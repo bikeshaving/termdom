@@ -62,7 +62,9 @@ interface Card {
 	up: boolean;
 }
 
-const isRed = (card: Card): boolean => card.suit === 1 || card.suit === 2;
+function isRed(card: Card): boolean {
+	return card.suit === 1 || card.suit === 2;
+}
 
 interface Game {
 	/** The deal this game was shuffled from. */
@@ -121,7 +123,9 @@ function deal(number: number, draw: number): Game {
 	};
 }
 
-const someDeal = (): number => Math.floor(Math.random() * 100000) + 1;
+function someDeal(): number {
+	return Math.floor(Math.random() * 100000) + 1;
+}
 
 /** A copy deep enough to hand to the undo stack. */
 function clone(game: Game): Game {
@@ -137,7 +141,9 @@ function clone(game: Game): Game {
 	};
 }
 
-const top = (cards: Card[]): Card | undefined => cards[cards.length - 1];
+function top(cards: Card[]): Card | undefined {
+	return cards[cards.length - 1];
+}
 
 // ---- the rules ---------------------------------------------------------------
 
@@ -295,8 +301,9 @@ function autoplay(game: Game): number {
 	return played;
 }
 
-const won = (game: Game): boolean =>
-	game.foundations.every((pile) => pile.length === 13);
+function won(game: Game): boolean {
+	return game.foundations.every((pile) => pile.length === 13);
+}
 
 // ---- the page ----------------------------------------------------------------
 
@@ -324,7 +331,7 @@ const GRAND_MIN_WIDTH = 96;
 const GRAND_MIN_HEIGHT = 32;
 const HINT_MIN_HEIGHT = 20;
 
-const sheet = (): string => {
+function sheet(): string {
 	// One set of numbers drives the stylesheet's @media blocks AND the matchMedia
 	// lists the component re-renders on, so the CSS widths and the drawn card
 	// faces can never disagree about the size of a card.
@@ -403,7 +410,7 @@ const sheet = (): string => {
   /* A short terminal spends its rows on the cards. */
   @media (max-height: ${HINT_MIN_HEIGHT - 1}) { .hint { display: none; } }
 `;
-};
+}
 
 // ---- the board ---------------------------------------------------------------
 
@@ -425,22 +432,26 @@ const DOT = " · ";
 const MIDDOT = "·";
 const STAR = "★";
 /** The key hints shrink with the cards, never past their own columns. */
-const deckKey = (t: Tier): string =>
-	t.width >= 7 ? "[Space]" : t.width >= 5 ? "[Spc]" : "[\u2423]";
-const flipKey = (t: Tier): string =>
-	t.width >= 7 ? "[0]/[f]lip" : t.width >= 5 ? "[0/f]" : "[0]";
+function deckKey(t: Tier): string {
+	return t.width >= 7 ? "[Space]" : t.width >= 5 ? "[Spc]" : "[\u2423]";
+}
+function flipKey(t: Tier): string {
+	return t.width >= 7 ? "[0]/[f]lip" : t.width >= 5 ? "[0/f]" : "[0]";
+}
 
 const ARROWS_ALL = "↑↓←→";
 
-const blank = (width: number): string => " ".repeat(width);
+function blank(width: number): string {
+	return " ".repeat(width);
+}
 
 /**
  * A card back: a plate with solid half-block rails and a single motif at the
  * center, the way a printed back reads. A covered card shows the plate's top
  * rule, so a pile of backs is ruled lines rather than pattern noise.
  */
-const backRows = (width: number, height: number): string[] =>
-	Array.from({length: height}, (_, row) => {
+function backRows(width: number, height: number): string[] {
+	return Array.from({length: height}, (_, row) => {
 		if (row === 0) return TL + T.repeat(width - 2) + TR;
 		if (row === height - 1) return BL + B.repeat(width - 2) + BR;
 		const inner = Array.from({length: width - 2}, (_, col) =>
@@ -450,6 +461,7 @@ const backRows = (width: number, height: number): string[] =>
 		).join("");
 		return L + inner + R;
 	});
+}
 
 /** `text` centered in a field of `width` cells. */
 function centered(text: string, width: number): string {

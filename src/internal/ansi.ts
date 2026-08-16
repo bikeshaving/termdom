@@ -36,23 +36,26 @@ const BORDER_EDGE_MASKS = [
 ];
 
 // Edge extraction utilities
-const getBorderEdge = (border: number, mask: number) => {
+function getBorderEdge(border: number, mask: number) {
 	const shift = Math.log2(mask & -mask);
 	return (border & mask) >> shift;
-};
+}
 
-const setBorderEdge = (border: number, mask: number, edgeValue: number) => {
+function setBorderEdge(border: number, mask: number, edgeValue: number) {
 	const shift = Math.log2(mask & -mask);
 	return (border & ~mask) | ((edgeValue << shift) & mask);
-};
+}
 
-const getEdgeStyle = (edgeValue: number) => edgeValue & BorderMask.Style;
-const getEdgePresence = (edgeValue: number) => {
+function getEdgeStyle(edgeValue: number) {
+	return edgeValue & BorderMask.Style;
+}
+function getEdgePresence(edgeValue: number) {
 	const style = edgeValue & BorderMask.Style;
 	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
-};
-const getEdgeRounded = (edgeValue: number) =>
-	(edgeValue & BorderEdgeStyle.Rounded) !== 0;
+}
+function getEdgeRounded(edgeValue: number) {
+	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
+}
 
 /**
  * Merge two border encodings, choosing the higher precedence style for each edge
