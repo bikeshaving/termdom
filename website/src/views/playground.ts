@@ -29,7 +29,7 @@ export default async function Playground({url}: {url: string}) {
 		<${Root}
 			title="TermDOM | Playground"
 			url=${url}
-			description="Edit HTML, CSS and JavaScript and watch TermDOM render it to a terminal, live in your browser."
+			description="Edit the library's own examples and watch TermDOM render them to a terminal, live in your browser."
 			stylesheets=${[assets.xtermCSS]}
 			scripts=${[assets.playgroundScript]}
 		>

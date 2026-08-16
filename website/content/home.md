@@ -6,8 +6,9 @@ any frontend web framework.
 ![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
 Everything below runs here. Each figure is a file from the repository's
-`examples/` directory, compiled and running in this page: edit the program and
-it runs again.
+`examples/` directory, running in this page the way `node` runs it: the
+imports resolve and the program constructs its own TermDOM. Edit one and it
+runs again.
 
 ![examples/progress-bar.ts](playground:progress-bar)
 

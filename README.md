@@ -105,7 +105,10 @@ to DOM nodes.
 - [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
   keypress counter apiece, each driving that framework's stock renderer.
 
-More runnable examples can be found in [`examples/`](./examples).
+More runnable examples can be found in [`examples/`](./examples). Most of
+them also run in the browser at
+[termdom.org/playground](https://termdom.org/playground/), from the same
+files.
 
 ## Runtimes
 
