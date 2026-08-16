@@ -179,7 +179,6 @@ export interface TextMetrics {
 }
 
 export interface CellStyle {
-	grapheme?: string;
 	fg?: number | null;
 	bg?: number | null;
 	bold?: boolean;
