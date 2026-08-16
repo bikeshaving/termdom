@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
-import {Renderer} from "../src/internal/ansi.js";
+import {Screen} from "../src/internal/ansi.js";
 import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
@@ -135,7 +135,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 	// erases itself) plus one partial erase below the content, which never
 	// qualifies as a whole-screen clear.
 	const terminal = new MockProcess({cols: 20, rows: 6});
-	const renderer = new Renderer(6, 20, "rgb");
+	const renderer = new Screen(6, 20, "rgb");
 	const write = (s: string) =>
 		new Promise<void>((r) => terminal.stdout.write(s, () => r()));
 
@@ -149,7 +149,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 
 	// The resize path resets the screen; the new frame is shorter and leaves
 	// row 1 blank.
-	renderer.resetScreen(0);
+	renderer.replaced(0);
 	const out = renderFrame(
 		renderer,
 		{offset: 0, cursorRow: 0, regionRows: 3},

@@ -4,7 +4,7 @@ import {
 	type CellStyle,
 	generateANSI,
 	getBorderChar,
-	Renderer,
+	Screen,
 } from "../src/internal/ansi.js";
 import {BorderEdgeStyle} from "../src/internal/styles.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
@@ -126,10 +126,10 @@ describe("CellGrid", () => {
 	});
 });
 
-describe("Renderer", () => {
+describe("Screen", () => {
 	describe("initialization", () => {
 		test("creates renderer with specified dimensions", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			// Test basic drawing functionality
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
@@ -140,7 +140,7 @@ describe("Renderer", () => {
 		});
 
 		test("handles color depth settings", () => {
-			const renderer = new Renderer(5, 10, "ansi");
+			const renderer = new Screen(5, 10, "ansi");
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "X", {fg: 0xff0000});
@@ -153,7 +153,7 @@ describe("Renderer", () => {
 
 	describe("drawing operations", () => {
 		test("setText draws text at position", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(1, 2, "Hello");
@@ -163,7 +163,7 @@ describe("Renderer", () => {
 		});
 
 		test("fillRect fills rectangular area", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.fillRect({x: 0, y: 0, width: 3, height: 2}, 0xff0000);
@@ -174,7 +174,7 @@ describe("Renderer", () => {
 		});
 
 		test("handles viewport offset", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
 				ctx.setText(0, 0, "Test");
@@ -187,7 +187,7 @@ describe("Renderer", () => {
 
 	describe("frame management", () => {
 		test("generates proper ANSI framing", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "Test");
@@ -203,14 +203,14 @@ describe("Renderer", () => {
 		});
 
 		test("clears previous buffer", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			// First frame
 			renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "First");
 			});
 
-			renderer.clearPreviousBuffer();
+			renderer.repaintAll();
 
 			// Second frame should render everything (no diff)
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
@@ -227,7 +227,7 @@ describe("Renderer", () => {
 		// through the frame, and SU commits rows to the scrollback, which
 		// document mode promises never to do.
 		test("increasing the offset repaints; it never emits SU", () => {
-			const renderer = new Renderer(10, 40);
+			const renderer = new Screen(10, 40);
 
 			renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "Initial");
@@ -243,7 +243,7 @@ describe("Renderer", () => {
 		});
 
 		test("decreasing the offset repaints; it never emits SD", () => {
-			const renderer = new Renderer(10, 40);
+			const renderer = new Screen(10, 40);
 
 			renderFrame(renderer, {offset: 3}, (ctx) => {
 				ctx.setText(0, 0, "Initial");
@@ -259,7 +259,7 @@ describe("Renderer", () => {
 		});
 
 		test("no scroll command when offset unchanged", () => {
-			const renderer = new Renderer(10, 40);
+			const renderer = new Screen(10, 40);
 
 			// Frame 1
 			renderFrame(renderer, {offset: 2}, (ctx) => {
@@ -278,7 +278,7 @@ describe("Renderer", () => {
 
 	describe("content optimization", () => {
 		test("generates empty output when no content", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (_ctx) => {
 				// No drawing operations
@@ -288,7 +288,7 @@ describe("Renderer", () => {
 		});
 
 		test("only outputs changed cells between frames", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			// First frame
 			renderFrame(renderer, {offset: 0}, (ctx) => {
@@ -452,7 +452,7 @@ describe("Border Functions", () => {
 		};
 
 		test("two boxes sharing a wall cross where the wall meets a run", () => {
-			const renderer = new Renderer(6, 14);
+			const renderer = new Screen(6, 14);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: solid});
@@ -465,7 +465,7 @@ describe("Border Functions", () => {
 		});
 
 		test("the heavier style wins a shared wall", () => {
-			const renderer = new Renderer(6, 14);
+			const renderer = new Screen(6, 14);
 			const double = {
 				topEdge: BorderEdgeStyle.Double,
 				rightEdge: BorderEdgeStyle.Double,
@@ -488,7 +488,7 @@ describe("Border Functions", () => {
 describe("Border Drawing", () => {
 	describe("drawBorder method", () => {
 		test("draws simple rectangle border", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder(
@@ -512,7 +512,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("draws partial borders", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder(
@@ -537,7 +537,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles border merging at intersections", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw two overlapping rectangles to create border intersections
@@ -575,7 +575,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("weaves junctions where separate borders touch", () => {
-			const renderer = new Renderer(6, 12);
+			const renderer = new Screen(6, 12);
 
 			// A page box, and a rule running wall to wall inside it -- a
 			// masthead's border-bottom. The rule's ends reach the cells of the
@@ -612,7 +612,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("boxes that sit flush stay separate", () => {
-			const renderer = new Renderer(4, 12);
+			const renderer = new Screen(4, 12);
 
 			// Two bordered siblings side by side: their verticals touch as
 			// parallel strokes, which meet nothing head-on. No junction forms
@@ -635,7 +635,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("respects viewport offset", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
 				ctx.drawBorder(
@@ -658,7 +658,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles different border styles", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder(
@@ -682,7 +682,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("skips drawing when hasAnyBorder is false", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder(
@@ -704,7 +704,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("handles border colors and styles", () => {
-			const renderer = new Renderer(5, 10);
+			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder(
@@ -732,7 +732,7 @@ describe("Border Drawing", () => {
 		});
 
 		test("clips borders to viewport bounds", () => {
-			const renderer = new Renderer(3, 5); // Small viewport
+			const renderer = new Screen(3, 5); // Small viewport
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw border that extends beyond viewport
@@ -760,7 +760,7 @@ describe("Border Drawing", () => {
 
 describe("Border Integration", () => {
 	test("renders complete border box without styles", () => {
-		const renderer = new Renderer(4, 8);
+		const renderer = new Screen(4, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -789,7 +789,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders borders with text content", () => {
-		const renderer = new Renderer(5, 10);
+		const renderer = new Screen(5, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw border
@@ -816,7 +816,7 @@ describe("Border Integration", () => {
 	});
 
 	test("borders work with fillRect backgrounds", () => {
-		const renderer = new Renderer(5, 10);
+		const renderer = new Screen(5, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Fill background
@@ -842,7 +842,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders double border box without styles", () => {
-		const renderer = new Renderer(5, 7);
+		const renderer = new Screen(5, 7);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -867,7 +867,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders partial border without right edge", () => {
-		const renderer = new Renderer(5, 8);
+		const renderer = new Screen(5, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -894,7 +894,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders text with no ANSI color styles", () => {
-		const renderer = new Renderer(3, 10);
+		const renderer = new Screen(3, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.setText(0, 0, "Hello");
@@ -917,7 +917,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders overlapping borders", () => {
-		const renderer = new Renderer(6, 10);
+		const renderer = new Screen(6, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// First box
@@ -961,10 +961,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders simple border pattern", () => {
-		const renderer = new Renderer(5, 10);
+		const renderer = new Screen(5, 10);
 
 		// Clear previous buffer to ensure output
-		renderer.clearPreviousBuffer();
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
@@ -994,7 +994,7 @@ describe("Border Integration", () => {
 	});
 
 	test("renders exact multi-line text output", () => {
-		const renderer = new Renderer(4, 12);
+		const renderer = new Screen(4, 12);
 
 		// First render to establish baseline
 		renderFrame(renderer, {offset: 0}, (ctx) => {
@@ -1021,10 +1021,10 @@ describe("Border Integration", () => {
 	});
 
 	test("renders box with text inside - full output", () => {
-		const renderer = new Renderer(5, 8);
+		const renderer = new Screen(5, 8);
 
 		// Clear any previous state
-		renderer.clearPreviousBuffer();
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw box
@@ -1056,9 +1056,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - 2x2 grid", () => {
-		const renderer = new Renderer(5, 9);
+		const renderer = new Screen(5, 9);
 
-		renderer.clearPreviousBuffer();
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Simulate CSS collapsed table borders by drawing each cell's borders
@@ -1132,9 +1132,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - mixed border styles", () => {
-		const renderer = new Renderer(3, 11);
+		const renderer = new Screen(3, 11);
 
-		renderer.clearPreviousBuffer();
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
@@ -1176,9 +1176,9 @@ describe("Border Integration", () => {
 	});
 
 	test("renders collapsed table borders - header and data rows", () => {
-		const renderer = new Renderer(5, 13); // 3 columns x 4 chars + 1 = 13 width
+		const renderer = new Screen(5, 13); // 3 columns x 4 chars + 1 = 13 width
 
-		renderer.clearPreviousBuffer();
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Simulate a typical HTML table with header and data rows
@@ -1284,8 +1284,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders simple single cell with border", () => {
-		const renderer = new Renderer(4, 6);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(4, 6);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -1307,8 +1307,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders double border box", () => {
-		const renderer = new Renderer(5, 8);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(5, 8);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -1331,8 +1331,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders partial borders - top and left only", () => {
-		const renderer = new Renderer(4, 6);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(4, 6);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -1358,8 +1358,8 @@ describe("Border Integration", () => {
 		// No top or bottom edge means no corner cells -- the vertical run owns
 		// the end rows too. Skipping them is what cut a blockquote's border
 		// off at its first and last row.
-		const renderer = new Renderer(5, 8);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(5, 8);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(
@@ -1387,8 +1387,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders L-shaped table border pattern", () => {
-		const renderer = new Renderer(4, 7);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(4, 7);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
@@ -1438,8 +1438,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders mixed border styles in adjacent cells", () => {
-		const renderer = new Renderer(3, 9);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(3, 9);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Solid border cell
@@ -1494,8 +1494,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders nested borders", () => {
-		const renderer = new Renderer(7, 11); // Wider to accommodate text
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(7, 11); // Wider to accommodate text
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Outer border
@@ -1536,8 +1536,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders grid layout - 3x3 table", () => {
-		const renderer = new Renderer(7, 11);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(7, 11);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw 3x3 grid of cells
@@ -1569,8 +1569,8 @@ describe("Border Integration", () => {
 	});
 
 	test("renders borders with background colors", () => {
-		const renderer = new Renderer(3, 7);
-		renderer.clearPreviousBuffer();
+		const renderer = new Screen(3, 7);
+		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawBorder(

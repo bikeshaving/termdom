@@ -1322,7 +1322,7 @@ export class DrawingContext {
 	}
 }
 
-export class Renderer {
+export class Screen {
 	#prev: CellGrid | null = null;
 	// Retired grids kept for the next frame that wants their size: the frame
 	// buffer and the previous frame trade places rather than reallocating, and
@@ -1366,7 +1366,7 @@ export class Renderer {
 	 * full wrapped height minus one; with a caret park it is the wrapped rows
 	 * above the caret's line plus the caret's own wrap segment.
 	 */
-	wrappedRowsAboveCursorPark(cols: number): number | null {
+	wrappedRowsAbovePark(cols: number): number | null {
 		if (!this.#prev || this.#prevContentHeight === 0 || cols <= 0) {
 			return null;
 		}
@@ -1415,7 +1415,42 @@ export class Renderer {
 	 * the fold: the already-printed copy is in the scrollback and cannot be
 	 * corrected, so the only honest thing left is to print a fresh one below it.
 	 */
-	clearPreviousBuffer(): void {
+	/**
+	 * The terminal's screen is no longer the one this last painted, from
+	 * `fromRow` down: the alternate screen swapped in, a resize moved the
+	 * frame, a width correction landed. What that costs -- which rows must be
+	 * erased, what can still be diffed -- is this class's business; the
+	 * caller only reports the fact.
+	 */
+	replaced(fromRow = 0): void {
+		this.#needsScreenReset = true;
+		this.#resetAtRow = Math.max(0, fromRow);
+		this.#hasSavedCursor = false;
+		this.#forgetScreen();
+	}
+
+	/**
+	 * The screen scrolled under this by `rows` -- output pushed into the
+	 * scrollback to make room -- so a pending erase, which names a screen row,
+	 * rides along with everything else on screen.
+	 */
+	scrolled(rows: number): void {
+		if (this.#needsScreenReset && rows > 0) {
+			this.#resetAtRow = Math.max(0, this.#resetAtRow - rows);
+		}
+	}
+
+	/**
+	 * What the terminal shows is no longer what this last painted, though it
+	 * still stands where it stood: a frame was written that this did not
+	 * describe, or a measurement corrected one it did. The next frame paints
+	 * every cell again, in place.
+	 */
+	repaintAll(): void {
+		this.#forgetScreen();
+	}
+
+	#forgetScreen(): void {
 		this.#spare = this.#prev;
 		this.#prev = null;
 		this.#prevContentHeight = 0;
@@ -1434,44 +1469,6 @@ export class Renderer {
 	 * reprint. The old content the terminal reflowed into scrollback stays there,
 	 * as any command's output would; the visible frame is clean.
 	 */
-	resetScreen(startRow: number): void {
-		this.#needsScreenReset = true;
-		this.#resetAtRow = Math.max(0, startRow);
-		this.#hasSavedCursor = false;
-		this.clearPreviousBuffer();
-	}
-
-	/**
-	 * Reset from the top row, for the resize whose anchor cannot be trusted
-	 * (the frame no longer fits below where the cursor query put it, so the
-	 * amount the terminal scrolled is unrecoverable). Nothing of the old frame
-	 * survives: a reset frame covers every visible row -- each region row
-	 * clears itself, and one partial erase takes everything below the content
-	 * -- without the whole-screen ED that tmux would archive into scrollback.
-	 * It costs the output above us, which beats a screen holding two
-	 * half-frames.
-	 */
-	clearScreen(): void {
-		this.resetScreen(0);
-	}
-
-	/**
-	 * The screen scrolled by `rows` between resetScreen() and the frame that
-	 * consumes it -- reserveRows pushing earlier output into the scrollback to
-	 * make room. The pending reset row is SCREEN-absolute, so it rides the
-	 * scroll like everything else on screen; without this, the erase and the
-	 * paint land `rows` too low, overflow the bottom margin, and the frame's
-	 * own top rows get scrolled up and stranded as duplicates.
-	 */
-	shiftScreenReset(rows: number): void {
-		if (this.#needsScreenReset && rows > 0) {
-			this.#resetAtRow = Math.max(0, this.#resetAtRow - rows);
-		}
-	}
-
-	get hasSavedCursor(): boolean {
-		return this.#hasSavedCursor;
-	}
 
 	/** A reset or clear is pending: the next frame must actually paint. */
 	get needsRepaint(): boolean {
@@ -1983,7 +1980,7 @@ export class Renderer {
 				// terminal preserves the cursor across a resize, scrolling exactly enough
 				// to keep it on screen, so an arbitrary resting place makes that scroll
 				// arbitrary too. The resize re-anchor recovers the frame's position from
-				// wherever the park went (see wrappedRowsAboveCursorPark).
+				// wherever the park went (see wrappedRowsAbovePark).
 				//
 				// Two parks:
 				// - A focused text element set a caret: park THERE and show the cursor.

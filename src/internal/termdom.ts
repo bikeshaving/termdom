@@ -33,7 +33,7 @@ import {
 	type TerminalSize,
 	type TerminalTransport,
 } from "./terminalsession.js";
-import {Renderer} from "./ansi.js";
+import {Screen} from "./ansi.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
@@ -510,7 +510,7 @@ export class TermDOM {
 	readonly document: Document;
 	readonly window: EngineWindow;
 
-	#renderer: Renderer;
+	#screen: Screen;
 	[kLayoutEngine]: LayoutEngine;
 	[kObserver]: MutationObserver;
 	#fullscreenManager: FullscreenManager;
@@ -713,7 +713,7 @@ export class TermDOM {
 
 		engines.set(document, this);
 		TermDOM.#installPrototypes(this.window);
-		this.#renderer = new Renderer(
+		this.#screen = new Screen(
 			this.#height,
 			this.#width,
 			this.#transport.colorDepth,
@@ -1490,7 +1490,7 @@ export class TermDOM {
 					// alternate screen starts cleared): drop the diff model or
 					// the first fullscreen frame patches against the main
 					// screen's content.
-					termDOM.#renderer.clearPreviousBuffer();
+					termDOM.#screen.repaintAll();
 					termDOM.#updateMouseReporting();
 				} finally {
 					termDOM.#screenSwitching = false;
@@ -1517,7 +1517,7 @@ export class TermDOM {
 					// main screen, but the diff model still describes the last
 					// ALTERNATE-screen frame -- patching against it garbles the
 					// restored document.
-					termDOM.#renderer.clearPreviousBuffer();
+					termDOM.#screen.repaintAll();
 					termDOM.#updateMouseReporting();
 				} finally {
 					termDOM.#screenSwitching = false;
@@ -1772,7 +1772,7 @@ export class TermDOM {
 				// that was never drawn: drop it and paint the region again from
 				// the corrected measurements.
 				onWidthCorrection: () => {
-					this.#renderer.clearPreviousBuffer();
+					this.#screen.repaintAll();
 					void this.#render();
 				},
 				// The terminal went away (hangup, disconnect, process exit):
@@ -1882,11 +1882,7 @@ export class TermDOM {
 		this.#transport = transport;
 		this.#interactive = transport.interactive;
 		this.#applyTerminalSize(transport.cols, transport.rows);
-		this.#renderer = new Renderer(
-			this.#height,
-			this.#width,
-			transport.colorDepth,
-		);
+		this.#screen = new Screen(this.#height, this.#width, transport.colorDepth);
 		this.#session = this.#buildSession();
 	}
 
@@ -2247,7 +2243,7 @@ export class TermDOM {
 		const newHeight = this.#transport.rows;
 
 		this.#applyTerminalSize(newWidth, newHeight);
-		this.#renderer.resize(newHeight, newWidth);
+		this.#screen.resize(newHeight, newWidth);
 
 		// Re-anchor and redraw. The terminal has already rewrapped everything on
 		// screen -- including our old frame -- and how far our content moved depends
@@ -2272,8 +2268,7 @@ export class TermDOM {
 		// vertical re-anchor (exact for height changes, approximate for width).
 		this[kLayoutEngine].calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
-		const wrappedRowsAbove =
-			this.#renderer.wrappedRowsAboveCursorPark(newWidth);
+		const wrappedRowsAbove = this.#screen.wrappedRowsAbovePark(newWidth);
 		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
@@ -2285,7 +2280,7 @@ export class TermDOM {
 			// top of the shell prompt above it.
 			this.#viewport.screenTop = startRow;
 			this.#viewport.anchorScrollTop = -this.#viewport.screenTop;
-			this.#renderer.resetScreen(startRow);
+			this.#screen.replaced(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
@@ -2316,7 +2311,6 @@ export class TermDOM {
 			if (startRow + contentHeight <= newHeight) {
 				redraw(startRow);
 			} else {
-				this.#renderer.clearScreen();
 				redraw(0);
 			}
 		};
@@ -3061,7 +3055,7 @@ export class TermDOM {
 
 		this[kLayoutEngine].calculateLayout();
 
-		const frame = this.#renderer.beginStatic({
+		const frame = this.#screen.beginStatic({
 			rows: this.document.body.scrollHeight,
 		});
 		this.#painter.paint(frame.context);
@@ -3121,7 +3115,7 @@ export class TermDOM {
 		this.#processPendingMutationsAndRender();
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return "";
-		const frame = this.#renderer.beginStatic({
+		const frame = this.#screen.beginStatic({
 			rows: contentHeight,
 			lineEnding,
 		});
@@ -3154,7 +3148,7 @@ export class TermDOM {
 		if (this.#sealed) {
 			this.#sealed = false;
 			this.#viewport.scrollTop = 0;
-			this.#renderer.clearPreviousBuffer();
+			this.#screen.repaintAll();
 			// detectCommandStart waits for a reply on stdin, so the listener must
 			// be attached first (idempotent -- normally already done by now).
 			if (this.#interactive) {
@@ -3206,7 +3200,7 @@ export class TermDOM {
 			this.#inputGeneration === this.#lastFrameInputGeneration &&
 			this.document.activeElement === this.#lastFrameActiveElement &&
 			(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
-			!this.#renderer.needsRepaint
+			!this.#screen.needsRepaint
 		) {
 			// Skip the paint, not the frame: observers still run, so a fresh
 			// observe() gets its initial entry on the next tick.
@@ -3384,7 +3378,7 @@ export class TermDOM {
 			scroll = {delta, bands};
 		}
 
-		const frame = this.#renderer.beginFrame({
+		const frame = this.#screen.beginFrame({
 			offset: -this.#viewport.scrollTop,
 			cursorRow: top,
 			regionRows: top + regionHeight,
@@ -3458,7 +3452,7 @@ export class TermDOM {
 			//
 			// A pending post-resize screen reset IS screen-absolute, though, and
 			// must ride the scroll (see shiftScreenReset).
-			this.#renderer.shiftScreenReset(push);
+			this.#screen.scrolled(push);
 		}
 
 		return this.#viewport.screenTop;
