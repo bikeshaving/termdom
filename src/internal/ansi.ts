@@ -1,6 +1,21 @@
 /**
  * The screen: the cells the terminal is showing, the cells the next frame
  * wants, and the shortest escape sequence between them.
+ *
+ * Two classes are the whole surface, one consumer each:
+ *
+ * - `Screen` is the session's. A frame is `beginFrame` (or `beginStatic`),
+ *   drawing calls against the frame's context, then `end()`, which diffs
+ *   against what the terminal shows and returns the bytes that close the
+ *   gap. Between frames the session reports what happened to the screen --
+ *   `replaced`, `scrolled`, `repaintAll` -- and the buffers, the diff, and
+ *   what each event costs stay in here.
+ * - `DrawingContext` is the painter's: canvas-like calls over the frame's
+ *   cells. Where borders meet, and with which glyph, is decided here, never
+ *   by a caller.
+ *
+ * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
+ * alone; nothing in src imports them.
  */
 import {
 	BOX_DRAWING,
