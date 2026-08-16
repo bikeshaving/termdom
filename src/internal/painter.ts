@@ -7,7 +7,7 @@ import {isTextField, selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
-import {type StyleManager, resolveBorderStyles} from "./styles.js";
+import {type StyleManager, resolveBorderSides} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
@@ -441,62 +441,48 @@ export class Painter {
 
 		// Handle borders
 		if (rect && visible) {
-			const borderStyles = resolveBorderStyles(element);
-			// A transparent edge reserves its layout space but paints no glyph
-			// -- the browser behavior authors use for invisible spacing borders.
-			// Suppress those edges for PAINTING only; layout reads the widths
-			// elsewhere and is unaffected.
-			const edgeColorProps = [
-				["topEdge", "border-top-color"],
-				["rightEdge", "border-right-color"],
-				["bottomEdge", "border-bottom-color"],
-				["leftEdge", "border-left-color"],
-			] as const;
-			for (const [edge, prop] of edgeColorProps) {
-				if (
-					borderStyles[edge] > 0 &&
-					isTransparentColor(computed.computedValueOf(prop))
-				) {
-					borderStyles[edge] = 0;
-				}
-			}
-			borderStyles.hasAnyBorder =
-				borderStyles.topEdge > 0 ||
-				borderStyles.rightEdge > 0 ||
-				borderStyles.bottomEdge > 0 ||
-				borderStyles.leftEdge > 0;
-			if (borderStyles.hasAnyBorder) {
-				// Border color per CSS: each side's border-<side>-color, whose
-				// initial value is currentColor -- the element's own color --
-				// and, with nothing authored anywhere, the terminal's DEFAULT
-				// foreground. Never a hardcoded white: no theme-safe color
-				// exists, and forcing one breaks light terminals.
-				const edgeCellStyle = (prop: string): import("./ansi.js").CellStyle => {
-					const borderColor = computed.computedValueOf(prop);
-					return {
-						fg:
-							borderColor &&
-							borderColor !== "currentcolor" &&
-							borderColor !== "currentColor"
-								? cssColorToNumber(borderColor)
-								: style.fg,
-						bg: style.bg, // Inherit element's background color
-					};
+			const sides = resolveBorderSides(element);
+			// Border color per CSS: each side's border-<side>-color, whose
+			// initial value is currentColor -- the element's own color -- and,
+			// with nothing authored anywhere, the terminal's DEFAULT
+			// foreground. Never a hardcoded white: no theme-safe color exists,
+			// and forcing one breaks light terminals. A transparent side
+			// reserves its layout space but paints no glyph -- the browser
+			// behavior authors use for invisible spacing borders; layout reads
+			// the widths elsewhere and is unaffected.
+			const sideFor = (
+				line: import("./ansi.js").BorderLineStyle | undefined,
+				prop: string,
+			): import("./ansi.js").BorderSide | undefined => {
+				if (!line) return undefined;
+				const borderColor = computed.computedValueOf(prop);
+				if (isTransparentColor(borderColor)) return undefined;
+				return {
+					style: line,
+					color:
+						borderColor &&
+						borderColor !== "currentcolor" &&
+						borderColor !== "currentColor"
+							? cssColorToNumber(borderColor)
+							: style.fg,
 				};
-				const top = edgeCellStyle("border-top-color");
+			};
+			const top = sideFor(sides.top, "border-top-color");
+			const borderRight = sideFor(sides.right, "border-right-color");
+			const bottom = sideFor(sides.bottom, "border-bottom-color");
+			const left = sideFor(sides.left, "border-left-color");
+			if (top || borderRight || bottom || left) {
 				ctx.drawBorder(
 					Math.round(rect.left),
 					Math.round(rect.top),
 					Math.round(rect.width),
 					Math.round(rect.height),
 					{
-						border: borderStyles,
-						edges: {
-							top,
-							right: edgeCellStyle("border-right-color"),
-							bottom: edgeCellStyle("border-bottom-color"),
-							left: edgeCellStyle("border-left-color"),
-						},
+						top,
+						right: borderRight,
+						bottom,
+						left,
+						corners: sides.corners,
 					},
 				);
 			}
@@ -681,17 +667,24 @@ export class Painter {
 					outlineColor !== "currentcolor" &&
 					outlineColor !== "invert" &&
 					!isSystemHighlightColor(outlineColor);
-				const borderStyles = resolveBorderStyles(element);
-				if (borderStyles.hasAnyBorder) {
+				const sides = resolveBorderSides(element);
+				if (sides.top || sides.right || sides.bottom || sides.left) {
 					if (hasColor) {
+						const ring = (
+							line: import("./ansi.js").BorderLineStyle | undefined,
+						): import("./ansi.js").BorderSide | undefined =>
+							line && {style: line, color: cssColorToNumber(outlineColor)};
 						ctx.drawBorder(
 							Math.round(rect.left),
 							Math.round(rect.top),
 							Math.round(rect.width),
 							Math.round(rect.height),
 							{
-								border: borderStyles,
-								style: {fg: cssColorToNumber(outlineColor), bg: style.bg},
+								top: ring(sides.top),
+								right: ring(sides.right),
+								bottom: ring(sides.bottom),
+								left: ring(sides.left),
+								corners: sides.corners,
 							},
 						);
 					}
