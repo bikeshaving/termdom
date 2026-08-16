@@ -829,6 +829,26 @@ test("whitespace-only text between flex items is not an item", async () => {
 	dom.dispose();
 });
 
+test("whitespace next to inline flex items is not an item either", async () => {
+	// Every element child of a flex container is an item of its own, so an
+	// inline sibling does not lend the whitespace run content: browsers
+	// drop the run whatever flanks it. A masthead written as multi-line
+	// markup must justify its spans to the edges.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<div style="display:flex;justify-content:space-between;width:20ch">
+		<span id="l">brand</span>
+		<span id="r">nav</span>
+	</div>`;
+	await nextFrame(dom);
+
+	const rect = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect();
+	expect(rect("l").left).toBe(0);
+	expect(rect("r").left).toBe(17); // flushed: 20 - "nav".length
+	dom.dispose();
+});
+
 test.todo("white-space: pre keeps whitespace items, per spec", async () => {
 	// The suppression correctly spares this item (pre is not collapsible),
 	// but a pre-existing quirk measures whitespace-only runs at zero width,
