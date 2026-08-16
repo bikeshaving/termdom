@@ -10,12 +10,12 @@
  *   gap. Between frames the session reports what happened to the screen --
  *   `replaced`, `scrolled`, `repaintAll` -- and the buffers, the diff, and
  *   what each event costs stay in here.
- * - `DrawingContext` is the painter's, modelled on the canvas 2D context:
- *   `fillText`, `fillRect`, `measureText` returning `TextMetrics` in cells.
- *   It diverges deliberately where a terminal is not a canvas -- styles ride
- *   each call instead of context state, and `drawBorder`, `edgeRow` and
- *   `setCaret` draw what a canvas has no name for. Where borders meet, and
- *   with which glyph, is decided here, never by a caller.
+ * - `DrawingContext` is the painter's. A cell grid has no fill rule and no
+ *   stroke width -- there is one act, writing cells -- so there is one verb:
+ *   `drawText`, `drawRect`, `drawBorder`, `drawEdge`. `measureText` answers
+ *   in the grid's one metric, and styles ride each call; the context holds
+ *   no state a canvas would put on the pen. Where borders meet, and with
+ *   which glyph, is decided here, never by a caller.
  *
  * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
  * alone; nothing in src imports them.
@@ -1029,7 +1029,7 @@ export class DrawingContext {
 		this.caret = {col: x, row: y};
 	}
 
-	fillRect(
+	drawRect(
 		rect: CellRect,
 		background: number | null | undefined | "default" | "inverse",
 	): void {
@@ -1057,7 +1057,7 @@ export class DrawingContext {
 		}
 	}
 
-	/** Measure `text` the way `fillText` will lay it down. */
+	/** Measure `text` the way `drawText` will lay it down. */
 	measureText(text: string): TextMetrics {
 		if (asciiPrintable.test(text)) {
 			return {width: text.length};
@@ -1069,7 +1069,7 @@ export class DrawingContext {
 		return {width};
 	}
 
-	fillText(text: string, x: number, y: number, style?: CellStyle): void {
+	drawText(text: string, x: number, y: number, style?: CellStyle): void {
 		let currentX = x;
 
 		// Printable ASCII needs no grapheme segmentation: every char is its
@@ -1111,7 +1111,7 @@ export class DrawingContext {
 	 * DEFAULT color: a cell that already carries an explicit foreground
 	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
-	edgeRow(
+	drawEdge(
 		x: number,
 		y: number,
 		width: number,
