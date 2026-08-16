@@ -1,129 +1,41 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 import {
-	CellGrid,
-	type CellStyle,
-	generateANSI,
-	getBorderChar,
 	Screen,
 	drawBox,
+	type DrawingContext,
+	type LineStyle,
 } from "../src/internal/ansi.js";
-import {BorderEdgeStyle} from "../src/internal/styles.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 
-describe("CellGrid", () => {
-	describe("planes", () => {
-		test("a new grid is entirely empty", () => {
-			const grid = new CellGrid(3, 5);
-
-			expect(grid.rows).toBe(3);
-			expect(grid.cols).toBe(5);
-			expect(grid.char.length).toBe(15);
-			for (let index = 0; index < 15; index++) {
-				expect(grid.graphemeAt(index)).toBe("");
-				expect(grid.widthAt(index)).toBe(0);
-			}
+describe("cells through the pen", () => {
+	// The grid itself is interior; what a cell HOLDS is observable in the
+	// emitted bytes, so its round trips are asserted there.
+	test("a multi-code-point grapheme survives to the output whole", () => {
+		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
+		const renderer = new Screen(1, 8);
+		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+			ctx.drawText(family, 0, 0);
+			ctx.drawText("é", 2, 0);
+			ctx.drawText("\u{1f1ef}\u{1f1f5}", 3, 0);
+			ctx.drawText("日", 5, 0);
 		});
 
-		test("a cell records its grapheme, colors and style", () => {
-			const style: CellStyle = {
-				fg: 0xff0000,
-				bg: 0x00ff00,
-				bold: true,
-				italic: true,
-			};
-			const grid = new CellGrid(1, 1);
-			grid.setCell(0, "A", {style});
-
-			expect(grid.graphemeAt(0)).toBe("A");
-			expect(grid.fg[0]).toBe(0xff0000);
-			expect(grid.bg[0]).toBe(0x00ff00);
-			expect(grid.widthAt(0)).toBe(1);
-		});
-
-		test("a background override replaces the style's own", () => {
-			const grid = new CellGrid(1, 1);
-			grid.setCell(0, "A", {style: {bg: 0x00ff00}, background: 0x0000ff});
-
-			expect(grid.bg[0]).toBe(0x0000ff);
-		});
-
-		test("a multi-code-point grapheme survives the round trip", () => {
-			const family = "\u{1f468}‍\u{1f469}‍\u{1f467}";
-			const grid = new CellGrid(1, 4);
-			grid.setCell(0, family);
-			grid.setCell(1, "é");
-			grid.setCell(2, "\u{1f1ef}\u{1f1f5}");
-			grid.setCell(3, "日");
-
-			expect(grid.graphemeAt(0)).toBe(family);
-			expect(grid.graphemeAt(1)).toBe("é");
-			expect(grid.graphemeAt(2)).toBe("\u{1f1ef}\u{1f1f5}");
-			expect(grid.graphemeAt(3)).toBe("日");
-			expect(grid.widthAt(0)).toBe(2);
-			expect(grid.widthAt(1)).toBe(1);
-			expect(grid.widthAt(2)).toBe(2);
-			expect(grid.widthAt(3)).toBe(2);
-		});
-
-		test("an interned grapheme keeps one id", () => {
-			const grid = new CellGrid(1, 2);
-			grid.setCell(0, "é");
-			grid.setCell(1, "é");
-
-			expect(grid.char[0]).toBe(grid.char[1]);
-		});
+		expect(output).toContain(family);
+		expect(output).toContain("é");
+		expect(output).toContain("\u{1f1ef}\u{1f1f5}");
+		expect(output).toContain("日");
 	});
 
-	describe("comparison", () => {
-		test("equalCells compares content and styling", () => {
-			const grid = new CellGrid(1, 3);
-			grid.setCell(0, "A", {style: {fg: 0xff0000, bold: true}});
-			grid.setCell(1, "B", {style: {fg: 0xff0000, bold: true}});
-			grid.setCell(2, "A", {style: {fg: 0x00ff00, bold: true}});
-
-			expect(grid.equalCells(0, grid, 0)).toBe(true);
-			expect(grid.equalCells(0, grid, 1)).toBe(false);
-			expect(grid.equalCells(0, grid, 2)).toBe(false);
-		});
-
-		test("equalCells reaches across grids", () => {
-			const a = new CellGrid(1, 1);
-			const b = new CellGrid(1, 1);
-			a.setCell(0, "A", {style: {fg: 0xff0000}});
-			b.setCell(0, "A", {style: {fg: 0xff0000}});
-
-			expect(a.equalCells(0, b, 0)).toBe(true);
-		});
-	});
-
-	describe("bulk moves", () => {
-		test("moveRange shifts cells and clearRange blanks them", () => {
-			const grid = new CellGrid(3, 2);
-			grid.setCell(0, "a");
-			grid.setCell(2, "b");
-			grid.setCell(4, "c");
-
-			// Row r now shows what was at row r + 1.
-			grid.moveRange(0, 2, 6);
-			grid.clearRange(4, 6);
-
-			expect(grid.graphemeAt(0)).toBe("b");
-			expect(grid.graphemeAt(2)).toBe("c");
-			expect(grid.graphemeAt(4)).toBe("");
-		});
-
-		test("bottomRows keeps only the last rows", () => {
-			const grid = new CellGrid(3, 1);
-			grid.setCell(0, "a");
-			grid.setCell(1, "b");
-			grid.setCell(2, "c");
-
-			const kept = grid.bottomRows(2);
-
-			expect(kept.rows).toBe(2);
-			expect(kept.graphemeAt(0)).toBe("b");
-			expect(kept.graphemeAt(1)).toBe("c");
-		});
+	test("measureText and the layout agree on widths", () => {
+		const renderer = new Screen(1, 10);
+		const frame = renderer.beginFrame({offset: 0});
+		expect(
+			frame.context.measureText("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}")
+				.width,
+		).toBe(2);
+		expect(frame.context.measureText("é").width).toBe(1);
+		expect(frame.context.measureText("\u{1f1ef}\u{1f1f5}").width).toBe(2);
+		expect(frame.context.measureText("日本").width).toBe(4);
 	});
 });
 
@@ -311,187 +223,105 @@ describe("Screen", () => {
 	});
 });
 
-describe("generateANSI", () => {
-	test("generates empty output for empty buffer", () => {
-		const output = generateANSI(new CellGrid(3, 5));
+describe("glyphs where lines meet", () => {
+	// A cell's four stroke slots say which way a line LEAVES it -- which is
+	// what a box-drawing glyph actually encodes. They used to mean "which
+	// edge of a box this cell sits on": a reading that is self-contradictory
+	// (a line running up, down and left cannot point right) and that broke
+	// as soon as two boxes shared a cell -- a collapsed table's colspan
+	// boundary merged a horizontal run with two downward corners and drew ┼
+	// where ┬ belongs. The half-stroke line ends are the honest model, and
+	// these read the glyphs straight off emitted frames.
+	const solid: LineStyle = {style: "solid"};
 
-		expect(output).toBe("");
-	});
+	function glyphs(
+		rows: number,
+		cols: number,
+		draw: (ctx: DrawingContext) => void,
+	): string {
+		const renderer = new Screen(rows, cols);
+		return stripControlCodes(renderFrame(renderer, {offset: 0}, draw));
+	}
 
-	test("generates ANSI for simple text", () => {
-		const grid = new CellGrid(2, 5);
-		grid.setCell(0, "H");
-		grid.setCell(1, "i");
-
-		const output = generateANSI(grid);
-
-		expect(output).toContain("Hi");
-		expect(output).toContain("\r\n"); // Line ending
-	});
-
-	test("generates color codes", () => {
-		const grid = new CellGrid(1, 1);
-		grid.setCell(0, "X", {style: {fg: 0xff0000, bg: 0x00ff00}});
-
-		const output = generateANSI(grid);
-
-		expect(output).toContain("38;2;255;0;0"); // Red foreground
-		expect(output).toContain("48;2;0;255;0"); // Green background
-		expect(output).toContain("X");
-		expect(output).toContain("\x1b[0m"); // Reset
-	});
-
-	test("handles wide characters", () => {
-		const grid = new CellGrid(1, 3);
-		grid.setCell(0, "👍"); // 2-width emoji
-		grid.setCell(2, "A"); // Normal char after emoji
-
-		const output = generateANSI(grid);
-
-		expect(output).toContain("👍");
-		expect(output).toContain("A");
-	});
-});
-
-describe("Border Functions", () => {
-	describe("getBorderChar", () => {
-		test("returns space for no borders", () => {
-			const char = getBorderChar(0);
-			expect(char).toBe(" ");
-		});
-
-		// The four bits say which way a line LEAVES the cell -- up, right, down,
-		// left -- which is what a box-drawing glyph actually encodes.
-		//
-		// They used to mean "which edge of a box this cell sits on", and these
-		// tests asserted that: a lone `top` bit rendered a horizontal line, and
-		// top+bottom+left rendered ├. That reading is self-contradictory (a line
-		// running up, down and left cannot point right), and it only survived
-		// because for a single box the two happen to coincide. It broke as soon
-		// as two boxes shared a cell: a collapsed table's colspan boundary merged
-		// a horizontal run with two downward corners and produced ┼ instead of ┬.
-		const UP = BorderEdgeStyle.Solid << 0;
-		const RIGHT = BorderEdgeStyle.Solid << 8;
-		const DOWN = BorderEdgeStyle.Solid << 16;
-		const LEFT = BorderEdgeStyle.Solid << 24;
-
-		test("generates corner characters", () => {
-			// ┌ turns from rightward to downward.
-			expect(getBorderChar(RIGHT | DOWN)).toBe("┌");
-			// ┐ arrives from the left and turns down.
-			expect(getBorderChar(LEFT | DOWN)).toBe("┐");
-			// └ comes up and turns right.
-			expect(getBorderChar(UP | RIGHT)).toBe("└");
-			// ┘ comes up and turns left.
-			expect(getBorderChar(UP | LEFT)).toBe("┘");
-		});
-
-		test("generates T-junction characters", () => {
-			// A tee points the way the fourth arm is missing.
-			expect(getBorderChar(LEFT | RIGHT | DOWN)).toBe("┬");
-			expect(getBorderChar(LEFT | RIGHT | UP)).toBe("┴");
-			expect(getBorderChar(UP | DOWN | RIGHT)).toBe("├");
-			expect(getBorderChar(UP | DOWN | LEFT)).toBe("┤");
-		});
-
-		test("generates cross junction", () => {
-			expect(getBorderChar(UP | RIGHT | DOWN | LEFT)).toBe("┼");
-		});
-
-		test("generates straight lines", () => {
-			// A line that leaves left and right is horizontal.
-			expect(getBorderChar(LEFT | RIGHT)).toBe("─");
-			// A line that leaves up and down is vertical.
-			expect(getBorderChar(UP | DOWN)).toBe("│");
-		});
-
-		test("a single stub still draws its line", () => {
-			// The end of a run: only one direction is set, but it is still a line.
-			expect(getBorderChar(BorderEdgeStyle.Solid << 8)).toBe("─"); // right
-			expect(getBorderChar(BorderEdgeStyle.Solid << 0)).toBe("│"); // up
-		});
-
-		test("handles different border styles", () => {
-			const doubleHorizontal =
-				(BorderEdgeStyle.Double << 8) | (BorderEdgeStyle.Double << 24);
-			expect(getBorderChar(doubleHorizontal)).toBe("═");
-
-			const dashedHorizontal =
-				(BorderEdgeStyle.Dashed << 8) | (BorderEdgeStyle.Dashed << 24);
-			expect(getBorderChar(dashedHorizontal)).toBe("╌");
-		});
-
-		test("handles rounded corners", () => {
-			const rounded = BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded;
-			// ╭ is the rounded ┌: rightward and downward.
-			const roundedTopLeft = (rounded << 8) | (rounded << 16);
-			expect(getBorderChar(roundedTopLeft)).toBe("╭");
-
-			// The dashes are the border style's; only the turn bends.
-			const dashed = BorderEdgeStyle.Dashed | BorderEdgeStyle.Rounded;
-			expect(getBorderChar((dashed << 16) | (dashed << 24))).toBe("╮");
-
-			// Unicode draws no rounded double corner, so the radius cannot
-			// reach this one.
-			const double = BorderEdgeStyle.Double | BorderEdgeStyle.Rounded;
-			expect(getBorderChar((double << 0) | (double << 8))).toBe("╚");
-
-			// A radius bends the corner, not the run leaving it.
-			expect(getBorderChar((rounded << 8) | (rounded << 24))).toBe("─");
-		});
-	});
-
-	describe("edges that meet", () => {
-		// The same rule decides both ways borders meet, so both are read off
-		// the glyphs a frame paints rather than off the encoding.
-		test("two boxes sharing a wall cross where the wall meets a run", () => {
-			const renderer = new Screen(6, 14);
-
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 0, 0, 6, 3, {
-					top: {style: "solid"},
-					right: {style: "solid"},
-					bottom: {style: "solid"},
-					left: {style: "solid"},
-				});
-				drawBox(ctx, 5, 0, 6, 3, {
-					top: {style: "solid"},
-					right: {style: "solid"},
-					bottom: {style: "solid"},
-					left: {style: "solid"},
-				});
-				drawBox(ctx, 0, 2, 6, 3, {
-					top: {style: "solid"},
-					right: {style: "solid"},
-					bottom: {style: "solid"},
-					left: {style: "solid"},
-				});
+	test("two lines turning in a cell make its corner", () => {
+		const output = glyphs(3, 6, (ctx) => {
+			drawBox(ctx, 0, 0, 3, 3, {
+				top: solid,
+				right: solid,
+				bottom: solid,
+				left: solid,
 			});
-
-			expect(output).toContain("┬");
-			expect(output).toContain("├");
 		});
+		expect(output).toContain("┌─┐");
+		expect(output).toContain("└─┘");
+	});
 
-		test("the heavier style wins a shared wall", () => {
-			const renderer = new Screen(6, 14);
-			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 0, 0, 6, 3, {
-					top: {style: "solid"},
-					right: {style: "solid"},
-					bottom: {style: "solid"},
-					left: {style: "solid"},
-				});
-				drawBox(ctx, 5, 0, 6, 3, {
-					top: {style: "double"},
-					right: {style: "double"},
-					bottom: {style: "double"},
-					left: {style: "double"},
-				});
-			});
-
-			// The shared column is drawn from the double box's edges.
-			expect(output).toMatch(/[╦╤╥]/);
+	test("a line ending on another's run makes the tee", () => {
+		const output = glyphs(3, 8, (ctx) => {
+			ctx.drawLine(0, 0, 0, 3, solid); // a wall
+			ctx.drawLine(0, 1, 4, 1, solid); // a rule leaving it rightward
 		});
+		expect(output).toContain("├───");
+		const inverted = glyphs(3, 8, (ctx) => {
+			ctx.drawLine(4, 0, 4, 3, solid);
+			ctx.drawLine(0, 1, 5, 1, solid);
+		});
+		expect(inverted).toContain("───┤");
+		const down = glyphs(3, 8, (ctx) => {
+			ctx.drawLine(0, 0, 5, 0, solid);
+			ctx.drawLine(2, 0, 2, 3, solid);
+		});
+		expect(down).toContain("─┬─");
+		expect(down).not.toContain("┼");
+	});
+
+	test("two lines crossing make the cross", () => {
+		const output = glyphs(3, 6, (ctx) => {
+			ctx.drawLine(0, 1, 5, 1, solid);
+			ctx.drawLine(2, 0, 2, 3, solid);
+		});
+		expect(output).toContain("─┼─");
+	});
+
+	test("a line is its line, and its ends still draw", () => {
+		const output = glyphs(2, 6, (ctx) => {
+			ctx.drawLine(0, 0, 2, 0, solid);
+			ctx.drawLine(4, 0, 4, 2, solid);
+		});
+		expect(output).toContain("──");
+		expect(output).toContain("│");
+	});
+
+	test("the style is the line's", () => {
+		const output = glyphs(2, 8, (ctx) => {
+			ctx.drawLine(0, 0, 3, 0, {style: "double"});
+			ctx.drawLine(4, 0, 7, 0, {style: "dashed"});
+		});
+		expect(output).toContain("═");
+		expect(output).toContain("╌");
+	});
+
+	test("a round cap bends the corner, not the run", () => {
+		const output = glyphs(3, 6, (ctx) => {
+			ctx.drawLine(0, 0, 3, 0, {style: "solid", startCap: "round"});
+			ctx.drawLine(0, 0, 0, 3, {style: "solid", startCap: "round"});
+		});
+		expect(output).toContain("╭──");
+
+		// The dashes are the border style's; only the turn bends.
+		const dashed = glyphs(3, 6, (ctx) => {
+			ctx.drawLine(0, 0, 3, 0, {style: "dashed", endCap: "round"});
+			ctx.drawLine(2, 0, 2, 3, {style: "dashed", startCap: "round"});
+		});
+		expect(dashed).toContain("╮");
+
+		// Unicode draws no rounded double corner, so the radius cannot
+		// reach one.
+		const double = glyphs(3, 6, (ctx) => {
+			ctx.drawLine(0, 2, 3, 2, {style: "double", startCap: "round"});
+			ctx.drawLine(0, 0, 0, 3, {style: "double", endCap: "round"});
+		});
+		expect(double).toContain("╚══");
 	});
 });
 

@@ -18,9 +18,7 @@
  *   no box: lines carry half-stroke ends that union where they meet, so
  *   corners, tees and crossings decide themselves, and `drawBox` is a plain
  *   function composing four lines the way any caller could.
- *
- * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
- * alone; nothing in src imports them.
+
  */
 import {BOX_DRAWING, BorderEdgeStyle, ROUNDED_CORNERS} from "./styles.js";
 import {stringWidth, widthIsUncertain} from "./text.js";
@@ -361,7 +359,7 @@ function packAttrs(style: CellStyle | undefined): number {
  * Planes are allocated once per size and reused. The renderer swaps whole
  * grids between frames rather than copying them.
  */
-export class CellGrid {
+class CellGrid {
 	readonly rows: number;
 	readonly cols: number;
 	readonly char: Uint32Array;
@@ -523,7 +521,7 @@ export class CellGrid {
  * Generate the appropriate box-drawing character for a cell based on its
  * border encoding
  */
-export function getBorderChar(borderEncoding: number): string {
+function getBorderChar(borderEncoding: number): string {
 	const topEdge = getBorderEdge(borderEncoding, BorderMask.Top);
 	const rightEdge = getBorderEdge(borderEncoding, BorderMask.Right);
 	const bottomEdge = getBorderEdge(borderEncoding, BorderMask.Bottom);
@@ -862,7 +860,7 @@ export interface WidthMeasurer {
  * names the rows that have been printed before; a row's first appearance opens
  * with an erase so nothing of the terminal's own is left on it.
  */
-export function generateANSI(
+function generateANSI(
 	grid: CellGrid,
 	colorDepth: ColorDepth = "rgb",
 	renderedLines?: Set<number>,
