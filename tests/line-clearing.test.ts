@@ -142,7 +142,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 	// An initial frame fills five rows.
 	await write(
 		renderFrame(renderer, {offset: 0, cursorRow: 0, regionRows: 5}, (ctx) => {
-			for (let i = 0; i < 5; i++) ctx.setText(0, i, `stale row ${i}`);
+			for (let i = 0; i < 5; i++) ctx.fillText(`stale row ${i}`, 0, i);
 		}),
 	);
 	expect(terminal.getVisibleText()).toContain("stale row 4");
@@ -154,8 +154,8 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 		renderer,
 		{offset: 0, cursorRow: 0, regionRows: 3},
 		(ctx) => {
-			ctx.setText(0, 0, "fresh top");
-			ctx.setText(0, 2, "fresh mid");
+			ctx.fillText("fresh top", 0, 0);
+			ctx.fillText("fresh mid", 0, 2);
 		},
 	);
 	expect(out).not.toContain("\x1b[2J");

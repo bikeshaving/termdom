@@ -10,9 +10,12 @@
  *   gap. Between frames the session reports what happened to the screen --
  *   `replaced`, `scrolled`, `repaintAll` -- and the buffers, the diff, and
  *   what each event costs stay in here.
- * - `DrawingContext` is the painter's: canvas-like calls over the frame's
- *   cells. Where borders meet, and with which glyph, is decided here, never
- *   by a caller.
+ * - `DrawingContext` is the painter's, modelled on the canvas 2D context:
+ *   `fillText`, `fillRect`, `measureText` returning `TextMetrics` in cells.
+ *   It diverges deliberately where a terminal is not a canvas -- styles ride
+ *   each call instead of context state, and `drawBorder`, `edgeRow` and
+ *   `setCaret` draw what a canvas has no name for. Where borders meet, and
+ *   with which glyph, is decided here, never by a caller.
  *
  * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
  * alone; nothing in src imports them.
@@ -170,6 +173,16 @@ export interface CellRect {
 export interface Frame {
 	context: DrawingContext;
 	end(): string;
+}
+
+/**
+ * What `measureText` answers, in cells. `uncertain` marks text a terminal
+ * might size differently than this module predicts -- the sequences the
+ * width probes exist for.
+ */
+export interface TextMetrics {
+	width: number;
+	uncertain: boolean;
 }
 
 export interface CellStyle {
@@ -1044,7 +1057,21 @@ export class DrawingContext {
 		}
 	}
 
-	setText(x: number, y: number, text: string, style?: CellStyle): number {
+	/** Measure `text` the way `fillText` will lay it down. */
+	measureText(text: string): TextMetrics {
+		if (asciiPrintable.test(text)) {
+			return {width: text.length, uncertain: false};
+		}
+		let width = 0;
+		let uncertain = false;
+		for (const segment of graphemeSegmenter.segment(text)) {
+			width += stringWidth(segment.segment);
+			uncertain ||= widthIsUncertain(segment.segment);
+		}
+		return {width, uncertain};
+	}
+
+	fillText(text: string, x: number, y: number, style?: CellStyle): void {
 		let currentX = x;
 
 		// Printable ASCII needs no grapheme segmentation: every char is its
@@ -1055,7 +1082,7 @@ export class DrawingContext {
 				this.#setCell(y, currentX, text[i], style);
 				currentX++;
 			}
-			return currentX;
+			return;
 		}
 
 		for (const segment of graphemeSegmenter.segment(text)) {
@@ -1076,7 +1103,7 @@ export class DrawingContext {
 			currentX += width;
 		}
 
-		return currentX;
+		return;
 	}
 
 	/**

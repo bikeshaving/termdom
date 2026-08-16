@@ -9,7 +9,7 @@ import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
-import {renderTextFragment, stringWidth} from "./text.js";
+import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 import type {CellRect} from "./ansi.js";
@@ -853,7 +853,7 @@ export class Painter {
 		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
 		// wide, and right-aligning it by its length would paint it over the item's
 		// own text.
-		const markerWidth = stringWidth(markerContent);
+		const markerWidth = ctx.measureText(markerContent).width;
 
 		// Get marker styles
 		const markerStyle = pseudoStyleOf(element, "::marker");
@@ -884,7 +884,7 @@ export class Painter {
 		const markerY = Math.round(rect.top);
 
 		// Render the marker (clipped to available space, never mutate the DOM)
-		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
+		ctx.fillText(markerContent, markerX, markerY, markerTextStyle);
 	}
 
 	/**
@@ -909,10 +909,10 @@ export class Painter {
 		if (!content) return;
 		const contentX = Math.round(content.x);
 		const contentY = Math.round(content.y);
-		ctx.setText(
+		ctx.fillText(
+			mark,
 			contentX,
 			contentY,
-			mark,
 			cellStyleFromComputed(computedStyleOf(glyphSpan)),
 		);
 		if (element === this.#document.activeElement) {
@@ -961,10 +961,10 @@ export class Painter {
 			);
 			if (!text) continue;
 			painted = true;
-			ctx.setText(
+			ctx.fillText(
+				applyTextTransform(text, textTransform),
 				Math.round(fragment.rect.x),
 				Math.round(fragment.rect.y),
-				applyTextTransform(text, textTransform),
 				textStyle,
 			);
 		}
@@ -1040,10 +1040,10 @@ export class Painter {
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
 		for (const run of this.#layout.getRangeRuns(range)) {
-			ctx.setText(
+			ctx.fillText(
+				applyTextTransform(run.text, textTransform),
 				run.rect.x,
 				run.rect.y,
-				applyTextTransform(run.text, textTransform),
 				selectionStyle,
 			);
 		}
