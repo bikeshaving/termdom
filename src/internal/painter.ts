@@ -510,7 +510,6 @@ export class Painter {
 				const top = edgeCellStyle("border-top-color");
 				ctx.drawBorder(roundedRect(rect), {
 					border: borderStyles,
-					style: top,
 					edges: {
 						top,
 						right: edgeCellStyle("border-right-color"),
