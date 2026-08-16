@@ -28,6 +28,8 @@ export interface RootProps {
 	/** Module scripts this page needs and no other does. */
 	scripts?: string[];
 	children: unknown;
+	/** A page that fills the window has nothing under it. */
+	footer?: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export function* Root(
 		stylesheets = [],
 		scripts = [],
 		children,
+		footer = true,
 	} of this) {
 		this.schedule(() => this.refresh());
 		const childrenHTML: string = yield jsx`
@@ -63,7 +66,7 @@ export function* Root(
 				<${Navbar} url=${url} />
 			</div>
 			${children}
-			<${Footer} />
+			${footer ? jsx`<${Footer} />` : null}
 		`;
 
 		const {html, css} = extractCritical(childrenHTML);

@@ -32,6 +32,7 @@ export default async function Playground({url}: {url: string}) {
 			description="Edit the library's own examples and watch TermDOM render them to a terminal, live in your browser."
 			stylesheets=${[assets.xtermCSS]}
 			scripts=${[assets.playgroundScript]}
+			footer=${false}
 		>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
 				<${Raw} value=${serializeExamples(examples)} />

@@ -8,6 +8,8 @@ import type {Context} from "@b9g/crank";
 import {renderer} from "@b9g/crank/dom";
 import {css} from "@emotion/css";
 import {Terminal} from "@xterm/xterm";
+import {FitAddon} from "@xterm/addon-fit";
+import {Unicode11Addon} from "@xterm/addon-unicode11";
 import {ContentAreaElement} from "@b9g/revise/contentarea.js";
 import {transform} from "sucrase";
 
@@ -389,12 +391,15 @@ function* TerminalPane(
 		code,
 		cols,
 		rows,
+		fill,
 		runNonce,
 		onstatus,
 	}: {
 		code: string;
 		cols: number;
 		rows: number;
+		/** Take the size of the box instead of the given geometry. */
+		fill?: boolean;
 		runNonce: number;
 		onstatus: (status: Status) => void;
 	},
@@ -404,6 +409,8 @@ function* TerminalPane(
 		rows,
 		convertEol: false,
 		cursorBlink: false,
+		// The Unicode version below is proposed API.
+		allowProposedApi: true,
 		fontSize: FONT_SIZE,
 		fontFamily:
 			'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
@@ -412,6 +419,17 @@ function* TerminalPane(
 			foreground: TERMINAL_FOREGROUND,
 		},
 	});
+
+	// The emulator ships Unicode 6 widths, which predate emoji: it would draw
+	// a 🎯 in one cell while the engine, on UAX #11, lays it out in two.
+	// Version 11 is the one both sides agree on.
+	terminal.loadAddon(new Unicode11Addon());
+	terminal.unicode.activeVersion = "11";
+
+	// A filling pane takes its geometry from its own box, so the terminal is
+	// as big as the window makes it.
+	const fitAddon = fill ? new FitAddon() : null;
+	if (fitAddon) terminal.loadAddon(fitAddon);
 
 	let root!: HTMLDivElement;
 	let current: Run | null = null;
@@ -462,6 +480,20 @@ function* TerminalPane(
 				// After `open`: the emulator's element and textarea, which the
 				// IME work listens on, are made there.
 				installIMEQuirks(terminal);
+				if (fitAddon) {
+					fitAddon.fit();
+					// The box changes with the window, and the program hears
+					// about it the way a program in a terminal does: the
+					// emulator resizes, and the transport carries the new
+					// size to the session.
+					const observer = new ResizeObserver(() => {
+						if (root.clientWidth > 0 && root.clientHeight > 0) {
+							fitAddon.fit();
+						}
+					});
+					observer.observe(root);
+					this.cleanup(() => observer.disconnect());
+				}
 				void run();
 			});
 
@@ -472,12 +504,22 @@ function* TerminalPane(
 			yield jsx`
 				<div
 					ref=${(el: HTMLDivElement) => (root = el)}
-					class=${css`
-						padding: 0.5rem;
-						min-width: 0;
-						overflow-x: auto;
-						background-color: ${TERMINAL_BACKGROUND};
-					`}
+					class=${
+						fill
+							? css`
+									padding: 0.5rem;
+									min-width: 0;
+									min-height: 0;
+									overflow: hidden;
+									background-color: ${TERMINAL_BACKGROUND};
+								`
+							: css`
+									padding: 0.5rem;
+									min-width: 0;
+									overflow-x: auto;
+									background-color: ${TERMINAL_BACKGROUND};
+								`
+					}
 				/>
 			`;
 			initial = false;
@@ -505,6 +547,20 @@ const container = css`
 	max-width: 1440px;
 	margin: 0 auto;
 	padding: 5rem 1.2rem 2rem;
+`;
+
+/* The playground is a window's worth of workbench: the navbar is fixed at
+   50px, and what is left of the viewport is the frame. Nothing scrolls but
+   the editor's own text. */
+const pageShell = css`
+	max-width: 1440px;
+	margin: 0 auto;
+	padding: calc(50px + 1rem) 1.2rem 1.2rem;
+	height: 100dvh;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
 `;
 
 /* The workbench's title bar: whatever the page puts here, the run button, and
@@ -591,18 +647,31 @@ const filename = css`
  * turns with the layout. Both halves stretch to the taller of them, so the
  * frame closes on a straight edge whichever way they are stacked.
  */
-function panes(cols: number) {
+// A filling terminal has no fixed width, so the two halves sit side by side
+// once the box can hold the editor and a terminal worth reading -- fifty
+// columns, which is where the examples' output stops wrapping.
+const FILL_MIN_COLUMNS = 50;
+
+function panes(cols: number, fill?: boolean) {
 	return css`
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		align-items: stretch;
+		${fill
+			? `
+		flex: 1;
+		min-height: 0;
+		grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+		`
+			: ""}
 
 		> * + * {
 			border-top: 1px solid var(--border-color);
 		}
 
-		@container workbench (min-width: ${sideBySideWidth(cols)}px) {
-			grid-template-columns: minmax(0, 1fr) auto;
+		@container workbench (min-width: ${sideBySideWidth(fill ? FILL_MIN_COLUMNS : cols)}px) {
+			grid-template-columns: ${fill ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr) auto"};
+			${fill ? "grid-template-rows: minmax(0, 1fr);" : ""}
 
 			> * + * {
 				border-top: none;
@@ -611,6 +680,30 @@ function panes(cols: number) {
 		}
 	`;
 }
+
+/* Filling the window: the frame is the page's one block, and the panes
+   inside it split whatever height the window leaves. */
+const workbenchFill = css`
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+`;
+
+/* The editor half when the workbench fills: as tall as the row it is in,
+   scrolling inside itself, because a program is longer than a window. */
+const editorPaneFill = css`
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	background-color: var(--surface-color);
+
+	> * {
+		flex: 1 1 auto;
+		min-width: 0;
+		min-height: 0;
+	}
+`;
 
 /* The frame. The site draws a surface as a hairline border and an 8px radius
    -- `pre`, the install command, the cast player -- and the workbench is one
@@ -678,6 +771,7 @@ function* Workbench(
 		name,
 		title,
 		geometry,
+		fill,
 		controls: extraControls,
 	}: {
 		value: string;
@@ -685,6 +779,8 @@ function* Workbench(
 		/** The file in the editor, where nothing else in the bar names it. */
 		title?: string;
 		geometry: {cols: number; rows: number; editorLines: number};
+		/** Fill the box this is given instead of sizing to the geometry. */
+		fill?: boolean;
 		controls?: unknown;
 	},
 ) {
@@ -733,7 +829,7 @@ function* Workbench(
 		this.cleanup(() => root.removeEventListener("keydown", onkeydown, true));
 	});
 
-	for ({value, name, title, geometry, controls: extraControls} of this) {
+	for ({value, name, title, geometry, fill, controls: extraControls} of this) {
 		// A value from outside is a new program; a value this component's own
 		// editor produced is already in `code`.
 		if (value !== shown) {
@@ -746,7 +842,9 @@ function* Workbench(
 		});
 
 		yield jsx`
-			<div ref=${(el: HTMLDivElement) => (root = el)} class=${workbench}>
+			<div
+				ref=${(el: HTMLDivElement) => (root = el)}
+				class=${fill ? `${workbench} ${workbenchFill}` : workbench}>
 				<div class=${toolbar}>
 					${title ? jsx`<span class=${filename}>${title}</span>` : null}
 					${extraControls}
@@ -761,8 +859,8 @@ function* Workbench(
 					</p>
 				</div>
 
-				<div class=${panes(geometry.cols)}>
-					<div class=${editorPane(geometry.editorLines)}>
+				<div class=${panes(geometry.cols, fill)}>
+					<div class=${fill ? editorPaneFill : editorPane(geometry.editorLines)}>
 						<${CodeEditor}
 							copy=${!updateEditor}
 							value=${code}
@@ -774,6 +872,7 @@ function* Workbench(
 						code=${code}
 						cols=${geometry.cols}
 						rows=${geometry.rows}
+						fill=${fill}
 						runNonce=${runNonce}
 						onstatus=${onstatus}
 					/>
@@ -814,15 +913,16 @@ function* Playground(this: Context) {
 
 	for ({} of this) {
 		yield jsx`
-			<main class=${container}>
+			<main class=${pageShell}>
 				<h1 class=${css`
 					font-size: 2.2rem;
-					margin: 0 0 1rem;
+					margin: 0;
 				`}>Playground</h1>
 				<${Workbench}
 					value=${example.code}
 					name="playground"
 					geometry=${PAGE_GEOMETRY}
+					fill
 					controls=${picker}
 				/>
 			</main>
