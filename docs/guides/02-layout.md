@@ -16,7 +16,10 @@ box.style.margin = "1px 0";
 ```
 
 Borders are drawn with box-drawing characters (`solid` and `double`) and
-take one cell per side.
+take one cell per side. Where one box's border runs into another's, the
+cell they meet in becomes the junction the two strokes make: a rule across
+a bordered box ends in `├` and `┤`, and a column divider under a header
+row makes `┬` and `┴`. Boxes that only sit flush stay separate.
 
 ## Flexbox
 
