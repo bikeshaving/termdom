@@ -175,7 +175,7 @@ export interface Frame {
  * nothing meets; "round" curves the glyph where two capped ends union -- a
  * box's four line ends are its four corners.
  */
-export interface BorderLineStyle {
+export interface LineStyle {
 	style:
 		| "solid"
 		| "double"
@@ -191,7 +191,7 @@ export interface BorderLineStyle {
 	endCap?: "round" | "square";
 }
 
-const BORDER_LINE_BITS: Record<BorderLineStyle["style"], number> = {
+const LINE_BITS: Record<LineStyle["style"], number> = {
 	solid: BorderEdgeStyle.Solid,
 	double: BorderEdgeStyle.Double,
 	dashed: BorderEdgeStyle.Dashed,
@@ -1179,14 +1179,14 @@ export class DrawingContext {
 		y1: number,
 		x2: number,
 		y2: number,
-		line: BorderLineStyle,
+		line: LineStyle,
 	): void {
 		// Axis-aligned, half-open: the stroke runs from the start cell toward
 		// the end coordinate and stops short of it, so a one-cell vertical is
 		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
 		// what disambiguates the axis of a one-cell line.
 		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) return;
-		const bits = BORDER_LINE_BITS[line.style];
+		const bits = LINE_BITS[line.style];
 		if (bits === 0) return;
 		const style: CellStyle | undefined =
 			line.color != null ? {fg: line.color} : undefined;
@@ -1325,7 +1325,7 @@ export function drawBox(
 			y1: number,
 			x2: number,
 			y2: number,
-			line: BorderLineStyle,
+			line: LineStyle,
 		): void;
 	},
 	x: number,
@@ -1333,10 +1333,10 @@ export function drawBox(
 	width: number,
 	height: number,
 	sides: {
-		top?: BorderLineStyle;
-		right?: BorderLineStyle;
-		bottom?: BorderLineStyle;
-		left?: BorderLineStyle;
+		top?: LineStyle;
+		right?: LineStyle;
+		bottom?: LineStyle;
+		left?: LineStyle;
 		corners?: {
 			topLeft?: boolean;
 			topRight?: boolean;
@@ -1350,7 +1350,7 @@ export function drawBox(
 	const b = y + height - 1;
 	const c = sides.corners;
 	const cap = (
-		adjacent: BorderLineStyle | undefined,
+		adjacent: LineStyle | undefined,
 		rounds: boolean | undefined,
 	): "round" | "square" | undefined =>
 		adjacent ? (rounds ? "round" : undefined) : "square";
