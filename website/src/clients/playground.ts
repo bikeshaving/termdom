@@ -224,11 +224,6 @@ function readSandboxConfig(): SandboxConfig | null {
 }
 
 /**
- * The sandbox document: an import map resolving the specifiers the examples
- * use, and a bootstrap that runs a module URL on request. `<` is escaped so
- * no asset URL can close the script element it is written into.
- */
-/**
  * The specifiers the page serves itself: the repository's own engine, and
  * the browser implementations of the node builtins. Everything else a
  * program imports is someone else's package and comes from the CDN.
@@ -243,7 +238,6 @@ function localImports(config: SandboxConfig): Record<string, string> {
 		"node:module": config.nodeModule,
 	};
 }
-
 
 const IMPORT_SPECIFIER =
 	/(?:^|\n)\s*import\s+(?:[^"'`]*?\s+from\s+)?["']([^"']+)["']/g;
@@ -265,6 +259,11 @@ function importMapFor(config: SandboxConfig, code: string): string {
 	return JSON.stringify({imports}).replace(/</g, "\\u003c");
 }
 
+/**
+ * The sandbox document: the import map, and a bootstrap that runs a module
+ * URL on request. `<` is escaped so no asset URL can close the script
+ * element it is written into.
+ */
 function sandboxHTML(config: SandboxConfig, code: string): string {
 	const importMap = importMapFor(config, code);
 	return [

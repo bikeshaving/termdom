@@ -36,7 +36,6 @@ const RUNNABLE = [
 	"progress-bar",
 	"rtl",
 	"solitaire",
-	"tanstack-table",
 	"todomvc",
 	"tree",
 	"weather",

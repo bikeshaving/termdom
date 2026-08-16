@@ -77,7 +77,6 @@
     "@b9g/libuild": "^0.2.16",
     "@eslint/js": "^9.39.5",
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.2.21",
     "@types/prismjs": "^1.26.6",
     "@types/react-dom": "^19.2.4",
