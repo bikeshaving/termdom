@@ -95,6 +95,30 @@ export function mergeBorderEncodings(
 	return merged;
 }
 
+/**
+ * A rectangle in cells: the box a drawing call acts on.
+ *
+ * Calls in this module take their subject positionally -- a point as `x, y`,
+ * a rectangle as one of these, the text to write -- and everything else in a
+ * named object after it. A drawing callback comes last.
+ */
+export interface CellRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * A frame in progress: paint into `context`, then take its ANSI from `end`.
+ * Painting is the caller's business, so this module stays what it is -- cells
+ * in, escape sequences out -- with nothing calling back into the caller.
+ */
+export interface Frame {
+	context: DrawingContext;
+	end(): string;
+}
+
 export interface CellStyle {
 	grapheme?: string;
 	fg?: number | null;
@@ -293,48 +317,45 @@ export class CellGrid {
 	}
 
 	/** Copy [srcStart, srcEnd) of `source` to `dest` in this grid. */
+	/** Copy `source`'s cells in `[start, end)` to this grid at `to`. */
 	copyFrom(
 		source: CellGrid,
-		dest: number,
-		srcStart: number,
-		srcEnd: number,
+		{to, start, end}: {to: number; start: number; end: number},
 	): void {
-		this.char.set(source.char.subarray(srcStart, srcEnd), dest);
-		this.fg.set(source.fg.subarray(srcStart, srcEnd), dest);
-		this.bg.set(source.bg.subarray(srcStart, srcEnd), dest);
-		this.attrs.set(source.attrs.subarray(srcStart, srcEnd), dest);
-		this.border.set(source.border.subarray(srcStart, srcEnd), dest);
+		this.char.set(source.char.subarray(start, end), to);
+		this.fg.set(source.fg.subarray(start, end), to);
+		this.bg.set(source.bg.subarray(start, end), to);
+		this.attrs.set(source.attrs.subarray(start, end), to);
+		this.border.set(source.border.subarray(start, end), to);
 	}
 
 	/** The bottom `rows` rows, as a grid of their own. */
 	bottomRows(rows: number): CellGrid {
 		const kept = new CellGrid(rows, this.cols);
-		kept.copyFrom(
-			this,
-			0,
-			(this.rows - rows) * this.cols,
-			this.rows * this.cols,
-		);
+		kept.copyFrom(this, {
+			to: 0,
+			start: (this.rows - rows) * this.cols,
+			end: this.rows * this.cols,
+		});
 		return kept;
 	}
 
 	/**
 	 * Write one cell.
 	 *
-	 * `bgColor` overrides the style's background, for the caller that has
-	 * already resolved what an absent background inherits.
+	 * `background` overrides the style's own, for the caller that has already
+	 * resolved what an absent background inherits.
 	 */
 	setCell(
 		index: number,
 		grapheme: string,
-		style?: CellStyle,
-		bgColor?: number,
+		{style, background}: {style?: CellStyle; background?: number} = {},
 	): void {
 		const width = graphemeColumns(grapheme);
 		this.char[index] = encodeGrapheme(grapheme);
 		this.fg[index] = (style?.fg ?? 0) & Color.Mask;
 		this.bg[index] =
-			bgColor !== undefined ? bgColor : (style?.bg ?? 0) & Color.Mask;
+			background !== undefined ? background : (style?.bg ?? 0) & Color.Mask;
 		this.attrs[index] =
 			packAttrs(style) |
 			((width < Attr.WidthWide ? width : Attr.WidthWide) << Attr.WidthShift);
@@ -993,15 +1014,14 @@ export class DrawingContext {
 	}
 
 	fillRect(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		bgColor?: number | null | "default" | "inverse",
+		rect: CellRect,
+		background: number | null | undefined | "default" | "inverse",
 	): void {
-		if (bgColor == null) {
+		if (background == null) {
 			return;
 		}
+
+		const {x, y, width, height} = rect;
 
 		// "default" clears the cells to the terminal's own background --
 		// CSS's Canvas system color -- which still OVERWRITES whatever was
@@ -1010,9 +1030,9 @@ export class DrawingContext {
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
 		const style: CellStyle =
-			bgColor === "inverse"
+			background === "inverse"
 				? {inverse: true}
-				: {bg: bgColor === "default" ? undefined : bgColor};
+				: {bg: background === "default" ? undefined : background};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -1067,8 +1087,7 @@ export class DrawingContext {
 		x: number,
 		y: number,
 		width: number,
-		edge: "underline" | "overline",
-		style?: CellStyle,
+		{edge, style}: {edge: "underline" | "overline"; style?: CellStyle},
 	): void {
 		const terminalRow = y + this.viewportOffset;
 		if (terminalRow < 0 || terminalRow >= this.rows) return;
@@ -1099,22 +1118,29 @@ export class DrawingContext {
 	}
 
 	drawBorder(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		borderStyles: BorderStyles,
-		style?: CellStyle,
-		// Per-edge overrides for differently-colored sides. A corner cell's
-		// glyph spans two edges but holds one color; it takes the horizontal
-		// edge's, the closest a cell gets to the browser's diagonal miter.
-		edgeStyles?: {
-			top?: CellStyle;
-			right?: CellStyle;
-			bottom?: CellStyle;
-			left?: CellStyle;
+		rect: CellRect,
+		{
+			border: borderStyles,
+			style,
+			edges: edgeStyles,
+		}: {
+			border: BorderStyles;
+			style?: CellStyle;
+			/**
+			 * Per-edge overrides for differently-colored sides. A corner
+			 * cell's glyph spans two edges but holds one color; it takes the
+			 * horizontal edge's, the closest a cell gets to the browser's
+			 * diagonal miter.
+			 */
+			edges?: {
+				top?: CellStyle;
+				right?: CellStyle;
+				bottom?: CellStyle;
+				left?: CellStyle;
+			};
 		},
 	): void {
+		const {x, y, width, height} = rect;
 		if (!borderStyles.hasAnyBorder || width < 1 || height < 1) return;
 		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
 		// below draw only the run that fits, so let it through.
@@ -1271,7 +1297,7 @@ export class DrawingContext {
 			bgColor = grid.bg[index];
 		}
 
-		grid.setCell(index, char, style, bgColor);
+		grid.setCell(index, char, {style, background: bgColor});
 	}
 
 	#setBorderCell(
@@ -1477,65 +1503,81 @@ export class Renderer {
 	 * spaces rather than cursor-forward, and rows end with a newline rather than an
 	 * erase-line.
 	 */
-	renderStatic(
-		contentRows: number,
-		drawCallback: (ctx: DrawingContext) => void,
-		lineEnding: "\n" | "\r\n" = "\n",
-	): string {
+	/**
+	 * Begin a frame that stands on its own: no diff, no previous screen, one
+	 * grid rendered whole. `end` returns the lines, padded to nothing.
+	 */
+	beginStatic({
+		rows: contentRows,
+		lineEnding = "\n",
+	}: {
+		rows: number;
+		lineEnding?: "\n" | "\r\n";
+	}): Frame {
 		const rows = Math.max(0, contentRows);
-		if (rows === 0) return "";
+		if (rows === 0) {
+			const empty = new CellGrid(0, this.#cols);
+			return {
+				context: new DrawingContext(empty, 0, this.#cols, 0),
+				end: () => "",
+			};
+		}
 
 		const cols = this.#cols;
 		const grid = new CellGrid(rows, cols);
-		drawCallback(new DrawingContext(grid, rows, cols, 0));
+		const context = new DrawingContext(grid, rows, cols, 0);
+		return {
+			context,
+			end: (): string => {
+				const lines: string[] = [];
+				for (let row = 0; row < rows; row++) {
+					const rowStart = row * cols;
+					// A file should not be padded out to the terminal width, so stop at the
+					// last cell that actually holds something.
+					let lastCol = -1;
+					for (let col = cols - 1; col >= 0; col--) {
+						if (grid.char[rowStart + col] !== 0) {
+							lastCol = col;
+							break;
+						}
+					}
 
-		const lines: string[] = [];
-		for (let row = 0; row < rows; row++) {
-			const rowStart = row * cols;
-			// A file should not be padded out to the terminal width, so stop at the
-			// last cell that actually holds something.
-			let lastCol = -1;
-			for (let col = cols - 1; col >= 0; col--) {
-				if (grid.char[rowStart + col] !== 0) {
-					lastCol = col;
-					break;
+					let line = "";
+					let previous = -1;
+
+					for (let col = 0; col <= lastCol; col++) {
+						const index = rowStart + col;
+						if (grid.char[index] === 0) {
+							line += " ";
+							continue;
+						}
+
+						const style = styleDiff(grid, index, previous, this.#colorDepth);
+						if (style !== "") line += `\x1b[${style}m`;
+
+						const encoding = grid.border[index];
+						line +=
+							encoding > 0
+								? getBorderChar(encoding)
+								: decodeGrapheme(grid.char[index]);
+						previous = index;
+
+						// A wide grapheme's continuation column is empty in the buffer but
+						// already covered by the glyph -- skip it, or the line grows a
+						// phantom space per wide character and shifts what follows.
+						if (encoding === 0) col += grid.widthAt(index) - 1;
+					}
+
+					if (previous !== -1) line += "\x1b[0m";
+					lines.push(line);
 				}
-			}
 
-			let line = "";
-			let previous = -1;
-
-			for (let col = 0; col <= lastCol; col++) {
-				const index = rowStart + col;
-				if (grid.char[index] === 0) {
-					line += " ";
-					continue;
-				}
-
-				const style = styleDiff(grid, index, previous, this.#colorDepth);
-				if (style !== "") line += `\x1b[${style}m`;
-
-				const encoding = grid.border[index];
-				line +=
-					encoding > 0
-						? getBorderChar(encoding)
-						: decodeGrapheme(grid.char[index]);
-				previous = index;
-
-				// A wide grapheme's continuation column is empty in the buffer but
-				// already covered by the glyph -- skip it, or the line grows a
-				// phantom space per wide character and shifts what follows.
-				if (encoding === 0) col += grid.widthAt(index) - 1;
-			}
-
-			if (previous !== -1) line += "\x1b[0m";
-			lines.push(line);
-		}
-
-		// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
-		// cursor down without returning it to column 0, so the lines would staircase
-		// away across the screen.
-		return lines.join(lineEnding) + lineEnding;
+				// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
+				// cursor down without returning it to column 0, so the lines would staircase
+				// away across the screen.
+				return lines.join(lineEnding) + lineEnding;
+			},
+		};
 	}
 
 	/**
@@ -1551,14 +1593,27 @@ export class Renderer {
 	 * `terminalHeight` of them are kept as the previous frame: they are the only
 	 * part still ours to redraw.
 	 */
-	renderFrame(
-		offset: number,
-		drawCallback: (ctx: DrawingContext) => void,
-		cursorPosition?: number,
-		regionRows?: number,
-		scroll?: {delta: number; bands: Array<[number, number]>},
-		measurer?: WidthMeasurer,
-	): string {
+	/**
+	 * Begin a frame against the screen: the grid is checked out and seeded for
+	 * whatever camera move the options describe, and `end` diffs it against
+	 * the last frame and returns the escape sequences that close the gap.
+	 */
+	beginFrame({
+		offset,
+		cursorRow: cursorPosition,
+		regionRows,
+		scroll,
+		measurer,
+	}: {
+		/** Rows the camera has scrolled, negative downward. */
+		offset: number;
+		/** Where the cursor parks when the frame ends. */
+		cursorRow?: number;
+		/** Rows the frame spans, when it is taller than the screen. */
+		regionRows?: number;
+		scroll?: {delta: number; bands: Array<[number, number]>};
+		measurer?: WidthMeasurer;
+	}): Frame {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
 
@@ -1632,7 +1687,11 @@ export class Renderer {
 				}
 				if (inBand) {
 					if (runStart >= 0) {
-						next.copyFrom(prev, runStart * cols, runStart * cols, row * cols);
+						next.copyFrom(prev, {
+							to: runStart * cols,
+							start: runStart * cols,
+							end: row * cols,
+						});
 						runStart = -1;
 					}
 				} else if (runStart < 0) {
@@ -1655,324 +1714,331 @@ export class Renderer {
 		// Create drawing context and execute drawing operations
 		const context = new DrawingContext(next, frameRows, cols, offset);
 		if (scrolling) context.paintBands = scroll!.bands;
-		drawCallback(context);
-		// The frame is complete: join the borders whose strokes touch, so the
-		// diff below sees a junction appear when only its neighbor changed.
-		next.weaveJunctions();
+		return {
+			context,
+			end: (): string => {
+				// The frame is complete: join the borders whose strokes touch, so the
+				// diff below sees a junction appear when only its neighbor changed.
+				next.weaveJunctions();
 
-		// Build the diff. A frame taller than the terminal is a growth frame:
-		// the rows below the fold have never been on screen, so there is nothing
-		// to diff against -- print all of it.
-		let diff = this.#diff;
-		if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
-			diff = new CellGrid(frameRows, cols);
-			this.#diff = diff;
-		} else {
-			diff.clear();
-		}
+				// Build the diff. A frame taller than the terminal is a growth frame:
+				// the rows below the fold have never been on screen, so there is nothing
+				// to diff against -- print all of it.
+				let diff = this.#diff;
+				if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
+					diff = new CellGrid(frameRows, cols);
+					this.#diff = diff;
+				} else {
+					diff.clear();
+				}
 
-		const prev = this.#prev;
-		if (prev === null || overflowing) {
-			diff.copyFrom(next, 0, 0, frameRows * cols);
-		} else {
-			const prevRows = prev.rows;
-			const prevCols = prev.cols;
-			const aligned = prevCols === cols;
+				const prev = this.#prev;
+				if (prev === null || overflowing) {
+					diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
+				} else {
+					const prevRows = prev.rows;
+					const prevCols = prev.cols;
+					const aligned = prevCols === cols;
 
-			for (let row = 0; row < this.#rows; row++) {
-				const nextRow = row * cols;
-				const prevRow = row * prevCols;
-				const rowInPrev = row < prevRows;
+					for (let row = 0; row < this.#rows; row++) {
+						const nextRow = row * cols;
+						const prevRow = row * prevCols;
+						const rowInPrev = row < prevRows;
 
-				// A row that did not change at all is the common case, so look
-				// for the first column that differs before touching the diff.
-				let col = 0;
-				if (aligned && rowInPrev) {
-					while (col < cols) {
-						const n = nextRow + col;
-						const p = prevRow + col;
-						if (
-							next.char[n] !== prev.char[p] ||
-							next.fg[n] !== prev.fg[p] ||
-							next.bg[n] !== prev.bg[p] ||
-							(next.attrs[n] & Attr.StyleMask) !==
-								(prev.attrs[p] & Attr.StyleMask) ||
-							next.border[n] !== prev.border[p]
-						) {
-							break;
+						// A row that did not change at all is the common case, so look
+						// for the first column that differs before touching the diff.
+						let col = 0;
+						if (aligned && rowInPrev) {
+							while (col < cols) {
+								const n = nextRow + col;
+								const p = prevRow + col;
+								if (
+									next.char[n] !== prev.char[p] ||
+									next.fg[n] !== prev.fg[p] ||
+									next.bg[n] !== prev.bg[p] ||
+									(next.attrs[n] & Attr.StyleMask) !==
+										(prev.attrs[p] & Attr.StyleMask) ||
+									next.border[n] !== prev.border[p]
+								) {
+									break;
+								}
+								col++;
+							}
+							if (col === cols) continue;
 						}
-						col++;
-					}
-					if (col === cols) continue;
-				}
 
-				for (; col < cols; col++) {
-					const n = nextRow + col;
-					const nextChar = next.char[n];
+						for (; col < cols; col++) {
+							const n = nextRow + col;
+							const nextChar = next.char[n];
 
-					if (!rowInPrev || col >= prevCols) {
-						if (nextChar !== 0) diff.setFrom(n, next, n);
-						continue;
-					}
+							if (!rowInPrev || col >= prevCols) {
+								if (nextChar !== 0) diff.setFrom(n, next, n);
+								continue;
+							}
 
-					const p = prevRow + col;
-					const prevChar = prev.char[p];
+							const p = prevRow + col;
+							const prevChar = prev.char[p];
 
-					if (prevChar === 0) {
-						if (nextChar !== 0) diff.setFrom(n, next, n);
-					} else if (nextChar === 0) {
-						// A cell the frame no longer paints has to be erased,
-						// not merely skipped: the terminal still shows the old
-						// glyph there.
-						diff.setBlank(n);
-					} else if (!next.equalCells(n, prev, p)) {
-						diff.setFrom(n, next, n);
+							if (prevChar === 0) {
+								if (nextChar !== 0) diff.setFrom(n, next, n);
+							} else if (nextChar === 0) {
+								// A cell the frame no longer paints has to be erased,
+								// not merely skipped: the terminal still shows the old
+								// glyph there.
+								diff.setBlank(n);
+							} else if (!next.equalCells(n, prev, p)) {
+								diff.setFrom(n, next, n);
+							}
+						}
 					}
 				}
-			}
-		}
 
-		// A reset frame redraws onto rows whose terminal content is unknown --
-		// the previous buffer was dropped. Every region row must clear ITSELF:
-		// a row the new frame leaves blank gets a seeded space so generateANSI
-		// emits its \r\e[K line like any content row. Per-row erases instead of
-		// one ED from the home position matter in tmux, which preserves a
-		// fully-erased screen by pushing it into scrollback (the courtesy it
-		// extends to `clear`) -- the ED archived a copy of the old frame into
-		// the scrollback on every resize.
-		const resetFrame = this.#needsScreenReset || this.#needsFullClear;
-		if (resetFrame) {
-			// Buffer rows are region-relative (the anchor row is where the frame
-			// CUPs to); regionRows is a screen-absolute end. Seed exactly the
-			// region's rows -- seeding further would count blank screen rows as
-			// content and skew the park the resize re-anchor measures from.
-			const anchorRow = this.#needsScreenReset
-				? this.#resetAtRow
-				: (cursorPosition ?? 0);
-			const regionHeight = (regionRows ?? this.#rows) - anchorRow;
-			const seedRows = Math.min(frameRows, this.#rows, regionHeight);
-			for (let row = 0; row < seedRows; row++) {
-				const rowStart = row * cols;
-				let empty = true;
-				for (let col = 0; col < cols; col++) {
-					if (diff.char[rowStart + col] !== 0) {
-						empty = false;
+				// A reset frame redraws onto rows whose terminal content is unknown --
+				// the previous buffer was dropped. Every region row must clear ITSELF:
+				// a row the new frame leaves blank gets a seeded space so generateANSI
+				// emits its \r\e[K line like any content row. Per-row erases instead of
+				// one ED from the home position matter in tmux, which preserves a
+				// fully-erased screen by pushing it into scrollback (the courtesy it
+				// extends to `clear`) -- the ED archived a copy of the old frame into
+				// the scrollback on every resize.
+				const resetFrame = this.#needsScreenReset || this.#needsFullClear;
+				if (resetFrame) {
+					// Buffer rows are region-relative (the anchor row is where the frame
+					// CUPs to); regionRows is a screen-absolute end. Seed exactly the
+					// region's rows -- seeding further would count blank screen rows as
+					// content and skew the park the resize re-anchor measures from.
+					const anchorRow = this.#needsScreenReset
+						? this.#resetAtRow
+						: (cursorPosition ?? 0);
+					const regionHeight = (regionRows ?? this.#rows) - anchorRow;
+					const seedRows = Math.min(frameRows, this.#rows, regionHeight);
+					for (let row = 0; row < seedRows; row++) {
+						const rowStart = row * cols;
+						let empty = true;
+						for (let col = 0; col < cols; col++) {
+							if (diff.char[rowStart + col] !== 0) {
+								empty = false;
+								break;
+							}
+						}
+						if (empty) diff.setBlank(rowStart);
+					}
+				}
+
+				// Check for content
+				let hasContent = false;
+
+				const diffCells = frameRows * cols;
+				for (let index = 0; index < diffCells; index++) {
+					if (diff.char[index] !== 0) {
+						hasContent = true;
 						break;
 					}
 				}
-				if (empty) diff.setBlank(rowStart);
-			}
-		}
 
-		// Check for content
-		let hasContent = false;
+				// A caret appearing, moving, or disappearing must emit a frame even when
+				// no cell changed -- a blurred input leaves no visual diff, but the real
+				// cursor is sitting visible at the stale caret until a frame re-parks it.
+				const caret = context.caret;
+				const caretBufferRow = caret === null ? null : caret.row + offset;
+				const caretVisible =
+					caret !== null &&
+					caretBufferRow !== null &&
+					caretBufferRow >= 0 &&
+					caretBufferRow < this.#rows &&
+					caret.col >= 0 &&
+					caret.col < this.#cols;
+				const caretStateChanged =
+					caretVisible !== this.#lastCaretVisible ||
+					(caretVisible &&
+						(this.#parkRow !== caretBufferRow || this.#parkCol !== caret.col));
+				if (caretStateChanged) {
+					hasContent = true;
+				}
+				this.#lastCaretVisible = caretVisible;
 
-		const diffCells = frameRows * cols;
-		for (let index = 0; index < diffCells; index++) {
-			if (diff.char[index] !== 0) {
-				hasContent = true;
-				break;
-			}
-		}
+				if (scrolling) {
+					hasContent = true;
+				}
 
-		// A caret appearing, moving, or disappearing must emit a frame even when
-		// no cell changed -- a blurred input leaves no visual diff, but the real
-		// cursor is sitting visible at the stale caret until a frame re-parks it.
-		const caret = context.caret;
-		const caretBufferRow = caret === null ? null : caret.row + offset;
-		const caretVisible =
-			caret !== null &&
-			caretBufferRow !== null &&
-			caretBufferRow >= 0 &&
-			caretBufferRow < this.#rows &&
-			caret.col >= 0 &&
-			caret.col < this.#cols;
-		const caretStateChanged =
-			caretVisible !== this.#lastCaretVisible ||
-			(caretVisible &&
-				(this.#parkRow !== caretBufferRow || this.#parkCol !== caret.col));
-		if (caretStateChanged) {
-			hasContent = true;
-		}
-		this.#lastCaretVisible = caretVisible;
+				// Build output with proper framing
+				let prefix = scrollPrefix;
+				let suffix = "";
+				// The frame's on-screen start row, when a positioning branch names one
+				// absolutely. Used to park the cursor at the content bottom after painting.
+				let frameStartRow: number | undefined;
+				if (hasContent) {
+					prefix += "\x1b[?25l"; // DECTCEM - Hide cursor
+					prefix += "\x1b[?2026h"; // Synchronized output mode (start)
 
-		if (scrolling) {
-			hasContent = true;
-		}
+					// Add cursor positioning
+					if (this.#needsScreenReset) {
+						// After a resize the terminal has rewrapped everything on screen,
+						// including our previous frame, and moved the cursor to somewhere we
+						// can no longer name via DECRC. But the content above us -- a shell
+						// prompt, an earlier command -- is short and does not reflow-grow, so
+						// our own record of the row our content starts at still holds.
+						//
+						// Position there absolutely and reprint. We do NOT home to the top of
+						// the screen: that would wipe whatever is above us. And no ED here at
+						// all: every region row clears itself (see the reset-frame seeding),
+						// and the rows below the content get one PARTIAL erase after the
+						// paint -- a full-screen ED from the home row is exactly what tmux
+						// archives into the scrollback.
+						prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
+						prefix += "\x1b7"; // DECSC - save the new content start
+						this.#hasSavedCursor = true;
+						this.#needsScreenReset = false;
+						this.#needsFullClear = false;
+						frameStartRow = this.#resetAtRow;
+					} else if (cursorPosition !== undefined) {
+						// Explicit cursor position provided (e.g., from cursor detection)
+						prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
+						// Save cursor at content start so DECRC-based cleanup works correctly
+						prefix += "\x1b7"; // DECSC
+						this.#hasSavedCursor = true;
+						frameStartRow = cursorPosition;
+					} else if (offset > 0) {
+						// Position based on viewport offset
+						prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
+						frameStartRow = offset;
+					} else if (this.#hasSavedCursor) {
+						// Restore cursor to content start (DECRC), then save again (DECSC)
+						prefix += "\x1b8\x1b7"; // Restore + Save
+					} else {
+						// First render: save cursor at content start (DECSC)
+						prefix += "\x1b7"; // Save
+						this.#hasSavedCursor = true;
+					}
 
-		// Build output with proper framing
-		let prefix = scrollPrefix;
-		let suffix = "";
-		// The frame's on-screen start row, when a positioning branch names one
-		// absolutely. Used to park the cursor at the content bottom after painting.
-		let frameStartRow: number | undefined;
-		if (hasContent) {
-			prefix += "\x1b[?25l"; // DECTCEM - Hide cursor
-			prefix += "\x1b[?2026h"; // Synchronized output mode (start)
+					// After resize, clear everything from content start down.
+					// Terminal reflow makes it impossible to know where old content ended up,
+					// so we erase the entire area before redrawing.
+					if (this.#needsFullClear) {
+						prefix += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+						this.#needsFullClear = false;
+					}
 
-			// Add cursor positioning
-			if (this.#needsScreenReset) {
-				// After a resize the terminal has rewrapped everything on screen,
-				// including our previous frame, and moved the cursor to somewhere we
-				// can no longer name via DECRC. But the content above us -- a shell
-				// prompt, an earlier command -- is short and does not reflow-grow, so
-				// our own record of the row our content starts at still holds.
+					// The cursor stays hidden between frames: it is parked at the content's
+					// bottom-left for resize bookkeeping, and a blinking cursor squatting
+					// there is not UI. Focused inputs paint their own caret as an inverse
+					// cell. dispose() shows the real cursor again on the way out.
+					suffix += "\x1b[?2026l"; // Synchronized output mode (end)
+				}
+
+				// Generate ANSI and finalize
+				let output = generateANSI(
+					diff,
+					this.#colorDepth,
+					this.#renderedLines,
+					measurer,
+				);
+
+				// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
+				// the trailing newline would scroll the terminal on each re-render,
+				// progressively pushing the command line into scrollback.
+				if (output.endsWith("\r\n")) {
+					output = output.slice(0, -2);
+				}
+
+				// Calculate current content height (highest rendered row + 1)
+				let contentHeight = 0;
+				for (const row of this.#renderedLines) {
+					if (row + 1 > contentHeight) contentHeight = row + 1;
+				}
+
+				// Clear stale content below the rendered area.
+				// Only needed when content shrank (previous render was taller).
+				let staleOutput = "";
+				if (this.#hasSavedCursor && this.#prevContentHeight > contentHeight) {
+					// Content shrank — clear the lines that are no longer used.
+					// Position to content start, then move past current content,
+					// then erase to end of screen.
+					staleOutput += "\x1b8"; // DECRC - restore to content start
+					if (contentHeight > 0) {
+						staleOutput += `\x1b[${contentHeight}B`; // CUD - Cursor Down
+					}
+					staleOutput += "\r"; // CR - column 0
+					staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+				} else if (
+					resetFrame &&
+					frameStartRow !== undefined &&
+					frameStartRow + contentHeight < this.#rows
+				) {
+					// After a reset nothing below the content is trusted either -- the
+					// old frame may have been taller. Erase from the first row past the
+					// content: a PARTIAL erase, which no terminal treats as a screen
+					// clear worth archiving.
+					staleOutput += `\x1b[${frameStartRow + contentHeight + 1};1H\x1b[J`;
+				}
+
+				// Update state for next frame. Anything above the last terminalHeight rows
+				// has scrolled into the scrollback and is no longer ours to redraw, so it is
+				// not worth remembering.
+				// The frame buffer becomes the previous frame and the retired one goes
+				// back to be the next frame's, so a steady-size renderer allocates two
+				// grids for its whole life.
+				const retired = this.#prev;
+				if (overflowing) {
+					this.#prev = next.bottomRows(this.#rows);
+					this.#spare = next;
+				} else {
+					this.#prev = next;
+					this.#spare = retired;
+				}
+				this.#prevContentHeight = contentHeight;
+
+				// Park the cursor before the frame ends. A diff leaves the cursor wherever
+				// the last changed cell happened to be -- an arbitrary row -- and the
+				// terminal preserves the cursor across a resize, scrolling exactly enough
+				// to keep it on screen, so an arbitrary resting place makes that scroll
+				// arbitrary too. The resize re-anchor recovers the frame's position from
+				// wherever the park went (see wrappedRowsAboveCursorPark).
 				//
-				// Position there absolutely and reprint. We do NOT home to the top of
-				// the screen: that would wipe whatever is above us. And no ED here at
-				// all: every region row clears itself (see the reset-frame seeding),
-				// and the rows below the content get one PARTIAL erase after the
-				// paint -- a full-screen ED from the home row is exactly what tmux
-				// archives into the scrollback.
-				prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
-				prefix += "\x1b7"; // DECSC - save the new content start
-				this.#hasSavedCursor = true;
-				this.#needsScreenReset = false;
-				this.#needsFullClear = false;
-				frameStartRow = this.#resetAtRow;
-			} else if (cursorPosition !== undefined) {
-				// Explicit cursor position provided (e.g., from cursor detection)
-				prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
-				// Save cursor at content start so DECRC-based cleanup works correctly
-				prefix += "\x1b7"; // DECSC
-				this.#hasSavedCursor = true;
-				frameStartRow = cursorPosition;
-			} else if (offset > 0) {
-				// Position based on viewport offset
-				prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
-				frameStartRow = offset;
-			} else if (this.#hasSavedCursor) {
-				// Restore cursor to content start (DECRC), then save again (DECSC)
-				prefix += "\x1b8\x1b7"; // Restore + Save
-			} else {
-				// First render: save cursor at content start (DECSC)
-				prefix += "\x1b7"; // Save
-				this.#hasSavedCursor = true;
-			}
-
-			// After resize, clear everything from content start down.
-			// Terminal reflow makes it impossible to know where old content ended up,
-			// so we erase the entire area before redrawing.
-			if (this.#needsFullClear) {
-				prefix += "\x1b[J"; // ED0 - Erase from cursor to end of screen
-				this.#needsFullClear = false;
-			}
-
-			// The cursor stays hidden between frames: it is parked at the content's
-			// bottom-left for resize bookkeeping, and a blinking cursor squatting
-			// there is not UI. Focused inputs paint their own caret as an inverse
-			// cell. dispose() shows the real cursor again on the way out.
-			suffix += "\x1b[?2026l"; // Synchronized output mode (end)
-		}
-
-		// Generate ANSI and finalize
-		let output = generateANSI(
-			diff,
-			this.#colorDepth,
-			this.#renderedLines,
-			measurer,
-		);
-
-		// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
-		// the trailing newline would scroll the terminal on each re-render,
-		// progressively pushing the command line into scrollback.
-		if (output.endsWith("\r\n")) {
-			output = output.slice(0, -2);
-		}
-
-		// Calculate current content height (highest rendered row + 1)
-		let contentHeight = 0;
-		for (const row of this.#renderedLines) {
-			if (row + 1 > contentHeight) contentHeight = row + 1;
-		}
-
-		// Clear stale content below the rendered area.
-		// Only needed when content shrank (previous render was taller).
-		let staleOutput = "";
-		if (this.#hasSavedCursor && this.#prevContentHeight > contentHeight) {
-			// Content shrank — clear the lines that are no longer used.
-			// Position to content start, then move past current content,
-			// then erase to end of screen.
-			staleOutput += "\x1b8"; // DECRC - restore to content start
-			if (contentHeight > 0) {
-				staleOutput += `\x1b[${contentHeight}B`; // CUD - Cursor Down
-			}
-			staleOutput += "\r"; // CR - column 0
-			staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
-		} else if (
-			resetFrame &&
-			frameStartRow !== undefined &&
-			frameStartRow + contentHeight < this.#rows
-		) {
-			// After a reset nothing below the content is trusted either -- the
-			// old frame may have been taller. Erase from the first row past the
-			// content: a PARTIAL erase, which no terminal treats as a screen
-			// clear worth archiving.
-			staleOutput += `\x1b[${frameStartRow + contentHeight + 1};1H\x1b[J`;
-		}
-
-		// Update state for next frame. Anything above the last terminalHeight rows
-		// has scrolled into the scrollback and is no longer ours to redraw, so it is
-		// not worth remembering.
-		// The frame buffer becomes the previous frame and the retired one goes
-		// back to be the next frame's, so a steady-size renderer allocates two
-		// grids for its whole life.
-		const retired = this.#prev;
-		if (overflowing) {
-			this.#prev = next.bottomRows(this.#rows);
-			this.#spare = next;
-		} else {
-			this.#prev = next;
-			this.#spare = retired;
-		}
-		this.#prevContentHeight = contentHeight;
-
-		// Park the cursor before the frame ends. A diff leaves the cursor wherever
-		// the last changed cell happened to be -- an arbitrary row -- and the
-		// terminal preserves the cursor across a resize, scrolling exactly enough
-		// to keep it on screen, so an arbitrary resting place makes that scroll
-		// arbitrary too. The resize re-anchor recovers the frame's position from
-		// wherever the park went (see wrappedRowsAboveCursorPark).
-		//
-		// Two parks:
-		// - A focused text element set a caret: park THERE and show the cursor.
-		//   IME composition anchors at the real terminal cursor, so the caret has
-		//   to be the real cursor, not just an inverse-video cell.
-		// - Otherwise: the content's last row, column 0, hidden -- where an
-		//   ordinary program's cursor rests after printing.
-		let parkOutput = "";
-		if (hasContent && contentHeight > 0) {
-			if (caretVisible) {
-				this.#parkRow = caretBufferRow;
-				this.#parkCol = caret.col;
-				if (frameStartRow !== undefined) {
-					parkOutput = `\x1b[${frameStartRow + caretBufferRow + 1};${caret.col + 1}H`; // CUP - caret
-				} else if (this.#hasSavedCursor) {
-					parkOutput = "\x1b8\x1b7";
-					if (caretBufferRow > 0) parkOutput += `\x1b[${caretBufferRow}B`; // CUD
-					if (caret.col > 0) parkOutput += `\r\x1b[${caret.col}C`;
-					else parkOutput += "\r";
+				// Two parks:
+				// - A focused text element set a caret: park THERE and show the cursor.
+				//   IME composition anchors at the real terminal cursor, so the caret has
+				//   to be the real cursor, not just an inverse-video cell.
+				// - Otherwise: the content's last row, column 0, hidden -- where an
+				//   ordinary program's cursor rests after printing.
+				let parkOutput = "";
+				if (hasContent && contentHeight > 0) {
+					if (caretVisible) {
+						this.#parkRow = caretBufferRow;
+						this.#parkCol = caret.col;
+						if (frameStartRow !== undefined) {
+							parkOutput = `\x1b[${frameStartRow + caretBufferRow + 1};${caret.col + 1}H`; // CUP - caret
+						} else if (this.#hasSavedCursor) {
+							parkOutput = "\x1b8\x1b7";
+							if (caretBufferRow > 0) parkOutput += `\x1b[${caretBufferRow}B`; // CUD
+							if (caret.col > 0) parkOutput += `\r\x1b[${caret.col}C`;
+							else parkOutput += "\r";
+						}
+						parkOutput += "\x1b[?25h"; // DECTCEM - the caret is the real cursor
+					} else {
+						this.#parkRow = Math.min(contentHeight, this.#rows) - 1;
+						this.#parkCol = 0;
+						if (frameStartRow !== undefined) {
+							// 0-based start + height = 1-based last row; the bottom margin caps
+							// it when the content overflows the screen.
+							const lastRow = Math.min(
+								frameStartRow + contentHeight,
+								this.#rows,
+							);
+							parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
+						} else if (this.#hasSavedCursor) {
+							// No absolute row to name: restore the saved content start, re-save
+							// it, and step down. CUD stops at the bottom margin, which is the
+							// content's visible bottom when it overflows.
+							parkOutput = "\x1b8\x1b7";
+							if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
+							parkOutput += "\r";
+						}
+					}
 				}
-				parkOutput += "\x1b[?25h"; // DECTCEM - the caret is the real cursor
-			} else {
-				this.#parkRow = Math.min(contentHeight, this.#rows) - 1;
-				this.#parkCol = 0;
-				if (frameStartRow !== undefined) {
-					// 0-based start + height = 1-based last row; the bottom margin caps
-					// it when the content overflows the screen.
-					const lastRow = Math.min(frameStartRow + contentHeight, this.#rows);
-					parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
-				} else if (this.#hasSavedCursor) {
-					// No absolute row to name: restore the saved content start, re-save
-					// it, and step down. CUD stops at the bottom margin, which is the
-					// content's visible bottom when it overflows.
-					parkOutput = "\x1b8\x1b7";
-					if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
-					parkOutput += "\r";
-				}
-			}
-		}
 
-		return prefix + output + staleOutput + parkOutput + suffix;
+				return prefix + output + staleOutput + parkOutput + suffix;
+			},
+		};
 	}
 }

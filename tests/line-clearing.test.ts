@@ -1,7 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
 import {Renderer} from "../src/internal/ansi.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
 	// Create a test terminal to simulate artifacts
@@ -141,28 +141,22 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 
 	// An initial frame fills five rows.
 	await write(
-		renderer.renderFrame(
-			0,
-			(ctx) => {
-				for (let i = 0; i < 5; i++) ctx.setText(0, i, `stale row ${i}`);
-			},
-			0,
-			5,
-		),
+		renderFrame(renderer, {offset: 0, cursorRow: 0, regionRows: 5}, (ctx) => {
+			for (let i = 0; i < 5; i++) ctx.setText(0, i, `stale row ${i}`);
+		}),
 	);
 	expect(terminal.getVisibleText()).toContain("stale row 4");
 
 	// The resize path resets the screen; the new frame is shorter and leaves
 	// row 1 blank.
 	renderer.resetScreen(0);
-	const out = renderer.renderFrame(
-		0,
+	const out = renderFrame(
+		renderer,
+		{offset: 0, cursorRow: 0, regionRows: 3},
 		(ctx) => {
 			ctx.setText(0, 0, "fresh top");
 			ctx.setText(0, 2, "fresh mid");
 		},
-		0,
-		3,
 	);
 	expect(out).not.toContain("\x1b[2J");
 	expect(out).not.toMatch(/\x1b\[1;1H\x1b\[J/);
