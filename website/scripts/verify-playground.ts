@@ -73,6 +73,12 @@ report(await waitForText("todos"), "playground: todomvc renders through mapped c
 await page.selectOption("select", "solitaire");
 report(await waitForText("one card", 20000), "playground: solitaire boots through its main guard");
 
+// Weather runs with the network allowed: its search prompt paints, and a
+// searched city fetches Open-Meteo and charts it (skipped offline -- the
+// prompt is the gate this suite owns).
+await page.selectOption("select", "weather");
+report(await waitForText("city", 15000), "playground: weather paints its search");
+
 // The homepage embeds hydrate as they come near and paint their programs.
 // The walk down the page mirrors a reader scrolling: each stop lets the
 // intersection observer fire and the programs boot.

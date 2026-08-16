@@ -225,9 +225,8 @@ function readSandboxConfig(): SandboxConfig | null {
 
 /**
  * The sandbox document: an import map resolving the specifiers the examples
- * use, and a bootstrap that runs a module URL on request. The CSP keeps the
- * page's promise that nothing here talks to a server. `<` is escaped so no
- * asset URL can close the script element it is written into.
+ * use, and a bootstrap that runs a module URL on request. `<` is escaped so
+ * no asset URL can close the script element it is written into.
  */
 function sandboxHTML(config: SandboxConfig): string {
 	const importMap = JSON.stringify({
@@ -236,6 +235,7 @@ function sandboxHTML(config: SandboxConfig): string {
 			"node:fs": config.nodefs,
 			"node:path": config.nodefs,
 			"node:url": config.nodefs,
+			"node:os": config.nodefs,
 			"@b9g/crank/standalone": config.crankStandalone,
 			"@b9g/crank/dom": config.crankDom,
 		},
@@ -243,7 +243,6 @@ function sandboxHTML(config: SandboxConfig): string {
 	return [
 		"<!doctype html>",
 		'<meta charset="utf-8">',
-		'<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'; worker-src \'none\'">',
 		'<script type="importmap">' + importMap + "</" + "script>",
 		'<script type="module">',
 		'globalThis.process = {argv: ["node", "example.ts"], env: {}};',

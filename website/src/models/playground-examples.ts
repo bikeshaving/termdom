@@ -35,6 +35,7 @@ const RUNNABLE = [
 	"solitaire",
 	"todomvc",
 	"tree",
+	"weather",
 ];
 
 /** The element the sandbox module URLs travel in, read by the client. */
