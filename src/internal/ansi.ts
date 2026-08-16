@@ -12,10 +12,12 @@
  *   what each event costs stay in here.
  * - `DrawingContext` is the painter's. A cell grid has no fill rule and no
  *   stroke width -- there is one act, writing cells -- so there is one verb:
- *   `drawText`, `drawRect`, `drawBorder`, `drawDecoration`. `measureText` answers
- *   in the grid's one metric, and styles ride each call; the context holds
- *   no state a canvas would put on the pen. Where borders meet, and with
- *   which glyph, is decided here, never by a caller.
+ *   `drawText`, `drawRect`, `drawLine`, `drawDecoration`. `measureText`
+ *   answers in the grid's one metric, and styles ride each call; the
+ *   context holds no state a canvas would put on the pen. The context knows
+ *   no box: lines carry half-stroke ends that union where they meet, so
+ *   corners, tees and crossings decide themselves, and `drawBox` is a plain
+ *   function composing four lines the way any caller could.
  *
  * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
  * alone; nothing in src imports them.
@@ -166,6 +168,12 @@ export interface Frame {
 /**
  * How a border line is drawn: the CSS keyword, in the CSS's own word, and
  * the line's color -- the terminal's default foreground when absent.
+ *
+ * An end's cap says how its stroke finishes. By default it stops at the end
+ * cell's center, which is what lets another line's half-stroke union with it
+ * into a corner or a tee; "square" projects through the cell, for a free end
+ * nothing meets; "round" curves the glyph where two capped ends union -- a
+ * box's four line ends are its four corners.
  */
 export interface BorderLineStyle {
 	style:
@@ -179,19 +187,8 @@ export interface BorderLineStyle {
 		| "outset"
 		| "hidden";
 	color?: number | null;
-}
-
-export interface BorderOptions {
-	top?: BorderLineStyle;
-	right?: BorderLineStyle;
-	bottom?: BorderLineStyle;
-	left?: BorderLineStyle;
-	corners?: {
-		topLeft?: boolean;
-		topRight?: boolean;
-		bottomRight?: boolean;
-		bottomLeft?: boolean;
-	};
+	startCap?: "round" | "square";
+	endCap?: "round" | "square";
 }
 
 const BORDER_LINE_BITS: Record<BorderLineStyle["style"], number> = {
@@ -1177,144 +1174,64 @@ export class DrawingContext {
 		}
 	}
 
-	drawBorder(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		sides: BorderOptions,
+	drawLine(
+		x1: number,
+		y1: number,
+		x2: number,
+		y2: number,
+		line: BorderLineStyle,
 	): void {
-		if (
-			(!sides.top && !sides.right && !sides.bottom && !sides.left) ||
-			width < 1 ||
-			height < 1
-		) {
-			return;
-		}
-		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
-		// below draw only the run that fits, so let it through.
+		// Axis-aligned, half-open: the stroke runs from the start cell toward
+		// the end coordinate and stops short of it, so a one-cell vertical is
+		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
+		// what disambiguates the axis of a one-cell line.
+		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) return;
+		const bits = BORDER_LINE_BITS[line.style];
+		if (bits === 0) return;
+		const style: CellStyle | undefined =
+			line.color != null ? {fg: line.color} : undefined;
+		const rounded = BorderEdgeStyle.Rounded;
 
-		const right = x + width - 1;
-		const bottom = y + height - 1;
-
-		const topEdge = sides.top ? BORDER_LINE_BITS[sides.top.style] : 0;
-		const rightEdge = sides.right ? BORDER_LINE_BITS[sides.right.style] : 0;
-		const bottomEdge = sides.bottom ? BORDER_LINE_BITS[sides.bottom.style] : 0;
-		const leftEdge = sides.left ? BORDER_LINE_BITS[sides.left.style] : 0;
-		const roundedCorners = sides.corners;
-		// A corner cell's glyph spans two sides but holds one color; it takes
-		// the horizontal side's, the closest a cell gets to the browser's
-		// diagonal miter -- this module's business, not the caller's.
-		const sideStyle = (side?: BorderLineStyle): CellStyle | undefined =>
-			side && {fg: side.color ?? undefined};
-		const edgeStyles = {
-			top: sideStyle(sides.top),
-			right: sideStyle(sides.right),
-			bottom: sideStyle(sides.bottom),
-			left: sideStyle(sides.left),
-		};
-		const hasTop = topEdge > 0;
-		const hasRight = rightEdge > 0;
-		const hasBottom = bottomEdge > 0;
-		const hasLeft = leftEdge > 0;
-
-		// Each cell records which way a line *leaves* it, not which edge of this
-		// box it belongs to. Two boxes sharing a cell then merge by simple union
-		// and land on the right glyph: a horizontal run (left+right) meeting two
-		// corners that both turn downward (left+down and right+down) becomes
-		// left+right+down -- a tee. Edge-membership bits gave a cross there,
-		// which is what made every colspan and rowspan boundary render as ┼.
-		const encode = (
-			up: number,
-			toRight: number,
-			down: number,
-			toLeft: number,
-		) =>
-			(up > 0 ? up << BorderShift.Top : 0) |
-			(toRight > 0 ? toRight << BorderShift.Right : 0) |
-			(down > 0 ? down << BorderShift.Bottom : 0) |
-			(toLeft > 0 ? toLeft << BorderShift.Left : 0);
-
-		const put = (
-			col: number,
-			row: number,
-			encoding: number,
-			edgeStyle?: CellStyle,
-		) => {
-			// No bounds check here: rows are DOCUMENT rows, and #setBorderCell
-			// culls after applying the viewport offset -- pre-culling against
-			// terminal rows dropped bottom edges the camera had scrolled INTO
-			// view.
-			this.#setBorderCell(col, row, encoding, edgeStyle);
-		};
-
-		// A radius bends one cell -- the corner where two edges turn -- so the
-		// flag rides only the edges written into that cell, and the runs between
-		// corners carry none of it.
-		const round = (edge: number, rounded: boolean) =>
-			edge > 0 && rounded ? edge | BorderEdgeStyle.Rounded : edge;
-
-		// Top edge: a horizontal run that turns down at whichever corners exist.
-		if (hasTop) {
-			for (let col = x; col <= right; col++) {
-				const atLeft = col === x && hasLeft;
-				const atRight = col === right && hasRight;
-				const rounded = atLeft
-					? Boolean(roundedCorners?.topLeft)
-					: atRight
-						? Boolean(roundedCorners?.topRight)
-						: false;
-				const across = round(topEdge, rounded);
-				const down = round(
-					atLeft ? leftEdge : atRight ? rightEdge : 0,
-					rounded,
-				);
-				put(
+		// Each cell records which way the stroke LEAVES it, and an end cell
+		// keeps only its inward half -- the stroke enters and stops at
+		// center. Two lines meeting in a cell then union into the corner,
+		// the tee or the cross without either knowing the other exists. A
+		// "square" cap projects through its cell instead, for a free end; a
+		// "round" cap rides the half-stroke, which is how a corner cell
+		// learns it curves.
+		if (y1 === y2) {
+			const a = Math.min(x1, x2);
+			const b = Math.max(x1, x2) - 1;
+			const capA = x1 <= x2 ? line.startCap : line.endCap;
+			const capB = x1 <= x2 ? line.endCap : line.startCap;
+			for (let col = a; col <= b; col++) {
+				let toRight = col < b || capB === "square" ? bits : 0;
+				let toLeft = col > a || capA === "square" ? bits : 0;
+				if (col === a && capA === "round") toRight |= rounded;
+				if (col === b && capB === "round") toLeft |= rounded;
+				this.#setBorderCell(
 					col,
-					y,
-					encode(0, atRight ? 0 : across, down, atLeft ? 0 : across),
-					edgeStyles?.top,
+					y1,
+					(toRight << BorderShift.Right) | (toLeft << BorderShift.Left),
+					style,
 				);
 			}
-		}
-
-		// Bottom edge: the same run, turning up at its corners. On a 1-row box it
-		// draws only if the top didn't already cover that row.
-		if (hasBottom && (bottom !== y || !hasTop)) {
-			for (let col = x; col <= right; col++) {
-				const atLeft = col === x && hasLeft;
-				const atRight = col === right && hasRight;
-				const rounded = atLeft
-					? Boolean(roundedCorners?.bottomLeft)
-					: atRight
-						? Boolean(roundedCorners?.bottomRight)
-						: false;
-				const across = round(bottomEdge, rounded);
-				const up = round(atLeft ? leftEdge : atRight ? rightEdge : 0, rounded);
-				put(
-					col,
-					bottom,
-					encode(up, atRight ? 0 : across, 0, atLeft ? 0 : across),
-					edgeStyles?.bottom,
+		} else {
+			const a = Math.min(y1, y2);
+			const b = Math.max(y1, y2) - 1;
+			const capA = y1 <= y2 ? line.startCap : line.endCap;
+			const capB = y1 <= y2 ? line.endCap : line.startCap;
+			for (let row = a; row <= b; row++) {
+				let down = row < b || capB === "square" ? bits : 0;
+				let up = row > a || capA === "square" ? bits : 0;
+				if (row === a && capA === "round") down |= rounded;
+				if (row === b && capB === "round") up |= rounded;
+				this.#setBorderCell(
+					x1,
+					row,
+					(down << BorderShift.Bottom) | (up << BorderShift.Top),
+					style,
 				);
-			}
-		}
-
-		// The sides are vertical runs between the corners -- and a missing
-		// horizontal edge has no corner, so the run owns that end row itself.
-		// Skipping unconditionally cut a border-left-only box (a blockquote)
-		// off at its first and last row.
-		const sideTop = hasTop ? y + 1 : y;
-		const sideBottom = hasBottom ? bottom - 1 : bottom;
-		if (hasLeft) {
-			for (let row = sideTop; row <= sideBottom; row++) {
-				put(x, row, encode(leftEdge, 0, leftEdge, 0), edgeStyles?.left);
-			}
-		}
-
-		if (hasRight && right !== x) {
-			for (let row = sideTop; row <= sideBottom; row++) {
-				put(right, row, encode(rightEdge, 0, rightEdge, 0), edgeStyles?.right);
 			}
 		}
 	}
@@ -1393,6 +1310,82 @@ export class DrawingContext {
 				: borderEncoding,
 			style,
 		);
+	}
+}
+
+/**
+ * Four lines and their caps: the box composition `drawLine` callers write.
+ * An end that meets an adjacent side stops at center (and curves when the
+ * corner rounds); a free end projects through its cell.
+ */
+export function drawBox(
+	ctx: {
+		drawLine(
+			x1: number,
+			y1: number,
+			x2: number,
+			y2: number,
+			line: BorderLineStyle,
+		): void;
+	},
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	sides: {
+		top?: BorderLineStyle;
+		right?: BorderLineStyle;
+		bottom?: BorderLineStyle;
+		left?: BorderLineStyle;
+		corners?: {
+			topLeft?: boolean;
+			topRight?: boolean;
+			bottomRight?: boolean;
+			bottomLeft?: boolean;
+		};
+	},
+): void {
+	if (width < 1 || height < 1) return;
+	const r = x + width - 1;
+	const b = y + height - 1;
+	const c = sides.corners;
+	const cap = (
+		adjacent: BorderLineStyle | undefined,
+		rounds: boolean | undefined,
+	): "round" | "square" | undefined =>
+		adjacent ? (rounds ? "round" : undefined) : "square";
+
+	// Verticals first: a corner cell's glyph spans two sides but holds one
+	// color, and the horizontal side's wins -- the closest a cell gets to
+	// the browser's diagonal miter.
+	if (sides.left) {
+		ctx.drawLine(x, y, x, b + 1, {
+			...sides.left,
+			startCap: cap(sides.top, c?.topLeft),
+			endCap: cap(sides.bottom, c?.bottomLeft),
+		});
+	}
+	if (sides.right) {
+		ctx.drawLine(r, y, r, b + 1, {
+			...sides.right,
+			startCap: cap(sides.top, c?.topRight),
+			endCap: cap(sides.bottom, c?.bottomRight),
+		});
+	}
+	if (sides.top) {
+		ctx.drawLine(x, y, r + 1, y, {
+			...sides.top,
+			startCap: cap(sides.left, c?.topLeft),
+			endCap: cap(sides.right, c?.topRight),
+		});
+	}
+	// A 1-row box's bottom shares the top's row; the top already drew it.
+	if (sides.bottom && !(b === y && sides.top)) {
+		ctx.drawLine(x, b, r + 1, b, {
+			...sides.bottom,
+			startCap: cap(sides.left, c?.bottomLeft),
+			endCap: cap(sides.right, c?.bottomRight),
+		});
 	}
 }
 
