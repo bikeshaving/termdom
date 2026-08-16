@@ -4493,7 +4493,9 @@ export class LayoutEngine {
 	 * multi-line flex markup must not become items that eat gap and
 	 * justify-content space -- browsers drop them; so do we. Preserved
 	 * white space (white-space: pre/pre-wrap on the container) stays an
-	 * item, and a run that reaches any inline content is a real item.
+	 * item. A run is a contiguous sequence of sibling TEXT nodes: every
+	 * element child of a flex container is an item of its own, inline or
+	 * not, so any element ends the run.
 	 */
 	#isSuppressedFlexWhitespace(text: Text): boolean {
 		const parent = text.parentElement;
@@ -4506,12 +4508,9 @@ export class LayoutEngine {
 				continue;
 			}
 			if (node.nodeType !== node.ELEMENT_NODE) continue;
-			const sibling = node as Element;
-			const siblingDisplay = getPropertyValue(sibling, "display");
-			if (siblingDisplay === "none") continue;
-			// An inline sibling joins this run and gives it content; anything
-			// block-level ends the run with only white space collected.
-			if (isInlineDisplay(siblingDisplay)) return false;
+			// A display: none child generates no box and does not interrupt
+			// the run; any other element is a flex item that ends it.
+			if (getPropertyValue(node as Element, "display") === "none") continue;
 			break;
 		}
 		return true;
