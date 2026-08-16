@@ -708,12 +708,12 @@ export class Painter {
 						});
 					}
 				} else {
-					ctx.drawEdge(
+					ctx.drawDecoration(
 						Math.round(rect.left),
 						Math.round(rect.bottom) - 1,
 						Math.round(rect.width),
 						{
-							edge: "underline",
+							line: "underline",
 							style: hasColor
 								? {fg: cssColorToNumber(outlineColor)}
 								: undefined,

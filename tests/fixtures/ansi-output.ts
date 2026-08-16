@@ -27,7 +27,7 @@ export const recordedOutput: Record<string, string> = {
 		"\u001b[?25l\u001b[?2026h\u001b7\u001b[4C\r\u001b[K\u001b[4Czontally\r\n\r\n\r\u001b[Kkept by the row clip\r\n\r\n\r\n\r\u001b[Ktail\u001b8\u001b7\u001b[5B\r\u001b[?2026l",
 	"wrapped rows above the cursor park":
 		'{"before":[3,5,6,8],"after":[1,2,2,3]}',
-	"drawEdge outline over existing cells":
+	"drawDecoration outline over existing cells":
 		"\u001b[?25l\u001b[?2026h\u001b7\r\n\r\u001b[K\u001b[38;2;255;0;0;1;4mboxed\u001b[38;2;95;175;255;22m       \u001b[0m\r\n\r\n\r\u001b[K\u001b[2;3;53mover\u001b[38;2;95;175;255;23m        \u001b[0m\u001b8\u001b7\u001b[3B\r\u001b[?2026l",
 	"incremental diff across frames":
 		"\u001b[?25l\u001b[?2026h\u001b7\r\u001b[Krow 0 content\r\n\r\u001b[Krow 1 content\r\n\r\u001b[Krow 2 content\r\n\r\u001b[Krow 3 content\r\n\r\u001b[Krow 4 content\r\n\r\u001b[Krow 5 content\u001b8\u001b7\u001b[5B\r\u001b[?2026l|\u001b[?25l\u001b[?2026h\u001b8\u001b7\r\n\r\n\r\n\u001b[4CX\u001b8\u001b7\u001b[5B\r\u001b[?2026l||\u001b[?25l\u001b[?2026h\u001b8\u001b7\r\n             \r\n             \r\n             \r\n             \r\n             \u001b8\u001b7\u001b[5B\r\u001b[?2026l",
