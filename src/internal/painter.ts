@@ -12,6 +12,7 @@ import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
+import {drawBox} from "./ansi.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -472,7 +473,8 @@ export class Painter {
 			const bottom = sideFor(sides.bottom, "border-bottom-color");
 			const left = sideFor(sides.left, "border-left-color");
 			if (top || borderRight || bottom || left) {
-				ctx.drawBorder(
+				drawBox(
+					ctx,
 					Math.round(rect.left),
 					Math.round(rect.top),
 					Math.round(rect.width),
@@ -674,7 +676,8 @@ export class Painter {
 							line: import("./ansi.js").BorderLineStyle["style"] | undefined,
 						): import("./ansi.js").BorderLineStyle | undefined =>
 							line && {style: line, color: cssColorToNumber(outlineColor)};
-						ctx.drawBorder(
+						drawBox(
+							ctx,
 							Math.round(rect.left),
 							Math.round(rect.top),
 							Math.round(rect.width),
