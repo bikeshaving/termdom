@@ -226,7 +226,6 @@ export interface CellStyle {
 	dim?: boolean;
 	blink?: boolean;
 	overline?: boolean;
-	border?: number;
 }
 
 /**
