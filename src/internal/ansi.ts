@@ -163,29 +163,29 @@ export interface Frame {
 	end(): string;
 }
 
-/** How a border side is drawn: the CSS keyword, in the CSS's own word. */
-export type BorderLineStyle =
-	| "solid"
-	| "double"
-	| "dashed"
-	| "dotted"
-	| "groove"
-	| "ridge"
-	| "inset"
-	| "outset"
-	| "hidden";
-
-export interface BorderSide {
-	style: BorderLineStyle;
-	/** The line's color; the terminal's default foreground when absent. */
+/**
+ * How a border line is drawn: the CSS keyword, in the CSS's own word, and
+ * the line's color -- the terminal's default foreground when absent.
+ */
+export interface BorderLineStyle {
+	style:
+		| "solid"
+		| "double"
+		| "dashed"
+		| "dotted"
+		| "groove"
+		| "ridge"
+		| "inset"
+		| "outset"
+		| "hidden";
 	color?: number | null;
 }
 
 export interface BorderOptions {
-	top?: BorderSide;
-	right?: BorderSide;
-	bottom?: BorderSide;
-	left?: BorderSide;
+	top?: BorderLineStyle;
+	right?: BorderLineStyle;
+	bottom?: BorderLineStyle;
+	left?: BorderLineStyle;
 	corners?: {
 		topLeft?: boolean;
 		topRight?: boolean;
@@ -194,7 +194,7 @@ export interface BorderOptions {
 	};
 }
 
-const BORDER_LINE_BITS: Record<BorderLineStyle, number> = {
+const BORDER_LINE_BITS: Record<BorderLineStyle["style"], number> = {
 	solid: BorderEdgeStyle.Solid,
 	double: BorderEdgeStyle.Double,
 	dashed: BorderEdgeStyle.Dashed,
@@ -1205,7 +1205,7 @@ export class DrawingContext {
 		// A corner cell's glyph spans two sides but holds one color; it takes
 		// the horizontal side's, the closest a cell gets to the browser's
 		// diagonal miter -- this module's business, not the caller's.
-		const sideStyle = (side?: BorderSide): CellStyle | undefined =>
+		const sideStyle = (side?: BorderLineStyle): CellStyle | undefined =>
 			side && {fg: side.color ?? undefined};
 		const edgeStyles = {
 			top: sideStyle(sides.top),

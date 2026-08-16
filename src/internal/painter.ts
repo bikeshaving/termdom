@@ -451,9 +451,9 @@ export class Painter {
 			// behavior authors use for invisible spacing borders; layout reads
 			// the widths elsewhere and is unaffected.
 			const sideFor = (
-				line: import("./ansi.js").BorderLineStyle | undefined,
+				line: import("./ansi.js").BorderLineStyle["style"] | undefined,
 				prop: string,
-			): import("./ansi.js").BorderSide | undefined => {
+			): import("./ansi.js").BorderLineStyle | undefined => {
 				if (!line) return undefined;
 				const borderColor = computed.computedValueOf(prop);
 				if (isTransparentColor(borderColor)) return undefined;
@@ -671,8 +671,8 @@ export class Painter {
 				if (sides.top || sides.right || sides.bottom || sides.left) {
 					if (hasColor) {
 						const ring = (
-							line: import("./ansi.js").BorderLineStyle | undefined,
-						): import("./ansi.js").BorderSide | undefined =>
+							line: import("./ansi.js").BorderLineStyle["style"] | undefined,
+						): import("./ansi.js").BorderLineStyle | undefined =>
 							line && {style: line, color: cssColorToNumber(outlineColor)};
 						ctx.drawBorder(
 							Math.round(rect.left),
