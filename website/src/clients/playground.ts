@@ -228,24 +228,53 @@ function readSandboxConfig(): SandboxConfig | null {
  * use, and a bootstrap that runs a module URL on request. `<` is escaped so
  * no asset URL can close the script element it is written into.
  */
-function sandboxHTML(config: SandboxConfig): string {
-	const importMap = JSON.stringify({
-		imports: {
-			"@b9g/termdom": config.termdom,
-			"node:fs": config.nodefs,
-			"node:path": config.nodefs,
-			"node:url": config.nodefs,
-			"node:os": config.nodefs,
-			"@b9g/crank/standalone": config.crankStandalone,
-			"@b9g/crank/dom": config.crankDom,
-		},
-	}).replace(/</g, "\\u003c");
+/** The specifiers served from the page's own assets. */
+function localImports(config: SandboxConfig): Record<string, string> {
+	return {
+		"@b9g/termdom": config.termdom,
+		"node:fs": config.nodefs,
+		"node:path": config.nodefs,
+		"node:url": config.nodefs,
+		"node:os": config.nodefs,
+		"node:module": config.nodeModule,
+		"@b9g/crank/standalone": config.crankStandalone,
+		"@b9g/crank/dom": config.crankDom,
+		"marked": config.marked,
+		"marked-highlight": config.markedHighlight,
+		"@tanstack/table-core": config.tanstackTableCore,
+	};
+}
+
+const IMPORT_SPECIFIER =
+	/(?:^|\n)\s*import\s+(?:[^"'`]*?\s+from\s+)?["']([^"']+)["']/g;
+
+/**
+ * The import map for one program: the page's own modules first, and any
+ * bare specifier the code names beyond them resolved to a CDN -- the same
+ * open door the crank playground holds. Relative and node-prefixed
+ * specifiers are not the map's business.
+ */
+function importMapFor(config: SandboxConfig, code: string): string {
+	const imports = localImports(config);
+	for (const match of code.matchAll(IMPORT_SPECIFIER)) {
+		const specifier = match[1];
+		if (specifier in imports) continue;
+		if (/^[./]/.test(specifier) || specifier.startsWith("node:")) continue;
+		imports[specifier] = `https://esm.sh/${specifier}`;
+	}
+	return JSON.stringify({imports}).replace(/</g, "\\u003c");
+}
+
+function sandboxHTML(config: SandboxConfig, code: string): string {
+	const importMap = importMapFor(config, code);
 	return [
 		"<!doctype html>",
 		'<meta charset="utf-8">',
 		'<script type="importmap">' + importMap + "</" + "script>",
 		'<script type="module">',
-		'globalThis.process = {argv: ["node", "example.ts"], env: {}};',
+		'globalThis.process = {argv: ["node", "example.ts"], env: {},' +
+			' cwd: () => "/workspace/termdom", platform: "linux",' +
+			' stdin: {isTTY: true}, stdout: {isTTY: true}, stderr: {isTTY: true}};',
 		"window.__start = (url) => import(url);",
 		"</" + "script>",
 	].join("\n");
@@ -273,7 +302,7 @@ async function runProgram(
 	const iframe = document.createElement("iframe");
 	iframe.style.display = "none";
 	iframe.setAttribute("aria-hidden", "true");
-	iframe.srcdoc = sandboxHTML(config);
+	iframe.srcdoc = sandboxHTML(config, code);
 	const loaded = new Promise<void>((resolve) => {
 		iframe.addEventListener("load", () => resolve(), {once: true});
 	});

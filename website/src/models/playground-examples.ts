@@ -24,15 +24,19 @@ const RUNNABLE = [
 	"hello-world",
 	"animated",
 	"borders",
+	"chat",
 	"commit-editor",
 	"flexbox",
 	"form",
 	"fullscreen",
+	"fuzzy-finder",
 	"lists",
+	"markdown",
 	"password",
 	"progress-bar",
 	"rtl",
 	"solitaire",
+	"tanstack-table",
 	"todomvc",
 	"tree",
 	"weather",
@@ -45,8 +49,12 @@ export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
 export interface SandboxConfig {
 	termdom: string;
 	nodefs: string;
+	nodeModule: string;
 	crankStandalone: string;
 	crankDom: string;
+	marked: string;
+	markedHighlight: string;
+	tanstackTableCore: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */

@@ -37,7 +37,7 @@ export default async function Playground({url}: {url: string}) {
 				<${Raw} value=${serializeExamples(examples)} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
-				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, crankStandalone: assets.crankStandaloneScript, crankDom: assets.crankDomScript})} />
+				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, nodeModule: assets.sandboxNodeModuleScript, crankStandalone: assets.crankStandaloneScript, crankDom: assets.crankDomScript, marked: assets.markedScript, markedHighlight: assets.markedHighlightScript, tanstackTableCore: assets.tanstackTableCoreScript})} />
 			</script>
 			<div id="playground">
 				<noscript class=${css`

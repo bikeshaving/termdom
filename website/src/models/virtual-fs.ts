@@ -51,8 +51,23 @@ const REPO: Tree = {
 		"flexbox.test.ts": "",
 	},
 	"LICENSE.md": "",
-	"README.md": "",
-	"package.json": "",
+	"README.md": [
+		"# TermDOM",
+		"",
+		"A DOM you can attach to a terminal: HTML in, cells out.",
+		"Layout is CSS, input is events, and the caret is real.",
+		"",
+		"    npm install @b9g/termdom",
+		"",
+	].join("\n"),
+	"package.json": [
+		"{",
+		'\t"name": "@b9g/termdom",',
+		'\t"version": "0.1.3",',
+		'\t"license": "MIT"',
+		"}",
+		"",
+	].join("\n"),
 };
 
 const ROOT: Tree = {

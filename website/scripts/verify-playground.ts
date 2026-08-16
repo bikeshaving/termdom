@@ -25,12 +25,16 @@ page.on("console", (msg) => {
 });
 
 /** All terminal text on the page, joined. */
-const terminalText = () =>
-	page.evaluate(() =>
-		Array.from(document.querySelectorAll(".xterm"))
-			.map((el) => (el as HTMLElement).innerText)
-			.join("\n"),
-	);
+// The emulator's DOM rows render some spaces as no-break spaces, so the
+// text is normalized before any needle is looked for.
+const terminalText = async () =>
+	(
+		await page.evaluate(() =>
+			Array.from(document.querySelectorAll(".xterm"))
+				.map((el) => (el as HTMLElement).innerText)
+				.join("\n"),
+		)
+	).replace(/\u00a0/g, " ");
 
 async function waitForText(needle: string, timeout = 15000): Promise<boolean> {
 	const deadline = Date.now() + timeout;
@@ -78,6 +82,20 @@ report(await waitForText("one card", 20000), "playground: solitaire boots throug
 // prompt is the gate this suite owns).
 await page.selectOption("select", "weather");
 report(await waitForText("city", 15000), "playground: weather paints its search");
+
+// The rest of the roster: chat paints its composer, fuzzy-finder lists and
+// previews the virtual files, markdown renders its sample through marked
+// and Prism (a CommonJS require served by the node:module shim), and
+// tanstack-table builds its table through the mapped package.
+await page.selectOption("select", "chat");
+report(await waitForText("ch.at", 15000), "playground: chat paints");
+await page.selectOption("select", "fuzzy-finder");
+report(await waitForText("type to filter", 15000), "playground: fuzzy-finder paints");
+report(await waitForText("termdom", 5000), "playground: fuzzy-finder previews the virtual files");
+await page.selectOption("select", "markdown");
+report(await waitForText("Markdown in the Terminal", 15000), "playground: markdown renders through marked and Prism");
+await page.selectOption("select", "tanstack-table");
+report(await waitForText("Status", 15000), "playground: tanstack-table renders through the mapped package");
 
 // The homepage embeds hydrate as they come near and paint their programs.
 // The walk down the page mirrors a reader scrolling: each stop lets the
