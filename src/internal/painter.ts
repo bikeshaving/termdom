@@ -12,7 +12,6 @@ import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
-import type {CellRect} from "./ansi.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -22,21 +21,6 @@ import type {CellRect} from "./ansi.js";
  * intersection downstream would silently propagate.
  */
 type ClipRect = {left: number; top: number; right: number; bottom: number};
-
-/** A layout rect as the cell a drawing call starts from. */
-function roundedRect(rect: {
-	left: number;
-	top: number;
-	width: number;
-	height: number;
-}): CellRect {
-	return {
-		x: Math.round(rect.left),
-		y: Math.round(rect.top),
-		width: Math.round(rect.width),
-		height: Math.round(rect.height),
-	};
-}
 
 /**
  * Whether a computed style asks for an underline.
@@ -321,10 +305,7 @@ export class Painter {
 		if (fill === null) return;
 		// The viewport, in the document coordinates every draw call takes: the
 		// band the buffer holds, which is where a fixed box paints too.
-		ctx.drawRect(
-			{x: 0, y: -ctx.viewportOffset, width: ctx.cols, height: ctx.rows},
-			fill,
-		);
+		ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 	}
 
 	#renderElement(
@@ -446,20 +427,15 @@ export class Painter {
 			if (fragments.length > 1) {
 				for (const fragment of fragments) {
 					ctx.drawRect(
-						{
-							x: fragment.left,
-							y: fragment.top,
-							width: fragment.width,
-							height: fragment.height,
-						},
+						fragment.left,
+						fragment.top,
+						fragment.width,
+						fragment.height,
 						fill,
 					);
 				}
 			} else {
-				ctx.drawRect(
-					{x: rect.left, y: rect.top, width: rect.width, height: rect.height},
-					fill,
-				);
+				ctx.drawRect(rect.left, rect.top, rect.width, rect.height, fill);
 			}
 		}
 
@@ -508,15 +484,21 @@ export class Painter {
 					};
 				};
 				const top = edgeCellStyle("border-top-color");
-				ctx.drawBorder(roundedRect(rect), {
-					border: borderStyles,
-					edges: {
-						top,
-						right: edgeCellStyle("border-right-color"),
-						bottom: edgeCellStyle("border-bottom-color"),
-						left: edgeCellStyle("border-left-color"),
+				ctx.drawBorder(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					{
+						border: borderStyles,
+						edges: {
+							top,
+							right: edgeCellStyle("border-right-color"),
+							bottom: edgeCellStyle("border-bottom-color"),
+							left: edgeCellStyle("border-left-color"),
+						},
 					},
-				});
+				);
 			}
 		}
 
@@ -702,22 +684,25 @@ export class Painter {
 				const borderStyles = resolveBorderStyles(element);
 				if (borderStyles.hasAnyBorder) {
 					if (hasColor) {
-						ctx.drawBorder(roundedRect(rect), {
-							border: borderStyles,
-							style: {fg: cssColorToNumber(outlineColor), bg: style.bg},
-						});
+						ctx.drawBorder(
+							Math.round(rect.left),
+							Math.round(rect.top),
+							Math.round(rect.width),
+							Math.round(rect.height),
+							{
+								border: borderStyles,
+								style: {fg: cssColorToNumber(outlineColor), bg: style.bg},
+							},
+						);
 					}
 				} else {
 					ctx.drawDecoration(
 						Math.round(rect.left),
 						Math.round(rect.bottom) - 1,
 						Math.round(rect.width),
-						{
-							line: "underline",
-							style: hasColor
-								? {fg: cssColorToNumber(outlineColor)}
-								: undefined,
-						},
+						hasColor
+							? {underline: true, fg: cssColorToNumber(outlineColor)}
+							: {underline: true},
 					);
 				}
 			}

@@ -166,7 +166,7 @@ describe("Screen", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawRect({x: 0, y: 0, width: 3, height: 2}, 0xff0000);
+				ctx.drawRect(0, 0, 3, 2, 0xff0000);
 			});
 
 			// Should contain background color ANSI codes
@@ -455,9 +455,9 @@ describe("Border Functions", () => {
 			const renderer = new Screen(6, 14);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: solid});
-				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: solid});
-				ctx.drawBorder({x: 0, y: 2, width: 6, height: 3}, {border: solid});
+				ctx.drawBorder(0, 0, 6, 3, {border: solid});
+				ctx.drawBorder(5, 0, 6, 3, {border: solid});
+				ctx.drawBorder(0, 2, 6, 3, {border: solid});
 			});
 
 			expect(output).toContain("┬");
@@ -475,8 +475,8 @@ describe("Border Functions", () => {
 			};
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: solid});
-				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: double});
+				ctx.drawBorder(0, 0, 6, 3, {border: solid});
+				ctx.drawBorder(5, 0, 6, 3, {border: double});
 			});
 
 			// The shared column is drawn from the double box's edges.
@@ -491,18 +491,15 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should contain complete box border pattern
@@ -515,18 +512,15 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: 0, // no right border
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: 0, // no right border
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should have partial borders (no right edge)
@@ -541,31 +535,25 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw two overlapping rectangles to create border intersections
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 
-				ctx.drawBorder(
-					{x: 2, y: 0, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(2, 0, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should contain overlapping border patterns with intersections
@@ -582,30 +570,24 @@ describe("Border Drawing", () => {
 			// page's verticals, which take the connecting stub: ├ and ┤, as a
 			// browser's touching one-pixel lines would draw.
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 0, y: 0, width: 10, height: 5},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(0, 0, 10, 5, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
-				ctx.drawBorder(
-					{x: 1, y: 2, width: 8, height: 1},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: 0,
-							bottomEdge: 0,
-							leftEdge: 0,
-							hasAnyBorder: true,
-						},
+				});
+				ctx.drawBorder(1, 2, 8, 1, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: 0,
+						bottomEdge: 0,
+						leftEdge: 0,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			expect(output).toContain("├────────┤");
@@ -625,8 +607,8 @@ describe("Border Drawing", () => {
 					leftEdge: BorderEdgeStyle.Solid,
 					hasAnyBorder: true,
 				};
-				ctx.drawBorder({x: 0, y: 0, width: 4, height: 3}, {border: solid});
-				ctx.drawBorder({x: 4, y: 0, width: 4, height: 3}, {border: solid});
+				ctx.drawBorder(0, 0, 4, 3, {border: solid});
+				ctx.drawBorder(4, 0, 4, 3, {border: solid});
 			});
 
 			expect(output).toContain("┐┌");
@@ -638,18 +620,15 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
-				ctx.drawBorder(
-					{x: 0, y: 0, width: 3, height: 2},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(0, 0, 3, 2, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should position cursor accounting for viewport offset
@@ -661,18 +640,15 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Double,
-							rightEdge: BorderEdgeStyle.Double,
-							bottomEdge: BorderEdgeStyle.Double,
-							leftEdge: BorderEdgeStyle.Double,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Double,
+						rightEdge: BorderEdgeStyle.Double,
+						bottomEdge: BorderEdgeStyle.Double,
+						leftEdge: BorderEdgeStyle.Double,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should contain complete double-line border pattern
@@ -685,18 +661,15 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: false, // Should skip drawing
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: false, // Should skip drawing
 					},
-				);
+				});
 			});
 
 			// Should not contain any border patterns
@@ -707,22 +680,19 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(
-					{x: 1, y: 1, width: 4, height: 3},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
-						style: {
-							fg: 0xff0000, // Red border
-							bold: true,
-						},
+				ctx.drawBorder(1, 1, 4, 3, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+					style: {
+						fg: 0xff0000, // Red border
+						bold: true,
+					},
+				});
 			});
 
 			// Should contain colored border with styling
@@ -736,18 +706,15 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw border that extends beyond viewport
-				ctx.drawBorder(
-					{x: 0, y: 0, width: 10, height: 10},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Solid,
-							rightEdge: BorderEdgeStyle.Solid,
-							bottomEdge: BorderEdgeStyle.Solid,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				ctx.drawBorder(0, 0, 10, 10, {
+					border: {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
+				});
 			});
 
 			// Should only render visible border portions without crashing
@@ -763,18 +730,15 @@ describe("Border Integration", () => {
 		const renderer = new Screen(4, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 1, y: 0, width: 6, height: 4},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 0, 6, 4, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 			// Fill inside to ensure proper spacing
 			ctx.drawText("    ", 2, 1);
 			ctx.drawText("    ", 2, 2);
@@ -793,18 +757,15 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw border
-			ctx.drawBorder(
-				{x: 1, y: 1, width: 6, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 1, 6, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Add text inside border
 			ctx.drawText("Hi", 2, 2);
@@ -820,21 +781,18 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Fill background
-			ctx.drawRect({x: 1, y: 1, width: 4, height: 3}, 0x00ff00);
+			ctx.drawRect(1, 1, 4, 3, 0x00ff00);
 
 			// Draw border on top
-			ctx.drawBorder(
-				{x: 1, y: 1, width: 4, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 1, 4, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		expect(output).toContain("48;2;0;255;0"); // Green background color
@@ -845,18 +803,15 @@ describe("Border Integration", () => {
 		const renderer = new Screen(5, 7);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 5, height: 4},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Double,
-						rightEdge: BorderEdgeStyle.Double,
-						bottomEdge: BorderEdgeStyle.Double,
-						leftEdge: BorderEdgeStyle.Double,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 5, 4, {
+				border: {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		// Check that double-line border characters are present
@@ -870,18 +825,15 @@ describe("Border Integration", () => {
 		const renderer = new Screen(5, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 6, height: 4},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: 0, // No right edge
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 6, 4, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: 0, // No right edge
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		// Check for partial border patterns
@@ -921,32 +873,26 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// First box
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 5, height: 4},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 5, 4, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Second box overlapping
-			ctx.drawBorder(
-				{x: 2, y: 2, width: 5, height: 4},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(2, 2, 5, 4, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		// Check for all border characters
@@ -968,18 +914,15 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
-			ctx.drawBorder(
-				{x: 1, y: 1, width: 3, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 1, 3, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		// Should have border output
@@ -1028,18 +971,15 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw box
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 8, height: 5},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 8, 5, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 			// Add text inside
 			ctx.drawText(" TEST ", 1, 1);
 			ctx.drawText(" BOX  ", 1, 2);
@@ -1065,60 +1005,48 @@ describe("Border Integration", () => {
 			// This should create proper junctions where borders meet
 
 			// Cell (0,0) - top-left
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid, // table top
-						rightEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
-						bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
-						leftEdge: BorderEdgeStyle.Solid, // table left
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid, // table top
+					rightEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
+					bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
+					leftEdge: BorderEdgeStyle.Solid, // table left
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Cell (0,1) - top-right
-			ctx.drawBorder(
-				{x: 4, y: 0, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid, // table top
-						rightEdge: BorderEdgeStyle.Solid, // table right
-						bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
-						leftEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(4, 0, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid, // table top
+					rightEdge: BorderEdgeStyle.Solid, // table right
+					bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
+					leftEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Cell (1,0) - bottom-left
-			ctx.drawBorder(
-				{x: 0, y: 2, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
-						rightEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
-						bottomEdge: BorderEdgeStyle.Solid, // table bottom
-						leftEdge: BorderEdgeStyle.Solid, // table left
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 2, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
+					rightEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
+					bottomEdge: BorderEdgeStyle.Solid, // table bottom
+					leftEdge: BorderEdgeStyle.Solid, // table left
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Cell (1,1) - bottom-right
-			ctx.drawBorder(
-				{x: 4, y: 2, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
-						rightEdge: BorderEdgeStyle.Solid, // table right
-						bottomEdge: BorderEdgeStyle.Solid, // table bottom
-						leftEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(4, 2, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
+					rightEdge: BorderEdgeStyle.Solid, // table right
+					bottomEdge: BorderEdgeStyle.Solid, // table bottom
+					leftEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Add cell content
 			ctx.drawText("A1", 1, 1);
@@ -1139,32 +1067,26 @@ describe("Border Integration", () => {
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
 			// Left cell with solid borders
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 6, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 6, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Right cell with double borders (should merge with solid)
-			ctx.drawBorder(
-				{x: 5, y: 0, width: 6, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Double,
-						rightEdge: BorderEdgeStyle.Double,
-						bottomEdge: BorderEdgeStyle.Double,
-						leftEdge: BorderEdgeStyle.Double,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(5, 0, 6, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Add content to differentiate the cells
 			ctx.drawText("Sol", 1, 1);
@@ -1185,90 +1107,72 @@ describe("Border Integration", () => {
 			// For collapsed borders, cells share borders at their edges
 
 			// Header row cells (row 0-2)
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 5, height: 3},
-				{
-					border: {
-						// Header cell 1: "Name"
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 5, 3, {
+				border: {
+					// Header cell 1: "Name"
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
-			ctx.drawBorder(
-				{x: 4, y: 0, width: 5, height: 3},
-				{
-					border: {
-						// Header cell 2: "Age" (shares border at x=4)
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(4, 0, 5, 3, {
+				border: {
+					// Header cell 2: "Age" (shares border at x=4)
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
-			ctx.drawBorder(
-				{x: 8, y: 0, width: 5, height: 3},
-				{
-					border: {
-						// Header cell 3: "City" (shares border at x=8)
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(8, 0, 5, 3, {
+				border: {
+					// Header cell 3: "City" (shares border at x=8)
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Data row cells (row 2-4, sharing top border with header cells)
-			ctx.drawBorder(
-				{x: 0, y: 2, width: 5, height: 3},
-				{
-					border: {
-						// Data cell 1: "John"
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 2, 5, 3, {
+				border: {
+					// Data cell 1: "John"
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
-			ctx.drawBorder(
-				{x: 4, y: 2, width: 5, height: 3},
-				{
-					border: {
-						// Data cell 2: "25"
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(4, 2, 5, 3, {
+				border: {
+					// Data cell 2: "25"
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
-			ctx.drawBorder(
-				{x: 8, y: 2, width: 5, height: 3},
-				{
-					border: {
-						// Data cell 3: "NYC"
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(8, 2, 5, 3, {
+				border: {
+					// Data cell 3: "NYC"
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Cell content - placed inside the cells (max 3 chars per cell)
 			ctx.drawText("Nam", 1, 1);
@@ -1288,18 +1192,15 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 1, y: 1, width: 4, height: 2},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 1, 4, 2, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1311,18 +1212,15 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 1, y: 1, width: 6, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Double,
-						rightEdge: BorderEdgeStyle.Double,
-						bottomEdge: BorderEdgeStyle.Double,
-						leftEdge: BorderEdgeStyle.Double,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(1, 1, 6, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
 				},
-			);
+			});
 			ctx.drawText("Test", 2, 2);
 		});
 
@@ -1335,18 +1233,15 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: 0,
-						bottomEdge: 0,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: 0,
+					bottomEdge: 0,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 			ctx.drawText("Part", 1, 1);
 		});
 
@@ -1362,18 +1257,15 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 6, height: 4},
-				{
-					border: {
-						topEdge: 0,
-						rightEdge: 0,
-						bottomEdge: 0,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 6, 4, {
+				border: {
+					topEdge: 0,
+					rightEdge: 0,
+					bottomEdge: 0,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 			ctx.drawText("Quote", 2, 1);
 		});
 
@@ -1392,45 +1284,36 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 4, height: 2},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 4, 2, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
-			ctx.drawBorder(
-				{x: 3, y: 0, width: 4, height: 2},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(3, 0, 4, 2, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Bottom left cell only
-			ctx.drawBorder(
-				{x: 0, y: 1, width: 4, height: 2},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 1, 4, 2, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1443,46 +1326,37 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Solid border cell
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 3, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 3, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Double border cell
-			ctx.drawBorder(
-				{x: 2, y: 0, width: 3, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Double,
-						rightEdge: BorderEdgeStyle.Double,
-						bottomEdge: BorderEdgeStyle.Double,
-						leftEdge: BorderEdgeStyle.Double,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(2, 0, 3, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Heavy border cell
-			ctx.drawBorder(
-				{x: 4, y: 0, width: 3, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Groove, // Uses heavy style
-						rightEdge: BorderEdgeStyle.Groove,
-						bottomEdge: BorderEdgeStyle.Groove,
-						leftEdge: BorderEdgeStyle.Groove,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(4, 0, 3, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Groove, // Uses heavy style
+					rightEdge: BorderEdgeStyle.Groove,
+					bottomEdge: BorderEdgeStyle.Groove,
+					leftEdge: BorderEdgeStyle.Groove,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			ctx.drawText("S", 1, 1);
 			ctx.drawText("D", 3, 1);
@@ -1499,32 +1373,26 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Outer border
-			ctx.drawBorder(
-				{x: 0, y: 0, width: 9, height: 7},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Double,
-						rightEdge: BorderEdgeStyle.Double,
-						bottomEdge: BorderEdgeStyle.Double,
-						leftEdge: BorderEdgeStyle.Double,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(0, 0, 9, 7, {
+				border: {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			// Inner border
-			ctx.drawBorder(
-				{x: 2, y: 2, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
+			ctx.drawBorder(2, 2, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+			});
 
 			ctx.drawText("Out", 1, 1);
 			ctx.drawText("In", 3, 3);
@@ -1546,18 +1414,15 @@ describe("Border Integration", () => {
 					const x = col * 3;
 					const y = row * 2;
 
-					ctx.drawBorder(
-						{x: x, y: y, width: 4, height: 3},
-						{
-							border: {
-								topEdge: BorderEdgeStyle.Solid,
-								rightEdge: BorderEdgeStyle.Solid,
-								bottomEdge: BorderEdgeStyle.Solid,
-								leftEdge: BorderEdgeStyle.Solid,
-								hasAnyBorder: true,
-							},
+					ctx.drawBorder(x, y, 4, 3, {
+						border: {
+							topEdge: BorderEdgeStyle.Solid,
+							rightEdge: BorderEdgeStyle.Solid,
+							bottomEdge: BorderEdgeStyle.Solid,
+							leftEdge: BorderEdgeStyle.Solid,
+							hasAnyBorder: true,
 						},
-					);
+					});
 
 					ctx.drawText(`${row + 1}${col + 1}`, x + 1, y + 1);
 				}
@@ -1573,22 +1438,19 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.drawBorder(
-				{x: 1, y: 0, width: 5, height: 3},
-				{
-					border: {
-						topEdge: BorderEdgeStyle.Solid,
-						rightEdge: BorderEdgeStyle.Solid,
-						bottomEdge: BorderEdgeStyle.Solid,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
-					style: {
-						fg: 0xff0000, // Red border
-						bg: 0x00ff00, // Green background
-					},
+			ctx.drawBorder(1, 0, 5, 3, {
+				border: {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
 				},
-			);
+				style: {
+					fg: 0xff0000, // Red border
+					bg: 0x00ff00, // Green background
+				},
+			});
 
 			ctx.drawText("Col", 2, 1);
 		});

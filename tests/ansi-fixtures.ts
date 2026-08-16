@@ -160,47 +160,38 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(9, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: BOX});
-				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: BOX});
-				ctx.drawBorder({x: 0, y: 2, width: 6, height: 3}, {border: BOX});
-				ctx.drawBorder({x: 5, y: 2, width: 6, height: 3}, {border: DOUBLE_BOX});
-				ctx.drawBorder(
-					{x: 12, y: 0, width: 8, height: 5},
-					{
-						border: BOX,
-						style: {fg: 0xff0000, bold: true},
-						edges: {
-							top: {fg: 0x00ff00},
-							right: {fg: 0x0000ff},
-							bottom: {fg: 0xffff00},
-							left: {fg: 0xff00ff},
-						},
+				ctx.drawBorder(0, 0, 6, 3, {border: BOX});
+				ctx.drawBorder(5, 0, 6, 3, {border: BOX});
+				ctx.drawBorder(0, 2, 6, 3, {border: BOX});
+				ctx.drawBorder(5, 2, 6, 3, {border: DOUBLE_BOX});
+				ctx.drawBorder(12, 0, 8, 5, {
+					border: BOX,
+					style: {fg: 0xff0000, bold: true},
+					edges: {
+						top: {fg: 0x00ff00},
+						right: {fg: 0x0000ff},
+						bottom: {fg: 0xffff00},
+						left: {fg: 0xff00ff},
 					},
-				);
-				ctx.drawBorder(
-					{x: 0, y: 5, width: 10, height: 4},
-					{
-						border: {
-							topEdge: 0,
-							rightEdge: 0,
-							bottomEdge: 0,
-							leftEdge: BorderEdgeStyle.Solid,
-							hasAnyBorder: true,
-						},
+				});
+				ctx.drawBorder(0, 5, 10, 4, {
+					border: {
+						topEdge: 0,
+						rightEdge: 0,
+						bottomEdge: 0,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
 					},
-				);
-				ctx.drawBorder(
-					{x: 12, y: 5, width: 10, height: 4},
-					{
-						border: {
-							topEdge: BorderEdgeStyle.Dashed,
-							rightEdge: BorderEdgeStyle.Dotted,
-							bottomEdge: BorderEdgeStyle.Groove,
-							leftEdge: BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded,
-							hasAnyBorder: true,
-						},
+				});
+				ctx.drawBorder(12, 5, 10, 4, {
+					border: {
+						topEdge: BorderEdgeStyle.Dashed,
+						rightEdge: BorderEdgeStyle.Dotted,
+						bottomEdge: BorderEdgeStyle.Groove,
+						leftEdge: BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded,
+						hasAnyBorder: true,
 					},
-				);
+				});
 				ctx.drawText("A1", 1, 1);
 				ctx.drawText("B2", 6, 3);
 			});
@@ -211,11 +202,11 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(6, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawRect({x: 0, y: 0, width: 20, height: 2}, 0x202020);
+				ctx.drawRect(0, 0, 20, 2, 0x202020);
 				ctx.drawText("selected text", 1, 0);
-				ctx.drawRect({x: 1, y: 0, width: 8, height: 1}, "inverse");
-				ctx.drawRect({x: 0, y: 3, width: 10, height: 1}, "default");
-				ctx.drawRect({x: 0, y: 4, width: 10, height: 1}, null);
+				ctx.drawRect(1, 0, 8, 1, "inverse");
+				ctx.drawRect(0, 3, 10, 1, "default");
+				ctx.drawRect(0, 4, 10, 1, null);
 				ctx.drawText("under", 0, 5, {fg: 0x00ff00});
 			});
 		},
@@ -229,9 +220,9 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawRect({x: 0, y: 0, width: 12, height: 1}, 0x004000);
+				ctx.drawRect(0, 0, 12, 1, 0x004000);
 				ctx.drawText("over", 2, 0, {fg: 0xffff00, bold: true});
-				ctx.drawRect({x: 0, y: 1, width: 12, height: 1}, 0x400000);
+				ctx.drawRect(0, 1, 12, 1, 0x400000);
 				ctx.drawText("own", 2, 1, {bg: 0x000040});
 				ctx.drawText("\u0301abc", 0, 2);
 				ctx.drawText("a\u0301bc", 0, 3);
@@ -292,15 +283,9 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("boxed", 0, 1, {fg: 0xff0000, bold: true});
-				ctx.drawDecoration(0, 1, 12, {
-					line: "underline",
-					style: {fg: 0x5fafff},
-				});
+				ctx.drawDecoration(0, 1, 12, {underline: true, fg: 0x5fafff});
 				ctx.drawText("over", 0, 3, {italic: true});
-				ctx.drawDecoration(0, 3, 12, {
-					edge: "overline",
-					style: {fg: 0x5fafff, dim: true},
-				});
+				ctx.drawDecoration(0, 3, 12, {overline: true, fg: 0x5fafff, dim: true});
 			});
 		},
 	},
@@ -453,7 +438,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("clipped horizontally", 0, 1);
 				ctx.drawText("also clipped", 0, 2);
 				ctx.drawText("outside the clip", 0, 3);
-				ctx.drawBorder({x: 0, y: 1, width: 14, height: 3}, {border: BOX});
+				ctx.drawBorder(0, 1, 14, 3, {border: BOX});
 				ctx.clipRect = null;
 				ctx.drawText("unclipped again", 0, 4);
 			});
@@ -467,10 +452,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("plain", 0, 0);
 				ctx.drawText("styled", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.drawText("日本語 wide", 0, 2);
-				ctx.drawBorder(
-					{x: 0, y: 3, width: 8, height: 2},
-					{border: BOX, style: {fg: 0x00ff00}},
-				);
+				ctx.drawBorder(0, 3, 8, 2, {border: BOX, style: {fg: 0x00ff00}});
 				ctx.drawText("👍 tail", 10, 3);
 			});
 			out += "|";
