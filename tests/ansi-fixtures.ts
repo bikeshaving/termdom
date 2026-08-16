@@ -69,8 +69,8 @@ function attributeSweep(colorDepth: ColorDepth): string {
 	const renderer = new Screen(EVERY_ATTRIBUTE.length + 2, 40, colorDepth);
 	return renderFrame(renderer, {offset: 0}, (ctx) => {
 		EVERY_ATTRIBUTE.forEach(([label, style], row) => {
-			ctx.setText(0, row, label.padEnd(12), style);
-			ctx.setText(14, row, "Sample", style);
+			ctx.fillText(label.padEnd(12), 0, row, style);
+			ctx.fillText("Sample", 14, row, style);
 		});
 	});
 }
@@ -96,20 +96,20 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(4, 40, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "AB", {bold: true, underline: true, fg: 0xff0000});
-				ctx.setText(2, 0, "CD", {underline: true, fg: 0xff0000});
-				ctx.setText(4, 0, "EF", {
+				ctx.fillText("AB", 0, 0, {bold: true, underline: true, fg: 0xff0000});
+				ctx.fillText("CD", 2, 0, {underline: true, fg: 0xff0000});
+				ctx.fillText("EF", 4, 0, {
 					underline: true,
 					underlineStyle: "double",
 					fg: 0xff0000,
 				});
-				ctx.setText(6, 0, "GH", {underline: true, fg: 0xff0000});
-				ctx.setText(8, 0, "IJ", {fg: 0xff0000});
-				ctx.setText(10, 0, "KL", {});
-				ctx.setText(12, 0, "MN", {inverse: true, blink: true, dim: true});
-				ctx.setText(14, 0, "OP", {strikethrough: true, overline: true});
-				ctx.setText(16, 0, "QR", {italic: true, bg: 0x008000});
-				ctx.setText(18, 0, "ST");
+				ctx.fillText("GH", 6, 0, {underline: true, fg: 0xff0000});
+				ctx.fillText("IJ", 8, 0, {fg: 0xff0000});
+				ctx.fillText("KL", 10, 0, {});
+				ctx.fillText("MN", 12, 0, {inverse: true, blink: true, dim: true});
+				ctx.fillText("OP", 14, 0, {strikethrough: true, overline: true});
+				ctx.fillText("QR", 16, 0, {italic: true, bg: 0x008000});
+				ctx.fillText("ST", 18, 0);
 			});
 		},
 	},
@@ -118,16 +118,16 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(8, 30, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "CJK 日本語 end");
-				ctx.setText(0, 1, "emoji 👍🏽 end");
-				ctx.setText(0, 2, "zwj 👨‍👩‍👧‍👦 end");
-				ctx.setText(0, 3, "flag 🇯🇵 end");
-				ctx.setText(0, 4, "combining éxá end");
-				ctx.setText(0, 5, "styled 日本", {fg: 0xff0000, bold: true});
+				ctx.fillText("CJK 日本語 end", 0, 0);
+				ctx.fillText("emoji 👍🏽 end", 0, 1);
+				ctx.fillText("zwj 👨‍👩‍👧‍👦 end", 0, 2);
+				ctx.fillText("flag 🇯🇵 end", 0, 3);
+				ctx.fillText("combining éxá end", 0, 4);
+				ctx.fillText("styled 日本", 0, 5, {fg: 0xff0000, bold: true});
 				// A wide glyph at the very last usable column, and one that does
 				// not fit at all.
-				ctx.setText(28, 6, "日");
-				ctx.setText(29, 7, "日");
+				ctx.fillText("日", 28, 6);
+				ctx.fillText("日", 29, 7);
 			});
 		},
 	},
@@ -139,18 +139,18 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(4, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "ab日本cd");
-				ctx.setText(0, 1, "日本日本");
+				ctx.fillText("ab日本cd", 0, 0);
+				ctx.fillText("日本日本", 0, 1);
 			});
 			out += "|";
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "abxycd");
-				ctx.setText(0, 1, "日xy日本");
+				ctx.fillText("abxycd", 0, 0);
+				ctx.fillText("日xy日本", 0, 1);
 			});
 			out += "|";
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "ab日本cd");
-				ctx.setText(0, 1, "日本日本");
+				ctx.fillText("ab日本cd", 0, 0);
+				ctx.fillText("日本日本", 0, 1);
 			});
 			return out;
 		},
@@ -201,8 +201,8 @@ export const scenarios: Scenario[] = [
 						},
 					},
 				);
-				ctx.setText(1, 1, "A1");
-				ctx.setText(6, 3, "B2");
+				ctx.fillText("A1", 1, 1);
+				ctx.fillText("B2", 6, 3);
 			});
 		},
 	},
@@ -212,11 +212,11 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(6, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.fillRect({x: 0, y: 0, width: 20, height: 2}, 0x202020);
-				ctx.setText(1, 0, "selected text");
+				ctx.fillText("selected text", 1, 0);
 				ctx.fillRect({x: 1, y: 0, width: 8, height: 1}, "inverse");
 				ctx.fillRect({x: 0, y: 3, width: 10, height: 1}, "default");
 				ctx.fillRect({x: 0, y: 4, width: 10, height: 1}, null);
-				ctx.setText(0, 5, "under", {fg: 0x00ff00});
+				ctx.fillText("under", 0, 5, {fg: 0x00ff00});
 			});
 		},
 	},
@@ -230,13 +230,13 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.fillRect({x: 0, y: 0, width: 12, height: 1}, 0x004000);
-				ctx.setText(2, 0, "over", {fg: 0xffff00, bold: true});
+				ctx.fillText("over", 2, 0, {fg: 0xffff00, bold: true});
 				ctx.fillRect({x: 0, y: 1, width: 12, height: 1}, 0x400000);
-				ctx.setText(2, 1, "own", {bg: 0x000040});
-				ctx.setText(0, 2, "\u0301abc");
-				ctx.setText(0, 3, "a\u0301bc");
+				ctx.fillText("own", 2, 1, {bg: 0x000040});
+				ctx.fillText("\u0301abc", 0, 2);
+				ctx.fillText("a\u0301bc", 0, 3);
 				// Inheritance reads the cell under the write, not the style run.
-				ctx.setText(0, 4, "\u0301x", {italic: true});
+				ctx.fillText("\u0301x", 0, 4, {italic: true});
 			});
 		},
 	},
@@ -248,12 +248,12 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(6, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.clipRect = {left: 4, top: -Infinity, right: 12, bottom: Infinity};
-				ctx.setText(0, 0, "horizontally bounded");
+				ctx.fillText("horizontally bounded", 0, 0);
 				ctx.clipRect = {left: -Infinity, top: 2, right: Infinity, bottom: 4};
-				ctx.setText(0, 1, "dropped by the row clip");
-				ctx.setText(0, 2, "kept by the row clip");
+				ctx.fillText("dropped by the row clip", 0, 1);
+				ctx.fillText("kept by the row clip", 0, 2);
 				ctx.clipRect = null;
-				ctx.setText(0, 5, "tail");
+				ctx.fillText("tail", 0, 5);
 			});
 		},
 	},
@@ -264,20 +264,20 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(4, 20, "rgb");
 			renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "a short line");
-				ctx.setText(0, 1, "日本語 wide and long");
-				ctx.setText(0, 2, "x");
-				ctx.setText(0, 3, "last");
+				ctx.fillText("a short line", 0, 0);
+				ctx.fillText("日本語 wide and long", 0, 1);
+				ctx.fillText("x", 0, 2);
+				ctx.fillText("last", 0, 3);
 			});
 			const before = [20, 10, 7, 5].map((cols) =>
 				renderer.wrappedRowsAbovePark(cols),
 			);
 			// A caret park moves the measurement point.
 			renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "a short line");
-				ctx.setText(0, 1, "日本語 wide and long");
-				ctx.setText(0, 2, "x");
-				ctx.setText(0, 3, "last");
+				ctx.fillText("a short line", 0, 0);
+				ctx.fillText("日本語 wide and long", 0, 1);
+				ctx.fillText("x", 0, 2);
+				ctx.fillText("last", 0, 3);
 				ctx.setCaret(3, 1);
 			});
 			const after = [20, 10, 7, 5].map((cols) =>
@@ -291,9 +291,9 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 1, "boxed", {fg: 0xff0000, bold: true});
+				ctx.fillText("boxed", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.edgeRow(0, 1, 12, {edge: "underline", style: {fg: 0x5fafff}});
-				ctx.setText(0, 3, "over", {italic: true});
+				ctx.fillText("over", 0, 3, {italic: true});
 				ctx.edgeRow(0, 3, 12, {
 					edge: "overline",
 					style: {fg: 0x5fafff, dim: true},
@@ -307,17 +307,17 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(6, 24, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
-					ctx.setText(0, row, `row ${row} content`);
+					ctx.fillText(`row ${row} content`, 0, row);
 				}
 			});
 			out += "|";
 			// One cell changes.
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
-					ctx.setText(
+					ctx.fillText(
+						row === 3 ? "row X content" : `row ${row} content`,
 						0,
 						row,
-						row === 3 ? "row X content" : `row ${row} content`,
 					);
 				}
 			});
@@ -325,17 +325,17 @@ export const scenarios: Scenario[] = [
 			// Nothing changes.
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
-					ctx.setText(
+					ctx.fillText(
+						row === 3 ? "row X content" : `row ${row} content`,
 						0,
 						row,
-						row === 3 ? "row X content" : `row ${row} content`,
 					);
 				}
 			});
 			out += "|";
 			// Content shrinks, leaving stale rows to clear.
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "row 0 content");
+				ctx.fillText("row 0 content", 0, 0);
 			});
 			return out;
 		},
@@ -348,7 +348,7 @@ export const scenarios: Scenario[] = [
 				(top: number) =>
 				(ctx: import("../src/internal/ansi.js").DrawingContext) => {
 					for (let row = 0; row < 10; row++) {
-						ctx.setText(0, row, `line ${top + row}`.padEnd(12), {
+						ctx.fillText(`line ${top + row}`.padEnd(12), 0, row, {
 							fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
 						});
 					}
@@ -403,18 +403,18 @@ export const scenarios: Scenario[] = [
 				renderer,
 				{offset: 0, cursorRow: 0, regionRows: 9},
 				(ctx) => {
-					for (let row = 0; row < 9; row++) ctx.setText(0, row, `L${row}`);
+					for (let row = 0; row < 9; row++) ctx.fillText(`L${row}`, 0, row);
 				},
 			);
 			out += "|";
 			renderer.replaced(2);
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "after reset");
+				ctx.fillText("after reset", 0, 0);
 			});
 			out += "|";
 			renderer.repaintAll();
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "after clear");
+				ctx.fillText("after clear", 0, 0);
 			});
 			return out;
 		},
@@ -424,18 +424,18 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(6, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "value");
+				ctx.fillText("value", 0, 0);
 				ctx.setCaret(5, 0);
 			});
 			out += "|";
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "value!");
+				ctx.fillText("value!", 0, 0);
 				ctx.setCaret(6, 0);
 			});
 			out += "|";
 			// Caret goes away: the frame still emits, to re-park the cursor.
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.setText(0, 0, "value!");
+				ctx.fillText("value!", 0, 0);
 			});
 			return out;
 		},
@@ -445,14 +445,14 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(8, 24, "rgb");
 			return renderFrame(renderer, {offset: 2}, (ctx) => {
-				ctx.setText(0, 0, "visible row");
+				ctx.fillText("visible row", 0, 0);
 				ctx.clipRect = {left: 2, top: 1, right: 10, bottom: 3};
-				ctx.setText(0, 1, "clipped horizontally");
-				ctx.setText(0, 2, "also clipped");
-				ctx.setText(0, 3, "outside the clip");
+				ctx.fillText("clipped horizontally", 0, 1);
+				ctx.fillText("also clipped", 0, 2);
+				ctx.fillText("outside the clip", 0, 3);
 				ctx.drawBorder({x: 0, y: 1, width: 14, height: 3}, {border: BOX});
 				ctx.clipRect = null;
-				ctx.setText(0, 4, "unclipped again");
+				ctx.fillText("unclipped again", 0, 4);
 			});
 		},
 	},
@@ -461,19 +461,19 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(6, 30, "rgb");
 			let out = renderStatic(renderer, {rows: 5}, (ctx) => {
-				ctx.setText(0, 0, "plain");
-				ctx.setText(0, 1, "styled", {fg: 0xff0000, bold: true});
-				ctx.setText(0, 2, "日本語 wide");
+				ctx.fillText("plain", 0, 0);
+				ctx.fillText("styled", 0, 1, {fg: 0xff0000, bold: true});
+				ctx.fillText("日本語 wide", 0, 2);
 				ctx.drawBorder(
 					{x: 0, y: 3, width: 8, height: 2},
 					{border: BOX, style: {fg: 0x00ff00}},
 				);
-				ctx.setText(10, 3, "👍 tail");
+				ctx.fillText("👍 tail", 10, 3);
 			});
 			out += "|";
 			out += renderStatic(renderer, {rows: 2, lineEnding: "\r\n"}, (ctx) => {
-				ctx.setText(0, 0, "crlf");
-				ctx.setText(0, 1, "lines");
+				ctx.fillText("crlf", 0, 0);
+				ctx.fillText("lines", 0, 1);
 			});
 			return out;
 		},
