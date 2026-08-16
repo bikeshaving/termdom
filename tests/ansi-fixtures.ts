@@ -7,11 +7,7 @@
  * that alters a single byte fails the fixture test.
  */
 
-import {
-	Renderer,
-	type ColorDepth,
-	type CellStyle,
-} from "../src/internal/ansi.js";
+import {Screen, type ColorDepth, type CellStyle} from "../src/internal/ansi.js";
 import {BorderEdgeStyle} from "../src/internal/styles.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
@@ -70,7 +66,7 @@ const EVERY_ATTRIBUTE: Array<[string, CellStyle]> = [
 ];
 
 function attributeSweep(colorDepth: ColorDepth): string {
-	const renderer = new Renderer(EVERY_ATTRIBUTE.length + 2, 40, colorDepth);
+	const renderer = new Screen(EVERY_ATTRIBUTE.length + 2, 40, colorDepth);
 	return renderFrame(renderer, {offset: 0}, (ctx) => {
 		EVERY_ATTRIBUTE.forEach(([label, style], row) => {
 			ctx.setText(0, row, label.padEnd(12), style);
@@ -98,7 +94,7 @@ export const scenarios: Scenario[] = [
 		// separated by a row reset) never reaches.
 		name: "SGR delta across adjacent cells",
 		run: () => {
-			const renderer = new Renderer(4, 40, "rgb");
+			const renderer = new Screen(4, 40, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "AB", {bold: true, underline: true, fg: 0xff0000});
 				ctx.setText(2, 0, "CD", {underline: true, fg: 0xff0000});
@@ -120,7 +116,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "wide characters and combining marks",
 		run: () => {
-			const renderer = new Renderer(8, 30, "rgb");
+			const renderer = new Screen(8, 30, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "CJK 日本語 end");
 				ctx.setText(0, 1, "emoji 👍🏽 end");
@@ -141,7 +137,7 @@ export const scenarios: Scenario[] = [
 		// that hole.
 		name: "wide-char boundary rewrite",
 		run: () => {
-			const renderer = new Renderer(4, 20, "rgb");
+			const renderer = new Screen(4, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "ab日本cd");
 				ctx.setText(0, 1, "日本日本");
@@ -162,7 +158,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "borders, merged and styled",
 		run: () => {
-			const renderer = new Renderer(9, 24, "rgb");
+			const renderer = new Screen(9, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: BOX});
 				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: BOX});
@@ -213,7 +209,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "fillRect backgrounds, default and inverse",
 		run: () => {
-			const renderer = new Renderer(6, 20, "rgb");
+			const renderer = new Screen(6, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.fillRect({x: 0, y: 0, width: 20, height: 2}, 0x202020);
 				ctx.setText(1, 0, "selected text");
@@ -231,7 +227,7 @@ export const scenarios: Scenario[] = [
 		// cell.
 		name: "inherited background and zero-width graphemes",
 		run: () => {
-			const renderer = new Renderer(5, 20, "rgb");
+			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.fillRect({x: 0, y: 0, width: 12, height: 1}, 0x004000);
 				ctx.setText(2, 0, "over", {fg: 0xffff00, bold: true});
@@ -249,7 +245,7 @@ export const scenarios: Scenario[] = [
 		// axis bounds the write.
 		name: "clip rect with unbounded axes",
 		run: () => {
-			const renderer = new Renderer(6, 24, "rgb");
+			const renderer = new Screen(6, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.clipRect = {left: 4, top: -Infinity, right: 12, bottom: Infinity};
 				ctx.setText(0, 0, "horizontally bounded");
@@ -266,7 +262,7 @@ export const scenarios: Scenario[] = [
 		// widths it recorded, so the number is a property of the buffer.
 		name: "wrapped rows above the cursor park",
 		run: () => {
-			const renderer = new Renderer(4, 20, "rgb");
+			const renderer = new Screen(4, 20, "rgb");
 			renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "a short line");
 				ctx.setText(0, 1, "日本語 wide and long");
@@ -274,7 +270,7 @@ export const scenarios: Scenario[] = [
 				ctx.setText(0, 3, "last");
 			});
 			const before = [20, 10, 7, 5].map((cols) =>
-				renderer.wrappedRowsAboveCursorPark(cols),
+				renderer.wrappedRowsAbovePark(cols),
 			);
 			// A caret park moves the measurement point.
 			renderFrame(renderer, {offset: 0}, (ctx) => {
@@ -285,7 +281,7 @@ export const scenarios: Scenario[] = [
 				ctx.setCaret(3, 1);
 			});
 			const after = [20, 10, 7, 5].map((cols) =>
-				renderer.wrappedRowsAboveCursorPark(cols),
+				renderer.wrappedRowsAbovePark(cols),
 			);
 			return JSON.stringify({before, after});
 		},
@@ -293,7 +289,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "edgeRow outline over existing cells",
 		run: () => {
-			const renderer = new Renderer(5, 20, "rgb");
+			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 1, "boxed", {fg: 0xff0000, bold: true});
 				ctx.edgeRow(0, 1, 12, {edge: "underline", style: {fg: 0x5fafff}});
@@ -308,7 +304,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "incremental diff across frames",
 		run: () => {
-			const renderer = new Renderer(6, 24, "rgb");
+			const renderer = new Screen(6, 24, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
 					ctx.setText(0, row, `row ${row} content`);
@@ -347,7 +343,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "scroll transform frames",
 		run: () => {
-			const renderer = new Renderer(10, 24, "rgb");
+			const renderer = new Screen(10, 24, "rgb");
 			const paint =
 				(top: number) =>
 				(ctx: import("../src/internal/ansi.js").DrawingContext) => {
@@ -402,7 +398,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "overflowing growth frame then reset",
 		run: () => {
-			const renderer = new Renderer(5, 20, "rgb");
+			const renderer = new Screen(5, 20, "rgb");
 			let out = renderFrame(
 				renderer,
 				{offset: 0, cursorRow: 0, regionRows: 9},
@@ -411,12 +407,12 @@ export const scenarios: Scenario[] = [
 				},
 			);
 			out += "|";
-			renderer.resetScreen(2);
+			renderer.replaced(2);
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "after reset");
 			});
 			out += "|";
-			renderer.clearPreviousBuffer();
+			renderer.repaintAll();
 			out += renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "after clear");
 			});
@@ -426,7 +422,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "caret parking",
 		run: () => {
-			const renderer = new Renderer(6, 20, "rgb");
+			const renderer = new Screen(6, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.setText(0, 0, "value");
 				ctx.setCaret(5, 0);
@@ -447,7 +443,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "clipRect and viewport offset",
 		run: () => {
-			const renderer = new Renderer(8, 24, "rgb");
+			const renderer = new Screen(8, 24, "rgb");
 			return renderFrame(renderer, {offset: 2}, (ctx) => {
 				ctx.setText(0, 0, "visible row");
 				ctx.clipRect = {left: 2, top: 1, right: 10, bottom: 3};
@@ -463,7 +459,7 @@ export const scenarios: Scenario[] = [
 	{
 		name: "static render to a pipe",
 		run: () => {
-			const renderer = new Renderer(6, 30, "rgb");
+			const renderer = new Screen(6, 30, "rgb");
 			let out = renderStatic(renderer, {rows: 5}, (ctx) => {
 				ctx.setText(0, 0, "plain");
 				ctx.setText(0, 1, "styled", {fg: 0xff0000, bold: true});

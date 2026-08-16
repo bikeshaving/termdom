@@ -366,7 +366,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Get static ANSI content using Renderer's generateANSI (no cursor movements)
+	 * Get static ANSI content using Screen's generateANSI (no cursor movements)
 	 */
 	getStaticANSI(): string {
 		const grid = this.#xtermToCellGrid();
