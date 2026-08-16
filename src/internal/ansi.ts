@@ -1113,12 +1113,13 @@ export class DrawingContext {
 			edges: edgeStyles,
 		}: {
 			border: BorderStyles;
+			/** The style of any side `edges` does not name. */
 			style?: CellStyle;
 			/**
-			 * Per-edge overrides for differently-colored sides. A corner
-			 * cell's glyph spans two edges but holds one color; it takes the
-			 * horizontal edge's, the closest a cell gets to the browser's
-			 * diagonal miter.
+			 * How each side is drawn. A corner cell's glyph spans two sides
+			 * but holds one color; it takes the horizontal side's, the
+			 * closest a cell gets to the browser's diagonal miter -- which is
+			 * this module's business, not the caller's.
 			 */
 			edges?: {
 				top?: CellStyle;
