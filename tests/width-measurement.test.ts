@@ -14,11 +14,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {
-	CellGrid,
-	generateANSI,
-	type WidthMeasurer,
-} from "../src/internal/ansi.js";
+import {Screen, type WidthMeasurer} from "../src/internal/ansi.js";
 import {
 	clusterAdvance,
 	recordClusterAdvance,
@@ -100,23 +96,48 @@ function scriptTerminal(
 	return {written, probeCount: () => probes};
 }
 
+/**
+ * One frame through the public surface: clusters drawn at their columns,
+ * the measurer riding the frame options, the emitted bytes returned. The
+ * emitter is what is under test; the pen is just how cells get there.
+ */
+function emit(
+	rows: number,
+	cols: number,
+	cells: Array<[number, string]>,
+	measurer: WidthMeasurer,
+): string {
+	const screen = new Screen(rows, cols, "rgb");
+	const frame = screen.beginFrame({offset: 0, measurer});
+	for (const [index, cluster] of cells) {
+		frame.context.drawText(cluster, index % cols, Math.floor(index / cols));
+	}
+	return frame.end();
+}
+
 function settle(ms = 60): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 test("a frame asks about each unmeasured uncertain cluster, once", () => {
-	const grid = new CellGrid(1, 20);
-	grid.setCell(0, "\u{1F31E}"); // 🌞
-	grid.setCell(2, "a");
-	grid.setCell(3, "\u{1F31E}");
-
 	const {probes, measurer} = recordingMeasurer();
-	const output = generateANSI(grid, "rgb", undefined, measurer);
+	const output = emit(
+		1,
+		20,
+		[
+			[0, "\u{1F31E}"],
+			[2, "a"],
+			[3, "\u{1F31E}"],
+		],
+		measurer,
+	);
 
 	expect(probes.length).toBe(1);
-	expect(probes[0]).toEqual({
+	// The run is a frame-internal counter; which run a probe is IN only
+	// matters relative to other probes, which the run tests below pin.
+	const {cluster, column, width} = probes[0];
+	expect({cluster, column, width}).toEqual({
 		cluster: "\u{1F31E}",
-		run: 0,
 		column: 0,
 		width: 2,
 	});
@@ -143,15 +164,15 @@ test("the characters every terminal agrees about are never asked about", () => {
 		"\u2044", // ⁄, Narrow General Punctuation
 	];
 
-	const grid = new CellGrid(1, 200);
+	const cells: Array<[number, string]> = [];
 	let col = 0;
 	for (const cluster of trusted) {
-		grid.setCell(col, cluster);
+		cells.push([col, cluster]);
 		col += stringWidth(cluster);
 	}
 
 	const {probes, measurer} = recordingMeasurer();
-	const output = generateANSI(grid, "rgb", undefined, measurer);
+	const output = emit(1, 200, cells, measurer);
 
 	expect(probes).toEqual([]);
 	expect(output).not.toContain("\x1b[6n");
@@ -179,10 +200,8 @@ test("the characters terminals disagree about are all asked about", () => {
 	];
 
 	for (const [name, cluster] of uncertain) {
-		const grid = new CellGrid(1, 40);
-		grid.setCell(0, cluster);
 		const {probes, measurer} = recordingMeasurer();
-		generateANSI(grid, "rgb", undefined, measurer);
+		emit(1, 40, [[0, cluster]], measurer);
 		expect([name, probes.map((probe) => probe.cluster)]).toEqual([
 			name,
 			[cluster],
@@ -194,25 +213,33 @@ test("a cluster at the right margin is left for a frame with room", () => {
 	// The last column is where the arithmetic stops working: a glyph that
 	// reaches it leaves the cursor there with wrap pending rather than past it,
 	// and one reply column then means two different advances.
-	const grid = new CellGrid(2, 10);
-	grid.setCell(8, "\u{1F31F}"); // 🌟, ending flush with the margin
-	grid.setCell(10, "\u{1F31F}"); // and again, at the start of the next row
-
 	const {probes, measurer} = recordingMeasurer();
-	generateANSI(grid, "rgb", undefined, measurer);
+	emit(
+		2,
+		10,
+		[
+			[8, "\u{1F31F}"], // 🌟, ending flush with the margin
+			[10, "\u{1F31F}"], // and again, at the start of the next row
+		],
+		measurer,
+	);
 
 	expect(probes.length).toBe(1);
 	expect(probes[0].column).toBe(0);
 });
 
 test("clusters reached by advancing share a run; a cursor move starts a new one", () => {
-	const grid = new CellGrid(2, 40);
-	grid.setCell(0, "\u{1F320}"); // 🌠
-	grid.setCell(2, "\u{1F321}️"); // 🌡️ immediately after it
-	grid.setCell(40, "\u{1F322}️"); // next row: the cursor is placed
-
 	const {probes, measurer} = recordingMeasurer();
-	generateANSI(grid, "rgb", undefined, measurer);
+	emit(
+		2,
+		40,
+		[
+			[0, "\u{1F320}"], // 🌠
+			[2, "\u{1F321}️"], // 🌡️ immediately after it
+			[40, "\u{1F322}️"], // next row: the cursor is placed
+		],
+		measurer,
+	);
 
 	expect(probes.map((probe) => probe.column)).toEqual([0, 2, 0]);
 	expect(probes[0].run).toBe(probes[1].run);
@@ -224,12 +251,16 @@ test("a gap crossed by cursor-forward keeps the run it was crossing", () => {
 	// cursor really is, so a glyph that came out narrow leaves the cursor short
 	// on the far side of the gap too. Only a carriage return names a column
 	// outright, and only that ends a run.
-	const grid = new CellGrid(1, 40);
-	grid.setCell(0, "\u{1F33B}"); // 🌻
-	grid.setCell(10, "\u{1F33C}"); // 🌼, ten columns further along
-
 	const {probes, measurer} = recordingMeasurer();
-	const output = generateANSI(grid, "rgb", undefined, measurer);
+	const output = emit(
+		1,
+		40,
+		[
+			[0, "\u{1F33B}"],
+			[10, "\u{1F33C}"],
+		],
+		measurer,
+	);
 
 	expect(output).toContain("\x1b[8C");
 	expect(probes.map((probe) => probe.column)).toEqual([0, 10]);

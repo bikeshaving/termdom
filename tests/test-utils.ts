@@ -14,8 +14,7 @@ import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
-import {CellGrid, type ColorDepth} from "../src/internal/ansi.js";
-import {generateANSI} from "../src/internal/ansi.js";
+import {Screen, type ColorDepth} from "../src/internal/ansi.js";
 import {stringWidth} from "../src/internal/text.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {LayoutEngine} from "../src/internal/layout.js";
@@ -294,18 +293,24 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Convert xterm buffer to our cell grid
+	 * The emulator's screen, re-rendered through the public pen: every cell
+	 * the buffer holds becomes a drawText, and the frame's own emitter
+	 * spells the colors -- so comparisons read TermDOM's SGR dialect.
 	 */
-	#xtermToCellGrid(): CellGrid {
+	getStaticANSI(): string {
 		const buffer = this.terminal.buffer.active;
-		const grid = new CellGrid(this.terminal.rows, this.terminal.cols);
+		const screen = new Screen(
+			this.terminal.rows,
+			this.terminal.cols,
+			this.#detectColorDepth(),
+		);
+		const frame = screen.beginFrame({offset: 0});
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
 			if (!line) continue;
 
-			let outputCol = 0; // Track output column separately from xterm column
-
+			let outputCol = 0;
 			for (
 				let xtermCol = 0;
 				xtermCol < this.terminal.cols && outputCol < this.terminal.cols;
@@ -313,67 +318,31 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 			) {
 				const cell = line.getCell(xtermCol);
 				if (!cell) continue;
+				// A width-0 cell continues the wide glyph to its left.
+				if (cell.getWidth() === 0) continue;
 
-				// Skip width-0 cells (continuation cells for wide characters like emojis)
-				// This is exactly how the serialize addon handles it
-				if (cell.getWidth() === 0) {
-					continue;
-				}
-
-				const chars = cell.getChars();
-				// Handle empty chars as spaces (this happens with leading indentation)
-				const actualChars = chars || " ";
-				// Don't skip spaces - they're important for text layout
-
-				// Convert xterm style to our format
-				const fg = cell.getFgColor();
-				const bg = cell.getBgColor();
-
-				// Check if cell has explicit color styling - XTerm returns theme colors for default cells
-				// For default cells, we want undefined colors to use the terminal's own defaults
-				const hasExplicitFg = cell.getFgColorMode() !== 0; // 0 = default color mode
-				const hasExplicitBg = cell.getBgColorMode() !== 0; // 0 = default color mode
-
-				const cellStyle = {
-					fg: hasExplicitFg ? fg : undefined,
-					bg: hasExplicitBg ? bg : undefined,
+				const chars = cell.getChars() || " ";
+				// XTerm reports theme colors for default cells; only explicit
+				// color modes carry over, so defaults stay the terminal's own.
+				const hasExplicitFg = cell.getFgColorMode() !== 0;
+				const hasExplicitBg = cell.getBgColorMode() !== 0;
+				frame.context.drawText(chars, outputCol, row, {
+					fg: hasExplicitFg ? cell.getFgColor() : undefined,
+					bg: hasExplicitBg ? cell.getBgColor() : undefined,
 					bold: !!cell.isBold(),
 					italic: !!cell.isItalic(),
 					underline: !!cell.isUnderline(),
-					strikethrough: false, // xterm doesn't expose this directly
 					inverse: !!cell.isInverse(),
 					dim: !!cell.isDim(),
 					blink: !!cell.isBlink(),
-					overline: false, // xterm doesn't expose this directly
-				};
-
-				// Create the cell at the output position
-				grid.setCell(row * this.terminal.cols + outputCol, actualChars, {
-					style: cellStyle,
 				});
-				outputCol++;
-
-				// A wide character's continuation column stays empty; the glyph
-				// to its left already covers it.
-				const actualWidth = stringWidth(actualChars);
-				if (actualWidth === 2 && outputCol < this.terminal.cols) {
-					outputCol++;
-				}
+				outputCol += stringWidth(chars) === 2 ? 2 : 1;
 			}
 		}
 
-		return grid;
-	}
-
-	/**
-	 * Get static ANSI content using Screen's generateANSI (no cursor movements)
-	 */
-	getStaticANSI(): string {
-		const grid = this.#xtermToCellGrid();
-		// Use same color depth detection logic as TermDOM
-		const colorDepth = this.#detectColorDepth();
-		const fullOutput = generateANSI(grid, colorDepth);
-		return stripControlCodes(fullOutput);
+		// The frame emitter withholds the final row's line ending (the screen
+		// has nothing below it); the oracle's callers split on lines.
+		return stripControlCodes(frame.end() + "\r\n");
 	}
 
 	/**
