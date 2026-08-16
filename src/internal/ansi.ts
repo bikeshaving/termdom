@@ -1,25 +1,3 @@
-/**
- * The screen: the cells the terminal is showing, the cells the next frame
- * wants, and the shortest escape sequence between them.
- *
- * Two classes are the whole surface, one consumer each:
- *
- * - `Screen` is the session's. A frame is `beginFrame` (or `beginStatic`),
- *   drawing calls against the frame's context, then `end()`, which diffs
- *   against what the terminal shows and returns the bytes that close the
- *   gap. Between frames the session reports what happened to the screen --
- *   `replaced`, `scrolled`, `repaintAll` -- and the buffers, the diff, and
- *   what each event costs stay in here.
- * - `DrawingContext` is the painter's. A cell grid has no fill rule and no
- *   stroke width -- there is one act, writing cells -- so there is one verb:
- *   `drawText`, `drawRect`, `drawLine`, `drawDecoration`. `measureText`
- *   answers in the grid's one metric, and styles ride each call; the
- *   context holds no state a canvas would put on the pen. The context knows
- *   no box: lines carry half-stroke ends that union where they meet, so
- *   corners, tees and crossings decide themselves, and `drawBox` is a plain
- *   function composing four lines the way any caller could.
-
- */
 import {BOX_DRAWING, BorderEdgeStyle, ROUNDED_CORNERS} from "./styles.js";
 import {stringWidth, widthIsUncertain} from "./text.js";
 
