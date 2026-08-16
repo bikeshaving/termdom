@@ -287,14 +287,17 @@ export const scenarios: Scenario[] = [
 		},
 	},
 	{
-		name: "drawEdge outline over existing cells",
+		name: "drawDecoration outline over existing cells",
 		run: () => {
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("boxed", 0, 1, {fg: 0xff0000, bold: true});
-				ctx.drawEdge(0, 1, 12, {edge: "underline", style: {fg: 0x5fafff}});
+				ctx.drawDecoration(0, 1, 12, {
+					line: "underline",
+					style: {fg: 0x5fafff},
+				});
 				ctx.drawText("over", 0, 3, {italic: true});
-				ctx.drawEdge(0, 3, 12, {
+				ctx.drawDecoration(0, 3, 12, {
 					edge: "overline",
 					style: {fg: 0x5fafff, dim: true},
 				});

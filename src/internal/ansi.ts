@@ -12,7 +12,7 @@
  *   what each event costs stay in here.
  * - `DrawingContext` is the painter's. A cell grid has no fill rule and no
  *   stroke width -- there is one act, writing cells -- so there is one verb:
- *   `drawText`, `drawRect`, `drawBorder`, `drawEdge`. `measureText` answers
+ *   `drawText`, `drawRect`, `drawBorder`, `drawDecoration`. `measureText` answers
  *   in the grid's one metric, and styles ride each call; the context holds
  *   no state a canvas would put on the pen. Where borders meet, and with
  *   which glyph, is decided here, never by a caller.
@@ -1111,17 +1111,17 @@ export class DrawingContext {
 	 * DEFAULT color: a cell that already carries an explicit foreground
 	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
-	drawEdge(
+	drawDecoration(
 		x: number,
 		y: number,
 		width: number,
-		{edge, style}: {edge: "underline" | "overline"; style?: CellStyle},
+		{line, style}: {line: "underline" | "overline"; style?: CellStyle},
 	): void {
 		const terminalRow = y + this.viewportOffset;
 		if (terminalRow < 0 || terminalRow >= this.rows) return;
 		const grid = this.grid;
 		const rowStart = terminalRow * this.cols;
-		const edgeBit = edge === "underline" ? Attr.Underline : Attr.Overline;
+		const edgeBit = line === "underline" ? Attr.Underline : Attr.Overline;
 		for (let col = x; col < x + width; col++) {
 			if (col < 0 || col >= this.cols) continue;
 			if (this.clipRect && !this.#inClip(y, col)) continue;
