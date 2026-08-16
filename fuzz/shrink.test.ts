@@ -14,7 +14,9 @@
  * With no environment set, the seeds that have caught a bug before are replayed
  * as a regression net and any difference fails the test. `SCAN=600 WANT=20`
  * scans 600 seeds from `FROM` (1 by default) and stops after 20 failures;
- * `SEEDS=133,149` replays a chosen few. Either way the shrunk repros land in /tmp/tdfuzz/shrunk.txt.
+ * `SEEDS=133,149` replays a chosen few. Either way the shrunk repros land in
+ * /tmp/tdfuzz/shrunk.txt, and the seed under way in /tmp/tdfuzz/seed.txt, which
+ * is where to read off a seed that crashed the engine rather than diverging.
  *
  * SCAN=600 WANT=20 npx libuild test fuzz -p node
  */
@@ -584,9 +586,17 @@ test("shrink", async () => {
 	const report: string[] = [];
 	let found = 0;
 	let checked = 0;
+	mkdirSync(REPORT_DIR, {recursive: true});
+	mkdirSync(REPORT_DIR, {recursive: true});
 	for (const seed of seeds) {
 		if (found >= wanted) break;
 		checked++;
+		// A seed that crashes the engine takes the scan down with it and never
+		// reaches the report, so the seed under way is left on disk first.
+		writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
+		// A seed that crashes the engine takes the scan down with it and never
+		// reaches the report, so the seed under way is left on disk first.
+		writeFileSync(`${REPORT_DIR}/seed.txt`, String(seed));
 		const {html, actions} = await record(seed);
 		if (!(await differs(html, actions)).differs) continue;
 		found++;
@@ -599,7 +609,6 @@ test("shrink", async () => {
 		);
 	}
 	const summary = `${found} of ${checked} scanned\n\n${report.join("\n")}`;
-	mkdirSync(REPORT_DIR, {recursive: true});
 	writeFileSync(`${REPORT_DIR}/shrunk.txt`, summary);
 	if (found > 0) throw new Error(summary);
 }, 900000);
