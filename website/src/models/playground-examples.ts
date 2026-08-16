@@ -50,11 +50,6 @@ export interface SandboxConfig {
 	termdom: string;
 	nodefs: string;
 	nodeModule: string;
-	crankStandalone: string;
-	crankDom: string;
-	marked: string;
-	markedHighlight: string;
-	tanstackTableCore: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */

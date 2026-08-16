@@ -228,7 +228,11 @@ function readSandboxConfig(): SandboxConfig | null {
  * use, and a bootstrap that runs a module URL on request. `<` is escaped so
  * no asset URL can close the script element it is written into.
  */
-/** The specifiers served from the page's own assets. */
+/**
+ * The specifiers the page serves itself: the repository's own engine, and
+ * the browser implementations of the node builtins. Everything else a
+ * program imports is someone else's package and comes from the CDN.
+ */
 function localImports(config: SandboxConfig): Record<string, string> {
 	return {
 		"@b9g/termdom": config.termdom,
@@ -237,13 +241,9 @@ function localImports(config: SandboxConfig): Record<string, string> {
 		"node:url": config.nodefs,
 		"node:os": config.nodefs,
 		"node:module": config.nodeModule,
-		"@b9g/crank/standalone": config.crankStandalone,
-		"@b9g/crank/dom": config.crankDom,
-		"marked": config.marked,
-		"marked-highlight": config.markedHighlight,
-		"@tanstack/table-core": config.tanstackTableCore,
 	};
 }
+
 
 const IMPORT_SPECIFIER =
 	/(?:^|\n)\s*import\s+(?:[^"'`]*?\s+from\s+)?["']([^"']+)["']/g;
