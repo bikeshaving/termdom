@@ -388,11 +388,7 @@ export class CellGrid {
 				if ((own & BorderMask.Bottom) === 0 && row < rows - 1) {
 					const edge = getBorderEdge(src[index + cols], BorderMask.Top);
 					if (getEdgePresence(edge)) {
-						woven = setBorderEdge(
-							woven,
-							BorderMask.Bottom,
-							getEdgeStyle(edge),
-						);
+						woven = setBorderEdge(woven, BorderMask.Bottom, getEdgeStyle(edge));
 					}
 				}
 				if ((own & BorderMask.Left) === 0 && col > 0) {
