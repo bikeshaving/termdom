@@ -435,7 +435,7 @@ function sheet(): string {
   dialog .again { color: #7fae90; padding-top: 1px; }
   dialog input { width: 12ch; }
 
-  .hint { padding-top: 1px; color: #7fae90; }
+  .hint { padding-top: 1px; color: #7fae90; text-align: center; }
   .hint b { color: #cfe8d8; font-weight: bold; }
 
   ${css(TIERS.compact)}

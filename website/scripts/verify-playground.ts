@@ -96,9 +96,14 @@ await page.selectOption("select", "markdown");
 report(await waitForText("Markdown in the Terminal", 15000), "playground: markdown renders through marked and Prism");
 
 // The homepage embeds hydrate as they come near and paint their programs.
-// The walk down the page mirrors a reader scrolling: each stop lets the
-// intersection observer fire and the programs boot.
+// The first one is above the fold, so it is checked where a reader meets
+// it -- before any scrolling, which would carry it away faster than the
+// observer that mounts it.
 await page.goto(`${ORIGIN}/`, {waitUntil: "load"});
+report(await waitForText("Installing"), "home: progress-bar embed paints");
+
+// The walk down the page mirrors a reader scrolling: each stop lets the
+// observer fire and the programs below boot.
 for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
 	await page.evaluate(
 		(f) => window.scrollTo(0, document.body.scrollHeight * f),
@@ -106,7 +111,6 @@ for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
 	);
 	await new Promise((r) => setTimeout(r, 1000));
 }
-report(await waitForText("Installing"), "home: progress-bar embed paints");
 report(await waitForText("workspace/termdom"), "home: tree embed reads the virtual filesystem");
 report(await waitForText("New profile"), "home: form embed paints");
 
