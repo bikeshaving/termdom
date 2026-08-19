@@ -656,3 +656,13 @@ test("preserved spaces survive inline element boundaries", async () => {
 	expect(lines[2]).toContain("| collapsed");
 	dom.dispose();
 });
+
+test("break-spaces preserves every space", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		'<div style="white-space: break-spaces">a  b   c</div>';
+	await nextFrame(dom);
+	expect(terminal.getVisibleText()).toContain("a  b   c");
+	dom.dispose();
+});
