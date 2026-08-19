@@ -11,7 +11,7 @@ const FS: Record<string, string[]> = {
 };
 
 export default {
-	setup(termdom: TermDOM) {
+	setup(termdom: TermDOM): void {
 		const {document} = termdom;
 		const style = document.createElement("style");
 		style.textContent = `

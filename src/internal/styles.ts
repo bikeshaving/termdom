@@ -154,7 +154,6 @@ const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
 const kCounterScopes = Symbol("counterScopes");
-const kIndexedStyles = Symbol("indexedStyles");
 const kComputePseudoElementStyle = Symbol("computePseudoElementStyle");
 const kParsedRules = Symbol("parsedRules");
 const kReachingClasses = Symbol("reachingClasses");
@@ -2779,52 +2778,40 @@ function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
 	}
 }
 
-/** An indexed CSSOM collection: `list[0]` alongside `list.item(0)`. */
-function indexed<T extends object>(list: T, items: readonly unknown[]): T {
-	// Arbitrary live indices have no other spelling.
-	// eslint-disable-next-line no-restricted-globals
-	return new Proxy(list, {
-		get(target, property) {
-			if (typeof property === "string" && /^\d+$/.test(property)) {
-				return items[Number(property)];
-			}
-			// The list itself is the receiver: its accessors and methods read
-			// private fields, which a proxy receiver cannot reach.
-			const value = Reflect.get(target, property, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-		set(target, property, value) {
-			// As with a read: the list itself is the receiver, so a setter
-			// reaches the private fields behind it.
-			return Reflect.set(target, property, value, target);
-		},
-		has(target, property) {
-			if (typeof property === "string" && /^\d+$/.test(property)) {
-				return Number(property) < items.length;
-			}
-			return Reflect.has(target, property);
-		},
-		ownKeys(target) {
-			return [
-				...items.map((_, index) => String(index)),
-				...Reflect.ownKeys(target),
-			];
-		},
-		getOwnPropertyDescriptor(target, property) {
-			if (typeof property === "string" && /^\d+$/.test(property)) {
-				const index = Number(property);
-				if (index < items.length) {
-					return {
-						value: items[index],
-						writable: false,
-						enumerable: true,
-						configurable: true,
-					};
-				}
-			}
-			return Reflect.getOwnPropertyDescriptor(target, property);
-		},
-	});
+const kIndexCount = Symbol("index count");
+
+interface IndexedCollection {
+	readonly length: number;
+	item(index: number): unknown;
+	[kIndexCount]?: number;
+	[index: number]: unknown;
+}
+
+/**
+ * Define the collection's own index accessors, `list[0]` alongside
+ * `list.item(0)`. Each accessor reads through item(), so the values are as
+ * live as the collection; only the count is maintained, re-synchronized here
+ * by whatever grows or shrinks the collection. Accessors beat a Proxy: every
+ * non-index read of a proxied list pays the get trap, and each method read
+ * pays a bind.
+ */
+function syncIndexed(collection: object, items?: readonly unknown[]): void {
+	const list = collection as IndexedCollection;
+	const previous = list[kIndexCount] ?? 0;
+	const length = items ? items.length : list.length;
+	for (let index = previous; index < length; index++) {
+		Object.defineProperty(list, index, {
+			get: items ?
+					(): unknown => items[index] :
+					(): unknown => list.item(index) ?? undefined,
+			enumerable: true,
+			configurable: true,
+		});
+	}
+	for (let index = length; index < previous; index++) {
+		delete list[index];
+	}
+	list[kIndexCount] = length;
 }
 
 /** The media queries a sheet or an `@media` rule applies under. */
@@ -2938,7 +2925,6 @@ export class MediaList {
 		this[kMedia] = [];
 		this[kOnChange] = onChange ?? null;
 		this[kParse](mediaText);
-		return indexed(this, this[kMedia]);
 	}
 
 	[kParse](text: string): void {
@@ -2949,6 +2935,7 @@ export class MediaList {
 				this[kMedia].push(serialized);
 			}
 		}
+		syncIndexed(this);
 	}
 
 	get mediaText(): string {
@@ -2986,6 +2973,7 @@ export class MediaList {
 			return;
 		}
 		this[kMedia].push(query);
+		syncIndexed(this);
 		this[kOnChange]?.();
 	}
 
@@ -3003,6 +2991,7 @@ export class MediaList {
 		}
 		this[kMedia].length = 0;
 		this[kMedia].push(...kept);
+		syncIndexed(this);
 		this[kOnChange]?.();
 	}
 
@@ -3097,6 +3086,7 @@ export abstract class CSSGroupingRule extends CSSRule {
 		this[kRuleList] = createRuleList(this[kRules]);
 		if (build) {
 			this[kRules].push(...build(this));
+			syncIndexed(this[kRuleList]);
 		}
 	}
 
@@ -3130,6 +3120,7 @@ export abstract class CSSGroupingRule extends CSSRule {
 			);
 		}
 		this[kRules].splice(index, 0, inserted);
+		syncIndexed(this[kRuleList]);
 		notifyRule(this);
 		return index;
 	}
@@ -3150,6 +3141,7 @@ export abstract class CSSGroupingRule extends CSSRule {
 		}
 		detachRule(this[kRules][index]);
 		this[kRules].splice(index, 1);
+		syncIndexed(this[kRuleList]);
 		notifyRule(this);
 	}
 }
@@ -4095,8 +4087,9 @@ export class CSSKeyframesRule extends CSSRule {
 		this[kRuleList] = createRuleList(this[kRules]);
 		if (build) {
 			this[kRules].push(...build(this));
+			syncIndexed(this[kRuleList]);
 		}
-		return indexed(this, this[kRules]);
+		syncIndexed(this, this[kRules]);
 	}
 
 	get type(): number {
@@ -4128,6 +4121,8 @@ export class CSSKeyframesRule extends CSSRule {
 		);
 		if (rule instanceof CSSKeyframesRule) {
 			this[kRules].push(...Array.from(rule.cssRules));
+			syncIndexed(this[kRuleList]);
+			syncIndexed(this, this[kRules]);
 			notifyRule(this);
 		}
 	}
@@ -4139,6 +4134,8 @@ export class CSSKeyframesRule extends CSSRule {
 				continue;
 			}
 			this[kRules].splice(index, 1);
+			syncIndexed(this[kRuleList]);
+			syncIndexed(this, this[kRules]);
 			notifyRule(this);
 			return;
 		}
@@ -4192,7 +4189,9 @@ export class CSSRuleList {
 }
 
 function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
-	return indexed(new CSSRuleList(rules), rules);
+	const list = new CSSRuleList(rules);
+	syncIndexed(list);
+	return list;
 }
 
 /** The stylesheets of a document or a shadow root. */
@@ -4285,6 +4284,7 @@ export class CSSStyleSheet {
 		this[kText] = text;
 		this[kRules].length = 0;
 		this[kRules].push(...parseRules(text, this, null));
+		syncIndexed(this[kRuleList]);
 	}
 
 	/**
@@ -4376,6 +4376,7 @@ export class CSSStyleSheet {
 		}
 		this[kCheckRuleOrder](inserted, index);
 		this[kRules].splice(index, 0, inserted);
+		syncIndexed(this[kRuleList]);
 		this[kChanged]();
 		return index;
 	}
@@ -4461,6 +4462,7 @@ export class CSSStyleSheet {
 		}
 		detachRule(removed);
 		this[kRules].splice(index, 1);
+		syncIndexed(this[kRuleList]);
 		this[kChanged]();
 	}
 
@@ -4498,6 +4500,7 @@ export class CSSStyleSheet {
 				(rule) => !(rule instanceof CSSImportRule),
 			),
 		);
+		syncIndexed(this[kRuleList]);
 		this[kChanged]();
 	}
 
@@ -5957,7 +5960,9 @@ function installStyleSheets(window: EngineWindow): void {
 		Object.defineProperty(documentPrototype, "styleSheets", {
 			get(this: Document) {
 				const sheets = declaredStyleSheets(this);
-				return indexed(new StyleSheetList(sheets), sheets);
+				const list = new StyleSheetList(sheets);
+				syncIndexed(list);
+				return list;
 			},
 			configurable: true,
 			enumerable: true,
@@ -5988,7 +5993,9 @@ function installStyleSheets(window: EngineWindow): void {
 			Object.defineProperty(window.ShadowRoot.prototype, "styleSheets", {
 				get(this: ShadowRoot) {
 					const sheets = declaredStyleSheets(this);
-					return indexed(new StyleSheetList(sheets), sheets);
+					const list = new StyleSheetList(sheets);
+					syncIndexed(list);
+					return list;
 				},
 				configurable: true,
 				enumerable: true,
@@ -6264,34 +6271,16 @@ export function pseudoStyleOf(
 }
 
 /**
- * A computed style that answers by index. The properties it enumerates are its
- * own `item`s -- every longhand, then the custom properties in effect -- and a
- * live style's list changes under it, so the indices are answered on demand
- * rather than written onto the object.
+ * Expose a computed style's indices to an author.
+ *
+ * The index accessors read through item(), so they answer the live list; the
+ * count re-synchronizes on refresh, but only for declarations that have been
+ * handed out here -- the engine's own computed styles never materialize an
+ * item list.
  */
 function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
-	// A live declaration's indices change under it; they cannot be defined.
-	// eslint-disable-next-line no-restricted-globals
-	return new Proxy(declaration, {
-		get(target, property) {
-			if (typeof property === "string" && /^\d+$/.test(property)) {
-				return target.item(Number(property)) || undefined;
-			}
-			// The declaration itself is the receiver: its accessors read
-			// private fields, which a proxy receiver cannot reach.
-			const value = Reflect.get(target, property, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-		set(target, property, value) {
-			return Reflect.set(target, property, value, target);
-		},
-		has(target, property) {
-			if (typeof property === "string" && /^\d+$/.test(property)) {
-				return Number(property) < target.length;
-			}
-			return Reflect.has(target, property);
-		},
-	});
+	syncIndexed(declaration);
+	return declaration;
 }
 
 /** What a read answers before a document has a cascade behind it. */
@@ -6827,6 +6816,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kCustom] = null;
 		this[kResolved].clear();
 		this[kUsed]?.clear();
+		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
+			syncIndexed(this);
+		}
 	}
 
 	/**
@@ -7340,6 +7332,9 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 		}
 		this[kResolved].clear();
 		this[kNodeResolved].clear();
+		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
+			syncIndexed(this);
+		}
 	}
 
 	/**
@@ -8232,15 +8227,6 @@ interface CounterScope {
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 	/**
-	 * The by-index view of each element's computed style, held so an author
-	 * reading `getComputedStyle(el)` twice gets one object both times.
-	 */
-	declare [kIndexedStyles]: WeakMap<
-		Element,
-		{of: ComputedStyleDeclaration; proxy: ComputedStyleDeclaration}
-	>;
-
-	/**
 	 * The counter every computed style watches. A bump means the whole cascade
 	 * changed -- new rules, a new sheet -- and every declaration handed out
 	 * must resolve again.
@@ -8330,10 +8316,6 @@ export class StyleManager {
 		this[kComputedStyleCache] = new WeakMap<
 			Element,
 			ComputedStyleDeclaration
-		>();
-		this[kIndexedStyles] = new WeakMap<
-			Element,
-			{of: ComputedStyleDeclaration; proxy: ComputedStyleDeclaration}
 		>();
 		this[kStyleEpoch] = {value: 0};
 		this[kShadowRoots] = new Set<ShadowRoot>();
@@ -8837,16 +8819,9 @@ export class StyleManager {
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
-		let indexedStyle = this[kIndexedStyles].get(element);
-		const declaration = this.declarationFor(element);
-		if (!indexedStyle || indexedStyle.of !== declaration) {
-			indexedStyle = {
-				of: declaration,
-				proxy: indexedDeclaration(declaration),
-			};
-			this[kIndexedStyles].set(element, indexedStyle);
-		}
-		return indexedStyle.proxy as unknown as globalThis.CSSStyleDeclaration;
+		return indexedDeclaration(
+			this.declarationFor(element),
+		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	/**

@@ -392,7 +392,11 @@ function apply(dom: any, action: Action): void {
 }
 
 /** Build, run the script with a frame between each action, park the camera. */
-async function play(run: Run, cols?: number, rows?: number) {
+async function play(
+	run: Run,
+	cols?: number,
+	rows?: number,
+): Promise<ReturnType<typeof makeDOM>> {
 	const made = makeDOM(cols, rows);
 	made.dom.document.body.innerHTML = run.document.html;
 	await nextFrame(made.dom);
@@ -406,7 +410,11 @@ async function play(run: Run, cols?: number, rows?: number) {
 }
 
 /** The same final tree, transferred into an untouched engine and drawn once. */
-async function replay(dom: any, cols?: number, rows?: number) {
+async function replay(
+	dom: any,
+	cols?: number,
+	rows?: number,
+): Promise<ReturnType<typeof makeDOM>> {
 	const made = makeDOM(cols, rows);
 	for (const attribute of Array.from(dom.document.body.attributes) as any[]) {
 		made.dom.document.body.setAttribute(attribute.name, attribute.value);

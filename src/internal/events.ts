@@ -475,8 +475,8 @@ export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 			const element = node as Element;
 			const candidate = (element as any).autofocus ?
 				element :
-					element.querySelector?.("[autofocus]");
-			(candidate as HTMLElement | null)?.focus?.();
+					element.querySelector("[autofocus]");
+			(candidate as HTMLElement | null)?.focus();
 		}
 	}
 }

@@ -11,7 +11,7 @@ const ENTER = "\r";
 const TAB = "\t";
 
 export default {
-	async setup(termdom: TermDOM) {
+	async setup(termdom: TermDOM): Promise<void> {
 		const {mount} = await import("../../examples/solitaire.js");
 		mount(termdom as never, {deal: 13});
 	},

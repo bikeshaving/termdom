@@ -343,7 +343,7 @@ document.addEventListener("keydown", (event) => {
 
 // A click on a day card charts that day.
 report.addEventListener("click", (event) => {
-	const card = (event.target as Element | null)?.closest?.(".day");
+	const card = (event.target as Element | null)?.closest(".day");
 	if (!card || !lastData) {
 		return;
 	}

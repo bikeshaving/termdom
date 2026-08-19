@@ -2,7 +2,7 @@
 import type {TermDOM} from "../../src/index.js";
 
 export default {
-	setup(termdom: TermDOM) {
+	setup(termdom: TermDOM): () => void {
 		const {document} = termdom;
 		document.body.innerHTML = `
 			<style>

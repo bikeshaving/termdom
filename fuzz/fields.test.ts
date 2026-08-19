@@ -161,7 +161,10 @@ const scriptArbitrary = fc.array(commandArbitrary, {
 	maxLength: 12,
 });
 
-async function play(tag: "input" | "textarea", script: Command[]) {
+async function play(
+	tag: "input" | "textarea",
+	script: Command[],
+): Promise<void> {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport}) as any;
 	dom.document.body.innerHTML = `<${tag}></${tag}>`;
