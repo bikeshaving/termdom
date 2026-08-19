@@ -34,7 +34,7 @@ const COMBINING = /[\p{M}\p{Cf}]/u;
  * wanted is promoted on its next hit. Recency is approximate, the bound is
  * exact: at most 2x the limit is ever held.
  */
-export class LRUCache<TKey, TValue> {
+class LRUCache<TKey, TValue> {
 	declare limit: number;
 	declare map: Map<TKey, TValue>;
 	declare old: Map<TKey, TValue>;

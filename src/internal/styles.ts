@@ -2347,7 +2347,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
  * IDL attribute, which is what separates it from the descriptor blocks an
  * at-rule holds -- `cssFloat` reaches a style rule's block and no @page's.
  */
-export class CSSStyleProperties extends CSSStyleDeclaration {}
+class CSSStyleProperties extends CSSStyleDeclaration {}
 
 /** Custom properties keep their case; everything else is ASCII-lowercased. */
 function normalizePropertyName(property: string): string {
@@ -3197,7 +3197,7 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 }
 
 /** A rule whose body is a declaration block rather than a rule list. */
-export abstract class CSSDeclarationBlockRule extends CSSRule {
+abstract class CSSDeclarationBlockRule extends CSSRule {
 	declare [kStyle]: CSSStyleDeclaration;
 
 	constructor(
@@ -3242,7 +3242,7 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 }
 
 /** `@font-face`: the descriptors of a font this terminal will never load. */
-export class CSSFontFaceRule extends CSSDeclarationBlockRule {
+class CSSFontFaceRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@font-face";
 
@@ -3256,7 +3256,7 @@ export class CSSFontFaceRule extends CSSDeclarationBlockRule {
 }
 
 /** `@page`: the page selector and its descriptors. */
-export class CSSPageRule extends CSSDeclarationBlockRule {
+class CSSPageRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@page";
 
@@ -3319,7 +3319,7 @@ function serializePageSelector(selector: string): string {
 const kName = Symbol("name");
 
 /** `@counter-style`: a counter's name and the descriptors that define it. */
-export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
+class CSSCounterStyleRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@counter-style";
 
@@ -3357,7 +3357,7 @@ export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
 }
 
 /** `@property`: a custom property's registration. */
-export class CSSPropertyRule extends CSSDeclarationBlockRule {
+class CSSPropertyRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@property";
 
@@ -3398,7 +3398,7 @@ export class CSSPropertyRule extends CSSDeclarationBlockRule {
 }
 
 /** `@font-palette-values`: a palette's name and its descriptors. */
-export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
+class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
 	static readonly atRule = "@font-palette-values";
 
@@ -3447,7 +3447,7 @@ const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 const kKeyText = Symbol("keyText");
 
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
-export class CSSKeyframeRule extends CSSDeclarationBlockRule {
+class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	declare [kKeyText]: string;
 
 	constructor(
@@ -3570,7 +3570,7 @@ abstract class CSSTextConditionRule extends CSSConditionRule {
 }
 
 /** `@supports`: its rules apply, since what this engine supports it renders. */
-export class CSSSupportsRule extends CSSTextConditionRule {
+class CSSSupportsRule extends CSSTextConditionRule {
 	get type(): number {
 		return RULE_TYPES.SUPPORTS_RULE;
 	}
@@ -3581,7 +3581,7 @@ export class CSSSupportsRule extends CSSTextConditionRule {
 }
 
 /** `@container`: parsed, with no container query engine behind it. */
-export class CSSContainerRule extends CSSTextConditionRule {
+class CSSContainerRule extends CSSTextConditionRule {
 	get type(): number {
 		return 0;
 	}
@@ -3606,7 +3606,7 @@ export class CSSContainerRule extends CSSTextConditionRule {
 const kPrelude = Symbol("prelude");
 
 /** `@scope`: parsed, and its rules apply unscoped. */
-export class CSSScopeRule extends CSSGroupingRule {
+class CSSScopeRule extends CSSGroupingRule {
 	declare [kPrelude]: string;
 
 	constructor(
@@ -3640,7 +3640,7 @@ export class CSSScopeRule extends CSSGroupingRule {
 }
 
 /** `@starting-style`: parsed, with no transitions behind it. */
-export class CSSStartingStyleRule extends CSSGroupingRule {
+class CSSStartingStyleRule extends CSSGroupingRule {
 	get type(): number {
 		return 0;
 	}
@@ -3651,7 +3651,7 @@ export class CSSStartingStyleRule extends CSSGroupingRule {
 }
 
 /** `@layer name { ... }`: its rules cascade in source order. */
-export class CSSLayerBlockRule extends CSSGroupingRule {
+class CSSLayerBlockRule extends CSSGroupingRule {
 	declare [kName]: string;
 
 	constructor(
@@ -3681,7 +3681,7 @@ export class CSSLayerBlockRule extends CSSGroupingRule {
 const kNames = Symbol("names");
 
 /** `@layer a, b;`: the layer order, declared without a block. */
-export class CSSLayerStatementRule extends CSSRule {
+class CSSLayerStatementRule extends CSSRule {
 	declare [kNames]: string[];
 
 	constructor(
@@ -3713,7 +3713,7 @@ const kPrefix = Symbol("prefix");
 const kNamespaceURI = Symbol("namespaceURI");
 
 /** `@namespace`: a prefix bound to a namespace URI. */
-export class CSSNamespaceRule extends CSSRule {
+class CSSNamespaceRule extends CSSRule {
 	declare [kPrefix]: string;
 	declare [kNamespaceURI]: string;
 
@@ -3823,7 +3823,7 @@ const kFontFamily = Symbol("fontFamily");
 const kBlocks = Symbol("blocks");
 
 /** `@font-feature-values`: a font family and the feature blocks it names. */
-export class CSSFontFeatureValuesRule extends CSSRule {
+class CSSFontFeatureValuesRule extends CSSRule {
 	declare [kFontFamily]: string;
 	declare [kBlocks]: Map<string, CSSStyleDeclaration>;
 
@@ -3913,7 +3913,7 @@ export class CSSFontFeatureValuesRule extends CSSRule {
 }
 
 /** `@keyframes`: its name and the keyframes it holds. */
-export class CSSKeyframesRule extends CSSRule {
+class CSSKeyframesRule extends CSSRule {
 	declare [kName]: string;
 	declare [kRules]: CSSRule[];
 	declare [kRuleList]: CSSRuleList;
@@ -6179,7 +6179,7 @@ const kUsedValue = Symbol("usedValue");
 const kResolvedMinSize = Symbol("resolvedMinSize");
 const kCustomNames = Symbol("customNames");
 
-export class ComputedStyleDeclaration extends CSSStyleProperties {
+class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
 	/**
@@ -7166,7 +7166,7 @@ const kNodeStyle = Symbol("nodeStyle");
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
  */
-export class PseudoStyleDeclaration extends CSSStyleProperties {
+class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoDeclarations]: Record<string, string>;
 	// Lazily resolved properties, cleared by kRefresh -- the same one-per
 	// -generation memo an element's declaration keeps, for the same reason.
@@ -7385,7 +7385,7 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
  * The answer to a `getComputedStyle` pseudo-element argument that names no
  * pseudo-element: a declaration of nothing, as CSSOM says.
  */
-export class EmptyStyleDeclaration extends CSSStyleProperties {
+class EmptyStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element | null;
 
 	constructor(element?: Element) {
@@ -7528,7 +7528,7 @@ for (const property of ACCESSOR_PROPERTIES) {
 }
 
 /** An element's border sides, in `drawBorder`'s own vocabulary. */
-export interface BorderSides {
+interface BorderSides {
 	top?: LineStyle["style"];
 	right?: LineStyle["style"];
 	bottom?: LineStyle["style"];

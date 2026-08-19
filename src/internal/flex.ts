@@ -35,11 +35,11 @@ export const ALIGN_SPACE_AROUND = 7;
 export const ALIGN_SPACE_EVENLY = 8;
 
 export const JUSTIFY_FLEX_START = 0;
-export const JUSTIFY_CENTER = 1;
+const JUSTIFY_CENTER = 1;
 export const JUSTIFY_FLEX_END = 2;
-export const JUSTIFY_SPACE_BETWEEN = 3;
-export const JUSTIFY_SPACE_AROUND = 4;
-export const JUSTIFY_SPACE_EVENLY = 5;
+const JUSTIFY_SPACE_BETWEEN = 3;
+const JUSTIFY_SPACE_AROUND = 4;
+const JUSTIFY_SPACE_EVENLY = 5;
 
 export const WRAP_NO_WRAP = 0;
 export const WRAP_WRAP = 1;
@@ -77,23 +77,23 @@ export const EDGE_LEFT = 0;
 export const EDGE_TOP = 1;
 export const EDGE_RIGHT = 2;
 export const EDGE_BOTTOM = 3;
-export const EDGE_START = 4;
-export const EDGE_END = 5;
-export const EDGE_HORIZONTAL = 6;
-export const EDGE_VERTICAL = 7;
+const EDGE_START = 4;
+const EDGE_END = 5;
+const EDGE_HORIZONTAL = 6;
+const EDGE_VERTICAL = 7;
 export const EDGE_ALL = 8;
 
-export const UNIT_UNDEFINED = 0;
-export const UNIT_POINT = 1;
-export const UNIT_PERCENT = 2;
-export const UNIT_AUTO = 3;
+const UNIT_UNDEFINED = 0;
+const UNIT_POINT = 1;
+const UNIT_PERCENT = 2;
+const UNIT_AUTO = 3;
 
 export type Align = number;
 export type Justify = number;
 export type Wrap = number;
-export type FlexDirection = number;
+type FlexDirection = number;
 export type Display = number;
-export type PositionType = number;
+type PositionType = number;
 export type MeasureMode = number;
 export type Edge = number;
 
@@ -109,7 +109,7 @@ export interface Size {
  * decides where its lines break -- and only the placing one describes the box
  * the content ends up in.
  */
-export type MeasureFunction = (
+type MeasureFunction = (
 	width: number,
 	widthMode: MeasureMode,
 	height: number,
@@ -124,7 +124,7 @@ export type MeasureFunction = (
  * flow supplies it; null means it has no static position to offer, and the
  * containing block's own alignment places the box instead.
  */
-export type StaticPositionFunction = (
+type StaticPositionFunction = (
 	containingBlock: Node,
 ) => {left: number; top: number} | null;
 
