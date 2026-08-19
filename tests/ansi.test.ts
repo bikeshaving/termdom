@@ -1,8 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 import {
 	Screen,
-	drawBox,
-	type DrawingContext,
+	type CellContext,
 	type LineStyle,
 } from "../src/internal/ansi.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
@@ -237,7 +236,7 @@ describe("glyphs where lines meet", () => {
 	function glyphs(
 		rows: number,
 		cols: number,
-		draw: (ctx: DrawingContext) => void,
+		draw: (ctx: CellContext) => void,
 	): string {
 		const renderer = new Screen(rows, cols);
 		return stripControlCodes(renderFrame(renderer, {offset: 0}, draw));
@@ -245,7 +244,7 @@ describe("glyphs where lines meet", () => {
 
 	test("two lines turning in a cell make its corner", () => {
 		const output = glyphs(3, 6, (ctx) => {
-			drawBox(ctx, 0, 0, 3, 3, {
+			ctx.drawBox(0, 0, 3, 3, {
 				top: solid,
 				right: solid,
 				bottom: solid,
@@ -331,7 +330,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 1, 1, 4, 3, {
+				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -349,7 +348,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 1, 1, 4, 3, {
+				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
@@ -368,14 +367,14 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw two overlapping rectangles to create border intersections
-				drawBox(ctx, 1, 1, 4, 3, {
+				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
 
-				drawBox(ctx, 2, 0, 4, 3, {
+				ctx.drawBox(2, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -397,13 +396,13 @@ describe("Border Drawing", () => {
 			// page's verticals, which take the connecting stub: ├ and ┤, as a
 			// browser's touching one-pixel lines would draw.
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 0, 0, 10, 5, {
+				ctx.drawBox(0, 0, 10, 5, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				drawBox(ctx, 1, 2, 8, 1, {top: {style: "solid"}});
+				ctx.drawBox(1, 2, 8, 1, {top: {style: "solid"}});
 			});
 
 			expect(output).toContain("├────────┤");
@@ -416,13 +415,13 @@ describe("Border Drawing", () => {
 			// parallel strokes, which meet nothing head-on. No junction forms
 			// -- the seam stays ┐┌, the way two browser boxes stay two boxes.
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 0, 0, 4, 3, {
+				ctx.drawBox(0, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				drawBox(ctx, 4, 0, 4, 3, {
+				ctx.drawBox(4, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -439,7 +438,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
-				drawBox(ctx, 0, 0, 3, 2, {
+				ctx.drawBox(0, 0, 3, 2, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -456,7 +455,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 1, 1, 4, 3, {
+				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "double"},
 					right: {style: "double"},
 					bottom: {style: "double"},
@@ -474,7 +473,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 1, 1, 4, 3, {});
+				ctx.drawBox(1, 1, 4, 3, {});
 			});
 
 			// Should not contain any border patterns
@@ -485,7 +484,7 @@ describe("Border Drawing", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 1, 1, 4, 3, {
+				ctx.drawBox(1, 1, 4, 3, {
 					top: {style: "solid", color: 0xff0000},
 					right: {style: "solid", color: 0xff0000},
 					bottom: {style: "solid", color: 0xff0000},
@@ -503,7 +502,7 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 				// Draw border that extends beyond viewport
-				drawBox(ctx, 0, 0, 10, 10, {
+				ctx.drawBox(0, 0, 10, 10, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -524,7 +523,7 @@ describe("Border Integration", () => {
 		const renderer = new Screen(4, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 1, 0, 6, 4, {
+			ctx.drawBox(1, 0, 6, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -548,7 +547,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw border
-			drawBox(ctx, 1, 1, 6, 3, {
+			ctx.drawBox(1, 1, 6, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -572,7 +571,7 @@ describe("Border Integration", () => {
 			ctx.drawRect(1, 1, 4, 3, 0x00ff00);
 
 			// Draw border on top
-			drawBox(ctx, 1, 1, 4, 3, {
+			ctx.drawBox(1, 1, 4, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -588,7 +587,7 @@ describe("Border Integration", () => {
 		const renderer = new Screen(5, 7);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 0, 0, 5, 4, {
+			ctx.drawBox(0, 0, 5, 4, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -607,7 +606,7 @@ describe("Border Integration", () => {
 		const renderer = new Screen(5, 8);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 0, 0, 6, 4, {
+			ctx.drawBox(0, 0, 6, 4, {
 				top: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
@@ -651,7 +650,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// First box
-			drawBox(ctx, 0, 0, 5, 4, {
+			ctx.drawBox(0, 0, 5, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -659,7 +658,7 @@ describe("Border Integration", () => {
 			});
 
 			// Second box overlapping
-			drawBox(ctx, 2, 2, 5, 4, {
+			ctx.drawBox(2, 2, 5, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -686,7 +685,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
-			drawBox(ctx, 1, 1, 3, 3, {
+			ctx.drawBox(1, 1, 3, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -740,7 +739,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Draw box
-			drawBox(ctx, 0, 0, 8, 5, {
+			ctx.drawBox(0, 0, 8, 5, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -771,7 +770,7 @@ describe("Border Integration", () => {
 			// This should create proper junctions where borders meet
 
 			// Cell (0,0) - top-left
-			drawBox(ctx, 0, 0, 5, 3, {
+			ctx.drawBox(0, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -779,7 +778,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (0,1) - top-right
-			drawBox(ctx, 4, 0, 5, 3, {
+			ctx.drawBox(4, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -787,7 +786,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (1,0) - bottom-left
-			drawBox(ctx, 0, 2, 5, 3, {
+			ctx.drawBox(0, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -795,7 +794,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (1,1) - bottom-right
-			drawBox(ctx, 4, 2, 5, 3, {
+			ctx.drawBox(4, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -821,7 +820,7 @@ describe("Border Integration", () => {
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
 			// Left cell with solid borders
-			drawBox(ctx, 0, 0, 6, 3, {
+			ctx.drawBox(0, 0, 6, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -829,7 +828,7 @@ describe("Border Integration", () => {
 			});
 
 			// Right cell with double borders (should merge with solid)
-			drawBox(ctx, 5, 0, 6, 3, {
+			ctx.drawBox(5, 0, 6, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -855,21 +854,21 @@ describe("Border Integration", () => {
 			// For collapsed borders, cells share borders at their edges
 
 			// Header row cells (row 0-2)
-			drawBox(ctx, 0, 0, 5, 3, {
+			ctx.drawBox(0, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			drawBox(ctx, 4, 0, 5, 3, {
+			ctx.drawBox(4, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			drawBox(ctx, 8, 0, 5, 3, {
+			ctx.drawBox(8, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -877,21 +876,21 @@ describe("Border Integration", () => {
 			});
 
 			// Data row cells (row 2-4, sharing top border with header cells)
-			drawBox(ctx, 0, 2, 5, 3, {
+			ctx.drawBox(0, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			drawBox(ctx, 4, 2, 5, 3, {
+			ctx.drawBox(4, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			drawBox(ctx, 8, 2, 5, 3, {
+			ctx.drawBox(8, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -916,7 +915,7 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 1, 1, 4, 2, {
+			ctx.drawBox(1, 1, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -933,7 +932,7 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 1, 1, 6, 3, {
+			ctx.drawBox(1, 1, 6, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -951,7 +950,7 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 0, 0, 5, 3, {
+			ctx.drawBox(0, 0, 5, 3, {
 				top: {style: "solid"},
 				left: {style: "solid"},
 			});
@@ -970,7 +969,7 @@ describe("Border Integration", () => {
 		renderer.repaintAll();
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			drawBox(ctx, 0, 0, 6, 4, {left: {style: "solid"}});
+			ctx.drawBox(0, 0, 6, 4, {left: {style: "solid"}});
 			ctx.drawText("Quote", 2, 1);
 		});
 
@@ -989,14 +988,14 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
-			drawBox(ctx, 0, 0, 4, 2, {
+			ctx.drawBox(0, 0, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			drawBox(ctx, 3, 0, 4, 2, {
+			ctx.drawBox(3, 0, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1004,7 +1003,7 @@ describe("Border Integration", () => {
 			});
 
 			// Bottom left cell only
-			drawBox(ctx, 0, 1, 4, 2, {
+			ctx.drawBox(0, 1, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1022,7 +1021,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Solid border cell
-			drawBox(ctx, 0, 0, 3, 3, {
+			ctx.drawBox(0, 0, 3, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1030,7 +1029,7 @@ describe("Border Integration", () => {
 			});
 
 			// Double border cell
-			drawBox(ctx, 2, 0, 3, 3, {
+			ctx.drawBox(2, 0, 3, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -1038,7 +1037,7 @@ describe("Border Integration", () => {
 			});
 
 			// Heavy border cell
-			drawBox(ctx, 4, 0, 3, 3, {
+			ctx.drawBox(4, 0, 3, 3, {
 				top: {style: "groove"},
 				right: {style: "groove"},
 				bottom: {style: "groove"},
@@ -1060,7 +1059,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Outer border
-			drawBox(ctx, 0, 0, 9, 7, {
+			ctx.drawBox(0, 0, 9, 7, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -1068,7 +1067,7 @@ describe("Border Integration", () => {
 			});
 
 			// Inner border
-			drawBox(ctx, 2, 2, 5, 3, {
+			ctx.drawBox(2, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1095,7 +1094,7 @@ describe("Border Integration", () => {
 					const x = col * 3;
 					const y = row * 2;
 
-					drawBox(ctx, x, y, 4, 3, {
+					ctx.drawBox(x, y, 4, 3, {
 						top: {style: "solid"},
 						right: {style: "solid"},
 						bottom: {style: "solid"},
@@ -1117,7 +1116,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			ctx.drawRect(1, 0, 5, 3, 0x00ff00);
-			drawBox(ctx, 1, 0, 5, 3, {
+			ctx.drawBox(1, 0, 5, 3, {
 				top: {style: "solid", color: 0xff0000},
 				right: {style: "solid", color: 0xff0000},
 				bottom: {style: "solid", color: 0xff0000},

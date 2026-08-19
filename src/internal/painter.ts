@@ -12,8 +12,7 @@ import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
-import {drawBox} from "./ansi.js";
-import type {CellStyle, DrawingContext, LineStyle} from "./ansi.js";
+import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -259,7 +258,7 @@ const kSelectionRangeFor = Symbol("selectionRangeFor");
  * cells. It reads geometry from the {@link LayoutEngine}, computed styles from
  * the {@link StyleManager} and the DOM, and form controls' shadow parts and caret
  * from the composed tree (the shell upgrades the widgets on connect, so their
- * shadow is already there), then draws into a `DrawingContext`. It owns no
+ * shadow is already there), then draws into a `CellContext`. It owns no
  * scheduling and mutates no DOM -- callers hand it a fresh context and call
  * {@link Painter.paint}.
  *
@@ -301,7 +300,7 @@ export class Painter {
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
-	paint(ctx: DrawingContext): void {
+	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		this[kRenderStackingContext](this[kDocument].body, ctx, layers);
@@ -333,7 +332,7 @@ export class Painter {
 	 */
 	[kRenderBackdrop](
 		element: Element,
-		ctx: DrawingContext,
+		ctx: CellContext,
 	): void {
 		const fill = backgroundFill(
 			pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
@@ -348,7 +347,7 @@ export class Painter {
 
 	[kRenderElement](
 		element: Element,
-		ctx: DrawingContext,
+		ctx: CellContext,
 		afterOwnBox?: () => void,
 	): void {
 		// Viewport culling. The buffer only keeps document rows in
@@ -516,8 +515,7 @@ export class Painter {
 			const bottom = sideFor(sides.bottom, "border-bottom-color");
 			const left = sideFor(sides.left, "border-left-color");
 			if (top || borderRight || bottom || left) {
-				drawBox(
-					ctx,
+				ctx.drawBox(
 					Math.round(rect.left),
 					Math.round(rect.top),
 					Math.round(rect.width),
@@ -730,8 +728,7 @@ export class Painter {
 							line: LineStyle["style"] | undefined,
 						): LineStyle | undefined =>
 							line && {style: line, color: cssColorToNumber(outlineColor)};
-						drawBox(
-							ctx,
+						ctx.drawBox(
 							Math.round(rect.left),
 							Math.round(rect.top),
 							Math.round(rect.width),
@@ -769,8 +766,8 @@ export class Painter {
 	[kPositionedClipFor](
 		element: Element,
 		contextRoot: Element,
-		contextClip: DrawingContext["clipRect"],
-	): DrawingContext["clipRect"] {
+		contextClip: CellContext["clipRect"],
+	): CellContext["clipRect"] {
 		let clip = contextClip;
 		for (
 			let ancestor = flatParentElement<Element>(element);
@@ -807,7 +804,7 @@ export class Painter {
 	 */
 	[kRenderStackingContext](
 		root: Element,
-		ctx: DrawingContext,
+		ctx: CellContext,
 		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 	): void {
 		const bucket = layers.get(root);
@@ -858,7 +855,7 @@ export class Painter {
 	/** Render outside-positioned list markers, once per element per frame. */
 	[kRenderOutsideMarker](
 		element: Element,
-		ctx: DrawingContext,
+		ctx: CellContext,
 	): void {
 		const computedStyle = computedStyleOf(element);
 		const display = computedStyle.computedValueOf("display");
@@ -941,7 +938,7 @@ export class Painter {
 	 */
 	[kRenderToggleGlyph](
 		element: HTMLInputElement,
-		ctx: DrawingContext,
+		ctx: CellContext,
 	): void {
 		const root = shadowRootOf<ShadowRoot>(element);
 		if (!root) {
@@ -976,7 +973,7 @@ export class Painter {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	[kRenderText](textNode: Text, ctx: DrawingContext): void {
+	[kRenderText](textNode: Text, ctx: CellContext): void {
 		const textContent = textNode.data;
 		if (!textContent) {
 			return;
@@ -1100,7 +1097,7 @@ export class Painter {
 		textNode: Text,
 		textStyle: CellStyle,
 		textTransform: string,
-		ctx: DrawingContext,
+		ctx: CellContext,
 	): void {
 		const found = this[kSelectionRangeFor](textNode);
 		if (!found) {
