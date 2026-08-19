@@ -282,17 +282,20 @@ function joinTouchingBorders(grid: CellGrid): void {
  * nothing meets; "round" curves the glyph where two capped ends union -- a
  * box's four line ends are its four corners.
  */
+export const LINE_STYLES = [
+	"solid",
+	"double",
+	"dashed",
+	"dotted",
+	"groove",
+	"ridge",
+	"inset",
+	"outset",
+	"hidden",
+] as const;
+
 export interface LineStyle {
-	style:
-		"solid" |
-		"double" |
-		"dashed" |
-		"dotted" |
-		"groove" |
-		"ridge" |
-		"inset" |
-		"outset" |
-		"hidden";
+	style: (typeof LINE_STYLES)[number];
 	color?: number | null;
 	startCap?: "round" | "square";
 	endCap?: "round" | "square";
