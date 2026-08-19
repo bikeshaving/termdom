@@ -77,7 +77,7 @@ function pick<T>(next: () => number, items: T[]): T {
 }
 
 type Action =
-	| {kind: "class"; id: string; cls: string} |
+	{kind: "class"; id: string; cls: string} |
 	{kind: "style"; id: string; value: string} |
 	{kind: "attr"; id: string; value: string} |
 	{

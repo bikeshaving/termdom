@@ -18,7 +18,7 @@
  * - `nullable-string`: a DOMString?, null when the attribute is absent.
  */
 type ReflectKind =
-	| "string" |
+	"string" |
 	"nullable-string" |
 	"url" |
 	"boolean" |

@@ -17,7 +17,7 @@ const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 25);
 const SEED = Number(process.env.FC_SEED ?? 1);
 
 type Command =
-	| {kind: "type"; text: string} |
+	{kind: "type"; text: string} |
 	{kind: "left"} |
 	{kind: "right"} |
 	{kind: "home"} |

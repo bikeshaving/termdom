@@ -459,7 +459,7 @@ const HostEvent = globalThis.Event as unknown as {
 interface HostEventInstance
 	extends Omit<
 		globalThis.Event,
-		| "target" |
+		"target" |
 		"srcElement" |
 		"currentTarget" |
 		"composedPath" |
@@ -1732,7 +1732,7 @@ const LEGACY_EVENT_INTERFACES = new Map<string, new (type: string) => Event>([
 ]);
 
 export type EventListenerOrEventListenerObject =
-	| ((event: Event) => void) |
+	((event: Event) => void) |
 	{handleEvent(event: Event): void};
 
 /** What an AbortSignal has to be for a listener to hang off it. */
@@ -4997,7 +4997,7 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 function collectionCache(node: Node): Map<string, HTMLCollection> {
 	const owner = node as unknown as Record<symbol, unknown>;
 	let cache = owner[kCollectionCaches] as
-		| Map<string, HTMLCollection> |
+		Map<string, HTMLCollection> |
 		undefined;
 	if (cache === undefined) {
 		cache = new Map();
@@ -6297,7 +6297,7 @@ installArrayIteration(NamedNodeMap.prototype, false);
 /* ---------------------------------------------------------------- elements */
 
 type CustomElementState =
-	| "uncustomized" |
+	"uncustomized" |
 	"undefined" |
 	"failed" |
 	"custom" |
@@ -7758,7 +7758,7 @@ interface CustomElementDefinition {
 }
 
 type Reaction =
-	| {upgrade: CustomElementDefinition} |
+	{upgrade: CustomElementDefinition} |
 	{callback: (...args: unknown[]) => void; args: unknown[]};
 
 /**
@@ -20341,7 +20341,7 @@ const FILTER_REJECT = 2;
 const FILTER_SKIP = 3;
 
 type NodeFilterInput =
-	| ((node: Node) => number) |
+	((node: Node) => number) |
 	{acceptNode(node: Node): number} |
 	null |
 	undefined;

@@ -201,7 +201,7 @@ export function transportFromProcess(
 
 	let engaged = false;
 	let dataListener:
-		| ((chunk: string | Uint8Array | ArrayBuffer) => void) |
+		((chunk: string | Uint8Array | ArrayBuffer) => void) |
 		null = null;
 	const signalListeners: Array<[ProcessSignal, () => void]> = [];
 

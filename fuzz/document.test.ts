@@ -75,7 +75,7 @@ const TAGS = ["div", "span", "p", "b", "em", "section", "li"];
 const ID_POOL = 16;
 
 type Tree =
-	| {leaf: "text" | "space" | "comment"} |
+	{leaf: "text" | "space" | "comment"} |
 	{tag: string; cls: string; children: Tree[]};
 
 const treeArbitrary = fc.letrec<{node: Tree}>((tie) => ({
@@ -128,7 +128,7 @@ const documentArbitrary = fc
 	.map(toMarkup);
 
 type Action =
-	| {kind: "class"; id: string; cls: string} |
+	{kind: "class"; id: string; cls: string} |
 	{kind: "style"; id: string; value: string} |
 	{kind: "attr"; id: string; value: string} |
 	{
