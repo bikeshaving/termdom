@@ -325,7 +325,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 			this.terminal.cols,
 			this[kDetectColorDepth](),
 		);
-		const frame = screen.beginFrame({offset: 0});
+		const context = screen.beginFrame({offset: 0});
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
@@ -353,7 +353,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				// color modes carry over, so defaults stay the terminal's own.
 				const hasExplicitFg = cell.getFgColorMode() !== 0;
 				const hasExplicitBg = cell.getBgColorMode() !== 0;
-				frame.context.drawText(chars, outputCol, row, {
+				context.drawText(chars, outputCol, row, {
 					fg: hasExplicitFg ? cell.getFgColor() : undefined,
 					bg: hasExplicitBg ? cell.getBgColor() : undefined,
 					bold: !!cell.isBold(),
@@ -369,7 +369,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		// The frame emitter withholds the final row's line ending (the screen
 		// has nothing below it); the oracle's callers split on lines.
-		return stripControlCodes(frame.end() + "\r\n");
+		return stripControlCodes(screen.endFrame() + "\r\n");
 	}
 
 	/**
@@ -456,22 +456,22 @@ export function stripControlCodes(ansi: string): string {
  * is a caller with one painter and one frame.
  */
 export function renderFrame(
-	renderer: {beginFrame(options: any): {context: any; end(): string}},
+	renderer: {beginFrame(options: any): any; endFrame(): string},
 	options: {offset: number} & Record<string, unknown>,
 	draw: (ctx: any) => void,
 ): string {
-	const frame = renderer.beginFrame(options);
-	draw(frame.context);
-	return frame.end();
+	const context = renderer.beginFrame(options);
+	draw(context);
+	return renderer.endFrame();
 }
 
 /** The same, for a frame that stands alone. */
 export function renderStatic(
-	renderer: {beginStatic(options: any): {context: any; end(): string}},
+	renderer: {beginStatic(options: any): any; endFrame(): string},
 	options: {rows: number} & Record<string, unknown>,
 	draw: (ctx: any) => void,
 ): string {
-	const frame = renderer.beginStatic(options);
-	draw(frame.context);
-	return frame.end();
+	const context = renderer.beginStatic(options);
+	draw(context);
+	return renderer.endFrame();
 }

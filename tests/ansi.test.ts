@@ -27,14 +27,14 @@ describe("cells through the pen", () => {
 
 	test("measureText and the layout agree on widths", () => {
 		const renderer = new Screen(1, 10);
-		const frame = renderer.beginFrame({offset: 0});
+		const context = renderer.beginFrame({offset: 0});
 		expect(
-			frame.context.measureText("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}")
+			context.measureText("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}")
 				.width,
 		).toBe(2);
-		expect(frame.context.measureText("é").width).toBe(1);
-		expect(frame.context.measureText("\u{1f1ef}\u{1f1f5}").width).toBe(2);
-		expect(frame.context.measureText("日本").width).toBe(4);
+		expect(context.measureText("é").width).toBe(1);
+		expect(context.measureText("\u{1f1ef}\u{1f1f5}").width).toBe(2);
+		expect(context.measureText("日本").width).toBe(4);
 	});
 });
 
