@@ -116,11 +116,11 @@ function emit(
 	measurer: WidthMeasurer,
 ): string {
 	const screen = new Screen(rows, cols, "rgb");
-	const frame = screen.beginFrame({offset: 0, measurer});
+	const context = screen.beginFrame({offset: 0, measurer});
 	for (const [index, cluster] of cells) {
-		frame.context.drawText(cluster, index % cols, Math.floor(index / cols));
+		context.drawText(cluster, index % cols, Math.floor(index / cols));
 	}
-	return frame.end();
+	return screen.endFrame();
 }
 
 function settle(ms = 60): Promise<void> {

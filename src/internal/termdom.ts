@@ -3333,11 +3333,11 @@ export class TermDOM {
 
 		this[kLayoutEngine].calculateLayout();
 
-		const frame = this[kScreen].beginStatic({
+		const context = this[kScreen].beginStatic({
 			rows: this.document.body.scrollHeight,
 		});
-		this[kPainter].paint(frame.context);
-		const output = frame.end();
+		this[kPainter].paint(context);
+		const output = this[kScreen].endFrame();
 
 		if (output) {
 			await this[kWrite](output);
@@ -3401,12 +3401,12 @@ export class TermDOM {
 		if (contentHeight === 0) {
 			return "";
 		}
-		const frame = this[kScreen].beginStatic({
+		const context = this[kScreen].beginStatic({
 			rows: contentHeight,
 			lineEnding,
 		});
-		this[kPainter].paint(frame.context);
-		return frame.end();
+		this[kPainter].paint(context);
+		return this[kScreen].endFrame();
 	}
 
 	/** Write to the transport and wait for it to be flushed. */
@@ -3688,15 +3688,15 @@ export class TermDOM {
 			scroll = {delta, bands};
 		}
 
-		const frame = this[kScreen].beginFrame({
+		const context = this[kScreen].beginFrame({
 			offset: -this[kViewport].scrollTop,
 			cursorRow: top,
 			regionRows: top + regionHeight,
 			scroll,
 			measurer: this[kSession].widthMeasurer,
 		});
-		this[kPainter].paint(frame.context);
-		const ansi = frame.end();
+		this[kPainter].paint(context);
+		const ansi = this[kScreen].endFrame();
 		this[kLastFrameScrollTop] = scrollTop;
 		this[kLastFrameEpoch] = this[kLayoutEngine].invalidationEpoch;
 		this[kLastFrameInputGeneration] = this[kInputGeneration];
