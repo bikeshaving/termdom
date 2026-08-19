@@ -2781,6 +2781,8 @@ function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
 
 /** An indexed CSSOM collection: `list[0]` alongside `list.item(0)`. */
 function indexed<T extends object>(list: T, items: readonly unknown[]): T {
+	// Arbitrary live indices have no other spelling.
+	// eslint-disable-next-line no-restricted-globals
 	return new Proxy(list, {
 		get(target, property) {
 			if (typeof property === "string" && /^\d+$/.test(property)) {
@@ -5905,6 +5907,8 @@ function observableAdopted(
 	const changed = (): void => {
 		managerForTree(target)?.refreshStylesheets();
 	};
+	// Assignment to arbitrary indices of adoptedStyleSheets must be observed.
+	// eslint-disable-next-line no-restricted-globals
 	proxy = new Proxy(list, {
 		set(array, property, value) {
 			if (typeof property === "string" && /^\d+$/.test(property)) {
@@ -6266,6 +6270,8 @@ export function pseudoStyleOf(
  * rather than written onto the object.
  */
 function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
+	// A live declaration's indices change under it; they cannot be defined.
+	// eslint-disable-next-line no-restricted-globals
 	return new Proxy(declaration, {
 		get(target, property) {
 			if (typeof property === "string" && /^\d+$/.test(property)) {
