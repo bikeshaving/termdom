@@ -53,19 +53,19 @@ function makeRecorder(
 		}
 
 		isTTY: boolean;
-		setRawMode() {
+		setRawMode(): this {
 			return this;
 		}
 
-		resume() {
+		resume(): this {
 			return this;
 		}
 
-		pause() {
+		pause(): this {
 			return this;
 		}
 
-		setEncoding() {
+		setEncoding(): this {
 			return this;
 		}
 	})();
@@ -95,7 +95,7 @@ function makeRecorder(
 }
 
 /** Let queued renders and stdout writes settle between scripted actions. */
-function settle() {
+function settle(): Promise<unknown> {
 	return new Promise((resolve) => setTimeout(resolve, 30));
 }
 

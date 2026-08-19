@@ -10,13 +10,15 @@ import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 
-function rectOf(dom: TermDOM, el: Element) {
+function rectOf(dom: TermDOM, el: Element): DOMRect {
 	return (
 		dom as unknown as Record<symbol, {getRect(e: Element): DOMRect | null}>
 	)[kLayoutEngine].getRect(el)!;
 }
 
-async function layout(html: string, head = "") {
+async function layout(html: string, head = ""): Promise<
+	{terminal: MockProcess; dom: TermDOM}
+> {
 	const terminal = new MockProcess({cols: 60, rows: 16});
 	const dom = new TermDOM({transport: terminal.transport});
 	if (head) {

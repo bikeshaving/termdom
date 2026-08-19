@@ -35,7 +35,12 @@ function box(parent: Node, index = parent.getChildCount()): Node {
 	return child;
 }
 
-function rect(n: Node) {
+function rect(n: Node): {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+} {
 	return {
 		left: n.getComputedLeft(),
 		top: n.getComputedTop(),
@@ -212,7 +217,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	//
 	// Each line's cross size is 10, so the lines total 20 in a 40-tall
 	// container: 20 of free cross space to distribute.
-	function wrapped(alignContent: number) {
+	function wrapped(alignContent: number): Node[] {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(40);
@@ -450,7 +455,12 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 	// This is exactly where baseline and flex-start part company: under
 	// flex-start both boxes would sit at 0 and the text rows would be on
 	// different lines.
-	function baselineRow(alignItems: number) {
+	function baselineRow(alignItems: number): {
+		a: Node;
+		b: Node;
+		aText: Node;
+		bText: Node;
+	} {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(20);

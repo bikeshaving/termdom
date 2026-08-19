@@ -672,7 +672,7 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 
 	const Base = window.HTMLElement as unknown as typeof HTMLElement;
 	class Card extends Base {
-		connectedCallback() {
+		connectedCallback(): void {
 			const root = this.attachShadow({mode: "open"});
 			const title = document.createElement("span");
 			title.setAttribute("part", "title");

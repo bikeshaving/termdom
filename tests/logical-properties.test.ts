@@ -13,7 +13,10 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function makeDOM(html = "", cols = 40, rows = 10) {
+function makeDOM(html = "", cols = 40, rows = 10): {
+	terminal: MockProcess;
+	dom: TermDOM;
+} {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
@@ -36,7 +39,7 @@ async function computed(html: string, selector = "#t") {
 }
 
 /** A detached declaration block, for the CSSOM half. */
-function block() {
+function block(): CSSStyleDeclaration {
 	const {dom} = makeDOM();
 	return dom.document.createElement("div").style;
 }

@@ -68,7 +68,7 @@ test("getName wants a constructor", () => {
 
 test("define reads prototype once, and only after the name is valid", () => {
 	const reads: string[] = [];
-	function watched() {
+	function watched(): typeof HTMLElement {
 		return new Proxy(class extends HTMLElement {}, {
 			get(target, key, receiver) {
 				reads.push(String(key));

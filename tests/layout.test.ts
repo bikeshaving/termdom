@@ -2535,7 +2535,11 @@ test("auto values reset positioning properties", () => {
 // These tests verify that DOM mutations are properly handled by the MutationObserver,
 // which automatically triggers layout invalidation when elements are added/removed.
 
-function createTermDOM(html = "<div></div>") {
+function createTermDOM(html = "<div></div>"): {
+	termdom: TermDOM;
+	document: Document;
+	layoutEngine: LayoutEngine;
+} {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document} = termdom;
 

@@ -16,15 +16,15 @@ class MockTTYStream extends EventEmitter {
 		this.readableObjectMode = false;
 	}
 
-	setRawMode(_mode: boolean) {
+	setRawMode(_mode: boolean): this {
 		return this;
 	}
 
-	resume() {
+	resume(): this {
 		return this;
 	}
 
-	pause() {
+	pause(): this {
 		return this;
 	}
 

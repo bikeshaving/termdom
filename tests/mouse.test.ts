@@ -13,15 +13,15 @@ class MockTTYStream extends EventEmitter {
 
 	isTTY: boolean;
 
-	setRawMode(_mode: boolean) {
+	setRawMode(_mode: boolean): this {
 		return this;
 	}
 
-	resume() {
+	resume(): this {
 		return this;
 	}
 
-	pause() {
+	pause(): this {
 		return this;
 	}
 
@@ -82,7 +82,11 @@ class MockMouseProcess extends EventEmitter {
 const ENABLE = "\x1b[?1002h\x1b[?1006h";
 const DISABLE = "\x1b[?1006l\x1b[?1002l";
 
-function makeDocumentModeApp(lines = 30) {
+function makeDocumentModeApp(lines = 30): {
+	proc: MockMouseProcess;
+	termdom: TermDOM;
+	document: Document;
+} {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;

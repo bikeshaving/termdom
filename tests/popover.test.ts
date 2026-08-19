@@ -26,7 +26,8 @@ function press(terminal: MockProcess, data: string): Promise<void> {
 }
 
 /** A press and a release at a screen cell, which is a click. */
-async function click(terminal: MockProcess, col: number, row: number) {
+async function click(terminal: MockProcess, col: number, row: number): Promise<
+	void> {
 	await press(terminal, `\x1b[<0;${col};${row}M`);
 	await press(terminal, `\x1b[<0;${col};${row}m`);
 }
