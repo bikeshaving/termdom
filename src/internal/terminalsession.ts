@@ -4,51 +4,6 @@ import type {ColorDepth, WidthMeasurer} from "./ansi.js";
 import {recordClusterAdvance} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
-const kWidthSettled = Symbol("widthSettled");
-const kWidthProbes = Symbol("widthProbes");
-const kWriteEpoch = Symbol("writeEpoch");
-const kDsrSequence = Symbol("dsrSequence");
-const kArmWidthProbeTimer = Symbol("armWidthProbeTimer");
-const kWidthProbeTimer = Symbol("widthProbeTimer");
-const kWIdTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
-const kWidthAnswered = Symbol("widthAnswered");
-const kWidthProbing = Symbol("widthProbing");
-const kInteractive = Symbol("interactive");
-const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
-const kWidthMeasurer = Symbol("widthMeasurer");
-const kWidthRunEpoch = Symbol("widthRunEpoch");
-const kWidthRun = Symbol("widthRun");
-const kWidthDrift = Symbol("widthDrift");
-const kWidthRunLost = Symbol("widthRunLost");
-const kLayout = Symbol("layout");
-const kHandlers = Symbol("handlers");
-const kTransport = Symbol("transport");
-const kViewport = Symbol("viewport");
-const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
-const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
-const kDisposed = Symbol("disposed");
-const kWriter = Symbol("writer");
-const kLastWrite = Symbol("lastWrite");
-const kStarted = Symbol("started");
-const kReader = Symbol("reader");
-const kReadLoop = Symbol("readLoop");
-const kResizeReader = Symbol("resizeReader");
-const kResizeLoop = Symbol("resizeLoop");
-const kPartialEscape = Symbol("partialEscape");
-const kRoute = Symbol("route");
-const kPasteBuffer = Symbol("pasteBuffer");
-const kFeedModeReport = Symbol("feedModeReport");
-const kFeedCursorReport = Symbol("feedCursorReport");
-const kModeProbeHandlers = Symbol("modeProbeHandlers");
-const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
-const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
-const kSettleWidthProbe = Symbol("settleWidthProbe");
-const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
-const kModeProbeTimers = Symbol("modeProbeTimers");
-const kProbeMode = Symbol("probeMode");
-const kPriorBidiMode = Symbol("priorBidiMode");
-const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
-
 /**
  * The wire between the engine and a terminal: an established session as
  * duplex streams plus lifecycle, the common subset of WebTransport and
@@ -432,6 +387,51 @@ interface TerminalSessionHandlers {
 	/** The transport's `closed` settled: the terminal is gone. */
 	onClosed(info: TerminalCloseInfo): void;
 }
+
+const kWidthSettled = Symbol("widthSettled");
+const kWidthProbes = Symbol("widthProbes");
+const kWriteEpoch = Symbol("writeEpoch");
+const kDsrSequence = Symbol("dsrSequence");
+const kArmWidthProbeTimer = Symbol("armWidthProbeTimer");
+const kWidthProbeTimer = Symbol("widthProbeTimer");
+const kWIdTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
+const kWidthAnswered = Symbol("widthAnswered");
+const kWidthProbing = Symbol("widthProbing");
+const kInteractive = Symbol("interactive");
+const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
+const kWidthMeasurer = Symbol("widthMeasurer");
+const kWidthRunEpoch = Symbol("widthRunEpoch");
+const kWidthRun = Symbol("widthRun");
+const kWidthDrift = Symbol("widthDrift");
+const kWidthRunLost = Symbol("widthRunLost");
+const kLayout = Symbol("layout");
+const kHandlers = Symbol("handlers");
+const kTransport = Symbol("transport");
+const kViewport = Symbol("viewport");
+const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
+const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
+const kDisposed = Symbol("disposed");
+const kWriter = Symbol("writer");
+const kLastWrite = Symbol("lastWrite");
+const kStarted = Symbol("started");
+const kReader = Symbol("reader");
+const kReadLoop = Symbol("readLoop");
+const kResizeReader = Symbol("resizeReader");
+const kResizeLoop = Symbol("resizeLoop");
+const kPartialEscape = Symbol("partialEscape");
+const kRoute = Symbol("route");
+const kPasteBuffer = Symbol("pasteBuffer");
+const kFeedModeReport = Symbol("feedModeReport");
+const kFeedCursorReport = Symbol("feedCursorReport");
+const kModeProbeHandlers = Symbol("modeProbeHandlers");
+const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
+const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
+const kSettleWidthProbe = Symbol("settleWidthProbe");
+const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
+const kModeProbeTimers = Symbol("modeProbeTimers");
+const kProbeMode = Symbol("probeMode");
+const kPriorBidiMode = Symbol("priorBidiMode");
+const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
 
 export class TerminalSession {
 	declare [kTransport]: TerminalTransport;

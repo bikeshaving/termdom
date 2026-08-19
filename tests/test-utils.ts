@@ -21,10 +21,6 @@ import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
-const kStdin = Symbol("stdin");
-const kTransport = Symbol("transport");
-const kDetectColorDepth = Symbol("detectColorDepth");
-
 /**
  * The width tables, as the mock terminal's own measure.
  *
@@ -87,6 +83,8 @@ const TABLE_UNICODE_VERSION = {
 
 /** charProperties kind: the cluster ended on a joiner and wants what follows. */
 const ZWJ_PENDING = 1;
+
+const kStdin = Symbol("stdin");
 
 /**
  * Mock WriteStream for testing that implements our minimal TTYWriteStream interface
@@ -168,6 +166,9 @@ class MockReadStream extends EventEmitter implements TTYReadStream {
 		this.emit("data", Buffer.from(data));
 	}
 }
+
+const kTransport = Symbol("transport");
+const kDetectColorDepth = Symbol("detectColorDepth");
 
 export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;

@@ -34,185 +34,6 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
-const kBubbles = Symbol("bubbles");
-const kCancelable = Symbol("cancelable");
-const kComposed = Symbol("composed");
-const kTimeStamp = Symbol("timeStamp");
-const kState = Symbol("state");
-const kDetail = Symbol("detail");
-const kReturnValue = Symbol("returnValue");
-const kWhich = Symbol("which");
-const kScreenX = Symbol("screenX");
-const kScreenY = Symbol("screenY");
-const kClientX = Symbol("clientX");
-const kClientY = Symbol("clientY");
-const kButton = Symbol("button");
-const kButtons = Symbol("buttons");
-const kModifiers = Symbol("modifiers");
-const kKey = Symbol("key");
-const kCode = Symbol("code");
-const kLocation = Symbol("location");
-const kRepeat = Symbol("repeat");
-const kIsComposing = Symbol("isComposing");
-const kCharCode = Symbol("charCode");
-const kKeyCode = Symbol("keyCode");
-const kInputType = Symbol("inputType");
-const kDeltaX = Symbol("deltaX");
-const kDeltaY = Symbol("deltaY");
-const kDeltaZ = Symbol("deltaZ");
-const kDeltaMode = Symbol("deltaMode");
-const kPointerId = Symbol("pointerId");
-const kWidth = Symbol("width");
-const kHeight = Symbol("height");
-const kPressure = Symbol("pressure");
-const kTangentialPressure = Symbol("tangentialPressure");
-const kTiltX = Symbol("tiltX");
-const kTiltY = Symbol("tiltY");
-const kTwist = Symbol("twist");
-const kAltitudeAngle = Symbol("altitudeAngle");
-const kAzimuthAngle = Symbol("azimuthAngle");
-const kPointerType = Symbol("pointerType");
-const kIsPrimary = Symbol("isPrimary");
-const kCoalesced = Symbol("coalesced");
-const kPredicted = Symbol("predicted");
-const kHandlers = Symbol("handlers");
-const kAttributeName = Symbol("attributeName");
-const kAttributeNamespace = Symbol("attributeNamespace");
-const kOldValue = Symbol("oldValue");
-const kAddedNodes = Symbol("addedNodes");
-const kRemovedNodes = Symbol("removedNodes");
-const kPreviousSibling = Symbol("previousSibling");
-const kNextSibling = Symbol("nextSibling");
-const kCallback = Symbol("callback");
-const kLiveNodes = Symbol("liveNodes");
-const kNodes = Symbol("nodes");
-const kRecords = Symbol("records");
-const kLive = Symbol("live");
-const kOwner = Symbol("owner");
-const kChildMember = Symbol("childMember");
-const kTold = Symbol("told");
-const kExact = Symbol("exact");
-const kVersion = Symbol("version");
-const kItems = Symbol("items");
-const kMaterialize = Symbol("materialize");
-const kRecompute = Symbol("recompute");
-const kRegistered = Symbol("registered");
-const kStanding = Symbol("standing");
-const kSplice = Symbol("splice");
-const kDefineIndices = Symbol("defineIndices");
-const kDefined = Symbol("defined");
-const kNames = Symbol("names");
-const kCompute = Symbol("compute");
-const kRoot = Symbol("root");
-const kWatched = Symbol("watched");
-const kMatches = Symbol("matches");
-const kMembersOf = Symbol("membersOf");
-const kMembers = Symbol("members");
-const kElement = Symbol("element");
-const kAttribute = Symbol("attribute");
-const kSupported = Symbol("supported");
-const kTokens = Symbol("tokens");
-const kWrite = Symbol("write");
-const kByName = Symbol("byName");
-const kDefinitions = Symbol("definitions");
-const kDefinitionIsRunning = Symbol("definitionIsRunning");
-const kWhenDefined = Symbol("whenDefined");
-const kScoped = Symbol("scoped");
-const kOptions = Symbol("options");
-const kToggleQueued = Symbol("toggleQueued");
-const kStateAtQueue = Symbol("stateAtQueue");
-const kOldState = Symbol("oldState");
-const kNewState = Symbol("newState");
-const kSource = Symbol("source");
-const kFocusDialog = Symbol("focusDialog");
-const kPreviouslyFocused = Symbol("previouslyFocused");
-const kClose = Symbol("close");
-const kElements = Symbol("elements");
-const kFiringReset = Symbol("firingReset");
-const kSubmitter = Symbol("submitter");
-const kMatching = Symbol("matching");
-const kAreas = Symbol("areas");
-const kCurrentTime = Symbol("currentTime");
-const kVolume = Symbol("volume");
-const kMuted = Symbol("muted");
-const kPlaybackRate = Symbol("playbackRate");
-const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
-const kPreservesPitch = Symbol("preservesPitch");
-const kTBodies = Symbol("tBodies");
-const kRows = Symbol("rows");
-const kTable = Symbol("table");
-const kCells = Symbol("cells");
-const kDirtyValue = Symbol("dirtyValue");
-const kSelectionStart = Symbol("selectionStart");
-const kSelectionEnd = Symbol("selectionEnd");
-const kSelectionDirection = Symbol("selectionDirection");
-const kChecked = Symbol("checked");
-const kDirtyChecked = Symbol("dirtyChecked");
-const kSetCheckedness = Symbol("setCheckedness");
-const kIndeterminate = Symbol("indeterminate");
-const kRequireSelectable = Symbol("requireSelectable");
-const kPreviousRadio = Symbol("previousRadio");
-const kPreviouslyChecked = Symbol("previouslyChecked");
-const kPreviouslyIndeterminate = Symbol("previouslyIndeterminate");
-const kValueText = Symbol("valueText");
-const kEngine = Symbol("engine");
-const kBuild = Symbol("build");
-const kOnKeydown = Symbol("onKeydown");
-const kOnBeforeInput = Symbol("onBeforeInput");
-const kKindFor = Symbol("kindFor");
-const kKind = Symbol("kind");
-const kPlaceholderText = Symbol("placeholderText");
-const kGlyphText = Symbol("glyphText");
-const kSelect = Symbol("select");
-const kDirty = Symbol("dirty");
-const kStored = Symbol("stored");
-const kSelectedOptions = Symbol("selectedOptions");
-const kPicker = Symbol("picker");
-const kOnMousedown = Symbol("onMousedown");
-const kOnBlur = Symbol("onBlur");
-const kOptionList = Symbol("optionList");
-const kHighlight = Symbol("highlight");
-const kReconcileRows = Symbol("reconcileRows");
-const kPickerRows = Symbol("pickerRows");
-const kStep = Symbol("step");
-const kCommit = Symbol("commit");
-const kOpenPicker = Symbol("openPicker");
-const kPlaceholderSpan = Symbol("placeholderSpan");
-const kGoalColumn = Symbol("goalColumn");
-const kVerticalTarget = Symbol("verticalTarget");
-const kBar = Symbol("bar");
-const kLevel = Symbol("level");
-const kFlags = Symbol("flags");
-const kValidity = Symbol("validity");
-const kRequireFormAssociated = Symbol("requireFormAssociated");
-const kDissolved = Symbol("dissolved");
-const kIsLastContent = Symbol("isLastContent");
-const kLastDescendant = Symbol("lastDescendant");
-const kIsDissolved = Symbol("isDissolved");
-const kHead = Symbol("head");
-const kTail = Symbol("tail");
-const kImplementation = Symbol("implementation");
-const kRange = Symbol("range");
-const kInDocument = Symbol("inDocument");
-const kDirection = Symbol("direction");
-const kStart = Symbol("start");
-const kEnd = Symbol("end");
-const kComposedOrder = Symbol("composedOrder");
-const kAnchorPoint = Symbol("anchorPoint");
-const kFocusPoint = Symbol("focusPoint");
-const kDocumentRange = Symbol("documentRange");
-const kAssociate = Symbol("associate");
-const kRangeFor = Symbol("rangeFor");
-const kReference = Symbol("reference");
-const kWhatToShow = Symbol("whatToShow");
-const kFilter = Symbol("filter");
-const kPointerBefore = Symbol("pointerBefore");
-const kTraverse = Symbol("traverse");
-const kActive = Symbol("active");
-const kCurrent = Symbol("current");
-const kTraverseChildren = Symbol("traverseChildren");
-const kTraverseSiblings = Symbol("traverseSiblings");
-
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -273,6 +94,8 @@ export function installUAEngine(document: object, engine: UAEngine): void {
 	(document as Record<symbol, UAEngine>)[kUAEngine] = engine;
 }
 
+const kUAUpgrade = Symbol("build a control's UA widget");
+
 /**
  * Build a control's user-agent widget if it has one and does not have it yet.
  * Idempotent and synchronous: the shadow tree exists by the time this returns,
@@ -283,20 +106,9 @@ export function upgradeUAWidget(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
 }
 
-const kUAUpgrade = Symbol("build a control's UA widget");
-const kUAReconcile = Symbol("bring a control's UA tree back into step");
-const kUAValueText = Symbol(
-	"the text node a control's editable value lives in",
-);
-const kUACaretRange = Symbol("where an element's own caret is");
-const kUASelectionRange = Symbol("what an element's own selection covers");
-
 /** A listener as this file's own dispatch takes one. */
 type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
-const kSetUASelection = Symbol("move a control's selection, whatever its type");
-const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
-const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 
 /** A text control's selection, read past the type gate the author meets. */
 function uaSelectionOf(control: object): {
@@ -308,6 +120,8 @@ function uaSelectionOf(control: object): {
 		kUASelection
 	]();
 }
+
+const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Move a text control's selection, past the type gate the author meets. */
 export function setUASelection(
@@ -322,6 +136,8 @@ export function setUASelection(
 		}
 	)[kSetUASelection](start, end, direction);
 }
+
+const kUAReconcile = Symbol("bring a control's UA tree back into step");
 
 /** Tell a control that its own state moved, so its UA tree follows. */
 function widgetChanged(element: object): void {
@@ -501,76 +317,17 @@ function validateAndExtract(
  * this file: the mutation algorithms that call them and the classes that
  * implement them. Engine invalidation hangs off these.
  */
-const kInsertionSteps = Symbol("insertion steps");
-const kRemovingSteps = Symbol("removing steps");
-const kAdoptingSteps = Symbol("adopting steps");
-const kChildrenChanged = Symbol("children changed steps");
-const kAttributeChanged = Symbol("attribute change steps");
-const kCloningSteps = Symbol("cloning steps");
-const kCloneSingle = Symbol("clone a single node");
-const kDispatchState = Symbol("event dispatch state");
-const kListeners = Symbol("event listener list");
-const kEventHandlerMap = Symbol("event handler map");
-const kGetTheParent = Symbol("get the parent");
-const kSetEventType = Symbol("set event type");
-const kIsMouseEvent = Symbol("is a mouse event");
-const kActivationBehavior = Symbol("activation behavior");
-const kLegacyPreActivationBehavior = Symbol("legacy-pre-activation behavior");
-const kLegacyCanceledActivationBehavior = Symbol(
-	"legacy-canceled activation behavior",
-);
 
 /**
  * A node's tree state. These are module-scoped symbols rather than #private
  * fields because the mutation algorithms are module functions: they operate on
  * whole subtrees of mixed node types, which no one class body can reach.
  */
-const kParent = Symbol("parent");
-const kFirstChild = Symbol("first child");
-const kLastChild = Symbol("last child");
-const kPrevious = Symbol("previous sibling");
-const kNext = Symbol("next sibling");
-const kDocument = Symbol("node document");
-const kChildNodes = Symbol("childNodes");
-const kChildren = Symbol("children");
-const kCollectionCaches = Symbol("collection caches");
-const kLiveLists = Symbol("live collections this node is the root of");
-const kHost = Symbol("host");
-const kRegisteredObservers = Symbol("registered observer list");
-const kShadowRoot = Symbol("shadow root");
-const kShadowMode = Symbol("shadow root mode");
-const kDelegatesFocus = Symbol("delegates focus");
-const kSlotAssignment = Symbol("slot assignment");
-const kClonable = Symbol("clonable");
-const kSerializable = Symbol("serializable");
-const kDeclarative = Symbol("declarative");
-const kUAInternal = Symbol("user-agent shadow root");
-const kAvailableToInternals = Symbol("available to element internals");
-const kSlotName = Symbol("slot name");
-const kSlottableName = Symbol("slottable name");
-const kAssignedSlot = Symbol("assigned slot");
-const kAssignedNodes = Symbol("assigned nodes");
-const kManualAssignment = Symbol("manually assigned nodes");
-const kManualSlot = Symbol("manual slot assignment");
-const kReactionQueue = Symbol("custom element reaction queue");
-const kPseudoElements = Symbol("user-agent pseudo-element slots");
-const kPseudoHost = Symbol("the element a pseudo-element originates from");
-const kPseudoName = Symbol("the pseudo-element a slot node fills");
-const kTemplateContent = Symbol("template content");
-const kRegistry = Symbol("custom element registry");
 
 /**
  * A range's boundary points, the selection a range belongs to, and a
  * document's selection and its pending selectionchange event.
  */
-const kStartNode = Symbol("range start node");
-const kStartOffset = Symbol("range start offset");
-const kEndNode = Symbol("range end node");
-const kEndOffset = Symbol("range end offset");
-const kRangeSelection = Symbol("the selection whose range this is");
-const kSelectionChanged = Symbol("the selection's range or direction changed");
-const kSelection = Symbol("the document's selection");
-const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 
 /* ------------------------------------------------------------------ events */
 
@@ -647,6 +404,12 @@ const LEGACY_EVENT_TYPES = new Map([
 	["transitionend", "webkitTransitionEnd"],
 ]);
 
+const kActivationBehavior = Symbol("activation behavior");
+const kLegacyPreActivationBehavior = Symbol("legacy-pre-activation behavior");
+const kLegacyCanceledActivationBehavior = Symbol(
+	"legacy-canceled activation behavior",
+);
+
 /**
  * The activation behavior an event target runs when a click dispatch reaches
  * it uncanceled, and the two legacy hooks around it that a checkbox and a
@@ -711,6 +474,8 @@ interface HostEventInstance
 	initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
 }
 
+const kDispatchState = Symbol("event dispatch state");
+
 /**
  * isTrusted is one accessor shared by every event, installed as an own
  * property of each: the interface declares it unforgeable, so it is not on
@@ -739,6 +504,15 @@ const hostInstallsIsTrusted = ((): boolean => {
 	);
 	return descriptor !== undefined && !descriptor.configurable;
 })();
+
+const kBubbles = Symbol("bubbles");
+const kCancelable = Symbol("cancelable");
+const kComposed = Symbol("composed");
+const kTimeStamp = Symbol("timeStamp");
+const kState = Symbol("state");
+const kSetEventType = Symbol("set event type");
+const kIsMouseEvent = Symbol("is a mouse event");
+const kType = Symbol("document type");
 
 /** An event, and the flags a listener sets on it while it is dispatched. */
 export class Event extends HostEvent {
@@ -994,6 +768,8 @@ function composedPath(state: DispatchState): EventTarget[] {
 	return composed;
 }
 
+const kDetail = Symbol("detail");
+
 /**
  * An event carrying a detail.
  *
@@ -1039,6 +815,8 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 	value: "CustomEvent",
 	configurable: true,
 });
+
+const kReturnValue = Symbol("returnValue");
 
 /**
  * The event fired before a document is unloaded, which a listener cancels to
@@ -1236,6 +1014,8 @@ function initModifiers(init: EventModifierInit): Set<string> {
 	return modifiers;
 }
 
+const kWhich = Symbol("which");
+
 /**
  * An event of a user interface.
  *
@@ -1294,6 +1074,14 @@ Object.defineProperty(UIEvent.prototype, Symbol.toStringTag, {
 	value: "UIEvent",
 	configurable: true,
 });
+
+const kScreenX = Symbol("screenX");
+const kScreenY = Symbol("screenY");
+const kClientX = Symbol("clientX");
+const kClientY = Symbol("clientY");
+const kButton = Symbol("button");
+const kButtons = Symbol("buttons");
+const kModifiers = Symbol("modifiers");
 
 /**
  * An event of a pointing device.
@@ -1444,6 +1232,14 @@ const DOM_KEY_LOCATION_LEFT = 1;
 const DOM_KEY_LOCATION_RIGHT = 2;
 const DOM_KEY_LOCATION_NUMPAD = 3;
 
+const kKey = Symbol("key");
+const kCode = Symbol("code");
+const kLocation = Symbol("location");
+const kRepeat = Symbol("repeat");
+const kIsComposing = Symbol("isComposing");
+const kCharCode = Symbol("charCode");
+const kKeyCode = Symbol("keyCode");
+
 /** An event of a key, named by the character it types and the key it is. */
 export class KeyboardEvent extends UIEvent {
 	declare [kKey]: string;
@@ -1567,6 +1363,8 @@ Object.defineProperties(KeyboardEvent.prototype, {
 	[Symbol.toStringTag]: {value: "KeyboardEvent", configurable: true},
 });
 
+const kData = Symbol("data");
+
 /** An event of text being composed by an input method. */
 export class CompositionEvent extends UIEvent {
 	declare [kData]: string;
@@ -1607,6 +1405,8 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+const kInputType = Symbol("inputType");
+
 /** An event of an editing host's text changing, and how it changed. */
 export class InputEvent extends UIEvent {
 	declare [kData]: string | null;
@@ -1643,6 +1443,11 @@ Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
 const DOM_DELTA_PIXEL = 0x00;
 const DOM_DELTA_LINE = 0x01;
 const DOM_DELTA_PAGE = 0x02;
+
+const kDeltaX = Symbol("deltaX");
+const kDeltaY = Symbol("deltaY");
+const kDeltaZ = Symbol("deltaZ");
+const kDeltaMode = Symbol("deltaMode");
 
 /** An event of a wheel turning over a target. */
 export class WheelEvent extends MouseEvent {
@@ -1704,6 +1509,21 @@ export interface PointerEventInit extends MouseEventInit {
 	coalescedEvents?: PointerEvent[];
 	predictedEvents?: PointerEvent[];
 }
+
+const kPointerId = Symbol("pointerId");
+const kWidth = Symbol("width");
+const kHeight = Symbol("height");
+const kPressure = Symbol("pressure");
+const kTangentialPressure = Symbol("tangentialPressure");
+const kTiltX = Symbol("tiltX");
+const kTiltY = Symbol("tiltY");
+const kTwist = Symbol("twist");
+const kAltitudeAngle = Symbol("altitudeAngle");
+const kAzimuthAngle = Symbol("azimuthAngle");
+const kPointerType = Symbol("pointerType");
+const kIsPrimary = Symbol("isPrimary");
+const kCoalesced = Symbol("coalesced");
+const kPredicted = Symbol("predicted");
 
 /**
  * An event of a pointer, which is the interface a synthetic click is built
@@ -2029,6 +1849,8 @@ function toEventListener(
 	throw new TypeError("An event listener must be an object or a function");
 }
 
+const kDocument = Symbol("node document");
+
 /**
  * The scroll-blocking types, which are passive by default at the roots a page
  * scrolls through, so that a listener there cannot cancel a scroll it was
@@ -2053,6 +1875,11 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 		target === (document.body as EventTarget | null)
 	);
 }
+
+const kHandlers = Symbol("handlers");
+const kListeners = Symbol("event listener list");
+const kEventHandlerMap = Symbol("event handler map");
+const kGetTheParent = Symbol("get the parent");
 
 /** An event target: a listener list, and the parent a dispatch walks to. */
 export class EventTarget {
@@ -2394,6 +2221,8 @@ export function installEventHandlers(
 /** The tables a window's own interface is installed from, which the engine owns. */
 export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.ts";
 
+const kDefaultView = Symbol("the window this document is displayed in");
+
 /**
  * Install an event handler attribute that belongs to the element's window
  * rather than to the element -- the set a `body` and a `frameset` forward.
@@ -2424,6 +2253,8 @@ function installForwardedEventHandler(prototype: object, name: string): void {
 		configurable: true,
 	});
 }
+
+const kHost = Symbol("host");
 
 /**
  * Retarget an object against another: walk out of the shadow trees the other
@@ -2459,6 +2290,8 @@ function retarget(
 function isShadowRoot(root: Node): boolean {
 	return root instanceof ShadowRoot;
 }
+
+const kShadowMode = Symbol("shadow root mode");
 
 function appendToPath(
 	state: DispatchState,
@@ -2848,6 +2681,8 @@ interface Materializable {
  */
 const rootlessMaterialized = new Set<Materializable>();
 
+const kLiveLists = Symbol("live collections this node is the root of");
+
 function registerMaterialized(
 	collection: Materializable,
 	owner: Node | null,
@@ -2868,6 +2703,8 @@ function registerMaterialized(
 function bumpVersion(): void {
 	treeVersion++;
 }
+
+const kParent = Symbol("parent");
 
 /**
  * Record a change to a tree's shape at `point`, and resynchronize what it
@@ -2909,6 +2746,12 @@ function bumpTreeVersion(
 		shapeSyncMethod.call(collection, point, changed, added);
 	}
 }
+
+const kCollectionCaches = Symbol("collection caches");
+const kAttributeSync = Symbol("resynchronize after an attribute change");
+const kClassList = Symbol("classList");
+const kAttributesMap = Symbol("attributes");
+const kTokenLists = Symbol("reflected token lists");
 
 /**
  * Resynchronize the collections an attribute change can have moved.
@@ -2972,6 +2815,22 @@ const DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 0x20;
 /** A stable per-node serial, so disconnected nodes order consistently. */
 let nodeSerial = 0;
 const kSerial = Symbol("node serial");
+
+const kInsertionSteps = Symbol("insertion steps");
+const kRemovingSteps = Symbol("removing steps");
+const kAdoptingSteps = Symbol("adopting steps");
+const kChildrenChanged = Symbol("children changed steps");
+const kCloningSteps = Symbol("cloning steps");
+const kCloneSingle = Symbol("clone a single node");
+const kFirstChild = Symbol("first child");
+const kLastChild = Symbol("last child");
+const kPrevious = Symbol("previous sibling");
+const kNext = Symbol("next sibling");
+const kChildNodes = Symbol("childNodes");
+const kRegisteredObservers = Symbol("registered observer list");
+const kRegistry = Symbol("custom element registry");
+const kAttributeList = Symbol("attribute list");
+const kDocumentURL = Symbol("document URL");
 
 export class Node extends EventTarget {
 	[kRegistry]: CustomElementRegistry | null;
@@ -3432,6 +3291,8 @@ function isShadowIncludingInclusiveAncestor(
 	return false;
 }
 
+const kShadowRoot = Symbol("shadow root");
+
 /**
  * Every shadow-including inclusive descendant, in shadow-including tree order:
  * a node, then its shadow root's tree, then its children's.
@@ -3644,6 +3505,10 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	insertNode(node, parent, referenceChild, false);
 	return node;
 }
+
+const kSlotAssignment = Symbol("slot assignment");
+const kAssignedNodes = Symbol("assigned nodes");
+const kCustomState = Symbol("custom element state");
 
 /** Insert node into parent before child. */
 function insertNode(
@@ -3949,6 +3814,9 @@ function preRemove(child: Node, parent: Node): Node {
 	return child;
 }
 
+const kRoot = Symbol("root");
+const kAssignedSlot = Symbol("assigned slot");
+
 /** Remove a node from its parent. */
 function removeNode(node: Node, suppressObservers = false): void {
 	const parent = node[kParent];
@@ -4056,10 +3924,6 @@ function adoptNode(node: Node, document: Document): void {
 
 /* ----------------------------------------------------- mutation observers */
 
-const kObserveNode = Symbol("add a node to an observer's node list");
-const kEnqueueRecord = Symbol("enqueue a record");
-const kNotifyObserver = Symbol("deliver an observer's records");
-
 export interface MutationObserverInit {
 	childList?: boolean;
 	attributes?: boolean;
@@ -4134,6 +3998,9 @@ function queueMutationObserverMicrotask(): void {
 	mutationObserverMicrotaskQueued = true;
 	queueMicrotask(notifyMutationObservers);
 }
+
+const kObserveNode = Symbol("add a node to an observer's node list");
+const kNotifyObserver = Symbol("deliver an observer's records");
 
 /**
  * Deliver every pending observer's records.
@@ -4256,6 +4123,15 @@ function removeTransientObservers(
 		registeredObserverCount--;
 	}
 }
+
+const kAttributeName = Symbol("attributeName");
+const kAttributeNamespace = Symbol("attributeNamespace");
+const kOldValue = Symbol("oldValue");
+const kAddedNodes = Symbol("addedNodes");
+const kRemovedNodes = Symbol("removedNodes");
+const kPreviousSibling = Symbol("previousSibling");
+const kNextSibling = Symbol("nextSibling");
+const kTarget = Symbol("processing instruction target");
 
 /** A record of one mutation, as an observer's callback receives it. */
 export class MutationRecord {
@@ -4405,6 +4281,12 @@ function toStringSequence(value: Iterable<string>): string[] {
 	}
 	return [...value].map((entry) => String(entry));
 }
+
+const kCallback = Symbol("callback");
+const kLiveNodes = Symbol("liveNodes");
+const kNodes = Symbol("nodes");
+const kRecords = Symbol("records");
+const kEnqueueRecord = Symbol("enqueue a record");
 
 /** An observer of a tree: what it watches, and the records it has to deliver. */
 export class MutationObserver {
@@ -4631,7 +4513,22 @@ function queueTreeMutationRecord(
 const kEnsure = Symbol("recompute if stale");
 const kComputed = Symbol("the list as last computed");
 const kGeneration = Symbol("how many lists the collection has been");
-const kAttributeSync = Symbol("resynchronize after an attribute change");
+
+const kLive = Symbol("live");
+const kOwner = Symbol("owner");
+const kChildMember = Symbol("childMember");
+const kTold = Symbol("told");
+const kExact = Symbol("exact");
+const kVersion = Symbol("version");
+const kItems = Symbol("items");
+const kMaterialize = Symbol("materialize");
+const kRecompute = Symbol("recompute");
+const kRegistered = Symbol("registered");
+const kStanding = Symbol("standing");
+const kSplice = Symbol("splice");
+const kDefineIndices = Symbol("defineIndices");
+const kDefined = Symbol("defined");
+const kNames = Symbol("names");
 
 /**
  * The list behind a live NodeList or HTMLCollection.
@@ -4938,6 +4835,8 @@ const shapeSyncMethod = (
 	>
 )[kShapeSync];
 
+const kCompute = Symbol("compute");
+
 export class NodeList extends LiveList {
 	declare forEach: (
 		callback: (node: Node, index: number, list: NodeList) => void,
@@ -5117,6 +5016,8 @@ function elementChildren(parent: Node): Element[] {
 	return elements;
 }
 
+const kLocalName = Symbol("local name");
+
 /**
  * Whether none of these nodes is a named property of a collection holding it.
  *
@@ -5138,6 +5039,11 @@ function areNameless(members: readonly Node[]): boolean {
 	}
 	return true;
 }
+
+const kWatched = Symbol("watched");
+const kMatches = Symbol("matches");
+const kMembersOf = Symbol("membersOf");
+const kMembers = Symbol("members");
 
 /**
  * The elements of a tree that pass a test, cached on the tree they walk.
@@ -5229,6 +5135,9 @@ class MatchingCollection extends HTMLCollection {
 	}
 }
 
+const kNamespace = Symbol("namespace");
+const kPrefix = Symbol("prefix");
+
 function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 	const cache = collectionCache(root);
 	const key = `tag:${qualifiedName}`;
@@ -5280,6 +5189,8 @@ function elementsByTagNameNS(
 	return collection;
 }
 
+const kClassTokens = Symbol("the parsed class attribute");
+
 /**
  * The tokens of an element's class attribute.
  *
@@ -5296,6 +5207,8 @@ function classTokens(element: Element): ReadonlySet<string> {
 	}
 	return tokens;
 }
+
+const kMode = Symbol("document mode");
 
 function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 	const cache = collectionCache(root);
@@ -5360,6 +5273,12 @@ function asciiUppercase(value: string): string {
 		String.fromCharCode(character.charCodeAt(0) - 32),
 	);
 }
+
+const kElement = Symbol("element");
+const kAttribute = Symbol("attribute");
+const kSupported = Symbol("supported");
+const kTokens = Symbol("tokens");
+const kWrite = Symbol("write");
 
 export class DOMTokenList extends LiveList {
 	declare forEach: (
@@ -5568,8 +5487,6 @@ function validateTokens(tokens: string[]): void {
 
 /* --------------------------------------------------------- character data */
 
-const kData = Symbol("data");
-
 export class CharacterData extends Node {
 	[kData]: string;
 
@@ -5715,6 +5632,8 @@ function queueCharacterDataMutationRecord(
 	);
 }
 
+const kManualSlot = Symbol("manual slot assignment");
+
 export class Text extends CharacterData {
 	[kAssignedSlot]: HTMLSlotElement | null;
 	[kManualSlot]: HTMLSlotElement | null;
@@ -5842,8 +5761,6 @@ Object.defineProperty(Comment.prototype, Symbol.toStringTag, {
 	value: "Comment",
 	configurable: true,
 });
-
-const kTarget = Symbol("processing instruction target");
 
 export class ProcessingInstruction extends CharacterData {
 	[kTarget]: string;
@@ -6008,12 +5925,8 @@ function setDescendantText(node: Node, value: string | null): void {
 
 /* ------------------------------------------------------------------- attrs */
 
-const kNamespace = Symbol("namespace");
-const kPrefix = Symbol("prefix");
-const kLocalName = Symbol("local name");
 const kValue = Symbol("attribute value");
 const kOwnerElement = Symbol("owner element");
-const kAttributeList = Symbol("attribute list");
 const kQualifiedName = Symbol("qualified name");
 
 export class Attr extends Node {
@@ -6125,6 +6038,8 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
 	}
 	changeAttribute(attribute, value);
 }
+
+const kAttributeChanged = Symbol("attribute change steps");
 
 /**
  * The attribute change steps run AFTER the change lands, as the DOM Standard
@@ -6381,24 +6296,14 @@ installArrayIteration(NamedNodeMap.prototype, false);
 
 /* ---------------------------------------------------------------- elements */
 
-const kCustomState = Symbol("custom element state");
-const kDefinition = Symbol("element definition");
-const kIsValue = Symbol("is value");
-const kClassList = Symbol("classList");
-const kClassTokens = Symbol("the parsed class attribute");
-const kAttributesMap = Symbol("attributes");
-const kTokenLists = Symbol("reflected token lists");
-const kARIAElements = Symbol("explicitly set attr-elements");
-const kDataset = Symbol("dataset");
-const kClickInProgress = Symbol("click in progress");
-const kInternals = Symbol("element internals");
-
 type CustomElementState =
 	| "uncustomized" |
 	"undefined" |
 	"failed" |
 	"custom" |
 	"precustomized";
+
+const kByName = Symbol("byName");
 
 /**
  * The interface an element name is built through.
@@ -6443,6 +6348,19 @@ const builtinRegistry = new ElementRegistry();
  * this flag is how the constructor tells the two apart.
  */
 let internalConstruction = false;
+
+const kChildren = Symbol("children");
+const kSlottableName = Symbol("slottable name");
+const kReactionQueue = Symbol("custom element reaction queue");
+const kPseudoElements = Symbol("user-agent pseudo-element slots");
+const kPseudoHost = Symbol("the element a pseudo-element originates from");
+const kPseudoName = Symbol("the pseudo-element a slot node fills");
+const kDefinition = Symbol("element definition");
+const kIsValue = Symbol("is value");
+const kARIAElements = Symbol("explicitly set attr-elements");
+const kDataset = Symbol("dataset");
+const kClickInProgress = Symbol("click in progress");
+const kInternals = Symbol("element internals");
 
 export class Element extends Node {
 	[kNamespace]: string | null;
@@ -7056,6 +6974,10 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	value: "Element",
 	configurable: true,
 });
+
+const alreadyConstructed = Symbol("already constructed");
+const kSyncDataset = Symbol("sync the data-* properties");
+const kActiveElement = Symbol("focused area");
 
 /**
  * The HTML element constructor.
@@ -7818,12 +7740,7 @@ function isValidCustomElementName(name: string): boolean {
 
 /* --------------------------------------------------- custom element reactions */
 
-const kDefinitionFor = Symbol("the definition a constructor defines");
-const kLookUp = Symbol("look up a custom element definition");
-const kIsScopedRegistry = Symbol("whether an author built this registry");
-
 /** The marker an entry in a construction stack becomes once super() ran. */
-const alreadyConstructed = Symbol("already constructed");
 
 type CustomElementConstructor = new () => Element;
 
@@ -8072,6 +7989,14 @@ const FORM_CALLBACK_NAMES = [
 
 /** Every registry this realm has, in the order they were built. */
 const registries: CustomElementRegistry[] = [];
+
+const kDefinitions = Symbol("definitions");
+const kDefinitionIsRunning = Symbol("definitionIsRunning");
+const kWhenDefined = Symbol("whenDefined");
+const kScoped = Symbol("scoped");
+const kDefinitionFor = Symbol("the definition a constructor defines");
+const kLookUp = Symbol("look up a custom element definition");
+const kIsScopedRegistry = Symbol("whether an author built this registry");
 
 export class CustomElementRegistry {
 	/**
@@ -8585,6 +8510,13 @@ interface ShadowRootInit {
 	serializable?: boolean;
 }
 
+const kDelegatesFocus = Symbol("delegates focus");
+const kClonable = Symbol("clonable");
+const kSerializable = Symbol("serializable");
+const kDeclarative = Symbol("declarative");
+const kUAInternal = Symbol("user-agent shadow root");
+const kAvailableToInternals = Symbol("available to element internals");
+
 /**
  * A shadow root: the root of a tree a host element carries beside its
  * children.
@@ -8871,6 +8803,9 @@ function hasInclusiveDescendantSlot(node: Node): boolean {
 	return false;
 }
 
+const kSlotName = Symbol("slot name");
+const kManualAssignment = Symbol("manually assigned nodes");
+
 /** The spec's "find a slot" algorithm. */
 function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const parent = slottable[kParent];
@@ -9151,6 +9086,8 @@ Object.defineProperty(HTMLSlotElement.prototype, Symbol.toStringTag, {
 });
 
 builtinRegistry.define(HTML_NAMESPACE, "slot", HTMLSlotElement);
+
+const kTemplateContent = Symbol("template content");
 
 /**
  * A template: an element whose children are parsed into a fragment beside it
@@ -9728,6 +9665,8 @@ export class HTMLCanvasElement extends HTMLElement {
 
 export class HTMLDataElement extends HTMLElement {}
 
+const kOptions = Symbol("options");
+
 /** A list of suggestions, whose options an input reaches through it. */
 export class HTMLDataListElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -9754,6 +9693,9 @@ export class HTMLDataListElement extends HTMLElement {
 		return options;
 	}
 }
+
+const kToggleQueued = Symbol("toggleQueued");
+const kStateAtQueue = Symbol("stateAtQueue");
 
 /**
  * A disclosure, whose open attribute is its whole state.
@@ -9838,6 +9780,10 @@ export interface ToggleEventInit extends EventInit {
 	newState?: string;
 	source?: Element | null;
 }
+
+const kOldState = Symbol("oldState");
+const kNewState = Symbol("newState");
+const kSource = Symbol("source");
 /** The event a details or a popover fires when it opens or closes. */
 export class ToggleEvent extends Event {
 	declare [kOldState]: string;
@@ -9871,6 +9817,10 @@ Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 });
 
 const kDialogFocusingSteps = Symbol("the dialog focusing steps");
+
+const kFocusDialog = Symbol("focusDialog");
+const kPreviouslyFocused = Symbol("previouslyFocused");
+const kClose = Symbol("close");
 /**
  * A dialog.
  *
@@ -10019,6 +9969,8 @@ export class HTMLDialogElement extends HTMLElement {
 		dispatch(this, new Event("close"));
 	}
 }
+
+const kTopLayer = Symbol("the document's top layer");
 /**
  * A document's TOP LAYER: the elements that render above every stacking
  * context of the document, in the order they entered it. Membership is what
@@ -10056,6 +10008,8 @@ export class HTMLEmbedElement extends HTMLElement {
 		return null;
 	}
 }
+
+const kElements = Symbol("elements");
 
 /** A group of controls, and the group's own disabling. */
 export class HTMLFieldSetElement extends HTMLElement {
@@ -10096,6 +10050,8 @@ export class HTMLFieldSetElement extends HTMLElement {
 }
 
 export class HTMLFontElement extends HTMLElement {}
+
+const kFiringReset = Symbol("firingReset");
 
 /**
  * A form, and the controls it owns.
@@ -10245,6 +10201,8 @@ function resetControl(control: Element): void {
 export interface SubmitEventInit extends EventInit {
 	submitter?: HTMLElement | null;
 }
+
+const kSubmitter = Symbol("submitter");
 /** The event a form fires before it is submitted, naming the button. */
 export class SubmitEvent extends Event {
 	declare [kSubmitter]: HTMLElement | null;
@@ -10263,6 +10221,8 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 	value: "SubmitEvent",
 	configurable: true,
 });
+
+const kMatching = Symbol("matching");
 /**
  * The controls of a form, which answers a name with every control that has
  * it: one element, or a list of the radio buttons that share it.
@@ -10542,6 +10502,8 @@ export class HTMLLinkElement extends HTMLElement {
 	}
 }
 
+const kAreas = Symbol("areas");
+
 /** An image map, and the areas inside it. */
 export class HTMLMapElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -10585,6 +10547,13 @@ const HAVE_METADATA = 1;
 const HAVE_CURRENT_DATA = 2;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_ENOUGH_DATA = 4;
+
+const kCurrentTime = Symbol("currentTime");
+const kVolume = Symbol("volume");
+const kMuted = Symbol("muted");
+const kPlaybackRate = Symbol("playbackRate");
+const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
+const kPreservesPitch = Symbol("preservesPitch");
 /**
  * A media element.
  *
@@ -10828,6 +10797,8 @@ export class HTMLSourceElement extends HTMLElement {}
 
 export class HTMLSpanElement extends HTMLElement {}
 
+const kStyleElements = Symbol("how many style elements the tree holds");
+
 /**
  * A style sheet written into the document.
  *
@@ -10889,6 +10860,9 @@ export class HTMLTableCellElement extends HTMLElement {
 }
 
 export class HTMLTableColElement extends HTMLElement {}
+
+const kTBodies = Symbol("tBodies");
+const kRows = Symbol("rows");
 
 /** A table, and the rows and sections a caller reaches and builds. */
 export class HTMLTableElement extends HTMLElement {
@@ -11161,6 +11135,9 @@ function tableRows(table: Element): Element[] {
 	return [...head, ...middle, ...foot];
 }
 
+const kTable = Symbol("table");
+const kCells = Symbol("cells");
+
 /** One row of a table, and the cells it holds. */
 export class HTMLTableRowElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -11345,6 +11322,10 @@ export function isTextField(element: {
 	return type !== "checkbox" && type !== "radio" && type !== "hidden";
 }
 
+const kUAValueText = Symbol(
+	"the text node a control's editable value lives in",
+);
+
 /**
  * The value part's text node inside a form control's user-agent shadow tree,
  * or null before the tree is built. The control's editable text lives at its
@@ -11368,6 +11349,8 @@ export function fieldValueText(field: object): UAText | null {
  */
 const caretRanges = new WeakMap<UADocument, UARange>();
 
+const kUACaretRange = Symbol("where an element's own caret is");
+
 /**
  * Where an element's caret is, as a collapsed Range the caller can measure --
  * or null for an element that has no caret of its own. The element answers;
@@ -11382,6 +11365,8 @@ export function caretRangeOf(element: object): UARange | null {
 		]?.() ?? null
 	);
 }
+
+const kUASelectionRange = Symbol("what an element's own selection covers");
 
 /**
  * What an element's own selection covers, as a Range the caller can measure --
@@ -11501,6 +11486,8 @@ function fieldSelectionMove(
 	}
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
+
+const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
 
 /**
  * The field-editing keys shared by <input> and <textarea>: Backspace/Delete
@@ -11650,6 +11637,8 @@ function collapsedEdit(value: string, pos: number): FieldEditResult {
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
+const kSetUAValue = Symbol("write a text control's value, as a user edit does");
+
 /**
  * Apply an edit result to a field's own value and selection, firing `input` on
  * a real value change (the value write reconciles the control's tree) and
@@ -11750,8 +11739,6 @@ function uaEngineOf(node: object): UAEngine | undefined {
 	return document?.[kUAEngine];
 }
 
-const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
-
 /**
  * Apply the text selection API's clamping and direction rules, and tell the
  * control that its selection moved.
@@ -11777,6 +11764,8 @@ function setTextSelection(
 	store([clampedStart, clampedEnd, kept]);
 	scheduleTextSelectionChange(control);
 }
+
+const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
 
 /** Queue the selectionchange event a text control fires at itself. */
 function scheduleTextSelectionChange(control: Element): void {
@@ -11877,6 +11866,28 @@ export class HTMLButtonElement extends HTMLElement {
 		popoverTargetActivationBehavior(this, event.target);
 	}
 }
+
+const kDirtyValue = Symbol("dirtyValue");
+const kSelectionStart = Symbol("selectionStart");
+const kSelectionEnd = Symbol("selectionEnd");
+const kSelectionDirection = Symbol("selectionDirection");
+const kChecked = Symbol("checked");
+const kDirtyChecked = Symbol("dirtyChecked");
+const kSetCheckedness = Symbol("setCheckedness");
+const kIndeterminate = Symbol("indeterminate");
+const kRequireSelectable = Symbol("requireSelectable");
+const kPreviousRadio = Symbol("previousRadio");
+const kPreviouslyChecked = Symbol("previouslyChecked");
+const kPreviouslyIndeterminate = Symbol("previouslyIndeterminate");
+const kValueText = Symbol("valueText");
+const kEngine = Symbol("engine");
+const kBuild = Symbol("build");
+const kOnKeydown = Symbol("onKeydown");
+const kOnBeforeInput = Symbol("onBeforeInput");
+const kKindFor = Symbol("kindFor");
+const kKind = Symbol("kind");
+const kPlaceholderText = Symbol("placeholderText");
+const kGlyphText = Symbol("glyphText");
 
 /**
  * A form control whose kind its type attribute names.
@@ -12827,6 +12838,8 @@ function selectOf(option: Element): HTMLSelectElement | null {
 	return null;
 }
 
+const kSelect = Symbol("select");
+
 /** The options of a select, which can be added to and taken from by index. */
 export class HTMLOptionsCollection extends HTMLCollection {
 	declare [kSelect]: HTMLSelectElement;
@@ -12918,6 +12931,9 @@ Object.defineProperty(HTMLOptionsCollection.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+const kDirty = Symbol("dirty");
+const kStored = Symbol("stored");
+
 /** The result of a calculation, whose value resets to its child text. */
 export class HTMLOutputElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -12972,6 +12988,18 @@ export class HTMLOutputElement extends HTMLElement {
 		this[kDirty] = false;
 	}
 }
+
+const kSelectedOptions = Symbol("selectedOptions");
+const kPicker = Symbol("picker");
+const kOnMousedown = Symbol("onMousedown");
+const kOnBlur = Symbol("onBlur");
+const kOptionList = Symbol("optionList");
+const kHighlight = Symbol("highlight");
+const kReconcileRows = Symbol("reconcileRows");
+const kPickerRows = Symbol("pickerRows");
+const kStep = Symbol("step");
+const kCommit = Symbol("commit");
+const kOpenPicker = Symbol("openPicker");
 
 /**
  * A control that picks among its options.
@@ -13564,6 +13592,10 @@ function askForAReset(select: HTMLSelectElement): void {
 	}
 }
 
+const kPlaceholderSpan = Symbol("placeholderSpan");
+const kGoalColumn = Symbol("goalColumn");
+const kVerticalTarget = Symbol("verticalTarget");
+
 /**
  * A multi-line control, whose default value is its child text.
  *
@@ -14116,6 +14148,9 @@ function setGaugeFill(bar: UAElement, fraction: number | null): void {
 	}
 }
 
+const kBar = Symbol("bar");
+const kLevel = Symbol("level");
+
 /**
  * A gauge, whose six numbers are each read inside the ones around them.
  *
@@ -14357,10 +14392,6 @@ export class HTMLProgressElement extends HTMLElement {
 
 /* ------------------------------------------------------------- popovers */
 
-const kPopoverShowing = Symbol("a popover is opening");
-
-const kPopoverHidingCount = Symbol("how many popovers are closing");
-
 /**
  * A popover's state, which no attribute records.
  *
@@ -14509,6 +14540,9 @@ function popoverValidity(
 function isPopoverException(result: true | false | unknown): boolean {
 	return result !== true && result !== false;
 }
+
+const kPopoverShowing = Symbol("a popover is opening");
+const kPopoverHidingCount = Symbol("how many popovers are closing");
 
 /**
  * HTML's show popover: the popover joins the top layer, and an auto one first
@@ -15228,7 +15262,6 @@ function datasetPropertyName(attribute: string): string | null {
 	return property;
 }
 
-const kSyncDataset = Symbol("sync the data-* properties");
 const kDatasetElement = Symbol("the element a data map belongs to");
 const kDatasetNames = Symbol("the names a data map has materialized");
 
@@ -15393,6 +15426,8 @@ function isLabelable(element: Element): boolean {
 	);
 }
 
+const kFormDisabled = Symbol("disabled by a fieldset or its own attribute");
+
 /**
  * Whether a form control is disabled: by its own attribute, or by a fieldset
  * above it whose first legend does not contain the control.
@@ -15495,6 +15530,8 @@ function formOwner(element: Element): HTMLFormElement | null {
 	return null;
 }
 
+const kFormOwner = Symbol("the form an internals last reported");
+
 /**
  * Tell a form-associated custom element that its owner changed.
  *
@@ -15554,15 +15591,6 @@ function refreshFormDisabled(element: Element): void {
 
 /* -------------------------------------------------------- element internals */
 
-const kFormOwner = Symbol("the form an internals last reported");
-const kFormDisabled = Symbol("disabled by a fieldset or its own attribute");
-const kValidityFlags = Symbol("validity flags");
-const kValidationMessage = Symbol("validation message");
-const kValidationAnchor = Symbol("validation anchor");
-const kSubmissionValue = Symbol("submission value");
-const kElementInternalsTarget = Symbol("the element an internals belongs to");
-const kStates = Symbol("custom state set");
-
 interface ValidityFlags {
 	valueMissing: boolean;
 	typeMismatch: boolean;
@@ -15604,6 +15632,9 @@ function noValidityFlags(): ValidityFlags {
 	};
 }
 
+const kFlags = Symbol("flags");
+const kValidityFlags = Symbol("validity flags");
+
 /** The ten constraints a control can fail, and whether it fails none. */
 export class ValidityState {
 	declare [kFlags]: () => ValidityFlags;
@@ -15639,6 +15670,8 @@ Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, {
 	value: "ValidityState",
 	configurable: true,
 });
+
+const kStates = Symbol("custom state set");
 
 /**
  * The states a custom element declares about itself.
@@ -15719,6 +15752,13 @@ Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
 	value: "CustomStateSet",
 	configurable: true,
 });
+
+const kValidity = Symbol("validity");
+const kRequireFormAssociated = Symbol("requireFormAssociated");
+const kValidationMessage = Symbol("validation message");
+const kValidationAnchor = Symbol("validation anchor");
+const kSubmissionValue = Symbol("submission value");
+const kElementInternalsTarget = Symbol("the element an internals belongs to");
 
 /**
  * A custom element's own handle on the parts of it the platform owns: its
@@ -16314,6 +16354,13 @@ export function createFlatTreeWalker<N>(
 		dissolved as ((node: Node) => boolean) | undefined,
 	) as unknown as FlatTreeWalker<N>;
 }
+
+const kDissolved = Symbol("dissolved");
+const kIsLastContent = Symbol("isLastContent");
+const kLastDescendant = Symbol("lastDescendant");
+const kIsDissolved = Symbol("isDissolved");
+const kHead = Symbol("head");
+const kTail = Symbol("tail");
 
 class FlatWalker {
 	declare readonly root: Node;
@@ -16982,18 +17029,6 @@ Object.defineProperty(DOMRect.prototype, Symbol.toStringTag, {
 
 /* --------------------------------------------------------------- document */
 
-const kDocumentURL = Symbol("document URL");
-const kMode = Symbol("document mode");
-const kType = Symbol("document type");
-const kContentType = Symbol("content type");
-const kEncoding = Symbol("encoding");
-const kIdMap = Symbol("id map");
-const kNwsapi = Symbol("selector engine");
-const kActiveElement = Symbol("focused area");
-const kDefaultView = Symbol("the window this document is displayed in");
-const kStyleElements = Symbol("how many style elements the tree holds");
-const kTopLayer = Symbol("the document's top layer");
-
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
 
@@ -17023,6 +17058,14 @@ export function setAmbientDocument(document: Document): void {
 function isHTMLDocument(document: Document): boolean {
 	return document[kType] === "html";
 }
+
+const kImplementation = Symbol("implementation");
+const kSelection = Symbol("the document's selection");
+const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
+const kContentType = Symbol("content type");
+const kEncoding = Symbol("encoding");
+const kIdMap = Symbol("id map");
+const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
 	constructor(...args: ConstructorParameters<typeof Node>) {
@@ -18559,6 +18602,8 @@ function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
 /** How many ranges have ever been registered; the mutation steps' fast path. */
 let liveRangesEver = 0;
 
+const kStartNode = Symbol("range start node");
+
 function registerLiveRange(range: Range): void {
 	const root = getRoot(range[kStartNode]);
 	let set = liveRangesByRoot.get(root);
@@ -18598,6 +18643,10 @@ function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 		steps(range);
 	}
 }
+
+const kStartOffset = Symbol("range start offset");
+const kEndNode = Symbol("range end node");
+const kEndOffset = Symbol("range end offset");
 
 /**
  * The boundary point steps the insert algorithm runs: a node inserted before a
@@ -19225,6 +19274,8 @@ function insertIntoRange(range: Range, node: Node): void {
 	}
 }
 
+const kRangeSelection = Symbol("the selection whose range this is");
+
 export class Range extends AbstractRange {
 	[kRangeSelection]: Selection | null;
 
@@ -19618,6 +19669,8 @@ Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+const kSelectionChanged = Symbol("the selection's range or direction changed");
+
 /* -------------------------------------------------------------- selection */
 
 /**
@@ -19734,6 +19787,18 @@ function createSelection(document: Document): Selection {
 		selectionUnderConstruction = null;
 	}
 }
+
+const kRange = Symbol("range");
+const kInDocument = Symbol("inDocument");
+const kDirection = Symbol("direction");
+const kStart = Symbol("start");
+const kEnd = Symbol("end");
+const kComposedOrder = Symbol("composedOrder");
+const kAnchorPoint = Symbol("anchorPoint");
+const kFocusPoint = Symbol("focusPoint");
+const kDocumentRange = Symbol("documentRange");
+const kAssociate = Symbol("associate");
+const kRangeFor = Symbol("rangeFor");
 
 export class Selection {
 	declare [kDocument]: Document;
@@ -20357,6 +20422,13 @@ function precedingWithin(node: Node, root: Node): Node | null {
 
 const kPreRemove = Symbol("node iterator pre-removing steps");
 
+const kReference = Symbol("reference");
+const kWhatToShow = Symbol("whatToShow");
+const kFilter = Symbol("filter");
+const kPointerBefore = Symbol("pointerBefore");
+const kTraverse = Symbol("traverse");
+const kActive = Symbol("active");
+
 export class NodeIterator {
 	declare [kRoot]: Node;
 	declare [kReference]: Node;
@@ -20489,6 +20561,10 @@ Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
 	value: "NodeIterator",
 	configurable: true,
 });
+
+const kCurrent = Symbol("current");
+const kTraverseChildren = Symbol("traverseChildren");
+const kTraverseSiblings = Symbol("traverseSiblings");
 
 export class TreeWalker {
 	declare [kRoot]: Node;
