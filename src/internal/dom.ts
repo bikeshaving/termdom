@@ -381,10 +381,13 @@ const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
 // The combining-mark ranges are the production's own, and are meant to match
 // a combining mark on its own rather than as part of a grapheme.
 
+/* eslint-disable no-misleading-character-class -- the XML Name production
+   matches lone combining marks by definition */
 const XML_NAME = new RegExp(
 	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
 	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
 );
+/* eslint-enable no-misleading-character-class */
 
 /** Throw unless the string matches the XML Name production. */
 function validateXMLName(name: string): void {
@@ -2234,7 +2237,8 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null) ?
+		typeof value === "function" ||
+		(typeof value === "object" && value !== null) ?
 				(value as EventHandlerValue) :
 			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
@@ -2842,8 +2846,7 @@ interface Materializable {
  * that lists a node's descendants is held by that node, under kLiveLists; the
  * rootless few are held here.
  */
-const rootlessMaterialized: Array<WeakRef<Materializable>> = [];
-let rootlessCompactAt = 8;
+const rootlessMaterialized = new Set<Materializable>();
 
 function registerMaterialized(
 	collection: Materializable,
@@ -2858,17 +2861,7 @@ function registerMaterialized(
 		}
 		return;
 	}
-	rootlessMaterialized.push(new WeakRef(collection));
-	if (rootlessMaterialized.length >= rootlessCompactAt) {
-		let write = 0;
-		for (let read = 0; read < rootlessMaterialized.length; read++) {
-			if (rootlessMaterialized[read].deref() !== undefined) {
-				rootlessMaterialized[write++] = rootlessMaterialized[read];
-			}
-		}
-		rootlessMaterialized.length = write;
-		rootlessCompactAt = Math.max(8, write * 2);
-	}
+	rootlessMaterialized.add(collection);
 }
 
 /** Record a change that every live collection must see on its next read. */
@@ -2912,11 +2905,8 @@ function bumpTreeVersion(
 			shapeSyncMethod.call(collection, point, changed, added);
 		}
 	}
-	for (let i = 0; i < rootlessMaterialized.length; i++) {
-		const collection = rootlessMaterialized[i].deref();
-		if (collection !== undefined) {
-			shapeSyncMethod.call(collection, point, changed, added);
-		}
+	for (const collection of rootlessMaterialized) {
+		shapeSyncMethod.call(collection, point, changed, added);
 	}
 }
 
@@ -3680,7 +3670,29 @@ function insertNode(
 	const previousSibling =
 		child !== null ? child[kPrevious] : parent[kLastChild];
 	const document = parent[kDocument];
+	const newRoot = getRoot(parent);
 	for (const inserted of nodes) {
+		// The inserted node was its own tree's root; whatever was registered
+		// under it belongs to the tree it is joining.
+		const carriedRanges = liveRangesByRoot.get(inserted);
+		if (carriedRanges !== undefined && inserted !== newRoot) {
+			liveRangesByRoot.delete(inserted);
+			const set = liveRangesByRoot.get(newRoot);
+			if (set === undefined) {
+				liveRangesByRoot.set(newRoot, carriedRanges);
+			} else {
+				for (const range of carriedRanges) {
+					set.add(range);
+				}
+			}
+		}
+		const carriedIterators = nodeIteratorsByRoot.get(inserted);
+		if (carriedIterators !== undefined && inserted !== newRoot) {
+			nodeIteratorsByRoot.delete(inserted);
+			for (const iterator of carriedIterators) {
+				registerNodeIterator(newRoot, iterator);
+			}
+		}
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
 		const shadow =
@@ -3944,10 +3956,16 @@ function removeNode(node: Node, suppressObservers = false): void {
 		return;
 	}
 	liveRangePreRemoveSteps(node);
-	for (const reference of node[kDocument][kNodeIterators]) {
-		const iterator = reference.deref();
-		if (iterator !== undefined) {
+	const iterators = nodeIteratorsByRoot.get(getRoot(node));
+	if (iterators !== undefined) {
+		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
+			// The removal makes `node` a root; an iterator rooted inside the
+			// leaving subtree belongs to that new tree.
+			if (isInclusiveAncestor(node, iterator[kRoot])) {
+				iterators.delete(iterator);
+				registerNodeIterator(node, iterator);
+			}
 		}
 	}
 	const oldPreviousSibling = node[kPrevious];
@@ -4104,13 +4122,8 @@ const pendingMutationObservers = new Set<MutationObserver>();
 
 /**
  * The nodes carrying transient registered observers, held until the observers
- * that would report on them have been notified.
- *
- * These are held strongly, where an observer's own node list holds weakly,
- * because they turn over every checkpoint: constructing a WeakRef keeps its
- * target alive for the rest of the surrounding job, so a weak entry per node
- * leaving an observed tree would pin every one of them until the job ends,
- * which for a render loop driving frames off promises is forever.
+ * that would report on them have been notified. They turn over every
+ * checkpoint.
  */
 const transientNodes: Node[] = [];
 
@@ -4397,12 +4410,14 @@ function toStringSequence(value: Iterable<string>): string[] {
 export class MutationObserver {
 	declare [kCallback]: MutationCallback;
 	/** The targets observe() named, and the nodes whose transient
-	 * registrations outlived a checkpoint, all weakly held. */
-	declare [kNodes]: Array<WeakRef<Node>>;
+	 * registrations outlived a checkpoint. Held strongly: each node's
+	 * registered observer list holds this observer right back, and a cycle
+	 * collects together once both sides are unreachable. */
+	declare [kNodes]: Set<Node>;
 	declare [kRecords]: MutationRecord[];
 
 	constructor(callback: MutationCallback) {
-		this[kNodes] = [];
+		this[kNodes] = new Set();
 		this[kRecords] = [];
 		if (arguments.length < 1) {
 			throw new TypeError("MutationObserver needs a callback");
@@ -4451,7 +4466,7 @@ export class MutationObserver {
 				registeredObserverCount--;
 			}
 		}
-		this[kNodes].length = 0;
+		this[kNodes].clear();
 		this[kRecords].length = 0;
 	}
 
@@ -4461,29 +4476,13 @@ export class MutationObserver {
 		return records;
 	}
 
-	/** The nodes still alive whose registered observer list names this one. */
+	/** The nodes whose registered observer list names this one. */
 	[kLiveNodes](): Node[] {
-		const nodes: Node[] = [];
-		let write = 0;
-		for (let read = 0; read < this[kNodes].length; read++) {
-			const node = this[kNodes][read].deref();
-			if (node === undefined) {
-				continue;
-			}
-			this[kNodes][write++] = this[kNodes][read];
-			nodes.push(node);
-		}
-		this[kNodes].length = write;
-		return nodes;
+		return [...this[kNodes]];
 	}
 
 	[kObserveNode](node: Node): void {
-		for (const reference of this[kNodes]) {
-			if (reference.deref() === node) {
-				return;
-			}
-		}
-		this[kNodes].push(new WeakRef(node));
+		this[kNodes].add(node);
 	}
 
 	[kEnqueueRecord](record: MutationRecord): void {
@@ -8013,6 +8012,9 @@ function isConstructor(value: unknown): boolean {
 	}
 	try {
 		Reflect.construct(
+			// Probing whether a registered constructor is constructible has no
+			// other spelling.
+			// eslint-disable-next-line no-restricted-globals
 			new Proxy(value as new () => unknown, {construct: () => ({})}),
 			[],
 		);
@@ -16986,7 +16988,6 @@ const kType = Symbol("document type");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
-const kNodeIterators = Symbol("node iterators");
 const kNwsapi = Symbol("selector engine");
 const kActiveElement = Symbol("focused area");
 const kDefaultView = Symbol("the window this document is displayed in");
@@ -17032,7 +17033,6 @@ export class Document extends Node {
 		this[kContentType] = "application/xml";
 		this[kEncoding] = "UTF-8";
 		this[kIdMap] = new Map<string, Element[]>();
-		this[kNodeIterators] = [];
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
 		this[kNwsapi] = null;
@@ -17052,7 +17052,7 @@ export class Document extends Node {
 	[kContentType]: string;
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
-	[kNodeIterators]: Array<WeakRef<NodeIterator>>;
+
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
 	[kNwsapi]: ReturnType<typeof NWSAPI> | null;
@@ -17575,15 +17575,7 @@ export class Document extends Node {
 		const iterator = new NodeIterator(root, toUnsignedLong(whatToShow), filter);
 		// The spec keys the pre-removing steps off the root's node document,
 		// which need not be the document the iterator was created from.
-		const iterators = root[kDocument][kNodeIterators];
-		let write = 0;
-		for (let read = 0; read < iterators.length; read++) {
-			if (iterators[read].deref() !== undefined) {
-				iterators[write++] = iterators[read];
-			}
-		}
-		iterators.length = write;
-		iterators.push(new WeakRef(iterator));
+		registerNodeIterator(getRoot(root), iterator);
 		return iterator;
 	}
 
@@ -18538,40 +18530,72 @@ function comparePoints(
 }
 
 /**
- * Every live range, weakly held.
+ * Every live range, keyed by the root of the tree its boundary points live
+ * in. Both boundaries always share one root: the boundary setters collapse
+ * the other point on a root change, as the spec says.
  *
- * The tree mutation algorithms move the boundary points of every live range
- * over the part of the tree they change, so each of them walks this list. A
- * range is registered when it is constructed and drops out of the list once
- * nothing else holds it.
+ * The root is held weakly, so an unreachable tree takes its ranges with it;
+ * the ranges are held strongly, which keeps collection unobservable where a
+ * WeakRef would expose it. A range changes trees only through the boundary
+ * setters and through its tree being inserted somewhere, and both of those
+ * re-home it.
  */
-const liveRanges: Array<WeakRef<Range>> = [];
-let liveRangeCompactAt = 8;
+const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
+
+/**
+ * Every NodeIterator, keyed by the root of the tree its own root lives in,
+ * held the same way as the ranges above and re-homed by the same moves.
+ */
+const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
+
+function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
+	let set = nodeIteratorsByRoot.get(treeRoot);
+	if (set === undefined) {
+		set = new Set();
+		nodeIteratorsByRoot.set(treeRoot, set);
+	}
+	set.add(iterator);
+}
+/** How many ranges have ever been registered; the mutation steps' fast path. */
+let liveRangesEver = 0;
 
 function registerLiveRange(range: Range): void {
-	liveRanges.push(new WeakRef(range));
-	// Dropping the cleared entries costs a walk of the list, so the walk waits
-	// until the list has doubled: registering n ranges stays linear in n.
-	if (liveRanges.length < liveRangeCompactAt) {
-		return;
+	const root = getRoot(range[kStartNode]);
+	let set = liveRangesByRoot.get(root);
+	if (set === undefined) {
+		set = new Set();
+		liveRangesByRoot.set(root, set);
 	}
-	let write = 0;
-	for (let read = 0; read < liveRanges.length; read++) {
-		if (liveRanges[read].deref() !== undefined) {
-			liveRanges[write++] = liveRanges[read];
-		}
-	}
-	liveRanges.length = write;
-	liveRangeCompactAt = Math.max(8, write * 2);
+	set.add(range);
+	liveRangesEver++;
 }
 
-/** Run steps over every live range that is still reachable. */
-function forEachLiveRange(steps: (range: Range) => void): void {
-	for (let index = 0; index < liveRanges.length; index++) {
-		const range = liveRanges[index].deref();
-		if (range !== undefined) {
-			steps(range);
-		}
+/** Move a range's registration after its boundary points changed trees. */
+function rehomeLiveRange(range: Range, oldRoot: Node): void {
+	const newRoot = getRoot(range[kStartNode]);
+	if (newRoot === oldRoot) {
+		return;
+	}
+	liveRangesByRoot.get(oldRoot)?.delete(range);
+	let set = liveRangesByRoot.get(newRoot);
+	if (set === undefined) {
+		set = new Set();
+		liveRangesByRoot.set(newRoot, set);
+	}
+	set.add(range);
+}
+
+/** Run steps over every live range in the tree holding `context`. */
+function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
+	if (liveRangesEver === 0) {
+		return;
+	}
+	const set = liveRangesByRoot.get(getRoot(context));
+	if (set === undefined) {
+		return;
+	}
+	for (const range of set) {
+		steps(range);
 	}
 }
 
@@ -18580,11 +18604,8 @@ function forEachLiveRange(steps: (range: Range) => void): void {
  * child pushes along every boundary point in the parent past that child.
  */
 function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
-	if (liveRanges.length === 0) {
-		return;
-	}
 	const index = nodeIndex(child);
-	forEachLiveRange((range) => {
+	forEachLiveRange(parent, (range) => {
 		if (range[kStartNode] === parent && range[kStartOffset] > index) {
 			range[kStartOffset] += count;
 		}
@@ -18600,12 +18621,9 @@ function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
  * parent moves back by one.
  */
 function liveRangePreRemoveSteps(node: Node): void {
-	if (liveRanges.length === 0) {
-		return;
-	}
 	const parent = node[kParent] as Node;
 	const index = nodeIndex(node);
-	forEachLiveRange((range) => {
+	forEachLiveRange(node, (range) => {
 		if (isInclusiveAncestor(node, range[kStartNode])) {
 			range[kStartNode] = parent;
 			range[kStartOffset] = index;
@@ -18634,10 +18652,7 @@ function liveRangeReplaceDataSteps(
 	count: number,
 	length: number,
 ): void {
-	if (liveRanges.length === 0) {
-		return;
-	}
-	forEachLiveRange((range) => {
+	forEachLiveRange(node, (range) => {
 		if (
 			range[kStartNode] === node &&
 			range[kStartOffset] > offset &&
@@ -18672,11 +18687,8 @@ function liveRangeSplitSteps(
 	offset: number,
 	parent: Node,
 ): void {
-	if (liveRanges.length === 0) {
-		return;
-	}
 	const index = nodeIndex(node);
-	forEachLiveRange((range) => {
+	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === node && range[kStartOffset] > offset) {
 			range[kStartNode] = newNode;
 			range[kStartOffset] -= offset;
@@ -18704,12 +18716,9 @@ function liveRangeNormalizeSteps(
 	currentNode: Text,
 	length: number,
 ): void {
-	if (liveRanges.length === 0) {
-		return;
-	}
 	const parent = currentNode[kParent] as Node;
 	const index = nodeIndex(currentNode);
-	forEachLiveRange((range) => {
+	forEachLiveRange(node, (range) => {
 		if (range[kStartNode] === currentNode) {
 			range[kStartNode] = node;
 			range[kStartOffset] += length;
@@ -18888,10 +18897,12 @@ function setRangePoints(
 	endNode: Node,
 	endOffset: number,
 ): void {
+	const oldRoot = getRoot(range[kStartNode]);
 	range[kStartNode] = startNode;
 	range[kStartOffset] = startOffset;
 	range[kEndNode] = endNode;
 	range[kEndOffset] = endOffset;
+	rehomeLiveRange(range, oldRoot);
 	rangeBoundaryPointsChanged(range, "both");
 }
 
@@ -18915,6 +18926,7 @@ function setRangeBoundary(
 	if (at > nodeLength(node)) {
 		throw indexSizeError("The offset is past the end of the node");
 	}
+	const oldRoot = getRoot(range[kStartNode]);
 	if (isStart) {
 		if (
 			rangeRoot(range) !== getRoot(node) ||
@@ -18936,6 +18948,7 @@ function setRangeBoundary(
 		range[kEndNode] = node;
 		range[kEndOffset] = at;
 	}
+	rehomeLiveRange(range, oldRoot);
 	rangeBoundaryPointsChanged(range, isStart ? "start" : "end");
 }
 
@@ -19705,10 +19718,7 @@ function compareComposedPoints(
 /** A collapsed live range, which is how a selection holds a boundary point. */
 function livePoint(node: Node, offset: number): Range {
 	const point = new Range();
-	point[kStartNode] = node;
-	point[kStartOffset] = offset;
-	point[kEndNode] = node;
-	point[kEndOffset] = offset;
+	setRangePoints(point, node, offset, node, offset);
 	return point;
 }
 
@@ -20781,6 +20791,8 @@ let parseRegistry: CustomElementRegistry | null | undefined = undefined;
  * every insertion runs the same algorithm a script's appendChild runs, so a
  * parsed tree and a scripted tree are the same tree.
  */
+// The return type is parse5's structural TreeAdapter, spelled by the object.
+// eslint-disable-next-line @b9g/explicit-declaration-return-type
 function treeAdapterFor(document: Document | null) {
 	let target = document;
 	const adapter = {
