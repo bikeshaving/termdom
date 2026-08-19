@@ -104,12 +104,12 @@ languages:
 
 ## Table
 
-| Element     | Display    | Notes                       |
-| ----------- | ---------- | --------------------------- |
-| \`h1\`–\`h6\`   | block      | themed bold, coloured       |
-| \`blockquote\`| block      | left rule via \`border-left\` |
-| \`pre\`       | block      | dark background, monospace  |
-| \`table\`     | table      | ruled by the UA stylesheet  |
+Element     | Display    | Notes                       |
+----------- | ---------- | --------------------------- |
+\`h1\`–\`h6\`   | block      | themed bold, coloured       |
+\`blockquote\`| block      | left rule via \`border-left\` |
+\`pre\`       | block      | dark background, monospace  |
+\`table\`     | table      | ruled by the UA stylesheet  |
 
 ## Horizontal rule
 

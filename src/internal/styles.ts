@@ -1193,7 +1193,7 @@ const CORNER_NAMES = [
  * sequence of components.
  */
 type ShorthandShape =
-	| "box" |
+	"box" |
 	"radius" |
 	"pair" |
 	"line" |

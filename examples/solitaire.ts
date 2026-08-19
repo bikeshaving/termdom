@@ -198,7 +198,7 @@ function runStart(pile: Card[]): number {
 }
 
 type Held =
-	| {kind: "waste"} |
+	{kind: "waste"} |
 	{kind: "foundation"; index: number} |
 	{kind: "tableau"; pile: number; index: number} |
 	null;
@@ -240,7 +240,7 @@ function lift(game: Game, held: Held): void {
 }
 
 type Target =
-	| {kind: "tableau"; pile: number} |
+	{kind: "tableau"; pile: number} |
 	{kind: "foundation"; index: number};
 
 /** Play the held cards onto a target, or report that they do not go there. */

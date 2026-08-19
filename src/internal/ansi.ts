@@ -295,7 +295,7 @@ export interface Frame {
  */
 export interface LineStyle {
 	style:
-		| "solid" |
+		"solid" |
 		"double" |
 		"dashed" |
 		"dotted" |
