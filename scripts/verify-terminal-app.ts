@@ -20,6 +20,10 @@ import {execFileSync, execSync} from "child_process";
 import {statSync} from "fs";
 import {join} from "path";
 
+const kTTY = Symbol("tty");
+const kWindowId = Symbol("windowId");
+const kTabProperty = Symbol("tabProperty");
+
 const ROOT = join(import.meta.dirname, "..");
 
 function osascript(script: string): string {
@@ -48,8 +52,8 @@ function ensureFreshDist(): void {
  * processes on this tty and closes exactly the window holding it.
  */
 class TerminalWindow {
-	#tty: string;
-	#windowId: string;
+	declare [kTTY]: string;
+	declare [kWindowId]: string;
 
 	constructor(command: string, cols: number, rows: number) {
 		// Resolve BOTH identities up front, while the tab is alive: the tty
@@ -72,11 +76,11 @@ class TerminalWindow {
 				error "window for " & ttyId & " not found"
 			end tell
 		`).split("|");
-		this.#tty = tty;
-		this.#windowId = windowId;
+		this[kTTY] = tty;
+		this[kWindowId] = windowId;
 	}
 
-	#tabProperty(property: "contents" | "history"): string {
+	[kTabProperty](property: "contents" | "history"): string {
 		// The tab must be addressed as `selected tab of w`, never through a
 		// loop variable: `contents of t` hits AppleScript's dereference
 		// operator and returns the tab's specifier string instead of its text.
@@ -85,24 +89,24 @@ class TerminalWindow {
 			tell application "Terminal"
 				repeat with w in (get windows)
 					try
-						if tty of selected tab of w is "${this.#tty}" then
+						if tty of selected tab of w is "${this[kTTY]}" then
 							return ${property} of selected tab of w
 						end if
 					end try
 				end repeat
-				error "harness tab ${this.#tty} not found"
+				error "harness tab ${this[kTTY]} not found"
 			end tell
 		`);
 	}
 
 	/** The visible screen as plain text. */
 	contents(): string {
-		return this.#tabProperty("contents");
+		return this[kTabProperty]("contents");
 	}
 
 	/** Screen plus scrollback as plain text. */
 	history(): string {
-		return this.#tabProperty("history");
+		return this[kTabProperty]("history");
 	}
 
 	async resize(cols: number, rows: number): Promise<void> {
@@ -110,7 +114,7 @@ class TerminalWindow {
 			tell application "Terminal"
 				repeat with w in (get windows)
 					try
-						if tty of selected tab of w is "${this.#tty}" then
+						if tty of selected tab of w is "${this[kTTY]}" then
 							set number of columns of selected tab of w to ${cols}
 							set number of rows of selected tab of w to ${rows}
 							return
@@ -130,7 +134,7 @@ class TerminalWindow {
 		try {
 			const pids = execFileSync(
 				"ps",
-				["-t", this.#tty.replace("/dev/", ""), "-o", "pid="],
+				["-t", this[kTTY].replace("/dev/", ""), "-o", "pid="],
 				{encoding: "utf8"},
 			)
 				.split("\n")
@@ -153,12 +157,12 @@ class TerminalWindow {
 		try {
 			osascript(`
 				tell application "Terminal"
-					close (every window whose id is ${this.#windowId})
+					close (every window whose id is ${this[kWindowId]})
 				end tell
 			`);
 		} catch (err) {
 			console.error(
-				`  warning: window ${this.#windowId} did not close: ${(err as Error).message}`,
+				`  warning: window ${this[kWindowId]} did not close: ${(err as Error).message}`,
 			);
 		}
 	}

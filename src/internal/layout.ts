@@ -47,7 +47,7 @@ const kBoxes = Symbol("boxes");
 const kAnonymousBoxes = Symbol("anonymousBoxes");
 const kMeasureNodes = Symbol("measureNodes");
 const kTerminalReordersText = Symbol("terminalReordersText");
-const kDomNodeByFlexNode = Symbol("domNodeByFlexNode");
+const kDOMNodeByFlexNode = Symbol("domNodeByFlexNode");
 const kInvalidatedNodes = Symbol("invalidatedNodes");
 const kAddNode = Symbol("addNode");
 const kLayoutPass = Symbol("layoutPass");
@@ -1365,7 +1365,7 @@ export class LayoutEngine {
 	// go from a flex child (found by binary search over its parent's already-
 	// ordered children[]) back to the DOM/pseudo-element node it needs to
 	// paint, without re-deriving that order with a second full tree walk.
-	declare [kDomNodeByFlexNode]: Map<FlexTypes.Node, Node>;
+	declare [kDOMNodeByFlexNode]: Map<FlexTypes.Node, Node>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	declare [kInvalidatedNodes]: Set<Node>;
@@ -1444,7 +1444,7 @@ export class LayoutEngine {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.Node>();
-		this[kDomNodeByFlexNode] = new Map<FlexTypes.Node, Node>();
+		this[kDOMNodeByFlexNode] = new Map<FlexTypes.Node, Node>();
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<FlexTypes.Node>();
 
@@ -1614,7 +1614,7 @@ export class LayoutEngine {
 
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
-		this[kDomNodeByFlexNode] = new Map();
+		this[kDOMNodeByFlexNode] = new Map();
 		this[kInvalidatedNodes] = new Set();
 		this[kMeasureNodes] = new Set();
 		this[kAnonymousBoxes] = new Map();
@@ -1760,7 +1760,7 @@ export class LayoutEngine {
 			if (child.extentTop >= bottom) {
 				break;
 			}
-			const domNode = this[kDomNodeByFlexNode].get(child);
+			const domNode = this[kDOMNodeByFlexNode].get(child);
 			if (domNode) {
 				result.push(domNode);
 			}
@@ -1770,13 +1770,13 @@ export class LayoutEngine {
 
 	[kTrackNode](domNode: Node, flexNode: FlexTypes.Node): void {
 		this.nodeMap.set(domNode, flexNode);
-		this[kDomNodeByFlexNode].set(flexNode, domNode);
+		this[kDOMNodeByFlexNode].set(flexNode, domNode);
 	}
 
 	[kUntrackNode](domNode: Node): void {
 		const flexNode = this.nodeMap.get(domNode);
 		if (flexNode) {
-			this[kDomNodeByFlexNode].delete(flexNode);
+			this[kDOMNodeByFlexNode].delete(flexNode);
 		}
 		// The lines a box holds are the product of the layout node that is
 		// going: nothing lays that content out until a box is built for it
@@ -1945,7 +1945,7 @@ export class LayoutEngine {
 			x += current.getComputedLeft();
 			y += current.getComputedTop();
 			if (current !== flexNode) {
-				const node = this[kDomNodeByFlexNode].get(current);
+				const node = this[kDOMNodeByFlexNode].get(current);
 				if (
 					node &&
 					node.nodeType === node.ELEMENT_NODE &&
@@ -2958,10 +2958,8 @@ export class LayoutEngine {
 		// unless the body generates no box of its own, and the box its content
 		// is laid out in is the root element's.
 		const paintRoot =
-			root === document.documentElement && !dissolvesIntoChildren(document.body)
-			?
-				document.body
-			:
+			root === document.documentElement && !dissolvesIntoChildren(document.body)			?
+				document.body			:
 				root;
 		for (const element of [...topLayer].reverse()) {
 			if (!flatIsConnected(element)) {
@@ -3442,7 +3440,7 @@ export class LayoutEngine {
 		flexNode.getParent()?.removeChild(flexNode);
 		this[kMeasureNodes].delete(flexNode);
 		this[kAnonymousBoxes].delete(flexNode);
-		this[kDomNodeByFlexNode].delete(flexNode);
+		this[kDOMNodeByFlexNode].delete(flexNode);
 		flexNode.freeRecursive();
 	}
 
@@ -3747,10 +3745,10 @@ export class LayoutEngine {
 					);
 					this[kMeasureNodes].add(flexNode);
 					this[kAnonymousBoxes].set(flexNode, entry);
-					this[kDomNodeByFlexNode].set(flexNode, entry.head);
-				} else if (this[kDomNodeByFlexNode].get(flexNode) !== entry.head) {
+					this[kDOMNodeByFlexNode].set(flexNode, entry.head);
+				} else if (this[kDOMNodeByFlexNode].get(flexNode) !== entry.head) {
 					// Paint reaches a box through the node that opens it.
-					this[kDomNodeByFlexNode].set(flexNode, entry.head);
+					this[kDOMNodeByFlexNode].set(flexNode, entry.head);
 				}
 				if (containerFlexNode.getChildIndex(flexNode) !== index) {
 					flexNode.getParent()?.removeChild(flexNode);
@@ -3797,7 +3795,7 @@ export class LayoutEngine {
 		// here from its CONTAINING BLOCK -- so it stays where it is.
 		for (let i = containerFlexNode.children.length - 1; i >= index; i--) {
 			const child = containerFlexNode.children[i];
-			const node = this[kDomNodeByFlexNode].get(child);
+			const node = this[kDOMNodeByFlexNode].get(child);
 			if (node && isOutOfFlow(node)) {
 				continue;
 			}
@@ -4036,9 +4034,9 @@ export class LayoutEngine {
 					while (flexNode.children.length > 0) {
 						const childFlexNode = flexNode.children[0];
 						flexNode.removeChild(childFlexNode);
-						const childDomNode = this[kDomNodeByFlexNode].get(childFlexNode);
-						if (childDomNode) {
-							this[kClearBreakResultCache](childDomNode);
+						const childDOMNode = this[kDOMNodeByFlexNode].get(childFlexNode);
+						if (childDOMNode) {
+							this[kClearBreakResultCache](childDOMNode);
 						}
 					}
 				}

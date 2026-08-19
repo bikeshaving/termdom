@@ -341,29 +341,29 @@ test("content positioning with different terminal sizes", async () => {
 	await new Promise<void>((resolve) => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
-	const smallDom = new TermDOM({transport: smallTerminal.sharedTransport});
-	await nextFrame(smallDom);
-	smallDom.document.body.innerHTML = content;
-	await nextFrame(smallDom);
+	const smallDOM = new TermDOM({transport: smallTerminal.sharedTransport});
+	await nextFrame(smallDOM);
+	smallDOM.document.body.innerHTML = content;
+	await nextFrame(smallDOM);
 
 	// Large terminal test
 	await new Promise<void>((resolve) => {
 		largeTerminal.stdout.write("\x1b[25;1H", () => resolve());
 	});
-	const largeDom = new TermDOM({transport: largeTerminal.sharedTransport});
-	await nextFrame(largeDom);
-	largeDom.document.body.innerHTML = content;
-	await nextFrame(largeDom);
+	const largeDOM = new TermDOM({transport: largeTerminal.sharedTransport});
+	await nextFrame(largeDOM);
+	largeDOM.document.body.innerHTML = content;
+	await nextFrame(largeDOM);
 
 	// Small terminal: cursor at row 3 (screenTop=2), only 3 rows below (rows
 	// 3-5). At 20 columns, "First line of content" wraps into two lines, so
 	// the content is really 4 rows -- one more than fits. Push up by 1: from
 	// screenTop=2 to 1.
-	expect(smallDom.window.screenTop).toBe(1);
+	expect(smallDOM.window.screenTop).toBe(1);
 
 	// Large terminal: cursor at row 25 (screenTop=24), 120 columns is wide
 	// enough that nothing wraps and all 3 lines fit easily -- no push-up.
-	expect(largeDom.window.screenTop).toBe(24);
+	expect(largeDOM.window.screenTop).toBe(24);
 });
 
 test("push-up prevents content from being clipped, when it still fits the terminal", async () => {

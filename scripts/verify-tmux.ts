@@ -17,6 +17,8 @@ import {execFileSync, execSync} from "child_process";
 import {readdirSync, statSync} from "fs";
 import {join} from "path";
 
+const kSession = Symbol("session");
+
 const SOCKET = "termdom-test";
 const ROOT = join(import.meta.dirname, "..");
 
@@ -67,24 +69,24 @@ interface Scenario {
 }
 
 class Pane {
-	#session: string;
+	declare [kSession]: string;
 	constructor(session: string) {
-		this.#session = session;
+		this[kSession] = session;
 	}
 
 	/** Visible pane text, ANSI stripped, right-trimmed rows. */
 	screen(): string[] {
-		return tmux("capture-pane", "-t", this.#session, "-p").split("\n");
+		return tmux("capture-pane", "-t", this[kSession], "-p").split("\n");
 	}
 
 	/** Visible pane text with SGR escapes preserved. */
 	screenANSI(): string {
-		return tmux("capture-pane", "-t", this.#session, "-p", "-e");
+		return tmux("capture-pane", "-t", this[kSession], "-p", "-e");
 	}
 
 	/** Scrollback + screen; length minus the pane height is history depth. */
 	full(): string[] {
-		return tmux("capture-pane", "-t", this.#session, "-p", "-S", "-").split(
+		return tmux("capture-pane", "-t", this[kSession], "-p", "-S", "-").split(
 			"\n",
 		);
 	}
@@ -95,14 +97,14 @@ class Pane {
 
 	/** A tmux format expanded against this pane (e.g. #{mouse_any_flag}). */
 	display(format: string): string {
-		return tmux("display-message", "-t", this.#session, "-p", format).trim();
+		return tmux("display-message", "-t", this[kSession], "-p", format).trim();
 	}
 
 	async resize(cols: number, rows: number): Promise<void> {
 		tmux(
 			"resize-window",
 			"-t",
-			this.#session,
+			this[kSession],
 			"-x",
 			`${cols}`,
 			"-y",
@@ -112,7 +114,7 @@ class Pane {
 	}
 
 	sendKeys(...keys: string[]): void {
-		tmux("send-keys", "-t", this.#session, ...keys);
+		tmux("send-keys", "-t", this[kSession], ...keys);
 	}
 }
 

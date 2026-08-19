@@ -6,7 +6,12 @@ import {EventEmitter} from "events";
 // A TTY-shaped process that records everything written to stdout, so tests
 // can assert on the escape sequences that enable and disable mouse capture.
 class MockTTYStream extends EventEmitter {
-	isTTY = true;
+	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+		super(...args);
+		this.isTTY = true;
+	}
+
+	isTTY: boolean;
 
 	setRawMode(_mode: boolean) {
 		return this;
@@ -28,29 +33,42 @@ class MockTTYStream extends EventEmitter {
 }
 
 class MockMouseProcess extends EventEmitter {
-	output: string[] = [];
+	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+		super(...args);
+		this.output = [];
+		this.stdout = {
+			isTTY: true,
+			columns: 80,
+			rows: 24,
+			write: (chunk: any, encoding?: any, callback?: any): boolean => {
+				this.output.push(String(chunk));
+				if (typeof encoding === "function") {
+					encoding();
+				} else if (callback) {
+					callback();
+				}
+				return true;
+			},
+		};
+		this.stdin = new MockTTYStream();
+		this.env = {
+			TERM: "xterm-256color",
+			COLORTERM: "truecolor",
+		};
+	}
 
-	stdout = {
-		isTTY: true,
-		columns: 80,
-		rows: 24,
-		write: (chunk: any, encoding?: any, callback?: any): boolean => {
-			this.output.push(String(chunk));
-			if (typeof encoding === "function") {
-				encoding();
-			} else if (callback) {
-				callback();
-			}
-			return true;
-		},
+	output: string[];
+
+	stdout: {
+		isTTY: boolean;
+		columns: number;
+		rows: number;
+		write: (chunk: any, encoding?: any, callback?: any) => boolean;
 	};
 
-	stdin = new MockTTYStream();
+	stdin: MockTTYStream;
 
-	env = {
-		TERM: "xterm-256color",
-		COLORTERM: "truecolor",
-	};
+	env: {TERM: string; COLORTERM: string};
 
 	exit(_code?: number): never {
 		throw new Error("Process exit");

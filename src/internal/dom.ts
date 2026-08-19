@@ -2234,10 +2234,8 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null)
-		?
-				(value as EventHandlerValue)
-		:
+		typeof value === "function" || (typeof value === "object" && value !== null)		?
+				(value as EventHandlerValue)		:
 			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
 	if (handlers === null) {
@@ -5294,7 +5292,7 @@ function classTokens(element: Element): ReadonlySet<string> {
 	let tokens = element[kClassTokens];
 	if (tokens === null) {
 		const value = element.getAttribute("class");
-		tokens = new Set(value === null ? [] : splitOnAsciiWhitespace(value));
+		tokens = new Set(value === null ? [] : splitOnASCIIWhitespace(value));
 		element[kClassTokens] = tokens;
 	}
 	return tokens;
@@ -5305,7 +5303,7 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 	const key = `class:${classNames}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		const classes = splitOnAsciiWhitespace(classNames);
+		const classes = splitOnASCIIWhitespace(classNames);
 		const quirks =
 			root[kDocument][kMode] === "quirks" ?
 					classes.map((name) => asciiLowercase(name)) :
@@ -5321,7 +5319,7 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 				if (value === null) {
 					return false;
 				}
-				tokens = new Set(splitOnAsciiWhitespace(asciiLowercase(value)));
+				tokens = new Set(splitOnASCIIWhitespace(asciiLowercase(value)));
 			} else {
 				tokens = classTokens(element);
 			}
@@ -5344,7 +5342,7 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
 
-function splitOnAsciiWhitespace(value: string): string[] {
+function splitOnASCIIWhitespace(value: string): string[] {
 	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 	if (trimmed === "") {
 		return [];
@@ -5393,7 +5391,7 @@ export class DOMTokenList extends LiveList {
 
 	override compute(): Node[] {
 		const value = this[kElement].getAttribute(this[kAttribute]);
-		const tokens = value === null ? [] : splitOnAsciiWhitespace(value);
+		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
 		const ordered: string[] = [];
 		for (const token of tokens) {
 			if (!ordered.includes(token)) {
@@ -6391,7 +6389,7 @@ const kClassList = Symbol("classList");
 const kClassTokens = Symbol("the parsed class attribute");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
-const kAriaElements = Symbol("explicitly set attr-elements");
+const kARIAElements = Symbol("explicitly set attr-elements");
 const kDataset = Symbol("dataset");
 const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
@@ -6458,7 +6456,7 @@ export class Element extends Node {
 	[kClassList]: DOMTokenList | null;
 	[kClassTokens]: Set<string> | null;
 	[kTokenLists]: Map<string, DOMTokenList> | null;
-	[kAriaElements]: Map<string, Element[]> | null;
+	[kARIAElements]: Map<string, Element[]> | null;
 	[kDataset]: DOMStringMap | null;
 	[kClickInProgress]: boolean;
 	[kInternals]: ElementInternals | null;
@@ -6485,7 +6483,7 @@ export class Element extends Node {
 		this[kClassList] = null;
 		this[kClassTokens] = null;
 		this[kTokenLists] = null;
-		this[kAriaElements] = null;
+		this[kARIAElements] = null;
 		this[kDataset] = null;
 		this[kClickInProgress] = false;
 		this[kInternals] = null;
@@ -15890,7 +15888,7 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
  * Whether an element a caller named is one this element may point at: it has
  * to sit in this element's tree, or in a tree above it.
  */
-function isReachableAriaTarget(from: Element, target: Element): boolean {
+function isReachableARIATarget(from: Element, target: Element): boolean {
 	const fromRoot = getRoot(from);
 	for (
 		let root: Node | null = getRoot(target);
@@ -15919,7 +15917,7 @@ function ariaTargetsFromAttribute(
 	}
 	const root = getRoot(element);
 	const found: Element[] = [];
-	for (const id of splitOnAsciiWhitespace(value)) {
+	for (const id of splitOnASCIIWhitespace(value)) {
 		for (const node of descendants(root)) {
 			if (node.nodeType !== ELEMENT_NODE) {
 				continue;
@@ -15940,29 +15938,29 @@ function ariaTargets(
 	property: string,
 	attribute: string,
 ): Element[] | null {
-	const explicit = element[kAriaElements]?.get(property);
+	const explicit = element[kARIAElements]?.get(property);
 	if (explicit === undefined) {
 		return ariaTargetsFromAttribute(element, attribute);
 	}
-	return explicit.filter((target) => isReachableAriaTarget(element, target));
+	return explicit.filter((target) => isReachableARIATarget(element, target));
 }
 
 /** Remember the elements a caller named, and mark the attribute as set. */
-function setAriaTargets(
+function setARIATargets(
 	element: Element,
 	property: string,
 	attribute: string,
 	targets: Element[] | null,
 ): void {
 	if (targets === null) {
-		element[kAriaElements]?.delete(property);
+		element[kARIAElements]?.delete(property);
 		element.removeAttribute(attribute);
 		return;
 	}
-	let explicit = element[kAriaElements];
+	let explicit = element[kARIAElements];
 	if (explicit === null) {
 		explicit = new Map<string, Element[]>();
-		element[kAriaElements] = explicit;
+		element[kARIAElements] = explicit;
 	}
 	explicit.set(property, targets);
 	element.setAttribute(attribute, "");
@@ -15989,7 +15987,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 		},
 		set: wrapWithReactions(function (this: Element, value: unknown): void {
 			if (value === null || value === undefined) {
-				setAriaTargets(this, property, attribute, null);
+				setARIATargets(this, property, attribute, null);
 				return;
 			}
 			if (many) {
@@ -16000,13 +15998,13 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 					}
 					list.push(entry);
 				}
-				setAriaTargets(this, property, attribute, list);
+				setARIATargets(this, property, attribute, list);
 				return;
 			}
 			if (!(value instanceof Element)) {
 				throw new TypeError("That is not an element");
 			}
-			setAriaTargets(this, property, attribute, [value]);
+			setARIATargets(this, property, attribute, [value]);
 		}) as (value: unknown) => void,
 		enumerable: true,
 		configurable: true,

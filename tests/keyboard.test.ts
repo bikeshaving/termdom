@@ -5,12 +5,15 @@ import {EventEmitter} from "events";
 
 // Mock TTY stream that simulates a real terminal
 class MockTTYStream extends EventEmitter {
-	isTTY = true;
-	readable = true;
-	readableObjectMode = false;
+	isTTY: boolean;
+	readable: boolean;
+	readableObjectMode: boolean;
 
 	constructor() {
 		super();
+		this.isTTY = true;
+		this.readable = true;
+		this.readableObjectMode = false;
 	}
 
 	setRawMode(_mode: boolean) {
@@ -46,6 +49,15 @@ class MockTTYStream extends EventEmitter {
 
 // Mock process that has a TTY
 class MockKeyboardProcess extends EventEmitter {
+	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+		super(...args);
+		this.stdin = new MockTTYStream();
+		this.env = {
+			TERM: "xterm-256color",
+			COLORTERM: "truecolor",
+		};
+	}
+
 	stdout = {
 		isTTY: true,
 		columns: 80,
@@ -61,12 +73,9 @@ class MockKeyboardProcess extends EventEmitter {
 		},
 	};
 
-	stdin = new MockTTYStream();
+	stdin: MockTTYStream;
 
-	env = {
-		TERM: "xterm-256color",
-		COLORTERM: "truecolor",
-	};
+	env: {TERM: string; COLORTERM: string};
 
 	exit(_code?: number): never {
 		throw new Error("Process exit");
@@ -591,7 +600,7 @@ test("TTY detection works correctly", () => {
 
 test("non-TTY environment doesn't set up keyboard handling", () => {
 	// Create a non-TTY mock process
-	const nonTtyProcess = {
+	const nonTTYProcess = {
 		stdout: {
 			isTTY: false,
 			columns: 80,
@@ -611,7 +620,7 @@ test("non-TTY environment doesn't set up keyboard handling", () => {
 
 	// This should work without trying to set up keyboard handling
 	const termdom = new TermDOM({
-		transport: transportFromProcess(nonTtyProcess as any),
+		transport: transportFromProcess(nonTTYProcess as any),
 	});
 
 	expect(termdom).toBeDefined();

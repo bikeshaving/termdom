@@ -973,7 +973,7 @@ function generateANSI(
 	for (let row = 0; row < rows; row++) {
 		const rowStart = row * cols;
 		let rowHasContent = false;
-		let rowHasAnsi = false;
+		let rowHasANSI = false;
 		let isFirstRenderOfLine = false;
 		unknownInRow = 0;
 
@@ -1040,7 +1040,7 @@ function generateANSI(
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
 			if (styleSeq !== "") {
 				output += `\x1b[${styleSeq}m`; // SGR - Select Graphic Rendition
-				rowHasAnsi = true;
+				rowHasANSI = true;
 			}
 
 			const encoding = border[index];
@@ -1089,7 +1089,7 @@ function generateANSI(
 
 		if (rowHasContent) {
 			prevIndex = -1;
-			if (rowHasAnsi) {
+			if (rowHasANSI) {
 				output += "\x1b[0m"; // SGR - Reset all attributes
 			}
 		}
