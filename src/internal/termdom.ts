@@ -137,17 +137,11 @@ const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
 // The static-render entry renderANSI() reaches through; off the public API
 // like the test handles above.
-const kRenderStatic = Symbol("renderStatic");
 export {kLayoutEngine, kObserver};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");
 const kIsInFullscreenMode = Symbol("isInFullscreenMode");
-const kEnterFullscreenMode = Symbol("enterFullscreenMode");
-const kFireFullscreenChangeEvent = Symbol("fireFullscreenChangeEvent");
-const kFireFullscreenErrorEvent = Symbol("fireFullscreenErrorEvent");
-const kExitFullscreenMode = Symbol("exitFullscreenMode");
-const kGetWindow = Symbol("getWindow");
 
 /**
  * The Fullscreen API over the terminal's alternate screen. Lives here
@@ -189,17 +183,17 @@ class FullscreenManager {
 
 			// Enter fullscreen mode if this is the first element
 			if (!this[kIsInFullscreenMode]) {
-				await this[kEnterFullscreenMode]();
+				await enterFullscreenMode(this);
 			}
 
 			// Fire fullscreenchange event
-			this[kFireFullscreenChangeEvent](element);
+			fireFullscreenChangeEvent(this, element);
 		} catch (error) {
 			// Remove from stack on error
 			this[kFullscreenStack].pop();
 
 			// Fire fullscreenerror event
-			this[kFireFullscreenErrorEvent](element, error as Error);
+			fireFullscreenErrorEvent(this, element, error as Error);
 			throw error;
 		}
 	}
@@ -217,11 +211,11 @@ class FullscreenManager {
 
 		// If no more elements in stack, exit fullscreen mode
 		if (this[kFullscreenStack].length === 0) {
-			await this[kExitFullscreenMode]();
+			await exitFullscreenMode(this);
 		}
 
 		// Fire fullscreenchange event
-		this[kFireFullscreenChangeEvent](exitingElement);
+		fireFullscreenChangeEvent(this, exitingElement);
 	}
 
 	/**
@@ -240,62 +234,6 @@ class FullscreenManager {
 		return this[kIsInFullscreenMode];
 	}
 
-	async [kEnterFullscreenMode](): Promise<void> {
-		// Enter alternate screen buffer, clear it, hide the cursor.
-		this[kWrite]("\x1b[?1049h");
-		this[kWrite]("\x1b[2J\x1b[H\x1b[?25l");
-
-		this[kIsInFullscreenMode] = true;
-	}
-
-	async [kExitFullscreenMode](): Promise<void> {
-		// Restore cursor and exit alternate screen buffer
-		this[kWrite]("\x1b[?25h\x1b[?1049l");
-
-		this[kIsInFullscreenMode] = false;
-	}
-
-	[kFireFullscreenChangeEvent](element: Element): void {
-		const window = this[kGetWindow](element);
-		if (!window) {
-			return;
-		}
-
-		const event = new window.CustomEvent("fullscreenchange", {
-			bubbles: true,
-			cancelable: false,
-		});
-
-		// Per spec: fired on the element, and it BUBBLES -- document listeners
-		// hear it through the bubble; dispatching on the document as well
-		// delivered every transition twice.
-		element.dispatchEvent(event);
-	}
-
-	[kFireFullscreenErrorEvent](element: Element, error: Error): void {
-		const window = this[kGetWindow](element);
-		if (!window) {
-			return;
-		}
-
-		const event = new window.CustomEvent("fullscreenerror", {
-			bubbles: true,
-			cancelable: false,
-			detail: {error},
-		});
-
-		// Fire on both element and document
-		element.dispatchEvent(event);
-		element.ownerDocument?.dispatchEvent(event);
-	}
-
-	[kGetWindow](element?: Element): any {
-		// Get window from the element's document, or from the stack
-		const targetElement = element || this[kFullscreenStack][0];
-		const document = targetElement ? targetElement.ownerDocument : null;
-		return document ? document.defaultView : undefined;
-	}
-
 	dispose(): void {
 		if (this[kIsInFullscreenMode]) {
 			this[kWrite]("\x1b[?25h\x1b[?1049l");
@@ -304,6 +242,76 @@ class FullscreenManager {
 		this[kFullscreenStack] = [];
 		this[kIsInFullscreenMode] = false;
 	}
+}
+
+async function enterFullscreenMode(
+	self: FullscreenManager,
+): Promise<void> {
+	// Enter alternate screen buffer, clear it, hide the cursor.
+	self[kWrite]("\x1b[?1049h");
+	self[kWrite]("\x1b[2J\x1b[H\x1b[?25l");
+
+	self[kIsInFullscreenMode] = true;
+}
+
+async function exitFullscreenMode(
+	self: FullscreenManager,
+): Promise<void> {
+	// Restore cursor and exit alternate screen buffer
+	self[kWrite]("\x1b[?25h\x1b[?1049l");
+
+	self[kIsInFullscreenMode] = false;
+}
+
+function fireFullscreenChangeEvent(
+	self: FullscreenManager,
+	element: Element,
+): void {
+	const window = getWindow(self, element);
+	if (!window) {
+		return;
+	}
+
+	const event = new window.CustomEvent("fullscreenchange", {
+		bubbles: true,
+		cancelable: false,
+	});
+
+	// Per spec: fired on the element, and it BUBBLES -- document listeners
+	// hear it through the bubble; dispatching on the document as well
+	// delivered every transition twice.
+	element.dispatchEvent(event);
+}
+
+function fireFullscreenErrorEvent(
+	self: FullscreenManager,
+	element: Element,
+	error: Error,
+): void {
+	const window = getWindow(self, element);
+	if (!window) {
+		return;
+	}
+
+	const event = new window.CustomEvent("fullscreenerror", {
+		bubbles: true,
+		cancelable: false,
+		detail: {error},
+	});
+
+	// Fire on both element and document
+	element.dispatchEvent(event);
+	element.ownerDocument?.dispatchEvent(event);
+}
+
+function getWindow(
+	self: FullscreenManager,
+	element?: Element,
+): any {
+	// Get window from the element's document, or from the stack
+	const targetElement = element || self[kFullscreenStack][0];
+	const document = targetElement ? targetElement.ownerDocument : null;
+	return document ? document.defaultView : undefined;
 }
 
 /**
@@ -524,93 +532,52 @@ const kTopLayer = Symbol("topLayer");
 const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
-const kProcessPendingMutationsAndRender = Symbol(
-	"processPendingMutationsAndRender",
-);
 const kFullscreenManager = Symbol("fullscreenManager");
 const kSession = Symbol("session");
 const kObserverManager = Symbol("observerManager");
-const kInstallWindowExtensions = Symbol("installWindowExtensions");
 const kInstallObservers = Symbol("installObservers");
-const kSetupMutationObserver = Symbol("setupMutationObserver");
-const kRender = Symbol("render");
 const kPainter = Symbol("painter");
 const kViewport = Symbol("viewport");
-const kBuildSession = Symbol("buildSession");
 const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
-const kQueueCaretReveal = Symbol("queueCaretReveal");
 const kNextRafId = Symbol("nextRafId");
-const kFlushDocument = Symbol("flushDocument");
 const kSealed = Symbol("sealed");
-const kScrollCamera = Symbol("scrollCamera");
-const kAllocateFrameHandle = Symbol("allocateFrameHandle");
 const kFrameCallbacks = Symbol("frameCallbacks");
 const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
 const kAttached = Symbol("attached");
 const kAttachReady = Symbol("attachReady");
 const kRenderCount = Symbol("renderCount");
-const kSealToScrollback = Symbol("sealToScrollback");
 const kPrototypesInstalled = Symbol("prototypesInstalled");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
-const kUpdateMouseReporting = Symbol("updateMouseReporting");
-const kFindElementAtDocumentPoint = Symbol("findElementAtDocumentPoint");
-const kAddFrameDamage = Symbol("addFrameDamage");
-const kHandlePendingMutations = Symbol("handlePendingMutations");
 const kInputGeneration = Symbol("inputGeneration");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
-const kReclaimMouseCapture = Symbol("reclaimMouseCapture");
-const kDispatchGlobalKeyboardEvent = Symbol("dispatchGlobalKeyboardEvent");
-const kHandleMouseReport = Symbol("handleMouseReport");
-const kDispatchPaste = Symbol("dispatchPaste");
-const kScheduleResize = Symbol("scheduleResize");
-const kRebindTransport = Symbol("rebindTransport");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
 const kDisposed = Symbol("disposed");
-const kApplyTerminalSize = Symbol("applyTerminalSize");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kScrollChainTimer = Symbol("scrollChainTimer");
 const kResizeInProgress = Symbol("resizeInProgress");
 const kIsRendering = Symbol("isRendering");
 const kRenderQueued = Symbol("renderQueued");
-const kRenderOnce = Symbol("renderOnce");
-const kDrainFrameCallbacks = Symbol("drainFrameCallbacks");
-const kRenderInteractive = Symbol("renderInteractive");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kResizeEpoch = Symbol("resizeEpoch");
 const kResizeTimer = Symbol("resizeTimer");
-const kHandleResize = Symbol("handleResize");
-const kTopmostModalDialog = Symbol("topmostModalDialog");
 const kSCROLL_CHAIN_TIMEOUT_MS = Symbol("SCROLL_CHAIN_TIMEOUT_MS");
 const kFieldDragAnchor = Symbol("fieldDragAnchor");
-const kFieldOffsetAtPoint = Symbol("fieldOffsetAtPoint");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kMouseDownTarget = Symbol("mouseDownTarget");
-const kDocumentPointToTextPosition = Symbol("documentPointToTextPosition");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
-const kTopmostCloseRequestTarget = Symbol("topmostCloseRequestTarget");
-const kMoveFocus = Symbol("moveFocus");
-const kDispatchInsertText = Symbol("dispatchInsertText");
-const kAfterRender = Symbol("afterRender");
-const kScrollCaretIntoView = Symbol("scrollCaretIntoView");
 const kLastFrameScrollTop = Symbol("lastFrameScrollTop");
 const kLastFrameEpoch = Symbol("lastFrameEpoch");
 const kLastFrameInputGeneration = Symbol("lastFrameInputGeneration");
 const kLastFrameActiveElement = Symbol("lastFrameActiveElement");
-const kScrollFieldCaretIntoView = Symbol("scrollFieldCaretIntoView");
-const kDocumentPaintHeight = Symbol("documentPaintHeight");
-const kReserveRows = Symbol("reserveRows");
 const kLastFrameStructuralGeneration = Symbol("lastFrameStructuralGeneration");
 const kLastFrameSelectionLive = Symbol("lastFrameSelectionLive");
 const kStaticSibling = Symbol("staticSibling");
-const kRenderStaticHTML = Symbol("renderStaticHTML");
-const kStaticRenderer = Symbol("staticRenderer");
-const kPrintStatic = Symbol("printStatic");
 
 /**
  * Everything the window installers below need from the TermDOM that installed
@@ -708,33 +675,6 @@ export class TermDOM {
 	// Elements this frame's mutations touched, with the layout rect each held
 	// BEFORE relayout. Null once the set overflowed; cleared per frame.
 	declare [kFrameDamage]: Map<Element, DOMRect | null> | null;
-
-	[kAddFrameDamage](node: Node): void {
-		if (!this[kFrameDamage]) {
-			return;
-		}
-		const element =
-			node.nodeType === node.ELEMENT_NODE ?
-					(node as Element) :
-					(node.parentElement ?? null);
-		if (!element) {
-			this[kFrameDamage] = null;
-			return;
-		}
-		if (this[kFrameDamage].has(element)) {
-			return;
-		}
-		if (this[kFrameDamage].size >= 24) {
-			this[kFrameDamage] = null;
-			return;
-		}
-		// The rect BEFORE this frame's relayout: getRect answers from the
-		// last computed layout until calculateLayout runs.
-		this[kFrameDamage].set(
-			element,
-			(this[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
-		);
-	}
 
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
@@ -871,10 +811,10 @@ export class TermDOM {
 			) {
 				return;
 			}
-			this[kQueueCaretReveal](
+			queueCaretReveal(this, 
 				target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 			);
-			void this[kRender]();
+			void render(this);
 		};
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
@@ -918,7 +858,7 @@ export class TermDOM {
 		// A resolved value is a measurement, so it takes the same flush every
 		// other geometry read takes -- one door, not two.
 		this[kStyleManager].setLayoutFlush(() =>
-			this[kProcessPendingMutationsAndRender](),
+			processPendingMutationsAndRender(this),
 		);
 		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
 		this[kFullscreenManager] = new FullscreenManager((output) => {
@@ -926,12 +866,12 @@ export class TermDOM {
 		});
 		this[kObserverManager] = new ObserverManager(this[kLayoutEngine]);
 
-		this[kInstallWindowExtensions]();
+		installWindowExtensions(this);
 		this[kInstallObservers]();
 
 		// Initialize scrolling management after window setup
 
-		this[kObserver] = this[kSetupMutationObserver]();
+		this[kObserver] = setupMutationObserver(this);
 
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
@@ -947,7 +887,7 @@ export class TermDOM {
 			// they reveal is asked for here.
 			stateChanged: (element: object) => {
 				this[kStyleManager].handleStateChange(element as Element);
-				void this[kRender]();
+				void render(this);
 			},
 		});
 		this[kPainter] = new Painter({
@@ -958,7 +898,7 @@ export class TermDOM {
 			viewport: this[kViewport],
 			topLayer: this[kTopLayer],
 		});
-		this[kSession] = this[kBuildSession]();
+		this[kSession] = buildSession(this);
 
 		// A field edit -- text (input), a caret or selection move
 		// (select/selectionchange), or a checkbox/radio toggle (change) --
@@ -995,348 +935,6 @@ export class TermDOM {
 	 * camera to it.
 	 */
 	declare [kOnFieldEditEvent]: (event: Event) => void;
-
-	/**
-	 * The frame handle a requestAnimationFrame callback is keyed by, so a
-	 * cancelAnimationFrame can name the callback it cancels.
-	 */
-	[kAllocateFrameHandle](): number {
-		return this[kNextRafId]++;
-	}
-
-	[kSealToScrollback](): void {
-		this[kFlushDocument]();
-		this[kSealed] = true;
-	}
-
-	[kInstallWindowExtensions](): void {
-		const termDOM = this;
-		const window = termDOM.window;
-		const document = window.document;
-		Object.defineProperty(window, "innerWidth", {
-			value: termDOM[kWidth],
-			writable: false,
-			configurable: true,
-		});
-		Object.defineProperty(window, "innerHeight", {
-			value: termDOM[kHeight],
-			writable: false,
-			configurable: true,
-		});
-		Object.defineProperty(window, "outerWidth", {
-			value: termDOM[kWidth],
-			writable: false,
-			configurable: true,
-		});
-		Object.defineProperty(window, "outerHeight", {
-			value: termDOM[kHeight],
-			writable: false,
-			configurable: true,
-		});
-
-		// screenTop: readonly like browsers, and LIVE -- cursor detection moves
-		// the anchor after this runs. A frozen value here silently shadowed the
-		// real one, with only constructor line order deciding which won.
-		Object.defineProperty(window, "screenTop", {
-			get: () => termDOM[kViewport].screenTop,
-			configurable: true,
-			enumerable: true,
-		});
-
-		// Standard window scrolling, mapped onto the camera: scrollY is how far the
-		// camera has moved down the document, scrollBy moves it.
-		Object.defineProperty(window, "scrollY", {
-			get: () => termDOM[kViewport].scrollTop,
-			configurable: true,
-			enumerable: true,
-		});
-		Object.defineProperty(window, "pageYOffset", {
-			get: () => termDOM[kViewport].scrollTop,
-			configurable: true,
-			enumerable: true,
-		});
-		// A terminal document never scrolls sideways, so the X pair reads 0.
-		Object.defineProperty(window, "scrollX", {
-			get: () => 0,
-			configurable: true,
-			enumerable: true,
-		});
-		Object.defineProperty(window, "pageXOffset", {
-			get: () => 0,
-			configurable: true,
-			enumerable: true,
-		});
-		window.scrollBy = ((
-			xOrOptions?: number | ScrollToOptions,
-			y?: number,
-		): void => {
-			const dy =
-				typeof xOrOptions === "object" && xOrOptions !== null ?
-						(xOrOptions.top ?? 0) :
-						(y ?? 0);
-			termDOM[kScrollCamera](dy);
-		}) as typeof window.scrollBy;
-
-		// scrollTo/scroll set the camera to an absolute position -- the same
-		// state scrollY reads and scrollBy moves relatively. document.
-		// documentElement/body.scrollTop are the same value again, standard DOM
-		// (window.scrollY === document.documentElement.scrollTop always): one
-		// camera, four ways to read or move it, matching the "unified scrolling
-		// model" the viewport tests already name it after.
-		const scrollToCamera = (
-			xOrOptions?: number | ScrollToOptions,
-			y?: number,
-		): void => {
-			const targetY =
-				typeof xOrOptions === "object" && xOrOptions !== null ?
-						(xOrOptions.top ?? termDOM[kViewport].scrollTop) :
-						(y ?? 0);
-			termDOM[kViewport].scrollTop = Math.max(0, targetY);
-			void termDOM[kRender]();
-		};
-		window.scrollTo = scrollToCamera as typeof window.scrollTo;
-		window.scroll = scrollToCamera as typeof window.scroll;
-
-		for (const root of [document.documentElement, document.body]) {
-			Object.defineProperty(root, "scrollTop", {
-				get: () => termDOM[kViewport].scrollTop,
-				set: (value: number) => {
-					termDOM[kViewport].scrollTop = Math.max(0, value);
-					void termDOM[kRender]();
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
-
-		// requestAnimationFrame is the only way to await a painted frame -- render()
-		// is private. A bare timer would be decoupled from our (async) paint, so a
-		// callback could fire before the frame is written.
-		// Route it through the render loop: schedule a render and fire the callback
-		// once it completes, so "await a frame" always means the frame that includes
-		// your pending mutations has landed.
-		window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
-			const id = termDOM[kAllocateFrameHandle]();
-			termDOM[kFrameCallbacks].set(id, cb);
-			void termDOM[kRender]();
-			return id;
-		}) as typeof window.requestAnimationFrame;
-		window.cancelAnimationFrame = ((handle: number): void => {
-			termDOM[kFrameCallbacks].delete(handle);
-		}) as typeof window.cancelAnimationFrame;
-
-		// matchMedia: the terminal is the one screen, and queries answer
-		// through the SAME evaluator @media stylesheet rules use, so a
-		// script and a stylesheet can never disagree about the viewport.
-		// The list is live: a resize (SIGWINCH is this screen's window
-		// resize) re-evaluates and fires "change" when the answer flips --
-		// the browser contract, which is what makes responsive terminal
-		// layouts a matchMedia listener instead of a bespoke resize hook.
-		window.matchMedia = ((query: string): MediaQueryList => {
-			const media = String(query);
-			const mql = new (window as any).EventTarget();
-			// `matches` reads live; this holds the value the last "change"
-			// event reported.
-			let notified = termDOM[kStyleManager].mediaQueryMatches(media);
-			let onchange: ((ev: Event) => void) | null = null;
-			Object.defineProperties(mql, {
-				media: {get: () => media, enumerable: true, configurable: true},
-				matches: {
-					get: () => termDOM[kStyleManager].mediaQueryMatches(media),
-					enumerable: true,
-					configurable: true,
-				},
-				onchange: {
-					get: () => onchange,
-					set: (value: ((ev: Event) => void) | null) => {
-						// An event-handler attribute IS a listener, per spec:
-						// route it through add/removeEventListener so dispatch
-						// order and dedup behave like any other handler.
-						if (onchange) {
-							mql.removeEventListener("change", onchange);
-						}
-						onchange = typeof value === "function" ? value : null;
-						if (onchange) {
-							mql.addEventListener("change", onchange);
-						}
-					},
-					enumerable: true,
-					configurable: true,
-				},
-				// The pre-2020 MediaQueryList API, still what much deployed
-				// code calls: plain aliases for the EventTarget pair.
-				addListener: {
-					value: (cb: ((ev: Event) => void) | null) => {
-						if (cb) {
-							mql.addEventListener("change", cb);
-						}
-					},
-					configurable: true,
-				},
-				removeListener: {
-					value: (cb: ((ev: Event) => void) | null) => {
-						if (cb) {
-							mql.removeEventListener("change", cb);
-						}
-					},
-					configurable: true,
-				},
-			});
-			termDOM[kMediaQueryUpdaters].add(() => {
-				const now = termDOM[kStyleManager].mediaQueryMatches(media);
-				if (now === notified) {
-					return;
-				}
-				notified = now;
-				const event = new window.Event("change");
-				Object.defineProperties(event, {
-					matches: {value: now, enumerable: true},
-					media: {value: media, enumerable: true},
-				});
-				mql.dispatchEvent(event);
-			});
-			return mql as MediaQueryList;
-		}) as typeof window.matchMedia;
-
-		// window.close() closes the terminal session as it would close a
-		// browser tab: dispose, then close the transport. Ctrl-C's default
-		// action is this call.
-		window.close = () => {
-			// beforeunload is the door out, and a listener that cancels keeps
-			// the session. A browser answers a canceled beforeunload with a
-			// prompt of its own; a terminal has no UA chrome to prompt with,
-			// so cancellation just stops the teardown, leaving the app to ask
-			// "are you sure?" however it likes and to close again once the
-			// user says yes. Every close asks: the event carries nothing from
-			// the last one.
-			const unloadEvent = DOM.createBeforeUnloadEvent();
-			(window as unknown as DOM.EventTarget).dispatchEvent(unloadEvent);
-			if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
-				return;
-			}
-
-			const wasAttached = termDOM[kAttached];
-			// An immediate close must not tear down mid-establishment: wait
-			// for attach to finish (anchor found, first frame painted) so the
-			// payout lands where the frame was, not at a stale row 0. Then
-			// everything dispose queued must reach the wire before the
-			// transport acts on the close (a process transport exits).
-			void (async () => {
-				if (wasAttached) {
-					await termDOM[kAttachReady];
-				}
-				await termDOM.dispose();
-				if (wasAttached) {
-					termDOM[kTransport].close({status: 0});
-				}
-			})();
-		};
-
-		// document.title sets the terminal's window title in-band (OSC 2).
-		// attach() pushes the previous title; dispose() pops it.
-		let nativeTitle: PropertyDescriptor | undefined;
-		for (
-			let proto = Object.getPrototypeOf(document);
-			proto && !nativeTitle;
-			proto = Object.getPrototypeOf(proto)
-		) {
-			nativeTitle = Object.getOwnPropertyDescriptor(proto, "title");
-		}
-		if (nativeTitle?.get && nativeTitle.set) {
-			Object.defineProperty(document, "title", {
-				get: () => nativeTitle.get!.call(document),
-				set: (value: string) => {
-					nativeTitle.set!.call(document, value);
-					if (termDOM[kAttached] && termDOM[kInteractive]) {
-						void termDOM[kSession].write(`\x1b]2;${String(value)}\x07`);
-					}
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
-
-		// navigator.clipboard: writeText() carries the text to the system
-		// clipboard over OSC 52, which travels in-band -- across SSH too.
-		// Terminals without OSC 52 ignore it; there is no way to know, so the
-		// promise resolves when the transport has the bytes. readText()
-		// rejects: terminals do not answer clipboard queries to untrusted
-		// programs, and pretending otherwise would hang.
-		Object.defineProperty(window.navigator, "clipboard", {
-			value: {
-				writeText: (text: string): Promise<void> => {
-					if (!termDOM[kAttached] || !termDOM[kInteractive]) {
-						return Promise.reject(
-							new (window as any).DOMException(
-								"clipboard requires an attached interactive terminal",
-								"NotAllowedError",
-							),
-						);
-					}
-					return termDOM[kSession].write(
-						`\x1b]52;c;${base64OfText(String(text))}\x07`,
-					);
-				},
-				readText: (): Promise<string> =>
-					Promise.reject(
-						new (window as any).DOMException(
-							"the terminal does not expose clipboard reads",
-							"NotAllowedError",
-						),
-					),
-			},
-			configurable: true,
-		});
-
-		// document.close() finalizes the document: flush the live region into the
-		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
-		// A later DOM mutation starts a fresh document below the sealed block. This
-		// is the "print rich output and stop" seam: write(), then close().
-		const nativeDocumentClose = document.close.bind(document);
-		document.close = () => {
-			nativeDocumentClose();
-			// dispose() has already set attached=false by the time it reaches here,
-			// so we skip the seal. A real seal is a close() from a live, painted
-			// session.
-			if (termDOM[kAttached] && termDOM[kRenderCount] > 0) {
-				termDOM[kSealToScrollback]();
-			}
-		};
-
-		// Implement standard DOM scrollHeight properties
-		Object.defineProperty(document.body, "scrollHeight", {
-			get() {
-				return termDOM[kLayoutEngine].getContentHeight();
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(document.documentElement, "scrollHeight", {
-			get() {
-				return termDOM[kLayoutEngine].getContentHeight();
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		// clientHeight is the viewport height (terminal height)
-		Object.defineProperty(document.body, "clientHeight", {
-			get() {
-				return termDOM[kHeight];
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(document.documentElement, "clientHeight", {
-			get() {
-				return termDOM[kHeight];
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
 
 	/**
 	 * Put the engine behind the DOM's measurement, focus and fullscreen
@@ -1405,7 +1003,7 @@ export class TermDOM {
 				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
 
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 
 			const rect = termDOM[kLayoutEngine].getRect(this);
 			return toViewportRect(
@@ -1421,7 +1019,7 @@ export class TermDOM {
 				return termDOM[kLayoutEngine].createDOMRectList();
 			}
 
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 
 			const rects = termDOM[kLayoutEngine]
 				.getRects(this)
@@ -1436,7 +1034,7 @@ export class TermDOM {
 		// getRangeRects() directly, the way scrollIntoView reads getRect().
 		Range.prototype.getClientRects = function (this: Range): DOMRectList {
 			const termDOM = engineOf(this.startContainer);
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 			const container = this.startContainer;
 			const anchor =
 				container.nodeType === container.ELEMENT_NODE ?
@@ -1450,7 +1048,7 @@ export class TermDOM {
 
 		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
 			const termDOM = engineOf(this.startContainer);
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 			const container = this.startContainer;
 			const anchor =
 				container.nodeType === container.ELEMENT_NODE ?
@@ -1485,7 +1083,7 @@ export class TermDOM {
 				return null;
 			}
 			const termDOM = engineOf(element);
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 			return termDOM[kLayoutEngine].getRect(element);
 		};
 
@@ -1647,7 +1245,7 @@ export class TermDOM {
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
 				termDOM[kLayoutEngine].invalidate(this);
-				void termDOM[kRender]();
+				void render(termDOM);
 			}
 			return root;
 		};
@@ -1684,11 +1282,11 @@ export class TermDOM {
 					// the first fullscreen frame patches against the main
 					// screen's content.
 					termDOM[kScreen].repaintAll();
-					termDOM[kUpdateMouseReporting]();
+					updateMouseReporting(termDOM);
 				} finally {
 					termDOM[kScreenSwitching] = false;
 				}
-				void termDOM[kRender]();
+				void render(termDOM);
 			})();
 		};
 
@@ -1711,11 +1309,11 @@ export class TermDOM {
 					// ALTERNATE-screen frame -- patching against it garbles the
 					// restored document.
 					termDOM[kScreen].repaintAll();
-					termDOM[kUpdateMouseReporting]();
+					updateMouseReporting(termDOM);
 				} finally {
 					termDOM[kScreenSwitching] = false;
 				}
-				void termDOM[kRender]();
+				void render(termDOM);
 			})();
 		};
 
@@ -1741,7 +1339,7 @@ export class TermDOM {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same conversion
 			// getBoundingClientRect's toViewportRect makes in the other direction.
-			return termDOM[kFindElementAtDocumentPoint](
+			return findElementAtDocumentPoint(termDOM, 
 				x,
 				y + termDOM[kViewport].scrollTop,
 			);
@@ -1764,7 +1362,7 @@ export class TermDOM {
 				// their caches, and the repaint must happen even when no
 				// listener mutates anything.
 				termDOM[kStyleManager].handleFocusChange(prev, this);
-				void termDOM[kRender]();
+				void render(termDOM);
 				if (prev && prev !== document.body) {
 					prev.dispatchEvent(
 						new window.FocusEvent("blur", {
@@ -1800,7 +1398,7 @@ export class TermDOM {
 			originalBlur.call(this);
 			if (wasFocused) {
 				termDOM[kStyleManager].handleFocusChange(this);
-				void termDOM[kRender]();
+				void render(termDOM);
 				this.dispatchEvent(
 					new window.FocusEvent("blur", {
 						relatedTarget: null,
@@ -1825,7 +1423,7 @@ export class TermDOM {
 				return;
 			}
 			const termDOM = engineOf(this);
-			termDOM[kProcessPendingMutationsAndRender]();
+			processPendingMutationsAndRender(termDOM);
 
 			// Document-relative, not getBoundingClientRect's viewport-relative --
 			// this compares directly against the camera's scrollTop below, so it needs
@@ -1844,154 +1442,11 @@ export class TermDOM {
 			);
 			const top = termDOM[kViewport].scrollTop;
 			if (rect.top < top) {
-				termDOM[kScrollCamera](rect.top - top);
+				scrollCamera(termDOM, rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
-				termDOM[kScrollCamera](rect.bottom - (top + regionHeight));
+				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
 			}
 		};
-	}
-
-	/**
-	 * Apply a batch of mutation records to everything that isn't painting:
-	 * pseudo-elements/caches, the layout tree, and the autofocus default
-	 * action. In the same order everywhere it's called, since mutations reach
-	 * this from two different places -- the observer's own async callback
-	 * below, and kProcessPendingMutationsAndRender/kRenderStatic/
-	 * kRenderInteractive's synchronous `takeRecords()` drain (a geometry read
-	 * or a scheduled render needs fresh layout NOW, not whenever the next
-	 * microtask checkpoint happens to land) -- and whichever one runs first
-	 * empties the queue for the other.
-	 */
-	[kHandlePendingMutations](mutations: MutationRecord[]): void {
-		// Any observed mutation can move a node in the flat tree; drop the
-		// memoized composition links before anything reads through them.
-		this[kLayoutEngine].invalidateFrame();
-		// Record damage while the old layout still answers: a banded repaint
-		// must cover the target's pre-mutation rows too.
-		for (const mutation of mutations) {
-			this[kAddFrameDamage](mutation.target);
-			if (mutation.type === "childList") {
-				for (const node of mutation.addedNodes) {
-					this[kAddFrameDamage](node);
-				}
-				// Removed nodes have no rows of their own; their damage is the
-				// parent's, already added.
-			}
-		}
-		// Attribute records whose value did not actually change are dropped
-		// before any handler sees them. Frameworks (and this repo's own
-		// examples) re-assign className/style with identical values on every
-		// update; per spec each assignment fires a record, and a class
-		// record rebuilds the whole layout tree from body -- the difference
-		// between a keystroke costing a counter re-measure and costing the
-		// document. A->B->A inside one unpainted batch also nets out: the
-		// intermediate value never rendered, so skipping is correct, and a
-		// same-batch pair still processes via the B->A record.
-		const relevant = mutations.filter((record) => {
-			if (record.type !== "attributes" || !record.attributeName) {
-				return true;
-			}
-			const target = record.target as Element;
-			return record.oldValue !== target.getAttribute(record.attributeName);
-		});
-		if (relevant.length === 0) {
-			return;
-		}
-		// Upgrade UA form controls the moment they connect -- before layout reads
-		// their shadow and before the painter walks it -- the way a browser
-		// upgrades a custom element on connect, not lazily at first paint. The
-		// shell drives it here, the one place every insert -- observer-driven or
-		// drained from a synchronous render -- passes through.
-		for (const record of relevant) {
-			if (record.type !== "childList") {
-				continue;
-			}
-			for (const added of record.addedNodes) {
-				if (added.nodeType !== added.ELEMENT_NODE) {
-					continue;
-				}
-				upgradeControlsIn(added as Element);
-			}
-		}
-		this[kStyleManager].handleMutations(relevant);
-		this[kLayoutEngine].handleMutations(relevant);
-		focusAutofocusedNodes(relevant);
-	}
-
-	[kSetupMutationObserver](): MutationObserver {
-		const observer = new this.window.MutationObserver((mutations) => {
-			this[kHandlePendingMutations](mutations);
-			this[kRender]();
-		});
-
-		observer.observe(this.document.documentElement, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-
-		return observer;
-	}
-
-	/**
-	 * The session over the transport: input demultiplexing and the query
-	 * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
-	 * started only by attach() -- construction holds no lock and reads nothing.
-	 */
-	[kBuildSession](): TerminalSession {
-		return new TerminalSession({
-			transport: this[kTransport],
-			viewport: this[kViewport],
-			layout: this[kLayoutEngine],
-			interactive: this[kInteractive],
-			anchorDetection: this[kTransport].sharesScreen,
-			handlers: {
-				onKeys: (keyInput) => {
-					this[kInputGeneration]++;
-					// A keystroke means the user is back at the live screen
-					// (terminals snap to the bottom on input): reclaim the mouse
-					// if scroll chaining yielded it.
-					if (this[kMouseCaptureYielded]) {
-						this[kReclaimMouseCapture]();
-					}
-					this[kDispatchGlobalKeyboardEvent](keyInput);
-				},
-				onMouse: (button, x, y, release) => {
-					this[kInputGeneration]++;
-					this[kHandleMouseReport](button, x, y, release);
-				},
-				onPaste: (text) => {
-					this[kInputGeneration]++;
-					this[kDispatchPaste](text);
-				},
-				onResize: () => {
-					this[kScheduleResize]();
-				},
-				// Ctrl-C's default action is the DOM's own way out: close the
-				// window. An app that wants different behavior handles the
-				// keydown; this is what happens when nobody does.
-				onCloseRequest: () => {
-					this.window.close();
-				},
-				// A cluster is wider or narrower on this terminal than the
-				// tables said, so every column after one on a painted row is
-				// off by the difference. The previous frame described a screen
-				// that was never drawn: drop it and paint the region again from
-				// the corrected measurements.
-				onWidthCorrection: () => {
-					this[kScreen].repaintAll();
-					void this[kRender]();
-				},
-				// The terminal went away (hangup, disconnect, process exit):
-				// clean up this side. The transport is already closing; there
-				// is nothing to close back.
-				onClosed: () => {
-					this.dispose();
-				},
-			},
-		});
 	}
 
 	/**
@@ -2030,7 +1485,7 @@ export class TermDOM {
 			return this[kAttachReady];
 		}
 		if (rebinding) {
-			this[kRebindTransport](transport);
+			rebindTransport(this, transport);
 		}
 		this[kAttached] = true;
 
@@ -2063,7 +1518,7 @@ export class TermDOM {
 					void this[kSession].write(`\x1b]2;${this.document.title}\x07`);
 				}
 			}
-			this[kUpdateMouseReporting]();
+			updateMouseReporting(this);
 			this[kSession].initializeCursorDetection();
 			void this[kSession].negotiateBidi();
 			void this[kSession].negotiateGraphemeClusters();
@@ -2075,543 +1530,9 @@ export class TermDOM {
 			// re-entrancy guard while synchronous code right after attach()
 			// still expects its own render calls to drain mutations inline.
 			await new Promise<void>((resolve) => queueMicrotask(resolve));
-			await this[kRender]();
+			await render(this);
 		})();
 		return this[kAttachReady];
-	}
-
-	/**
-	 * Adopt `transport` and re-derive everything that comes from the terminal:
-	 * color depth, the viewport size, and the session. The collaborators that
-	 * hold the transport -- the renderer, the session -- are rebuilt rather
-	 * than mutated: the renderer has no color-depth setter, and a rebind always
-	 * precedes the first frame. The transport-independent collaborators
-	 * (layout, style, painter, viewport) are untouched; only the layout is
-	 * resized to the new terminal.
-	 */
-	[kRebindTransport](transport: TerminalTransport): void {
-		this[kTransport] = transport;
-		this[kInteractive] = transport.interactive;
-		this[kApplyTerminalSize](transport.cols, transport.rows);
-		this[kScreen] = new Screen(
-			this[kHeight],
-			this[kWidth],
-			transport.colorDepth,
-		);
-		this[kSession] = this[kBuildSession]();
-	}
-
-	/**
-	 * Adopt a new terminal size: update the reported dimensions, re-parse the
-	 * stylesheets and re-evaluate media queries against them (a viewport change
-	 * can flip any @media answer), and resize the layout. The renderer is left
-	 * to the caller -- a resize resizes it in place, a rebind replaces it.
-	 */
-	[kApplyTerminalSize](newWidth: number, newHeight: number): void {
-		// A SIGWINCH reporting an unchanged size still redraws but fires no
-		// resize event.
-		const sizeChanged = newWidth !== this[kWidth] ||
-			newHeight !== this[kHeight];
-		this[kWidth] = newWidth;
-		this[kHeight] = newHeight;
-
-		Object.defineProperty(this.window, "innerWidth", {
-			value: newWidth,
-			writable: false,
-			configurable: true,
-		});
-		Object.defineProperty(this.window, "innerHeight", {
-			value: newHeight,
-			writable: false,
-			configurable: true,
-		});
-
-		// The layout engine holds the viewport a `vw` is a hundredth of, so it
-		// learns the new size BEFORE any style is resolved against it.
-		this[kLayoutEngine].resize(newWidth, newHeight);
-
-		// The viewport changed, so every @media answer may have: re-parse the
-		// stylesheets against the new size (they were parsed against the old one
-		// and would stay stale), then let each live MediaQueryList re-evaluate
-		// and fire "change" if it flipped. The re-parse also moves the style
-		// epoch, which is what retires the viewport-relative values every
-		// computed style resolved under the old size.
-		this[kStyleManager].refreshStylesheets();
-
-		// Per the rendering steps, resize fires before media query "change"
-		// events, and everything a listener reads already has the new size.
-		if (sizeChanged) {
-			this.window.dispatchEvent(new this.window.Event("resize"));
-		}
-		for (const update of this[kMediaQueryUpdaters]) {
-			update();
-		}
-	}
-
-	/**
-	 * The mouse is captured exactly when the document owns the camera: document
-	 * mode and fullscreen, where wheel-to-scroll is the default action, the same
-	 * as a browser. Flow mode leaves the mouse native -- there the terminal owns
-	 * scrolling (that is the mode's point), and capture would take the user's
-	 * scrollback and selection in exchange for nothing.
-	 *
-	 * Idempotent; call it whenever attachment, viewport mode, or fullscreen
-	 * changes.
-	 */
-	[kUpdateMouseReporting](): void {
-		const wanted =
-			this[kAttached] && this[kInteractive] && !this[kMouseCaptureYielded];
-		if (wanted === this[kMouseReportingEnabled]) {
-			return;
-		}
-		this[kMouseReportingEnabled] = wanted;
-		// 1002: button presses, releases, wheel, and drag motion (no move flood
-		// while nothing is pressed). 1006: SGR encoding, the only one that is
-		// unambiguous past column 223.
-		void this[kSession].write(
-			wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
-		);
-	}
-
-	/**
-	 * End a scroll-chaining yield, from whichever of the two triggers reaches
-	 * it first -- a keystroke (the common case) or the fallback timer (see
-	 * kScrollChainTimer). Both need the same cleanup, so this is the one place
-	 * that does it: clear the pending timer (the other trigger firing later
-	 * would be a harmless no-op via kUpdateMouseReporting's own idempotence,
-	 * but there is no reason to let it) and restore mouse capture.
-	 */
-	[kReclaimMouseCapture](): void {
-		if (this[kScrollChainTimer] !== null) {
-			clearTimeout(this[kScrollChainTimer]);
-			this[kScrollChainTimer] = null;
-		}
-		this[kMouseCaptureYielded] = false;
-		this[kUpdateMouseReporting]();
-	}
-
-	async [kRender](): Promise<void> {
-		// attach() is the ONLY door to the terminal: until the app calls it,
-		// mutations keep the DOM and layout live but write nothing. Rendering
-		// resumes -- starting with whatever the document holds by then -- the
-		// moment attach() runs, which ends by scheduling this render.
-		if (!this[kAttached]) {
-			return;
-		}
-
-		// A resize is settling: suppress every render until handleResize issues the
-		// single re-anchored redraw. See resizeInProgress.
-		if (this[kResizeInProgress]) {
-			return;
-		}
-
-		// A screen switch (fullscreen enter/exit) is in progress: no frame
-		// may straddle it -- a frame computed for one screen landing on the
-		// other paints the wrong geometry onto the wrong buffer.
-		if (this[kScreenSwitching]) {
-			return;
-		}
-
-		// A render in flight: coalesce, don't drop. Dropping an auto-render (a
-		// mutation observer firing mid-frame) leaves the diff renderer's
-		// previous-buffer out of step with the screen, which shows up as rows drawn
-		// at the wrong place. Instead mark one pending and hand back the running
-		// loop's promise: it will fold this caller's changes into a trailing frame,
-		// so awaiting render() always means "the caller's changes are painted".
-		if (this[kIsRendering]) {
-			this[kRenderQueued] = true;
-			return this[kRenderInFlight] ?? Promise.resolve();
-		}
-
-		this[kIsRendering] = true;
-		this[kRenderInFlight] = (async () => {
-			try {
-				do {
-					this[kRenderQueued] = false;
-					await this[kRenderOnce]();
-				} while (this[kRenderQueued]);
-				// The frame(s) are written; wake anything awaiting requestAnimationFrame.
-				this[kDrainFrameCallbacks]();
-			} finally {
-				this[kIsRendering] = false;
-				this[kRenderInFlight] = null;
-			}
-		})();
-		return this[kRenderInFlight];
-	}
-
-	[kDrainFrameCallbacks](): void {
-		if (this[kFrameCallbacks].size === 0) {
-			return;
-		}
-		const callbacks = [...this[kFrameCallbacks].values()];
-		this[kFrameCallbacks].clear();
-		const now = performance.now();
-		for (const cb of callbacks) {
-			cb(now);
-		}
-	}
-
-	async [kRenderOnce](): Promise<void> {
-		// An in-flight render loop can outlive dispose() by one queued frame;
-		// everything below assumes a live document.
-		if (this[kDisposed]) {
-			return;
-		}
-		if (this[kAttachBeginning]) {
-			await this[kAttachBegun];
-			if (this[kDisposed]) {
-				return;
-			}
-		}
-		if (!this[kInteractive]) {
-			await this[kPrintStatic]();
-			return;
-		}
-
-		await this[kRenderInteractive]();
-	}
-
-	/**
-	 * The paint height of the document: body's scroll height, extended to
-	 * cover top-layer boxes -- hoisted under the root, they contribute
-	 * nothing to body's own height, and a picker opening at the bottom
-	 * edge must still get rows to paint into.
-	 */
-	[kDocumentPaintHeight](): number {
-		let height = this.document.body.scrollHeight;
-		for (const element of this[kTopLayer]) {
-			if (!flatIsConnected(element)) {
-				continue;
-			}
-			const rect = this[kLayoutEngine].getRect(element);
-			if (rect) {
-				height = Math.max(height, Math.ceil(rect.bottom));
-			}
-		}
-		return height;
-	}
-
-	/**
-	 * The value offset under a document-space point in a text field --
-	 * cell-width aware, clamped to the nearest offset so a drag that
-	 * leaves the field still resolves (the browser's capture model:
-	 * a selection begun in a field is the field's until release).
-	 */
-	[kFieldOffsetAtPoint](
-		element: HTMLInputElement | HTMLTextAreaElement,
-		x: number,
-		y: number,
-	): number | null {
-		// The value's own text: a field's selection is measured in ITS offsets,
-		// and for a password that text is the bullets, which is what was
-		// painted and so what the point lands on.
-		const valueText = fieldValueText(element);
-		if (!valueText) {
-			return null;
-		}
-		const found = this[kLayoutEngine].caretPositionFromPoint(
-			x,
-			y,
-			valueText,
-			true,
-		);
-		if (!found) {
-			return null;
-		}
-		return Math.min(found.offset, valueText.data.length);
-	}
-
-	/**
-	 * Queue a caret reveal for the next frame. The reveal rides the frame
-	 * the edit already scheduled: one camera decision against the layout
-	 * that frame flushes anyway, however many keystrokes coalesced into it.
-	 * Revealing immediately instead would cost a full synchronous layout
-	 * flush per keystroke, before the frame's own -- half the typing latency.
-	 */
-	[kQueueCaretReveal](
-		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-	): void {
-		this[kPendingCaretReveal] = element;
-	}
-
-	/**
-	 * Keep the editing caret inside the camera, the way a browser keeps the
-	 * caret of a focused control visible on every EDIT (typing, Enter,
-	 * caret travel) -- and only on edits: wheel-scrolling away from a
-	 * focused field stays allowed, so the render loop runs this only when
-	 * an edit queued it (see kQueueCaretReveal). The caret row comes from
-	 * fresh layout; single-row widgets reduce to their own row.
-	 */
-	[kScrollCaretIntoView](
-		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-	): void {
-		this[kProcessPendingMutationsAndRender]();
-		const rect = this[kLayoutEngine].getRect(element);
-		if (!rect) {
-			return;
-		}
-		let caretY = Math.round(rect.top);
-		if (element.tagName === "TEXTAREA") {
-			const caret = this[kLayoutEngine].caretRectOf(element);
-			if (!caret) {
-				return;
-			}
-			caretY = caret.y;
-		}
-		// The row span to reveal: the caret's row -- widened to the field's
-		// own edge when the caret sits on the first or last content row, so
-		// resting at a boundary shows the border instead of a cropped box.
-		const boxModel = getBoxModel(element);
-		let revealTop = caretY;
-		let revealBottom = caretY + 1;
-		if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
-			revealTop = Math.round(rect.top);
-		}
-		if (
-			caretY >=
-			Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
-		) {
-			revealBottom = Math.round(rect.bottom);
-		}
-		const regionHeight = Math.min(
-			this[kHeight],
-			this.document.body.scrollHeight,
-		);
-		const delta = this[kViewport].scrollDeltaToReveal(
-			revealTop,
-			revealBottom,
-			regionHeight,
-		);
-		if (delta) {
-			this[kScrollCamera](delta);
-		}
-	}
-
-	/**
-	 * Keep a single-line input's caret in its box by setting the value part's
-	 * scrollLeft (the layout reads it live, no relayout). Measured in cells.
-	 */
-	[kScrollFieldCaretIntoView](input: HTMLInputElement): void {
-		const valueText = fieldValueText(input);
-		const valueSpan = valueText?.parentElement as HTMLElement | null;
-		if (!valueText || !valueSpan) {
-			return;
-		}
-		const content = this[kLayoutEngine].contentRect(input);
-		if (!content) {
-			return;
-		}
-		const contentWidth = Math.round(content.width);
-		if (contentWidth <= 0) {
-			return;
-		}
-
-		const shown = valueText.data;
-		// Seed from the current scrollLeft so a settled window doesn't jitter.
-		const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
-		let scrollOffset = 0;
-		for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
-			acc += stringWidth(shown[scrollOffset]);
-			scrollOffset++;
-		}
-		// The caret is wherever the input renders it, in the value text's own
-		// offsets -- the same text `shown` is read from.
-		const caret = caretRangeOf(input);
-		if (!caret) {
-			return;
-		}
-		const cursor = caret.startOffset;
-		// Keep the caret's cell in the box, then pull back when a deletion left slack.
-		if (cursor < scrollOffset) {
-			scrollOffset = cursor;
-		}
-		while (
-			scrollOffset < cursor &&
-			stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
-		) {
-			scrollOffset++;
-		}
-		while (
-			scrollOffset > 0 &&
-			stringWidth(shown.slice(scrollOffset - 1)) < contentWidth
-		) {
-			scrollOffset--;
-		}
-		const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
-		if (scrollLeft !== currentScroll) {
-			valueSpan.scrollLeft = scrollLeft;
-		}
-	}
-
-	[kProcessPendingMutationsAndRender](): boolean {
-		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
-		// *layout*, not fresh pixels. A full render() here would make every
-		// rect read with pending mutations paint a frame -- an app calling
-		// scrollIntoView on each keystroke pays two paints per key, and the
-		// rect could still be stale unless the render were awaited. Flushing
-		// mutations and laying out synchronously gives an exact rect; painting
-		// stays with the caller's own render. The dirty-skip makes this free when
-		// nothing changed.
-		const pendingMutations = this[kObserver].takeRecords();
-		const hadMutations = pendingMutations.length > 0;
-		if (hadMutations) {
-			this[kHandlePendingMutations](pendingMutations);
-			// takeRecords() stole these from the observer callback that would
-			// have painted them. When the caller's own follow-up (a camera
-			// move, an input's render) never comes -- scrollIntoView on an
-			// already-visible row is the canonical case -- the mutation would
-			// otherwise never reach the screen. Schedule the paint the drain
-			// consumed, UNCONDITIONALLY: render() itself queues a trailing
-			// frame when one is in flight, and skipping "because a render is
-			// running" leaves the screen one interaction behind the DOM when
-			// keystrokes arrive faster than frames.
-			void this[kRender]();
-		}
-		this[kLayoutEngine].calculateLayout();
-		return hadMutations;
-	}
-
-	/**
-	 * Coalesce a burst of resize events into a single redraw.
-	 *
-	 * Dragging a terminal's edge fires a SIGWINCH for every width it passes
-	 * through -- dozens in one drag. Redrawing on each leaves a little reflowed
-	 * crud in the scrollback every time (see handleResize), so the crud grows with
-	 * the length of the drag rather than the fact that it happened. Waiting for the
-	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
-	 */
-	[kScheduleResize](): void {
-		// Suppress renders from the very first SIGWINCH, before the debounce
-		// settles, so a drag's worth of animation ticks cannot paint at the stale
-		// anchor while the terminal is rewrapping under us.
-		this[kResizeInProgress] = true;
-		this[kResizeEpoch]++;
-		if (this[kResizeTimer] !== null) {
-			clearTimeout(this[kResizeTimer]);
-		}
-		this[kResizeTimer] = setTimeout(() => {
-			this[kResizeTimer] = null;
-			this[kHandleResize]();
-		}, RESIZE_DEBOUNCE_MS);
-	}
-
-	[kHandleResize](): void {
-		const newWidth = this[kTransport].cols;
-		const newHeight = this[kTransport].rows;
-
-		this[kApplyTerminalSize](newWidth, newHeight);
-		this[kScreen].resize(newHeight, newWidth);
-
-		// Re-anchor and redraw. The terminal has already rewrapped everything on
-		// screen -- including our old frame -- and how far our content moved depends
-		// on text above us that we do not own. But two facts make its new position
-		// exactly recoverable:
-		//
-		//   1. The cursor is parked on our content's bottom row after every frame,
-		//      and it rides its line through the rewrap (renderFrame parks it).
-		//   2. Every row we paint is a hard line, so the old frame's rewrapped
-		//      height is computable from the previous frame's own line lengths.
-		//
-		// So: ask the terminal where the cursor is (DSR), subtract the rewrapped
-		// height, and that is our frame's new top row -- ground truth, immune to
-		// whatever the shell prompt above did. Anything that ballooned past the
-		// screen top is in the scrollback, beyond rewriting; the redraw's erase
-		// covers everything from the recovered top down, so the visible screen
-		// carries exactly one copy.
-		//
-		// resizeInProgress has suppressed every animation tick since the first
-		// SIGWINCH, so nothing paints at a stale anchor while the query is in
-		// flight. If the terminal does not answer, fall back to the computed
-		// vertical re-anchor (exact for height changes, approximate for width).
-		this[kLayoutEngine].calculateLayout();
-		const contentHeight = this.document.body.scrollHeight;
-		const wrappedRowsAbove = this[kScreen].wrappedRowsAbovePark(newWidth);
-		const epoch = this[kResizeEpoch];
-
-		const redraw = (startRow: number) => {
-			// The recovered row is where the frame stands; whether it still
-			// FITS below that row at the new height is reserveRows' problem,
-			// which solves it the only permissible way -- scrolling earlier
-			// output up into the scrollback, never painting over it. Clamping
-			// startRow upward to force a fit instead would plant the frame on
-			// top of the shell prompt above it.
-			this[kViewport].screenTop = startRow;
-			this[kViewport].anchorScrollTop = -this[kViewport].screenTop;
-			this[kScreen].replaced(startRow);
-
-			// Everything suppressed since the first SIGWINCH may paint again. The
-			// frame is placed by the screen reset, not by cursor detection.
-			this[kResizeInProgress] = false;
-			const wasDetected = this[kSession].hasDetectedCommandStart;
-			this[kSession].hasDetectedCommandStart = false;
-			this[kRender]().then(() => {
-				this[kSession].hasDetectedCommandStart = wasDetected;
-			});
-		};
-
-		const computedReanchor = () => {
-			const previousStart = this[kViewport].screenTop;
-			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
-			return Math.max(0, previousStart - scrolledUp);
-		};
-
-		// The anchor is trustworthy exactly while the frame still FITS below it.
-		// When it does, no room-making scroll happens and the redraw is precise,
-		// so the prompt above is left alone. When it does not, the terminal
-		// scrolled the frame by an amount a same-cursor DSR cannot report, and
-		// making room on top of that mis-anchor is what strands a copy of our
-		// own rows -- an intermittent race we cannot win. There, clear the whole
-		// screen and start at the top: the erase covers every row the old frame
-		// could hold, so no fragment survives. It costs the output above us,
-		// which is the trade for a screen that is always legible.
-		const place = (startRow: number) => {
-			if (startRow + contentHeight <= newHeight) {
-				redraw(startRow);
-			} else {
-				redraw(0);
-			}
-		};
-
-		if (this[kSession].anchorDetectionEnabled && wrappedRowsAbove !== null) {
-			this[kSession]
-				.queryCursorRow()
-				.then((cursorRow) => {
-					// A newer resize superseded this one; its handler will redraw.
-					if (epoch !== this[kResizeEpoch]) {
-						return;
-					}
-					place(Math.max(0, cursorRow - wrappedRowsAbove));
-				})
-				.catch(() => {
-					if (epoch !== this[kResizeEpoch]) {
-						return;
-					}
-					place(computedReanchor());
-				});
-		} else {
-			place(computedReanchor());
-		}
-	}
-
-	/**
-	 * Run the observers against the layout just produced.
-	 *
-	 * Called after every render, once isRendering is clear -- a callback that
-	 * mutates the DOM schedules the next frame through the mutation observer, so
-	 * there is no re-entrancy to guard against here.
-	 */
-	[kAfterRender](): void {
-		this[kRenderCount]++;
-		// The viewport in document coordinates: the scroll offset, one terminal
-		// high. IntersectionObserver measures targets against it.
-		const viewport = this[kLayoutEngine].createDOMRect(
-			0,
-			this[kViewport].scrollTop,
-			this[kWidth],
-			this[kHeight],
-		);
-		this[kObserverManager].flush(viewport, this[kRenderCount]);
 	}
 
 	/** Install the observer constructors on the window, bound to this instance. */
@@ -2640,1134 +1561,9 @@ export class TermDOM {
 		};
 	}
 
-	/**
-	 * The modal dialog on top of the document, or null while none is showing.
-	 * Last in the top layer is topmost, and only a modal dialog is ever in it
-	 * by way of `showModal`.
-	 */
-	[kTopmostModalDialog](): HTMLDialogElement | null {
-		let modal: HTMLDialogElement | null = null;
-		for (const element of this[kTopLayer]) {
-			if (isModalDialog(element)) {
-				modal = element as HTMLDialogElement;
-			}
-		}
-		return modal;
-	}
-
-	/**
-	 * What a close request closes: the modal dialog or auto popover last into
-	 * the top layer, which is the one the user sees on top. A manual popover
-	 * is not one -- it responds to neither Escape nor a click outside -- and
-	 * neither is anything else riding the layer.
-	 */
-	[kTopmostCloseRequestTarget](): Element | null {
-		const popover = topmostAutoPopover(this.document) as Element | null;
-		let target: Element | null = null;
-		for (const element of this[kTopLayer]) {
-			if (isModalDialog(element) || element === popover) {
-				target = element;
-			}
-		}
-		return target;
-	}
-
-	/**
-	 * Focus the next or previous focusable element
-	 */
-	[kMoveFocus](reverse: boolean): void {
-		// A modal dialog makes the rest of the document inert, and the visible
-		// half of inertness is that Tab cannot leave the dialog: the sequential
-		// order is the dialog's own, and it wraps within it.
-		const scope = this[kTopmostModalDialog]() ?? this.document;
-		const focusable = getFocusableElements(scope, this[kLayoutEngine]);
-		if (focusable.length === 0) {
-			return;
-		}
-
-		const current = this.document.activeElement;
-		const currentIndex = focusable.indexOf(current as Element);
-		let nextIndex: number;
-
-		if (reverse) {
-			nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
-		} else {
-			nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
-		}
-
-		const next = focusable[nextIndex] as HTMLElement;
-		next.focus();
-		// A control the camera is not looking at cannot be typed into, so the
-		// move brings it into view -- what a browser does when focus leaves the
-		// scrollport, and what makes tabbing through a form longer than the
-		// screen work at all.
-		next.scrollIntoView({block: "nearest"});
-
-		// Focus is not a DOM mutation, so no observer will schedule a frame -- but
-		// :focus styling and the caret (the real terminal cursor, parked in the
-		// focused field) both need one to move.
-		void this[kRender]();
-	}
-
-	/**
-	 * Hit-test a document-relative point (flushing pending layout first). The
-	 * one place both document.elementFromPoint (which converts its public,
-	 * viewport-relative x/y into this space) and mouse hit-testing (whose
-	 * points are already document-relative, from the viewport's screenToDocumentPoint) go
-	 * through, so a click always tests against fresh layout regardless of
-	 * entry point.
-	 */
-	[kFindElementAtDocumentPoint](x: number, y: number): Element | null {
-		this[kProcessPendingMutationsAndRender]();
-		let element = this[kLayoutEngine].hitTest(
-			this.document.documentElement,
-			x,
-			y,
-			this[kTopLayer],
-			this[kViewport].scrollTop,
-		);
-		// A pseudo-element is not an element the DOM can hand out: the hit on
-		// the content it generates is a hit on the element it originates from.
-		for (
-			let host = element && pseudoHostOf<Element>(element);
-			host;
-			host = pseudoHostOf<Element>(element!)
-		) {
-			element = host;
-		}
-		// RETARGET out of shadow trees, per spec: from outside a shadow tree
-		// (and the document is always outside), the hit is the HOST -- a
-		// click on an input's internal value span is a click on the input.
-		// Without this, closest()/focus logic dead-ends inside the UA
-		// fragment, whose parts have no parentElement chain to climb.
-		while (element) {
-			const root = element.getRootNode();
-			if (root.nodeType === 11 && (root as ShadowRoot).host) {
-				element = (root as ShadowRoot).host;
-			} else {
-				break;
-			}
-		}
-		// A modal dialog makes the rest of the document inert: a point outside
-		// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
-		// the target a browser reports for a click on the dim area, and the
-		// reason nothing behind a modal can be clicked or focused while it is
-		// up.
-		const modal = this[kTopmostModalDialog]();
-		if (modal !== null && (element === null || !modal.contains(element))) {
-			return modal as unknown as Element;
-		}
-		return element;
-	}
-
-	/**
-	 * The caret position under a document point: the element it hit-tests to,
-	 * asked of the engine.
-	 *
-	 * Null over a form control, whose value is not document text -- its
-	 * selection is the control's own bounded world, which kFieldOffsetAtPoint
-	 * asks about instead. The two never merge: getSelection() cannot see inside
-	 * a control, per spec.
-	 */
-	[kDocumentPointToTextPosition](
-		x: number,
-		y: number,
-	): {node: Text; offset: number} | null {
-		const element = this[kFindElementAtDocumentPoint](x, y);
-		if (
-			!element ||
-			element instanceof (this.window as any).HTMLInputElement ||
-			element instanceof (this.window as any).HTMLTextAreaElement
-		) {
-			return null;
-		}
-		return this[kLayoutEngine].caretPositionFromPoint(x, y, element);
-	}
-
-	/**
-	 * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
-	 * These only arrive while capture is on -- see updateMouseReporting.
-	 *
-	 * Reports become the DOM's own mouse events, dispatched at the element
-	 * under the cell (document.elementFromPoint is layout-true), with the
-	 * browser's default actions: wheel scrolls the camera, mousedown moves
-	 * focus, mouseup on the mousedown target is a click.
-	 */
-	[kHandleMouseReport](
-		code: number,
-		col: number,
-		row: number,
-		isRelease: boolean,
-	): void {
-		const {
-			shiftKey,
-			altKey,
-			ctrlKey,
-			isMotion,
-			base,
-			wheelDeltaY,
-			button,
-			buttons,
-		} = decodeMouseReport(code, isRelease);
-
-		const point = this[kViewport].screenToDocumentPoint(
-			col - 1,
-			row - 1,
-			this[kFullscreenManager].isFullscreen,
-		);
-		const x = point?.x ?? col - 1;
-		const y = point?.y ?? 0;
-		// Already document-relative -- go straight to the shared hit-test rather
-		// than through the public elementFromPoint, which expects viewport-
-		// relative input and would convert it right back.
-		const target =
-			(point && this[kFindElementAtDocumentPoint](x, y)) || this.document.body;
-
-		if (wheelDeltaY !== null) {
-			const notCanceled = target.dispatchEvent(
-				new this.window.WheelEvent("wheel", {
-					deltaY: wheelDeltaY,
-					deltaMode: 1, // DOM_DELTA_LINE
-					clientX: x,
-					clientY: y,
-					shiftKey,
-					altKey,
-					ctrlKey,
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-			if (notCanceled) {
-				if (
-					wheelDeltaY < 0 &&
-					this[kViewport].scrollTop === 0 &&
-					!this[kFullscreenManager].isFullscreen
-				) {
-					// Scroll chaining, the browser default: the camera is at the
-					// document top, so the scroll escapes to the parent scroller --
-					// here, the terminal's own scrollback. Yield the mouse so the
-					// next wheel tick scrolls the shell history natively; the next
-					// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
-					// reclaims it too, in case the user scrolls back down without
-					// ever pressing a key -- wheel activity while yielded produces no
-					// signal we could otherwise catch that on. An app opts out the
-					// same way it would in a browser: preventDefault on the wheel
-					// event.
-					this[kMouseCaptureYielded] = true;
-					this[kUpdateMouseReporting]();
-					if (this[kScrollChainTimer] !== null) {
-						clearTimeout(this[kScrollChainTimer]);
-					}
-					this[kScrollChainTimer] = setTimeout(() => {
-						this[kScrollChainTimer] = null;
-						this[kReclaimMouseCapture]();
-					}, TermDOM[kSCROLL_CHAIN_TIMEOUT_MS]);
-				} else {
-					this[kScrollCamera](wheelDeltaY);
-				}
-			}
-			return;
-		}
-
-		// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
-		// encoding; SGR names the button even on release, so 3 carries nothing.
-		if (base > 2) {
-			return;
-		}
-		const eventInit = {
-			button,
-			buttons,
-			clientX: x,
-			clientY: y,
-			shiftKey,
-			altKey,
-			ctrlKey,
-			bubbles: true,
-			cancelable: true,
-		};
-
-		if (isMotion) {
-			target.dispatchEvent(new this.window.MouseEvent("mousemove", eventInit));
-			// A field drag extends the field's own selection to the offset
-			// under the pointer -- clamped into the field, whichever element
-			// the pointer is over now (the field holds the capture).
-			if (this[kFieldDragAnchor] && point) {
-				const {element: fieldElement, offset: anchor} = this[kFieldDragAnchor];
-				const focus = this[kFieldOffsetAtPoint](fieldElement, x, y);
-				if (focus !== null) {
-					setUASelection(
-						fieldElement,
-						Math.min(anchor, focus),
-						Math.max(anchor, focus),
-						focus < anchor ? "backward" : "forward",
-					);
-					this[kRender]();
-				}
-				return;
-			}
-			// Dragging with the anchor set extends the document selection to
-			// the caret position under the pointer. setBaseAndExtent handles a
-			// backward drag itself; over a textless stretch the focus simply
-			// stays where it last was.
-			if (this[kSelectionDragAnchor] && this[kMouseDownTarget] && point) {
-				const focus = this[kDocumentPointToTextPosition](x, y);
-				if (focus) {
-					const anchor = this[kSelectionDragAnchor];
-					this.window
-						.getSelection()
-						?.setBaseAndExtent(
-							anchor.node,
-							anchor.offset,
-							focus.node,
-							focus.offset,
-						);
-					this[kRender]();
-				}
-			}
-			return;
-		}
-
-		if (!isRelease) {
-			this[kMouseDownTarget] = target;
-			// The popover a press belongs to, which the release compares
-			// against: light dismiss is a press and a release in the same
-			// place, so a drag out of a popover does not close it.
-			this[kPopoverPressTarget] = topmostClickedPopover(target);
-			this[kFieldDragAnchor] = null;
-			// A pointer press suppresses the :focus-visible ring.
-			if (this[kStyleManager].setFocusVisible(false)) {
-				this[kStyleManager].handleFocusChange(this.document.activeElement);
-				void this[kRender]();
-			}
-			const notCanceled = target.dispatchEvent(
-				new this.window.MouseEvent("mousedown", eventInit),
-			);
-			// Default action: mousedown moves focus, exactly as in a browser --
-			// to the nearest focusable ancestor, or away from the active element
-			// when the click lands on nothing focusable.
-			if (notCanceled) {
-				const focusable = (target as Element).closest?.(FOCUSABLE_SELECTOR);
-				const active = this.document.activeElement;
-				if (focusable && focusable !== active) {
-					(focusable as HTMLElement).focus();
-					void this[kRender]();
-				} else if (!focusable && active && active !== this.document.body) {
-					(active as HTMLElement).blur();
-					void this[kRender]();
-				}
-
-				// A select's press-to-open and option-row commit are the select
-				// widget's own mousedown listener, run during dispatch above --
-				// the un-retargeted option row it needs comes from the rows' own
-				// document rects, not a renderer hit-test here.
-
-				// Default action: a press in a text field parks the caret at
-				// the pressed character and anchors a FIELD drag there -- the
-				// field's own bounded selectionStart/End world, never the
-				// document selection: the same split a browser makes.
-				const field =
-					base === 0 && point && isTextField(target as Element) ?
-							(target as HTMLInputElement | HTMLTextAreaElement) :
-						null;
-				if (field) {
-					const offset = this[kFieldOffsetAtPoint](field, x, y);
-					if (offset !== null) {
-						setUASelection(field, offset, offset);
-						this[kFieldDragAnchor] = {element: field, offset};
-						// The DOCUMENT selection still clears on entry -- a page
-						// selection doesn't stay highlighted behind a field click
-						// in a browser either. The two worlds just never merge:
-						// getSelection() cannot see inside the field, per spec.
-						const docSelection = this.window.getSelection();
-						if (docSelection && !docSelection.isCollapsed) {
-							docSelection.removeAllRanges();
-						}
-						this[kRender]();
-					}
-				}
-
-				// Default action: mousedown collapses the document selection at
-				// the pressed caret position and anchors a possible drag there,
-				// as in a browser. Left button only -- and preventDefault on
-				// mousedown suppresses it, which is exactly how apps that want
-				// the drag events for themselves opt out.
-				const selection = this.window.getSelection();
-				if (base === 0 && selection && !this[kFieldDragAnchor]) {
-					const anchor = point ?
-							this[kDocumentPointToTextPosition](x, y) :
-						null;
-					const hadSelection = !selection.isCollapsed;
-					this[kSelectionDragAnchor] = anchor;
-					if (anchor) {
-						selection.setBaseAndExtent(
-							anchor.node,
-							anchor.offset,
-							anchor.node,
-							anchor.offset,
-						);
-					} else if (selection.rangeCount > 0) {
-						selection.removeAllRanges();
-					}
-					if (hadSelection) {
-						this[kRender]();
-					}
-				}
-			}
-			return;
-		}
-
-		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
-		// LIGHT DISMISS: a release closes every auto popover the released
-		// point is not inside of and did not open -- the invoker of a popover
-		// counts as part of it, so the click that follows toggles rather than
-		// reopens what this closed. It runs before the click, where a browser
-		// runs it, and no listener can prevent it.
-		const dismissAncestor = topmostClickedPopover(target);
-		const samePopoverPress = dismissAncestor === this[kPopoverPressTarget];
-		this[kPopoverPressTarget] = null;
-		if (samePopoverPress && topmostAutoPopover(this.document) !== null) {
-			hidePopoversUntil(this.document, dismissAncestor, false, true);
-		}
-		// A selection is only a selection: writing the clipboard is a
-		// deliberate act, through navigator.clipboard. The terminal's own
-		// select-to-copy remains available as Shift+drag, which bypasses
-		// mouse reporting.
-		let selectedByDrag = false;
-		if (this[kFieldDragAnchor]) {
-			this[kFieldDragAnchor] = null;
-		}
-		if (this[kSelectionDragAnchor]) {
-			this[kSelectionDragAnchor] = null;
-			const text = this.window.getSelection()?.toString() ?? "";
-			if (text.length > 0) {
-				selectedByDrag = true;
-			}
-		}
-		// A drag that selected text is not a click: browsers suppress
-		// activation after a selecting gesture, and without this a drag
-		// released over a <label> would activate it -- toggling its checkbox,
-		// which in a framework app re-renders the very nodes the fresh
-		// selection points into, destroying it on the spot.
-		if (selectedByDrag) {
-			this[kMouseDownTarget] = null;
-			return;
-		}
-		if (this[kMouseDownTarget] === target) {
-			target.dispatchEvent(
-				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
-			);
-			// A checkbox/radio's .checked already flipped -- the activation behavior's
-			// activation behavior handles that directly, and forwards it from a
-			// <label for> or wrapping label the same way (honoring
-			// preventDefault in both cases) -- but that's a property change,
-			// invisible to the MutationObserver that would otherwise repaint it,
-			// same as .value on a text input. Focus also needs an explicit push
-			// here for the label case: a real browser's "focusing steps" move
-			// focus to the label's associated control, which the activation behavior's
-			// alone does not simulate (the direct-click case is already
-			// focused via mousedown's own default action above, so this is a
-			// harmless no-op there).
-			const isCheckable = (el: unknown): el is HTMLInputElement =>
-				el instanceof (this.window as any).HTMLInputElement &&
-				((el as HTMLInputElement).type === "checkbox" ||
-					(el as HTMLInputElement).type === "radio");
-			const control = isCheckable(target) ?
-				target :
-				target instanceof (this.window as any).HTMLLabelElement &&
-				isCheckable((target as any).control) ?
-						((target as any).control as HTMLInputElement) :
-					null;
-			if (control) {
-				control.focus();
-				this[kRender]();
-			}
-
-			// A second click on the same target within the double-click interval
-			// is also a dblclick -- in addition to, not instead of, its own click
-			// (a browser fires both). Reset after firing so a third quick click
-			// starts a fresh pair rather than double-firing again immediately.
-			const now = performance.now();
-			if (
-				this[kLastClickTarget] === target &&
-				now - this[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
-			) {
-				target.dispatchEvent(
-					new this.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
-				);
-				this[kLastClickTarget] = null;
-				this[kLastClickTime] = 0;
-			} else {
-				this[kLastClickTarget] = target as Element;
-				this[kLastClickTime] = now;
-			}
-		}
-		this[kMouseDownTarget] = null;
-	}
-
-	/**
-	 * Deliver a paste to the focused control as an `insertFromPaste` beforeinput;
-	 * its own listener does the edit. Dropped if nothing editable is focused.
-	 */
-	[kDispatchPaste](text: string): void {
-		// A terminal transmits a pasted line break as CR -- the byte Enter
-		// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
-		// while the DOM's paste carries newlines as LF. Converted here, at the
-		// boundary, so a multi-line paste into a textarea is multi-line and
-		// a field's own handlers never see a bare CR.
-		text = text.replace(/\r\n?/g, "\n");
-		const target = this.document.activeElement;
-		if (!target || target === this.document.body) {
-			return;
-		}
-		target.dispatchEvent(
-			new this.window.InputEvent("beforeinput", {
-				inputType: "insertFromPaste",
-				data: text,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
-		void this[kRender]();
-	}
-
-	/**
-	 * Deliver a typed character to a field as an `insertText` beforeinput; its
-	 * own listener does the edit.
-	 *
-	 * This is the keypress default action, and it runs where a default action
-	 * runs: after the dispatch it belongs to. That is what puts a field's
-	 * `input` after its `keypress` rather than between keydown and it. Only a
-	 * field takes text -- nothing else in this engine is an editing host.
-	 */
-	[kDispatchInsertText](target: Element, text: string): void {
-		const tag = target.tagName;
-		if (tag !== "INPUT" && tag !== "TEXTAREA") {
-			return;
-		}
-		target.dispatchEvent(
-			new this.window.InputEvent("beforeinput", {
-				inputType: "insertText",
-				data: text,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
-	}
-
-	[kDispatchGlobalKeyboardEvent](key: string): void {
-		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(tokenizeInput(key));
-		if (tokens.length > 1) {
-			for (const token of tokens) {
-				this[kDispatchGlobalKeyboardEvent](token);
-			}
-			return;
-		}
-
-		// A cursor position report with no query outstanding is a late or
-		// duplicate terminal reply, not a keystroke: decodeKey returns null and
-		// nothing is dispatched.
-		const stroke = decodeKey(key);
-		if (!stroke) {
-			return;
-		}
-		const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
-			stroke;
-
-		// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-		if (this[kStyleManager].setFocusVisible(true)) {
-			this[kStyleManager].handleFocusChange(this.document.activeElement);
-			void this[kRender]();
-		}
-
-		// Find the focused element. document.activeElement defaults to body when
-		// nothing is focused, so it can't be used with `||` to detect "nothing
-		// focused". In fullscreen, a browser moves focus to the fullscreen
-		// element as part of entering it -- but focus() only takes
-		// elements that are already focusable (tabindex, form controls, etc.),
-		// so an arbitrary fullscreen container is otherwise unreachable here.
-		// Fall back to it (before document.body) so keydown still lands on it,
-		// the same as the dedicated fullscreen dispatch this replaced -- but
-		// still prefer an explicitly focused descendant (e.g. an input inside
-		// the fullscreen element), which the old dispatch ignored.
-		const active = this.document.activeElement;
-		const targetElement =
-			active && active !== this.document.body ?
-				active :
-				this[kFullscreenManager].fullscreenElement || this.document.body;
-
-		// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
-		// all, the same as a real browser: fullscreen exit is a user-agent
-		// guarantee an app can't trap the user past with preventDefault.
-		if (keyName === "Escape" && this[kFullscreenManager].isFullscreen) {
-			this[kFullscreenManager].exitFullscreen().catch(() => {});
-			return;
-		}
-
-		// Create and dispatch keydown event
-		const keydownEvent = new this.window.KeyboardEvent("keydown", {
-			key: keyName,
-			code: domCodeFor(keyName),
-			keyCode,
-			charCode: 0,
-			which: keyCode,
-			ctrlKey,
-			shiftKey,
-			altKey,
-			metaKey,
-			bubbles: true,
-			cancelable: true,
-		});
-
-		const notCanceled = targetElement.dispatchEvent(keydownEvent);
-
-		// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
-		// answers one: a modal dialog fires cancel and closes unless a
-		// listener takes it, an auto popover closes outright (nothing cancels
-		// a popover, which is why a manual one -- answering no close request
-		// -- is the way to keep one up). Whichever entered the layer last is
-		// the one the key reaches, so a popover over a dialog closes first.
-		// Both get Escape only when nothing is fullscreen -- the branch above
-		// already returned -- which is the browser's own precedence: the
-		// fullscreen exit is the user agent's guarantee, and only after it is
-		// spent does the key reach the page's own modality. Unlike Tab below,
-		// a preventDefault on keydown does not suppress it.
-		if (keyName === "Escape") {
-			const target = this[kTopmostCloseRequestTarget]();
-			if (target !== null) {
-				if (isShowingPopover(target)) {
-					closePopover(target);
-				} else {
-					(target as HTMLDialogElement).requestClose();
-				}
-				void this[kRender]();
-				return;
-			}
-		}
-
-		// Handle default actions if keydown wasn't canceled
-		if (notCanceled) {
-			// Tab navigation
-			if (keyName === "Tab") {
-				this[kMoveFocus](shiftKey);
-			}
-
-			// Field editing (input and textarea) is each widget's own keydown
-			// listener, run during dispatch above -- not a default action here.
-			if (keyboardActivation(targetElement as Element)) {
-				// A focused button activates on Enter and on Space, and a link on
-				// Enter, per HTML's activation behavior. Without this, both took
-				// focus and painted :focus while doing nothing -- advertising an
-				// affordance they did not have. `input[type=submit|button]`
-				// activate here; text inputs never match keyboardActivation.
-				const activation = keyboardActivation(targetElement as Element)!;
-				if (
-					(keyName === "Enter" && activation.enter) ||
-					(key === " " && activation.space)
-				) {
-					// click() rather than a synthesized event: it runs the element's
-					// full activation behavior, so a submit button submits its form
-					// and a link follows its href, exactly as a mouse click would.
-					(targetElement as HTMLElement).click();
-					this[kRender]();
-				}
-			}
-			// A select's editing (open/navigate/commit) is the select widget's
-			// own keydown listener, run during dispatch above -- not here.
-		}
-
-		// A character-producing key fires keypress between keydown and keyup,
-		// and inserting the character is that event's default action -- so a
-		// field's `input` arrives after keypress, as it does in a browser, and a
-		// keypress a listener cancels inserts nothing. Every printable
-		// character, not only the ASCII ones: charCode is the character's own
-		// code, and DEL and the control codes are the keys named elsewhere.
-		if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
-			const keypressEvent = new this.window.KeyboardEvent("keypress", {
-				key,
-				code: domCodeFor(key),
-				keyCode: charCode,
-				charCode,
-				which: charCode,
-				ctrlKey,
-				shiftKey,
-				altKey,
-				metaKey,
-				bubbles: true,
-				cancelable: true,
-			});
-			if (targetElement.dispatchEvent(keypressEvent)) {
-				this[kDispatchInsertText](targetElement, key);
-			}
-		}
-
-		// Always dispatch keyup
-		const keyupEvent = new this.window.KeyboardEvent("keyup", {
-			key: keyName,
-			code: domCodeFor(keyName),
-			keyCode,
-			charCode: 0,
-			which: keyCode,
-			ctrlKey,
-			shiftKey,
-			altKey,
-			metaKey,
-			bubbles: true,
-			cancelable: true,
-		});
-		targetElement.dispatchEvent(keyupEvent);
-	}
-
-	/**
-	 * Render the whole document once, as plain lines, for a non-terminal stdout.
-	 *
-	 * There is no fold here, so there is nothing to commit, freeze or repair: the
-	 * document is simply printed. Every hard problem in this file is a consequence
-	 * of having a viewport, and a pipe does not have one.
-	 */
-	async [kPrintStatic](): Promise<void> {
-		const pending = this[kObserver].takeRecords();
-		if (pending.length > 0) {
-			this[kHandlePendingMutations](pending);
-		}
-
-		this[kLayoutEngine].calculateLayout();
-
-		const context = this[kScreen].beginStatic({
-			rows: this.document.body.scrollHeight,
-		});
-		this[kPainter].paint(context);
-		const output = this[kScreen].endFrame();
-
-		if (output) {
-			await this[kWrite](output);
-		}
-		this[kAfterRender]();
-	}
-
-	/**
-	 * Print the whole document to stdout, once, on the way out.
-	 *
-	 * Document mode never commits anything: it paints a window of the document into
-	 * a region it owns and repaints it in place. That is what buys the mutability --
-	 * nothing is frozen, because nothing was printed. But it means that at the
-	 * moment we exit, the terminal has only ever *seen* the last frame.
-	 *
-	 * So we settle up. Erase the region we were painting -- our own viewport rows,
-	 * with ED0; this is not the flicker sin, which is ED3 against the scrollback --
-	 * and then print the document in full. It scrolls into the scrollback exactly as
-	 * an ordinary command's output does, and the terminal ends up holding the whole
-	 * thing: searchable, selectable, and still there tomorrow.
-	 *
-	 * The axis was never "do you get scrollback". It is *when you commit*: flow
-	 * writes uneditable stdout as it goes, and document waits until the end.
-	 *
-	 * The cost of waiting is that a crash takes the output with it -- flow's partial
-	 * output survives, because it was already printed.
-	 */
-	[kFlushDocument](): void {
-		if (!this[kInteractive]) {
-			return;
-		}
-
-		const top = this[kViewport].screenTop;
-		const output = this[kRenderStatic]("\r\n");
-		if (!output) {
-			return;
-		}
-
-		// Back to the top of our region; every payout line then clears ITSELF
-		// (\x1b[K before its text) and one partial erase covers whatever the
-		// old frame held below. Never a full ED from the top row: tmux
-		// preserves a fully-erased screen by pushing it into scrollback (the
-		// courtesy it extends to `clear`), which archived a copy of the final
-		// frame above the payout -- the document twice, interleaved.
-		void this[kSession].write(`\x1b[${top + 1};1H`);
-		void this[kSession].write(
-			"\x1b[K" + output.replace(/\r\n(?!$)/g, "\r\n\x1b[K"),
-		);
-		void this[kSession].write("\x1b[J");
-	}
-
-	/**
-	 * The document as an ANSI string: colors and line breaks, no cursor
-	 * controls, no modes. Feeds the quit payout (CRLF: raw mode does not
-	 * translate bare newlines) and the scratch sibling behind renderANSI();
-	 * not part of the class's public surface.
-	 */
-	[kRenderStatic](lineEnding: "\n" | "\r\n"): string {
-		this[kProcessPendingMutationsAndRender]();
-		const contentHeight = this.document.body.scrollHeight;
-		if (contentHeight === 0) {
-			return "";
-		}
-		const context = this[kScreen].beginStatic({
-			rows: contentHeight,
-			lineEnding,
-		});
-		this[kPainter].paint(context);
-		return this[kScreen].endFrame();
-	}
-
 	/** Write to the transport and wait for it to be flushed. */
 	[kWrite](output: string): Promise<void> {
 		return this[kSession].write(output);
-	}
-
-	/**
-	 * Render a window of the document into a region we own.
-	 *
-	 * Document mode still starts at the command height: it does not seize the whole
-	 * terminal, and it does not paint over what was on screen before us. If it needs
-	 * more rows than are left below the command start, it *scrolls* the earlier
-	 * content away into the scrollback, where it survives and the user can still
-	 * reach it.
-	 *
-	 * Nothing of ours is committed. The document stays a single mutable thing
-	 * that we repaint a window of: content that scrolls out of view is never
-	 * frozen output, and reflow anywhere is free.
-	 */
-	async [kRenderInteractive](): Promise<void> {
-		// The previous document was sealed to scrollback by close(). Start a fresh
-		// one below it: re-anchor to where the cursor now sits and reset the diff so
-		// nothing composites over the frozen block.
-		if (this[kSealed]) {
-			this[kSealed] = false;
-			this[kViewport].scrollTop = 0;
-			this[kScreen].repaintAll();
-			// detectCommandStart waits for a reply on stdin, so the listener must
-			// be attached first (idempotent -- normally already done by now).
-			if (this[kInteractive]) {
-				this.attach();
-				await this[kSession].detectCommandStart();
-			}
-		}
-
-		// Our region starts at the command-start row, which cursor detection resolves
-		// asynchronously. Render before it lands and the first frame anchors at row 0
-		// while every diff after detection anchors one row lower -- the labels stay,
-		// the values slide down a row. Wait for the anchor to settle first, exactly
-		// as the flow path does. Await only when one is pending: an unconditional
-		// await would defer the rest of this frame a microtask even with nothing
-		// to wait for, and a downstream synchronous scroll clamp depends on it.
-		const detectionPending = this[kSession].cursorDetectionPending;
-		if (detectionPending) {
-			await detectionPending;
-		}
-
-		const pending = this[kObserver].takeRecords();
-		if (pending.length > 0) {
-			this[kHandlePendingMutations](pending);
-		}
-
-		this[kLayoutEngine].calculateLayout();
-
-		// The caret reveal an edit queued runs here, against the layout this
-		// frame just flushed -- one camera decision per frame, however many
-		// keystrokes coalesced into it. Skipped if focus has already moved
-		// on: revealing a field the user left would yank the camera back.
-		const revealed = this[kPendingCaretReveal] !== null;
-		if (this[kPendingCaretReveal]) {
-			const reveal = this[kPendingCaretReveal];
-			this[kPendingCaretReveal] = null;
-			if (reveal === this.document.activeElement) {
-				this[kScrollCaretIntoView](reveal);
-			}
-		}
-
-		// Nothing observable moved: no mutations, no invalidation, no input,
-		// same focus, no live selection, camera unmoved, no reveal, no pending
-		// reset. Painting would emit nothing; don't pay to discover that.
-		const selection = this.window.getSelection?.();
-		if (
-			pending.length === 0 &&
-			!revealed &&
-			this[kLastFrameScrollTop] !== null &&
-			this[kViewport].scrollTop === this[kLastFrameScrollTop] &&
-			this[kLayoutEngine].invalidationEpoch === this[kLastFrameEpoch] &&
-			this[kInputGeneration] === this[kLastFrameInputGeneration] &&
-			this.document.activeElement === this[kLastFrameActiveElement] &&
-			(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
-			!this[kScreen].needsRepaint
-		) {
-			// Skip the paint, not the frame: observers still run, so a fresh
-			// observe() gets its initial entry on the next tick.
-			this[kAfterRender]();
-			return;
-		}
-
-		// Recompute the focused input's scroll window every frame (derived state).
-		const activeField = this.document.activeElement;
-		if (
-			activeField instanceof (this.window as any).HTMLInputElement &&
-			isTextField(activeField as HTMLInputElement)
-		) {
-			this[kScrollFieldCaretIntoView](activeField as HTMLInputElement);
-		}
-
-		// Fullscreen owns the WHOLE alternate screen from row zero: the
-		// main screen's command anchor means nothing there, and reserveRows'
-		// index-scrolls would scroll the alternate screen itself. The
-		// document's scroll position survives untouched underneath -- the
-		// fixed, Canvas-backed fullscreen element covers it regardless.
-		const isFullscreen = this[kFullscreenManager].isFullscreen;
-		const contentHeight = isFullscreen ?
-			this[kHeight] :
-				this[kDocumentPaintHeight]();
-		const regionHeight = Math.min(contentHeight, this[kHeight]);
-
-		// Take the room we need by pushing earlier output up, never over it.
-		const top = isFullscreen ? 0 : this[kReserveRows](regionHeight);
-
-		if (!isFullscreen) {
-			// The camera cannot run off the end of the document.
-			const maxScroll = Math.max(0, contentHeight - regionHeight);
-			this[kViewport].scrollTop = Math.min(
-				this[kViewport].scrollTop,
-				maxScroll,
-			);
-		}
-
-		// A frame is a TRANSFORM when everything that changed since the last
-		// one is bounded: a camera delta (the terminal scrolls the region via
-		// DECSTBM + DL/IL) plus damage that names its elements. Only the
-		// exposed band, fixed rows (real and shifted positions), the focused
-		// field, and damaged rows repaint. Anything unbounded -- a structural
-		// event, a live selection, a drag, a geometry change (cascades) --
-		// takes the full diff. What a mouse report changes names its elements:
-		// a click moves focus, which the cascade damages, and a drag holds an
-		// anchor this gate already reads. A pointer that flipped state
-		// anywhere on the screen would not, but no such state exists here --
-		// :hover matches nothing -- and adding one means damaging the chains
-		// it entered and left, not giving up the transform.
-		let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
-		const scrollTop = this[kViewport].scrollTop;
-		const styleDamage = this[kStyleManager].drainStyleDamage();
-		const frameDamage = this[kFrameDamage];
-		this[kFrameDamage] = new Map();
-		const documentSelection = this.window.getSelection?.();
-		const liveSelection = Boolean(
-			documentSelection &&
-			documentSelection.rangeCount > 0 &&
-			!documentSelection.isCollapsed,
-		);
-		transform: if (
-			!isFullscreen &&
-			top === 0 &&
-			regionHeight === this[kHeight] &&
-			this[kLastFrameScrollTop] !== null &&
-			this[kLayoutEngine].structuralGeneration ===
-			this[kLastFrameStructuralGeneration] &&
-			!liveSelection &&
-			!this[kLastFrameSelectionLive] &&
-			this[kSelectionDragAnchor] === null &&
-			this[kFieldDragAnchor] === null &&
-			!this[kResizeInProgress] &&
-			frameDamage !== null &&
-			styleDamage !== null
-		) {
-			const delta = scrollTop - this[kLastFrameScrollTop];
-			if (Math.abs(delta) >= regionHeight) {
-				break transform;
-			}
-			if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
-				break transform;
-			}
-
-			const bands: Array<[number, number]> = [];
-			// Past most of the region the transform stops paying, so the rows
-			// the bands claim are counted as they are added: damage that
-			// already covers the screen stops the walk instead of pricing
-			// every element that follows it. Overlap counts twice, which only
-			// makes the bail come sooner.
-			const bandBudget = regionHeight * 0.75;
-			let coverage = 0;
-			const addBand = (start: number, end: number): void => {
-				const clampedStart = Math.max(0, Math.floor(start));
-				const clampedEnd = Math.min(regionHeight, Math.ceil(end));
-				if (clampedEnd > clampedStart) {
-					bands.push([clampedStart, clampedEnd]);
-					coverage += clampedEnd - clampedStart;
-				}
-			};
-
-			if (delta > 0) {
-				addBand(regionHeight - delta, regionHeight);
-			} else if (delta < 0) {
-				addBand(0, -delta);
-			}
-			for (const band of this[kLayoutEngine].fixedRowBands(this[kHeight])) {
-				addBand(band[0], band[1]);
-				// The scroll moved fixed content too, leaving a stale copy at
-				// the shifted position; model and screen agree on it, so only
-				// a repaint of that row corrects it.
-				if (delta !== 0) {
-					addBand(band[0] - delta, band[1] - delta);
-				}
-			}
-			// The focused field's rows repaint: its caret cell and the real
-			// cursor park come from the painter visiting it.
-			const active = this.document.activeElement;
-			if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
-				const rect = this[kLayoutEngine].getRect(active);
-				if (rect) {
-					addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);
-				}
-			}
-
-			// A focus move flips :focus/:focus-visible on both elements.
-			const damaged = new Set<Element>(frameDamage.keys());
-			for (const element of styleDamage) {
-				damaged.add(element);
-			}
-			if (active !== this[kLastFrameActiveElement]) {
-				if (active) {
-					damaged.add(active);
-				}
-				if (this[kLastFrameActiveElement]) {
-					damaged.add(this[kLastFrameActiveElement]);
-				}
-			}
-
-			for (const element of damaged) {
-				if (coverage > bandBudget) {
-					break transform;
-				}
-				// Damage reaches as far as the selector invalidation scope; the
-				// whole document is unbounded.
-				const scope = this[kStyleManager].invalidationScopeFor(element);
-				if (
-					scope === this.document.body ||
-					scope === this.document.documentElement
-				) {
-					break transform;
-				}
-				const before = frameDamage.get(element) ?? frameDamage.get(scope);
-				const after = this[kLayoutEngine].getRect(scope);
-				if (!after && !before) {
-					// An inline element has no box of its own, so its rows are
-					// not recoverable here: unbounded. A removed element's
-					// damage is its parent's, already recorded.
-					if (scope.isConnected) {
-						break transform;
-					}
-					continue;
-				}
-				// A geometry change cascades to everything after the element.
-				if (
-					before &&
-					after &&
-					(before.top !== after.top || before.height !== after.height)
-				) {
-					break transform;
-				}
-				const fixedSpace = this[kLayoutEngine].isInFixedSpace(scope);
-				if (after) {
-					const afterTop = fixedSpace ? after.top : after.top - scrollTop;
-					addBand(afterTop, afterTop + after.height);
-					// The shifted stale copy of the damaged rows, as for fixed.
-					if (delta !== 0) {
-						addBand(afterTop - delta, afterTop + after.height - delta);
-					}
-				}
-				if (before) {
-					const beforeTop = fixedSpace ?
-						before.top :
-						before.top - this[kLastFrameScrollTop];
-					addBand(beforeTop - delta, beforeTop + before.height - delta);
-				}
-			}
-
-			if (delta === 0 && bands.length === 0) {
-				break transform;
-			}
-			if (coverage > bandBudget) {
-				break transform;
-			}
-
-			scroll = {delta, bands};
-		}
-
-		const context = this[kScreen].beginFrame({
-			offset: -this[kViewport].scrollTop,
-			cursorRow: top,
-			regionRows: top + regionHeight,
-			scroll,
-			measurer: this[kSession].widthMeasurer,
-		});
-		this[kPainter].paint(context);
-		const ansi = this[kScreen].endFrame();
-		this[kLastFrameScrollTop] = scrollTop;
-		this[kLastFrameEpoch] = this[kLayoutEngine].invalidationEpoch;
-		this[kLastFrameInputGeneration] = this[kInputGeneration];
-		this[kLastFrameStructuralGeneration] =
-			this[kLayoutEngine].structuralGeneration;
-		this[kLastFrameSelectionLive] = liveSelection;
-		this[kLastFrameActiveElement] = this.document.activeElement;
-
-		if (ansi) {
-			await this[kWrite](ansi);
-		}
-		this[kAfterRender]();
-	}
-
-	/** Move the camera over the document. */
-	[kScrollCamera](rows: number): void {
-		this[kViewport].scrollBy(rows);
-		// A camera move is invisible to the MutationObserver; schedule the frame
-		// it needs, the same way a DOM mutation would.
-		void this[kRender]();
-	}
-
-	/**
-	 * Make room for `rows` rows below the command start, *without painting over
-	 * anything that was already on screen*.
-	 *
-	 * If there is not enough room between the command start and the bottom of the
-	 * terminal, we scroll the terminal -- pushing the rows above into the
-	 * scrollback, where they are preserved and the user can still reach them.
-	 * Overwriting them in place would destroy the output of whatever ran before
-	 * us; scrolling them away is what an ordinary command does when it prints.
-	 *
-	 * This positions the cursor at the bottom row (CUP) and sends IND (ESC D,
-	 * Index -- "move down a line, scrolling if already at the bottom margin")
-	 * `push` times. Two things this is deliberately NOT:
-	 *
-	 * - Not "print bare newlines at the bottom margin". Verified directly (a
-	 *   real terminal via tmux, and the xterm-headless mock the test suite
-	 *   runs against) that a bare LF only triggers a scroll when the cursor
-	 *   reaches the bottom row through ordinary sequential output --
-	 *   teleporting there with an absolute CUP first and then sending LF
-	 *   leaves the screen completely unchanged in both.
-	 * - Not CSI n S (Scroll Up), which scrolls the visible screen correctly in
-	 *   both but -- verified directly -- does not add the scrolled-off rows to
-	 *   xterm-headless's own scrollback history the way real terminal
-	 *   scrolling does, which would make the "scrolled away, not destroyed"
-	 *   half of this behavior untestable. IND scrolls identically but goes
-	 *   through the same internal path as natural overflow, so it does.
-	 *
-	 * Returns the screen row our region now starts at.
-	 */
-	[kReserveRows](rows: number): number {
-		const push = this[kViewport].reserveRows(rows, this[kHeight]);
-		if (push > 0) {
-			void this[kSession].write(
-				`\x1b[${this[kHeight]};1H` + "\x1bD".repeat(push),
-			);
-			// Do NOT shift the renderer's previous buffer. Its rows are relative to
-			// the region top, and the top moves up by exactly the amount the screen
-			// scrolled -- the two cancel, so buffer coordinates are unchanged.
-			// Shifting it desynced the diff by `push` rows: the model compared
-			// against the wrong screen rows, skipped cells it wrongly believed
-			// unchanged, and composited the old frame under the new one whenever a
-			// document-mode region grew past the space below the shell prompt.
-			//
-			// A pending post-resize screen reset IS screen-absolute, though, and
-			// must ride the scroll (see shiftScreenReset).
-			this[kScreen].scrolled(push);
-		}
-
-		return this[kViewport].screenTop;
 	}
 
 	// The scratch engine behind renderANSI/print: created on first use,
@@ -3775,43 +1571,13 @@ export class TermDOM {
 	// across calls.
 	declare [kStaticSibling]: TermDOM | null;
 
-	[kStaticRenderer](): TermDOM {
-		const cols = this[kTransport].cols;
-		if (this[kStaticSibling] && this[kStaticSibling][kWidth] !== cols) {
-			void this[kStaticSibling].dispose();
-			this[kStaticSibling] = null;
-		}
-		this[kStaticSibling] ??= new TermDOM({
-			transport: {
-				cols,
-				rows: 24,
-				readable: new ReadableStream<string>({}, {highWaterMark: 0}),
-				writable: new WritableStream<string>({}),
-				resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
-				closed: new Promise<TerminalCloseInfo>(() => {}),
-				ready: Promise.resolve(),
-				colorDepth: "rgb",
-				interactive: false,
-				sharesScreen: false,
-				close() {},
-			},
-		});
-		return this[kStaticSibling];
-	}
-
 	/**
 	 * Render an HTML string to an ANSI string at the transport's width:
 	 * colors and line breaks, no cursor controls, no modes. <style> elements
 	 * in the fragment join the cascade. The instance's document is untouched.
 	 */
 	renderANSI(html: string): string {
-		return this[kRenderStaticHTML](html, "\n");
-	}
-
-	[kRenderStaticHTML](html: string, lineEnding: "\n" | "\r\n"): string {
-		const renderer = this[kStaticRenderer]();
-		renderer.document.body.innerHTML = html;
-		return renderer[kRenderStatic](lineEnding);
+		return renderStaticHTML(this, html, "\n");
 	}
 
 	/**
@@ -3820,7 +1586,7 @@ export class TermDOM {
 	 * session holds the terminal, since raw mode does not translate newlines.
 	 */
 	print(html: string): Promise<void> {
-		const output = this[kRenderStaticHTML](
+		const output = renderStaticHTML(this, 
 			html,
 			this[kAttached] && this[kInteractive] ? "\r\n" : "\n",
 		);
@@ -3861,7 +1627,7 @@ export class TermDOM {
 		// of ours on screen, and the payout's cursor moves and erases would
 		// land on someone else's rows.
 		if (wasAttached && this[kRenderCount] > 0) {
-			this[kFlushDocument]();
+			flushDocument(this);
 		}
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
@@ -3909,4 +1675,2298 @@ export class TermDOM {
 		this[kObserverManager].dispose();
 		return this[kSession].flush();
 	}
+}
+
+function addFrameDamage(
+	self: TermDOM,
+	node: Node,
+): void {
+	if (!self[kFrameDamage]) {
+		return;
+	}
+	const element =
+		node.nodeType === node.ELEMENT_NODE ?
+				(node as Element) :
+				(node.parentElement ?? null);
+	if (!element) {
+		self[kFrameDamage] = null;
+		return;
+	}
+	if (self[kFrameDamage].has(element)) {
+		return;
+	}
+	if (self[kFrameDamage].size >= 24) {
+		self[kFrameDamage] = null;
+		return;
+	}
+	// The rect BEFORE this frame's relayout: getRect answers from the
+	// last computed layout until calculateLayout runs.
+	self[kFrameDamage].set(
+		element,
+		(self[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
+	);
+}
+
+/**
+ * The frame handle a requestAnimationFrame callback is keyed by, so a
+ * cancelAnimationFrame can name the callback it cancels.
+ */
+function allocateFrameHandle(
+	self: TermDOM,
+): number {
+	return self[kNextRafId]++;
+}
+
+function sealToScrollback(
+	self: TermDOM,
+): void {
+	flushDocument(self);
+	self[kSealed] = true;
+}
+
+function installWindowExtensions(
+	self: TermDOM,
+): void {
+	const termDOM = self;
+	const window = termDOM.window;
+	const document = window.document;
+	Object.defineProperty(window, "innerWidth", {
+		value: termDOM[kWidth],
+		writable: false,
+		configurable: true,
+	});
+	Object.defineProperty(window, "innerHeight", {
+		value: termDOM[kHeight],
+		writable: false,
+		configurable: true,
+	});
+	Object.defineProperty(window, "outerWidth", {
+		value: termDOM[kWidth],
+		writable: false,
+		configurable: true,
+	});
+	Object.defineProperty(window, "outerHeight", {
+		value: termDOM[kHeight],
+		writable: false,
+		configurable: true,
+	});
+
+	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
+	// the anchor after this runs. A frozen value here silently shadowed the
+	// real one, with only constructor line order deciding which won.
+	Object.defineProperty(window, "screenTop", {
+		get: () => termDOM[kViewport].screenTop,
+		configurable: true,
+		enumerable: true,
+	});
+
+	// Standard window scrolling, mapped onto the camera: scrollY is how far the
+	// camera has moved down the document, scrollBy moves it.
+	Object.defineProperty(window, "scrollY", {
+		get: () => termDOM[kViewport].scrollTop,
+		configurable: true,
+		enumerable: true,
+	});
+	Object.defineProperty(window, "pageYOffset", {
+		get: () => termDOM[kViewport].scrollTop,
+		configurable: true,
+		enumerable: true,
+	});
+	// A terminal document never scrolls sideways, so the X pair reads 0.
+	Object.defineProperty(window, "scrollX", {
+		get: () => 0,
+		configurable: true,
+		enumerable: true,
+	});
+	Object.defineProperty(window, "pageXOffset", {
+		get: () => 0,
+		configurable: true,
+		enumerable: true,
+	});
+	window.scrollBy = ((
+		xOrOptions?: number | ScrollToOptions,
+		y?: number,
+	): void => {
+		const dy =
+			typeof xOrOptions === "object" && xOrOptions !== null ?
+					(xOrOptions.top ?? 0) :
+					(y ?? 0);
+		scrollCamera(termDOM, dy);
+	}) as typeof window.scrollBy;
+
+	// scrollTo/scroll set the camera to an absolute position -- the same
+	// state scrollY reads and scrollBy moves relatively. document.
+	// documentElement/body.scrollTop are the same value again, standard DOM
+	// (window.scrollY === document.documentElement.scrollTop always): one
+	// camera, four ways to read or move it, matching the "unified scrolling
+	// model" the viewport tests already name it after.
+	const scrollToCamera = (
+		xOrOptions?: number | ScrollToOptions,
+		y?: number,
+	): void => {
+		const targetY =
+			typeof xOrOptions === "object" && xOrOptions !== null ?
+					(xOrOptions.top ?? termDOM[kViewport].scrollTop) :
+					(y ?? 0);
+		termDOM[kViewport].scrollTop = Math.max(0, targetY);
+		void render(termDOM);
+	};
+	window.scrollTo = scrollToCamera as typeof window.scrollTo;
+	window.scroll = scrollToCamera as typeof window.scroll;
+
+	for (const root of [document.documentElement, document.body]) {
+		Object.defineProperty(root, "scrollTop", {
+			get: () => termDOM[kViewport].scrollTop,
+			set: (value: number) => {
+				termDOM[kViewport].scrollTop = Math.max(0, value);
+				void render(termDOM);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	// requestAnimationFrame is the only way to await a painted frame -- render()
+	// is private. A bare timer would be decoupled from our (async) paint, so a
+	// callback could fire before the frame is written.
+	// Route it through the render loop: schedule a render and fire the callback
+	// once it completes, so "await a frame" always means the frame that includes
+	// your pending mutations has landed.
+	window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+		const id = allocateFrameHandle(termDOM);
+		termDOM[kFrameCallbacks].set(id, cb);
+		void render(termDOM);
+		return id;
+	}) as typeof window.requestAnimationFrame;
+	window.cancelAnimationFrame = ((handle: number): void => {
+		termDOM[kFrameCallbacks].delete(handle);
+	}) as typeof window.cancelAnimationFrame;
+
+	// matchMedia: the terminal is the one screen, and queries answer
+	// through the SAME evaluator @media stylesheet rules use, so a
+	// script and a stylesheet can never disagree about the viewport.
+	// The list is live: a resize (SIGWINCH is this screen's window
+	// resize) re-evaluates and fires "change" when the answer flips --
+	// the browser contract, which is what makes responsive terminal
+	// layouts a matchMedia listener instead of a bespoke resize hook.
+	window.matchMedia = ((query: string): MediaQueryList => {
+		const media = String(query);
+		const mql = new (window as any).EventTarget();
+		// `matches` reads live; this holds the value the last "change"
+		// event reported.
+		let notified = termDOM[kStyleManager].mediaQueryMatches(media);
+		let onchange: ((ev: Event) => void) | null = null;
+		Object.defineProperties(mql, {
+			media: {get: () => media, enumerable: true, configurable: true},
+			matches: {
+				get: () => termDOM[kStyleManager].mediaQueryMatches(media),
+				enumerable: true,
+				configurable: true,
+			},
+			onchange: {
+				get: () => onchange,
+				set: (value: ((ev: Event) => void) | null) => {
+					// An event-handler attribute IS a listener, per spec:
+					// route it through add/removeEventListener so dispatch
+					// order and dedup behave like any other handler.
+					if (onchange) {
+						mql.removeEventListener("change", onchange);
+					}
+					onchange = typeof value === "function" ? value : null;
+					if (onchange) {
+						mql.addEventListener("change", onchange);
+					}
+				},
+				enumerable: true,
+				configurable: true,
+			},
+			// The pre-2020 MediaQueryList API, still what much deployed
+			// code calls: plain aliases for the EventTarget pair.
+			addListener: {
+				value: (cb: ((ev: Event) => void) | null) => {
+					if (cb) {
+						mql.addEventListener("change", cb);
+					}
+				},
+				configurable: true,
+			},
+			removeListener: {
+				value: (cb: ((ev: Event) => void) | null) => {
+					if (cb) {
+						mql.removeEventListener("change", cb);
+					}
+				},
+				configurable: true,
+			},
+		});
+		termDOM[kMediaQueryUpdaters].add(() => {
+			const now = termDOM[kStyleManager].mediaQueryMatches(media);
+			if (now === notified) {
+				return;
+			}
+			notified = now;
+			const event = new window.Event("change");
+			Object.defineProperties(event, {
+				matches: {value: now, enumerable: true},
+				media: {value: media, enumerable: true},
+			});
+			mql.dispatchEvent(event);
+		});
+		return mql as MediaQueryList;
+	}) as typeof window.matchMedia;
+
+	// window.close() closes the terminal session as it would close a
+	// browser tab: dispose, then close the transport. Ctrl-C's default
+	// action is this call.
+	window.close = () => {
+		// beforeunload is the door out, and a listener that cancels keeps
+		// the session. A browser answers a canceled beforeunload with a
+		// prompt of its own; a terminal has no UA chrome to prompt with,
+		// so cancellation just stops the teardown, leaving the app to ask
+		// "are you sure?" however it likes and to close again once the
+		// user says yes. Every close asks: the event carries nothing from
+		// the last one.
+		const unloadEvent = DOM.createBeforeUnloadEvent();
+		(window as unknown as DOM.EventTarget).dispatchEvent(unloadEvent);
+		if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
+			return;
+		}
+
+		const wasAttached = termDOM[kAttached];
+		// An immediate close must not tear down mid-establishment: wait
+		// for attach to finish (anchor found, first frame painted) so the
+		// payout lands where the frame was, not at a stale row 0. Then
+		// everything dispose queued must reach the wire before the
+		// transport acts on the close (a process transport exits).
+		void (async () => {
+			if (wasAttached) {
+				await termDOM[kAttachReady];
+			}
+			await termDOM.dispose();
+			if (wasAttached) {
+				termDOM[kTransport].close({status: 0});
+			}
+		})();
+	};
+
+	// document.title sets the terminal's window title in-band (OSC 2).
+	// attach() pushes the previous title; dispose() pops it.
+	let nativeTitle: PropertyDescriptor | undefined;
+	for (
+		let proto = Object.getPrototypeOf(document);
+		proto && !nativeTitle;
+		proto = Object.getPrototypeOf(proto)
+	) {
+		nativeTitle = Object.getOwnPropertyDescriptor(proto, "title");
+	}
+	if (nativeTitle?.get && nativeTitle.set) {
+		Object.defineProperty(document, "title", {
+			get: () => nativeTitle.get!.call(document),
+			set: (value: string) => {
+				nativeTitle.set!.call(document, value);
+				if (termDOM[kAttached] && termDOM[kInteractive]) {
+					void termDOM[kSession].write(`\x1b]2;${String(value)}\x07`);
+				}
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	// navigator.clipboard: writeText() carries the text to the system
+	// clipboard over OSC 52, which travels in-band -- across SSH too.
+	// Terminals without OSC 52 ignore it; there is no way to know, so the
+	// promise resolves when the transport has the bytes. readText()
+	// rejects: terminals do not answer clipboard queries to untrusted
+	// programs, and pretending otherwise would hang.
+	Object.defineProperty(window.navigator, "clipboard", {
+		value: {
+			writeText: (text: string): Promise<void> => {
+				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
+					return Promise.reject(
+						new (window as any).DOMException(
+							"clipboard requires an attached interactive terminal",
+							"NotAllowedError",
+						),
+					);
+				}
+				return termDOM[kSession].write(
+					`\x1b]52;c;${base64OfText(String(text))}\x07`,
+				);
+			},
+			readText: (): Promise<string> =>
+				Promise.reject(
+					new (window as any).DOMException(
+						"the terminal does not expose clipboard reads",
+						"NotAllowedError",
+					),
+				),
+		},
+		configurable: true,
+	});
+
+	// document.close() finalizes the document: flush the live region into the
+	// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
+	// A later DOM mutation starts a fresh document below the sealed block. This
+	// is the "print rich output and stop" seam: write(), then close().
+	const nativeDocumentClose = document.close.bind(document);
+	document.close = () => {
+		nativeDocumentClose();
+		// dispose() has already set attached=false by the time it reaches here,
+		// so we skip the seal. A real seal is a close() from a live, painted
+		// session.
+		if (termDOM[kAttached] && termDOM[kRenderCount] > 0) {
+			sealToScrollback(termDOM);
+		}
+	};
+
+	// Implement standard DOM scrollHeight properties
+	Object.defineProperty(document.body, "scrollHeight", {
+		get() {
+			return termDOM[kLayoutEngine].getContentHeight();
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	Object.defineProperty(document.documentElement, "scrollHeight", {
+		get() {
+			return termDOM[kLayoutEngine].getContentHeight();
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	// clientHeight is the viewport height (terminal height)
+	Object.defineProperty(document.body, "clientHeight", {
+		get() {
+			return termDOM[kHeight];
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	Object.defineProperty(document.documentElement, "clientHeight", {
+		get() {
+			return termDOM[kHeight];
+		},
+		configurable: true,
+		enumerable: true,
+	});
+}
+
+/**
+ * Apply a batch of mutation records to everything that isn't painting:
+ * pseudo-elements/caches, the layout tree, and the autofocus default
+ * action. In the same order everywhere it's called, since mutations reach
+ * this from two different places -- the observer's own async callback
+ * below, and kProcessPendingMutationsAndRender/kRenderStatic/
+ * kRenderInteractive's synchronous `takeRecords()` drain (a geometry read
+ * or a scheduled render needs fresh layout NOW, not whenever the next
+ * microtask checkpoint happens to land) -- and whichever one runs first
+ * empties the queue for the other.
+ */
+function handlePendingMutations(
+	self: TermDOM,
+	mutations: MutationRecord[],
+): void {
+	// Any observed mutation can move a node in the flat tree; drop the
+	// memoized composition links before anything reads through them.
+	self[kLayoutEngine].invalidateFrame();
+	// Record damage while the old layout still answers: a banded repaint
+	// must cover the target's pre-mutation rows too.
+	for (const mutation of mutations) {
+		addFrameDamage(self, mutation.target);
+		if (mutation.type === "childList") {
+			for (const node of mutation.addedNodes) {
+				addFrameDamage(self, node);
+			}
+			// Removed nodes have no rows of their own; their damage is the
+			// parent's, already added.
+		}
+	}
+	// Attribute records whose value did not actually change are dropped
+	// before any handler sees them. Frameworks (and this repo's own
+	// examples) re-assign className/style with identical values on every
+	// update; per spec each assignment fires a record, and a class
+	// record rebuilds the whole layout tree from body -- the difference
+	// between a keystroke costing a counter re-measure and costing the
+	// document. A->B->A inside one unpainted batch also nets out: the
+	// intermediate value never rendered, so skipping is correct, and a
+	// same-batch pair still processes via the B->A record.
+	const relevant = mutations.filter((record) => {
+		if (record.type !== "attributes" || !record.attributeName) {
+			return true;
+		}
+		const target = record.target as Element;
+		return record.oldValue !== target.getAttribute(record.attributeName);
+	});
+	if (relevant.length === 0) {
+		return;
+	}
+	// Upgrade UA form controls the moment they connect -- before layout reads
+	// their shadow and before the painter walks it -- the way a browser
+	// upgrades a custom element on connect, not lazily at first paint. The
+	// shell drives it here, the one place every insert -- observer-driven or
+	// drained from a synchronous render -- passes through.
+	for (const record of relevant) {
+		if (record.type !== "childList") {
+			continue;
+		}
+		for (const added of record.addedNodes) {
+			if (added.nodeType !== added.ELEMENT_NODE) {
+				continue;
+			}
+			upgradeControlsIn(added as Element);
+		}
+	}
+	self[kStyleManager].handleMutations(relevant);
+	self[kLayoutEngine].handleMutations(relevant);
+	focusAutofocusedNodes(relevant);
+}
+
+function setupMutationObserver(
+	self: TermDOM,
+): MutationObserver {
+	const observer = new self.window.MutationObserver((mutations) => {
+		handlePendingMutations(self, mutations);
+		render(self);
+	});
+
+	observer.observe(self.document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
+
+	return observer;
+}
+
+/**
+ * The session over the transport: input demultiplexing and the query
+ * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
+ * started only by attach() -- construction holds no lock and reads nothing.
+ */
+function buildSession(
+	self: TermDOM,
+): TerminalSession {
+	return new TerminalSession({
+		transport: self[kTransport],
+		viewport: self[kViewport],
+		layout: self[kLayoutEngine],
+		interactive: self[kInteractive],
+		anchorDetection: self[kTransport].sharesScreen,
+		handlers: {
+			onKeys: (keyInput) => {
+				self[kInputGeneration]++;
+				// A keystroke means the user is back at the live screen
+				// (terminals snap to the bottom on input): reclaim the mouse
+				// if scroll chaining yielded it.
+				if (self[kMouseCaptureYielded]) {
+					reclaimMouseCapture(self);
+				}
+				dispatchGlobalKeyboardEvent(self, keyInput);
+			},
+			onMouse: (button, x, y, release) => {
+				self[kInputGeneration]++;
+				handleMouseReport(self, button, x, y, release);
+			},
+			onPaste: (text) => {
+				self[kInputGeneration]++;
+				dispatchPaste(self, text);
+			},
+			onResize: () => {
+				scheduleResize(self);
+			},
+			// Ctrl-C's default action is the DOM's own way out: close the
+			// window. An app that wants different behavior handles the
+			// keydown; this is what happens when nobody does.
+			onCloseRequest: () => {
+				self.window.close();
+			},
+			// A cluster is wider or narrower on this terminal than the
+			// tables said, so every column after one on a painted row is
+			// off by the difference. The previous frame described a screen
+			// that was never drawn: drop it and paint the region again from
+			// the corrected measurements.
+			onWidthCorrection: () => {
+				self[kScreen].repaintAll();
+				void render(self);
+			},
+			// The terminal went away (hangup, disconnect, process exit):
+			// clean up this side. The transport is already closing; there
+			// is nothing to close back.
+			onClosed: () => {
+				self.dispose();
+			},
+		},
+	});
+}
+
+/**
+ * Adopt `transport` and re-derive everything that comes from the terminal:
+ * color depth, the viewport size, and the session. The collaborators that
+ * hold the transport -- the renderer, the session -- are rebuilt rather
+ * than mutated: the renderer has no color-depth setter, and a rebind always
+ * precedes the first frame. The transport-independent collaborators
+ * (layout, style, painter, viewport) are untouched; only the layout is
+ * resized to the new terminal.
+ */
+function rebindTransport(
+	self: TermDOM,
+	transport: TerminalTransport,
+): void {
+	self[kTransport] = transport;
+	self[kInteractive] = transport.interactive;
+	applyTerminalSize(self, transport.cols, transport.rows);
+	self[kScreen] = new Screen(
+		self[kHeight],
+		self[kWidth],
+		transport.colorDepth,
+	);
+	self[kSession] = buildSession(self);
+}
+
+/**
+ * Adopt a new terminal size: update the reported dimensions, re-parse the
+ * stylesheets and re-evaluate media queries against them (a viewport change
+ * can flip any @media answer), and resize the layout. The renderer is left
+ * to the caller -- a resize resizes it in place, a rebind replaces it.
+ */
+function applyTerminalSize(
+	self: TermDOM,
+	newWidth: number,
+	newHeight: number,
+): void {
+	// A SIGWINCH reporting an unchanged size still redraws but fires no
+	// resize event.
+	const sizeChanged = newWidth !== self[kWidth] ||
+		newHeight !== self[kHeight];
+	self[kWidth] = newWidth;
+	self[kHeight] = newHeight;
+
+	Object.defineProperty(self.window, "innerWidth", {
+		value: newWidth,
+		writable: false,
+		configurable: true,
+	});
+	Object.defineProperty(self.window, "innerHeight", {
+		value: newHeight,
+		writable: false,
+		configurable: true,
+	});
+
+	// The layout engine holds the viewport a `vw` is a hundredth of, so it
+	// learns the new size BEFORE any style is resolved against it.
+	self[kLayoutEngine].resize(newWidth, newHeight);
+
+	// The viewport changed, so every @media answer may have: re-parse the
+	// stylesheets against the new size (they were parsed against the old one
+	// and would stay stale), then let each live MediaQueryList re-evaluate
+	// and fire "change" if it flipped. The re-parse also moves the style
+	// epoch, which is what retires the viewport-relative values every
+	// computed style resolved under the old size.
+	self[kStyleManager].refreshStylesheets();
+
+	// Per the rendering steps, resize fires before media query "change"
+	// events, and everything a listener reads already has the new size.
+	if (sizeChanged) {
+		self.window.dispatchEvent(new self.window.Event("resize"));
+	}
+	for (const update of self[kMediaQueryUpdaters]) {
+		update();
+	}
+}
+
+/**
+ * The mouse is captured exactly when the document owns the camera: document
+ * mode and fullscreen, where wheel-to-scroll is the default action, the same
+ * as a browser. Flow mode leaves the mouse native -- there the terminal owns
+ * scrolling (that is the mode's point), and capture would take the user's
+ * scrollback and selection in exchange for nothing.
+ *
+ * Idempotent; call it whenever attachment, viewport mode, or fullscreen
+ * changes.
+ */
+function updateMouseReporting(
+	self: TermDOM,
+): void {
+	const wanted =
+		self[kAttached] && self[kInteractive] && !self[kMouseCaptureYielded];
+	if (wanted === self[kMouseReportingEnabled]) {
+		return;
+	}
+	self[kMouseReportingEnabled] = wanted;
+	// 1002: button presses, releases, wheel, and drag motion (no move flood
+	// while nothing is pressed). 1006: SGR encoding, the only one that is
+	// unambiguous past column 223.
+	void self[kSession].write(
+		wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
+	);
+}
+
+/**
+ * End a scroll-chaining yield, from whichever of the two triggers reaches
+ * it first -- a keystroke (the common case) or the fallback timer (see
+ * kScrollChainTimer). Both need the same cleanup, so this is the one place
+ * that does it: clear the pending timer (the other trigger firing later
+ * would be a harmless no-op via kUpdateMouseReporting's own idempotence,
+ * but there is no reason to let it) and restore mouse capture.
+ */
+function reclaimMouseCapture(
+	self: TermDOM,
+): void {
+	if (self[kScrollChainTimer] !== null) {
+		clearTimeout(self[kScrollChainTimer]);
+		self[kScrollChainTimer] = null;
+	}
+	self[kMouseCaptureYielded] = false;
+	updateMouseReporting(self);
+}
+
+async function render(
+	self: TermDOM,
+): Promise<void> {
+	// attach() is the ONLY door to the terminal: until the app calls it,
+	// mutations keep the DOM and layout live but write nothing. Rendering
+	// resumes -- starting with whatever the document holds by then -- the
+	// moment attach() runs, which ends by scheduling this render.
+	if (!self[kAttached]) {
+		return;
+	}
+
+	// A resize is settling: suppress every render until handleResize issues the
+	// single re-anchored redraw. See resizeInProgress.
+	if (self[kResizeInProgress]) {
+		return;
+	}
+
+	// A screen switch (fullscreen enter/exit) is in progress: no frame
+	// may straddle it -- a frame computed for one screen landing on the
+	// other paints the wrong geometry onto the wrong buffer.
+	if (self[kScreenSwitching]) {
+		return;
+	}
+
+	// A render in flight: coalesce, don't drop. Dropping an auto-render (a
+	// mutation observer firing mid-frame) leaves the diff renderer's
+	// previous-buffer out of step with the screen, which shows up as rows drawn
+	// at the wrong place. Instead mark one pending and hand back the running
+	// loop's promise: it will fold this caller's changes into a trailing frame,
+	// so awaiting render() always means "the caller's changes are painted".
+	if (self[kIsRendering]) {
+		self[kRenderQueued] = true;
+		return self[kRenderInFlight] ?? Promise.resolve();
+	}
+
+	self[kIsRendering] = true;
+	self[kRenderInFlight] = (async () => {
+		try {
+			do {
+				self[kRenderQueued] = false;
+				await renderOnce(self);
+			} while (self[kRenderQueued]);
+			// The frame(s) are written; wake anything awaiting requestAnimationFrame.
+			drainFrameCallbacks(self);
+		} finally {
+			self[kIsRendering] = false;
+			self[kRenderInFlight] = null;
+		}
+	})();
+	return self[kRenderInFlight];
+}
+
+function drainFrameCallbacks(
+	self: TermDOM,
+): void {
+	if (self[kFrameCallbacks].size === 0) {
+		return;
+	}
+	const callbacks = [...self[kFrameCallbacks].values()];
+	self[kFrameCallbacks].clear();
+	const now = performance.now();
+	for (const cb of callbacks) {
+		cb(now);
+	}
+}
+
+async function renderOnce(
+	self: TermDOM,
+): Promise<void> {
+	// An in-flight render loop can outlive dispose() by one queued frame;
+	// everything below assumes a live document.
+	if (self[kDisposed]) {
+		return;
+	}
+	if (self[kAttachBeginning]) {
+		await self[kAttachBegun];
+		if (self[kDisposed]) {
+			return;
+		}
+	}
+	if (!self[kInteractive]) {
+		await printStatic(self);
+		return;
+	}
+
+	await renderInteractive(self);
+}
+
+/**
+ * The paint height of the document: body's scroll height, extended to
+ * cover top-layer boxes -- hoisted under the root, they contribute
+ * nothing to body's own height, and a picker opening at the bottom
+ * edge must still get rows to paint into.
+ */
+function documentPaintHeight(
+	self: TermDOM,
+): number {
+	let height = self.document.body.scrollHeight;
+	for (const element of self[kTopLayer]) {
+		if (!flatIsConnected(element)) {
+			continue;
+		}
+		const rect = self[kLayoutEngine].getRect(element);
+		if (rect) {
+			height = Math.max(height, Math.ceil(rect.bottom));
+		}
+	}
+	return height;
+}
+
+/**
+ * The value offset under a document-space point in a text field --
+ * cell-width aware, clamped to the nearest offset so a drag that
+ * leaves the field still resolves (the browser's capture model:
+ * a selection begun in a field is the field's until release).
+ */
+function fieldOffsetAtPoint(
+	self: TermDOM,
+	element: HTMLInputElement | HTMLTextAreaElement,
+	x: number,
+	y: number,
+): number | null {
+	// The value's own text: a field's selection is measured in ITS offsets,
+	// and for a password that text is the bullets, which is what was
+	// painted and so what the point lands on.
+	const valueText = fieldValueText(element);
+	if (!valueText) {
+		return null;
+	}
+	const found = self[kLayoutEngine].caretPositionFromPoint(
+		x,
+		y,
+		valueText,
+		true,
+	);
+	if (!found) {
+		return null;
+	}
+	return Math.min(found.offset, valueText.data.length);
+}
+
+/**
+ * Queue a caret reveal for the next frame. The reveal rides the frame
+ * the edit already scheduled: one camera decision against the layout
+ * that frame flushes anyway, however many keystrokes coalesced into it.
+ * Revealing immediately instead would cost a full synchronous layout
+ * flush per keystroke, before the frame's own -- half the typing latency.
+ */
+function queueCaretReveal(
+	self: TermDOM,
+	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): void {
+	self[kPendingCaretReveal] = element;
+}
+
+/**
+ * Keep the editing caret inside the camera, the way a browser keeps the
+ * caret of a focused control visible on every EDIT (typing, Enter,
+ * caret travel) -- and only on edits: wheel-scrolling away from a
+ * focused field stays allowed, so the render loop runs this only when
+ * an edit queued it (see kQueueCaretReveal). The caret row comes from
+ * fresh layout; single-row widgets reduce to their own row.
+ */
+function scrollCaretIntoView(
+	self: TermDOM,
+	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): void {
+	processPendingMutationsAndRender(self);
+	const rect = self[kLayoutEngine].getRect(element);
+	if (!rect) {
+		return;
+	}
+	let caretY = Math.round(rect.top);
+	if (element.tagName === "TEXTAREA") {
+		const caret = self[kLayoutEngine].caretRectOf(element);
+		if (!caret) {
+			return;
+		}
+		caretY = caret.y;
+	}
+	// The row span to reveal: the caret's row -- widened to the field's
+	// own edge when the caret sits on the first or last content row, so
+	// resting at a boundary shows the border instead of a cropped box.
+	const boxModel = getBoxModel(element);
+	let revealTop = caretY;
+	let revealBottom = caretY + 1;
+	if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
+		revealTop = Math.round(rect.top);
+	}
+	if (
+		caretY >=
+		Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
+	) {
+		revealBottom = Math.round(rect.bottom);
+	}
+	const regionHeight = Math.min(
+		self[kHeight],
+		self.document.body.scrollHeight,
+	);
+	const delta = self[kViewport].scrollDeltaToReveal(
+		revealTop,
+		revealBottom,
+		regionHeight,
+	);
+	if (delta) {
+		scrollCamera(self, delta);
+	}
+}
+
+/**
+ * Keep a single-line input's caret in its box by setting the value part's
+ * scrollLeft (the layout reads it live, no relayout). Measured in cells.
+ */
+function scrollFieldCaretIntoView(
+	self: TermDOM,
+	input: HTMLInputElement,
+): void {
+	const valueText = fieldValueText(input);
+	const valueSpan = valueText?.parentElement as HTMLElement | null;
+	if (!valueText || !valueSpan) {
+		return;
+	}
+	const content = self[kLayoutEngine].contentRect(input);
+	if (!content) {
+		return;
+	}
+	const contentWidth = Math.round(content.width);
+	if (contentWidth <= 0) {
+		return;
+	}
+
+	const shown = valueText.data;
+	// Seed from the current scrollLeft so a settled window doesn't jitter.
+	const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
+	let scrollOffset = 0;
+	for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
+		acc += stringWidth(shown[scrollOffset]);
+		scrollOffset++;
+	}
+	// The caret is wherever the input renders it, in the value text's own
+	// offsets -- the same text `shown` is read from.
+	const caret = caretRangeOf(input);
+	if (!caret) {
+		return;
+	}
+	const cursor = caret.startOffset;
+	// Keep the caret's cell in the box, then pull back when a deletion left slack.
+	if (cursor < scrollOffset) {
+		scrollOffset = cursor;
+	}
+	while (
+		scrollOffset < cursor &&
+		stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
+	) {
+		scrollOffset++;
+	}
+	while (
+		scrollOffset > 0 &&
+		stringWidth(shown.slice(scrollOffset - 1)) < contentWidth
+	) {
+		scrollOffset--;
+	}
+	const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
+	if (scrollLeft !== currentScroll) {
+		valueSpan.scrollLeft = scrollLeft;
+	}
+}
+
+function processPendingMutationsAndRender(
+	self: TermDOM,
+): boolean {
+	// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
+	// *layout*, not fresh pixels. A full render() here would make every
+	// rect read with pending mutations paint a frame -- an app calling
+	// scrollIntoView on each keystroke pays two paints per key, and the
+	// rect could still be stale unless the render were awaited. Flushing
+	// mutations and laying out synchronously gives an exact rect; painting
+	// stays with the caller's own render. The dirty-skip makes this free when
+	// nothing changed.
+	const pendingMutations = self[kObserver].takeRecords();
+	const hadMutations = pendingMutations.length > 0;
+	if (hadMutations) {
+		handlePendingMutations(self, pendingMutations);
+		// takeRecords() stole these from the observer callback that would
+		// have painted them. When the caller's own follow-up (a camera
+		// move, an input's render) never comes -- scrollIntoView on an
+		// already-visible row is the canonical case -- the mutation would
+		// otherwise never reach the screen. Schedule the paint the drain
+		// consumed, UNCONDITIONALLY: render() itself queues a trailing
+		// frame when one is in flight, and skipping "because a render is
+		// running" leaves the screen one interaction behind the DOM when
+		// keystrokes arrive faster than frames.
+		void render(self);
+	}
+	self[kLayoutEngine].calculateLayout();
+	return hadMutations;
+}
+
+/**
+ * Coalesce a burst of resize events into a single redraw.
+ *
+ * Dragging a terminal's edge fires a SIGWINCH for every width it passes
+ * through -- dozens in one drag. Redrawing on each leaves a little reflowed
+ * crud in the scrollback every time (see handleResize), so the crud grows with
+ * the length of the drag rather than the fact that it happened. Waiting for the
+ * drag to settle turns the whole gesture into one redraw, and one lot of crud.
+ */
+function scheduleResize(
+	self: TermDOM,
+): void {
+	// Suppress renders from the very first SIGWINCH, before the debounce
+	// settles, so a drag's worth of animation ticks cannot paint at the stale
+	// anchor while the terminal is rewrapping under us.
+	self[kResizeInProgress] = true;
+	self[kResizeEpoch]++;
+	if (self[kResizeTimer] !== null) {
+		clearTimeout(self[kResizeTimer]);
+	}
+	self[kResizeTimer] = setTimeout(() => {
+		self[kResizeTimer] = null;
+		handleResize(self);
+	}, RESIZE_DEBOUNCE_MS);
+}
+
+function handleResize(
+	self: TermDOM,
+): void {
+	const newWidth = self[kTransport].cols;
+	const newHeight = self[kTransport].rows;
+
+	applyTerminalSize(self, newWidth, newHeight);
+	self[kScreen].resize(newHeight, newWidth);
+
+	// Re-anchor and redraw. The terminal has already rewrapped everything on
+	// screen -- including our old frame -- and how far our content moved depends
+	// on text above us that we do not own. But two facts make its new position
+	// exactly recoverable:
+	//
+	//   1. The cursor is parked on our content's bottom row after every frame,
+	//      and it rides its line through the rewrap (renderFrame parks it).
+	//   2. Every row we paint is a hard line, so the old frame's rewrapped
+	//      height is computable from the previous frame's own line lengths.
+	//
+	// So: ask the terminal where the cursor is (DSR), subtract the rewrapped
+	// height, and that is our frame's new top row -- ground truth, immune to
+	// whatever the shell prompt above did. Anything that ballooned past the
+	// screen top is in the scrollback, beyond rewriting; the redraw's erase
+	// covers everything from the recovered top down, so the visible screen
+	// carries exactly one copy.
+	//
+	// resizeInProgress has suppressed every animation tick since the first
+	// SIGWINCH, so nothing paints at a stale anchor while the query is in
+	// flight. If the terminal does not answer, fall back to the computed
+	// vertical re-anchor (exact for height changes, approximate for width).
+	self[kLayoutEngine].calculateLayout();
+	const contentHeight = self.document.body.scrollHeight;
+	const wrappedRowsAbove = self[kScreen].wrappedRowsAbovePark(newWidth);
+	const epoch = self[kResizeEpoch];
+
+	const redraw = (startRow: number) => {
+		// The recovered row is where the frame stands; whether it still
+		// FITS below that row at the new height is reserveRows' problem,
+		// which solves it the only permissible way -- scrolling earlier
+		// output up into the scrollback, never painting over it. Clamping
+		// startRow upward to force a fit instead would plant the frame on
+		// top of the shell prompt above it.
+		self[kViewport].screenTop = startRow;
+		self[kViewport].anchorScrollTop = -self[kViewport].screenTop;
+		self[kScreen].replaced(startRow);
+
+		// Everything suppressed since the first SIGWINCH may paint again. The
+		// frame is placed by the screen reset, not by cursor detection.
+		self[kResizeInProgress] = false;
+		const wasDetected = self[kSession].hasDetectedCommandStart;
+		self[kSession].hasDetectedCommandStart = false;
+		render(self).then(() => {
+			self[kSession].hasDetectedCommandStart = wasDetected;
+		});
+	};
+
+	const computedReanchor = () => {
+		const previousStart = self[kViewport].screenTop;
+		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
+		return Math.max(0, previousStart - scrolledUp);
+	};
+
+	// The anchor is trustworthy exactly while the frame still FITS below it.
+	// When it does, no room-making scroll happens and the redraw is precise,
+	// so the prompt above is left alone. When it does not, the terminal
+	// scrolled the frame by an amount a same-cursor DSR cannot report, and
+	// making room on top of that mis-anchor is what strands a copy of our
+	// own rows -- an intermittent race we cannot win. There, clear the whole
+	// screen and start at the top: the erase covers every row the old frame
+	// could hold, so no fragment survives. It costs the output above us,
+	// which is the trade for a screen that is always legible.
+	const place = (startRow: number) => {
+		if (startRow + contentHeight <= newHeight) {
+			redraw(startRow);
+		} else {
+			redraw(0);
+		}
+	};
+
+	if (self[kSession].anchorDetectionEnabled && wrappedRowsAbove !== null) {
+		self[kSession]
+			.queryCursorRow()
+			.then((cursorRow) => {
+				// A newer resize superseded this one; its handler will redraw.
+				if (epoch !== self[kResizeEpoch]) {
+					return;
+				}
+				place(Math.max(0, cursorRow - wrappedRowsAbove));
+			})
+			.catch(() => {
+				if (epoch !== self[kResizeEpoch]) {
+					return;
+				}
+				place(computedReanchor());
+			});
+	} else {
+		place(computedReanchor());
+	}
+}
+
+/**
+ * Run the observers against the layout just produced.
+ *
+ * Called after every render, once isRendering is clear -- a callback that
+ * mutates the DOM schedules the next frame through the mutation observer, so
+ * there is no re-entrancy to guard against here.
+ */
+function afterRender(
+	self: TermDOM,
+): void {
+	self[kRenderCount]++;
+	// The viewport in document coordinates: the scroll offset, one terminal
+	// high. IntersectionObserver measures targets against it.
+	const viewport = self[kLayoutEngine].createDOMRect(
+		0,
+		self[kViewport].scrollTop,
+		self[kWidth],
+		self[kHeight],
+	);
+	self[kObserverManager].flush(viewport, self[kRenderCount]);
+}
+
+/**
+ * The modal dialog on top of the document, or null while none is showing.
+ * Last in the top layer is topmost, and only a modal dialog is ever in it
+ * by way of `showModal`.
+ */
+function topmostModalDialog(
+	self: TermDOM,
+): HTMLDialogElement | null {
+	let modal: HTMLDialogElement | null = null;
+	for (const element of self[kTopLayer]) {
+		if (isModalDialog(element)) {
+			modal = element as HTMLDialogElement;
+		}
+	}
+	return modal;
+}
+
+/**
+ * What a close request closes: the modal dialog or auto popover last into
+ * the top layer, which is the one the user sees on top. A manual popover
+ * is not one -- it responds to neither Escape nor a click outside -- and
+ * neither is anything else riding the layer.
+ */
+function topmostCloseRequestTarget(
+	self: TermDOM,
+): Element | null {
+	const popover = topmostAutoPopover(self.document) as Element | null;
+	let target: Element | null = null;
+	for (const element of self[kTopLayer]) {
+		if (isModalDialog(element) || element === popover) {
+			target = element;
+		}
+	}
+	return target;
+}
+
+/**
+ * Focus the next or previous focusable element
+ */
+function moveFocus(
+	self: TermDOM,
+	reverse: boolean,
+): void {
+	// A modal dialog makes the rest of the document inert, and the visible
+	// half of inertness is that Tab cannot leave the dialog: the sequential
+	// order is the dialog's own, and it wraps within it.
+	const scope = topmostModalDialog(self) ?? self.document;
+	const focusable = getFocusableElements(scope, self[kLayoutEngine]);
+	if (focusable.length === 0) {
+		return;
+	}
+
+	const current = self.document.activeElement;
+	const currentIndex = focusable.indexOf(current as Element);
+	let nextIndex: number;
+
+	if (reverse) {
+		nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+	} else {
+		nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+	}
+
+	const next = focusable[nextIndex] as HTMLElement;
+	next.focus();
+	// A control the camera is not looking at cannot be typed into, so the
+	// move brings it into view -- what a browser does when focus leaves the
+	// scrollport, and what makes tabbing through a form longer than the
+	// screen work at all.
+	next.scrollIntoView({block: "nearest"});
+
+	// Focus is not a DOM mutation, so no observer will schedule a frame -- but
+	// :focus styling and the caret (the real terminal cursor, parked in the
+	// focused field) both need one to move.
+	void render(self);
+}
+
+/**
+ * Hit-test a document-relative point (flushing pending layout first). The
+ * one place both document.elementFromPoint (which converts its public,
+ * viewport-relative x/y into this space) and mouse hit-testing (whose
+ * points are already document-relative, from the viewport's screenToDocumentPoint) go
+ * through, so a click always tests against fresh layout regardless of
+ * entry point.
+ */
+function findElementAtDocumentPoint(
+	self: TermDOM,
+	x: number,
+	y: number,
+): Element | null {
+	processPendingMutationsAndRender(self);
+	let element = self[kLayoutEngine].hitTest(
+		self.document.documentElement,
+		x,
+		y,
+		self[kTopLayer],
+		self[kViewport].scrollTop,
+	);
+	// A pseudo-element is not an element the DOM can hand out: the hit on
+	// the content it generates is a hit on the element it originates from.
+	for (
+		let host = element && pseudoHostOf<Element>(element);
+		host;
+		host = pseudoHostOf<Element>(element!)
+	) {
+		element = host;
+	}
+	// RETARGET out of shadow trees, per spec: from outside a shadow tree
+	// (and the document is always outside), the hit is the HOST -- a
+	// click on an input's internal value span is a click on the input.
+	// Without this, closest()/focus logic dead-ends inside the UA
+	// fragment, whose parts have no parentElement chain to climb.
+	while (element) {
+		const root = element.getRootNode();
+		if (root.nodeType === 11 && (root as ShadowRoot).host) {
+			element = (root as ShadowRoot).host;
+		} else {
+			break;
+		}
+	}
+	// A modal dialog makes the rest of the document inert: a point outside
+	// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
+	// the target a browser reports for a click on the dim area, and the
+	// reason nothing behind a modal can be clicked or focused while it is
+	// up.
+	const modal = topmostModalDialog(self);
+	if (modal !== null && (element === null || !modal.contains(element))) {
+		return modal as unknown as Element;
+	}
+	return element;
+}
+
+/**
+ * The caret position under a document point: the element it hit-tests to,
+ * asked of the engine.
+ *
+ * Null over a form control, whose value is not document text -- its
+ * selection is the control's own bounded world, which kFieldOffsetAtPoint
+ * asks about instead. The two never merge: getSelection() cannot see inside
+ * a control, per spec.
+ */
+function documentPointToTextPosition(
+	self: TermDOM,
+	x: number,
+	y: number,
+): {node: Text; offset: number} | null {
+	const element = findElementAtDocumentPoint(self, x, y);
+	if (
+		!element ||
+		element instanceof (self.window as any).HTMLInputElement ||
+		element instanceof (self.window as any).HTMLTextAreaElement
+	) {
+		return null;
+	}
+	return self[kLayoutEngine].caretPositionFromPoint(x, y, element);
+}
+
+/**
+ * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
+ * These only arrive while capture is on -- see updateMouseReporting.
+ *
+ * Reports become the DOM's own mouse events, dispatched at the element
+ * under the cell (document.elementFromPoint is layout-true), with the
+ * browser's default actions: wheel scrolls the camera, mousedown moves
+ * focus, mouseup on the mousedown target is a click.
+ */
+function handleMouseReport(
+	self: TermDOM,
+	code: number,
+	col: number,
+	row: number,
+	isRelease: boolean,
+): void {
+	const {
+		shiftKey,
+		altKey,
+		ctrlKey,
+		isMotion,
+		base,
+		wheelDeltaY,
+		button,
+		buttons,
+	} = decodeMouseReport(code, isRelease);
+
+	const point = self[kViewport].screenToDocumentPoint(
+		col - 1,
+		row - 1,
+		self[kFullscreenManager].isFullscreen,
+	);
+	const x = point?.x ?? col - 1;
+	const y = point?.y ?? 0;
+	// Already document-relative -- go straight to the shared hit-test rather
+	// than through the public elementFromPoint, which expects viewport-
+	// relative input and would convert it right back.
+	const target =
+		(point && findElementAtDocumentPoint(self, x, y)) || self.document.body;
+
+	if (wheelDeltaY !== null) {
+		const notCanceled = target.dispatchEvent(
+			new self.window.WheelEvent("wheel", {
+				deltaY: wheelDeltaY,
+				deltaMode: 1, // DOM_DELTA_LINE
+				clientX: x,
+				clientY: y,
+				shiftKey,
+				altKey,
+				ctrlKey,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		if (notCanceled) {
+			if (
+				wheelDeltaY < 0 &&
+				self[kViewport].scrollTop === 0 &&
+				!self[kFullscreenManager].isFullscreen
+			) {
+				// Scroll chaining, the browser default: the camera is at the
+				// document top, so the scroll escapes to the parent scroller --
+				// here, the terminal's own scrollback. Yield the mouse so the
+				// next wheel tick scrolls the shell history natively; the next
+				// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
+				// reclaims it too, in case the user scrolls back down without
+				// ever pressing a key -- wheel activity while yielded produces no
+				// signal we could otherwise catch that on. An app opts out the
+				// same way it would in a browser: preventDefault on the wheel
+				// event.
+				self[kMouseCaptureYielded] = true;
+				updateMouseReporting(self);
+				if (self[kScrollChainTimer] !== null) {
+					clearTimeout(self[kScrollChainTimer]);
+				}
+				self[kScrollChainTimer] = setTimeout(() => {
+					self[kScrollChainTimer] = null;
+					reclaimMouseCapture(self);
+				}, TermDOM[kSCROLL_CHAIN_TIMEOUT_MS]);
+			} else {
+				scrollCamera(self, wheelDeltaY);
+			}
+		}
+		return;
+	}
+
+	// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
+	// encoding; SGR names the button even on release, so 3 carries nothing.
+	if (base > 2) {
+		return;
+	}
+	const eventInit = {
+		button,
+		buttons,
+		clientX: x,
+		clientY: y,
+		shiftKey,
+		altKey,
+		ctrlKey,
+		bubbles: true,
+		cancelable: true,
+	};
+
+	if (isMotion) {
+		target.dispatchEvent(new self.window.MouseEvent("mousemove", eventInit));
+		// A field drag extends the field's own selection to the offset
+		// under the pointer -- clamped into the field, whichever element
+		// the pointer is over now (the field holds the capture).
+		if (self[kFieldDragAnchor] && point) {
+			const {element: fieldElement, offset: anchor} = self[kFieldDragAnchor];
+			const focus = fieldOffsetAtPoint(self, fieldElement, x, y);
+			if (focus !== null) {
+				setUASelection(
+					fieldElement,
+					Math.min(anchor, focus),
+					Math.max(anchor, focus),
+					focus < anchor ? "backward" : "forward",
+				);
+				render(self);
+			}
+			return;
+		}
+		// Dragging with the anchor set extends the document selection to
+		// the caret position under the pointer. setBaseAndExtent handles a
+		// backward drag itself; over a textless stretch the focus simply
+		// stays where it last was.
+		if (self[kSelectionDragAnchor] && self[kMouseDownTarget] && point) {
+			const focus = documentPointToTextPosition(self, x, y);
+			if (focus) {
+				const anchor = self[kSelectionDragAnchor];
+				self.window
+					.getSelection()
+					?.setBaseAndExtent(
+						anchor.node,
+						anchor.offset,
+						focus.node,
+						focus.offset,
+					);
+				render(self);
+			}
+		}
+		return;
+	}
+
+	if (!isRelease) {
+		self[kMouseDownTarget] = target;
+		// The popover a press belongs to, which the release compares
+		// against: light dismiss is a press and a release in the same
+		// place, so a drag out of a popover does not close it.
+		self[kPopoverPressTarget] = topmostClickedPopover(target);
+		self[kFieldDragAnchor] = null;
+		// A pointer press suppresses the :focus-visible ring.
+		if (self[kStyleManager].setFocusVisible(false)) {
+			self[kStyleManager].handleFocusChange(self.document.activeElement);
+			void render(self);
+		}
+		const notCanceled = target.dispatchEvent(
+			new self.window.MouseEvent("mousedown", eventInit),
+		);
+		// Default action: mousedown moves focus, exactly as in a browser --
+		// to the nearest focusable ancestor, or away from the active element
+		// when the click lands on nothing focusable.
+		if (notCanceled) {
+			const focusable = (target as Element).closest?.(FOCUSABLE_SELECTOR);
+			const active = self.document.activeElement;
+			if (focusable && focusable !== active) {
+				(focusable as HTMLElement).focus();
+				void render(self);
+			} else if (!focusable && active && active !== self.document.body) {
+				(active as HTMLElement).blur();
+				void render(self);
+			}
+
+			// A select's press-to-open and option-row commit are the select
+			// widget's own mousedown listener, run during dispatch above --
+			// the un-retargeted option row it needs comes from the rows' own
+			// document rects, not a renderer hit-test here.
+
+			// Default action: a press in a text field parks the caret at
+			// the pressed character and anchors a FIELD drag there -- the
+			// field's own bounded selectionStart/End world, never the
+			// document selection: the same split a browser makes.
+			const field =
+				base === 0 && point && isTextField(target as Element) ?
+						(target as HTMLInputElement | HTMLTextAreaElement) :
+					null;
+			if (field) {
+				const offset = fieldOffsetAtPoint(self, field, x, y);
+				if (offset !== null) {
+					setUASelection(field, offset, offset);
+					self[kFieldDragAnchor] = {element: field, offset};
+					// The DOCUMENT selection still clears on entry -- a page
+					// selection doesn't stay highlighted behind a field click
+					// in a browser either. The two worlds just never merge:
+					// getSelection() cannot see inside the field, per spec.
+					const docSelection = self.window.getSelection();
+					if (docSelection && !docSelection.isCollapsed) {
+						docSelection.removeAllRanges();
+					}
+					render(self);
+				}
+			}
+
+			// Default action: mousedown collapses the document selection at
+			// the pressed caret position and anchors a possible drag there,
+			// as in a browser. Left button only -- and preventDefault on
+			// mousedown suppresses it, which is exactly how apps that want
+			// the drag events for themselves opt out.
+			const selection = self.window.getSelection();
+			if (base === 0 && selection && !self[kFieldDragAnchor]) {
+				const anchor = point ?
+						documentPointToTextPosition(self, x, y) :
+					null;
+				const hadSelection = !selection.isCollapsed;
+				self[kSelectionDragAnchor] = anchor;
+				if (anchor) {
+					selection.setBaseAndExtent(
+						anchor.node,
+						anchor.offset,
+						anchor.node,
+						anchor.offset,
+					);
+				} else if (selection.rangeCount > 0) {
+					selection.removeAllRanges();
+				}
+				if (hadSelection) {
+					render(self);
+				}
+			}
+		}
+		return;
+	}
+
+	target.dispatchEvent(new self.window.MouseEvent("mouseup", eventInit));
+	// LIGHT DISMISS: a release closes every auto popover the released
+	// point is not inside of and did not open -- the invoker of a popover
+	// counts as part of it, so the click that follows toggles rather than
+	// reopens what this closed. It runs before the click, where a browser
+	// runs it, and no listener can prevent it.
+	const dismissAncestor = topmostClickedPopover(target);
+	const samePopoverPress = dismissAncestor === self[kPopoverPressTarget];
+	self[kPopoverPressTarget] = null;
+	if (samePopoverPress && topmostAutoPopover(self.document) !== null) {
+		hidePopoversUntil(self.document, dismissAncestor, false, true);
+	}
+	// A selection is only a selection: writing the clipboard is a
+	// deliberate act, through navigator.clipboard. The terminal's own
+	// select-to-copy remains available as Shift+drag, which bypasses
+	// mouse reporting.
+	let selectedByDrag = false;
+	if (self[kFieldDragAnchor]) {
+		self[kFieldDragAnchor] = null;
+	}
+	if (self[kSelectionDragAnchor]) {
+		self[kSelectionDragAnchor] = null;
+		const text = self.window.getSelection()?.toString() ?? "";
+		if (text.length > 0) {
+			selectedByDrag = true;
+		}
+	}
+	// A drag that selected text is not a click: browsers suppress
+	// activation after a selecting gesture, and without this a drag
+	// released over a <label> would activate it -- toggling its checkbox,
+	// which in a framework app re-renders the very nodes the fresh
+	// selection points into, destroying it on the spot.
+	if (selectedByDrag) {
+		self[kMouseDownTarget] = null;
+		return;
+	}
+	if (self[kMouseDownTarget] === target) {
+		target.dispatchEvent(
+			new self.window.MouseEvent("click", {...eventInit, buttons: 0}),
+		);
+		// A checkbox/radio's .checked already flipped -- the activation behavior's
+		// activation behavior handles that directly, and forwards it from a
+		// <label for> or wrapping label the same way (honoring
+		// preventDefault in both cases) -- but that's a property change,
+		// invisible to the MutationObserver that would otherwise repaint it,
+		// same as .value on a text input. Focus also needs an explicit push
+		// here for the label case: a real browser's "focusing steps" move
+		// focus to the label's associated control, which the activation behavior's
+		// alone does not simulate (the direct-click case is already
+		// focused via mousedown's own default action above, so this is a
+		// harmless no-op there).
+		const isCheckable = (el: unknown): el is HTMLInputElement =>
+			el instanceof (self.window as any).HTMLInputElement &&
+			((el as HTMLInputElement).type === "checkbox" ||
+				(el as HTMLInputElement).type === "radio");
+		const control = isCheckable(target) ?
+			target :
+			target instanceof (self.window as any).HTMLLabelElement &&
+			isCheckable((target as any).control) ?
+					((target as any).control as HTMLInputElement) :
+				null;
+		if (control) {
+			control.focus();
+			render(self);
+		}
+
+		// A second click on the same target within the double-click interval
+		// is also a dblclick -- in addition to, not instead of, its own click
+		// (a browser fires both). Reset after firing so a third quick click
+		// starts a fresh pair rather than double-firing again immediately.
+		const now = performance.now();
+		if (
+			self[kLastClickTarget] === target &&
+			now - self[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
+		) {
+			target.dispatchEvent(
+				new self.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
+			);
+			self[kLastClickTarget] = null;
+			self[kLastClickTime] = 0;
+		} else {
+			self[kLastClickTarget] = target as Element;
+			self[kLastClickTime] = now;
+		}
+	}
+	self[kMouseDownTarget] = null;
+}
+
+/**
+ * Deliver a paste to the focused control as an `insertFromPaste` beforeinput;
+ * its own listener does the edit. Dropped if nothing editable is focused.
+ */
+function dispatchPaste(
+	self: TermDOM,
+	text: string,
+): void {
+	// A terminal transmits a pasted line break as CR -- the byte Enter
+	// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
+	// while the DOM's paste carries newlines as LF. Converted here, at the
+	// boundary, so a multi-line paste into a textarea is multi-line and
+	// a field's own handlers never see a bare CR.
+	text = text.replace(/\r\n?/g, "\n");
+	const target = self.document.activeElement;
+	if (!target || target === self.document.body) {
+		return;
+	}
+	target.dispatchEvent(
+		new self.window.InputEvent("beforeinput", {
+			inputType: "insertFromPaste",
+			data: text,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+	void render(self);
+}
+
+/**
+ * Deliver a typed character to a field as an `insertText` beforeinput; its
+ * own listener does the edit.
+ *
+ * This is the keypress default action, and it runs where a default action
+ * runs: after the dispatch it belongs to. That is what puts a field's
+ * `input` after its `keypress` rather than between keydown and it. Only a
+ * field takes text -- nothing else in this engine is an editing host.
+ */
+function dispatchInsertText(
+	self: TermDOM,
+	target: Element,
+	text: string,
+): void {
+	const tag = target.tagName;
+	if (tag !== "INPUT" && tag !== "TEXTAREA") {
+		return;
+	}
+	target.dispatchEvent(
+		new self.window.InputEvent("beforeinput", {
+			inputType: "insertText",
+			data: text,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+}
+
+function dispatchGlobalKeyboardEvent(
+	self: TermDOM,
+	key: string,
+): void {
+	// Tokenize multi-key chunks and dispatch each token on its own.
+	const tokens = Array.from(tokenizeInput(key));
+	if (tokens.length > 1) {
+		for (const token of tokens) {
+			dispatchGlobalKeyboardEvent(self, token);
+		}
+		return;
+	}
+
+	// A cursor position report with no query outstanding is a late or
+	// duplicate terminal reply, not a keystroke: decodeKey returns null and
+	// nothing is dispatched.
+	const stroke = decodeKey(key);
+	if (!stroke) {
+		return;
+	}
+	const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
+		stroke;
+
+	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
+	if (self[kStyleManager].setFocusVisible(true)) {
+		self[kStyleManager].handleFocusChange(self.document.activeElement);
+		void render(self);
+	}
+
+	// Find the focused element. document.activeElement defaults to body when
+	// nothing is focused, so it can't be used with `||` to detect "nothing
+	// focused". In fullscreen, a browser moves focus to the fullscreen
+	// element as part of entering it -- but focus() only takes
+	// elements that are already focusable (tabindex, form controls, etc.),
+	// so an arbitrary fullscreen container is otherwise unreachable here.
+	// Fall back to it (before document.body) so keydown still lands on it,
+	// the same as the dedicated fullscreen dispatch this replaced -- but
+	// still prefer an explicitly focused descendant (e.g. an input inside
+	// the fullscreen element), which the old dispatch ignored.
+	const active = self.document.activeElement;
+	const targetElement =
+		active && active !== self.document.body ?
+			active :
+			self[kFullscreenManager].fullscreenElement || self.document.body;
+
+	// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
+	// all, the same as a real browser: fullscreen exit is a user-agent
+	// guarantee an app can't trap the user past with preventDefault.
+	if (keyName === "Escape" && self[kFullscreenManager].isFullscreen) {
+		self[kFullscreenManager].exitFullscreen().catch(() => {});
+		return;
+	}
+
+	// Create and dispatch keydown event
+	const keydownEvent = new self.window.KeyboardEvent("keydown", {
+		key: keyName,
+		code: domCodeFor(keyName),
+		keyCode,
+		charCode: 0,
+		which: keyCode,
+		ctrlKey,
+		shiftKey,
+		altKey,
+		metaKey,
+		bubbles: true,
+		cancelable: true,
+	});
+
+	const notCanceled = targetElement.dispatchEvent(keydownEvent);
+
+	// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
+	// answers one: a modal dialog fires cancel and closes unless a
+	// listener takes it, an auto popover closes outright (nothing cancels
+	// a popover, which is why a manual one -- answering no close request
+	// -- is the way to keep one up). Whichever entered the layer last is
+	// the one the key reaches, so a popover over a dialog closes first.
+	// Both get Escape only when nothing is fullscreen -- the branch above
+	// already returned -- which is the browser's own precedence: the
+	// fullscreen exit is the user agent's guarantee, and only after it is
+	// spent does the key reach the page's own modality. Unlike Tab below,
+	// a preventDefault on keydown does not suppress it.
+	if (keyName === "Escape") {
+		const target = topmostCloseRequestTarget(self);
+		if (target !== null) {
+			if (isShowingPopover(target)) {
+				closePopover(target);
+			} else {
+				(target as HTMLDialogElement).requestClose();
+			}
+			void render(self);
+			return;
+		}
+	}
+
+	// Handle default actions if keydown wasn't canceled
+	if (notCanceled) {
+		// Tab navigation
+		if (keyName === "Tab") {
+			moveFocus(self, shiftKey);
+		}
+
+		// Field editing (input and textarea) is each widget's own keydown
+		// listener, run during dispatch above -- not a default action here.
+		if (keyboardActivation(targetElement as Element)) {
+			// A focused button activates on Enter and on Space, and a link on
+			// Enter, per HTML's activation behavior. Without this, both took
+			// focus and painted :focus while doing nothing -- advertising an
+			// affordance they did not have. `input[type=submit|button]`
+			// activate here; text inputs never match keyboardActivation.
+			const activation = keyboardActivation(targetElement as Element)!;
+			if (
+				(keyName === "Enter" && activation.enter) ||
+				(key === " " && activation.space)
+			) {
+				// click() rather than a synthesized event: it runs the element's
+				// full activation behavior, so a submit button submits its form
+				// and a link follows its href, exactly as a mouse click would.
+				(targetElement as HTMLElement).click();
+				render(self);
+			}
+		}
+		// A select's editing (open/navigate/commit) is the select widget's
+		// own keydown listener, run during dispatch above -- not here.
+	}
+
+	// A character-producing key fires keypress between keydown and keyup,
+	// and inserting the character is that event's default action -- so a
+	// field's `input` arrives after keypress, as it does in a browser, and a
+	// keypress a listener cancels inserts nothing. Every printable
+	// character, not only the ASCII ones: charCode is the character's own
+	// code, and DEL and the control codes are the keys named elsewhere.
+	if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
+		const keypressEvent = new self.window.KeyboardEvent("keypress", {
+			key,
+			code: domCodeFor(key),
+			keyCode: charCode,
+			charCode,
+			which: charCode,
+			ctrlKey,
+			shiftKey,
+			altKey,
+			metaKey,
+			bubbles: true,
+			cancelable: true,
+		});
+		if (targetElement.dispatchEvent(keypressEvent)) {
+			dispatchInsertText(self, targetElement, key);
+		}
+	}
+
+	// Always dispatch keyup
+	const keyupEvent = new self.window.KeyboardEvent("keyup", {
+		key: keyName,
+		code: domCodeFor(keyName),
+		keyCode,
+		charCode: 0,
+		which: keyCode,
+		ctrlKey,
+		shiftKey,
+		altKey,
+		metaKey,
+		bubbles: true,
+		cancelable: true,
+	});
+	targetElement.dispatchEvent(keyupEvent);
+}
+
+/**
+ * Render the whole document once, as plain lines, for a non-terminal stdout.
+ *
+ * There is no fold here, so there is nothing to commit, freeze or repair: the
+ * document is simply printed. Every hard problem in this file is a consequence
+ * of having a viewport, and a pipe does not have one.
+ */
+async function printStatic(
+	self: TermDOM,
+): Promise<void> {
+	const pending = self[kObserver].takeRecords();
+	if (pending.length > 0) {
+		handlePendingMutations(self, pending);
+	}
+
+	self[kLayoutEngine].calculateLayout();
+
+	const context = self[kScreen].beginStatic({
+		rows: self.document.body.scrollHeight,
+	});
+	self[kPainter].paint(context);
+	const output = self[kScreen].endFrame();
+
+	if (output) {
+		await self[kWrite](output);
+	}
+	afterRender(self);
+}
+
+/**
+ * Print the whole document to stdout, once, on the way out.
+ *
+ * Document mode never commits anything: it paints a window of the document into
+ * a region it owns and repaints it in place. That is what buys the mutability --
+ * nothing is frozen, because nothing was printed. But it means that at the
+ * moment we exit, the terminal has only ever *seen* the last frame.
+ *
+ * So we settle up. Erase the region we were painting -- our own viewport rows,
+ * with ED0; this is not the flicker sin, which is ED3 against the scrollback --
+ * and then print the document in full. It scrolls into the scrollback exactly as
+ * an ordinary command's output does, and the terminal ends up holding the whole
+ * thing: searchable, selectable, and still there tomorrow.
+ *
+ * The axis was never "do you get scrollback". It is *when you commit*: flow
+ * writes uneditable stdout as it goes, and document waits until the end.
+ *
+ * The cost of waiting is that a crash takes the output with it -- flow's partial
+ * output survives, because it was already printed.
+ */
+function flushDocument(
+	self: TermDOM,
+): void {
+	if (!self[kInteractive]) {
+		return;
+	}
+
+	const top = self[kViewport].screenTop;
+	const output = renderStatic(self, "\r\n");
+	if (!output) {
+		return;
+	}
+
+	// Back to the top of our region; every payout line then clears ITSELF
+	// (\x1b[K before its text) and one partial erase covers whatever the
+	// old frame held below. Never a full ED from the top row: tmux
+	// preserves a fully-erased screen by pushing it into scrollback (the
+	// courtesy it extends to `clear`), which archived a copy of the final
+	// frame above the payout -- the document twice, interleaved.
+	void self[kSession].write(`\x1b[${top + 1};1H`);
+	void self[kSession].write(
+		"\x1b[K" + output.replace(/\r\n(?!$)/g, "\r\n\x1b[K"),
+	);
+	void self[kSession].write("\x1b[J");
+}
+
+/**
+ * The document as an ANSI string: colors and line breaks, no cursor
+ * controls, no modes. Feeds the quit payout (CRLF: raw mode does not
+ * translate bare newlines) and the scratch sibling behind renderANSI();
+ * not part of the class's public surface.
+ */
+function renderStatic(
+	self: TermDOM,
+	lineEnding: "\n" | "\r\n",
+): string {
+	processPendingMutationsAndRender(self);
+	const contentHeight = self.document.body.scrollHeight;
+	if (contentHeight === 0) {
+		return "";
+	}
+	const context = self[kScreen].beginStatic({
+		rows: contentHeight,
+		lineEnding,
+	});
+	self[kPainter].paint(context);
+	return self[kScreen].endFrame();
+}
+
+/**
+ * Render a window of the document into a region we own.
+ *
+ * Document mode still starts at the command height: it does not seize the whole
+ * terminal, and it does not paint over what was on screen before us. If it needs
+ * more rows than are left below the command start, it *scrolls* the earlier
+ * content away into the scrollback, where it survives and the user can still
+ * reach it.
+ *
+ * Nothing of ours is committed. The document stays a single mutable thing
+ * that we repaint a window of: content that scrolls out of view is never
+ * frozen output, and reflow anywhere is free.
+ */
+async function renderInteractive(
+	self: TermDOM,
+): Promise<void> {
+	// The previous document was sealed to scrollback by close(). Start a fresh
+	// one below it: re-anchor to where the cursor now sits and reset the diff so
+	// nothing composites over the frozen block.
+	if (self[kSealed]) {
+		self[kSealed] = false;
+		self[kViewport].scrollTop = 0;
+		self[kScreen].repaintAll();
+		// detectCommandStart waits for a reply on stdin, so the listener must
+		// be attached first (idempotent -- normally already done by now).
+		if (self[kInteractive]) {
+			self.attach();
+			await self[kSession].detectCommandStart();
+		}
+	}
+
+	// Our region starts at the command-start row, which cursor detection resolves
+	// asynchronously. Render before it lands and the first frame anchors at row 0
+	// while every diff after detection anchors one row lower -- the labels stay,
+	// the values slide down a row. Wait for the anchor to settle first, exactly
+	// as the flow path does. Await only when one is pending: an unconditional
+	// await would defer the rest of this frame a microtask even with nothing
+	// to wait for, and a downstream synchronous scroll clamp depends on it.
+	const detectionPending = self[kSession].cursorDetectionPending;
+	if (detectionPending) {
+		await detectionPending;
+	}
+
+	const pending = self[kObserver].takeRecords();
+	if (pending.length > 0) {
+		handlePendingMutations(self, pending);
+	}
+
+	self[kLayoutEngine].calculateLayout();
+
+	// The caret reveal an edit queued runs here, against the layout this
+	// frame just flushed -- one camera decision per frame, however many
+	// keystrokes coalesced into it. Skipped if focus has already moved
+	// on: revealing a field the user left would yank the camera back.
+	const revealed = self[kPendingCaretReveal] !== null;
+	if (self[kPendingCaretReveal]) {
+		const reveal = self[kPendingCaretReveal];
+		self[kPendingCaretReveal] = null;
+		if (reveal === self.document.activeElement) {
+			scrollCaretIntoView(self, reveal);
+		}
+	}
+
+	// Nothing observable moved: no mutations, no invalidation, no input,
+	// same focus, no live selection, camera unmoved, no reveal, no pending
+	// reset. Painting would emit nothing; don't pay to discover that.
+	const selection = self.window.getSelection?.();
+	if (
+		pending.length === 0 &&
+		!revealed &&
+		self[kLastFrameScrollTop] !== null &&
+		self[kViewport].scrollTop === self[kLastFrameScrollTop] &&
+		self[kLayoutEngine].invalidationEpoch === self[kLastFrameEpoch] &&
+		self[kInputGeneration] === self[kLastFrameInputGeneration] &&
+		self.document.activeElement === self[kLastFrameActiveElement] &&
+		(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
+		!self[kScreen].needsRepaint
+	) {
+		// Skip the paint, not the frame: observers still run, so a fresh
+		// observe() gets its initial entry on the next tick.
+		afterRender(self);
+		return;
+	}
+
+	// Recompute the focused input's scroll window every frame (derived state).
+	const activeField = self.document.activeElement;
+	if (
+		activeField instanceof (self.window as any).HTMLInputElement &&
+		isTextField(activeField as HTMLInputElement)
+	) {
+		scrollFieldCaretIntoView(self, activeField as HTMLInputElement);
+	}
+
+	// Fullscreen owns the WHOLE alternate screen from row zero: the
+	// main screen's command anchor means nothing there, and reserveRows'
+	// index-scrolls would scroll the alternate screen itself. The
+	// document's scroll position survives untouched underneath -- the
+	// fixed, Canvas-backed fullscreen element covers it regardless.
+	const isFullscreen = self[kFullscreenManager].isFullscreen;
+	const contentHeight = isFullscreen ?
+		self[kHeight] :
+			documentPaintHeight(self);
+	const regionHeight = Math.min(contentHeight, self[kHeight]);
+
+	// Take the room we need by pushing earlier output up, never over it.
+	const top = isFullscreen ? 0 : reserveRows(self, regionHeight);
+
+	if (!isFullscreen) {
+		// The camera cannot run off the end of the document.
+		const maxScroll = Math.max(0, contentHeight - regionHeight);
+		self[kViewport].scrollTop = Math.min(
+			self[kViewport].scrollTop,
+			maxScroll,
+		);
+	}
+
+	// A frame is a TRANSFORM when everything that changed since the last
+	// one is bounded: a camera delta (the terminal scrolls the region via
+	// DECSTBM + DL/IL) plus damage that names its elements. Only the
+	// exposed band, fixed rows (real and shifted positions), the focused
+	// field, and damaged rows repaint. Anything unbounded -- a structural
+	// event, a live selection, a drag, a geometry change (cascades) --
+	// takes the full diff. What a mouse report changes names its elements:
+	// a click moves focus, which the cascade damages, and a drag holds an
+	// anchor this gate already reads. A pointer that flipped state
+	// anywhere on the screen would not, but no such state exists here --
+	// :hover matches nothing -- and adding one means damaging the chains
+	// it entered and left, not giving up the transform.
+	let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
+	const scrollTop = self[kViewport].scrollTop;
+	const styleDamage = self[kStyleManager].drainStyleDamage();
+	const frameDamage = self[kFrameDamage];
+	self[kFrameDamage] = new Map();
+	const documentSelection = self.window.getSelection?.();
+	const liveSelection = Boolean(
+		documentSelection &&
+		documentSelection.rangeCount > 0 &&
+		!documentSelection.isCollapsed,
+	);
+	transform: if (
+		!isFullscreen &&
+		top === 0 &&
+		regionHeight === self[kHeight] &&
+		self[kLastFrameScrollTop] !== null &&
+		self[kLayoutEngine].structuralGeneration ===
+		self[kLastFrameStructuralGeneration] &&
+		!liveSelection &&
+		!self[kLastFrameSelectionLive] &&
+		self[kSelectionDragAnchor] === null &&
+		self[kFieldDragAnchor] === null &&
+		!self[kResizeInProgress] &&
+		frameDamage !== null &&
+		styleDamage !== null
+	) {
+		const delta = scrollTop - self[kLastFrameScrollTop];
+		if (Math.abs(delta) >= regionHeight) {
+			break transform;
+		}
+		if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
+			break transform;
+		}
+
+		const bands: Array<[number, number]> = [];
+		// Past most of the region the transform stops paying, so the rows
+		// the bands claim are counted as they are added: damage that
+		// already covers the screen stops the walk instead of pricing
+		// every element that follows it. Overlap counts twice, which only
+		// makes the bail come sooner.
+		const bandBudget = regionHeight * 0.75;
+		let coverage = 0;
+		const addBand = (start: number, end: number): void => {
+			const clampedStart = Math.max(0, Math.floor(start));
+			const clampedEnd = Math.min(regionHeight, Math.ceil(end));
+			if (clampedEnd > clampedStart) {
+				bands.push([clampedStart, clampedEnd]);
+				coverage += clampedEnd - clampedStart;
+			}
+		};
+
+		if (delta > 0) {
+			addBand(regionHeight - delta, regionHeight);
+		} else if (delta < 0) {
+			addBand(0, -delta);
+		}
+		for (const band of self[kLayoutEngine].fixedRowBands(self[kHeight])) {
+			addBand(band[0], band[1]);
+			// The scroll moved fixed content too, leaving a stale copy at
+			// the shifted position; model and screen agree on it, so only
+			// a repaint of that row corrects it.
+			if (delta !== 0) {
+				addBand(band[0] - delta, band[1] - delta);
+			}
+		}
+		// The focused field's rows repaint: its caret cell and the real
+		// cursor park come from the painter visiting it.
+		const active = self.document.activeElement;
+		if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
+			const rect = self[kLayoutEngine].getRect(active);
+			if (rect) {
+				addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);
+			}
+		}
+
+		// A focus move flips :focus/:focus-visible on both elements.
+		const damaged = new Set<Element>(frameDamage.keys());
+		for (const element of styleDamage) {
+			damaged.add(element);
+		}
+		if (active !== self[kLastFrameActiveElement]) {
+			if (active) {
+				damaged.add(active);
+			}
+			if (self[kLastFrameActiveElement]) {
+				damaged.add(self[kLastFrameActiveElement]);
+			}
+		}
+
+		for (const element of damaged) {
+			if (coverage > bandBudget) {
+				break transform;
+			}
+			// Damage reaches as far as the selector invalidation scope; the
+			// whole document is unbounded.
+			const scope = self[kStyleManager].invalidationScopeFor(element);
+			if (
+				scope === self.document.body ||
+				scope === self.document.documentElement
+			) {
+				break transform;
+			}
+			const before = frameDamage.get(element) ?? frameDamage.get(scope);
+			const after = self[kLayoutEngine].getRect(scope);
+			if (!after && !before) {
+				// An inline element has no box of its own, so its rows are
+				// not recoverable here: unbounded. A removed element's
+				// damage is its parent's, already recorded.
+				if (scope.isConnected) {
+					break transform;
+				}
+				continue;
+			}
+			// A geometry change cascades to everything after the element.
+			if (
+				before &&
+				after &&
+				(before.top !== after.top || before.height !== after.height)
+			) {
+				break transform;
+			}
+			const fixedSpace = self[kLayoutEngine].isInFixedSpace(scope);
+			if (after) {
+				const afterTop = fixedSpace ? after.top : after.top - scrollTop;
+				addBand(afterTop, afterTop + after.height);
+				// The shifted stale copy of the damaged rows, as for fixed.
+				if (delta !== 0) {
+					addBand(afterTop - delta, afterTop + after.height - delta);
+				}
+			}
+			if (before) {
+				const beforeTop = fixedSpace ?
+					before.top :
+					before.top - self[kLastFrameScrollTop];
+				addBand(beforeTop - delta, beforeTop + before.height - delta);
+			}
+		}
+
+		if (delta === 0 && bands.length === 0) {
+			break transform;
+		}
+		if (coverage > bandBudget) {
+			break transform;
+		}
+
+		scroll = {delta, bands};
+	}
+
+	const context = self[kScreen].beginFrame({
+		offset: -self[kViewport].scrollTop,
+		cursorRow: top,
+		regionRows: top + regionHeight,
+		scroll,
+		measurer: self[kSession].widthMeasurer,
+	});
+	self[kPainter].paint(context);
+	const ansi = self[kScreen].endFrame();
+	self[kLastFrameScrollTop] = scrollTop;
+	self[kLastFrameEpoch] = self[kLayoutEngine].invalidationEpoch;
+	self[kLastFrameInputGeneration] = self[kInputGeneration];
+	self[kLastFrameStructuralGeneration] =
+		self[kLayoutEngine].structuralGeneration;
+	self[kLastFrameSelectionLive] = liveSelection;
+	self[kLastFrameActiveElement] = self.document.activeElement;
+
+	if (ansi) {
+		await self[kWrite](ansi);
+	}
+	afterRender(self);
+}
+
+/** Move the camera over the document. */
+function scrollCamera(
+	self: TermDOM,
+	rows: number,
+): void {
+	self[kViewport].scrollBy(rows);
+	// A camera move is invisible to the MutationObserver; schedule the frame
+	// it needs, the same way a DOM mutation would.
+	void render(self);
+}
+
+/**
+ * Make room for `rows` rows below the command start, *without painting over
+ * anything that was already on screen*.
+ *
+ * If there is not enough room between the command start and the bottom of the
+ * terminal, we scroll the terminal -- pushing the rows above into the
+ * scrollback, where they are preserved and the user can still reach them.
+ * Overwriting them in place would destroy the output of whatever ran before
+ * us; scrolling them away is what an ordinary command does when it prints.
+ *
+ * This positions the cursor at the bottom row (CUP) and sends IND (ESC D,
+ * Index -- "move down a line, scrolling if already at the bottom margin")
+ * `push` times. Two things this is deliberately NOT:
+ *
+ * - Not "print bare newlines at the bottom margin". Verified directly (a
+ *   real terminal via tmux, and the xterm-headless mock the test suite
+ *   runs against) that a bare LF only triggers a scroll when the cursor
+ *   reaches the bottom row through ordinary sequential output --
+ *   teleporting there with an absolute CUP first and then sending LF
+ *   leaves the screen completely unchanged in both.
+ * - Not CSI n S (Scroll Up), which scrolls the visible screen correctly in
+ *   both but -- verified directly -- does not add the scrolled-off rows to
+ *   xterm-headless's own scrollback history the way real terminal
+ *   scrolling does, which would make the "scrolled away, not destroyed"
+ *   half of this behavior untestable. IND scrolls identically but goes
+ *   through the same internal path as natural overflow, so it does.
+ *
+ * Returns the screen row our region now starts at.
+ */
+function reserveRows(
+	self: TermDOM,
+	rows: number,
+): number {
+	const push = self[kViewport].reserveRows(rows, self[kHeight]);
+	if (push > 0) {
+		void self[kSession].write(
+			`\x1b[${self[kHeight]};1H` + "\x1bD".repeat(push),
+		);
+		// Do NOT shift the renderer's previous buffer. Its rows are relative to
+		// the region top, and the top moves up by exactly the amount the screen
+		// scrolled -- the two cancel, so buffer coordinates are unchanged.
+		// Shifting it desynced the diff by `push` rows: the model compared
+		// against the wrong screen rows, skipped cells it wrongly believed
+		// unchanged, and composited the old frame under the new one whenever a
+		// document-mode region grew past the space below the shell prompt.
+		//
+		// A pending post-resize screen reset IS screen-absolute, though, and
+		// must ride the scroll (see shiftScreenReset).
+		self[kScreen].scrolled(push);
+	}
+
+	return self[kViewport].screenTop;
+}
+
+function staticRenderer(
+	self: TermDOM,
+): TermDOM {
+	const cols = self[kTransport].cols;
+	if (self[kStaticSibling] && self[kStaticSibling][kWidth] !== cols) {
+		void self[kStaticSibling].dispose();
+		self[kStaticSibling] = null;
+	}
+	self[kStaticSibling] ??= new TermDOM({
+		transport: {
+			cols,
+			rows: 24,
+			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+			writable: new WritableStream<string>({}),
+			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
+			closed: new Promise<TerminalCloseInfo>(() => {}),
+			ready: Promise.resolve(),
+			colorDepth: "rgb",
+			interactive: false,
+			sharesScreen: false,
+			close() {},
+		},
+	});
+	return self[kStaticSibling];
+}
+
+function renderStaticHTML(
+	self: TermDOM,
+	html: string,
+	lineEnding: "\n" | "\r\n",
+): string {
+	const renderer = staticRenderer(self);
+	renderer.document.body.innerHTML = html;
+	return renderStatic(renderer, lineEnding);
 }

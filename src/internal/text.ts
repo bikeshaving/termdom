@@ -991,7 +991,6 @@ export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
  * (css-text-3 §4.1.1). `pre-line` does not: it collapses spaces and tabs and
  * preserves only newlines.
  */
-/** Whether a `white-space` value keeps every space as content. */
 export function preservesSpaces(whiteSpace: string): boolean {
 	return (
 		whiteSpace === "pre" ||

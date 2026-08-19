@@ -268,11 +268,6 @@ function joinTouchingBorders(grid: CellGrid): void {
 }
 
 /**
- * A frame in progress: paint into `context`, then take its ANSI from `end`.
- * Painting is the caller's business, so this module stays what it is -- cells
- * in, escape sequences out -- with nothing calling back into the caller.
- */
-/**
  * How a border line is drawn: the CSS keyword, in the CSS's own word, and
  * the line's color -- the terminal's default foreground when absent.
  *
@@ -1217,10 +1212,6 @@ function generateANSI(
 	return output;
 }
 
-const kSetCell = Symbol("setCell");
-const kInClip = Symbol("inClip");
-const kSetBorderCell = Symbol("setBorderCell");
-
 export class CellContext {
 	grid: CellGrid;
 	rows: number;
@@ -1292,7 +1283,7 @@ export class CellContext {
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
-				this[kSetCell](row, col, " ", style);
+				setCell(this, row, col, " ", style);
 			}
 		}
 	}
@@ -1319,7 +1310,7 @@ export class CellContext {
 				if (currentX + 1 > this.cols) {
 					break;
 				}
-				this[kSetCell](y, currentX, text[i], style);
+				setCell(this, y, currentX, text[i], style);
 				currentX++;
 			}
 			return;
@@ -1341,7 +1332,7 @@ export class CellContext {
 				break;
 			}
 
-			this[kSetCell](y, currentX, char, style);
+			setCell(this, y, currentX, char, style);
 			currentX += width;
 		}
 
@@ -1372,7 +1363,7 @@ export class CellContext {
 			if (col < 0 || col >= this.cols) {
 				continue;
 			}
-			if (this.clipRect && !this[kInClip](y, col)) {
+			if (this.clipRect && !inClip(this, y, col)) {
 				continue;
 			}
 			const index = rowStart + col;
@@ -1438,7 +1429,8 @@ export class CellContext {
 				if (col === b && capB === "round") {
 					toLeft |= rounded;
 				}
-				this[kSetBorderCell](
+				setBorderCell(
+					this,
 					col,
 					y1,
 					(toRight << BorderShift.Right) | (toLeft << BorderShift.Left),
@@ -1459,7 +1451,8 @@ export class CellContext {
 				if (row === b && capB === "round") {
 					up |= rounded;
 				}
-				this[kSetBorderCell](
+				setBorderCell(
+					this,
 					x1,
 					row,
 					(down << BorderShift.Bottom) | (up << BorderShift.Top),
@@ -1525,91 +1518,102 @@ export class CellContext {
 			});
 		}
 	}
+}
 
-	[kInClip](row: number, col: number): boolean {
-		if (!this.clipRect) {
-			return true;
-		}
-		const {left, top, right, bottom} = this.clipRect;
-		return col >= left && col < right && row >= top && row < bottom;
+function inClip(
+	self: CellContext,
+	row: number,
+	col: number,
+): boolean {
+	if (!self.clipRect) {
+		return true;
+	}
+	const {left, top, right, bottom} = self.clipRect;
+	return col >= left && col < right && row >= top && row < bottom;
+}
+
+function setCell(
+	self: CellContext,
+	row: number,
+	col: number,
+	char: string,
+	style?: CellStyle,
+): void {
+	const terminalRow = row + self.viewportOffset;
+
+	if (
+		terminalRow < 0 ||
+		terminalRow >= self.rows ||
+		col < 0 ||
+		col >= self.cols
+	) {
+		return;
 	}
 
-	[kSetCell](row: number, col: number, char: string, style?: CellStyle): void {
-		const terminalRow = row + this.viewportOffset;
-
-		if (
-			terminalRow < 0 ||
-			terminalRow >= this.rows ||
-			col < 0 ||
-			col >= this.cols
-		) {
-			return;
-		}
-
-		if (this.paintBands) {
-			let inBand = false;
-			for (const [start, end] of this.paintBands) {
-				if (terminalRow >= start && terminalRow < end) {
-					inBand = true;
-					break;
-				}
+	if (self.paintBands) {
+		let inBand = false;
+		for (const [start, end] of self.paintBands) {
+			if (terminalRow >= start && terminalRow < end) {
+				inBand = true;
+				break;
 			}
-			if (!inBand) {
-				return;
-			}
 		}
-
-		if (this.clipRect && !this[kInClip](row, col)) {
+		if (!inBand) {
 			return;
 		}
-
-		const grid = this.grid;
-		const index = terminalRow * this.cols + col;
-
-		// A style that names no background of its own takes the one already in
-		// the cell: text painted over a filled box sits ON the fill rather than
-		// punching a default-colored hole through it.
-		let bgColor: number | undefined;
-		if (style && style.bg == null && grid.char[index] !== 0) {
-			bgColor = grid.bg[index];
-		}
-
-		grid.setCell(index, char, {style, background: bgColor});
 	}
 
-	[kSetBorderCell](
-		x: number,
-		y: number,
-		borderEncoding: number,
-		style?: CellStyle,
-	): void {
-		// Document row -> terminal row, exactly as kSetCell translates text.
-		// Without the offset, borders were only ever correct at scroll 0: a
-		// scrolled camera stamped off-screen top edges into the band's first
-		// row and lost bottom edges it had scrolled to.
-		const terminalY = y + this.viewportOffset;
-
-		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
-			return;
-		}
-		if (!this[kInClip](y, x)) {
-			return;
-		}
-
-		const grid = this.grid;
-		const index = terminalY * this.cols + x;
-
-		// Two boxes sharing a cell union their edges, so a shared wall lands on
-		// a tee or a cross rather than the later box's corner.
-		const existing = grid.border[index];
-		grid.setBorderCell(
-			index,
-			grid.char[index] !== 0 && existing > 0 ?
-					meetEdges(existing, borderEncoding) :
-				borderEncoding,
-			style,
-		);
+	if (self.clipRect && !inClip(self, row, col)) {
+		return;
 	}
+
+	const grid = self.grid;
+	const index = terminalRow * self.cols + col;
+
+	// A style that names no background of its own takes the one already in
+	// the cell: text painted over a filled box sits ON the fill rather than
+	// punching a default-colored hole through it.
+	let bgColor: number | undefined;
+	if (style && style.bg == null && grid.char[index] !== 0) {
+		bgColor = grid.bg[index];
+	}
+
+	grid.setCell(index, char, {style, background: bgColor});
+}
+
+function setBorderCell(
+	self: CellContext,
+	x: number,
+	y: number,
+	borderEncoding: number,
+	style?: CellStyle,
+): void {
+	// Document row -> terminal row, exactly as kSetCell translates text.
+	// Without the offset, borders were only ever correct at scroll 0: a
+	// scrolled camera stamped off-screen top edges into the band's first
+	// row and lost bottom edges it had scrolled to.
+	const terminalY = y + self.viewportOffset;
+
+	if (terminalY < 0 || terminalY >= self.rows || x < 0 || x >= self.cols) {
+		return;
+	}
+	if (!inClip(self, y, x)) {
+		return;
+	}
+
+	const grid = self.grid;
+	const index = terminalY * self.cols + x;
+
+	// Two boxes sharing a cell union their edges, so a shared wall lands on
+	// a tee or a cross rather than the later box's corner.
+	const existing = grid.border[index];
+	grid.setBorderCell(
+		index,
+		grid.char[index] !== 0 && existing > 0 ?
+				meetEdges(existing, borderEncoding) :
+			borderEncoding,
+		style,
+	);
 }
 
 const kRows = Symbol("rows");
@@ -1618,7 +1622,6 @@ const kColorDepth = Symbol("colorDepth");
 const kPrev = Symbol("prev");
 const kPrevContentHeight = Symbol("prevContentHeight");
 const kParkRow = Symbol("parkRow");
-const kLineLength = Symbol("lineLength");
 const kParkCol = Symbol("parkCol");
 const kSpare = Symbol("spare");
 const kNeedsScreenReset = Symbol("needsScreenReset");
@@ -1626,7 +1629,6 @@ const kResetAtRow = Symbol("resetAtRow");
 const kHasSavedCursor = Symbol("hasSavedCursor");
 const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
-const kTakeGrid = Symbol("takeGrid");
 const kEndFrame = Symbol("endFrame");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
@@ -1702,34 +1704,9 @@ export class Screen {
 		);
 		let wrapped = 0;
 		for (let row = 0; row < limit; row++) {
-			wrapped += Math.max(1, Math.ceil(this[kLineLength](row) / cols));
+			wrapped += Math.max(1, Math.ceil(lineLength(this, row) / cols));
 		}
 		return wrapped + Math.floor(this[kParkCol] / cols);
-	}
-
-	[kLineLength](row: number): number {
-		const grid = this[kPrev]!;
-		const rowStart = row * grid.cols;
-		for (let col = grid.cols - 1; col >= 0; col--) {
-			const index = rowStart + col;
-			if (grid.char[index] !== 0) {
-				return col + grid.widthAt(index);
-			}
-		}
-		return 0;
-	}
-
-	/**
-	 * A cleared grid of the given size, reusing a retired one when it fits.
-	 */
-	[kTakeGrid](rows: number, cols: number): CellGrid {
-		const spare = this[kSpare];
-		if (spare !== null && spare.rows === rows && spare.cols === cols) {
-			this[kSpare] = null;
-			spare.clear();
-			return spare;
-		}
-		return new CellGrid(rows, cols);
 	}
 
 	/**
@@ -1912,7 +1889,7 @@ export class Screen {
 		const overflowing = frameRows > this[kRows];
 
 		const cols = this[kCols];
-		const next = this[kTakeGrid](frameRows, cols);
+		const next = takeGrid(this, frameRows, cols);
 
 		// A camera move is a rigid transform the terminal performs itself:
 		// DECSTBM pins the margins to our region (a shell prompt above is
@@ -2371,4 +2348,36 @@ export class Screen {
 		this[kEndFrame] = null;
 		return end();
 	}
+}
+
+function lineLength(
+	self: Screen,
+	row: number,
+): number {
+	const grid = self[kPrev]!;
+	const rowStart = row * grid.cols;
+	for (let col = grid.cols - 1; col >= 0; col--) {
+		const index = rowStart + col;
+		if (grid.char[index] !== 0) {
+			return col + grid.widthAt(index);
+		}
+	}
+	return 0;
+}
+
+/**
+ * A cleared grid of the given size, reusing a retired one when it fits.
+ */
+function takeGrid(
+	self: Screen,
+	rows: number,
+	cols: number,
+): CellGrid {
+	const spare = self[kSpare];
+	if (spare !== null && spare.rows === rows && spare.cols === cols) {
+		self[kSpare] = null;
+		spare.clear();
+		return spare;
+	}
+	return new CellGrid(rows, cols);
 }

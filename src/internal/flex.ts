@@ -558,9 +558,6 @@ function breaksStacking(node: Node): boolean {
 	);
 }
 
-const kMarkDirtyUpward = Symbol("markDirtyUpward");
-const kSetEdges = Symbol("setEdges");
-
 export class Node {
 	style: Style;
 	layout: LayoutResult;
@@ -635,7 +632,7 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		this[kMarkDirtyUpward]();
+		markDirtyUpward(this);
 	}
 
 	removeChild(child: Node): void {
@@ -643,7 +640,7 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			this[kMarkDirtyUpward]();
+			markDirtyUpward(this);
 		}
 	}
 
@@ -677,7 +674,7 @@ export class Node {
 
 	markDirty(): void {
 		this.dirty = true;
-		this[kMarkDirtyUpward]();
+		markDirtyUpward(this);
 	}
 
 	/**
@@ -706,12 +703,6 @@ export class Node {
 		this.extentTop = extentTop;
 		this.extentBottom = extentBottom;
 		this.unstackedChildCount = unstacked;
-	}
-
-	[kMarkDirtyUpward](): void {
-		for (let node: Node | null = this; node; node = node.parent) {
-			node.dirty = true;
-		}
 	}
 
 	setMeasureFunc(fn: MeasureFunction | null): void {
@@ -903,27 +894,27 @@ export class Node {
 	}
 
 	setMargin(edge: Edge, v: number | undefined): void {
-		this[kSetEdges](this.style.margin, edge, toValue(v));
+		setEdges(this, this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setMarginPercent(edge: Edge, v: number): void {
-		this[kSetEdges](this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this, this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setMarginAuto(edge: Edge): void {
-		this[kSetEdges](this.style.margin, edge, AUTO_VALUE);
+		setEdges(this, this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
 	setPadding(edge: Edge, v: number | undefined): void {
-		this[kSetEdges](this.style.padding, edge, toValue(v));
+		setEdges(this, this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPaddingPercent(edge: Edge, v: number): void {
-		this[kSetEdges](this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this, this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
@@ -936,24 +927,18 @@ export class Node {
 	}
 
 	setPosition(edge: Edge, v: number | undefined): void {
-		this[kSetEdges](this.style.position, edge, toValue(v));
+		setEdges(this, this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPositionPercent(edge: Edge, v: number): void {
-		this[kSetEdges](this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this, this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setPositionAuto(edge: Edge): void {
-		this[kSetEdges](this.style.position, edge, AUTO_VALUE);
+		setEdges(this, this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
-	}
-
-	[kSetEdges](target: Value[], edge: Edge, value: Value): void {
-		for (const index of expandEdge(edge)) {
-			target[index] = value;
-		}
 	}
 
 	// -- computed getters ---------------------------------------------------
@@ -1035,6 +1020,25 @@ export class Node {
 		roundToGrid(this, 0, 0);
 		this.computePaintExtents(0);
 		this.dirty = false;
+	}
+}
+
+function markDirtyUpward(
+	self: Node,
+): void {
+	for (let node: Node | null = self; node; node = node.parent) {
+		node.dirty = true;
+	}
+}
+
+function setEdges(
+	self: Node,
+	target: Value[],
+	edge: Edge,
+	value: Value,
+): void {
+	for (const index of expandEdge(edge)) {
+		target[index] = value;
 	}
 }
 
