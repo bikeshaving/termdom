@@ -160,54 +160,46 @@ const NAMED_COLORS: Record<string, number> = {
 	yellowgreen: 0x9acd32,
 };
 
-/**
- * Parse a CSS color to 24-bit RGB (0xRRGGBB): named colors, #hex, rgb()/rgba(),
- * and hsl()/hsla(). Returns null for anything unrecognized -- a system color
- * among them, which stays a name until a painter reads it.
- */
-export function parseCSSColor(color: string): number | null {
-	color = color.trim().toLowerCase();
+/** A parsed CSS color: packed 24-bit RGB, and its alpha in [0, 1]. */
+function parseColor(text: string): {color: number; alpha: number} | null {
+	const color = text.trim().toLowerCase();
 
-	// Named colors
 	if (color in NAMED_COLORS) {
-		return NAMED_COLORS[color];
+		return {color: NAMED_COLORS[color], alpha: 1};
 	}
 
-	// Hex colors - return 24-bit RGB
 	if (color.startsWith("#")) {
 		const hex = color.slice(1);
-		let r: number, g: number, b: number;
-		if (hex.length === 3 || hex.length === 4) {
-			r = parseInt(hex[0] + hex[0], 16);
-			g = parseInt(hex[1] + hex[1], 16);
-			b = parseInt(hex[2] + hex[2], 16);
-		} else if (hex.length === 6 || hex.length === 8) {
-			r = parseInt(hex.slice(0, 2), 16);
-			g = parseInt(hex.slice(2, 4), 16);
-			b = parseInt(hex.slice(4, 6), 16);
-		} else {
+		if (!/^[0-9a-f]+$/.test(hex)) {
 			return null;
 		}
-		if (isNaN(r) || isNaN(g) || isNaN(b)) {
+		const short = hex.length === 3 || hex.length === 4;
+		if (!short && hex.length !== 6 && hex.length !== 8) {
 			return null;
 		}
-		return (r << 16) | (g << 8) | b;
+		const size = short ? 1 : 2;
+		const channel = (index: number): number => {
+			const part = hex.slice(index * size, (index + 1) * size);
+			return parseInt(short ? part + part : part, 16);
+		};
+		const packed = (channel(0) << 16) | (channel(1) << 8) | channel(2);
+		const alpha =
+			hex.length === 4 || hex.length === 8 ? channel(3) / 255 : 1;
+		return {color: packed, alpha};
 	}
 
-	// rgb()/rgba()
 	const rgbMatch = color.match(
-		/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/,
+		/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+%?))?\s*\)/,
 	);
 	if (rgbMatch) {
 		const r = parseInt(rgbMatch[1], 10);
 		const g = parseInt(rgbMatch[2], 10);
 		const b = parseInt(rgbMatch[3], 10);
-		return (r << 16) | (g << 8) | b;
+		return {color: (r << 16) | (g << 8) | b, alpha: parseAlpha(rgbMatch[4])};
 	}
 
-	// hsl()/hsla()
 	const hslMatch = color.match(
-		/hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*[\d.]+%?)?\s*\)/,
+		/hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*([\d.]+%?))?\s*\)/,
 	);
 	if (hslMatch) {
 		const h = ((parseFloat(hslMatch[1]) % 360) + 360) % 360;
@@ -229,16 +221,36 @@ export function parseCSSColor(color: string): number | null {
 			[r1, g1, b1] = [0, x, c];
 		} else if (h < 300) {
 			[r1, g1, b1] = [x, 0, c];
-		} else {
+		}	else {
 			[r1, g1, b1] = [c, 0, x];
 		}
 		const r = Math.round((r1 + m) * 255);
 		const g = Math.round((g1 + m) * 255);
 		const b = Math.round((b1 + m) * 255);
-		return (r << 16) | (g << 8) | b;
+		return {color: (r << 16) | (g << 8) | b, alpha: parseAlpha(hslMatch[4])};
 	}
 
 	return null;
+}
+
+/** An alpha component: a number or a percentage, absent meaning opaque. */
+function parseAlpha(raw: string | undefined): number {
+	if (raw === undefined) {
+		return 1;
+	}
+	const value = raw.endsWith("%") ?
+		Number(raw.slice(0, -1)) / 100 :
+			Number(raw);
+	return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+/**
+ * Parse a CSS color to 24-bit RGB (0xRRGGBB): named colors, #hex, rgb()/rgba(),
+ * and hsl()/hsla(). Returns null for anything unrecognized -- a system color
+ * among them, which stays a name until a painter reads it.
+ */
+export function parseCSSColor(color: string): number | null {
+	return parseColor(color)?.color ?? null;
 }
 
 /**
@@ -250,17 +262,34 @@ export function isTransparentColor(color: string): boolean {
 	if (!text || text === "transparent" || text === "none") {
 		return true;
 	}
-	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/.exec(text);
-	if (!functional) {
-		return false;
+	return parseColor(text)?.alpha === 0;
+}
+
+/**
+ * A color's computed spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
+ * is not opaque. Null for a value that names no color -- `currentcolor`
+ * before it resolves, a keyword the color table does not carry.
+ */
+export function serializeCSSColor(value: string): string | null {
+	const text = value.trim();
+	if (!text || text.toLowerCase() === "currentcolor") {
+		return null;
 	}
-	const parts = functional[1].split(/\s*[,/]\s*/);
-	if (parts.length !== 4) {
-		return false;
+	if (/^transparent$/i.test(text)) {
+		return "rgba(0, 0, 0, 0)";
 	}
-	const raw = parts[3].trim();
-	const alpha = raw.endsWith("%") ? Number(raw.slice(0, -1)) : Number(raw);
-	return alpha === 0;
+	const parsed = parseColor(text);
+	if (parsed === null) {
+		return null;
+	}
+	const red = (parsed.color >> 16) & 0xff;
+	const green = (parsed.color >> 8) & 0xff;
+	const blue = parsed.color & 0xff;
+	if (parsed.alpha < 1) {
+		const alpha = Math.round(parsed.alpha * 1000) / 1000;
+		return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+	}
+	return `rgb(${red}, ${green}, ${blue})`;
 }
 
 /**
@@ -272,6 +301,5 @@ export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 		return 0;
 	}
-	const colorNumber = parseCSSColor(cssColor);
-	return typeof colorNumber === "number" ? colorNumber : 0;
+	return parseColor(cssColor)?.color ?? 0;
 }

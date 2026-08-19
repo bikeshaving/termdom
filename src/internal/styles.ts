@@ -22,7 +22,7 @@ import {
 	styleElementCount,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
-import {parseCSSColor} from "./color.js";
+import {serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
 import {
@@ -559,32 +559,6 @@ const VERBATIM_PROPERTIES = new Set([
 const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
 /**
- * `#rgb`/`#rrggbb` (and their alpha forms) in the rgb()/rgba() serialization
- * a computed color carries. Null for anything that is not a valid hex color.
- */
-function hexColorToRGB(hex: string): string | null {
-	const digits = hex.slice(1);
-	if (!/^[0-9a-fA-F]+$/.test(digits)) {
-		return null;
-	}
-	const short = digits.length === 3 || digits.length === 4;
-	if (!short && digits.length !== 6 && digits.length !== 8) {
-		return null;
-	}
-	const size = short ? 1 : 2;
-	const channel = (index: number): number => {
-		const part = digits.substr(index * size, size);
-		return parseInt(short ? part + part : part, 16);
-	};
-	const rgb = `${channel(0)}, ${channel(1)}, ${channel(2)}`;
-	if (digits.length === 4 || digits.length === 8) {
-		const alpha = Math.round((channel(3) / 255) * 1000) / 1000;
-		return `rgba(${rgb}, ${alpha})`;
-	}
-	return `rgb(${rgb})`;
-}
-
-/**
  * A numeric component in its computed spelling: the sign and any trailing
  * zeros dropped, the unit case-folded, and a unitless zero given the `px` a
  * length always computes to.
@@ -633,51 +607,13 @@ function normalizeValue(property: string, declared: string): string {
 		return value;
 	}
 	if (COLOR_PROPERTIES.has(property)) {
-		return serializeColor(value) ?? value;
+		return serializeCSSColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
 		const lengths = value.split(/\s+/).map(computedNumber).join(" ");
 		return RADIUS_LONGHANDS.has(property) ? collapseRadius(lengths) : lengths;
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
-}
-
-/**
- * A color's resolved spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
- * is not opaque. Null for a value that names no color -- `currentcolor` before
- * it resolves, a keyword this engine's color table does not carry.
- */
-function serializeColor(value: string): string | null {
-	const text = value.trim();
-	if (!text || text.toLowerCase() === "currentcolor") {
-		return null;
-	}
-	if (/^transparent$/i.test(text)) {
-		return "rgba(0, 0, 0, 0)";
-	}
-	if (text.startsWith("#")) {
-		return hexColorToRGB(text);
-	}
-	const packed = parseCSSColor(text);
-	if (packed === null) {
-		return null;
-	}
-	const red = (packed >> 16) & 0xff;
-	const green = (packed >> 8) & 0xff;
-	const blue = packed & 0xff;
-	// An alpha component survives the 24-bit packing as its own text.
-	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/i.exec(text);
-	const parts = functional ? functional[1].split(/\s*[,/]\s*/) : [];
-	if (parts.length === 4) {
-		const raw = parts[3].trim();
-		const opacity = raw.endsWith("%") ?
-			Number(raw.slice(0, -1)) / 100 :
-				Number(raw);
-		if (Number.isFinite(opacity) && opacity < 1) {
-			return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
-		}
-	}
-	return `rgb(${red}, ${green}, ${blue})`;
 }
 
 /**
