@@ -78,7 +78,7 @@ export const scenarios: Scenario[] = [
 		// reset code in the SGR delta, which the sweep above (all-on rows
 		// separated by a row reset) never reaches.
 		name: "SGR delta across adjacent cells",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(4, 40, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("AB", 0, 0, {bold: true, underline: true, fg: 0xff0000});
@@ -100,7 +100,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "wide characters and combining marks",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(8, 30, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("CJK 日本語 end", 0, 0);
@@ -121,7 +121,7 @@ export const scenarios: Scenario[] = [
 		// second frame that overwrites the pair with narrow cells has to fill
 		// that hole.
 		name: "wide-char boundary rewrite",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(4, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("ab日本cd", 0, 0);
@@ -142,7 +142,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "borders, merged and styled",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(9, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				drawBox(ctx, 0, 0, 6, 3, {
@@ -190,7 +190,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "drawRect backgrounds, default and inverse",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(6, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawRect(0, 0, 20, 2, 0x202020);
@@ -208,7 +208,7 @@ export const scenarios: Scenario[] = [
 		// mark occupies no columns, so the grapheme after it lands in the same
 		// cell.
 		name: "inherited background and zero-width graphemes",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawRect(0, 0, 12, 1, 0x004000);
@@ -226,7 +226,7 @@ export const scenarios: Scenario[] = [
 		// An axis the element does not clip is +-Infinity, so only the other
 		// axis bounds the write.
 		name: "clip rect with unbounded axes",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(6, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.clipRect = {left: 4, top: -Infinity, right: 12, bottom: Infinity};
@@ -243,7 +243,7 @@ export const scenarios: Scenario[] = [
 		// The resize re-anchor measures the previous frame through the cell
 		// widths it recorded, so the number is a property of the buffer.
 		name: "wrapped rows above the cursor park",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(4, 20, "rgb");
 			renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("a short line", 0, 0);
@@ -270,7 +270,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "drawDecoration outline over existing cells",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(5, 20, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("boxed", 0, 1, {fg: 0xff0000, bold: true});
@@ -282,7 +282,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "incremental diff across frames",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(6, 24, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				for (let row = 0; row < 6; row++) {
@@ -321,7 +321,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "scroll transform frames",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(10, 24, "rgb");
 			const paint =
 				(top: number) =>
@@ -376,7 +376,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "overflowing growth frame then reset",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(5, 20, "rgb");
 			let out = renderFrame(
 				renderer,
@@ -402,7 +402,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "caret parking",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(6, 20, "rgb");
 			let out = renderFrame(renderer, {offset: 0}, (ctx) => {
 				ctx.drawText("value", 0, 0);
@@ -423,7 +423,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "clipRect and viewport offset",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(8, 24, "rgb");
 			return renderFrame(renderer, {offset: 2}, (ctx) => {
 				ctx.drawText("visible row", 0, 0);
@@ -444,7 +444,7 @@ export const scenarios: Scenario[] = [
 	},
 	{
 		name: "static render to a pipe",
-		run: () => {
+		run: (): string => {
 			const renderer = new Screen(6, 30, "rgb");
 			let out = renderStatic(renderer, {rows: 5}, (ctx) => {
 				ctx.drawText("plain", 0, 0);

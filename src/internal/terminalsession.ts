@@ -265,8 +265,11 @@ export function transportFromProcess(
 			proc.stdin.removeListener?.("data", dataListener);
 			dataListener = null;
 		}
-		proc.stdin?.setRawMode?.(false);
-		proc.stdin?.pause();
+		const stdin = proc.stdin;
+		if (stdin !== undefined) {
+			stdin.setRawMode?.(false);
+			stdin.pause();
+		}
 		for (const [signal, listener] of signalListeners) {
 			proc.removeListener?.(signal, listener);
 		}

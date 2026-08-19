@@ -947,8 +947,12 @@ export class Painter {
 		if (!root) {
 			return;
 		}
-		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
-		const mark = (glyphSpan?.firstChild as Text | null)?.data;
+		const glyphSpan = root.querySelector('[part="glyph"]');
+		if (glyphSpan === null) {
+			return;
+		}
+		const glyphText = glyphSpan.firstChild as Text | null;
+		const mark = glyphText === null ? undefined : glyphText.data;
 		if (!mark) {
 			return;
 		}

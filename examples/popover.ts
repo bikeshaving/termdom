@@ -78,7 +78,7 @@ const saved = document.getElementById("saved")!;
 // The menus open, close, stack and dismiss on their own. Actions are the
 // one thing left to write.
 document.addEventListener("click", (event) => {
-	const item = (event.target as Element | null)?.closest?.("[data-action]");
+	const item = (event.target as Element | null)?.closest("[data-action]");
 	if (!item) {
 		return;
 	}

@@ -388,7 +388,8 @@ export class FullscreenManager {
 	[kGetWindow](element?: Element): any {
 		// Get window from the element's document, or from the stack
 		const targetElement = element || this[kFullscreenStack][0];
-		return targetElement?.ownerDocument?.defaultView;
+		const document = targetElement ? targetElement.ownerDocument : null;
+		return document ? document.defaultView : undefined;
 	}
 
 	dispose(): void {
