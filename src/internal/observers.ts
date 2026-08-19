@@ -6,13 +6,6 @@
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
 
-const kManager = Symbol("manager");
-const kCallback = Symbol("callback");
-const kRoot = Symbol("root");
-const kThresholdIndex = Symbol("thresholdIndex");
-const kLayoutEngine = Symbol("layoutEngine");
-const kObservers = Symbol("observers");
-
 /**
  * An element's content box: its size, plus the offset of its top-left corner
  * INSIDE the border box -- the padding and border that precede it.
@@ -35,11 +28,7 @@ interface ContentBox {
  * The manager's way in. Not #private, because the manager has to call it; not a
  * named method, because author code must never see it.
  */
-const kCheck = Symbol("check");
 /** Subclass hooks and shared state, symbol-keyed for the same reason. */
-const kTargets = Symbol("targets");
-const kMeasure = Symbol("measure");
-const kDeliver = Symbol("deliver");
 
 /**
  * ResizeObserver's contentRect: an element's content box, or null when it
@@ -66,6 +55,12 @@ function contentBoxOf(
 		left: content.x - border.x,
 	};
 }
+
+const kManager = Symbol("manager");
+const kCheck = Symbol("check");
+const kTargets = Symbol("targets");
+const kMeasure = Symbol("measure");
+const kDeliver = Symbol("deliver");
 
 /**
  * The half of an observer that is identical between the two: which elements are
@@ -201,6 +196,8 @@ const RESIZE_BOXES = new Set([
 interface ResizeObserverOptions {
 	box?: string;
 }
+
+const kCallback = Symbol("callback");
 
 export class ResizeObserver extends LayoutObserver<
 	ResizeSize,
@@ -391,6 +388,9 @@ function applyRootMargin(
 	);
 }
 
+const kRoot = Symbol("root");
+const kThresholdIndex = Symbol("thresholdIndex");
+
 export class IntersectionObserver extends LayoutObserver<
 	number,
 	IntersectionObserverEntry
@@ -488,6 +488,9 @@ export class IntersectionObserver extends LayoutObserver<
 		this[kCallback](entries, this);
 	}
 }
+
+const kLayoutEngine = Symbol("layoutEngine");
+const kObservers = Symbol("observers");
 
 // ---------------------------------------------------------------------------
 // Manager

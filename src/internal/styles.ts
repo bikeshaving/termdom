@@ -42,159 +42,6 @@ import {
 	getInitialStyle,
 } from "./useragent.js";
 
-const kElement = Symbol("element");
-const kParentRule = Symbol("parentRule");
-const kOnChange = Symbol("onChange");
-const kDescriptors = Symbol("descriptors");
-const kKeyframe = Symbol("keyframe");
-const kAttributeText = Symbol("attributeText");
-const kDeclarations = Symbol("declarations");
-const kPseudoDeclarations = Symbol("pseudo declarations");
-const kByName = Symbol("byName");
-const kApply = Symbol("apply");
-const kInvalidate = Symbol("invalidate");
-const kShorthandValue = Symbol("shorthandValue");
-const kFind = Symbol("find");
-const kSerialize = Symbol("serialize");
-const kBlock = Symbol("block");
-const kIndexed = Symbol("indexed");
-const kRemove = Symbol("remove");
-const kStore = Symbol("store");
-const kSync = Symbol("sync");
-const kSupports = Symbol("supports");
-const kFlush = Symbol("flush");
-const kParse = Symbol("parse");
-const kMedia = Symbol("media");
-const kRuleList = Symbol("ruleList");
-const kRules = Symbol("rules");
-const kSelectors = Symbol("selectors");
-const kStyle = Symbol("style");
-const kSelectorText = Symbol("selectorText");
-const kName = Symbol("name");
-const kKeyText = Symbol("keyText");
-const kConditionText = Symbol("conditionText");
-const kPrelude = Symbol("prelude");
-const kNames = Symbol("names");
-const kPrefix = Symbol("prefix");
-const kNamespaceURI = Symbol("namespaceURI");
-const kHref = Symbol("href");
-const kLayerName = Symbol("layerName");
-const kSupportsText = Symbol("supportsText");
-const kFontFamily = Symbol("fontFamily");
-const kBlocks = Symbol("blocks");
-const kSheets = Symbol("sheets");
-const kOwnerNode = Symbol("ownerNode");
-const kConstructed = Symbol("constructed");
-const kTitle = Symbol("title");
-const kDisabled = Symbol("disabled");
-const kChanged = Symbol("changed");
-const kText = Symbol("text");
-const kOwnerRule = Symbol("ownerRule");
-const kCheckRuleOrder = Symbol("checkRuleOrder");
-const kCSSRules = Symbol("cssRules");
-const kManager = Symbol("manager");
-const kEpoch = Symbol("epoch");
-const kSeenEpoch = Symbol("seenEpoch");
-const kUsed = Symbol("used");
-const kUsedEpoch = Symbol("usedEpoch");
-const kMeasure = Symbol("measure");
-const kResolvePropertyValue = Symbol("resolvePropertyValue");
-const kLengthContext = Symbol("lengthContext");
-const kRootFontSize = Symbol("rootFontSize");
-const kStale = Symbol("stale");
-const kRefresh = Symbol("refresh");
-const kResolved = Symbol("resolved");
-const kShorthand = Symbol("shorthand");
-const kComputed = Symbol("computed");
-const kPhysicalOf = Symbol("physicalOf");
-const kUsedInset = Symbol("usedInset");
-const kEdge = Symbol("edge");
-const kAutoMargin = Symbol("autoMargin");
-const kContainingWidth = Symbol("containingWidth");
-const kContainingBlockBox = Symbol("containingBlockBox");
-const kViewportBox = Symbol("viewportBox");
-const kBoxOf = Symbol("boxOf");
-const kCustom = Symbol("custom");
-const kResolveCustomProperty = Symbol("resolveCustomProperty");
-const kSubstituteVar = Symbol("substituteVar");
-const kResolvePropertyValueRaw = Symbol("resolvePropertyValueRaw");
-const kResolveFromParent = Symbol("resolveFromParent");
-const kInlineDeclarations = Symbol("inlineDeclarations");
-const kUsedValue = Symbol("usedValue");
-const kResolvedMinSize = Symbol("resolvedMinSize");
-const kCustomNames = Symbol("customNames");
-const kPseudoElement = Symbol("pseudoElement");
-const kNodeResolved = Symbol("nodeResolved");
-const kNodeStyle = Symbol("nodeStyle");
-const kWindow = Symbol("window");
-const kLayoutEngine = Symbol("layoutEngine");
-const kDocument = Symbol("document");
-const kGetComputedStyle = Symbol("getComputedStyle");
-const kSetupInvalidationHooks = Symbol("setupInvalidationHooks");
-const kStyleEpoch = Symbol("styleEpoch");
-const kStylesheetsDirty = Symbol("stylesheetsDirty");
-const kStyleSheetCount = Symbol("styleSheetCount");
-const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
-const kParseStylesheets = Symbol("parseStylesheets");
-const kGetMatchingRules = Symbol("getMatchingRules");
-const kLayoutFlush = Symbol("layoutFlush");
-const kFlushing = Symbol("flushing");
-const kUsedGeneration = Symbol("usedGeneration");
-const kFlushedEpoch = Symbol("flushedEpoch");
-const kShadowRoots = Symbol("shadowRoots");
-const kInvalidateEnclosingList = Symbol("invalidateEnclosingList");
-const kInvalidateElementCaches = Symbol("invalidateElementCaches");
-const kInvalidateSubtree = Symbol("invalidateSubtree");
-const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
-const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
-const kStyleSheetList = Symbol("styleSheetList");
-const kPendingStyleDamage = Symbol("pendingStyleDamage");
-const kFocusVisibleActive = Symbol("focusVisibleActive");
-const kComputedStyleCache = Symbol("computedStyleCache");
-const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
-const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
-const kCounterScopes = Symbol("counterScopes");
-const kComputePseudoElementStyle = Symbol("computePseudoElementStyle");
-const kParsedRules = Symbol("parsedRules");
-const kReachingClasses = Symbol("reachingClasses");
-const kReachingIds = Symbol("reachingIds");
-const kReachingAttributes = Symbol("reachingAttributes");
-const kReachingStates = Symbol("reachingStates");
-const kPseudoRulesByType = Symbol("pseudoRulesByType");
-const kPseudoSubjectTags = Symbol("pseudoSubjectTags");
-const kCounterRulesExist = Symbol("counterRulesExist");
-const kListItemRulesExist = Symbol("listItemRulesExist");
-const kScopedRulesExist = Symbol("scopedRulesExist");
-const kLayerPaths = Symbol("layerPaths");
-const kAnonymousLayers = Symbol("anonymousLayers");
-const kParseStyleSheet = Symbol("parseStyleSheet");
-const kRankLayers = Symbol("rankLayers");
-const kUnlayeredRank = Symbol("unlayeredRank");
-const kAttachPseudoElements = Symbol("attachPseudoElements");
-const kParseStyleRule = Symbol("parseStyleRule");
-const kDeclareLayer = Symbol("declareLayer");
-const kMediaQueryPartMatches = Symbol("mediaQueryPartMatches");
-const kMediaFeatureMatches = Symbol("mediaFeatureMatches");
-const kParseSelector = Symbol("parseSelector");
-const kIndexReachingKeys = Symbol("indexReachingKeys");
-const kPartPseudoFor = Symbol("partPseudoFor");
-const kRuleMatches = Symbol("ruleMatches");
-const kScopeProximity = Symbol("scopeProximity");
-const kScopingRoot = Symbol("scopingRoot");
-const kMatchesRule = Symbol("matchesRule");
-const kAttachPseudoElementToElementForType = Symbol(
-	"attachPseudoElementToElementForType",
-);
-const kPseudoSubjects = Symbol("pseudoSubjects");
-const kPseudoRuleCouldMatch = Symbol("pseudoRuleCouldMatch");
-const kRemovePseudoElement = Symbol("removePseudoElement");
-const kPseudoContentFor = Symbol("pseudoContentFor");
-const kParseCounterReset = Symbol("parseCounterReset");
-const kParseCounterIncrement = Symbol("parseCounterIncrement");
-const kIncrementCounter = Symbol("incrementCounter");
-const kGetListItemCounterValue = Symbol("getListItemCounterValue");
-const kGetCounterValueFromScope = Symbol("getCounterValueFromScope");
-
 /**
  * Helper to get computed style property value for an element.
  */
@@ -2093,7 +1940,27 @@ function camelCaseProperty(property: string, lowercaseFirst = false): string {
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
 /** Marks a prototype whose `style` accessor is already the engine's. */
-const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
+
+const kElement = Symbol("element");
+const kParentRule = Symbol("parentRule");
+const kOnChange = Symbol("onChange");
+const kDescriptors = Symbol("descriptors");
+const kKeyframe = Symbol("keyframe");
+const kAttributeText = Symbol("attributeText");
+const kDeclarations = Symbol("declarations");
+const kByName = Symbol("byName");
+const kApply = Symbol("apply");
+const kInvalidate = Symbol("invalidate");
+const kShorthandValue = Symbol("shorthandValue");
+const kFind = Symbol("find");
+const kSerialize = Symbol("serialize");
+const kBlock = Symbol("block");
+const kIndexed = Symbol("indexed");
+const kRemove = Symbol("remove");
+const kStore = Symbol("store");
+const kSync = Symbol("sync");
+const kSupports = Symbol("supports");
+const kFlush = Symbol("flush");
 
 /**
  * A CSS declaration block: what `element.style`, a style rule's `style`, and
@@ -2667,6 +2534,8 @@ function installInvalidationHooks(window: EngineWindow): void {
 	};
 }
 
+const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
+
 /**
  * Put this engine's CSSOM behind `element.style`.
  *
@@ -2920,6 +2789,9 @@ function splitMediaQueryList(text: string): string[] {
 	return queries;
 }
 
+const kParse = Symbol("parse");
+const kMedia = Symbol("media");
+
 export class MediaList {
 	/**
 	 * The queries, in their canonical spelling. Mutated in place: the indexed
@@ -3078,6 +2950,9 @@ function notifyRule(rule: CSSRule): void {
 	sheetChanged(rule.parentStyleSheet);
 }
 
+const kRuleList = Symbol("ruleList");
+const kRules = Symbol("rules");
+
 /** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
 export abstract class CSSGroupingRule extends CSSRule {
 	declare [kRules]: CSSRule[];
@@ -3164,6 +3039,10 @@ function serializeGroupRules(group: CSSGroupingRule): string {
 export abstract class CSSConditionRule extends CSSGroupingRule {
 	abstract get conditionText(): string;
 }
+
+const kSelectors = Symbol("selectors");
+const kStyle = Symbol("style");
+const kSelectorText = Symbol("selectorText");
 
 /** A style rule: a selector and the declaration block it applies. */
 export class CSSStyleRule extends CSSGroupingRule {
@@ -3501,6 +3380,8 @@ function serializePageSelector(selector: string): string {
 	return name + pseudos.map((pseudo) => `:${pseudo.toLowerCase()}`).join("");
 }
 
+const kName = Symbol("name");
+
 /** `@counter-style`: a counter's name and the descriptors that define it. */
 export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
@@ -3628,6 +3509,8 @@ export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
  */
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
+const kKeyText = Symbol("keyText");
+
 export class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	declare [kKeyText]: string;
 
@@ -3722,6 +3605,8 @@ export class CSSMediaRule extends CSSConditionRule {
 	}
 }
 
+const kConditionText = Symbol("conditionText");
+
 /** A grouping rule whose condition is a text this engine keeps as authored. */
 abstract class CSSTextConditionRule extends CSSConditionRule {
 	declare [kConditionText]: string;
@@ -3781,6 +3666,8 @@ export class CSSContainerRule extends CSSTextConditionRule {
 			this.conditionText;
 	}
 }
+
+const kPrelude = Symbol("prelude");
 
 /** `@scope`: parsed, and its rules apply unscoped. */
 export class CSSScopeRule extends CSSGroupingRule {
@@ -3855,6 +3742,8 @@ export class CSSLayerBlockRule extends CSSGroupingRule {
 	}
 }
 
+const kNames = Symbol("names");
+
 /** `@layer a, b;`: the layer order, declared without a block. */
 export class CSSLayerStatementRule extends CSSRule {
 	declare [kNames]: string[];
@@ -3883,6 +3772,9 @@ export class CSSLayerStatementRule extends CSSRule {
 		return `@layer ${this[kNames].join(", ")};`;
 	}
 }
+
+const kPrefix = Symbol("prefix");
+const kNamespaceURI = Symbol("namespaceURI");
 
 /** `@namespace`: a prefix bound to a namespace URI. */
 export class CSSNamespaceRule extends CSSRule {
@@ -3916,6 +3808,10 @@ export class CSSNamespaceRule extends CSSRule {
 		return `@namespace ${prefix}url(${serializeCSSString(this[kNamespaceURI])});`;
 	}
 }
+
+const kHref = Symbol("href");
+const kLayerName = Symbol("layerName");
+const kSupportsText = Symbol("supportsText");
 
 /**
  * `@import`: parsed into an object with its href, layer, supports condition
@@ -3986,6 +3882,9 @@ export class CSSImportRule extends CSSRule {
 		return `${out};`;
 	}
 }
+
+const kFontFamily = Symbol("fontFamily");
+const kBlocks = Symbol("blocks");
 
 /** `@font-feature-values`: a font family and the feature blocks it names. */
 export class CSSFontFeatureValuesRule extends CSSRule {
@@ -4201,6 +4100,8 @@ function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 	return list;
 }
 
+const kSheets = Symbol("sheets");
+
 /** The stylesheets of a document or a shadow root. */
 export class StyleSheetList {
 	declare [kSheets]: readonly CSSStyleSheet[];
@@ -4221,6 +4122,15 @@ export class StyleSheetList {
 		return this[kSheets][Symbol.iterator]();
 	}
 }
+
+const kOwnerNode = Symbol("ownerNode");
+const kConstructed = Symbol("constructed");
+const kTitle = Symbol("title");
+const kDisabled = Symbol("disabled");
+const kChanged = Symbol("changed");
+const kText = Symbol("text");
+const kOwnerRule = Symbol("ownerRule");
+const kCheckRuleOrder = Symbol("checkRuleOrder");
 
 /**
  * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
@@ -5771,7 +5681,6 @@ const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
 /** Marks a prototype whose CSSOM accessors are already the engine's. */
-const kStyleSheetsInstalled = Symbol("termdom.styleSheets");
 
 function sheetFor(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
@@ -5944,6 +5853,8 @@ function observableAdopted(
 	adoptedProxies.set(target, proxy);
 	return proxy;
 }
+
+const kStyleSheetsInstalled = Symbol("termdom.styleSheets");
 
 /**
  * Put this engine's CSSOM behind the document's stylesheet surface: a style
@@ -6298,6 +6209,39 @@ const EMPTY_COMPUTED_STYLE: ComputedStyle = {
 
 /** The epoch a declaration with no manager behind it watches: one that never moves. */
 const NO_STYLE_EPOCH = {value: 0};
+
+const kCSSRules = Symbol("cssRules");
+const kManager = Symbol("manager");
+const kEpoch = Symbol("epoch");
+const kSeenEpoch = Symbol("seenEpoch");
+const kUsed = Symbol("used");
+const kUsedEpoch = Symbol("usedEpoch");
+const kMeasure = Symbol("measure");
+const kResolvePropertyValue = Symbol("resolvePropertyValue");
+const kLengthContext = Symbol("lengthContext");
+const kRootFontSize = Symbol("rootFontSize");
+const kStale = Symbol("stale");
+const kRefresh = Symbol("refresh");
+const kResolved = Symbol("resolved");
+const kShorthand = Symbol("shorthand");
+const kComputed = Symbol("computed");
+const kPhysicalOf = Symbol("physicalOf");
+const kUsedInset = Symbol("usedInset");
+const kEdge = Symbol("edge");
+const kAutoMargin = Symbol("autoMargin");
+const kContainingWidth = Symbol("containingWidth");
+const kContainingBlockBox = Symbol("containingBlockBox");
+const kViewportBox = Symbol("viewportBox");
+const kBoxOf = Symbol("boxOf");
+const kCustom = Symbol("custom");
+const kResolveCustomProperty = Symbol("resolveCustomProperty");
+const kSubstituteVar = Symbol("substituteVar");
+const kResolvePropertyValueRaw = Symbol("resolvePropertyValueRaw");
+const kResolveFromParent = Symbol("resolveFromParent");
+const kInlineDeclarations = Symbol("inlineDeclarations");
+const kUsedValue = Symbol("usedValue");
+const kResolvedMinSize = Symbol("resolvedMinSize");
+const kCustomNames = Symbol("customNames");
 
 export class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
@@ -7276,6 +7220,11 @@ function isBeingRendered(element: Element): boolean {
 	return true;
 }
 
+const kPseudoDeclarations = Symbol("pseudo declarations");
+const kPseudoElement = Symbol("pseudoElement");
+const kNodeResolved = Symbol("nodeResolved");
+const kNodeStyle = Symbol("nodeStyle");
+
 /**
  * A pseudo-element's computed style: a flat declaration set -- the matched
  * rules plus what it inherits from its originating element -- read through
@@ -7641,129 +7590,6 @@ for (const property of ACCESSOR_PROPERTIES) {
 		}
 	}
 }
-
-// ============================================================================
-// BORDER UTILITIES
-// ============================================================================
-
-export const BorderEdgeStyle = {
-	// Style values (bits 3-0)
-	None: 0b0000,
-	Dotted: 0b0001,
-	Dashed: 0b0010,
-	Solid: 0b0011,
-	Groove: 0b0100,
-	Ridge: 0b0101,
-	Inset: 0b0110,
-	Outset: 0b0111,
-	Double: 0b1000,
-	Hidden: 0b1111,
-
-	// Flags (bit 4+)
-	// Set on the edges that meet in a corner cell whose radius rounds it, and
-	// on nothing else: the runs between corners are the same line either way.
-	Rounded: 0b00010000,
-} as const;
-export type BorderEdgeStyle = number;
-
-interface BoxCharSet {
-	horizontal: string;
-	vertical: string;
-	topLeft: string;
-	topRight: string;
-	bottomLeft: string;
-	bottomRight: string;
-	topTee: string;
-	bottomTee: string;
-	leftTee: string;
-	rightTee: string;
-	cross: string;
-}
-
-export const BOX_DRAWING: Record<string, BoxCharSet> = {
-	dashed: {
-		horizontal: "╌",
-		vertical: "┆",
-		topLeft: "┌",
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	},
-	dotted: {
-		horizontal: "┄",
-		vertical: "┊",
-		topLeft: "┌",
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	},
-	double: {
-		horizontal: "═",
-		vertical: "║",
-		topLeft: "╔",
-		topRight: "╗",
-		bottomLeft: "╚",
-		bottomRight: "╝",
-		topTee: "╦",
-		bottomTee: "╩",
-		leftTee: "╣",
-		rightTee: "╠",
-		cross: "╬",
-	},
-	heavy: {
-		horizontal: "━",
-		vertical: "┃",
-		topLeft: "┏",
-		topRight: "┓",
-		bottomLeft: "┗",
-		bottomRight: "┛",
-		topTee: "┳",
-		bottomTee: "┻",
-		leftTee: "┫",
-		rightTee: "┣",
-		cross: "╋",
-	},
-	light: {
-		horizontal: "─",
-		vertical: "│",
-		topLeft: "┌",
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	},
-};
-
-/**
- * The rounded form of a corner glyph.
- *
- * Unicode draws rounded corners for the light single stroke alone, so this is
- * the whole of what a terminal can bend: the light-cornered character sets --
- * solid, dashed, dotted, ridge, inset, outset -- round, and double and heavy
- * corners stay square because no glyph exists that bends those strokes. That
- * is the deliberate adaptation: a radius on a double border is honored as far
- * as the terminal's characters allow, which is not at all.
- */
-export const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
-	"┌": "╭",
-	"┐": "╮",
-	"└": "╰",
-	"┘": "╯",
-};
 
 /** An element's border sides, in `drawBorder`'s own vocabulary. */
 export interface BorderSides {
@@ -8228,6 +8054,75 @@ interface CounterScope {
 	counters: CounterState;
 	parent?: CounterScope;
 }
+
+const kWindow = Symbol("window");
+const kLayoutEngine = Symbol("layoutEngine");
+const kDocument = Symbol("document");
+const kGetComputedStyle = Symbol("getComputedStyle");
+const kSetupInvalidationHooks = Symbol("setupInvalidationHooks");
+const kStyleEpoch = Symbol("styleEpoch");
+const kStylesheetsDirty = Symbol("stylesheetsDirty");
+const kStyleSheetCount = Symbol("styleSheetCount");
+const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
+const kParseStylesheets = Symbol("parseStylesheets");
+const kGetMatchingRules = Symbol("getMatchingRules");
+const kLayoutFlush = Symbol("layoutFlush");
+const kFlushing = Symbol("flushing");
+const kUsedGeneration = Symbol("usedGeneration");
+const kFlushedEpoch = Symbol("flushedEpoch");
+const kShadowRoots = Symbol("shadowRoots");
+const kInvalidateEnclosingList = Symbol("invalidateEnclosingList");
+const kInvalidateElementCaches = Symbol("invalidateElementCaches");
+const kInvalidateSubtree = Symbol("invalidateSubtree");
+const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
+const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
+const kStyleSheetList = Symbol("styleSheetList");
+const kPendingStyleDamage = Symbol("pendingStyleDamage");
+const kFocusVisibleActive = Symbol("focusVisibleActive");
+const kComputedStyleCache = Symbol("computedStyleCache");
+const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
+const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
+const kCounterScopes = Symbol("counterScopes");
+const kComputePseudoElementStyle = Symbol("computePseudoElementStyle");
+const kParsedRules = Symbol("parsedRules");
+const kReachingClasses = Symbol("reachingClasses");
+const kReachingIds = Symbol("reachingIds");
+const kReachingAttributes = Symbol("reachingAttributes");
+const kReachingStates = Symbol("reachingStates");
+const kPseudoRulesByType = Symbol("pseudoRulesByType");
+const kPseudoSubjectTags = Symbol("pseudoSubjectTags");
+const kCounterRulesExist = Symbol("counterRulesExist");
+const kListItemRulesExist = Symbol("listItemRulesExist");
+const kScopedRulesExist = Symbol("scopedRulesExist");
+const kLayerPaths = Symbol("layerPaths");
+const kAnonymousLayers = Symbol("anonymousLayers");
+const kParseStyleSheet = Symbol("parseStyleSheet");
+const kRankLayers = Symbol("rankLayers");
+const kUnlayeredRank = Symbol("unlayeredRank");
+const kAttachPseudoElements = Symbol("attachPseudoElements");
+const kParseStyleRule = Symbol("parseStyleRule");
+const kDeclareLayer = Symbol("declareLayer");
+const kMediaQueryPartMatches = Symbol("mediaQueryPartMatches");
+const kMediaFeatureMatches = Symbol("mediaFeatureMatches");
+const kParseSelector = Symbol("parseSelector");
+const kIndexReachingKeys = Symbol("indexReachingKeys");
+const kPartPseudoFor = Symbol("partPseudoFor");
+const kRuleMatches = Symbol("ruleMatches");
+const kScopeProximity = Symbol("scopeProximity");
+const kScopingRoot = Symbol("scopingRoot");
+const kMatchesRule = Symbol("matchesRule");
+const kAttachPseudoElementToElementForType = Symbol(
+	"attachPseudoElementToElementForType",
+);
+const kPseudoSubjects = Symbol("pseudoSubjects");
+const kPseudoRuleCouldMatch = Symbol("pseudoRuleCouldMatch");
+const kRemovePseudoElement = Symbol("removePseudoElement");
+const kPseudoContentFor = Symbol("pseudoContentFor");
+const kParseCounterReset = Symbol("parseCounterReset");
+const kParseCounterIncrement = Symbol("parseCounterIncrement");
+const kIncrementCounter = Symbol("incrementCounter");
+const kGetListItemCounterValue = Symbol("getListItemCounterValue");
+const kGetCounterValueFromScope = Symbol("getCounterValueFromScope");
 
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;

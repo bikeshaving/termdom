@@ -1,27 +1,123 @@
-import {BOX_DRAWING, BorderEdgeStyle, ROUNDED_CORNERS} from "./styles.js";
 import {stringWidth, widthIsUncertain} from "./text.js";
 
-const kSetCell = Symbol("setCell");
-const kInClip = Symbol("inClip");
-const kSetBorderCell = Symbol("setBorderCell");
-const kRows = Symbol("rows");
-const kCols = Symbol("cols");
-const kColorDepth = Symbol("colorDepth");
-const kPrev = Symbol("prev");
-const kPrevContentHeight = Symbol("prevContentHeight");
-const kParkRow = Symbol("parkRow");
-const kLineLength = Symbol("lineLength");
-const kParkCol = Symbol("parkCol");
-const kSpare = Symbol("spare");
-const kNeedsScreenReset = Symbol("needsScreenReset");
-const kResetAtRow = Symbol("resetAtRow");
-const kHasSavedCursor = Symbol("hasSavedCursor");
-const kForgetScreen = Symbol("forgetScreen");
-const kNeedsFullClear = Symbol("needsFullClear");
-const kRenderedLines = Symbol("renderedLines");
-const kTakeGrid = Symbol("takeGrid");
-const kDiff = Symbol("diff");
-const kLastCaretVisible = Symbol("lastCaretVisible");
+const BorderEdgeStyle = {
+	// Style values (bits 3-0)
+	None: 0b0000,
+	Dotted: 0b0001,
+	Dashed: 0b0010,
+	Solid: 0b0011,
+	Groove: 0b0100,
+	Ridge: 0b0101,
+	Inset: 0b0110,
+	Outset: 0b0111,
+	Double: 0b1000,
+	Hidden: 0b1111,
+
+	// Flags (bit 4+)
+	// Set on the edges that meet in a corner cell whose radius rounds it, and
+	// on nothing else: the runs between corners are the same line either way.
+	Rounded: 0b00010000,
+} as const;
+type BorderEdgeStyle = number;
+
+interface BoxCharSet {
+	horizontal: string;
+	vertical: string;
+	topLeft: string;
+	topRight: string;
+	bottomLeft: string;
+	bottomRight: string;
+	topTee: string;
+	bottomTee: string;
+	leftTee: string;
+	rightTee: string;
+	cross: string;
+}
+
+const BOX_DRAWING: Record<string, BoxCharSet> = {
+	dashed: {
+		horizontal: "╌",
+		vertical: "┆",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	dotted: {
+		horizontal: "┄",
+		vertical: "┊",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	double: {
+		horizontal: "═",
+		vertical: "║",
+		topLeft: "╔",
+		topRight: "╗",
+		bottomLeft: "╚",
+		bottomRight: "╝",
+		topTee: "╦",
+		bottomTee: "╩",
+		leftTee: "╣",
+		rightTee: "╠",
+		cross: "╬",
+	},
+	heavy: {
+		horizontal: "━",
+		vertical: "┃",
+		topLeft: "┏",
+		topRight: "┓",
+		bottomLeft: "┗",
+		bottomRight: "┛",
+		topTee: "┳",
+		bottomTee: "┻",
+		leftTee: "┫",
+		rightTee: "┣",
+		cross: "╋",
+	},
+	light: {
+		horizontal: "─",
+		vertical: "│",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+};
+
+/**
+ * The rounded form of a corner glyph.
+ *
+ * Unicode draws rounded corners for the light single stroke alone, so this is
+ * the whole of what a terminal can bend: the light-cornered character sets --
+ * solid, dashed, dotted, ridge, inset, outset -- round, and double and heavy
+ * corners stay square because no glyph exists that bends those strokes. That
+ * is the deliberate adaptation: a radius on a double border is honored as far
+ * as the terminal's characters allow, which is not at all.
+ */
+const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
+	"┌": "╭",
+	"┐": "╮",
+	"└": "╰",
+	"┘": "╯",
+};
 
 /** One shared grapheme segmenter -- construction is expensive. */
 const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
@@ -1118,6 +1214,10 @@ function generateANSI(
 	return output;
 }
 
+const kSetCell = Symbol("setCell");
+const kInClip = Symbol("inClip");
+const kSetBorderCell = Symbol("setBorderCell");
+
 export class DrawingContext {
 	grid: CellGrid;
 	rows: number;
@@ -1529,6 +1629,25 @@ export function drawBox(
 		});
 	}
 }
+
+const kRows = Symbol("rows");
+const kCols = Symbol("cols");
+const kColorDepth = Symbol("colorDepth");
+const kPrev = Symbol("prev");
+const kPrevContentHeight = Symbol("prevContentHeight");
+const kParkRow = Symbol("parkRow");
+const kLineLength = Symbol("lineLength");
+const kParkCol = Symbol("parkCol");
+const kSpare = Symbol("spare");
+const kNeedsScreenReset = Symbol("needsScreenReset");
+const kResetAtRow = Symbol("resetAtRow");
+const kHasSavedCursor = Symbol("hasSavedCursor");
+const kForgetScreen = Symbol("forgetScreen");
+const kNeedsFullClear = Symbol("needsFullClear");
+const kRenderedLines = Symbol("renderedLines");
+const kTakeGrid = Symbol("takeGrid");
+const kDiff = Symbol("diff");
+const kLastCaretVisible = Symbol("lastCaretVisible");
 
 export class Screen {
 	declare [kPrev]: CellGrid | null;

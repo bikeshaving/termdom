@@ -15,23 +15,6 @@ import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 import {drawBox} from "./ansi.js";
 import type {CellStyle, DrawingContext, LineStyle} from "./ansi.js";
 
-const kWindow = Symbol("window");
-const kDocument = Symbol("document");
-const kLayout = Symbol("layout");
-const kStyleManager = Symbol("styleManager");
-const kViewport = Symbol("viewport");
-const kTopLayer = Symbol("topLayer");
-const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
-const kRenderStackingContext = Symbol("renderStackingContext");
-const kRenderBackdrop = Symbol("renderBackdrop");
-const kRenderOutsideMarker = Symbol("renderOutsideMarker");
-const kRenderToggleGlyph = Symbol("renderToggleGlyph");
-const kRenderElement = Symbol("renderElement");
-const kRenderText = Symbol("renderText");
-const kPositionedClipFor = Symbol("positionedClipFor");
-const kRenderTextSelection = Symbol("renderTextSelection");
-const kSelectionRangeFor = Symbol("selectionRangeFor");
-
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
  * an axis that nothing clips is unbounded, and the only honest spelling of
@@ -253,6 +236,23 @@ function applyTextTransform(text: string, transform: string): string {
 			return text;
 	}
 }
+
+const kWindow = Symbol("window");
+const kDocument = Symbol("document");
+const kLayout = Symbol("layout");
+const kStyleManager = Symbol("styleManager");
+const kViewport = Symbol("viewport");
+const kTopLayer = Symbol("topLayer");
+const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
+const kRenderStackingContext = Symbol("renderStackingContext");
+const kRenderBackdrop = Symbol("renderBackdrop");
+const kRenderOutsideMarker = Symbol("renderOutsideMarker");
+const kRenderToggleGlyph = Symbol("renderToggleGlyph");
+const kRenderElement = Symbol("renderElement");
+const kRenderText = Symbol("renderText");
+const kPositionedClipFor = Symbol("positionedClipFor");
+const kRenderTextSelection = Symbol("renderTextSelection");
+const kSelectionRangeFor = Symbol("selectionRangeFor");
 
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal

@@ -1,5 +1,4 @@
-const kMarkDirtyUpward = Symbol("markDirtyUpward");
-const kSetEdges = Symbol("setEdges");/**
+/**
  * A pure-JS CSS flexbox implementation over an integer cell grid.
  *
  * It implements CSS Flexible Box Layout (CSS Box Alignment / css-flexbox-1)
@@ -558,6 +557,9 @@ function breaksStacking(node: Node): boolean {
 		node.style.display === DISPLAY_NONE
 	);
 }
+
+const kMarkDirtyUpward = Symbol("markDirtyUpward");
+const kSetEdges = Symbol("setEdges");
 
 export class Node {
 	style: Style;
