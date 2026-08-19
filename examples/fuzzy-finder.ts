@@ -25,7 +25,7 @@ function walk(
 	let entries;
 	try {
 		entries = readdirSync(dir, {withFileTypes: true});
-	} catch {
+	} catch (_err) {
 		return;
 	}
 	for (const entry of entries) {

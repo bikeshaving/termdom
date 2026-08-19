@@ -19,7 +19,7 @@ const SESSION = "verify-examples";
 function tmux(args: string): string {
 	try {
 		return execSync(`tmux -L ${SOCKET} ${args}`, {encoding: "utf8"});
-	} catch {
+	} catch (_err) {
 		return "";
 	}
 }

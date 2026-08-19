@@ -18,16 +18,18 @@
 import {TermDOM, transportFromProcess} from "../dist/index.js";
 
 const runtime =
-	typeof Deno !== "undefined"
-		? "Deno"
-		: typeof Bun !== "undefined"
-			? "Bun"
-			: "Node";
+	typeof Deno !== "undefined" ?
+		"Deno" :
+		typeof Bun !== "undefined" ?
+			"Bun" :
+			"Node";
 const failures = [];
 
 function check(label, actual, expected) {
 	const ok = actual === expected;
-	if (!ok) failures.push(`${label}: got ${actual}, want ${expected}`);
+	if (!ok) {
+		failures.push(`${label}: got ${actual}, want ${expected}`);
+	}
 	console.log(
 		`  ${ok ? "ok  " : "FAIL"} ${label.padEnd(28)} ${String(actual).padStart(6)}`,
 	);
@@ -88,7 +90,9 @@ const proc = {
 		write(chunk, enc, cb) {
 			out += String(chunk);
 			const done = typeof enc === "function" ? enc : cb;
-			if (typeof done === "function") done();
+			if (typeof done === "function") {
+				done();
+			}
 			return true;
 		},
 		isTTY: false,
@@ -103,10 +107,10 @@ const proc = {
 const colorTerm = new TermDOM({transport: transportFromProcess(proc)});
 colorTerm.attach();
 colorTerm.document.body.innerHTML =
-	`<div style="color:#ff8000">hex</div>` +
-	`<div style="color:#f80">short</div>` +
-	`<div style="color:red">named</div>` +
-	`<div style="color:rgb(0, 128, 255)">rgb</div>`;
+	"<div style=\"color:#ff8000\">hex</div>" +
+	"<div style=\"color:#f80\">short</div>" +
+	"<div style=\"color:red\">named</div>" +
+	"<div style=\"color:rgb(0, 128, 255)\">rgb</div>";
 await new Promise((r) => colorTerm.window.requestAnimationFrame(() => r()));
 colorTerm.dispose();
 
@@ -141,7 +145,9 @@ check(
 
 if (failures.length > 0) {
 	console.error(`\n${failures.length} failure(s) on ${runtime}:`);
-	for (const failure of failures) console.error(`  ${failure}`);
+	for (const failure of failures) {
+		console.error(`  ${failure}`);
+	}
 	process.exit(1);
 }
 

@@ -2234,8 +2234,10 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null)		?
-				(value as EventHandlerValue)		:
+		typeof value === "function" || (typeof value === "object" && value !== null)
+		?
+				(value as EventHandlerValue)
+		:
 			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
 	if (handlers === null) {
@@ -8017,7 +8019,7 @@ function isConstructor(value: unknown): boolean {
 			[],
 		);
 		return true;
-	} catch {
+	} catch (_err) {
 		return false;
 	}
 }
@@ -9256,7 +9258,7 @@ builtinRegistry.define(HTML_NAMESPACE, "template", HTMLTemplateElement);
 function parseURL(value: string, base: string): string | null {
 	try {
 		return new URL(value, base).href;
-	} catch {
+	} catch (_err) {
 		return null;
 	}
 }
@@ -9660,7 +9662,7 @@ function hyperlinkURL(element: Element): URL | null {
 	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 	try {
 		return new URL(trimmed, documentBaseURL(element[kDocument]));
-	} catch {
+	} catch (_err) {
 		return null;
 	}
 }
@@ -9672,7 +9674,7 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	}
 	try {
 		change(url);
-	} catch {
+	} catch (_err) {
 		return;
 	}
 	element.setAttribute("href", url.href);
@@ -21037,7 +21039,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 				null :
 				globalCustomElements,
 		);
-	} catch {
+	} catch (_err) {
 		return false;
 	}
 	const shadow = (host as Element)[kShadowRoot] as ShadowRoot;

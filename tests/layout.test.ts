@@ -2549,7 +2549,7 @@ function getPosition(layoutEngine: any, element: Element): number {
 	try {
 		const rects = layoutEngine[kRectTexts](element);
 		return rects[0]?.rect.x ?? -1;
-	} catch {
+	} catch (_err) {
 		return -1;
 	}
 }

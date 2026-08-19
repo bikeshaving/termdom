@@ -52,8 +52,8 @@
   "scripts": {
     "build": "libuild build",
     "lint": "eslint .",
-    "smoke": "node scripts/smoke.mjs",
-    "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
+    "smoke": "node scripts/smoke.js",
+    "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.js",
     "support": "bun scripts/support-matrix.ts",
     "test": "libuild test -p node -p bun",
     "typecheck": "tsc --noEmit",

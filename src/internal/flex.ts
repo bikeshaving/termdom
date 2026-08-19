@@ -1420,8 +1420,10 @@ function layoutEmptyContainer(
 			paddingBorderRow :
 			availableWidth - marginRow;
 	const height =
-		heightMode === MEASURE_MODE_UNDEFINED || heightMode === MEASURE_MODE_AT_MOST		?
-			paddingBorderColumn		:
+		heightMode === MEASURE_MODE_UNDEFINED || heightMode === MEASURE_MODE_AT_MOST
+		?
+			paddingBorderColumn
+		:
 			availableHeight - marginColumn;
 
 	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
@@ -2517,8 +2519,10 @@ function positionCrossAxis(
 
 	// align-content: stretch grows each line to share the free cross space.
 	const stretchPerLine =
-		node.style.alignContent === ALIGN_STRETCH && lineCount > 0 && freeCross > 0		?
-			freeCross / lineCount		:
+		node.style.alignContent === ALIGN_STRETCH && lineCount > 0 && freeCross > 0
+		?
+			freeCross / lineCount
+		:
 			0;
 
 	let cursor = leadingPaddingBorderCross + lineLeading;
