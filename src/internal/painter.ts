@@ -525,7 +525,10 @@ export class Painter {
 						right: borderRight,
 						bottom,
 						left,
-						corners: sides.corners,
+						topLeft: sides.topLeft,
+						topRight: sides.topRight,
+						bottomRight: sides.bottomRight,
+						bottomLeft: sides.bottomLeft,
 					},
 				);
 			}
@@ -738,7 +741,10 @@ export class Painter {
 								right: ring(sides.right),
 								bottom: ring(sides.bottom),
 								left: ring(sides.left),
-								corners: sides.corners,
+								topLeft: sides.topLeft,
+								topRight: sides.topRight,
+								bottomRight: sides.bottomRight,
+								bottomLeft: sides.bottomLeft,
 							},
 						);
 					}
