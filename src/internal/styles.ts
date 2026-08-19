@@ -7597,12 +7597,10 @@ export interface BorderSides {
 	right?: LineStyle["style"];
 	bottom?: LineStyle["style"];
 	left?: LineStyle["style"];
-	corners: {
-		topLeft: boolean;
-		topRight: boolean;
-		bottomRight: boolean;
-		bottomLeft: boolean;
-	};
+	topLeft?: "round";
+	topRight?: "round";
+	bottomRight?: "round";
+	bottomLeft?: "round";
 }
 
 const LINE_KEYWORDS = new Set<LineStyle["style"]>([
@@ -7638,15 +7636,17 @@ export function resolveBorderSides(element: Element): BorderSides {
 	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
 	// a browser squares off a corner whose ellipse has collapsed. A cell grid
 	// has one size of curve, so how large the radius is says nothing further.
-	const isRounded = (corner: string): boolean => {
+	const roundedCorner = (corner: string): "round" | undefined => {
 		const radii = computedStyle
 			.computedValueOf(`border-${corner}-radius`)
 			.split(/\s+/)
 			.filter(Boolean);
 		if (radii.length === 0) {
-			return false;
+			return undefined;
 		}
-		return radii.every((radius) => parseFloat(radius) > 0);
+		return radii.every((radius) => parseFloat(radius) > 0) ?
+			"round" :
+			undefined;
 	};
 
 	const of = (side: string): LineStyle["style"] | undefined =>
@@ -7662,12 +7662,10 @@ export function resolveBorderSides(element: Element): BorderSides {
 		right: of("right"),
 		bottom: of("bottom"),
 		left: of("left"),
-		corners: {
-			topLeft: isRounded("top-left"),
-			topRight: isRounded("top-right"),
-			bottomRight: isRounded("bottom-right"),
-			bottomLeft: isRounded("bottom-left"),
-		},
+		topLeft: roundedCorner("top-left"),
+		topRight: roundedCorner("top-right"),
+		bottomRight: roundedCorner("bottom-right"),
+		bottomLeft: roundedCorner("bottom-left"),
 	};
 }
 

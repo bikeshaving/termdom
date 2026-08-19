@@ -327,18 +327,16 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
  * and the field are canvas's own original TextMetrics; further fields join
  * if a consumer ever appears, the way canvas itself grew.
  */
-/** A box's sides and which of its corners round, drawBox's vocabulary. */
+/** A box's sides, and "round" on each corner whose radius rounds it. */
 export interface BoxSides {
 	top?: LineStyle;
 	right?: LineStyle;
 	bottom?: LineStyle;
 	left?: LineStyle;
-	corners?: {
-		topLeft?: boolean;
-		topRight?: boolean;
-		bottomRight?: boolean;
-		bottomLeft?: boolean;
-	};
+	topLeft?: "round";
+	topRight?: "round";
+	bottomRight?: "round";
+	bottomLeft?: "round";
 }
 
 export interface TextMetrics {
@@ -1498,12 +1496,10 @@ export class CellContext {
 		}
 		const r = x + width - 1;
 		const b = y + height - 1;
-		const c = sides.corners;
 		const cap = (
 			adjacent: LineStyle | undefined,
-			rounds: boolean | undefined,
-		): "round" | "square" | undefined =>
-			adjacent ? (rounds ? "round" : undefined) : "square";
+			corner: "round" | undefined,
+		): "round" | "square" | undefined => (adjacent ? corner : "square");
 
 		// Verticals first: a corner cell's glyph spans two sides but holds one
 		// color, and the horizontal side's wins -- the closest a cell gets to
@@ -1511,30 +1507,30 @@ export class CellContext {
 		if (sides.left) {
 			this.drawLine(x, y, x, b + 1, {
 				...sides.left,
-				startCap: cap(sides.top, c?.topLeft),
-				endCap: cap(sides.bottom, c?.bottomLeft),
+				startCap: cap(sides.top, sides.topLeft),
+				endCap: cap(sides.bottom, sides.bottomLeft),
 			});
 		}
 		if (sides.right) {
 			this.drawLine(r, y, r, b + 1, {
 				...sides.right,
-				startCap: cap(sides.top, c?.topRight),
-				endCap: cap(sides.bottom, c?.bottomRight),
+				startCap: cap(sides.top, sides.topRight),
+				endCap: cap(sides.bottom, sides.bottomRight),
 			});
 		}
 		if (sides.top) {
 			this.drawLine(x, y, r + 1, y, {
 				...sides.top,
-				startCap: cap(sides.left, c?.topLeft),
-				endCap: cap(sides.right, c?.topRight),
+				startCap: cap(sides.left, sides.topLeft),
+				endCap: cap(sides.right, sides.topRight),
 			});
 		}
 		// A 1-row box's bottom shares the top's row; the top already drew it.
 		if (sides.bottom && !(b === y && sides.top)) {
 			this.drawLine(x, b, r + 1, b, {
 				...sides.bottom,
-				startCap: cap(sides.left, c?.bottomLeft),
-				endCap: cap(sides.right, c?.bottomRight),
+				startCap: cap(sides.left, sides.bottomLeft),
+				endCap: cap(sides.right, sides.bottomRight),
 			});
 		}
 	}

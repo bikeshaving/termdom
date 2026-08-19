@@ -180,7 +180,8 @@ export const scenarios: Scenario[] = [
 					right: {style: "dotted"},
 					bottom: {style: "groove"},
 					left: {style: "solid"},
-					corners: {topLeft: true, bottomLeft: true},
+					topLeft: "round",
+					bottomLeft: "round",
 				});
 				ctx.drawText("A1", 1, 1);
 				ctx.drawText("B2", 6, 3);
