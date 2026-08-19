@@ -1,4 +1,5 @@
-/**
+const kMarkDirtyUpward = Symbol("markDirtyUpward");
+const kSetEdges = Symbol("setEdges");/**
  * A pure-JS CSS flexbox implementation over an integer cell grid.
  *
  * It implements CSS Flexible Box Layout (CSS Box Alignment / css-flexbox-1)
@@ -408,7 +409,11 @@ function createLayout(): LayoutResult {
 // ---------------------------------------------------------------------------
 
 export class Config {
-	pointScaleFactor = 1;
+	constructor() {
+		this.pointScaleFactor = 1;
+	}
+
+	pointScaleFactor: number;
 
 	static create(): Config {
 		return new Config();
@@ -557,20 +562,20 @@ function breaksStacking(node: Node): boolean {
 export class Node {
 	style: Style;
 	layout: LayoutResult;
-	children: Node[] = [];
-	parent: Node | null = null;
-	measureFunc: MeasureFunction | null = null;
-	staticPositionFunc: StaticPositionFunction | null = null;
+	children: Node[];
+	parent: Node | null;
+	measureFunc: MeasureFunction | null;
+	staticPositionFunc: StaticPositionFunction | null;
 	config: Config;
-	dirty = true;
+	dirty: boolean;
 	// The vertical span this node's subtree can paint, in absolute document
 	// rows -- its own box unioned with every descendant's, which absolutely
 	// positioned children can push outside the parent box. Recomputed by
 	// computePaintExtents after each layout pass; used for viewport culling.
 	// (Text that overflows a fixed-height box is not included: the box is the
 	// extent. Auto-height boxes -- the normal case -- always contain theirs.)
-	extentTop = 0;
-	extentBottom = 0;
+	extentTop: number;
+	extentBottom: number;
 	// How many direct children can't be trusted to keep children[] sorted
 	// top-to-bottom by extentTop -- derived by computePaintExtents, alongside
 	// the extents it is a statement about. Two ways a child breaks that:
@@ -582,7 +587,7 @@ export class Node {
 	// which is still correctly slotted). children[] is only guaranteed sorted
 	// when this is 0, which is what lets paint-time culling skip straight to
 	// the visible range instead of visiting every child to rule it out.
-	unstackedChildCount = 0;
+	unstackedChildCount: number;
 	// Layout caches: the constraints of the last sizing passes and the last full
 	// layout pass, with the sizes they produced. A clean node asked again under
 	// constraints it has already answered restores its size and skips its whole
@@ -593,13 +598,23 @@ export class Node {
 	// their own slot and none displaces the answer the next probe wants.
 	// Invalidation is the dirty flag, which every mutation path already sets on
 	// the way in.
-	cachedMeasures: Array<CachedLayout | null> = new Array(CACHE_SLOT_COUNT).fill(
-		null,
-	);
+	cachedMeasures: Array<CachedLayout | null>;
 
-	cachedLayout: CachedLayout | null = null;
+	cachedLayout: CachedLayout | null;
 
 	constructor(config: Config = defaultConfig) {
+		this.children = [];
+		this.parent = null;
+		this.measureFunc = null;
+		this.staticPositionFunc = null;
+		this.dirty = true;
+		this.extentTop = 0;
+		this.extentBottom = 0;
+		this.unstackedChildCount = 0;
+		this.cachedMeasures = new Array(CACHE_SLOT_COUNT).fill(
+			null,
+		);
+		this.cachedLayout = null;
 		this.config = config;
 		this.style = createStyle();
 		this.layout = createLayout();
@@ -618,7 +633,7 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		this.#markDirtyUpward();
+		this[kMarkDirtyUpward]();
 	}
 
 	removeChild(child: Node): void {
@@ -626,7 +641,7 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			this.#markDirtyUpward();
+			this[kMarkDirtyUpward]();
 		}
 	}
 
@@ -660,7 +675,7 @@ export class Node {
 
 	markDirty(): void {
 		this.dirty = true;
-		this.#markDirtyUpward();
+		this[kMarkDirtyUpward]();
 	}
 
 	/**
@@ -691,7 +706,7 @@ export class Node {
 		this.unstackedChildCount = unstacked;
 	}
 
-	#markDirtyUpward(): void {
+	[kMarkDirtyUpward](): void {
 		for (let node: Node | null = this; node; node = node.parent) {
 			node.dirty = true;
 		}
@@ -886,27 +901,27 @@ export class Node {
 	}
 
 	setMargin(edge: Edge, v: number | undefined): void {
-		this.#setEdges(this.style.margin, edge, toValue(v));
+		this[kSetEdges](this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setMarginPercent(edge: Edge, v: number): void {
-		this.#setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		this[kSetEdges](this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setMarginAuto(edge: Edge): void {
-		this.#setEdges(this.style.margin, edge, AUTO_VALUE);
+		this[kSetEdges](this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
 	setPadding(edge: Edge, v: number | undefined): void {
-		this.#setEdges(this.style.padding, edge, toValue(v));
+		this[kSetEdges](this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPaddingPercent(edge: Edge, v: number): void {
-		this.#setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		this[kSetEdges](this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
@@ -919,21 +934,21 @@ export class Node {
 	}
 
 	setPosition(edge: Edge, v: number | undefined): void {
-		this.#setEdges(this.style.position, edge, toValue(v));
+		this[kSetEdges](this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPositionPercent(edge: Edge, v: number): void {
-		this.#setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		this[kSetEdges](this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setPositionAuto(edge: Edge): void {
-		this.#setEdges(this.style.position, edge, AUTO_VALUE);
+		this[kSetEdges](this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
-	#setEdges(target: Value[], edge: Edge, value: Value): void {
+	[kSetEdges](target: Value[], edge: Edge, value: Value): void {
 		for (const index of expandEdge(edge)) {
 			target[index] = value;
 		}
@@ -1405,8 +1420,10 @@ function layoutEmptyContainer(
 			paddingBorderRow :
 			availableWidth - marginRow;
 	const height =
-		heightMode === MEASURE_MODE_UNDEFINED || heightMode === MEASURE_MODE_AT_MOST ?
-			paddingBorderColumn :
+		heightMode === MEASURE_MODE_UNDEFINED || heightMode === MEASURE_MODE_AT_MOST
+		?
+			paddingBorderColumn
+		:
 			availableHeight - marginColumn;
 
 	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
@@ -2502,8 +2519,10 @@ function positionCrossAxis(
 
 	// align-content: stretch grows each line to share the free cross space.
 	const stretchPerLine =
-		node.style.alignContent === ALIGN_STRETCH && lineCount > 0 && freeCross > 0 ?
-			freeCross / lineCount :
+		node.style.alignContent === ALIGN_STRETCH && lineCount > 0 && freeCross > 0
+		?
+			freeCross / lineCount
+		:
 			0;
 
 	let cursor = leadingPaddingBorderCross + lineLeading;

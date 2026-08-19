@@ -1,0 +1,38 @@
+#3          VT100 / ANSI SELF-PORTRAIT
+#4          VT100 / ANSI SELF-PORTRAIT
+        every escape code, wearing itself
+
+--- SGR attributes ------------------------------
+[1m ESC[1m [0m  bold
+[2m ESC[2m [0m  dim
+[3m ESC[3m [0m  italic
+[4m ESC[4m [0m  underline
+[5m ESC[5m [0m  blink
+[7m ESC[7m [0m  reverse
+[8m ESC[8m [0m  conceal
+[9m ESC[9m [0m  strike
+[21m ESC[21m [0m  double underline
+[53m ESC[53m [0m  overline
+
+--- foreground ----------------------------------
+[30m ESC[30m [0m[31m ESC[31m [0m[32m ESC[32m [0m[33m ESC[33m [0m[34m ESC[34m [0m[35m ESC[35m [0m[36m ESC[36m [0m[37m ESC[37m [0m
+[90m ESC[90m [0m[91m ESC[91m [0m[92m ESC[92m [0m[93m ESC[93m [0m[94m ESC[94m [0m[95m ESC[95m [0m[96m ESC[96m [0m[97m ESC[97m [0m
+
+--- background ----------------------------------
+[40m ESC[40m [0m[41m ESC[41m [0m[42m ESC[42m [0m[43m ESC[43m [0m[44m ESC[44m [0m[45m ESC[45m [0m[46m ESC[46m [0m[47m ESC[47m [0m
+[100m ESC[100m [0m[101m ESC[101m [0m[102m ESC[102m [0m[103m ESC[103m [0m[104m ESC[104m [0m[105m ESC[105m [0m[106m ESC[106m [0m[107m ESC[107m [0m
+
+--- 256 / truecolor -----------------------------
+[38;5;208m ESC[38;5;208m [0m  [48;5;24m ESC[48;5;24m [0m
+[38;2;255;105;180m ESC[38;2;255;105;180m [0m
+
+--- DEC special graphics: ESC(0 -----------------
+(0 lqqqqqqk    abcdefghij -> (0abcdefghij(B
+(0 x      x (B  ESC(0 draws lines, ESC(B comes home
+(0 mqqqqqqj (B
+
+--- double width: ESC#6 -------------------------
+#6ESC#6 wide load
+
+[1;4;33m ESC[1;4;33m [0m  parameters stack up
+[0m ESC[0m  and this one takes it all away

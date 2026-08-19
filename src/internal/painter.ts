@@ -14,6 +14,23 @@ import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 import {drawBox} from "./ansi.js";
 
+const kWindow = Symbol("window");
+const kDocument = Symbol("document");
+const kLayout = Symbol("layout");
+const kStyleManager = Symbol("styleManager");
+const kViewport = Symbol("viewport");
+const kTopLayer = Symbol("topLayer");
+const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
+const kRenderStackingContext = Symbol("renderStackingContext");
+const kRenderBackdrop = Symbol("renderBackdrop");
+const kRenderOutsideMarker = Symbol("renderOutsideMarker");
+const kRenderToggleGlyph = Symbol("renderToggleGlyph");
+const kRenderElement = Symbol("renderElement");
+const kRenderText = Symbol("renderText");
+const kPositionedClipFor = Symbol("positionedClipFor");
+const kRenderTextSelection = Symbol("renderTextSelection");
+const kSelectionRangeFor = Symbol("selectionRangeFor");
+
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
  * an axis that nothing clips is unbounded, and the only honest spelling of
@@ -252,18 +269,18 @@ function applyTextTransform(text: string, transform: string): string {
  * by reference through the constructor.
  */
 export class Painter {
-	#window: EngineWindow;
+	declare [kWindow]: EngineWindow;
 	// The document, cached the way TermDOM caches it: a stray post-dispose frame
 	// paints against this reference rather than reaching through a torn-down
 	// window. The live window still serves getComputedStyle/getSelection.
-	#document: Document;
-	#layout: LayoutEngine;
-	#styleManager: StyleManager;
-	#viewport: Viewport;
+	declare [kDocument]: Document;
+	declare [kLayout]: LayoutEngine;
+	declare [kStyleManager]: StyleManager;
+	declare [kViewport]: Viewport;
 	// Shared with TermDOM by reference -- see the class doc.
-	#topLayer: Set<Element>;
+	declare [kTopLayer]: Set<Element>;
 	// List markers already painted this frame; each renders at most once.
-	#renderedOutsideMarkers = new WeakSet<Element>();
+	declare [kRenderedOutsideMarkers]: WeakSet<Element>;
 
 	constructor(deps: {
 		window: EngineWindow;
@@ -273,31 +290,32 @@ export class Painter {
 		viewport: Viewport;
 		topLayer: Set<Element>;
 	}) {
-		this.#window = deps.window;
-		this.#document = deps.document;
-		this.#layout = deps.layout;
-		this.#styleManager = deps.styleManager;
-		this.#viewport = deps.viewport;
-		this.#topLayer = deps.topLayer;
+		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
+		this[kWindow] = deps.window;
+		this[kDocument] = deps.document;
+		this[kLayout] = deps.layout;
+		this[kStyleManager] = deps.styleManager;
+		this[kViewport] = deps.viewport;
+		this[kTopLayer] = deps.topLayer;
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
 	paint(ctx: import("./ansi.js").DrawingContext): void {
-		this.#renderedOutsideMarkers = new WeakSet<Element>();
-		const layers = this.#layout.collectStackingLayers(this.#topLayer);
-		this.#renderStackingContext(this.#document.body, ctx, layers);
-		for (const element of this.#topLayer) {
+		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
+		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
+		this[kRenderStackingContext](this[kDocument].body, ctx, layers);
+		for (const element of this[kTopLayer]) {
 			// COMPOSITION-connected: a UA part (the select's picker) lives in
 			// a fragment and is never DOM-connected while very much on screen.
 			if (!flatIsConnected(element)) {
-				this.#topLayer.delete(element);
+				this[kTopLayer].delete(element);
 				continue;
 			}
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
 			try {
-				this.#renderBackdrop(element, ctx);
-				this.#renderStackingContext(element, ctx, layers);
+				this[kRenderBackdrop](element, ctx);
+				this[kRenderStackingContext](element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
 			}
@@ -312,7 +330,7 @@ export class Painter {
 	 * author writing `dialog::backdrop { background-color: ... }` replaces the
 	 * scrim and one writing `transparent` removes it.
 	 */
-	#renderBackdrop(
+	[kRenderBackdrop](
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -327,7 +345,7 @@ export class Painter {
 		ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 	}
 
-	#renderElement(
+	[kRenderElement](
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 		afterOwnBox?: () => void,
@@ -351,7 +369,7 @@ export class Painter {
 				bandTop = Math.min(bandTop, start - ctx.viewportOffset);
 				bandBottom = Math.max(bandBottom, end - ctx.viewportOffset);
 				if (
-					!this.#layout.isSubtreeOutsideBand(
+					!this[kLayout].isSubtreeOutsideBand(
 						element,
 						start - ctx.viewportOffset,
 						end - ctx.viewportOffset,
@@ -364,7 +382,7 @@ export class Painter {
 				return;
 			}
 		} else if (
-			this.#layout.isSubtreeOutsideBand(element, bandTop, bandBottom)
+			this[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)
 		) {
 			return;
 		}
@@ -380,7 +398,7 @@ export class Painter {
 			return;
 		}
 
-		const rect = this.#layout.getRect(element);
+		const rect = this[kLayout].getRect(element);
 
 		const color = computed.computedValueOf("color");
 		const backgroundColor = computed.computedValueOf("background-color");
@@ -444,7 +462,7 @@ export class Painter {
 			// of every line it spans, including the cells before the box begins
 			// and after it ends, which are its neighbours' to paint. A box that
 			// did not break has one fragment and fills it.
-			const fragments = this.#layout.getRects(element);
+			const fragments = this[kLayout].getRects(element);
 			if (fragments.length > 1) {
 				for (const fragment of fragments) {
 					ctx.drawRect(
@@ -516,7 +534,7 @@ export class Painter {
 
 		// Handle list-style-position: outside markers
 		if (visible) {
-			this.#renderOutsideMarker(element, ctx);
+			this[kRenderOutsideMarker](element, ctx);
 		}
 
 		// A text field's content is its shadow tree, painted by the child walk
@@ -524,12 +542,12 @@ export class Painter {
 		// to the content origin when the value is empty (no box for the Range).
 		if (rect && visible && isTextField(element)) {
 			const field = element as HTMLInputElement | HTMLTextAreaElement;
-			if (field === this.#document.activeElement) {
-				const caret = this.#layout.caretRectOf(field);
+			if (field === this[kDocument].activeElement) {
+				const caret = this[kLayout].caretRectOf(field);
 				if (caret) {
 					ctx.setCaret(caret.x, caret.y);
 				} else {
-					const content = this.#layout.contentRect(field);
+					const content = this[kLayout].contentRect(field);
 					if (content) {
 						ctx.setCaret(Math.round(content.x), Math.round(content.y));
 					}
@@ -552,13 +570,13 @@ export class Painter {
 			// and exactly the open/closed signal the top-layer decision wants.
 			if (picker) {
 				if (picker.style.display !== "none") {
-					this.#topLayer.add(picker);
+					this[kTopLayer].add(picker);
 				} else {
-					this.#topLayer.delete(picker);
+					this[kTopLayer].delete(picker);
 				}
 			}
-			if (visible && select === this.#document.activeElement) {
-				const content = this.#layout.contentRect(select);
+			if (visible && select === this[kDocument].activeElement) {
+				const content = this[kLayout].contentRect(select);
 				if (content) {
 					ctx.setCaret(Math.round(content.x), Math.round(content.y));
 				}
@@ -571,7 +589,7 @@ export class Painter {
 			const input = element as HTMLInputElement;
 			if (input.type === "checkbox" || input.type === "radio") {
 				if (visible) {
-					this.#renderToggleGlyph(input, ctx);
+					this[kRenderToggleGlyph](input, ctx);
 				}
 				return;
 			}
@@ -606,7 +624,7 @@ export class Painter {
 		// the longer the list gets, though only ~O(screen) of it can ever be
 		// visible -- because the walker below has no choice but to step
 		// through every sibling to find out which ones are off-band.
-		const fastChildren = this.#layout.visibleChildrenInBand(
+		const fastChildren = this[kLayout].visibleChildrenInBand(
 			element,
 			bandTop,
 			bandBottom,
@@ -628,7 +646,7 @@ export class Painter {
 				// wide container of mostly off-screen children O(screen).
 				if (
 					childNode.nodeType === childNode.ELEMENT_NODE &&
-					this.#layout.isSubtreeOutsideBand(
+					this[kLayout].isSubtreeOutsideBand(
 						childNode as Element,
 						bandTop,
 						bandBottom,
@@ -639,7 +657,7 @@ export class Painter {
 				if (
 					childNode.nodeType === childNode.ELEMENT_NODE &&
 					isPositioned(childNode as Element) &&
-					this.#layout.positionedElements.has(childNode as Element)
+					this[kLayout].positionedElements.has(childNode as Element)
 				) {
 					// Hoisted to its stacking context. Registry membership is
 					// the gate: a positioned INLINE run member owns no box of
@@ -666,12 +684,12 @@ export class Painter {
 			for (const childNode of children) {
 				if (childNode.nodeType === childNode.ELEMENT_NODE) {
 					const childElement = childNode as Element;
-					if (childElement instanceof (this.#window as any).HTMLElement) {
-						this.#renderElement(childElement, ctx);
+					if (childElement instanceof (this[kWindow] as any).HTMLElement) {
+						this[kRenderElement](childElement, ctx);
 					}
 				} else if (childNode.nodeType === childNode.TEXT_NODE) {
 					const textNode = childNode as Text;
-					this.#renderText(textNode, ctx);
+					this[kRenderText](textNode, ctx);
 				}
 			}
 		} finally {
@@ -747,7 +765,7 @@ export class Painter {
 	 * root) -- and nothing else: intervening non-positioned overflow
 	 * ancestors don't clip a box they don't contain.
 	 */
-	#positionedClipFor(
+	[kPositionedClipFor](
 		element: Element,
 		contextRoot: Element,
 		contextClip: import("./ansi.js").DrawingContext["clipRect"],
@@ -766,7 +784,7 @@ export class Painter {
 			const overflowX = style.computedValueOf("overflow-x") || overflow;
 			const overflowY = style.computedValueOf("overflow-y") || overflow;
 			if (overflowX === "hidden" || overflowY === "hidden") {
-				const rect = this.#layout.getRect(ancestor);
+				const rect = this[kLayout].getRect(ancestor);
 				if (rect) {
 					clip = overflowClipRect(rect, overflowX, overflowY, clip);
 				}
@@ -786,14 +804,14 @@ export class Painter {
 	 * itself and its context, the common CSS escape (per-containing-block
 	 * clipping is layer-2 work).
 	 */
-	#renderStackingContext(
+	[kRenderStackingContext](
 		root: Element,
 		ctx: import("./ansi.js").DrawingContext,
 		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 	): void {
 		const bucket = layers.get(root);
 		if (!bucket) {
-			this.#renderElement(root, ctx);
+			this[kRenderElement](root, ctx);
 			return;
 		}
 		const contextClip = ctx.clipRect;
@@ -803,27 +821,27 @@ export class Painter {
 			// Clips apply along the CONTAINING BLOCK chain only: an overflow
 			// ancestor that isn't a positioned ancestor doesn't clip a
 			// deferred box, but its own containing blocks' overflow does.
-			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
+			ctx.clipRect = this[kPositionedClipFor](element, root, contextClip);
 			// position:fixed anchors to the VIEWPORT: cancel the camera by
 			// undoing the scroll offset for the whole subtree. Fixed-space is
 			// a property of the containing-block CHAIN: an absolute box inside
 			// a fixed bar is laid out against the bar's viewport coordinates
 			// and must ride with it, so the walk includes ancestors.
-			if (this.#layout.isInFixedSpace(element)) {
-				ctx.viewportOffset = previousOffset + this.#viewport.scrollTop;
+			if (this[kLayout].isInFixedSpace(element)) {
+				ctx.viewportOffset = previousOffset + this[kViewport].scrollTop;
 			}
 			try {
-				if (this.#layout.formsStackingContext(element)) {
-					this.#renderStackingContext(element, ctx, layers);
+				if (this[kLayout].formsStackingContext(element)) {
+					this[kRenderStackingContext](element, ctx, layers);
 				} else {
-					this.#renderElement(element, ctx);
+					this[kRenderElement](element, ctx);
 				}
 			} finally {
 				ctx.clipRect = previousClip;
 				ctx.viewportOffset = previousOffset;
 			}
 		};
-		this.#renderElement(root, ctx, () => {
+		this[kRenderElement](root, ctx, () => {
 			for (const element of bucket.neg) {
 				paintMember(element);
 			}
@@ -837,7 +855,7 @@ export class Painter {
 	}
 
 	/** Render outside-positioned list markers, once per element per frame. */
-	#renderOutsideMarker(
+	[kRenderOutsideMarker](
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -858,18 +876,18 @@ export class Painter {
 		}
 
 		// Prevent duplicate rendering in the same frame
-		if (this.#renderedOutsideMarkers.has(element)) {
+		if (this[kRenderedOutsideMarkers].has(element)) {
 			return;
 		}
-		this.#renderedOutsideMarkers.add(element);
+		this[kRenderedOutsideMarkers].add(element);
 
 		// Get marker content from StyleManager
-		const markerContent = this.#styleManager.getMarkerContent(element);
+		const markerContent = this[kStyleManager].getMarkerContent(element);
 		if (!markerContent) {
 			return;
 		}
 
-		const rect = this.#layout.getRect(element);
+		const rect = this[kLayout].getRect(element);
 		if (!rect) {
 			return;
 		}
@@ -920,7 +938,7 @@ export class Painter {
 	 * discovers -- a checkedness that changes without an event still schedules
 	 * the frame that shows it.
 	 */
-	#renderToggleGlyph(
+	[kRenderToggleGlyph](
 		element: HTMLInputElement,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -933,7 +951,7 @@ export class Painter {
 		if (!mark) {
 			return;
 		}
-		const content = this.#layout.contentRect(element);
+		const content = this[kLayout].contentRect(element);
 		if (!content) {
 			return;
 		}
@@ -945,7 +963,7 @@ export class Painter {
 			contentY,
 			cellStyleFromComputed(computedStyleOf(glyphSpan)),
 		);
-		if (element === this.#document.activeElement) {
+		if (element === this[kDocument].activeElement) {
 			ctx.setCaret(contentX, contentY);
 		}
 	}
@@ -953,7 +971,7 @@ export class Painter {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
+	[kRenderText](textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
 		const textContent = textNode.data;
 		if (!textContent) {
 			return;
@@ -984,7 +1002,7 @@ export class Painter {
 		// node itself, rendered under its own `white-space` and then transformed:
 		// nothing of the line breaker's is read here.
 		const whiteSpace = computedStyle.computedValueOf("white-space");
-		const fragments = this.#layout.lineFragments(textNode);
+		const fragments = this[kLayout].lineFragments(textNode);
 		let painted = false;
 		for (const fragment of fragments) {
 			if (fragment.endOffset <= fragment.startOffset) {
@@ -1009,7 +1027,7 @@ export class Painter {
 			);
 		}
 		if (painted) {
-			this.#renderTextSelection(textNode, textStyle, textTransform, ctx);
+			this[kRenderTextSelection](textNode, textStyle, textTransform, ctx);
 		}
 	}
 
@@ -1021,10 +1039,10 @@ export class Painter {
 	 * control hands its selection out as a Range of its own -- otherwise the
 	 * document selection.
 	 */
-	#selectionRangeFor(
+	[kSelectionRangeFor](
 		textNode: Text,
 	): {range: Range; selectionParent: Element} | null {
-		const active = this.#document.activeElement;
+		const active = this[kDocument].activeElement;
 		if (active && isTextField(active)) {
 			const fieldRange = selectionRangeOf(active);
 			// The control's range names the text it renders its value through, so
@@ -1036,7 +1054,7 @@ export class Painter {
 			}
 		}
 
-		const selection = this.#window.getSelection();
+		const selection = this[kWindow].getSelection();
 		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 			return null;
 		}
@@ -1073,13 +1091,13 @@ export class Painter {
 	 * Case transforms never change cell width, so transforming each run's raw
 	 * text repaints exactly the cells the base pass laid down.
 	 */
-	#renderTextSelection(
+	[kRenderTextSelection](
 		textNode: Text,
 		textStyle: import("./ansi.js").CellStyle,
 		textTransform: string,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
-		const found = this.#selectionRangeFor(textNode);
+		const found = this[kSelectionRangeFor](textNode);
 		if (!found) {
 			return;
 		}
@@ -1089,7 +1107,7 @@ export class Painter {
 			return;
 		} // no ::selection rule reaches here
 
-		for (const run of this.#layout.getRangeRuns(range)) {
+		for (const run of this[kLayout].getRangeRuns(range)) {
 			ctx.drawText(
 				applyTextTransform(run.text, textTransform),
 				run.rect.x,

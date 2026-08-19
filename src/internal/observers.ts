@@ -6,6 +6,13 @@
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
 
+const kManager = Symbol("manager");
+const kCallback = Symbol("callback");
+const kRoot = Symbol("root");
+const kThresholdIndex = Symbol("thresholdIndex");
+const kLayoutEngine = Symbol("layoutEngine");
+const kObservers = Symbol("observers");
+
 /**
  * An element's content box: its size, plus the offset of its top-left corner
  * INSIDE the border box -- the padding and border that precede it.
@@ -68,19 +75,23 @@ function contentBoxOf(
  * an entry from that measurement, which is the whole of what differs.
  */
 abstract class LayoutObserver<TState, TEntry, TOptions = void> {
-	#manager: ObserverManager;
+	declare [kManager]: ObserverManager;
 	/**
 	 * Observed targets, each mapped to how it was asked to be observed and to
 	 * what was last reported for it. One entry per target, as the DOM says: a
 	 * second observe() of the same target replaces the first's options.
 	 */
-	[kTargets] = new Map<
+	[kTargets]: Map<
 		Element,
 		{options: TOptions | undefined; last: TState | null}
-	>();
+	>;
 
 	constructor(manager: ObserverManager) {
-		this.#manager = manager;
+		this[kTargets] = new Map<
+			Element,
+			{options: TOptions | undefined; last: TState | null}
+		>();
+		this[kManager] = manager;
 	}
 
 	observe(target: Element, options?: TOptions): void {
@@ -90,19 +101,19 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 			options,
 			last: this[kTargets].get(target)?.last ?? null,
 		});
-		this.#manager.register(this as unknown as AnyObserver);
+		this[kManager].register(this as unknown as AnyObserver);
 	}
 
 	unobserve(target: Element): void {
 		this[kTargets].delete(target);
 		if (this[kTargets].size === 0) {
-			this.#manager.unregister(this as unknown as AnyObserver);
+			this[kManager].unregister(this as unknown as AnyObserver);
 		}
 	}
 
 	disconnect(): void {
 		this[kTargets].clear();
-		this.#manager.unregister(this as unknown as AnyObserver);
+		this[kManager].unregister(this as unknown as AnyObserver);
 	}
 
 	/**
@@ -196,11 +207,11 @@ export class ResizeObserver extends LayoutObserver<
 	ResizeObserverEntry,
 	ResizeObserverOptions
 > {
-	#callback: ResizeObserverCallback;
+	declare [kCallback]: ResizeObserverCallback;
 
 	constructor(callback: ResizeObserverCallback, manager: ObserverManager) {
 		super(manager);
-		this.#callback = callback;
+		this[kCallback] = callback;
 	}
 
 	/**
@@ -285,7 +296,7 @@ export class ResizeObserver extends LayoutObserver<
 	}
 
 	[kDeliver](entries: ResizeObserverEntry[]): void {
-		this.#callback(entries, this);
+		this[kCallback](entries, this);
 	}
 }
 
@@ -384,8 +395,8 @@ export class IntersectionObserver extends LayoutObserver<
 	number,
 	IntersectionObserverEntry
 > {
-	#callback: IntersectionObserverCallback;
-	#root: Element | null;
+	declare [kCallback]: IntersectionObserverCallback;
+	declare [kRoot]: Element | null;
 
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];
@@ -396,8 +407,8 @@ export class IntersectionObserver extends LayoutObserver<
 		init: IntersectionObserverInit = {},
 	) {
 		super(manager);
-		this.#callback = callback;
-		this.#root = init.root ?? null;
+		this[kCallback] = callback;
+		this[kRoot] = init.root ?? null;
 		this.rootMargin = init.rootMargin ?? "0px";
 
 		// A single number, an array, or the default of "any intersection at all".
@@ -408,7 +419,7 @@ export class IntersectionObserver extends LayoutObserver<
 	}
 
 	get root(): Element | null {
-		return this.#root;
+		return this[kRoot];
 	}
 
 	/**
@@ -418,7 +429,7 @@ export class IntersectionObserver extends LayoutObserver<
 	 * "is it intersecting" collapsed all of those into one callback and made
 	 * threshold arrays decorative.
 	 */
-	#thresholdIndex(ratio: number): number {
+	[kThresholdIndex](ratio: number): number {
 		let index = 0;
 		while (index < this.thresholds.length && ratio >= this.thresholds[index]) {
 			// A zero threshold means "any overlap at all", so a ratio of exactly
@@ -446,14 +457,14 @@ export class IntersectionObserver extends LayoutObserver<
 		// The root: an explicit element's border box, or the viewport. Either way
 		// grown by rootMargin, which is the whole point of that option -- it is
 		// what lets a list start loading a row before it scrolls into view.
-		const rootBox = this.#root ? layoutEngine.getRect(this.#root) : viewport;
+		const rootBox = this[kRoot] ? layoutEngine.getRect(this[kRoot]) : viewport;
 		if (!rootBox) {
 			return null;
 		}
 		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
 
 		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
-		const index = this.#thresholdIndex(ratio);
+		const index = this[kThresholdIndex](ratio);
 		if (last === index) {
 			return null;
 		}
@@ -474,7 +485,7 @@ export class IntersectionObserver extends LayoutObserver<
 	}
 
 	[kDeliver](entries: IntersectionObserverEntry[]): void {
-		this.#callback(entries, this);
+		this[kCallback](entries, this);
 	}
 }
 
@@ -493,35 +504,36 @@ export class IntersectionObserver extends LayoutObserver<
  * work and holds no memory.
  */
 export class ObserverManager {
-	#layoutEngine: LayoutEngine;
-	#observers = new Set<AnyObserver>();
+	declare [kLayoutEngine]: LayoutEngine;
+	declare [kObservers]: Set<AnyObserver>;
 
 	constructor(layoutEngine: LayoutEngine) {
-		this.#layoutEngine = layoutEngine;
+		this[kObservers] = new Set<AnyObserver>();
+		this[kLayoutEngine] = layoutEngine;
 	}
 
 	register(observer: AnyObserver): void {
-		this.#observers.add(observer);
+		this[kObservers].add(observer);
 	}
 
 	unregister(observer: AnyObserver): void {
-		this.#observers.delete(observer);
+		this[kObservers].delete(observer);
 	}
 
 	/** Run every observer against the current layout. Called after each render. */
 	flush(viewport: DOMRect, frame: number): void {
-		if (this.#observers.size === 0) {
+		if (this[kObservers].size === 0) {
 			return;
 		}
 		// A copy: a callback may observe or disconnect, and mutating the set
 		// mid-iteration would visit the new observer against a layout it has not
 		// been measured for, or skip one that is still live.
-		for (const observer of [...this.#observers]) {
-			observer[kCheck](this.#layoutEngine, viewport, frame);
+		for (const observer of [...this[kObservers]]) {
+			observer[kCheck](this[kLayoutEngine], viewport, frame);
 		}
 	}
 
 	dispose(): void {
-		this.#observers.clear();
+		this[kObservers].clear();
 	}
 }
