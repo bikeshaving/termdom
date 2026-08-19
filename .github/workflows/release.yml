@@ -1,0 +1,63 @@
+name: Release
+
+# The only way @b9g/termdom reaches npm - and CI can only STAGE, never make a
+# version live.
+#
+# Trigger by publishing a GitHub Release, which creates the tag, or from
+# Actions -> Release -> Run workflow. The job parks on the `npm` environment
+# until a required reviewer approves it, then runs `libuild stage`: the version
+# lands on the registry in a not-installable state, and only a human running
+# `npm stage approve <id>` makes it live. That approval always prompts for 2FA,
+# in the CLI and on the website, so no automation can do it.
+#
+# Restrict this repo's npm trusted publisher to the `npm stage publish` action
+# only. Without that, CI regains the ability to publish directly.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1+, and staged publishing 11.15.0+
+      # (libuild stage checks and says so). libuild spawns `npm`, so the
+      # upgraded binary has to be the one on PATH.
+      - run: npm install -g npm@latest
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run build
+
+      # The same script a human runs locally, so CI cannot drift from the
+      # command you debug with.
+      - run: bun run test
+
+      # A mistyped tag would otherwise stage whatever the manifest says, and
+      # the GitHub Release would then claim a version npm never received.
+      - name: Check the tag matches the version
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $TAG does not match package version $PKG"
+            exit 1
+          fi
+
+      - run: npx libuild stage --provenance
