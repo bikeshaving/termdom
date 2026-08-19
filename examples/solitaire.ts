@@ -645,6 +645,8 @@ function* App(this: Context) {
 
 	const ticker = setInterval(() => {
 		if (startedAt !== null && finishedAt === null) {
+			// The tick changes no state; the render reads the clock itself.
+			// eslint-disable-next-line crank/prefer-refresh-callback
 			this.refresh();
 		}
 	}, 1000);
@@ -928,9 +930,10 @@ function* App(this: Context) {
 			}
 			if (cur.col === 1) {
 				if (held) {
-					return void this.refresh(() => {
+					this.refresh(() => {
 						message = "The discard takes nothing back.";
 					});
+					return;
 				}
 				if (top(game.waste)) {
 					grab({kind: "waste"});

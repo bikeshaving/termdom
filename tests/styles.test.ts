@@ -8,7 +8,9 @@ import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
 import {expandShorthands} from "../src/internal/useragent.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
-function documentWindow(html: string) {
+function documentWindow(html: string): {
+	window: ReturnType<typeof createDocumentWindow>;
+} {
 	return {window: createDocumentWindow(html)};
 }
 

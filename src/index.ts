@@ -1,9 +1,9 @@
 // V8's compile cache: the module graph is most of a CLI invocation's
 // startup. Namespace access because runtimes with their own cache (Bun)
 // do not export it.
-import * as nodeModule from "node:module";
+import * as NodeModule from "node:module";
 try {
-	(nodeModule as {enableCompileCache?: () => void}).enableCompileCache?.();
+	(NodeModule as {enableCompileCache?: () => void}).enableCompileCache?.();
 } catch (_err) {
 	// Nothing to do; the runtime just recompiles.
 }

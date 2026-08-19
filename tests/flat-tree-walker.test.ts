@@ -18,7 +18,9 @@ import {createDocumentWindow} from "../src/internal/termdom.js";
  * property. The pseudo-elements are the test's own, put straight in their
  * slots; a cascade would own them instead.
  */
-function documentWindow(html: string) {
+function documentWindow(html: string): {
+	window: ReturnType<typeof createDocumentWindow>;
+} {
 	const window = createDocumentWindow(html);
 	window.getComputedStyle = ((element: Element) =>
 		({

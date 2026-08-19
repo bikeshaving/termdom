@@ -8,7 +8,16 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-async function open(html: string, cols = 40, rows = 10) {
+async function open(
+	html: string,
+	cols = 40,
+	rows = 10,
+): Promise<{
+	terminal: MockProcess;
+	dom: TermDOM;
+	document: Document;
+	popover: HTMLElement;
+}> {
 	const terminal = new MockProcess({rows, cols});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;

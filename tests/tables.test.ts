@@ -24,7 +24,15 @@ interface Box {
 	height: number;
 }
 
-async function render(html: string, cols = 60) {
+async function render(
+	html: string,
+	cols = 60,
+): Promise<{
+	box: (selector: string, index?: number) => Box;
+	rows: string[];
+	dom: TermDOM;
+	document: Document;
+}> {
 	const terminal = new MockProcess({cols, rows: 20});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;

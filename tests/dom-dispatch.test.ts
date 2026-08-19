@@ -17,7 +17,17 @@ import {createHTMLDocument, FocusEvent} from "../src/internal/dom.js";
  *
  *   document > host #shadow-root > [sibling, inner #shadow-root > deep]
  */
-function nestedTrees(mode: "open" | "closed" = "open") {
+interface NestedTrees {
+	document: any;
+	host: any;
+	outer: any;
+	sibling: any;
+	inner: any;
+	innerShadow: any;
+	deep: any;
+}
+
+function nestedTrees(mode: "open" | "closed" = "open"): NestedTrees {
 	const document = createHTMLDocument("") as any;
 	const host = document.createElement("div");
 	document.body.append(host);

@@ -56,21 +56,27 @@ class MockKeyboardProcess extends EventEmitter {
 			TERM: "xterm-256color",
 			COLORTERM: "truecolor",
 		};
+		this.stdout = {
+			isTTY: true,
+			columns: 80,
+			rows: 24,
+			write: (chunk: any, encoding?: any, callback?: any) => {
+				// Mock write - just call callback
+				if (typeof encoding === "function") {
+					encoding();
+				} else if (callback) {
+					callback();
+				}
+				return true;
+			},
+		};
 	}
 
-	stdout = {
-		isTTY: true,
-		columns: 80,
-		rows: 24,
-		write: (chunk: any, encoding?: any, callback?: any) => {
-			// Mock write - just call callback
-			if (typeof encoding === "function") {
-				encoding();
-			} else if (callback) {
-				callback();
-			}
-			return true;
-		},
+	stdout: {
+		isTTY: boolean;
+		columns: number;
+		rows: number;
+		write: (chunk: any, encoding?: any, callback?: any) => boolean;
 	};
 
 	stdin: MockTTYStream;
