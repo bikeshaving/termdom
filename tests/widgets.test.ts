@@ -20,8 +20,8 @@ test("a datalist never renders its options", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<datalist id="suggestions"><option>sugg</option></datalist>` +
-		`<p>after</p>`;
+		"<datalist id=\"suggestions\"><option>sugg</option></datalist>" +
+		"<p>after</p>";
 	await nextFrame(dom);
 
 	const output = terminal.getPlainText();
@@ -35,7 +35,7 @@ test("a dialog renders only while it is open", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<dialog>dialog content</dialog>`;
+	document.body.innerHTML = "<dialog>dialog content</dialog>";
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).not.toContain("dialog content");
 
@@ -49,7 +49,7 @@ test("a dialog renders only while it is open", async () => {
 test("a closed details shows its summary and nothing else", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<details><summary>More</summary><p>secret</p></details>`;
+	dom.document.body.innerHTML = "<details><summary>More</summary><p>secret</p></details>";
 	await nextFrame(dom);
 
 	const output = terminal.getPlainText();
@@ -62,7 +62,7 @@ test("a closed details shows its summary and nothing else", async () => {
 test("an open details shows its body", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<details open><summary>More</summary><p>secret</p></details>`;
+	dom.document.body.innerHTML = "<details open><summary>More</summary><p>secret</p></details>";
 	await nextFrame(dom);
 
 	const output = terminal.getPlainText();
@@ -78,7 +78,7 @@ test("the disclosure marker follows the open state", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<details><summary>More</summary><p>body</p></details>`;
+	document.body.innerHTML = "<details><summary>More</summary><p>body</p></details>";
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("▸ More");
 
@@ -94,7 +94,7 @@ test("clicking the summary toggles open and fires toggle", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<details><summary>More</summary><p>secret</p></details>`;
+	document.body.innerHTML = "<details><summary>More</summary><p>secret</p></details>";
 	await nextFrame(dom);
 
 	const details = document.querySelector("details") as HTMLDetailsElement;
@@ -122,7 +122,7 @@ test("Enter on a focused summary toggles the disclosure", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<details><summary>More</summary><p>secret</p></details>`;
+	document.body.innerHTML = "<details><summary>More</summary><p>secret</p></details>";
 	await nextFrame(dom);
 
 	(document.querySelector("summary") as HTMLElement).focus();
@@ -145,7 +145,7 @@ function cellAt(terminal: MockProcess, row: number, col: number): any {
 test("a kbd wears brackets and bold", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<kbd>x</kbd>`;
+	dom.document.body.innerHTML = "<kbd>x</kbd>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toContain("[x]");
@@ -161,12 +161,12 @@ test("author rules replace the keycap's brackets and weight", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<style>` +
-		`kbd { font-weight: normal; }` +
-		`kbd::before { content: "<"; }` +
-		`kbd::after { content: ">"; }` +
-		`</style>` +
-		`<kbd>x</kbd>`;
+		"<style>" +
+		"kbd { font-weight: normal; }" +
+		"kbd::before { content: \"<\"; }" +
+		"kbd::after { content: \">\"; }" +
+		"</style>" +
+		"<kbd>x</kbd>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toContain("<x>");
@@ -185,7 +185,7 @@ function bar(terminal: MockProcess): string {
 test("a progress bar fills its track from value and max", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<progress value="4" max="10"></progress>`;
+	dom.document.body.innerHTML = "<progress value=\"4\" max=\"10\"></progress>";
 	await nextFrame(dom);
 
 	expect(bar(terminal)).toBe("████░░░░░░");
@@ -197,7 +197,7 @@ test("a progress bar follows its value", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<progress value="0" max="10"></progress>`;
+	document.body.innerHTML = "<progress value=\"0\" max=\"10\"></progress>";
 	await nextFrame(dom);
 	expect(bar(terminal)).toBe("░░░░░░░░░░");
 
@@ -211,7 +211,7 @@ test("a progress bar follows its value", async () => {
 test("a progress bar with no value is an empty groove", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<progress></progress>`;
+	dom.document.body.innerHTML = "<progress></progress>";
 	await nextFrame(dom);
 
 	expect(bar(terminal)).toBe("░░░░░░░░░░");
@@ -223,8 +223,8 @@ test("a gauge takes the width its author gives it", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<style>progress { width: 20ch; }</style>` +
-		`<progress value="1" max="4"></progress>`;
+		"<style>progress { width: 20ch; }</style>" +
+		"<progress value=\"1\" max=\"4\"></progress>";
 	await nextFrame(dom);
 
 	expect(bar(terminal)).toBe("█████░░░░░░░░░░░░░░░");
@@ -235,7 +235,7 @@ test("a gauge takes the width its author gives it", async () => {
 test("a meter fills between its min and max", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<meter min="10" max="20" value="15"></meter>`;
+	dom.document.body.innerHTML = "<meter min=\"10\" max=\"20\" value=\"15\"></meter>";
 	await nextFrame(dom);
 
 	expect(bar(terminal)).toBe("█████░░░░░");
@@ -247,7 +247,7 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<meter min="0" max="10" low="3" high="7" optimum="9" value="9"></meter>`;
+	document.body.innerHTML = "<meter min=\"0\" max=\"10\" low=\"3\" high=\"7\" optimum=\"9\" value=\"9\"></meter>";
 	await nextFrame(dom);
 
 	const meter = document.querySelector("meter") as HTMLMeterElement;
@@ -272,13 +272,13 @@ test("a meter's level reads its value against low, high and optimum", async () =
 test("a fieldset draws a border its legend interrupts", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 24});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<fieldset><legend>Legend</legend>field body</fieldset>`;
+	dom.document.body.innerHTML = "<fieldset><legend>Legend</legend>field body</fieldset>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toBe(
 		"┌─ Legend ─────────────┐\n" +
-			"│ field body           │\n" +
-			"└──────────────────────┘\n",
+		"│ field body           │\n" +
+		"└──────────────────────┘\n",
 	);
 
 	dom.dispose();
@@ -287,14 +287,14 @@ test("a fieldset draws a border its legend interrupts", async () => {
 test("a fieldset's blocks stack under the legend", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 24});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<fieldset><legend>Group</legend><div>one</div><div>two</div></fieldset>`;
+	dom.document.body.innerHTML = "<fieldset><legend>Group</legend><div>one</div><div>two</div></fieldset>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toBe(
 		"┌─ Group ──────────────┐\n" +
-			"│ one                  │\n" +
-			"│ two                  │\n" +
-			"└──────────────────────┘\n",
+		"│ one                  │\n" +
+		"│ two                  │\n" +
+		"└──────────────────────┘\n",
 	);
 
 	dom.dispose();
@@ -304,7 +304,7 @@ test("Tab reaches a summary", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<details><summary>More</summary><p>secret</p></details>`;
+	document.body.innerHTML = "<details><summary>More</summary><p>secret</p></details>";
 	await nextFrame(dom);
 
 	await type(terminal, "\t");
@@ -323,8 +323,8 @@ test("a checkedness that changes on its own repaints, and unchecks its group", a
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML =
-		`<input type="checkbox" id="c">` +
-		`<input type="radio" name="g" id="r1"><input type="radio" name="g" id="r2">`;
+		"<input type=\"checkbox\" id=\"c\">" +
+		"<input type=\"radio\" name=\"g\" id=\"r1\"><input type=\"radio\" name=\"g\" id=\"r2\">";
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("[ ]");
 

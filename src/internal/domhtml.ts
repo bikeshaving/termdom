@@ -18,14 +18,14 @@
  * - `nullable-string`: a DOMString?, null when the attribute is absent.
  */
 type ReflectKind =
-	| "string"
-	| "nullable-string"
-	| "url"
-	| "boolean"
-	| "long"
-	| "unsigned-long"
-	| "enum"
-	| "tokenlist";
+	| "string" |
+	"nullable-string" |
+	"url" |
+	"boolean" |
+	"long" |
+	"unsigned-long" |
+	"enum" |
+	"tokenlist";
 
 export interface ReflectSpec {
 	property: string;

@@ -70,23 +70,23 @@ const NARROW = "#probe { width: 10ch; }";
 
 const FEATURES: Record<string, Feature> = {
 	// Box model
-	width: {value: "12ch"},
-	height: {value: "4px"},
+	"width": {value: "12ch"},
+	"height": {value: "4px"},
 	"min-width": {value: "20ch", setup: NARROW},
 	"min-height": {value: "5px"},
 	"max-width": {value: "3ch", setup: NARROW},
 	"max-height": {value: "1px", setup: "#probe { height: 5px; }"},
-	padding: {value: "1px 2ch"},
+	"padding": {value: "1px 2ch"},
 	"padding-top": {value: "2px"},
 	"padding-right": {value: "3ch", setup: NARROW},
 	"padding-bottom": {value: "2px"},
 	"padding-left": {value: "3ch"},
-	margin: {value: "1px 2ch"},
+	"margin": {value: "1px 2ch"},
 	"margin-top": {value: "2px"},
 	"margin-right": {value: "3ch", setup: `${FLEX} #probe { width: 10ch; }`},
 	"margin-bottom": {value: "2px"},
 	"margin-left": {value: "3ch"},
-	border: {value: "1px solid red"},
+	"border": {value: "1px solid red"},
 	"border-width": {value: "1px", setup: "#probe { border-style: solid; }"},
 	"border-style": {value: "solid", setup: "#probe { border-width: 1px; }"},
 	"border-color": {value: "red", setup: "#probe { border: 1px solid; }"},
@@ -115,7 +115,7 @@ const FEATURES: Record<string, Feature> = {
 		value: "border-box",
 		setup: "#probe { width: 12ch; padding: 0 2ch; border: 1px solid; }",
 	},
-	outline: {value: "1px solid red"},
+	"outline": {value: "1px solid red"},
 	"outline-style": {value: "solid", setup: "#probe { outline-width: 1px; }"},
 	// The painted outline is present or absent; a zero width is the only width
 	// the grid can tell apart from the rest.
@@ -127,12 +127,12 @@ const FEATURES: Record<string, Feature> = {
 	"outline-offset": {value: "1px", setup: "#probe { outline: 1px solid red; }"},
 
 	// Display and positioning
-	display: {value: "none"},
-	position: {value: "absolute"},
-	top: {value: "3px", setup: "#probe { position: absolute; }"},
-	right: {value: "2ch", setup: "#probe { position: absolute; }"},
-	bottom: {value: "1px", setup: "#probe { position: absolute; }"},
-	left: {value: "4ch", setup: "#probe { position: absolute; }"},
+	"display": {value: "none"},
+	"position": {value: "absolute"},
+	"top": {value: "3px", setup: "#probe { position: absolute; }"},
+	"right": {value: "2ch", setup: "#probe { position: absolute; }"},
+	"bottom": {value: "1px", setup: "#probe { position: absolute; }"},
+	"left": {value: "4ch", setup: "#probe { position: absolute; }"},
 	"z-index": {
 		value: "5",
 		setup:
@@ -142,7 +142,7 @@ const FEATURES: Record<string, Feature> = {
 	// #inner is above #sibling by z-index alone; `isolation` on #probe makes
 	// #probe a stacking context, which confines #inner to #probe's own place in
 	// the paint order and puts #sibling on top.
-	isolation: {
+	"isolation": {
 		value: "isolate",
 		setup:
 			"#parent { display: block; position: relative; }" +
@@ -154,12 +154,12 @@ const FEATURES: Record<string, Feature> = {
 			'<div id="parent"><div id="probe"><div id="inner">inner</div></div>' +
 			'<div id="sibling">sibling</div></div>',
 	},
-	float: {value: "right"},
-	clear: {value: "both", setup: "#probe { float: left; }"},
+	"float": {value: "right"},
+	"clear": {value: "both", setup: "#probe { float: left; }"},
 	// Clipping only shows against content that overflows the box: an
 	// unbreakable word wider than it for the x axis, wrapped lines taller
 	// than it for the y axis.
-	overflow: {
+	"overflow": {
 		value: "hidden",
 		setup: NARROW,
 		text: "an-unbreakable-overflowing-word",
@@ -174,7 +174,7 @@ const FEATURES: Record<string, Feature> = {
 		setup: "#probe { width: 6ch; height: 1px; }",
 		text: "aaa bbb ccc",
 	},
-	visibility: {value: "hidden"},
+	"visibility": {value: "hidden"},
 
 	// Flexbox -- container properties on the parent, item properties on the item
 	"flex-direction": {value: "column", target: "parent", setup: FLEX},
@@ -189,7 +189,7 @@ const FEATURES: Record<string, Feature> = {
 		setup: `${FLEX} #probe, #sibling { width: 30ch; }`,
 	},
 	"flex-basis": {value: "8ch", setup: FLEX},
-	flex: {value: "1 0 8ch", setup: FLEX},
+	"flex": {value: "1 0 8ch", setup: FLEX},
 	"justify-content": {value: "flex-end", target: "parent", setup: FLEX},
 	"align-items": {
 		value: "flex-end",
@@ -205,8 +205,8 @@ const FEATURES: Record<string, Feature> = {
 		target: "parent",
 		setup: `${FLEX} #parent { height: 8px; flex-wrap: wrap; } #probe, #sibling { width: 30ch; }`,
 	},
-	order: {value: "2", setup: FLEX},
-	gap: {value: "2px", target: "parent", setup: FLEX},
+	"order": {value: "2", setup: FLEX},
+	"gap": {value: "2px", target: "parent", setup: FLEX},
 	"row-gap": {
 		value: "2px",
 		target: "parent",
@@ -234,9 +234,9 @@ const FEATURES: Record<string, Feature> = {
 	},
 
 	// Text and paint
-	color: {value: "red"},
+	"color": {value: "red"},
 	"background-color": {value: "blue"},
-	background: {value: "blue"},
+	"background": {value: "blue"},
 	"font-weight": {value: "bold"},
 	"font-style": {value: "italic"},
 	"text-decoration": {value: "underline"},
@@ -258,8 +258,8 @@ const FEATURES: Record<string, Feature> = {
 		text: UNBREAKABLE,
 	},
 	"line-height": {value: "2"},
-	direction: {value: "rtl"},
-	opacity: {value: "0"},
+	"direction": {value: "rtl"},
+	"opacity": {value: "0"},
 	"font-family": {value: "monospace"},
 	"font-size": {value: "2px"},
 	"letter-spacing": {value: "2px"},
@@ -307,17 +307,17 @@ const FEATURES: Record<string, Feature> = {
 			"#probe { display: inline-block; height: 1px; }" +
 			" #sibling { display: inline-block; height: 4px; }",
 	},
-	content: {value: '"X"', selector: "#probe::before"},
+	"content": {value: '"X"', selector: "#probe::before"},
 	"counter-reset": {value: "c 3"},
 	"counter-increment": {value: "c 2"},
 
 	// Deliberately unsupported, probed so the claim stays honest
-	transition: {value: "color 1s"},
-	animation: {value: "spin 1s"},
+	"transition": {value: "color 1s"},
+	"animation": {value: "spin 1s"},
 	"box-shadow": {value: "1px 1px red"},
-	filter: {value: "blur(1px)"},
+	"filter": {value: "blur(1px)"},
 	"aspect-ratio": {value: "1 / 1", setup: NARROW},
-	cursor: {value: "pointer"},
+	"cursor": {value: "pointer"},
 };
 
 /**
@@ -502,22 +502,22 @@ function generatedFeatures(): Record<string, Feature> {
 	]) {
 		out[name] = {
 			value:
-				name === "grid-template-areas"
-					? '"a" "b"'
-					: name === "grid-template" || name === "grid"
-						? "1fr / 1fr"
-						: name.endsWith("-start") || name.endsWith("-end")
-							? "1"
-							: name === "grid-area"
-								? "1 / 1 / 2 / 2"
-								: "1fr",
+				name === "grid-template-areas" ?
+					'"a" "b"' :
+					name === "grid-template" || name === "grid" ?
+						"1fr / 1fr" :
+						name.endsWith("-start") || name.endsWith("-end") ?
+							"1" :
+							name === "grid-area" ?
+								"1 / 1 / 2 / 2" :
+								"1fr",
 			target:
 				name.startsWith("grid-auto") ||
 				name === "grid" ||
 				name === "grid-template" ||
-				name === "grid-template-areas"
-					? "parent"
-					: "probe",
+				name === "grid-template-areas" ?
+					"parent" :
+					"probe",
 			setup: "#parent { display: grid; }",
 		};
 	}
@@ -868,8 +868,8 @@ const NOT_IMPLEMENTED: string[] = [
 const BASE_CSS = "#parent { display: block; }";
 
 const PROBE_MARKUP =
-	`<div id="parent"><div id="probe">probe text</div>` +
-	`<div id="sibling">sibling</div></div>`;
+	"<div id=\"parent\"><div id=\"probe\">probe text</div>" +
+	"<div id=\"sibling\">sibling</div></div>";
 
 interface Probe {
 	name: string;
@@ -892,7 +892,9 @@ async function snapshot(
 ): Promise<{frame: string; geometry: string}> {
 	const key = `${css}\u0000${markup}`;
 	const cached = renderCache.get(key);
-	if (cached) return cached;
+	if (cached) {
+		return cached;
+	}
 
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -904,7 +906,9 @@ async function snapshot(
 
 		const rect = (selector: string): string => {
 			const element = dom.document.querySelector(selector);
-			if (!element) return "-";
+			if (!element) {
+				return "-";
+			}
 			const r = element.getBoundingClientRect();
 			return `${r.x},${r.y},${r.width},${r.height}`;
 		};
@@ -927,17 +931,17 @@ async function snapshot(
 function cssProbe(property: string, feature: Feature, category: string): Probe {
 	const markup =
 		feature.markup ??
-		(feature.text
-			? PROBE_MARKUP.replace("probe text", feature.text)
-			: PROBE_MARKUP);
+		(feature.text ?
+				PROBE_MARKUP.replace("probe text", feature.text) :
+			PROBE_MARKUP);
 	const target =
 		feature.selector ?? (feature.target === "parent" ? "#parent" : "#probe");
 	// BASE_CSS blocks out the default #parent; a probe that brings its own
 	// markup (a real <table>, say) brings its own context and must not have
 	// display: block forced onto its root.
-	const context = feature.markup
-		? (feature.setup ?? "")
-		: `${BASE_CSS} ${feature.setup ?? ""}`;
+	const context = feature.markup ?
+			(feature.setup ?? "") :
+		`${BASE_CSS} ${feature.setup ?? ""}`;
 	return {
 		name: property,
 		category,
@@ -1124,15 +1128,17 @@ function buildProbes(): Probe[] {
 	const probes: Probe[] = [];
 	const generated = generatedFeatures();
 	for (const [name, feature] of Object.entries(generated)) {
-		const category = name.startsWith("border")
-			? "Box model"
-			: "Logical properties";
+		const category = name.startsWith("border") ?
+			"Box model" :
+			"Logical properties";
 		probes.push(cssProbe(name, feature, category));
 	}
 	for (const [category, names] of CATEGORIES) {
 		for (const name of names) {
 			const feature = FEATURES[name];
-			if (!feature) continue;
+			if (!feature) {
+				continue;
+			}
 			probes.push(cssProbe(name, feature, category));
 		}
 	}
@@ -1326,13 +1332,15 @@ async function main(): Promise<void> {
 			(p) =>
 				!p.startsWith("-") &&
 				(properties as Record<string, {status: string}>)[p].status ===
-					"standard",
+				"standard",
 		)
 		.sort();
 
 	const unprobed: string[] = [];
 	for (const property of standard) {
-		if (!probed.has(property)) unprobed.push(property);
+		if (!probed.has(property)) {
+			unprobed.push(property);
+		}
 	}
 
 	// A classification names a property that exists; anything else is a typo,
@@ -1392,7 +1400,9 @@ async function main(): Promise<void> {
 		["Logical properties"],
 	] as Array<[string]>) {
 		const rows = results.filter((r) => r.probe.category === category);
-		if (rows.length === 0) continue;
+		if (rows.length === 0) {
+			continue;
+		}
 		lines.push(
 			`## ${category}`,
 			"",
@@ -1459,7 +1469,7 @@ async function main(): Promise<void> {
 	writeFileSync(target, output);
 	process.stdout.write(
 		`Wrote COMPATIBILITY.md: ${supported}/${results.length} probed supported, ` +
-			`${unclassified.length} not yet probed.\n`,
+		`${unclassified.length} not yet probed.\n`,
 	);
 }
 

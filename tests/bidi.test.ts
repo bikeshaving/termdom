@@ -97,7 +97,7 @@ test("undeclared RTL text still paints in visual order", async () => {
 test("direction: rtl right-aligns the line and keeps Latin runs readable", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="direction: rtl; width: 20ch">مرحبا Bun</div>`;
+	dom.document.body.innerHTML = "<div style=\"direction: rtl; width: 20ch\">مرحبا Bun</div>";
 
 	await nextFrame(dom);
 
@@ -145,12 +145,16 @@ test("a terminal that insists on reordering gets logical order instead", async (
 				0,
 			);
 			const rest = data.replace("\x1b[8l", "").replace("\x1b[8$p", "");
-			if (rest) return original(rest, ...args.slice(1));
+			if (rest) {
+				return original(rest, ...args.slice(1));
+			}
 			// The write is swallowed, but its completion callback must still
 			// fire: the transport's sink resolves on it, and an unresolved
 			// write blocks every write queued behind it.
 			const callback = args.find((arg) => typeof arg === "function");
-			if (callback) (callback as () => void)();
+			if (callback) {
+				(callback as () => void)();
+			}
 			return true;
 		}
 		return original(...args);
@@ -192,18 +196,22 @@ test("grapheme-cluster mode is negotiated, and given back on dispose", async () 
 				0,
 			);
 			const rest = data.replace("\x1b[?2027h", "").replace("\x1b[?2027$p", "");
-			if (rest) return original(rest, ...args.slice(1));
+			if (rest) {
+				return original(rest, ...args.slice(1));
+			}
 			// See above: the sink resolves on the callback, so a swallowed
 			// write must still complete or it blocks the queue behind it.
 			const callback = args.find((arg) => typeof arg === "function");
-			if (callback) (callback as () => void)();
+			if (callback) {
+				(callback as () => void)();
+			}
 			return true;
 		}
 		return original(...args);
 	};
 
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>hi</div>`;
+	dom.document.body.innerHTML = "<div>hi</div>";
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 60));
 	// dispose() resolves when its queued mode restores have landed.
@@ -233,7 +241,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 	};
 
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>hi</div>`;
+	dom.document.body.innerHTML = "<div>hi</div>";
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 1100));
 	dom.dispose();
@@ -251,7 +259,7 @@ test("lam-alef shaping keeps RTL text flush at the right edge", async () => {
 	// never between the text and the right border it aligns to.
 	const terminal = new MockProcess({cols: 50, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="direction:rtl;border:1px solid;width:30ch">الإصدار يعمل</div>`;
+	dom.document.body.innerHTML = "<div style=\"direction:rtl;border:1px solid;width:30ch\">الإصدار يعمل</div>";
 	await nextFrame(dom);
 
 	const row = terminal

@@ -187,7 +187,7 @@ test("a form reset clears the flag a user edit set", async () => {
 	dom.attach();
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	const {document} = dom;
-	document.body.innerHTML = `<form><input value="default"><textarea>child text</textarea></form>`;
+	document.body.innerHTML = "<form><input value=\"default\"><textarea>child text</textarea></form>";
 	const form = document.querySelector("form") as any;
 	const input = document.querySelector("input") as any;
 	const textarea = document.querySelector("textarea") as any;

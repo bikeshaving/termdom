@@ -385,13 +385,19 @@ test("a TreeWalker's filter rejects a subtree and skips a single node", () => {
 		document.body,
 		NodeFilter.SHOW_ELEMENT,
 		(node: any) => {
-			if (node.localName === "b") return NodeFilter.FILTER_REJECT;
-			if (node.localName === "d") return NodeFilter.FILTER_SKIP;
+			if (node.localName === "b") {
+				return NodeFilter.FILTER_REJECT;
+			}
+			if (node.localName === "d") {
+				return NodeFilter.FILTER_SKIP;
+			}
 			return NodeFilter.FILTER_ACCEPT;
 		},
 	);
 	const seen: string[] = [];
-	while (walker.nextNode()) seen.push(walker.currentNode.localName);
+	while (walker.nextNode()) {
+		seen.push(walker.currentNode.localName);
+	}
 	expect(seen).toEqual(["a", "e"]);
 });
 
@@ -834,7 +840,9 @@ test("a removed subtree is still observed until the callback runs", async () => 
 	document.body.appendChild(parent);
 	const types: string[] = [];
 	const observer = new MutationObserver((records: any) => {
-		for (const record of records) types.push(`${record.type}`);
+		for (const record of records) {
+			types.push(`${record.type}`);
+		}
 	});
 	observer.observe(parent, {childList: true, subtree: true});
 	parent.removeChild(child);
@@ -1133,6 +1141,7 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 			static get observedAttributes(): string[] {
 				return ["watched"];
 			}
+
 			attributeChangedCallback(...args: unknown[]): void {
 				seen.push(args);
 			}
@@ -1158,9 +1167,11 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 		static get observedAttributes(): string[] {
 			return ["a"];
 		}
+
 		attributeChangedCallback(name: string): void {
 			seen.push(`attribute ${name}`);
 		}
+
 		connectedCallback(): void {
 			seen.push("connected");
 		}
@@ -1817,7 +1828,9 @@ test("one predicate names the elements that edit text", () => {
 	const document = make();
 	const field = (tag: string, type?: string) => {
 		const element = document.createElement(tag);
-		if (type !== undefined) (element as any).type = type;
+		if (type !== undefined) {
+			(element as any).type = type;
+		}
 		return isTextField(element as any);
 	};
 

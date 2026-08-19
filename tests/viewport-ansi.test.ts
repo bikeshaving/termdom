@@ -7,15 +7,19 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 // homing, nothing at all when empty). stdin.isTTY:false disables cursor
 // detection entirely, so these tests render from the terminal home row without
 // any anchor setup.
-function createRawMockProcess(rows: number = 24, cols: number = 80) {
+function createRawMockProcess(rows = 24, cols = 80) {
 	let capturedOutput = "";
 	return {
 		process: {
 			stdout: {
 				write: (chunk: any, encoding?: any, callback?: any) => {
 					capturedOutput += chunk;
-					if (typeof encoding === "function") callback = encoding;
-					if (callback) setImmediate(() => callback());
+					if (typeof encoding === "function") {
+						callback = encoding;
+					}
+					if (callback) {
+						setImmediate(() => callback());
+					}
 					return true;
 				},
 				columns: cols,

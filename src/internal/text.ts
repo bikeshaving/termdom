@@ -40,7 +40,9 @@ export class LRUCache<TKey, TValue> {
 	declare old: Map<TKey, TValue>;
 
 	constructor(limit: number) {
-		if (limit <= 0) throw new TypeError("limit must be positive");
+		if (limit <= 0) {
+			throw new TypeError("limit must be positive");
+		}
 		this.limit = limit;
 		this.map = new Map();
 		this.old = new Map();
@@ -49,7 +51,9 @@ export class LRUCache<TKey, TValue> {
 	get(key: TKey): TValue | undefined {
 		const val = this.map.get(key);
 		// The has() check only disambiguates a stored undefined from a miss.
-		if (val !== undefined || this.map.has(key)) return val;
+		if (val !== undefined || this.map.has(key)) {
+			return val;
+		}
 		if (this.old.has(key)) {
 			const promoted = this.old.get(key)!;
 			this.old.delete(key);
@@ -86,21 +90,27 @@ export class LRUCache<TKey, TValue> {
 		return this.map.size + this.old.size;
 	}
 
-	*keys(): IterableIterator<TKey> {
+	* keys(): IterableIterator<TKey> {
 		yield* this.map.keys();
 		for (const key of this.old.keys()) {
-			if (!this.map.has(key)) yield key;
+			if (!this.map.has(key)) {
+				yield key;
+			}
 		}
 	}
 
-	*values(): IterableIterator<TValue> {
-		for (const [, value] of this) yield value;
+	* values(): IterableIterator<TValue> {
+		for (const [, value] of this) {
+			yield value;
+		}
 	}
 
-	*entries(): IterableIterator<[TKey, TValue]> {
+	* entries(): IterableIterator<[TKey, TValue]> {
 		yield* this.map.entries();
 		for (const entry of this.old.entries()) {
-			if (!this.map.has(entry[0])) yield entry;
+			if (!this.map.has(entry[0])) {
+				yield entry;
+			}
 		}
 	}
 
@@ -147,8 +157,12 @@ export function recordClusterAdvance(
 	cluster: string,
 	advance: number,
 ): boolean {
-	if (clusterAdvances.has(cluster)) return false;
-	if (advance === graphemeWidth(cluster)) return false;
+	if (clusterAdvances.has(cluster)) {
+		return false;
+	}
+	if (advance === graphemeWidth(cluster)) {
+		return false;
+	}
 	clusterAdvances.set(cluster, advance);
 	// Widths answered before this one were answered by the tables alone.
 	widthCache.clear();
@@ -215,14 +229,26 @@ const DEFAULT_EMOJI_HIGH = 0x1faf8;
 export function widthIsUncertain(cluster: string): boolean {
 	const code = cluster.codePointAt(0)!;
 	// More than the base: a sequence, and sequences are the divergence zone.
-	if (cluster.length !== (code > 0xffff ? 2 : 1)) return true;
+	if (cluster.length !== (code > 0xffff ? 2 : 1)) {
+		return true;
+	}
 	// ASCII and the C1 controls, on their own, are one cell or none anywhere.
-	if (code < 0xa1) return false;
-	if (inRanges(code, UNCERTAIN_RANGES)) return true;
+	if (code < 0xa1) {
+		return false;
+	}
+	if (inRanges(code, UNCERTAIN_RANGES)) {
+		return true;
+	}
 	// Arabic Presentation Forms-A and -B.
-	if (code >= 0xfb50 && code <= 0xfdff) return true;
-	if (code >= 0xfe70 && code <= 0xfeff) return true;
-	if (code < DEFAULT_EMOJI_LOW || code > DEFAULT_EMOJI_HIGH) return false;
+	if (code >= 0xfb50 && code <= 0xfdff) {
+		return true;
+	}
+	if (code >= 0xfe70 && code <= 0xfeff) {
+		return true;
+	}
+	if (code < DEFAULT_EMOJI_LOW || code > DEFAULT_EMOJI_HIGH) {
+		return false;
+	}
 	if (code > DEFAULT_EMOJI_BMP_HIGH && code < DEFAULT_EMOJI_ASTRAL_LOW) {
 		return false;
 	}
@@ -240,18 +266,22 @@ export function widthIsUncertain(cluster: string): boolean {
  * the fallback below is the implementation that knows that.
  */
 export function stringWidth(str: string): number {
-	if (PRINTABLE_ASCII.test(str)) return str.length;
+	if (PRINTABLE_ASCII.test(str)) {
+		return str.length;
+	}
 
 	const cached = widthCache.get(str);
-	if (cached !== undefined) return cached;
+	if (cached !== undefined) {
+		return cached;
+	}
 
 	// Bun.stringWidth knows the tables, not the ledger, so a session that has
 	// learned anything takes the cluster-by-cluster path -- which is where the
 	// ledger is consulted. An empty ledger costs one size read.
 	const width =
-		isBun && clusterAdvances.size === 0 && !COMBINING.test(str)
-			? Bun.stringWidth(str)
-			: stringWidthFallback(str);
+		isBun && clusterAdvances.size === 0 && !COMBINING.test(str) ?
+				Bun.stringWidth(str) :
+				stringWidthFallback(str);
 	widthCache.set(str, width);
 	return width;
 }
@@ -276,7 +306,9 @@ export function writeClusterWidths(
 	offset: number,
 ): void {
 	if (PRINTABLE_ASCII.test(str)) {
-		for (let i = 0; i < str.length; i++) out[offset + i] = 1;
+		for (let i = 0; i < str.length; i++) {
+			out[offset + i] = 1;
+		}
 		return;
 	}
 
@@ -327,9 +359,9 @@ export function stringWidthFallback(str: string): number {
 }
 
 const segmenter =
-	typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
-		? new Intl.Segmenter("en", {granularity: "grapheme"})
-		: null;
+	typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ?
+			new Intl.Segmenter("en", {granularity: "grapheme"}) :
+		null;
 
 /**
  * Spacing combining marks (general category Mc). Unlike Mn and Me, which draw
@@ -344,14 +376,20 @@ function graphemeWidth(cluster: string): number {
 	// What the terminal was seen to do outranks what the tables say it should.
 	if (clusterAdvances.size !== 0) {
 		const measured = clusterAdvances.get(cluster);
-		if (measured !== undefined) return measured;
+		if (measured !== undefined) {
+			return measured;
+		}
 	}
 
 	const code = cluster.codePointAt(0)!;
 
-	if (code === 0) return 0;
+	if (code === 0) {
+		return 0;
+	}
 	// Control characters
-	if (code < 32 || (code >= 0x7f && code < 0xa0)) return 0;
+	if (code < 32 || (code >= 0x7f && code < 0xa0)) {
+		return 0;
+	}
 
 	// A U+FE0F *after* the base requests emoji presentation, which is two cells
 	// even when the base is narrow on its own (\u2764 is one cell, \u2764\uFE0F is
@@ -365,7 +403,9 @@ function graphemeWidth(cluster: string): number {
 
 	// Otherwise the base carries the width, and a cluster led by a combining
 	// mark or a lone variation selector occupies no cells.
-	if (inRanges(code, ZERO_WIDTH_RANGES)) return 0;
+	if (inRanges(code, ZERO_WIDTH_RANGES)) {
+		return 0;
+	}
 
 	// Two regional indicators form a flag, which renders as two cells; a lone
 	// one is a narrow letter. The segmenter clusters them in pairs for us.
@@ -383,10 +423,14 @@ function graphemeWidth(cluster: string): number {
 	// Counted strictly AFTER the base, never including it -- a lone spacing
 	// mark is its own base, and scanning the whole cluster charged it twice.
 	const rest = cluster.slice(String.fromCodePoint(code).length);
-	if (!rest) return base;
+	if (!rest) {
+		return base;
+	}
 	SPACING_MARK.lastIndex = 0;
 	let spacing = 0;
-	while (SPACING_MARK.exec(rest) !== null) spacing++;
+	while (SPACING_MARK.exec(rest) !== null) {
+		spacing++;
+	}
 	return base + spacing;
 }
 
@@ -419,7 +463,9 @@ function graphemeBoundaries(value: string): number[] {
 /** The first grapheme boundary strictly after `index` (or the end). */
 export function nextGraphemeBoundary(value: string, index: number): number {
 	for (const boundary of graphemeBoundaries(value)) {
-		if (boundary > index) return boundary;
+		if (boundary > index) {
+			return boundary;
+		}
 	}
 	return value.length;
 }
@@ -427,7 +473,9 @@ export function nextGraphemeBoundary(value: string, index: number): number {
 export function prevGraphemeBoundary(value: string, index: number): number {
 	let previous = 0;
 	for (const boundary of graphemeBoundaries(value)) {
-		if (boundary >= index) break;
+		if (boundary >= index) {
+			break;
+		}
 		previous = boundary;
 	}
 	return previous;
@@ -898,7 +946,9 @@ export function hasRTL(text: string): boolean {
  * first strong character decides, and text with no strong character is LTR.
  */
 export function inferParagraphDirection(text: string): "ltr" | "rtl" {
-	if (!hasRTL(text)) return "ltr";
+	if (!hasRTL(text)) {
+		return "ltr";
+	}
 	const {paragraphs} = bidi.getEmbeddingLevels(text);
 	return paragraphs[0] && paragraphs[0].level % 2 === 1 ? "rtl" : "ltr";
 }
@@ -916,8 +966,12 @@ export function inferParagraphDirection(text: string): "ltr" | "rtl" {
  * a blemish, where the other way is a wrong caret.
  */
 export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
-	if (!text) return text;
-	if (!hasRTL(text)) return text;
+	if (!text) {
+		return text;
+	}
+	if (!hasRTL(text)) {
+		return text;
+	}
 
 	// Shape FIRST, on logical order. A letter's form comes from the letters
 	// beside it in READING order, so shaping a reversed string picks the wrong
@@ -971,12 +1025,16 @@ function collapsiblePattern(whiteSpace: string): RegExp {
  * character, which is how fragment offsets are defined.
  */
 export function renderWhiteSpace(data: string, whiteSpace: string): string {
-	if (preservesSpaces(whiteSpace)) return data;
+	if (preservesSpaces(whiteSpace)) {
+		return data;
+	}
 	// Text whose collapsible whitespace is already single spaces renders as
 	// itself, which is most text: the question is worth asking before building
 	// a second string that would equal the first.
 	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
-	if (!collapses.test(data)) return data;
+	if (!collapses.test(data)) {
+		return data;
+	}
 	return data.replace(collapsiblePattern(whiteSpace), " ");
 }
 
@@ -1011,7 +1069,9 @@ export function renderWhiteSpaceOffsets(
 	data: string,
 	whiteSpace: string,
 ): {text: string; offsets: RenderedOffsets | null} {
-	if (preservesSpaces(whiteSpace)) return {text: data, offsets: null};
+	if (preservesSpaces(whiteSpace)) {
+		return {text: data, offsets: null};
+	}
 	const pattern = collapsiblePattern(whiteSpace);
 	pattern.lastIndex = 0;
 	const spaceAt: number[] = [];
@@ -1029,7 +1089,9 @@ export function renderWhiteSpaceOffsets(
 		runStart.push(match.index);
 		runEnd.push(match.index + match[0].length);
 		dropped += match[0].length - 1;
-		if (match[0] !== " ") rewritten = true;
+		if (match[0] !== " ") {
+			rewritten = true;
+		}
 	}
 	return {
 		text: dropped === 0 && !rewritten ? data : data.replace(pattern, " "),
@@ -1047,7 +1109,9 @@ export function dataOffsetAt(
 	offsets: RenderedOffsets | null,
 	index: number,
 ): number {
-	if (!offsets) return index;
+	if (!offsets) {
+		return index;
+	}
 	const rendered = index + offsets.base;
 	// The last collapsed run at or before the index: everything after that run
 	// maps across one-for-one from the data just past it.
@@ -1064,8 +1128,12 @@ export function dataOffsetAt(
 			high = middle - 1;
 		}
 	}
-	if (run < 0) return rendered;
-	if (spaceAt[run] === rendered) return offsets.runStart[run];
+	if (run < 0) {
+		return rendered;
+	}
+	if (spaceAt[run] === rendered) {
+		return offsets.runStart[run];
+	}
 	return offsets.runEnd[run] + (rendered - spaceAt[run] - 1);
 }
 

@@ -63,7 +63,7 @@ test("block structure inside a shadow root lays out normally", async () => {
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<div>first row</div><div>second row</div>`;
+	root.innerHTML = "<div>first row</div><div>second row</div>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -88,7 +88,7 @@ test("default slot projects light children between shadow siblings", async () =>
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<div>HEADER</div><slot></slot><div>FOOTER</div>`;
+	root.innerHTML = "<div>HEADER</div><slot></slot><div>FOOTER</div>";
 	const light = document.createElement("div");
 	light.textContent = "PROJECTED";
 	host.appendChild(light);
@@ -112,8 +112,8 @@ test("named slots project by slot attribute, in shadow-tree order", async () => 
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
 	// Shadow order reverses the light order: the slot's position wins.
-	root.innerHTML = `<div><slot name="second"></slot></div><div><slot name="first"></slot></div>`;
-	host.innerHTML = `<span slot="first">ALPHA</span><span slot="second">BETA</span>`;
+	root.innerHTML = "<div><slot name=\"second\"></slot></div><div><slot name=\"first\"></slot></div>";
+	host.innerHTML = "<span slot=\"first\">ALPHA</span><span slot=\"second\">BETA</span>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -133,7 +133,7 @@ test("a slot with nothing assigned renders its fallback content", async () => {
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<slot>FALLBACK</slot>`;
+	root.innerHTML = "<slot>FALLBACK</slot>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -148,8 +148,8 @@ test("assigned content replaces fallback; unassigned light children don't render
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<slot name="a">FALLBACK</slot>`;
-	host.innerHTML = `<span slot="a">ASSIGNED</span><span slot="nowhere">ORPHAN</span>`;
+	root.innerHTML = "<slot name=\"a\">FALLBACK</slot>";
+	host.innerHTML = "<span slot=\"a\">ASSIGNED</span><span slot=\"nowhere\">ORPHAN</span>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -167,7 +167,7 @@ test("bare text light children project through the default slot", async () => {
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<span>[</span><slot></slot><span>]</span>`;
+	root.innerHTML = "<span>[</span><slot></slot><span>]</span>";
 	host.appendChild(document.createTextNode("TEXTCHILD"));
 	document.body.appendChild(host);
 	await nextFrame(dom);
@@ -235,7 +235,7 @@ test("attachShadow on a connected host with slots reprojects its light children"
 	expect(terminal.getPlainText()).toContain("KEPT");
 
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<span>&lt;</span><slot></slot><span>&gt;</span>`;
+	root.innerHTML = "<span>&lt;</span><slot></slot><span>&gt;</span>";
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText()).toContain("<KEPT>");
@@ -249,7 +249,7 @@ test("reassigning a slot attribute reprojects on the next frame", async () => {
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<div>A:<slot name="a"></slot></div><div>B:<slot name="b"></slot></div>`;
+	root.innerHTML = "<div>A:<slot name=\"a\"></slot></div><div>B:<slot name=\"b\"></slot></div>";
 	const item = document.createElement("span");
 	item.setAttribute("slot", "a");
 	item.textContent = "ITEM";
@@ -285,13 +285,13 @@ test("document rules do not leak into shadow trees", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.head.innerHTML = `<style>span { text-transform: uppercase }</style>`;
+	document.head.innerHTML = "<style>span { text-transform: uppercase }</style>";
 	const light = document.createElement("span");
 	light.textContent = "light";
 	document.body.appendChild(light);
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<span>shadow</span>`;
+	root.innerHTML = "<span>shadow</span>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -312,7 +312,7 @@ test("a shadow root's <style> styles its own tree only", async () => {
 	document.body.appendChild(light);
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<style>span { text-transform: uppercase }</style><span>shadow</span>`;
+	root.innerHTML = "<style>span { text-transform: uppercase }</style><span>shadow</span>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -330,7 +330,7 @@ test(":host rules style the host from inside its own shadow tree", async () => {
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<style>:host { text-transform: uppercase }</style><span>shadow</span>`;
+	root.innerHTML = "<style>:host { text-transform: uppercase }</style><span>shadow</span>";
 	document.body.appendChild(host);
 	// A sibling the :host rule must NOT touch.
 	const other = document.createElement("div");
@@ -375,7 +375,7 @@ test("inherited properties cross the shadow boundary from the host", async () =>
 	const host = document.createElement("div");
 	host.style.textTransform = "uppercase";
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<span>shadow</span>`;
+	root.innerHTML = "<span>shadow</span>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -393,7 +393,7 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<style>.wrap { text-transform: uppercase }</style><div class="wrap"><slot></slot></div>`;
+	root.innerHTML = "<style>.wrap { text-transform: uppercase }</style><div class=\"wrap\"><slot></slot></div>";
 	host.appendChild(document.createTextNode("slotted"));
 	document.body.appendChild(host);
 	await nextFrame(dom);
@@ -472,7 +472,7 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.head.innerHTML = `<style>input::placeholder { color: #ff0000 }</style>`;
+	document.head.innerHTML = "<style>input::placeholder { color: #ff0000 }</style>";
 	const input = document.createElement("input");
 	input.setAttribute("placeholder", "hint");
 	document.body.appendChild(input);
@@ -493,7 +493,7 @@ test("::selection colors replace the inverse-video default", async () => {
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
-	document.head.innerHTML = `<style>input::selection { background-color: #0000ff; color: #ffffff }</style>`;
+	document.head.innerHTML = "<style>input::selection { background-color: #0000ff; color: #ffffff }</style>";
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
@@ -651,7 +651,7 @@ test("an inline-block host measures its shadow content, not its light children",
 	host.style.display = "inline-block";
 	host.textContent = "LIGHT-IGNORED";
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<style>b { font-weight: bold }</style><b>WIDE-SHADOW-CONTENT</b>`;
+	root.innerHTML = "<style>b { font-weight: bold }</style><b>WIDE-SHADOW-CONTENT</b>";
 	document.body.appendChild(host);
 	await nextFrame(dom);
 
@@ -667,7 +667,7 @@ test("::part() styles an exposed shadow part from the document, per spec", async
 	const {document, window} = dom;
 
 	const style = document.createElement("style");
-	style.textContent = `my-card::part(title) { font-weight: bold; color: rgb(9, 8, 7); }`;
+	style.textContent = "my-card::part(title) { font-weight: bold; color: rgb(9, 8, 7); }";
 	document.head.appendChild(style);
 
 	const Base = window.HTMLElement as unknown as typeof HTMLElement;

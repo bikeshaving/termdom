@@ -72,8 +72,8 @@ test("an element made fixed by a style write solves its auto margins", async () 
 	const {dom, terminal} = makeDom();
 	const {document} = dom;
 	document.body.innerHTML =
-		`<div id="e" style="width: 10ch; height: 3px; ` +
-		`margin: auto; background: #444">pinned</div>`;
+		"<div id=\"e\" style=\"width: 10ch; height: 3px; " +
+		"margin: auto; background: #444\">pinned</div>";
 	await nextFrame(dom);
 	const element = document.getElementById("e")!;
 	element.style.position = "fixed";
@@ -102,7 +102,7 @@ test("an element made fixed by a style write solves its auto margins", async () 
 test("an element made fixed by the popover attribute solves its auto margins", async () => {
 	const {dom, terminal} = makeDom();
 	const {document} = dom;
-	document.body.innerHTML = `<div id="e">note</div>`;
+	document.body.innerHTML = "<div id=\"e\">note</div>";
 	await nextFrame(dom);
 	const element = document.getElementById("e")!;
 	element.setAttribute("popover", "manual");
@@ -128,7 +128,7 @@ test("an element made fixed by the popover attribute solves its auto margins", a
 
 test("a flex item that stops holding a block measures as a run again", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<div class="flex"><em id="e"><section>t000</section></em></div>`,
+		"<div class=\"flex\"><em id=\"e\"><section>t000</section></em></div>",
 		[
 			(document) => {
 				document.getElementById("e")!.innerHTML = "<b>x</b>";
@@ -141,7 +141,7 @@ test("a flex item that stops holding a block measures as a run again", async () 
 
 test("a div inside an inline made display:contents keeps its subtree", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<b><div id="e"><section>t003</section></div></b>`,
+		"<b><div id=\"e\"><section>t003</section></div></b>",
 		[
 			(document) => {
 				(document.getElementById("e") as HTMLElement).style.display =
@@ -158,7 +158,7 @@ test("a div inside an inline made display:contents keeps its subtree", async () 
 // tree correctly while the sequence does not.
 test("dissolving a box and then preserving white space agree frame by frame", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<em><li id="a"><section><p id="b"> </p>   </section>t000</li></em>`,
+		"<em><li id=\"a\"><section><p id=\"b\"> </p>   </section>t000</li></em>",
 		[
 			(document) => {
 				document.getElementById("a")!.classList.add("contents");
@@ -173,7 +173,7 @@ test("dissolving a box and then preserving white space agree frame by frame", as
 
 test("a marker moved into another inline is enumerated where it lands", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<em><em id="a"><b id="b"></b></em>t002<em id="c" class="mark">t003</em></em>`,
+		"<em><em id=\"a\"><b id=\"b\"></b></em>t002<em id=\"c\" class=\"mark\">t003</em></em>",
 		[
 			(document) => {
 				document.getElementById("a")!.classList.add("flex");
@@ -190,7 +190,7 @@ test("a marker moved into another inline is enumerated where it lands", async ()
 
 test("an inline moved into a block inside an inline-block lays out", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<span id="a">a</span><span class="iblock"><div id="b">b</div></span>`,
+		"<span id=\"a\">a</span><span class=\"iblock\"><div id=\"b\">b</div></span>",
 		[
 			(document) => {
 				document
@@ -208,7 +208,7 @@ test("an inline moved into a block inside an inline-block lays out", async () =>
 // that builds a box is what hoists it to its containing block.
 test("a run member that leaves the flow is hoisted, not dropped", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<div>a<em id="e">mid</em>b</div>`,
+		"<div>a<em id=\"e\">mid</em>b</div>",
 		[
 			(document) => {
 				document.getElementById("e")!.className = "abs";
@@ -221,7 +221,7 @@ test("a run member that leaves the flow is hoisted, not dropped", async () => {
 
 test("an inline-block that gains a block lays its content out under its own root", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<div><span id="e" class="iblock">head</span>tail</div>`,
+		"<div><span id=\"e\" class=\"iblock\">head</span>tail</div>",
 		[
 			(document) => {
 				const block = document.createElement("div");
@@ -236,7 +236,7 @@ test("an inline-block that gains a block lays its content out under its own root
 
 test("an inline that gains a block is broken around it", async () => {
 	const {incremental, fresh} = await incrementalVersusFresh(
-		`<div><span id="e">head</span></div>`,
+		"<div><span id=\"e\">head</span></div>",
 		[
 			(document) => {
 				const block = document.createElement("div");

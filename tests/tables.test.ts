@@ -91,7 +91,7 @@ test("columns are sized to their content, not split evenly", async () => {
 test("a table with width auto shrink-wraps instead of filling its container", async () => {
 	// A browser renders this a dozen or so cells wide, not the full viewport.
 	const {box, dom} = await render(
-		`<table><tr><td>a</td><td>b</td></tr></table>`,
+		"<table><tr><td>a</td><td>b</td></tr></table>",
 		60,
 	);
 

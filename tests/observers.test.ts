@@ -50,7 +50,9 @@ test("ResizeObserver fires when the terminal resizes a percentage-sized box", as
 
 	const widths: number[] = [];
 	const ro = new window.ResizeObserver((entries: any[]) => {
-		for (const e of entries) widths.push(e.contentRect.width);
+		for (const e of entries) {
+			widths.push(e.contentRect.width);
+		}
 	});
 	ro.observe(box);
 	await nextFrame(dom);
@@ -118,7 +120,9 @@ test("IntersectionObserver reports an off-screen element as not intersecting", a
 
 	const states: boolean[] = [];
 	const io = new window.IntersectionObserver((entries: any[]) => {
-		for (const e of entries) states.push(e.isIntersecting);
+		for (const e of entries) {
+			states.push(e.isIntersecting);
+		}
 	});
 	// Row 18 is below a 10-row viewport.
 	io.observe(document.getElementById("r18"));
@@ -137,7 +141,9 @@ test("IntersectionObserver fires again when a target scrolls into view", async (
 
 	const states: boolean[] = [];
 	const io = new window.IntersectionObserver((entries: any[]) => {
-		for (const e of entries) states.push(e.isIntersecting);
+		for (const e of entries) {
+			states.push(e.isIntersecting);
+		}
 	});
 	io.observe(document.getElementById("r18"));
 	await nextFrame(dom);
@@ -154,12 +160,14 @@ test("IntersectionObserver honours a ratio threshold", async () => {
 	// A target taller than the viewport can never be more than partly visible, so a
 	// threshold of 1 (fully visible) is never met.
 	const {dom, document, window} = make(4, 40) as any;
-	document.body.innerHTML = `<div id="tall" style="height:8px">tall block</div>`;
+	document.body.innerHTML = "<div id=\"tall\" style=\"height:8px\">tall block</div>";
 
 	const states: boolean[] = [];
 	const io = new window.IntersectionObserver(
 		(entries: any[]) => {
-			for (const e of entries) states.push(e.isIntersecting);
+			for (const e of entries) {
+				states.push(e.isIntersecting);
+			}
 		},
 		{threshold: 1},
 	);
@@ -191,7 +199,9 @@ test("the manager hook is not part of the public surface", () => {
 		o && o !== Object.prototype;
 		o = Object.getPrototypeOf(o) as typeof ro
 	) {
-		for (const key of Object.getOwnPropertyNames(o)) names.add(key);
+		for (const key of Object.getOwnPropertyNames(o)) {
+			names.add(key);
+		}
 	}
 	expect([...names].some((n) => /check/i.test(n))).toBe(false);
 
@@ -200,7 +210,7 @@ test("the manager hook is not part of the public surface", () => {
 
 test("ResizeObserver reports the content box's own origin", async () => {
 	const {dom, document, window} = make() as any;
-	document.body.innerHTML = `<div id="a" style="width:10ch;height:3px;padding:1px 2ch">A</div>`;
+	document.body.innerHTML = "<div id=\"a\" style=\"width:10ch;height:3px;padding:1px 2ch\">A</div>";
 	await nextFrame(dom);
 
 	const entries: Array<{contentRect: {top: number; left: number}}> = [];
@@ -220,7 +230,7 @@ test("ResizeObserver reports the content box's own origin", async () => {
 
 test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 	const {dom, document, window} = make() as any;
-	document.body.innerHTML = `<div id="a" style="width:10ch;height:3px">A</div>`;
+	document.body.innerHTML = "<div id=\"a\" style=\"width:10ch;height:3px\">A</div>";
 	await nextFrame(dom);
 
 	const entries: Array<{
@@ -254,7 +264,7 @@ test("display:none stops taking up rows", async () => {
 	// Not an observer bug: styleFlexNode set DISPLAY_NONE and then a later branch
 	// reset it to flex, so a hidden element stopped painting but kept its space.
 	const {dom, terminal, document} = make(8, 30) as any;
-	document.body.innerHTML = `<div id="a" style="height:3px">AAA</div><div>after</div>`;
+	document.body.innerHTML = "<div id=\"a\" style=\"height:3px\">AAA</div><div>after</div>";
 	await nextFrame(dom);
 
 	const rows = () =>
@@ -279,14 +289,16 @@ test("display:none stops taking up rows", async () => {
 
 test("IntersectionObserver honours rootMargin", async () => {
 	const {dom, document, window} = make(5, 40) as any;
-	document.body.innerHTML = `<div style="height:20px">spacer</div><div id="far" style="height:2px">far</div>`;
+	document.body.innerHTML = "<div style=\"height:20px\">spacer</div><div id=\"far\" style=\"height:2px\">far</div>";
 	await nextFrame(dom);
 	const far = document.getElementById("far");
 
 	const without: boolean[] = [];
 	const a = new window.IntersectionObserver(
 		(es: Array<{isIntersecting: boolean}>) => {
-			for (const e of es) without.push(e.isIntersecting);
+			for (const e of es) {
+				without.push(e.isIntersecting);
+			}
 		},
 	);
 	a.observe(far);
@@ -296,7 +308,9 @@ test("IntersectionObserver honours rootMargin", async () => {
 	const withMargin: boolean[] = [];
 	const b = new window.IntersectionObserver(
 		(es: Array<{isIntersecting: boolean}>) => {
-			for (const e of es) withMargin.push(e.isIntersecting);
+			for (const e of es) {
+				withMargin.push(e.isIntersecting);
+			}
 		},
 		{rootMargin: "100px"},
 	);
@@ -311,15 +325,17 @@ test("IntersectionObserver honours rootMargin", async () => {
 test("IntersectionObserver fires at every threshold crossing", async () => {
 	const {dom, document, window} = make(6, 40) as any;
 	document.body.innerHTML =
-		`<div style="height:3px">top</div>` +
-		`<div id="target" style="height:4px">target</div>` +
-		`<div style="height:40px">filler</div>`;
+		"<div style=\"height:3px\">top</div>" +
+		"<div id=\"target\" style=\"height:4px\">target</div>" +
+		"<div style=\"height:40px\">filler</div>";
 	await nextFrame(dom);
 
 	const ratios: number[] = [];
 	const io = new window.IntersectionObserver(
 		(es: Array<{intersectionRatio: number}>) => {
-			for (const e of es) ratios.push(e.intersectionRatio);
+			for (const e of es) {
+				ratios.push(e.intersectionRatio);
+			}
 		},
 		{threshold: [0, 0.25, 0.5, 0.75, 1]},
 	);
@@ -339,7 +355,7 @@ test("IntersectionObserver fires at every threshold crossing", async () => {
 
 test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
 	const {dom, document, window} = make() as any;
-	document.body.innerHTML = `<div id="r"></div>`;
+	document.body.innerHTML = "<div id=\"r\"></div>";
 	const root = document.getElementById("r");
 	const io = new window.IntersectionObserver(() => {}, {
 		root,

@@ -36,7 +36,7 @@ function computed(html: string, id: string, property: string): string {
  */
 const IMPLEMENTED_HINTS: Record<string, string> = {
 	"*[dir]": "direction",
-	bdi: "direction",
+	"bdi": "direction",
 	"input[type=tel]": "direction",
 };
 
@@ -85,7 +85,7 @@ const EXCLUDED_HINTS: Record<string, string> = {
 
 	// Alignment attributes, which map to text-align, float and vertical-align.
 	"div[align]": "text-align: the align attribute predates text-align",
-	center: "text-align: center, which the UA sheet could carry but does not",
+	"center": "text-align: center, which the UA sheet could carry but does not",
 	"td[align]": "text-align on a cell",
 	"th[align]": "text-align on a cell",
 	"tr[align]": "text-align on a row",
@@ -170,32 +170,36 @@ test("every attribute the Rendering section styles is implemented or named", () 
 });
 
 test("the dir attribute reaches the direction property", () => {
-	expect(computed(`<div dir="rtl" id="d">x</div>`, "d", "direction")).toBe(
+	expect(computed("<div dir=\"rtl\" id=\"d\">x</div>", "d", "direction")).toBe(
 		"rtl",
 	);
-	expect(computed(`<div dir="ltr" id="d">x</div>`, "d", "direction")).toBe(
+	expect(computed("<div dir=\"ltr\" id=\"d\">x</div>", "d", "direction")).toBe(
 		"ltr",
 	);
 	// The attribute value is matched ASCII case-insensitively.
-	expect(computed(`<div dir="RTL" id="d">x</div>`, "d", "direction")).toBe(
+	expect(computed("<div dir=\"RTL\" id=\"d\">x</div>", "d", "direction")).toBe(
 		"rtl",
 	);
 	// No dir attribute is the initial value.
-	expect(computed(`<div id="d">x</div>`, "d", "direction")).toBe("ltr");
+	expect(computed("<div id=\"d\">x</div>", "d", "direction")).toBe("ltr");
 });
 
 test("dir inherits, and a nested dir overrides it", () => {
-	const markup = `<div dir="rtl"><p id="inner">x</p></div>`;
+	const markup = "<div dir=\"rtl\"><p id=\"inner\">x</p></div>";
 	expect(computed(markup, "inner", "direction")).toBe("rtl");
-	const nested = `<div dir="rtl"><p dir="ltr" id="inner">x</p></div>`;
+	const nested = "<div dir=\"rtl\"><p dir=\"ltr\" id=\"inner\">x</p></div>";
 	expect(computed(nested, "inner", "direction")).toBe("ltr");
 });
 
 test("dir=auto reads the direction off the content", () => {
-	expect(computed(`<div dir="auto" id="d">שלום</div>`, "d", "direction")).toBe(
+	expect(
+		computed("<div dir=\"auto\" id=\"d\">שלום</div>", "d", "direction"),
+	).toBe(
 		"rtl",
 	);
-	expect(computed(`<div dir="auto" id="d">hello</div>`, "d", "direction")).toBe(
+	expect(
+		computed("<div dir=\"auto\" id=\"d\">hello</div>", "d", "direction"),
+	).toBe(
 		"ltr",
 	);
 	// The boundary, pinned rather than asserted away: the selector engine's
@@ -203,7 +207,7 @@ test("dir=auto reads the direction off the content", () => {
 	// strong direction, so content opening with digits or punctuation reads
 	// left-to-right whatever follows. Writing dir=rtl says it outright.
 	expect(
-		computed(`<div dir="auto" id="d">123 - שלום</div>`, "d", "direction"),
+		computed("<div dir=\"auto\" id=\"d\">123 - שלום</div>", "d", "direction"),
 	).toBe("ltr");
 });
 
@@ -212,14 +216,14 @@ test("an unrecognized dir value inherits the parent's direction", () => {
 	// Rendering section's `[dir]:dir(ltr)`: a value that is neither ltr, rtl
 	// nor auto matches no rule, and direction inherits, as the directionality
 	// algorithm says it should.
-	const markup = `<div dir="rtl"><p dir="sideways" id="inner">x</p></div>`;
+	const markup = "<div dir=\"rtl\"><p dir=\"sideways\" id=\"inner\">x</p></div>";
 	expect(computed(markup, "inner", "direction")).toBe("rtl");
 });
 
 test("bdi is auto without an attribute, and bdo takes the attribute", () => {
-	expect(computed(`<bdi id="d">שלום</bdi>`, "d", "direction")).toBe("rtl");
-	expect(computed(`<bdi id="d">hello</bdi>`, "d", "direction")).toBe("ltr");
-	expect(computed(`<bdo dir="rtl" id="d">x</bdo>`, "d", "direction")).toBe(
+	expect(computed("<bdi id=\"d\">שלום</bdi>", "d", "direction")).toBe("rtl");
+	expect(computed("<bdi id=\"d\">hello</bdi>", "d", "direction")).toBe("ltr");
+	expect(computed("<bdo dir=\"rtl\" id=\"d\">x</bdo>", "d", "direction")).toBe(
 		"rtl",
 	);
 });
@@ -227,7 +231,7 @@ test("bdi is auto without an attribute, and bdo takes the attribute", () => {
 test("an author's direction outranks the attribute", () => {
 	// The dir rules are UA origin, so any author rule beats them -- including
 	// one whose selector is weaker than the UA's.
-	const markup = `<style>p { direction: ltr }</style><p dir="rtl" id="d">x</p>`;
+	const markup = "<style>p { direction: ltr }</style><p dir=\"rtl\" id=\"d\">x</p>";
 	expect(computed(markup, "d", "direction")).toBe("ltr");
 });
 

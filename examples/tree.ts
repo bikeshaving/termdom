@@ -73,9 +73,15 @@ function makeRow(entry: Listing, depth: number): HTMLElement {
 
 	const name = document.createElement("span");
 	name.className = "name";
-	if (entry.isDir) name.classList.add("dir");
-	if (entry.isLink) name.classList.add("link");
-	if (entry.name.startsWith(".")) name.classList.add("dotted");
+	if (entry.isDir) {
+		name.classList.add("dir");
+	}
+	if (entry.isLink) {
+		name.classList.add("link");
+	}
+	if (entry.name.startsWith(".")) {
+		name.classList.add("dotted");
+	}
 	name.textContent = entry.isDir ? `${entry.name}/` : entry.name;
 
 	row.append(marker, name);
@@ -94,7 +100,9 @@ function fill(container: HTMLElement, dir: string, depth: number): void {
 }
 
 function expand(row: HTMLElement): void {
-	if (row.dataset.kind !== "dir" || row.dataset.open === "true") return;
+	if (row.dataset.kind !== "dir" || row.dataset.open === "true") {
+		return;
+	}
 	let children = childrenOf.get(row);
 	if (!children) {
 		children = document.createElement("div");
@@ -113,7 +121,9 @@ function expand(row: HTMLElement): void {
 }
 
 function collapse(row: HTMLElement): void {
-	if (row.dataset.open !== "true") return;
+	if (row.dataset.open !== "true") {
+		return;
+	}
 	childrenOf.get(row)?.remove();
 	row.dataset.open = "false";
 	row.querySelector(".marker")!.textContent = "▸ ";
@@ -149,7 +159,9 @@ function parentOf(row: HTMLElement): HTMLElement | undefined {
 	const depth = depthOf(row);
 	const all = rows();
 	for (let i = all.indexOf(row) - 1; i >= 0; i--) {
-		if (depthOf(all[i]) < depth) return all[i];
+		if (depthOf(all[i]) < depth) {
+			return all[i];
+		}
 	}
 	return undefined;
 }
@@ -160,7 +172,9 @@ async function refresh(): Promise<void> {
 	rows()[selected]?.scrollIntoView();
 	// At the first row, pull the camera the rest of the way up so the header
 	// shows too -- scrollIntoView alone stops one row short of it.
-	if (selected === 0) window.scrollBy(0, -document.body.scrollHeight);
+	if (selected === 0) {
+		window.scrollBy(0, -document.body.scrollHeight);
+	}
 	await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
 }
 
@@ -185,15 +199,20 @@ document.addEventListener("keydown", (event: Event) => {
 		select(rows().length - 1);
 	} else if (key === "Enter" || key === "l" || key === "ArrowRight") {
 		if (current?.dataset.kind === "dir") {
-			if (current.dataset.open === "true") collapse(current);
-			else expand(current);
+			if (current.dataset.open === "true") {
+				collapse(current);
+			} else {
+				expand(current);
+			}
 		}
 	} else if (key === "h" || key === "ArrowLeft") {
 		if (current?.dataset.open === "true") {
 			collapse(current);
 		} else if (current) {
 			const parent = parentOf(current);
-			if (parent) select(rows().indexOf(parent));
+			if (parent) {
+				select(rows().indexOf(parent));
+			}
 		}
 	} else if (key === ".") {
 		showDotfiles = !showDotfiles;
@@ -210,11 +229,16 @@ document.addEventListener("keydown", (event: Event) => {
 // expand() make paint themselves, so there is nothing to render here.
 document.addEventListener("click", (event: Event) => {
 	const row = (event.target as Element).closest(".row") as HTMLElement | null;
-	if (!row) return;
+	if (!row) {
+		return;
+	}
 	select(rows().indexOf(row));
 	if (row.dataset.kind === "dir") {
-		if (row.dataset.open === "true") collapse(row);
-		else expand(row);
+		if (row.dataset.open === "true") {
+			collapse(row);
+		} else {
+			expand(row);
+		}
 	}
 });
 

@@ -148,7 +148,7 @@ test("a relative inline run member keeps painting with its run", async () => {
 	// in-flow walk must not defer it. (Its text also keeps its run cells:
 	// relative positioning preserves flow space.)
 	const {terminal, dom} = await render(
-		`<div>ab<span style="position:relative">MID</span>cd</div>`,
+		"<div>ab<span style=\"position:relative\">MID</span>cd</div>",
 	);
 	expect(terminal.getPlainText()).toContain("abMIDcd");
 	dom.dispose();
@@ -166,7 +166,7 @@ test("isolation: isolate forms a stacking context without positioning", async ()
 
 test("relative offsets shift an inline run member's fragments", async () => {
 	const {terminal, dom} = await render(
-		`<div>ab<span style="position:relative; left:3ch">MID</span></div>`,
+		"<div>ab<span style=\"position:relative; left:3ch\">MID</span></div>",
 	);
 	const row = terminal.getPlainText().split("\n")[0];
 	expect(row.indexOf("MID")).toBe(5); // 2 (after "ab") + 3 offset
@@ -190,7 +190,7 @@ test("position:fixed stays glued to the viewport as the camera scrolls", async (
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="position:fixed; top:0; left:30ch; width:6ch">PINNED</div>` +
+		"<div style=\"position:fixed; top:0; left:30ch; width:6ch\">PINNED</div>" +
 		Array.from({length: 10}, (_, i) => `<div>row${i}</div>`).join("");
 	await nextFrame(dom);
 	expect(terminal.getPlainText().split("\n")[0]).toContain("PINNED");

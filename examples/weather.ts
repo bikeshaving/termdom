@@ -101,7 +101,9 @@ const GLYPHS: Array<[Set<number>, string, string]> = [
 
 function glyphFor(code: number): [string, string] {
 	for (const [codes, glyph, name] of GLYPHS) {
-		if (codes.has(code)) return [glyph, name];
+		if (codes.has(code)) {
+			return [glyph, name];
+		}
 	}
 	return ["🌡️", `code ${code}`];
 }
@@ -132,11 +134,15 @@ async function search(query: string): Promise<void> {
 	try {
 		const geo = await fetch(
 			"https://geocoding-api.open-meteo.com/v1/search?count=1&name=" +
-				encodeURIComponent(query),
+			encodeURIComponent(query),
 		).then((res) => res.json());
-		if (generation !== searchGeneration) return;
+		if (generation !== searchGeneration) {
+			return;
+		}
 		const hit = geo.results?.[0];
-		if (!hit) return show("error", `no place called ${query} found`);
+		if (!hit) {
+			return show("error", `no place called ${query} found`);
+		}
 		lastPlace = {
 			name: hit.name,
 			region: [hit.admin1, hit.country].filter(Boolean).join(", "),
@@ -159,12 +165,14 @@ async function forecast(generation: number): Promise<void> {
 		const unit = celsius ? "celsius" : "fahrenheit";
 		const data = await fetch(
 			`https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}` +
-				"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m" +
-				"&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=7" +
-				"&daily=weather_code,temperature_2m_max,temperature_2m_min" +
-				`&temperature_unit=${unit}&timezone=auto`,
+			"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m" +
+			"&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=7" +
+			"&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+			`&temperature_unit=${unit}&timezone=auto`,
 		).then((res) => res.json());
-		if (generation !== searchGeneration) return;
+		if (generation !== searchGeneration) {
+			return;
+		}
 		lastData = data;
 		dayIndex = 0;
 		render(data);
@@ -201,11 +209,21 @@ interface Forecast {
 /** The color bucket a temperature paints with, coldest to hottest. */
 function bucketOf(temp: number): string {
 	const c = celsius ? temp : ((temp - 32) * 5) / 9;
-	if (c < 0) return "t0";
-	if (c < 10) return "t1";
-	if (c < 20) return "t2";
-	if (c < 28) return "t3";
-	if (c < 35) return "t4";
+	if (c < 0) {
+		return "t0";
+	}
+	if (c < 10) {
+		return "t1";
+	}
+	if (c < 20) {
+		return "t2";
+	}
+	if (c < 28) {
+		return "t3";
+	}
+	if (c < 35) {
+		return "t4";
+	}
 	return "t5";
 }
 
@@ -232,11 +250,11 @@ function temperatureChart(temps: number[]): string {
 			})
 			.join("");
 		const label =
-			row === ROWS - 1
-				? String(Math.round(max)).padStart(4) + "° "
-				: row === 0
-					? String(Math.round(min)).padStart(4) + "° "
-					: "      ";
+			row === ROWS - 1 ?
+				String(Math.round(max)).padStart(4) + "° " :
+				row === 0 ?
+					String(Math.round(min)).padStart(4) + "° " :
+					"      ";
 		lines.push(`<div><span class="label">${label}</span>${cells}</div>`);
 	}
 	return lines.join("");
@@ -290,21 +308,33 @@ function render(data: Forecast): void {
 input.addEventListener("keydown", (event) => {
 	if ((event as KeyboardEvent).key === "Enter") {
 		const query = (input as HTMLInputElement).value.trim();
-		if (query) void search(query);
+		if (query) {
+			void search(query);
+		}
 	}
 });
 
 document.addEventListener("keydown", (event) => {
 	const key = (event as KeyboardEvent).key;
-	if ((event.target as Element)?.tagName === "INPUT") return;
-	if (key === "q") term.window.close();
-	if (key === "/") (input as HTMLElement).focus();
+	if ((event.target as Element)?.tagName === "INPUT") {
+		return;
+	}
+	if (key === "q") {
+		term.window.close();
+	}
+	if (key === "/") {
+		(input as HTMLElement).focus();
+	}
 	if (key === "u") {
 		celsius = !celsius;
-		if (lastPlace) void forecast(++searchGeneration);
+		if (lastPlace) {
+			void forecast(++searchGeneration);
+		}
 	}
 	if (key === "ArrowLeft" || key === "ArrowRight") {
-		if (!lastData) return;
+		if (!lastData) {
+			return;
+		}
 		const count = lastData.daily.time.length;
 		dayIndex = (dayIndex + (key === "ArrowRight" ? 1 : -1) + count) % count;
 		render(lastData);
@@ -314,7 +344,9 @@ document.addEventListener("keydown", (event) => {
 // A click on a day card charts that day.
 report.addEventListener("click", (event) => {
 	const card = (event.target as Element | null)?.closest?.(".day");
-	if (!card || !lastData) return;
+	if (!card || !lastData) {
+		return;
+	}
 	dayIndex = Array.from(card.parentElement!.children).indexOf(card);
 	render(lastData);
 });

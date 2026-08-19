@@ -201,10 +201,10 @@ const NAME_START =
 const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
 // The combining-mark ranges are the production's own, and are meant to match
 // a combining mark on its own rather than as part of a grapheme.
-// eslint-disable-next-line no-misleading-character-class
+
 const XML_NAME = new RegExp(
 	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
-		`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
+	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
 );
 
 /** Throw unless the string matches the XML Name production. */
@@ -215,9 +215,9 @@ function validateXMLName(name: string): void {
 }
 
 function isValidLocalName(name: string, forAttribute: boolean): boolean {
-	return forAttribute
-		? VALID_ATTRIBUTE_LOCAL_NAME.test(name)
-		: VALID_ELEMENT_LOCAL_NAME.test(name);
+	return forAttribute ?
+			VALID_ATTRIBUTE_LOCAL_NAME.test(name) :
+			VALID_ELEMENT_LOCAL_NAME.test(name);
 }
 
 /** Throw unless the string is a valid element local name. */
@@ -483,7 +483,9 @@ interface ActivationTarget {
 
 /** A dictionary argument, per Web IDL: absent, null, or an object. */
 function toDictionary<T extends object>(value: unknown, what: string): T {
-	if (value === undefined || value === null) return {} as T;
+	if (value === undefined || value === null) {
+		return {} as T;
+	}
 	if (typeof value !== "object" && typeof value !== "function") {
 		throw new TypeError(`${what} must be an object`);
 	}
@@ -512,14 +514,14 @@ const HostEvent = globalThis.Event as unknown as {
 interface HostEventInstance
 	extends Omit<
 		globalThis.Event,
-		| "target"
-		| "srcElement"
-		| "currentTarget"
-		| "composedPath"
-		| "stopPropagation"
-		| "stopImmediatePropagation"
-		| "preventDefault"
-		| "initEvent"
+		| "target" |
+		"srcElement" |
+		"currentTarget" |
+		"composedPath" |
+		"stopPropagation" |
+		"stopImmediatePropagation" |
+		"preventDefault" |
+		"initEvent"
 	> {
 	stopPropagation(): void;
 	stopImmediatePropagation(): void;
@@ -675,7 +677,9 @@ export class Event extends HostEvent {
 	}
 
 	override set returnValue(value: boolean) {
-		if (!value) setCanceledFlag(this);
+		if (!value) {
+			setCanceledFlag(this);
+		}
 	}
 
 	override get cancelBubble(): boolean {
@@ -712,7 +716,9 @@ export class Event extends HostEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initEvent needs a type");
 		}
-		if (this.#state.dispatch) return;
+		if (this.#state.dispatch) {
+			return;
+		}
 		this.#type = String(type);
 		this.#bubbles = Boolean(bubbles);
 		this.#cancelable = Boolean(cancelable);
@@ -751,43 +757,55 @@ function setCanceledFlag(event: Event): void {
  */
 function composedPath(state: DispatchState): EventTarget[] {
 	const path = state.path;
-	if (path.length === 0) return [];
+	if (path.length === 0) {
+		return [];
+	}
 	const currentTarget = state.currentTarget as EventTarget;
 	const composed: EventTarget[] = [currentTarget];
 	let currentTargetIndex = 0;
 	let currentTargetHiddenSubtreeLevel = 0;
 	for (let index = path.length - 1; index >= 0; index--) {
-		if (path[index].rootOfClosedTree) currentTargetHiddenSubtreeLevel++;
+		if (path[index].rootOfClosedTree) {
+			currentTargetHiddenSubtreeLevel++;
+		}
 		if (path[index].invocationTarget === currentTarget) {
 			currentTargetIndex = index;
 			break;
 		}
-		if (path[index].slotInClosedTree) currentTargetHiddenSubtreeLevel--;
+		if (path[index].slotInClosedTree) {
+			currentTargetHiddenSubtreeLevel--;
+		}
 	}
 	let currentHiddenLevel = currentTargetHiddenSubtreeLevel;
 	let maxHiddenLevel = currentTargetHiddenSubtreeLevel;
 	for (let index = currentTargetIndex - 1; index >= 0; index--) {
-		if (path[index].rootOfClosedTree) currentHiddenLevel++;
+		if (path[index].rootOfClosedTree) {
+			currentHiddenLevel++;
+		}
 		if (currentHiddenLevel <= maxHiddenLevel) {
 			composed.unshift(path[index].invocationTarget);
 		}
 		if (path[index].slotInClosedTree) {
 			currentHiddenLevel--;
-			if (currentHiddenLevel < maxHiddenLevel)
+			if (currentHiddenLevel < maxHiddenLevel) {
 				maxHiddenLevel = currentHiddenLevel;
+			}
 		}
 	}
 	currentHiddenLevel = currentTargetHiddenSubtreeLevel;
 	maxHiddenLevel = currentTargetHiddenSubtreeLevel;
 	for (let index = currentTargetIndex + 1; index < path.length; index++) {
-		if (path[index].slotInClosedTree) currentHiddenLevel++;
+		if (path[index].slotInClosedTree) {
+			currentHiddenLevel++;
+		}
 		if (currentHiddenLevel <= maxHiddenLevel) {
 			composed.push(path[index].invocationTarget);
 		}
 		if (path[index].rootOfClosedTree) {
 			currentHiddenLevel--;
-			if (currentHiddenLevel < maxHiddenLevel)
+			if (currentHiddenLevel < maxHiddenLevel) {
 				maxHiddenLevel = currentHiddenLevel;
+			}
 		}
 	}
 	return composed;
@@ -826,7 +844,9 @@ export class CustomEvent<T = unknown> extends Event {
 		if (arguments.length < 1) {
 			throw new TypeError("initCustomEvent needs a type");
 		}
-		if (this[kDispatchState].dispatch) return;
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
 		this.initEvent(type, bubbles, cancelable);
 		this.#detail = detail;
 	}
@@ -854,7 +874,9 @@ export class BeforeUnloadEvent extends Event {
 
 	constructor() {
 		super("beforeunload", {cancelable: true});
-		if (!internalConstruction) throw new TypeError("Illegal constructor");
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 	}
 
 	/**
@@ -951,7 +973,9 @@ export interface WheelEventInit extends MouseEventInit {
 /** A WebIDL long: the number truncated and wrapped into 32 signed bits. */
 function toLong(value: unknown): number {
 	const number = Number(value);
-	if (!Number.isFinite(number)) return 0;
+	if (!Number.isFinite(number)) {
+		return 0;
+	}
 	return Math.trunc(number) | 0;
 }
 
@@ -971,7 +995,9 @@ function toShort(value: unknown): number {
 
 /** An EventTarget? argument, per Web IDL: null, or an event target. */
 function toEventTarget(value: unknown): EventTarget | null {
-	if (value === undefined || value === null) return null;
+	if (value === undefined || value === null) {
+		return null;
+	}
 	if (!(value instanceof EventTarget)) {
 		throw new TypeError("That is not an event target");
 	}
@@ -981,20 +1007,48 @@ function toEventTarget(value: unknown): EventTarget | null {
 /** The modifiers an event's init dictionary sets, as a set of key names. */
 function initModifiers(init: EventModifierInit): Set<string> {
 	const modifiers = new Set<string>();
-	if (init.ctrlKey) modifiers.add("Control");
-	if (init.shiftKey) modifiers.add("Shift");
-	if (init.altKey) modifiers.add("Alt");
-	if (init.metaKey) modifiers.add("Meta");
-	if (init.modifierAltGraph) modifiers.add("AltGraph");
-	if (init.modifierCapsLock) modifiers.add("CapsLock");
-	if (init.modifierFn) modifiers.add("Fn");
-	if (init.modifierFnLock) modifiers.add("FnLock");
-	if (init.modifierHyper) modifiers.add("Hyper");
-	if (init.modifierNumLock) modifiers.add("NumLock");
-	if (init.modifierScrollLock) modifiers.add("ScrollLock");
-	if (init.modifierSuper) modifiers.add("Super");
-	if (init.modifierSymbol) modifiers.add("Symbol");
-	if (init.modifierSymbolLock) modifiers.add("SymbolLock");
+	if (init.ctrlKey) {
+		modifiers.add("Control");
+	}
+	if (init.shiftKey) {
+		modifiers.add("Shift");
+	}
+	if (init.altKey) {
+		modifiers.add("Alt");
+	}
+	if (init.metaKey) {
+		modifiers.add("Meta");
+	}
+	if (init.modifierAltGraph) {
+		modifiers.add("AltGraph");
+	}
+	if (init.modifierCapsLock) {
+		modifiers.add("CapsLock");
+	}
+	if (init.modifierFn) {
+		modifiers.add("Fn");
+	}
+	if (init.modifierFnLock) {
+		modifiers.add("FnLock");
+	}
+	if (init.modifierHyper) {
+		modifiers.add("Hyper");
+	}
+	if (init.modifierNumLock) {
+		modifiers.add("NumLock");
+	}
+	if (init.modifierScrollLock) {
+		modifiers.add("ScrollLock");
+	}
+	if (init.modifierSuper) {
+		modifiers.add("Super");
+	}
+	if (init.modifierSymbol) {
+		modifiers.add("Symbol");
+	}
+	if (init.modifierSymbolLock) {
+		modifiers.add("SymbolLock");
+	}
 	return modifiers;
 }
 
@@ -1035,13 +1089,15 @@ export class UIEvent extends Event {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view: null = null,
+		view = null,
 		detail = 0,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initUIEvent needs a type");
 		}
-		if (this[kDispatchState].dispatch) return;
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
 		this.initEvent(type, bubbles, cancelable);
 		if (view !== undefined && view !== null) {
 			throw new TypeError("There is no window for an event to come through");
@@ -1146,7 +1202,7 @@ export class MouseEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view: null = null,
+		view = null,
 		detail = 0,
 		screenX = 0,
 		screenY = 0,
@@ -1162,7 +1218,9 @@ export class MouseEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initMouseEvent needs a type");
 		}
-		if (this[kDispatchState].dispatch) return;
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
 		this.initUIEvent(type, bubbles, cancelable, view, detail);
 		this.#screenX = toLong(screenX);
 		this.#screenY = toLong(screenY);
@@ -1293,7 +1351,7 @@ export class KeyboardEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view: null = null,
+		view = null,
 		key = "",
 		location = 0,
 		ctrlKey = false,
@@ -1304,7 +1362,9 @@ export class KeyboardEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initKeyboardEvent needs a type");
 		}
-		if (this[kDispatchState].dispatch) return;
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
 		this.#key = String(key);
 		this.#location = toUnsignedLong(location);
@@ -1344,13 +1404,15 @@ export class CompositionEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view: null = null,
+		view = null,
 		data = "",
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initCompositionEvent needs a type");
 		}
-		if (this[kDispatchState].dispatch) return;
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
 		this.#data = String(data);
 	}
@@ -1527,8 +1589,12 @@ export class PointerEvent extends MouseEvent {
 	 * gives neither leaves a pen upright.
 	 */
 	get tiltX(): number {
-		if (this.#tiltX !== null) return this.#tiltX;
-		if (this.#altitudeAngle === null && this.#azimuthAngle === null) return 0;
+		if (this.#tiltX !== null) {
+			return this.#tiltX;
+		}
+		if (this.#altitudeAngle === null && this.#azimuthAngle === null) {
+			return 0;
+		}
 		return sphericalToTilt(
 			this.#altitudeAngle ?? Math.PI / 2,
 			this.#azimuthAngle ?? 0,
@@ -1536,8 +1602,12 @@ export class PointerEvent extends MouseEvent {
 	}
 
 	get tiltY(): number {
-		if (this.#tiltY !== null) return this.#tiltY;
-		if (this.#altitudeAngle === null && this.#azimuthAngle === null) return 0;
+		if (this.#tiltY !== null) {
+			return this.#tiltY;
+		}
+		if (this.#altitudeAngle === null && this.#azimuthAngle === null) {
+			return 0;
+		}
 		return sphericalToTilt(
 			this.#altitudeAngle ?? Math.PI / 2,
 			this.#azimuthAngle ?? 0,
@@ -1549,14 +1619,22 @@ export class PointerEvent extends MouseEvent {
 	}
 
 	get altitudeAngle(): number {
-		if (this.#altitudeAngle !== null) return this.#altitudeAngle;
-		if (this.#tiltX === null && this.#tiltY === null) return Math.PI / 2;
+		if (this.#altitudeAngle !== null) {
+			return this.#altitudeAngle;
+		}
+		if (this.#tiltX === null && this.#tiltY === null) {
+			return Math.PI / 2;
+		}
 		return tiltToSpherical(this.#tiltX ?? 0, this.#tiltY ?? 0)[0];
 	}
 
 	get azimuthAngle(): number {
-		if (this.#azimuthAngle !== null) return this.#azimuthAngle;
-		if (this.#tiltX === null && this.#tiltY === null) return 0;
+		if (this.#azimuthAngle !== null) {
+			return this.#azimuthAngle;
+		}
+		if (this.#tiltX === null && this.#tiltY === null) {
+			return 0;
+		}
 		return tiltToSpherical(this.#tiltX ?? 0, this.#tiltY ?? 0)[1];
 	}
 
@@ -1585,10 +1663,18 @@ Object.defineProperty(PointerEvent.prototype, Symbol.toStringTag, {
 /** The tilt angles a pen's altitude and azimuth describe, in degrees. */
 function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 	if (altitude === 0) {
-		if (azimuth === 0 || azimuth === 2 * Math.PI) return [90, 0];
-		if (azimuth === Math.PI / 2) return [0, 90];
-		if (azimuth === Math.PI) return [-90, 0];
-		if (azimuth === (3 * Math.PI) / 2) return [0, -90];
+		if (azimuth === 0 || azimuth === 2 * Math.PI) {
+			return [90, 0];
+		}
+		if (azimuth === Math.PI / 2) {
+			return [0, 90];
+		}
+		if (azimuth === Math.PI) {
+			return [-90, 0];
+		}
+		if (azimuth === (3 * Math.PI) / 2) {
+			return [0, -90];
+		}
 	}
 	const tiltX = Math.round(
 		(Math.atan(Math.cos(azimuth) / Math.tan(altitude)) * 180) / Math.PI,
@@ -1606,7 +1692,9 @@ function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
 	const tanX = Math.tan(radiansX);
 	const tanY = Math.tan(radiansY);
 	let azimuth = Math.atan2(tanY, tanX);
-	if (azimuth < 0) azimuth += 2 * Math.PI;
+	if (azimuth < 0) {
+		azimuth += 2 * Math.PI;
+	}
 	const altitude = Math.atan(1 / Math.sqrt(tanX * tanX + tanY * tanY));
 	return [
 		Math.abs(tiltX) === 90 || Math.abs(tiltY) === 90 ? 0 : altitude,
@@ -1640,8 +1728,8 @@ const LEGACY_EVENT_INTERFACES = new Map<string, new (type: string) => Event>([
 ]);
 
 export type EventListenerOrEventListenerObject =
-	| ((event: Event) => void)
-	| {handleEvent(event: Event): void};
+	| ((event: Event) => void) |
+	{handleEvent(event: Event): void};
 
 /** What an AbortSignal has to be for a listener to hang off it. */
 interface ListenerSignal {
@@ -1748,7 +1836,9 @@ function flattenCapture(
 function toEventListener(
 	callback: unknown,
 ): EventListenerOrEventListenerObject | null {
-	if (callback === null || callback === undefined) return null;
+	if (callback === null || callback === undefined) {
+		return null;
+	}
 	if (typeof callback === "function" || typeof callback === "object") {
 		return callback as EventListenerOrEventListenerObject;
 	}
@@ -1769,7 +1859,9 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 	) {
 		return false;
 	}
-	if (!(target instanceof Node)) return false;
+	if (!(target instanceof Node)) {
+		return false;
+	}
 	const document = target[kDocument];
 	return (
 		target === (document as EventTarget) ||
@@ -1795,8 +1887,12 @@ export class EventTarget {
 		const name = String(type);
 		const listenerCallback = toEventListener(callback);
 		const flat = flattenMore(options);
-		if (flat.signal !== null && flat.signal.aborted) return;
-		if (listenerCallback === null) return;
+		if (flat.signal !== null && flat.signal.aborted) {
+			return;
+		}
+		if (listenerCallback === null) {
+			return;
+		}
 		const passive =
 			flat.passive === null ? defaultPassiveValue(name, this) : flat.passive;
 		for (const existing of this.#listeners) {
@@ -1835,7 +1931,9 @@ export class EventTarget {
 		const name = String(type);
 		const listenerCallback = toEventListener(callback);
 		const capture = flattenCapture(options);
-		if (listenerCallback === null) return;
+		if (listenerCallback === null) {
+			return;
+		}
 		for (const listener of this.#listeners) {
 			if (
 				listener.type === name &&
@@ -1852,7 +1950,9 @@ export class EventTarget {
 		if (!(event instanceof HostEvent)) {
 			throw new TypeError("dispatchEvent needs an Event");
 		}
-		if (!(event instanceof Event)) adoptForeignEvent(event);
+		if (!(event instanceof Event)) {
+			adoptForeignEvent(event);
+		}
 		const state = event[kDispatchState];
 		if (state.dispatch || !state.initialized) {
 			throw domError(
@@ -1875,7 +1975,9 @@ export class EventTarget {
 	 * allocates nothing.
 	 */
 	[kEventHandlerMap](create: boolean): Map<string, EventHandlerRecord> | null {
-		if (this.#handlers === null && create) this.#handlers = new Map();
+		if (this.#handlers === null && create) {
+			this.#handlers = new Map();
+		}
 		return this.#handlers;
 	}
 
@@ -1897,7 +1999,9 @@ Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
 function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
-	if (index !== -1) listeners.splice(index, 1);
+	if (index !== -1) {
+		listeners.splice(index, 1);
+	}
 }
 
 /* -------------------------------------------- event handler IDL attributes */
@@ -1933,7 +2037,9 @@ function eventHandlerValue(
 	type: string,
 ): EventHandlerValue | null {
 	const handlers = target[kEventHandlerMap](false);
-	if (handlers === null) return null;
+	if (handlers === null) {
+		return null;
+	}
 	return handlers.get(type)?.value ?? null;
 }
 
@@ -1947,14 +2053,18 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null)
-			? (value as EventHandlerValue)
-			: null;
+		typeof value === "function" || (typeof value === "object" && value !== null) ?
+				(value as EventHandlerValue) :
+			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
-	if (handlers === null) return;
+	if (handlers === null) {
+		return;
+	}
 	const record = handlers.get(type);
 	if (handler === null) {
-		if (record === undefined) return;
+		if (record === undefined) {
+			return;
+		}
 		record.value = null;
 		if (record.listener !== null) {
 			removeListener(target[kListeners], record.listener);
@@ -2032,7 +2142,9 @@ function invokeEventHandler(
 	event: Event,
 ): void {
 	const callback = record.value;
-	if (callback === null) return;
+	if (callback === null) {
+		return;
+	}
 	// A window's error handler takes an ErrorEvent apart into arguments and
 	// answers a cancellation with true, the inverse of every other handler. A
 	// document's or an element's error handler is an ordinary one.
@@ -2041,16 +2153,16 @@ function invokeEventHandler(
 	let result: unknown;
 	try {
 		const called = callback as (...args: unknown[]) => unknown;
-		result = errorHandling
-			? called.call(
+		result = errorHandling ?
+				called.call(
 					target,
 					(event as unknown as {message: unknown}).message,
 					(event as unknown as {filename: unknown}).filename,
 					(event as unknown as {lineno: unknown}).lineno,
 					(event as unknown as {colno: unknown}).colno,
 					(event as unknown as {error: unknown}).error,
-				)
-			: called.call(target, event);
+				) :
+				called.call(target, event);
 	} catch (error) {
 		reportError(error);
 		return;
@@ -2089,7 +2201,9 @@ export function installEventHandlers(
 	prototype: object,
 	names: readonly string[],
 ): void {
-	for (const name of names) installEventHandler(prototype, name);
+	for (const name of names) {
+		installEventHandler(prototype, name);
+	}
 }
 
 /** The tables a window's own interface is installed from, which the engine owns. */
@@ -2116,7 +2230,9 @@ function installForwardedEventHandler(prototype: object, name: string): void {
 				string,
 				unknown
 			> | null;
-			if (view === null) return;
+			if (view === null) {
+				return;
+			}
 			view[name] = value;
 		},
 		enumerable: true,
@@ -2134,9 +2250,13 @@ function retarget(
 ): EventTarget | null {
 	let current = object;
 	for (;;) {
-		if (!(current instanceof Node)) return current;
+		if (!(current instanceof Node)) {
+			return current;
+		}
 		const root = getRoot(current);
-		if (!isShadowRoot(root)) return current;
+		if (!isShadowRoot(root)) {
+			return current;
+		}
 		// Shadow-including ancestry, so a tree the other object reaches through
 		// a host of its own is a tree it can see into: a related target inside
 		// a nested shadow tree stays itself for a listener in the tree above it.
@@ -2189,7 +2309,9 @@ function appendToPath(
  * target is null again and its path is empty.
  */
 function adoptForeignEvent(event: Event): void {
-	if (Object.prototype.hasOwnProperty.call(event, kDispatchState)) return;
+	if (Object.prototype.hasOwnProperty.call(event, kDispatchState)) {
+		return;
+	}
 	const state: DispatchState = {
 		target: null,
 		relatedTarget: null,
@@ -2234,7 +2356,9 @@ function defineDispatchAccessor(
  * remaining at this one still run.
  */
 function syncForeignFlags(event: Event, state: DispatchState): void {
-	if (event.defaultPrevented) setCanceledFlag(event);
+	if (event.defaultPrevented) {
+		setCanceledFlag(event);
+	}
 	if ((event as {cancelBubble?: boolean}).cancelBubble) {
 		state.stopPropagation = true;
 	}
@@ -2264,9 +2388,9 @@ function dispatch(target: EventTarget, event: Event): boolean {
 		// A slottable that is assigned reaches its slot next, and the slot's
 		// tree may be closed to the tree the event started in: the struct for
 		// the slot carries that, so composedPath can count the boundary.
-		let slottable: Node | null = isAssigned(eventTarget)
-			? (eventTarget as Node)
-			: null;
+		let slottable: Node | null = isAssigned(eventTarget) ?
+				(eventTarget as Node) :
+			null;
 		let slotInClosedTree = false;
 		if (isActivationEvent && hasActivationBehavior(eventTarget)) {
 			activationTarget = eventTarget;
@@ -2283,7 +2407,9 @@ function dispatch(target: EventTarget, event: Event): boolean {
 					slotInClosedTree = true;
 				}
 			}
-			if (isAssigned(parent)) slottable = parent as Node;
+			if (isAssigned(parent)) {
+				slottable = parent as Node;
+			}
 			relatedTarget = retarget(state.relatedTarget, parent);
 			if (
 				parent instanceof Node &&
@@ -2318,15 +2444,20 @@ function dispatch(target: EventTarget, event: Event): boolean {
 					slotInClosedTree,
 				);
 			}
-			if (parent !== null) parent = parent[kGetTheParent](event);
+			if (parent !== null) {
+				parent = parent[kGetTheParent](event);
+			}
 			slotInClosedTree = false;
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
 			const struct = state.path[index];
 			if (struct.shadowAdjustedTarget !== null) {
-				if (isShadowRootTarget(struct.shadowAdjustedTarget))
+				if (isShadowRootTarget(struct.shadowAdjustedTarget)) {
 					clearTargets = true;
-				if (isShadowRootTarget(struct.relatedTarget)) clearTargets = true;
+				}
+				if (isShadowRootTarget(struct.relatedTarget)) {
+					clearTargets = true;
+				}
 				break;
 			}
 		}
@@ -2344,7 +2475,9 @@ function dispatch(target: EventTarget, event: Event): boolean {
 			if (struct.shadowAdjustedTarget !== null) {
 				state.eventPhase = AT_TARGET;
 			} else {
-				if (!event.bubbles) continue;
+				if (!event.bubbles) {
+					continue;
+				}
 				state.eventPhase = BUBBLING_PHASE;
 			}
 			invoke(event, index, false);
@@ -2397,7 +2530,9 @@ function invoke(event: Event, index: number, capturing: boolean): void {
 		}
 	}
 	state.relatedTarget = struct.relatedTarget;
-	if (state.stopPropagation) return;
+	if (state.stopPropagation) {
+		return;
+	}
 	state.currentTarget = struct.invocationTarget;
 	const listeners = struct.invocationTarget[kListeners].slice();
 	const found = innerInvoke(event, listeners, capturing);
@@ -2425,24 +2560,38 @@ function innerInvoke(
 	const state = event[kDispatchState];
 	let found = false;
 	for (const listener of listeners) {
-		if (listener.removed) continue;
-		if (listener.type !== event.type) continue;
+		if (listener.removed) {
+			continue;
+		}
+		if (listener.type !== event.type) {
+			continue;
+		}
 		found = true;
-		if (capturing && !listener.capture) continue;
-		if (!capturing && listener.capture) continue;
+		if (capturing && !listener.capture) {
+			continue;
+		}
+		if (!capturing && listener.capture) {
+			continue;
+		}
 		if (listener.once) {
 			const target = state.currentTarget as EventTarget;
 			removeListener(target[kListeners], listener);
 		}
-		if (listener.passive) state.inPassiveListener = true;
+		if (listener.passive) {
+			state.inPassiveListener = true;
+		}
 		try {
 			callListener(listener.callback, state.currentTarget, event);
 		} catch (error) {
 			reportError(error);
 		}
-		if (state.foreign) syncForeignFlags(event, state);
+		if (state.foreign) {
+			syncForeignFlags(event, state);
+		}
 		state.inPassiveListener = false;
-		if (state.stopImmediate) break;
+		if (state.stopImmediate) {
+			break;
+		}
 	}
 	return found;
 }
@@ -2473,7 +2622,6 @@ function reportError(error: unknown): void {
 	if (report) {
 		report(error);
 	} else {
-		// eslint-disable-next-line no-console
 		console.error(error);
 	}
 }
@@ -2576,7 +2724,9 @@ function bumpTreeVersion(
 	treeVersion++;
 	for (let node: Node | null = point; node !== null; node = node[kParent]) {
 		const held = node[kLiveLists];
-		if (held === null) continue;
+		if (held === null) {
+			continue;
+		}
 		for (const collection of held) {
 			shapeSyncMethod.call(collection, point, changed, added);
 		}
@@ -2600,18 +2750,26 @@ function bumpTreeVersion(
  */
 function syncAttributeCollections(element: Element, localName: string): void {
 	const map = element[kAttributesMap];
-	if (map !== null) syncMethod.call(map);
+	if (map !== null) {
+		syncMethod.call(map);
+	}
 	const classList = element[kClassList];
-	if (classList !== null) syncMethod.call(classList);
+	if (classList !== null) {
+		syncMethod.call(classList);
+	}
 	const lists = element[kTokenLists];
 	if (lists !== null) {
-		for (const list of lists.values()) syncMethod.call(list);
+		for (const list of lists.values()) {
+			syncMethod.call(list);
+		}
 	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]) {
 		const cache = (node as unknown as Record<symbol, unknown>)[
 			kCollectionCaches
 		] as Map<string, HTMLCollection> | undefined;
-		if (cache === undefined) continue;
+		if (cache === undefined) {
+			continue;
+		}
 		for (const collection of cache.values()) {
 			collection[kAttributeSync](element, localName);
 		}
@@ -2671,11 +2829,13 @@ export class Node extends EventTarget {
 	static readonly NOTATION_NODE = NOTATION_NODE;
 	static readonly DOCUMENT_POSITION_DISCONNECTED =
 		DOCUMENT_POSITION_DISCONNECTED;
+
 	static readonly DOCUMENT_POSITION_PRECEDING = DOCUMENT_POSITION_PRECEDING;
 	static readonly DOCUMENT_POSITION_FOLLOWING = DOCUMENT_POSITION_FOLLOWING;
 	static readonly DOCUMENT_POSITION_CONTAINS = DOCUMENT_POSITION_CONTAINS;
 	static readonly DOCUMENT_POSITION_CONTAINED_BY =
 		DOCUMENT_POSITION_CONTAINED_BY;
+
 	static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC =
 		DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
 
@@ -2715,9 +2875,9 @@ export class Node extends EventTarget {
 	}
 
 	get ownerDocument(): Document | null {
-		return this.nodeType === DOCUMENT_NODE
-			? null
-			: (this[kDocument] as Document);
+		return this.nodeType === DOCUMENT_NODE ?
+			null :
+				(this[kDocument] as Document);
 	}
 
 	getRootNode(options?: {composed?: boolean}): Node {
@@ -2734,9 +2894,9 @@ export class Node extends EventTarget {
 
 	get parentElement(): Element | null {
 		const parent = this[kParent];
-		return parent !== null && parent.nodeType === ELEMENT_NODE
-			? (parent as Element)
-			: null;
+		return parent !== null && parent.nodeType === ELEMENT_NODE ?
+				(parent as Element) :
+			null;
 	}
 
 	hasChildNodes(): boolean {
@@ -2791,10 +2951,14 @@ export class Node extends EventTarget {
 			node !== null;
 			node = nextInTree(node, this)
 		) {
-			if (node.nodeType === TEXT_NODE) texts.push(node as Text);
+			if (node.nodeType === TEXT_NODE) {
+				texts.push(node as Text);
+			}
 		}
 		for (const text of texts) {
-			if (text[kParent] === null) continue;
+			if (text[kParent] === null) {
+				continue;
+			}
 			if ((text as CharacterData)[kData].length === 0) {
 				removeNode(text);
 				continue;
@@ -2840,7 +3004,9 @@ export class Node extends EventTarget {
 	}
 
 	compareDocumentPosition(other: Node): number {
-		if (this === other) return 0;
+		if (this === other) {
+			return 0;
+		}
 		let node1: Node | null = other;
 		let node2: Node | null = this;
 		let attr1: Attr | null = null;
@@ -2871,9 +3037,9 @@ export class Node extends EventTarget {
 		}
 		if (node1 === null || node2 === null || getRoot(node1) !== getRoot(node2)) {
 			const first =
-				node1 === null || node2 === null
-					? this[kSerial] < other[kSerial]
-					: getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
+				node1 === null || node2 === null ?
+					this[kSerial] < other[kSerial] :
+					getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
 			return (
 				DOCUMENT_POSITION_DISCONNECTED +
 				DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC +
@@ -2892,9 +3058,9 @@ export class Node extends EventTarget {
 		) {
 			return DOCUMENT_POSITION_CONTAINED_BY + DOCUMENT_POSITION_FOLLOWING;
 		}
-		return precedesInTree(node1, node2)
-			? DOCUMENT_POSITION_PRECEDING
-			: DOCUMENT_POSITION_FOLLOWING;
+		return precedesInTree(node1, node2) ?
+			DOCUMENT_POSITION_PRECEDING :
+			DOCUMENT_POSITION_FOLLOWING;
 	}
 
 	contains(other: Node | null): boolean {
@@ -2902,15 +3068,17 @@ export class Node extends EventTarget {
 	}
 
 	lookupPrefix(namespace: string | null): string | null {
-		if (namespace == null || namespace === "") return null;
+		if (namespace == null || namespace === "") {
+			return null;
+		}
 		switch (this.nodeType) {
 			case ELEMENT_NODE:
 				return locateNamespacePrefix(this as unknown as Element, namespace);
 			case DOCUMENT_NODE: {
 				const element = (this as unknown as Document).documentElement;
-				return element === null
-					? null
-					: locateNamespacePrefix(element, namespace);
+				return element === null ?
+					null :
+						locateNamespacePrefix(element, namespace);
 			}
 			case DOCUMENT_TYPE_NODE:
 			case DOCUMENT_FRAGMENT_NODE:
@@ -2921,9 +3089,9 @@ export class Node extends EventTarget {
 			}
 			default: {
 				const parent = this.parentElement;
-				return parent === null
-					? null
-					: locateNamespacePrefix(parent, namespace);
+				return parent === null ?
+					null :
+						locateNamespacePrefix(parent, namespace);
 			}
 		}
 	}
@@ -3018,14 +3186,18 @@ Object.defineProperty(Node.prototype, Symbol.toStringTag, {
 
 function getRoot(node: Node): Node {
 	let current = node;
-	while (current[kParent] !== null) current = current[kParent] as Node;
+	while (current[kParent] !== null) {
+		current = current[kParent] as Node;
+	}
 	return current;
 }
 
 function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	let current: Node | null = node;
 	while (current !== null) {
-		if (current === ancestor) return true;
+		if (current === ancestor) {
+			return true;
+		}
 		current = current[kParent];
 	}
 	return false;
@@ -3036,11 +3208,15 @@ function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
  * fragment to its host where one exists.
  */
 function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
-	if (isInclusiveAncestor(ancestor, node)) return true;
+	if (isInclusiveAncestor(ancestor, node)) {
+		return true;
+	}
 	const root = getRoot(node);
 	if (root.nodeType === DOCUMENT_FRAGMENT_NODE) {
 		const host = (root as DocumentFragment)[kHost];
-		if (host != null) return isHostIncludingInclusiveAncestor(ancestor, host);
+		if (host != null) {
+			return isHostIncludingInclusiveAncestor(ancestor, host);
+		}
 	}
 	return false;
 }
@@ -3052,9 +3228,9 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
  */
 function shadowIncludingRoot(node: Node): Node {
 	const root = getRoot(node);
-	return isShadowRoot(root)
-		? shadowIncludingRoot((root as ShadowRoot)[kHost] as Element)
-		: root;
+	return isShadowRoot(root) ?
+			shadowIncludingRoot((root as ShadowRoot)[kHost] as Element) :
+		root;
 }
 
 /** Whether ancestor is node, an ancestor of node, or a host above it. */
@@ -3062,7 +3238,9 @@ function isShadowIncludingInclusiveAncestor(
 	ancestor: Node,
 	node: Node,
 ): boolean {
-	if (isInclusiveAncestor(ancestor, node)) return true;
+	if (isInclusiveAncestor(ancestor, node)) {
+		return true;
+	}
 	const root = getRoot(node);
 	if (isShadowRoot(root)) {
 		return isShadowIncludingInclusiveAncestor(
@@ -3081,7 +3259,9 @@ function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 	yield node;
 	if (node.nodeType === ELEMENT_NODE) {
 		const shadow = (node as Element)[kShadowRoot];
-		if (shadow !== null) yield* shadowIncludingInclusiveDescendants(shadow);
+		if (shadow !== null) {
+			yield* shadowIncludingInclusiveDescendants(shadow);
+		}
 	}
 	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 		yield* shadowIncludingInclusiveDescendants(child);
@@ -3090,10 +3270,14 @@ function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 
 /** The next node in tree order, stopping once the walk leaves the root. */
 function nextInTree(node: Node, root: Node): Node | null {
-	if (node[kFirstChild] !== null) return node[kFirstChild];
+	if (node[kFirstChild] !== null) {
+		return node[kFirstChild];
+	}
 	let current: Node | null = node;
 	while (current !== null && current !== root) {
-		if (current[kNext] !== null) return current[kNext];
+		if (current[kNext] !== null) {
+			return current[kNext];
+		}
 		current = current[kParent];
 	}
 	return null;
@@ -3121,7 +3305,9 @@ function* descendants(node: Node): Generator<Node> {
 function descendantElements(root: Node, into: Element[]): Element[] {
 	let current = root[kFirstChild];
 	while (current !== null) {
-		if (current.nodeType === ELEMENT_NODE) into.push(current as Element);
+		if (current.nodeType === ELEMENT_NODE) {
+			into.push(current as Element);
+		}
 		current = nextInTree(current, root);
 	}
 	return into;
@@ -3131,8 +3317,12 @@ function descendantElements(root: Node, into: Element[]): Element[] {
 function precedesInTree(node1: Node, node2: Node): boolean {
 	const root = getRoot(node1);
 	for (const node of inclusiveDescendants(root)) {
-		if (node === node1) return true;
-		if (node === node2) return false;
+		if (node === node1) {
+			return true;
+		}
+		if (node === node2) {
+			return false;
+		}
 	}
 	return false;
 }
@@ -3156,22 +3346,30 @@ function isCharacterData(node: Node): boolean {
 function countChildren(parent: Node, type: number): number {
 	let count = 0;
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType === type) count++;
+		if (node.nodeType === type) {
+			count++;
+		}
 	}
 	return count;
 }
 
 function hasFollowing(child: Node | null, type: number): boolean {
 	for (let node = child; node !== null; node = node[kNext]) {
-		if (node.nodeType === type) return true;
+		if (node.nodeType === type) {
+			return true;
+		}
 	}
 	return false;
 }
 
 function hasPreceding(child: Node | null, type: number): boolean {
-	if (child === null) return false;
+	if (child === null) {
+		return false;
+	}
 	for (let node = child[kPrevious]; node !== null; node = node[kPrevious]) {
-		if (node.nodeType === type) return true;
+		if (node.nodeType === type) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -3212,7 +3410,9 @@ function ensurePreInsertionValidity(
 	) {
 		throw hierarchyRequestError("That node cannot go there");
 	}
-	if (parentType !== DOCUMENT_NODE) return;
+	if (parentType !== DOCUMENT_NODE) {
+		return;
+	}
 	const elements = replacingAll ? 0 : countChildren(parent, ELEMENT_NODE);
 	const doctypes = replacingAll ? 0 : countChildren(parent, DOCUMENT_TYPE_NODE);
 	if (type === DOCUMENT_FRAGMENT_NODE) {
@@ -3257,7 +3457,9 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	const reference = child ?? null;
 	ensurePreInsertionValidity(node, parent, reference);
 	let referenceChild = reference;
-	if (referenceChild === node) referenceChild = node[kNext];
+	if (referenceChild === node) {
+		referenceChild = node[kNext];
+	}
 	insertNode(node, parent, referenceChild, false);
 	return node;
 }
@@ -3272,12 +3474,18 @@ function insertNode(
 	const nodes =
 		node.nodeType === DOCUMENT_FRAGMENT_NODE ? childNodeArray(node) : [node];
 	const count = nodes.length;
-	if (count === 0) return;
+	if (count === 0) {
+		return;
+	}
 	if (node.nodeType === DOCUMENT_FRAGMENT_NODE) {
-		for (const child_ of nodes) removeNode(child_, true);
+		for (const child_ of nodes) {
+			removeNode(child_, true);
+		}
 		queueTreeMutationRecord(node, [], nodes, null, null);
 	}
-	if (child !== null) liveRangeInsertSteps(parent, child, count);
+	if (child !== null) {
+		liveRangeInsertSteps(parent, child, count);
+	}
 	const previousSibling =
 		child !== null ? child[kPrevious] : parent[kLastChild];
 	const document = parent[kDocument];
@@ -3285,12 +3493,14 @@ function insertNode(
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
 		const shadow =
-			parent.nodeType === ELEMENT_NODE
-				? (parent as Element)[kShadowRoot]
-				: null;
+			parent.nodeType === ELEMENT_NODE ?
+					(parent as Element)[kShadowRoot] :
+				null;
 		if (shadow !== null) {
 			if (shadow[kSlotAssignment] === "named") {
-				if (isSlottable(inserted)) assignASlot(inserted as Slottable);
+				if (isSlottable(inserted)) {
+					assignASlot(inserted as Slottable);
+				}
 			} else {
 				// A manual assignment names nodes rather than finding them, and
 				// only a node the host still has counts: the host's child list
@@ -3313,8 +3523,12 @@ function insertNode(
 		}
 		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
 			descendant[kInsertionSteps]();
-			if (!descendant.isConnected) continue;
-			if (descendant.nodeType !== ELEMENT_NODE) continue;
+			if (!descendant.isConnected) {
+				continue;
+			}
+			if (descendant.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const element = descendant as Element;
 			if (element[kCustomState] === "custom") {
 				enqueueCallbackReaction(element, "connectedCallback", []);
@@ -3453,7 +3667,9 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 		}
 	}
 	let referenceChild = child[kNext];
-	if (referenceChild === node) referenceChild = node[kNext];
+	if (referenceChild === node) {
+		referenceChild = node[kNext];
+	}
 	const previousSibling = child[kPrevious];
 	const removedNodes: Node[] = [];
 	// Adopting takes the replacement out of the tree it is in now, which is a
@@ -3480,30 +3696,40 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 
 function hasOtherElementChild(parent: Node, exclude: Node): boolean {
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node !== exclude && node.nodeType === ELEMENT_NODE) return true;
+		if (node !== exclude && node.nodeType === ELEMENT_NODE) {
+			return true;
+		}
 	}
 	return false;
 }
 
 function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node !== exclude && node.nodeType === DOCUMENT_TYPE_NODE) return true;
+		if (node !== exclude && node.nodeType === DOCUMENT_TYPE_NODE) {
+			return true;
+		}
 	}
 	return false;
 }
 
 /** Replace all of a parent's children with a node, or with nothing. */
 function replaceAll(node: Node | null, parent: Node): void {
-	if (node !== null) adoptNode(node, parent[kDocument]);
+	if (node !== null) {
+		adoptNode(node, parent[kDocument]);
+	}
 	const removedNodes = childNodeArray(parent);
 	const addedNodes =
-		node === null
-			? []
-			: node.nodeType === DOCUMENT_FRAGMENT_NODE
-				? childNodeArray(node)
-				: [node];
-	for (const child of removedNodes) removeNode(child, true);
-	if (node !== null) insertNode(node, parent, null, true);
+		node === null ?
+				[] :
+			node.nodeType === DOCUMENT_FRAGMENT_NODE ?
+					childNodeArray(node) :
+					[node];
+	for (const child of removedNodes) {
+		removeNode(child, true);
+	}
+	if (node !== null) {
+		insertNode(node, parent, null, true);
+	}
 	if (removedNodes.length > 0 || addedNodes.length > 0) {
 		queueTreeMutationRecord(parent, addedNodes, removedNodes, null, null);
 	}
@@ -3523,19 +3749,25 @@ function preRemove(child: Node, parent: Node): Node {
 /** Remove a node from its parent. */
 function removeNode(node: Node, suppressObservers = false): void {
 	const parent = node[kParent];
-	if (parent === null) return;
+	if (parent === null) {
+		return;
+	}
 	liveRangePreRemoveSteps(node);
 	for (const reference of node[kDocument][kNodeIterators]) {
 		const iterator = reference.deref();
-		if (iterator !== undefined) preRemoveFromIterator(iterator, node);
+		if (iterator !== undefined) {
+			preRemoveFromIterator(iterator, node);
+		}
 	}
 	const oldPreviousSibling = node[kPrevious];
 	const oldNextSibling = node[kNext];
 	unlinkChild(node);
-	const assignedSlot = isSlottable(node)
-		? (node as Slottable)[kAssignedSlot]
-		: null;
-	if (assignedSlot !== null) assignSlottables(assignedSlot);
+	const assignedSlot = isSlottable(node) ?
+			(node as Slottable)[kAssignedSlot] :
+		null;
+	if (assignedSlot !== null) {
+		assignSlottables(assignedSlot);
+	}
 	const hostShadow =
 		parent.nodeType === ELEMENT_NODE ? (parent as Element)[kShadowRoot] : null;
 	if (hostShadow !== null && hostShadow[kSlotAssignment] === "manual") {
@@ -3585,8 +3817,12 @@ function removeNode(node: Node, suppressObservers = false): void {
 
 function adoptNode(node: Node, document: Document): void {
 	const oldDocument = node[kDocument];
-	if (node[kParent] !== null) removeNode(node);
-	if (oldDocument === document) return;
+	if (node[kParent] !== null) {
+		removeNode(node);
+	}
+	if (oldDocument === document) {
+		return;
+	}
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kDocument] = document;
 		if (descendant.nodeType === ELEMENT_NODE) {
@@ -3688,7 +3924,9 @@ const pendingMutationObservers = new Set<MutationObserver>();
 const transientNodes: Node[] = [];
 
 function queueMutationObserverMicrotask(): void {
-	if (mutationObserverMicrotaskQueued) return;
+	if (mutationObserverMicrotaskQueued) {
+		return;
+	}
 	mutationObserverMicrotaskQueued = true;
 	queueMicrotask(notifyMutationObservers);
 }
@@ -3704,7 +3942,9 @@ function notifyMutationObservers(): void {
 	const notifySet = [...pendingMutationObservers];
 	pendingMutationObservers.clear();
 	const signalSet = signalSlots.splice(0, signalSlots.length);
-	for (const observer of notifySet) observer[kNotifyObserver]();
+	for (const observer of notifySet) {
+		observer[kNotifyObserver]();
+	}
 	// What is left carries transient registrations of observers this checkpoint
 	// had nothing to deliver to. Those last until their observer is next
 	// notified: a node whose observer is already queued again waits here for
@@ -3713,14 +3953,23 @@ function notifyMutationObservers(): void {
 	let write = 0;
 	for (const node of transientNodes) {
 		const list = node[kRegisteredObservers];
-		if (list === null) continue;
+		if (list === null) {
+			continue;
+		}
 		let queued = false;
 		for (const registered of list) {
-			if (registered.source === null) continue;
-			if (pendingMutationObservers.has(registered.observer)) queued = true;
-			else registered.observer[kObserveNode](node);
+			if (registered.source === null) {
+				continue;
+			}
+			if (pendingMutationObservers.has(registered.observer)) {
+				queued = true;
+			} else {
+				registered.observer[kObserveNode](node);
+			}
 		}
-		if (queued) transientNodes[write++] = node;
+		if (queued) {
+			transientNodes[write++] = node;
+		}
 	}
 	transientNodes.length = write;
 	for (const slot of signalSet) {
@@ -3747,16 +3996,22 @@ function registeredObserverList(node: Node): RegisteredObserver[] {
  * collapses anyway.
  */
 function addTransientObservers(node: Node, parent: Node): void {
-	if (registeredObserverCount === 0) return;
+	if (registeredObserverCount === 0) {
+		return;
+	}
 	for (
 		let ancestor: Node | null = parent;
 		ancestor !== null;
 		ancestor = ancestor[kParent]
 	) {
 		const list = ancestor[kRegisteredObservers];
-		if (list === null) continue;
+		if (list === null) {
+			continue;
+		}
 		for (const registered of list) {
-			if (registered.options.subtree !== true) continue;
+			if (registered.options.subtree !== true) {
+				continue;
+			}
 			appendTransientObserver(node, registered);
 		}
 	}
@@ -3765,7 +4020,9 @@ function addTransientObservers(node: Node, parent: Node): void {
 function appendTransientObserver(node: Node, source: RegisteredObserver): void {
 	const list = registeredObserverList(node);
 	for (const existing of list) {
-		if (existing.source === source) return;
+		if (existing.source === source) {
+			return;
+		}
 	}
 	list.push({observer: source.observer, options: source.options, source});
 	registeredObserverCount++;
@@ -3783,10 +4040,14 @@ function removeTransientObservers(
 	matches: (registered: RegisteredObserver) => boolean,
 ): void {
 	const list = node[kRegisteredObservers];
-	if (list === null) return;
+	if (list === null) {
+		return;
+	}
 	for (let index = list.length - 1; index >= 0; index--) {
 		const registered = list[index];
-		if (registered.source === null || !matches(registered)) continue;
+		if (registered.source === null || !matches(registered)) {
+			continue;
+		}
 		list.splice(index, 1);
 		registeredObserverCount--;
 	}
@@ -3880,17 +4141,17 @@ function normalizeObserverOptions(
 ): ObserverOptions {
 	const init = toDictionary<MutationObserverInit>(options, "Observe options");
 	const attributeFilter =
-		init.attributeFilter === undefined
-			? undefined
-			: toStringSequence(init.attributeFilter);
+		init.attributeFilter === undefined ?
+			undefined :
+				toStringSequence(init.attributeFilter);
 	const attributeOldValue =
-		init.attributeOldValue === undefined
-			? undefined
-			: Boolean(init.attributeOldValue);
+		init.attributeOldValue === undefined ?
+			undefined :
+				Boolean(init.attributeOldValue);
 	const characterDataOldValue =
-		init.characterDataOldValue === undefined
-			? undefined
-			: Boolean(init.characterDataOldValue);
+		init.characterDataOldValue === undefined ?
+			undefined :
+				Boolean(init.characterDataOldValue);
 	let attributes =
 		init.attributes === undefined ? undefined : Boolean(init.attributes);
 	let characterData =
@@ -3934,7 +4195,7 @@ function toStringSequence(value: Iterable<string>): string[] {
 		value === null ||
 		typeof value !== "object" ||
 		typeof (value as {[Symbol.iterator]?: unknown})[Symbol.iterator] !==
-			"function"
+		"function"
 	) {
 		throw new TypeError("That is not a sequence of strings");
 	}
@@ -3969,7 +4230,9 @@ export class MutationObserver {
 		const normalized = normalizeObserverOptions(options);
 		const list = registeredObserverList(target);
 		for (const registered of list) {
-			if (registered.observer !== this || registered.source !== null) continue;
+			if (registered.observer !== this || registered.source !== null) {
+				continue;
+			}
 			for (const node of [...this.#liveNodes(), ...transientNodes]) {
 				removeTransientObservers(node, (entry) => entry.source === registered);
 			}
@@ -3984,9 +4247,13 @@ export class MutationObserver {
 	disconnect(): void {
 		for (const node of [...this.#liveNodes(), ...transientNodes]) {
 			const list = node[kRegisteredObservers];
-			if (list === null) continue;
+			if (list === null) {
+				continue;
+			}
 			for (let index = list.length - 1; index >= 0; index--) {
-				if (list[index].observer !== this) continue;
+				if (list[index].observer !== this) {
+					continue;
+				}
 				list.splice(index, 1);
 				registeredObserverCount--;
 			}
@@ -4007,7 +4274,9 @@ export class MutationObserver {
 		let write = 0;
 		for (let read = 0; read < this.#nodes.length; read++) {
 			const node = this.#nodes[read].deref();
-			if (node === undefined) continue;
+			if (node === undefined) {
+				continue;
+			}
 			this.#nodes[write++] = this.#nodes[read];
 			nodes.push(node);
 		}
@@ -4017,7 +4286,9 @@ export class MutationObserver {
 
 	[kObserveNode](node: Node): void {
 		for (const reference of this.#nodes) {
-			if (reference.deref() === node) return;
+			if (reference.deref() === node) {
+				return;
+			}
 		}
 		this.#nodes.push(new WeakRef(node));
 	}
@@ -4035,7 +4306,9 @@ export class MutationObserver {
 		for (const node of transientNodes) {
 			removeTransientObservers(node, (entry) => entry.observer === this);
 		}
-		if (records.length === 0) return;
+		if (records.length === 0) {
+			return;
+		}
 		try {
 			this.#callback.call(this, records, this);
 		} catch (error) {
@@ -4071,16 +4344,24 @@ function queueMutationRecord(
 	previousSibling: Node | null,
 	nextSibling: Node | null,
 ): void {
-	if (registeredObserverCount === 0) return;
+	if (registeredObserverCount === 0) {
+		return;
+	}
 	let interested: Map<MutationObserver, string | null> | null = null;
 	for (let node: Node | null = target; node !== null; node = node[kParent]) {
 		const list = node[kRegisteredObservers];
-		if (list === null) continue;
+		if (list === null) {
+			continue;
+		}
 		for (const registered of list) {
 			const options = registered.options;
-			if (node !== target && options.subtree !== true) continue;
+			if (node !== target && options.subtree !== true) {
+				continue;
+			}
 			if (type === "attributes") {
-				if (options.attributes !== true) continue;
+				if (options.attributes !== true) {
+					continue;
+				}
 				if (
 					options.attributeFilter !== undefined &&
 					(namespace !== null ||
@@ -4089,13 +4370,19 @@ function queueMutationRecord(
 					continue;
 				}
 			} else if (type === "characterData") {
-				if (options.characterData !== true) continue;
+				if (options.characterData !== true) {
+					continue;
+				}
 			} else if (!options.childList) {
 				continue;
 			}
 			const observer = registered.observer;
-			if (interested === null) interested = new Map();
-			if (!interested.has(observer)) interested.set(observer, null);
+			if (interested === null) {
+				interested = new Map();
+			}
+			if (!interested.has(observer)) {
+				interested.set(observer, null);
+			}
 			if (
 				(type === "attributes" && options.attributeOldValue === true) ||
 				(type === "characterData" && options.characterDataOldValue === true)
@@ -4104,7 +4391,9 @@ function queueMutationRecord(
 			}
 		}
 	}
-	if (interested === null) return;
+	if (interested === null) {
+		return;
+	}
 	for (const [observer, mappedOldValue] of interested) {
 		observer[kEnqueueRecord](
 			new MutationRecord(
@@ -4234,10 +4523,14 @@ abstract class LiveList implements Materializable {
 	 */
 	shapeMembers(changed: readonly Node[]): Node[] | null {
 		const member = this.#childMember;
-		if (member === null) return null;
+		if (member === null) {
+			return null;
+		}
 		const members: Node[] = [];
 		for (const node of changed) {
-			if (member(node)) members.push(node);
+			if (member(node)) {
+				members.push(node);
+			}
 		}
 		return members;
 	}
@@ -4246,19 +4539,25 @@ abstract class LiveList implements Materializable {
 
 	[kEnsure](): Node[] {
 		if (!this.#live) {
-			if (!this.#exact) this.#recompute();
+			if (!this.#exact) {
+				this.#recompute();
+			}
 			return this.#items;
 		}
 		if (!this.#registered) {
 			this.#registered = true;
 			registerMaterialized(this, this.#owner);
 		}
-		if (!this.#standing) this.#recompute();
+		if (!this.#standing) {
+			this.#recompute();
+		}
 		return this.#items;
 	}
 
 	[kSync](): void {
-		if (!this.#registered) return;
+		if (!this.#registered) {
+			return;
+		}
 		this.#recompute();
 	}
 
@@ -4279,9 +4578,13 @@ abstract class LiveList implements Materializable {
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void {
-		if (!this.#registered) return;
+		if (!this.#registered) {
+			return;
+		}
 		if (this.#standing) {
-			if (this.#childMember !== null && point !== this.#owner) return;
+			if (this.#childMember !== null && point !== this.#owner) {
+				return;
+			}
 			if (changed !== null) {
 				const members = this.shapeMembers(changed);
 				if (members !== null && this.#splice(point, changed, members, added)) {
@@ -4311,29 +4614,43 @@ abstract class LiveList implements Materializable {
 		added: boolean,
 	): boolean {
 		const items = this.#items;
-		if (members.length === 0) return true;
+		if (members.length === 0) {
+			return true;
+		}
 		if (added) {
 			const next = changed[changed.length - 1][kNext];
 			if (next !== null) {
 				const at = items.indexOf(next);
-				if (at === -1) return false;
+				if (at === -1) {
+					return false;
+				}
 				// A member at a time: what a change carries has no bound, and a
 				// spread is an argument list.
 				const rest = items.splice(at);
-				for (const member of members) items.push(member);
-				for (const node of rest) items.push(node);
+				for (const member of members) {
+					items.push(member);
+				}
+				for (const node of rest) {
+					items.push(node);
+				}
 			} else {
 				const last = items[items.length - 1];
 				if (last !== undefined && !isInclusiveAncestor(point, last)) {
 					return false;
 				}
-				for (const member of members) items.push(member);
+				for (const member of members) {
+					items.push(member);
+				}
 			}
 		} else {
 			const at = items.indexOf(members[0]);
-			if (at === -1) return false;
+			if (at === -1) {
+				return false;
+			}
 			for (let i = 1; i < members.length; i++) {
-				if (items[at + i] !== members[i]) return false;
+				if (items[at + i] !== members[i]) {
+					return false;
+				}
 			}
 			items.splice(at, members.length);
 		}
@@ -4388,7 +4705,9 @@ abstract class LiveList implements Materializable {
 		const items = this.#items;
 		const self = this as unknown as Record<number | string, unknown>;
 		this.#defineIndices(items.length);
-		for (const name of this.#names) delete self[name];
+		for (const name of this.#names) {
+			delete self[name];
+		}
 		this.#names = [];
 		const named = this.namedProperties(items);
 		if (named !== null) {
@@ -4429,6 +4748,7 @@ export class NodeList extends LiveList {
 		callback: (node: Node, index: number, list: NodeList) => void,
 		thisArg?: unknown,
 	) => void;
+
 	declare keys: () => IterableIterator<number>;
 	declare values: () => IterableIterator<Node>;
 	declare entries: () => IterableIterator<[number, Node]>;
@@ -4488,7 +4808,9 @@ export class HTMLCollection extends LiveList {
 
 	override shapeMembers(changed: readonly Node[]): Node[] | null {
 		const members = super.shapeMembers(changed);
-		if (members === null || areNameless(members)) return members;
+		if (members === null || areNameless(members)) {
+			return members;
+		}
 		return null;
 	}
 
@@ -4497,7 +4819,9 @@ export class HTMLCollection extends LiveList {
 		for (const item of items) {
 			const element = item as Element;
 			const id = element.getAttribute("id");
-			if (id !== null && id !== "" && !named.has(id)) named.set(id, element);
+			if (id !== null && id !== "" && !named.has(id)) {
+				named.set(id, element);
+			}
 			if (element.namespaceURI === HTML_NAMESPACE) {
 				const name = element.getAttribute("name");
 				if (name !== null && name !== "" && !named.has(name)) {
@@ -4519,11 +4843,15 @@ export class HTMLCollection extends LiveList {
 	}
 
 	namedItem(name: string): Element | null {
-		if (name === "") return null;
+		if (name === "") {
+			return null;
+		}
 		const key = String(name);
 		for (const item of this[kEnsure]()) {
 			const element = item as Element;
-			if (element.getAttribute("id") === key) return element;
+			if (element.getAttribute("id") === key) {
+				return element;
+			}
 			if (
 				element.namespaceURI === HTML_NAMESPACE &&
 				element.getAttribute("name") === key
@@ -4542,7 +4870,9 @@ Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 
 function toUnsignedLong(value: unknown): number {
 	const number = Number(value);
-	if (!Number.isFinite(number)) return 0;
+	if (!Number.isFinite(number)) {
+		return 0;
+	}
 	const truncated = Math.trunc(number);
 	return ((truncated % 4294967296) + 4294967296) % 4294967296;
 }
@@ -4573,8 +4903,8 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 function collectionCache(node: Node): Map<string, HTMLCollection> {
 	const owner = node as unknown as Record<symbol, unknown>;
 	let cache = owner[kCollectionCaches] as
-		| Map<string, HTMLCollection>
-		| undefined;
+		| Map<string, HTMLCollection> |
+		undefined;
 	if (cache === undefined) {
 		cache = new Map();
 		owner[kCollectionCaches] = cache;
@@ -4585,7 +4915,9 @@ function collectionCache(node: Node): Map<string, HTMLCollection> {
 function elementChildren(parent: Node): Element[] {
 	const elements: Element[] = [];
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType === ELEMENT_NODE) elements.push(node as Element);
+		if (node.nodeType === ELEMENT_NODE) {
+			elements.push(node as Element);
+		}
 	}
 	return elements;
 }
@@ -4599,10 +4931,14 @@ function elementChildren(parent: Node): Element[] {
  */
 function areNameless(members: readonly Node[]): boolean {
 	for (const member of members) {
-		if (member.nodeType !== ELEMENT_NODE) continue;
+		if (member.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		for (const attribute of (member as Element)[kAttributeList]) {
 			const name = attribute[kLocalName];
-			if (name === "id" || name === "name") return false;
+			if (name === "id" || name === "name") {
+				return false;
+			}
 		}
 	}
 	return true;
@@ -4634,7 +4970,9 @@ class MatchingCollection extends HTMLCollection {
 			() => {
 				const found: Element[] = [];
 				for (const element of descendantElements(root, [])) {
-					if (matches(element)) found.push(element);
+					if (matches(element)) {
+						found.push(element);
+					}
 				}
 				return found;
 			},
@@ -4655,11 +4993,13 @@ class MatchingCollection extends HTMLCollection {
 		const members: Node[] = [];
 		for (const node of changed) {
 			const elements =
-				node.nodeType === ELEMENT_NODE
-					? descendantElements(node, [node as Element])
-					: descendantElements(node, []);
+				node.nodeType === ELEMENT_NODE ?
+						descendantElements(node, [node as Element]) :
+						descendantElements(node, []);
 			for (const element of elements) {
-				if (this.#matches(element)) members.push(element);
+				if (this.#matches(element)) {
+					members.push(element);
+				}
 			}
 		}
 		return areNameless(members) ? members : null;
@@ -4669,7 +5009,9 @@ class MatchingCollection extends HTMLCollection {
 		// A collection answers to the id and the name of what it holds, so a
 		// change to either moves its named properties whatever the test says.
 		if (localName !== "id" && localName !== "name") {
-			if (localName !== this.#watched) return;
+			if (localName !== this.#watched) {
+				return;
+			}
 			const items = this[kComputed]();
 			if (items === null) {
 				this[kSync]();
@@ -4697,14 +5039,16 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 	if (collection === undefined) {
 		const lowered = asciiLowercase(qualifiedName);
 		collection = new MatchingCollection(root, null, (element) => {
-			if (qualifiedName === "*") return true;
+			if (qualifiedName === "*") {
+				return true;
+			}
 			const name =
-				element[kPrefix] === null
-					? element[kLocalName]
-					: `${element[kPrefix]}:${element[kLocalName]}`;
-			return element[kNamespace] === HTML_NAMESPACE
-				? name === lowered
-				: name === qualifiedName;
+				element[kPrefix] === null ?
+					element[kLocalName] :
+					`${element[kPrefix]}:${element[kLocalName]}`;
+			return element[kNamespace] === HTML_NAMESPACE ?
+				name === lowered :
+				name === qualifiedName;
 		});
 		// The indices a collection defines are observable without reading it,
 		// so a collection materializes them as it is made.
@@ -4763,22 +5107,28 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 	if (collection === undefined) {
 		const classes = splitOnAsciiWhitespace(classNames);
 		const quirks =
-			root[kDocument][kMode] === "quirks"
-				? classes.map((name) => asciiLowercase(name))
-				: classes;
+			root[kDocument][kMode] === "quirks" ?
+					classes.map((name) => asciiLowercase(name)) :
+				classes;
 		collection = new MatchingCollection(root, "class", (element) => {
-			if (classes.length === 0) return false;
+			if (classes.length === 0) {
+				return false;
+			}
 			const isQuirks = root[kDocument][kMode] === "quirks";
 			let tokens: ReadonlySet<string>;
 			if (isQuirks) {
 				const value = element.getAttribute("class");
-				if (value === null) return false;
+				if (value === null) {
+					return false;
+				}
 				tokens = new Set(splitOnAsciiWhitespace(asciiLowercase(value)));
 			} else {
 				tokens = classTokens(element);
 			}
 			for (const name of isQuirks ? quirks : classes) {
-				if (!tokens.has(name)) return false;
+				if (!tokens.has(name)) {
+					return false;
+				}
 			}
 			return true;
 		});
@@ -4796,7 +5146,9 @@ const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
 
 function splitOnAsciiWhitespace(value: string): string[] {
 	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
-	if (trimmed === "") return [];
+	if (trimmed === "") {
+		return [];
+	}
 	return trimmed.split(ASCII_WHITESPACE);
 }
 
@@ -4817,6 +5169,7 @@ export class DOMTokenList extends LiveList {
 		callback: (token: string, index: number, list: DOMTokenList) => void,
 		thisArg?: unknown,
 	) => void;
+
 	declare keys: () => IterableIterator<number>;
 	declare values: () => IterableIterator<string>;
 	declare entries: () => IterableIterator<[number, string]>;
@@ -4843,7 +5196,9 @@ export class DOMTokenList extends LiveList {
 		const tokens = value === null ? [] : splitOnAsciiWhitespace(value);
 		const ordered: string[] = [];
 		for (const token of tokens) {
-			if (!ordered.includes(token)) ordered.push(token);
+			if (!ordered.includes(token)) {
+				ordered.push(token);
+			}
 		}
 		return ordered as unknown as Node[];
 	}
@@ -4870,7 +5225,9 @@ export class DOMTokenList extends LiveList {
 		validateTokens(tokens);
 		const current = this.#tokens.slice();
 		for (const token of tokens) {
-			if (!current.includes(token)) current.push(String(token));
+			if (!current.includes(token)) {
+				current.push(String(token));
+			}
 		}
 		this.#write(current);
 	}
@@ -4909,7 +5266,9 @@ export class DOMTokenList extends LiveList {
 		const name = String(token);
 		const replacement = String(newToken);
 		const current = this.#tokens.slice();
-		if (!current.includes(name)) return false;
+		if (!current.includes(name)) {
+			return false;
+		}
 		// The ordered set replacement: the first of either token becomes the
 		// replacement, and every other instance of either is dropped.
 		const first = Math.min(
@@ -4950,7 +5309,9 @@ export class DOMTokenList extends LiveList {
 
 	#write(tokens: string[]): void {
 		if (this.#element.getAttributeNode(this.#attribute) === null) {
-			if (tokens.length === 0) return;
+			if (tokens.length === 0) {
+				return;
+			}
 		}
 		this.#element.setAttribute(this.#attribute, tokens.join(" "));
 	}
@@ -5059,14 +5420,20 @@ export class CharacterData extends Node {
 		}
 		const length = this[kData].length;
 		const start = toUnsignedLong(offset);
-		if (start > length) throw indexSizeError("The offset is past the end");
+		if (start > length) {
+			throw indexSizeError("The offset is past the end");
+		}
 		const size = toUnsignedLong(count);
-		if (start + size > length) return this[kData].slice(start);
+		if (start + size > length) {
+			return this[kData].slice(start);
+		}
 		return this[kData].slice(start, start + size);
 	}
 
 	appendData(data: string): void {
-		if (arguments.length < 1) throw new TypeError("appendData needs data");
+		if (arguments.length < 1) {
+			throw new TypeError("appendData needs data");
+		}
 		replaceData(this, this[kData].length, 0, String(data));
 	}
 
@@ -5115,7 +5482,9 @@ function replaceData(
 	data: string,
 ): void {
 	const length = node[kData].length;
-	if (offset > length) throw indexSizeError("The offset is past the end");
+	if (offset > length) {
+		throw indexSizeError("The offset is past the end");
+	}
 	const size = offset + count > length ? length - offset : count;
 	const oldValue = node[kData];
 	node[kData] =
@@ -5126,7 +5495,9 @@ function replaceData(
 	// nodes, and a collection that lists nodes holds what it held.
 	bumpTreeVersion(node, [], false);
 	const parent = node[kParent];
-	if (parent !== null) parent[kChildrenChanged]();
+	if (parent !== null) {
+		parent[kChildrenChanged]();
+	}
 }
 
 /** Queue a record for a change to a node's data. */
@@ -5174,10 +5545,14 @@ export class Text extends CharacterData {
 	}
 
 	splitText(offset: number): Text {
-		if (arguments.length < 1) throw new TypeError("splitText needs an offset");
+		if (arguments.length < 1) {
+			throw new TypeError("splitText needs an offset");
+		}
 		const start = toUnsignedLong(offset);
 		const length = this[kData].length;
-		if (start > length) throw indexSizeError("The offset is past the end");
+		if (start > length) {
+			throw indexSizeError("The offset is past the end");
+		}
 		const count = length - start;
 		const data = this.substringData(start, count);
 		const created = new Text(data);
@@ -5383,10 +5758,14 @@ export class DocumentFragment extends Node {
 
 	getElementById(elementId: string): Element | null {
 		const id = String(elementId);
-		if (id === "") return null;
+		if (id === "") {
+			return null;
+		}
 		for (const node of descendants(this)) {
 			if (node.nodeType === ELEMENT_NODE) {
-				if ((node as Element).getAttribute("id") === id) return node as Element;
+				if ((node as Element).getAttribute("id") === id) {
+					return node as Element;
+				}
 			}
 		}
 		return null;
@@ -5474,9 +5853,9 @@ export class Attr extends Node {
 	}
 
 	get [kQualifiedName](): string {
-		return this[kPrefix] === null
-			? this[kLocalName]
-			: `${this[kPrefix]}:${this[kLocalName]}`;
+		return this[kPrefix] === null ?
+			this[kLocalName] :
+			`${this[kPrefix]}:${this[kLocalName]}`;
 	}
 
 	get value(): string {
@@ -5586,7 +5965,9 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	queueAttributeMutationRecord(element, attribute, oldValue);
 	const list = element[kAttributeList];
 	const index = list.indexOf(attribute);
-	if (index !== -1) list.splice(index, 1);
+	if (index !== -1) {
+		list.splice(index, 1);
+	}
 	attribute[kOwnerElement] = null;
 	element[kAttributeChanged](
 		attribute[kLocalName],
@@ -5650,7 +6031,9 @@ function getAttributeByName(
 		name = asciiLowercase(name);
 	}
 	for (const attribute of element[kAttributeList]) {
-		if (attribute[kQualifiedName] === name) return attribute;
+		if (attribute[kQualifiedName] === name) {
+			return attribute;
+		}
 	}
 	return null;
 }
@@ -5684,7 +6067,9 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 		attribute[kNamespace],
 		attribute[kLocalName],
 	);
-	if (existing === attribute) return attribute;
+	if (existing === attribute) {
+		return attribute;
+	}
 	if (existing !== null) {
 		replaceAttribute(element, existing, attribute);
 		return existing;
@@ -5720,8 +6105,12 @@ export class NamedNodeMap extends LiveList {
 		for (const item of items) {
 			const attribute = item as Attr;
 			const name = attribute[kQualifiedName];
-			if (html && asciiLowercase(name) !== name) continue;
-			if (!named.has(name)) named.set(name, attribute);
+			if (html && asciiLowercase(name) !== name) {
+				continue;
+			}
+			if (!named.has(name)) {
+				named.set(name, attribute);
+			}
 		}
 		return named;
 	}
@@ -5754,7 +6143,9 @@ export class NamedNodeMap extends LiveList {
 
 	removeNamedItem(qualifiedName: string): Attr {
 		const attribute = getAttributeByName(this.#element, String(qualifiedName));
-		if (attribute === null) throw notFoundError("There is no such attribute");
+		if (attribute === null) {
+			throw notFoundError("There is no such attribute");
+		}
 		removeAttributeNode(this.#element, attribute);
 		return attribute;
 	}
@@ -5765,7 +6156,9 @@ export class NamedNodeMap extends LiveList {
 			namespace,
 			String(localName),
 		);
-		if (attribute === null) throw notFoundError("There is no such attribute");
+		if (attribute === null) {
+			throw notFoundError("There is no such attribute");
+		}
 		removeAttributeNode(this.#element, attribute);
 		return attribute;
 	}
@@ -5796,11 +6189,11 @@ const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
 
 type CustomElementState =
-	| "uncustomized"
-	| "undefined"
-	| "failed"
-	| "custom"
-	| "precustomized";
+	| "uncustomized" |
+	"undefined" |
+	"failed" |
+	"custom" |
+	"precustomized";
 
 /**
  * The interface an element name is built through.
@@ -5887,9 +6280,9 @@ export class Element extends Node {
 	}
 
 	get [kQualifiedName](): string {
-		return this[kPrefix] === null
-			? this[kLocalName]
-			: `${this[kPrefix]}:${this[kLocalName]}`;
+		return this[kPrefix] === null ?
+			this[kLocalName] :
+			`${this[kPrefix]}:${this[kLocalName]}`;
 	}
 
 	get namespaceURI(): string | null {
@@ -5907,9 +6300,9 @@ export class Element extends Node {
 	get tagName(): string {
 		const qualified = this[kQualifiedName];
 		return this[kNamespace] === HTML_NAMESPACE &&
-			isHTMLDocument(this[kDocument])
-			? asciiUppercase(qualified)
-			: qualified;
+			isHTMLDocument(this[kDocument]) ?
+				asciiUppercase(qualified) :
+			qualified;
 	}
 
 	get id(): string {
@@ -5965,9 +6358,9 @@ export class Element extends Node {
 			throw new TypeError(`${mode} is not a shadow root mode`);
 		}
 		const slotAssignment =
-			options.slotAssignment === undefined
-				? "named"
-				: String(options.slotAssignment);
+			options.slotAssignment === undefined ?
+				"named" :
+					String(options.slotAssignment);
 		if (slotAssignment !== "named" && slotAssignment !== "manual") {
 			throw new TypeError(`${slotAssignment} is not a slot assignment mode`);
 		}
@@ -5986,7 +6379,9 @@ export class Element extends Node {
 
 	get shadowRoot(): ShadowRoot | null {
 		const shadow = this[kShadowRoot];
-		if (shadow === null || shadow[kShadowMode] !== "open") return null;
+		if (shadow === null || shadow[kShadowMode] !== "open") {
+			return null;
+		}
 		return shadow;
 	}
 
@@ -6070,7 +6465,9 @@ export class Element extends Node {
 
 	removeAttribute(qualifiedName: string): void {
 		const attribute = getAttributeByName(this, String(qualifiedName));
-		if (attribute !== null) removeAttributeNode(this, attribute);
+		if (attribute !== null) {
+			removeAttributeNode(this, attribute);
+		}
 	}
 
 	removeAttributeNS(namespace: string | null, localName: string): void {
@@ -6079,7 +6476,9 @@ export class Element extends Node {
 			namespace,
 			String(localName),
 		);
-		if (attribute !== null) removeAttributeNode(this, attribute);
+		if (attribute !== null) {
+			removeAttributeNode(this, attribute);
+		}
 	}
 
 	toggleAttribute(qualifiedName: string, force?: boolean): boolean {
@@ -6117,7 +6516,9 @@ export class Element extends Node {
 			name = asciiLowercase(name);
 		}
 		for (const attribute of this[kAttributeList]) {
-			if (attribute[kQualifiedName] === name) return true;
+			if (attribute[kQualifiedName] === name) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -6135,17 +6536,23 @@ export class Element extends Node {
 	}
 
 	setAttributeNode(attr: Attr): Attr | null {
-		if (!(attr instanceof Attr)) throw new TypeError("That is not an Attr");
+		if (!(attr instanceof Attr)) {
+			throw new TypeError("That is not an Attr");
+		}
 		return setAttributeNode(this, attr);
 	}
 
 	setAttributeNodeNS(attr: Attr): Attr | null {
-		if (!(attr instanceof Attr)) throw new TypeError("That is not an Attr");
+		if (!(attr instanceof Attr)) {
+			throw new TypeError("That is not an Attr");
+		}
 		return setAttributeNode(this, attr);
 	}
 
 	removeAttributeNode(attr: Attr): Attr {
-		if (!(attr instanceof Attr)) throw new TypeError("That is not an Attr");
+		if (!(attr instanceof Attr)) {
+			throw new TypeError("That is not an Attr");
+		}
 		if (!this[kAttributeList].includes(attr)) {
 			throw notFoundError("That attribute is not on this element");
 		}
@@ -6217,7 +6624,9 @@ export class Element extends Node {
 
 	set outerHTML(value: string) {
 		const parent = this[kParent];
-		if (parent === null) return;
+		if (parent === null) {
+			return;
+		}
 		if (parent.nodeType === DOCUMENT_NODE) {
 			throw domError(
 				"NoModificationAllowedError",
@@ -6225,9 +6634,9 @@ export class Element extends Node {
 			);
 		}
 		const context =
-			parent.nodeType === DOCUMENT_FRAGMENT_NODE
-				? createElementInternal(this[kDocument], "body", HTML_NAMESPACE)
-				: (parent as Element);
+			parent.nodeType === DOCUMENT_FRAGMENT_NODE ?
+					createElementInternal(this[kDocument], "body", HTML_NAMESPACE) :
+					(parent as Element);
 		const fragment = parseFragmentHTML(String(value ?? ""), context);
 		replaceChild(this, fragment, parent);
 	}
@@ -6256,9 +6665,9 @@ export class Element extends Node {
 					);
 				}
 				context =
-					parent.nodeType === ELEMENT_NODE
-						? parent
-						: createElementInternal(this[kDocument], "body", HTML_NAMESPACE);
+					parent.nodeType === ELEMENT_NODE ?
+						parent :
+							createElementInternal(this[kDocument], "body", HTML_NAMESPACE);
 				break;
 			}
 			case "afterbegin":
@@ -6344,8 +6753,12 @@ export class Element extends Node {
 			const root = getRoot(this);
 			if (root.nodeType === DOCUMENT_NODE) {
 				const document = root as Document;
-				if (oldValue !== null) removeIdEntry(document, oldValue, this);
-				if (value !== null && value !== "") addIdEntry(document, value, this);
+				if (oldValue !== null) {
+					removeIdEntry(document, oldValue, this);
+				}
+				if (value !== null && value !== "") {
+					addIdEntry(document, value, this);
+				}
 			}
 		}
 		if (namespace === null && localName === "slot") {
@@ -6365,8 +6778,9 @@ export class Element extends Node {
 			refreshFormDisabled(this);
 			if (this instanceof HTMLFieldSetElement) {
 				for (const node of descendants(this)) {
-					if (node.nodeType === ELEMENT_NODE)
+					if (node.nodeType === ELEMENT_NODE) {
 						refreshFormDisabled(node as Element);
+					}
 				}
 			}
 		}
@@ -6454,9 +6868,9 @@ export class HTMLElement extends Element {
 			// what allocating from this constructor would have given the element.
 			const named = (target as unknown as {prototype: unknown}).prototype;
 			const prototype =
-				named !== null && typeof named === "object"
-					? (named as object)
-					: HTMLElement.prototype;
+				named !== null && typeof named === "object" ?
+						(named as object) :
+					HTMLElement.prototype;
 			const element = stack[stack.length - 1];
 			if (element === alreadyConstructed) {
 				throw domError(
@@ -6466,7 +6880,7 @@ export class HTMLElement extends Element {
 			}
 			Object.setPrototypeOf(element, prototype);
 			stack[stack.length - 1] = alreadyConstructed;
-			// eslint-disable-next-line no-constructor-return
+
 			return element as HTMLElement;
 		}
 		super();
@@ -6489,8 +6903,12 @@ export class HTMLElement extends Element {
 		const value = this.getAttribute("translate");
 		if (value !== null) {
 			const mode = asciiLowercase(value);
-			if (mode === "" || mode === "yes") return true;
-			if (mode === "no") return false;
+			if (mode === "" || mode === "yes") {
+				return true;
+			}
+			if (mode === "no") {
+				return false;
+			}
 		}
 		const parent = this[kParent];
 		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
@@ -6511,11 +6929,19 @@ export class HTMLElement extends Element {
 		const value = this.getAttribute("draggable");
 		if (value !== null) {
 			const state = asciiLowercase(value);
-			if (state === "true") return true;
-			if (state === "false") return false;
+			if (state === "true") {
+				return true;
+			}
+			if (state === "false") {
+				return false;
+			}
 		}
-		if (this[kNamespace] !== HTML_NAMESPACE) return false;
-		if (this[kLocalName] === "img") return true;
+		if (this[kNamespace] !== HTML_NAMESPACE) {
+			return false;
+		}
+		if (this[kLocalName] === "img") {
+			return true;
+		}
 		return this[kLocalName] === "a" && this.hasAttribute("href");
 	}
 
@@ -6528,8 +6954,12 @@ export class HTMLElement extends Element {
 		const value = this.getAttribute("spellcheck");
 		if (value !== null) {
 			const state = asciiLowercase(value);
-			if (state === "" || state === "true") return true;
-			if (state === "false") return false;
+			if (state === "" || state === "true") {
+				return true;
+			}
+			if (state === "false") {
+				return false;
+			}
 		}
 		const parent = this[kParent];
 		if (parent !== null && parent.nodeType === ELEMENT_NODE) {
@@ -6545,11 +6975,19 @@ export class HTMLElement extends Element {
 	/** The element's own autocapitalization hint, named by its keyword. */
 	get autocapitalize(): string {
 		const value = this.getAttribute("autocapitalize");
-		if (value === null) return "";
+		if (value === null) {
+			return "";
+		}
 		const state = asciiLowercase(value);
-		if (state === "off" || state === "none") return "none";
-		if (state === "on" || state === "sentences") return "sentences";
-		if (state === "words" || state === "characters") return state;
+		if (state === "off" || state === "none") {
+			return "none";
+		}
+		if (state === "on" || state === "sentences") {
+			return "sentences";
+		}
+		if (state === "words" || state === "characters") {
+			return state;
+		}
 		return "sentences";
 	}
 
@@ -6570,7 +7008,9 @@ export class HTMLElement extends Element {
 	/** Hidden reflects as `any`: a string for the third state, else a boolean. */
 	get hidden(): boolean | string {
 		const value = this.getAttribute("hidden");
-		if (value === null) return false;
+		if (value === null) {
+			return false;
+		}
 		return asciiLowercase(value) === "until-found" ? "until-found" : true;
 	}
 
@@ -6586,11 +7026,19 @@ export class HTMLElement extends Element {
 
 	get contentEditable(): string {
 		const value = this.getAttribute("contenteditable");
-		if (value === null) return "inherit";
+		if (value === null) {
+			return "inherit";
+		}
 		const state = asciiLowercase(value);
-		if (state === "" || state === "true") return "true";
-		if (state === "false") return "false";
-		if (state === "plaintext-only") return "plaintext-only";
+		if (state === "" || state === "true") {
+			return "true";
+		}
+		if (state === "false") {
+			return "false";
+		}
+		if (state === "plaintext-only") {
+			return "plaintext-only";
+		}
 		return "inherit";
 	}
 
@@ -6614,8 +7062,12 @@ export class HTMLElement extends Element {
 			node = node[kParent]
 		) {
 			const state = (node as HTMLElement).contentEditable;
-			if (state === "true" || state === "plaintext-only") return true;
-			if (state === "false") return false;
+			if (state === "true" || state === "plaintext-only") {
+				return true;
+			}
+			if (state === "false") {
+				return false;
+			}
 		}
 		return false;
 	}
@@ -6659,8 +7111,12 @@ export class HTMLElement extends Element {
 	 * reaches. A disabled form control is not clicked at all.
 	 */
 	click(): void {
-		if (isActuallyDisabled(this)) return;
-		if (this[kClickInProgress]) return;
+		if (isActuallyDisabled(this)) {
+			return;
+		}
+		if (this[kClickInProgress]) {
+			return;
+		}
 		this[kClickInProgress] = true;
 		try {
 			const event = new PointerEvent("click", {
@@ -6688,9 +7144,13 @@ export class HTMLElement extends Element {
 	 * this DOM has no window to fire them at.
 	 */
 	focus(): void {
-		if (!isFocusableArea(this)) return;
+		if (!isFocusableArea(this)) {
+			return;
+		}
 		const document = this[kDocument];
-		if (getRoot(this).nodeType !== DOCUMENT_NODE) return;
+		if (getRoot(this).nodeType !== DOCUMENT_NODE) {
+			return;
+		}
 		document[kActiveElement] = this;
 	}
 
@@ -6708,9 +7168,9 @@ export class HTMLElement extends Element {
 	 */
 	showPopover(options?: {source?: Element | null}): void {
 		const init =
-			options === undefined
-				? {}
-				: toDictionary<{source?: Element | null}>(options, "Show options");
+			options === undefined ?
+					{} :
+					toDictionary<{source?: Element | null}>(options, "Show options");
 		showPopover(this, true, init.source ?? null);
 	}
 
@@ -6736,7 +7196,9 @@ export class HTMLElement extends Element {
 				options,
 				"Toggle options",
 			);
-			if (init.force !== undefined) force = Boolean(init.force);
+			if (init.force !== undefined) {
+				force = Boolean(init.force);
+			}
 			source = init.source ?? null;
 		}
 		const showing = isShowingPopover(this);
@@ -6748,7 +7210,9 @@ export class HTMLElement extends Element {
 			// Neither half runs, and the state still has to be a legal one:
 			// toggling something that is not a popover throws either way.
 			const validity = popoverValidity(this, showing, null);
-			if (isPopoverException(validity)) throw validity;
+			if (isPopoverException(validity)) {
+				throw validity;
+			}
 		}
 		return isShowingPopover(this);
 	}
@@ -6765,9 +7229,15 @@ export class HTMLElement extends Element {
 		namespace: string | null,
 	): void {
 		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace !== null || localName !== "popover") return;
-		if (popoverValueState(oldValue) === popoverValueState(value)) return;
-		if (!isShowingPopover(this)) return;
+		if (namespace !== null || localName !== "popover") {
+			return;
+		}
+		if (popoverValueState(oldValue) === popoverValueState(value)) {
+			return;
+		}
+		if (!isShowingPopover(this)) {
+			return;
+		}
 		hidePopover(this, true, true, false, null);
 	}
 
@@ -6777,7 +7247,9 @@ export class HTMLElement extends Element {
 	 */
 	override [kRemovingSteps](oldParent: Node): void {
 		super[kRemovingSteps](oldParent);
-		if (!isShowingPopover(this)) return;
+		if (!isShowingPopover(this)) {
+			return;
+		}
 		const state = popoverStateOf(this);
 		topLayerOf(this[kDocument]).delete(this);
 		state.visibility = "hidden";
@@ -6797,9 +7269,15 @@ export class HTMLElement extends Element {
  * their default tabindex. A disabled control is focusable by neither route.
  */
 function isFocusableArea(element: Element): boolean {
-	if (isActuallyDisabled(element)) return false;
-	if (element.hasAttribute("tabindex")) return true;
-	if (element.hasAttribute("contenteditable")) return true;
+	if (isActuallyDisabled(element)) {
+		return false;
+	}
+	if (element.hasAttribute("tabindex")) {
+		return true;
+	}
+	if (element.hasAttribute("contenteditable")) {
+		return true;
+	}
 	return defaultTabIndex(element) >= 0;
 }
 
@@ -6814,7 +7292,9 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
  * minus one for every other element.
  */
 function defaultTabIndex(element: Element): number {
-	if (element[kNamespace] !== HTML_NAMESPACE) return -1;
+	if (element[kNamespace] !== HTML_NAMESPACE) {
+		return -1;
+	}
 	switch (element[kLocalName]) {
 		case "a":
 		case "area":
@@ -6832,9 +7312,9 @@ function defaultTabIndex(element: Element): number {
 				parent.nodeType === ELEMENT_NODE &&
 				(parent as Element)[kNamespace] === HTML_NAMESPACE &&
 				(parent as Element)[kLocalName] === "details" &&
-				firstChildElement(parent, "summary") === element
-				? 0
-				: -1;
+				firstChildElement(parent, "summary") === element ?
+				0 :
+					-1;
 		}
 		default:
 			return -1;
@@ -6844,7 +7324,9 @@ function defaultTabIndex(element: Element): number {
 /** The first child element of a parent with a given HTML local name. */
 function firstChildElement(parent: Node, localName: string): Element | null {
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = node as Element;
 		if (
 			element[kNamespace] === HTML_NAMESPACE &&
@@ -6906,14 +7388,20 @@ function elementInterface(
 	localName: string,
 ): new () => Element {
 	const builtin = builtinRegistry.lookup(namespace, localName);
-	if (builtin !== null) return builtin;
-	if (namespace === HTML_NAMESPACE) {
-		return isValidCustomElementName(localName)
-			? HTMLElement
-			: HTMLUnknownElement;
+	if (builtin !== null) {
+		return builtin;
 	}
-	if (namespace === SVG_NAMESPACE) return SVGElement;
-	if (namespace === MATHML_NAMESPACE) return MathMLElement;
+	if (namespace === HTML_NAMESPACE) {
+		return isValidCustomElementName(localName) ?
+			HTMLElement :
+			HTMLUnknownElement;
+	}
+	if (namespace === SVG_NAMESPACE) {
+		return SVGElement;
+	}
+	if (namespace === MATHML_NAMESPACE) {
+		return MathMLElement;
+	}
 	return Element;
 }
 
@@ -7062,9 +7550,9 @@ function createElementInternal(
 	element[kRegistry] = inRegistry;
 	element[kCustomState] =
 		namespace === HTML_NAMESPACE &&
-		(isValidCustomElementName(localName) || is !== null)
-			? "undefined"
-			: "uncustomized";
+		(isValidCustomElementName(localName) || is !== null) ?
+			"undefined" :
+			"uncustomized";
 	return element;
 }
 
@@ -7120,8 +7608,8 @@ interface CustomElementDefinition {
 }
 
 type Reaction =
-	| {upgrade: CustomElementDefinition}
-	| {callback: (...args: unknown[]) => void; args: unknown[]};
+	| {upgrade: CustomElementDefinition} |
+	{callback: (...args: unknown[]) => void; args: unknown[]};
 
 /**
  * The custom element reactions stack.
@@ -7145,7 +7633,9 @@ let processingBackupElementQueue = false;
 function enqueueOnAppropriateElementQueue(element: Element): void {
 	if (reactionsStack.length === 0) {
 		backupElementQueue.push(element);
-		if (processingBackupElementQueue) return;
+		if (processingBackupElementQueue) {
+			return;
+		}
 		processingBackupElementQueue = true;
 		queueMicrotask(() => {
 			invokeReactions(backupElementQueue);
@@ -7171,9 +7661,13 @@ function enqueueCallbackReaction(
 	args: unknown[],
 ): void {
 	const definition = element[kDefinition];
-	if (definition === null) return;
+	if (definition === null) {
+		return;
+	}
 	const callback = definition.lifecycleCallbacks.get(callbackName) ?? null;
-	if (callback === null) return;
+	if (callback === null) {
+		return;
+	}
 	if (
 		callbackName === "attributeChangedCallback" &&
 		!definition.observedAttributes.has(args[0] as string)
@@ -7197,7 +7691,9 @@ function invokeReactions(queue: Element[]): void {
 	while (queue.length > 0) {
 		const element = queue.shift() as Element;
 		const reactions = element[kReactionQueue];
-		if (reactions === null) continue;
+		if (reactions === null) {
+			continue;
+		}
 		while (reactions.length > 0) {
 			const reaction = reactions.shift() as Reaction;
 			try {
@@ -7231,7 +7727,9 @@ function withReactions<T>(steps: () => T): T {
 function ceReactions(prototype: object, names: string[]): void {
 	for (const name of names) {
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-		if (descriptor === undefined) continue;
+		if (descriptor === undefined) {
+			continue;
+		}
 		if (typeof descriptor.value === "function") {
 			descriptor.value = wrapWithReactions(
 				descriptor.value as (...args: unknown[]) => unknown,
@@ -7276,7 +7774,9 @@ function wrapWithReactions(
  * `prototype`, which the caller can see and the algorithm reads later, once.
  */
 function isConstructor(value: unknown): boolean {
-	if (typeof value !== "function") return false;
+	if (typeof value !== "function") {
+		return false;
+	}
 	try {
 		Reflect.construct(
 			new Proxy(value as new () => unknown, {construct: () => ({})}),
@@ -7291,14 +7791,18 @@ function isConstructor(value: unknown): boolean {
 /** Convert a value to sequence<DOMString>, as the IDL binding would. */
 function toStringSequenceStrict(value: unknown, what: string): string[] {
 	if (value === null || typeof value !== "object") {
-		if (typeof value !== "string") throw new TypeError(`${what} is not a list`);
+		if (typeof value !== "string") {
+			throw new TypeError(`${what} is not a list`);
+		}
 	}
 	const iterator = (value as Iterable<unknown>)[Symbol.iterator];
 	if (typeof iterator !== "function") {
 		throw new TypeError(`${what} is not a list`);
 	}
 	const strings: string[] = [];
-	for (const entry of value as Iterable<unknown>) strings.push(String(entry));
+	for (const entry of value as Iterable<unknown>) {
+		strings.push(String(entry));
+	}
 	return strings;
 }
 
@@ -7306,7 +7810,9 @@ function toCallback(
 	value: unknown,
 	name: string,
 ): ((...args: unknown[]) => void) | null {
-	if (value === undefined) return null;
+	if (value === undefined) {
+		return null;
+	}
 	if (typeof value !== "function") {
 		throw new TypeError(`${name} is not callable`);
 	}
@@ -7459,11 +7965,19 @@ export class CustomElementRegistry {
 		this.#definitions.push(definition);
 		const document = currentDocument();
 		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
-			if (candidate.nodeType !== ELEMENT_NODE) continue;
+			if (candidate.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const element = candidate as Element;
-			if (element[kRegistry] !== this) continue;
-			if (element[kNamespace] !== HTML_NAMESPACE) continue;
-			if (element[kLocalName] !== localName) continue;
+			if (element[kRegistry] !== this) {
+				continue;
+			}
+			if (element[kNamespace] !== HTML_NAMESPACE) {
+				continue;
+			}
+			if (element[kLocalName] !== localName) {
+				continue;
+			}
 			enqueueUpgradeReaction(element, definition);
 		}
 		const pending = this.#whenDefined.get(localName);
@@ -7505,7 +8019,9 @@ export class CustomElementRegistry {
 			);
 		}
 		const defined = this.#definitions.find((entry) => entry.name === localName);
-		if (defined !== undefined) return Promise.resolve(defined.constructor);
+		if (defined !== undefined) {
+			return Promise.resolve(defined.constructor);
+		}
 		let pending = this.#whenDefined.get(localName);
 		if (pending === undefined) {
 			let resolve: (value: CustomElementConstructor) => void = () => {};
@@ -7519,9 +8035,13 @@ export class CustomElementRegistry {
 	}
 
 	upgrade(root: Node): void {
-		if (!(root instanceof Node)) throw new TypeError("That is not a node");
+		if (!(root instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		for (const candidate of shadowIncludingInclusiveDescendants(root)) {
-			if (candidate.nodeType !== ELEMENT_NODE) continue;
+			if (candidate.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			tryToUpgrade(candidate as Element);
 		}
 	}
@@ -7534,7 +8054,9 @@ export class CustomElementRegistry {
 	 * nothing for the call to do.
 	 */
 	initialize(root: Node): void {
-		if (!(root instanceof Node)) throw new TypeError("That is not a node");
+		if (!(root instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (!this.#scoped && root.nodeType === DOCUMENT_NODE) {
 			throw domError(
 				"NotSupportedError",
@@ -7543,7 +8065,9 @@ export class CustomElementRegistry {
 		}
 		const upgrades: Element[] = [];
 		associateRegistry(root, this, upgrades);
-		for (const element of upgrades) tryToUpgrade(element);
+		for (const element of upgrades) {
+			tryToUpgrade(element);
+		}
 	}
 
 	get [kIsScopedRegistry](): boolean {
@@ -7564,7 +8088,9 @@ export class CustomElementRegistry {
 		localName: string,
 		is: string | null,
 	): CustomElementDefinition | null {
-		if (namespace !== HTML_NAMESPACE) return null;
+		if (namespace !== HTML_NAMESPACE) {
+			return null;
+		}
 		for (const definition of this.#definitions) {
 			if (definition.name === localName && definition.localName === localName) {
 				return definition;
@@ -7602,10 +8128,14 @@ function definitionForConstructor(
 		}
 	}
 	const global = globalCustomElements[kDefinitionFor](constructor);
-	if (global !== null) return global;
+	if (global !== null) {
+		return global;
+	}
 	for (const registry of registries) {
 		const definition = registry[kDefinitionFor](constructor);
-		if (definition !== null) return definition;
+		if (definition !== null) {
+			return definition;
+		}
 	}
 	return null;
 }
@@ -7638,7 +8168,9 @@ function lookUpCustomElementDefinition(
 	localName: string,
 	is: string | null,
 ): CustomElementDefinition | null {
-	if (registry === null) return null;
+	if (registry === null) {
+		return null;
+	}
 	return registry[kLookUp](namespace, localName, is);
 }
 
@@ -7653,9 +8185,13 @@ function associateRegistry(
 	registry: CustomElementRegistry,
 	upgrades: Element[],
 ): void {
-	if (node[kRegistry] !== null) return;
+	if (node[kRegistry] !== null) {
+		return;
+	}
 	node[kRegistry] = registry;
-	if (node.nodeType === ELEMENT_NODE) upgrades.push(node as Element);
+	if (node.nodeType === ELEMENT_NODE) {
+		upgrades.push(node as Element);
+	}
 	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 		associateRegistry(child, registry, upgrades);
 	}
@@ -7683,7 +8219,9 @@ function upgradeElement(
 	definition: CustomElementDefinition,
 ): void {
 	const state = element[kCustomState];
-	if (state !== "undefined" && state !== "uncustomized") return;
+	if (state !== "undefined" && state !== "uncustomized") {
+		return;
+	}
 	element[kDefinition] = definition;
 	element[kCustomState] = "failed";
 	for (const attribute of element[kAttributeList]) {
@@ -7764,7 +8302,9 @@ function upgradeDefinitionFor(
 
 function tryToUpgrade(element: Element): void {
 	const definition = upgradeDefinitionFor(element);
-	if (definition !== null) enqueueUpgradeReaction(element, definition);
+	if (definition !== null) {
+		enqueueUpgradeReaction(element, definition);
+	}
 }
 
 /* --------------------------------------------------------------- shadow trees */
@@ -7820,7 +8360,9 @@ export class ShadowRoot extends DocumentFragment {
 
 	constructor() {
 		super();
-		if (!internalConstruction) throw new TypeError("Illegal constructor");
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 	}
 
 	get mode(): "open" | "closed" {
@@ -7963,7 +8505,9 @@ function attachShadowRoot(
 				"That element already hosts a shadow tree",
 			);
 		}
-		for (const child of childNodeArray(existing)) removeNode(child);
+		for (const child of childNodeArray(existing)) {
+			removeNode(child);
+		}
 		existing[kDeclarative] = false;
 		return;
 	}
@@ -8058,15 +8602,17 @@ function isAssigned(target: EventTarget | null): boolean {
 
 /** A slottable's name: an element's slot attribute, and "" for text. */
 function slottableName(slottable: Slottable): string {
-	return slottable.nodeType === ELEMENT_NODE
-		? (slottable as Element)[kSlottableName]
-		: "";
+	return slottable.nodeType === ELEMENT_NODE ?
+			(slottable as Element)[kSlottableName] :
+		"";
 }
 
 function hasInclusiveDescendantSlot(node: Node): boolean {
 	let current: Node | null = node;
 	while (current !== null) {
-		if (current instanceof HTMLSlotElement) return true;
+		if (current instanceof HTMLSlotElement) {
+			return true;
+		}
 		current = nextInTree(current, node);
 	}
 	return false;
@@ -8075,10 +8621,16 @@ function hasInclusiveDescendantSlot(node: Node): boolean {
 /** The spec's "find a slot" algorithm. */
 function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const parent = slottable[kParent];
-	if (parent === null || parent.nodeType !== ELEMENT_NODE) return null;
+	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
 	const shadow = (parent as Element)[kShadowRoot];
-	if (shadow === null) return null;
-	if (open && shadow[kShadowMode] !== "open") return null;
+	if (shadow === null) {
+		return null;
+	}
+	if (open && shadow[kShadowMode] !== "open") {
+		return null;
+	}
 	if (shadow[kSlotAssignment] === "manual") {
 		for (const descendant of descendants(shadow)) {
 			if (
@@ -8106,18 +8658,26 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 function findSlottables(slot: HTMLSlotElement): Slottable[] {
 	const result: Slottable[] = [];
 	const root = getRoot(slot);
-	if (!isShadowRoot(root)) return result;
+	if (!isShadowRoot(root)) {
+		return result;
+	}
 	const shadow = root as ShadowRoot;
 	const host = shadow[kHost] as Element;
 	if (shadow[kSlotAssignment] === "manual") {
 		for (const slottable of slot[kManualAssignment]) {
-			if (slottable[kParent] === host) result.push(slottable);
+			if (slottable[kParent] === host) {
+				result.push(slottable);
+			}
 		}
 		return result;
 	}
 	for (let child = host[kFirstChild]; child !== null; child = child[kNext]) {
-		if (!isSlottable(child)) continue;
-		if (findASlot(child as Slottable) === slot) result.push(child as Slottable);
+		if (!isSlottable(child)) {
+			continue;
+		}
+		if (findASlot(child as Slottable) === slot) {
+			result.push(child as Slottable);
+		}
 	}
 	return result;
 }
@@ -8125,12 +8685,16 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 /** The spec's "find flattened slottables" algorithm. */
 function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 	const result: Slottable[] = [];
-	if (!isShadowRoot(getRoot(slot))) return result;
+	if (!isShadowRoot(getRoot(slot))) {
+		return result;
+	}
 	let slottables = findSlottables(slot);
 	if (slottables.length === 0) {
 		slottables = [];
 		for (let child = slot[kFirstChild]; child !== null; child = child[kNext]) {
-			if (isSlottable(child)) slottables.push(child as Slottable);
+			if (isSlottable(child)) {
+				slottables.push(child as Slottable);
+			}
 		}
 	}
 	for (const node of slottables) {
@@ -8150,27 +8714,35 @@ function assignSlottables(slot: HTMLSlotElement): void {
 	const identical =
 		slottables.length === assigned.length &&
 		slottables.every((node, index) => node === assigned[index]);
-	if (!identical) signalASlotChange(slot);
+	if (!identical) {
+		signalASlotChange(slot);
+	}
 	for (const previous of assigned) {
 		if (previous[kAssignedSlot] === slot && !slottables.includes(previous)) {
 			previous[kAssignedSlot] = null;
 		}
 	}
 	slot[kAssignedNodes] = slottables;
-	for (const slottable of slottables) slottable[kAssignedSlot] = slot;
+	for (const slottable of slottables) {
+		slottable[kAssignedSlot] = slot;
+	}
 }
 
 /** The spec's "assign slottables for a tree" algorithm. */
 function assignSlottablesForTree(root: Node): void {
 	for (const node of inclusiveDescendants(root)) {
-		if (node instanceof HTMLSlotElement) assignSlottables(node);
+		if (node instanceof HTMLSlotElement) {
+			assignSlottables(node);
+		}
 	}
 }
 
 /** The spec's "assign a slot" algorithm. */
 function assignASlot(slottable: Slottable): void {
 	const slot = findASlot(slottable);
-	if (slot !== null) assignSlottables(slot);
+	if (slot !== null) {
+		assignSlottables(slot);
+	}
 }
 
 /**
@@ -8183,7 +8755,9 @@ function assignASlot(slottable: Slottable): void {
 const signalSlots: HTMLSlotElement[] = [];
 
 function signalASlotChange(slot: HTMLSlotElement): void {
-	if (!signalSlots.includes(slot)) signalSlots.push(slot);
+	if (!signalSlots.includes(slot)) {
+		signalSlots.push(slot);
+	}
 	queueMutationObserverMicrotask();
 }
 
@@ -8193,12 +8767,20 @@ function updateSlottableName(
 	oldValue: string | null,
 	value: string | null,
 ): void {
-	if (value === oldValue) return;
-	if (value === null && oldValue === "") return;
-	if (value === "" && oldValue === null) return;
+	if (value === oldValue) {
+		return;
+	}
+	if (value === null && oldValue === "") {
+		return;
+	}
+	if (value === "" && oldValue === null) {
+		return;
+	}
 	element[kSlottableName] = value === null || value === "" ? "" : value;
 	const assigned = element[kAssignedSlot];
-	if (assigned !== null) assignSlottables(assigned);
+	if (assigned !== null) {
+		assignSlottables(assigned);
+	}
 	assignASlot(element);
 }
 
@@ -8208,9 +8790,15 @@ function updateSlotName(
 	oldValue: string | null,
 	value: string | null,
 ): void {
-	if (value === oldValue) return;
-	if (value === null && oldValue === "") return;
-	if (value === "" && oldValue === null) return;
+	if (value === oldValue) {
+		return;
+	}
+	if (value === null && oldValue === "") {
+		return;
+	}
+	if (value === "" && oldValue === null) {
+		return;
+	}
 	slot[kSlotName] = value === null || value === "" ? "" : value;
 	assignSlottablesForTree(getRoot(slot));
 }
@@ -8242,7 +8830,9 @@ export class HTMLSlotElement extends HTMLElement {
 			options ?? {},
 			"An AssignedNodesOptions",
 		);
-		if (!init.flatten) return [...this[kAssignedNodes]];
+		if (!init.flatten) {
+			return [...this[kAssignedNodes]];
+		}
 		return findFlattenedSlottables(this);
 	}
 
@@ -8271,19 +8861,27 @@ export class HTMLSlotElement extends HTMLElement {
 		const assigned: Slottable[] = [];
 		for (const node of nodes) {
 			const slottable = node as Slottable;
-			if (assigned.includes(slottable)) continue;
+			if (assigned.includes(slottable)) {
+				continue;
+			}
 			const previous = slottable[kManualSlot];
 			if (previous !== null && previous !== this) {
 				const index = previous[kManualAssignment].indexOf(slottable);
-				if (index >= 0) previous[kManualAssignment].splice(index, 1);
+				if (index >= 0) {
+					previous[kManualAssignment].splice(index, 1);
+				}
 				const root = getRoot(previous);
-				if (!roots.includes(root)) roots.push(root);
+				if (!roots.includes(root)) {
+					roots.push(root);
+				}
 			}
 			slottable[kManualSlot] = this;
 			assigned.push(slottable);
 		}
 		this[kManualAssignment] = assigned;
-		for (const root of roots) assignSlottablesForTree(root);
+		for (const root of roots) {
+			assignSlottablesForTree(root);
+		}
 	}
 }
 
@@ -8320,7 +8918,9 @@ export class HTMLTemplateElement extends HTMLElement {
 
 	get shadowRootMode(): string {
 		const value = this.getAttribute("shadowrootmode");
-		if (value === null) return "";
+		if (value === null) {
+			return "";
+		}
 		const mode = asciiLowercase(value);
 		return mode === "open" || mode === "closed" ? mode : "";
 	}
@@ -8355,7 +8955,9 @@ export class HTMLTemplateElement extends HTMLElement {
 
 	override [kAdoptingSteps](_oldDocument: Document): void {
 		const content = this[kTemplateContent];
-		if (content !== null) adoptNode(content, this[kDocument]);
+		if (content !== null) {
+			adoptNode(content, this[kDocument]);
+		}
 	}
 
 	override [kCloningSteps](
@@ -8364,7 +8966,9 @@ export class HTMLTemplateElement extends HTMLElement {
 		_deep: boolean,
 	): void {
 		const content = this[kTemplateContent];
-		if (content === null) return;
+		if (content === null) {
+			return;
+		}
 		const target = (copy as HTMLTemplateElement).content;
 		for (
 			let child = content[kFirstChild];
@@ -8402,12 +9006,20 @@ function parseURL(value: string, base: string): string | null {
 function documentBaseURL(document: Document): string {
 	const fallback = document[kDocumentURL];
 	for (const node of descendants(document)) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = node as Element;
-		if (element[kNamespace] !== HTML_NAMESPACE) continue;
-		if (element[kLocalName] !== "base") continue;
+		if (element[kNamespace] !== HTML_NAMESPACE) {
+			continue;
+		}
+		if (element[kLocalName] !== "base") {
+			continue;
+		}
 		const href = element.getAttribute("href");
-		if (href === null) continue;
+		if (href === null) {
+			continue;
+		}
 		return parseURL(href, fallback) ?? fallback;
 	}
 	return fallback;
@@ -8416,7 +9028,9 @@ function documentBaseURL(document: Document): string {
 /** The rules for parsing integers, which stop at the first non-digit. */
 function parseInteger(value: string): number | null {
 	const match = /^[\t\n\f\r ]*([+-]?[0-9]+)/.exec(value);
-	if (match === null) return null;
+	if (match === null) {
+		return null;
+	}
 	const number = Number(match[1]);
 	return Number.isSafeInteger(number) ? number : null;
 }
@@ -8424,7 +9038,9 @@ function parseInteger(value: string): number | null {
 /** The rules for parsing non-negative integers: a sign is not one. */
 function parseNonNegativeInteger(value: string): number | null {
 	const match = /^[\t\n\f\r ]*([0-9]+)/.exec(value);
-	if (match === null) return null;
+	if (match === null) {
+		return null;
+	}
 	const number = Number(match[1]);
 	return Number.isSafeInteger(number) ? number : null;
 }
@@ -8492,7 +9108,9 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 		case "url":
 			get = function (this: Element): string {
 				const value = this.getAttribute(attribute);
-				if (value === null) return "";
+				if (value === null) {
+					return "";
+				}
 				const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 				return parseURL(trimmed, documentBaseURL(this[kDocument])) ?? trimmed;
 			};
@@ -8513,9 +9131,15 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			get = function (this: Element): number {
 				const value = this.getAttribute(attribute);
 				const parsed = value === null ? null : parseInteger(value);
-				if (parsed === null) return fallback;
-				if (parsed < -2147483648 || parsed > 2147483647) return fallback;
-				if (spec.nonNegative && parsed < 0) return fallback;
+				if (parsed === null) {
+					return fallback;
+				}
+				if (parsed < -2147483648 || parsed > 2147483647) {
+					return fallback;
+				}
+				if (spec.nonNegative && parsed < 0) {
+					return fallback;
+				}
 				return parsed;
 			};
 			set = function (this: Element, value: unknown): void {
@@ -8532,12 +9156,16 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			get = function (this: Element): number {
 				const value = this.getAttribute(attribute);
 				let parsed = value === null ? null : parseNonNegativeInteger(value);
-				if (parsed !== null && parsed > 2147483647) parsed = null;
+				if (parsed !== null && parsed > 2147483647) {
+					parsed = null;
+				}
 				if (parsed !== null && spec.greaterThanZero && parsed === 0) {
 					parsed = null;
 				}
 				if (parsed === null) {
-					if (spec.clampMin === undefined) return fallback;
+					if (spec.clampMin === undefined) {
+						return fallback;
+					}
 					parsed = fallback;
 				}
 				if (spec.clampMin !== undefined) {
@@ -8566,13 +9194,19 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			const invalid = spec.invalid ?? "";
 			get = function (this: Element): string | null {
 				const value = this.getAttribute(attribute);
-				if (value === null) return spec.nullable ? null : missing;
+				if (value === null) {
+					return spec.nullable ? null : missing;
+				}
 				// An attribute whose empty string is one of its own keywords
 				// answers with the state that keyword names.
-				if (value === "" && spec.empty !== undefined) return spec.empty;
+				if (value === "" && spec.empty !== undefined) {
+					return spec.empty;
+				}
 				const lowered = asciiLowercase(value);
 				for (const candidate of keywords) {
-					if (asciiLowercase(candidate) === lowered) return candidate;
+					if (asciiLowercase(candidate) === lowered) {
+						return candidate;
+					}
 				}
 				return invalid;
 			};
@@ -8652,7 +9286,9 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	href: {
 		get(this: Element): string {
 			const value = this.getAttribute("href");
-			if (value === null) return "";
+			if (value === null) {
+				return "";
+			}
 			const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 			return parseURL(trimmed, documentBaseURL(this[kDocument])) ?? trimmed;
 		},
@@ -8736,7 +9372,9 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	toString: {
 		value: function toString(this: Element): string {
 			const value = this.getAttribute("href");
-			if (value === null) return "";
+			if (value === null) {
+				return "";
+			}
 			const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 			return parseURL(trimmed, documentBaseURL(this[kDocument])) ?? trimmed;
 		},
@@ -8753,7 +9391,9 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 /** The URL a hyperlink's href names, or null where it names none. */
 function hyperlinkURL(element: Element): URL | null {
 	const value = element.getAttribute("href");
-	if (value === null) return null;
+	if (value === null) {
+		return null;
+	}
 	const trimmed = value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 	try {
 		return new URL(trimmed, documentBaseURL(element[kDocument]));
@@ -8764,7 +9404,9 @@ function hyperlinkURL(element: Element): URL | null {
 /** Change one part of a hyperlink's URL and write the whole of it back. */
 function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	const url = hyperlinkURL(element);
-	if (url === null) return;
+	if (url === null) {
+		return;
+	}
 	try {
 		change(url);
 	} catch {
@@ -8787,7 +9429,9 @@ export class HTMLBaseElement extends HTMLElement {
 	get href(): string {
 		const value = this.getAttribute("href");
 		const fallback = this[kDocument][kDocumentURL];
-		if (value === null) return fallback;
+		if (value === null) {
+			return fallback;
+		}
 		return parseURL(value, fallback) ?? fallback;
 	}
 
@@ -8829,7 +9473,9 @@ export class HTMLDataListElement extends HTMLElement {
 			options = new HTMLCollection(() => {
 				const found: Element[] = [];
 				for (const node of descendants(this)) {
-					if (node instanceof HTMLOptionElement) found.push(node);
+					if (node instanceof HTMLOptionElement) {
+						found.push(node);
+					}
 				}
 				return found;
 			}, this);
@@ -8856,15 +9502,21 @@ export class HTMLDetailsElement extends HTMLElement {
 		namespace: string | null,
 	): void {
 		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace !== null || localName !== "open") return;
-		if ((oldValue === null) === (value === null)) return;
+		if (namespace !== null || localName !== "open") {
+			return;
+		}
+		if ((oldValue === null) === (value === null)) {
+			return;
+		}
 		if (!this.#toggleQueued) {
 			this.#toggleQueued = true;
 			this.#stateAtQueue = oldValue === null ? "closed" : "open";
 			queueMicrotask(() => {
 				this.#toggleQueued = false;
 				const now = this.hasAttribute("open") ? "open" : "closed";
-				if (now === this.#stateAtQueue) return;
+				if (now === this.#stateAtQueue) {
+					return;
+				}
 				dispatch(
 					this,
 					new ToggleEvent("toggle", {
@@ -8886,12 +9538,18 @@ export class HTMLDetailsElement extends HTMLElement {
 Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
 	get(this: HTMLElement): (() => void) | undefined {
 		const parent = this[kParent];
-		if (this[kNamespace] !== HTML_NAMESPACE) return undefined;
-		if (this[kLocalName] !== "summary") return undefined;
+		if (this[kNamespace] !== HTML_NAMESPACE) {
+			return undefined;
+		}
+		if (this[kLocalName] !== "summary") {
+			return undefined;
+		}
 		if (parent === null || !(parent instanceof HTMLDetailsElement)) {
 			return undefined;
 		}
-		if (firstChildElement(parent, "summary") !== this) return undefined;
+		if (firstChildElement(parent, "summary") !== this) {
+			return undefined;
+		}
 		return function toggleTheDetails(this: HTMLElement): void {
 			const details = this[kParent] as HTMLDetailsElement;
 			details.toggleAttribute("open", !details.hasAttribute("open"));
@@ -9008,14 +9666,20 @@ export class HTMLDialogElement extends HTMLElement {
 		const walker = shadowIncludingInclusiveDescendants(this);
 		let fallback: Element | null = null;
 		for (const node of walker) {
-			if (node === this || node.nodeType !== ELEMENT_NODE) continue;
+			if (node === this || node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const element = node as Element;
-			if (!isFocusableArea(element)) continue;
+			if (!isFocusableArea(element)) {
+				continue;
+			}
 			if (element.hasAttribute("autofocus")) {
 				(element as HTMLElement).focus();
 				return;
 			}
-			if (fallback === null) fallback = element;
+			if (fallback === null) {
+				fallback = element;
+			}
 		}
 		if (fallback !== null) {
 			(fallback as HTMLElement).focus();
@@ -9039,14 +9703,20 @@ export class HTMLDialogElement extends HTMLElement {
 	}
 
 	requestClose(returnValue?: string): void {
-		if (!this.hasAttribute("open")) return;
+		if (!this.hasAttribute("open")) {
+			return;
+		}
 		const canceled = !dispatch(this, new Event("cancel", {cancelable: true}));
-		if (canceled) return;
+		if (canceled) {
+			return;
+		}
 		this.#close(returnValue, false);
 	}
 
 	#close(returnValue: string | undefined, _fromRequest: boolean): void {
-		if (!this.hasAttribute("open")) return;
+		if (!this.hasAttribute("open")) {
+			return;
+		}
 		this.removeAttribute("open");
 		topLayerOf(this[kDocument]).delete(this);
 		// The page gets its focus back where the dialog took it from, so the
@@ -9061,7 +9731,9 @@ export class HTMLDialogElement extends HTMLElement {
 				(previous as HTMLElement).focus();
 			}
 		}
-		if (returnValue !== undefined) this.#returnValue = String(returnValue);
+		if (returnValue !== undefined) {
+			this.#returnValue = String(returnValue);
+		}
 		dispatch(this, new Event("close"));
 	}
 }
@@ -9121,8 +9793,12 @@ export class HTMLFieldSetElement extends HTMLElement {
 			elements = new HTMLCollection(() => {
 				const listed: Element[] = [];
 				for (const node of descendants(this)) {
-					if (node.nodeType !== ELEMENT_NODE) continue;
-					if (isListed(node as Element)) listed.push(node as Element);
+					if (node.nodeType !== ELEMENT_NODE) {
+						continue;
+					}
+					if (isListed(node as Element)) {
+						listed.push(node as Element);
+					}
 				}
 				return listed;
 			}, this);
@@ -9181,7 +9857,9 @@ export class HTMLFormElement extends HTMLElement {
 	}
 
 	reset(): void {
-		if (this.#firingReset) return;
+		if (this.#firingReset) {
+			return;
+		}
 		this.#firingReset = true;
 		let canceled: boolean;
 		try {
@@ -9192,8 +9870,12 @@ export class HTMLFormElement extends HTMLElement {
 		} finally {
 			this.#firingReset = false;
 		}
-		if (canceled) return;
-		for (const control of listedControls(this)) resetControl(control);
+		if (canceled) {
+			return;
+		}
+		for (const control of listedControls(this)) {
+			resetControl(control);
+		}
 	}
 }
 /** The listed controls a form owns, in tree order. */
@@ -9201,10 +9883,16 @@ function listedControls(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
 	const root = getRoot(form);
 	for (const node of descendants(root)) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = node as Element;
-		if (!isListed(element)) continue;
-		if (formOwner(element) !== form) continue;
+		if (!isListed(element)) {
+			continue;
+		}
+		if (formOwner(element) !== form) {
+			continue;
+		}
 		if (element instanceof HTMLInputElement && element.type === "image") {
 			continue;
 		}
@@ -9214,7 +9902,9 @@ function listedControls(form: HTMLFormElement): Element[] {
 }
 /** Whether an element is a button that submits its form. */
 function isSubmitButton(element: Element): boolean {
-	if (element instanceof HTMLButtonElement) return element.type === "submit";
+	if (element instanceof HTMLButtonElement) {
+		return element.type === "submit";
+	}
 	if (element instanceof HTMLInputElement) {
 		const type = element.type;
 		return type === "submit" || type === "image";
@@ -9236,8 +9926,12 @@ function submitForm(
 	// A form that cannot navigate does not submit, and a form outside a
 	// document cannot: submission ends in a navigation, and there is nothing
 	// there to navigate. The submit event does not fire either.
-	if (!form.isConnected) return;
-	if (skipEvent) return;
+	if (!form.isConnected) {
+		return;
+	}
+	if (skipEvent) {
+		return;
+	}
 	const event = new SubmitEvent("submit", {
 		bubbles: true,
 		cancelable: true,
@@ -9290,10 +9984,16 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 
 	override namedItem(name: string): Element | null {
 		const key = String(name);
-		if (key === "") return null;
+		if (key === "") {
+			return null;
+		}
 		const matches = this.#matching(key);
-		if (matches.length === 0) return null;
-		if (matches.length === 1) return matches[0] as Element;
+		if (matches.length === 0) {
+			return null;
+		}
+		if (matches.length === 1) {
+			return matches[0] as Element;
+		}
 		// The list is what the interface answers with for a shared name; the
 		// declared type is the collection's, which has no way to say so.
 		return new RadioNodeList(
@@ -9310,7 +10010,9 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 				element.getAttribute("id"),
 				element.getAttribute("name"),
 			]) {
-				if (key === null || key === "") continue;
+				if (key === null || key === "") {
+					continue;
+				}
 				const list = counts.get(key);
 				if (list === undefined) {
 					counts.set(key, [element]);
@@ -9323,9 +10025,9 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		for (const [key, list] of counts) {
 			named.set(
 				key,
-				list.length === 1
-					? list[0]
-					: (new RadioNodeList(
+				list.length === 1 ?
+					list[0] :
+						(new RadioNodeList(
 							() => this.#matching(key),
 							this.#owner,
 						) as unknown as Node),
@@ -9361,8 +10063,12 @@ export class RadioNodeList extends NodeList {
 
 	get value(): string {
 		for (const node of this[kEnsure]()) {
-			if (!(node instanceof HTMLInputElement)) continue;
-			if (node.type !== "radio" || !node.checked) continue;
+			if (!(node instanceof HTMLInputElement)) {
+				continue;
+			}
+			if (node.type !== "radio" || !node.checked) {
+				continue;
+			}
 			return node.getAttribute("value") ?? "on";
 		}
 		return "";
@@ -9371,9 +10077,15 @@ export class RadioNodeList extends NodeList {
 	set value(value: string) {
 		const wanted = String(value);
 		for (const node of this[kEnsure]()) {
-			if (!(node instanceof HTMLInputElement)) continue;
-			if (node.type !== "radio") continue;
-			if ((node.getAttribute("value") ?? "on") !== wanted) continue;
+			if (!(node instanceof HTMLInputElement)) {
+				continue;
+			}
+			if (node.type !== "radio") {
+				continue;
+			}
+			if ((node.getAttribute("value") ?? "on") !== wanted) {
+				continue;
+			}
 			node.checked = true;
 			return;
 		}
@@ -9469,19 +10181,29 @@ export class HTMLLabelElement extends HTMLElement {
 	get control(): HTMLElement | null {
 		const id = this.getAttribute("for");
 		if (id !== null) {
-			if (id === "") return null;
+			if (id === "") {
+				return null;
+			}
 			const root = getRoot(this);
 			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) continue;
+				if (node.nodeType !== ELEMENT_NODE) {
+					continue;
+				}
 				const element = node as Element;
-				if (element.getAttribute("id") !== id) continue;
+				if (element.getAttribute("id") !== id) {
+					continue;
+				}
 				return isLabelable(element) ? (element as HTMLElement) : null;
 			}
 			return null;
 		}
 		for (const node of descendants(this)) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
-			if (isLabelable(node as Element)) return node as HTMLElement;
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
+			if (isLabelable(node as Element)) {
+				return node as HTMLElement;
+			}
 		}
 		return null;
 	}
@@ -9492,11 +10214,17 @@ export class HTMLLabelElement extends HTMLElement {
 	 */
 	[kActivationBehavior](event: Event): void {
 		const control = this.control;
-		if (control === null) return;
-		for (const target of event.composedPath()) {
-			if (target === control) return;
+		if (control === null) {
+			return;
 		}
-		if (control[kClickInProgress]) return;
+		for (const target of event.composedPath()) {
+			if (target === control) {
+				return;
+			}
+		}
+		if (control[kClickInProgress]) {
+			return;
+		}
 		control.click();
 	}
 }
@@ -9505,8 +10233,9 @@ export class HTMLLabelElement extends HTMLElement {
 export class HTMLLegendElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
 		const parent = this[kParent];
-		if (parent === null || !(parent instanceof HTMLFieldSetElement))
+		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
 			return null;
+		}
 		return formOwner(parent);
 	}
 }
@@ -9530,7 +10259,9 @@ export class HTMLMapElement extends HTMLElement {
 			areas = new HTMLCollection(() => {
 				const found: Element[] = [];
 				for (const node of descendants(this)) {
-					if (node instanceof HTMLAreaElement) found.push(node);
+					if (node instanceof HTMLAreaElement) {
+						found.push(node);
+					}
 				}
 				return found;
 			}, this);
@@ -9842,7 +10573,9 @@ export class HTMLTableCaptionElement extends HTMLElement {}
 export class HTMLTableCellElement extends HTMLElement {
 	get cellIndex(): number {
 		const parent = this[kParent];
-		if (!(parent instanceof HTMLTableRowElement)) return -1;
+		if (!(parent instanceof HTMLTableRowElement)) {
+			return -1;
+		}
 		return rowCells(parent).indexOf(this);
 	}
 }
@@ -9863,12 +10596,16 @@ export class HTMLTableElement extends HTMLElement {
 			throw new TypeError("That is not a caption");
 		}
 		this.deleteCaption();
-		if (value !== null) preInsert(value, this, this[kFirstChild]);
+		if (value !== null) {
+			preInsert(value, this, this[kFirstChild]);
+		}
 	}
 
 	createCaption(): Element {
 		const existing = this.caption;
-		if (existing !== null) return existing;
+		if (existing !== null) {
+			return existing;
+		}
 		const caption = createElementInternal(
 			this[kDocument],
 			"caption",
@@ -9880,7 +10617,9 @@ export class HTMLTableElement extends HTMLElement {
 
 	deleteCaption(): void {
 		const existing = this.caption;
-		if (existing !== null) removeNode(existing);
+		if (existing !== null) {
+			removeNode(existing);
+		}
 	}
 
 	get tHead(): Element | null {
@@ -9895,10 +10634,14 @@ export class HTMLTableElement extends HTMLElement {
 			throw new TypeError("That is not a table head");
 		}
 		this.deleteTHead();
-		if (value === null) return;
+		if (value === null) {
+			return;
+		}
 		let before: Node | null = null;
 		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const name = (node as Element)[kLocalName];
 			if (name !== "caption" && name !== "colgroup") {
 				before = node;
@@ -9910,7 +10653,9 @@ export class HTMLTableElement extends HTMLElement {
 
 	createTHead(): Element {
 		const existing = this.tHead;
-		if (existing !== null) return existing;
+		if (existing !== null) {
+			return existing;
+		}
 		const head = createElementInternal(
 			this[kDocument],
 			"thead",
@@ -9922,7 +10667,9 @@ export class HTMLTableElement extends HTMLElement {
 
 	deleteTHead(): void {
 		const existing = this.tHead;
-		if (existing !== null) removeNode(existing);
+		if (existing !== null) {
+			removeNode(existing);
+		}
 	}
 
 	get tFoot(): Element | null {
@@ -9937,12 +10684,16 @@ export class HTMLTableElement extends HTMLElement {
 			throw new TypeError("That is not a table foot");
 		}
 		this.deleteTFoot();
-		if (value !== null) preInsert(value, this, null);
+		if (value !== null) {
+			preInsert(value, this, null);
+		}
 	}
 
 	createTFoot(): Element {
 		const existing = this.tFoot;
-		if (existing !== null) return existing;
+		if (existing !== null) {
+			return existing;
+		}
 		const foot = createElementInternal(
 			this[kDocument],
 			"tfoot",
@@ -9954,7 +10705,9 @@ export class HTMLTableElement extends HTMLElement {
 
 	deleteTFoot(): void {
 		const existing = this.tFoot;
-		if (existing !== null) removeNode(existing);
+		if (existing !== null) {
+			removeNode(existing);
+		}
 	}
 
 	get tBodies(): HTMLCollection {
@@ -10026,7 +10779,9 @@ export class HTMLTableElement extends HTMLElement {
 	deleteRow(index: number): void {
 		const rows = tableRows(this);
 		let at = toLong(index);
-		if (at === -1) at = rows.length - 1;
+		if (at === -1) {
+			at = rows.length - 1;
+		}
 		if (at < 0 || at >= rows.length) {
 			throw indexSizeError("There is no row at that index");
 		}
@@ -10045,7 +10800,9 @@ function isHTMLElementNamed(node: Node, localName: string): boolean {
 function childElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
 	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = node as Element;
 		if (
 			element[kNamespace] === HTML_NAMESPACE &&
@@ -10065,9 +10822,13 @@ function tableRows(table: Element): Element[] {
 	const middle: Element[] = [];
 	const foot: Element[] = [];
 	for (let node = table[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = node as Element;
-		if (element[kNamespace] !== HTML_NAMESPACE) continue;
+		if (element[kNamespace] !== HTML_NAMESPACE) {
+			continue;
+		}
 		switch (element[kLocalName]) {
 			case "thead":
 				head.push(...childElementsNamed(element, "tr"));
@@ -10097,7 +10858,9 @@ export class HTMLTableRowElement extends HTMLElement {
 
 	get sectionRowIndex(): number {
 		const parent = this[kParent];
-		if (parent === null || parent.nodeType !== ELEMENT_NODE) return -1;
+		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+			return -1;
+		}
 		return childElementsNamed(parent, "tr").indexOf(this);
 	}
 
@@ -10128,7 +10891,9 @@ export class HTMLTableRowElement extends HTMLElement {
 	deleteCell(index: number): void {
 		const cells = rowCells(this);
 		let at = toLong(index);
-		if (at === -1) at = cells.length - 1;
+		if (at === -1) {
+			at = cells.length - 1;
+		}
 		if (at < 0 || at >= cells.length) {
 			throw indexSizeError("There is no cell at that index");
 		}
@@ -10137,22 +10902,28 @@ export class HTMLTableRowElement extends HTMLElement {
 
 	#table(): Element | null {
 		const parent = this[kParent];
-		if (parent === null || parent.nodeType !== ELEMENT_NODE) return null;
-		if ((parent as Element)[kLocalName] === "table") return parent as Element;
+		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+			return null;
+		}
+		if ((parent as Element)[kLocalName] === "table") {
+			return parent as Element;
+		}
 		const grandparent = parent[kParent];
 		if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
 			return null;
 		}
-		return (grandparent as Element)[kLocalName] === "table"
-			? (grandparent as Element)
-			: null;
+		return (grandparent as Element)[kLocalName] === "table" ?
+				(grandparent as Element) :
+			null;
 	}
 }
 /** The cells of a row: its td and th children, in order. */
 function rowCells(row: Element): Element[] {
 	const cells: Element[] = [];
 	for (let node = row[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node instanceof HTMLTableCellElement) cells.push(node);
+		if (node instanceof HTMLTableCellElement) {
+			cells.push(node);
+		}
 	}
 	return cells;
 }
@@ -10188,7 +10959,9 @@ export class HTMLTableSectionElement extends HTMLElement {
 	deleteRow(index: number): void {
 		const rows = childElementsNamed(this, "tr");
 		let at = toLong(index);
-		if (at === -1) at = rows.length - 1;
+		if (at === -1) {
+			at = rows.length - 1;
+		}
 		if (at < 0 || at >= rows.length) {
 			throw indexSizeError("There is no row at that index");
 		}
@@ -10212,7 +10985,9 @@ export class HTMLTitleElement extends HTMLElement {
 function childText(element: Element): string {
 	let text = "";
 	for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType === TEXT_NODE) text += (node as Text).data;
+		if (node.nodeType === TEXT_NODE) {
+			text += (node as Text).data;
+		}
 	}
 	return text;
 }
@@ -10236,8 +11011,12 @@ export function isTextField(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
-	if (element.tagName === "TEXTAREA") return true;
-	if (element.tagName !== "INPUT") return false;
+	if (element.tagName === "TEXTAREA") {
+		return true;
+	}
+	if (element.tagName !== "INPUT") {
+		return false;
+	}
 	const type = element.type;
 	return type !== "checkbox" && type !== "radio" && type !== "hidden";
 }
@@ -10309,12 +11088,16 @@ function textSelectionRange(
 	control: HTMLInputElement | HTMLTextAreaElement,
 	valueText: UAText | null,
 ): UARange | null {
-	if (!valueText) return null;
+	if (!valueText) {
+		return null;
+	}
 	const {start, end} = uaSelectionOf(control);
 	const length = valueText.data.length;
 	const from = Math.max(0, Math.min(start, length));
 	const to = Math.max(0, Math.min(end, length));
-	if (to <= from) return null;
+	if (to <= from) {
+		return null;
+	}
 	const document = uaDocumentOf(control);
 	let range = selectionRanges.get(document);
 	if (range === undefined) {
@@ -10339,7 +11122,9 @@ function textCaretRange(
 	control: HTMLInputElement | HTMLTextAreaElement,
 	valueText: UAText | null,
 ): UARange | null {
-	if (!valueText) return null;
+	if (!valueText) {
+		return null;
+	}
 	const selection = uaSelectionOf(control);
 	const caret =
 		selection.direction === "backward" ? selection.start : selection.end;
@@ -10526,8 +11311,12 @@ function printableFieldEdit(
  */
 function wordStartBefore(value: string, caret: number): number {
 	let at = caret;
-	while (at > 0 && /\s/.test(value[at - 1])) at--;
-	while (at > 0 && !/\s/.test(value[at - 1])) at--;
+	while (at > 0 && /\s/.test(value[at - 1])) {
+		at--;
+	}
+	while (at > 0 && !/\s/.test(value[at - 1])) {
+		at--;
+	}
 	return at;
 }
 
@@ -10574,7 +11363,9 @@ function insertPaste(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
 ): void {
-	if (!text) return;
+	if (!text) {
+		return;
+	}
 	const value = field[kUAValue];
 	const {start, end} = uaSelectionOf(field);
 	applyFieldEdit(
@@ -10656,9 +11447,9 @@ function setTextSelection(
 	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
 	const named = direction === undefined ? "none" : direction;
 	const kept =
-		named === "forward" || named === "backward" || named === "none"
-			? named
-			: "none";
+		named === "forward" || named === "backward" || named === "none" ?
+			named :
+			"none";
 	store([clampedStart, clampedEnd, kept]);
 	scheduleTextSelectionChange(control);
 }
@@ -10666,7 +11457,9 @@ function setTextSelection(
 /** Queue the selectionchange event a text control fires at itself. */
 function scheduleTextSelectionChange(control: Element): void {
 	const scheduled = control as unknown as Record<symbol, boolean>;
-	if (scheduled[kTextSelectionChangeScheduled]) return;
+	if (scheduled[kTextSelectionChangeScheduled]) {
+		return;
+	}
 	scheduled[kTextSelectionChangeScheduled] = true;
 	queueMicrotask(() => {
 		scheduled[kTextSelectionChangeScheduled] = false;
@@ -10688,8 +11481,8 @@ function replaceTextRange(
 		throw indexSizeError("A range cannot end before it starts");
 	}
 	const length = value.length;
-	let from = Math.min(start, length);
-	let to = Math.min(end, length);
+	const from = Math.min(start, length);
+	const to = Math.min(end, length);
 	let selectionFrom = selectionStart;
 	let selectionTo = selectionEnd;
 	const next = value.slice(0, from) + replacement + value.slice(to);
@@ -10746,7 +11539,9 @@ export class HTMLButtonElement extends HTMLElement {
 	}
 
 	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) return;
+		if (isActuallyDisabled(this)) {
+			return;
+		}
 		const form = formOwner(this);
 		if (form !== null) {
 			if (this.type === "submit") {
@@ -10808,12 +11603,18 @@ export class HTMLInputElement extends HTMLElement {
 
 	get list(): HTMLDataListElement | null {
 		const id = this.getAttribute("list");
-		if (id === null || id === "") return null;
+		if (id === null || id === "") {
+			return null;
+		}
 		const root = getRoot(this);
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const element = node as Element;
-			if (element.getAttribute("id") !== id) continue;
+			if (element.getAttribute("id") !== id) {
+				continue;
+			}
 			return element instanceof HTMLDataListElement ? element : null;
 		}
 		return null;
@@ -10878,7 +11679,9 @@ export class HTMLInputElement extends HTMLElement {
 	 * can write, as in a browser, where its UI accepts no typing at all.
 	 */
 	[kSetUAValue](value: string): void {
-		if (inputValueMode(this.type) !== "value") return;
+		if (inputValueMode(this.type) !== "value") {
+			return;
+		}
 		this.#value = sanitizeInputValue(this, value);
 		this.#dirtyValue = true;
 		widgetChanged(this);
@@ -10902,7 +11705,9 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionStart(): number | null {
-		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
+			return null;
+		}
 		return this.#selectionStart;
 	}
 
@@ -10917,7 +11722,9 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionEnd(): number | null {
-		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
+			return null;
+		}
 		return this.#selectionEnd;
 	}
 
@@ -10931,7 +11738,9 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionDirection(): string | null {
-		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
+			return null;
+		}
 		return this.#selectionDirection;
 	}
 
@@ -10945,7 +11754,9 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	select(): void {
-		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return;
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
+			return;
+		}
 		this.setSelectionRange(0, this.#value.length, "none");
 	}
 
@@ -11023,7 +11834,9 @@ export class HTMLInputElement extends HTMLElement {
 		namespace: string | null,
 	): void {
 		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace !== null) return;
+		if (namespace !== null) {
+			return;
+		}
 		if (localName === "value" && !this.#dirtyValue) {
 			this.#value = sanitizeInputValue(this, value ?? "");
 		} else if (localName === "checked" && !this.#dirtyChecked) {
@@ -11086,7 +11899,9 @@ export class HTMLInputElement extends HTMLElement {
 			this.#checked = this.#previouslyChecked;
 			return;
 		}
-		if (this.type !== "radio") return;
+		if (this.type !== "radio") {
+			return;
+		}
 		const previous = this.#previousRadio;
 		this.#previousRadio = null;
 		this.#checked = false;
@@ -11109,13 +11924,17 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) return;
+		if (isActuallyDisabled(this)) {
+			return;
+		}
 		const type = this.type;
 		if (type === "checkbox" || type === "radio") {
 			// A control outside a document reports nothing: the checkedness the
 			// legacy-pre-activation behavior already flipped stands, and the
 			// events that would announce it are not fired.
-			if (!this.isConnected) return;
+			if (!this.isConnected) {
+				return;
+			}
 			dispatch(this, new Event("input", {bubbles: true, composed: true}));
 			dispatch(this, new Event("change", {bubbles: true}));
 			return;
@@ -11135,7 +11954,9 @@ export class HTMLInputElement extends HTMLElement {
 	#setCheckedness(checked: boolean): void {
 		this.#checked = checked;
 		widgetChanged(this);
-		if (!checked || this.type !== "radio") return;
+		if (!checked || this.type !== "radio") {
+			return;
+		}
 		for (const other of radioGroupOf(this)) {
 			if (other !== this) {
 				other.#checked = false;
@@ -11175,7 +11996,9 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
+		if (engine === undefined) {
+			return;
+		}
 		this.#engine = engine;
 		this.#build();
 		// Editing is the control's own default action, like a browser input's --
@@ -11198,14 +12021,20 @@ export class HTMLInputElement extends HTMLElement {
 	 * value sanitization). A toggle takes neither: it holds no text.
 	 */
 	#onBeforeInput = (event: InputEvent): void => {
-		if (event.defaultPrevented || event.data == null) return;
-		if (this.#kindFor() !== "field") return;
+		if (event.defaultPrevented || event.data == null) {
+			return;
+		}
+		if (this.#kindFor() !== "field") {
+			return;
+		}
 		if (event.inputType === "insertText") {
 			event.preventDefault();
 			applyFieldEdit(this, printableFieldEdit(this, event.data));
 			return;
 		}
-		if (event.inputType !== "insertFromPaste") return;
+		if (event.inputType !== "insertFromPaste") {
+			return;
+		}
 		event.preventDefault();
 		insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
 	};
@@ -11224,7 +12053,9 @@ export class HTMLInputElement extends HTMLElement {
 		} else {
 			// A rebuild keeps the root -- and its enrollment -- and replaces only
 			// what hangs under it, the stylesheet included.
-			while (root.firstChild) root.removeChild(root.firstChild);
+			while (root.firstChild) {
+				root.removeChild(root.firstChild);
+			}
 			engine.invalidateStructure();
 			root.appendChild(uaStyleElement(this, FIELD_UA_STYLES));
 		}
@@ -11253,7 +12084,9 @@ export class HTMLInputElement extends HTMLElement {
 	 * same mutation every other change is.
 	 */
 	[kUAReconcile](): void {
-		if (this.#engine === null) return;
+		if (this.#engine === null) {
+			return;
+		}
 		// A type flip is a different tree, not a different value.
 		if (this.#kindFor() !== this.#kind) {
 			this.#build();
@@ -11262,18 +12095,22 @@ export class HTMLInputElement extends HTMLElement {
 		if (this.#kind !== "field") {
 			if (this.#glyphText) {
 				const mark =
-					this.type === "checkbox"
-						? this.checked
-							? "[x]"
-							: "[ ]"
-						: this.checked
-							? "(x)"
-							: "( )";
-				if (this.#glyphText.data !== mark) this.#glyphText.data = mark;
+					this.type === "checkbox" ?
+						this.checked ?
+							"[x]" :
+							"[ ]" :
+						this.checked ?
+							"(x)" :
+							"( )";
+				if (this.#glyphText.data !== mark) {
+					this.#glyphText.data = mark;
+				}
 			}
 			return;
 		}
-		if (!this.#valueText) return;
+		if (!this.#valueText) {
+			return;
+		}
 		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow, never the
@@ -11306,7 +12143,9 @@ export class HTMLInputElement extends HTMLElement {
 		// A width:auto input sizes to its composed content; nothing else
 		// invalidates the measure, and the observer would only hear it on a
 		// microtask.
-		if (changed) this.#engine.layout.invalidate(this);
+		if (changed) {
+			this.#engine.layout.invalidate(this);
+		}
 	}
 
 	/**
@@ -11316,7 +12155,9 @@ export class HTMLInputElement extends HTMLElement {
 	 * logic.
 	 */
 	#onKeydown = (event: KeyboardEvent): void => {
-		if (event.defaultPrevented) return;
+		if (event.defaultPrevented) {
+			return;
+		}
 		const {key, shiftKey, ctrlKey} = event;
 
 		if (this.type === "checkbox" || this.type === "radio") {
@@ -11330,7 +12171,9 @@ export class HTMLInputElement extends HTMLElement {
 			// does nothing at all outside one; a terminal has no implicit
 			// submission to inherit, so the key would simply be inert on a focused
 			// control. It toggles, for the same reason the readline chords edit.
-			if (key === " " || key === "Enter") this.click();
+			if (key === " " || key === "Enter") {
+				this.click();
+			}
 			return;
 		}
 
@@ -11351,7 +12194,9 @@ export class HTMLInputElement extends HTMLElement {
 		} else {
 			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
 		}
-		if (result) applyFieldEdit(this, result);
+		if (result) {
+			applyFieldEdit(this, result);
+		}
 	};
 }
 /** How an input's type reads and writes its value. */
@@ -11390,7 +12235,9 @@ const VALID_FLOAT = /^-?(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
 const VALID_SIMPLE_COLOR = /^#[0-9a-fA-F]{6}$/;
 /** A floating-point number as the value space of the numeric types reads it. */
 function parseFloatingPoint(value: string): number | null {
-	if (!VALID_FLOAT.test(value)) return null;
+	if (!VALID_FLOAT.test(value)) {
+		return null;
+	}
 	const number = Number(value);
 	return Number.isFinite(number) ? number : null;
 }
@@ -11428,9 +12275,9 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 		case "time":
 			return VALID_TIME.test(value) ? value : "";
 		case "datetime-local":
-			return VALID_DATETIME_LOCAL.test(value)
-				? value.replace(" ", "T").replace(/(:[0-9]{2})\.?0*$/, "$1")
-				: "";
+			return VALID_DATETIME_LOCAL.test(value) ?
+					value.replace(" ", "T").replace(/(:[0-9]{2})\.?0*$/, "$1") :
+				"";
 		case "number":
 			return parseFloatingPoint(value) === null ? "" : value;
 		case "range":
@@ -11447,23 +12294,39 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
 	const number = parseFloatingPoint(value);
 	const middle = max < min ? min : min + (max - min) / 2;
-	if (number === null) return middle;
-	if (number < min) return min;
-	if (max >= min && number > max) return max;
+	if (number === null) {
+		return middle;
+	}
+	if (number < min) {
+		return min;
+	}
+	if (max >= min && number > max) {
+		return max;
+	}
 	return number;
 }
 /** The radio buttons an input shares a group with: its name, form and tree. */
 function radioGroupOf(input: HTMLInputElement): HTMLInputElement[] {
 	const name = input.getAttribute("name");
-	if (name === null || name === "") return [input];
+	if (name === null || name === "") {
+		return [input];
+	}
 	const owner = formOwner(input);
 	const root = getRoot(input);
 	const group: HTMLInputElement[] = [];
 	for (const node of descendants(root)) {
-		if (!(node instanceof HTMLInputElement)) continue;
-		if (node.type !== "radio") continue;
-		if (node.getAttribute("name") !== name) continue;
-		if (formOwner(node) !== owner) continue;
+		if (!(node instanceof HTMLInputElement)) {
+			continue;
+		}
+		if (node.type !== "radio") {
+			continue;
+		}
+		if (node.getAttribute("name") !== name) {
+			continue;
+		}
+		if (formOwner(node) !== owner) {
+			continue;
+		}
 		group.push(node);
 	}
 	return group;
@@ -11493,7 +12356,9 @@ export class HTMLOptionElement extends HTMLElement {
 	}
 
 	set [kSelectedness](value: boolean) {
-		if (this.#selectedness === value) return;
+		if (this.#selectedness === value) {
+			return;
+		}
 		this.#selectedness = value;
 		bumpVersion();
 	}
@@ -11533,13 +12398,17 @@ export class HTMLOptionElement extends HTMLElement {
 
 	get index(): number {
 		const select = selectOf(this);
-		if (select === null) return 0;
+		if (select === null) {
+			return 0;
+		}
 		return optionsOf(select).indexOf(this);
 	}
 
 	get selected(): boolean {
 		const select = selectOf(this);
-		if (select !== null) askForAReset(select);
+		if (select !== null) {
+			askForAReset(select);
+		}
 		return this[kSelectedness];
 	}
 
@@ -11547,10 +12416,14 @@ export class HTMLOptionElement extends HTMLElement {
 		this[kOptionDirty] = true;
 		this[kSelectedness] = Boolean(value);
 		const select = selectOf(this);
-		if (select === null) return;
+		if (select === null) {
+			return;
+		}
 		if (this[kSelectedness] && !select.hasAttribute("multiple")) {
 			for (const option of optionsOf(select)) {
-				if (option !== this) option[kSelectedness] = false;
+				if (option !== this) {
+					option[kSelectedness] = false;
+				}
 			}
 		}
 		askForAReset(select);
@@ -11568,7 +12441,9 @@ export class HTMLOptionElement extends HTMLElement {
 			this[kSelectedness] = value !== null;
 		}
 		const select = selectOf(this);
-		if (select !== null) widgetChanged(select);
+		if (select !== null) {
+			widgetChanged(select);
+		}
 	}
 
 	override [kCloningSteps](copy: Node): void {
@@ -11580,11 +12455,17 @@ export class HTMLOptionElement extends HTMLElement {
 /** The select an option belongs to, directly or through its group. */
 function selectOf(option: Element): HTMLSelectElement | null {
 	const parent = option[kParent];
-	if (parent === null) return null;
-	if (parent instanceof HTMLSelectElement) return parent;
+	if (parent === null) {
+		return null;
+	}
+	if (parent instanceof HTMLSelectElement) {
+		return parent;
+	}
 	if (parent instanceof HTMLOptGroupElement) {
 		const grandparent = parent[kParent];
-		if (grandparent instanceof HTMLSelectElement) return grandparent;
+		if (grandparent instanceof HTMLSelectElement) {
+			return grandparent;
+		}
 	}
 	return null;
 }
@@ -11606,7 +12487,9 @@ export class HTMLOptionsCollection extends HTMLCollection {
 		const wanted = toUnsignedLong(value);
 		const options = optionsOf(this.#select);
 		if (wanted > options.length) {
-			if (wanted > 100000) return;
+			if (wanted > 100000) {
+				return;
+			}
 			for (let index = options.length; index < wanted; index++) {
 				const option = createElementInternal(
 					this.#select[kDocument],
@@ -11667,7 +12550,9 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	remove(index: number): void {
 		const options = optionsOf(this.#select);
 		const at = toLong(index);
-		if (at < 0 || at >= options.length) return;
+		if (at < 0 || at >= options.length) {
+			return;
+		}
 		removeNode(options[at]);
 	}
 }
@@ -11710,13 +12595,17 @@ export class HTMLOutputElement extends HTMLElement {
 	}
 
 	set value(value: string) {
-		if (!this.#dirty) this.#stored = descendantText(this);
+		if (!this.#dirty) {
+			this.#stored = descendantText(this);
+		}
 		this.#dirty = true;
 		setDescendantText(this, String(value));
 	}
 
 	[kResetControl](): void {
-		if (this.#dirty) setDescendantText(this, this.#stored);
+		if (this.#dirty) {
+			setDescendantText(this, this.#stored);
+		}
 		this.#dirty = false;
 	}
 }
@@ -11787,7 +12676,9 @@ export class HTMLSelectElement extends HTMLElement {
 
 	remove(index?: number): void {
 		if (arguments.length === 0) {
-			if (this[kParent] !== null) removeNode(this);
+			if (this[kParent] !== null) {
+				removeNode(this);
+			}
 			return;
 		}
 		this.options.remove(toLong(index));
@@ -11827,7 +12718,9 @@ export class HTMLSelectElement extends HTMLElement {
 	get value(): string {
 		askForAReset(this);
 		for (const option of optionsOf(this)) {
-			if (option[kSelectedness]) return option.value;
+			if (option[kSelectedness]) {
+				return option.value;
+			}
 		}
 		return "";
 	}
@@ -11871,7 +12764,9 @@ export class HTMLSelectElement extends HTMLElement {
 			return;
 		}
 		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
+		if (engine === undefined) {
+			return;
+		}
 		this.#engine = engine;
 		const document = uaDocumentOf(this);
 		// The tree: the selected option's label (part=value), the ▾ indicator
@@ -11906,7 +12801,9 @@ export class HTMLSelectElement extends HTMLElement {
 	[kUAReconcile](): void {
 		const engine = this.#engine;
 		const picker = this.#picker;
-		if (engine === null || picker === null) return;
+		if (engine === null || picker === null) {
+			return;
+		}
 		const optionList = this.#optionList();
 		const selectedIndex = this.selectedIndex;
 		const selected = selectedIndex >= 0 ? optionList[selectedIndex] : null;
@@ -11917,7 +12814,9 @@ export class HTMLSelectElement extends HTMLElement {
 		}
 
 		if (this.#highlight === null) {
-			if (picker.style.display !== "none") picker.style.display = "none";
+			if (picker.style.display !== "none") {
+				picker.style.display = "none";
+			}
 			return;
 		}
 
@@ -11930,11 +12829,19 @@ export class HTMLSelectElement extends HTMLElement {
 			const top = `${Math.round(rect.bottom)}px`;
 			const left = `${Math.round(rect.left)}px`;
 			const width = `${Math.max(4, Math.round(rect.width))}ch`;
-			if (picker.style.top !== top) picker.style.top = top;
-			if (picker.style.left !== left) picker.style.left = left;
-			if (picker.style.width !== width) picker.style.width = width;
+			if (picker.style.top !== top) {
+				picker.style.top = top;
+			}
+			if (picker.style.left !== left) {
+				picker.style.left = left;
+			}
+			if (picker.style.width !== width) {
+				picker.style.width = width;
+			}
 		}
-		if (picker.style.display !== "block") picker.style.display = "block";
+		if (picker.style.display !== "block") {
+			picker.style.display = "block";
+		}
 	}
 
 	/**
@@ -11972,7 +12879,9 @@ export class HTMLSelectElement extends HTMLElement {
 					child !== null;
 					child = child[kNext]
 				) {
-					if (child instanceof HTMLOptionElement) addOption(child, true);
+					if (child instanceof HTMLOptionElement) {
+						addOption(child, true);
+					}
 				}
 			}
 		}
@@ -12002,7 +12911,9 @@ export class HTMLSelectElement extends HTMLElement {
 			if (node.getAttribute("part") !== row.part) {
 				node.setAttribute("part", row.part);
 			}
-			if (node.textContent !== row.label) node.textContent = row.label;
+			if (node.textContent !== row.label) {
+				node.textContent = row.label;
+			}
 			setRowFlag(node, "data-disabled", row.disabled);
 			setRowFlag(node, "data-grouped", row.grouped);
 			setRowFlag(node, "data-highlighted", row.highlighted);
@@ -12017,7 +12928,9 @@ export class HTMLSelectElement extends HTMLElement {
 			i >= 0 && i < options.length;
 			i += direction
 		) {
-			if (!optionIsDisabled(options[i])) return i;
+			if (!optionIsDisabled(options[i])) {
+				return i;
+			}
 		}
 		return from;
 	}
@@ -12025,9 +12938,13 @@ export class HTMLSelectElement extends HTMLElement {
 	/** Open the picker with the highlight on the current selection. */
 	#openPicker(): void {
 		const options = this.#optionList();
-		if (options.length === 0) return;
+		if (options.length === 0) {
+			return;
+		}
 		let index = this.selectedIndex;
-		if (index < 0) index = options.findIndex((o) => !optionIsDisabled(o));
+		if (index < 0) {
+			index = options.findIndex((o) => !optionIsDisabled(o));
+		}
 		this.#highlight = index;
 		this[kUAReconcile]();
 	}
@@ -12047,18 +12964,25 @@ export class HTMLSelectElement extends HTMLElement {
 	 * browser's closed-select keyboard model, no popup to degrade.
 	 */
 	#onKeydown = (event: KeyboardEvent): void => {
-		if (event.defaultPrevented) return;
+		if (event.defaultPrevented) {
+			return;
+		}
 		const key = event.key;
 		const options = this.#optionList();
-		if (options.length === 0) return;
+		if (options.length === 0) {
+			return;
+		}
 		const current = this.selectedIndex;
 
 		if (this.#highlight !== null) {
 			const highlight = this.#highlight;
-			if (key === "ArrowDown") this.#highlight = this.#step(highlight, 1);
-			else if (key === "ArrowUp") this.#highlight = this.#step(highlight, -1);
-			else if (key === "Home") this.#highlight = this.#step(-1, 1);
-			else if (key === "End") {
+			if (key === "ArrowDown") {
+				this.#highlight = this.#step(highlight, 1);
+			} else if (key === "ArrowUp") {
+				this.#highlight = this.#step(highlight, -1);
+			} else if (key === "Home") {
+				this.#highlight = this.#step(-1, 1);
+			} else if (key === "End") {
 				this.#highlight = this.#step(options.length, -1);
 			} else if (key === "Enter" || key === " ") {
 				this.#highlight = null;
@@ -12094,7 +13018,9 @@ export class HTMLSelectElement extends HTMLElement {
 		} else {
 			return;
 		}
-		if (target !== current && target >= 0) this.#commit(target);
+		if (target !== current && target >= 0) {
+			this.#commit(target);
+		}
 	};
 
 	/**
@@ -12104,7 +13030,9 @@ export class HTMLSelectElement extends HTMLElement {
 	 * from the rows' own document rects -- no renderer hit-test.
 	 */
 	#onMousedown = (event: MouseEvent): void => {
-		if (event.defaultPrevented || event.button !== 0) return;
+		if (event.defaultPrevented || event.button !== 0) {
+			return;
+		}
 		const engine = this.#engine!;
 		this.focus(); // A press focuses the control, as in a browser.
 		if (this.#highlight === null) {
@@ -12123,8 +13051,11 @@ export class HTMLSelectElement extends HTMLElement {
 			const option = this.#optionList()[index];
 			if (option && !optionIsDisabled(option)) {
 				this.#highlight = null;
-				if (index !== this.selectedIndex) this.#commit(index);
-				else this[kUAReconcile](); // Re-press the selection: just close.
+				if (index !== this.selectedIndex) {
+					this.#commit(index);
+				} else {
+					this[kUAReconcile]();
+				} // Re-press the selection: just close.
 			}
 			return;
 		}
@@ -12158,7 +13089,9 @@ interface PickerRow {
  * to carrying one -- the two the HTML Standard reads together.
  */
 function optionIsDisabled(option: HTMLOptionElement): boolean {
-	if (option.disabled) return true;
+	if (option.disabled) {
+		return true;
+	}
 	const parent = option[kParent];
 	return parent instanceof HTMLOptGroupElement && parent.disabled;
 }
@@ -12173,20 +13106,31 @@ function rectContains(rect: UARect, x: number, y: number): boolean {
 }
 /** Set or clear a picker row's state attribute, writing only on a change. */
 function setRowFlag(row: UAElement, name: string, on: boolean): void {
-	if (on === row.hasAttribute(name)) return;
-	if (on) row.setAttribute(name, "");
-	else row.removeAttribute(name);
+	if (on === row.hasAttribute(name)) {
+		return;
+	}
+	if (on) {
+		row.setAttribute(name, "");
+	} else {
+		row.removeAttribute(name);
+	}
 }
 /**
  * The index into a select's option list that a picker row stands for: the rows
  * that are options, counted in tree order.
  */
 function optionIndexOfRow(picker: UAElement, row: UAElement): number {
-	if (row.getAttribute("part") !== "option") return -1;
+	if (row.getAttribute("part") !== "option") {
+		return -1;
+	}
 	let index = 0;
 	for (const child of Array.from(picker.children)) {
-		if (child === row) return index;
-		if (child.getAttribute("part") === "option") index++;
+		if (child === row) {
+			return index;
+		}
+		if (child.getAttribute("part") === "option") {
+			index++;
+		}
 	}
 	return -1;
 }
@@ -12202,7 +13146,9 @@ function optionsOf(select: Element): HTMLOptionElement[] {
 				child !== null;
 				child = child[kNext]
 			) {
-				if (child instanceof HTMLOptionElement) options.push(child);
+				if (child instanceof HTMLOptionElement) {
+					options.push(child);
+				}
 			}
 		}
 	}
@@ -12228,7 +13174,9 @@ function askForAReset(select: HTMLSelectElement): void {
 		selected.length === 0
 	) {
 		const first = options.find((option) => !isActuallyDisabled(option));
-		if (first !== undefined) first[kSelectedness] = true;
+		if (first !== undefined) {
+			first[kSelectedness] = true;
+		}
 		return;
 	}
 	if (selected.length >= 2 && !select.hasAttribute("multiple")) {
@@ -12449,7 +13397,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 			return;
 		}
 		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
+		if (engine === undefined) {
+			return;
+		}
 		this.#engine = engine;
 		const document = uaDocumentOf(this);
 		const root = buildUARoot(this, engine, TEXTAREA_UA_STYLES);
@@ -12473,13 +13423,17 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	// A typed character arrives as an insertText; a paste keeps its newlines.
 	#onBeforeInput = (event: InputEvent): void => {
-		if (event.defaultPrevented || event.data == null) return;
+		if (event.defaultPrevented || event.data == null) {
+			return;
+		}
 		if (event.inputType === "insertText") {
 			event.preventDefault();
 			applyFieldEdit(this, printableFieldEdit(this, event.data));
 			return;
 		}
-		if (event.inputType !== "insertFromPaste") return;
+		if (event.inputType !== "insertFromPaste") {
+			return;
+		}
 		event.preventDefault();
 		insertPaste(this, event.data);
 	};
@@ -12492,7 +13446,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 */
 	[kUAReconcile](): void {
 		const engine = this.#engine;
-		if (engine === null) return;
+		if (engine === null) {
+			return;
+		}
 		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
@@ -12509,7 +13465,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 			this.#placeholderSpan!.style.display = placeholderDisplay;
 			changed = true;
 		}
-		if (!changed) return;
+		if (!changed) {
+			return;
+		}
 		// The value text lays out through the normal pipeline. The observer
 		// hears its characterData change too, but only on a microtask -- an edit
 		// that reads the fresh geometry back the same tick (vertical motion,
@@ -12526,12 +13484,18 @@ export class HTMLTextAreaElement extends HTMLElement {
 	#onKeydown = (event: KeyboardEvent): void => {
 		// Editing is a default action: an author's keydown preventDefault
 		// suppresses it, exactly as it suppresses a browser textarea's edit.
-		if (event.defaultPrevented) return;
+		if (event.defaultPrevented) {
+			return;
+		}
 		const engine = this.#engine;
-		if (engine === null) return;
+		if (engine === null) {
+			return;
+		}
 		const {key, shiftKey, ctrlKey} = event;
 		// The goal column survives only an unbroken run of vertical moves.
-		if (key !== "ArrowUp" && key !== "ArrowDown") this.#goalColumn = null;
+		if (key !== "ArrowUp" && key !== "ArrowDown") {
+			this.#goalColumn = null;
+		}
 
 		const value = this[kUAValue];
 		const {start, end, direction} = uaSelectionOf(this);
@@ -12558,9 +13522,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 		) {
 			engine.layout.calculateLayout();
 			const visual = textareaVisualLines(this, engine.layout);
-			const line = visual
-				? visual.lines[textareaLineAt(visual.lines, caret)]
-				: null;
+			const line = visual ?
+				visual.lines[textareaLineAt(visual.lines, caret)] :
+				null;
 			const lineStart = line?.startOffset ?? 0;
 			const lineEnd = line?.endOffset ?? value.length;
 			if (ctrlKey && key === "k") {
@@ -12585,7 +13549,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 		} else {
 			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
 		}
-		if (result) applyFieldEdit(this, result);
+		if (result) {
+			applyFieldEdit(this, result);
+		}
 	};
 
 	/**
@@ -12596,11 +13562,17 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 */
 	#verticalTarget(caret: number, direction: 1 | -1): number {
 		const visual = textareaVisualLines(this, this.#engine!.layout);
-		if (!visual) return caret;
+		if (!visual) {
+			return caret;
+		}
 		const lineIndex = textareaLineAt(visual.lines, caret);
 		const targetIndex = lineIndex + direction;
-		if (targetIndex < 0) return 0;
-		if (targetIndex >= visual.lines.length) return visual.value.length;
+		if (targetIndex < 0) {
+			return 0;
+		}
+		if (targetIndex >= visual.lines.length) {
+			return visual.value.length;
+		}
 		const line = visual.lines[lineIndex];
 		const lineText = visual.value.slice(line.startOffset, line.endOffset);
 		const currentColumn = stringWidth(
@@ -12648,7 +13620,9 @@ function textareaLineAt(
 		// the offset; later line wins), matching browsers.
 		if (caret <= lines[i].endOffset) {
 			const next = lines[i + 1];
-			if (next && next.startOffset <= caret) continue;
+			if (next && next.startOffset <= caret) {
+				continue;
+			}
 			return i;
 		}
 	}
@@ -12665,13 +13639,17 @@ function textareaVisualLines(
 	layout: UAEngine["layout"],
 ): {value: string; lines: TextareaVisualLine[]} | null {
 	const valueText = fieldValueText(field);
-	if (!valueText) return null;
+	if (!valueText) {
+		return null;
+	}
 	// The laid-out lines with their data ranges, including the empty lines no
 	// fragment represents (an empty value, a trailing newline) -- the same
 	// annotation range geometry reads, so the caret, a Range, and vertical
 	// navigation all agree on where an offset sits.
 	const lines = layout.lineFragments(valueText);
-	if (lines.length === 0) return null;
+	if (lines.length === 0) {
+		return null;
+	}
 	return {value: valueText.data, lines};
 }
 /** A raw value holds line breaks as single line feeds. */
@@ -12734,7 +13712,9 @@ function buildGaugeRoot(
 function setGaugeFill(bar: UAElement, fraction: number | null): void {
 	const width =
 		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
-	if (bar.style.width !== width) bar.style.width = width;
+	if (bar.style.width !== width) {
+		bar.style.width = width;
+	}
 }
 
 /**
@@ -12755,14 +13735,18 @@ export class HTMLMeterElement extends HTMLElement {
 			return;
 		}
 		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
+		if (engine === undefined) {
+			return;
+		}
 		this.#engine = engine;
 		this.#bar = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
 		this[kUAReconcile]();
 	}
 
 	[kUAReconcile](): void {
-		if (this.#engine === null) return;
+		if (this.#engine === null) {
+			return;
+		}
 		const bar = this.#bar!;
 		const min = this.min;
 		const span = this.max - min;
@@ -12782,11 +13766,15 @@ export class HTMLMeterElement extends HTMLElement {
 	#level(): string {
 		const {low, high, optimum, value} = this;
 		if (optimum < low) {
-			if (value < low) return "optimum";
+			if (value < low) {
+				return "optimum";
+			}
 			return value <= high ? "suboptimum" : "even-less-good";
 		}
 		if (optimum > high) {
-			if (value > high) return "optimum";
+			if (value > high) {
+				return "optimum";
+			}
 			return value >= low ? "suboptimum" : "even-less-good";
 		}
 		return value >= low && value <= high ? "optimum" : "suboptimum";
@@ -12832,7 +13820,9 @@ export class HTMLMeterElement extends HTMLElement {
 
 	get low(): number {
 		const low = parseFloatingPoint(this.getAttribute("low") ?? "");
-		if (low === null) return this.min;
+		if (low === null) {
+			return this.min;
+		}
 		return Math.min(Math.max(low, this.min), this.max);
 	}
 
@@ -12842,7 +13832,9 @@ export class HTMLMeterElement extends HTMLElement {
 
 	get high(): number {
 		const high = parseFloatingPoint(this.getAttribute("high") ?? "");
-		if (high === null) return this.max;
+		if (high === null) {
+			return this.max;
+		}
 		return Math.min(Math.max(high, this.low), this.max);
 	}
 
@@ -12852,7 +13844,9 @@ export class HTMLMeterElement extends HTMLElement {
 
 	get optimum(): number {
 		const optimum = parseFloatingPoint(this.getAttribute("optimum") ?? "");
-		if (optimum === null) return (this.min + this.max) / 2;
+		if (optimum === null) {
+			return (this.min + this.max) / 2;
+		}
 		return Math.min(Math.max(optimum, this.min), this.max);
 	}
 
@@ -12892,14 +13886,18 @@ export class HTMLProgressElement extends HTMLElement {
 			return;
 		}
 		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
+		if (engine === undefined) {
+			return;
+		}
 		this.#engine = engine;
 		this.#bar = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
 		this[kUAReconcile]();
 	}
 
 	[kUAReconcile](): void {
-		if (this.#engine === null) return;
+		if (this.#engine === null) {
+			return;
+		}
 		const position = this.position;
 		setGaugeFill(this.#bar!, position < 0 ? null : position);
 	}
@@ -12918,7 +13916,9 @@ export class HTMLProgressElement extends HTMLElement {
 
 	get value(): number {
 		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
-		if (value === null || value < 0) return 0;
+		if (value === null || value < 0) {
+			return 0;
+		}
 		return Math.min(value, this.max);
 	}
 
@@ -13003,13 +14003,17 @@ function popoverStateOf(element: Element): PopoverState {
  * value it does not know, the Manual state, and reflects as "manual".
  */
 function popoverAttributeState(element: Element): "auto" | "manual" | null {
-	if (element[kNamespace] !== HTML_NAMESPACE) return null;
+	if (element[kNamespace] !== HTML_NAMESPACE) {
+		return null;
+	}
 	return popoverValueState(element.getAttribute("popover"));
 }
 
 /** The state a popover attribute VALUE is in, for comparing two of them. */
 function popoverValueState(value: string | null): "auto" | "manual" | null {
-	if (value === null) return null;
+	if (value === null) {
+		return null;
+	}
 	const keyword = asciiLowercase(value);
 	return keyword === "" || keyword === "auto" ? "auto" : "manual";
 }
@@ -13072,7 +14076,9 @@ function popoverValidity(
 		return domError("NotSupportedError", "That element is not a popover");
 	}
 	const showing = popoverStateOf(element).visibility === "showing";
-	if (expectedToBeShowing !== showing) return false;
+	if (expectedToBeShowing !== showing) {
+		return false;
+	}
 	if (!isConnectedNode(element)) {
 		return domError("InvalidStateError", "That popover is not connected");
 	}
@@ -13117,7 +14123,9 @@ function showPopover(
 	}
 	let validity = popoverValidity(element, false, null);
 	if (validity !== true) {
-		if (throwExceptions && isPopoverException(validity)) throw validity;
+		if (throwExceptions && isPopoverException(validity)) {
+			throw validity;
+		}
 		return;
 	}
 	const state = popoverStateOf(element);
@@ -13140,7 +14148,9 @@ function showPopover(
 	validity = popoverValidity(element, false, document);
 	if (validity !== true) {
 		cleanup();
-		if (throwExceptions && isPopoverException(validity)) throw validity;
+		if (throwExceptions && isPopoverException(validity)) {
+			throw validity;
+		}
 		return;
 	}
 	let shouldRestoreFocus = false;
@@ -13161,12 +14171,16 @@ function showPopover(
 		validity = popoverValidity(element, false, document);
 		if (validity !== true) {
 			cleanup();
-			if (throwExceptions && isPopoverException(validity)) throw validity;
+			if (throwExceptions && isPopoverException(validity)) {
+				throw validity;
+			}
 			return;
 		}
 		// Focus goes back to the page only for the popover that OPENED the
 		// stack, so unwinding one returns it once.
-		if (topmostAutoPopover(document) === null) shouldRestoreFocus = true;
+		if (topmostAutoPopover(document) === null) {
+			shouldRestoreFocus = true;
+		}
 		state.mode = "auto";
 	}
 	state.previouslyFocused = null;
@@ -13196,17 +14210,23 @@ function hidePopover(
 ): void {
 	let validity = popoverValidity(element, true, null);
 	if (validity !== true) {
-		if (throwExceptions && isPopoverException(validity)) throw validity;
+		if (throwExceptions && isPopoverException(validity)) {
+			throw validity;
+		}
 		return;
 	}
 	const document = element[kDocument];
 	const state = popoverStateOf(element);
 	const nestedHide = state.hiding;
 	state.hiding = true;
-	if (nestedHide) fireEvents = false;
+	if (nestedHide) {
+		fireEvents = false;
+	}
 	document[kPopoverHidingCount]++;
 	const cleanup = (): void => {
-		if (!nestedHide) state.hiding = false;
+		if (!nestedHide) {
+			state.hiding = false;
+		}
 		document[kPopoverHidingCount]--;
 	};
 	if (state.mode === "auto") {
@@ -13216,7 +14236,9 @@ function hidePopover(
 		validity = popoverValidity(element, true, null);
 		if (validity !== true) {
 			cleanup();
-			if (throwExceptions && isPopoverException(validity)) throw validity;
+			if (throwExceptions && isPopoverException(validity)) {
+				throw validity;
+			}
 			return;
 		}
 	}
@@ -13232,7 +14254,9 @@ function hidePopover(
 		validity = popoverValidity(element, true, null);
 		if (validity !== true) {
 			cleanup();
-			if (throwExceptions && isPopoverException(validity)) throw validity;
+			if (throwExceptions && isPopoverException(validity)) {
+				throw validity;
+			}
 			return;
 		}
 	}
@@ -13292,7 +14316,9 @@ function hidePopoverStackUntil(
 		hidePopover(popover, focusPreviousElement, fireEvents, false, null);
 	}
 	for (const popover of showingAutoPopovers(document).reverse()) {
-		if (toRemain.includes(popover)) continue;
+		if (toRemain.includes(popover)) {
+			continue;
+		}
 		hidePopover(popover, focusPreviousElement, false, false, null);
 	}
 }
@@ -13336,7 +14362,9 @@ function topmostPopoverAncestor(
 /** The index of the last popover in a stack a node sits inside of. */
 function lastFlatAncestorIndex(popovers: Element[], node: Element): number {
 	for (let i = popovers.length - 1; i >= 0; i--) {
-		if (isFlatTreeDescendant(node, popovers[i])) return i;
+		if (isFlatTreeDescendant(node, popovers[i])) {
+			return i;
+		}
 	}
 	return -1;
 }
@@ -13348,7 +14376,9 @@ function isFlatTreeDescendant(node: Node, ancestor: Element): boolean {
 		current !== null;
 		current = flatParentElement<Node>(current)
 	) {
-		if (current === ancestor) return true;
+		if (current === ancestor) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -13393,7 +14423,9 @@ function nearestInclusiveTargetPopover(node: Node): Element | null {
 
 /** Where a popover sits in its document's stack; zero for one not in it. */
 function popoverStackPosition(popover: Element | null): number {
-	if (popover === null) return 0;
+	if (popover === null) {
+		return 0;
+	}
 	const index = showingAutoPopovers(popover[kDocument]).indexOf(popover);
 	return index === -1 ? 0 : index + 1;
 }
@@ -13406,9 +14438,9 @@ function popoverStackPosition(popover: Element | null): number {
 export function topmostClickedPopover(node: object): Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
 	const target = nearestInclusiveTargetPopover(node as Node);
-	return popoverStackPosition(clicked) > popoverStackPosition(target)
-		? clicked
-		: target;
+	return popoverStackPosition(clicked) > popoverStackPosition(target) ?
+		clicked :
+		target;
 }
 
 /**
@@ -13426,10 +14458,16 @@ function popoverFocusingSteps(element: Element): void {
 		return;
 	}
 	for (const node of shadowIncludingInclusiveDescendants(element)) {
-		if (node === element || node.nodeType !== ELEMENT_NODE) continue;
+		if (node === element || node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const descendant = node as Element;
-		if (!descendant.hasAttribute("autofocus")) continue;
-		if (!isFocusableArea(descendant)) continue;
+		if (!descendant.hasAttribute("autofocus")) {
+			continue;
+		}
+		if (!isFocusableArea(descendant)) {
+			continue;
+		}
 		(descendant as HTMLElement).focus();
 		return;
 	}
@@ -13455,7 +14493,9 @@ function queuePopoverToggleEventTask(
 	const task = {oldState, canceled: false};
 	state.toggleTask = task;
 	queueMicrotask(() => {
-		if (task.canceled) return;
+		if (task.canceled) {
+			return;
+		}
 		state.toggleTask = null;
 		dispatch(element, new ToggleEvent("toggle", {oldState, newState, source}));
 	});
@@ -13475,25 +14515,37 @@ const explicitPopoverTargets = new WeakMap<Element, Element>();
  * in the invoker's own tree.
  */
 function popoverTargetAttributeElement(node: Node): Element | null {
-	if (node.nodeType !== ELEMENT_NODE) return null;
+	if (node.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
 	const element = node as Element;
 	const explicit = explicitPopoverTargets.get(element);
 	if (explicit !== undefined) {
 		// The reference stands while the target is in the invoker's own tree
 		// or in one that tree composes into; it goes stale, rather than
 		// dangling, when the target is moved out from under it.
-		for (let root: Node = getRoot(element); ; ) {
-			if (root.contains(explicit)) return explicit;
-			if (!isShadowRoot(root)) return null;
+		for (let root: Node = getRoot(element); ;) {
+			if (root.contains(explicit)) {
+				return explicit;
+			}
+			if (!isShadowRoot(root)) {
+				return null;
+			}
 			const host = (root as ShadowRoot)[kHost];
-			if (host === null) return null;
+			if (host === null) {
+				return null;
+			}
 			root = getRoot(host);
 		}
 	}
 	const id = element.getAttribute("popovertarget");
-	if (id === null) return null;
+	if (id === null) {
+		return null;
+	}
 	const root = getRoot(element);
-	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) return null;
+	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
+		return null;
+	}
 	return (root as Document | ShadowRoot).getElementById(id);
 }
 
@@ -13516,8 +14568,12 @@ function setPopoverTargetAttributeElement(
  * button element, and the input types that render as buttons.
  */
 function isPopoverInvokerButton(node: Node): boolean {
-	if (node instanceof HTMLButtonElement) return true;
-	if (!(node instanceof HTMLInputElement)) return false;
+	if (node instanceof HTMLButtonElement) {
+		return true;
+	}
+	if (!(node instanceof HTMLInputElement)) {
+		return false;
+	}
 	const type = node.type;
 	return (
 		type === "submit" ||
@@ -13533,12 +14589,20 @@ function isPopoverInvokerButton(node: Node): boolean {
  * and the attribute on it does nothing.
  */
 function popoverTargetElementOf(node: Node): Element | null {
-	if (!isPopoverInvokerButton(node)) return null;
+	if (!isPopoverInvokerButton(node)) {
+		return null;
+	}
 	const element = node as Element;
-	if (isActuallyDisabled(element)) return null;
-	if (formOwner(element) !== null && isSubmitButton(element)) return null;
+	if (isActuallyDisabled(element)) {
+		return null;
+	}
+	if (formOwner(element) !== null && isSubmitButton(element)) {
+		return null;
+	}
 	const popover = popoverTargetAttributeElement(element);
-	if (popover === null) return null;
+	if (popover === null) {
+		return null;
+	}
 	return popoverAttributeState(popover) === null ? null : popover;
 }
 
@@ -13550,7 +14614,9 @@ function popoverTargetElementOf(node: Node): Element | null {
  */
 function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 	const popover = popoverTargetElementOf(node);
-	if (popover === null) return;
+	if (popover === null) {
+		return;
+	}
 	if (
 		target instanceof Node &&
 		isShadowIncludingInclusiveDescendant(target, popover) &&
@@ -13563,8 +14629,12 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 		node.getAttribute("popovertargetaction") ?? "toggle",
 	);
 	const showing = isShowingPopover(popover);
-	if (action === "show" && showing) return;
-	if (action === "hide" && !showing) return;
+	if (action === "show" && showing) {
+		return;
+	}
+	if (action === "hide" && !showing) {
+		return;
+	}
 	if (showing) {
 		hidePopover(popover, true, true, false, node);
 		return;
@@ -13584,7 +14654,9 @@ function isShadowIncludingInclusiveDescendant(
 		current !== null;
 		current = flatParentElement<Node>(current)
 	) {
-		if (current === ancestor) return true;
+		if (current === ancestor) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -13714,16 +14786,18 @@ function datasetAttributeName(property: string): string {
 			);
 		}
 		name +=
-			character >= "A" && character <= "Z"
-				? `-${asciiLowercase(character)}`
-				: character;
+			character >= "A" && character <= "Z" ?
+				`-${asciiLowercase(character)}` :
+				character;
 	}
 	return name;
 }
 
 /** The property name a data-* attribute is reached under, or null. */
 function datasetPropertyName(attribute: string): string | null {
-	if (!attribute.startsWith("data-")) return null;
+	if (!attribute.startsWith("data-")) {
+		return null;
+	}
 	let property = "";
 	for (let index = 5; index < attribute.length; index++) {
 		const character = attribute[index];
@@ -13735,7 +14809,9 @@ function datasetPropertyName(attribute: string): string | null {
 				continue;
 			}
 		}
-		if (character >= "A" && character <= "Z") return null;
+		if (character >= "A" && character <= "Z") {
+			return null;
+		}
 		property += character;
 	}
 	return property;
@@ -13765,17 +14841,25 @@ export class DOMStringMap {
 		const element = this[kDatasetElement];
 		const names: string[] = [];
 		for (const attribute of element[kAttributeList]) {
-			if (attribute[kNamespace] !== null) continue;
+			if (attribute[kNamespace] !== null) {
+				continue;
+			}
 			const property = datasetPropertyName(attribute[kLocalName]);
-			if (property === null) continue;
+			if (property === null) {
+				continue;
+			}
 			names.push(property);
 		}
 		names.sort();
 		for (const name of this[kDatasetNames]) {
-			if (!names.includes(name)) delete (this as never)[name];
+			if (!names.includes(name)) {
+				delete (this as never)[name];
+			}
 		}
 		for (const name of names) {
-			if (this[kDatasetNames].includes(name)) continue;
+			if (this[kDatasetNames].includes(name)) {
+				continue;
+			}
 			const attribute = datasetAttributeName(name);
 			Object.defineProperty(this, name, {
 				get(this: DOMStringMap): string {
@@ -13848,7 +14932,9 @@ const DISABLEABLE_TAGS = new Set([
 ]);
 
 function isHTMLTag(node: Node, tags: Set<string>): boolean {
-	if (node.nodeType !== ELEMENT_NODE) return false;
+	if (node.nodeType !== ELEMENT_NODE) {
+		return false;
+	}
 	const element = node as Element;
 	return (
 		element[kNamespace] === HTML_NAMESPACE && tags.has(element[kLocalName])
@@ -13857,13 +14943,17 @@ function isHTMLTag(node: Node, tags: Set<string>): boolean {
 
 /** Whether an element is one a form owns: a built-in one, or a custom one. */
 function isFormAssociated(element: Element): boolean {
-	if (isFormAssociatedCustom(element)) return true;
+	if (isFormAssociatedCustom(element)) {
+		return true;
+	}
 	return isHTMLTag(element, FORM_ASSOCIATED_TAGS);
 }
 
 /** Whether an element is listed: it appears in its form's element list. */
 function isListed(element: Element): boolean {
-	if (isFormAssociatedCustom(element)) return true;
+	if (isFormAssociatedCustom(element)) {
+		return true;
+	}
 	return isHTMLTag(element, LISTED_TAGS);
 }
 
@@ -13879,8 +14969,12 @@ function isFormAssociatedCustom(element: Element): boolean {
 
 /** Whether a label can label the element. */
 function isLabelable(element: Element): boolean {
-	if (isFormAssociatedCustom(element)) return true;
-	if (!isHTMLTag(element, LABELABLE_TAGS)) return false;
+	if (isFormAssociatedCustom(element)) {
+		return true;
+	}
+	if (!isHTMLTag(element, LABELABLE_TAGS)) {
+		return false;
+	}
 	return (
 		element[kLocalName] !== "input" ||
 		asciiLowercase(element.getAttribute("type") ?? "") !== "hidden"
@@ -13895,9 +14989,13 @@ function isActuallyDisabled(element: Element): boolean {
 	if (isFormAssociatedCustom(element)) {
 		return element[kInternals]?.[kFormDisabled] === true;
 	}
-	if (!isHTMLTag(element, DISABLEABLE_TAGS)) return false;
+	if (!isHTMLTag(element, DISABLEABLE_TAGS)) {
+		return false;
+	}
 	if (element[kLocalName] === "option" || element[kLocalName] === "optgroup") {
-		if (element.hasAttribute("disabled")) return true;
+		if (element.hasAttribute("disabled")) {
+			return true;
+		}
 		const parent = element[kParent];
 		return (
 			element[kLocalName] === "option" &&
@@ -13906,8 +15004,12 @@ function isActuallyDisabled(element: Element): boolean {
 			(parent as Element).hasAttribute("disabled")
 		);
 	}
-	if (element.hasAttribute("disabled")) return true;
-	if (element[kLocalName] === "fieldset") return false;
+	if (element.hasAttribute("disabled")) {
+		return true;
+	}
+	if (element[kLocalName] === "fieldset") {
+		return false;
+	}
 	return isDisabledByFieldSet(element);
 }
 
@@ -13918,11 +15020,17 @@ function isDisabledByFieldSet(element: Element): boolean {
 		node !== null;
 		node = node[kParent]
 	) {
-		if (!isHTMLTag(node, new Set(["fieldset"]))) continue;
+		if (!isHTMLTag(node, new Set(["fieldset"]))) {
+			continue;
+		}
 		const fieldset = node as Element;
-		if (!fieldset.hasAttribute("disabled")) continue;
+		if (!fieldset.hasAttribute("disabled")) {
+			continue;
+		}
 		const legend = firstChildElement(fieldset, "legend");
-		if (legend !== null && isInclusiveAncestor(legend, element)) continue;
+		if (legend !== null && isInclusiveAncestor(legend, element)) {
+			continue;
+		}
 		return true;
 	}
 	return false;
@@ -13939,16 +15047,26 @@ function isDisabledByFieldSet(element: Element): boolean {
  * specification does.
  */
 function formOwner(element: Element): HTMLFormElement | null {
-	if (!isFormAssociated(element)) return null;
+	if (!isFormAssociated(element)) {
+		return null;
+	}
 	if (isListed(element) && element.hasAttribute("form")) {
 		const id = element.getAttribute("form") as string;
-		if (id === "") return null;
+		if (id === "") {
+			return null;
+		}
 		const root = getRoot(element);
-		if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) return null;
+		if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
+			return null;
+		}
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
 			const candidate = node as Element;
-			if (candidate.getAttribute("id") !== id) continue;
+			if (candidate.getAttribute("id") !== id) {
+				continue;
+			}
 			return candidate instanceof HTMLFormElement ? candidate : null;
 		}
 		return null;
@@ -13958,7 +15076,9 @@ function formOwner(element: Element): HTMLFormElement | null {
 		node !== null;
 		node = node[kParent]
 	) {
-		if (node instanceof HTMLFormElement) return node;
+		if (node instanceof HTMLFormElement) {
+			return node;
+		}
 	}
 	return null;
 }
@@ -13970,11 +15090,17 @@ function formOwner(element: Element): HTMLFormElement | null {
  * the change that is reported rather than the value.
  */
 function refreshFormOwner(element: Element): void {
-	if (!isFormAssociatedCustom(element)) return;
+	if (!isFormAssociatedCustom(element)) {
+		return;
+	}
 	const internals = element[kInternals];
-	if (internals === null) return;
+	if (internals === null) {
+		return;
+	}
 	const owner = formOwner(element);
-	if (internals[kFormOwner] === owner) return;
+	if (internals[kFormOwner] === owner) {
+		return;
+	}
 	internals[kFormOwner] = owner;
 	enqueueCallbackReaction(element, "formAssociatedCallback", [owner]);
 }
@@ -13982,7 +15108,9 @@ function refreshFormOwner(element: Element): void {
 /** Tell every form-associated custom element under a node about its owner. */
 function refreshFormOwnersUnder(node: Node): void {
 	for (const candidate of shadowIncludingInclusiveDescendants(node)) {
-		if (candidate.nodeType !== ELEMENT_NODE) continue;
+		if (candidate.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		refreshFormOwner(candidate as Element);
 		refreshFormDisabled(candidate as Element);
 	}
@@ -13996,12 +15124,18 @@ function refreshFormOwnersUnder(node: Node): void {
  * change reportable rather than a value.
  */
 function refreshFormDisabled(element: Element): void {
-	if (!isFormAssociatedCustom(element)) return;
+	if (!isFormAssociatedCustom(element)) {
+		return;
+	}
 	const internals = element[kInternals];
-	if (internals === null) return;
+	if (internals === null) {
+		return;
+	}
 	const disabled =
 		element.hasAttribute("disabled") || isDisabledByFieldSet(element);
-	if (internals[kFormDisabled] === disabled) return;
+	if (internals[kFormDisabled] === disabled) {
+		return;
+	}
 	internals[kFormDisabled] = disabled;
 	enqueueCallbackReaction(element, "formDisabledCallback", [disabled]);
 }
@@ -14063,7 +15197,9 @@ export class ValidityState {
 	#flags: () => ValidityFlags;
 
 	constructor(flags: () => ValidityFlags) {
-		if (!internalConstruction) throw new TypeError("Illegal constructor");
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 		this.#flags = flags;
 	}
 
@@ -14102,7 +15238,9 @@ export class CustomStateSet {
 	#states = new Set<string>();
 
 	constructor() {
-		if (!internalConstruction) throw new TypeError("Illegal constructor");
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 	}
 
 	get size(): number {
@@ -14110,18 +15248,24 @@ export class CustomStateSet {
 	}
 
 	add(value: string): CustomStateSet {
-		if (arguments.length < 1) throw new TypeError("add needs a value");
+		if (arguments.length < 1) {
+			throw new TypeError("add needs a value");
+		}
 		this.#states.add(String(value));
 		return this;
 	}
 
 	delete(value: string): boolean {
-		if (arguments.length < 1) throw new TypeError("delete needs a value");
+		if (arguments.length < 1) {
+			throw new TypeError("delete needs a value");
+		}
 		return this.#states.delete(String(value));
 	}
 
 	has(value: string): boolean {
-		if (arguments.length < 1) throw new TypeError("has needs a value");
+		if (arguments.length < 1) {
+			throw new TypeError("has needs a value");
+		}
 		return this.#states.has(String(value));
 	}
 
@@ -14180,14 +15324,18 @@ export class ElementInternals {
 	#validity: ValidityState;
 
 	constructor(target: Element) {
-		if (!internalConstruction) throw new TypeError("Illegal constructor");
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
 		this[kElementInternalsTarget] = target;
 		this.#validity = new ValidityState(() => this[kValidityFlags]);
 	}
 
 	get shadowRoot(): ShadowRoot | null {
 		const shadow = this[kElementInternalsTarget][kShadowRoot];
-		if (shadow === null || !shadow[kAvailableToInternals]) return null;
+		if (shadow === null || !shadow[kAvailableToInternals]) {
+			return null;
+		}
 		return shadow;
 	}
 
@@ -14216,11 +15364,11 @@ export class ElementInternals {
 		}
 		this.#requireFormAssociated();
 		this[kSubmissionValue] =
-			value === null || value === undefined
-				? null
-				: typeof value === "object"
-					? value
-					: String(value);
+			value === null || value === undefined ?
+				null :
+				typeof value === "object" ?
+					value :
+						String(value);
 		void state;
 	}
 
@@ -14238,7 +15386,9 @@ export class ElementInternals {
 		let anyFailed = false;
 		for (const name of VALIDITY_FLAG_NAMES) {
 			next[name] = Boolean(given[name]);
-			if (next[name]) anyFailed = true;
+			if (next[name]) {
+				anyFailed = true;
+			}
 		}
 		if (anyFailed && (message === undefined || String(message) === "")) {
 			throw new TypeError("A failing constraint needs a message");
@@ -14325,11 +15475,13 @@ function isReachableAriaTarget(from: Element, target: Element): boolean {
 	for (
 		let root: Node | null = getRoot(target);
 		root !== null;
-		root = isShadowRoot(root)
-			? getRoot((root as ShadowRoot)[kHost] as Node)
-			: null
+		root = isShadowRoot(root) ?
+				getRoot((root as ShadowRoot)[kHost] as Node) :
+			null
 	) {
-		if (root === fromRoot) return true;
+		if (root === fromRoot) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -14342,13 +15494,19 @@ function ariaTargetsFromAttribute(
 	const value = element.getAttribute(attribute);
 	// No attribute and no elements handed over is no reflected target at all,
 	// which reads back as null rather than as an empty list.
-	if (value === null) return null;
+	if (value === null) {
+		return null;
+	}
 	const root = getRoot(element);
 	const found: Element[] = [];
 	for (const id of splitOnAsciiWhitespace(value)) {
 		for (const node of descendants(root)) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
-			if ((node as Element).getAttribute("id") !== id) continue;
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
+			if ((node as Element).getAttribute("id") !== id) {
+				continue;
+			}
 			found.push(node as Element);
 			break;
 		}
@@ -14363,8 +15521,9 @@ function ariaTargets(
 	attribute: string,
 ): Element[] | null {
 	const explicit = element[kAriaElements]?.get(property);
-	if (explicit === undefined)
+	if (explicit === undefined) {
 		return ariaTargetsFromAttribute(element, attribute);
+	}
 	return explicit.filter((target) => isReachableAriaTarget(element, target));
 }
 
@@ -14400,8 +15559,12 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 	const descriptor: PropertyDescriptor = {
 		get(this: Element): Element | readonly Element[] | null {
 			const targets = ariaTargets(this, property, attribute);
-			if (targets === null) return null;
-			if (many) return Object.freeze(targets);
+			if (targets === null) {
+				return null;
+			}
+			if (many) {
+				return Object.freeze(targets);
+			}
 			return targets.length === 0 ? null : targets[0];
 		},
 		set: wrapWithReactions(function (this: Element, value: unknown): void {
@@ -14433,8 +15596,12 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 		get(this: ElementInternals): Element | readonly Element[] | null {
 			const target = this[kElementInternalsTarget];
 			const targets = ariaTargets(target, property, attribute);
-			if (targets === null) return null;
-			if (many) return Object.freeze(targets);
+			if (targets === null) {
+				return null;
+			}
+			if (many) {
+				return Object.freeze(targets);
+			}
 			return targets.length === 0 ? null : targets[0];
 		},
 		set(this: ElementInternals, value: unknown): void {
@@ -14497,26 +15664,46 @@ function attachElementInternals(element: HTMLElement): ElementInternals {
 
 /** The labels whose control an element is. */
 function labelsOf(element: Element): NodeList {
-	if (!isLabelable(element)) return createStaticNodeList([]);
+	if (!isLabelable(element)) {
+		return createStaticNodeList([]);
+	}
 	const labels: Node[] = [];
 	const root = getRoot(element);
 	for (const node of descendants(root)) {
-		if (!(node instanceof HTMLLabelElement)) continue;
-		if (node.control === element) labels.push(node);
+		if (!(node instanceof HTMLLabelElement)) {
+			continue;
+		}
+		if (node.control === element) {
+			labels.push(node);
+		}
 	}
 	return createStaticNodeList(labels);
 }
 
 /** Whether an element is a candidate for constraint validation. */
 function willValidate(element: Element): boolean {
-	if (!isListed(element)) return false;
-	if (isActuallyDisabled(element)) return false;
-	if (element instanceof HTMLObjectElement) return false;
-	if (element instanceof HTMLFieldSetElement) return false;
-	if (element[kLocalName] === "output") return false;
-	if (element.hasAttribute("readonly")) return false;
+	if (!isListed(element)) {
+		return false;
+	}
+	if (isActuallyDisabled(element)) {
+		return false;
+	}
+	if (element instanceof HTMLObjectElement) {
+		return false;
+	}
+	if (element instanceof HTMLFieldSetElement) {
+		return false;
+	}
+	if (element[kLocalName] === "output") {
+		return false;
+	}
+	if (element.hasAttribute("readonly")) {
+		return false;
+	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]) {
-		if (isHTMLTag(node, new Set(["datalist"]))) return false;
+		if (isHTMLTag(node, new Set(["datalist"]))) {
+			return false;
+		}
 	}
 	return true;
 }
@@ -14526,8 +15713,12 @@ function checkValidity(element: Element): boolean {
 	const internals = element[kInternals];
 	const flags =
 		internals === null ? noValidityFlags() : internals[kValidityFlags];
-	if (!willValidate(element)) return true;
-	if (!VALIDITY_FLAG_NAMES.some((name) => flags[name])) return true;
+	if (!willValidate(element)) {
+		return true;
+	}
+	if (!VALIDITY_FLAG_NAMES.some((name) => flags[name])) {
+		return true;
+	}
 	dispatch(element, new Event("invalid", {cancelable: true}));
 	return false;
 }
@@ -14552,9 +15743,9 @@ function checkValidity(element: Element): boolean {
  */
 export function pseudoElement<T>(host: object, name: string): T | null {
 	const slots = (host as Element)[kPseudoElements];
-	return slots === null || slots === undefined
-		? null
-		: ((slots.get(name) as T) ?? null);
+	return slots === null || slots === undefined ?
+		null :
+			((slots.get(name) as T) ?? null);
 }
 
 /** How many pseudo-element nodes an element carries. */
@@ -14626,9 +15817,9 @@ export function clearPseudoElement(host: object, name: string): void {
 /** The slot a node is assigned to: the stored assignment, closed trees too. */
 function assignedSlotOf(node: Node): HTMLSlotElement | null {
 	const type = node.nodeType;
-	return type === ELEMENT_NODE || type === TEXT_NODE
-		? (node as Slottable)[kAssignedSlot]
-		: null;
+	return type === ELEMENT_NODE || type === TEXT_NODE ?
+			(node as Slottable)[kAssignedSlot] :
+		null;
 }
 
 /**
@@ -14641,13 +15832,17 @@ function assignedSlotOf(node: Node): HTMLSlotElement | null {
 export function flatParentElement<T>(target: object): T | null {
 	const node = target as Node;
 	const slot = assignedSlotOf(node);
-	if (slot !== null) return slot as unknown as T;
+	if (slot !== null) {
+		return slot as unknown as T;
+	}
 	const parent = node[kParent];
 	if (parent !== null) {
-		if (parent.nodeType === ELEMENT_NODE) return parent as unknown as T;
-		return isShadowRoot(parent)
-			? ((parent as ShadowRoot)[kHost] as unknown as T)
-			: null;
+		if (parent.nodeType === ELEMENT_NODE) {
+			return parent as unknown as T;
+		}
+		return isShadowRoot(parent) ?
+				((parent as ShadowRoot)[kHost] as unknown as T) :
+			null;
 	}
 	return ((node as Element)[kPseudoHost] as T) ?? null;
 }
@@ -14660,7 +15855,9 @@ export function flatParentElement<T>(target: object): T | null {
 export function flatIsConnected(target: object): boolean {
 	let node: Node | null = target as Node;
 	while (node !== null) {
-		if (isConnectedNode(node)) return true;
+		if (isConnectedNode(node)) {
+			return true;
+		}
 		node = flatParentElement<Node>(node);
 	}
 	return false;
@@ -14726,7 +15923,9 @@ class FlatWalker {
 			// at the root with nothing to descend into, the subtree is
 			// exhausted: returning the root's sibling would escape it, which is
 			// how an empty inline element measured its next sibling's width.
-			if (node === this.root) return null;
+			if (node === this.root) {
+				return null;
+			}
 
 			const nextSibling = this.#nextSibling(node);
 			if (nextSibling !== null) {
@@ -14764,13 +15963,17 @@ class FlatWalker {
 				parent = this.#parent(parent);
 			}
 
-			if (parent === null || parent === this.root) return null;
+			if (parent === null || parent === this.root) {
+				return null;
+			}
 		}
 	}
 
 	previousNode(): Node | null {
 		let node = this.currentNode;
-		if (node === this.root) return null;
+		if (node === this.root) {
+			return null;
+		}
 		for (;;) {
 			const previousSibling = this.#previousSibling(node);
 			if (previousSibling !== null) {
@@ -14783,12 +15986,16 @@ class FlatWalker {
 				continue;
 			}
 			const parent = this.#parent(node);
-			if (parent === null) return null;
+			if (parent === null) {
+				return null;
+			}
 			if (accepts(parent)) {
 				this.currentNode = parent;
 				return parent;
 			}
-			if (parent === this.root) return null;
+			if (parent === this.root) {
+				return null;
+			}
 			node = parent;
 		}
 	}
@@ -14808,8 +16015,12 @@ class FlatWalker {
 
 	firstChild(): Node | null {
 		let child = this.#firstChild(this.currentNode);
-		while (child !== null && !accepts(child)) child = this.#nextSibling(child);
-		if (child === null) return null;
+		while (child !== null && !accepts(child)) {
+			child = this.#nextSibling(child);
+		}
+		if (child === null) {
+			return null;
+		}
 		this.currentNode = child;
 		return child;
 	}
@@ -14819,7 +16030,9 @@ class FlatWalker {
 		while (child !== null && !accepts(child)) {
 			child = this.#previousSibling(child);
 		}
-		if (child === null) return null;
+		if (child === null) {
+			return null;
+		}
 		this.currentNode = child;
 		return child;
 	}
@@ -14833,24 +16046,32 @@ class FlatWalker {
 	 * the next flex item's text into its measurement.)
 	 */
 	nextSibling(): Node | null {
-		if (this.currentNode === this.root) return null;
+		if (this.currentNode === this.root) {
+			return null;
+		}
 		let sibling = this.#nextSibling(this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
 			sibling = this.#nextSibling(sibling);
 		}
-		if (sibling === null) return null;
+		if (sibling === null) {
+			return null;
+		}
 		this.currentNode = sibling;
 		return sibling;
 	}
 
 	/** Root-guarded like nextSibling, per spec. */
 	previousSibling(): Node | null {
-		if (this.currentNode === this.root) return null;
+		if (this.currentNode === this.root) {
+			return null;
+		}
 		let sibling = this.#previousSibling(this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
 			sibling = this.#previousSibling(sibling);
 		}
-		if (sibling === null) return null;
+		if (sibling === null) {
+			return null;
+		}
 		this.currentNode = sibling;
 		return sibling;
 	}
@@ -14870,10 +16091,14 @@ class FlatWalker {
 
 	/** The first undissolved node at a node's position, or null if it has none. */
 	#head(node: Node): Node | null {
-		if (!this.#isDissolved(node)) return node;
-		for (let child = composedFirstChild(node); child !== null; ) {
+		if (!this.#isDissolved(node)) {
+			return node;
+		}
+		for (let child = composedFirstChild(node); child !== null;) {
 			const head = this.#head(child);
-			if (head !== null) return head;
+			if (head !== null) {
+				return head;
+			}
 			child = composedNextSibling(child);
 		}
 		return null;
@@ -14881,28 +16106,36 @@ class FlatWalker {
 
 	/** Mirror of #head: the last undissolved node at a node's position. */
 	#tail(node: Node): Node | null {
-		if (!this.#isDissolved(node)) return node;
-		for (let child = composedLastChild(node); child !== null; ) {
+		if (!this.#isDissolved(node)) {
+			return node;
+		}
+		for (let child = composedLastChild(node); child !== null;) {
 			const tail = this.#tail(child);
-			if (tail !== null) return tail;
+			if (tail !== null) {
+				return tail;
+			}
 			child = composedPreviousSibling(child);
 		}
 		return null;
 	}
 
 	#firstChild(node: Node): Node | null {
-		for (let child = composedFirstChild(node); child !== null; ) {
+		for (let child = composedFirstChild(node); child !== null;) {
 			const head = this.#head(child);
-			if (head !== null) return head;
+			if (head !== null) {
+				return head;
+			}
 			child = composedNextSibling(child);
 		}
 		return null;
 	}
 
 	#lastChild(node: Node): Node | null {
-		for (let child = composedLastChild(node); child !== null; ) {
+		for (let child = composedLastChild(node); child !== null;) {
 			const tail = this.#tail(child);
-			if (tail !== null) return tail;
+			if (tail !== null) {
+				return tail;
+			}
 			child = composedPreviousSibling(child);
 		}
 		return null;
@@ -14917,12 +16150,16 @@ class FlatWalker {
 				sibling = composedNextSibling(sibling)
 			) {
 				const head = this.#head(sibling);
-				if (head !== null) return head;
+				if (head !== null) {
+					return head;
+				}
 			}
 			// Out of composed siblings: a dissolved parent's siblings continue
 			// the sequence.
 			const parent = composedParentNode(current);
-			if (parent === null || !this.#isDissolved(parent)) return null;
+			if (parent === null || !this.#isDissolved(parent)) {
+				return null;
+			}
 			current = parent;
 		}
 	}
@@ -14936,10 +16173,14 @@ class FlatWalker {
 				sibling = composedPreviousSibling(sibling)
 			) {
 				const tail = this.#tail(sibling);
-				if (tail !== null) return tail;
+				if (tail !== null) {
+					return tail;
+				}
 			}
 			const parent = composedParentNode(current);
-			if (parent === null || !this.#isDissolved(parent)) return null;
+			if (parent === null || !this.#isDissolved(parent)) {
+				return null;
+			}
 			current = parent;
 		}
 	}
@@ -14968,14 +16209,20 @@ class FlatWalker {
 	#isLastContent(node: Node, element: Element): boolean {
 		const shadow = element[kShadowRoot];
 		const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
-		if (last === null) return false;
-		if (node === last) return true;
+		if (last === null) {
+			return false;
+		}
+		if (node === last) {
+			return true;
+		}
 		for (
 			let ancestor = composedParentNode(node);
 			ancestor !== null;
 			ancestor = composedParentNode(ancestor)
 		) {
-			if (ancestor === last) return true;
+			if (ancestor === last) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -14995,18 +16242,26 @@ function pseudoSlot(element: Element, name: string): Element | null {
 /* The composed hops: the flat tree before any dissolving. */
 
 function composedFirstChild(node: Node): Node | null {
-	if (node.nodeType !== ELEMENT_NODE) return node[kFirstChild];
+	if (node.nodeType !== ELEMENT_NODE) {
+		return node[kFirstChild];
+	}
 	const element = node as Element;
 	const slots = element[kPseudoElements];
 	if (slots !== null) {
 		// ::marker precedes ::before, and both precede the element's content.
 		const marker = slots.get("::marker");
-		if (marker !== undefined) return marker;
+		if (marker !== undefined) {
+			return marker;
+		}
 		const before = slots.get("::before");
-		if (before !== undefined) return before;
+		if (before !== undefined) {
+			return before;
+		}
 	}
 	const composed = composedContentFirstChild(element);
-	if (composed !== null) return composed;
+	if (composed !== null) {
+		return composed;
+	}
 	// A CHILDLESS element still renders its ::after: the sibling transition
 	// only reaches ::after from a last child, which there is none of here, so
 	// for an empty element the pseudo-element IS the content.
@@ -15022,35 +16277,53 @@ function composedFirstChild(node: Node): Node | null {
  */
 function composedContentFirstChild(element: Element): Node | null {
 	const shadow = element[kShadowRoot];
-	if (shadow !== null) return shadow[kFirstChild];
+	if (shadow !== null) {
+		return shadow[kFirstChild];
+	}
 	if (element instanceof HTMLSlotElement) {
 		const assigned = element[kAssignedNodes];
-		if (assigned.length > 0) return assigned[0];
+		if (assigned.length > 0) {
+			return assigned[0];
+		}
 	}
 	return element[kFirstChild];
 }
 
 function composedLastChild(node: Node): Node | null {
-	if (node.nodeType !== ELEMENT_NODE) return node[kLastChild];
+	if (node.nodeType !== ELEMENT_NODE) {
+		return node[kLastChild];
+	}
 	const element = node as Element;
 	const slots = element[kPseudoElements];
 	if (slots !== null) {
 		const after = slots.get("::after");
-		if (after !== undefined) return after;
+		if (after !== undefined) {
+			return after;
+		}
 	}
 	const shadow = element[kShadowRoot];
-	if (shadow !== null) return shadow[kLastChild];
+	if (shadow !== null) {
+		return shadow[kLastChild];
+	}
 	if (element instanceof HTMLSlotElement) {
 		const assigned = element[kAssignedNodes];
-		if (assigned.length > 0) return assigned[assigned.length - 1];
+		if (assigned.length > 0) {
+			return assigned[assigned.length - 1];
+		}
 	}
 	const child = element[kLastChild];
-	if (child !== null) return child;
+	if (child !== null) {
+		return child;
+	}
 	if (slots !== null) {
 		const before = slots.get("::before");
-		if (before !== undefined) return before;
+		if (before !== undefined) {
+			return before;
+		}
 		const marker = slots.get("::marker");
-		if (marker !== undefined) return marker;
+		if (marker !== undefined) {
+			return marker;
+		}
 	}
 	return null;
 }
@@ -15061,7 +16334,9 @@ function composedNextSibling(node: Node): Node | null {
 		const name = (node as Element)[kPseudoName];
 		if (name === "::marker") {
 			const before = pseudoSlot(host, "::before");
-			if (before !== null) return before;
+			if (before !== null) {
+				return before;
+			}
 		}
 		if (name !== "::after") {
 			const content = composedContentFirstChild(host);
@@ -15077,13 +16352,15 @@ function composedNextSibling(node: Node): Node | null {
 	if (slot !== null) {
 		const assigned = slot[kAssignedNodes];
 		const index = assigned.indexOf(node as Slottable);
-		return index >= 0 && index < assigned.length - 1
-			? assigned[index + 1]
-			: null;
+		return index >= 0 && index < assigned.length - 1 ?
+			assigned[index + 1] :
+			null;
 	}
 
 	const next = node[kNext];
-	if (next !== null) return next;
+	if (next !== null) {
+		return next;
+	}
 
 	// The last of an element's content is followed by its ::after.
 	const parent = node[kParent];
@@ -15100,12 +16377,18 @@ function composedPreviousSibling(node: Node): Node | null {
 		if (name === "::after") {
 			const shadow = host[kShadowRoot];
 			const last = shadow !== null ? shadow[kLastChild] : host[kLastChild];
-			if (last !== null) return last;
+			if (last !== null) {
+				return last;
+			}
 			const before = pseudoSlot(host, "::before");
-			if (before !== null) return before;
+			if (before !== null) {
+				return before;
+			}
 			return pseudoSlot(host, "::marker");
 		}
-		if (name === "::before") return pseudoSlot(host, "::marker");
+		if (name === "::before") {
+			return pseudoSlot(host, "::marker");
+		}
 		return null;
 	}
 
@@ -15117,12 +16400,16 @@ function composedPreviousSibling(node: Node): Node | null {
 	}
 
 	const previous = node[kPrevious];
-	if (previous !== null) return previous;
+	if (previous !== null) {
+		return previous;
+	}
 
 	const parent = node[kParent];
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		const before = pseudoSlot(parent as Element, "::before");
-		if (before !== null) return before;
+		if (before !== null) {
+			return before;
+		}
 		return pseudoSlot(parent as Element, "::marker");
 	}
 	return null;
@@ -15130,9 +16417,13 @@ function composedPreviousSibling(node: Node): Node | null {
 
 function composedParentNode(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost];
-	if (host !== null && host !== undefined) return host;
+	if (host !== null && host !== undefined) {
+		return host;
+	}
 	const slot = assignedSlotOf(node);
-	if (slot !== null) return slot;
+	if (slot !== null) {
+		return slot;
+	}
 	const parent = node[kParent];
 	if (parent !== null && isShadowRoot(parent)) {
 		return (parent as ShadowRoot)[kHost];
@@ -15389,7 +16680,9 @@ export class Document extends Node {
 
 	get doctype(): DocumentType | null {
 		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-			if (node.nodeType === DOCUMENT_TYPE_NODE) return node as DocumentType;
+			if (node.nodeType === DOCUMENT_TYPE_NODE) {
+				return node as DocumentType;
+			}
 		}
 		return null;
 	}
@@ -15410,7 +16703,9 @@ export class Document extends Node {
 	 */
 	get activeElement(): Element | null {
 		const active = this[kActiveElement];
-		if (active !== null && getRoot(active) === (this as Node)) return active;
+		if (active !== null && getRoot(active) === (this as Node)) {
+			return active;
+		}
 		this[kActiveElement] = null;
 		return this.body;
 	}
@@ -15443,7 +16738,9 @@ export class Document extends Node {
 	 */
 	get head(): Element | null {
 		const root = this.documentElement;
-		if (root === null) return null;
+		if (root === null) {
+			return null;
+		}
 		for (let node = root[kFirstChild]; node !== null; node = node[kNext]) {
 			if (
 				node.nodeType === ELEMENT_NODE &&
@@ -15458,7 +16755,9 @@ export class Document extends Node {
 
 	get body(): Element | null {
 		const root = this.documentElement;
-		if (root === null) return null;
+		if (root === null) {
+			return null;
+		}
 		for (let node = root[kFirstChild]; node !== null; node = node[kNext]) {
 			if (
 				node.nodeType === ELEMENT_NODE &&
@@ -15482,7 +16781,9 @@ export class Document extends Node {
 			throw hierarchyRequestError("That element cannot be a document body");
 		}
 		const existing = this.body;
-		if (existing === value) return;
+		if (existing === value) {
+			return;
+		}
 		const root = this.documentElement;
 		if (root === null) {
 			throw hierarchyRequestError("There is no document element");
@@ -15524,13 +16825,17 @@ export class Document extends Node {
 				}
 			}
 		}
-		if (element === null) return "";
+		if (element === null) {
+			return "";
+		}
 		return stripAndCollapseWhitespace(descendantText(element));
 	}
 
 	set title(value: string) {
 		const root = this.documentElement;
-		if (root === null) return;
+		if (root === null) {
+			return;
+		}
 		let element: Element | null = null;
 		for (const node of descendants(this)) {
 			if (
@@ -15544,7 +16849,9 @@ export class Document extends Node {
 		}
 		if (element === null) {
 			const head = this.head;
-			if (head === null) return;
+			if (head === null) {
+				return;
+			}
 			element = createElementInternal(this, "title", HTML_NAMESPACE);
 			appendNode(element, head);
 		}
@@ -15553,7 +16860,9 @@ export class Document extends Node {
 
 	get documentElement(): Element | null {
 		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-			if (node.nodeType === ELEMENT_NODE) return node as Element;
+			if (node.nodeType === ELEMENT_NODE) {
+				return node as Element;
+			}
 		}
 		return null;
 	}
@@ -15576,11 +16885,17 @@ export class Document extends Node {
 	getElementById(elementId: string): Element | null {
 		const id = String(elementId);
 		const entries = this[kIdMap].get(id);
-		if (entries === undefined || entries.length === 0) return null;
-		if (entries.length === 1) return entries[0];
+		if (entries === undefined || entries.length === 0) {
+			return null;
+		}
+		if (entries.length === 1) {
+			return entries[0];
+		}
 		let first = entries[0];
 		for (let index = 1; index < entries.length; index++) {
-			if (precedesInTree(entries[index], first)) first = entries[index];
+			if (precedesInTree(entries[index], first)) {
+				first = entries[index];
+			}
 		}
 		return first;
 	}
@@ -15594,12 +16909,14 @@ export class Document extends Node {
 		}
 		let name = String(localName);
 		validateElementLocalName(name);
-		if (isHTMLDocument(this)) name = asciiLowercase(name);
+		if (isHTMLDocument(this)) {
+			name = asciiLowercase(name);
+		}
 		const is = extractIs(options);
 		const namespace =
-			isHTMLDocument(this) || this[kContentType] === "application/xhtml+xml"
-				? HTML_NAMESPACE
-				: null;
+			isHTMLDocument(this) || this[kContentType] === "application/xhtml+xml" ?
+				HTML_NAMESPACE :
+				null;
 		return createElementInternal(
 			this,
 			name,
@@ -15642,7 +16959,9 @@ export class Document extends Node {
 	}
 
 	createTextNode(data: string): Text {
-		if (arguments.length < 1) throw new TypeError("createTextNode needs data");
+		if (arguments.length < 1) {
+			throw new TypeError("createTextNode needs data");
+		}
 		const text = new Text(String(data));
 		text[kDocument] = this;
 		return text;
@@ -15668,7 +16987,9 @@ export class Document extends Node {
 	}
 
 	createComment(data: string): Comment {
-		if (arguments.length < 1) throw new TypeError("createComment needs data");
+		if (arguments.length < 1) {
+			throw new TypeError("createComment needs data");
+		}
 		const comment = new Comment(String(data));
 		comment[kDocument] = this;
 		return comment;
@@ -15698,7 +17019,9 @@ export class Document extends Node {
 	}
 
 	importNode(node: Node, deep = false): Node {
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (node.nodeType === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be imported");
 		}
@@ -15709,7 +17032,9 @@ export class Document extends Node {
 	}
 
 	adoptNode(node: Node): Node {
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (node.nodeType === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be adopted");
 		}
@@ -15726,7 +17051,9 @@ export class Document extends Node {
 		}
 		let name = String(localName);
 		validateAttributeLocalName(name);
-		if (isHTMLDocument(this)) name = asciiLowercase(name);
+		if (isHTMLDocument(this)) {
+			name = asciiLowercase(name);
+		}
 		const attribute = new Attr(null, null, name, "");
 		attribute[kDocument] = this;
 		return attribute;
@@ -15802,7 +17129,9 @@ export class Document extends Node {
 		whatToShow = 0xffffffff,
 		filter: NodeFilterInput = null,
 	): NodeIterator {
-		if (!(root instanceof Node)) throw new TypeError("That is not a node");
+		if (!(root instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		const iterator = new NodeIterator(root, toUnsignedLong(whatToShow), filter);
 		// The spec keys the pre-removing steps off the root's node document,
 		// which need not be the document the iterator was created from.
@@ -15823,7 +17152,9 @@ export class Document extends Node {
 		whatToShow = 0xffffffff,
 		filter: NodeFilterInput = null,
 	): TreeWalker {
-		if (!(root instanceof Node)) throw new TypeError("That is not a node");
+		if (!(root instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		return new TreeWalker(root, toUnsignedLong(whatToShow), filter);
 	}
 
@@ -15871,11 +17202,19 @@ function copyDocumentState(from: Document, to: Document): void {
 function extractRegistry(
 	options: {customElementRegistry?: unknown} | string | undefined,
 ): CustomElementRegistry | null | undefined {
-	if (options === undefined || options === null) return undefined;
-	if (typeof options !== "object") return undefined;
-	if (!("customElementRegistry" in options)) return undefined;
+	if (options === undefined || options === null) {
+		return undefined;
+	}
+	if (typeof options !== "object") {
+		return undefined;
+	}
+	if (!("customElementRegistry" in options)) {
+		return undefined;
+	}
 	const value = options.customElementRegistry;
-	if (value === null || value === undefined) return null;
+	if (value === null || value === undefined) {
+		return null;
+	}
 	if (!(value instanceof CustomElementRegistry)) {
 		throw new TypeError("That is not a custom element registry");
 	}
@@ -15883,8 +17222,12 @@ function extractRegistry(
 }
 
 function extractIs(options: {is?: string} | string | undefined): string | null {
-	if (options == null) return null;
-	if (typeof options === "string") return null;
+	if (options == null) {
+		return null;
+	}
+	if (typeof options === "string") {
+		return null;
+	}
 	const is = (options as {is?: unknown}).is;
 	return is === undefined ? null : String(is);
 }
@@ -15893,12 +17236,16 @@ function extractIs(options: {is?: string} | string | undefined): string | null {
 
 function addToIdMap(document: Document, element: Element): void {
 	const id = element.getAttribute("id");
-	if (id !== null && id !== "") addIdEntry(document, id, element);
+	if (id !== null && id !== "") {
+		addIdEntry(document, id, element);
+	}
 }
 
 function removeFromIdMap(document: Document, element: Element): void {
 	const id = element.getAttribute("id");
-	if (id !== null && id !== "") removeIdEntry(document, id, element);
+	if (id !== null && id !== "") {
+		removeIdEntry(document, id, element);
+	}
 }
 
 function addIdEntry(document: Document, id: string, element: Element): void {
@@ -15912,10 +17259,16 @@ function addIdEntry(document: Document, id: string, element: Element): void {
 
 function removeIdEntry(document: Document, id: string, element: Element): void {
 	const entries = document[kIdMap].get(id);
-	if (entries === undefined) return;
+	if (entries === undefined) {
+		return;
+	}
 	const index = entries.indexOf(element);
-	if (index !== -1) entries.splice(index, 1);
-	if (entries.length === 0) document[kIdMap].delete(id);
+	if (index !== -1) {
+		entries.splice(index, 1);
+	}
+	if (entries.length === 0) {
+		document[kIdMap].delete(id);
+	}
 }
 
 /* ------------------------------------------------------------ implementation */
@@ -15961,8 +17314,12 @@ export class DOMImplementation {
 				name,
 			);
 		}
-		if (doctype != null) appendNode(doctype, document);
-		if (element !== null) appendNode(element, document);
+		if (doctype != null) {
+			appendNode(doctype, document);
+		}
+		if (element !== null) {
+			appendNode(element, document);
+		}
 		const ns = namespace === "" || namespace == null ? null : String(namespace);
 		if (ns === HTML_NAMESPACE) {
 			document[kContentType] = "application/xhtml+xml";
@@ -16049,16 +17406,24 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 type Insertable = Node | string;
 
 function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
-	if (nodes.length === 1 && nodes[0] instanceof Node) return nodes[0];
+	if (nodes.length === 1 && nodes[0] instanceof Node) {
+		return nodes[0];
+	}
 	const converted = nodes.map((node) => {
-		if (node instanceof Node) return node;
+		if (node instanceof Node) {
+			return node;
+		}
 		const text = new Text(String(node));
 		text[kDocument] = document;
 		return text as Node;
 	});
-	if (converted.length === 1) return converted[0];
+	if (converted.length === 1) {
+		return converted[0];
+	}
 	const fragment = document.createDocumentFragment();
-	for (const node of converted) appendNode(node, fragment);
+	for (const node of converted) {
+		appendNode(node, fragment);
+	}
 	return fragment;
 }
 
@@ -16084,7 +17449,9 @@ const parentNodeMembers = {
 	firstElementChild: {
 		get(this: Node): Element | null {
 			for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-				if (node.nodeType === ELEMENT_NODE) return node as Element;
+				if (node.nodeType === ELEMENT_NODE) {
+					return node as Element;
+				}
 			}
 			return null;
 		},
@@ -16094,7 +17461,9 @@ const parentNodeMembers = {
 	lastElementChild: {
 		get(this: Node): Element | null {
 			for (let node = this[kLastChild]; node !== null; node = node[kPrevious]) {
-				if (node.nodeType === ELEMENT_NODE) return node as Element;
+				if (node.nodeType === ELEMENT_NODE) {
+					return node as Element;
+				}
 			}
 			return null;
 		},
@@ -16105,7 +17474,9 @@ const parentNodeMembers = {
 		get(this: Node): number {
 			let count = 0;
 			for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-				if (node.nodeType === ELEMENT_NODE) count++;
+				if (node.nodeType === ELEMENT_NODE) {
+					count++;
+				}
 			}
 			return count;
 		},
@@ -16169,7 +17540,9 @@ const childNodeMembers = {
 	before: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const parent = this[kParent];
-			if (parent === null) return;
+			if (parent === null) {
+				return;
+			}
 			let viable = this[kPrevious];
 			while (viable !== null && nodes.includes(viable)) {
 				viable = viable[kPrevious];
@@ -16188,7 +17561,9 @@ const childNodeMembers = {
 	after: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const parent = this[kParent];
-			if (parent === null) return;
+			if (parent === null) {
+				return;
+			}
 			let viable = this[kNext];
 			while (viable !== null && nodes.includes(viable)) {
 				viable = viable[kNext];
@@ -16203,7 +17578,9 @@ const childNodeMembers = {
 	replaceWith: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const parent = this[kParent];
-			if (parent === null) return;
+			if (parent === null) {
+				return;
+			}
 			let viable = this[kNext];
 			while (viable !== null && nodes.includes(viable)) {
 				viable = viable[kNext];
@@ -16221,7 +17598,9 @@ const childNodeMembers = {
 	},
 	remove: {
 		value(this: Node): void {
-			if (this[kParent] === null) return;
+			if (this[kParent] === null) {
+				return;
+			}
 			removeNode(this);
 		},
 		configurable: true,
@@ -16234,7 +17613,9 @@ const nonDocumentTypeChildNodeMembers = {
 	previousElementSibling: {
 		get(this: Node): Element | null {
 			for (let node = this[kPrevious]; node !== null; node = node[kPrevious]) {
-				if (node.nodeType === ELEMENT_NODE) return node as Element;
+				if (node.nodeType === ELEMENT_NODE) {
+					return node as Element;
+				}
 			}
 			return null;
 		},
@@ -16244,7 +17625,9 @@ const nonDocumentTypeChildNodeMembers = {
 	nextElementSibling: {
 		get(this: Node): Element | null {
 			for (let node = this[kNext]; node !== null; node = node[kNext]) {
-				if (node.nodeType === ELEMENT_NODE) return node as Element;
+				if (node.nodeType === ELEMENT_NODE) {
+					return node as Element;
+				}
 			}
 			return null;
 		},
@@ -16281,7 +17664,9 @@ function markUnscopable(prototype: object, names: string[]): void {
 	];
 	const unscopables: Record<string, true> =
 		existing === undefined ? Object.create(null) : existing;
-	for (const name of names) unscopables[name] = true;
+	for (const name of names) {
+		unscopables[name] = true;
+	}
 	Object.defineProperty(prototype, Symbol.unscopables, {
 		value: unscopables,
 		configurable: true,
@@ -16332,7 +17717,9 @@ Object.defineProperties(Element.prototype, {
 			engine.match(selector, this as never);
 			let node: Node | null = this;
 			while (node !== null && node.nodeType === ELEMENT_NODE) {
-				if (engine.match(selector, node as never)) return node as Element;
+				if (engine.match(selector, node as never)) {
+					return node as Element;
+				}
 				node = node[kParent];
 			}
 			return null;
@@ -16387,7 +17774,9 @@ function insertAdjacent(
 	switch (asciiLowercase(where)) {
 		case "beforebegin": {
 			const parent = element[kParent];
-			if (parent === null) return null;
+			if (parent === null) {
+				return null;
+			}
 			preInsert(node, parent, element);
 			return node;
 		}
@@ -16399,7 +17788,9 @@ function insertAdjacent(
 			return node;
 		case "afterend": {
 			const parent = element[kParent];
-			if (parent === null) return null;
+			if (parent === null) {
+				return null;
+			}
 			preInsert(node, parent, element[kNext]);
 			return node;
 		}
@@ -16417,7 +17808,9 @@ function cloneNode(
 ): Node {
 	const target = document ?? node[kDocument];
 	const copy = node[kCloneSingle](target);
-	if (copy.nodeType === DOCUMENT_NODE) copy[kDocument] = copy as Document;
+	if (copy.nodeType === DOCUMENT_NODE) {
+		copy[kDocument] = copy as Document;
+	}
 	node[kCloningSteps](copy, target, deep);
 	if (node.nodeType === ELEMENT_NODE) {
 		const shadow = (node as Element)[kShadowRoot];
@@ -16454,7 +17847,9 @@ function cloneNode(
 }
 
 function equalNodes(a: Node, b: Node): boolean {
-	if (a.nodeType !== b.nodeType) return false;
+	if (a.nodeType !== b.nodeType) {
+		return false;
+	}
 	switch (a.nodeType) {
 		case DOCUMENT_TYPE_NODE: {
 			const one = a as DocumentType;
@@ -16485,7 +17880,9 @@ function equalNodes(a: Node, b: Node): boolean {
 					attribute[kNamespace],
 					attribute[kLocalName],
 				);
-				if (other === null || other[kValue] !== attribute[kValue]) return false;
+				if (other === null || other[kValue] !== attribute[kValue]) {
+					return false;
+				}
 			}
 			break;
 		}
@@ -16522,7 +17919,9 @@ function equalNodes(a: Node, b: Node): boolean {
 	let childA = a[kFirstChild];
 	let childB = b[kFirstChild];
 	while (childA !== null && childB !== null) {
-		if (!equalNodes(childA, childB)) return false;
+		if (!equalNodes(childA, childB)) {
+			return false;
+		}
 		childA = childA[kNext];
 		childB = childB[kNext];
 	}
@@ -16551,8 +17950,12 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 	switch (node.nodeType) {
 		case ELEMENT_NODE: {
 			// The two prefixes the XML specifications bind for good.
-			if (prefix === "xml") return XML_NAMESPACE;
-			if (prefix === "xmlns") return XMLNS_NAMESPACE;
+			if (prefix === "xml") {
+				return XML_NAMESPACE;
+			}
+			if (prefix === "xmlns") {
+				return XMLNS_NAMESPACE;
+			}
 			const element = node as Element;
 			if (element[kNamespace] !== null && element[kPrefix] === prefix) {
 				return element[kNamespace];
@@ -16620,8 +18023,12 @@ function nodeIndex(node: Node): number {
  * data, and the number of children for everything else.
  */
 function nodeLength(node: Node): number {
-	if (node.nodeType === DOCUMENT_TYPE_NODE) return 0;
-	if (isCharacterData(node)) return (node as CharacterData)[kData].length;
+	if (node.nodeType === DOCUMENT_TYPE_NODE) {
+		return 0;
+	}
+	if (isCharacterData(node)) {
+		return (node as CharacterData)[kData].length;
+	}
 	let length = 0;
 	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 		length++;
@@ -16646,7 +18053,9 @@ function ancestorChain(node: Node): Node[] {
 /** Whether a node precedes one of its siblings. */
 function precedesSibling(node: Node, other: Node): boolean {
 	for (let next = node[kNext]; next !== null; next = next[kNext]) {
-		if (next === other) return true;
+		if (next === other) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -16662,7 +18071,9 @@ function comparePoints(
 	offsetB: number,
 ): number {
 	if (nodeA === nodeB) {
-		if (offsetA === offsetB) return EQUAL;
+		if (offsetA === offsetB) {
+			return EQUAL;
+		}
 		return offsetA < offsetB ? BEFORE : AFTER;
 	}
 	const chainA = ancestorChain(nodeA);
@@ -16701,7 +18112,9 @@ function registerLiveRange(range: Range): void {
 	liveRanges.push(new WeakRef(range));
 	// Dropping the cleared entries costs a walk of the list, so the walk waits
 	// until the list has doubled: registering n ranges stays linear in n.
-	if (liveRanges.length < liveRangeCompactAt) return;
+	if (liveRanges.length < liveRangeCompactAt) {
+		return;
+	}
 	let write = 0;
 	for (let read = 0; read < liveRanges.length; read++) {
 		if (liveRanges[read].deref() !== undefined) {
@@ -16716,7 +18129,9 @@ function registerLiveRange(range: Range): void {
 function forEachLiveRange(steps: (range: Range) => void): void {
 	for (let index = 0; index < liveRanges.length; index++) {
 		const range = liveRanges[index].deref();
-		if (range !== undefined) steps(range);
+		if (range !== undefined) {
+			steps(range);
+		}
 	}
 }
 
@@ -16725,7 +18140,9 @@ function forEachLiveRange(steps: (range: Range) => void): void {
  * child pushes along every boundary point in the parent past that child.
  */
 function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
-	if (liveRanges.length === 0) return;
+	if (liveRanges.length === 0) {
+		return;
+	}
 	const index = nodeIndex(child);
 	forEachLiveRange((range) => {
 		if (range[kStartNode] === parent && range[kStartOffset] > index) {
@@ -16743,7 +18160,9 @@ function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
  * parent moves back by one.
  */
 function liveRangePreRemoveSteps(node: Node): void {
-	if (liveRanges.length === 0) return;
+	if (liveRanges.length === 0) {
+		return;
+	}
 	const parent = node[kParent] as Node;
 	const index = nodeIndex(node);
 	forEachLiveRange((range) => {
@@ -16775,7 +18194,9 @@ function liveRangeReplaceDataSteps(
 	count: number,
 	length: number,
 ): void {
-	if (liveRanges.length === 0) return;
+	if (liveRanges.length === 0) {
+		return;
+	}
 	forEachLiveRange((range) => {
 		if (
 			range[kStartNode] === node &&
@@ -16811,7 +18232,9 @@ function liveRangeSplitSteps(
 	offset: number,
 	parent: Node,
 ): void {
-	if (liveRanges.length === 0) return;
+	if (liveRanges.length === 0) {
+		return;
+	}
 	const index = nodeIndex(node);
 	forEachLiveRange((range) => {
 		if (range[kStartNode] === node && range[kStartOffset] > offset) {
@@ -16841,7 +18264,9 @@ function liveRangeNormalizeSteps(
 	currentNode: Text,
 	length: number,
 ): void {
-	if (liveRanges.length === 0) return;
+	if (liveRanges.length === 0) {
+		return;
+	}
 	const parent = currentNode[kParent] as Node;
 	const index = nodeIndex(currentNode);
 	forEachLiveRange((range) => {
@@ -16985,7 +18410,9 @@ function rangeRoot(range: Range): Node {
 
 /** Whether a node is contained in a live range. */
 function isContained(node: Node, range: Range): boolean {
-	if (getRoot(node) !== rangeRoot(range)) return false;
+	if (getRoot(node) !== rangeRoot(range)) {
+		return false;
+	}
 	return (
 		comparePoints(node, 0, range[kStartNode], range[kStartOffset]) === AFTER &&
 		comparePoints(
@@ -17035,7 +18462,9 @@ function setRangeBoundary(
 	offset: number,
 	isStart: boolean,
 ): void {
-	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	if (!(node instanceof Node)) {
+		throw new TypeError("That is not a node");
+	}
 	if (node.nodeType === DOCUMENT_TYPE_NODE) {
 		throw domError(
 			"InvalidNodeTypeError",
@@ -17072,7 +18501,9 @@ function setRangeBoundary(
 
 /** The parent a boundary point is set relative to, for the -Before/-After set. */
 function boundaryParent(node: unknown): Node {
-	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	if (!(node instanceof Node)) {
+		throw new TypeError("That is not a node");
+	}
 	const parent = node[kParent];
 	if (parent === null) {
 		throw domError(
@@ -17145,7 +18576,9 @@ function extractionShape(range: Range): ExtractionShape {
 		child !== null;
 		child = child[kNext]
 	) {
-		if (!isContained(child, range)) continue;
+		if (!isContained(child, range)) {
+			continue;
+		}
 		if (child.nodeType === DOCUMENT_TYPE_NODE) {
 			throw hierarchyRequestError("A doctype cannot be taken out of a range");
 		}
@@ -17189,7 +18622,9 @@ function characterDataSlice(
 /** The spec's "extract" of a live range. */
 function extractRange(range: Range): DocumentFragment {
 	const fragment = createFragment(range[kStartNode][kDocument]);
-	if (range.collapsed) return fragment;
+	if (range.collapsed) {
+		return fragment;
+	}
 	const startNode = range[kStartNode];
 	const startOffset = range[kStartOffset];
 	const endNode = range[kEndNode];
@@ -17219,7 +18654,9 @@ function extractRange(range: Range): DocumentFragment {
 		setRangePoints(subrange, startNode, startOffset, first, nodeLength(first));
 		appendNode(extractRange(subrange), clone);
 	}
-	for (const child of shape.containedChildren) appendNode(child, fragment);
+	for (const child of shape.containedChildren) {
+		appendNode(child, fragment);
+	}
 	const last = shape.lastPartiallyContained;
 	if (last !== null && isCharacterData(last)) {
 		const data = endNode as CharacterData;
@@ -17238,7 +18675,9 @@ function extractRange(range: Range): DocumentFragment {
 /** The spec's "clone the contents" of a live range. */
 function cloneRangeContents(range: Range): DocumentFragment {
 	const fragment = createFragment(range[kStartNode][kDocument]);
-	if (range.collapsed) return fragment;
+	if (range.collapsed) {
+		return fragment;
+	}
 	const startNode = range[kStartNode];
 	const startOffset = range[kStartOffset];
 	const endNode = range[kEndNode];
@@ -17283,7 +18722,9 @@ function cloneRangeContents(range: Range): DocumentFragment {
 
 /** The spec's "insert" of a node into a live range. */
 function insertIntoRange(range: Range, node: Node): void {
-	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	if (!(node instanceof Node)) {
+		throw new TypeError("That is not a node");
+	}
 	const startNode = range[kStartNode];
 	const type = startNode.nodeType;
 	if (
@@ -17314,8 +18755,12 @@ function insertIntoRange(range: Range, node: Node): void {
 	if (startNode instanceof Text) {
 		referenceNode = startNode.splitText(range[kStartOffset]);
 	}
-	if (node === referenceNode) referenceNode = node[kNext];
-	if (node[kParent] !== null) removeNode(node);
+	if (node === referenceNode) {
+		referenceNode = node[kNext];
+	}
+	if (node[kParent] !== null) {
+		removeNode(node);
+	}
 	let newOffset =
 		referenceNode === null ? nodeLength(parent) : nodeIndex(referenceNode);
 	newOffset += node.nodeType === DOCUMENT_FRAGMENT_NODE ? nodeLength(node) : 1;
@@ -17360,26 +18805,33 @@ export class Range extends AbstractRange {
 	}
 
 	setStartBefore(node: Node): void {
-		if (arguments.length < 1)
+		if (arguments.length < 1) {
 			throw new TypeError("setStartBefore needs a node");
+		}
 		const parent = boundaryParent(node);
 		setRangeBoundary(this, parent, nodeIndex(node), true);
 	}
 
 	setStartAfter(node: Node): void {
-		if (arguments.length < 1) throw new TypeError("setStartAfter needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("setStartAfter needs a node");
+		}
 		const parent = boundaryParent(node);
 		setRangeBoundary(this, parent, nodeIndex(node) + 1, true);
 	}
 
 	setEndBefore(node: Node): void {
-		if (arguments.length < 1) throw new TypeError("setEndBefore needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("setEndBefore needs a node");
+		}
 		const parent = boundaryParent(node);
 		setRangeBoundary(this, parent, nodeIndex(node), false);
 	}
 
 	setEndAfter(node: Node): void {
-		if (arguments.length < 1) throw new TypeError("setEndAfter needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("setEndAfter needs a node");
+		}
 		const parent = boundaryParent(node);
 		setRangeBoundary(this, parent, nodeIndex(node) + 1, false);
 	}
@@ -17405,7 +18857,9 @@ export class Range extends AbstractRange {
 	}
 
 	selectNode(node: Node): void {
-		if (arguments.length < 1) throw new TypeError("selectNode needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("selectNode needs a node");
+		}
 		selectNodeWithin(this, node);
 	}
 
@@ -17413,7 +18867,9 @@ export class Range extends AbstractRange {
 		if (arguments.length < 1) {
 			throw new TypeError("selectNodeContents needs a node");
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (node.nodeType === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
@@ -17459,7 +18915,9 @@ export class Range extends AbstractRange {
 	}
 
 	deleteContents(): void {
-		if (this.collapsed) return;
+		if (this.collapsed) {
+			return;
+		}
 		const startNode = this[kStartNode];
 		const startOffset = this[kStartOffset];
 		const endNode = this[kEndNode];
@@ -17475,9 +18933,13 @@ export class Range extends AbstractRange {
 		}
 		const nodesToRemove: Node[] = [];
 		for (const node of descendants(commonAncestorOf(this))) {
-			if (!isContained(node, this)) continue;
+			if (!isContained(node, this)) {
+				continue;
+			}
 			const parent = node[kParent];
-			if (parent !== null && isContained(parent, this)) continue;
+			if (parent !== null && isContained(parent, this)) {
+				continue;
+			}
 			nodesToRemove.push(node);
 		}
 		const [newNode, newOffset] = pointAfterExtraction(this);
@@ -17486,7 +18948,9 @@ export class Range extends AbstractRange {
 			const data = startNode as CharacterData;
 			replaceData(data, startOffset, data[kData].length - startOffset, "");
 		}
-		for (const node of nodesToRemove) removeNode(node);
+		for (const node of nodesToRemove) {
+			removeNode(node);
+		}
 		if (isCharacterData(endNode)) {
 			replaceData(endNode as CharacterData, 0, endOffset, "");
 		}
@@ -17501,7 +18965,9 @@ export class Range extends AbstractRange {
 	}
 
 	insertNode(node: Node): void {
-		if (arguments.length < 1) throw new TypeError("insertNode needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("insertNode needs a node");
+		}
 		insertIntoRange(this, node);
 	}
 
@@ -17509,7 +18975,9 @@ export class Range extends AbstractRange {
 		if (arguments.length < 1) {
 			throw new TypeError("surroundContents needs a node");
 		}
-		if (!(newParent instanceof Node)) throw new TypeError("That is not a node");
+		if (!(newParent instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		for (const node of [this[kStartNode], this[kEndNode]]) {
 			let current: Node | null = node;
 			while (current !== null) {
@@ -17534,7 +19002,9 @@ export class Range extends AbstractRange {
 			);
 		}
 		const fragment = extractRange(this);
-		if (newParent[kFirstChild] !== null) replaceAll(null, newParent);
+		if (newParent[kFirstChild] !== null) {
+			replaceAll(null, newParent);
+		}
 		insertIntoRange(this, newParent);
 		appendNode(fragment, newParent);
 		selectNodeWithin(this, newParent);
@@ -17560,8 +19030,12 @@ export class Range extends AbstractRange {
 		if (arguments.length < 2) {
 			throw new TypeError("isPointInRange needs a node and an offset");
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
-		if (getRoot(node) !== rangeRoot(this)) return false;
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		if (getRoot(node) !== rangeRoot(this)) {
+			return false;
+		}
 		if (node.nodeType === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
@@ -17574,7 +19048,7 @@ export class Range extends AbstractRange {
 		}
 		if (
 			comparePoints(node, at, this[kStartNode], this[kStartOffset]) ===
-				BEFORE ||
+			BEFORE ||
 			comparePoints(node, at, this[kEndNode], this[kEndOffset]) === AFTER
 		) {
 			return false;
@@ -17586,7 +19060,9 @@ export class Range extends AbstractRange {
 		if (arguments.length < 2) {
 			throw new TypeError("comparePoint needs a node and an offset");
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (getRoot(node) !== rangeRoot(this)) {
 			throw domError(
 				"WrongDocumentError",
@@ -17618,14 +19094,20 @@ export class Range extends AbstractRange {
 		if (arguments.length < 1) {
 			throw new TypeError("intersectsNode needs a node");
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
-		if (getRoot(node) !== rangeRoot(this)) return false;
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		if (getRoot(node) !== rangeRoot(this)) {
+			return false;
+		}
 		const parent = node[kParent];
-		if (parent === null) return true;
+		if (parent === null) {
+			return true;
+		}
 		const offset = nodeIndex(node);
 		return (
 			comparePoints(parent, offset, this[kEndNode], this[kEndOffset]) ===
-				BEFORE &&
+			BEFORE &&
 			comparePoints(
 				parent,
 				offset + 1,
@@ -17646,8 +19128,12 @@ export class Range extends AbstractRange {
 			string += startNode[kData].slice(this[kStartOffset]);
 		}
 		for (const node of descendants(commonAncestorOf(this))) {
-			if (!(node instanceof Text)) continue;
-			if (isContained(node, this)) string += node[kData];
+			if (!(node instanceof Text)) {
+				continue;
+			}
+			if (isContained(node, this)) {
+				string += node[kData];
+			}
 		}
 		if (endNode instanceof Text) {
 			string += endNode[kData].slice(0, this[kEndOffset]);
@@ -17689,12 +19175,16 @@ function rangeBoundaryPointsChanged(
 	which: "start" | "end" | "both",
 ): void {
 	const selection = range[kRangeSelection];
-	if (selection !== null) selection[kSelectionChanged](which);
+	if (selection !== null) {
+		selection[kSelectionChanged](which);
+	}
 }
 
 /** Schedule a selectionchange event at a document, at most one per task. */
 function scheduleSelectionChange(document: Document): void {
-	if (document[kSelectionChangeScheduled]) return;
+	if (document[kSelectionChangeScheduled]) {
+		return;
+	}
 	document[kSelectionChangeScheduled] = true;
 	setTimeout(() => {
 		document[kSelectionChangeScheduled] = false;
@@ -17709,7 +19199,9 @@ function scheduleSelectionChange(document: Document): void {
  */
 function composedParent(node: Node): Node | null {
 	const parent = node[kParent];
-	if (parent !== null) return parent;
+	if (parent !== null) {
+		return parent;
+	}
 	return isShadowRoot(node) ? ((node as ShadowRoot)[kHost] as Node) : null;
 }
 
@@ -17743,7 +19235,9 @@ function compareComposedPoints(
 	offsetB: number,
 ): number {
 	if (nodeA === nodeB) {
-		if (offsetA === offsetB) return EQUAL;
+		if (offsetA === offsetB) {
+			return EQUAL;
+		}
 		return offsetA < offsetB ? BEFORE : AFTER;
 	}
 	const chainA = composedChain(nodeA);
@@ -17762,9 +19256,9 @@ function compareComposedPoints(
 	if (depth === chainB.length) {
 		return composedIndex(chainA[depth]) < offsetB ? BEFORE : AFTER;
 	}
-	return composedIndex(chainA[depth]) < composedIndex(chainB[depth])
-		? BEFORE
-		: AFTER;
+	return composedIndex(chainA[depth]) < composedIndex(chainB[depth]) ?
+		BEFORE :
+		AFTER;
 }
 
 /** A collapsed live range, which is how a selection holds a boundary point. */
@@ -17822,24 +19316,30 @@ export class Selection {
 	 */
 	#documentRange(): Range | null {
 		const range = this.#range;
-		if (range === null) return null;
+		if (range === null) {
+			return null;
+		}
 		return this.#inDocument(range[kStartNode]) ? range : null;
 	}
 
 	#anchorPoint(): [Node, number] | null {
 		const range = this.#range;
-		if (range === null) return null;
-		return this.#direction === "forwards"
-			? [range[kStartNode], range[kStartOffset]]
-			: [range[kEndNode], range[kEndOffset]];
+		if (range === null) {
+			return null;
+		}
+		return this.#direction === "forwards" ?
+				[range[kStartNode], range[kStartOffset]] :
+				[range[kEndNode], range[kEndOffset]];
 	}
 
 	#focusPoint(): [Node, number] | null {
 		const range = this.#range;
-		if (range === null) return null;
-		return this.#direction === "forwards"
-			? [range[kEndNode], range[kEndOffset]]
-			: [range[kStartNode], range[kStartOffset]];
+		if (range === null) {
+			return null;
+		}
+		return this.#direction === "forwards" ?
+				[range[kEndNode], range[kEndOffset]] :
+				[range[kStartNode], range[kStartOffset]];
 	}
 
 	/** The range the Range API builds from an ordered pair of points. */
@@ -17858,7 +19358,9 @@ export class Selection {
 		direction: "forwards" | "backwards" | "directionless",
 	): void {
 		const previous = this.#range;
-		if (previous !== null) previous[kRangeSelection] = null;
+		if (previous !== null) {
+			previous[kRangeSelection] = null;
+		}
 		this.#range = range;
 		range[kRangeSelection] = this;
 		const anchorFirst =
@@ -17878,7 +19380,9 @@ export class Selection {
 	 */
 	[kSelectionChanged](which: "start" | "end" | "both"): void {
 		const range = this.#range;
-		if (range === null) return;
+		if (range === null) {
+			return;
+		}
 		if (!this.#inDocument(range[kStartNode])) {
 			this.removeAllRanges();
 			return;
@@ -17890,10 +19394,14 @@ export class Selection {
 			this.#end = end;
 		} else if (which === "start") {
 			this.#start = start;
-			if (this.#composedOrder(start, this.#end) === AFTER) this.#end = start;
+			if (this.#composedOrder(start, this.#end) === AFTER) {
+				this.#end = start;
+			}
 		} else {
 			this.#end = end;
-			if (this.#composedOrder(end, this.#start) === BEFORE) this.#start = end;
+			if (this.#composedOrder(end, this.#start) === BEFORE) {
+				this.#start = end;
+			}
 		}
 		scheduleSelectionChange(this.#document);
 	}
@@ -17909,25 +19417,33 @@ export class Selection {
 
 	get anchorNode(): Node | null {
 		const anchor = this.#anchorPoint();
-		if (anchor === null || !this.#inDocument(anchor[0])) return null;
+		if (anchor === null || !this.#inDocument(anchor[0])) {
+			return null;
+		}
 		return anchor[0];
 	}
 
 	get anchorOffset(): number {
 		const anchor = this.#anchorPoint();
-		if (anchor === null || !this.#inDocument(anchor[0])) return 0;
+		if (anchor === null || !this.#inDocument(anchor[0])) {
+			return 0;
+		}
 		return anchor[1];
 	}
 
 	get focusNode(): Node | null {
 		const focus = this.#focusPoint();
-		if (focus === null || !this.#inDocument(focus[0])) return null;
+		if (focus === null || !this.#inDocument(focus[0])) {
+			return null;
+		}
 		return focus[0];
 	}
 
 	get focusOffset(): number {
 		const focus = this.#focusPoint();
-		if (focus === null || !this.#inDocument(focus[0])) return 0;
+		if (focus === null || !this.#inDocument(focus[0])) {
+			return 0;
+		}
 		return focus[1];
 	}
 
@@ -17942,19 +19458,29 @@ export class Selection {
 
 	get type(): string {
 		const range = this.#documentRange();
-		if (range === null) return "None";
+		if (range === null) {
+			return "None";
+		}
 		return range.collapsed ? "Caret" : "Range";
 	}
 
 	get direction(): string {
-		if (this.#range === null) return "none";
-		if (this.#direction === "forwards") return "forward";
-		if (this.#direction === "backwards") return "backward";
+		if (this.#range === null) {
+			return "none";
+		}
+		if (this.#direction === "forwards") {
+			return "forward";
+		}
+		if (this.#direction === "backwards") {
+			return "backward";
+		}
 		return "none";
 	}
 
 	getRangeAt(index: number): Range {
-		if (arguments.length < 1) throw new TypeError("getRangeAt needs an index");
+		if (arguments.length < 1) {
+			throw new TypeError("getRangeAt needs an index");
+		}
 		const range = this.#documentRange();
 		if (toUnsignedLong(index) !== 0 || range === null) {
 			throw indexSizeError("The selection has no range at that index");
@@ -17963,10 +19489,18 @@ export class Selection {
 	}
 
 	addRange(range: Range): void {
-		if (arguments.length < 1) throw new TypeError("addRange needs a range");
-		if (!(range instanceof Range)) throw new TypeError("That is not a range");
-		if (!this.#inDocument(range[kStartNode])) return;
-		if (this.rangeCount !== 0) return;
+		if (arguments.length < 1) {
+			throw new TypeError("addRange needs a range");
+		}
+		if (!(range instanceof Range)) {
+			throw new TypeError("That is not a range");
+		}
+		if (!this.#inDocument(range[kStartNode])) {
+			return;
+		}
+		if (this.rangeCount !== 0) {
+			return;
+		}
 		this.#associate(
 			range,
 			[range[kStartNode], range[kStartOffset]],
@@ -17976,8 +19510,12 @@ export class Selection {
 	}
 
 	removeRange(range: Range): void {
-		if (arguments.length < 1) throw new TypeError("removeRange needs a range");
-		if (!(range instanceof Range)) throw new TypeError("That is not a range");
+		if (arguments.length < 1) {
+			throw new TypeError("removeRange needs a range");
+		}
+		if (!(range instanceof Range)) {
+			throw new TypeError("That is not a range");
+		}
 		if (range !== this.#range) {
 			throw notFoundError("That range is not the selection's range");
 		}
@@ -17986,7 +19524,9 @@ export class Selection {
 
 	removeAllRanges(): void {
 		const range = this.#range;
-		if (range === null) return;
+		if (range === null) {
+			return;
+		}
 		range[kRangeSelection] = null;
 		this.#range = null;
 		this.#start = null;
@@ -18018,7 +19558,9 @@ export class Selection {
 		}
 		const start = this.#start;
 		const end = this.#end;
-		if (start === null || end === null) return [];
+		if (start === null || end === null) {
+			return [];
+		}
 		const rescope = (
 			node: Node,
 			offset: number,
@@ -18028,7 +19570,9 @@ export class Selection {
 			let at = offset;
 			for (;;) {
 				const root = getRoot(current);
-				if (!isShadowRoot(root)) break;
+				if (!isShadowRoot(root)) {
+					break;
+				}
 				if (
 					roots.some((given) => isShadowIncludingInclusiveAncestor(root, given))
 				) {
@@ -18037,7 +19581,9 @@ export class Selection {
 				const host = (root as ShadowRoot)[kHost] as Element;
 				at = nodeIndex(host) + (after ? 1 : 0);
 				const parent = host[kParent];
-				if (parent === null) break;
+				if (parent === null) {
+					break;
+				}
 				current = parent;
 			}
 			return [current, at];
@@ -18059,12 +19605,16 @@ export class Selection {
 	}
 
 	collapse(node: Node | null, offset = 0): void {
-		if (arguments.length < 1) throw new TypeError("collapse needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("collapse needs a node");
+		}
 		if (node === null || node === undefined) {
 			this.removeAllRanges();
 			return;
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (node.nodeType === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
@@ -18075,7 +19625,9 @@ export class Selection {
 		if (at > nodeLength(node)) {
 			throw indexSizeError("The offset is past the end of the node");
 		}
-		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) return;
+		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) {
+			return;
+		}
 		const point: [Node, number] = [node, at];
 		this.#associate(
 			this.#rangeFor(point, point),
@@ -18086,7 +19638,9 @@ export class Selection {
 	}
 
 	setPosition(node: Node | null, offset = 0): void {
-		if (arguments.length < 1) throw new TypeError("setPosition needs a node");
+		if (arguments.length < 1) {
+			throw new TypeError("setPosition needs a node");
+		}
 		this.collapse(node, offset);
 	}
 
@@ -18119,9 +19673,15 @@ export class Selection {
 	}
 
 	extend(node: Node, offset = 0): void {
-		if (arguments.length < 1) throw new TypeError("extend needs a node");
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
-		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) return;
+		if (arguments.length < 1) {
+			throw new TypeError("extend needs a node");
+		}
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) {
+			return;
+		}
 		if (this.#range === null) {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
@@ -18129,9 +19689,9 @@ export class Selection {
 		const focus: [Node, number] = [node, toUnsignedLong(offset)];
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
-		const range = anchorFirst
-			? this.#rangeFor(anchor, focus)
-			: this.#rangeFor(focus, anchor);
+		const range = anchorFirst ?
+				this.#rangeFor(anchor, focus) :
+				this.#rangeFor(focus, anchor);
 		this.#associate(
 			range,
 			anchor,
@@ -18167,9 +19727,9 @@ export class Selection {
 		const focus: [Node, number] = [focusNode, focusAt];
 		const anchorFirst =
 			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
-		const range = anchorFirst
-			? this.#rangeFor(anchor, focus)
-			: this.#rangeFor(focus, anchor);
+		const range = anchorFirst ?
+				this.#rangeFor(anchor, focus) :
+				this.#rangeFor(focus, anchor);
 		this.#associate(
 			range,
 			anchor,
@@ -18182,14 +19742,18 @@ export class Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("selectAllChildren needs a node");
 		}
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		if (node.nodeType === DOCUMENT_TYPE_NODE) {
 			throw domError(
 				"InvalidNodeTypeError",
 				"A boundary point cannot be a doctype",
 			);
 		}
-		if (getRoot(node) !== this.#document) return;
+		if (getRoot(node) !== this.#document) {
+			return;
+		}
 		let childCount = 0;
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			childCount++;
@@ -18201,28 +19765,39 @@ export class Selection {
 
 	deleteFromDocument(): void {
 		const range = this.#documentRange();
-		if (range === null) return;
+		if (range === null) {
+			return;
+		}
 		range.deleteContents();
 	}
 
 	containsNode(node: Node, allowPartialContainment = false): boolean {
-		if (arguments.length < 1) throw new TypeError("containsNode needs a node");
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (arguments.length < 1) {
+			throw new TypeError("containsNode needs a node");
+		}
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		const range = this.#range;
-		if (range === null || getRoot(node) !== this.#document) return false;
-		if (rangeRoot(range) !== this.#document) return false;
+		if (range === null || getRoot(node) !== this.#document) {
+			return false;
+		}
+		if (rangeRoot(range) !== this.#document) {
+			return false;
+		}
 		const length = nodeLength(node);
 		if (allowPartialContainment) {
 			return (
 				comparePoints(range[kStartNode], range[kStartOffset], node, length) !==
-					AFTER &&
+				AFTER &&
 				comparePoints(range[kEndNode], range[kEndOffset], node, 0) !== BEFORE
 			);
 		}
 		return (
 			comparePoints(range[kStartNode], range[kStartOffset], node, 0) !==
-				AFTER &&
-			comparePoints(range[kEndNode], range[kEndOffset], node, length) !== BEFORE
+			AFTER &&
+			comparePoints(range[kEndNode], range[kEndOffset], node, length) !==
+			BEFORE
 		);
 	}
 
@@ -18246,10 +19821,10 @@ const FILTER_REJECT = 2;
 const FILTER_SKIP = 3;
 
 type NodeFilterInput =
-	| ((node: Node) => number)
-	| {acceptNode(node: Node): number}
-	| null
-	| undefined;
+	| ((node: Node) => number) |
+	{acceptNode(node: Node): number} |
+	null |
+	undefined;
 
 export const NodeFilter = {
 	FILTER_ACCEPT,
@@ -18289,14 +19864,16 @@ function filterNode(
 		return FILTER_SKIP;
 	}
 	const filter = traverser.filter;
-	if (filter == null) return FILTER_ACCEPT;
+	if (filter == null) {
+		return FILTER_ACCEPT;
+	}
 	traverser.active.value = true;
 	let result: unknown;
 	try {
 		result =
-			typeof filter === "function"
-				? filter(node)
-				: (filter as {acceptNode(node: Node): number}).acceptNode(node);
+			typeof filter === "function" ?
+					filter(node) :
+					(filter as {acceptNode(node: Node): number}).acceptNode(node);
 	} finally {
 		traverser.active.value = false;
 	}
@@ -18310,10 +19887,16 @@ function followingWithin(node: Node, root: Node): Node | null {
 
 /** The node preceding a node in tree order, inside a root. */
 function precedingWithin(node: Node, root: Node): Node | null {
-	if (node === root) return null;
+	if (node === root) {
+		return null;
+	}
 	let previous = node[kPrevious];
-	if (previous === null) return node[kParent];
-	while (previous[kLastChild] !== null) previous = previous[kLastChild] as Node;
+	if (previous === null) {
+		return node[kParent];
+	}
+	while (previous[kLastChild] !== null) {
+		previous = previous[kLastChild] as Node;
+	}
 	return previous;
 }
 
@@ -18379,14 +19962,18 @@ export class NodeIterator {
 			if (forward) {
 				if (!before) {
 					node = followingWithin(node as Node, this.#root);
-					if (node === null) return null;
+					if (node === null) {
+						return null;
+					}
 				} else {
 					before = false;
 				}
 			} else {
 				if (before) {
 					node = precedingWithin(node as Node, this.#root);
-					if (node === null) return null;
+					if (node === null) {
+						return null;
+					}
 				} else {
 					before = true;
 				}
@@ -18430,7 +20017,9 @@ export class NodeIterator {
 			return;
 		}
 		let last: Node = previous;
-		while (last[kLastChild] !== null) last = last[kLastChild] as Node;
+		while (last[kLastChild] !== null) {
+			last = last[kLastChild] as Node;
+		}
 		this.#reference = last;
 	}
 }
@@ -18475,7 +20064,9 @@ export class TreeWalker {
 	}
 
 	set currentNode(node: Node) {
-		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!(node instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
 		this.#current = node;
 	}
 
@@ -18539,7 +20130,9 @@ export class TreeWalker {
 				sibling = node[kPrevious];
 			}
 			const parent = node[kParent];
-			if (node === this.#root || parent === null) return null;
+			if (node === this.#root || parent === null) {
+				return null;
+			}
 			node = parent;
 			if (filterNode(this.#state, node) === FILTER_ACCEPT) {
 				this.#current = node;
@@ -18564,12 +20157,18 @@ export class TreeWalker {
 			let sibling: Node | null = null;
 			let temporary: Node | null = node;
 			while (temporary !== null) {
-				if (temporary === this.#root) return null;
+				if (temporary === this.#root) {
+					return null;
+				}
 				sibling = temporary[kNext];
-				if (sibling !== null) break;
+				if (sibling !== null) {
+					break;
+				}
 				temporary = temporary[kParent];
 			}
-			if (sibling === null) return null;
+			if (sibling === null) {
+				return null;
+			}
 			node = sibling;
 			result = filterNode(this.#state, node);
 			if (result === FILTER_ACCEPT) {
@@ -18580,9 +20179,9 @@ export class TreeWalker {
 	}
 
 	#traverseChildren(first: boolean): Node | null {
-		let node: Node | null = first
-			? this.#current[kFirstChild]
-			: this.#current[kLastChild];
+		let node: Node | null = first ?
+			this.#current[kFirstChild] :
+			this.#current[kLastChild];
 		while (node !== null) {
 			const result = filterNode(this.#state, node);
 			if (result === FILTER_ACCEPT) {
@@ -18618,7 +20217,9 @@ export class TreeWalker {
 
 	#traverseSiblings(next: boolean): Node | null {
 		let node = this.#current;
-		if (node === this.#root) return null;
+		if (node === this.#root) {
+			return null;
+		}
 		for (;;) {
 			let sibling = next ? node[kNext] : node[kPrevious];
 			while (sibling !== null) {
@@ -18634,9 +20235,13 @@ export class TreeWalker {
 				}
 			}
 			const parent = node[kParent];
-			if (parent === null || parent === this.#root) return null;
+			if (parent === null || parent === this.#root) {
+				return null;
+			}
 			node = parent;
-			if (filterNode(this.#state, node) === FILTER_ACCEPT) return null;
+			if (filterNode(this.#state, node) === FILTER_ACCEPT) {
+				return null;
+			}
 		}
 	}
 }
@@ -18735,7 +20340,9 @@ function treeAdapterFor(document: Document | null) {
 			const created = new Document();
 			created[kType] = "html";
 			created[kContentType] = "text/html";
-			if (target === null) target = created;
+			if (target === null) {
+				target = created;
+			}
 			return created;
 		},
 		createDocumentFragment(): DocumentFragment {
@@ -18937,7 +20544,9 @@ function clearRegistry(node: Node): void {
  */
 function attachDeclarativeShadowRoots(root: Node): void {
 	for (const child of childNodeArray(root)) {
-		if (child.nodeType !== ELEMENT_NODE) continue;
+		if (child.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
 		const element = child as Element;
 		if (
 			element[kNamespace] === HTML_NAMESPACE &&
@@ -18955,11 +20564,17 @@ function attachDeclarativeShadowRoots(root: Node): void {
 /** Turn one template into its host's shadow root, if it names a mode. */
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	const named = template.getAttribute("shadowrootmode");
-	if (named === null) return false;
+	if (named === null) {
+		return false;
+	}
 	const mode = asciiLowercase(named);
-	if (mode !== "open" && mode !== "closed") return false;
+	if (mode !== "open" && mode !== "closed") {
+		return false;
+	}
 	const host = template[kParent];
-	if (host === null || host.nodeType !== ELEMENT_NODE) return false;
+	if (host === null || host.nodeType !== ELEMENT_NODE) {
+		return false;
+	}
 	try {
 		attachShadowRoot(
 			host as Element,
@@ -18970,9 +20585,9 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			"named",
 			// A declarative shadow root that names a registry attribute is
 			// scoped to one it has not been given yet, so it starts with none.
-			template.hasAttribute("shadowrootcustomelementregistry")
-				? null
-				: globalCustomElements,
+			template.hasAttribute("shadowrootcustomelementregistry") ?
+				null :
+				globalCustomElements,
 		);
 	} catch {
 		return false;
@@ -18983,7 +20598,9 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	removeNode(template);
 	if (content !== null) {
 		for (const child of childNodeArray(content)) {
-			if (shadow[kRegistry] === null) clearRegistry(child);
+			if (shadow[kRegistry] === null) {
+				clearRegistry(child);
+			}
 			insertNode(child, shadow, null, true);
 		}
 	}
@@ -19015,7 +20632,9 @@ export function parseHTMLDocument(
 	}
 	document[kRegistry] = registry;
 	document[kDocumentURL] = url;
-	if (allowDeclarativeShadowRoots) attachDeclarativeShadowRoots(document);
+	if (allowDeclarativeShadowRoots) {
+		attachDeclarativeShadowRoots(document);
+	}
 	return document;
 }
 
@@ -19046,7 +20665,9 @@ function parseFragmentHTML(
 	for (const child of childNodeArray(parsed)) {
 		insertNode(child, fragment, null, true);
 	}
-	if (allowDeclarativeShadowRoots) attachDeclarativeShadowRoots(fragment);
+	if (allowDeclarativeShadowRoots) {
+		attachDeclarativeShadowRoots(fragment);
+	}
 	return fragment;
 }
 
@@ -19148,14 +20769,20 @@ function escapeAttribute(value: string): string {
 
 function attributeSerializedName(attribute: Attr): string {
 	const namespace = attribute[kNamespace];
-	if (namespace === null) return attribute[kLocalName];
-	if (namespace === XML_NAMESPACE) return `xml:${attribute[kLocalName]}`;
-	if (namespace === XMLNS_NAMESPACE) {
-		return attribute[kLocalName] === "xmlns"
-			? "xmlns"
-			: `xmlns:${attribute[kLocalName]}`;
+	if (namespace === null) {
+		return attribute[kLocalName];
 	}
-	if (namespace === XLINK_NAMESPACE) return `xlink:${attribute[kLocalName]}`;
+	if (namespace === XML_NAMESPACE) {
+		return `xml:${attribute[kLocalName]}`;
+	}
+	if (namespace === XMLNS_NAMESPACE) {
+		return attribute[kLocalName] === "xmlns" ?
+			"xmlns" :
+			`xmlns:${attribute[kLocalName]}`;
+	}
+	if (namespace === XLINK_NAMESPACE) {
+		return `xlink:${attribute[kLocalName]}`;
+	}
 	return attribute[kQualifiedName];
 }
 
@@ -19179,7 +20806,9 @@ function serializeFragment(
 		(node as Element)[kLocalName] === "template"
 	) {
 		const content = (node as HTMLTemplateElement)[kTemplateContent];
-		if (content !== null && content !== undefined) children = content;
+		if (content !== null && content !== undefined) {
+			children = content;
+		}
 	}
 	let html = "";
 	if (node.nodeType === ELEMENT_NODE) {
@@ -19213,9 +20842,15 @@ function serializeShadowRoot(
 	shadowRoots: ShadowRoot[],
 ): string {
 	let html = `<template shadowrootmode="${shadow[kShadowMode]}"`;
-	if (shadow[kDelegatesFocus]) html += ' shadowrootdelegatesfocus=""';
-	if (shadow[kSerializable]) html += ' shadowrootserializable=""';
-	if (shadow[kClonable]) html += ' shadowrootclonable=""';
+	if (shadow[kDelegatesFocus]) {
+		html += ' shadowrootdelegatesfocus=""';
+	}
+	if (shadow[kSerializable]) {
+		html += ' shadowrootserializable=""';
+	}
+	if (shadow[kClonable]) {
+		html += ' shadowrootclonable=""';
+	}
 	html += ">";
 	html += serializeFragment(shadow, serializableShadowRoots, shadowRoots);
 	html += "</template>";
@@ -19234,9 +20869,9 @@ function serializeNode(
 			const tagName =
 				namespace === HTML_NAMESPACE ||
 				namespace === MATHML_NAMESPACE ||
-				namespace === SVG_NAMESPACE
-					? element[kLocalName]
-					: element[kQualifiedName];
+				namespace === SVG_NAMESPACE ?
+					element[kLocalName] :
+					element[kQualifiedName];
 			let html = `<${tagName}`;
 			for (const attribute of element[kAttributeList]) {
 				html += ` ${attributeSerializedName(attribute)}="${escapeAttribute(

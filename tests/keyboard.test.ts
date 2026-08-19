@@ -694,7 +694,7 @@ test("a focused empty input still shows its placeholder, caret at the field star
 	// hide-on-focus condition never had a first paint to ruin.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<div><input id="a" type="text" placeholder="What needs doing?" autofocus></div>`;
+	dom.document.body.innerHTML = "<div><input id=\"a\" type=\"text\" placeholder=\"What needs doing?\" autofocus></div>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	await nextFrame(dom);
 
@@ -896,10 +896,14 @@ test("a number field paints its selection exactly as a text field does", async (
 		const marked: string[] = [];
 		for (let row = 0; row < 6; row++) {
 			const line = buffer.getLine(row);
-			if (!line) continue;
+			if (!line) {
+				continue;
+			}
 			for (let col = 0; col < 40; col++) {
 				const cell = line.getCell(col);
-				if (cell?.isInverse()) marked.push(`${row},${col}:${cell.getChars()}`);
+				if (cell?.isInverse()) {
+					marked.push(`${row},${col}:${cell.getChars()}`);
+				}
 			}
 		}
 		dom.dispose();
@@ -993,7 +997,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	// blur assertion can tell "re-parked at the bottom" apart from "never
 	// moved" -- a flat one-row input at the end of the document would park
 	// in place.
-	dom.document.body.innerHTML = `<div>title line</div><div><input id="a" type="text"></div><div>footer line</div>`;
+	dom.document.body.innerHTML = "<div>title line</div><div><input id=\"a\" type=\"text\"></div><div>footer line</div>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
@@ -1066,7 +1070,8 @@ test("Enter activates a checkbox and a radio, as Space does", async () => {
 	const {document} = dom;
 
 	document.body.innerHTML =
-		`<input type="checkbox" id="box">` + `<input type="radio" id="dot">`;
+		"<input type=\"checkbox\" id=\"box\">" +
+		"<input type=\"radio\" id=\"dot\">";
 	const checkbox = document.getElementById("box") as HTMLInputElement;
 	const radio = document.getElementById("dot") as HTMLInputElement;
 	const changes: string[] = [];
@@ -1428,7 +1433,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// field occupies exactly 20 cells.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch">|</div>`;
+	dom.document.body.innerHTML = "<div><input id=\"a\" type=\"text\" style=\"width:20ch\">|</div>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
@@ -1459,7 +1464,7 @@ test("the size attribute sets a text input's default width, as in a browser", as
 	// over the attribute, as it does in a browser.
 	const terminal = new MockProcess({rows: 6, cols: 60});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<div><input id="a" size="8">|</div><div><input id="b">|</div><div><input id="c" size="8" style="width: 12ch">|</div>`;
+	dom.document.body.innerHTML = "<div><input id=\"a\" size=\"8\">|</div><div><input id=\"b\">|</div><div><input id=\"c\" size=\"8\" style=\"width: 12ch\">|</div>";
 	await nextFrame(dom);
 
 	const lines = terminal.getPlainText().split("\n");
@@ -1478,7 +1483,7 @@ test("width:100% on an input fills its container instead of collapsing", async (
 	// run's available width.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<div><input style="width:100%" placeholder="What needs to be done?"></div><div><input style="width:50%"></div>`;
+	dom.document.body.innerHTML = "<div><input style=\"width:100%\" placeholder=\"What needs to be done?\"></div><div><input style=\"width:50%\"></div>";
 	await nextFrame(dom);
 
 	const [full, half] = Array.from(dom.document.querySelectorAll("input"));
@@ -1499,7 +1504,7 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document, window} = dom;
 	const style = document.createElement("style");
-	style.textContent = `input:focus { background: #264f78; }`;
+	style.textContent = "input:focus { background: #264f78; }";
 	document.head.appendChild(style);
 	const a = document.createElement("input");
 	const b = document.createElement("input");
@@ -1600,11 +1605,11 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
-	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row }</style>`;
+	document.head.innerHTML = "<style>.editing .view { display: none } .view { display: flex; flex-direction: row }</style>";
 	document.body.innerHTML =
-		`<div>before</div>` +
-		`<li class="editing"><div class="view"><input type="checkbox"><label>todo</label><button>x</button></div><input class="edit"></li>` +
-		`<div>after</div>`;
+		"<div>before</div>" +
+		"<li class=\"editing\"><div class=\"view\"><input type=\"checkbox\"><label>todo</label><button>x</button></div><input class=\"edit\"></li>" +
+		"<div>after</div>";
 	await nextFrame(dom);
 
 	const rows = terminal.getPlainText().split("\n");
@@ -1633,11 +1638,11 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
-	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row; gap: 1ch }</style>`;
+	document.head.innerHTML = "<style>.editing .view { display: none } .view { display: flex; flex-direction: row; gap: 1ch }</style>";
 	document.body.innerHTML =
-		`<div>before</div>` +
-		`<li id="item"><div class="view"><input type="checkbox"><label>Finish TermDOM</label><button>x</button></div></li>` +
-		`<div>after</div>`;
+		"<div>before</div>" +
+		"<li id=\"item\"><div class=\"view\"><input type=\"checkbox\"><label>Finish TermDOM</label><button>x</button></div></li>" +
+		"<div>after</div>";
 	await nextFrame(dom);
 
 	const li = document.getElementById("item")!;
@@ -1674,7 +1679,7 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<div><input style="width: auto" value="abc"></div>`;
+	dom.document.body.innerHTML = "<div><input style=\"width: auto\" value=\"abc\"></div>";
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 	input.focus();
@@ -1699,8 +1704,8 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML =
-		`<div style="display:flex; flex-direction:row; gap:1ch">` +
-		`<span>a:</span><input style="width: auto"><span>z</span></div>`;
+		"<div style=\"display:flex; flex-direction:row; gap:1ch\">" +
+		"<span>a:</span><input style=\"width: auto\"><span>z</span></div>";
 	await nextFrame(dom);
 
 	const line = () => (terminal as any).terminal.buffer.active.getLine(0);
@@ -1735,7 +1740,7 @@ test("non-mouse nav: a link underlines at rest and inverts on Tab focus", async 
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<a href="/x">link</a>`;
+	dom.document.body.innerHTML = "<a href=\"/x\">link</a>";
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -1761,8 +1766,8 @@ test("an author-colored link keeps its focus ring", async () => {
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.head.innerHTML = `<style>.filters a { color: #777 }</style>`;
-	dom.document.body.innerHTML = `<input id="i"><div class="filters"><a href="#/">All</a></div>`;
+	dom.document.head.innerHTML = "<style>.filters a { color: #777 }</style>";
+	dom.document.body.innerHTML = "<input id=\"i\"><div class=\"filters\"><a href=\"#/\">All</a></div>";
 	dom.document.getElementById("i")!.focus();
 	await nextFrame(dom);
 
@@ -1783,7 +1788,7 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<button>go</button>`;
+	dom.document.body.innerHTML = "<button>go</button>";
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -1815,7 +1820,7 @@ test("bracketed paste into an input strips newlines and never replays as keys", 
 	// a single-line input drops the line breaks per HTML value sanitization.
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input>`;
+	dom.document.body.innerHTML = "<input>";
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 	let keydowns = 0;
 	input.addEventListener("keydown", () => keydowns++);
@@ -1841,7 +1846,7 @@ test("bracketed paste into a textarea keeps its newlines", async () => {
 	// one run-together row.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<textarea></textarea>`;
+	dom.document.body.innerHTML = "<textarea></textarea>";
 	const ta = dom.document.querySelector("textarea") as HTMLTextAreaElement;
 	await nextFrame(dom);
 	ta.focus();
@@ -1865,7 +1870,7 @@ test("non-mouse nav: the focus ring is keyboard-only (:focus-visible)", async ()
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<a href="/x">link</a>`;
+	dom.document.body.innerHTML = "<a href=\"/x\">link</a>";
 	await nextFrame(dom);
 	const inverse = () =>
 		(terminal as any).terminal.buffer.active.getLine(0).getCell(0).isInverse();
@@ -1891,7 +1896,7 @@ test("a click in a text input parks the caret at the pressed character", async (
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
+	dom.document.body.innerHTML = "<div><input value=\"hello world\"></div>";
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 
@@ -1910,7 +1915,7 @@ test("a drag inside an input selects within the field, bounded to its value", as
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
+	dom.document.body.innerHTML = "<div><input value=\"hello world\"></div>";
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 
@@ -1944,7 +1949,7 @@ test("clicking into a field clears the document selection's highlight", async ()
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<div id="p">page text here</div><div><input value="hello"></div>`;
+	dom.document.body.innerHTML = "<div id=\"p\">page text here</div><div><input value=\"hello\"></div>";
 	await nextFrame(dom);
 
 	// Select the page text by drag, then press inside the input: the
@@ -1979,8 +1984,8 @@ test("an input preceded by text in its run positions on its own row", async () =
 	const terminal = new MockProcess({rows: 6, cols: 50});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML =
-		`<div>Name: <input value="Ada"></div>` +
-		`<div>Email: <input placeholder="you@example.com"></div>`;
+		"<div>Name: <input value=\"Ada\"></div>" +
+		"<div>Email: <input placeholder=\"you@example.com\"></div>";
 	await nextFrame(dom);
 
 	const lines = terminal.getPlainText().split("\n");
@@ -2044,7 +2049,7 @@ test("a keydown listener can cancel a button's activation", async () => {
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
-	document.body.innerHTML = `<button id="btn">Go</button>`;
+	document.body.innerHTML = "<button id=\"btn\">Go</button>";
 	await nextFrame(dom);
 
 	let clicks = 0;
@@ -2181,7 +2186,7 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 test("a password input paints masked bullets, never the real value", async () => {
 	const terminal = new MockProcess({rows: 3, cols: 20});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input type="password" value="secret">`;
+	dom.document.body.innerHTML = "<input type=\"password\" value=\"secret\">";
 	await nextFrame(dom);
 
 	const input = dom.document.querySelector("input")! as HTMLInputElement;
@@ -2212,7 +2217,7 @@ test("a constrained input scrolls horizontally to follow the caret", async () =>
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<input id="i" style="width:10ch">`;
+	dom.document.body.innerHTML = "<input id=\"i\" style=\"width:10ch\">";
 	const input = dom.document.getElementById("i") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
@@ -2238,7 +2243,7 @@ test("a printable key runs keydown, keypress, input, keyup in that order", async
 	// insertion has run.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input id="a" type="text" value="a" autofocus>`;
+	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" value=\"a\" autofocus>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	await nextFrame(dom);
 
@@ -2264,7 +2269,7 @@ test("a printable key runs keydown, keypress, input, keyup in that order", async
 test("a canceled keypress inserts nothing", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input id="a" type="text" value="a" autofocus>`;
+	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" value=\"a\" autofocus>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	await nextFrame(dom);
 
@@ -2280,7 +2285,7 @@ test("a canceled keypress inserts nothing", async () => {
 test("a non-ASCII printable key fires keypress and is inserted", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input id="a" type="text" autofocus>`;
+	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" autofocus>";
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	await nextFrame(dom);
 
@@ -2303,7 +2308,7 @@ test("an onkeydown handler assigned by property runs, and can cancel the edit", 
 	// listener, cancellation and all.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.document.body.innerHTML = `<input id="a" type="text" autofocus>`;
+	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" autofocus>";
 	const input = dom.document.getElementById("a") as any;
 	await nextFrame(dom);
 
@@ -2332,7 +2337,7 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.document.body.innerHTML = `<textarea id="t"></textarea>`;
+	dom.document.body.innerHTML = "<textarea id=\"t\"></textarea>";
 	const field = dom.document.getElementById("t") as HTMLTextAreaElement;
 	field.focus();
 	await nextFrame(dom);
@@ -2367,12 +2372,12 @@ test("moving focus and opening a disclosure bring their target into view", async
 	await new Promise((r) => setTimeout(r, 0));
 	const {document, window} = dom;
 	document.body.innerHTML =
-		`<input id="first">` +
+		"<input id=\"first\">" +
 		Array.from({length: 40}, (_, i) => `<div>line ${i}</div>`).join("") +
-		`<input id="last">` +
-		`<details id="d"><summary>Show</summary>` +
+		"<input id=\"last\">" +
+		"<details id=\"d\"><summary>Show</summary>" +
 		Array.from({length: 20}, (_, i) => `<div>hidden ${i}</div>`).join("") +
-		`</details>`;
+		"</details>";
 	(document.getElementById("first") as HTMLElement).focus();
 	await nextFrame(dom);
 	expect(window.scrollY).toBe(0);

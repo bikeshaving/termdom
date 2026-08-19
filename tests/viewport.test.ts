@@ -56,7 +56,7 @@ test("rendering small content from command start (fits in available space)", asy
 	await nextFrame(dom);
 
 	// Add small content that fits in available space
-	dom.document.body.innerHTML = `<div>Content Line</div>`;
+	dom.document.body.innerHTML = "<div>Content Line</div>";
 
 	await nextFrame(dom);
 	const lines = terminal.getPlainText().split("\n");
@@ -594,9 +594,9 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 	await nextFrame(dom);
 
 	dom.document.body.innerHTML =
-		`<div>Header line for the demo application here.</div>` +
-		`<div>A paragraph that wraps when the terminal is narrow.</div>` +
-		`<div>Footer content at the bottom.</div>`;
+		"<div>Header line for the demo application here.</div>" +
+		"<div>A paragraph that wraps when the terminal is narrow.</div>" +
+		"<div>Footer content at the bottom.</div>";
 	await nextFrame(dom);
 
 	terminal.resize(24, 12);
@@ -626,7 +626,9 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 	// in the new render.
 	const headerRows = [];
 	for (let i = 0; i < buffer.length; i++) {
-		if (line(i).startsWith("Header line")) headerRows.push(i);
+		if (line(i).startsWith("Header line")) {
+			headerRows.push(i);
+		}
 	}
 	expect(headerRows.length).toBe(1);
 
@@ -675,7 +677,9 @@ test("shrinking height re-anchors to the scrolled command start, no orphaned top
 	// appears exactly once -- not orphaned above a fresh copy.
 	let firstLineHits = 0;
 	for (let i = buffer.baseY; i < buffer.baseY + terminal.stdout.rows; i++) {
-		if (line(i) === "APPLINE 1") firstLineHits++;
+		if (line(i) === "APPLINE 1") {
+			firstLineHits++;
+		}
 	}
 	expect(firstLineHits).toBe(1);
 
@@ -696,7 +700,7 @@ test("the cursor parks at the content bottom after every frame", async () => {
 		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
 	});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
-	dom.document.body.innerHTML = `<div id="a">alpha</div><div>beta</div><div>gamma</div><div>delta</div>`;
+	dom.document.body.innerHTML = "<div id=\"a\">alpha</div><div>beta</div><div>gamma</div><div>delta</div>";
 	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
@@ -730,8 +734,8 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
-		`<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>` +
-		`<div>short one</div><div>short two</div><div>short three</div>`;
+		"<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>" +
+		"<div>short one</div><div>short two</div><div>short three</div>";
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(2);
 
@@ -745,7 +749,9 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	const headerCopiesOnScreen = (): number => {
 		let copies = 0;
 		for (let i = 0; i < buffer.baseY + 20; i++) {
-			if (line(i).startsWith("HEADER LINE")) copies++;
+			if (line(i).startsWith("HEADER LINE")) {
+				copies++;
+			}
 		}
 		return copies;
 	};
@@ -813,7 +819,7 @@ test("a terminal resize fires a resize event at the window", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {window, document} = dom;
 
-	document.body.innerHTML = `<div id="d" style="width: 100%">x</div>`;
+	document.body.innerHTML = "<div id=\"d\" style=\"width: 100%\">x</div>";
 	await nextFrame(dom);
 
 	const seen: any[] = [];
@@ -960,9 +966,9 @@ test("@media stylesheet rules re-evaluate when the terminal resizes", async () =
 	const {window, document} = dom;
 
 	const style = document.createElement("style");
-	style.textContent = `@media (max-width: 60px) { div { color: red; } }`;
+	style.textContent = "@media (max-width: 60px) { div { color: red; } }";
 	document.head.appendChild(style);
-	document.body.innerHTML = `<div id="d">narrow-only</div>`;
+	document.body.innerHTML = "<div id=\"d\">narrow-only</div>";
 	await nextFrame(dom);
 	const div = document.getElementById("d")!;
 	expect(window.getComputedStyle(div).getPropertyValue("color")).not.toBe(
@@ -1021,8 +1027,8 @@ test("a height shrink past the fit point repaints one whole frame", async () => 
 	});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
-		`<div>HEADER-ROW</div>` +
-		`<div>Subject <input id="s"></div>` +
+		"<div>HEADER-ROW</div>" +
+		"<div>Subject <input id=\"s\"></div>" +
 		Array.from({length: 10}, (_, i) => `<div>BODY-${i + 1}</div>`).join("");
 	(dom.document.getElementById("s") as HTMLElement).focus();
 	await nextFrame(dom);
@@ -1038,7 +1044,9 @@ test("a height shrink past the fit point repaints one whole frame", async () => 
 	const visibleCopies = (text: string): number => {
 		let copies = 0;
 		for (let i = buffer.baseY; i < buffer.baseY + terminal.stdout.rows; i++) {
-			if (line(i) === text) copies++;
+			if (line(i) === text) {
+				copies++;
+			}
 		}
 		return copies;
 	};
@@ -1074,7 +1082,7 @@ test("scroll-transform frames match a full repaint exactly", async () => {
 			{length: 60},
 			(_, i) => `<div>line ${i} of the document</div>`,
 		).join("") +
-		`<div style="position:fixed;bottom:0;left:0;right:0;background-color:#333">BAR</div>`;
+		"<div style=\"position:fixed;bottom:0;left:0;right:0;background-color:#333\">BAR</div>";
 
 	const render = async (steps: number[]): Promise<string> => {
 		const terminal = new MockProcess({cols: 40, rows: 10});
@@ -1112,12 +1120,12 @@ test("bounded-damage frames match a full repaint exactly", async () => {
 	// damage rides the banded transform; the same operations done in one
 	// jump take the full diff. The screens must be identical.
 	const content =
-		`<style>.row.selected { background-color: #264f78; color: #ffffff; }</style>` +
+		"<style>.row.selected { background-color: #264f78; color: #ffffff; }</style>" +
 		Array.from(
 			{length: 40},
 			(_, i) => `<div class="row" id="r${i}">row ${i} content here</div>`,
 		).join("") +
-		`<div style="position:fixed;bottom:0;left:0;right:0;background-color:#333">bar <span id="pct">0%</span></div>`;
+		"<div style=\"position:fixed;bottom:0;left:0;right:0;background-color:#333\">bar <span id=\"pct\">0%</span></div>";
 
 	const render = async (steps: number): Promise<string> => {
 		const terminal = new MockProcess({cols: 40, rows: 10});

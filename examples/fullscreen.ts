@@ -53,9 +53,14 @@ document.addEventListener("fullscreenchange", () => {
 // Keyboard events land on the focused element (or body) and bubble up to
 // the document -- never DOWN into children, so listen here.
 document.addEventListener("keydown", async (event: KeyboardEvent) => {
-	if (event.key === "q") term.window.close();
+	if (event.key === "q") {
+		term.window.close();
+	}
 	if (event.key === "f") {
-		if (document.fullscreenElement) await document.exitFullscreen();
-		else await stage.requestFullscreen();
+		if (document.fullscreenElement) {
+			await document.exitFullscreen();
+		} else {
+			await stage.requestFullscreen();
+		}
 	}
 });

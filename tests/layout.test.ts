@@ -35,7 +35,7 @@ function documentWindow(html: string) {
 	return {window: createDocumentWindow(html)};
 }
 
-function createLayoutEngine(html: string = "<div></div>") {
+function createLayoutEngine(html = "<div></div>") {
 	const dom = documentWindow(`<!DOCTYPE html><html><head><style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 		html, body { width: 100%; }
@@ -78,7 +78,7 @@ function createLayoutEngine(html: string = "<div></div>") {
 // CSS-to-Yoga property mapping tests
 test("styleYogaNode - basic layout", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 100px; height: 50px;"></div>`,
+		"<div style=\"width: 100px; height: 50px;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
@@ -91,7 +91,7 @@ test("styleYogaNode - basic layout", () => {
 
 test("styleYogaNode - percentage dimensions", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 50%;"></div>`,
+		"<div style=\"width: 50%;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
@@ -103,7 +103,7 @@ test("styleYogaNode - percentage dimensions", () => {
 
 test("styleYogaNode - margins", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="margin: 10px;"></div>`,
+		"<div style=\"margin: 10px;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
@@ -212,7 +212,7 @@ test("block elements have separate yoga nodes", () => {
 // Mutation handling tests
 test("style changes trigger layout updates", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
-		`<div style="width: 100px;"></div>`,
+		"<div style=\"width: 100px;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 
@@ -231,7 +231,7 @@ test("style changes trigger layout updates", () => {
 
 test("element removal cleans up yoga nodes", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
-		`<div><span>test</span></div>`,
+		"<div><span>test</span></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const span = dom.window.document.querySelector("span")!;
@@ -252,7 +252,7 @@ test("element removal cleans up yoga nodes", () => {
 // Edge cases
 test("display none elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: none;"></div>`,
+		"<div style=\"display: none;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 
@@ -264,7 +264,7 @@ test("display none elements", () => {
 
 test("resize updates layout", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 100%;"></div>`,
+		"<div style=\"width: 100%;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 
@@ -283,7 +283,7 @@ test("resize updates layout", () => {
 
 // Static inline run tests
 test("isInlineRunHead - single inline element", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`<span>text</span>`);
+	const {dom, layoutEngine} = createLayoutEngine("<span>text</span>");
 	const span = dom.window.document.querySelector("span")!;
 
 	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
@@ -291,7 +291,7 @@ test("isInlineRunHead - single inline element", () => {
 
 test("isInlineRunHead - first of multiple inline elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>first</span><span>second</span>`,
+		"<span>first</span><span>second</span>",
 	);
 	const firstSpan = dom.window.document.querySelector("span")!;
 
@@ -300,7 +300,7 @@ test("isInlineRunHead - first of multiple inline elements", () => {
 
 test("isInlineRunHead - second of multiple inline elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>first</span><span>second</span>`,
+		"<span>first</span><span>second</span>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
@@ -309,7 +309,7 @@ test("isInlineRunHead - second of multiple inline elements", () => {
 
 test("isInlineRunHead - text node as head", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`Text content <span>element</span>`,
+		"Text content <span>element</span>",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -329,7 +329,7 @@ test("isInlineRunHead - text node as head", () => {
 
 test("isInlineRunHead - text node not head", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>element</span> text content`,
+		"<span>element</span> text content",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -349,7 +349,7 @@ test("isInlineRunHead - text node not head", () => {
 
 test("isInlineRunHead - inline in flex container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: flex"><span>item</span></div>`,
+		"<div style=\"display: flex\"><span>item</span></div>",
 	);
 	const span = dom.window.document.querySelector("span")!;
 
@@ -358,7 +358,7 @@ test("isInlineRunHead - inline in flex container", () => {
 
 test("isInlineRunHead - multiple inlines in flex container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: flex"><span>first</span><span>second</span></div>`,
+		"<div style=\"display: flex\"><span>first</span><span>second</span></div>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
@@ -368,7 +368,7 @@ test("isInlineRunHead - multiple inlines in flex container", () => {
 
 test("isInlineRunHead - block element breaks run", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>first</span><div>block</div><span>after</span>`,
+		"<span>first</span><div>block</div><span>after</span>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
@@ -378,7 +378,7 @@ test("isInlineRunHead - block element breaks run", () => {
 
 test("findInlineRunHead - simple case", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>first</span><span>second</span>`,
+		"<span>first</span><span>second</span>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
@@ -388,7 +388,7 @@ test("findInlineRunHead - simple case", () => {
 
 test("findInlineRunHead - text node head", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`Text content <span>element</span>`,
+		"Text content <span>element</span>",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -410,7 +410,7 @@ test("findInlineRunHead - text node head", () => {
 
 test("findInlineRunHead - mixed content", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`Text <span>element</span> more text <em>emphasis</em>`,
+		"Text <span>element</span> more text <em>emphasis</em>",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -436,7 +436,7 @@ test("findInlineRunHead - mixed content", () => {
 });
 
 test("findInlineRunHead - block element", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`<div>block</div>`);
+	const {dom, layoutEngine} = createLayoutEngine("<div>block</div>");
 	const div = dom.window.document.querySelector("div")!;
 
 	expect(layoutEngine.findInlineRunHead(div)).toBe(null); // Block elements don't have inline heads
@@ -445,7 +445,7 @@ test("findInlineRunHead - block element", () => {
 // Edge cases from CSS spec research
 test("anonymous inline boxes - direct text in block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div>Direct text content</div>`,
+		"<div>Direct text content</div>",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -467,7 +467,7 @@ test("anonymous inline boxes - direct text in block", () => {
 
 test("white space only text nodes", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>first</span>   <span>second</span></div>`,
+		"<div><span>first</span>   <span>second</span></div>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const whitespaceNode = spans[0].nextSibling as Text; // The "   " between spans
@@ -481,7 +481,7 @@ test("white space only text nodes", () => {
 
 test("nested inline elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>outer <em>nested</em> text</span></div>`,
+		"<div><span>outer <em>nested</em> text</span></div>",
 	);
 	const span = dom.window.document.querySelector("span")!;
 	const em = dom.window.document.querySelector("em")!;
@@ -494,7 +494,7 @@ test("nested inline elements", () => {
 
 test("inline-block vs inline behavior", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span style="display: inline">inline</span><span style="display: inline-block">inline-block</span></div>`,
+		"<div><span style=\"display: inline\">inline</span><span style=\"display: inline-block\">inline-block</span></div>",
 	);
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
@@ -506,7 +506,7 @@ test("inline-block vs inline behavior", () => {
 
 test("mixed content with line breaks", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div>Text<br><span>after break</span></div>`,
+		"<div>Text<br><span>after break</span></div>",
 	);
 	const walker = dom.window.document.createTreeWalker(
 		dom.window.document.body,
@@ -530,7 +530,7 @@ test("mixed content with line breaks", () => {
 
 test("text node with inline precedent in flex container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: flex"><span>element</span> text content</div>`,
+		"<div style=\"display: flex\"><span>element</span> text content</div>",
 	);
 	const span = dom.window.document.querySelector("span")!;
 	const walker = dom.window.document.createTreeWalker(
@@ -559,7 +559,7 @@ test("text node with inline precedent in flex container", () => {
 
 test("block insertion splits inline run", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
-		`<div><span>first</span><span>second</span></div>`,
+		"<div><span>first</span><span>second</span></div>",
 	);
 	const container = dom.window.document.querySelector("div")!;
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -583,7 +583,7 @@ test("block insertion splits inline run", () => {
 
 test("a run whose first node is removed re-measures from the next", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
-		`<div><span>head</span><span>second</span><span>third</span></div>`,
+		"<div><span>head</span><span>second</span><span>third</span></div>",
 	);
 	const container = dom.window.document.querySelector("div")!;
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -615,7 +615,7 @@ test("a run whose first node is removed re-measures from the next", () => {
 });
 
 test("findInlineRunHead - text node inside inline element should find element", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`<span>🚀</span>`);
+	const {dom, layoutEngine} = createLayoutEngine("<span>🚀</span>");
 
 	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
@@ -631,7 +631,7 @@ test("findInlineRunHead - text node inside inline element should find element", 
 
 test("findInlineRunHead - nested inline elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>outer <em>nested <strong>deep</strong></em> text</span>`,
+		"<span>outer <em>nested <strong>deep</strong></em> text</span>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -650,7 +650,7 @@ test("findInlineRunHead - nested inline elements", () => {
 
 test("findInlineRunHead - text nodes after br elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div>Start<br>After break</div>`,
+		"<div>Start<br>After break</div>",
 	);
 
 	const walker = dom.window.document.createTreeWalker(
@@ -677,7 +677,7 @@ test("findInlineRunHead - text nodes after br elements", () => {
 
 test("findInlineRunHead - inline elements in flex container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: flex"><span>first</span><span>second</span><em>third</em></div>`,
+		"<div style=\"display: flex\"><span>first</span><span>second</span><em>third</em></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -697,7 +697,7 @@ test("findInlineRunHead - inline elements in flex container", () => {
 
 test("findInlineRunHead - mixed text and inline elements in flex", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="display: flex">Text node<span>element</span>More text</div>`,
+		"<div style=\"display: flex\">Text node<span>element</span>More text</div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -726,7 +726,7 @@ test("findInlineRunHead - mixed text and inline elements in flex", () => {
 
 test("findInlineRunHead - inline-block elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span style="display: inline-block">block1</span><span style="display: inline-block">block2</span></div>`,
+		"<div><span style=\"display: inline-block\">block1</span><span style=\"display: inline-block\">block2</span></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -744,7 +744,7 @@ test("findInlineRunHead - inline-block elements", () => {
 
 test("findInlineRunHead - empty text nodes and whitespace", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>content</span>   <em>more</em></div>`,
+		"<div><span>content</span>   <em>more</em></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -759,7 +759,7 @@ test("findInlineRunHead - empty text nodes and whitespace", () => {
 
 test("findInlineRunHead - block elements return null", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><p>paragraph</p><h1>heading</h1></div>`,
+		"<div><p>paragraph</p><h1>heading</h1></div>",
 	);
 
 	const p = dom.window.document.querySelector("p")!;
@@ -774,7 +774,7 @@ test("findInlineRunHead - block elements return null", () => {
 
 test("findInlineRunHead - inline elements after block elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>first run</span><p>block breaks run</p><span>second run</span><em>continues second</em></div>`,
+		"<div><span>first run</span><p>block breaks run</p><span>second run</span><em>continues second</em></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -790,7 +790,7 @@ test("findInlineRunHead - inline elements after block elements", () => {
 
 test("findInlineRunHead - deeply nested inline elements", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span><em><strong><code>deeply nested</code></strong></em></span></div>`,
+		"<div><span><em><strong><code>deeply nested</code></strong></em></span></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -810,7 +810,7 @@ test("findInlineRunHead - deeply nested inline elements", () => {
 });
 
 test("findInlineRunHead - text node orphan (no parent)", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`<div></div>`);
+	const {dom, layoutEngine} = createLayoutEngine("<div></div>");
 
 	// Create orphaned text node
 	const textNode = dom.window.document.createTextNode("orphan");
@@ -820,7 +820,7 @@ test("findInlineRunHead - text node orphan (no parent)", () => {
 });
 
 test("findInlineRunHead - comment nodes and other node types", () => {
-	const {dom, layoutEngine} = createLayoutEngine(`<div><!-- comment --></div>`);
+	const {dom, layoutEngine} = createLayoutEngine("<div><!-- comment --></div>");
 
 	const comment = dom.window.document.querySelector("div")!.firstChild!;
 
@@ -848,7 +848,7 @@ test("findInlineRunHead - whitespace behavior (expected: finds whitespace text n
 
 test("emoji text RectLengths preserve character boundaries", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<span>🎨 Colorful Text 🌈</span>`,
+		"<span>🎨 Colorful Text 🌈</span>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -875,7 +875,7 @@ test("emoji text RectLengths preserve character boundaries", () => {
 
 test("RectLength text slicing mismatch with whitespace", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 20ch;"><span>Hello   </span><span>World</span></div>`,
+		"<div style=\"width: 20ch;\"><span>Hello   </span><span>World</span></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -953,7 +953,7 @@ test("inline-block elements should get individual rects", () => {
 
 test("inline head element gets incorrect rect from yoga node", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>Head</span><span>Tail</span></div>`,
+		"<div><span>Head</span><span>Tail</span></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -972,7 +972,7 @@ test("inline head element gets incorrect rect from yoga node", () => {
 
 test("inline run with mixed content - whitespace handling", () => {
 	const {dom, layoutEngine: _layoutEngine} = createLayoutEngine(
-		`<div>Start <span>middle  </span> <em>end</em></div>`,
+		"<div>Start <span>middle  </span> <em>end</em></div>",
 	);
 
 	// In normal inline flow, this should be processed as one run
@@ -1018,7 +1018,7 @@ test("text truncation due to RectLength accumulation error", () => {
 
 test("line fragments - regular inline element (baseline)", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>RegularInline</span></div>`,
+		"<div><span>RegularInline</span></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -1032,7 +1032,7 @@ test("line fragments - regular inline element (baseline)", () => {
 
 test("line fragments - text node in regular inline element", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><span>TextContent</span></div>`,
+		"<div><span>TextContent</span></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -1046,7 +1046,7 @@ test("line fragments - text node in regular inline element", () => {
 
 test("line fragments - element inside inline-block container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><div style="display: inline-block;"><span>InsideBlock</span></div></div>`,
+		"<div><div style=\"display: inline-block;\"><span>InsideBlock</span></div></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -1060,7 +1060,7 @@ test("line fragments - element inside inline-block container", () => {
 
 test("line fragments - text node inside inline-block container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><div style="display: inline-block;"><span>BlockText</span></div></div>`,
+		"<div><div style=\"display: inline-block;\"><span>BlockText</span></div></div>",
 	);
 
 	const span = dom.window.document.querySelector("span")!;
@@ -1074,7 +1074,7 @@ test("line fragments - text node inside inline-block container", () => {
 
 test("line fragments - nested elements inside inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><div style="display: inline-block;"><span><em>Nested</em></span></div></div>`,
+		"<div><div style=\"display: inline-block;\"><span><em>Nested</em></span></div></div>",
 	);
 
 	const em = dom.window.document.querySelector("em")!;
@@ -1087,7 +1087,7 @@ test("line fragments - nested elements inside inline-block", () => {
 
 test("line fragments - multiple children in inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><div style="display: inline-block;"><span>First</span><span>Second</span></div></div>`,
+		"<div><div style=\"display: inline-block;\"><span>First</span><span>Second</span></div></div>",
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
@@ -1156,7 +1156,7 @@ test("line fragments - multiple inline-blocks", () => {
 
 test("line fragments - inline-block container element itself", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div><div style="display: inline-block;">Container</div></div>`,
+		"<div><div style=\"display: inline-block;\">Container</div></div>",
 	);
 
 	const inlineBlock = dom.window.document.querySelector("div[style]")!;
@@ -1235,7 +1235,7 @@ test("line fragment offsets render back to the text the line was broken into", (
 
 test("line fragment offsets render back under pre-wrap", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 10ch; white-space: pre-wrap;">a  b\nlong  line here</div>`,
+		"<div style=\"width: 10ch; white-space: pre-wrap;\">a  b\nlong  line here</div>",
 	);
 
 	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
@@ -1256,7 +1256,7 @@ test("line fragment offsets render back under pre-wrap", () => {
 
 test("a Range over a text node reports the rects of its line fragments", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 12ch;">wrapping prose across several lines</div>`,
+		"<div style=\"width: 12ch;\">wrapping prose across several lines</div>",
 	);
 
 	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
@@ -1652,7 +1652,7 @@ test("Block element removal merging inline runs", async () => {
 	// Initial render - should have multiple lines due to block element
 	await nextFrame(termdom);
 	const initialOutput = terminal.getPlainText();
-	let initialLines = initialOutput.split("\n").filter((line) => line.trim());
+	const initialLines = initialOutput.split("\n").filter((line) => line.trim());
 	expect(initialLines.length).toBeGreaterThan(1); // Should be split by block
 
 	// Remove the block element
@@ -1716,7 +1716,7 @@ test.todo("Complex inline run with mixed content types", async () => {
 // === PSEUDO ELEMENT INLINE RUN HEAD TESTS ===
 // These tests verify how pseudo elements interact with inline run head detection
 
-function createLayoutEngineWithPseudos(html: string = "<div></div>") {
+function createLayoutEngineWithPseudos(html = "<div></div>") {
 	const dom = documentWindow(
 		`<!DOCTYPE html><html><body>${html}</body></html>`,
 	);
@@ -1735,7 +1735,7 @@ function createLayoutEngineWithPseudos(html: string = "<div></div>") {
 
 test("::before pseudo element becomes run head", () => {
 	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		`<div class="quote">Hello World</div>`,
+		"<div class=\"quote\">Hello World</div>",
 	);
 
 	const quote = dom.window.document.querySelector(".quote")!;
@@ -1754,7 +1754,7 @@ test("::before pseudo element becomes run head", () => {
 
 test("::marker appears before ::before in run head order", () => {
 	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		`<ul><li class="decorated">Item text</li></ul>`,
+		"<ul><li class=\"decorated\">Item text</li></ul>",
 	);
 
 	const listItem = dom.window.document.querySelector(".decorated")!;
@@ -1780,7 +1780,7 @@ test("::marker appears before ::before in run head order", () => {
 
 test("Dynamic pseudo element addition affects run heads", () => {
 	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		`<div class="dynamic">Text</div>`,
+		"<div class=\"dynamic\">Text</div>",
 	);
 
 	const div = dom.window.document.querySelector(".dynamic")!;
@@ -1869,7 +1869,7 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 
 test("Block child positioned after parent text content", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div>Parent text<div>Child content</div></div>`,
+		"<div>Parent text<div>Child content</div></div>",
 	);
 
 	layoutEngine.calculateLayout();
@@ -1897,7 +1897,7 @@ test("Block child positioned after parent text content", () => {
 
 test("Multiple block children positioned sequentially after parent text", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div>Parent text<div>Child 1</div><div>Child 2</div></div>`,
+		"<div>Parent text<div>Child 1</div><div>Child 2</div></div>",
 	);
 
 	layoutEngine.calculateLayout();
@@ -1924,7 +1924,7 @@ test("Multiple block children positioned sequentially after parent text", () => 
 
 test("Inline children do not affect block child positioning", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div>Parent <span>inline</span> text<div>Block child</div></div>`,
+		"<div>Parent <span>inline</span> text<div>Block child</div></div>",
 	);
 
 	layoutEngine.calculateLayout();
@@ -2071,7 +2071,9 @@ test("whitespace between block elements should be collapsed", async () => {
 			const text = line.translateToString(true);
 			// Phantom line = whitespace-only content (not truly empty)
 			const isPhantom = text.trim() === "" && text.length > 0;
-			if (isPhantom) phantomLines++;
+			if (isPhantom) {
+				phantomLines++;
+			}
 		}
 	}
 
@@ -2114,7 +2116,9 @@ test("whitespace in nested lists should be collapsed", async () => {
 		if (line) {
 			const text = line.translateToString(true);
 			const isPhantom = text.trim() === "" && text.length > 0;
-			if (isPhantom) phantomLineCount++;
+			if (isPhantom) {
+				phantomLineCount++;
+			}
 		}
 	}
 
@@ -2164,7 +2168,9 @@ test("programmatic DOM creation should not have phantom lines", async () => {
 		if (line) {
 			const text = line.translateToString(true);
 			const isPhantom = text.trim() === "" && text.length > 0;
-			if (isPhantom) phantomLineCount++;
+			if (isPhantom) {
+				phantomLineCount++;
+			}
 		}
 	}
 
@@ -2182,7 +2188,7 @@ test("compact HTML should not have phantom lines", async () => {
 
 	// HTML without any whitespace between elements
 	const container = document.createElement("div");
-	container.innerHTML = `<ul><li>Item 1</li><li>Item 2<ul><li>Sub item</li></ul></li></ul>`;
+	container.innerHTML = "<ul><li>Item 1</li><li>Item 2<ul><li>Sub item</li></ul></li></ul>";
 	document.body.appendChild(container);
 
 	await nextFrame(dom);
@@ -2195,7 +2201,9 @@ test("compact HTML should not have phantom lines", async () => {
 		if (line) {
 			const text = line.translateToString(true);
 			const isPhantom = text.trim() === "" && text.length > 0;
-			if (isPhantom) phantomLineCount++;
+			if (isPhantom) {
+				phantomLineCount++;
+			}
 		}
 	}
 
@@ -2213,7 +2221,7 @@ test("compact HTML should not have phantom lines", async () => {
 
 test("position: static ignores left/top properties", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: static; left: 50px; top: 100px;">Static positioned</div>`,
+		"<div style=\"position: static; left: 50px; top: 100px;\">Static positioned</div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2227,7 +2235,7 @@ test("position: static ignores left/top properties", () => {
 
 test("position: absolute with left and top", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: absolute; left: 10ch; top: 2ch;">Absolute positioned</div>`,
+		"<div style=\"position: absolute; left: 10ch; top: 2ch;\">Absolute positioned</div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2241,7 +2249,7 @@ test("position: absolute with left and top", () => {
 
 test("position: absolute with right and bottom", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: absolute; right: 5ch; bottom: 3ch; width: 20ch; height: 10ch;"></div>`,
+		"<div style=\"position: absolute; right: 5ch; bottom: 3ch; width: 20ch; height: 10ch;\"></div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2259,7 +2267,7 @@ test("position: absolute with right and bottom", () => {
 
 test("position: relative with left and top offsets", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: relative; left: 15ch; top: 5ch;">Relative positioned</div>`,
+		"<div style=\"position: relative; left: 15ch; top: 5ch;\">Relative positioned</div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2316,7 +2324,7 @@ test("mixed positioning types in same container", () => {
 
 test("ch unit conversion works correctly", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: absolute; left: 25ch; top: 15ch; width: 30ch; height: 8ch;">CH units</div>`,
+		"<div style=\"position: absolute; left: 25ch; top: 15ch; width: 30ch; height: 8ch;\">CH units</div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2370,7 +2378,7 @@ test("position: absolute removes element from document flow", () => {
 
 test("percentage values in positioning", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: absolute; left: 25%; top: 50%; width: 50%; height: 25%;"></div>`,
+		"<div style=\"position: absolute; left: 25%; top: 50%; width: 50%; height: 25%;\"></div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2430,7 +2438,7 @@ test("the static position is measured through the box's own flow parent", () => 
 
 test("an absolute box in an inline context takes the line's position", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: relative;">word <span id="target" style="position: absolute;">X</span> rest</div>`,
+		"<div style=\"position: relative;\">word <span id=\"target\" style=\"position: absolute;\">X</span> rest</div>",
 	);
 
 	const target = layoutEngine.window.document.getElementById("target")!;
@@ -2458,7 +2466,7 @@ test("an explicit inset still wins over the static position", () => {
 
 test("an absolute box with an auto inset shrinks to fit its content", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: relative; width: 40ch;"><div id="target" style="position: absolute; left: 0;">hello</div></div>`,
+		"<div style=\"position: relative; width: 40ch;\"><div id=\"target\" style=\"position: absolute; left: 0;\">hello</div></div>",
 	);
 
 	const target = layoutEngine.window.document.getElementById("target")!;
@@ -2467,7 +2475,7 @@ test("an absolute box with an auto inset shrinks to fit its content", () => {
 
 test("an absolute box pinned on both sides fills the space between them", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: relative; width: 40ch;"><div id="target" style="position: absolute; left: 2ch; right: 3ch;">hello</div></div>`,
+		"<div style=\"position: relative; width: 40ch;\"><div id=\"target\" style=\"position: absolute; left: 2ch; right: 3ch;\">hello</div></div>",
 	);
 
 	const target = layoutEngine.window.document.getElementById("target")!;
@@ -2480,10 +2488,10 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 	const terminal = new MockProcess({cols: 30, rows: 8});
 	const termdom = new TermDOM({transport: terminal.transport});
 	termdom.document.body.innerHTML =
-		`<div style="position: relative;">` +
-		`<div>first</div><div>second</div>` +
-		`<div style="position: absolute;">OVERLAY</div>` +
-		`</div>`;
+		"<div style=\"position: relative;\">" +
+		"<div>first</div><div>second</div>" +
+		"<div style=\"position: absolute;\">OVERLAY</div>" +
+		"</div>";
 	await nextFrame(termdom);
 
 	const rows = terminal.getPlainText().split("\n");
@@ -2494,7 +2502,7 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 });
 
 test("a resolved value measures the layout the last style write asked for", async () => {
-	const {termdom, document} = createTermDOM(`<div id="target">content</div>`);
+	const {termdom, document} = createTermDOM("<div id=\"target\">content</div>");
 	await nextFrame(termdom);
 	const {window} = termdom;
 	const target = document.getElementById("target")! as HTMLElement;
@@ -2510,7 +2518,7 @@ test("a resolved value measures the layout the last style write asked for", asyn
 
 test("auto values reset positioning properties", () => {
 	const {layoutEngine} = createLayoutEngine(
-		`<div style="position: absolute; left: auto; top: auto; right: 10ch; bottom: 5ch;">Auto positioning</div>`,
+		"<div style=\"position: absolute; left: auto; top: auto; right: 10ch; bottom: 5ch;\">Auto positioning</div>",
 	);
 
 	const div = layoutEngine.window.document.querySelector("div")!;
@@ -2527,7 +2535,7 @@ test("auto values reset positioning properties", () => {
 // These tests verify that DOM mutations are properly handled by the MutationObserver,
 // which automatically triggers layout invalidation when elements are added/removed.
 
-function createTermDOM(html: string = "<div></div>") {
+function createTermDOM(html = "<div></div>") {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document} = termdom;
 
@@ -2864,10 +2872,10 @@ test("a flex item that shrank paints the lines its own width was broken to", asy
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<div id="row" style="display:flex;width:24ch">` +
-		`<div id="a">aaaa bbbb cccc dddd eeee</div>` +
-		`<div id="b" style="flex-shrink:0">wwww xxxx yyyy zzzz</div>` +
-		`</div>`;
+		"<div id=\"row\" style=\"display:flex;width:24ch\">" +
+		"<div id=\"a\">aaaa bbbb cccc dddd eeee</div>" +
+		"<div id=\"b\" style=\"flex-shrink:0\">wwww xxxx yyyy zzzz</div>" +
+		"</div>";
 	await nextFrame(dom);
 
 	const row = document.getElementById("row")!;
@@ -2890,7 +2898,7 @@ test("an empty inline element measures zero, not its container's width", async (
 	// width. `<div style="width:30ch"><span></span></div>` measured the span at
 	// 30 columns instead of 0.
 	const {dom, layoutEngine} = createLayoutEngine(
-		`<div style="width:30ch"><span id="e"></span><span id="n"><b>hi</b></span></div>`,
+		"<div style=\"width:30ch\"><span id=\"e\"></span><span id=\"n\"><b>hi</b></span></div>",
 	);
 	const empty = dom.window.document.getElementById("e")!;
 	const nested = dom.window.document.getElementById("n")!;

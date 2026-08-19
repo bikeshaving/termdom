@@ -94,7 +94,9 @@ function shuffled(seed: number): Card[] {
 	const next = random(seed);
 	const deck: Card[] = [];
 	for (let suit = 0; suit < 4; suit++) {
-		for (let rank = 1; rank <= 13; rank++) deck.push({rank, suit, up: false});
+		for (let rank = 1; rank <= 13; rank++) {
+			deck.push({rank, suit, up: false});
+		}
 	}
 	for (let i = deck.length - 1; i > 0; i--) {
 		const j = Math.floor(next() * (i + 1));
@@ -150,14 +152,18 @@ function top(cards: Card[]): Card | undefined {
 /** A foundation takes its suit's ace first, and then that suit in order. */
 function fitsFoundation(card: Card, foundation: Card[]): boolean {
 	const under = top(foundation);
-	if (!under) return card.rank === 1;
+	if (!under) {
+		return card.rank === 1;
+	}
 	return under.suit === card.suit && under.rank === card.rank - 1;
 }
 
 /** A tableau pile takes a king on nothing, and descending alternating colours. */
 function fitsTableau(card: Card, pile: Card[]): boolean {
 	const under = top(pile);
-	if (!under) return card.rank === 13;
+	if (!under) {
+		return card.rank === 13;
+	}
 	return (
 		under.up && isRed(under) !== isRed(card) && under.rank === card.rank + 1
 	);
@@ -165,7 +171,9 @@ function fitsTableau(card: Card, pile: Card[]): boolean {
 
 /** Whether the cards from `index` down form a run that moves as one. */
 function isRun(pile: Card[], index: number): boolean {
-	if (index < 0 || index >= pile.length || !pile[index].up) return false;
+	if (index < 0 || index >= pile.length || !pile[index].up) {
+		return false;
+	}
 	for (let i = index; i < pile.length - 1; i++) {
 		const card = pile[i];
 		const next = pile[i + 1];
@@ -183,19 +191,23 @@ function isRun(pile: Card[], index: number): boolean {
 /** The deepest card of a pile that can be picked up with everything below it. */
 function runStart(pile: Card[]): number {
 	let index = pile.length - 1;
-	while (index > 0 && isRun(pile, index - 1)) index--;
+	while (index > 0 && isRun(pile, index - 1)) {
+		index--;
+	}
 	return index;
 }
 
 type Held =
-	| {kind: "waste"}
-	| {kind: "foundation"; index: number}
-	| {kind: "tableau"; pile: number; index: number}
-	| null;
+	| {kind: "waste"} |
+	{kind: "foundation"; index: number} |
+	{kind: "tableau"; pile: number; index: number} |
+	null;
 
 /** The cards a hold is carrying, top of the run first in board order. */
 function heldCards(game: Game, held: Held): Card[] {
-	if (!held) return [];
+	if (!held) {
+		return [];
+	}
 	if (held.kind === "waste") {
 		const card = top(game.waste);
 		return card ? [card] : [];
@@ -209,7 +221,9 @@ function heldCards(game: Game, held: Held): Card[] {
 
 /** Take the held cards off the board. The caller has already placed them. */
 function lift(game: Game, held: Held): void {
-	if (!held) return;
+	if (!held) {
+		return;
+	}
 	if (held.kind === "waste") {
 		game.waste.pop();
 	} else if (held.kind === "foundation") {
@@ -219,28 +233,42 @@ function lift(game: Game, held: Held): void {
 		pile.length = held.index;
 		// The card a moved run was sitting on turns face up.
 		const exposed = top(pile);
-		if (exposed && !exposed.up) exposed.up = true;
+		if (exposed && !exposed.up) {
+			exposed.up = true;
+		}
 	}
 }
 
 type Target =
-	| {kind: "tableau"; pile: number}
-	| {kind: "foundation"; index: number};
+	| {kind: "tableau"; pile: number} |
+	{kind: "foundation"; index: number};
 
 /** Play the held cards onto a target, or report that they do not go there. */
 function play(game: Game, held: Held, target: Target): boolean {
 	const cards = heldCards(game, held);
-	if (cards.length === 0) return false;
+	if (cards.length === 0) {
+		return false;
+	}
 	if (target.kind === "foundation") {
 		// A foundation takes one card, and only ever the last of a run.
-		if (cards.length !== 1) return false;
-		if (target.index !== cards[0].suit) return false;
-		if (!fitsFoundation(cards[0], game.foundations[target.index])) return false;
+		if (cards.length !== 1) {
+			return false;
+		}
+		if (target.index !== cards[0].suit) {
+			return false;
+		}
+		if (!fitsFoundation(cards[0], game.foundations[target.index])) {
+			return false;
+		}
 		lift(game, held);
 		game.foundations[target.index].push(cards[0]);
 	} else {
-		if (held?.kind === "tableau" && held.pile === target.pile) return false;
-		if (!fitsTableau(cards[0], game.tableau[target.pile])) return false;
+		if (held?.kind === "tableau" && held.pile === target.pile) {
+			return false;
+		}
+		if (!fitsTableau(cards[0], game.tableau[target.pile])) {
+			return false;
+		}
 		lift(game, held);
 		game.tableau[target.pile].push(...cards);
 	}
@@ -266,7 +294,9 @@ function draw(game: Game): boolean {
 		game.moves++;
 		return true;
 	}
-	if (game.waste.length === 0) return false;
+	if (game.waste.length === 0) {
+		return false;
+	}
 	while (game.waste.length > 0) {
 		const card = game.waste.pop()!;
 		card.up = false;
@@ -279,7 +309,7 @@ function draw(game: Game): boolean {
 /** Send every card that is ready to a foundation, until none is. Returns moves. */
 function autoplay(game: Game): number {
 	let played = 0;
-	for (let progress = true; progress; ) {
+	for (let progress = true; progress;) {
 		progress = false;
 		const sources: Held[] = [{kind: "waste"}];
 		for (let pile = 0; pile < 7; pile++) {
@@ -290,9 +320,13 @@ function autoplay(game: Game): number {
 		}
 		for (const source of sources) {
 			const card = heldCards(game, source)[0];
-			if (!card) continue;
+			if (!card) {
+				continue;
+			}
 			const index = foundationFor(game, card);
-			if (index === null) continue;
+			if (index === null) {
+				continue;
+			}
 			play(game, source, {kind: "foundation", index});
 			played++;
 			progress = true;
@@ -452,12 +486,16 @@ function blank(width: number): string {
  */
 function backRows(width: number, height: number): string[] {
 	return Array.from({length: height}, (_, row) => {
-		if (row === 0) return TL + T.repeat(width - 2) + TR;
-		if (row === height - 1) return BL + B.repeat(width - 2) + BR;
+		if (row === 0) {
+			return TL + T.repeat(width - 2) + TR;
+		}
+		if (row === height - 1) {
+			return BL + B.repeat(width - 2) + BR;
+		}
 		const inner = Array.from({length: width - 2}, (_, col) =>
-			row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
-				? MOTIF
-				: " ",
+			row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2) ?
+				MOTIF :
+				" ",
 		).join("");
 		return L + inner + R;
 	});
@@ -478,12 +516,16 @@ function centered(text: string, width: number): string {
  */
 function faceRows(card: Card, tier: Tier): string[] {
 	const {width, height} = tier;
-	if (!card.up) return backRows(width, height);
+	if (!card.up) {
+		return backRows(width, height);
+	}
 	const grid = Array.from({length: height}, () =>
 		Array.from({length: width}, () => " "),
 	);
 	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
-	for (let i = 0; i < index.length && i < width; i++) grid[0][i] = index[i];
+	for (let i = 0; i < index.length && i < width; i++) {
+		grid[0][i] = index[i];
+	}
 	if (width > 3) {
 		grid[Math.floor(height / 2)][Math.floor(width / 2)] = SUITS[card.suit];
 	}
@@ -521,11 +563,19 @@ function CardFace({
 	ondblclick,
 }: CardProps) {
 	const classes = ["card"];
-	if (!card.up) classes.push("down");
-	else if (isRed(card)) classes.push("red");
-	if (held) classes.push("held");
-	else if (drop) classes.push("drop");
-	if (cursor) classes.push("cursor");
+	if (!card.up) {
+		classes.push("down");
+	} else if (isRed(card)) {
+		classes.push("red");
+	}
+	if (held) {
+		classes.push("held");
+	} else if (drop) {
+		classes.push("drop");
+	}
+	if (cursor) {
+		classes.push("cursor");
+	}
 	const rows = faceRows(card, tier);
 	return jsx`
 		<div
@@ -553,13 +603,17 @@ function Slot({
 	onclick?: (event: MouseEvent) => unknown;
 }) {
 	const rows = Array.from({length: tier.height}, (_, line) =>
-		line === Math.floor(tier.height / 2) && mark
-			? centered(mark, tier.width)
-			: blank(tier.width),
+		line === Math.floor(tier.height / 2) && mark ?
+				centered(mark, tier.width) :
+				blank(tier.width),
 	);
 	const classes = ["slot"];
-	if (drop) classes.push("drop");
-	if (cursor) classes.push("cursor");
+	if (drop) {
+		classes.push("drop");
+	}
+	if (cursor) {
+		classes.push("cursor");
+	}
 	return jsx`
 		<div class=${classes.join(" ")} onclick=${onclick}>${rows.map(
 			(row, line) => jsx`<div key=${line}>${row}</div>`,
@@ -590,7 +644,9 @@ function* App(this: Context) {
 	let best: {ms: number; moves: number} | null = null;
 
 	const ticker = setInterval(() => {
-		if (startedAt !== null && finishedAt === null) this.refresh();
+		if (startedAt !== null && finishedAt === null) {
+			this.refresh();
+		}
 	}, 1000);
 	this.cleanup(() => clearInterval(ticker));
 
@@ -603,7 +659,9 @@ function* App(this: Context) {
 		startedAt !== null && finishedAt === null && game.moves > 0;
 
 	const guardedReset = (number: number, label: string): void => {
-		if (!liveRun()) return reset(number);
+		if (!liveRun()) {
+			return reset(number);
+		}
 		this.refresh(() => {
 			confirming = {
 				question: "Abandon this run?",
@@ -616,7 +674,9 @@ function* App(this: Context) {
 	/** Back to the deal's opening position, clock unstarted, cursor down. */
 	const reset = (number: number): void => {
 		this.refresh(() => {
-			if (number !== game.number) best = null;
+			if (number !== game.number) {
+				best = null;
+			}
 			game = deal(number, mode);
 			history = [];
 			held = null;
@@ -641,10 +701,14 @@ function* App(this: Context) {
 		}
 		this.refresh(() => {
 			history.push(before);
-			if (history.length > 200) history.shift();
+			if (history.length > 200) {
+				history.shift();
+			}
 			held = null;
 			message = "";
-			if (startedAt === null) startedAt = performance.now();
+			if (startedAt === null) {
+				startedAt = performance.now();
+			}
 			if (won(game) && finishedAt === null) {
 				finishedAt = performance.now();
 				const ms = finishedAt - startedAt;
@@ -719,7 +783,9 @@ function* App(this: Context) {
 		for (const source of candidates) {
 			const card = heldCards(game, source)[0];
 			const index = card?.up ? foundationFor(game, card) : null;
-			if (index === null) continue;
+			if (index === null) {
+				continue;
+			}
 			act((game) => play(game, source, {kind: "foundation", index}));
 			return;
 		}
@@ -857,21 +923,29 @@ function* App(this: Context) {
 	/** Enter, wherever the cursor rests: pick up, drop, or draw. */
 	const activate = (): void => {
 		if (cur.row === "top") {
-			if (cur.col === 0)
+			if (cur.col === 0) {
 				return act(draw, "The deck and the flip are both empty.");
+			}
 			if (cur.col === 1) {
-				if (held)
+				if (held) {
 					return void this.refresh(() => {
 						message = "The discard takes nothing back.";
 					});
-				if (top(game.waste)) grab({kind: "waste"});
+				}
+				if (top(game.waste)) {
+					grab({kind: "waste"});
+				}
 				return;
 			}
 			return target({kind: "foundation", index: cur.col - 3});
 		}
 		const pile = pileAt(cur.col);
-		if (held) return target({kind: "tableau", pile: cur.col});
-		if (pile.length === 0) return;
+		if (held) {
+			return target({kind: "tableau", pile: cur.col});
+		}
+		if (pile.length === 0) {
+			return;
+		}
 		const card = pile[cur.depth];
 		if (!card?.up || !isRun(pile, cur.depth)) {
 			this.refresh(() => {
@@ -888,7 +962,9 @@ function* App(this: Context) {
 			// While the seed field has focus, letters and digits belong to it;
 			// only Enter still deals.
 			const typing = (event.target as Element | null)?.tagName === "INPUT";
-			if (typing && key !== "Enter") return;
+			if (typing && key !== "Enter") {
+				return;
+			}
 			// The typed seed names the deal; empty or nonsense means any deal.
 			const dealFromMenu = (): void => {
 				const seedField = document.getElementById(
@@ -902,7 +978,9 @@ function* App(this: Context) {
 				// The number picks; the same number again deals, so the whole
 				// menu answers to two fingers.
 				const picked = key === "1" ? 1 : 3;
-				if (mode === picked) return dealFromMenu();
+				if (mode === picked) {
+					return dealFromMenu();
+				}
 				this.refresh(() => {
 					mode = picked;
 				});
@@ -931,7 +1009,9 @@ function* App(this: Context) {
 			return;
 		}
 		if (key === "q") {
-			if (!liveRun()) return term.window.close();
+			if (!liveRun()) {
+				return term.window.close();
+			}
 			return this.refresh(() => {
 				confirming = {
 					question: "Quit in the middle of a run?",
@@ -946,8 +1026,12 @@ function* App(this: Context) {
 			});
 			return;
 		}
-		if (key === "r") return guardedReset(game.number, "this deal again");
-		if (key === "u") return undo();
+		if (key === "r") {
+			return guardedReset(game.number, "this deal again");
+		}
+		if (key === "u") {
+			return undo();
+		}
 		if (key === "Escape") {
 			this.refresh(() => {
 				held = null;
@@ -961,7 +1045,9 @@ function* App(this: Context) {
 		}
 		if (key === "f" || key === "0") {
 			seat("top", 1);
-			if (top(game.waste)) grab({kind: "waste"});
+			if (top(game.waste)) {
+				grab({kind: "waste"});
+			}
 			return;
 		}
 		if (key === "s" || key === "h" || key === "d" || key === "c") {
@@ -996,10 +1082,18 @@ function* App(this: Context) {
 			});
 			return;
 		}
-		if (key === "ArrowUp") return moveCursor(0, -1);
-		if (key === "ArrowDown") return moveCursor(0, 1);
-		if (key === "ArrowLeft") return moveCursor(-1, 0);
-		if (key === "ArrowRight") return moveCursor(1, 0);
+		if (key === "ArrowUp") {
+			return moveCursor(0, -1);
+		}
+		if (key === "ArrowDown") {
+			return moveCursor(0, 1);
+		}
+		if (key === "ArrowLeft") {
+			return moveCursor(-1, 0);
+		}
+		if (key === "ArrowRight") {
+			return moveCursor(1, 0);
+		}
 		if (key === "Enter") {
 			// Until something summons the cursor, Enter draws -- the typing
 			// player's right hand never leaves home row -- and seats the
@@ -1028,9 +1122,9 @@ function* App(this: Context) {
 			seat(
 				"board",
 				pile,
-				grip?.kind === "tableau" && grip.pile === pile
-					? grip.index
-					: Math.max(0, lastOf(pileAt(pile))),
+				grip?.kind === "tableau" && grip.pile === pile ?
+					grip.index :
+						Math.max(0, lastOf(pileAt(pile))),
 			);
 		}
 	};
@@ -1061,7 +1155,6 @@ function* App(this: Context) {
 	const tier = (): Tier =>
 		grand.matches ? TIERS.grand : roomy.matches ? TIERS.roomy : TIERS.compact;
 
-	// eslint-disable-next-line no-empty-pattern
 	for ({} of this) {
 		if (inMenu()) {
 			yield jsx`
@@ -1115,9 +1208,9 @@ function* App(this: Context) {
 						${clock(startedAt === null ? 0 : (finishedAt ?? performance.now()) - startedAt)}
 					</span>
 					${
-						won(game)
-							? jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>`
-							: message && jsx`<span class="score">${message}</span>`
+						won(game) ?
+							jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>` :
+							message && jsx`<span class="score">${message}</span>`
 					}
 				</div>
 
@@ -1133,21 +1226,21 @@ function* App(this: Context) {
 				<div class="top">
 					<div class="pile">
 						${
-							game.stock.length > 0
-								? jsx`<${CardFace}
+							game.stock.length > 0 ?
+								jsx`<${CardFace}
 										card=${{rank: 1, suit: 0, up: false}}
 										tier=${t}
 										cursor=${atTop(0)}
 										onclick=${() => act(draw)}
-									/>`
-								: jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
+									/>` :
+								jsx`<${Slot} tier=${t} mark=${TURN_GLYPH}
 										cursor=${atTop(0)} onclick=${() => act(draw)} />`
 						}
 					</div>
 					<div class="pile">
 						${
-							wasteTop
-								? game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
+							wasteTop ?
+									game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
 										(card, at, fan) => jsx`<${CardFace}
 												key=${`${card.suit}-${card.rank}`}
 												card=${card}
@@ -1158,8 +1251,8 @@ function* App(this: Context) {
 												onclick=${at === fan.length - 1 ? () => grab({kind: "waste"}) : undefined}
 												ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
 											/>`,
-									)
-								: jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
+									) :
+								jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
 						}
 					</div>
 					<div class="gap"></div>
@@ -1167,16 +1260,16 @@ function* App(this: Context) {
 						(foundation, index) => jsx`
 							<div class="pile" key=${`foundation-${index}`}>
 								${
-									top(foundation)
-										? jsx`<${CardFace}
+									top(foundation) ?
+										jsx`<${CardFace}
 												card=${top(foundation)}
 												tier=${t}
 												held=${grip?.kind === "foundation" && grip.index === index}
 												drop=${home === index}
 												cursor=${atTop(3 + index)}
 												onclick=${() => target({kind: "foundation", index})}
-											/>`
-										: jsx`<${Slot}
+											/>` :
+										jsx`<${Slot}
 												tier=${t}
 												mark=${SUITS[index]}
 												cursor=${atTop(3 + index)}
@@ -1204,14 +1297,14 @@ function* App(this: Context) {
 						(pile, index) => jsx`
 							<div class="pile" key=${`pile-${index}`}>
 								${
-									pile.length === 0
-										? jsx`<${Slot}
+									pile.length === 0 ?
+										jsx`<${Slot}
 												tier=${t}
 												drop=${Boolean(card) && fitsTableau(card, pile)}
 												cursor=${cursorShown && cur.row === "board" && cur.col === index}
 												onclick=${() => target({kind: "tableau", pile: index})}
-											/>`
-										: pile.map(
+											/>` :
+											pile.map(
 												(each, depth) => jsx`
 													<${CardFace}
 														key=${`${each.suit}-${each.rank}`}

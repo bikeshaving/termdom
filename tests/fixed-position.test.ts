@@ -12,8 +12,8 @@ import {TermDOM} from "../src/internal/termdom.js";
 function makeTallDoc(dom: TermDOM): void {
 	dom.document.body.innerHTML =
 		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("") +
-		`<div id="bar" style="position:fixed;bottom:0;left:0;width:100%;background-color:#333">STATUS` +
-		`<span id="pct" style="position:absolute;right:1ch;top:0">42%</span></div>`;
+		"<div id=\"bar\" style=\"position:fixed;bottom:0;left:0;width:100%;background-color:#333\">STATUS" +
+		"<span id=\"pct\" style=\"position:absolute;right:1ch;top:0\">42%</span></div>";
 }
 
 test("a fixed bottom bar sits on the viewport's last row, unscrolled", async () => {

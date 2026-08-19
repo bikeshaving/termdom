@@ -173,7 +173,9 @@ function nonEmptyRows(text: string): string[] {
 }
 
 function assert(condition: boolean, message: string): void {
-	if (!condition) throw new Error(message);
+	if (!condition) {
+		throw new Error(message);
+	}
 }
 
 interface Scenario {
@@ -196,7 +198,7 @@ const scenarios: Scenario[] = [
 			assert(top >= 0, "no border top row on screen");
 			assert(
 				rows[top + 1]?.includes("│") &&
-					rows[top + 1]?.includes("message ch.at"),
+				rows[top + 1]?.includes("message ch.at"),
 				"row below border top is not the placeholder content row",
 			);
 			assert(rows[top + 2]?.includes("└"), "no border bottom on third row");
@@ -258,7 +260,7 @@ const scenarios: Scenario[] = [
 async function main(): Promise<void> {
 	ensureFreshDist();
 	try {
-		osascript(`tell application "Terminal" to count windows`);
+		osascript("tell application \"Terminal\" to count windows");
 	} catch {
 		console.error(
 			"cannot control Terminal.app -- grant Automation permission to this terminal in System Settings > Privacy & Security > Automation",

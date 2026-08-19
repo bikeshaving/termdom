@@ -541,7 +541,7 @@ test("complex mixed white-space with word-break properties", async () => {
 test("a leading <br> keeps its line break and the whole run after it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<br> abcdef`;
+	dom.document.body.innerHTML = "<br> abcdef";
 
 	await nextFrame(dom);
 
@@ -568,8 +568,8 @@ test("white-space: pre suppresses wrapping but keeps newlines", async () => {
 		#lines { white-space: pre; }
 	</style>`;
 	dom.document.body.innerHTML =
-		`<div id="wrap">the quick brown fox jumps over the lazy dog</div>` +
-		`<div id="lines">one\ntwo\nthree</div>`;
+		"<div id=\"wrap\">the quick brown fox jumps over the lazy dog</div>" +
+		"<div id=\"lines\">one\ntwo\nthree</div>";
 
 	await nextFrame(dom);
 

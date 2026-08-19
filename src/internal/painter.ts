@@ -6,7 +6,7 @@
 import {isTextField, selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
-import {type Viewport} from "./viewport.js";
+import type {Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderSides} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
@@ -57,17 +57,23 @@ function overflowClipRect(
 	overflowY: string,
 	parent: ClipRect | null,
 ): ClipRect | null {
-	if (!rect) return parent;
+	if (!rect) {
+		return parent;
+	}
 	const hiddenX = overflowX === "hidden";
 	const hiddenY = overflowY === "hidden";
-	if (!hiddenX && !hiddenY) return parent;
+	if (!hiddenX && !hiddenY) {
+		return parent;
+	}
 
 	const left = hiddenX ? rect.left : -Infinity;
 	const right = hiddenX ? rect.left + rect.width : Infinity;
 	const top = hiddenY ? rect.top : -Infinity;
 	const bottom = hiddenY ? rect.top + rect.height : Infinity;
 
-	if (!parent) return {left, top, right, bottom};
+	if (!parent) {
+		return {left, top, right, bottom};
+	}
 	return {
 		left: Math.max(parent.left, left),
 		top: Math.max(parent.top, top),
@@ -93,8 +99,12 @@ function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 	}
 	const numeric = parseInt(weight, 10);
 	if (Number.isFinite(numeric)) {
-		if (numeric >= 600) return {bold: true, dim: false};
-		if (numeric <= 300) return {bold: false, dim: true};
+		if (numeric >= 600) {
+			return {bold: true, dim: false};
+		}
+		if (numeric <= 300) {
+			return {bold: false, dim: true};
+		}
 	}
 	return {bold: false, dim: false};
 }
@@ -114,9 +124,15 @@ function isSystemHighlightColor(value: string): boolean {
  * background that paints nothing answers null.
  */
 function backgroundFill(value: string): number | "default" | "inverse" | null {
-	if (!value || value === "initial" || isTransparentColor(value)) return null;
-	if (/^canvas$/i.test(value.trim())) return "default";
-	if (isSystemHighlightColor(value)) return "inverse";
+	if (!value || value === "initial" || isTransparentColor(value)) {
+		return null;
+	}
+	if (/^canvas$/i.test(value.trim())) {
+		return "default";
+	}
+	if (isSystemHighlightColor(value)) {
+		return "inverse";
+	}
 	return cssColorToNumber(value);
 }
 
@@ -141,26 +157,26 @@ function cellStyleFromComputed(
 	const isHighlightPair = isSystemHighlightColor(bgColor);
 	return {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color)
-				? cssColorToNumber(color)
-				: undefined,
+			color && color !== "initial" && !isSystemHighlightColor(color) ?
+					cssColorToNumber(color) :
+				undefined,
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
 			!isTransparentColor(bgColor) &&
 			!/^canvas$/i.test(bgColor.trim()) &&
-			!isSystemHighlightColor(bgColor)
-				? cssColorToNumber(bgColor)
-				: undefined,
+			!isSystemHighlightColor(bgColor) ?
+					cssColorToNumber(bgColor) :
+				undefined,
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
 		italic: computedStyle.computedValueOf("font-style") === "italic",
 		underline: hasUnderline(computedStyle),
 		underlineStyle:
-			computedStyle.computedValueOf("text-decoration-style") === "double"
-				? ("double" as const)
-				: undefined,
+			computedStyle.computedValueOf("text-decoration-style") === "double" ?
+					("double" as const) :
+				undefined,
 		strikethrough: hasLineThrough(computedStyle),
 	};
 }
@@ -303,7 +319,9 @@ export class Painter {
 		const fill = backgroundFill(
 			pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
 		);
-		if (fill === null) return;
+		if (fill === null) {
+			return;
+		}
 		// The viewport, in the document coordinates every draw call takes: the
 		// band the buffer holds, which is where a fixed box paints too.
 		ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
@@ -342,7 +360,9 @@ export class Painter {
 					inside = true;
 				}
 			}
-			if (!inside) return;
+			if (!inside) {
+				return;
+			}
 		} else if (
 			this.#layout.isSubtreeOutsideBand(element, bandTop, bandBottom)
 		) {
@@ -370,9 +390,9 @@ export class Painter {
 		const italic = computed.computedValueOf("font-style") === "italic";
 		const underline = hasUnderline(computed);
 		const underlineStyle =
-			computed.computedValueOf("text-decoration-style") === "double"
-				? ("double" as const)
-				: undefined;
+			computed.computedValueOf("text-decoration-style") === "double" ?
+					("double" as const) :
+				undefined;
 		// visibility:hidden reserves the box (layout is untouched) but paints
 		// nothing of it -- unlike display:none, which removes the box entirely. A
 		// descendant that sets visibility:visible still paints, since visibility
@@ -394,17 +414,17 @@ export class Painter {
 			Boolean(backgroundColor) && isSystemHighlightColor(backgroundColor);
 		const style = {
 			fg:
-				color && color !== "initial" && !isSystemHighlightColor(color)
-					? cssColorToNumber(color)
-					: undefined,
+				color && color !== "initial" && !isSystemHighlightColor(color) ?
+						cssColorToNumber(color) :
+					undefined,
 			bg:
 				backgroundColor &&
 				!isCanvasBg &&
 				backgroundColor !== "initial" &&
 				!isTransparentColor(backgroundColor) &&
-				!isSystemHighlightColor(backgroundColor)
-					? cssColorToNumber(backgroundColor)
-					: undefined,
+				!isSystemHighlightColor(backgroundColor) ?
+						cssColorToNumber(backgroundColor) :
+					undefined,
 			bold,
 			dim,
 			italic,
@@ -413,11 +433,11 @@ export class Painter {
 		};
 
 		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-			const fill = isCanvasBg
-				? "default"
-				: isHighlightBox
-					? "inverse"
-					: style.bg;
+			const fill = isCanvasBg ?
+				"default" :
+				isHighlightBox ?
+					"inverse" :
+					style.bg;
 			// A box that broke across lines has a fragment on each of them, and
 			// its background belongs to those fragments rather than to the
 			// rectangle enclosing them: the enclosing one covers the whole width
@@ -455,17 +475,21 @@ export class Painter {
 				line: import("./ansi.js").LineStyle["style"] | undefined,
 				prop: string,
 			): import("./ansi.js").LineStyle | undefined => {
-				if (!line) return undefined;
+				if (!line) {
+					return undefined;
+				}
 				const borderColor = computed.computedValueOf(prop);
-				if (isTransparentColor(borderColor)) return undefined;
+				if (isTransparentColor(borderColor)) {
+					return undefined;
+				}
 				return {
 					style: line,
 					color:
 						borderColor &&
 						borderColor !== "currentcolor" &&
-						borderColor !== "currentColor"
-							? cssColorToNumber(borderColor)
-							: style.fg,
+						borderColor !== "currentColor" ?
+								cssColorToNumber(borderColor) :
+							style.fg,
 				};
 			};
 			const top = sideFor(sides.top, "border-top-color");
@@ -491,7 +515,9 @@ export class Painter {
 		}
 
 		// Handle list-style-position: outside markers
-		if (visible) this.#renderOutsideMarker(element, ctx);
+		if (visible) {
+			this.#renderOutsideMarker(element, ctx);
+		}
 
 		// A text field's content is its shadow tree, painted by the child walk
 		// below; the rest is parking the caret at its Range position, falling back
@@ -525,8 +551,11 @@ export class Painter {
 			// own intent reads straight off style.display -- no style resolution,
 			// and exactly the open/closed signal the top-layer decision wants.
 			if (picker) {
-				if (picker.style.display !== "none") this.#topLayer.add(picker);
-				else this.#topLayer.delete(picker);
+				if (picker.style.display !== "none") {
+					this.#topLayer.add(picker);
+				} else {
+					this.#topLayer.delete(picker);
+				}
 			}
 			if (visible && select === this.#document.activeElement) {
 				const content = this.#layout.contentRect(select);
@@ -541,10 +570,14 @@ export class Painter {
 		if (element.tagName === "INPUT" && rect) {
 			const input = element as HTMLInputElement;
 			if (input.type === "checkbox" || input.type === "radio") {
-				if (visible) this.#renderToggleGlyph(input, ctx);
+				if (visible) {
+					this.#renderToggleGlyph(input, ctx);
+				}
 				return;
 			}
-			if (input.type === "hidden") return;
+			if (input.type === "hidden") {
+				return;
+			}
 		}
 
 		// No manual lifecycle management needed
@@ -552,7 +585,9 @@ export class Painter {
 		// The stacking-context painter slots its negative-z layer here: after
 		// this element's own background and border, before any of its in-flow
 		// content -- the CSS position for negative z-index.
-		if (afterOwnBox) afterOwnBox();
+		if (afterOwnBox) {
+			afterOwnBox();
+		}
 
 		// The IN-FLOW walk: children paint in tree order, and POSITIONED
 		// children don't paint here at all -- per CSS they are hoisted to
@@ -696,9 +731,9 @@ export class Painter {
 						Math.round(rect.left),
 						Math.round(rect.bottom) - 1,
 						Math.round(rect.width),
-						hasColor
-							? {underline: true, fg: cssColorToNumber(outlineColor)}
-							: {underline: true},
+						hasColor ?
+								{underline: true, fg: cssColorToNumber(outlineColor)} :
+								{underline: true},
 					);
 				}
 			}
@@ -723,7 +758,9 @@ export class Painter {
 			ancestor && ancestor !== contextRoot;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			if (!isPositioned(ancestor)) continue;
+			if (!isPositioned(ancestor)) {
+				continue;
+			}
 			const style = computedStyleOf(ancestor);
 			const overflow = style.computedValueOf("overflow");
 			const overflowX = style.computedValueOf("overflow-x") || overflow;
@@ -787,10 +824,16 @@ export class Painter {
 			}
 		};
 		this.#renderElement(root, ctx, () => {
-			for (const element of bucket.neg) paintMember(element);
+			for (const element of bucket.neg) {
+				paintMember(element);
+			}
 		});
-		for (const element of bucket.zero) paintMember(element);
-		for (const element of bucket.pos) paintMember(element);
+		for (const element of bucket.zero) {
+			paintMember(element);
+		}
+		for (const element of bucket.pos) {
+			paintMember(element);
+		}
 	}
 
 	/** Render outside-positioned list markers, once per element per frame. */
@@ -851,9 +894,9 @@ export class Painter {
 
 		const markerTextStyle = {
 			fg:
-				markerColor && markerColor !== "initial"
-					? cssColorToNumber(markerColor)
-					: undefined,
+				markerColor && markerColor !== "initial" ?
+						cssColorToNumber(markerColor) :
+					undefined,
 			bold: markerBold,
 			dim: markerDim,
 			italic: markerItalic,
@@ -882,12 +925,18 @@ export class Painter {
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const root = shadowRootOf<ShadowRoot>(element);
-		if (!root) return;
+		if (!root) {
+			return;
+		}
 		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
 		const mark = (glyphSpan?.firstChild as Text | null)?.data;
-		if (!mark) return;
+		if (!mark) {
+			return;
+		}
 		const content = this.#layout.contentRect(element);
-		if (!content) return;
+		if (!content) {
+			return;
+		}
 		const contentX = Math.round(content.x);
 		const contentY = Math.round(content.y);
 		ctx.drawText(
@@ -906,19 +955,25 @@ export class Painter {
 	 */
 	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
 		const textContent = textNode.data;
-		if (!textContent) return;
+		if (!textContent) {
+			return;
+		}
 
 		// The FLAT-tree parent: slotted bare text draws its inherited styles
 		// through the slot's shadow chain, not from the host it came from, and
 		// the text of a pseudo-element draws the pseudo-element's own.
 		const parentElement = flatParentElement<Element>(textNode);
-		if (!parentElement) return;
+		if (!parentElement) {
+			return;
+		}
 
 		const computedStyle: ComputedStyle = computedStyleOf(parentElement);
 
 		// visibility inherits, so the parent's own resolved value already accounts
 		// for a closer ancestor overriding back to visible.
-		if (computedStyle.computedValueOf("visibility") === "hidden") return;
+		if (computedStyle.computedValueOf("visibility") === "hidden") {
+			return;
+		}
 
 		const textTransform = computedStyle.computedValueOf("text-transform");
 		const textStyle = cellStyleFromComputed(computedStyle);
@@ -932,7 +987,9 @@ export class Painter {
 		const fragments = this.#layout.lineFragments(textNode);
 		let painted = false;
 		for (const fragment of fragments) {
-			if (fragment.endOffset <= fragment.startOffset) continue;
+			if (fragment.endOffset <= fragment.startOffset) {
+				continue;
+			}
 			const text = renderTextFragment(
 				textContent,
 				whiteSpace,
@@ -940,7 +997,9 @@ export class Painter {
 				fragment.endOffset,
 				fragment.visualBase,
 			);
-			if (!text) continue;
+			if (!text) {
+				continue;
+			}
 			painted = true;
 			ctx.drawText(
 				applyTextTransform(text, textTransform),
@@ -982,18 +1041,24 @@ export class Painter {
 			return null;
 		}
 		const documentRange = selection.getRangeAt(0);
-		if (!documentRange.intersectsNode(textNode)) return null;
+		if (!documentRange.intersectsNode(textNode)) {
+			return null;
+		}
 		const selectionParent = flatParentElement<Element>(textNode);
-		if (!selectionParent) return null;
+		if (!selectionParent) {
+			return null;
+		}
 		// Narrowed to this node: ::selection resolves per node's parent, so each
 		// node's share of the selection is painted in its own style.
 		const from =
 			documentRange.startContainer === textNode ? documentRange.startOffset : 0;
 		const to =
-			documentRange.endContainer === textNode
-				? documentRange.endOffset
-				: textNode.data.length;
-		if (to <= from) return null;
+			documentRange.endContainer === textNode ?
+				documentRange.endOffset :
+				textNode.data.length;
+		if (to <= from) {
+			return null;
+		}
 		const range = textNode.ownerDocument.createRange();
 		range.setStart(textNode, from);
 		range.setEnd(textNode, to);
@@ -1015,10 +1080,14 @@ export class Painter {
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const found = this.#selectionRangeFor(textNode);
-		if (!found) return;
+		if (!found) {
+			return;
+		}
 		const {range, selectionParent} = found;
 		const selectionStyle = selectionStyleFor(selectionParent, textStyle);
-		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
+		if (selectionStyle === textStyle) {
+			return;
+		} // no ::selection rule reaches here
 
 		for (const run of this.#layout.getRangeRuns(range)) {
 			ctx.drawText(

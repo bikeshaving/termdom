@@ -41,9 +41,9 @@ const done = document.getElementById("done")!;
 function updatePreview(): void {
 	const [name, email, handle] = fields.map((f) => f.value);
 	preview.textContent =
-		name || email || handle
-			? `» ${name || "?"} <${email || "?"}> @${handle || "?"}`
-			: "» start typing to build a profile";
+		name || email || handle ?
+			`» ${name || "?"} <${email || "?"}> @${handle || "?"}` :
+			"» start typing to build a profile";
 	done.textContent = "";
 }
 
@@ -53,9 +53,13 @@ for (const field of fields) {
 }
 
 document.addEventListener("keydown", (event: Event) => {
-	if ((event as KeyboardEvent).key !== "Enter") return;
+	if ((event as KeyboardEvent).key !== "Enter") {
+		return;
+	}
 	const [name, email, handle] = fields.map((f) => f.value.trim());
-	if (!name && !email && !handle) return;
+	if (!name && !email && !handle) {
+		return;
+	}
 	done.textContent = `✓ saved: ${name || "anonymous"} <${email || "n/a"}> @${handle || "n/a"}`;
 });
 

@@ -15,32 +15,32 @@ import {computedStyleOf} from "./styles.js";
  * sequence pins down exactly, independent of any US-QWERTY assumption.
  */
 const NAMED_KEY_CODES: Record<string, string> = {
-	Enter: "Enter",
-	Tab: "Tab",
-	Backspace: "Backspace",
-	Escape: "Escape",
-	ArrowUp: "ArrowUp",
-	ArrowDown: "ArrowDown",
-	ArrowLeft: "ArrowLeft",
-	ArrowRight: "ArrowRight",
-	Home: "Home",
-	End: "End",
-	Insert: "Insert",
-	Delete: "Delete",
-	PageUp: "PageUp",
-	PageDown: "PageDown",
-	F1: "F1",
-	F2: "F2",
-	F3: "F3",
-	F4: "F4",
-	F5: "F5",
-	F6: "F6",
-	F7: "F7",
-	F8: "F8",
-	F9: "F9",
-	F10: "F10",
-	F11: "F11",
-	F12: "F12",
+	"Enter": "Enter",
+	"Tab": "Tab",
+	"Backspace": "Backspace",
+	"Escape": "Escape",
+	"ArrowUp": "ArrowUp",
+	"ArrowDown": "ArrowDown",
+	"ArrowLeft": "ArrowLeft",
+	"ArrowRight": "ArrowRight",
+	"Home": "Home",
+	"End": "End",
+	"Insert": "Insert",
+	"Delete": "Delete",
+	"PageUp": "PageUp",
+	"PageDown": "PageDown",
+	"F1": "F1",
+	"F2": "F2",
+	"F3": "F3",
+	"F4": "F4",
+	"F5": "F5",
+	"F6": "F6",
+	"F7": "F7",
+	"F8": "F8",
+	"F9": "F9",
+	"F10": "F10",
+	"F11": "F11",
+	"F12": "F12",
 	" ": "Space",
 };
 
@@ -57,11 +57,17 @@ const NAMED_KEY_CODES: Record<string, string> = {
  */
 export function domCodeFor(keyName: string): string {
 	const named = NAMED_KEY_CODES[keyName];
-	if (named) return named;
+	if (named) {
+		return named;
+	}
 	if (keyName.length === 1) {
 		const upper = keyName.toUpperCase();
-		if (upper >= "A" && upper <= "Z") return `Key${upper}`;
-		if (keyName >= "0" && keyName <= "9") return `Digit${keyName}`;
+		if (upper >= "A" && upper <= "Z") {
+			return `Key${upper}`;
+		}
+		if (keyName >= "0" && keyName <= "9") {
+			return `Digit${keyName}`;
+		}
 	}
 	return `Key${keyName.toUpperCase()}`;
 }
@@ -435,9 +441,15 @@ export function getFocusableElements(
 		const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
 		const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
 		if (aTab !== bTab) {
-			if (aTab > 0 && bTab > 0) return aTab - bTab;
-			if (aTab > 0) return -1;
-			if (bTab > 0) return 1;
+			if (aTab > 0 && bTab > 0) {
+				return aTab - bTab;
+			}
+			if (aTab > 0) {
+				return -1;
+			}
+			if (bTab > 0) {
+				return 1;
+			}
 		}
 		return 0;
 	});
@@ -457,11 +469,13 @@ export function getFocusableElements(
 export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	for (const record of mutations) {
 		for (const node of record.addedNodes) {
-			if (node.nodeType !== node.ELEMENT_NODE) continue;
+			if (node.nodeType !== node.ELEMENT_NODE) {
+				continue;
+			}
 			const element = node as Element;
-			const candidate = (element as any).autofocus
-				? element
-				: element.querySelector?.("[autofocus]");
+			const candidate = (element as any).autofocus ?
+				element :
+					element.querySelector?.("[autofocus]");
 			(candidate as HTMLElement | null)?.focus?.();
 		}
 	}

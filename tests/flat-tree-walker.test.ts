@@ -24,9 +24,9 @@ function documentWindow(html: string) {
 		({
 			getPropertyValue: (property: string) =>
 				property === "display" &&
-				(element.tagName === "LI" || element.hasAttribute("data-list-item"))
-					? "list-item"
-					: "",
+				(element.tagName === "LI" || element.hasAttribute("data-list-item")) ?
+					"list-item" :
+					"",
 		}) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle;
 	return {window};
 }
@@ -168,7 +168,7 @@ test("A bare document - flat-tree walker slot content traversal", () => {
 	const document = window.document;
 
 	const host = document.createElement("div");
-	host.innerHTML = `<span class="light-content">Light DOM content</span>`;
+	host.innerHTML = "<span class=\"light-content\">Light DOM content</span>";
 	document.body.appendChild(host);
 
 	const shadowRoot = host.attachShadow({mode: "open"});
@@ -625,9 +625,13 @@ test("flat-tree walker flattens named slots into composed order", () => {
 	let sawSlot = false;
 	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 		if (node.nodeType === node.ELEMENT_NODE) {
-			if (node.nodeName === "SLOT") sawSlot = true;
+			if (node.nodeName === "SLOT") {
+				sawSlot = true;
+			}
 			const className = (node as Element).className;
-			if (className) classNames.push(className);
+			if (className) {
+				classNames.push(className);
+			}
 		}
 	}
 
@@ -1159,9 +1163,9 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 		const out: string[] = [];
 		for (let n = walker.firstChild(); n; n = walker.nextSibling()) {
 			out.push(
-				n.nodeType === n.ELEMENT_NODE
-					? (n as Element).tagName
-					: (n as Text).data,
+				n.nodeType === n.ELEMENT_NODE ?
+						(n as Element).tagName :
+						(n as Text).data,
 			);
 		}
 		return out;

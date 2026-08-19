@@ -19,9 +19,9 @@ function type(terminal: MockProcess, data: string): Promise<void> {
 function makeSelect(document: Document): HTMLSelectElement {
 	const select = document.createElement("select");
 	select.innerHTML =
-		`<option value="a">Alpha</option>` +
-		`<option value="b" disabled>Beta</option>` +
-		`<option value="c">Gamma ray</option>`;
+		"<option value=\"a\">Alpha</option>" +
+		"<option value=\"b\" disabled>Beta</option>" +
+		"<option value=\"c\">Gamma ray</option>";
 	return select;
 }
 
@@ -318,14 +318,14 @@ test("picker: the highlighted row is inverse video, the rest carry no underline"
 function makeGroupedSelect(document: Document): HTMLSelectElement {
 	const select = document.createElement("select");
 	select.innerHTML =
-		`<option value="none">None</option>` +
-		`<optgroup label="Fruit">` +
-		`<option value="apple">Apple</option>` +
-		`<option value="pear" disabled>Pear</option>` +
-		`</optgroup>` +
-		`<optgroup label="Off" disabled>` +
-		`<option value="rock">Rock</option>` +
-		`</optgroup>`;
+		"<option value=\"none\">None</option>" +
+		"<optgroup label=\"Fruit\">" +
+		"<option value=\"apple\">Apple</option>" +
+		"<option value=\"pear\" disabled>Pear</option>" +
+		"</optgroup>" +
+		"<optgroup label=\"Off\" disabled>" +
+		"<option value=\"rock\">Rock</option>" +
+		"</optgroup>";
 	return select;
 }
 

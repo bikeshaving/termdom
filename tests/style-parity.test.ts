@@ -157,8 +157,12 @@ function normalize(
 	const match = prop.match(/^border-(top|right|bottom|left)-width$/);
 	if (match) {
 		const style = styles.getPropertyValue(`border-${match[1]}-style`);
-		if (!style || style === "none" || style === "hidden") return "0";
-		if (value === "0px") return "0";
+		if (!style || style === "none" || style === "hidden") {
+			return "0";
+		}
+		if (value === "0px") {
+			return "0";
+		}
 	}
 	return value;
 }
@@ -179,7 +183,7 @@ test("inline styles and stylesheets compute identically", async () => {
 	for (const declaration of DECLARATIONS) {
 		document.head.innerHTML = `<style>.probe { ${declaration}; }</style>`;
 		document.body.innerHTML =
-			`<div class="probe" id="sheet">x</div>` +
+			"<div class=\"probe\" id=\"sheet\">x</div>" +
 			`<div id="inline" style="${declaration}">x</div>`;
 		await nextFrame(dom);
 		const sheet = window.getComputedStyle(document.getElementById("sheet")!);
@@ -189,7 +193,9 @@ test("inline styles and stylesheets compute identically", async () => {
 			// resolved-value property (the used length, not the declared one)
 			// legitimately differs between them. This test is about the
 			// declaration's spelling, not the box's position.
-			if (POSITION_DEPENDENT.has(prop)) continue;
+			if (POSITION_DEPENDENT.has(prop)) {
+				continue;
+			}
 			const a = normalize(prop, sheet.getPropertyValue(prop), sheet);
 			const b = normalize(prop, inline.getPropertyValue(prop), inline);
 			if (a !== b) {

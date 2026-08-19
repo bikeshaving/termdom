@@ -28,8 +28,8 @@ function press(terminal: MockProcess, data: string): Promise<void> {
 
 test("a modal dialog paints over the page, centered in the viewport", async () => {
 	const {terminal, dom, dialog} = await open(
-		`<p>page one</p><p>page two</p><p>page three</p>` +
-			`<dialog><p>Save?</p></dialog>`,
+		"<p>page one</p><p>page two</p><p>page three</p>" +
+		"<dialog><p>Save?</p></dialog>",
 	);
 	dialog.showModal();
 	await nextFrame(dom);
@@ -49,8 +49,8 @@ test("a modal dialog paints over the page, centered in the viewport", async () =
 
 test("the backdrop covers the viewport, and an author's rules restyle it", async () => {
 	const {terminal, dom, dialog} = await open(
-		`<style>dialog::backdrop { background-color: transparent; }</style>` +
-			`<p>page one</p><p>page two</p><dialog><p>Save?</p></dialog>`,
+		"<style>dialog::backdrop { background-color: transparent; }</style>" +
+		"<p>page one</p><p>page two</p><dialog><p>Save?</p></dialog>",
 	);
 	dialog.showModal();
 	await nextFrame(dom);
@@ -65,7 +65,7 @@ test("the backdrop covers the viewport, and an author's rules restyle it", async
 
 test("show() leaves the dialog in the flow, with no backdrop", async () => {
 	const {terminal, dom, dialog} = await open(
-		`<p>page one</p><dialog><p>Save?</p></dialog>`,
+		"<p>page one</p><dialog><p>Save?</p></dialog>",
 	);
 	dialog.show();
 	await nextFrame(dom);
@@ -81,7 +81,7 @@ test("show() leaves the dialog in the flow, with no backdrop", async () => {
 
 test("closing gives the page back", async () => {
 	const {terminal, dom, dialog} = await open(
-		`<p>page one</p><dialog><p>Save?</p></dialog>`,
+		"<p>page one</p><dialog><p>Save?</p></dialog>",
 	);
 	dialog.showModal();
 	await nextFrame(dom);
@@ -100,7 +100,7 @@ test("closing gives the page back", async () => {
 /* ----------------------------------------------------------------- state */
 
 test(":modal matches a dialog shown modally, and only while it is showing", async () => {
-	const {dom, dialog} = await open(`<dialog><p>Save?</p></dialog>`);
+	const {dom, dialog} = await open("<dialog><p>Save?</p></dialog>");
 	expect(dialog.matches(":modal")).toBe(false);
 
 	dialog.showModal();
@@ -114,7 +114,7 @@ test(":modal matches a dialog shown modally, and only while it is showing", asyn
 });
 
 test("showModal refuses a dialog that is already showing, or is not connected", async () => {
-	const {dom, dialog} = await open(`<dialog><p>Save?</p></dialog>`);
+	const {dom, dialog} = await open("<dialog><p>Save?</p></dialog>");
 	dialog.show();
 	expect(() => dialog.showModal()).toThrow(/already showing/);
 	dialog.close();
@@ -132,7 +132,7 @@ test("showModal refuses a dialog that is already showing, or is not connected", 
 });
 
 test("taking a modal dialog out of the document takes it out of the top layer", async () => {
-	const {dom, dialog} = await open(`<dialog><p>Save?</p></dialog>`);
+	const {dom, dialog} = await open("<dialog><p>Save?</p></dialog>");
 	dialog.showModal();
 	dialog.remove();
 	expect(dialog.matches(":modal")).toBe(false);
@@ -143,7 +143,7 @@ test("taking a modal dialog out of the document takes it out of the top layer", 
 
 test("a click outside a modal dialog lands on the dialog, not the page", async () => {
 	const {dom, dialog} = await open(
-		`<p id="page">page one</p><dialog><p id="inside">Save?</p></dialog>`,
+		"<p id=\"page\">page one</p><dialog><p id=\"inside\">Save?</p></dialog>",
 	);
 	const {document} = dom;
 	expect(document.elementFromPoint(0, 0)?.id).toBe("page");
@@ -167,8 +167,8 @@ test("focus enters the dialog and Tab cannot leave it", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<button id="page">page</button>` +
-		`<dialog><button id="ok">OK</button><button id="cancel">Cancel</button></dialog>`;
+		"<button id=\"page\">page</button>" +
+		"<dialog><button id=\"ok\">OK</button><button id=\"cancel\">Cancel</button></dialog>";
 	dom.attach();
 	await nextFrame(dom);
 	const {document} = dom;
@@ -194,7 +194,7 @@ test("focus enters the dialog and Tab cannot leave it", async () => {
 
 test("autofocus wins the dialog focusing steps", async () => {
 	const {dom, dialog} = await open(
-		`<dialog><button id="ok">OK</button><button id="cancel" autofocus>Cancel</button></dialog>`,
+		"<dialog><button id=\"ok\">OK</button><button id=\"cancel\" autofocus>Cancel</button></dialog>",
 	);
 	dialog.showModal();
 	expect(dom.document.activeElement?.id).toBe("cancel");
@@ -202,7 +202,7 @@ test("autofocus wins the dialog focusing steps", async () => {
 });
 
 test("a dialog with nothing focusable takes focus itself", async () => {
-	const {dom, dialog} = await open(`<dialog><p>Saving...</p></dialog>`);
+	const {dom, dialog} = await open("<dialog><p>Saving...</p></dialog>");
 	dialog.showModal();
 	expect(dom.document.activeElement).toBe(dialog);
 	dom.dispose();
@@ -213,7 +213,7 @@ test("a dialog with nothing focusable takes focus itself", async () => {
 test("Escape fires cancel and closes the topmost modal dialog", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<p>page</p><dialog><p>Save?</p></dialog>`;
+	dom.document.body.innerHTML = "<p>page</p><dialog><p>Save?</p></dialog>";
 	dom.attach();
 	await nextFrame(dom);
 	const dialog = dom.document.querySelector("dialog") as HTMLDialogElement;
@@ -233,7 +233,7 @@ test("Escape fires cancel and closes the topmost modal dialog", async () => {
 test("a canceled cancel event keeps the dialog open", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<p>page</p><dialog><p>Save?</p></dialog>`;
+	dom.document.body.innerHTML = "<p>page</p><dialog><p>Save?</p></dialog>";
 	dom.attach();
 	await nextFrame(dom);
 	const dialog = dom.document.querySelector("dialog") as HTMLDialogElement;
@@ -251,7 +251,7 @@ test("a canceled cancel event keeps the dialog open", async () => {
 test("Escape reaches no dialog while nothing is showing modally", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<p>page</p><dialog open><p>Save?</p></dialog>`;
+	dom.document.body.innerHTML = "<p>page</p><dialog open><p>Save?</p></dialog>";
 	dom.attach();
 	await nextFrame(dom);
 	const dialog = dom.document.querySelector("dialog") as HTMLDialogElement;

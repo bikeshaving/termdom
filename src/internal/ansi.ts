@@ -115,17 +115,31 @@ function joinTouchingBorders(grid: CellGrid): void {
 		for (let col = 0; col < cols; col++) {
 			const index = row * cols + col;
 			const own = painted[index];
-			if (own === 0) continue;
+			if (own === 0) {
+				continue;
+			}
 			let joined = border[index];
 			for (const {mask, step, from} of REACHES) {
-				if ((own & mask) !== 0) continue;
+				if ((own & mask) !== 0) {
+					continue;
+				}
 				const neighbour = index + step;
-				if (mask === BorderMask.Top && row === 0) continue;
-				if (mask === BorderMask.Bottom && row === rows - 1) continue;
-				if (mask === BorderMask.Left && col === 0) continue;
-				if (mask === BorderMask.Right && col === cols - 1) continue;
+				if (mask === BorderMask.Top && row === 0) {
+					continue;
+				}
+				if (mask === BorderMask.Bottom && row === rows - 1) {
+					continue;
+				}
+				if (mask === BorderMask.Left && col === 0) {
+					continue;
+				}
+				if (mask === BorderMask.Right && col === cols - 1) {
+					continue;
+				}
 				const edge = getBorderEdge(painted[neighbour], from);
-				if (!getEdgePresence(edge)) continue;
+				if (!getEdgePresence(edge)) {
+					continue;
+				}
 				joined = meetEdges(joined, setBorderEdge(0, mask, edge));
 			}
 
@@ -156,15 +170,15 @@ export interface Frame {
  */
 export interface LineStyle {
 	style:
-		| "solid"
-		| "double"
-		| "dashed"
-		| "dotted"
-		| "groove"
-		| "ridge"
-		| "inset"
-		| "outset"
-		| "hidden";
+		| "solid" |
+		"double" |
+		"dashed" |
+		"dotted" |
+		"groove" |
+		"ridge" |
+		"inset" |
+		"outset" |
+		"hidden";
 	color?: number | null;
 	startCap?: "round" | "square";
 	endCap?: "round" | "square";
@@ -285,15 +299,17 @@ function internGrapheme(grapheme: string): number {
 /** The char-plane value for a grapheme cluster. */
 function encodeGrapheme(grapheme: string): number {
 	const code = grapheme.codePointAt(0)!;
-	if (grapheme.length === (code > 0xffff ? 2 : 1)) return code;
+	if (grapheme.length === (code > 0xffff ? 2 : 1)) {
+		return code;
+	}
 	return CHAR_INTERNED | internGrapheme(grapheme);
 }
 
 /** The grapheme cluster a char-plane value names. */
 function decodeGrapheme(char: number): string {
-	return char >= CHAR_INTERNED
-		? internedGraphemes[char - CHAR_INTERNED]
-		: String.fromCodePoint(char);
+	return char >= CHAR_INTERNED ?
+		internedGraphemes[char - CHAR_INTERNED] :
+			String.fromCodePoint(char);
 }
 
 /**
@@ -302,25 +318,45 @@ function decodeGrapheme(char: number): string {
  */
 function graphemeColumns(grapheme: string): number {
 	const code = grapheme.charCodeAt(0);
-	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) return 1;
+	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
+		return 1;
+	}
 	return stringWidth(grapheme);
 }
 
 /** The style bits of a CellStyle, packed. Width is added by the caller. */
 function packAttrs(style: CellStyle | undefined): number {
-	if (!style) return 0;
+	if (!style) {
+		return 0;
+	}
 	let attrs = 0;
-	if (style.bold) attrs |= Attr.Bold;
-	if (style.italic) attrs |= Attr.Italic;
+	if (style.bold) {
+		attrs |= Attr.Bold;
+	}
+	if (style.italic) {
+		attrs |= Attr.Italic;
+	}
 	if (style.underline) {
 		attrs |= Attr.Underline;
-		if (style.underlineStyle === "double") attrs |= Attr.DoubleUnderline;
+		if (style.underlineStyle === "double") {
+			attrs |= Attr.DoubleUnderline;
+		}
 	}
-	if (style.strikethrough) attrs |= Attr.Strikethrough;
-	if (style.overline) attrs |= Attr.Overline;
-	if (style.inverse) attrs |= Attr.Inverse;
-	if (style.blink) attrs |= Attr.Blink;
-	if (style.dim) attrs |= Attr.Dim;
+	if (style.strikethrough) {
+		attrs |= Attr.Strikethrough;
+	}
+	if (style.overline) {
+		attrs |= Attr.Overline;
+	}
+	if (style.inverse) {
+		attrs |= Attr.Inverse;
+	}
+	if (style.blink) {
+		attrs |= Attr.Blink;
+	}
+	if (style.dim) {
+		attrs |= Attr.Dim;
+	}
 	return attrs;
 }
 
@@ -370,7 +406,9 @@ class CellGrid {
 
 	/** Blank the cells in [start, end) of the flat index space. */
 	clearRange(start: number, end: number): void {
-		if (end <= start) return;
+		if (end <= start) {
+			return;
+		}
 		this.char.fill(0, start, end);
 		this.fg.fill(0, start, end);
 		this.bg.fill(0, start, end);
@@ -474,9 +512,9 @@ class CellGrid {
 	/** Columns the cell's glyph occupies. */
 	widthAt(index: number): number {
 		const width = (this.attrs[index] & Attr.WidthMask) >>> Attr.WidthShift;
-		return width === Attr.WidthWide
-			? stringWidth(decodeGrapheme(this.char[index]))
-			: width;
+		return width === Attr.WidthWide ?
+				stringWidth(decodeGrapheme(this.char[index])) :
+			width;
 	}
 
 	/** The grapheme a cell holds, or "" when it is empty. */
@@ -492,7 +530,7 @@ class CellGrid {
 			this.fg[index] === other.fg[otherIndex] &&
 			this.bg[index] === other.bg[otherIndex] &&
 			(this.attrs[index] & Attr.StyleMask) ===
-				(other.attrs[otherIndex] & Attr.StyleMask) &&
+			(other.attrs[otherIndex] & Attr.StyleMask) &&
 			this.border[index] === other.border[otherIndex]
 		);
 	}
@@ -573,12 +611,20 @@ function getBorderChar(borderEncoding: number): string {
 		(hasBottom ? 1 : 0) +
 		(hasLeft ? 1 : 0);
 
-	if (count === 4) return charSet.cross; // ┼
+	if (count === 4) {
+		return charSet.cross;
+	} // ┼
 
 	if (count === 3) {
-		if (!hasTop) return charSet.topTee; // ┬
-		if (!hasBottom) return charSet.bottomTee; // ┴
-		if (!hasLeft) return charSet.rightTee; // ├
+		if (!hasTop) {
+			return charSet.topTee;
+		} // ┬
+		if (!hasBottom) {
+			return charSet.bottomTee;
+		} // ┴
+		if (!hasLeft) {
+			return charSet.rightTee;
+		} // ├
 		return charSet.leftTee; // ┤
 	}
 
@@ -587,21 +633,25 @@ function getBorderChar(borderEncoding: number): string {
 	// bends only the four cells where the strokes turn -- and a style whose
 	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
 	const corner =
-		hasRight && hasBottom
-			? charSet.topLeft // ┌
-			: hasLeft && hasBottom
-				? charSet.topRight // ┐
-				: hasRight && hasTop
-					? charSet.bottomLeft // └
-					: hasLeft && hasTop
-						? charSet.bottomRight // ┘
-						: null;
+		hasRight && hasBottom ?
+			charSet.topLeft : // ┌
+			hasLeft && hasBottom ?
+				charSet.topRight : // ┐
+				hasRight && hasTop ?
+					charSet.bottomLeft : // └
+					hasLeft && hasTop ?
+						charSet.bottomRight : // ┘
+						null;
 	if (corner !== null) {
 		return hasRounded ? (ROUNDED_CORNERS[corner] ?? corner) : corner;
 	}
 
-	if (hasLeft || hasRight) return charSet.horizontal; // ─
-	if (hasTop || hasBottom) return charSet.vertical; // │
+	if (hasLeft || hasRight) {
+		return charSet.horizontal;
+	} // ─
+	if (hasTop || hasBottom) {
+		return charSet.vertical;
+	} // │
 
 	return " ";
 }
@@ -612,8 +662,12 @@ function rgbTo256(color: number): number {
 	const b = color & 0xff;
 
 	if (r === g && g === b) {
-		if (r < 8) return 0;
-		if (r > 248) return 15;
+		if (r < 8) {
+			return 0;
+		}
+		if (r > 248) {
+			return 15;
+		}
 		return Math.round(((r - 8) / 247) * 23) + 232;
 	}
 
@@ -629,9 +683,15 @@ function rgbToBasic8(color: number): number {
 	const b = color & 0xff;
 
 	let ansiColor = 0;
-	if (r > 127) ansiColor |= 1;
-	if (g > 127) ansiColor |= 2;
-	if (b > 127) ansiColor |= 4;
+	if (r > 127) {
+		ansiColor |= 1;
+	}
+	if (g > 127) {
+		ansiColor |= 2;
+	}
+	if (b > 127) {
+		ansiColor |= 4;
+	}
 	return ansiColor;
 }
 
@@ -676,22 +736,42 @@ function styleDiff(
 
 	if (prev < 0) {
 		let seq = "";
-		if (fg !== 0) seq = emitColor(fg, true, colorDepth);
+		if (fg !== 0) {
+			seq = emitColor(fg, true, colorDepth);
+		}
 		if (bg !== 0) {
 			const code = emitColor(bg, false, colorDepth);
 			seq = seq === "" ? code : `${seq};${code}`;
 		}
-		if (attrs & Attr.Bold) seq += seq === "" ? "1" : ";1";
-		if (attrs & Attr.Dim) seq += seq === "" ? "2" : ";2";
-		if (attrs & Attr.Italic) seq += seq === "" ? "3" : ";3";
-		if (attrs & Attr.Underline) seq += seq === "" ? "4" : ";4";
+		if (attrs & Attr.Bold) {
+			seq += seq === "" ? "1" : ";1";
+		}
+		if (attrs & Attr.Dim) {
+			seq += seq === "" ? "2" : ";2";
+		}
+		if (attrs & Attr.Italic) {
+			seq += seq === "" ? "3" : ";3";
+		}
+		if (attrs & Attr.Underline) {
+			seq += seq === "" ? "4" : ";4";
+		}
 		// After plain 4, so terminals without styled-underline support keep
 		// the single underline.
-		if (attrs & Attr.DoubleUnderline) seq += seq === "" ? "4:2" : ";4:2";
-		if (attrs & Attr.Blink) seq += seq === "" ? "5" : ";5";
-		if (attrs & Attr.Inverse) seq += seq === "" ? "7" : ";7";
-		if (attrs & Attr.Strikethrough) seq += seq === "" ? "9" : ";9";
-		if (attrs & Attr.Overline) seq += seq === "" ? "53" : ";53";
+		if (attrs & Attr.DoubleUnderline) {
+			seq += seq === "" ? "4:2" : ";4:2";
+		}
+		if (attrs & Attr.Blink) {
+			seq += seq === "" ? "5" : ";5";
+		}
+		if (attrs & Attr.Inverse) {
+			seq += seq === "" ? "7" : ";7";
+		}
+		if (attrs & Attr.Strikethrough) {
+			seq += seq === "" ? "9" : ";9";
+		}
+		if (attrs & Attr.Overline) {
+			seq += seq === "" ? "53" : ";53";
+		}
 		return seq;
 	}
 
@@ -735,7 +815,9 @@ function styleDiff(
 
 	if (fgChanged || bgChanged) {
 		const diffFlag = (bit: number, on: string, off: string) => {
-			if ((attrs & bit) !== (prevAttrs & bit)) push(attrs & bit ? on : off);
+			if ((attrs & bit) !== (prevAttrs & bit)) {
+				push(attrs & bit ? on : off);
+			}
 		};
 
 		diffFlag(Attr.Bold, "1", "22");
@@ -916,7 +998,9 @@ function generateANSI(
 				// mattering and a new run begins. A bare cursor-forward does
 				// not: it steps from wherever the cursor actually is, carrying
 				// any divergence with it, and the run continues.
-				if (measuring && moveSeq.includes("\r")) run++;
+				if (measuring && moveSeq.includes("\r")) {
+					run++;
+				}
 			}
 
 			if (isFirstRenderOfLine) {
@@ -926,7 +1010,9 @@ function generateANSI(
 				}
 				cursorCol = col;
 				isFirstRenderOfLine = false;
-				if (measuring) run++;
+				if (measuring) {
+					run++;
+				}
 			}
 
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
@@ -1015,6 +1101,7 @@ export class DrawingContext {
 		right: number;
 		bottom: number;
 	} | null = null;
+
 	// When set, only buffer rows inside these [start, end) bands accept
 	// writes; every other row is the seeded previous frame. Writes outside
 	// the bands are identical to the seeded content by construction, so
@@ -1055,9 +1142,9 @@ export class DrawingContext {
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
 		const style: CellStyle =
-			background === "inverse"
-				? {inverse: true}
-				: {bg: background === "default" ? undefined : background};
+			background === "inverse" ?
+					{inverse: true} :
+					{bg: background === "default" ? undefined : background};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -1085,7 +1172,9 @@ export class DrawingContext {
 		// own one-cell grapheme.
 		if (asciiPrintable.test(text)) {
 			for (let i = 0; i < text.length; i++) {
-				if (currentX + 1 > this.cols) break;
+				if (currentX + 1 > this.cols) {
+					break;
+				}
 				this.#setCell(y, currentX, text[i], style);
 				currentX++;
 			}
@@ -1098,7 +1187,9 @@ export class DrawingContext {
 			// Never write a control char to a cell: a trailing one would survive to
 			// the output as a raw escape byte (injection from untrusted text).
 			const code = char.codePointAt(0)!;
-			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) continue;
+			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+				continue;
+			}
 
 			const width = stringWidth(char);
 
@@ -1122,16 +1213,24 @@ export class DrawingContext {
 	 */
 	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
 		const terminalRow = y + this.viewportOffset;
-		if (terminalRow < 0 || terminalRow >= this.rows) return;
+		if (terminalRow < 0 || terminalRow >= this.rows) {
+			return;
+		}
 		const grid = this.grid;
 		const rowStart = terminalRow * this.cols;
 		const edgeBit =
 			(style.underline ? Attr.Underline : 0) |
 			(style.overline ? Attr.Overline : 0);
-		if (edgeBit === 0) return;
+		if (edgeBit === 0) {
+			return;
+		}
 		for (let col = x; col < x + width; col++) {
-			if (col < 0 || col >= this.cols) continue;
-			if (this.clipRect && !this.#inClip(y, col)) continue;
+			if (col < 0 || col >= this.cols) {
+				continue;
+			}
+			if (this.clipRect && !this.#inClip(y, col)) {
+				continue;
+			}
 			const index = rowStart + col;
 			if (grid.char[index] !== 0) {
 				let attrs = grid.attrs[index] | edgeBit;
@@ -1163,9 +1262,13 @@ export class DrawingContext {
 		// the end coordinate and stops short of it, so a one-cell vertical is
 		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
 		// what disambiguates the axis of a one-cell line.
-		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) return;
+		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
+			return;
+		}
 		const bits = LINE_BITS[line.style];
-		if (bits === 0) return;
+		if (bits === 0) {
+			return;
+		}
 		const style: CellStyle | undefined =
 			line.color != null ? {fg: line.color} : undefined;
 		const rounded = BorderEdgeStyle.Rounded;
@@ -1185,8 +1288,12 @@ export class DrawingContext {
 			for (let col = a; col <= b; col++) {
 				let toRight = col < b || capB === "square" ? bits : 0;
 				let toLeft = col > a || capA === "square" ? bits : 0;
-				if (col === a && capA === "round") toRight |= rounded;
-				if (col === b && capB === "round") toLeft |= rounded;
+				if (col === a && capA === "round") {
+					toRight |= rounded;
+				}
+				if (col === b && capB === "round") {
+					toLeft |= rounded;
+				}
 				this.#setBorderCell(
 					col,
 					y1,
@@ -1202,8 +1309,12 @@ export class DrawingContext {
 			for (let row = a; row <= b; row++) {
 				let down = row < b || capB === "square" ? bits : 0;
 				let up = row > a || capA === "square" ? bits : 0;
-				if (row === a && capA === "round") down |= rounded;
-				if (row === b && capB === "round") up |= rounded;
+				if (row === a && capA === "round") {
+					down |= rounded;
+				}
+				if (row === b && capB === "round") {
+					up |= rounded;
+				}
 				this.#setBorderCell(
 					x1,
 					row,
@@ -1215,7 +1326,9 @@ export class DrawingContext {
 	}
 
 	#inClip(row: number, col: number): boolean {
-		if (!this.clipRect) return true;
+		if (!this.clipRect) {
+			return true;
+		}
 		const {left, top, right, bottom} = this.clipRect;
 		return col >= left && col < right && row >= top && row < bottom;
 	}
@@ -1228,8 +1341,9 @@ export class DrawingContext {
 			terminalRow >= this.rows ||
 			col < 0 ||
 			col >= this.cols
-		)
+		) {
 			return;
+		}
 
 		if (this.paintBands) {
 			let inBand = false;
@@ -1239,10 +1353,14 @@ export class DrawingContext {
 					break;
 				}
 			}
-			if (!inBand) return;
+			if (!inBand) {
+				return;
+			}
 		}
 
-		if (this.clipRect && !this.#inClip(row, col)) return;
+		if (this.clipRect && !this.#inClip(row, col)) {
+			return;
+		}
 
 		const grid = this.grid;
 		const index = terminalRow * this.cols + col;
@@ -1273,7 +1391,9 @@ export class DrawingContext {
 		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
 			return;
 		}
-		if (!this.#inClip(y, x)) return;
+		if (!this.#inClip(y, x)) {
+			return;
+		}
 
 		const grid = this.grid;
 		const index = terminalY * this.cols + x;
@@ -1283,9 +1403,9 @@ export class DrawingContext {
 		const existing = grid.border[index];
 		grid.setBorderCell(
 			index,
-			grid.char[index] !== 0 && existing > 0
-				? meetEdges(existing, borderEncoding)
-				: borderEncoding,
+			grid.char[index] !== 0 && existing > 0 ?
+					meetEdges(existing, borderEncoding) :
+				borderEncoding,
 			style,
 		);
 	}
@@ -1323,7 +1443,9 @@ export function drawBox(
 		};
 	},
 ): void {
-	if (width < 1 || height < 1) return;
+	if (width < 1 || height < 1) {
+		return;
+	}
 	const r = x + width - 1;
 	const b = y + height - 1;
 	const c = sides.corners;
@@ -1375,17 +1497,17 @@ export class Screen {
 	#spare: CellGrid | null = null;
 	#diff: CellGrid | null = null;
 	#renderedLines: Set<number> = new Set();
-	#prevContentHeight: number = 0;
+	#prevContentHeight = 0;
 	// Where the last frame parked the cursor, in buffer coordinates. The resize
 	// re-anchor derives the frame's new top row from the cursor's post-rewrap
 	// position minus the wrapped rows above this park point.
 	#parkRow = 0;
 	#parkCol = 0;
 	#lastCaretVisible = false;
-	#hasSavedCursor: boolean = false;
-	#needsFullClear: boolean = false;
-	#needsScreenReset: boolean = false;
-	#resetAtRow: number = 0;
+	#hasSavedCursor = false;
+	#needsFullClear = false;
+	#needsScreenReset = false;
+	#resetAtRow = 0;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -1584,22 +1706,28 @@ export class Screen {
 						}
 
 						const style = styleDiff(grid, index, previous, this.#colorDepth);
-						if (style !== "") line += `\x1b[${style}m`;
+						if (style !== "") {
+							line += `\x1b[${style}m`;
+						}
 
 						const encoding = grid.border[index];
 						line +=
-							encoding > 0
-								? getBorderChar(encoding)
-								: decodeGrapheme(grid.char[index]);
+							encoding > 0 ?
+									getBorderChar(encoding) :
+									decodeGrapheme(grid.char[index]);
 						previous = index;
 
 						// A wide grapheme's continuation column is empty in the buffer but
 						// already covered by the glyph -- skip it, or the line grows a
 						// phantom space per wide character and shifts what follows.
-						if (encoding === 0) col += grid.widthAt(index) - 1;
+						if (encoding === 0) {
+							col += grid.widthAt(index) - 1;
+						}
 					}
 
-					if (previous !== -1) line += "\x1b[0m";
+					if (previous !== -1) {
+						line += "\x1b[0m";
+					}
 					lines.push(line);
 				}
 
@@ -1693,11 +1821,15 @@ export class Screen {
 			const shiftedLines = new Set<number>();
 			for (const row of this.#renderedLines) {
 				const moved = row - delta;
-				if (moved >= 0 && moved < frameRows) shiftedLines.add(moved);
+				if (moved >= 0 && moved < frameRows) {
+					shiftedLines.add(moved);
+				}
 			}
 			// The repainted bands emit fresh \r\x1b[K lines regardless.
 			for (const [start, end] of scroll!.bands) {
-				for (let row = start; row < end; row++) shiftedLines.add(row);
+				for (let row = start; row < end; row++) {
+					shiftedLines.add(row);
+				}
 			}
 			this.#renderedLines = shiftedLines;
 
@@ -1744,7 +1876,9 @@ export class Screen {
 
 		// Create drawing context and execute drawing operations
 		const context = new DrawingContext(next, frameRows, cols, offset);
-		if (scrolling) context.paintBands = scroll!.bands;
+		if (scrolling) {
+			context.paintBands = scroll!.bands;
+		}
 		return {
 			context,
 			end: (): string => {
@@ -1789,14 +1923,16 @@ export class Screen {
 									next.fg[n] !== prev.fg[p] ||
 									next.bg[n] !== prev.bg[p] ||
 									(next.attrs[n] & Attr.StyleMask) !==
-										(prev.attrs[p] & Attr.StyleMask) ||
+									(prev.attrs[p] & Attr.StyleMask) ||
 									next.border[n] !== prev.border[p]
 								) {
 									break;
 								}
 								col++;
 							}
-							if (col === cols) continue;
+							if (col === cols) {
+								continue;
+							}
 						}
 
 						for (; col < cols; col++) {
@@ -1804,7 +1940,9 @@ export class Screen {
 							const nextChar = next.char[n];
 
 							if (!rowInPrev || col >= prevCols) {
-								if (nextChar !== 0) diff.setFrom(n, next, n);
+								if (nextChar !== 0) {
+									diff.setFrom(n, next, n);
+								}
 								continue;
 							}
 
@@ -1812,7 +1950,9 @@ export class Screen {
 							const prevChar = prev.char[p];
 
 							if (prevChar === 0) {
-								if (nextChar !== 0) diff.setFrom(n, next, n);
+								if (nextChar !== 0) {
+									diff.setFrom(n, next, n);
+								}
 							} else if (nextChar === 0) {
 								// A cell the frame no longer paints has to be erased,
 								// not merely skipped: the terminal still shows the old
@@ -1839,9 +1979,9 @@ export class Screen {
 					// CUPs to); regionRows is a screen-absolute end. Seed exactly the
 					// region's rows -- seeding further would count blank screen rows as
 					// content and skew the park the resize re-anchor measures from.
-					const anchorRow = this.#needsScreenReset
-						? this.#resetAtRow
-						: (cursorPosition ?? 0);
+					const anchorRow = this.#needsScreenReset ?
+						this.#resetAtRow :
+							(cursorPosition ?? 0);
 					const regionHeight = (regionRows ?? this.#rows) - anchorRow;
 					const seedRows = Math.min(frameRows, this.#rows, regionHeight);
 					for (let row = 0; row < seedRows; row++) {
@@ -1853,7 +1993,9 @@ export class Screen {
 								break;
 							}
 						}
-						if (empty) diff.setBlank(rowStart);
+						if (empty) {
+							diff.setBlank(rowStart);
+						}
 					}
 				}
 
@@ -1976,7 +2118,9 @@ export class Screen {
 				// Calculate current content height (highest rendered row + 1)
 				let contentHeight = 0;
 				for (const row of this.#renderedLines) {
-					if (row + 1 > contentHeight) contentHeight = row + 1;
+					if (row + 1 > contentHeight) {
+						contentHeight = row + 1;
+					}
 				}
 
 				// Clear stale content below the rendered area.
@@ -2042,9 +2186,14 @@ export class Screen {
 							parkOutput = `\x1b[${frameStartRow + caretBufferRow + 1};${caret.col + 1}H`; // CUP - caret
 						} else if (this.#hasSavedCursor) {
 							parkOutput = "\x1b8\x1b7";
-							if (caretBufferRow > 0) parkOutput += `\x1b[${caretBufferRow}B`; // CUD
-							if (caret.col > 0) parkOutput += `\r\x1b[${caret.col}C`;
-							else parkOutput += "\r";
+							if (caretBufferRow > 0) {
+								parkOutput += `\x1b[${caretBufferRow}B`;
+							} // CUD
+							if (caret.col > 0) {
+								parkOutput += `\r\x1b[${caret.col}C`;
+							} else {
+								parkOutput += "\r";
+							}
 						}
 						parkOutput += "\x1b[?25h"; // DECTCEM - the caret is the real cursor
 					} else {
@@ -2063,7 +2212,9 @@ export class Screen {
 							// it, and step down. CUD stops at the bottom margin, which is the
 							// content's visible bottom when it overflows.
 							parkOutput = "\x1b8\x1b7";
-							if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
+							if (contentHeight > 1) {
+								parkOutput += `\x1b[${contentHeight - 1}B`;
+							} // CUD
 							parkOutput += "\r";
 						}
 					}

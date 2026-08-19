@@ -276,9 +276,9 @@ test("a class flip is scoped: a sibling-combinator rule still reaches the siblin
 	// flipped element's own subtree -- if the scope stayed at the element,
 	// the sibling would keep its old display.
 	const style = document.createElement("style");
-	style.textContent = `.on ~ .light { display: none; }`;
+	style.textContent = ".on ~ .light { display: none; }";
 	document.head.appendChild(style);
-	document.body.innerHTML = `<div id="switch">switch</div><div class="light">light</div>`;
+	document.body.innerHTML = "<div id=\"switch\">switch</div><div class=\"light\">light</div>";
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("light");
 
@@ -301,7 +301,7 @@ test("a no-op class flip on a block inside an inline repaints identically", asyn
 	// A block in an inline breaks the span into fragments owned by the
 	// nearest block container; a scoped invalidation must rebuild from that
 	// container (found by the markup fuzzer: the div's content vanished).
-	document.body.innerHTML = `<span><p>head</p> <div id="mid">middle</div></span> tail`;
+	document.body.innerHTML = "<span><p>head</p> <div id=\"mid\">middle</div></span> tail";
 	await nextFrame(dom);
 	const before = terminal.getPlainText();
 	expect(before).toContain("middle");
@@ -324,7 +324,7 @@ test("a run's first node turning block-level takes a box of its own", async () =
 	// The span opens the paragraph's only anonymous box. Flipping its display
 	// moves it out of that box and into one of its own, which only the
 	// container's box list knows about -- the style record names the span.
-	document.body.innerHTML = `<p><span id="s">head</span> tail</p>`;
+	document.body.innerHTML = "<p><span id=\"s\">head</span> tail</p>";
 	await nextFrame(dom);
 	const lines = () =>
 		terminal
@@ -360,14 +360,14 @@ test("a class flip reaches the descendants its selectors reach", async () => {
 	// sibling combinator. A flip that reaches none of them still has to leave
 	// the label exactly as it was.
 	document.body.innerHTML =
-		`<style>` +
-		`.editing .view { display: none; }` +
-		`.dim { color: red; }` +
-		`.open ~ .note { display: none; }` +
-		`.boxed { background: blue; padding-left: 1px; }` +
-		`</style>` +
-		`<div id="row"><span class="view">label</span></div>` +
-		`<div class="note">note</div>`;
+		"<style>" +
+		".editing .view { display: none; }" +
+		".dim { color: red; }" +
+		".open ~ .note { display: none; }" +
+		".boxed { background: blue; padding-left: 1px; }" +
+		"</style>" +
+		"<div id=\"row\"><span class=\"view\">label</span></div>" +
+		"<div class=\"note\">note</div>";
 	await nextFrame(dom);
 	const row = document.getElementById("row")!;
 	const label = document.querySelector(".view") as HTMLElement;
@@ -420,8 +420,8 @@ test("a style that changes what descendants inherit re-measures them", async () 
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<style>.pre { white-space: pre; }</style>` +
-		`<span id="s"><em style="display: flex"><span>   x   </span></em></span>`;
+		"<style>.pre { white-space: pre; }</style>" +
+		"<span id=\"s\"><em style=\"display: flex\"><span>   x   </span></em></span>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe(" x");
@@ -448,7 +448,7 @@ test("a block arriving under a box that measures as a unit rebuilds it", async (
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<span style="display: inline-block" id="s">A</span>B`;
+	document.body.innerHTML = "<span style=\"display: inline-block\" id=\"s\">A</span>B";
 	await nextFrame(dom);
 	const lines = () =>
 		terminal
@@ -474,7 +474,7 @@ test("a block added inside a display: contents element keeps its siblings", asyn
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<style>.c { display: contents; }</style>AB<p class="c" id="s">C</p>`;
+	document.body.innerHTML = "<style>.c { display: contents; }</style>AB<p class=\"c\" id=\"s\">C</p>";
 	await nextFrame(dom);
 	const lines = () =>
 		terminal
@@ -505,8 +505,8 @@ test("an element flipped to display: contents gives up its box", async () => {
 	// A sibling combinator anywhere in the sheets widens every class flip's
 	// scope to the parent, which is how the element stops being visited.
 	document.body.innerHTML =
-		`<style>.c { display: contents; } .on ~ .light { color: red; }</style>` +
-		`<li id="a">A<div id="b">B</div></li><p>C</p>`;
+		"<style>.c { display: contents; } .on ~ .light { color: red; }</style>" +
+		"<li id=\"a\">A<div id=\"b\">B</div></li><p>C</p>";
 	await nextFrame(dom);
 	const lines = () =>
 		terminal
@@ -535,7 +535,7 @@ test("a block inside an inline takes its padding from a class flip", async () =>
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<style>.pad { padding-left: 2ch; }</style><b><div id="d">AB</div></b>`;
+	document.body.innerHTML = "<style>.pad { padding-left: 2ch; }</style><b><div id=\"d\">AB</div></b>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
@@ -556,7 +556,7 @@ test("a block turned inline-block keeps the content it already had", async () =>
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<div id="d"><section>AB</section></div>`;
+	document.body.innerHTML = "<div id=\"d\"><section>AB</section></div>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
@@ -579,8 +579,8 @@ test("a restyle deep inside an inline-block re-measures the run holding it", asy
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<style>.dim { color: #808080; } .on ~ .light { color: red; }</style>` +
-		`A<section style="display: inline-block"><section><b id="s">BC</b></section></section>`;
+		"<style>.dim { color: #808080; } .on ~ .light { color: red; }</style>" +
+		"A<section style=\"display: inline-block\"><section><b id=\"s\">BC</b></section></section>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("ABC");
@@ -601,8 +601,8 @@ test("a flex item that stops being one gives up its layout node", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<style>.col { display: flex; flex-direction: column; }</style>` +
-		`<b><div id="d" class="col"><span>A</span></div>BC</b>`;
+		"<style>.col { display: flex; flex-direction: column; }</style>" +
+		"<b><div id=\"d\" class=\"col\"><span>A</span></div>BC</b>";
 	await nextFrame(dom);
 	const lines = () =>
 		terminal
@@ -625,7 +625,7 @@ test("a hidden run member gives up the width it reserved", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<span>A<em id="s">BBBB</em></span>C`;
+	document.body.innerHTML = "<span>A<em id=\"s\">BBBB</em></span>C";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("ABBBBC");
@@ -644,7 +644,7 @@ test("a box that stops being display:none is built with its content", async () =
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<em id="s">AB</em>`;
+	document.body.innerHTML = "<em id=\"s\">AB</em>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 
@@ -669,8 +669,8 @@ test("an inline-block turned block gives up its content root", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<style>.iblock { display: inline-block; }</style>` +
-		`<section id="s" class="iblock"><em><section>AB</section></em></section>`;
+		"<style>.iblock { display: inline-block; }</style>" +
+		"<section id=\"s\" class=\"iblock\"><em><section>AB</section></em></section>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
@@ -691,8 +691,8 @@ test("a block turned flex gives each child a box of its own", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<style>.mark::before { content: "* "; }</style>` +
-		`<section id="s" class="mark">AB</section>`;
+		"<style>.mark::before { content: \"* \"; }</style>" +
+		"<section id=\"s\" class=\"mark\">AB</section>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("* AB");
@@ -714,11 +714,11 @@ test("an absolute box inside an appended inline subtree reaches its containing b
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = `<div id="host" style="position: relative">base</div>`;
+	document.body.innerHTML = "<div id=\"host\" style=\"position: relative\">base</div>";
 	await nextFrame(dom);
 
 	const span = document.createElement("span");
-	span.innerHTML = `hi<i style="position:absolute; top:2px; left:0px">ABS</i>`;
+	span.innerHTML = "hi<i style=\"position:absolute; top:2px; left:0px\">ABS</i>";
 	document.getElementById("host")!.appendChild(span);
 	await nextFrame(dom);
 

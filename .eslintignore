@@ -1,7 +1,0 @@
-node_modules
-dist
-coverage
-# The website is its own package with its own conventions (Crank's `for ({} of
-# this)` loops, console output in build scripts). It is linted from within
-# website/, not by the library's config.
-website

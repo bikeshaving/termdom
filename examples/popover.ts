@@ -79,7 +79,9 @@ const saved = document.getElementById("saved")!;
 // one thing left to write.
 document.addEventListener("click", (event) => {
 	const item = (event.target as Element | null)?.closest?.("[data-action]");
-	if (!item) return;
+	if (!item) {
+		return;
+	}
 	(item.closest("[popover]") as HTMLElement).hidePopover();
 	switch (item.getAttribute("data-action")) {
 		case "new":

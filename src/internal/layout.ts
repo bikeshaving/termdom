@@ -59,7 +59,9 @@ export function isPositioned(element: Element): boolean {
  */
 function zIndexValueOf(element: Element): number | "auto" {
 	const zIndex = computedStyleOf(element).computedValueOf("z-index");
-	if (!zIndex || zIndex === "auto") return "auto";
+	if (!zIndex || zIndex === "auto") {
+		return "auto";
+	}
 	const value = parseInt(zIndex, 10);
 	return Number.isFinite(value) ? value : "auto";
 }
@@ -76,11 +78,19 @@ function lineAlignOffset(
 	containerWidth: number | undefined,
 	lineWidth: number,
 ): number {
-	if (!container || containerWidth === undefined) return 0;
+	if (!container || containerWidth === undefined) {
+		return 0;
+	}
 	const align = getPropertyValue(container, "text-align");
-	if (align === "center") return Math.max(0, (containerWidth - lineWidth) / 2);
-	if (align === "right") return Math.max(0, containerWidth - lineWidth);
-	if (align === "left") return 0;
+	if (align === "center") {
+		return Math.max(0, (containerWidth - lineWidth) / 2);
+	}
+	if (align === "right") {
+		return Math.max(0, containerWidth - lineWidth);
+	}
+	if (align === "left") {
+		return 0;
+	}
 	// `start` and `end` name the READING direction's ends, so they trade sides
 	// in an RTL paragraph: an undeclared alignment is `start`, which puts an
 	// RTL line at the right edge, and `end` puts it at the left.
@@ -102,13 +112,19 @@ function lineIndent(
 	container: Element | null,
 	containerWidth: number | undefined,
 ): number {
-	if (!isFirstLine || !container) return 0;
+	if (!isFirstLine || !container) {
+		return 0;
+	}
 	const parsed = parseUnitValue(getPropertyValue(container, "text-indent"));
-	if (parsed === null) return 0;
-	if (typeof parsed === "number") return parsed;
-	return containerWidth === undefined
-		? 0
-		: (parsed.percentage / 100) * containerWidth;
+	if (parsed === null) {
+		return 0;
+	}
+	if (typeof parsed === "number") {
+		return parsed;
+	}
+	return containerWidth === undefined ?
+		0 :
+			(parsed.percentage / 100) * containerWidth;
 }
 
 interface EnumMap {
@@ -129,7 +145,9 @@ function getFlexConstant<TEnumName extends keyof EnumMap>(
 /** A colspan/rowspan attribute, defaulting to 1 when absent or nonsense. */
 function parseSpanAttribute(element: Element, name: string): number {
 	const raw = element.getAttribute(name);
-	if (!raw) return 1;
+	if (!raw) {
+		return 1;
+	}
 	const span = parseInt(raw, 10);
 	return Number.isFinite(span) && span > 0 ? span : 1;
 }
@@ -190,7 +208,9 @@ function dissolvesIntoChildren(node: Node): boolean {
  * out of normal flow entirely.
  */
 function isOutOfFlow(node: Node): boolean {
-	if (node.nodeType !== node.ELEMENT_NODE) return false;
+	if (node.nodeType !== node.ELEMENT_NODE) {
+		return false;
+	}
 	const position = getPropertyValue(node as Element, "position");
 	return position === "absolute" || position === "fixed";
 }
@@ -228,7 +248,9 @@ function isBlockifiedBox(element: Element): boolean {
  */
 function usedDisplay(element: Element): string {
 	const display = getPropertyValue(element, "display");
-	if (!isInlineDisplay(display)) return display;
+	if (!isInlineDisplay(display)) {
+		return display;
+	}
 	return isBlockifiedBox(element) ? "block" : display;
 }
 
@@ -238,8 +260,12 @@ function usedDisplay(element: Element): string {
  * makes it.
  */
 function isInlineLevel(node: Node): boolean {
-	if (node.nodeType === node.TEXT_NODE) return true;
-	if (node.nodeType !== node.ELEMENT_NODE) return false;
+	if (node.nodeType === node.TEXT_NODE) {
+		return true;
+	}
+	if (node.nodeType !== node.ELEMENT_NODE) {
+		return false;
+	}
 	return isInlineDisplay(usedDisplay(node as Element));
 }
 
@@ -265,7 +291,9 @@ function placeChild(
 	index: number,
 ): void {
 	if (child.getParent() === parent) {
-		if (parent.getChildIndex(child) === index) return;
+		if (parent.getChildIndex(child) === index) {
+			return;
+		}
 		parent.removeChild(child);
 	}
 	parent.insertChild(child, index);
@@ -301,7 +329,9 @@ function boxParentElement(node: Node): Element | null {
  */
 function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 	while (!walker.nextSibling()) {
-		if (!walker.parentNode()) return false;
+		if (!walker.parentNode()) {
+			return false;
+		}
 	}
 	return true;
 }
@@ -365,7 +395,9 @@ function applyInsets(
 			flexNode.setPositionPercent(edge, value.percentage);
 		} else if (autoWhenUnset) {
 			const declared = computedStyle.computedValueOf(property);
-			if (declared === "auto" || !declared) flexNode.setPositionAuto(edge);
+			if (declared === "auto" || !declared) {
+				flexNode.setPositionAuto(edge);
+			}
 		}
 	}
 }
@@ -568,7 +600,9 @@ function styleFlexNode(
 		// two box models disagree about the same element.
 		const usedBorderWidth = (side: string) => {
 			const style = computedStyle.computedValueOf(`border-${side}-style`);
-			if (!style || style === "none" || style === "hidden") return null;
+			if (!style || style === "none" || style === "hidden") {
+				return null;
+			}
 			return parseBorderWidthValue(
 				computedStyle.computedValueOf(`border-${side}-width`),
 			);
@@ -612,9 +646,9 @@ function styleFlexNode(
 			"flex-direction",
 		);
 		const crossEdges =
-			direction === "column" || direction === "column-reverse"
-				? [Flex.EDGE_LEFT, Flex.EDGE_RIGHT]
-				: [Flex.EDGE_TOP, Flex.EDGE_BOTTOM];
+			direction === "column" || direction === "column-reverse" ?
+					[Flex.EDGE_LEFT, Flex.EDGE_RIGHT] :
+					[Flex.EDGE_TOP, Flex.EDGE_BOTTOM];
 		for (const edge of crossEdges) {
 			flexNode.setPadding(edge, 0);
 			flexNode.setBorder(edge, 0);
@@ -788,11 +822,11 @@ function styleFlexNode(
 	// there rather than escaping into the viewport.
 	flexNode.setBlockFormattingContext(
 		element === element.ownerDocument?.documentElement ||
-			element.tagName === "BODY" ||
-			(display !== "block" && display !== "list-item") ||
-			computedStyle.computedValueOf("overflow") !== "visible" ||
-			isOutOfFlow(element) ||
-			parentIsFlex,
+		element.tagName === "BODY" ||
+		(display !== "block" && display !== "list-item") ||
+		computedStyle.computedValueOf("overflow") !== "visible" ||
+		isOutOfFlow(element) ||
+		parentIsFlex,
 	);
 
 	// Handle positioning properties
@@ -1209,10 +1243,14 @@ export class LayoutEngine {
 		const results = new Map<Node, BreakResult>();
 		for (const node of this.nodeMap.keys()) {
 			const lines = this.#boxes.get(node)?.fragments;
-			if (lines) results.set(node, lines);
+			if (lines) {
+				results.set(node, lines);
+			}
 		}
 		for (const box of this.#anonymousBoxes.values()) {
-			if (box.fragments) results.set(box.head, box.fragments);
+			if (box.fragments) {
+				results.set(box.head, box.fragments);
+			}
 		}
 		return results;
 	}
@@ -1256,16 +1294,22 @@ export class LayoutEngine {
 	 */
 	invalidateTextMeasurement(): void {
 		this.invalidateStructure();
-		for (const flexNode of this.#measureNodes) flexNode.markDirty();
+		for (const flexNode of this.#measureNodes) {
+			flexNode.markDirty();
+		}
 	}
 
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
 		this.invalidateStructure();
-		if (this.#terminalReordersText === value) return;
+		if (this.#terminalReordersText === value) {
+			return;
+		}
 		this.#terminalReordersText = value;
 		// Every measured line was built for the other contract.
-		for (const flexNode of this.#measureNodes) flexNode.markDirty();
+		for (const flexNode of this.#measureNodes) {
+			flexNode.markDirty();
+		}
 	}
 
 	constructor(window: EngineWindow) {
@@ -1374,7 +1418,9 @@ export class LayoutEngine {
 			const containers = [...this.#dirtyRunContainers];
 			this.#dirtyRunContainers.clear();
 			for (const container of containers) {
-				if (synced.has(container)) continue;
+				if (synced.has(container)) {
+					continue;
+				}
 				synced.add(container);
 				this.#syncContainerRuns(container);
 			}
@@ -1411,7 +1457,9 @@ export class LayoutEngine {
 	#pruneDisconnectedNodes(): void {
 		// A box outlives the nodes that pass through it, but not its container.
 		for (const box of [...this.#anonymousBoxes.values()]) {
-			if (!this.#isNodeLive(box.container)) this.#retireAnonymousBox(box);
+			if (!this.#isNodeLive(box.container)) {
+				this.#retireAnonymousBox(box);
+			}
 		}
 		for (const [node, flexNode] of this.nodeMap) {
 			if (node === this.rootElement || this.#isNodeLive(node)) {
@@ -1466,13 +1514,17 @@ export class LayoutEngine {
 		const bands: Array<[number, number]> = [];
 		const documentNode = this.nodeMap.get(this.rootElement);
 		for (const child of this.viewportRootNode.children) {
-			if (child === documentNode) continue;
+			if (child === documentNode) {
+				continue;
+			}
 			const top = Math.max(0, Math.floor(child.getComputedTop()));
 			const bottom = Math.min(
 				rows,
 				Math.ceil(child.getComputedTop() + child.getComputedHeight()),
 			);
-			if (bottom > top) bands.push([top, bottom]);
+			if (bottom > top) {
+				bands.push([top, bottom]);
+			}
 		}
 		return bands;
 	}
@@ -1490,8 +1542,12 @@ export class LayoutEngine {
 		// An element with no box of its own is culled by the anonymous box that
 		// lays its content out, whose extent covers the whole run it opens.
 		const node = this.nodeMap.get(element) ?? this.#runFlexNode(element);
-		if (!node) return false;
-		if (node.extentBottom > top && node.extentTop < bottom) return false;
+		if (!node) {
+			return false;
+		}
+		if (node.extentBottom > top && node.extentTop < bottom) {
+			return false;
+		}
 		// An inline broken around a block-level box paints boxes that are NOT
 		// in its own layout subtree -- the block and the fragment after it are
 		// the container's children -- so its extent says nothing about them.
@@ -1541,7 +1597,7 @@ export class LayoutEngine {
 			// heads the run collides at one and one, and the fast path paints
 			// the pseudo-element alone.
 			element.childNodes.length + pseudoElementCount(element) !==
-				flexNode.children.length ||
+			flexNode.children.length ||
 			// A shadow host's childNodes are its LIGHT children, unrelated to
 			// the composed children the layout tree holds -- the counts can
 			// collide by accident (1 light child, 1 run head) and the fast
@@ -1574,9 +1630,13 @@ export class LayoutEngine {
 		const result: Node[] = [];
 		for (let i = lo; i < children.length; i++) {
 			const child = children[i];
-			if (child.extentTop >= bottom) break;
+			if (child.extentTop >= bottom) {
+				break;
+			}
 			const domNode = this.#domNodeByFlexNode.get(child);
-			if (domNode) result.push(domNode);
+			if (domNode) {
+				result.push(domNode);
+			}
 		}
 		return result;
 	}
@@ -1595,7 +1655,9 @@ export class LayoutEngine {
 		// going: nothing lays that content out until a box is built for it
 		// again, and the lines would describe a box that no longer exists.
 		const box = this.#boxes.get(domNode);
-		if (box) box.fragments = null;
+		if (box) {
+			box.fragments = null;
+		}
 		this.nodeMap.delete(domNode);
 		if (domNode.nodeType === domNode.ELEMENT_NODE) {
 			this.positionedElements.delete(domNode as Element);
@@ -1639,7 +1701,9 @@ export class LayoutEngine {
 				current;
 				current = boxParentElement(current)
 			) {
-				if (current === element) return false;
+				if (current === element) {
+					return false;
+				}
 			}
 			return true;
 		};
@@ -1652,12 +1716,16 @@ export class LayoutEngine {
 		let breakResult = this.#runBreakResult(runHead);
 		while (runHead && !(runFlexNode && breakResult)) {
 			const parent = boxParentElement(runHead);
-			if (!parent) return null;
+			if (!parent) {
+				return null;
+			}
 			runHead = headOutside(parent) ?? parent;
 			runFlexNode = this.#runFlexNode(runHead);
 			breakResult = this.#runBreakResult(runHead);
 		}
-		if (!runHead || !runFlexNode || !breakResult) return null;
+		if (!runHead || !runFlexNode || !breakResult) {
+			return null;
+		}
 
 		const runPosition = this.#documentPosition(runHead, runFlexNode);
 		let originX = runPosition.x;
@@ -1674,13 +1742,19 @@ export class LayoutEngine {
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			enclosing.unshift(ancestor);
-			if (ancestor === runHead) break;
+			if (ancestor === runHead) {
+				break;
+			}
 		}
 		let descended = false;
 		for (const ancestor of enclosing) {
-			if (getPropertyValue(ancestor, "display") !== "inline-block") continue;
+			if (getPropertyValue(ancestor, "display") !== "inline-block") {
+				continue;
+			}
 			const hop = findInlineBlockSegment(breakResult, ancestor);
-			if (!hop) continue;
+			if (!hop) {
+				continue;
+			}
 			// Border and padding both occupy cells, so the content edge is where
 			// the nested run's own origin sits.
 			originX +=
@@ -1698,7 +1772,9 @@ export class LayoutEngine {
 		}
 
 		const target = findInlineBlockSegment(breakResult, element);
-		if (!target) return null;
+		if (!target) {
+			return null;
+		}
 
 		// Only the run that owns the box can speak for its position. Once the
 		// walk descends into a nested measurement, any flex node the box still
@@ -1769,7 +1845,9 @@ export class LayoutEngine {
 	 */
 	contentRect(element: Element): DOMRect | null {
 		const rect = this.getRect(element);
-		if (!rect) return null;
+		if (!rect) {
+			return null;
+		}
 		const box = getBoxModel(element);
 		const left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
 		const top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
@@ -1790,7 +1868,9 @@ export class LayoutEngine {
 		// report -- the layout node it keeps is a placeholder holding its slot
 		// among its container's children, not a box. Its client rects are empty
 		// and its resolved values are the computed ones (CSSOM View §4).
-		if (display === "none") return null;
+		if (display === "none") {
+			return null;
+		}
 
 		// A blockified box's box is the one the layout tree sized, not the
 		// extent of the text it happens to hold: its layout node is the truth,
@@ -1827,7 +1907,9 @@ export class LayoutEngine {
 				// No layout node means the element was removed or never laid
 				// out -- null, exactly as the block fallback below reports it.
 				// A laid-out empty inline gets a zero-size rect at its position.
-				if (!runFlexNode) return null;
+				if (!runFlexNode) {
+					return null;
+				}
 				const position = this.#absolutePosition(runFlexNode);
 				return new this.DOMRect(position.x, position.y, 0, 0);
 			}
@@ -1898,7 +1980,9 @@ export class LayoutEngine {
 					// The breakResult contains this inline-block as a segment with nested content
 					const rectTexts: RectText[] = [];
 					const flexNode = this.#runFlexNode(element);
-					if (!flexNode) return [];
+					if (!flexNode) {
+						return [];
+					}
 
 					const position = this.#documentPosition(element, flexNode);
 					const containerX = position.x;
@@ -1931,9 +2015,9 @@ export class LayoutEngine {
 												visualBase: nestedSegment.visualBase,
 												rect: new this.DOMRect(
 													containerX +
-														segment.x +
-														paddingLeft +
-														nestedSegment.x,
+													segment.x +
+													paddingLeft +
+													nestedSegment.x,
 													containerY + line.y + paddingTop + nestedLine.y,
 													nestedSegment.width,
 													nestedLine.height,
@@ -1963,17 +2047,17 @@ export class LayoutEngine {
 															visualBase: innerSegment.visualBase,
 															rect: new this.DOMRect(
 																containerX +
-																	segment.x +
-																	paddingLeft +
-																	nestedSegment.x +
-																	nestedPaddingLeft +
-																	innerSegment.x,
+																segment.x +
+																paddingLeft +
+																nestedSegment.x +
+																nestedPaddingLeft +
+																innerSegment.x,
 																containerY +
-																	line.y +
-																	paddingTop +
-																	nestedLine.y +
-																	nestedPaddingTop +
-																	innerLine.y,
+																line.y +
+																paddingTop +
+																nestedLine.y +
+																nestedPaddingTop +
+																innerLine.y,
 																innerSegment.width,
 																innerLine.height,
 															),
@@ -2007,7 +2091,9 @@ export class LayoutEngine {
 
 		// Get run head's absolute position by accumulating parent positions
 		const flexNode = this.#runFlexNode(runHead);
-		if (!flexNode) return [];
+		if (!flexNode) {
+			return [];
+		}
 
 		let {x: containerX, y: containerY} = this.#documentPosition(
 			runHead,
@@ -2087,7 +2173,9 @@ export class LayoutEngine {
 							break;
 						}
 					}
-					if (found) break;
+					if (found) {
+						break;
+					}
 				}
 			}
 			currentNode = parent;
@@ -2103,17 +2191,21 @@ export class LayoutEngine {
 		// run head accumulating offsets.
 		for (
 			let ancestor =
-				node.nodeType === node.ELEMENT_NODE
-					? (node as Element)
-					: flatParentElement<Element>(node);
+				node.nodeType === node.ELEMENT_NODE ?
+						(node as Element) :
+						flatParentElement<Element>(node);
 			ancestor && ancestor !== runHead && !this.nodeMap.has(ancestor);
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (getPropertyValue(ancestor, "position") === "relative") {
 				const left = parseUnitValue(getPropertyValue(ancestor, "left"));
 				const top = parseUnitValue(getPropertyValue(ancestor, "top"));
-				if (typeof left === "number") containerX += left;
-				if (typeof top === "number") containerY += top;
+				if (typeof left === "number") {
+					containerX += left;
+				}
+				if (typeof top === "number") {
+					containerY += top;
+				}
 			}
 		}
 
@@ -2148,10 +2240,14 @@ export class LayoutEngine {
 		const byLine = new Map<number, TextFragmentEntry[]>();
 		for (const textNode of targetTextNodes) {
 			const entries = index.get(textNode);
-			if (!entries) continue;
+			if (!entries) {
+				continue;
+			}
 			for (const entry of entries) {
 				let bucket = byLine.get(entry.line);
-				if (!bucket) byLine.set(entry.line, (bucket = []));
+				if (!bucket) {
+					byLine.set(entry.line, (bucket = []));
+				}
 				bucket.push(entry);
 			}
 		}
@@ -2213,7 +2309,9 @@ export class LayoutEngine {
 		breakResult: BreakResult,
 	): Map<Text, TextFragmentEntry[]> {
 		let index = this.#rectTextIndices.get(breakResult);
-		if (index) return index;
+		if (index) {
+			return index;
+		}
 		index = new Map();
 		let ord = 0;
 		const visit = (segments: any[], baseX: number, lineIndex: number): void => {
@@ -2221,7 +2319,9 @@ export class LayoutEngine {
 				if (segment.leaf.type === "text") {
 					const textNode = segment.leaf.node as Text;
 					let entries = index!.get(textNode);
-					if (!entries) index!.set(textNode, (entries = []));
+					if (!entries) {
+						index!.set(textNode, (entries = []));
+					}
 					entries.push({
 						line: lineIndex,
 						x: baseX + segment.x,
@@ -2296,7 +2396,9 @@ export class LayoutEngine {
 				textNode,
 				range.startContainer === textNode ? range.startOffset : 0,
 			);
-			if (caret) rects.push(caret);
+			if (caret) {
+				rects.push(caret);
+			}
 		}
 		return rects;
 	}
@@ -2308,15 +2410,19 @@ export class LayoutEngine {
 	 * without the text, for the public `Range` API.
 	 */
 	getRangeRuns(range: Range): Array<{rect: globalThis.DOMRect; text: string}> {
-		if (range.collapsed) return [];
+		if (range.collapsed) {
+			return [];
+		}
 		const runs: Array<{rect: globalThis.DOMRect; text: string}> = [];
 		for (const textNode of this.#rangeTextNodes(range)) {
 			const from = range.startContainer === textNode ? range.startOffset : 0;
 			const to =
-				range.endContainer === textNode
-					? range.endOffset
-					: textNode.data.length;
-			if (to > from) runs.push(...this.#selectionRuns(textNode, from, to));
+				range.endContainer === textNode ?
+					range.endOffset :
+					textNode.data.length;
+			if (to > from) {
+				runs.push(...this.#selectionRuns(textNode, from, to));
+			}
 		}
 		return runs;
 	}
@@ -2325,12 +2431,14 @@ export class LayoutEngine {
 	#rangeTextNodes(range: Range): Text[] {
 		if (range.collapsed) {
 			const container = range.startContainer;
-			return container.nodeType === container.TEXT_NODE
-				? [container as Text]
-				: [];
+			return container.nodeType === container.TEXT_NODE ?
+					[container as Text] :
+					[];
 		}
 		const root = range.commonAncestorContainer;
-		if (root.nodeType === root.TEXT_NODE) return [root as Text];
+		if (root.nodeType === root.TEXT_NODE) {
+			return [root as Text];
+		}
 		const nodes: Text[] = [];
 		const walker = this.window.document.createTreeWalker(
 			root,
@@ -2338,7 +2446,9 @@ export class LayoutEngine {
 		);
 		let node: Node | null;
 		while ((node = walker.nextNode())) {
-			if (range.intersectsNode(node)) nodes.push(node as Text);
+			if (range.intersectsNode(node)) {
+				nodes.push(node as Text);
+			}
 		}
 		return nodes;
 	}
@@ -2406,14 +2516,18 @@ export class LayoutEngine {
 	/** A zero-width caret rect at a data offset within a text node. */
 	#caretRect(textNode: Text, offset: number): globalThis.DOMRect | null {
 		const lines = this.lineFragments(textNode);
-		if (lines.length === 0) return null;
+		if (lines.length === 0) {
+			return null;
+		}
 		// The line owning the caret: the first whose end it does not pass, but a
 		// caret exactly on a soft-wrap boundary belongs to the next line's start.
 		let lineIndex = lines.length - 1;
 		for (let i = 0; i < lines.length; i++) {
 			if (offset <= lines[i].endOffset) {
 				const next = lines[i + 1];
-				if (next && next.startOffset <= offset) continue;
+				if (next && next.startOffset <= offset) {
+					continue;
+				}
 				lineIndex = i;
 				break;
 			}
@@ -2489,8 +2603,12 @@ export class LayoutEngine {
 			}
 		}
 
-		if (best) return {node: best.node, offset: best.offset};
-		if (!nearest) return null;
+		if (best) {
+			return {node: best.node, offset: best.offset};
+		}
+		if (!nearest) {
+			return null;
+		}
 		const found = this.#offsetInFragment(
 			nearest.node,
 			whiteSpaceOf(nearest.node),
@@ -2520,21 +2638,23 @@ export class LayoutEngine {
 		let index = 0;
 		while (index < text.length && cellX < x) {
 			const width = runtimeStringWidth(text[index]);
-			if (cellX + width > x) break;
+			if (cellX + width > x) {
+				break;
+			}
 			cellX += width;
 			index++;
 		}
 		const distance =
-			x < fragment.rect.x
-				? fragment.rect.x - x
-				: x >= cellX && index === text.length
-					? x - cellX
-					: 0;
+			x < fragment.rect.x ?
+				fragment.rect.x - x :
+				x >= cellX && index === text.length ?
+					x - cellX :
+					0;
 		return {
 			offset:
-				index < text.length
-					? fragment.startOffset + dataOffsetAt(offsets, index)
-					: fragment.endOffset,
+				index < text.length ?
+					fragment.startOffset + dataOffsetAt(offsets, index) :
+					fragment.endOffset,
 			distance,
 		};
 	}
@@ -2562,9 +2682,9 @@ export class LayoutEngine {
 			let runStart = -1;
 			for (let i = 0; i <= text.length; i++) {
 				const dataOffset =
-					i < text.length
-						? fragment.startOffset + dataOffsetAt(offsets, i)
-						: -1;
+					i < text.length ?
+						fragment.startOffset + dataOffsetAt(offsets, i) :
+							-1;
 				const selected = dataOffset >= from && dataOffset < to;
 				if (selected && runStart === -1) {
 					runStart = i;
@@ -2583,9 +2703,9 @@ export class LayoutEngine {
 						// Painted order, since the caller redraws these cells: a
 						// selected run of a bidirectional line reverses just as
 						// the line it sits on did.
-						text: fragment.visualBase
-							? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
-							: text.slice(runStart, i),
+						text: fragment.visualBase ?
+								toVisualOrder(text.slice(runStart, i), fragment.visualBase) :
+								text.slice(runStart, i),
 					});
 					runStart = -1;
 				}
@@ -2601,7 +2721,9 @@ export class LayoutEngine {
 	 * transform/filter have no terminal meaning here.)
 	 */
 	formsStackingContext(element: Element): boolean {
-		if (element === this.window.document.body) return true;
+		if (element === this.window.document.body) {
+			return true;
+		}
 		if (computedStyleOf(element).computedValueOf("isolation") === "isolate") {
 			return true;
 		}
@@ -2626,12 +2748,20 @@ export class LayoutEngine {
 		// A stray frame can fire after the window is torn down (window.document
 		// goes null on close), and then there is nothing to layer.
 		const body = this.window.document?.body;
-		if (!body) return layers;
+		if (!body) {
+			return layers;
+		}
 		for (const element of this.positionedElements) {
-			if (!element.isConnected || element === body) continue;
-			if (topLayer.has(element)) continue; // painted above everything
+			if (!element.isConnected || element === body) {
+				continue;
+			}
+			if (topLayer.has(element)) {
+				continue;
+			} // painted above everything
 			// The registry is a superset: re-ask before believing membership.
-			if (!isPositioned(element)) continue;
+			if (!isPositioned(element)) {
+				continue;
+			}
 			let root: Element = body;
 			for (
 				let ancestor = flatParentElement<Element>(element);
@@ -2649,9 +2779,13 @@ export class LayoutEngine {
 				layers.set(root, bucket);
 			}
 			const z = zIndexValueOf(element);
-			if (z === "auto" || z === 0) bucket.zero.push(element);
-			else if (z < 0) bucket.neg.push(element);
-			else bucket.pos.push(element);
+			if (z === "auto" || z === 0) {
+				bucket.zero.push(element);
+			} else if (z < 0) {
+				bucket.neg.push(element);
+			} else {
+				bucket.pos.push(element);
+			}
 		}
 		const treeOrder = (a: Element, b: Element) =>
 			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
@@ -2685,18 +2819,26 @@ export class LayoutEngine {
 	): Element | null {
 		const layers = this.collectStackingLayers(topLayer);
 		const document = this.window.document;
-		if (!document?.body) return null;
+		if (!document?.body) {
+			return null;
+		}
 		// Painting starts at the body, whose box covers everything in flow --
 		// unless the body generates no box of its own, and the box its content
 		// is laid out in is the root element's.
 		const paintRoot =
 			root === document.documentElement && !dissolvesIntoChildren(document.body)
-				? document.body
-				: root;
+			?
+				document.body
+			:
+				root;
 		for (const element of [...topLayer].reverse()) {
-			if (!flatIsConnected(element)) continue;
+			if (!flatIsConnected(element)) {
+				continue;
+			}
 			const hit = this.#hitTestContext(element, x, y, layers, cameraScrollTop);
-			if (hit) return hit;
+			if (hit) {
+				return hit;
+			}
 		}
 		return this.#hitTestContext(paintRoot, x, y, layers, cameraScrollTop);
 	}
@@ -2715,26 +2857,34 @@ export class LayoutEngine {
 			// a property of the containing-block CHAIN, so the check walks
 			// ancestors -- an absolute box inside a fixed bar lives there too.
 			const probeY = this.isInFixedSpace(element) ? y - cameraScrollTop : y;
-			return this.formsStackingContext(element)
-				? this.#hitTestContext(element, x, probeY, layers, cameraScrollTop)
-				: this.#hitTestInFlow(element, x, probeY);
+			return this.formsStackingContext(element) ?
+					this.#hitTestContext(element, x, probeY, layers, cameraScrollTop) :
+					this.#hitTestInFlow(element, x, probeY);
 		};
 		if (bucket) {
 			for (let i = bucket.pos.length - 1; i >= 0; i--) {
 				const hit = probeMember(bucket.pos[i]);
-				if (hit) return hit;
+				if (hit) {
+					return hit;
+				}
 			}
 			for (let i = bucket.zero.length - 1; i >= 0; i--) {
 				const hit = probeMember(bucket.zero[i]);
-				if (hit) return hit;
+				if (hit) {
+					return hit;
+				}
 			}
 		}
 		const inFlow = this.#hitTestInFlow(root, x, y);
-		if (inFlow) return inFlow;
+		if (inFlow) {
+			return inFlow;
+		}
 		if (bucket) {
 			for (let i = bucket.neg.length - 1; i >= 0; i--) {
 				const hit = probeMember(bucket.neg[i]);
-				if (hit) return hit;
+				if (hit) {
+					return hit;
+				}
 			}
 		}
 		return null;
@@ -2746,7 +2896,9 @@ export class LayoutEngine {
 	 * their context probes them.
 	 */
 	#hitTestInFlow(element: Element, x: number, y: number): Element | null {
-		if (element.nodeType !== 1) return null;
+		if (element.nodeType !== 1) {
+			return null;
+		}
 		if (computedStyleOf(element).computedValueOf("display") === "none") {
 			return null;
 		}
@@ -2764,18 +2916,26 @@ export class LayoutEngine {
 			} catch {
 				return null;
 			}
-			if (!contained && !this.#splitsAroundBlock(element)) return null;
+			if (!contained && !this.#splitsAroundBlock(element)) {
+				return null;
+			}
 		}
 		const children: Element[] = [];
 		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (child.nodeType !== 1) continue;
-			if (isPositioned(child as Element)) continue;
+			if (child.nodeType !== 1) {
+				continue;
+			}
+			if (isPositioned(child as Element)) {
+				continue;
+			}
 			children.push(child as Element);
 		}
 		for (let i = children.length - 1; i >= 0; i--) {
 			const hit = this.#hitTestInFlow(children[i], x, y);
-			if (hit) return hit;
+			if (hit) {
+				return hit;
+			}
 		}
 		return contained ? element : null;
 	}
@@ -2790,7 +2950,9 @@ export class LayoutEngine {
 	 */
 	caretRectOf(element: Element): globalThis.DOMRect | null {
 		const range = caretRangeOf(element);
-		if (!range) return null;
+		if (!range) {
+			return null;
+		}
 		return this.getRangeRects(range as unknown as Range)[0] ?? null;
 	}
 
@@ -2803,10 +2965,10 @@ export class LayoutEngine {
 	}
 
 	createDOMRect(
-		x: number = 0,
-		y: number = 0,
-		width: number = 0,
-		height: number = 0,
+		x = 0,
+		y = 0,
+		width = 0,
+		height = 0,
 	): globalThis.DOMRect {
 		return new this.DOMRect(x, y, width, height);
 	}
@@ -2818,7 +2980,9 @@ export class LayoutEngine {
 	 * the origin, which is what both public APIs return for no geometry.
 	 */
 	unionRect(rects: readonly globalThis.DOMRect[]): globalThis.DOMRect {
-		if (rects.length === 0) return this.createDOMRect();
+		if (rects.length === 0) {
+			return this.createDOMRect();
+		}
 		let left = Infinity;
 		let top = Infinity;
 		let right = -Infinity;
@@ -2918,7 +3082,9 @@ export class LayoutEngine {
 					// holds none -- it hangs from its containing block, whatever
 					// display it computes -- and is named here so that the one path
 					// that builds a box reaches it there.
-					if (!inlineLevel || isOutOfFlow(element)) children.push(own);
+					if (!inlineLevel || isOutOfFlow(element)) {
+						children.push(own);
+					}
 					continue;
 				}
 				if (!inlineLevel) {
@@ -3000,7 +3166,9 @@ export class LayoutEngine {
 			box = new Box("node", node);
 			this.#boxes.set(node, box);
 		}
-		if (parent) box.parent = parent;
+		if (parent) {
+			box.parent = parent;
+		}
 		return box;
 	}
 
@@ -3102,7 +3270,9 @@ export class LayoutEngine {
 	 */
 	#retireFlexNode(node: Node): void {
 		const flexNode = this.nodeMap.get(node);
-		if (!flexNode) return;
+		if (!flexNode) {
+			return;
+		}
 		flexNode.getParent()?.removeChild(flexNode);
 		while (flexNode.children.length > 0) {
 			flexNode.removeChild(flexNode.children[0]);
@@ -3134,7 +3304,9 @@ export class LayoutEngine {
 		const flexNode = box.flexNode;
 		box.flexNode = null;
 		box.fragments = null;
-		if (!flexNode) return;
+		if (!flexNode) {
+			return;
+		}
 		flexNode.getParent()?.removeChild(flexNode);
 		this.#measureNodes.delete(flexNode);
 		this.#anonymousBoxes.delete(flexNode);
@@ -3150,7 +3322,9 @@ export class LayoutEngine {
 
 	/** The box a node's content falls under, among its container's children. */
 	#boxEntryOf(node: Node): Box | null {
-		if (!flatIsConnected(node)) return null;
+		if (!flatIsConnected(node)) {
+			return null;
+		}
 
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
@@ -3158,22 +3332,32 @@ export class LayoutEngine {
 			// left the flow entirely. Letting run invalidation "ensure" it a
 			// bare layout node makes later rebuilds skip its full build, so its
 			// pseudo-only content vanishes on a runtime class flip.
-			if (isOutOfFlow(element)) return null;
-			if (!isInlineDisplay(getPropertyValue(element, "display"))) return null;
+			if (isOutOfFlow(element)) {
+				return null;
+			}
+			if (!isInlineDisplay(getPropertyValue(element, "display"))) {
+				return null;
+			}
 		} else if (node.nodeType !== node.TEXT_NODE) {
 			return null;
 		}
 
 		const container = this.#runContainerOf(node);
-		if (!container) return this.#principalBox(node);
+		if (!container) {
+			return this.#principalBox(node);
+		}
 		const heads = this.#containerBox(container).heads!;
 		// Up from the node to whichever of its ancestors the container counts
 		// among its own flow children: that is the box the content falls under.
-		for (let current: Node = node; current !== container; ) {
+		for (let current: Node = node; current !== container;) {
 			const entry = heads.get(current);
-			if (entry) return entry;
+			if (entry) {
+				return entry;
+			}
 			const parent = this.#boxParentOf(current);
-			if (!parent) return this.#principalBox(current);
+			if (!parent) {
+				return this.#principalBox(current);
+			}
 			current = parent;
 		}
 		return this.#principalBox(node);
@@ -3186,7 +3370,9 @@ export class LayoutEngine {
 	 */
 	#runFlexNode(node: Node): FlexTypes.Node | undefined {
 		const box = this.#boxOf(node);
-		if (box) return box.head === node ? (box.flexNode ?? undefined) : undefined;
+		if (box) {
+			return box.head === node ? (box.flexNode ?? undefined) : undefined;
+		}
 		return this.nodeMap.get(node);
 	}
 
@@ -3246,14 +3432,18 @@ export class LayoutEngine {
 		containingBlock: FlexTypes.Node,
 	): {left: number; top: number} | null {
 		const container = this.#runContainerOf(element);
-		if (!container) return null;
+		if (!container) {
+			return null;
+		}
 		if (
 			NO_STATIC_POSITION_DISPLAYS.has(getPropertyValue(container, "display"))
 		) {
 			return null;
 		}
 		const containerNode = this.#containerFlexNode(container);
-		if (!containerNode) return null;
+		if (!containerNode) {
+			return null;
+		}
 
 		const origin = this.#absolutePosition(containerNode);
 		const containingOrigin = this.#absolutePosition(containingBlock);
@@ -3270,14 +3460,16 @@ export class LayoutEngine {
 		const containerBox = this.#containerBox(container);
 		const children = containerBox.children!;
 		let entry: Box | null = null;
-		for (let current: Node = element; current !== container; ) {
+		for (let current: Node = element; current !== container;) {
 			const found = containerBox.heads!.get(current);
 			if (found) {
 				entry = found;
 				break;
 			}
 			const parent = this.#boxParentOf(current);
-			if (!parent) break;
+			if (!parent) {
+				break;
+			}
 			current = parent;
 		}
 
@@ -3301,10 +3493,12 @@ export class LayoutEngine {
 		for (let i = index - 1; i >= 0; i--) {
 			const previous = children[i];
 			const previousNode =
-				previous.kind === "anonymous"
-					? previous.flexNode
-					: (this.nodeMap.get(previous.node!) ?? null);
-			if (!previousNode || previousNode.getParent() !== containerNode) continue;
+				previous.kind === "anonymous" ?
+					previous.flexNode :
+						(this.nodeMap.get(previous.node!) ?? null);
+			if (!previousNode || previousNode.getParent() !== containerNode) {
+				continue;
+			}
 			return {
 				left: offsetLeft + contentLeft,
 				top:
@@ -3324,12 +3518,16 @@ export class LayoutEngine {
 	 */
 	#inlineCursorBefore(run: Box, element: Element): {x: number; y: number} {
 		const breakResult = run.fragments;
-		if (!breakResult) return ZERO_OFFSET;
+		if (!breakResult) {
+			return ZERO_OFFSET;
+		}
 		let cursor = ZERO_OFFSET;
 		for (const line of breakResult.lines) {
 			for (const segment of line.segments) {
 				const position = element.compareDocumentPosition(segment.leaf.node);
-				if (!(position & element.DOCUMENT_POSITION_PRECEDING)) return cursor;
+				if (!(position & element.DOCUMENT_POSITION_PRECEDING)) {
+					return cursor;
+				}
 				cursor = {x: segment.x + segment.width, y: line.y};
 			}
 		}
@@ -3363,7 +3561,9 @@ export class LayoutEngine {
 		// content: the fragments and the block between them are boxes of the
 		// CONTAINER (CSS2 §9.2.1.1), reconciled there. Taking them here steals
 		// them from the container that places them.
-		if (this.#splitsAroundBlock(container)) return;
+		if (this.#splitsAroundBlock(container)) {
+			return;
+		}
 
 		const containerFlexNode = this.#containerFlexNode(container);
 		if (!containerFlexNode || containerFlexNode.measureFunc) {
@@ -3385,9 +3585,9 @@ export class LayoutEngine {
 			if (entry.kind === "anonymous") {
 				let flexNode = entry.flexNode;
 				const styledFrom =
-					entry.head.nodeType === entry.head.ELEMENT_NODE
-						? (entry.head as Element)
-						: null;
+					entry.head.nodeType === entry.head.ELEMENT_NODE ?
+							(entry.head as Element) :
+						null;
 				// The head decides the box's own flex styles (an anonymous box has
 				// none), so a run that changes hands starts from a fresh node
 				// rather than wearing the last head's margins and flex factors.
@@ -3439,7 +3639,9 @@ export class LayoutEngine {
 			// An out-of-flow box is not one of the container's: it hangs from its
 			// CONTAINING BLOCK, which the build above hoisted it to, and takes no
 			// place among the boxes counted here.
-			if (isOutOfFlow(node)) continue;
+			if (isOutOfFlow(node)) {
+				continue;
+			}
 			const flexNode = this.nodeMap.get(node);
 			if (flexNode && flexNode.getParent() === containerFlexNode) {
 				// The box list is the order. A box placed among its DOM
@@ -3464,7 +3666,9 @@ export class LayoutEngine {
 		for (let i = containerFlexNode.children.length - 1; i >= index; i--) {
 			const child = containerFlexNode.children[i];
 			const node = this.#domNodeByFlexNode.get(child);
-			if (node && isOutOfFlow(node)) continue;
+			if (node && isOutOfFlow(node)) {
+				continue;
+			}
 			containerFlexNode.removeChild(child);
 		}
 	}
@@ -3478,13 +3682,17 @@ export class LayoutEngine {
 	 */
 	#syncRunMembers(run: Box): void {
 		for (const member of run.members) {
-			if (member.nodeType !== member.ELEMENT_NODE) continue;
+			if (member.nodeType !== member.ELEMENT_NODE) {
+				continue;
+			}
 			const element = member as Element;
 			if (isOutOfFlow(element)) {
 				this.#addNode(element, null);
 				continue;
 			}
-			if (!this.#boxes.get(element)?.contentRoot) this.#retireFlexNode(element);
+			if (!this.#boxes.get(element)?.contentRoot) {
+				this.#retireFlexNode(element);
+			}
 			this.#retireRunContent(element);
 		}
 	}
@@ -3504,7 +3712,9 @@ export class LayoutEngine {
 	 */
 	#runContainerOf(node: Node): Element | null {
 		const parent = this.#boxParentOf(node);
-		if (!parent) return null;
+		if (!parent) {
+			return null;
+		}
 		const startsOwnRun =
 			node.nodeType === node.ELEMENT_NODE &&
 			getPropertyValue(node as Element, "display") !== "inline";
@@ -3525,11 +3735,15 @@ export class LayoutEngine {
 			current;
 			current = this.#boxParentOf(current)
 		) {
-			if (isOutOfFlow(current)) return current;
+			if (isOutOfFlow(current)) {
+				return current;
+			}
 			const display = getPropertyValue(current, "display");
 			// An inline box is transparent: its content belongs to the run
 			// around it.
-			if (display === "inline") continue;
+			if (display === "inline") {
+				continue;
+			}
 			if (display === "inline-block") {
 				// A box laying out children of its own establishes a block
 				// container; and an inline-block nested in one starts a run
@@ -3593,7 +3807,9 @@ export class LayoutEngine {
 	 */
 	#restageBox(node: Node): void {
 		const container = this.#runContainerOf(node);
-		if (container) this.#restageContainer(container);
+		if (container) {
+			this.#restageContainer(container);
+		}
 	}
 
 	/**
@@ -3604,17 +3820,25 @@ export class LayoutEngine {
 	 */
 	#restageChildren(parent: Element): void {
 		let box: Element | null = parent;
-		while (box && dissolvesIntoChildren(box)) box = boxParentElement(box);
-		if (!box) return;
+		while (box && dissolvesIntoChildren(box)) {
+			box = boxParentElement(box);
+		}
+		if (!box) {
+			return;
+		}
 		this.#restageContainer(box);
 		const container = this.#runContainerFrom(box, false);
-		if (container) this.#restageContainer(container);
+		if (container) {
+			this.#restageContainer(container);
+		}
 	}
 
 	/** Note that every container in and around a subtree must re-enumerate. */
 	#restageSubtree(node: Node): void {
 		this.#restageBox(node);
-		if (node.nodeType !== node.ELEMENT_NODE) return;
+		if (node.nodeType !== node.ELEMENT_NODE) {
+			return;
+		}
 		this.#restageChildren(node as Element);
 		// A subtree layout has never seen holds no enumeration to unsettle, and
 		// the walk to discover that would cost more than the boxes it saves.
@@ -3725,7 +3949,9 @@ export class LayoutEngine {
 	#invalidateBox(box: Box): void {
 		box.flexNode?.markDirty();
 		const host = this.#enclosingContentRoot(box.container);
-		if (host) this.#invalidateEnclosingMeasure(host);
+		if (host) {
+			this.#invalidateEnclosingMeasure(host);
+		}
 	}
 
 	/**
@@ -3740,7 +3966,9 @@ export class LayoutEngine {
 	 */
 	#enclosingContentRoot(from: Element | null): Element | null {
 		for (let current = from; current; current = boxParentElement(current)) {
-			if (this.#boxes.get(current)?.contentRoot) return current;
+			if (this.#boxes.get(current)?.contentRoot) {
+				return current;
+			}
 		}
 		return null;
 	}
@@ -3776,7 +4004,9 @@ export class LayoutEngine {
 		// Whatever restyled a node with no box of its own may have given it
 		// one, or taken one away: the container's box list is what says.
 		const runContainer = this.#runContainerOf(node);
-		if (runContainer) this.#dirtyRunContainers.add(runContainer);
+		if (runContainer) {
+			this.#dirtyRunContainers.add(runContainer);
+		}
 		// The box a node's content sits in may be its ANCESTOR's box: a node
 		// inside a run member is not itself a member, and the anonymous box
 		// holding it belongs to no DOM node, so the climb below -- which looks
@@ -3810,7 +4040,9 @@ export class LayoutEngine {
 				// Keep climbing out of any content root this run sits under:
 				// only the box that owns it can run that layout again.
 				const host = this.#enclosingContentRoot(boxParentElement(entry.node!));
-				if (host) this.#invalidateEnclosingMeasure(host);
+				if (host) {
+					this.#invalidateEnclosingMeasure(host);
+				}
 				return;
 			}
 		}
@@ -3831,7 +4063,9 @@ export class LayoutEngine {
 					flexNode.markDirty();
 				}
 				const host = this.#enclosingContentRoot(boxParentElement(current));
-				if (host) this.#invalidateEnclosingMeasure(host);
+				if (host) {
+					this.#invalidateEnclosingMeasure(host);
+				}
 				return;
 			}
 			current = boxParentElement(current);
@@ -3840,7 +4074,9 @@ export class LayoutEngine {
 
 	[kInvalidateInlineRun](node: Node): void {
 		const entry = this.#boxEntryOf(node);
-		if (!entry) return;
+		if (!entry) {
+			return;
+		}
 		if (entry.kind === "anonymous") {
 			this.#invalidateContainerBoxes(entry.container);
 			this.#dirtyRunContainers.add(entry.container);
@@ -3853,7 +4089,9 @@ export class LayoutEngine {
 		// A box of the element's own (a flex container blockifies its inline
 		// children) measures only itself.
 		const container = this.#runContainerOf(entry.node!);
-		if (container) this.#invalidateContainerBoxes(container);
+		if (container) {
+			this.#invalidateContainerBoxes(container);
+		}
 		this.nodeMap.get(entry.node!)?.markDirty();
 	}
 
@@ -3880,7 +4118,9 @@ export class LayoutEngine {
 		// line. A card's blank middle row is three spaces, and this is what
 		// makes it a row.
 		const whiteSpace = getPropertyValue(parent, "white-space");
-		if (preservesSpaces(whiteSpace)) return false;
+		if (preservesSpaces(whiteSpace)) {
+			return false;
+		}
 		if (whiteSpace === "pre-line" && textNode.textContent.includes("\n")) {
 			return false;
 		}
@@ -3991,7 +4231,9 @@ export class LayoutEngine {
 			const restyled = [...this.#restyled];
 			this.#restyled.clear();
 			for (const element of restyled) {
-				if (!flatIsConnected(element)) continue;
+				if (!flatIsConnected(element)) {
+					continue;
+				}
 				// The element's own box may move between runs, and so may the
 				// boxes of its children.
 				this.#restageBox(element);
@@ -4021,9 +4263,9 @@ export class LayoutEngine {
 	#restageForRecord(record: MutationRecord): void {
 		// A record on a shadow root describes the HOST's composed children.
 		const target =
-			record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
-				? (record.target as ShadowRoot).host
-				: record.target;
+			record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE ?
+					(record.target as ShadowRoot).host :
+				record.target;
 		if (record.type === "attributes") {
 			// The element's own box may move between runs (its display could
 			// have changed), and so may the boxes of its children (a flex
@@ -4079,7 +4321,9 @@ export class LayoutEngine {
 			el;
 			el = flatParentElement<Element>(el)
 		) {
-			if (getPropertyValue(el, "position") === "fixed") return true;
+			if (getPropertyValue(el, "position") === "fixed") {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -4107,7 +4351,9 @@ export class LayoutEngine {
 				// A measure-function node cannot take flex children; a
 				// positioned inline-block can't serve as a flex containing
 				// block, so the hoist keeps climbing.
-				if (flexNode && !flexNode.measureFunc) return flexNode;
+				if (flexNode && !flexNode.measureFunc) {
+					return flexNode;
+				}
 			}
 		}
 		return this.nodeMap.get(this.rootElement) ?? null;
@@ -4120,7 +4366,9 @@ export class LayoutEngine {
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			if (getPropertyValue(ancestor, "display") === "none") return true;
+			if (getPropertyValue(ancestor, "display") === "none") {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -4166,10 +4414,12 @@ export class LayoutEngine {
 		// always assumed.
 		if (isOutOfFlow(node)) {
 			const containingBlock =
-				getPropertyValue(node as Element, "position") === "fixed"
-					? this.viewportRootNode
-					: this.#containingBlockFlexNode(node as Element);
-			if (containingBlock) parentFlexNode = containingBlock;
+				getPropertyValue(node as Element, "position") === "fixed" ?
+					this.viewportRootNode :
+						this.#containingBlockFlexNode(node as Element);
+			if (containingBlock) {
+				parentFlexNode = containingBlock;
+			}
 		}
 
 		// A measure-function node owns no layout children: everything under an
@@ -4249,7 +4499,9 @@ export class LayoutEngine {
 						parentFlexNode.children.length,
 					);
 					const container = this.#runContainerOf(node);
-					if (container) this.#dirtyRunContainers.add(container);
+					if (container) {
+						this.#dirtyRunContainers.add(container);
+					}
 				}
 			}
 			return;
@@ -4272,11 +4524,19 @@ export class LayoutEngine {
 	 * item its intrinsic size.
 	 */
 	#measuresAsRun(element: Element): boolean {
-		if (isOutOfFlow(element)) return false;
+		if (isOutOfFlow(element)) {
+			return false;
+		}
 		const display = getPropertyValue(element, "display");
-		if (!isInlineDisplay(display)) return false;
-		if (display === "inline-block") return true;
-		if (isInlineLevel(element)) return true;
+		if (!isInlineDisplay(display)) {
+			return false;
+		}
+		if (display === "inline-block") {
+			return true;
+		}
+		if (isInlineLevel(element)) {
+			return true;
+		}
 		return !this.#containsBlockLevelBox(element);
 	}
 
@@ -4384,7 +4644,9 @@ export class LayoutEngine {
 			// which know nothing of the anonymous boxes between them. The
 			// container's box list is what settles the order, so ask for it.
 			const container = this.#runContainerOf(element);
-			if (container) this.#dirtyRunContainers.add(container);
+			if (container) {
+				this.#dirtyRunContainers.add(container);
+			}
 		}
 	}
 
@@ -4400,7 +4662,9 @@ export class LayoutEngine {
 	#retireHiddenContent(element: Element): void {
 		this.#retireContainerBoxes(element);
 		const box = this.#boxes.get(element);
-		if (box) this.#retireContentRoot(box);
+		if (box) {
+			this.#retireContentRoot(box);
+		}
 		const walker = createFlatTreeWalker<Node>(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			this.#retireFlexNode(child);
@@ -4421,7 +4685,9 @@ export class LayoutEngine {
 		const box = this.#boxes.get(element);
 		if (box?.children) {
 			for (const child of box.children) {
-				if (child.kind === "anonymous") this.#retireAnonymousBox(child);
+				if (child.kind === "anonymous") {
+					this.#retireAnonymousBox(child);
+				}
 			}
 			box.children = null;
 			box.heads = null;
@@ -4444,10 +4710,12 @@ export class LayoutEngine {
 	 * content out under a root only its own measurement reaches.
 	 */
 	#retireRunContent(element: Element): void {
-		if (this.#boxes.get(element)?.contentRoot) return;
+		if (this.#boxes.get(element)?.contentRoot) {
+			return;
+		}
 		this.#retireContainerBoxes(element);
 		const walker = flowWalker(element);
-		for (let node = walker.nextNode(); node; ) {
+		for (let node = walker.nextNode(); node;) {
 			if (node.nodeType === node.ELEMENT_NODE) {
 				const child = node as Element;
 				if (isOutOfFlow(child)) {
@@ -4477,12 +4745,18 @@ export class LayoutEngine {
 	#retireSteppedOver(parent: Element): void {
 		const walker = createFlatTreeWalker<Node>(parent);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			if (child.nodeType !== child.ELEMENT_NODE) {
+				continue;
+			}
 			const element = child as Element;
 			const dissolves = dissolvesIntoChildren(element);
-			if (!dissolves && !this.#boxes.get(element)?.broken) continue;
+			if (!dissolves && !this.#boxes.get(element)?.broken) {
+				continue;
+			}
 			// #addNode is what retires the box of a box-less element.
-			if (dissolves && this.nodeMap.has(element)) this.#addNode(element, null);
+			if (dissolves && this.nodeMap.has(element)) {
+				this.#addNode(element, null);
+			}
 			this.#retireSteppedOver(element);
 		}
 	}
@@ -4493,24 +4767,39 @@ export class LayoutEngine {
 	 * multi-line flex markup must not become items that eat gap and
 	 * justify-content space -- browsers drop them; so do we. Preserved
 	 * white space (white-space: pre/pre-wrap on the container) stays an
-	 * item. A run is a contiguous sequence of sibling TEXT nodes: every
-	 * element child of a flex container is an item of its own, inline or
-	 * not, so any element ends the run.
+	 * item, and a run that reaches any inline content is a real item.
 	 */
 	#isSuppressedFlexWhitespace(text: Text): boolean {
 		const parent = text.parentElement;
-		if (!parent) return false;
-		if (!isFlexContainer(parent)) return false;
-		if (preservesSpaces(getPropertyValue(parent, "white-space"))) return false;
+		if (!parent) {
+			return false;
+		}
+		if (!isFlexContainer(parent)) {
+			return false;
+		}
+		if (preservesSpaces(getPropertyValue(parent, "white-space"))) {
+			return false;
+		}
 		for (let node: Node | null = text; node; node = node.nextSibling) {
 			if (node.nodeType === node.TEXT_NODE) {
-				if ((node as Text).data.trim() !== "") return false;
+				if ((node as Text).data.trim() !== "") {
+					return false;
+				}
 				continue;
 			}
-			if (node.nodeType !== node.ELEMENT_NODE) continue;
-			// A display: none child generates no box and does not interrupt
-			// the run; any other element is a flex item that ends it.
-			if (getPropertyValue(node as Element, "display") === "none") continue;
+			if (node.nodeType !== node.ELEMENT_NODE) {
+				continue;
+			}
+			const sibling = node as Element;
+			const siblingDisplay = getPropertyValue(sibling, "display");
+			if (siblingDisplay === "none") {
+				continue;
+			}
+			// An inline sibling joins this run and gives it content; anything
+			// block-level ends the run with only white space collected.
+			if (isInlineDisplay(siblingDisplay)) {
+				return false;
+			}
 			break;
 		}
 		return true;
@@ -4577,7 +4866,9 @@ export class LayoutEngine {
 		const walker = flowWalker(container);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			into.push(child);
-			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			if (child.nodeType !== child.ELEMENT_NODE) {
+				continue;
+			}
 			// Written on the way past rather than recomputed by the readers:
 			// paint culling asks per element per frame, and re-walking an
 			// inline's subtree there would cost every off-screen row of a long
@@ -4643,7 +4934,9 @@ export class LayoutEngine {
 	/** Retire a box's content root once its content is all inline again. */
 	#retireContentRoot(box: Box): void {
 		const root = box.contentRoot;
-		if (!root) return;
+		if (!root) {
+			return;
+		}
 		box.contentRoot = null;
 		// Sever first: the children belong to DOM nodes that re-add themselves
 		// through the run machinery, and freeing them would leave nodeMap
@@ -4663,10 +4956,16 @@ export class LayoutEngine {
 	 */
 	#markRunMeasureDirty(runHead: Node): void {
 		const flexNode = this.nodeMap.get(runHead);
-		if (!flexNode) return;
-		if (flexNode.measureFunc) flexNode.markDirty();
+		if (!flexNode) {
+			return;
+		}
+		if (flexNode.measureFunc) {
+			flexNode.markDirty();
+		}
 		const host = this.#enclosingContentRoot(boxParentElement(runHead));
-		if (host) this.#invalidateEnclosingMeasure(host);
+		if (host) {
+			this.#invalidateEnclosingMeasure(host);
+		}
 	}
 
 	/**
@@ -4689,17 +4988,23 @@ export class LayoutEngine {
 		for (let parent = root.getParent(); parent; parent = root.getParent()) {
 			root = parent;
 		}
-		if (root === this.viewportRootNode) return position;
+		if (root === this.viewportRootNode) {
+			return position;
+		}
 		let host: Element | null = null;
 		for (
 			let current = boxParentElement(node);
 			current && !host;
 			current = boxParentElement(current)
 		) {
-			if (this.#boxes.get(current)?.contentRoot === root) host = current;
+			if (this.#boxes.get(current)?.contentRoot === root) {
+				host = current;
+			}
 		}
 		const hostRect = host && this.getRect(host);
-		if (!host || !hostRect) return position;
+		if (!host || !hostRect) {
+			return position;
+		}
 		const boxModel = getBoxModel(host);
 		return {
 			x:
@@ -4714,22 +5019,34 @@ export class LayoutEngine {
 
 	/** An inline box with block-level content inside it: CSS breaks it apart. */
 	#splitsAroundBlock(element: Element): boolean {
-		if (isOutOfFlow(element)) return false;
-		if (getPropertyValue(element, "display") !== "inline") return false;
+		if (isOutOfFlow(element)) {
+			return false;
+		}
+		if (getPropertyValue(element, "display") !== "inline") {
+			return false;
+		}
 		return this.#containsBlockLevelBox(element);
 	}
 
 	#containsBlockLevelBox(element: Element): boolean {
 		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			if (child.nodeType !== child.ELEMENT_NODE) {
+				continue;
+			}
 			const childElement = child as Element;
-			if (isOutOfFlow(childElement)) continue;
+			if (isOutOfFlow(childElement)) {
+				continue;
+			}
 			const display = getPropertyValue(childElement, "display");
 			// An inline-block contains its own blocks without splitting anything.
-			if (display === "none" || display === "inline-block") continue;
+			if (display === "none" || display === "inline-block") {
+				continue;
+			}
 			if (display === "inline") {
-				if (this.#containsBlockLevelBox(childElement)) return true;
+				if (this.#containsBlockLevelBox(childElement)) {
+					return true;
+				}
 				continue;
 			}
 			return true;
@@ -4764,7 +5081,9 @@ export class LayoutEngine {
 		if (Number.isFinite(width)) {
 			breakResult.containerWidth = width;
 		}
-		if (placing) box.fragments = breakResult;
+		if (placing) {
+			box.fragments = breakResult;
+		}
 
 		return {
 			width: breakResult.maxLineWidth,
@@ -4800,8 +5119,12 @@ export class LayoutEngine {
 	 */
 	#isRowFlexItem(element: Element): boolean {
 		const parent = flatParentElement<Element>(element);
-		if (!parent) return false;
-		if (!isFlexContainer(parent)) return false;
+		if (!parent) {
+			return false;
+		}
+		if (!isFlexContainer(parent)) {
+			return false;
+		}
 		const direction = getPropertyValue(parent, "flex-direction") || "row";
 		return direction === "row" || direction === "row-reverse";
 	}
@@ -4840,7 +5163,9 @@ export class LayoutEngine {
 
 		const node = source.node!;
 		const parentElement = boxParentElement(node);
-		if (!parentElement) return leafNodes;
+		if (!parentElement) {
+			return leafNodes;
+		}
 
 		// An element measuring its OWN content walks from itself, out through
 		// the block container that holds it: a run that starts inside an inline
@@ -4914,7 +5239,9 @@ export class LayoutEngine {
 						this.#shouldCollapseWhitespaceTextNode(textNode)
 					) {
 						// Skip this whitespace text node - it should be collapsed to nothing
-						if (!walker.nextNode()) break;
+						if (!walker.nextNode()) {
+							break;
+						}
 						continue;
 					}
 
@@ -4925,7 +5252,9 @@ export class LayoutEngine {
 					});
 				}
 				// Continue with normal traversal
-				if (!walker.nextNode()) break;
+				if (!walker.nextNode()) {
+					break;
+				}
 			} else if (node.nodeType === node.ELEMENT_NODE) {
 				const element = node as Element;
 				const display = getPropertyValue(element, "display");
@@ -4938,14 +5267,18 @@ export class LayoutEngine {
 					// neither occupies run space nor interrupts the run. Checked
 					// before the display branches -- an absolute inline span
 					// otherwise measures into the run it left.
-					if (!skipSubtree(walker)) break;
+					if (!skipSubtree(walker)) {
+						break;
+					}
 				} else if (element.tagName === "BR") {
 					leafNodes.push({
 						type: "br",
 						node: element as HTMLBRElement,
 					});
 					// Continue with normal traversal
-					if (!walker.nextNode()) break;
+					if (!walker.nextNode()) {
+						break;
+					}
 				} else if (display === "inline-block") {
 					const ownBox = this.#principalBox(element);
 					// Before anything reads its size or asks what its content
@@ -4953,7 +5286,9 @@ export class LayoutEngine {
 					// a run MEMBER, and #addElementNode is never called on one,
 					// so this is the first moment its block content is known to
 					// need a root.
-					if (!ownBox.contentRoot) this.#syncContentRoot(element);
+					if (!ownBox.contentRoot) {
+						this.#syncContentRoot(element);
+					}
 
 					// Parse CSS box model properties
 					const boxModel = getBoxModel(element);
@@ -5104,12 +5439,12 @@ export class LayoutEngine {
 						// width shrinks to fit, which is what an inline-block does.
 						// NaN is the engine's "undefined": the axis shrinks to fit.
 						contentRoot.calculateLayout(
-							contentWidthMode === Flex.MEASURE_MODE_EXACTLY
-								? contentWidth
-								: Number.NaN,
-							contentHeightMode === Flex.MEASURE_MODE_EXACTLY
-								? contentHeight
-								: Number.NaN,
+							contentWidthMode === Flex.MEASURE_MODE_EXACTLY ?
+								contentWidth :
+								Number.NaN,
+							contentHeightMode === Flex.MEASURE_MODE_EXACTLY ?
+								contentHeight :
+								Number.NaN,
 						);
 						finalContentWidth = contentRoot.getComputedWidth();
 						finalContentHeight = contentRoot.getComputedHeight();
@@ -5233,10 +5568,14 @@ export class LayoutEngine {
 						contentHeight: finalContentHeight,
 					});
 					// Skip children -- they were measured inside the box above
-					if (!skipSubtree(walker)) break;
+					if (!skipSubtree(walker)) {
+						break;
+					}
 				} else if (display === "inline") {
 					// Inline element - traverse into its children
-					if (!walker.nextNode()) break;
+					if (!walker.nextNode()) {
+						break;
+					}
 				} else {
 					// A block-level box is not this box's content: it broke the
 					// inline that holds it, and the fragments on either side are
@@ -5245,7 +5584,9 @@ export class LayoutEngine {
 				}
 			} else {
 				// Unknown node type - continue
-				if (!walker.nextNode()) break;
+				if (!walker.nextNode()) {
+					break;
+				}
 			}
 		}
 	}
@@ -5277,9 +5618,9 @@ export class LayoutEngine {
 		// pseudo-element is the pseudo-element's own node.
 		const opener = source.head;
 		const styleElement =
-			opener.nodeType === opener.TEXT_NODE
-				? flatParentElement<Element>(opener)!
-				: (opener as Element);
+			opener.nodeType === opener.TEXT_NODE ?
+				flatParentElement<Element>(opener)! :
+					(opener as Element);
 
 		// Get default CSS properties from the opening element
 		const whiteSpace = getPropertyValue(styleElement, "white-space");
@@ -5292,9 +5633,9 @@ export class LayoutEngine {
 		// max-content instead, making min-content zero everywhere, with a long
 		// word left nothing to stop it overflowing its box.
 		const maxWidth =
-			widthMode === Flex.MEASURE_MODE_UNDEFINED
-				? Number.MAX_SAFE_INTEGER
-				: width;
+			widthMode === Flex.MEASURE_MODE_UNDEFINED ?
+				Number.MAX_SAFE_INTEGER :
+				width;
 
 		// Process and break the content with dynamic per-element styling
 		const processedContent = this.#processWhitespace(leafNodes);
@@ -5330,11 +5671,11 @@ export class LayoutEngine {
 		// string usually arrives.
 		const declared = getPropertyValue(styleElement, "direction");
 		const base: "ltr" | "rtl" =
-			declared === "rtl"
-				? "rtl"
-				: declared === "ltr"
-					? "ltr"
-					: inferParagraphDirection(processedContent.text);
+			declared === "rtl" ?
+				"rtl" :
+				declared === "ltr" ?
+					"ltr" :
+						inferParagraphDirection(processedContent.text);
 
 		const lines = this.#buildLines(
 			processedContent,
@@ -5378,7 +5719,9 @@ export class LayoutEngine {
 	): {text: string; offsets: RenderedOffsets | null} {
 		const key = `${whiteSpace}\u0000${textNode.data}`;
 		const cached = this.#renderedLeaves.get(textNode);
-		if (cached?.key === key) return cached;
+		if (cached?.key === key) {
+			return cached;
+		}
 		const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
 		this.#renderedLeaves.set(textNode, {
 			key,
@@ -5433,7 +5776,7 @@ export class LayoutEngine {
 
 				items.push({
 					leafNode: leaf,
-					start: start,
+					start,
 					end: text.length,
 					processedContent: processed,
 					dataOffsets,
@@ -5541,7 +5884,7 @@ export class LayoutEngine {
 		if (options.nowrap) {
 			const forced: BreakPoint[] = [];
 			if (options.whiteSpace === "pre" || options.whiteSpace === "pre-wrap") {
-				for (let i = content.text.indexOf("\n"); i !== -1; ) {
+				for (let i = content.text.indexOf("\n"); i !== -1;) {
 					forced.push({position: i + 1, required: true});
 					i = content.text.indexOf("\n", i + 1);
 				}
@@ -5645,9 +5988,9 @@ export class LayoutEngine {
 			// anywhere/break-all may synthesize a break inside the word.
 			if (bestBreak === lineStart && !breakAnywhere) {
 				bestBreak =
-					cursor < breaks.length
-						? breaks[cursor].position
-						: content.text.length;
+					cursor < breaks.length ?
+						breaks[cursor].position :
+						content.text.length;
 				bestBreakWidth = this.#measureText(content, lineStart, bestBreak);
 			}
 
@@ -5691,13 +6034,13 @@ export class LayoutEngine {
 			if (lineNodes.length > 0) {
 				const lineHeight = Math.max(
 					...lineNodes.map((n) =>
-						n.leaf.type === "inline-block"
-							? n.leaf.contentHeight +
-								n.leaf.boxModel.paddingTop +
-								n.leaf.boxModel.paddingBottom +
-								n.leaf.boxModel.borderTopWidth +
-								n.leaf.boxModel.borderBottomWidth
-							: 1,
+						n.leaf.type === "inline-block" ?
+							n.leaf.contentHeight +
+							n.leaf.boxModel.paddingTop +
+							n.leaf.boxModel.paddingBottom +
+							n.leaf.boxModel.borderTopWidth +
+							n.leaf.boxModel.borderBottomWidth :
+							1,
 					),
 					1,
 				);
@@ -5747,7 +6090,9 @@ export class LayoutEngine {
 		lineWidth: number,
 		base: "ltr" | "rtl",
 	): void {
-		if (this.#terminalReordersText) return; // It insists; let it.
+		if (this.#terminalReordersText) {
+			return;
+		} // It insists; let it.
 		if (base === "ltr" && !segments.some((s) => hasRTL(s.processedText))) {
 			return; // Nothing bidirectional here; the common case pays one scan.
 		}
@@ -5789,7 +6134,9 @@ export class LayoutEngine {
 		let x = 0;
 
 		for (const item of items) {
-			if (item.start >= end || item.end <= start) continue;
+			if (item.start >= end || item.end <= start) {
+				continue;
+			}
 
 			const itemStart = Math.max(item.start, start);
 			const itemEnd = Math.min(item.end, end);
@@ -5818,13 +6165,13 @@ export class LayoutEngine {
 					// sits -- the caret slot of a blank line.
 					const offsets = item.dataOffsets ?? null;
 					const dataStart =
-						relativeStart < item.processedContent.length
-							? dataOffsetAt(offsets, relativeStart)
-							: item.leafNode.node.data.length;
+						relativeStart < item.processedContent.length ?
+								dataOffsetAt(offsets, relativeStart) :
+							item.leafNode.node.data.length;
 					const dataEnd =
-						portion.length > 0
-							? dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1
-							: dataStart;
+						portion.length > 0 ?
+							dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1 :
+							dataStart;
 
 					nodes.push({
 						leaf: item.leafNode,
