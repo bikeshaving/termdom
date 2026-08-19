@@ -129,10 +129,10 @@ export interface TermDOMOptions {
 	transport?: TerminalTransport;
 }
 
-// Symbol-keyed handles for the internals the test suite must reach (the layout
-// engine, input injection, anchor state). These are deliberately not #private so
-// a test can import the key and read them -- but they are off the public API:
-// index.ts does not re-export these symbols, so a consumer cannot name them.
+// Exported handles for the internals the test suite must reach (the layout
+// engine, input injection, anchor state): a test imports the key and reads
+// them, but they are off the public API -- index.ts does not re-export these
+// symbols, so a consumer cannot name them.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
 // The static-render entry renderANSI() reaches through; off the public API
@@ -307,15 +307,6 @@ export class FullscreenManager {
 }
 
 /**
- * The window a TermDOM document is displayed in.
- *
- * A terminal has one screen and no browsing context, so this is a plain
- * object rather than a global: the DOM interfaces of `./dom.js`, the
- * scrolling and sizing the camera answers, and the handful of APIs an author
- * reaches for through `window`. Everything on it is either a DOM constructor
- * or something the engine itself serves.
- */
-/**
  * The on* attributes a window carries. addEventListener/removeEventListener
  * come from EventTarget, so the mixins' redeclarations are dropped.
  */
@@ -324,6 +315,15 @@ type WindowEventHandlerAttributes = Omit<
 	"addEventListener" | "removeEventListener"
 >;
 
+/**
+ * The window a TermDOM document is displayed in.
+ *
+ * A terminal has one screen and no browsing context, so this is a plain
+ * object rather than a global: the DOM interfaces of `./dom.js`, the
+ * scrolling and sizing the camera answers, and the handful of APIs an author
+ * reaches for through `window`. Everything on it is either a DOM constructor
+ * or something the engine itself serves.
+ */
 export interface EngineWindow
 	extends EventTarget,
 	WindowEventHandlerAttributes {
@@ -638,7 +638,7 @@ export class TermDOM {
 	declare [kObserverManager]: ObserverManager;
 	declare [kStyleManager]: StyleManager;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
-	// owns no scheduling. Shares #topLayer by reference.
+	// owns no scheduling. Shares kTopLayer by reference.
 	declare [kPainter]: Painter;
 	// Where the viewport looks in the document: scrollTop (window.scrollY),
 	// screenTop (the command-start row), and the fullscreen anchor. See Viewport.
@@ -654,7 +654,7 @@ export class TermDOM {
 	declare [kFrameCallbacks]: Map<number, FrameRequestCallback>;
 	declare [kNextRafId]: number;
 	// One updater per live MediaQueryList: re-evaluates its query and fires
-	// "change" if the answer flipped. Run by #handleResize -- SIGWINCH is
+	// "change" if the answer flipped. Run by kHandleResize -- SIGWINCH is
 	// this screen's window resize.
 	declare [kMediaQueryUpdaters]: Set<() => void>;
 	// document.close() sealed the current document into scrollback; the next
@@ -668,7 +668,7 @@ export class TermDOM {
 	declare [kRenderCount]: number;
 
 	// An overflowed field's horizontal scroll lives on the value part's own
-	// scrollLeft (set by #scrollFieldCaretIntoView), not a side table.
+	// scrollLeft (set by kScrollFieldCaretIntoView), not a side table.
 
 	/**
 	 * The TOP LAYER: elements painted above every stacking context, in
@@ -752,7 +752,7 @@ export class TermDOM {
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
 	// -- terminals snap to the live screen on input, which is exactly the
 	// moment the wheel should become ours again -- or, failing that, by
-	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see #scrollChainTimer).
+	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see kScrollChainTimer).
 	declare [kMouseCaptureYielded]: boolean;
 	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
 	// activity produces literally no signal (that's the entire mechanism --
@@ -779,7 +779,7 @@ export class TermDOM {
 	// Selection.setBaseAndExtent, which handles backward drags itself.
 	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
 	// The field whose caret the NEXT frame must reveal -- set by edits,
-	// consumed inside #renderInteractive after its layout flush. Last
+	// consumed inside kRenderInteractive after its layout flush. Last
 	// edit before the frame wins.
 	declare [kPendingCaretReveal]: | HTMLInputElement |
 		HTMLTextAreaElement |
@@ -1374,7 +1374,7 @@ export class TermDOM {
 		// per element. But getBoundingClientRect/getClientRects are a *public*
 		// API, and CSSOM View defines them relative to the viewport: rect.top
 		// for a scrolled-past element should be negative, not the same
-		// ever-growing document row regardless of scroll. #toViewportRect is the
+		// ever-growing document row regardless of scroll. toViewportRect is the
 		// one place that conversion happens, so both wrappers apply it
 		// identically. Internal callers that need the pre-conversion,
 		// document-relative rect (scrollIntoView, hit-testing) read
@@ -1856,8 +1856,8 @@ export class TermDOM {
 	 * pseudo-elements/caches, the layout tree, and the autofocus default
 	 * action. In the same order everywhere it's called, since mutations reach
 	 * this from two different places -- the observer's own async callback
-	 * below, and #processPendingMutationsAndRender/#renderStatic/
-	 * #renderInteractive's synchronous `takeRecords()` drain (a geometry read
+	 * below, and kProcessPendingMutationsAndRender/kRenderStatic/
+	 * kRenderInteractive's synchronous `takeRecords()` drain (a geometry read
 	 * or a scheduled render needs fresh layout NOW, not whenever the next
 	 * microtask checkpoint happens to land) -- and whichever one runs first
 	 * empties the queue for the other.
@@ -2176,9 +2176,9 @@ export class TermDOM {
 	/**
 	 * End a scroll-chaining yield, from whichever of the two triggers reaches
 	 * it first -- a keystroke (the common case) or the fallback timer (see
-	 * #scrollChainTimer). Both need the same cleanup, so this is the one place
+	 * kScrollChainTimer). Both need the same cleanup, so this is the one place
 	 * that does it: clear the pending timer (the other trigger firing later
-	 * would be a harmless no-op via #updateMouseReporting's own idempotence,
+	 * would be a harmless no-op via kUpdateMouseReporting's own idempotence,
 	 * but there is no reason to let it) and restore mouse capture.
 	 */
 	[kReclaimMouseCapture](): void {
@@ -2340,7 +2340,7 @@ export class TermDOM {
 	 * caret of a focused control visible on every EDIT (typing, Enter,
 	 * caret travel) -- and only on edits: wheel-scrolling away from a
 	 * focused field stays allowed, so the render loop runs this only when
-	 * an edit queued it (see #queueCaretReveal). The caret row comes from
+	 * an edit queued it (see kQueueCaretReveal). The caret row comes from
 	 * fresh layout; single-row widgets reduce to their own row.
 	 */
 	[kScrollCaretIntoView](
@@ -2713,7 +2713,7 @@ export class TermDOM {
 	 * Hit-test a document-relative point (flushing pending layout first). The
 	 * one place both document.elementFromPoint (which converts its public,
 	 * viewport-relative x/y into this space) and mouse hit-testing (whose
-	 * points are already document-relative, from #screenToDocumentPoint) go
+	 * points are already document-relative, from the viewport's screenToDocumentPoint) go
 	 * through, so a click always tests against fresh layout regardless of
 	 * entry point.
 	 */
@@ -2765,7 +2765,7 @@ export class TermDOM {
 	 * asked of the engine.
 	 *
 	 * Null over a form control, whose value is not document text -- its
-	 * selection is the control's own bounded world, which #fieldOffsetAtPoint
+	 * selection is the control's own bounded world, which kFieldOffsetAtPoint
 	 * asks about instead. The two never merge: getSelection() cannot see inside
 	 * a control, per spec.
 	 */

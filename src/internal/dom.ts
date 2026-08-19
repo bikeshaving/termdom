@@ -319,9 +319,9 @@ function validateAndExtract(
  */
 
 /**
- * A node's tree state. These are module-scoped symbols rather than #private
- * fields because the mutation algorithms are module functions: they operate on
- * whole subtrees of mixed node types, which no one class body can reach.
+ * A node's tree state, keyed by module-scoped symbols: the mutation
+ * algorithms are module functions operating on whole subtrees of mixed node
+ * types, so the state has to be reachable outside any one class body.
  */
 
 /**
@@ -4019,8 +4019,7 @@ function notifyMutationObservers(): void {
 	// What is left carries transient registrations of observers this checkpoint
 	// had nothing to deliver to. Those last until their observer is next
 	// notified: a node whose observer is already queued again waits here for
-	// that, and the rest go back to being held weakly, which is what the
-	// observer's own node list is for.
+	// that, and the rest go back to their observer's own node list.
 	let write = 0;
 	for (const node of transientNodes) {
 		const list = node[kRegisteredObservers];
@@ -16571,7 +16570,7 @@ class FlatWalker {
 		return null;
 	}
 
-	/** Mirror of #head: the last undissolved node at a node's position. */
+	/** Mirror of kHead: the last undissolved node at a node's position. */
 	[kTail](node: Node): Node | null {
 		if (!this[kIsDissolved](node)) {
 			return node;

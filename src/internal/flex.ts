@@ -550,7 +550,7 @@ function cacheSlot(
 	);
 }
 
-/** See Node#unstackedChildCount. */
+/** See FlexNode's unstackedChildCount. */
 function breaksStacking(node: Node): boolean {
 	return (
 		node.style.positionType !== POSITION_TYPE_STATIC ||
@@ -2864,7 +2864,6 @@ function zeroLayout(node: Node): void {
 	}
 }
 
-/** Dispatch: measure leaf, empty container, or full flexbox. */
 // ---------------------------------------------------------------------------
 // Table layout (CSS 2.1 §17, automatic table layout)
 //
@@ -3818,6 +3817,7 @@ function layoutBlock(
 	}
 }
 
+/** Dispatch: measure leaf, empty container, or full flexbox. */
 function layoutNode(
 	node: Node,
 	availableWidth: number,

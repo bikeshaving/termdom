@@ -119,7 +119,7 @@ export interface ProcessLike {
  * The length of an incomplete escape sequence at the end of `chunk`, or 0.
  * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
  * arrived, or an SS3 (ESC O) missing its one final character. A bare
- * trailing ESC reports 0: see #partialEscape.
+ * trailing ESC reports 0: see kPartialEscape.
  */
 function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
@@ -1072,6 +1072,18 @@ export class TerminalSession {
 	}
 
 	/**
+	 * A terminal that does not implement a mode report may echo the
+	 * request's final byte as text. Homing and erasing the line disposes
+	 * of any echo, so the first frame starts on a clean row.
+	 */
+	scrubProbeEcho(): void {
+		if (!this[kInteractive]) {
+			return;
+		}
+		void this.write("\r\x1b[K");
+	}
+
+	/**
 	 * Ask the terminal to measure text in grapheme CLUSTERS rather than by code
 	 * point (DEC private mode 2027, the terminal-unicode-core specification).
 	 *
@@ -1089,18 +1101,6 @@ export class TerminalSession {
 	 * measurements do not change, because they were already cluster-based; what
 	 * changes is only whether the terminal agrees with them.
 	 */
-	/**
-	 * A terminal that does not implement a mode report may echo the
-	 * request's final byte as text. Homing and erasing the line disposes
-	 * of any echo, so the first frame starts on a clean row.
-	 */
-	scrubProbeEcho(): void {
-		if (!this[kInteractive]) {
-			return;
-		}
-		void this.write("\r\x1b[K");
-	}
-
 	async negotiateGraphemeClusters(): Promise<void> {
 		if (!this[kInteractive]) {
 			return;

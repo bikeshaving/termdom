@@ -585,7 +585,7 @@ export class Painter {
 			}
 		}
 
-		// A checkbox/radio is a single glyph (#renderToggleGlyph) with nothing to
+		// A checkbox/radio is a single glyph (kRenderToggleGlyph) with nothing to
 		// walk; every other input is a text field, painted by the walk below.
 		if (element.tagName === "INPUT" && rect) {
 			const input = element as HTMLInputElement;
@@ -612,7 +612,7 @@ export class Painter {
 		// The IN-FLOW walk: children paint in tree order, and POSITIONED
 		// children don't paint here at all -- per CSS they are hoisted to
 		// their nearest stacking context and painted in its layer order (see
-		// #renderStackingContext). The old per-sibling z sort could never
+		// kRenderStackingContext). The old per-sibling z sort could never
 		// let a deep overlay escape its parent's siblings; hoisting is what
 		// makes a modal or dropdown paint over unrelated subtrees.
 		const children: Node[] = [];
@@ -699,7 +699,7 @@ export class Painter {
 		}
 
 		// A focused textarea's own selection now paints inline while the child
-		// walk lays down the value text -- #renderTextSelection reads the
+		// walk lays down the value text -- kRenderTextSelection reads the
 		// control's selectionStart/End, the same way it reads a document Range.
 
 		// An `outline` paints last (a focus ring). A bordered box already has a
@@ -799,7 +799,7 @@ export class Painter {
 
 	/**
 	 * Paint a stacking context in the CSS layer order: the root's own box,
-	 * negative-z child contexts, in-flow content (the #renderElement walk,
+	 * negative-z child contexts, in-flow content (the kRenderElement walk,
 	 * which skips positioned descendants), the positioned z:auto/0 layer,
 	 * then positive-z contexts. A z:auto member doesn't isolate: it paints
 	 * as an in-flow subtree here while its own positioned descendants sit
@@ -1094,7 +1094,7 @@ export class Painter {
 	/**
 	 * Overlay the selection on a text node as inverse video (or the author's
 	 * ::selection colors) by redrawing its selected runs in the highlight style.
-	 * The selected Range comes from #selectionRangeFor; the runs' rects and text
+	 * The selected Range comes from kSelectionRangeFor; the runs' rects and text
 	 * come from the layout's Range geometry, so the painter does no offset math.
 	 * Case transforms never change cell width, so transforming each run's raw
 	 * text repaints exactly the cells the base pass laid down.
