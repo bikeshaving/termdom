@@ -5797,7 +5797,7 @@ function documentStyleSheetList(document: Document): {length: number} {
  * The sheets a tree's own elements declare, which is what `styleSheets`
  * lists. An adopted sheet belongs to no element and is not one of them.
  */
-function declaredStyleSheets(root: Document | ShadowRoot) {
+function declaredStyleSheets(root: Document | ShadowRoot): CSSStyleSheet[] {
 	return Array.from(root.querySelectorAll("style"), sheetFor);
 }
 

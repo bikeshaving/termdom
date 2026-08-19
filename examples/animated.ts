@@ -144,7 +144,7 @@ let bouncePos = 0;
 let bounceDir = 1;
 const bounceWidth = 20;
 
-function updateAnimations() {
+function updateAnimations(): void {
 	// Spinner
 	spinner.textContent =
 		spinnerFrames[frame % spinnerFrames.length] + " Processing...";

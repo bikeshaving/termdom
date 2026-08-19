@@ -61,24 +61,28 @@ const BORDER_EDGE_MASKS = [
 ];
 
 // Edge extraction utilities
-function getBorderEdge(border: number, mask: number) {
+function getBorderEdge(border: number, mask: number): number {
 	const shift = Math.log2(mask & -mask);
 	return (border & mask) >> shift;
 }
 
-function setBorderEdge(border: number, mask: number, edgeValue: number) {
+function setBorderEdge(
+	border: number,
+	mask: number,
+	edgeValue: number,
+): number {
 	const shift = Math.log2(mask & -mask);
 	return (border & ~mask) | ((edgeValue << shift) & mask);
 }
 
-function getEdgeStyle(edgeValue: number) {
+function getEdgeStyle(edgeValue: number): number {
 	return edgeValue & BorderMask.Style;
 }
-function getEdgePresence(edgeValue: number) {
+function getEdgePresence(edgeValue: number): boolean {
 	const style = edgeValue & BorderMask.Style;
 	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
 }
-function getEdgeRounded(edgeValue: number) {
+function getEdgeRounded(edgeValue: number): boolean {
 	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
 }
 

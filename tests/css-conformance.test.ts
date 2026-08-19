@@ -150,7 +150,9 @@ const FIXTURES: Fixture[] = [
 	},
 ];
 
-async function renderFixture(fx: Fixture) {
+async function renderFixture(fx: Fixture): Promise<
+	{screen: string; text: string}
+> {
 	const terminal = new MockProcess({
 		cols: fx.cols ?? 40,
 		rows: fx.rows ?? 12,

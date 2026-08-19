@@ -44,7 +44,9 @@ function read(terminal: MockProcess, rows: number): Screen {
 }
 
 /** A terminal with four rows of output already on it, from a previous command. */
-async function withPriorOutput(rows = 10) {
+async function withPriorOutput(rows = 10): Promise<
+	{terminal: MockProcess; dom: TermDOM}
+> {
 	const terminal = new MockProcess({rows, cols: 30});
 	terminal.stdout.write("PREV-1\r\nPREV-2\r\nPREV-3\r\nPREV-4\r\n");
 

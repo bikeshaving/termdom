@@ -12,7 +12,7 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function makeDOM(html = "") {
+function makeDOM(html = ""): {terminal: MockProcess; dom: TermDOM} {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;

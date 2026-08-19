@@ -13,7 +13,9 @@ import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
-async function render(html: string, cols = 40, rows = 8) {
+async function render(html: string, cols = 40, rows = 8): Promise<
+	{dom: TermDOM; terminal: MockProcess; lines: () => string[]}
+> {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;

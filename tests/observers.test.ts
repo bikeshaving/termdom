@@ -8,7 +8,12 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function make(rows = 10, cols = 40) {
+function make(rows = 10, cols = 40): {
+	terminal: MockProcess;
+	dom: TermDOM;
+	document: Document;
+	window: any;
+} {
 	const terminal = new MockProcess({rows, cols});
 	const dom = new TermDOM({transport: terminal.transport});
 	return {terminal, dom, document: dom.document, window: dom.window as any};

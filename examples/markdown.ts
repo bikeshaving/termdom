@@ -207,10 +207,10 @@ if (!process.stdout.isTTY || fits) {
 // Pager mode: the document is taller than the screen, so move the camera over
 // it. window.scrollBy IS the camera (clamped to the document), so this is the
 // same scrolling any web page gets -- no terminal-specific plumbing.
-function page() {
+function page(): number {
 	return Math.max(1, window.innerHeight - 1);
 }
-function height() {
+function height(): number {
 	return document.body.scrollHeight;
 }
 
@@ -224,7 +224,7 @@ pct.className = "pct";
 status.append(statusName, pct);
 document.body.appendChild(status);
 
-function updateStatus() {
+function updateStatus(): void {
 	const max = Math.max(1, height() - window.innerHeight);
 	pct.textContent = `${Math.min(100, Math.round((window.scrollY / max) * 100))}%`;
 }
