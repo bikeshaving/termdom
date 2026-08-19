@@ -69,6 +69,8 @@ test("getName wants a constructor", () => {
 test("define reads prototype once, and only after the name is valid", () => {
 	const reads: string[] = [];
 	function watched(): typeof HTMLElement {
+		// The test observes which keys define() reads; only a trap sees reads.
+		// eslint-disable-next-line no-restricted-globals
 		return new Proxy(class extends HTMLElement {}, {
 			get(target, key, receiver) {
 				reads.push(String(key));

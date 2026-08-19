@@ -31,11 +31,18 @@ function attachPseudo(
 }
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
-function documentWindow(html: string) {
+function documentWindow(html: string): {
+	window: ReturnType<typeof createDocumentWindow>;
+} {
 	return {window: createDocumentWindow(html)};
 }
 
-function createLayoutEngine(html = "<div></div>") {
+function createLayoutEngine(html = "<div></div>"): {
+	dom: ReturnType<typeof documentWindow>;
+	layoutEngine: LayoutEngine;
+	observer: MutationObserver;
+	processMutationsAndLayout: () => void;
+} {
 	const dom = documentWindow(`<!DOCTYPE html><html><head><style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 		html, body { width: 100%; }
@@ -1716,7 +1723,11 @@ test.todo("Complex inline run with mixed content types", async () => {
 // === PSEUDO ELEMENT INLINE RUN HEAD TESTS ===
 // These tests verify how pseudo elements interact with inline run head detection
 
-function createLayoutEngineWithPseudos(html = "<div></div>") {
+function createLayoutEngineWithPseudos(html = "<div></div>"): {
+	dom: ReturnType<typeof documentWindow>;
+	layoutEngine: LayoutEngine;
+	styleManager: StyleManager;
+} {
 	const dom = documentWindow(
 		`<!DOCTYPE html><html><body>${html}</body></html>`,
 	);

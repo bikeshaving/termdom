@@ -21,7 +21,7 @@ import {
 	shadowRootOf,
 	styleElementCount,
 } from "./dom.js";
-import * as cssTree from "css-tree";
+import * as CSSTree from "css-tree";
 import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
@@ -470,7 +470,7 @@ function isValidDeclaration(
  * `generic()` family names, the SVG baseline keywords and `outline-color:
  * invert` are all in the current specs and missing from the index.
  */
-const grammarLexer = cssTree.fork({
+const grammarLexer = CSSTree.fork({
 	properties: {
 		"alignment-baseline": "| text-bottom | text-top",
 		"baseline-shift": "| top | center | bottom",
@@ -2563,7 +2563,7 @@ function parsePropertyName(source: string): string {
 		return normalizePropertyName(name);
 	}
 	return name.includes("\\") ?
-		`--${cssTree.ident.decode(name.slice(2))}` :
+		`--${CSSTree.ident.decode(name.slice(2))}` :
 		name;
 }
 
@@ -2726,9 +2726,17 @@ export function installInlineStyle(window: EngineWindow): void {
  */
 let cssomWindow: EngineWindow | null = null;
 
+/** The window of the document a sheet's owner node lives in, if any. */
+function sheetView(
+	sheet: CSSStyleSheet | null | undefined,
+): object | undefined {
+	const owner = sheet ? sheet.ownerNode : null;
+	const document = owner === null ? null : owner.ownerDocument;
+	return document === null ? undefined : (document.defaultView ?? undefined);
+}
+
 function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
-	const view =
-		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const view = sheetView(sheet) ?? cssomWindow ?? undefined;
 	const Constructor =
 		(view as unknown as {TypeError?: typeof TypeError} | undefined)
 			?.TypeError ?? TypeError;
@@ -2740,8 +2748,7 @@ function domException(
 	name: string,
 	sheet?: CSSStyleSheet | null,
 ): DOMException {
-	const view =
-		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const view = sheetView(sheet) ?? cssomWindow ?? undefined;
 	const Exception =
 		(view as unknown as {DOMException?: typeof DOMException} | undefined)
 			?.DOMException ?? DOMException;
@@ -3285,7 +3292,7 @@ function selectorNamespace(
 			if (prefix === "") {
 				uri = null;
 			} else if (prefix !== "*") {
-				uri = namespaces.prefixes.get(cssTree.ident.decode(prefix));
+				uri = namespaces.prefixes.get(CSSTree.ident.decode(prefix));
 				// A prefix no @namespace declared makes the selector invalid,
 				// and an invalid selector matches nothing.
 				if (uri === undefined) {
@@ -3321,7 +3328,7 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 			namespaces.default = rule.namespaceURI;
 		} else {
 			namespaces.prefixes.set(
-				cssTree.ident.decode(rule.prefix),
+				CSSTree.ident.decode(rule.prefix),
 				rule.namespaceURI,
 			);
 		}
@@ -4709,7 +4716,7 @@ function serializeQualifiedName(
 		// namespace, so `[|attr]` and `[attr]` are the same selector.
 		return namespaces === ATTRIBUTE_NAMESPACES ? localText : `|${localText}`;
 	}
-	const decoded = cssTree.ident.decode(prefix);
+	const decoded = CSSTree.ident.decode(prefix);
 	if (
 		namespaces.default !== null &&
 		namespaces.prefixes.get(decoded) === namespaces.default
@@ -4872,7 +4879,7 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 function selectorSpecificity(selector: string): string {
 	let list: SelectorNode | null = null;
 	try {
-		list = cssTree.parse(selector, {
+		list = CSSTree.parse(selector, {
 			context: "selectorList",
 			onParseError(error: Error) {
 				throw error;
@@ -5016,7 +5023,7 @@ const ATTRIBUTE_NAMESPACES: SelectorNamespaces = {
 
 /** An identifier as the selector source spelled it, re-escaped canonically. */
 function serializeIdentifierSource(name: string): string {
-	return serializeCSSIdentifier(cssTree.ident.decode(name));
+	return serializeCSSIdentifier(CSSTree.ident.decode(name));
 }
 
 /**
@@ -5025,7 +5032,7 @@ function serializeIdentifierSource(name: string): string {
  * `::after`, and an escape is part of the spelling, not of the name.
  */
 function pseudoName(name: string): string {
-	return cssTree.ident.decode(name).toLowerCase();
+	return CSSTree.ident.decode(name).toLowerCase();
 }
 
 /**
@@ -5215,10 +5222,9 @@ function parsePseudoElementArgument(text: string): string | null {
 			open++;
 		} else if (char === ")") {
 			open--;
-		}
-		// A comma outside the arguments starts a second selector, and a list
-		// of them names no one pseudo-element.
-		else if (char === "," && open === 0) {
+		} else if (char === "," && open === 0) {
+			// A comma outside the arguments starts a second selector, and a
+			// list of them names no one pseudo-element.
 			return null;
 		}
 	}
@@ -5297,7 +5303,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 		return null;
 	}
 	try {
-		list = cssTree.parse(String(text), {
+		list = CSSTree.parse(String(text), {
 			context: "selectorList",
 			onParseError(error: Error) {
 				throw error;
@@ -5403,7 +5409,7 @@ function validPseudoElementArguments(
 	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
 		return false;
 	}
-	const identifier = cssTree.ident.decode(text);
+	const identifier = CSSTree.ident.decode(text);
 	// `::picker` names the element whose picker it is, and nothing else does.
 	if (name === "picker") {
 		return identifier === "select";
@@ -5443,7 +5449,7 @@ function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
 		}
 		const name = parsePropertyName(child.property ?? "");
 		const value = serializeCSSValue(
-			cssTree.generate(child.value as never),
+			CSSTree.generate(child.value as never),
 			name,
 		);
 		if (!value) {
@@ -5476,7 +5482,7 @@ function parseRules(
 ): CSSRule[] {
 	let ast: {children: {toArray(): ParsedNode[]}};
 	try {
-		ast = cssTree.parse(text, {
+		ast = CSSTree.parse(text, {
 			parseValue: false,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -5497,7 +5503,7 @@ function parseRuleText(
 	const source = String(text ?? "");
 	let ast: {children: {toArray(): ParsedNode[]}};
 	try {
-		ast = cssTree.parse(source, {
+		ast = CSSTree.parse(source, {
 			parseValue: false,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
@@ -5545,7 +5551,7 @@ function convertRules(
 				namespaces.default = rule.namespaceURI;
 			} else {
 				namespaces.prefixes.set(
-					cssTree.ident.decode(rule.prefix),
+					CSSTree.ident.decode(rule.prefix),
 					rule.namespaceURI,
 				);
 			}
@@ -7541,12 +7547,11 @@ export class EmptyStyleDeclaration extends CSSStyleProperties {
  * from another global is not the one an author catches.
  */
 function readOnlyDeclaration(element?: Element): DOMException {
+	const document = element ? element.ownerDocument : null;
+	const view = document ? document.defaultView : null;
 	const Exception =
-		(
-			element?.ownerDocument?.defaultView as unknown as {
-				DOMException?: typeof DOMException;
-			}
-		)?.DOMException ?? DOMException;
+		(view as unknown as {DOMException?: typeof DOMException} | null)
+			?.DOMException ?? DOMException;
 	return new Exception(
 		"A computed style declaration is read-only",
 		"NoModificationAllowedError",

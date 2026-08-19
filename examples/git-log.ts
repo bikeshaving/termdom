@@ -160,7 +160,11 @@ document.addEventListener("keydown", (event: Event) => {
 		select(rows().length - 1);
 	} else if (key === "Enter" || key === "l" || key === "ArrowRight") {
 		if (current) {
-			current.dataset.open === "true" ? collapse(current) : expand(current);
+			if (current.dataset.open === "true") {
+				collapse(current);
+			} else {
+				expand(current);
+			}
 		}
 	} else if (key === "h" || key === "ArrowLeft") {
 		if (current) {
@@ -178,7 +182,11 @@ document.addEventListener("click", (event: Event) => {
 		return;
 	}
 	select(rows().indexOf(row));
-	row.dataset.open === "true" ? collapse(row) : expand(row);
+	if (row.dataset.open === "true") {
+		collapse(row);
+	} else {
+		expand(row);
+	}
 	void refresh();
 });
 
