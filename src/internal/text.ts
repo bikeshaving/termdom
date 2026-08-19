@@ -905,7 +905,7 @@ function inRanges(
  * cells at absolute positions and diffing frames, because a reordering terminal
  * would shuffle each fragment against a line we did not give it whole. So
  * termdom takes the other side of ECMA-48's BDSM contract (explicit mode, see
- * #negotiateBidi) and emits cells already in visual order.
+ * negotiateBidi) and emits cells already in visual order.
  *
  * Two libraries do the standards work, both pinned:
  *

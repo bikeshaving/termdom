@@ -174,24 +174,18 @@ function setBorderEdge(
 function getEdgeStyle(edgeValue: number): number {
 	return edgeValue & BorderMask.Style;
 }
+
 function getEdgePresence(edgeValue: number): boolean {
 	const style = edgeValue & BorderMask.Style;
 	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
 }
+
 function getEdgeRounded(edgeValue: number): boolean {
 	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
 }
 
 /**
  * Merge two border encodings, choosing the higher precedence style for each edge
- */
-/**
- * The edges a cell holds once two strokes meet in it.
- *
- * Borders meet in two ways and this decides both: two boxes painting the same
- * cell, and a box's stroke running at the cell beside it. An edge only one
- * side draws is taken as it is; an edge both draw keeps the heavier style,
- * which is what makes a double border win a shared wall.
  */
 function meetEdges(existing: number, incoming: number): number {
 	let met = 0;
@@ -321,12 +315,6 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
 	hidden: BorderEdgeStyle.Hidden,
 };
 
-/**
- * What `measureText` answers: the columns the text occupies, which is the
- * one metric a cell grid has -- nothing in a cell has a baseline. The name
- * and the field are canvas's own original TextMetrics; further fields join
- * if a consumer ever appears, the way canvas itself grew.
- */
 /** A box's sides, and "round" on each corner whose radius rounds it. */
 export interface BoxSides {
 	top?: LineStyle;
@@ -339,6 +327,12 @@ export interface BoxSides {
 	bottomLeft?: "round";
 }
 
+/**
+ * What `measureText` answers: the columns the text occupies, which is the
+ * one metric a cell grid has -- nothing in a cell has a baseline. The name
+ * and the field are canvas's own original TextMetrics; further fields join
+ * if a consumer ever appears, the way canvas itself grew.
+ */
 export interface TextMetrics {
 	width: number;
 }
@@ -571,7 +565,6 @@ class CellGrid {
 		this.border.copyWithin(dest, srcStart, srcEnd);
 	}
 
-	/** Copy [srcStart, srcEnd) of `source` to `dest` in this grid. */
 	/** Copy `source`'s cells in `[start, end)` to this grid at `to`. */
 	copyFrom(
 		source: CellGrid,
@@ -1592,7 +1585,7 @@ export class CellContext {
 		borderEncoding: number,
 		style?: CellStyle,
 	): void {
-		// Document row -> terminal row, exactly as #setCell translates text.
+		// Document row -> terminal row, exactly as kSetCell translates text.
 		// Without the offset, borders were only ever correct at scroll 0: a
 		// scrolled camera stamped off-screen top edges into the band's first
 		// row and lost bottom edges it had scrolled to.
@@ -1738,14 +1731,6 @@ export class Screen {
 	}
 
 	/**
-	 * Forget where the current block of output started.
-	 *
-	 * The next frame will anchor itself wherever the cursor now is, rather than
-	 * restoring to the old content start. Used when the document has reflowed above
-	 * the fold: the already-printed copy is in the scrollback and cannot be
-	 * corrected, so the only honest thing left is to print a fresh one below it.
-	 */
-	/**
 	 * The terminal's screen is no longer the one this last painted, from
 	 * `fromRow` down: the alternate screen swapped in, a resize moved the
 	 * frame, a width correction landed. What that costs -- which rows must be
@@ -1814,14 +1799,11 @@ export class Screen {
 	 * nothing to commit, nothing to freeze and nothing to repair.
 	 *
 	 * It also has no way to interpret cursor movement. Emitting the interactive
-	 * frame here would write CUP, EL, DECSC and synchronised-output sequences into
-	 * the file. So this emits styled text and newlines, and nothing else: gaps are
-	 * spaces rather than cursor-forward, and rows end with a newline rather than an
-	 * erase-line.
-	 */
-	/**
-	 * Begin a frame that stands on its own: no diff, no previous screen, one
-	 * grid rendered whole. `end` returns the lines, padded to nothing.
+	 * frame here would write CUP, EL, DECSC and synchronised-output sequences
+	 * into the file. So this emits styled text and newlines, and nothing else:
+	 * gaps are spaces rather than cursor-forward, and rows end with a newline
+	 * rather than an erase-line. There is no diff and no previous screen; one
+	 * grid is rendered whole, and `end` returns the lines.
 	 */
 	beginStatic({
 		rows: contentRows,
@@ -1903,22 +1885,19 @@ export class Screen {
 	}
 
 	/**
-	 * Render one frame.
-	 *
-	 * `regionRows` lets the caller render a region *taller than the terminal*. That
-	 * is how content reaches the scrollback: the frame is emitted top to bottom
-	 * with newlines, and printing past the bottom margin is what makes the terminal
-	 * scroll -- and what puts the rows that scroll past into its scrollback, where
-	 * they remain readable. (`CSI n S` scrolls too, but discards them.)
-	 *
-	 * Rows that scroll off can never be addressed again, so only the last
-	 * `terminalHeight` of them are kept as the previous frame: they are the only
-	 * part still ours to redraw.
-	 */
 	/**
 	 * Begin a frame against the screen: the grid is checked out and seeded for
 	 * whatever camera move the options describe, and `end` diffs it against
 	 * the last frame and returns the escape sequences that close the gap.
+	 *
+	 * `regionRows` lets the caller render a region taller than the terminal.
+	 * That is how content reaches the scrollback: the frame is emitted top to
+	 * bottom with newlines, and printing past the bottom margin is what makes
+	 * the terminal scroll -- and what puts the rows that scroll past into its
+	 * scrollback, where they remain readable. (`CSI n S` scrolls too, but
+	 * discards them.) Rows that scroll off can never be addressed again, so
+	 * only the last `terminalHeight` of them are kept as the previous frame:
+	 * they are the only part still ours to redraw.
 	 */
 	beginFrame({
 		offset,

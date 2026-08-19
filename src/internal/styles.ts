@@ -2405,7 +2405,6 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	}
 }
 
-/** Custom properties keep their case; everything else is ASCII-lowercased. */
 /**
  * The declaration block of CSS PROPERTIES: an element's inline style, a style
  * rule's block, a keyframe's. It reflects every property in the index as an
@@ -2414,6 +2413,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
  */
 export class CSSStyleProperties extends CSSStyleDeclaration {}
 
+/** Custom properties keep their case; everything else is ASCII-lowercased. */
 function normalizePropertyName(property: string): string {
 	const name = String(property).trim();
 	return name.startsWith("--") ? name : name.toLowerCase();
@@ -2690,7 +2690,6 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	list[kIndexCount] = length;
 }
 
-/** The media queries a sheet or an `@media` rule applies under. */
 /**
  * The top-level `and`-separated conditions of one media query. Whitespace
  * inside a feature's parentheses belongs to the feature.
@@ -2792,6 +2791,7 @@ function splitMediaQueryList(text: string): string[] {
 const kParse = Symbol("parse");
 const kMedia = Symbol("media");
 
+/** The media queries a sheet or an `@media` rule applies under. */
 export class MediaList {
 	/**
 	 * The queries, in their canonical spelling. Mutated in place: the indexed
@@ -2883,7 +2883,6 @@ export class MediaList {
 	}
 }
 
-/** A rule of a stylesheet: the base every rule type shares. */
 /**
  * A rule's owning sheet, held beside the rule so that deleting a rule can cut
  * the link -- a removed rule belongs to no stylesheet, and says so.
@@ -2901,6 +2900,7 @@ function detachRule(rule: CSSRule): void {
 	}
 }
 
+/** A rule of a stylesheet: the base every rule type shares. */
 export abstract class CSSRule {
 	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
 	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
@@ -3119,7 +3119,6 @@ export class CSSStyleRule extends CSSGroupingRule {
 	}
 }
 
-/** The namespaces a sheet's `@namespace` rules declare. */
 /**
  * A selector's namespace constraint, and the selector with the prefixes that
  * state it taken off.
@@ -3194,6 +3193,7 @@ function selectorNamespace(
 	};
 }
 
+/** The namespaces a sheet's `@namespace` rules declare. */
 function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	if (!sheet) {
 		return NO_NAMESPACES;
@@ -3215,7 +3215,6 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	return namespaces;
 }
 
-/** A rule whose body is a declaration block rather than a rule list. */
 /**
  * The declaration blocks at-rules hold: one class per at-rule that declares
  * descriptors, each reflecting its own descriptors as IDL attributes and
@@ -3261,6 +3260,7 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	DESCRIPTOR_BLOCKS.set(atRule, block);
 }
 
+/** A rule whose body is a declaration block rather than a rule list. */
 export abstract class CSSDeclarationBlockRule extends CSSRule {
 	declare [kStyle]: CSSStyleDeclaration;
 
@@ -3502,7 +3502,6 @@ export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
 	}
 }
 
-/** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
 /**
  * The properties a keyframe cannot declare: an animation's own, which describe
  * the animation rather than a step of it.
@@ -3511,6 +3510,7 @@ const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
 const kKeyText = Symbol("keyText");
 
+/** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
 export class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	declare [kKeyText]: string;
 
@@ -6852,7 +6852,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	[kResolveCustomProperty](name: string): string | null {
 		// A custom property is just an ordinary (always-inherited) cascade lookup
-		// -- #resolvePropertyValueRaw's step 4 already walks ancestors for it.
+		// -- kResolvePropertyValueRaw's step 4 already walks ancestors for it.
 		return this[kResolvePropertyValueRaw](name) || null;
 	}
 
@@ -7232,7 +7232,7 @@ const kNodeStyle = Symbol("nodeStyle");
  */
 export class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoDeclarations]: Record<string, string>;
-	// Lazily resolved properties, cleared by #refresh -- the same one-per
+	// Lazily resolved properties, cleared by kRefresh -- the same one-per
 	// -generation memo an element's declaration keeps, for the same reason.
 	declare [kResolved]: Map<string, string>;
 	/**
@@ -7335,7 +7335,7 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 		let style = this[kNodeStyle];
 		if (style === null) {
 			// One object for the declaration's life: the memo behind it is a
-			// field #refresh clears, so a holder of this view sees the current
+			// field kRefresh clears, so a holder of this view sees the current
 			// cascade rather than the one it was first read under.
 			style = {
 				computedValueOf: (property: string): string => {
@@ -8189,14 +8189,14 @@ export class StyleManager {
 	/** Whether any rule is scoped, which is what puts proximity in the sort. */
 	declare [kScopedRulesExist]: boolean;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
-	// (keyboard true, pointer false). #ruleMatches gates such rules on it.
+	// (keyboard true, pointer false). kRuleMatches gates such rules on it.
 	declare [kFocusVisibleActive]: boolean;
 	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
 	 * which is what lets a sheet appended right before the first paint
 	 * apply even when no MutationObserver is attached. (The old sentinel
-	 * was #parsedRules.length === 0, which stopped meaning "never parsed"
+	 * was kParsedRules.length === 0, which stopped meaning "never parsed"
 	 * the moment the UA document sheet guaranteed one rule.)
 	 */
 	declare [kParsedStyleSheetCount]: number;
@@ -9309,7 +9309,7 @@ export class StyleManager {
 
 		// :host selectors only mean anything inside a shadow tree's own
 		// stylesheet; the selector engine rejects them outright, so they parse
-		// into a structured predicate matched by #ruleMatches instead.
+		// into a structured predicate matched by kRuleMatches instead.
 		const subjectTag = selectorSubjectTag(selector);
 
 		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
@@ -9344,7 +9344,7 @@ export class StyleManager {
 		// Check if this is a pseudo-element rule. ::placeholder/::selection
 		// are widget-part pseudos: no content node ever attaches for them --
 		// they resolve onto the UA shadow tree's [part] elements (see
-		// #getMatchingRules) or the selection painter.
+		// kGetMatchingRules) or the selection painter.
 		// Any pseudo-element, not just the ones this engine gives a box: a
 		// rule for `::highlight(x)` still has to answer through
 		// getComputedStyle, which is the whole of what CSSOM asks of it.
@@ -10119,9 +10119,6 @@ export class StyleManager {
 		installStyleSheets(this[kWindow]);
 	}
 
-	/**
-	 * Invalidate cached computed style for an element
-	 */
 	// Elements style-invalidated since the last drain; null once the set
 	// overflowed. The engine drains this per frame to bound a banded repaint.
 	declare [kPendingStyleDamage]: Set<Element> | null;

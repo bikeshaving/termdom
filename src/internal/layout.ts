@@ -1034,7 +1034,6 @@ interface LineFragment {
 	visualBase: "ltr" | "rtl" | null;
 }
 
-/** The `white-space` a text node renders under: its flat-tree parent's. */
 /** Every text node under a node, in tree order -- the node itself included. */
 function* textNodesUnder(root: Node): Generator<Text> {
 	if (root.nodeType === root.TEXT_NODE) {
@@ -1046,12 +1045,13 @@ function* textNodesUnder(root: Node): Generator<Text> {
 	}
 }
 
+/** The `white-space` a text node renders under: its flat-tree parent's. */
 function whiteSpaceOf(textNode: Text): string {
 	const parent = flatParentElement<Element>(textNode);
 	return parent ? getPropertyValue(parent, "white-space") : "normal";
 }
 
-/** One text node's placed fragment within a break result. See #rectTextIndices. */
+/** One text node's placed fragment within a break result. See kRectTextIndices. */
 interface TextFragmentEntry {
 	line: number;
 	x: number;
@@ -1360,8 +1360,8 @@ export class LayoutEngine {
 		return results;
 	}
 
-	// The reverse of nodeMap -- always kept in sync with it via #trackNode/
-	// #untrackNode, never written directly elsewhere. Lets paint-time culling
+	// The reverse of nodeMap -- always kept in sync with it via kTrackNode/
+	// kUntrackNode, never written directly elsewhere. Lets paint-time culling
 	// go from a flex child (found by binary search over its parent's already-
 	// ordered children[]) back to the DOM/pseudo-element node it needs to
 	// paint, without re-deriving that order with a second full tree walk.
@@ -1387,7 +1387,7 @@ export class LayoutEngine {
 
 	/**
 	 * Set when the terminal answered that it reorders bidirectional text itself
-	 * (see #negotiateBidi). Then lines stay in logical order: one reordering is
+	 * (see the session's negotiateBidi). Then lines stay in logical order: one reordering is
 	 * correct, two is a sentence backwards again.
 	 */
 	declare [kTerminalReordersText]: boolean;
@@ -1819,7 +1819,7 @@ export class LayoutEngine {
 		// coordinates of the very frame being resolved. An enumeration read
 		// before a mutation is reconciled still describes the tree as it stood,
 		// and can name a head that has since moved in here; following it walks
-		// in a circle. This is also what keeps #documentPosition's host search
+		// in a circle. This is also what keeps kDocumentPosition's host search
 		// out of one -- the host of a box is never the box, so a run head from
 		// out here is never laid out under the content root of the box itself.
 		const outward = (node: Node): boolean => {
@@ -2227,14 +2227,14 @@ export class LayoutEngine {
 			flexNode,
 		);
 
-		// #documentPosition gives the run head's BORDER box. A blockified
+		// kDocumentPosition gives the run head's BORDER box. A blockified
 		// inline flex item reserved its own padding and border in that box (see
 		// styleFlexNode's parentIsFlex exception) but its text ignored them,
 		// painting at the border edge instead of below the padding. Push the run
 		// in by that box. Scoped to exactly the blockified case: a normal inline
 		// has its flex-node box model cleared even when the author declared
 		// padding (so getBoxModel would over-report), an inline-block's content
-		// offset is already handled by #documentPosition, and a block's
+		// offset is already handled by kDocumentPosition, and a block's
 		// run head is a text node with no box.
 		if (runHead.nodeType === runHead.ELEMENT_NODE) {
 			const runHeadElement = runHead as Element;
@@ -3150,7 +3150,7 @@ export class LayoutEngine {
 	 * as the text they generate would.
 	 *
 	 * The derivation is what every membership question reads: `heads` maps each
-	 * flow child (and, through the walk in #boxEntryOf, everything nested inside
+	 * flow child (and, through the walk in kBoxEntryOf, everything nested inside
 	 * one) to the box it falls under, so membership is a parent-side lookup
 	 * rather than a walk backward through siblings -- a run of N boxes costs one
 	 * derivation, not N of them. `children` is the same derivation read as the
@@ -3162,7 +3162,7 @@ export class LayoutEngine {
 	 * box is open around them so that content nested inside them still resolves.
 	 *
 	 * A derivation describes children that may since have moved, so it is redone
-	 * when they might have: the containers named in {@link #staleContainers}
+	 * when they might have: the containers named in {@link kStaleContainers}
 	 * rebuild on their next read, and an unbounded change -- a stylesheet
 	 * reparse, a pseudo-element appearing, a shadow root attaching -- names every
 	 * one of them by moving the structural generation the box carries. The
@@ -3855,7 +3855,7 @@ export class LayoutEngine {
 	/**
 	 * The block container the boxes directly inside an element fall under:
 	 * that element when it establishes one, and otherwise the container its
-	 * own box joins. This is the answer {@link #runContainerOf} gives for a
+	 * own box joins. This is the answer {@link kRunContainerOf} gives for a
 	 * node whose box parent is known without the node itself -- which is how a
 	 * node that has LEFT the tree is answered for, since a removed node has no
 	 * parent left to climb from.
@@ -4884,7 +4884,7 @@ export class LayoutEngine {
 			if (!dissolves && !this[kBoxes].get(element)?.broken) {
 				continue;
 			}
-			// #addNode is what retires the box of a box-less element.
+			// kAddNode is what retires the box of a box-less element.
 			if (dissolves && this.nodeMap.has(element)) {
 				this[kAddNode](element, null);
 			}
@@ -5417,7 +5417,7 @@ export class LayoutEngine {
 					const ownBox = this[kPrincipalBox](element);
 					// Before anything reads its size or asks what its content
 					// runs from: an inline-block nested inside another inline is
-					// a run MEMBER, and #addElementNode is never called on one,
+					// a run MEMBER, and kAddElementNode is never called on one,
 					// so this is the first moment its block content is known to
 					// need a root.
 					if (!ownBox.contentRoot) {
@@ -5776,7 +5776,7 @@ export class LayoutEngine {
 		// Process and break the content with dynamic per-element styling
 		const processedContent = this[kProcessWhitespace](leafNodes);
 		// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
-		// preserving whitespace and honouring newlines, which #processWhitespace
+		// preserving whitespace and honouring newlines, which kProcessWhitespace
 		// already handles. Treating it as wrappable folds text a browser lets
 		// overflow.
 		const preservesLines = whiteSpace === "pre";
@@ -5829,16 +5829,11 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * A text node's data rendered under a `white-space` value, held until either
-	 * changes. One inline run is broken several times per build -- once per
-	 * width the sizing pass tries -- and the rendering is the same every time.
-	 */
-	/**
 	 * The last rendering of each text node, under the one key its rendering is
-	 * a function of: the data and the white-space it was rendered under. A node
-	 * holds one, because a text node has one data and one white-space at a
-	 * time, and the previous rendering of a node whose data just changed is of
-	 * no use to anyone.
+	 * a function of: the data and the white-space it was rendered under. A
+	 * node holds one, because a text node has one data and one white-space at
+	 * a time. One inline run is broken several times per build -- once per
+	 * width the sizing pass tries -- and the rendering is the same every time.
 	 */
 	declare [kRenderedLeaves]: WeakMap<Text, {
 		key: string;

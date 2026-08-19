@@ -25,12 +25,6 @@ interface ContentBox {
 }
 
 /**
- * The manager's way in. Not #private, because the manager has to call it; not a
- * named method, because author code must never see it.
- */
-/** Subclass hooks and shared state, symbol-keyed for the same reason. */
-
-/**
  * ResizeObserver's contentRect: an element's content box, or null when it
  * generates no box at all (display:none or detached) -- reported as "nothing",
  * which the observer turns into an all-zero rect.
@@ -56,6 +50,9 @@ function contentBoxOf(
 	};
 }
 
+// Symbol-keyed rather than named: kCheck is the manager's way in, the rest
+// are subclass hooks and shared state, and author code must never see any of
+// them on an observer it holds.
 const kManager = Symbol("manager");
 const kCheck = Symbol("check");
 const kTargets = Symbol("targets");
@@ -66,7 +63,7 @@ const kDeliver = Symbol("deliver");
  * The half of an observer that is identical between the two: which elements are
  * watched, what was last reported for each, and registration with the manager.
  *
- * Subclasses supply only how to measure one target (#measure) and how to build
+ * Subclasses supply only how to measure one target (kMeasure) and how to build
  * an entry from that measurement, which is the whole of what differs.
  */
 abstract class LayoutObserver<TState, TEntry, TOptions = void> {
