@@ -7,7 +7,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
-import type {LineStyle} from "./ansi.js";
+import {LINE_STYLES, type LineStyle} from "./ansi.js";
 import {
 	clearPseudoElement,
 	type Document as DOMDocument,
@@ -7506,9 +7506,7 @@ const ACCESSOR_PROPERTIES = new Set<string>([
 ]);
 
 for (const property of ACCESSOR_PROPERTIES) {
-	const camelCase = property.replace(/-([a-z])/g, (_, letter: string) =>
-		letter.toUpperCase(),
-	);
+	const camelCase = camelCaseProperty(property);
 	for (const name of new Set([property, camelCase])) {
 		for (const prototype of [
 			ComputedStyleDeclaration.prototype,
@@ -7539,17 +7537,7 @@ interface BorderSides {
 	bottomLeft?: "round";
 }
 
-const LINE_KEYWORDS = new Set<LineStyle["style"]>([
-	"solid",
-	"double",
-	"dashed",
-	"dotted",
-	"groove",
-	"ridge",
-	"inset",
-	"outset",
-	"hidden",
-]);
+const LINE_KEYWORDS = new Set<string>(LINE_STYLES);
 
 export function resolveBorderSides(element: Element): BorderSides {
 	const computedStyle = computedStyleOf(element);
@@ -7564,7 +7552,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 			return undefined;
 		}
 		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style as LineStyle["style"]) ?
+		return LINE_KEYWORDS.has(style) ?
 				(style as LineStyle["style"]) :
 			"solid";
 	};
