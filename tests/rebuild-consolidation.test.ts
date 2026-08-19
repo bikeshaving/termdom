@@ -19,7 +19,7 @@ const SHEET = `
 	.abs { position: absolute; top: 2px; left: 3ch; }
 `;
 
-function makeDom(): {dom: TermDOM; terminal: MockProcess} {
+function makeDOM(): {dom: TermDOM; terminal: MockProcess} {
 	const terminal = new MockProcess({cols: 60, rows: 20});
 	const dom = new TermDOM({transport: terminal.transport});
 	const style = dom.document.createElement("style");
@@ -46,7 +46,7 @@ async function incrementalVersusFresh(
 	html: string,
 	steps: Array<(document: Document) => void>,
 ): Promise<{incremental: string; fresh: string}> {
-	const {dom, terminal} = makeDom();
+	const {dom, terminal} = makeDOM();
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	for (const step of steps) {
@@ -55,7 +55,7 @@ async function incrementalVersusFresh(
 	}
 	const incremental = frameOf(terminal);
 
-	const second = makeDom();
+	const second = makeDOM();
 	for (const child of Array.from(dom.document.body.childNodes)) {
 		second.dom.document.body.appendChild(
 			second.dom.document.importNode(child, true),
@@ -69,7 +69,7 @@ async function incrementalVersusFresh(
 }
 
 test("an element made fixed by a style write solves its auto margins", async () => {
-	const {dom, terminal} = makeDom();
+	const {dom, terminal} = makeDOM();
 	const {document} = dom;
 	document.body.innerHTML =
 		"<div id=\"e\" style=\"width: 10ch; height: 3px; " +
@@ -83,7 +83,7 @@ test("an element made fixed by a style write solves its auto margins", async () 
 	const incremental = element.getBoundingClientRect().top;
 	const frame = frameOf(terminal);
 
-	const fresh = makeDom();
+	const fresh = makeDOM();
 	fresh.dom.document.body.appendChild(
 		fresh.dom.document.importNode(document.body.firstChild!, true),
 	);
@@ -100,7 +100,7 @@ test("an element made fixed by a style write solves its auto margins", async () 
 });
 
 test("an element made fixed by the popover attribute solves its auto margins", async () => {
-	const {dom, terminal} = makeDom();
+	const {dom, terminal} = makeDOM();
 	const {document} = dom;
 	document.body.innerHTML = "<div id=\"e\">note</div>";
 	await nextFrame(dom);
@@ -111,7 +111,7 @@ test("an element made fixed by the popover attribute solves its auto margins", a
 	const incremental = element.getBoundingClientRect().top;
 	const frame = frameOf(terminal);
 
-	const fresh = makeDom();
+	const fresh = makeDOM();
 	fresh.dom.document.body.appendChild(
 		fresh.dom.document.importNode(document.body.firstChild!, true),
 	);

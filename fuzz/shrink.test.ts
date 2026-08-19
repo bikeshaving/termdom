@@ -101,7 +101,7 @@ function describe(action: Action): string {
 		.join(", ")})`;
 }
 
-function makeDom(): {dom: any; terminal: any} {
+function makeDOM(): {dom: any; terminal: any} {
 	const terminal = new MockProcess({cols: 60, rows: 60});
 	const dom = new TermDOM({transport: terminal.transport});
 	const style = dom.document.createElement("style");
@@ -208,7 +208,7 @@ async function differs(
 	html: string,
 	actions: Action[],
 ): Promise<{differs: boolean; incremental: string; fresh: string}> {
-	const {dom, terminal} = makeDom();
+	const {dom, terminal} = makeDOM();
 	dom.document.body.innerHTML = html;
 	tag(dom.document);
 	await nextFrame(dom);
@@ -218,7 +218,7 @@ async function differs(
 	}
 	const incremental = frameOf(terminal);
 
-	const fresh = makeDom();
+	const fresh = makeDOM();
 	for (const child of Array.from(dom.document.body.childNodes) as any[]) {
 		fresh.dom.document.body.appendChild(
 			fresh.dom.document.importNode(child, true),
@@ -272,7 +272,7 @@ async function record(
 ): Promise<{html: string; actions: Action[]}> {
 	const next = rng(seed);
 	const html = generate(next);
-	const {dom} = makeDom();
+	const {dom} = makeDOM();
 	dom.document.body.innerHTML = html;
 	tag(dom.document);
 	const tagged = dom.document.body.innerHTML;
@@ -373,7 +373,7 @@ async function record(
 
 function reductions(html: string): string[] {
 	const out: string[] = [];
-	const {dom} = makeDom();
+	const {dom} = makeDOM();
 	dom.document.body.innerHTML = html;
 	const elements = Array.from(dom.document.body.querySelectorAll("*")) as any[];
 

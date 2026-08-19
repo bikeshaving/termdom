@@ -10,7 +10,7 @@ const kWriteEpoch = Symbol("writeEpoch");
 const kDsrSequence = Symbol("dsrSequence");
 const kArmWidthProbeTimer = Symbol("armWidthProbeTimer");
 const kWidthProbeTimer = Symbol("widthProbeTimer");
-const kWIDTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
+const kWIdTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
 const kWidthAnswered = Symbol("widthAnswered");
 const kWidthProbing = Symbol("widthProbing");
 const kInteractive = Symbol("interactive");
@@ -532,7 +532,7 @@ export class TerminalSession {
 	 * answering late is still answering. Only a session that gets NOTHING back
 	 * gives up probing, and it can afford to wait to be sure.
 	 */
-	static readonly [kWIDTH_PROBE_TIMEOUT_MS] = 2000;
+	static readonly [kWIdTH_PROBE_TIMEOUT_MS] = 2000;
 
 	declare [kWidthMeasurer]: WidthMeasurer;
 
@@ -550,7 +550,7 @@ export class TerminalSession {
 		}
 		const remaining = Math.max(
 			0,
-			oldest.sentAt + TerminalSession[kWIDTH_PROBE_TIMEOUT_MS] - Date.now(),
+			oldest.sentAt + TerminalSession[kWIdTH_PROBE_TIMEOUT_MS] - Date.now(),
 		);
 		this[kWidthProbeTimer] = setTimeout(() => {
 			this[kWidthProbeTimer] = null;
@@ -560,7 +560,7 @@ export class TerminalSession {
 			// written since the deadline was set are not late yet and keep
 			// their place -- the deadline is per probe, and re-arms for the
 			// oldest one still waiting.
-			const deadline = Date.now() - TerminalSession[kWIDTH_PROBE_TIMEOUT_MS];
+			const deadline = Date.now() - TerminalSession[kWIdTH_PROBE_TIMEOUT_MS];
 			let expired = 0;
 			while (
 				expired < this[kWidthProbes].length &&

@@ -91,7 +91,7 @@ const kChanged = Symbol("changed");
 const kText = Symbol("text");
 const kOwnerRule = Symbol("ownerRule");
 const kCheckRuleOrder = Symbol("checkRuleOrder");
-const kCssRules = Symbol("cssRules");
+const kCSSRules = Symbol("cssRules");
 const kManager = Symbol("manager");
 const kEpoch = Symbol("epoch");
 const kSeenEpoch = Symbol("seenEpoch");
@@ -716,7 +716,7 @@ const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
  * `#rgb`/`#rrggbb` (and their alpha forms) in the rgb()/rgba() serialization
  * a computed color carries. Null for anything that is not a valid hex color.
  */
-function hexColorToRgb(hex: string): string | null {
+function hexColorToRGB(hex: string): string | null {
 	const digits = hex.slice(1);
 	if (!/^[0-9a-fA-F]+$/.test(digits)) {
 		return null;
@@ -810,7 +810,7 @@ function serializeColor(value: string): string | null {
 		return "rgba(0, 0, 0, 0)";
 	}
 	if (text.startsWith("#")) {
-		return hexColorToRgb(text);
+		return hexColorToRGB(text);
 	}
 	const packed = parseCSSColor(text);
 	if (packed === null) {
@@ -6300,7 +6300,7 @@ const NO_STYLE_EPOCH = {value: 0};
 
 export class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
-	declare [kCssRules]: ParsedCSSRule[];
+	declare [kCSSRules]: ParsedCSSRule[];
 	/**
 	 * The manager to re-ask for matching rules, and the epoch it bumps when
 	 * every declaration goes stale at once. A computed style is LIVE: the
@@ -6337,7 +6337,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kUsedEpoch] = -1;
 		this[kCustom] = null;
 		this[kElement] = element;
-		this[kCssRules] = cssRules;
+		this[kCSSRules] = cssRules;
 		if (manager) {
 			this[kManager] = manager;
 			this[kEpoch] = manager.styleEpoch;
@@ -6817,7 +6817,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		this[kStale] = false;
 		this[kSeenEpoch] = this[kEpoch].value;
-		this[kCssRules] = this[kManager].matchingRules(this[kElement]);
+		this[kCSSRules] = this[kManager].matchingRules(this[kElement]);
 		this[kCustom] = null;
 		this[kResolved].clear();
 		this[kUsed]?.clear();
@@ -6994,7 +6994,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// keeps it, and later ones only tie it within the same layer.
 		let importantOrigin = false;
 		let importantLayer = 0;
-		for (const rule of this[kCssRules]) {
+		for (const rule of this[kCSSRules]) {
 			const name = declaredName(rule, names, false, mapsHere);
 			if (name !== null) {
 				ruleValue = rule.declarations[name];
@@ -7174,7 +7174,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	/** The names of the custom properties declared for this element. */
 	declaredCustomProperties(): string[] {
 		const names: string[] = [];
-		for (const rule of this[kCssRules]) {
+		for (const rule of this[kCSSRules]) {
 			for (const name of Object.keys(rule.declarations)) {
 				if (name.startsWith("--") && !names.includes(name)) {
 					names.push(name);

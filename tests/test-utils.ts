@@ -21,6 +21,10 @@ import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
+const kStdin = Symbol("stdin");
+const kTransport = Symbol("transport");
+const kDetectColorDepth = Symbol("detectColorDepth");
+
 /**
  * The width tables, as the mock terminal's own measure.
  *
@@ -90,9 +94,9 @@ const ZWJ_PENDING = 1;
 class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	columns: number;
 	rows: number;
-	isTTY = true;
+	isTTY: boolean;
 	terminal: Terminal;
-	#stdin: MockReadStream;
+	declare [kStdin]: MockReadStream;
 
 	constructor(
 		terminal: Terminal,
@@ -101,8 +105,9 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		rows = 24,
 	) {
 		super();
+		this.isTTY = true;
 		this.terminal = terminal;
-		this.#stdin = stdin;
+		this[kStdin] = stdin;
 		this.columns = cols;
 		this.rows = rows;
 
@@ -110,7 +115,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		// xterm.js automatically handles cursor position queries and responds via onData
 		this.terminal.onData((data) => {
 			// Forward any responses from xterm (like cursor position) to stdin
-			this.#stdin.simulateResponse(data);
+			this[kStdin].simulateResponse(data);
 		});
 	}
 
@@ -136,7 +141,12 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 }
 
 class MockReadStream extends EventEmitter implements TTYReadStream {
-	isTTY = true;
+	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+		super(...args);
+		this.isTTY = true;
+	}
+
+	isTTY: boolean;
 
 	setRawMode(_mode: boolean): this {
 		return this;
@@ -164,11 +174,11 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
-	#transport: TerminalTransport | null = null;
+	declare [kTransport]: TerminalTransport | null;
 
 	/** This mock as a TerminalTransport, the shape TermDOM takes. */
 	get transport(): TerminalTransport {
-		return (this.#transport ??= transportFromProcess(this));
+		return (this[kTransport] ??= transportFromProcess(this));
 	}
 
 	/**
@@ -189,6 +199,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		} = {},
 	) {
 		super();
+		this[kTransport] = null;
 
 		const cols = options.cols || 80;
 		const rows = options.rows || 24;
@@ -203,6 +214,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		this.terminal = new Terminal({
 			cols,
 			rows,
+			// eslint-disable-next-line acrocase/acrocase -- xterm's own option name
 			allowProposedApi: true,
 			theme: {
 				// Standard ANSI colors that match typical terminal expectations
@@ -310,7 +322,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const screen = new Screen(
 			this.terminal.rows,
 			this.terminal.cols,
-			this.#detectColorDepth(),
+			this[kDetectColorDepth](),
 		);
 		const frame = screen.beginFrame({offset: 0});
 
@@ -362,7 +374,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	/**
 	 * Detect color depth from environment (same logic as TermDOM)
 	 */
-	#detectColorDepth(): ColorDepth {
+	[kDetectColorDepth](): ColorDepth {
 		const colorterm = this.env.COLORTERM;
 		if (colorterm === "truecolor" || colorterm === "24bit") {
 			return "rgb";

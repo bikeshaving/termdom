@@ -12,9 +12,6 @@ export default [
 			// An engine that parses and emits terminal escape sequences writes
 			// regexes about control characters on purpose.
 			"no-control-regex": "off",
-			// TODO(acrocase): re-enable once the SCREAMING_SNAKE substring fix
-			// (VALID -> VALId) ships in eslint-plugin-acrocase.
-			"acrocase/acrocase": "off",
 		},
 	},
 ];

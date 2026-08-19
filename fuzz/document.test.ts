@@ -154,7 +154,7 @@ const idArbitrary = fc.oneof(
 );
 
 /** A generated element only: the body is not a thing a script may unroot. */
-const elementIDArbitrary = fc
+const elementIdArbitrary = fc
 	.integer({min: 0, max: ID_POOL - 1})
 	.map((n) => `e${n}`);
 
@@ -202,10 +202,10 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 		text: fc.integer({min: 0, max: 99}).map((n) => `i${n}`),
 		made: fc.integer({min: 0, max: 7}).map((n) => `m${n}`),
 	}),
-	fc.record({kind: fc.constant("remove" as const), id: elementIDArbitrary}),
+	fc.record({kind: fc.constant("remove" as const), id: elementIdArbitrary}),
 	fc.record({
 		kind: fc.constant("move" as const),
-		id: elementIDArbitrary,
+		id: elementIdArbitrary,
 		to: idArbitrary,
 	}),
 	fc.record({

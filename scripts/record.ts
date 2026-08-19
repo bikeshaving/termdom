@@ -47,7 +47,12 @@ function makeRecorder(
 	};
 
 	const stdin = new (class extends EventEmitter {
-		isTTY = true;
+		constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+			super(...args);
+			this.isTTY = true;
+		}
+
+		isTTY: boolean;
 		setRawMode() {
 			return this;
 		}
@@ -66,9 +71,16 @@ function makeRecorder(
 	})();
 
 	const proc = new (class extends EventEmitter {
-		stdout = stdout;
-		stdin = stdin;
-		env = {TERM: "xterm-256color", COLORTERM: "truecolor"};
+		constructor(...args: ConstructorParameters<typeof EventEmitter>) {
+			super(...args);
+			this.stdout = stdout;
+			this.stdin = stdin;
+			this.env = {TERM: "xterm-256color", COLORTERM: "truecolor"};
+		}
+
+		stdout: typeof stdout;
+		stdin: typeof stdin;
+		env: {TERM: string; COLORTERM: string};
 		exit(): never {
 			throw new Error("recording finished");
 		}
