@@ -245,15 +245,6 @@ function parseAlpha(raw: string | undefined): number {
 }
 
 /**
- * Parse a CSS color to 24-bit RGB (0xRRGGBB): named colors, #hex, rgb()/rgba(),
- * and hsl()/hsla(). Returns null for anything unrecognized -- a system color
- * among them, which stays a name until a painter reads it.
- */
-export function parseCSSColor(color: string): number | null {
-	return parseColor(color)?.color ?? null;
-}
-
-/**
  * Whether a color paints nothing: the `transparent` keyword, `none`, an empty
  * value, or any color whose alpha has reached zero.
  */

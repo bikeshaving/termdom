@@ -138,7 +138,7 @@ const kObserver = Symbol("observer");
 // The static-render entry renderANSI() reaches through; off the public API
 // like the test handles above.
 const kRenderStatic = Symbol("renderStatic");
-export {kLayoutEngine, kObserver, kRenderStatic};
+export {kLayoutEngine, kObserver};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");
@@ -158,7 +158,7 @@ const kGetWindow = Symbol("getWindow");
  * session's for the whole attachment, so there is nothing to save or restore
  * here beyond the screen switch itself.
  */
-export class FullscreenManager {
+class FullscreenManager {
 	declare [kWrite]: (output: string) => void;
 
 	declare [kFullscreenStack]: Element[];
