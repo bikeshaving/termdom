@@ -54,7 +54,6 @@ function contentBoxOf(
 // are subclass hooks and shared state, and author code must never see any of
 // them on an observer it holds.
 const kManager = Symbol("manager");
-const kCheck = Symbol("check");
 const kTargets = Symbol("targets");
 const kMeasure = Symbol("measure");
 const kDeliver = Symbol("deliver");
@@ -128,33 +127,36 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	): {state: TState; entry: TEntry} | null;
 
 	abstract [kDeliver](entries: TEntry[]): void;
+}
 
-	[kCheck](layoutEngine: LayoutEngine, viewport: DOMRect, frame: number): void {
-		const entries: TEntry[] = [];
-		for (const [target, observation] of this[kTargets]) {
-			const result = this[kMeasure](
-				target,
-				observation.last,
-				layoutEngine,
-				viewport,
-				frame,
-				observation.options,
-			);
-			if (!result) {
-				continue;
-			}
-			observation.last = result.state;
-			entries.push(result.entry);
+function check<TState, TEntry, TOptions = void>(
+	self: LayoutObserver<TState, TEntry, TOptions>,
+	layoutEngine: LayoutEngine,
+	viewport: DOMRect,
+	frame: number,
+): void {
+	const entries: TEntry[] = [];
+	for (const [target, observation] of self[kTargets]) {
+		const result = self[kMeasure](
+			target,
+			observation.last,
+			layoutEngine,
+			viewport,
+			frame,
+			observation.options,
+		);
+		if (!result) {
+			continue;
 		}
-		if (entries.length > 0) {
-			this[kDeliver](entries);
-		}
+		observation.last = result.state;
+		entries.push(result.entry);
+	}
+	if (entries.length > 0) {
+		self[kDeliver](entries);
 	}
 }
 
-type AnyObserver = {
-	[kCheck](layoutEngine: LayoutEngine, viewport: DOMRect, frame: number): void;
-};
+type AnyObserver = LayoutObserver<unknown, unknown, unknown>;
 
 // ---------------------------------------------------------------------------
 // ResizeObserver
@@ -386,7 +388,6 @@ function applyRootMargin(
 }
 
 const kRoot = Symbol("root");
-const kThresholdIndex = Symbol("thresholdIndex");
 
 export class IntersectionObserver extends LayoutObserver<
 	number,
@@ -419,26 +420,6 @@ export class IntersectionObserver extends LayoutObserver<
 		return this[kRoot];
 	}
 
-	/**
-	 * How many thresholds the ratio has reached, which is what the spec actually
-	 * watches: an observation fires when this CHANGES, so a target scrolling
-	 * through `[0, 0.5, 1]` reports at each step. Tracking only the boolean
-	 * "is it intersecting" collapsed all of those into one callback and made
-	 * threshold arrays decorative.
-	 */
-	[kThresholdIndex](ratio: number): number {
-		let index = 0;
-		while (index < this.thresholds.length && ratio >= this.thresholds[index]) {
-			// A zero threshold means "any overlap at all", so a ratio of exactly
-			// zero has not reached it.
-			if (this.thresholds[index] === 0 && ratio === 0) {
-				break;
-			}
-			index++;
-		}
-		return index;
-	}
-
 	[kMeasure](
 		target: Element,
 		last: number | null,
@@ -461,7 +442,7 @@ export class IntersectionObserver extends LayoutObserver<
 		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
 
 		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
-		const index = this[kThresholdIndex](ratio);
+		const index = thresholdIndex(this, ratio);
 		if (last === index) {
 			return null;
 		}
@@ -484,6 +465,29 @@ export class IntersectionObserver extends LayoutObserver<
 	[kDeliver](entries: IntersectionObserverEntry[]): void {
 		this[kCallback](entries, this);
 	}
+}
+
+/**
+ * How many thresholds the ratio has reached, which is what the spec actually
+ * watches: an observation fires when this CHANGES, so a target scrolling
+ * through `[0, 0.5, 1]` reports at each step. Tracking only the boolean
+ * "is it intersecting" collapsed all of those into one callback and made
+ * threshold arrays decorative.
+ */
+function thresholdIndex(
+	self: IntersectionObserver,
+	ratio: number,
+): number {
+	let index = 0;
+	while (index < self.thresholds.length && ratio >= self.thresholds[index]) {
+		// A zero threshold means "any overlap at all", so a ratio of exactly
+		// zero has not reached it.
+		if (self.thresholds[index] === 0 && ratio === 0) {
+			break;
+		}
+		index++;
+	}
+	return index;
 }
 
 const kLayoutEngine = Symbol("layoutEngine");
@@ -529,7 +533,7 @@ export class ObserverManager {
 		// mid-iteration would visit the new observer against a layout it has not
 		// been measured for, or skip one that is still live.
 		for (const observer of [...this[kObservers]]) {
-			observer[kCheck](this[kLayoutEngine], viewport, frame);
+			check(observer, this[kLayoutEngine], viewport, frame);
 		}
 	}
 
