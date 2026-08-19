@@ -1885,18 +1885,9 @@ const kKeyframe = Symbol("keyframe");
 const kAttributeText = Symbol("attributeText");
 const kDeclarations = Symbol("declarations");
 const kByName = Symbol("byName");
-const kApply = Symbol("apply");
-const kInvalidate = Symbol("invalidate");
-const kShorthandValue = Symbol("shorthandValue");
-const kFind = Symbol("find");
-const kSerialize = Symbol("serialize");
 const kBlock = Symbol("block");
 const kIndexed = Symbol("indexed");
-const kRemove = Symbol("remove");
-const kStore = Symbol("store");
 const kSync = Symbol("sync");
-const kSupports = Symbol("supports");
-const kFlush = Symbol("flush");
 
 /**
  * A CSS declaration block: what `element.style`, a style rule's `style`, and
@@ -1977,204 +1968,15 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this[kDeclarations] = [];
 		this[kByName].clear();
 		for (const declaration of parseDeclarationText(text)) {
-			this[kApply](
+			apply(
+				this,
 				declaration.name,
 				declaration.value,
 				declaration.important,
 				true,
 			);
 		}
-		this[kInvalidate]();
-	}
-
-	/** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
-	[kSerialize](): string {
-		const parts: string[] = [];
-		const serialized = new Set<string>();
-		// A shorthand this block cannot express is one it cannot express at
-		// any of its longhands: the declarations do not change under the walk.
-		const unserializable = new Set<string>();
-		for (const declaration of this[kDeclarations]) {
-			if (serialized.has(declaration.name)) {
-				continue;
-			}
-			let text = "";
-			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
-				if (unserializable.has(shorthand)) {
-					continue;
-				}
-				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
-				// A shorthand covering more properties than the block holds
-				// cannot be serialized from it, and `all` covers hundreds.
-				if (longhands.length > this[kDeclarations].length) {
-					continue;
-				}
-				const value = this[kShorthandValue](shorthand, longhands);
-				if (!value) {
-					unserializable.add(shorthand);
-					continue;
-				}
-				const important = this[kFind](longhands[0])!.important;
-				text = `${shorthand}: ${value}${important ? " !important" : ""};`;
-				for (const longhand of longhands) {
-					serialized.add(longhand);
-				}
-				break;
-			}
-			if (!text) {
-				const priority = declaration.important ? " !important" : "";
-				text = `${serializePropertyName(declaration.name)}: ${
-					declaration.value
-				}${priority};`;
-				serialized.add(declaration.name);
-			}
-			parts.push(text);
-		}
-		return parts.join(" ");
-	}
-
-	/** Serialize to the `style` attribute, which is what invalidation observes. */
-	[kFlush](): void {
-		this[kInvalidate]();
-		if (this[kElement]) {
-			this[kAttributeText] = this[kSerialize]();
-			this[kElement].setAttribute("style", this[kAttributeText]);
-		}
-		this[kOnChange]?.();
-	}
-
-	[kInvalidate](): void {
-		this[kBlock] = null;
-		for (let i = 0; i < this[kIndexed]; i++) {
-			delete this[i];
-		}
-		this[kIndexed] = this[kDeclarations].length;
-		for (let i = 0; i < this[kIndexed]; i++) {
-			this[i] = this[kDeclarations][i].name;
-		}
-	}
-
-	[kFind](property: string): CSSDeclaration | undefined {
-		return this[kByName].get(property);
-	}
-
-	/**
-	 * Whether this block may hold `name`: a supported CSS property or a custom
-	 * property, or -- in an at-rule's block -- any descriptor it names, since
-	 * the property index does not describe descriptors.
-	 */
-	[kSupports](name: string): boolean {
-		// A keyframe's block is a step of an animation, and the animation's own
-		// properties describe the whole rather than the step.
-		if (this[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
-			return false;
-		}
-		if (this[kDescriptors]) {
-			// An at-rule's block holds its own descriptors. One this engine
-			// has no descriptor list for holds whatever it is given, which is
-			// what keeps @font-feature-values' feature blocks working.
-			const names = DESCRIPTOR_NAMES.get(this[kDescriptors]);
-			return names ? names.has(name) : name !== "";
-		}
-
-		return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
-	}
-
-	/**
-	 * Store one declaration; returns whether anything changed.
-	 *
-	 * A declaration that says something new is the LAST declaration in the
-	 * block: it was written after the ones already there, and the order the
-	 * block serializes in is the order its declarations were made. Restating
-	 * a declaration unchanged leaves it where it stands.
-	 */
-	[kStore](
-		name: string,
-		value: string,
-		important: boolean,
-		cascade = false,
-	): boolean {
-		const declared = this[kFind](name);
-		if (declared) {
-			// Parsing a block is a cascade in miniature: a normal declaration
-			// does not displace the important one already standing there.
-			if (cascade && declared.important && !important) {
-				return false;
-			}
-			if (declared.value === value && declared.important === important) {
-				return false;
-			}
-			this[kRemove](name);
-		}
-		const entry = {name, value, important};
-		this[kDeclarations].push(entry);
-		this[kByName].set(name, entry);
-		return true;
-	}
-
-	[kRemove](name: string): boolean {
-		const index = this[kDeclarations].findIndex((entry) => entry.name === name);
-		if (index === -1) {
-			return false;
-		}
-		this[kDeclarations].splice(index, 1);
-		this[kByName].delete(name);
-		return true;
-	}
-
-	/** Store a property as its longhands, or as itself; returns whether it changed. */
-	[kApply](
-		name: string,
-		value: string,
-		important: boolean,
-		cascade = false,
-	): boolean {
-		// A declaration whose value does not parse is not stored at all, so a
-		// shorthand with one bad component drops whole rather than leaving its
-		// good components behind.
-		if (!isValidDeclaration(name, value, this[kDescriptors])) {
-			return false;
-		}
-		const expanded = expandShorthandValue(name, value);
-		if (!expanded) {
-			return this[kStore](name, value, important, cascade);
-		}
-		let changed = this[kRemove](name);
-		for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
-			if (longhand in expanded) {
-				continue;
-			}
-			if (cascade && this[kFind](longhand)?.important && !important) {
-				continue;
-			}
-			changed = this[kRemove](longhand) || changed;
-		}
-		for (const [longhand, longhandValue] of Object.entries(expanded)) {
-			changed =
-				this[kStore](longhand, longhandValue, important, cascade) || changed;
-		}
-		return changed;
-	}
-
-	/** The shorthand's value, or "" when its longhands do not agree on one. */
-	[kShorthandValue](shorthand: string, longhands: readonly string[]): string {
-		let important: boolean | null = null;
-		for (const longhand of longhands) {
-			const declared = this[kFind](longhand);
-			if (!declared) {
-				return "";
-			}
-			if (important === null) {
-				important = declared.important;
-			} else if (important !== declared.important) {
-				return "";
-			}
-		}
-		return serializeShorthandValue(
-			shorthand,
-			longhands,
-			(longhand) => this[kFind](longhand)!.value,
-		);
+		invalidate(this);
 	}
 
 	/** The declarations as the cascade consumes them: longhands, importance included. */
@@ -2255,25 +2057,25 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	getPropertyValue(property: string): string {
 		this[kSync]();
 		const name = normalizePropertyName(property);
-		const declared = this[kFind](name);
+		const declared = find(this, name);
 		if (declared) {
 			return declared.value;
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
-		return longhands ? this[kShorthandValue](name, longhands) : "";
+		return longhands ? shorthandValue(this, name, longhands) : "";
 	}
 
 	getPropertyPriority(property: string): string {
 		this[kSync]();
 		const name = normalizePropertyName(property);
-		const declared = this[kFind](name);
+		const declared = find(this, name);
 		if (declared) {
 			return declared.important ? "important" : "";
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
 		if (
 			longhands &&
-			longhands.every((longhand) => this[kFind](longhand)?.important)
+			longhands.every((longhand) => find(this, longhand)?.important)
 		) {
 			return "important";
 		}
@@ -2283,7 +2085,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	setProperty(property: string, value: string, priority?: string): void {
 		this[kSync]();
 		const name = normalizePropertyName(property);
-		if (!this[kSupports](name)) {
+		if (!supports(this, name)) {
 			return;
 		}
 		// `[LegacyNullToEmptyString]`: null names the empty value, which removes
@@ -2298,8 +2100,8 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		if (priorityText !== "" && priorityText !== "important") {
 			return;
 		}
-		if (this[kApply](name, text, priorityText === "important")) {
-			this[kFlush]();
+		if (apply(this, name, text, priorityText === "important")) {
+			flush(this);
 		}
 	}
 
@@ -2307,19 +2109,19 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this[kSync]();
 		const name = normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
-		let changed = this[kRemove](name);
+		let changed = remove(this, name);
 		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
-			changed = this[kRemove](longhand) || changed;
+			changed = remove(this, longhand) || changed;
 		}
 		if (changed) {
-			this[kFlush]();
+			flush(this);
 		}
 		return previous;
 	}
 
 	get cssText(): string {
 		this[kSync]();
-		return this[kSerialize]();
+		return serialize(this);
 	}
 
 	set cssText(text: string) {
@@ -2327,18 +2129,230 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this[kDeclarations] = [];
 		this[kByName].clear();
 		for (const declaration of parseDeclarationText(text ?? "")) {
-			if (!this[kSupports](declaration.name)) {
+			if (!supports(this, declaration.name)) {
 				continue;
 			}
-			this[kApply](
+			apply(
+				this,
 				declaration.name,
 				declaration.value,
 				declaration.important,
 				true,
 			);
 		}
-		this[kFlush]();
+		flush(this);
 	}
+}
+
+/** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
+function serialize(
+	self: CSSStyleDeclaration,
+): string {
+	const parts: string[] = [];
+	const serialized = new Set<string>();
+	// A shorthand this block cannot express is one it cannot express at
+	// any of its longhands: the declarations do not change under the walk.
+	const unserializable = new Set<string>();
+	for (const declaration of self[kDeclarations]) {
+		if (serialized.has(declaration.name)) {
+			continue;
+		}
+		let text = "";
+		for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
+			if (unserializable.has(shorthand)) {
+				continue;
+			}
+			const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
+			// A shorthand covering more properties than the block holds
+			// cannot be serialized from it, and `all` covers hundreds.
+			if (longhands.length > self[kDeclarations].length) {
+				continue;
+			}
+			const value = shorthandValue(self, shorthand, longhands);
+			if (!value) {
+				unserializable.add(shorthand);
+				continue;
+			}
+			const important = find(self, longhands[0])!.important;
+			text = `${shorthand}: ${value}${important ? " !important" : ""};`;
+			for (const longhand of longhands) {
+				serialized.add(longhand);
+			}
+			break;
+		}
+		if (!text) {
+			const priority = declaration.important ? " !important" : "";
+			text = `${serializePropertyName(declaration.name)}: ${
+				declaration.value
+			}${priority};`;
+			serialized.add(declaration.name);
+		}
+		parts.push(text);
+	}
+	return parts.join(" ");
+}
+
+/** Serialize to the `style` attribute, which is what invalidation observes. */
+function flush(
+	self: CSSStyleDeclaration,
+): void {
+	invalidate(self);
+	if (self[kElement]) {
+		self[kAttributeText] = serialize(self);
+		self[kElement].setAttribute("style", self[kAttributeText]);
+	}
+	self[kOnChange]?.();
+}
+
+function invalidate(
+	self: CSSStyleDeclaration,
+): void {
+	self[kBlock] = null;
+	for (let i = 0; i < self[kIndexed]; i++) {
+		delete self[i];
+	}
+	self[kIndexed] = self[kDeclarations].length;
+	for (let i = 0; i < self[kIndexed]; i++) {
+		self[i] = self[kDeclarations][i].name;
+	}
+}
+
+function find(
+	self: CSSStyleDeclaration,
+	property: string,
+): CSSDeclaration | undefined {
+	return self[kByName].get(property);
+}
+
+/**
+ * Whether this block may hold `name`: a supported CSS property or a custom
+ * property, or -- in an at-rule's block -- any descriptor it names, since
+ * the property index does not describe descriptors.
+ */
+function supports(
+	self: CSSStyleDeclaration,
+	name: string,
+): boolean {
+	// A keyframe's block is a step of an animation, and the animation's own
+	// properties describe the whole rather than the step.
+	if (self[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
+		return false;
+	}
+	if (self[kDescriptors]) {
+		// An at-rule's block holds its own descriptors. One this engine
+		// has no descriptor list for holds whatever it is given, which is
+		// what keeps @font-feature-values' feature blocks working.
+		const names = DESCRIPTOR_NAMES.get(self[kDescriptors]);
+		return names ? names.has(name) : name !== "";
+	}
+
+	return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
+}
+
+/**
+ * Store one declaration; returns whether anything changed.
+ *
+ * A declaration that says something new is the LAST declaration in the
+ * block: it was written after the ones already there, and the order the
+ * block serializes in is the order its declarations were made. Restating
+ * a declaration unchanged leaves it where it stands.
+ */
+function store(
+	self: CSSStyleDeclaration,
+	name: string,
+	value: string,
+	important: boolean,
+	cascade = false,
+): boolean {
+	const declared = find(self, name);
+	if (declared) {
+		// Parsing a block is a cascade in miniature: a normal declaration
+		// does not displace the important one already standing there.
+		if (cascade && declared.important && !important) {
+			return false;
+		}
+		if (declared.value === value && declared.important === important) {
+			return false;
+		}
+		remove(self, name);
+	}
+	const entry = {name, value, important};
+	self[kDeclarations].push(entry);
+	self[kByName].set(name, entry);
+	return true;
+}
+
+function remove(
+	self: CSSStyleDeclaration,
+	name: string,
+): boolean {
+	const index = self[kDeclarations].findIndex((entry) => entry.name === name);
+	if (index === -1) {
+		return false;
+	}
+	self[kDeclarations].splice(index, 1);
+	self[kByName].delete(name);
+	return true;
+}
+
+/** Store a property as its longhands, or as itself; returns whether it changed. */
+function apply(
+	self: CSSStyleDeclaration,
+	name: string,
+	value: string,
+	important: boolean,
+	cascade = false,
+): boolean {
+	// A declaration whose value does not parse is not stored at all, so a
+	// shorthand with one bad component drops whole rather than leaving its
+	// good components behind.
+	if (!isValidDeclaration(name, value, self[kDescriptors])) {
+		return false;
+	}
+	const expanded = expandShorthandValue(name, value);
+	if (!expanded) {
+		return store(self, name, value, important, cascade);
+	}
+	let changed = remove(self, name);
+	for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
+		if (longhand in expanded) {
+			continue;
+		}
+		if (cascade && find(self, longhand)?.important && !important) {
+			continue;
+		}
+		changed = remove(self, longhand) || changed;
+	}
+	for (const [longhand, longhandValue] of Object.entries(expanded)) {
+		changed =
+			store(self, longhand, longhandValue, important, cascade) || changed;
+	}
+	return changed;
+}
+
+/** The shorthand's value, or "" when its longhands do not agree on one. */
+function shorthandValue(
+	self: CSSStyleDeclaration,
+	shorthand: string,
+	longhands: readonly string[],
+): string {
+	let important: boolean | null = null;
+	for (const longhand of longhands) {
+		const declared = find(self, longhand);
+		if (!declared) {
+			return "";
+		}
+		if (important === null) {
+			important = declared.important;
+		} else if (important !== declared.important) {
+			return "";
+		}
+	}
+	return serializeShorthandValue(
+		shorthand,
+		longhands,
+		(longhand) => find(self, longhand)!.value,
+	);
 }
 
 /**
@@ -2724,7 +2738,6 @@ function splitMediaQueryList(text: string): string[] {
 	return queries;
 }
 
-const kParse = Symbol("parse");
 const kMedia = Symbol("media");
 
 /** The media queries a sheet or an `@media` rule applies under. */
@@ -2739,18 +2752,7 @@ export class MediaList {
 	constructor(mediaText = "", onChange?: () => void) {
 		this[kMedia] = [];
 		this[kOnChange] = onChange ?? null;
-		this[kParse](mediaText);
-	}
-
-	[kParse](text: string): void {
-		this[kMedia].length = 0;
-		for (const query of splitMediaQueryList(String(text ?? ""))) {
-			const serialized = serializeMediaQuery(query);
-			if (serialized) {
-				this[kMedia].push(serialized);
-			}
-		}
-		syncIndexed(this);
+		parse(this, mediaText);
 	}
 
 	get mediaText(): string {
@@ -2758,7 +2760,7 @@ export class MediaList {
 	}
 
 	set mediaText(text: string) {
-		this[kParse](text);
+		parse(this, text);
 		this[kOnChange]?.();
 	}
 
@@ -2817,6 +2819,20 @@ export class MediaList {
 	toString(): string {
 		return this.mediaText;
 	}
+}
+
+function parse(
+	self: MediaList,
+	text: string,
+): void {
+	self[kMedia].length = 0;
+	for (const query of splitMediaQueryList(String(text ?? ""))) {
+		const serialized = serializeMediaQuery(query);
+		if (serialized) {
+			self[kMedia].push(serialized);
+		}
+	}
+	syncIndexed(self);
 }
 
 /**
@@ -4063,10 +4079,8 @@ const kOwnerNode = Symbol("ownerNode");
 const kConstructed = Symbol("constructed");
 const kTitle = Symbol("title");
 const kDisabled = Symbol("disabled");
-const kChanged = Symbol("changed");
 const kText = Symbol("text");
 const kOwnerRule = Symbol("ownerRule");
-const kCheckRuleOrder = Symbol("checkRuleOrder");
 
 /**
  * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
@@ -4115,13 +4129,9 @@ export class CSSStyleSheet {
 		this[kDisabled] = Boolean(options.disabled);
 		this[kMedia] = new MediaList(
 			ownerNode?.getAttribute("media") ?? options.media ?? "",
-			() => this[kChanged](),
+			() => changed(this),
 		);
 		this[kRuleList] = createRuleList(this[kRules]);
-	}
-
-	[kChanged](): void {
-		sheetNotifiers.get(this)?.();
 	}
 
 	/** Reparse the owner element's text when it says something new. */
@@ -4202,7 +4212,7 @@ export class CSSStyleSheet {
 			return;
 		}
 		this[kDisabled] = value;
-		this[kChanged]();
+		changed(this);
 	}
 
 	insertRule(text: string, index = 0): number {
@@ -4227,59 +4237,11 @@ export class CSSStyleSheet {
 				this,
 			);
 		}
-		this[kCheckRuleOrder](inserted, index);
+		checkRuleOrder(this, inserted, index);
 		this[kRules].splice(index, 0, inserted);
 		syncIndexed(this[kRuleList]);
-		this[kChanged]();
+		changed(this);
 		return index;
-	}
-
-	/**
-	 * Whether a rule may stand at `index`.
-	 *
-	 * `@import` precedes every rule but another `@import`, and `@namespace`
-	 * every rule but those two -- which is as much a constraint on the rule
-	 * being inserted as on the ones already there. A `@namespace` additionally
-	 * needs a sheet that holds nothing else: a namespace declared after a
-	 * selector has been parsed cannot reach it.
-	 */
-	[kCheckRuleOrder](rule: CSSRule, index: number): void {
-		const hierarchy = (): never => {
-			throw domException(
-				"That rule cannot stand at that index",
-				"HierarchyRequestError",
-				this,
-			);
-		};
-		const prelude = (other: CSSRule): boolean =>
-			other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
-		const before = this[kRules].slice(0, index);
-		const after = this[kRules].slice(index);
-		if (rule instanceof CSSImportRule) {
-			if (before.some((other) => !(other instanceof CSSImportRule))) {
-				hierarchy();
-			}
-			return;
-		}
-		if (rule instanceof CSSNamespaceRule) {
-			if (before.some((other) => !prelude(other))) {
-				hierarchy();
-			}
-			if (after.some((other) => other instanceof CSSImportRule)) {
-				hierarchy();
-			}
-			if (this[kRules].some((other) => !prelude(other))) {
-				throw domException(
-					"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
-					"InvalidStateError",
-					this,
-				);
-			}
-			return;
-		}
-		if (after.some(prelude)) {
-			hierarchy();
-		}
 	}
 
 	deleteRule(index: number): void {
@@ -4316,7 +4278,7 @@ export class CSSStyleSheet {
 		detachRule(removed);
 		this[kRules].splice(index, 1);
 		syncIndexed(this[kRuleList]);
-		this[kChanged]();
+		changed(this);
 	}
 
 	/** The legacy IE spellings, defined in terms of the modern pair. */
@@ -4354,7 +4316,7 @@ export class CSSStyleSheet {
 			),
 		);
 		syncIndexed(this[kRuleList]);
-		this[kChanged]();
+		changed(this);
 	}
 
 	replace(text: string): Promise<CSSStyleSheet> {
@@ -4364,6 +4326,64 @@ export class CSSStyleSheet {
 			return Promise.reject(error);
 		}
 		return Promise.resolve(this);
+	}
+}
+
+function changed(
+	self: CSSStyleSheet,
+): void {
+	sheetNotifiers.get(self)?.();
+}
+
+/**
+ * Whether a rule may stand at `index`.
+ *
+ * `@import` precedes every rule but another `@import`, and `@namespace`
+ * every rule but those two -- which is as much a constraint on the rule
+ * being inserted as on the ones already there. A `@namespace` additionally
+ * needs a sheet that holds nothing else: a namespace declared after a
+ * selector has been parsed cannot reach it.
+ */
+function checkRuleOrder(
+	self: CSSStyleSheet,
+	rule: CSSRule,
+	index: number,
+): void {
+	const hierarchy = (): never => {
+		throw domException(
+			"That rule cannot stand at that index",
+			"HierarchyRequestError",
+			self,
+		);
+	};
+	const prelude = (other: CSSRule): boolean =>
+		other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
+	const before = self[kRules].slice(0, index);
+	const after = self[kRules].slice(index);
+	if (rule instanceof CSSImportRule) {
+		if (before.some((other) => !(other instanceof CSSImportRule))) {
+			hierarchy();
+		}
+		return;
+	}
+	if (rule instanceof CSSNamespaceRule) {
+		if (before.some((other) => !prelude(other))) {
+			hierarchy();
+		}
+		if (after.some((other) => other instanceof CSSImportRule)) {
+			hierarchy();
+		}
+		if (self[kRules].some((other) => !prelude(other))) {
+			throw domException(
+				"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
+				"InvalidStateError",
+				self,
+			);
+		}
+		return;
+	}
+	if (after.some(prelude)) {
+		hierarchy();
 	}
 }
 
@@ -6152,32 +6172,11 @@ const kEpoch = Symbol("epoch");
 const kSeenEpoch = Symbol("seenEpoch");
 const kUsed = Symbol("used");
 const kUsedEpoch = Symbol("usedEpoch");
-const kMeasure = Symbol("measure");
-const kResolvePropertyValue = Symbol("resolvePropertyValue");
-const kLengthContext = Symbol("lengthContext");
-const kRootFontSize = Symbol("rootFontSize");
 const kStale = Symbol("stale");
 const kRefresh = Symbol("refresh");
 const kResolved = Symbol("resolved");
-const kShorthand = Symbol("shorthand");
-const kComputed = Symbol("computed");
-const kPhysicalOf = Symbol("physicalOf");
-const kUsedInset = Symbol("usedInset");
-const kEdge = Symbol("edge");
-const kAutoMargin = Symbol("autoMargin");
-const kContainingWidth = Symbol("containingWidth");
-const kContainingBlockBox = Symbol("containingBlockBox");
-const kViewportBox = Symbol("viewportBox");
-const kBoxOf = Symbol("boxOf");
 const kCustom = Symbol("custom");
-const kResolveCustomProperty = Symbol("resolveCustomProperty");
-const kSubstituteVar = Symbol("substituteVar");
-const kResolvePropertyValueRaw = Symbol("resolvePropertyValueRaw");
-const kResolveFromParent = Symbol("resolveFromParent");
-const kInlineDeclarations = Symbol("inlineDeclarations");
 const kUsedValue = Symbol("usedValue");
-const kResolvedMinSize = Symbol("resolvedMinSize");
-const kCustomNames = Symbol("customNames");
 
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
@@ -6254,76 +6253,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 
 		const computed = this.computedValueOf(property);
-		const value = this[kMeasure](property, computed);
+		const value = measure(this, property, computed);
 		this[kUsed].set(property, value);
 		return value;
-	}
-
-	/**
-	 * One property's computed value: the cascade's declaration, interned, and
-	 * absolutized against this element when the interned entry says only an
-	 * element can answer it. The memo both callers write into is the
-	 * per-element, per-generation cache that absolutization is paid into once.
-	 */
-	[kComputed](property: string): string {
-		const entry = computedEntry(
-			property,
-			this[kResolvePropertyValue](property),
-		);
-		if (!entry.contextual) {
-			return entry.value;
-		}
-		const absolute = absolutizeLengths(
-			entry.value,
-			this[kLengthContext](property),
-		);
-		// Two radii that differ as written -- `1ch 1px` -- can measure the same
-		// cell, and a corner whose radii agree states one of them.
-		return RADIUS_LONGHANDS.has(property) ? collapseRadius(absolute) : absolute;
-	}
-
-	/**
-	 * What a relative length on this element is worth.
-	 *
-	 * `font-size` measures against the PARENT's font size, so it is the one
-	 * property whose own computed value is not in its own context; every other
-	 * property measures against this element's font size, which therefore
-	 * computes first.
-	 */
-	[kLengthContext](property: string): LengthContext {
-		const own = property === "font-size";
-		const parent = own ? flatParentElement<Element>(this[kElement]) : null;
-		const font = own ?
-			parent ?
-					fontSizeOf(computedStyleOf(parent)) :
-				INITIAL_FONT_SIZE :
-				fontSizeOf(this);
-		const root = this[kRootFontSize](own);
-		const viewport = this[kManager]?.viewportSize();
-		return {
-			font,
-			root,
-			viewportWidth: viewport ? viewport.width : 0,
-			viewportHeight: viewport ? viewport.height : 0,
-			// A percentage is font-relative on exactly two properties: on
-			// `font-size` it is a share of the parent's, on `line-height` of
-			// this element's own. Everywhere else it stays a percentage until
-			// something uses it.
-			percent: FONT_RELATIVE_PERCENTAGES.has(property) ? font / 100 : null,
-		};
-	}
-
-	/** The font size `rem` measures against: the root element's. */
-	[kRootFontSize](ownFontSize: boolean): number {
-		const root = this[kElement].ownerDocument?.documentElement;
-		// `rem` in the root's own font-size is the initial value, not the
-		// value being computed.
-		if (!root || (ownFontSize && root === this[kElement])) {
-			return INITIAL_FONT_SIZE;
-		}
-		return root === this[kElement] ?
-				fontSizeOf(this) :
-				fontSizeOf(computedStyleOf(root));
 	}
 
 	/**
@@ -6339,347 +6271,14 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands ?
-					this[kShorthand](property, longhands, (longhand) =>
+					shorthand(this, property, longhands, (longhand) =>
 						this.computedValueOf(longhand),
 					) : // A flow-relative longhand shares its computed value with the
 					// physical longhand it maps to, so it is answered as that one.
-					this[kComputed](this[kPhysicalOf](property));
+					computed(this, physicalOf(this, property));
 			this[kResolved].set(property, value);
 		}
 		return value;
-	}
-
-	/**
-	 * The name a longhand computes under: itself, or -- for a flow-relative
-	 * longhand -- the physical longhand this element's `direction` maps it to.
-	 */
-	[kPhysicalOf](property: string): string {
-		if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) {
-			return property;
-		}
-		return (
-			physicalProperty(property, this.computedValueOf("direction")) ?? property
-		);
-	}
-
-	/**
-	 * A shorthand answers as its longhands, each in the spelling `read` gives
-	 * it, collapsed: `margin: 10px 10px 10px 10px` is "10px". The reader is the
-	 * caller's, because the computed and resolved value paths ask their
-	 * longhands different questions -- and their answers must not meet, which
-	 * is why only the computed one is memoized.
-	 */
-	[kShorthand](
-		property: string,
-		longhands: readonly string[],
-		read: (longhand: string) => string,
-	): string {
-		return serializeShorthandValue(
-			property,
-			longhands,
-			(longhand) => read(longhand) || CSS_INITIAL_VALUES[longhand] || "",
-		);
-	}
-
-	[kMeasure](property: string, computed: string): string {
-		// A border with no style draws nothing and takes no space, whatever
-		// width it declares.
-		if (property.startsWith("border-") && property.endsWith("-width")) {
-			const style = this.computedValueOf(
-				`${property.slice(0, -"-width".length)}-style`,
-			);
-			if (!style || style === "none" || style === "hidden") {
-				return "0px";
-			}
-		}
-		const inset = INSET_PROPERTIES.has(property);
-		// An inset only applies to a positioned box; on a static one it stays
-		// as declared.
-		const position = inset ? this.getPropertyValue("position") : "";
-		if (inset && position === "static") {
-			return computed;
-		}
-
-		const rect = this[kManager]!.usedRect(this[kElement]);
-		// No box -- display:none, or a tree layout never reached -- so the
-		// computed value is the answer, exactly as CSSOM says.
-		if (!rect) {
-			return computed;
-		}
-
-		if (inset) {
-			return this[kUsedInset](property, computed, rect, position);
-		}
-
-		if (property === "width" || property === "height") {
-			const vertical = property === "height";
-			const edges =
-				this[kEdge](vertical ? "border-top-width" : "border-left-width") +
-				this[kEdge](vertical ? "border-bottom-width" : "border-right-width") +
-				this[kEdge](vertical ? "padding-top" : "padding-left") +
-				this[kEdge](vertical ? "padding-bottom" : "padding-right");
-			const border = vertical ? rect.height : rect.width;
-			// `box-sizing: border-box` measures the border box itself.
-			const content =
-				this.getPropertyValue("box-sizing") === "border-box" ?
-					border :
-					border - edges;
-			return usedLength(Math.max(0, content));
-		}
-
-		// An `auto` margin is whatever space the box was given: the distance
-		// between its border box and its containing block's content edge.
-		if (computed === "auto" && property.startsWith("margin-")) {
-			return usedLength(this[kAutoMargin](property, rect));
-		}
-
-		// Every other used length is already absolute in this engine's own
-		// unit, so the computed value carries it; only a percentage still has
-		// to be resolved, against the containing block's width.
-		if (computed.endsWith("%")) {
-			const basis = this[kContainingWidth]();
-			if (basis === null) {
-				return computed;
-			}
-			return usedLength((parseFloat(computed) / 100) * basis);
-		}
-		return computed || "0px";
-	}
-
-	/**
-	 * A positioned box's inset, as used.
-	 *
-	 * A declared inset resolves where it stands -- a percentage against the
-	 * containing block, everything else as written -- which is also what CSSOM
-	 * asks for when the four insets over-constrain the box. `auto` is the one
-	 * that has to be measured: it is whatever distance the box ended up at.
-	 */
-	[kUsedInset](
-		property: string,
-		computed: string,
-		rect: DOMRect,
-		position: string,
-	): string {
-		const block = this[kContainingBlockBox](position);
-		if (!block) {
-			return computed;
-		}
-		const vertical = property === "top" || property === "bottom";
-		const basis = vertical ? block.height : block.width;
-		const own = insetLength(computed, basis);
-		if (own !== null) {
-			return usedLength(own);
-		}
-		// A sticky box keeps its `auto`: it names an edge that constrains
-		// nothing, not a distance.
-		if (position === "sticky") {
-			return computed;
-		}
-
-		const opposite = OPPOSITE_INSET[property];
-		const other = insetLength(this.computedValueOf(opposite), basis);
-		// A relatively positioned box is offset from where it already was, so
-		// an `auto` inset is the negative of its opposite -- and zero when both
-		// are auto, which moves the box nowhere.
-		if (position === "relative") {
-			return usedLength(other === null ? 0 : -other);
-		}
-
-		// Out of flow: the box hangs in its containing block, so the used
-		// inset is the distance from that block's edge to the box's margin
-		// edge -- the far side of the box when the opposite inset placed it,
-		// and its static position when neither did.
-		const start = vertical ? "margin-top" : "margin-left";
-		const end = vertical ? "margin-bottom" : "margin-right";
-		if (other !== null) {
-			const size =
-				(vertical ? rect.height : rect.width) +
-				this[kEdge](start) +
-				this[kEdge](end);
-			return usedLength(basis - other - size);
-		}
-		switch (property) {
-			case "top":
-				return usedLength(rect.y - this[kEdge](start) - block.y);
-			case "left":
-				return usedLength(rect.x - this[kEdge](start) - block.x);
-			case "bottom":
-				return usedLength(
-					block.y + block.height - (rect.y + rect.height + this[kEdge](end)),
-				);
-			default:
-				return usedLength(
-					block.x + block.width - (rect.x + rect.width + this[kEdge](end)),
-				);
-		}
-	}
-
-	/**
-	 * The box this element's insets are measured against: the padding box of
-	 * the containing block an out-of-flow box hangs from, the scrollport a
-	 * sticky box is constrained by, and otherwise the content box of the box
-	 * this one flows in.
-	 */
-	[kContainingBlockBox](position: string): DOMRect | null {
-		if (position === "fixed") {
-			return this[kViewportBox]();
-		}
-		if (position === "absolute") {
-			for (
-				let ancestor = flatParentElement<Element>(this[kElement]);
-				ancestor;
-				ancestor = flatParentElement<Element>(ancestor)
-			) {
-				const ancestorPosition =
-					computedStyleOf(ancestor).computedValueOf("position");
-				if (ancestorPosition && ancestorPosition !== "static") {
-					return this[kBoxOf](ancestor, false);
-				}
-			}
-			return this[kViewportBox]();
-		}
-		if (position === "sticky") {
-			for (
-				let ancestor = flatParentElement<Element>(this[kElement]);
-				ancestor;
-				ancestor = flatParentElement<Element>(ancestor)
-			) {
-				const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
-				if (overflow && overflow !== "visible") {
-					return this[kBoxOf](ancestor, true);
-				}
-			}
-		}
-		const parent = flatParentElement<Element>(this[kElement]);
-		return parent ? this[kBoxOf](parent, true) : this[kViewportBox]();
-	}
-
-	/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
-	[kBoxOf](element: Element, content: boolean): DOMRect | null {
-		const rect = this[kManager]!.usedRect(element);
-		if (!rect) {
-			return null;
-		}
-		const style = computedStyleOf(element);
-		const edge = (name: string): number =>
-			parseFloat(style.computedValueOf(name)) || 0;
-		let top = edge("border-top-width");
-		let left = edge("border-left-width");
-		let bottom = edge("border-bottom-width");
-		let right = edge("border-right-width");
-		if (content) {
-			top += edge("padding-top");
-			left += edge("padding-left");
-			bottom += edge("padding-bottom");
-			right += edge("padding-right");
-		}
-		return new (rect.constructor as typeof DOMRect)(
-			rect.x + left,
-			rect.y + top,
-			rect.width - left - right,
-			rect.height - top - bottom,
-		);
-	}
-
-	/** The initial containing block: the grid itself. */
-	[kViewportBox](): DOMRect | null {
-		const viewport = this[kManager]!.viewportSize();
-		if (!viewport) {
-			return null;
-		}
-		const rect = this[kManager]!.usedRect(this[kElement]);
-		if (!rect) {
-			return null;
-		}
-		return new (rect.constructor as typeof DOMRect)(
-			0,
-			0,
-			viewport.width,
-			viewport.height,
-		);
-	}
-
-	/**
-	 * `min-width: auto` and `min-height: auto` as resolved.
-	 *
-	 * The keyword means "the box's automatic minimum size", which only a flex
-	 * or grid item, or a box with an aspect ratio, actually has; anywhere else
-	 * -- and for a box that was never generated -- it is zero, which is the
-	 * value CSSOM reports.
-	 */
-	[kResolvedMinSize](computed: string): string {
-		if (computed !== "auto") {
-			return computed;
-		}
-		// A box that was never generated has no automatic minimum, whatever
-		// else its style says.
-		for (
-			let element: Element | null = this[kElement];
-			element;
-			element = flatParentElement<Element>(element)
-		) {
-			if (computedStyleOf(element).computedValueOf("display") === "none") {
-				return "0px";
-			}
-		}
-		if (this.computedValueOf("aspect-ratio") !== "auto") {
-			return "auto";
-		}
-		const parent = flatParentElement<Element>(this[kElement]);
-		const display = parent ?
-				computedStyleOf(parent).computedValueOf("display") :
-			"";
-		return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
-	}
-
-	/** One edge length in cells, for the arithmetic above. */
-	[kEdge](property: string): number {
-		return parseFloat(this.getPropertyValue(property)) || 0;
-	}
-
-	/** The space an `auto` margin actually took, measured off the two boxes. */
-	[kAutoMargin](property: string, rect: DOMRect): number {
-		const parent = flatParentElement<Element>(this[kElement]);
-		const parentRect = parent ? this[kManager]!.usedRect(parent) : null;
-		if (!parent || !parentRect) {
-			return 0;
-		}
-		const parentStyle = computedStyleOf(parent);
-		const edge = (name: string): number =>
-			parseFloat(parentStyle.computedValueOf(name)) || 0;
-		const left =
-			parentRect.x + edge("border-left-width") + edge("padding-left");
-		const top = parentRect.y + edge("border-top-width") + edge("padding-top");
-		const right =
-			parentRect.x +
-			parentRect.width -
-			edge("border-right-width") -
-			edge("padding-right");
-		const bottom =
-			parentRect.y +
-			parentRect.height -
-			edge("border-bottom-width") -
-			edge("padding-bottom");
-		switch (property) {
-			case "margin-left":
-				return Math.max(0, rect.x - left);
-			case "margin-top":
-				return Math.max(0, rect.y - top);
-			case "margin-right":
-				return Math.max(0, right - (rect.x + rect.width));
-			default:
-				return Math.max(0, bottom - (rect.y + rect.height));
-		}
-	}
-
-	/** The width a percentage on this element resolves against. */
-	[kContainingWidth](): number | null {
-		const parent = flatParentElement<Element>(this[kElement]);
-		if (!parent) {
-			return null;
-		}
-		const rect = this[kManager]!.usedRect(parent);
-		return rect ? rect.width : null;
 	}
 
 	/** Mark this declaration's values as belonging to a cascade that has moved on. */
@@ -6707,284 +6306,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 	}
 
-	/**
-	 * The element's inline declarations, expanded to longhands.
-	 *
-	 * The store behind `element.style` is this engine's own CSSOM, which keeps
-	 * a declaration as authored and hands the cascade the expanded block --
-	 * so a shorthand's `!important` covers every longhand it declares.
-	 */
-	[kInlineDeclarations](): DeclarationBlock {
-		const style = (this[kElement] as HTMLElement).style;
-		return style instanceof CSSStyleDeclaration ?
-				style.declarationBlock() :
-			EMPTY_DECLARATIONS;
-	}
-
-	/** This element's flat-tree parent's computed value for `property`, or null at the root. */
-	[kResolveFromParent](property: string): string | null {
-		const parent = flatParentElement<Element>(this[kElement]);
-		if (!parent) {
-			return null;
-		}
-		return computedStyleOf(parent).computedValueOf(property) || null;
-	}
-
-	/**
-	 * Resolve `var(--name[, fallback])` references in a declared value.
-	 *
-	 * Custom properties always inherit (they aren't subject to the fixed
-	 * INHERITED_PROPERTIES list), so lookup walks the element's own inline style
-	 * and matching rules first, then the parent chain via getComputedStyle --
-	 * which recurses through this same substitution at each ancestor, so a
-	 * custom property whose own value references another var() resolves too.
-	 * A depth guard stops a property that (invalidly) refers to itself.
-	 */
-	[kSubstituteVar](value: string, depth = 0): string {
-		if (depth > 8 || !value.includes("var(")) {
-			return value;
-		}
-
-		let out = "";
-		let i = 0;
-		while (i < value.length) {
-			const start = value.indexOf("var(", i);
-			if (start === -1) {
-				out += value.slice(i);
-				break;
-			}
-			out += value.slice(i, start);
-
-			let parenDepth = 1;
-			let j = start + 4;
-			for (; j < value.length && parenDepth > 0; j++) {
-				if (value[j] === "(") {
-					parenDepth++;
-				} else if (value[j] === ")") {
-					parenDepth--;
-				}
-			}
-			const inner = value.slice(start + 4, j - 1);
-			const commaIndex = inner.indexOf(",");
-			const name = (
-				commaIndex === -1 ? inner : inner.slice(0, commaIndex)
-			).trim();
-			const fallback =
-				commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
-
-			const resolved = this[kResolveCustomProperty](name);
-			if (resolved !== null) {
-				out += this[kSubstituteVar](resolved, depth + 1);
-			} else if (fallback !== undefined) {
-				out += this[kSubstituteVar](fallback, depth + 1);
-			}
-			// Neither a value nor a fallback: the guaranteed-invalid value -- omit,
-			// which approximates the property's own initial/inherited fallback.
-
-			i = j;
-		}
-		return out;
-	}
-
-	[kResolveCustomProperty](name: string): string | null {
-		// A custom property is just an ordinary (always-inherited) cascade lookup
-		// -- kResolvePropertyValueRaw's step 4 already walks ancestors for it.
-		return this[kResolvePropertyValueRaw](name) || null;
-	}
-
-	/**
-	 * Resolve property value applying CSS cascade: inline styles > CSS rules >
-	 * defaults, with `!important` promoted above all of that (an important
-	 * stylesheet rule beats even a non-important inline style, per spec), and
-	 * `var()` references substituted in whatever wins.
-	 */
-	[kResolvePropertyValue](property: string): string {
-		const raw = this[kResolvePropertyValueRaw](property);
-		// A custom property holds the tokens it was given; substituting it
-		// into a property of its own grammar re-serializes them in that
-		// property's spelling.
-		const value = raw ?
-			property.startsWith("--") ?
-					this[kSubstituteVar](raw) :
-					serializeCSSValue(this[kSubstituteVar](raw), property) :
-			raw;
-		// `currentcolor` is the element's own color, which is what a resolved
-		// value says; on `color` itself it means the parent's.
-		if (
-			value.toLowerCase() === "currentcolor" &&
-			COLOR_PROPERTIES.has(property)
-		) {
-			// The COMPUTED color, on the engine's own read path: this is the
-			// cascade resolving a value, and the author path flushes -- which
-			// drains mutations and lays the document out, from inside the
-			// resolution of a style that layout is waiting on. `color` has no
-			// used value to wait for, so the two answer alike.
-			return property === "color" ?
-					(this[kResolveFromParent]("color") ?? "") :
-					this.computedValueOf("color");
-		}
-		return value;
-	}
-
-	[kResolvePropertyValueRaw](property: string): string {
-		// A physical property and the flow-relative properties that map to it
-		// are ONE cascade slot (css-logical-1 §2.1): every name in the slot
-		// computes to the value of the declaration that comes last in the
-		// cascade, whichever name that declaration used. Which flow-relative
-		// name maps here depends on the element's `direction`, so the slot's
-		// names are widened to both inline edges and narrowed by direction
-		// only once a block actually declares one of them.
-		const logical = PHYSICAL_TO_LOGICAL.get(property);
-		const names = logical ? [property, ...logical] : [property];
-		let direction: string | null = null;
-		const mapsHere = (name: string): boolean =>
-			name === property ||
-			physicalProperty(
-				name,
-				(direction ??= this.computedValueOf("direction")),
-			) === property;
-
-		const inline = this[kInlineDeclarations]();
-		const inlineName = declaredName(inline, names, false, mapsHere);
-		const inlineValue = inlineName ?
-				inline.declarations[inlineName].trim() :
-			undefined;
-		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
-		const inlineImportantName = declaredName(inline, names, true, mapsHere);
-		const inlineImportantValue = inlineImportantName ?
-				inline.declarations[inlineImportantName].trim() :
-			undefined;
-		const inlineImportant =
-			!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
-
-		// `inherit` skips the rest of the cascade and goes straight to the parent's
-		// resolved value, regardless of whether this property normally inherits.
-		if (inlineImportant && inlineImportantValue === "inherit") {
-			return this[kResolveFromParent](property) ?? "";
-		}
-		if (!inlineImportant && inlineUsable && inlineValue === "inherit") {
-			return this[kResolveFromParent](property) ?? "";
-		}
-
-		// 1 & 2. Inline style and stylesheet rules, with an !important tier above
-		// the normal cascade. #cssRules is pre-sorted by specificity/source order,
-		// so within each tier the last match wins.
-		let ruleValue: string | null = null;
-		let importantRuleValue: string | null = null;
-		// `!important` reverses the layer order (css-cascade-5 §6.4.4): the
-		// EARLIEST layer wins, and unlayered declarations -- which win the
-		// normal cascade -- lose to every layer. The rules arrive with the
-		// earliest layer first, so the first layer to declare the property
-		// keeps it, and later ones only tie it within the same layer.
-		let importantOrigin = false;
-		let importantLayer = 0;
-		for (const rule of this[kCSSRules]) {
-			const name = declaredName(rule, names, false, mapsHere);
-			if (name !== null) {
-				ruleValue = rule.declarations[name];
-			}
-			const importantName = declaredName(rule, names, true, mapsHere);
-			if (
-				importantName !== null &&
-				(importantRuleValue === null ||
-					Boolean(rule.uaOrigin) !== importantOrigin ||
-					rule.layerRank === importantLayer)
-			) {
-				importantRuleValue = rule.declarations[importantName];
-				importantOrigin = Boolean(rule.uaOrigin);
-				importantLayer = rule.layerRank;
-			}
-		}
-
-		// A CSS-wide keyword a rule declares is not a value: `inherit` takes the
-		// parent's, and the rest send resolution on to the defaults below, as
-		// though the declaration were not there.
-		const declaredByRule = (value: string): string | null => {
-			if (value === "inherit") {
-				return this[kResolveFromParent](property) ?? "";
-			}
-			return INITIAL_KEYWORDS.has(value) ? null : value;
-		};
-
-		if (inlineImportant) {
-			return inlineImportantValue!;
-		}
-		if (importantRuleValue) {
-			const resolved = declaredByRule(importantRuleValue);
-			if (resolved !== null) {
-				return resolved;
-			}
-		} else if (inlineUsable) {
-			return inlineValue!;
-		} else if (ruleValue) {
-			const resolved = declaredByRule(ruleValue);
-			if (resolved !== null) {
-				return resolved;
-			}
-		}
-
-		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
-		// These take priority over inherited values
-		const tagName = this[kElement].tagName.toLowerCase();
-
-		// A list's marker gutter is sized to its widest marker rather than taken
-		// from the static table, so it has to be resolved before it.
-		if (
-			property === "padding-left" &&
-			(tagName === "ul" || tagName === "ol") &&
-			this[kElement].ownerDocument?.defaultView
-		) {
-			return `${getListGutterWidth(this[kElement])}ch`;
-		}
-
-		// The UA default marker type depends on nesting depth, exactly as a browser's
-		// `ul ul { list-style-type: circle }` rules do. Resolving it here rather than
-		// inheriting means an author value on an outer list does not leak into a
-		// nested one, while an author rule that matches the nested list still wins:
-		// it was already returned in step 2.
-		if (
-			property === "list-style-type" &&
-			(tagName === "ul" || tagName === "ol")
-		) {
-			if (tagName === "ol") {
-				return "decimal";
-			}
-			const bullets = ["disc", "circle", "square"];
-			const depth = listNestingDepth(this[kElement]);
-			return bullets[Math.min(depth, bullets.length - 1)];
-		}
-
-		const elementDefaults = getElementDefaults(this[kElement]);
-		if (elementDefaults && elementDefaults[property]) {
-			return elementDefaults[property];
-		}
-
-		// 4. For inherited properties, walk up the DOM using getComputedStyle
-		// which correctly resolves CSS rules on parent elements. Custom properties
-		// (--x) always inherit -- there's no fixed list for them to be in.
-		if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
-			const window = this[kElement].ownerDocument?.defaultView;
-			if (window) {
-				// Flat-tree parents: inheritance crosses the shadow boundary
-				// (host -> shadow child) and reaches slotted content through
-				// its slot's chain, exactly as in a browser.
-				for (
-					let parent = flatParentElement<Element>(this[kElement]);
-					parent !== null;
-					parent = flatParentElement<Element>(parent)
-				) {
-					const parentValue = computedStyleOf(parent).computedValueOf(property);
-					if (parentValue) {
-						return parentValue;
-					}
-				}
-			}
-		}
-
-		// 5. Fallback to universal defaults and CSS spec defaults
-		return getInitialStyle(this[kElement], property);
-	}
-
 	// Resolution is fully lazy: construction populates nothing, and each
 	// property resolves on first read, then answers from the memo. Most
 	// elements are only ever asked a handful of properties -- the
@@ -7000,12 +6321,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same answer.
-		property = this[kPhysicalOf](property);
+		property = physicalOf(this, property);
 		if (this[kManager] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property);
 		}
 		if (this[kManager] && MIN_SIZE_PROPERTIES.has(property)) {
-			return this[kResolvedMinSize](this.computedValueOf(property));
+			return resolvedMinSize(this, this.computedValueOf(property));
 		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.computedValueOf(property);
@@ -7013,7 +6334,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(property);
 		if (longhands) {
-			return this[kShorthand](property, longhands, (longhand) =>
+			return shorthand(this, property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
 			);
 		}
@@ -7042,17 +6363,17 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	override item(index: number): string {
 		return (
 			CSS_LONGHANDS[index] ??
-			this[kCustomNames]()[index - CSS_LONGHANDS.length] ??
+			customNames(this)[index - CSS_LONGHANDS.length] ??
 			""
 		);
 	}
 
 	override get length(): number {
-		return CSS_LONGHANDS.length + this[kCustomNames]().length;
+		return CSS_LONGHANDS.length + customNames(this).length;
 	}
 
 	override [Symbol.iterator](): IterableIterator<string> {
-		return [...CSS_LONGHANDS, ...this[kCustomNames]()][Symbol.iterator]();
+		return [...CSS_LONGHANDS, ...customNames(this)][Symbol.iterator]();
 	}
 
 	/** The names of the custom properties declared for this element. */
@@ -7065,7 +6386,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 				}
 			}
 		}
-		for (const name of Object.keys(this[kInlineDeclarations]().declarations)) {
+		for (const name of Object.keys(inlineDeclarations(this).declarations)) {
 			if (name.startsWith("--") && !names.includes(name)) {
 				names.push(name);
 			}
@@ -7074,33 +6395,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	declare [kCustom]: string[] | null;
-
-	/**
-	 * The custom properties in effect here: this element's own, and every one
-	 * an ancestor declared -- a custom property inherits, so it is part of
-	 * this element's computed style whichever element declared it.
-	 */
-	[kCustomNames](): string[] {
-		if (this[kStale] || this[kEpoch].value !== this[kSeenEpoch]) {
-			this[kRefresh]();
-		}
-		if (this[kCustom]) {
-			return this[kCustom];
-		}
-		const names = new Set<string>();
-		for (
-			let element: Element | null = this[kElement];
-			element;
-			element = flatParentElement<Element>(element)
-		) {
-			const declaration = this[kManager]?.declarationFor(element);
-			for (const name of declaration?.declaredCustomProperties() ?? []) {
-				names.add(name);
-			}
-		}
-		this[kCustom] = [...names];
-		return this[kCustom];
-	}
 
 	override get cssText(): string {
 		return "";
@@ -7113,6 +6407,770 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	override get parentRule(): CSSRule | null {
 		return null;
 	}
+}
+
+/**
+ * One property's computed value: the cascade's declaration, interned, and
+ * absolutized against this element when the interned entry says only an
+ * element can answer it. The memo both callers write into is the
+ * per-element, per-generation cache that absolutization is paid into once.
+ */
+function computed(
+	self: ComputedStyleDeclaration,
+	property: string,
+): string {
+	const entry = computedEntry(
+		property,
+		resolvePropertyValue(self, property),
+	);
+	if (!entry.contextual) {
+		return entry.value;
+	}
+	const absolute = absolutizeLengths(
+		entry.value,
+		lengthContext(self, property),
+	);
+	// Two radii that differ as written -- `1ch 1px` -- can measure the same
+	// cell, and a corner whose radii agree states one of them.
+	return RADIUS_LONGHANDS.has(property) ? collapseRadius(absolute) : absolute;
+}
+
+/**
+ * What a relative length on this element is worth.
+ *
+ * `font-size` measures against the PARENT's font size, so it is the one
+ * property whose own computed value is not in its own context; every other
+ * property measures against this element's font size, which therefore
+ * computes first.
+ */
+function lengthContext(
+	self: ComputedStyleDeclaration,
+	property: string,
+): LengthContext {
+	const own = property === "font-size";
+	const parent = own ? flatParentElement<Element>(self[kElement]) : null;
+	const font = own ?
+		parent ?
+				fontSizeOf(computedStyleOf(parent)) :
+			INITIAL_FONT_SIZE :
+			fontSizeOf(self);
+	const root = rootFontSize(self, own);
+	const viewport = self[kManager]?.viewportSize();
+	return {
+		font,
+		root,
+		viewportWidth: viewport ? viewport.width : 0,
+		viewportHeight: viewport ? viewport.height : 0,
+		// A percentage is font-relative on exactly two properties: on
+		// `font-size` it is a share of the parent's, on `line-height` of
+		// this element's own. Everywhere else it stays a percentage until
+		// something uses it.
+		percent: FONT_RELATIVE_PERCENTAGES.has(property) ? font / 100 : null,
+	};
+}
+
+/** The font size `rem` measures against: the root element's. */
+function rootFontSize(
+	self: ComputedStyleDeclaration,
+	ownFontSize: boolean,
+): number {
+	const root = self[kElement].ownerDocument?.documentElement;
+	// `rem` in the root's own font-size is the initial value, not the
+	// value being computed.
+	if (!root || (ownFontSize && root === self[kElement])) {
+		return INITIAL_FONT_SIZE;
+	}
+	return root === self[kElement] ?
+			fontSizeOf(self) :
+			fontSizeOf(computedStyleOf(root));
+}
+
+/**
+ * The name a longhand computes under: itself, or -- for a flow-relative
+ * longhand -- the physical longhand this element's `direction` maps it to.
+ */
+function physicalOf(
+	self: ComputedStyleDeclaration,
+	property: string,
+): string {
+	if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) {
+		return property;
+	}
+	return (
+		physicalProperty(property, self.computedValueOf("direction")) ?? property
+	);
+}
+
+/**
+ * A shorthand answers as its longhands, each in the spelling `read` gives
+ * it, collapsed: `margin: 10px 10px 10px 10px` is "10px". The reader is the
+ * caller's, because the computed and resolved value paths ask their
+ * longhands different questions -- and their answers must not meet, which
+ * is why only the computed one is memoized.
+ */
+function shorthand(
+	self: ComputedStyleDeclaration,
+	property: string,
+	longhands: readonly string[],
+	read: (longhand: string) => string,
+): string {
+	return serializeShorthandValue(
+		property,
+		longhands,
+		(longhand) => read(longhand) || CSS_INITIAL_VALUES[longhand] || "",
+	);
+}
+
+function measure(
+	self: ComputedStyleDeclaration,
+	property: string,
+	computed: string,
+): string {
+	// A border with no style draws nothing and takes no space, whatever
+	// width it declares.
+	if (property.startsWith("border-") && property.endsWith("-width")) {
+		const style = self.computedValueOf(
+			`${property.slice(0, -"-width".length)}-style`,
+		);
+		if (!style || style === "none" || style === "hidden") {
+			return "0px";
+		}
+	}
+	const inset = INSET_PROPERTIES.has(property);
+	// An inset only applies to a positioned box; on a static one it stays
+	// as declared.
+	const position = inset ? self.getPropertyValue("position") : "";
+	if (inset && position === "static") {
+		return computed;
+	}
+
+	const rect = self[kManager]!.usedRect(self[kElement]);
+	// No box -- display:none, or a tree layout never reached -- so the
+	// computed value is the answer, exactly as CSSOM says.
+	if (!rect) {
+		return computed;
+	}
+
+	if (inset) {
+		return usedInset(self, property, computed, rect, position);
+	}
+
+	if (property === "width" || property === "height") {
+		const vertical = property === "height";
+		const edges =
+			edge(self, vertical ? "border-top-width" : "border-left-width") +
+			edge(self, vertical ? "border-bottom-width" : "border-right-width") +
+			edge(self, vertical ? "padding-top" : "padding-left") +
+			edge(self, vertical ? "padding-bottom" : "padding-right");
+		const border = vertical ? rect.height : rect.width;
+		// `box-sizing: border-box` measures the border box itself.
+		const content =
+			self.getPropertyValue("box-sizing") === "border-box" ?
+				border :
+				border - edges;
+		return usedLength(Math.max(0, content));
+	}
+
+	// An `auto` margin is whatever space the box was given: the distance
+	// between its border box and its containing block's content edge.
+	if (computed === "auto" && property.startsWith("margin-")) {
+		return usedLength(autoMargin(self, property, rect));
+	}
+
+	// Every other used length is already absolute in this engine's own
+	// unit, so the computed value carries it; only a percentage still has
+	// to be resolved, against the containing block's width.
+	if (computed.endsWith("%")) {
+		const basis = containingWidth(self);
+		if (basis === null) {
+			return computed;
+		}
+		return usedLength((parseFloat(computed) / 100) * basis);
+	}
+	return computed || "0px";
+}
+
+/**
+ * A positioned box's inset, as used.
+ *
+ * A declared inset resolves where it stands -- a percentage against the
+ * containing block, everything else as written -- which is also what CSSOM
+ * asks for when the four insets over-constrain the box. `auto` is the one
+ * that has to be measured: it is whatever distance the box ended up at.
+ */
+function usedInset(
+	self: ComputedStyleDeclaration,
+	property: string,
+	computed: string,
+	rect: DOMRect,
+	position: string,
+): string {
+	const block = containingBlockBox(self, position);
+	if (!block) {
+		return computed;
+	}
+	const vertical = property === "top" || property === "bottom";
+	const basis = vertical ? block.height : block.width;
+	const own = insetLength(computed, basis);
+	if (own !== null) {
+		return usedLength(own);
+	}
+	// A sticky box keeps its `auto`: it names an edge that constrains
+	// nothing, not a distance.
+	if (position === "sticky") {
+		return computed;
+	}
+
+	const opposite = OPPOSITE_INSET[property];
+	const other = insetLength(self.computedValueOf(opposite), basis);
+	// A relatively positioned box is offset from where it already was, so
+	// an `auto` inset is the negative of its opposite -- and zero when both
+	// are auto, which moves the box nowhere.
+	if (position === "relative") {
+		return usedLength(other === null ? 0 : -other);
+	}
+
+	// Out of flow: the box hangs in its containing block, so the used
+	// inset is the distance from that block's edge to the box's margin
+	// edge -- the far side of the box when the opposite inset placed it,
+	// and its static position when neither did.
+	const start = vertical ? "margin-top" : "margin-left";
+	const end = vertical ? "margin-bottom" : "margin-right";
+	if (other !== null) {
+		const size =
+			(vertical ? rect.height : rect.width) +
+			edge(self, start) +
+			edge(self, end);
+		return usedLength(basis - other - size);
+	}
+	switch (property) {
+		case "top":
+			return usedLength(rect.y - edge(self, start) - block.y);
+		case "left":
+			return usedLength(rect.x - edge(self, start) - block.x);
+		case "bottom":
+			return usedLength(
+				block.y + block.height - (rect.y + rect.height + edge(self, end)),
+			);
+		default:
+			return usedLength(
+				block.x + block.width - (rect.x + rect.width + edge(self, end)),
+			);
+	}
+}
+
+/**
+ * The box this element's insets are measured against: the padding box of
+ * the containing block an out-of-flow box hangs from, the scrollport a
+ * sticky box is constrained by, and otherwise the content box of the box
+ * this one flows in.
+ */
+function containingBlockBox(
+	self: ComputedStyleDeclaration,
+	position: string,
+): DOMRect | null {
+	if (position === "fixed") {
+		return viewportBox(self);
+	}
+	if (position === "absolute") {
+		for (
+			let ancestor = flatParentElement<Element>(self[kElement]);
+			ancestor;
+			ancestor = flatParentElement<Element>(ancestor)
+		) {
+			const ancestorPosition =
+				computedStyleOf(ancestor).computedValueOf("position");
+			if (ancestorPosition && ancestorPosition !== "static") {
+				return boxOf(self, ancestor, false);
+			}
+		}
+		return viewportBox(self);
+	}
+	if (position === "sticky") {
+		for (
+			let ancestor = flatParentElement<Element>(self[kElement]);
+			ancestor;
+			ancestor = flatParentElement<Element>(ancestor)
+		) {
+			const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
+			if (overflow && overflow !== "visible") {
+				return boxOf(self, ancestor, true);
+			}
+		}
+	}
+	const parent = flatParentElement<Element>(self[kElement]);
+	return parent ? boxOf(self, parent, true) : viewportBox(self);
+}
+
+/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
+function boxOf(
+	self: ComputedStyleDeclaration,
+	element: Element,
+	content: boolean,
+): DOMRect | null {
+	const rect = self[kManager]!.usedRect(element);
+	if (!rect) {
+		return null;
+	}
+	const style = computedStyleOf(element);
+	const edge = (name: string): number =>
+		parseFloat(style.computedValueOf(name)) || 0;
+	let top = edge("border-top-width");
+	let left = edge("border-left-width");
+	let bottom = edge("border-bottom-width");
+	let right = edge("border-right-width");
+	if (content) {
+		top += edge("padding-top");
+		left += edge("padding-left");
+		bottom += edge("padding-bottom");
+		right += edge("padding-right");
+	}
+	return new (rect.constructor as typeof DOMRect)(
+		rect.x + left,
+		rect.y + top,
+		rect.width - left - right,
+		rect.height - top - bottom,
+	);
+}
+
+/** The initial containing block: the grid itself. */
+function viewportBox(
+	self: ComputedStyleDeclaration,
+): DOMRect | null {
+	const viewport = self[kManager]!.viewportSize();
+	if (!viewport) {
+		return null;
+	}
+	const rect = self[kManager]!.usedRect(self[kElement]);
+	if (!rect) {
+		return null;
+	}
+	return new (rect.constructor as typeof DOMRect)(
+		0,
+		0,
+		viewport.width,
+		viewport.height,
+	);
+}
+
+/**
+ * `min-width: auto` and `min-height: auto` as resolved.
+ *
+ * The keyword means "the box's automatic minimum size", which only a flex
+ * or grid item, or a box with an aspect ratio, actually has; anywhere else
+ * -- and for a box that was never generated -- it is zero, which is the
+ * value CSSOM reports.
+ */
+function resolvedMinSize(
+	self: ComputedStyleDeclaration,
+	computed: string,
+): string {
+	if (computed !== "auto") {
+		return computed;
+	}
+	// A box that was never generated has no automatic minimum, whatever
+	// else its style says.
+	for (
+		let element: Element | null = self[kElement];
+		element;
+		element = flatParentElement<Element>(element)
+	) {
+		if (computedStyleOf(element).computedValueOf("display") === "none") {
+			return "0px";
+		}
+	}
+	if (self.computedValueOf("aspect-ratio") !== "auto") {
+		return "auto";
+	}
+	const parent = flatParentElement<Element>(self[kElement]);
+	const display = parent ?
+			computedStyleOf(parent).computedValueOf("display") :
+		"";
+	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
+}
+
+/** One edge length in cells, for the arithmetic above. */
+function edge(
+	self: ComputedStyleDeclaration,
+	property: string,
+): number {
+	return parseFloat(self.getPropertyValue(property)) || 0;
+}
+
+/** The space an `auto` margin actually took, measured off the two boxes. */
+function autoMargin(
+	self: ComputedStyleDeclaration,
+	property: string,
+	rect: DOMRect,
+): number {
+	const parent = flatParentElement<Element>(self[kElement]);
+	const parentRect = parent ? self[kManager]!.usedRect(parent) : null;
+	if (!parent || !parentRect) {
+		return 0;
+	}
+	const parentStyle = computedStyleOf(parent);
+	const edge = (name: string): number =>
+		parseFloat(parentStyle.computedValueOf(name)) || 0;
+	const left =
+		parentRect.x + edge("border-left-width") + edge("padding-left");
+	const top = parentRect.y + edge("border-top-width") + edge("padding-top");
+	const right =
+		parentRect.x +
+		parentRect.width -
+		edge("border-right-width") -
+		edge("padding-right");
+	const bottom =
+		parentRect.y +
+		parentRect.height -
+		edge("border-bottom-width") -
+		edge("padding-bottom");
+	switch (property) {
+		case "margin-left":
+			return Math.max(0, rect.x - left);
+		case "margin-top":
+			return Math.max(0, rect.y - top);
+		case "margin-right":
+			return Math.max(0, right - (rect.x + rect.width));
+		default:
+			return Math.max(0, bottom - (rect.y + rect.height));
+	}
+}
+
+/** The width a percentage on this element resolves against. */
+function containingWidth(
+	self: ComputedStyleDeclaration,
+): number | null {
+	const parent = flatParentElement<Element>(self[kElement]);
+	if (!parent) {
+		return null;
+	}
+	const rect = self[kManager]!.usedRect(parent);
+	return rect ? rect.width : null;
+}
+
+/**
+ * The element's inline declarations, expanded to longhands.
+ *
+ * The store behind `element.style` is this engine's own CSSOM, which keeps
+ * a declaration as authored and hands the cascade the expanded block --
+ * so a shorthand's `!important` covers every longhand it declares.
+ */
+function inlineDeclarations(
+	self: ComputedStyleDeclaration,
+): DeclarationBlock {
+	const style = (self[kElement] as HTMLElement).style;
+	return style instanceof CSSStyleDeclaration ?
+			style.declarationBlock() :
+		EMPTY_DECLARATIONS;
+}
+
+/** This element's flat-tree parent's computed value for `property`, or null at the root. */
+function resolveFromParent(
+	self: ComputedStyleDeclaration,
+	property: string,
+): string | null {
+	const parent = flatParentElement<Element>(self[kElement]);
+	if (!parent) {
+		return null;
+	}
+	return computedStyleOf(parent).computedValueOf(property) || null;
+}
+
+/**
+ * Resolve `var(--name[, fallback])` references in a declared value.
+ *
+ * Custom properties always inherit (they aren't subject to the fixed
+ * INHERITED_PROPERTIES list), so lookup walks the element's own inline style
+ * and matching rules first, then the parent chain via getComputedStyle --
+ * which recurses through this same substitution at each ancestor, so a
+ * custom property whose own value references another var() resolves too.
+ * A depth guard stops a property that (invalidly) refers to itself.
+ */
+function substituteVar(
+	self: ComputedStyleDeclaration,
+	value: string,
+	depth = 0,
+): string {
+	if (depth > 8 || !value.includes("var(")) {
+		return value;
+	}
+
+	let out = "";
+	let i = 0;
+	while (i < value.length) {
+		const start = value.indexOf("var(", i);
+		if (start === -1) {
+			out += value.slice(i);
+			break;
+		}
+		out += value.slice(i, start);
+
+		let parenDepth = 1;
+		let j = start + 4;
+		for (; j < value.length && parenDepth > 0; j++) {
+			if (value[j] === "(") {
+				parenDepth++;
+			} else if (value[j] === ")") {
+				parenDepth--;
+			}
+		}
+		const inner = value.slice(start + 4, j - 1);
+		const commaIndex = inner.indexOf(",");
+		const name = (
+			commaIndex === -1 ? inner : inner.slice(0, commaIndex)
+		).trim();
+		const fallback =
+			commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
+
+		const resolved = resolveCustomProperty(self, name);
+		if (resolved !== null) {
+			out += substituteVar(self, resolved, depth + 1);
+		} else if (fallback !== undefined) {
+			out += substituteVar(self, fallback, depth + 1);
+		}
+		// Neither a value nor a fallback: the guaranteed-invalid value -- omit,
+		// which approximates the property's own initial/inherited fallback.
+
+		i = j;
+	}
+	return out;
+}
+
+function resolveCustomProperty(
+	self: ComputedStyleDeclaration,
+	name: string,
+): string | null {
+	// A custom property is just an ordinary (always-inherited) cascade lookup
+	// -- kResolvePropertyValueRaw's step 4 already walks ancestors for it.
+	return resolvePropertyValueRaw(self, name) || null;
+}
+
+/**
+ * Resolve property value applying CSS cascade: inline styles > CSS rules >
+ * defaults, with `!important` promoted above all of that (an important
+ * stylesheet rule beats even a non-important inline style, per spec), and
+ * `var()` references substituted in whatever wins.
+ */
+function resolvePropertyValue(
+	self: ComputedStyleDeclaration,
+	property: string,
+): string {
+	const raw = resolvePropertyValueRaw(self, property);
+	// A custom property holds the tokens it was given; substituting it
+	// into a property of its own grammar re-serializes them in that
+	// property's spelling.
+	const value = raw ?
+		property.startsWith("--") ?
+				substituteVar(self, raw) :
+				serializeCSSValue(substituteVar(self, raw), property) :
+		raw;
+	// `currentcolor` is the element's own color, which is what a resolved
+	// value says; on `color` itself it means the parent's.
+	if (
+		value.toLowerCase() === "currentcolor" &&
+		COLOR_PROPERTIES.has(property)
+	) {
+		// The COMPUTED color, on the engine's own read path: this is the
+		// cascade resolving a value, and the author path flushes -- which
+		// drains mutations and lays the document out, from inside the
+		// resolution of a style that layout is waiting on. `color` has no
+		// used value to wait for, so the two answer alike.
+		return property === "color" ?
+				(resolveFromParent(self, "color") ?? "") :
+				self.computedValueOf("color");
+	}
+	return value;
+}
+
+function resolvePropertyValueRaw(
+	self: ComputedStyleDeclaration,
+	property: string,
+): string {
+	// A physical property and the flow-relative properties that map to it
+	// are ONE cascade slot (css-logical-1 §2.1): every name in the slot
+	// computes to the value of the declaration that comes last in the
+	// cascade, whichever name that declaration used. Which flow-relative
+	// name maps here depends on the element's `direction`, so the slot's
+	// names are widened to both inline edges and narrowed by direction
+	// only once a block actually declares one of them.
+	const logical = PHYSICAL_TO_LOGICAL.get(property);
+	const names = logical ? [property, ...logical] : [property];
+	let direction: string | null = null;
+	const mapsHere = (name: string): boolean =>
+		name === property ||
+		physicalProperty(
+			name,
+			(direction ??= self.computedValueOf("direction")),
+		) === property;
+
+	const inline = inlineDeclarations(self);
+	const inlineName = declaredName(inline, names, false, mapsHere);
+	const inlineValue = inlineName ?
+			inline.declarations[inlineName].trim() :
+		undefined;
+	const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
+	const inlineImportantName = declaredName(inline, names, true, mapsHere);
+	const inlineImportantValue = inlineImportantName ?
+			inline.declarations[inlineImportantName].trim() :
+		undefined;
+	const inlineImportant =
+		!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
+
+	// `inherit` skips the rest of the cascade and goes straight to the parent's
+	// resolved value, regardless of whether this property normally inherits.
+	if (inlineImportant && inlineImportantValue === "inherit") {
+		return resolveFromParent(self, property) ?? "";
+	}
+	if (!inlineImportant && inlineUsable && inlineValue === "inherit") {
+		return resolveFromParent(self, property) ?? "";
+	}
+
+	// 1 & 2. Inline style and stylesheet rules, with an !important tier above
+	// the normal cascade. #cssRules is pre-sorted by specificity/source order,
+	// so within each tier the last match wins.
+	let ruleValue: string | null = null;
+	let importantRuleValue: string | null = null;
+	// `!important` reverses the layer order (css-cascade-5 §6.4.4): the
+	// EARLIEST layer wins, and unlayered declarations -- which win the
+	// normal cascade -- lose to every layer. The rules arrive with the
+	// earliest layer first, so the first layer to declare the property
+	// keeps it, and later ones only tie it within the same layer.
+	let importantOrigin = false;
+	let importantLayer = 0;
+	for (const rule of self[kCSSRules]) {
+		const name = declaredName(rule, names, false, mapsHere);
+		if (name !== null) {
+			ruleValue = rule.declarations[name];
+		}
+		const importantName = declaredName(rule, names, true, mapsHere);
+		if (
+			importantName !== null &&
+			(importantRuleValue === null ||
+				Boolean(rule.uaOrigin) !== importantOrigin ||
+				rule.layerRank === importantLayer)
+		) {
+			importantRuleValue = rule.declarations[importantName];
+			importantOrigin = Boolean(rule.uaOrigin);
+			importantLayer = rule.layerRank;
+		}
+	}
+
+	// A CSS-wide keyword a rule declares is not a value: `inherit` takes the
+	// parent's, and the rest send resolution on to the defaults below, as
+	// though the declaration were not there.
+	const declaredByRule = (value: string): string | null => {
+		if (value === "inherit") {
+			return resolveFromParent(self, property) ?? "";
+		}
+		return INITIAL_KEYWORDS.has(value) ? null : value;
+	};
+
+	if (inlineImportant) {
+		return inlineImportantValue!;
+	}
+	if (importantRuleValue) {
+		const resolved = declaredByRule(importantRuleValue);
+		if (resolved !== null) {
+			return resolved;
+		}
+	} else if (inlineUsable) {
+		return inlineValue!;
+	} else if (ruleValue) {
+		const resolved = declaredByRule(ruleValue);
+		if (resolved !== null) {
+			return resolved;
+		}
+	}
+
+	// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
+	// These take priority over inherited values
+	const tagName = self[kElement].tagName.toLowerCase();
+
+	// A list's marker gutter is sized to its widest marker rather than taken
+	// from the static table, so it has to be resolved before it.
+	if (
+		property === "padding-left" &&
+		(tagName === "ul" || tagName === "ol") &&
+		self[kElement].ownerDocument?.defaultView
+	) {
+		return `${getListGutterWidth(self[kElement])}ch`;
+	}
+
+	// The UA default marker type depends on nesting depth, exactly as a browser's
+	// `ul ul { list-style-type: circle }` rules do. Resolving it here rather than
+	// inheriting means an author value on an outer list does not leak into a
+	// nested one, while an author rule that matches the nested list still wins:
+	// it was already returned in step 2.
+	if (
+		property === "list-style-type" &&
+		(tagName === "ul" || tagName === "ol")
+	) {
+		if (tagName === "ol") {
+			return "decimal";
+		}
+		const bullets = ["disc", "circle", "square"];
+		const depth = listNestingDepth(self[kElement]);
+		return bullets[Math.min(depth, bullets.length - 1)];
+	}
+
+	const elementDefaults = getElementDefaults(self[kElement]);
+	if (elementDefaults && elementDefaults[property]) {
+		return elementDefaults[property];
+	}
+
+	// 4. For inherited properties, walk up the DOM using getComputedStyle
+	// which correctly resolves CSS rules on parent elements. Custom properties
+	// (--x) always inherit -- there's no fixed list for them to be in.
+	if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
+		const window = self[kElement].ownerDocument?.defaultView;
+		if (window) {
+			// Flat-tree parents: inheritance crosses the shadow boundary
+			// (host -> shadow child) and reaches slotted content through
+			// its slot's chain, exactly as in a browser.
+			for (
+				let parent = flatParentElement<Element>(self[kElement]);
+				parent !== null;
+				parent = flatParentElement<Element>(parent)
+			) {
+				const parentValue = computedStyleOf(parent).computedValueOf(property);
+				if (parentValue) {
+					return parentValue;
+				}
+			}
+		}
+	}
+
+	// 5. Fallback to universal defaults and CSS spec defaults
+	return getInitialStyle(self[kElement], property);
+}
+
+/**
+ * The custom properties in effect here: this element's own, and every one
+ * an ancestor declared -- a custom property inherits, so it is part of
+ * this element's computed style whichever element declared it.
+ */
+function customNames(
+	self: ComputedStyleDeclaration,
+): string[] {
+	if (self[kStale] || self[kEpoch].value !== self[kSeenEpoch]) {
+		self[kRefresh]();
+	}
+	if (self[kCustom]) {
+		return self[kCustom];
+	}
+	const names = new Set<string>();
+	for (
+		let element: Element | null = self[kElement];
+		element;
+		element = flatParentElement<Element>(element)
+	) {
+		const declaration = self[kManager]?.declarationFor(element);
+		for (const name of declaration?.declaredCustomProperties() ?? []) {
+			names.add(name);
+		}
+	}
+	self[kCustom] = [...names];
+	return self[kCustom];
 }
 
 /**
@@ -7981,21 +8039,14 @@ const kWindow = Symbol("window");
 const kLayoutEngine = Symbol("layoutEngine");
 const kDocument = Symbol("document");
 const kGetComputedStyle = Symbol("getComputedStyle");
-const kSetupInvalidationHooks = Symbol("setupInvalidationHooks");
 const kStyleEpoch = Symbol("styleEpoch");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
-const kStyleSheetCount = Symbol("styleSheetCount");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
-const kParseStylesheets = Symbol("parseStylesheets");
-const kGetMatchingRules = Symbol("getMatchingRules");
 const kLayoutFlush = Symbol("layoutFlush");
 const kFlushing = Symbol("flushing");
 const kUsedGeneration = Symbol("usedGeneration");
 const kFlushedEpoch = Symbol("flushedEpoch");
 const kShadowRoots = Symbol("shadowRoots");
-const kInvalidateEnclosingList = Symbol("invalidateEnclosingList");
-const kInvalidateElementCaches = Symbol("invalidateElementCaches");
-const kInvalidateSubtree = Symbol("invalidateSubtree");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
 const kStyleSheetList = Symbol("styleSheetList");
@@ -8005,7 +8056,6 @@ const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
 const kCounterScopes = Symbol("counterScopes");
-const kComputePseudoElementStyle = Symbol("computePseudoElementStyle");
 const kParsedRules = Symbol("parsedRules");
 const kReachingClasses = Symbol("reachingClasses");
 const kReachingIds = Symbol("reachingIds");
@@ -8018,33 +8068,7 @@ const kListItemRulesExist = Symbol("listItemRulesExist");
 const kScopedRulesExist = Symbol("scopedRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
-const kParseStyleSheet = Symbol("parseStyleSheet");
-const kRankLayers = Symbol("rankLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
-const kAttachPseudoElements = Symbol("attachPseudoElements");
-const kParseStyleRule = Symbol("parseStyleRule");
-const kDeclareLayer = Symbol("declareLayer");
-const kMediaQueryPartMatches = Symbol("mediaQueryPartMatches");
-const kMediaFeatureMatches = Symbol("mediaFeatureMatches");
-const kParseSelector = Symbol("parseSelector");
-const kIndexReachingKeys = Symbol("indexReachingKeys");
-const kPartPseudoFor = Symbol("partPseudoFor");
-const kRuleMatches = Symbol("ruleMatches");
-const kScopeProximity = Symbol("scopeProximity");
-const kScopingRoot = Symbol("scopingRoot");
-const kMatchesRule = Symbol("matchesRule");
-const kAttachPseudoElementToElementForType = Symbol(
-	"attachPseudoElementToElementForType",
-);
-const kPseudoSubjects = Symbol("pseudoSubjects");
-const kPseudoRuleCouldMatch = Symbol("pseudoRuleCouldMatch");
-const kRemovePseudoElement = Symbol("removePseudoElement");
-const kPseudoContentFor = Symbol("pseudoContentFor");
-const kParseCounterReset = Symbol("parseCounterReset");
-const kParseCounterIncrement = Symbol("parseCounterIncrement");
-const kIncrementCounter = Symbol("incrementCounter");
-const kGetListItemCounterValue = Symbol("getListItemCounterValue");
-const kGetCounterValueFromScope = Symbol("getCounterValueFromScope");
 
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
@@ -8183,7 +8207,7 @@ export class StyleManager {
 		window.getComputedStyle = this[kGetComputedStyle].bind(this);
 
 		// Hook into methods that should invalidate cached styles
-		this[kSetupInvalidationHooks]();
+		setupInvalidationHooks(this);
 	}
 
 	/** The epoch a computed style watches to know its values have gone stale. */
@@ -8195,11 +8219,11 @@ export class StyleManager {
 	matchingRules(element: Element): ParsedCSSRule[] {
 		if (
 			this[kStylesheetsDirty] ||
-			this[kStyleSheetCount]() !== this[kParsedStyleSheetCount]
+			styleSheetCount(this) !== this[kParsedStyleSheetCount]
 		) {
-			this[kParseStylesheets]();
+			parseStylesheets(this);
 		}
-		return this[kGetMatchingRules](element);
+		return getMatchingRules(this, element);
 	}
 
 	/**
@@ -8306,7 +8330,7 @@ export class StyleManager {
 		this[kLayoutEngine] = layoutEngine;
 
 		// Parse initial stylesheets (may be empty at construction time)
-		this[kParseStylesheets]();
+		parseStylesheets(this);
 	}
 
 	/**
@@ -8343,7 +8367,7 @@ export class StyleManager {
 				// moved. Without this the gutter stays at whatever the original items
 				// needed, and a wider marker added later overruns it -- the "iii.Third"
 				// collision, on any mutation.
-				this[kInvalidateEnclosingList](mutation.target);
+				invalidateEnclosingList(this, mutation.target);
 
 				// Check for stylesheet changes
 				for (const node of mutation.addedNodes) {
@@ -8357,14 +8381,14 @@ export class StyleManager {
 							shouldRefreshStylesheets = true;
 						} else {
 							// Invalidate caches for new elements
-							this[kInvalidateElementCaches](element);
+							invalidateElementCaches(this, element);
 							// Process pseudo-elements for new elements
 							this.attachPseudoElementsToElement(element);
 
 							// Also handle any child elements
 							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
-								this[kInvalidateElementCaches](childElement);
+								invalidateElementCaches(this, childElement);
 								this.attachPseudoElementsToElement(childElement);
 							}
 						}
@@ -8400,9 +8424,9 @@ export class StyleManager {
 						mutation.oldValue,
 					)
 				) {
-					this[kInvalidateSubtree](element);
+					invalidateSubtree(this, element);
 				} else {
-					this[kInvalidateElementCaches](element);
+					invalidateElementCaches(this, element);
 					this.attachPseudoElementsToElement(element);
 				}
 				// Sibling combinators reach right: `.on ~ .light` matches (or
@@ -8419,7 +8443,7 @@ export class StyleManager {
 						sibling;
 						sibling = sibling.nextElementSibling
 					) {
-						this[kInvalidateSubtree](sibling);
+						invalidateSubtree(this, sibling);
 					}
 				}
 			} else if (mutation.type === "characterData") {
@@ -8447,17 +8471,12 @@ export class StyleManager {
 	 */
 	declare [kStyleSheetList]: {length: number} | null;
 
-	[kStyleSheetCount](): number {
-		this[kStyleSheetList] ??= documentStyleSheetList(this[kDocument]);
-		return this[kStyleSheetList].length;
-	}
-
 	invalidationScopeFor(element: Element): Element {
 		if (
 			this[kStylesheetsDirty] ||
-			this[kStyleSheetCount]() !== this[kParsedStyleSheetCount]
+			styleSheetCount(this) !== this[kParsedStyleSheetCount]
 		) {
-			this[kParseStylesheets]();
+			parseStylesheets(this);
 		}
 		if (this[kSelectorsReachAncestors]) {
 			return this[kDocument].body ?? element;
@@ -8481,14 +8500,14 @@ export class StyleManager {
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
 			if (element) {
-				this[kInvalidateElementCaches](element);
+				invalidateElementCaches(this, element);
 				// A host's focus state reaches into its shadow tree through
 				// :host(:focus) rules (and inheritance from whatever they
 				// set), so the tree's cached styles go stale with it.
 				const shadowRoot = shadowRootOf<ShadowRoot>(element);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
-						this[kInvalidateElementCaches](descendant);
+						invalidateElementCaches(this, descendant);
 					}
 				}
 			}
@@ -8503,7 +8522,7 @@ export class StyleManager {
 	 * whose style comes through it re-resolve.
 	 */
 	handleStateChange(element: Element): void {
-		this[kInvalidateSubtree](element);
+		invalidateSubtree(this, element);
 		// No mutation record describes the move, so the frame that decides
 		// whether anything is worth painting is told here: the cascade moved,
 		// and the rows the element claims are the damage to repaint.
@@ -8520,81 +8539,6 @@ export class StyleManager {
 		return true;
 	}
 
-	/**
-	 * Invalidate an element and everything whose style it reaches: its
-	 * descendants, and the shadow tree it hosts -- inheritance crosses that
-	 * boundary, so a color set on a host reaches the tree it composes.
-	 */
-	[kInvalidateSubtree](element: Element): void {
-		this[kInvalidateElementCaches](element);
-		this.attachPseudoElementsToElement(element);
-		for (const descendant of element.querySelectorAll("*")) {
-			this[kInvalidateElementCaches](descendant);
-			this.attachPseudoElementsToElement(descendant);
-		}
-		const root = element.shadowRoot;
-		if (root) {
-			for (const descendant of root.querySelectorAll("*")) {
-				this[kInvalidateSubtree](descendant);
-			}
-		}
-	}
-
-	[kInvalidateElementCaches](element: Element): void {
-		// Layout measured this element under the style being dropped. This is
-		// the one place an element's computed style goes stale -- attribute
-		// flips, inline styles, subtree and sibling reach, focus all arrive
-		// here -- so it is the one place layout has to be told.
-		this[kLayoutEngine]?.styleInvalidated(element);
-		// A computed style an author still holds is the one this cache handed
-		// out, so it is told the cascade moved on rather than merely dropped.
-		this[kComputedStyleCache].get(element)?.invalidate();
-		this[kComputedStyleCache].delete(element);
-		this[kPseudoElementStyleCache].delete(element);
-		// The pseudo-element nodes read through the declarations just dropped.
-		if (pseudoElementCount(element) > 0) {
-			for (const name of PSEUDO_ELEMENT_NAMES) {
-				const node = pseudoElement<Element>(element, name);
-				if (node) {
-					this[kPseudoNodeStyles].delete(node);
-				}
-			}
-		}
-		this[kCounterScopes].delete(element);
-	}
-
-	/**
-	 * Invalidate the nearest enclosing list, and its items, after a child changed.
-	 *
-	 * The list's padding-left is a function of its items' markers, and the items'
-	 * ordinals are a function of their position, so both go stale when the child
-	 * list changes. Only the *nearest* list is affected: a deeper list's items do
-	 * not contribute to an outer list's gutter.
-	 */
-	// TODO(box-tree): a list's gutter is a layout question -- the widest
-	// marker its items generate -- answered here in the cascade, which is why
-	// the cascade must watch child lists and reach into the layout engine.
-	// Phase C computes the gutter during block layout and deletes this.
-	[kInvalidateEnclosingList](target: Node): void {
-		let element: Element | null =
-			target.nodeType === this[kWindow].Node.ELEMENT_NODE ?
-					(target as Element) :
-				target.parentElement;
-
-		for (; element; element = element.parentElement) {
-			if (element.tagName !== "UL" && element.tagName !== "OL") {
-				continue;
-			}
-
-			this[kInvalidateElementCaches](element);
-			this[kLayoutEngine]?.invalidate(element);
-			for (const item of Array.from(element.children)) {
-				this[kInvalidateElementCaches](item);
-			}
-			return;
-		}
-	}
-
 	[kGetComputedStyle](
 		element: Element,
 		pseudoElt?: string | null,
@@ -8607,9 +8551,9 @@ export class StyleManager {
 		// awaits
 		if (
 			this[kStylesheetsDirty] ||
-			this[kStyleSheetCount]() !== this[kParsedStyleSheetCount]
+			styleSheetCount(this) !== this[kParsedStyleSheetCount]
 		) {
-			this[kParseStylesheets]();
+			parseStylesheets(this);
 		}
 		// An element that is not being rendered has no style to report: it is
 		// out of the document, or out of the flat tree its document composes.
@@ -8659,13 +8603,13 @@ export class StyleManager {
 		if (!declaration) {
 			if (
 				this[kStylesheetsDirty] ||
-				this[kStyleSheetCount]() !== this[kParsedStyleSheetCount]
+				styleSheetCount(this) !== this[kParsedStyleSheetCount]
 			) {
-				this[kParseStylesheets]();
+				parseStylesheets(this);
 			}
 			declaration = new ComputedStyleDeclaration(
 				element,
-				this[kGetMatchingRules](element),
+				getMatchingRules(this, element),
 				this,
 			);
 			this[kComputedStyleCache].set(element, declaration);
@@ -8736,7 +8680,7 @@ export class StyleManager {
 		pseudoElement: string,
 	): Record<string, string> {
 		const declarations: Record<string, string> = {
-			...this[kComputePseudoElementStyle](element, pseudoElement),
+			...computePseudoElementStyle(this, element, pseudoElement),
 		};
 		// Per CSS, a pseudo-element INHERITS from its originating element: a
 		// button's focus underline runs through its UA brackets, a .destroy's
@@ -8763,82 +8707,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * Walk the document's stylesheets -- this engine's own CSSOM objects, the
-	 * same ones an author reaches through `styleEl.sheet` -- and collect the
-	 * rules the cascade matches against.
-	 *
-	 * Every style cached against the previous rule set is dropped: a
-	 * declaration built before this parse was resolved against rules that no
-	 * longer describe the cascade, and nothing else would ever tell it so.
-	 */
-	[kParseStylesheets](): void {
-		this[kLayoutEngine]?.invalidateStructure();
-		const document = this[kDocument];
-		this[kParsedRules] = [];
-		this[kSelectorsReachSiblings] = false;
-		this[kSelectorsReachAncestors] = false;
-		this[kReachingClasses].clear();
-		this[kReachingIds].clear();
-		this[kReachingAttributes].clear();
-		this[kReachingStates] = false;
-		this[kPseudoRulesByType] = new Map();
-		this[kPseudoSubjectTags] = undefined;
-		this[kCounterRulesExist] = false;
-		this[kListItemRulesExist] = false;
-		this[kScopedRulesExist] = false;
-		this[kStylesheetsDirty] = false;
-		this[kLayerPaths] = [];
-		this[kAnonymousLayers] = 0;
-		this[kParsedStyleSheetCount] = this[kStyleSheetCount]();
-
-		// The UA document sheet parses first; origin ordering (not source
-		// order) is what keeps it beneath every author rule.
-		this[kParseStyleSheet](uaStyleSheet(), undefined, true);
-
-		for (const sheet of documentStyleSheets(document)) {
-			this[kParseStyleSheet](sheet);
-		}
-
-		// Shadow-tree stylesheets, scoped to their root. Disconnected roots
-		// parse too: attach-populate-connect is the standard order, and a
-		// scope-gated rule matches nothing until its tree renders anyway.
-		for (const root of this[kShadowRoots]) {
-			for (const sheet of shadowStyleSheets(root)) {
-				this[kParseStyleSheet](sheet, root);
-			}
-		}
-
-		const layerRanks = this[kRankLayers]();
-		for (const rule of this[kParsedRules]) {
-			rule.layerRank =
-				rule.layer === null ?
-					this[kUnlayeredRank] :
-						(layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
-		}
-
-		// Sort rules for cascade resolution: origin first (UA rules sort
-		// below every author rule -- later wins), then cascade layer, then
-		// specificity, then the order the rules were read in.
-		const sourceOrder = new Map(
-			this[kParsedRules].map((rule, index) => [rule, index] as const),
-		);
-		this[kParsedRules].sort((a, b) => {
-			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
-				return a.uaOrigin ? -1 : 1;
-			}
-			if (a.layerRank !== b.layerRank) {
-				return a.layerRank - b.layerRank;
-			}
-			if (a.specificity !== b.specificity) {
-				return a.specificity < b.specificity ? -1 : 1;
-			}
-			return sourceOrder.get(a)! - sourceOrder.get(b)!;
-		});
-		this.clearCache();
-		this[kAttachPseudoElements]();
-	}
-
-	/**
 	 * Every cascade layer, in the order its name was first declared: a
 	 * `@layer a, b;` statement, a `@layer a { }` block, or the anonymous layer
 	 * an unnamed block opens. A nested layer's path is dot-joined through its
@@ -8849,131 +8717,6 @@ export class StyleManager {
 
 	/** Where an unlayered rule sorts: after every layer, and so above them. */
 	declare [kUnlayeredRank]: number;
-
-	/** Name a layer, and every layer its path nests inside, in declaration order. */
-	[kDeclareLayer](outer: string | null, name: string): string {
-		const path = outer === null ? name : `${outer}.${name}`;
-		const segments = path.split(".");
-		for (let depth = 1; depth <= segments.length; depth++) {
-			const prefix = segments.slice(0, depth).join(".");
-			if (!this[kLayerPaths].includes(prefix)) {
-				this[kLayerPaths].push(prefix);
-			}
-		}
-		return path;
-	}
-
-	/**
-	 * Where each layer sorts. Layers sort in the order their names were
-	 * declared, and a layer's OWN rules sort after the rules of every layer
-	 * nested inside it -- the same relation unlayered rules have to layers,
-	 * one level down. Smallest first, so the last layer, and then the
-	 * unlayered rules above it, win the normal cascade; the important cascade
-	 * reads the same order backwards.
-	 */
-	[kRankLayers](): Map<string, number> {
-		const nested = new Map<string, string[]>();
-		for (const path of this[kLayerPaths]) {
-			const dot = path.lastIndexOf(".");
-			const outer = dot === -1 ? "" : path.slice(0, dot);
-			const siblings = nested.get(outer);
-			if (siblings) {
-				siblings.push(path);
-			} else {
-				nested.set(outer, [path]);
-			}
-		}
-		const ranks = new Map<string, number>();
-		let next = 0;
-		const rank = (path: string): void => {
-			for (const inner of nested.get(path) ?? []) {
-				rank(inner);
-			}
-			if (path !== "") {
-				ranks.set(path, next++);
-			}
-		};
-		rank("");
-		this[kUnlayeredRank] = next;
-		return ranks;
-	}
-
-	/**
-	 * Collect the style rules of a stylesheet, or of a grouping rule's own
-	 * rule list. A disabled sheet, and a sheet or `@media` whose condition the
-	 * terminal viewport does not match, contribute nothing; `@supports`
-	 * contributes its rules, since what this engine supports is what it
-	 * renders. `@font-face`, `@keyframes` and `@import` have no terminal
-	 * rendering and declare nothing to the cascade.
-	 *
-	 * A grouping rule this walk has no branch for is walked THROUGH: its rules
-	 * cascade without whatever its prelude says about them. For a conditional
-	 * rule that is the wrong answer where the condition is false -- a
-	 * `@container` query the box does not satisfy still paints -- and it is
-	 * the better wrong answer: a rule that applies too widely is one an author
-	 * can see, and one that vanishes with the whole at-rule is not.
-	 */
-	[kParseStyleSheet](
-		container: CSSStyleSheet | CSSGroupingRule,
-		scope?: Node,
-		uaOrigin?: boolean,
-		context: RuleContext = UNCONDITIONAL,
-	): void {
-		if (container instanceof CSSStyleSheet) {
-			if (container.disabled) {
-				return;
-			}
-			if (!this.mediaQueryMatches(container.media.mediaText)) {
-				return;
-			}
-		}
-		for (const rule of container.cssRules) {
-			if (rule instanceof CSSStyleRule) {
-				this[kParseStyleRule](rule, scope, uaOrigin, context);
-			} else if (rule instanceof CSSMediaRule) {
-				if (this.mediaQueryMatches(rule.conditionText)) {
-					this[kParseStyleSheet](rule, scope, uaOrigin, context);
-				}
-			} else if (rule instanceof CSSSupportsRule) {
-				this[kParseStyleSheet](rule, scope, uaOrigin, context);
-			} else if (rule instanceof CSSLayerStatementRule) {
-				// `@layer a, b;` declares the order of layers whose rules come
-				// later, and declares nothing else.
-				for (const name of rule.nameList) {
-					this[kDeclareLayer](context.layer, name);
-				}
-			} else if (rule instanceof CSSLayerBlockRule) {
-				// An unnamed block opens a layer nothing else can name or reach,
-				// which is a layer of its own wherever it stands.
-				const layer = rule.name ?
-						this[kDeclareLayer](context.layer, rule.name) :
-						this[kDeclareLayer](context.layer, ` ${this[kAnonymousLayers]++}`);
-				this[kParseStyleSheet](rule, scope, uaOrigin, {...context, layer});
-			} else if (rule instanceof CSSScopeRule) {
-				const owner = rule.parentStyleSheet?.ownerNode ?? null;
-				this[kParseStyleSheet](rule, scope, uaOrigin, {
-					...context,
-					scopes: [
-						...context.scopes,
-						{
-							start: rule.start,
-							end: rule.end,
-							owner: owner ? owner.parentElement : null,
-						},
-					],
-				});
-			} else if (rule instanceof CSSStartingStyleRule) {
-				// `@starting-style` declares the style a box starts a transition
-				// FROM. This engine runs no transitions, so a rule inside it
-				// would have no moment to stop applying in and would style the
-				// box for good: it parses into the CSSOM and reaches the
-				// cascade never.
-				continue;
-			} else if (rule instanceof CSSGroupingRule) {
-				this[kParseStyleSheet](rule, scope, uaOrigin, context);
-			}
-		}
-	}
 
 	/**
 	 * Whether a media query currently matches. There is exactly one "screen" --
@@ -8988,132 +8731,7 @@ export class StyleManager {
 		if (!text) {
 			return true;
 		}
-		return text.split(",").some((query) => this[kMediaQueryPartMatches](query));
-	}
-
-	[kMediaQueryPartMatches](query: string): boolean {
-		let q = query.trim();
-		let negate = false;
-		if (/^not\s+/i.test(q)) {
-			negate = true;
-			q = q.replace(/^not\s+/i, "");
-		}
-
-		const typeMatch = q.match(/^(all|screen|print|speech)\b\s*(and\s+)?/i);
-		let matches = true;
-		if (typeMatch) {
-			matches = typeMatch[1].toLowerCase() !== "print";
-			q = q.slice(typeMatch[0].length);
-		}
-
-		const features = q.match(/\([^)]*\)/g) || [];
-		for (const feature of features) {
-			if (!this[kMediaFeatureMatches](feature.slice(1, -1).trim())) {
-				matches = false;
-			}
-		}
-
-		return negate ? !matches : matches;
-	}
-
-	[kMediaFeatureMatches](feature: string): boolean {
-		const match = feature.match(
-			/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
-		);
-		if (!match) {
-			return true;
-		} // unrecognized feature: permissive default
-
-		const [, boundRaw, dimension, numRaw] = match;
-		const bound = boundRaw?.toLowerCase();
-		const num = parseFloat(numRaw);
-		const actual =
-			dimension.toLowerCase() === "width" ?
-				this[kWindow].innerWidth :
-				this[kWindow].innerHeight;
-
-		if (bound === "min-") {
-			return actual >= num;
-		}
-		if (bound === "max-") {
-			return actual <= num;
-		}
-		return actual === num;
-	}
-
-	/**
-	 * Parse a single style rule and extract selector/declarations
-	 */
-	[kParseStyleRule](
-		styleRule: CSSStyleRule,
-		scope?: Node,
-		uaOriginSheet?: boolean,
-		context: RuleContext = UNCONDITIONAL,
-	): void {
-		// A rule's selector list is a set of selectors that share a block, and
-		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
-		// pseudo-element rule and one ordinary rule, not one of either.
-		const block = styleRule.style.declarationBlock();
-		const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
-		for (const selector of splitSelectorList(styleRule.selectorText)) {
-			this[kParseSelector](
-				selector,
-				block,
-				scope,
-				uaOriginSheet,
-				namespaces,
-				context,
-			);
-		}
-	}
-
-	/**
-	 * Record the keys a change to which can reach an element's descendants.
-	 *
-	 * Two ways it can: the key is tested on a NON-SUBJECT compound, so the
-	 * rule matches something below the element it names; or the rule declares
-	 * an INHERITED property, so starting or stopping it moves a value the
-	 * descendants take from the element. A key in neither position changes
-	 * nothing but the element's own box.
-	 */
-	[kIndexReachingKeys](
-		selector: string,
-		declarations: Record<string, string>,
-	): void {
-		let inherits = false;
-		for (const property in declarations) {
-			// A shorthand is stored as its longhands, so this reads longhands --
-			// except `all`, which stands for every property there is.
-			// `display` is not inherited and reaches them anyway: a flex
-			// container blockifies its children (css-display-3 §2.7), which
-			// changes what KIND of box each of them is.
-			if (
-				property === "all" ||
-				property === "display" ||
-				property.startsWith("--") ||
-				INHERITED_PROPERTIES.has(property)
-			) {
-				inherits = true;
-				break;
-			}
-		}
-		const compounds = selectorCompounds(selector);
-		const last = inherits ? compounds.length : compounds.length - 1;
-		for (let i = 0; i < last; i++) {
-			const compound = compounds[i];
-			for (const match of compound.matchAll(SELECTOR_CLASS_NAME)) {
-				this[kReachingClasses].add(match[1]);
-			}
-			for (const match of compound.matchAll(SELECTOR_ID_NAME)) {
-				this[kReachingIds].add(match[1]);
-			}
-			for (const match of compound.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
-				this[kReachingAttributes].add(match[1].toLowerCase());
-			}
-			if (STATE_PSEUDO_CLASSES.test(compound)) {
-				this[kReachingStates] = true;
-			}
-		}
+		return text.split(",").some((query) => mediaQueryPartMatches(this, query));
 	}
 
 	/**
@@ -9182,453 +8800,6 @@ export class StyleManager {
 		return this[kReachingStates] && STATE_ATTRIBUTES.has(name);
 	}
 
-	[kParseSelector](
-		selector: string,
-		block: DeclarationBlock,
-		scope?: Node,
-		uaOriginSheet?: boolean,
-		sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
-		context: RuleContext = UNCONDITIONAL,
-	): void {
-		const {declarations, important, order} = block;
-		// A rule's layer decides where it sorts, and the whole layer order is
-		// only known once every sheet has been read: the rank is filled in
-		// then, and this is the value it is filled in from.
-		const layer = context.layer;
-		let scopes: readonly ScopeCondition[] | undefined;
-		if (context.scopes.length > 0) {
-			scopes = context.scopes;
-			this[kScopedRulesExist] = true;
-		}
-		let namespace: string | null | undefined;
-		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
-			const resolved = selectorNamespace(selector, sheetNamespaces);
-			if (!resolved.valid) {
-				return;
-			}
-			selector = resolved.selector;
-			namespace = resolved.namespace;
-		}
-		if (selector.includes("+") || selector.includes("~")) {
-			this[kSelectorsReachSiblings] = true;
-		}
-		if (selector.includes(":has")) {
-			this[kSelectorsReachAncestors] = true;
-		}
-		this[kIndexReachingKeys](selector, declarations);
-		if (
-			declarations["counter-reset"] ||
-			declarations["counter-increment"] ||
-			declarations["content"]?.includes("counter")
-		) {
-			this[kCounterRulesExist] = true;
-		}
-		if (declarations["display"] === "list-item") {
-			this[kListItemRulesExist] = true;
-		}
-		const specificity = selectorSpecificity(selector);
-		const uaOrigin = Boolean(
-			uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
-		);
-
-		// :host selectors only mean anything inside a shadow tree's own
-		// stylesheet; the selector engine rejects them outright, so they parse
-		// into a structured predicate matched by kRuleMatches instead.
-		const subjectTag = selectorSubjectTag(selector);
-
-		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
-		// those followed by a descendant (or `>` child) selector.
-		if (scope && selector.startsWith(":host")) {
-			// The argument needs balanced-paren matching, not [^)]*: the UA
-			// field sheet's own :host(:not(:focus)) nests one level deep.
-			const hostMatch = selector.match(
-				/^:host(?:\(((?:[^()]|\([^()]*\))*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
-			);
-			if (hostMatch) {
-				const [, arg, compound, child, restRaw] = hostMatch;
-				const predicate = [arg, compound].filter(Boolean).join("") || null;
-				const rest = restRaw.trim() || null;
-				this[kParsedRules].push({
-					selector,
-					declarations,
-					important,
-					order,
-					specificity,
-					scope,
-					host: {predicate, rest, child: Boolean(child)},
-					uaOrigin,
-					layer,
-					layerRank: 0,
-					scopes,
-				});
-				return;
-			}
-		}
-
-		// Check if this is a pseudo-element rule. ::placeholder/::selection
-		// are widget-part pseudos: no content node ever attaches for them --
-		// they resolve onto the UA shadow tree's [part] elements (see
-		// kGetMatchingRules) or the selection painter.
-		// Any pseudo-element, not just the ones this engine gives a box: a
-		// rule for `::highlight(x)` still has to answer through
-		// getComputedStyle, which is the whole of what CSSOM asks of it.
-		const pseudoMatch = selector.match(
-			/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
-		);
-
-		if (pseudoMatch) {
-			const [, baseSelector, pseudoElement] = pseudoMatch;
-			const rule: ParsedCSSRule = {
-				// A pseudo-element written with no originating selector
-				// originates on every element, which is what `*` names.
-				selector: baseSelector.trim() || "*",
-				subjectTag: selectorSubjectTag(baseSelector.trim()),
-				declarations,
-				important,
-				order,
-				specificity,
-				pseudoElement,
-				scope,
-				uaOrigin,
-				namespace,
-				layer,
-				layerRank: 0,
-				scopes,
-			};
-			this[kParsedRules].push(rule);
-			const byType = this[kPseudoRulesByType].get(pseudoElement);
-			if (byType) {
-				byType.push(rule);
-			} else {
-				this[kPseudoRulesByType].set(pseudoElement, [rule]);
-			}
-		} else {
-			this[kParsedRules].push({
-				selector,
-				subjectTag,
-				declarations,
-				important,
-				order,
-				specificity,
-				scope,
-				uaOrigin,
-				namespace,
-				layer,
-				layerRank: 0,
-				scopes,
-			});
-		}
-	}
-
-	/**
-	 * Get matching CSS rules for an element
-	 */
-	[kGetMatchingRules](element: Element): ParsedCSSRule[] {
-		// A UA shadow part IS the element its part pseudo styles: the host's
-		// ::placeholder rules cascade directly onto the [part="placeholder"]
-		// span, the way a browser resolves ::placeholder onto its input's
-		// internal placeholder element.
-		const partPseudo = this[kPartPseudoFor](element);
-		const root = element.getRootNode();
-		const shadowHost =
-			root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
-		const partNames = (element.getAttribute("part") ?? "")
-			.split(/\s+/)
-			.filter(Boolean);
-		const matched = this[kParsedRules].filter((rule) => {
-			if (rule.pseudoElement) {
-				// ::part(name): an author styling an exposed shadow part from
-				// outside. The rule matches the shadow's HOST; its declarations
-				// cascade onto the part element -- any shadow, not just the UA's,
-				// which is the standard CSS Shadow Parts crossing.
-				const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
-				if (partArg) {
-					return (
-						shadowHost !== null &&
-						partNames.includes(partArg[1].trim()) &&
-						this[kRuleMatches](shadowHost, rule)
-					);
-				}
-				// ::placeholder / ::selection: UA-part pseudo aliases.
-				return (
-					partPseudo !== null &&
-					shadowHost !== null &&
-					rule.pseudoElement === partPseudo &&
-					this[kRuleMatches](shadowHost, rule)
-				);
-			}
-			return this[kRuleMatches](element, rule);
-		});
-		// Scope proximity sorts between specificity and order of appearance
-		// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
-		// element: the closer scoping root wins, and a rule in no scope at all
-		// is infinitely far from one. The rules arrive in cascade order and
-		// the sort is stable, so a comparison that only answers for proximity
-		// leaves every other tier as it found it.
-		if (!this[kScopedRulesExist]) {
-			return matched;
-		}
-		const proximity = new Map(
-			matched.map(
-				(rule) =>
-					[
-						rule,
-						rule.scopes ? this[kScopeProximity](element, rule) : UNSCOPED,
-					] as const,
-			),
-		);
-		return matched.sort((a, b) => {
-			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
-				return 0;
-			}
-			if (a.layerRank !== b.layerRank) {
-				return 0;
-			}
-			if (a.specificity !== b.specificity) {
-				return 0;
-			}
-			return proximity.get(b)! - proximity.get(a)!;
-		});
-	}
-
-	/**
-	 * Whether an element matches one of a rule's selectors. A scoped rule's
-	 * selector is written relative to a scoping root and reaches only the
-	 * elements that root has in scope; every other rule's is matched by the
-	 * DOM outright.
-	 */
-	[kMatchesRule](
-		element: Element,
-		rule: ParsedCSSRule,
-		selector: string,
-	): boolean {
-		if (!rule.scopes) {
-			return element.matches(selector);
-		}
-		return this[kScopingRoot](element, {...rule, selector}) !== null;
-	}
-
-	/**
-	 * How many generations lie between an element and the nearest scoping root
-	 * its rule applies from, or Infinity when the rule names no scope. Only
-	 * ever asked of a rule that matches, so a rule out of scope everywhere has
-	 * already been filtered out.
-	 */
-	[kScopeProximity](element: Element, rule: ParsedCSSRule): number {
-		const root = this[kScopingRoot](element, rule);
-		if (!root) {
-			return UNSCOPED;
-		}
-		let generations = 0;
-		for (
-			let node: Element | null = element;
-			node && node !== root;
-			node = node.parentElement
-		) {
-			generations++;
-		}
-		return generations;
-	}
-
-	/**
-	 * The scoping root a scoped rule reaches this element from, or null when
-	 * no chain of roots puts the element in the rule's scope and matches its
-	 * selector.
-	 *
-	 * Every root is an inclusive ancestor of the element -- that is what being
-	 * in scope means -- so the chain is read outermost first, each condition
-	 * taking the HIGHEST root it can (which constrains the roots inside it
-	 * least), and the innermost taking the NEAREST, which is the one the
-	 * element's selector and its proximity are measured from.
-	 */
-	[kScopingRoot](element: Element, rule: ParsedCSSRule): Element | null {
-		const conditions = rule.scopes!;
-		let outer: Element | null = null;
-		for (let index = 0; index < conditions.length; index++) {
-			const condition = conditions[index];
-			const innermost = index === conditions.length - 1;
-			let found: Element | null = null;
-			for (
-				let candidate: Element | null = element;
-				candidate;
-				candidate = candidate.parentElement
-			) {
-				if (outer && candidate !== outer && !outer.contains(candidate)) {
-					break;
-				}
-				if (!scopeRootMatches(candidate, condition, outer)) {
-					continue;
-				}
-				if (!inScopeOf(element, candidate, condition)) {
-					continue;
-				}
-				if (innermost) {
-					if (!matchesInScope(element, rule.selector, candidate)) {
-						continue;
-					}
-					// The nearest root the rule reaches the element from.
-					found = candidate;
-					break;
-				}
-				found = candidate;
-			}
-			if (!found) {
-				return null;
-			}
-			outer = found;
-		}
-		return outer;
-	}
-
-	/**
-	 * The part pseudo-element a UA shadow part element answers to, if any:
-	 * "::placeholder" for the [part="placeholder"] span of an input's
-	 * UA-internal tree. Author shadow trees are not eligible -- their parts
-	 * are theirs to style from inside.
-	 */
-	[kPartPseudoFor](element: Element): string | null {
-		const root = element.getRootNode();
-		if (isUAShadowRoot(root)) {
-			const part = element.getAttribute("part");
-			if (part === "placeholder" || part === "selection") {
-				return `::${part}`;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Whether a rule applies to an element, honoring tree scopes: a rule
-	 * matches only elements of the tree its stylesheet belongs to --
-	 * document rules stop at every shadow boundary, shadow rules never
-	 * escape their root -- plus the one deliberate crossing, :host, which
-	 * lets a shadow stylesheet style its own host.
-	 */
-	[kRuleMatches](element: Element, rule: ParsedCSSRule): boolean {
-		// The subject's type, when the selector names one: every rule is tried
-		// against every element, and this is the reject that costs a string
-		// comparison instead of a selector match. A :host rule's subject is the
-		// host, which the branch below resolves for itself.
-		if (rule.subjectTag !== undefined && rule.host === undefined) {
-			const local = element.localName;
-			// A foreign element's local name keeps its case (feGaussianBlur), and
-			// the tag here is lowercased, so the reject only fires when neither
-			// reading matches -- the case-sensitivity a selector really has is
-			// then the matcher's to decide.
-			if (
-				local !== rule.subjectTag &&
-				local.toLowerCase() !== rule.subjectTag
-			) {
-				return false;
-			}
-		}
-		try {
-			// The namespace the selector qualifies its subject with, which the
-			// DOM's own matcher cannot answer.
-			if (
-				rule.namespace !== undefined &&
-				element.namespaceURI !== rule.namespace
-			) {
-				return false;
-			}
-			// The selector engine treats `:focus-visible` as `:focus`, so gate it
-			// on our own flag.
-			if (
-				!this[kFocusVisibleActive] &&
-				rule.selector.includes(":focus-visible")
-			) {
-				return false;
-			}
-			if (rule.host) {
-				const scope = rule.scope as ShadowRoot;
-				const host = scope.host;
-				if (!host) {
-					return false;
-				}
-				const {predicate, rest, child} = rule.host;
-				if (predicate && !host.matches(predicate)) {
-					return false;
-				}
-				if (!rest) {
-					return element === host;
-				}
-				if (element.getRootNode() !== scope) {
-					return false;
-				}
-				if (!element.matches(rest)) {
-					return false;
-				}
-				return child ? element.parentNode === scope : true;
-			}
-			const root = element.getRootNode();
-			if (rule.scope) {
-				return (
-					root === rule.scope &&
-					this[kMatchesRule](element, rule, rule.selector)
-				);
-			}
-			// UA document rules apply in EVERY tree scope, as a browser's own
-			// UA sheet styles shadow trees.
-			if (rule.uaOrigin) {
-				return this[kMatchesRule](element, rule, rule.selector);
-			}
-			// AUTHOR document rules match everything OUTSIDE shadow trees --
-			// including detached elements (styles resolve before insertion,
-			// and always have here); the boundary they must not cross is the
-			// shadow root.
-			const inShadowTree =
-				root.nodeType === 11 && Boolean((root as ShadowRoot).host);
-			return !inShadowTree && this[kMatchesRule](element, rule, rule.selector);
-		} catch (err) {
-			// Fallback for unsupported selectors
-			return false;
-		}
-	}
-
-	/**
-	 * Compute style properties for a pseudo-element
-	 */
-	[kComputePseudoElementStyle](
-		element: Element,
-		pseudoElement: string,
-	): Record<string, string> {
-		const matchingRules = this[kParsedRules].filter((rule) => {
-			if (rule.pseudoElement !== pseudoElement) {
-				return false;
-			}
-			return this[kRuleMatches](element, rule);
-		});
-
-		// Apply rules in cascade order. A pseudo-element's declarations are a
-		// flat record rather than a per-property cascade, so a flow-relative
-		// declaration fills BOTH names of its slot as it lands: the physical
-		// one everything downstream reads, and its own, which a later rule
-		// declaring either name overwrites in turn.
-		const computedStyle: Record<string, string> = {};
-		let direction: string | null = null;
-		for (const rule of matchingRules) {
-			const names = Object.keys(rule.declarations).sort(
-				(a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0),
-			);
-			for (const name of names) {
-				const value = rule.declarations[name];
-				computedStyle[name] = value;
-				if (
-					!LOGICAL_TO_PHYSICAL.ltr.has(name) &&
-					!PHYSICAL_TO_LOGICAL.has(name)
-				) {
-					continue;
-				}
-				direction ??= this.declarationFor(element).computedValueOf("direction");
-				for (const other of slotNames(name, direction)) {
-					computedStyle[other] = value;
-				}
-			}
-		}
-
-		return computedStyle;
-	}
-
 	/**
 	 * Get marker content for outside positioning
 	 */
@@ -9644,7 +8815,7 @@ export class StyleManager {
 			return null;
 		}
 
-		const styles = this[kComputePseudoElementStyle](hostElement, "::marker");
+		const styles = computePseudoElementStyle(this, hostElement, "::marker");
 		let content = styles.content;
 
 		// If no explicit CSS content, generate default marker using list-style-type
@@ -9677,58 +8848,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * The text a pseudo-element holds, or null when it holds none -- no rule
-	 * declared `content`, or the one that did declared `none`.
-	 */
-	[kPseudoContentFor](hostElement: Element, pseudoType: string): string | null {
-		const styles = this[kComputePseudoElementStyle](hostElement, pseudoType);
-		let content = styles.content;
-
-		// For ::marker pseudo-elements, generate default content if none specified
-		if (pseudoType === "::marker") {
-			const computedStyle = this.declarationFor(hostElement);
-			const display = computedStyle.computedValueOf("display");
-
-			if (display === "list-item") {
-				// Check if explicitly set to outside positioning
-				const listStylePosition =
-					computedStyle.computedValueOf("list-style-position") || "outside";
-
-				// Skip inline marker creation for outside positioning (the default)
-				if (listStylePosition === "outside") {
-					return null;
-				}
-
-				// If no explicit CSS content, generate default marker using list-style-type
-				if (!content || content === "none" || content === "normal") {
-					const listParent = hostElement.parentElement;
-					if (
-						listParent &&
-						(listParent.tagName === "UL" || listParent.tagName === "OL")
-					) {
-						// Use getListMarker function to handle all list-style-type values
-						const marker = getListMarker(hostElement, listParent);
-						if (marker) {
-							content = `"${marker} "`;
-						}
-					}
-				}
-			}
-		}
-
-		// Only create pseudo-element if it has content
-		if (!content || content === "none" || content === "normal") {
-			return null;
-		}
-
-		// Remove quotes from content string
-		const textContent = unquoteContent(content);
-
-		// Resolve counter() functions in the content
-		return this.resolveCounterFunction(hostElement, textContent);
-	}
-
-	/**
 	 * Check if element should have a pseudo-element based on CSS rules
 	 */
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
@@ -9744,7 +8863,7 @@ export class StyleManager {
 			}
 		}
 
-		const styles = this[kComputePseudoElementStyle](element, pseudoType);
+		const styles = computePseudoElementStyle(this, element, pseudoType);
 		const content = styles.content;
 		return !!(content && content !== "none" && content !== "normal");
 	}
@@ -9753,7 +8872,7 @@ export class StyleManager {
 	 * Refresh stylesheet parsing (call when stylesheets change)
 	 */
 	refreshStylesheets(): void {
-		this[kParseStylesheets]();
+		parseStylesheets(this);
 
 		// Rules can change LAYOUT (a display flip, new dimensions), and boxes
 		// may already have been built under the pre-parse styles -- a
@@ -9764,36 +8883,6 @@ export class StyleManager {
 		if (body) {
 			this[kLayoutEngine]?.invalidate(body);
 		}
-	}
-
-	/**
-	 * Bring the document's pseudo-element nodes into line with the rules just
-	 * parsed: the ones a rule now reaches gain a node, the ones no rule
-	 * reaches lose theirs.
-	 */
-	[kAttachPseudoElements](): void {
-		// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
-		// wholesale: layout keys a pseudo's boxes by node instance, and a
-		// fresh node per refresh strands every mapped one. Attach handles
-		// content updates in place and removal when a pseudo stops matching.
-		// Walks every element on stylesheet change.
-		if (!this[kDocument].documentElement) {
-			return;
-		}
-		const walker = this[kDocument].createTreeWalker(
-			this[kDocument].documentElement,
-			this[kWindow].NodeFilter.SHOW_ELEMENT,
-			null,
-		);
-		let element = walker.nextNode() as Element;
-		while (element) {
-			if (pseudoElementCount(element) > 0) {
-				this.attachPseudoElementsToElement(element);
-			}
-			element = walker.nextNode() as Element;
-		}
-
-		this.attachPseudoElementsToDocument();
 	}
 
 	/**
@@ -9840,7 +8929,7 @@ export class StyleManager {
 
 			// Attach pseudo-elements to matching elements
 			for (const element of matchingElements) {
-				this[kAttachPseudoElementToElementForType](element, pseudoType);
+				attachPseudoElementToElementForType(this, element, pseudoType);
 			}
 		}
 
@@ -9856,7 +8945,7 @@ export class StyleManager {
 
 			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
-				this[kAttachPseudoElementToElementForType](element, "::marker");
+				attachPseudoElementToElementForType(this, element, "::marker");
 			}
 		}
 	}
@@ -9869,30 +8958,6 @@ export class StyleManager {
 	 */
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
-	[kPseudoSubjects](): Set<string> | null {
-		if (this[kPseudoSubjectTags] !== undefined) {
-			return this[kPseudoSubjectTags];
-		}
-		if (this[kCounterRulesExist] || this[kListItemRulesExist]) {
-			return (this[kPseudoSubjectTags] = null);
-		}
-		// A list carries the one counter no rule declares, and its items the
-		// markers that counter numbers.
-		const tags = new Set(["OL", "UL", "LI"]);
-		// Only the pseudos this attaches: ::marker reaches list items, named
-		// above, and ::placeholder, ::selection and ::part live on nodes the
-		// widget trees already hold.
-		for (const type of ["::before", "::after"]) {
-			for (const rule of this[kPseudoRulesByType].get(type) ?? []) {
-				if (!rule.subjectTag) {
-					return (this[kPseudoSubjectTags] = null);
-				}
-				tags.add(rule.subjectTag.toUpperCase());
-			}
-		}
-		return (this[kPseudoSubjectTags] = tags);
-	}
-
 	/**
 	 * Attach pseudo-element nodes to a specific element if it has matching pseudo-element rules
 	 */
@@ -9901,7 +8966,7 @@ export class StyleManager {
 		// it, and it carries no pseudo of its own to reconsider: everything
 		// below would answer no, one matches() call per rule at a time. This is
 		// the whole cost of the walk over a subtree that just arrived.
-		const tags = this[kPseudoSubjects]();
+		const tags = pseudoSubjects(this);
 		if (
 			tags !== null &&
 			!tags.has(element.tagName) &&
@@ -9917,130 +8982,8 @@ export class StyleManager {
 		const pseudoTypes = ["::before", "::after", "::marker"];
 
 		for (const pseudoType of pseudoTypes) {
-			this[kAttachPseudoElementToElementForType](element, pseudoType);
+			attachPseudoElementToElementForType(this, element, pseudoType);
 		}
-	}
-
-	/**
-	 * Could any parsed rule give this element a pseudo of this type? A few
-	 * matches() calls against only the rules that declare the pseudo --
-	 * instead of building the full pseudo style declaration per element per
-	 * type just to discover `content` is "none". Over-matching is safe (the
-	 * full path still decides); the win is the early false for the common
-	 * document with no pseudo rules beyond the UA button brackets.
-	 */
-	[kPseudoRuleCouldMatch](element: Element, pseudoType: string): boolean {
-		if (pseudoType === "::marker") {
-			// Markers exist only on display:list-item boxes: an <li>, a rule
-			// declaring it, or an inline style. Nothing else needs the
-			// computed-display check below.
-			return (
-				element.tagName === "LI" ||
-				this[kListItemRulesExist] ||
-				(element.getAttribute("style") ?? "").includes("list-item")
-			);
-		}
-		const rules = this[kPseudoRulesByType].get(pseudoType);
-		if (!rules) {
-			return false;
-		}
-		for (const rule of rules) {
-			try {
-				if (element.matches(rule.selector)) {
-					return true;
-				}
-			} catch (_err) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Attach a specific pseudo-element type to an element if it should have one
-	 */
-	[kAttachPseudoElementToElementForType](
-		element: Element,
-		pseudoType: string,
-	): void {
-		// No rule can apply and none is attached: skip the counter and style
-		// computations wholesale. (An attached pseudo still takes the full
-		// path so a rule that STOPPED matching removes it.)
-		if (
-			!this[kPseudoRuleCouldMatch](element, pseudoType) &&
-			!pseudoElement(element, pseudoType)
-		) {
-			return;
-		}
-
-		// Initialize counters for this element first (needed for counter() functions)
-		this.initializeCounters(element);
-
-		// Skip ::marker for elements without display: list-item or with outside positioning
-		if (pseudoType === "::marker") {
-			const computedStyle = this.declarationFor(element);
-			const display = computedStyle.computedValueOf("display");
-			const listStylePosition =
-				computedStyle.computedValueOf("list-style-position") || "outside";
-
-			if (display !== "list-item") {
-				return;
-			}
-
-			// Remove inline markers for outside positioning
-			if (listStylePosition === "outside") {
-				this[kRemovePseudoElement](element, "::marker");
-				return;
-			}
-		}
-
-		// Compute what the pseudo should hold now; null means "none".
-		const content = this.shouldCreatePseudoElement(element, pseudoType) ?
-				this[kPseudoContentFor](element, pseudoType) :
-			null;
-		const existing = pseudoElement<Element>(element, pseudoType);
-
-		// Pseudo NODE IDENTITY is stable: attaches re-run on every element
-		// addition and attribute invalidation, and layout keys the pseudo's
-		// boxes by instance -- a fresh node per attach strands the mapped one
-		// (an absolutely positioned button's ::after glyph simply vanished).
-		// The slot keeps the node; only its text changes.
-		if (content === null) {
-			if (existing) {
-				this[kRemovePseudoElement](element, pseudoType);
-			}
-			return;
-		}
-		if (existing) {
-			const text = existing.firstChild as Text;
-			if (text.data !== content) {
-				text.data = content;
-				this[kLayoutEngine]?.invalidate(element);
-			}
-			return;
-		}
-		const node = ensurePseudoElement<Element>(element, pseudoType);
-		node.appendChild(element.ownerDocument.createTextNode(content));
-		this[kLayoutEngine]?.invalidateStructure();
-		this[kLayoutEngine]?.invalidate(element);
-	}
-
-	/** Drop an element's pseudo-element node, and the boxes it held. */
-	[kRemovePseudoElement](element: Element, pseudoType: string): void {
-		if (!pseudoElement(element, pseudoType)) {
-			return;
-		}
-		clearPseudoElement(element, pseudoType);
-		this[kLayoutEngine]?.invalidateStructure();
-		this[kLayoutEngine]?.invalidate(element);
-	}
-
-	[kSetupInvalidationHooks](): void {
-		installInvalidationHooks(this[kWindow]);
-		// A property written through element.style lands on the style attribute,
-		// so the hooks above are the whole invalidation path for inline styles.
-		installInlineStyle(this[kWindow]);
-		installStyleSheets(this[kWindow]);
 	}
 
 	// Elements style-invalidated since the last drain; null once the set
@@ -10138,7 +9081,7 @@ export class StyleManager {
 
 		// Handle counter-reset first
 		if (counterReset && counterReset !== "none") {
-			this[kParseCounterReset](scope, counterReset);
+			parseCounterReset(this, scope, counterReset);
 		}
 
 		// Handle automatic list-item counter for ol/ul elements
@@ -10152,118 +9095,13 @@ export class StyleManager {
 
 		// Handle counter-increment after reset
 		if (counterIncrement && counterIncrement !== "none") {
-			this[kParseCounterIncrement](scope, counterIncrement);
+			parseCounterIncrement(this, scope, counterIncrement);
 		}
 
 		// Handle automatic list-item increment for li elements
 		if (element.tagName === "LI") {
-			this[kIncrementCounter](scope, "list-item", 1);
+			incrementCounter(this, scope, "list-item", 1);
 		}
-	}
-
-	/**
-	 * Parse counter-reset CSS property
-	 */
-	[kParseCounterReset](scope: CounterScope, counterReset: string): void {
-		// Parse "counter1 value1 counter2 value2" format
-		const tokens = counterReset.trim().split(/\s+/);
-		for (let i = 0; i < tokens.length; i += 2) {
-			const counterName = tokens[i];
-			const value = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 0;
-			if (counterName && !isNaN(value)) {
-				scope.counters[counterName] = value;
-			}
-		}
-	}
-
-	/**
-	 * Parse counter-increment CSS property
-	 */
-	[kParseCounterIncrement](
-		scope: CounterScope,
-		counterIncrement: string,
-	): void {
-		// Parse "counter1 increment1 counter2 increment2" format
-		const tokens = counterIncrement.trim().split(/\s+/);
-		for (let i = 0; i < tokens.length; i += 2) {
-			const counterName = tokens[i];
-			const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
-			if (counterName && !isNaN(increment)) {
-				this[kIncrementCounter](scope, counterName, increment);
-			}
-		}
-	}
-
-	/**
-	 * Increment a counter by a specific amount
-	 */
-	[kIncrementCounter](
-		scope: CounterScope,
-		counterName: string,
-		increment: number,
-	): void {
-		// For list-item counters, we need to check previous siblings for the most recent value
-		if (counterName === "list-item" && scope.element.tagName === "LI") {
-			const currentValue = this[kGetListItemCounterValue](scope.element);
-			scope.counters[counterName] = currentValue + increment;
-		} else {
-			// For other counters, get value from parent scopes
-			const currentValue = this[kGetCounterValueFromScope](
-				scope.parent,
-				counterName,
-			);
-			scope.counters[counterName] = currentValue + increment;
-		}
-	}
-
-	/**
-	 * Get the current list-item counter value by checking previous siblings
-	 */
-	[kGetListItemCounterValue](element: Element): number {
-		// Find the parent OL/UL that establishes the counter scope
-		let parent = element.parentElement;
-		while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
-			parent = parent.parentElement;
-		}
-
-		if (!parent) {
-			return 0;
-		}
-
-		// Get the reset value from the OL/UL
-		const parentScope = this[kCounterScopes].get(parent);
-		let currentValue = parentScope?.counters["list-item"] ?? 0;
-
-		// Add increments from all previous LI siblings
-		const siblings = Array.from(parent.children);
-		const currentIndex = siblings.indexOf(element);
-
-		for (let i = 0; i < currentIndex; i++) {
-			const sibling = siblings[i];
-			if (sibling.tagName === "LI") {
-				currentValue += 1; // Each LI increments by 1
-			}
-		}
-
-		return currentValue;
-	}
-
-	/**
-	 * Get counter value from a specific scope (without current scope)
-	 */
-	[kGetCounterValueFromScope](
-		scope: CounterScope | undefined,
-		counterName: string,
-	): number {
-		// Look for counter in current scope or parent scopes
-		let currentScope = scope;
-		while (currentScope) {
-			if (counterName in currentScope.counters) {
-				return currentScope.counters[counterName];
-			}
-			currentScope = currentScope.parent;
-		}
-		return 0; // Counter not found
 	}
 
 	getCounterValue(element: Element, counterName: string): number {
@@ -10310,6 +9148,1272 @@ export class StyleManager {
 		this[kPseudoNodeStyles] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 	}
+}
+
+function styleSheetCount(
+	self: StyleManager,
+): number {
+	self[kStyleSheetList] ??= documentStyleSheetList(self[kDocument]);
+	return self[kStyleSheetList].length;
+}
+
+/**
+ * Invalidate an element and everything whose style it reaches: its
+ * descendants, and the shadow tree it hosts -- inheritance crosses that
+ * boundary, so a color set on a host reaches the tree it composes.
+ */
+function invalidateSubtree(
+	self: StyleManager,
+	element: Element,
+): void {
+	invalidateElementCaches(self, element);
+	self.attachPseudoElementsToElement(element);
+	for (const descendant of element.querySelectorAll("*")) {
+		invalidateElementCaches(self, descendant);
+		self.attachPseudoElementsToElement(descendant);
+	}
+	const root = element.shadowRoot;
+	if (root) {
+		for (const descendant of root.querySelectorAll("*")) {
+			invalidateSubtree(self, descendant);
+		}
+	}
+}
+
+function invalidateElementCaches(
+	self: StyleManager,
+	element: Element,
+): void {
+	// Layout measured this element under the style being dropped. This is
+	// the one place an element's computed style goes stale -- attribute
+	// flips, inline styles, subtree and sibling reach, focus all arrive
+	// here -- so it is the one place layout has to be told.
+	self[kLayoutEngine]?.styleInvalidated(element);
+	// A computed style an author still holds is the one this cache handed
+	// out, so it is told the cascade moved on rather than merely dropped.
+	self[kComputedStyleCache].get(element)?.invalidate();
+	self[kComputedStyleCache].delete(element);
+	self[kPseudoElementStyleCache].delete(element);
+	// The pseudo-element nodes read through the declarations just dropped.
+	if (pseudoElementCount(element) > 0) {
+		for (const name of PSEUDO_ELEMENT_NAMES) {
+			const node = pseudoElement<Element>(element, name);
+			if (node) {
+				self[kPseudoNodeStyles].delete(node);
+			}
+		}
+	}
+	self[kCounterScopes].delete(element);
+}
+
+/**
+ * Invalidate the nearest enclosing list, and its items, after a child changed.
+ *
+ * The list's padding-left is a function of its items' markers, and the items'
+ * ordinals are a function of their position, so both go stale when the child
+ * list changes. Only the *nearest* list is affected: a deeper list's items do
+ * not contribute to an outer list's gutter.
+ */
+// TODO(box-tree): a list's gutter is a layout question -- the widest
+// marker its items generate -- answered here in the cascade, which is why
+// the cascade must watch child lists and reach into the layout engine.
+// Phase C computes the gutter during block layout and deletes this.
+function invalidateEnclosingList(
+	self: StyleManager,
+	target: Node,
+): void {
+	let element: Element | null =
+		target.nodeType === self[kWindow].Node.ELEMENT_NODE ?
+				(target as Element) :
+			target.parentElement;
+
+	for (; element; element = element.parentElement) {
+		if (element.tagName !== "UL" && element.tagName !== "OL") {
+			continue;
+		}
+
+		invalidateElementCaches(self, element);
+		self[kLayoutEngine]?.invalidate(element);
+		for (const item of Array.from(element.children)) {
+			invalidateElementCaches(self, item);
+		}
+		return;
+	}
+}
+
+/**
+ * Walk the document's stylesheets -- this engine's own CSSOM objects, the
+ * same ones an author reaches through `styleEl.sheet` -- and collect the
+ * rules the cascade matches against.
+ *
+ * Every style cached against the previous rule set is dropped: a
+ * declaration built before this parse was resolved against rules that no
+ * longer describe the cascade, and nothing else would ever tell it so.
+ */
+function parseStylesheets(
+	self: StyleManager,
+): void {
+	self[kLayoutEngine]?.invalidateStructure();
+	const document = self[kDocument];
+	self[kParsedRules] = [];
+	self[kSelectorsReachSiblings] = false;
+	self[kSelectorsReachAncestors] = false;
+	self[kReachingClasses].clear();
+	self[kReachingIds].clear();
+	self[kReachingAttributes].clear();
+	self[kReachingStates] = false;
+	self[kPseudoRulesByType] = new Map();
+	self[kPseudoSubjectTags] = undefined;
+	self[kCounterRulesExist] = false;
+	self[kListItemRulesExist] = false;
+	self[kScopedRulesExist] = false;
+	self[kStylesheetsDirty] = false;
+	self[kLayerPaths] = [];
+	self[kAnonymousLayers] = 0;
+	self[kParsedStyleSheetCount] = styleSheetCount(self);
+
+	// The UA document sheet parses first; origin ordering (not source
+	// order) is what keeps it beneath every author rule.
+	parseStyleSheet(self, uaStyleSheet(), undefined, true);
+
+	for (const sheet of documentStyleSheets(document)) {
+		parseStyleSheet(self, sheet);
+	}
+
+	// Shadow-tree stylesheets, scoped to their root. Disconnected roots
+	// parse too: attach-populate-connect is the standard order, and a
+	// scope-gated rule matches nothing until its tree renders anyway.
+	for (const root of self[kShadowRoots]) {
+		for (const sheet of shadowStyleSheets(root)) {
+			parseStyleSheet(self, sheet, root);
+		}
+	}
+
+	const layerRanks = rankLayers(self);
+	for (const rule of self[kParsedRules]) {
+		rule.layerRank =
+			rule.layer === null ?
+				self[kUnlayeredRank] :
+					(layerRanks.get(rule.layer) ?? self[kUnlayeredRank]);
+	}
+
+	// Sort rules for cascade resolution: origin first (UA rules sort
+	// below every author rule -- later wins), then cascade layer, then
+	// specificity, then the order the rules were read in.
+	const sourceOrder = new Map(
+		self[kParsedRules].map((rule, index) => [rule, index] as const),
+	);
+	self[kParsedRules].sort((a, b) => {
+		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+			return a.uaOrigin ? -1 : 1;
+		}
+		if (a.layerRank !== b.layerRank) {
+			return a.layerRank - b.layerRank;
+		}
+		if (a.specificity !== b.specificity) {
+			return a.specificity < b.specificity ? -1 : 1;
+		}
+		return sourceOrder.get(a)! - sourceOrder.get(b)!;
+	});
+	self.clearCache();
+	attachPseudoElements(self);
+}
+
+/** Name a layer, and every layer its path nests inside, in declaration order. */
+function declareLayer(
+	self: StyleManager,
+	outer: string | null,
+	name: string,
+): string {
+	const path = outer === null ? name : `${outer}.${name}`;
+	const segments = path.split(".");
+	for (let depth = 1; depth <= segments.length; depth++) {
+		const prefix = segments.slice(0, depth).join(".");
+		if (!self[kLayerPaths].includes(prefix)) {
+			self[kLayerPaths].push(prefix);
+		}
+	}
+	return path;
+}
+
+/**
+ * Where each layer sorts. Layers sort in the order their names were
+ * declared, and a layer's OWN rules sort after the rules of every layer
+ * nested inside it -- the same relation unlayered rules have to layers,
+ * one level down. Smallest first, so the last layer, and then the
+ * unlayered rules above it, win the normal cascade; the important cascade
+ * reads the same order backwards.
+ */
+function rankLayers(
+	self: StyleManager,
+): Map<string, number> {
+	const nested = new Map<string, string[]>();
+	for (const path of self[kLayerPaths]) {
+		const dot = path.lastIndexOf(".");
+		const outer = dot === -1 ? "" : path.slice(0, dot);
+		const siblings = nested.get(outer);
+		if (siblings) {
+			siblings.push(path);
+		} else {
+			nested.set(outer, [path]);
+		}
+	}
+	const ranks = new Map<string, number>();
+	let next = 0;
+	const rank = (path: string): void => {
+		for (const inner of nested.get(path) ?? []) {
+			rank(inner);
+		}
+		if (path !== "") {
+			ranks.set(path, next++);
+		}
+	};
+	rank("");
+	self[kUnlayeredRank] = next;
+	return ranks;
+}
+
+/**
+ * Collect the style rules of a stylesheet, or of a grouping rule's own
+ * rule list. A disabled sheet, and a sheet or `@media` whose condition the
+ * terminal viewport does not match, contribute nothing; `@supports`
+ * contributes its rules, since what this engine supports is what it
+ * renders. `@font-face`, `@keyframes` and `@import` have no terminal
+ * rendering and declare nothing to the cascade.
+ *
+ * A grouping rule this walk has no branch for is walked THROUGH: its rules
+ * cascade without whatever its prelude says about them. For a conditional
+ * rule that is the wrong answer where the condition is false -- a
+ * `@container` query the box does not satisfy still paints -- and it is
+ * the better wrong answer: a rule that applies too widely is one an author
+ * can see, and one that vanishes with the whole at-rule is not.
+ */
+function parseStyleSheet(
+	self: StyleManager,
+	container: CSSStyleSheet | CSSGroupingRule,
+	scope?: Node,
+	uaOrigin?: boolean,
+	context: RuleContext = UNCONDITIONAL,
+): void {
+	if (container instanceof CSSStyleSheet) {
+		if (container.disabled) {
+			return;
+		}
+		if (!self.mediaQueryMatches(container.media.mediaText)) {
+			return;
+		}
+	}
+	for (const rule of container.cssRules) {
+		if (rule instanceof CSSStyleRule) {
+			parseStyleRule(self, rule, scope, uaOrigin, context);
+		} else if (rule instanceof CSSMediaRule) {
+			if (self.mediaQueryMatches(rule.conditionText)) {
+				parseStyleSheet(self, rule, scope, uaOrigin, context);
+			}
+		} else if (rule instanceof CSSSupportsRule) {
+			parseStyleSheet(self, rule, scope, uaOrigin, context);
+		} else if (rule instanceof CSSLayerStatementRule) {
+			// `@layer a, b;` declares the order of layers whose rules come
+			// later, and declares nothing else.
+			for (const name of rule.nameList) {
+				declareLayer(self, context.layer, name);
+			}
+		} else if (rule instanceof CSSLayerBlockRule) {
+			// An unnamed block opens a layer nothing else can name or reach,
+			// which is a layer of its own wherever it stands.
+			const layer = rule.name ?
+					declareLayer(self, context.layer, rule.name) :
+					declareLayer(self, context.layer, ` ${self[kAnonymousLayers]++}`);
+			parseStyleSheet(self, rule, scope, uaOrigin, {...context, layer});
+		} else if (rule instanceof CSSScopeRule) {
+			const owner = rule.parentStyleSheet?.ownerNode ?? null;
+			parseStyleSheet(self, rule, scope, uaOrigin, {
+				...context,
+				scopes: [
+					...context.scopes,
+					{
+						start: rule.start,
+						end: rule.end,
+						owner: owner ? owner.parentElement : null,
+					},
+				],
+			});
+		} else if (rule instanceof CSSStartingStyleRule) {
+			// `@starting-style` declares the style a box starts a transition
+			// FROM. This engine runs no transitions, so a rule inside it
+			// would have no moment to stop applying in and would style the
+			// box for good: it parses into the CSSOM and reaches the
+			// cascade never.
+			continue;
+		} else if (rule instanceof CSSGroupingRule) {
+			parseStyleSheet(self, rule, scope, uaOrigin, context);
+		}
+	}
+}
+
+function mediaQueryPartMatches(
+	self: StyleManager,
+	query: string,
+): boolean {
+	let q = query.trim();
+	let negate = false;
+	if (/^not\s+/i.test(q)) {
+		negate = true;
+		q = q.replace(/^not\s+/i, "");
+	}
+
+	const typeMatch = q.match(/^(all|screen|print|speech)\b\s*(and\s+)?/i);
+	let matches = true;
+	if (typeMatch) {
+		matches = typeMatch[1].toLowerCase() !== "print";
+		q = q.slice(typeMatch[0].length);
+	}
+
+	const features = q.match(/\([^)]*\)/g) || [];
+	for (const feature of features) {
+		if (!mediaFeatureMatches(self, feature.slice(1, -1).trim())) {
+			matches = false;
+		}
+	}
+
+	return negate ? !matches : matches;
+}
+
+function mediaFeatureMatches(
+	self: StyleManager,
+	feature: string,
+): boolean {
+	const match = feature.match(
+		/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
+	);
+	if (!match) {
+		return true;
+	} // unrecognized feature: permissive default
+
+	const [, boundRaw, dimension, numRaw] = match;
+	const bound = boundRaw?.toLowerCase();
+	const num = parseFloat(numRaw);
+	const actual =
+		dimension.toLowerCase() === "width" ?
+			self[kWindow].innerWidth :
+			self[kWindow].innerHeight;
+
+	if (bound === "min-") {
+		return actual >= num;
+	}
+	if (bound === "max-") {
+		return actual <= num;
+	}
+	return actual === num;
+}
+
+/**
+ * Parse a single style rule and extract selector/declarations
+ */
+function parseStyleRule(
+	self: StyleManager,
+	styleRule: CSSStyleRule,
+	scope?: Node,
+	uaOriginSheet?: boolean,
+	context: RuleContext = UNCONDITIONAL,
+): void {
+	// A rule's selector list is a set of selectors that share a block, and
+	// each is matched -- and weighed -- on its own. `#a::before, #b` is one
+	// pseudo-element rule and one ordinary rule, not one of either.
+	const block = styleRule.style.declarationBlock();
+	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
+	for (const selector of splitSelectorList(styleRule.selectorText)) {
+		parseSelector(
+			self,
+			selector,
+			block,
+			scope,
+			uaOriginSheet,
+			namespaces,
+			context,
+		);
+	}
+}
+
+/**
+ * Record the keys a change to which can reach an element's descendants.
+ *
+ * Two ways it can: the key is tested on a NON-SUBJECT compound, so the
+ * rule matches something below the element it names; or the rule declares
+ * an INHERITED property, so starting or stopping it moves a value the
+ * descendants take from the element. A key in neither position changes
+ * nothing but the element's own box.
+ */
+function indexReachingKeys(
+	self: StyleManager,
+	selector: string,
+	declarations: Record<string, string>,
+): void {
+	let inherits = false;
+	for (const property in declarations) {
+		// A shorthand is stored as its longhands, so this reads longhands --
+		// except `all`, which stands for every property there is.
+		// `display` is not inherited and reaches them anyway: a flex
+		// container blockifies its children (css-display-3 §2.7), which
+		// changes what KIND of box each of them is.
+		if (
+			property === "all" ||
+			property === "display" ||
+			property.startsWith("--") ||
+			INHERITED_PROPERTIES.has(property)
+		) {
+			inherits = true;
+			break;
+		}
+	}
+	const compounds = selectorCompounds(selector);
+	const last = inherits ? compounds.length : compounds.length - 1;
+	for (let i = 0; i < last; i++) {
+		const compound = compounds[i];
+		for (const match of compound.matchAll(SELECTOR_CLASS_NAME)) {
+			self[kReachingClasses].add(match[1]);
+		}
+		for (const match of compound.matchAll(SELECTOR_ID_NAME)) {
+			self[kReachingIds].add(match[1]);
+		}
+		for (const match of compound.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
+			self[kReachingAttributes].add(match[1].toLowerCase());
+		}
+		if (STATE_PSEUDO_CLASSES.test(compound)) {
+			self[kReachingStates] = true;
+		}
+	}
+}
+
+function parseSelector(
+	self: StyleManager,
+	selector: string,
+	block: DeclarationBlock,
+	scope?: Node,
+	uaOriginSheet?: boolean,
+	sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
+	context: RuleContext = UNCONDITIONAL,
+): void {
+	const {declarations, important, order} = block;
+	// A rule's layer decides where it sorts, and the whole layer order is
+	// only known once every sheet has been read: the rank is filled in
+	// then, and this is the value it is filled in from.
+	const layer = context.layer;
+	let scopes: readonly ScopeCondition[] | undefined;
+	if (context.scopes.length > 0) {
+		scopes = context.scopes;
+		self[kScopedRulesExist] = true;
+	}
+	let namespace: string | null | undefined;
+	if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
+		const resolved = selectorNamespace(selector, sheetNamespaces);
+		if (!resolved.valid) {
+			return;
+		}
+		selector = resolved.selector;
+		namespace = resolved.namespace;
+	}
+	if (selector.includes("+") || selector.includes("~")) {
+		self[kSelectorsReachSiblings] = true;
+	}
+	if (selector.includes(":has")) {
+		self[kSelectorsReachAncestors] = true;
+	}
+	indexReachingKeys(self, selector, declarations);
+	if (
+		declarations["counter-reset"] ||
+		declarations["counter-increment"] ||
+		declarations["content"]?.includes("counter")
+	) {
+		self[kCounterRulesExist] = true;
+	}
+	if (declarations["display"] === "list-item") {
+		self[kListItemRulesExist] = true;
+	}
+	const specificity = selectorSpecificity(selector);
+	const uaOrigin = Boolean(
+		uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
+	);
+
+	// :host selectors only mean anything inside a shadow tree's own
+	// stylesheet; the selector engine rejects them outright, so they parse
+	// into a structured predicate matched by kRuleMatches instead.
+	const subjectTag = selectorSubjectTag(selector);
+
+	// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
+	// those followed by a descendant (or `>` child) selector.
+	if (scope && selector.startsWith(":host")) {
+		// The argument needs balanced-paren matching, not [^)]*: the UA
+		// field sheet's own :host(:not(:focus)) nests one level deep.
+		const hostMatch = selector.match(
+			/^:host(?:\(((?:[^()]|\([^()]*\))*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
+		);
+		if (hostMatch) {
+			const [, arg, compound, child, restRaw] = hostMatch;
+			const predicate = [arg, compound].filter(Boolean).join("") || null;
+			const rest = restRaw.trim() || null;
+			self[kParsedRules].push({
+				selector,
+				declarations,
+				important,
+				order,
+				specificity,
+				scope,
+				host: {predicate, rest, child: Boolean(child)},
+				uaOrigin,
+				layer,
+				layerRank: 0,
+				scopes,
+			});
+			return;
+		}
+	}
+
+	// Check if this is a pseudo-element rule. ::placeholder/::selection
+	// are widget-part pseudos: no content node ever attaches for them --
+	// they resolve onto the UA shadow tree's [part] elements (see
+	// kGetMatchingRules) or the selection painter.
+	// Any pseudo-element, not just the ones this engine gives a box: a
+	// rule for `::highlight(x)` still has to answer through
+	// getComputedStyle, which is the whole of what CSSOM asks of it.
+	const pseudoMatch = selector.match(
+		/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
+	);
+
+	if (pseudoMatch) {
+		const [, baseSelector, pseudoElement] = pseudoMatch;
+		const rule: ParsedCSSRule = {
+			// A pseudo-element written with no originating selector
+			// originates on every element, which is what `*` names.
+			selector: baseSelector.trim() || "*",
+			subjectTag: selectorSubjectTag(baseSelector.trim()),
+			declarations,
+			important,
+			order,
+			specificity,
+			pseudoElement,
+			scope,
+			uaOrigin,
+			namespace,
+			layer,
+			layerRank: 0,
+			scopes,
+		};
+		self[kParsedRules].push(rule);
+		const byType = self[kPseudoRulesByType].get(pseudoElement);
+		if (byType) {
+			byType.push(rule);
+		} else {
+			self[kPseudoRulesByType].set(pseudoElement, [rule]);
+		}
+	} else {
+		self[kParsedRules].push({
+			selector,
+			subjectTag,
+			declarations,
+			important,
+			order,
+			specificity,
+			scope,
+			uaOrigin,
+			namespace,
+			layer,
+			layerRank: 0,
+			scopes,
+		});
+	}
+}
+
+/**
+ * Get matching CSS rules for an element
+ */
+function getMatchingRules(
+	self: StyleManager,
+	element: Element,
+): ParsedCSSRule[] {
+	// A UA shadow part IS the element its part pseudo styles: the host's
+	// ::placeholder rules cascade directly onto the [part="placeholder"]
+	// span, the way a browser resolves ::placeholder onto its input's
+	// internal placeholder element.
+	const partPseudo = partPseudoFor(self, element);
+	const root = element.getRootNode();
+	const shadowHost =
+		root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
+	const partNames = (element.getAttribute("part") ?? "")
+		.split(/\s+/)
+		.filter(Boolean);
+	const matched = self[kParsedRules].filter((rule) => {
+		if (rule.pseudoElement) {
+			// ::part(name): an author styling an exposed shadow part from
+			// outside. The rule matches the shadow's HOST; its declarations
+			// cascade onto the part element -- any shadow, not just the UA's,
+			// which is the standard CSS Shadow Parts crossing.
+			const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
+			if (partArg) {
+				return (
+					shadowHost !== null &&
+					partNames.includes(partArg[1].trim()) &&
+					ruleMatches(self, shadowHost, rule)
+				);
+			}
+			// ::placeholder / ::selection: UA-part pseudo aliases.
+			return (
+				partPseudo !== null &&
+				shadowHost !== null &&
+				rule.pseudoElement === partPseudo &&
+				ruleMatches(self, shadowHost, rule)
+			);
+		}
+		return ruleMatches(self, element, rule);
+	});
+	// Scope proximity sorts between specificity and order of appearance
+	// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
+	// element: the closer scoping root wins, and a rule in no scope at all
+	// is infinitely far from one. The rules arrive in cascade order and
+	// the sort is stable, so a comparison that only answers for proximity
+	// leaves every other tier as it found it.
+	if (!self[kScopedRulesExist]) {
+		return matched;
+	}
+	const proximity = new Map(
+		matched.map(
+			(rule) =>
+				[
+					rule,
+					rule.scopes ? scopeProximity(self, element, rule) : UNSCOPED,
+				] as const,
+		),
+	);
+	return matched.sort((a, b) => {
+		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+			return 0;
+		}
+		if (a.layerRank !== b.layerRank) {
+			return 0;
+		}
+		if (a.specificity !== b.specificity) {
+			return 0;
+		}
+		return proximity.get(b)! - proximity.get(a)!;
+	});
+}
+
+/**
+ * Whether an element matches one of a rule's selectors. A scoped rule's
+ * selector is written relative to a scoping root and reaches only the
+ * elements that root has in scope; every other rule's is matched by the
+ * DOM outright.
+ */
+function matchesRule(
+	self: StyleManager,
+	element: Element,
+	rule: ParsedCSSRule,
+	selector: string,
+): boolean {
+	if (!rule.scopes) {
+		return element.matches(selector);
+	}
+	return scopingRoot(self, element, {...rule, selector}) !== null;
+}
+
+/**
+ * How many generations lie between an element and the nearest scoping root
+ * its rule applies from, or Infinity when the rule names no scope. Only
+ * ever asked of a rule that matches, so a rule out of scope everywhere has
+ * already been filtered out.
+ */
+function scopeProximity(
+	self: StyleManager,
+	element: Element,
+	rule: ParsedCSSRule,
+): number {
+	const root = scopingRoot(self, element, rule);
+	if (!root) {
+		return UNSCOPED;
+	}
+	let generations = 0;
+	for (
+		let node: Element | null = element;
+		node && node !== root;
+		node = node.parentElement
+	) {
+		generations++;
+	}
+	return generations;
+}
+
+/**
+ * The scoping root a scoped rule reaches this element from, or null when
+ * no chain of roots puts the element in the rule's scope and matches its
+ * selector.
+ *
+ * Every root is an inclusive ancestor of the element -- that is what being
+ * in scope means -- so the chain is read outermost first, each condition
+ * taking the HIGHEST root it can (which constrains the roots inside it
+ * least), and the innermost taking the NEAREST, which is the one the
+ * element's selector and its proximity are measured from.
+ */
+function scopingRoot(
+	self: StyleManager,
+	element: Element,
+	rule: ParsedCSSRule,
+): Element | null {
+	const conditions = rule.scopes!;
+	let outer: Element | null = null;
+	for (let index = 0; index < conditions.length; index++) {
+		const condition = conditions[index];
+		const innermost = index === conditions.length - 1;
+		let found: Element | null = null;
+		for (
+			let candidate: Element | null = element;
+			candidate;
+			candidate = candidate.parentElement
+		) {
+			if (outer && candidate !== outer && !outer.contains(candidate)) {
+				break;
+			}
+			if (!scopeRootMatches(candidate, condition, outer)) {
+				continue;
+			}
+			if (!inScopeOf(element, candidate, condition)) {
+				continue;
+			}
+			if (innermost) {
+				if (!matchesInScope(element, rule.selector, candidate)) {
+					continue;
+				}
+				// The nearest root the rule reaches the element from.
+				found = candidate;
+				break;
+			}
+			found = candidate;
+		}
+		if (!found) {
+			return null;
+		}
+		outer = found;
+	}
+	return outer;
+}
+
+/**
+ * The part pseudo-element a UA shadow part element answers to, if any:
+ * "::placeholder" for the [part="placeholder"] span of an input's
+ * UA-internal tree. Author shadow trees are not eligible -- their parts
+ * are theirs to style from inside.
+ */
+function partPseudoFor(
+	self: StyleManager,
+	element: Element,
+): string | null {
+	const root = element.getRootNode();
+	if (isUAShadowRoot(root)) {
+		const part = element.getAttribute("part");
+		if (part === "placeholder" || part === "selection") {
+			return `::${part}`;
+		}
+	}
+	return null;
+}
+
+/**
+ * Whether a rule applies to an element, honoring tree scopes: a rule
+ * matches only elements of the tree its stylesheet belongs to --
+ * document rules stop at every shadow boundary, shadow rules never
+ * escape their root -- plus the one deliberate crossing, :host, which
+ * lets a shadow stylesheet style its own host.
+ */
+function ruleMatches(
+	self: StyleManager,
+	element: Element,
+	rule: ParsedCSSRule,
+): boolean {
+	// The subject's type, when the selector names one: every rule is tried
+	// against every element, and this is the reject that costs a string
+	// comparison instead of a selector match. A :host rule's subject is the
+	// host, which the branch below resolves for itself.
+	if (rule.subjectTag !== undefined && rule.host === undefined) {
+		const local = element.localName;
+		// A foreign element's local name keeps its case (feGaussianBlur), and
+		// the tag here is lowercased, so the reject only fires when neither
+		// reading matches -- the case-sensitivity a selector really has is
+		// then the matcher's to decide.
+		if (
+			local !== rule.subjectTag &&
+			local.toLowerCase() !== rule.subjectTag
+		) {
+			return false;
+		}
+	}
+	try {
+		// The namespace the selector qualifies its subject with, which the
+		// DOM's own matcher cannot answer.
+		if (
+			rule.namespace !== undefined &&
+			element.namespaceURI !== rule.namespace
+		) {
+			return false;
+		}
+		// The selector engine treats `:focus-visible` as `:focus`, so gate it
+		// on our own flag.
+		if (
+			!self[kFocusVisibleActive] &&
+			rule.selector.includes(":focus-visible")
+		) {
+			return false;
+		}
+		if (rule.host) {
+			const scope = rule.scope as ShadowRoot;
+			const host = scope.host;
+			if (!host) {
+				return false;
+			}
+			const {predicate, rest, child} = rule.host;
+			if (predicate && !host.matches(predicate)) {
+				return false;
+			}
+			if (!rest) {
+				return element === host;
+			}
+			if (element.getRootNode() !== scope) {
+				return false;
+			}
+			if (!element.matches(rest)) {
+				return false;
+			}
+			return child ? element.parentNode === scope : true;
+		}
+		const root = element.getRootNode();
+		if (rule.scope) {
+			return (
+				root === rule.scope &&
+				matchesRule(self, element, rule, rule.selector)
+			);
+		}
+		// UA document rules apply in EVERY tree scope, as a browser's own
+		// UA sheet styles shadow trees.
+		if (rule.uaOrigin) {
+			return matchesRule(self, element, rule, rule.selector);
+		}
+		// AUTHOR document rules match everything OUTSIDE shadow trees --
+		// including detached elements (styles resolve before insertion,
+		// and always have here); the boundary they must not cross is the
+		// shadow root.
+		const inShadowTree =
+			root.nodeType === 11 && Boolean((root as ShadowRoot).host);
+		return !inShadowTree && matchesRule(self, element, rule, rule.selector);
+	} catch (err) {
+		// Fallback for unsupported selectors
+		return false;
+	}
+}
+
+/**
+ * Compute style properties for a pseudo-element
+ */
+function computePseudoElementStyle(
+	self: StyleManager,
+	element: Element,
+	pseudoElement: string,
+): Record<string, string> {
+	const matchingRules = self[kParsedRules].filter((rule) => {
+		if (rule.pseudoElement !== pseudoElement) {
+			return false;
+		}
+		return ruleMatches(self, element, rule);
+	});
+
+	// Apply rules in cascade order. A pseudo-element's declarations are a
+	// flat record rather than a per-property cascade, so a flow-relative
+	// declaration fills BOTH names of its slot as it lands: the physical
+	// one everything downstream reads, and its own, which a later rule
+	// declaring either name overwrites in turn.
+	const computedStyle: Record<string, string> = {};
+	let direction: string | null = null;
+	for (const rule of matchingRules) {
+		const names = Object.keys(rule.declarations).sort(
+			(a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0),
+		);
+		for (const name of names) {
+			const value = rule.declarations[name];
+			computedStyle[name] = value;
+			if (
+				!LOGICAL_TO_PHYSICAL.ltr.has(name) &&
+				!PHYSICAL_TO_LOGICAL.has(name)
+			) {
+				continue;
+			}
+			direction ??= self.declarationFor(element).computedValueOf("direction");
+			for (const other of slotNames(name, direction)) {
+				computedStyle[other] = value;
+			}
+		}
+	}
+
+	return computedStyle;
+}
+
+/**
+ * The text a pseudo-element holds, or null when it holds none -- no rule
+ * declared `content`, or the one that did declared `none`.
+ */
+function pseudoContentFor(
+	self: StyleManager,
+	hostElement: Element,
+	pseudoType: string,
+): string | null {
+	const styles = computePseudoElementStyle(self, hostElement, pseudoType);
+	let content = styles.content;
+
+	// For ::marker pseudo-elements, generate default content if none specified
+	if (pseudoType === "::marker") {
+		const computedStyle = self.declarationFor(hostElement);
+		const display = computedStyle.computedValueOf("display");
+
+		if (display === "list-item") {
+			// Check if explicitly set to outside positioning
+			const listStylePosition =
+				computedStyle.computedValueOf("list-style-position") || "outside";
+
+			// Skip inline marker creation for outside positioning (the default)
+			if (listStylePosition === "outside") {
+				return null;
+			}
+
+			// If no explicit CSS content, generate default marker using list-style-type
+			if (!content || content === "none" || content === "normal") {
+				const listParent = hostElement.parentElement;
+				if (
+					listParent &&
+					(listParent.tagName === "UL" || listParent.tagName === "OL")
+				) {
+					// Use getListMarker function to handle all list-style-type values
+					const marker = getListMarker(hostElement, listParent);
+					if (marker) {
+						content = `"${marker} "`;
+					}
+				}
+			}
+		}
+	}
+
+	// Only create pseudo-element if it has content
+	if (!content || content === "none" || content === "normal") {
+		return null;
+	}
+
+	// Remove quotes from content string
+	const textContent = unquoteContent(content);
+
+	// Resolve counter() functions in the content
+	return self.resolveCounterFunction(hostElement, textContent);
+}
+
+/**
+ * Bring the document's pseudo-element nodes into line with the rules just
+ * parsed: the ones a rule now reaches gain a node, the ones no rule
+ * reaches lose theirs.
+ */
+function attachPseudoElements(
+	self: StyleManager,
+): void {
+	// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
+	// wholesale: layout keys a pseudo's boxes by node instance, and a
+	// fresh node per refresh strands every mapped one. Attach handles
+	// content updates in place and removal when a pseudo stops matching.
+	// Walks every element on stylesheet change.
+	if (!self[kDocument].documentElement) {
+		return;
+	}
+	const walker = self[kDocument].createTreeWalker(
+		self[kDocument].documentElement,
+		self[kWindow].NodeFilter.SHOW_ELEMENT,
+		null,
+	);
+	let element = walker.nextNode() as Element;
+	while (element) {
+		if (pseudoElementCount(element) > 0) {
+			self.attachPseudoElementsToElement(element);
+		}
+		element = walker.nextNode() as Element;
+	}
+
+	self.attachPseudoElementsToDocument();
+}
+
+function pseudoSubjects(
+	self: StyleManager,
+): Set<string> | null {
+	if (self[kPseudoSubjectTags] !== undefined) {
+		return self[kPseudoSubjectTags];
+	}
+	if (self[kCounterRulesExist] || self[kListItemRulesExist]) {
+		return (self[kPseudoSubjectTags] = null);
+	}
+	// A list carries the one counter no rule declares, and its items the
+	// markers that counter numbers.
+	const tags = new Set(["OL", "UL", "LI"]);
+	// Only the pseudos this attaches: ::marker reaches list items, named
+	// above, and ::placeholder, ::selection and ::part live on nodes the
+	// widget trees already hold.
+	for (const type of ["::before", "::after"]) {
+		for (const rule of self[kPseudoRulesByType].get(type) ?? []) {
+			if (!rule.subjectTag) {
+				return (self[kPseudoSubjectTags] = null);
+			}
+			tags.add(rule.subjectTag.toUpperCase());
+		}
+	}
+	return (self[kPseudoSubjectTags] = tags);
+}
+
+/**
+ * Could any parsed rule give this element a pseudo of this type? A few
+ * matches() calls against only the rules that declare the pseudo --
+ * instead of building the full pseudo style declaration per element per
+ * type just to discover `content` is "none". Over-matching is safe (the
+ * full path still decides); the win is the early false for the common
+ * document with no pseudo rules beyond the UA button brackets.
+ */
+function pseudoRuleCouldMatch(
+	self: StyleManager,
+	element: Element,
+	pseudoType: string,
+): boolean {
+	if (pseudoType === "::marker") {
+		// Markers exist only on display:list-item boxes: an <li>, a rule
+		// declaring it, or an inline style. Nothing else needs the
+		// computed-display check below.
+		return (
+			element.tagName === "LI" ||
+			self[kListItemRulesExist] ||
+			(element.getAttribute("style") ?? "").includes("list-item")
+		);
+	}
+	const rules = self[kPseudoRulesByType].get(pseudoType);
+	if (!rules) {
+		return false;
+	}
+	for (const rule of rules) {
+		try {
+			if (element.matches(rule.selector)) {
+				return true;
+			}
+		} catch (_err) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Attach a specific pseudo-element type to an element if it should have one
+ */
+function attachPseudoElementToElementForType(
+	self: StyleManager,
+	element: Element,
+	pseudoType: string,
+): void {
+	// No rule can apply and none is attached: skip the counter and style
+	// computations wholesale. (An attached pseudo still takes the full
+	// path so a rule that STOPPED matching removes it.)
+	if (
+		!pseudoRuleCouldMatch(self, element, pseudoType) &&
+		!pseudoElement(element, pseudoType)
+	) {
+		return;
+	}
+
+	// Initialize counters for this element first (needed for counter() functions)
+	self.initializeCounters(element);
+
+	// Skip ::marker for elements without display: list-item or with outside positioning
+	if (pseudoType === "::marker") {
+		const computedStyle = self.declarationFor(element);
+		const display = computedStyle.computedValueOf("display");
+		const listStylePosition =
+			computedStyle.computedValueOf("list-style-position") || "outside";
+
+		if (display !== "list-item") {
+			return;
+		}
+
+		// Remove inline markers for outside positioning
+		if (listStylePosition === "outside") {
+			removePseudoElement(self, element, "::marker");
+			return;
+		}
+	}
+
+	// Compute what the pseudo should hold now; null means "none".
+	const content = self.shouldCreatePseudoElement(element, pseudoType) ?
+			pseudoContentFor(self, element, pseudoType) :
+		null;
+	const existing = pseudoElement<Element>(element, pseudoType);
+
+	// Pseudo NODE IDENTITY is stable: attaches re-run on every element
+	// addition and attribute invalidation, and layout keys the pseudo's
+	// boxes by instance -- a fresh node per attach strands the mapped one
+	// (an absolutely positioned button's ::after glyph simply vanished).
+	// The slot keeps the node; only its text changes.
+	if (content === null) {
+		if (existing) {
+			removePseudoElement(self, element, pseudoType);
+		}
+		return;
+	}
+	if (existing) {
+		const text = existing.firstChild as Text;
+		if (text.data !== content) {
+			text.data = content;
+			self[kLayoutEngine]?.invalidate(element);
+		}
+		return;
+	}
+	const node = ensurePseudoElement<Element>(element, pseudoType);
+	node.appendChild(element.ownerDocument.createTextNode(content));
+	self[kLayoutEngine]?.invalidateStructure();
+	self[kLayoutEngine]?.invalidate(element);
+}
+
+/** Drop an element's pseudo-element node, and the boxes it held. */
+function removePseudoElement(
+	self: StyleManager,
+	element: Element,
+	pseudoType: string,
+): void {
+	if (!pseudoElement(element, pseudoType)) {
+		return;
+	}
+	clearPseudoElement(element, pseudoType);
+	self[kLayoutEngine]?.invalidateStructure();
+	self[kLayoutEngine]?.invalidate(element);
+}
+
+function setupInvalidationHooks(
+	self: StyleManager,
+): void {
+	installInvalidationHooks(self[kWindow]);
+	// A property written through element.style lands on the style attribute,
+	// so the hooks above are the whole invalidation path for inline styles.
+	installInlineStyle(self[kWindow]);
+	installStyleSheets(self[kWindow]);
+}
+
+/**
+ * Parse counter-reset CSS property
+ */
+function parseCounterReset(
+	self: StyleManager,
+	scope: CounterScope,
+	counterReset: string,
+): void {
+	// Parse "counter1 value1 counter2 value2" format
+	const tokens = counterReset.trim().split(/\s+/);
+	for (let i = 0; i < tokens.length; i += 2) {
+		const counterName = tokens[i];
+		const value = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 0;
+		if (counterName && !isNaN(value)) {
+			scope.counters[counterName] = value;
+		}
+	}
+}
+
+/**
+ * Parse counter-increment CSS property
+ */
+function parseCounterIncrement(
+	self: StyleManager,
+	scope: CounterScope,
+	counterIncrement: string,
+): void {
+	// Parse "counter1 increment1 counter2 increment2" format
+	const tokens = counterIncrement.trim().split(/\s+/);
+	for (let i = 0; i < tokens.length; i += 2) {
+		const counterName = tokens[i];
+		const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
+		if (counterName && !isNaN(increment)) {
+			incrementCounter(self, scope, counterName, increment);
+		}
+	}
+}
+
+/**
+ * Increment a counter by a specific amount
+ */
+function incrementCounter(
+	self: StyleManager,
+	scope: CounterScope,
+	counterName: string,
+	increment: number,
+): void {
+	// For list-item counters, we need to check previous siblings for the most recent value
+	if (counterName === "list-item" && scope.element.tagName === "LI") {
+		const currentValue = getListItemCounterValue(self, scope.element);
+		scope.counters[counterName] = currentValue + increment;
+	} else {
+		// For other counters, get value from parent scopes
+		const currentValue = getCounterValueFromScope(
+			self,
+			scope.parent,
+			counterName,
+		);
+		scope.counters[counterName] = currentValue + increment;
+	}
+}
+
+/**
+ * Get the current list-item counter value by checking previous siblings
+ */
+function getListItemCounterValue(
+	self: StyleManager,
+	element: Element,
+): number {
+	// Find the parent OL/UL that establishes the counter scope
+	let parent = element.parentElement;
+	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
+		parent = parent.parentElement;
+	}
+
+	if (!parent) {
+		return 0;
+	}
+
+	// Get the reset value from the OL/UL
+	const parentScope = self[kCounterScopes].get(parent);
+	let currentValue = parentScope?.counters["list-item"] ?? 0;
+
+	// Add increments from all previous LI siblings
+	const siblings = Array.from(parent.children);
+	const currentIndex = siblings.indexOf(element);
+
+	for (let i = 0; i < currentIndex; i++) {
+		const sibling = siblings[i];
+		if (sibling.tagName === "LI") {
+			currentValue += 1; // Each LI increments by 1
+		}
+	}
+
+	return currentValue;
+}
+
+/**
+ * Get counter value from a specific scope (without current scope)
+ */
+function getCounterValueFromScope(
+	self: StyleManager,
+	scope: CounterScope | undefined,
+	counterName: string,
+): number {
+	// Look for counter in current scope or parent scopes
+	let currentScope = scope;
+	while (currentScope) {
+		if (counterName in currentScope.counters) {
+			return currentScope.counters[counterName];
+		}
+		currentScope = currentScope.parent;
+	}
+	return 0; // Counter not found
 }
 
 /**

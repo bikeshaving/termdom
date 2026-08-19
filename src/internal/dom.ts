@@ -510,7 +510,6 @@ const kCancelable = Symbol("cancelable");
 const kComposed = Symbol("composed");
 const kTimeStamp = Symbol("timeStamp");
 const kState = Symbol("state");
-const kSetEventType = Symbol("set event type");
 const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
@@ -569,11 +568,6 @@ export class Event extends HostEvent {
 
 	get [kDispatchState](): DispatchState {
 		return this[kState];
-	}
-
-	/** Swap the type a dispatch invokes listeners under, for the legacy pass. */
-	[kSetEventType](type: string): void {
-		this[kType] = type;
 	}
 
 	/**
@@ -686,6 +680,14 @@ export class Event extends HostEvent {
 		this[kState].trusted = false;
 		this[kState].target = null;
 	}
+}
+
+/** Swap the type a dispatch invokes listeners under, for the legacy pass. */
+function setEventType(
+	self: Event,
+	type: string,
+): void {
+	self[kType] = type;
 }
 
 Object.defineProperties(Event.prototype, {
@@ -1878,7 +1880,6 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 
 const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
-const kEventHandlerMap = Symbol("event handler map");
 const kGetTheParent = Symbol("get the parent");
 
 /** An event target: a listener list, and the parent a dispatch walks to. */
@@ -1981,24 +1982,27 @@ export class EventTarget {
 	}
 
 	/**
-	 * The event handler map, for the handler IDL attributes. Created only when
-	 * a handler is being set: reading a handler off a target that has none
-	 * allocates nothing.
-	 */
-	[kEventHandlerMap](create: boolean): Map<string, EventHandlerRecord> | null {
-		if (this[kHandlers] === null && create) {
-			this[kHandlers] = new Map();
-		}
-		return this[kHandlers];
-	}
-
-	/**
 	 * The target a dispatch reaches next. A bare event target is the end of a
 	 * path; a node hands back its parent.
 	 */
 	[kGetTheParent](_event: Event): EventTarget | null {
 		return null;
 	}
+}
+
+/**
+ * The event handler map, for the handler IDL attributes. Created only when
+ * a handler is being set: reading a handler off a target that has none
+ * allocates nothing.
+ */
+function eventHandlerMap(
+	self: EventTarget,
+	create: boolean,
+): Map<string, EventHandlerRecord> | null {
+	if (self[kHandlers] === null && create) {
+		self[kHandlers] = new Map();
+	}
+	return self[kHandlers];
 }
 
 Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
@@ -2047,7 +2051,7 @@ function eventHandlerValue(
 	target: EventTarget,
 	type: string,
 ): EventHandlerValue | null {
-	const handlers = target[kEventHandlerMap](false);
+	const handlers = eventHandlerMap(target, false);
 	if (handlers === null) {
 		return null;
 	}
@@ -2068,7 +2072,7 @@ function setEventHandler(
 		(typeof value === "object" && value !== null) ?
 				(value as EventHandlerValue) :
 			null;
-	const handlers = target[kEventHandlerMap](handler !== null);
+	const handlers = eventHandlerMap(target, handler !== null);
 	if (handlers === null) {
 		return;
 	}
@@ -2479,8 +2483,8 @@ function dispatch(target: EventTarget, event: Event): boolean {
 				break;
 			}
 		}
-		if (activationTarget !== null) {
-			(activationTarget as ActivationTarget)[kLegacyPreActivationBehavior]?.();
+		if (activationTarget instanceof HTMLInputElement) {
+			legacyPreActivationBehavior(activationTarget);
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
 			const struct = state.path[index];
@@ -2515,8 +2519,8 @@ function dispatch(target: EventTarget, event: Event): boolean {
 		const behaviors = activationTarget as ActivationTarget;
 		if (!state.canceled) {
 			behaviors[kActivationBehavior]?.(event);
-		} else {
-			behaviors[kLegacyCanceledActivationBehavior]?.();
+		} else if (activationTarget instanceof HTMLInputElement) {
+			legacyCanceledActivationBehavior(activationTarget);
 		}
 	}
 	return !state.canceled;
@@ -2558,9 +2562,9 @@ function invoke(event: Event, index: number, capturing: boolean): void {
 		const legacyType = LEGACY_EVENT_TYPES.get(event.type);
 		if (legacyType !== undefined) {
 			const originalType = event.type;
-			event[kSetEventType](legacyType);
+			setEventType(event, legacyType);
 			innerInvoke(event, listeners, capturing);
-			event[kSetEventType](originalType);
+			setEventType(event, originalType);
 		}
 	}
 }
@@ -2819,7 +2823,6 @@ const kSerial = Symbol("node serial");
 const kInsertionSteps = Symbol("insertion steps");
 const kRemovingSteps = Symbol("removing steps");
 const kAdoptingSteps = Symbol("adopting steps");
-const kChildrenChanged = Symbol("children changed steps");
 const kCloningSteps = Symbol("cloning steps");
 const kCloneSingle = Symbol("clone a single node");
 const kFirstChild = Symbol("first child");
@@ -3181,8 +3184,6 @@ export class Node extends EventTarget {
 	[kRemovingSteps](_oldParent: Node): void {}
 
 	[kAdoptingSteps](_oldDocument: Document): void {}
-
-	[kChildrenChanged](): void {}
 
 	[kCloningSteps](_copy: Node, _document: Document, _deep: boolean): void {}
 
@@ -3609,7 +3610,6 @@ function insertNode(
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
-	parent[kChildrenChanged]();
 }
 
 /** Splice a node into a parent's child list. */
@@ -3887,7 +3887,6 @@ function removeNode(node: Node, suppressObservers = false): void {
 			oldNextSibling,
 		);
 	}
-	parent[kChildrenChanged]();
 }
 
 /* --------------------------------------------------------- mutation: adopt */
@@ -3999,9 +3998,6 @@ function queueMutationObserverMicrotask(): void {
 	queueMicrotask(notifyMutationObservers);
 }
 
-const kObserveNode = Symbol("add a node to an observer's node list");
-const kNotifyObserver = Symbol("deliver an observer's records");
-
 /**
  * Deliver every pending observer's records.
  *
@@ -4014,7 +4010,7 @@ function notifyMutationObservers(): void {
 	pendingMutationObservers.clear();
 	const signalSet = signalSlots.splice(0, signalSlots.length);
 	for (const observer of notifySet) {
-		observer[kNotifyObserver]();
+		notifyObserver(observer);
 	}
 	// What is left carries transient registrations of observers this checkpoint
 	// had nothing to deliver to. Those last until their observer is next
@@ -4034,7 +4030,7 @@ function notifyMutationObservers(): void {
 			if (pendingMutationObservers.has(registered.observer)) {
 				queued = true;
 			} else {
-				registered.observer[kObserveNode](node);
+				observeNode(registered.observer, node);
 			}
 		}
 		if (queued) {
@@ -4282,10 +4278,8 @@ function toStringSequence(value: Iterable<string>): string[] {
 }
 
 const kCallback = Symbol("callback");
-const kLiveNodes = Symbol("liveNodes");
 const kNodes = Symbol("nodes");
 const kRecords = Symbol("records");
-const kEnqueueRecord = Symbol("enqueue a record");
 
 /** An observer of a tree: what it watches, and the records it has to deliver. */
 export class MutationObserver {
@@ -4322,7 +4316,7 @@ export class MutationObserver {
 			if (registered.observer !== this || registered.source !== null) {
 				continue;
 			}
-			for (const node of [...this[kLiveNodes](), ...transientNodes]) {
+			for (const node of [...liveNodes(this), ...transientNodes]) {
 				removeTransientObservers(node, (entry) => entry.source === registered);
 			}
 			registered.options = normalized;
@@ -4330,11 +4324,11 @@ export class MutationObserver {
 		}
 		list.push({observer: this, options: normalized, source: null});
 		registeredObserverCount++;
-		this[kObserveNode](target);
+		observeNode(this, target);
 	}
 
 	disconnect(): void {
-		for (const node of [...this[kLiveNodes](), ...transientNodes]) {
+		for (const node of [...liveNodes(this), ...transientNodes]) {
 			const list = node[kRegisteredObservers];
 			if (list === null) {
 				continue;
@@ -4356,37 +4350,47 @@ export class MutationObserver {
 		this[kRecords] = [];
 		return records;
 	}
+}
 
-	/** The nodes whose registered observer list names this one. */
-	[kLiveNodes](): Node[] {
-		return [...this[kNodes]];
+/** The nodes whose registered observer list names this one. */
+function liveNodes(
+	self: MutationObserver,
+): Node[] {
+	return [...self[kNodes]];
+}
+
+function observeNode(
+	self: MutationObserver,
+	node: Node,
+): void {
+	self[kNodes].add(node);
+}
+
+function enqueueRecord(
+	self: MutationObserver,
+	record: MutationRecord,
+): void {
+	self[kRecords].push(record);
+}
+
+function notifyObserver(
+	self: MutationObserver,
+): void {
+	const records = self[kRecords];
+	self[kRecords] = [];
+	for (const node of liveNodes(self)) {
+		removeTransientObservers(node, () => true);
 	}
-
-	[kObserveNode](node: Node): void {
-		this[kNodes].add(node);
+	for (const node of transientNodes) {
+		removeTransientObservers(node, (entry) => entry.observer === self);
 	}
-
-	[kEnqueueRecord](record: MutationRecord): void {
-		this[kRecords].push(record);
+	if (records.length === 0) {
+		return;
 	}
-
-	[kNotifyObserver](): void {
-		const records = this[kRecords];
-		this[kRecords] = [];
-		for (const node of this[kLiveNodes]()) {
-			removeTransientObservers(node, () => true);
-		}
-		for (const node of transientNodes) {
-			removeTransientObservers(node, (entry) => entry.observer === this);
-		}
-		if (records.length === 0) {
-			return;
-		}
-		try {
-			this[kCallback].call(this, records, this);
-		} catch (error) {
-			reportError(error);
-		}
+	try {
+		self[kCallback].call(self, records, self);
+	} catch (error) {
+		reportError(error);
 	}
 }
 
@@ -4468,7 +4472,8 @@ function queueMutationRecord(
 		return;
 	}
 	for (const [observer, mappedOldValue] of interested) {
-		observer[kEnqueueRecord](
+		enqueueRecord(
+			observer,
 			new MutationRecord(
 				type,
 				target,
@@ -4510,7 +4515,6 @@ function queueTreeMutationRecord(
 /* ------------------------------------------------------- live collections */
 
 const kEnsure = Symbol("recompute if stale");
-const kComputed = Symbol("the list as last computed");
 const kGeneration = Symbol("how many lists the collection has been");
 
 const kLive = Symbol("live");
@@ -4520,12 +4524,8 @@ const kTold = Symbol("told");
 const kExact = Symbol("exact");
 const kVersion = Symbol("version");
 const kItems = Symbol("items");
-const kMaterialize = Symbol("materialize");
-const kRecompute = Symbol("recompute");
 const kRegistered = Symbol("registered");
 const kStanding = Symbol("standing");
-const kSplice = Symbol("splice");
-const kDefineIndices = Symbol("defineIndices");
 const kDefined = Symbol("defined");
 const kNames = Symbol("names");
 
@@ -4586,14 +4586,6 @@ abstract class LiveList implements Materializable {
 		return this[kExact] && (this[kTold] || this[kVersion] === treeVersion);
 	}
 
-	[kRecompute](): void {
-		this[kVersion] = treeVersion;
-		this[kItems] = this.compute();
-		this[kExact] = true;
-		this[kGeneration]++;
-		this[kMaterialize]();
-	}
-
 	/**
 	 * How many lists the collection has been, which is what tells a cache over
 	 * the list that the list under it is another one. The array itself is not:
@@ -4631,7 +4623,7 @@ abstract class LiveList implements Materializable {
 	[kEnsure](): Node[] {
 		if (!this[kLive]) {
 			if (!this[kExact]) {
-				this[kRecompute]();
+				recompute(this);
 			}
 			return this[kItems];
 		}
@@ -4640,7 +4632,7 @@ abstract class LiveList implements Materializable {
 			registerMaterialized(this, this[kOwner]);
 		}
 		if (!this[kStanding]) {
-			this[kRecompute]();
+			recompute(this);
 		}
 		return this[kItems];
 	}
@@ -4649,7 +4641,7 @@ abstract class LiveList implements Materializable {
 		if (!this[kRegistered]) {
 			return;
 		}
-		this[kRecompute]();
+		recompute(this);
 	}
 
 	/**
@@ -4678,84 +4670,13 @@ abstract class LiveList implements Materializable {
 			}
 			if (changed !== null) {
 				const members = this.shapeMembers(changed);
-				if (members !== null && this[kSplice](point, changed, members, added)) {
+				if (members !== null && splice(this, point, changed, members, added)) {
 					this[kVersion] = treeVersion;
 					return;
 				}
 			}
 		}
-		this[kRecompute]();
-	}
-
-	/**
-	 * Move members into or out of the list where their place in it follows
-	 * from the change alone. Answers whether it did.
-	 *
-	 * Members arriving sit where the sibling they were placed before sits,
-	 * since nothing but them comes between the two; placed last of their
-	 * parent's children they sit past every member the list holds, as long as
-	 * the last of those is under that parent. Anywhere else asks the tree
-	 * where they go. Members leaving take their place with them, and they sit
-	 * together, so the first of them finds the run.
-	 */
-	[kSplice](
-		point: Node,
-		changed: readonly Node[],
-		members: readonly Node[],
-		added: boolean,
-	): boolean {
-		const items = this[kItems];
-		if (members.length === 0) {
-			return true;
-		}
-		if (added) {
-			const next = changed[changed.length - 1][kNext];
-			if (next !== null) {
-				const at = items.indexOf(next);
-				if (at === -1) {
-					return false;
-				}
-				// A member at a time: what a change carries has no bound, and a
-				// spread is an argument list.
-				const rest = items.splice(at);
-				for (const member of members) {
-					items.push(member);
-				}
-				for (const node of rest) {
-					items.push(node);
-				}
-			} else {
-				const last = items[items.length - 1];
-				if (last !== undefined && !isInclusiveAncestor(point, last)) {
-					return false;
-				}
-				for (const member of members) {
-					items.push(member);
-				}
-			}
-		} else {
-			const at = items.indexOf(members[0]);
-			if (at === -1) {
-				return false;
-			}
-			for (let i = 1; i < members.length; i++) {
-				if (items[at + i] !== members[i]) {
-					return false;
-				}
-			}
-			items.splice(at, members.length);
-		}
-		this[kGeneration]++;
-		this[kDefineIndices](items.length);
-		return true;
-	}
-
-	/**
-	 * The list as it was last computed, where that is still the list the tree
-	 * holds; null where the tree has moved on from it.
-	 */
-	[kComputed](): Node[] | null {
-		return this[kStanding] ? this[kItems] : null;
+		recompute(this);
 	}
 
 	/**
@@ -4768,55 +4689,146 @@ abstract class LiveList implements Materializable {
 	[kAttributeSync](_element: Element, _localName: string): void {
 		this[kSync]();
 	}
+}
 
-	/** Define an index for every member the collection has, and no more. */
-	[kDefineIndices](length: number): void {
-		const self = this as unknown as Record<number | string, unknown>;
-		const list = this;
-		for (let index = this[kDefined]; index < length; index++) {
-			const at = index;
-			Object.defineProperty(this, at, {
-				// The recompute is reached through the captured method, not
-				// through the prototype: a caller may replace the prototype,
-				// and an indexed property is meant to survive that.
-				get(): unknown {
-					return ensureMethod.call(list)[at] ?? undefined;
-				},
-				enumerable: true,
-				configurable: true,
-			});
-		}
-		for (let index = length; index < this[kDefined]; index++) {
-			delete self[index];
-		}
-		this[kDefined] = length;
+function recompute(
+	self: LiveList,
+): void {
+	self[kVersion] = treeVersion;
+	self[kItems] = self.compute();
+	self[kExact] = true;
+	self[kGeneration]++;
+	materialize(self);
+}
+
+/**
+ * Move members into or out of the list where their place in it follows
+ * from the change alone. Answers whether it did.
+ *
+ * Members arriving sit where the sibling they were placed before sits,
+ * since nothing but them comes between the two; placed last of their
+ * parent's children they sit past every member the list holds, as long as
+ * the last of those is under that parent. Anywhere else asks the tree
+ * where they go. Members leaving take their place with them, and they sit
+ * together, so the first of them finds the run.
+ */
+function splice(
+	self: LiveList,
+	point: Node,
+	changed: readonly Node[],
+	members: readonly Node[],
+	added: boolean,
+): boolean {
+	const items = self[kItems];
+	if (members.length === 0) {
+		return true;
 	}
-
-	[kMaterialize](): void {
-		const items = this[kItems];
-		const self = this as unknown as Record<number | string, unknown>;
-		this[kDefineIndices](items.length);
-		for (const name of this[kNames]) {
-			delete self[name];
-		}
-		this[kNames] = [];
-		const named = this.namedProperties(items);
-		if (named !== null) {
-			for (const [name, node] of named) {
-				if (name === "" || Object.prototype.hasOwnProperty.call(self, name)) {
-					continue;
-				}
-				if (name in (this.constructor as {prototype: object}).prototype) {
-					continue;
-				}
-				this[kNames].push(name);
-				Object.defineProperty(this, name, {
-					value: node,
-					enumerable: false,
-					configurable: true,
-					writable: false,
-				});
+	if (added) {
+		const next = changed[changed.length - 1][kNext];
+		if (next !== null) {
+			const at = items.indexOf(next);
+			if (at === -1) {
+				return false;
 			}
+			// A member at a time: what a change carries has no bound, and a
+			// spread is an argument list.
+			const rest = items.splice(at);
+			for (const member of members) {
+				items.push(member);
+			}
+			for (const node of rest) {
+				items.push(node);
+			}
+		} else {
+			const last = items[items.length - 1];
+			if (last !== undefined && !isInclusiveAncestor(point, last)) {
+				return false;
+			}
+			for (const member of members) {
+				items.push(member);
+			}
+		}
+	} else {
+		const at = items.indexOf(members[0]);
+		if (at === -1) {
+			return false;
+		}
+		for (let i = 1; i < members.length; i++) {
+			if (items[at + i] !== members[i]) {
+				return false;
+			}
+		}
+		items.splice(at, members.length);
+	}
+	self[kGeneration]++;
+	defineIndices(self, items.length);
+	return true;
+}
+
+/**
+ * The list as it was last computed, where that is still the list the tree
+ * holds; null where the tree has moved on from it.
+ */
+function computed(
+	self: LiveList,
+): Node[] | null {
+	return self[kStanding] ? self[kItems] : null;
+}
+
+/** Define an index for every member the collection has, and no more. */
+function defineIndices(
+	self: LiveList,
+	length: number,
+): void {
+	const indexed = self as unknown as Record<number | string, unknown>;
+	for (let index = self[kDefined]; index < length; index++) {
+		const at = index;
+		Object.defineProperty(indexed, at, {
+			// The recompute is reached through the captured method, not
+			// through the prototype: a caller may replace the prototype,
+			// and an indexed property is meant to survive that.
+			get(): unknown {
+				return ensureMethod.call(self)[at] ?? undefined;
+			},
+			enumerable: true,
+			configurable: true,
+		});
+	}
+	for (let index = length; index < self[kDefined]; index++) {
+		delete indexed[index];
+	}
+	self[kDefined] = length;
+}
+
+function materialize(
+	self: LiveList,
+): void {
+	const items = self[kItems];
+	const record = self as unknown as Record<number | string, unknown>;
+	defineIndices(self, items.length);
+	for (const name of self[kNames]) {
+		delete record[name];
+	}
+	self[kNames] = [];
+	const named = self.namedProperties(items);
+	if (named !== null) {
+		for (const [name, node] of named) {
+			if (
+				name === "" ||
+				Object.prototype.hasOwnProperty.call(self, name)
+			) {
+				continue;
+			}
+			if (name in (self.constructor as {prototype: object}).prototype) {
+				continue;
+			}
+			self[kNames].push(name);
+			Object.defineProperty(record, name, {
+				value: node,
+				enumerable: false,
+				configurable: true,
+				writable: false,
+			});
 		}
 	}
 }
@@ -5114,7 +5126,7 @@ class MatchingCollection extends HTMLCollection {
 			if (localName !== this[kWatched]) {
 				return;
 			}
-			const items = this[kComputed]();
+			const items = computed(this);
 			if (items === null) {
 				this[kSync]();
 				return;
@@ -5277,7 +5289,6 @@ const kElement = Symbol("element");
 const kAttribute = Symbol("attribute");
 const kSupported = Symbol("supported");
 const kTokens = Symbol("tokens");
-const kWrite = Symbol("write");
 
 export class DOMTokenList extends LiveList {
 	declare forEach: (
@@ -5344,7 +5355,7 @@ export class DOMTokenList extends LiveList {
 				current.push(String(token));
 			}
 		}
-		this[kWrite](current);
+		write(this, current);
 	}
 
 	remove(...tokens: string[]): void {
@@ -5352,7 +5363,7 @@ export class DOMTokenList extends LiveList {
 		const current = this[kTokens].filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
-		this[kWrite](current);
+		write(this, current);
 	}
 
 	toggle(token: string, force?: boolean): boolean {
@@ -5363,14 +5374,14 @@ export class DOMTokenList extends LiveList {
 		if (index !== -1) {
 			if (force === undefined || force === false) {
 				current.splice(index, 1);
-				this[kWrite](current);
+				write(this, current);
 				return false;
 			}
 			return true;
 		}
 		if (force === undefined || force === true) {
 			current.push(name);
-			this[kWrite](current);
+			write(this, current);
 			return true;
 		}
 		return false;
@@ -5399,7 +5410,7 @@ export class DOMTokenList extends LiveList {
 				replaced.push(current[index]);
 			}
 		}
-		this[kWrite](replaced);
+		write(this, replaced);
 		return true;
 	}
 
@@ -5421,15 +5432,18 @@ export class DOMTokenList extends LiveList {
 	override toString(): string {
 		return this.value;
 	}
+}
 
-	[kWrite](tokens: string[]): void {
-		if (this[kElement].getAttributeNode(this[kAttribute]) === null) {
-			if (tokens.length === 0) {
-				return;
-			}
+function write(
+	self: DOMTokenList,
+	tokens: string[],
+): void {
+	if (self[kElement].getAttributeNode(self[kAttribute]) === null) {
+		if (tokens.length === 0) {
+			return;
 		}
-		this[kElement].setAttribute(this[kAttribute], tokens.join(" "));
 	}
+	self[kElement].setAttribute(self[kAttribute], tokens.join(" "));
 }
 
 Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
@@ -5607,10 +5621,6 @@ function replaceData(
 	// A node's data is no part of the shape of a tree: the change carries no
 	// nodes, and a collection that lists nodes holds what it held.
 	bumpTreeVersion(node, [], false);
-	const parent = node[kParent];
-	if (parent !== null) {
-		parent[kChildrenChanged]();
-	}
 }
 
 /** Queue a record for a change to a node's data. */
@@ -6975,7 +6985,6 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 });
 
 const alreadyConstructed = Symbol("already constructed");
-const kSyncDataset = Symbol("sync the data-* properties");
 const kActiveElement = Symbol("focused area");
 
 /**
@@ -7253,7 +7262,7 @@ export class HTMLElement extends Element {
 			map = new DOMStringMap(this);
 			this[kDataset] = map;
 		}
-		map[kSyncDataset]();
+		syncDataset(map);
 		return map;
 	}
 
@@ -7993,8 +8002,6 @@ const kDefinitions = Symbol("definitions");
 const kDefinitionIsRunning = Symbol("definitionIsRunning");
 const kWhenDefined = Symbol("whenDefined");
 const kScoped = Symbol("scoped");
-const kDefinitionFor = Symbol("the definition a constructor defines");
-const kLookUp = Symbol("look up a custom element definition");
 const kIsScopedRegistry = Symbol("whether an author built this registry");
 
 export class CustomElementRegistry {
@@ -8242,36 +8249,38 @@ export class CustomElementRegistry {
 	get [kIsScopedRegistry](): boolean {
 		return this[kScoped];
 	}
+}
 
-	[kDefinitionFor](
-		constructor: CustomElementConstructor,
-	): CustomElementDefinition | null {
-		return (
-			this[kDefinitions].find((entry) => entry.constructor === constructor) ??
-			null
-		);
-	}
+function definitionFor(
+	self: CustomElementRegistry,
+	constructor: CustomElementConstructor,
+): CustomElementDefinition | null {
+	return (
+		self[kDefinitions].find((entry) => entry.constructor === constructor) ??
+		null
+	);
+}
 
-	[kLookUp](
-		namespace: string | null,
-		localName: string,
-		is: string | null,
-	): CustomElementDefinition | null {
-		if (namespace !== HTML_NAMESPACE) {
-			return null;
-		}
-		for (const definition of this[kDefinitions]) {
-			if (definition.name === localName && definition.localName === localName) {
-				return definition;
-			}
-		}
-		for (const definition of this[kDefinitions]) {
-			if (definition.name === is && definition.localName === localName) {
-				return definition;
-			}
-		}
+function lookUp(
+	self: CustomElementRegistry,
+	namespace: string | null,
+	localName: string,
+	is: string | null,
+): CustomElementDefinition | null {
+	if (namespace !== HTML_NAMESPACE) {
 		return null;
 	}
+	for (const definition of self[kDefinitions]) {
+		if (definition.name === localName && definition.localName === localName) {
+			return definition;
+		}
+	}
+	for (const definition of self[kDefinitions]) {
+		if (definition.name === is && definition.localName === localName) {
+			return definition;
+		}
+	}
+	return null;
 }
 
 Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
@@ -8291,17 +8300,17 @@ function definitionForConstructor(
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
 	for (const registry of registries) {
-		const definition = registry[kDefinitionFor](constructor);
+		const definition = definitionFor(registry, constructor);
 		if (definition !== null && definition.constructionStack.length > 0) {
 			return definition;
 		}
 	}
-	const global = globalCustomElements[kDefinitionFor](constructor);
+	const global = definitionFor(globalCustomElements, constructor);
 	if (global !== null) {
 		return global;
 	}
 	for (const registry of registries) {
-		const definition = registry[kDefinitionFor](constructor);
+		const definition = definitionFor(registry, constructor);
 		if (definition !== null) {
 			return definition;
 		}
@@ -8340,7 +8349,7 @@ function lookUpCustomElementDefinition(
 	if (registry === null) {
 		return null;
 	}
-	return registry[kLookUp](namespace, localName, is);
+	return lookUp(registry, namespace, localName, is);
 }
 
 /**
@@ -9815,11 +9824,7 @@ Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kDialogFocusingSteps = Symbol("the dialog focusing steps");
-
-const kFocusDialog = Symbol("focusDialog");
 const kPreviouslyFocused = Symbol("previouslyFocused");
-const kClose = Symbol("close");
 /**
  * A dialog.
  *
@@ -9875,48 +9880,7 @@ export class HTMLDialogElement extends HTMLElement {
 		// reads membership rather than a flag of its own.
 		topLayerOf(this[kDocument]).add(this);
 		this.setAttribute("open", "");
-		this[kFocusDialog]();
-	}
-
-	/**
-	 * The dialog focusing steps, as the popover focusing steps reach them: a
-	 * dialog shown as a popover focuses like a dialog, not like a popover.
-	 */
-	[kDialogFocusingSteps](): void {
-		this[kFocusDialog]();
-	}
-
-	/**
-	 * HTML's dialog focusing steps: focus goes to the descendant asking for it
-	 * with `autofocus`, else to the first one that can take focus, else to the
-	 * dialog itself -- which is focusable for exactly as long as it is the
-	 * modal one, so a dialog of plain text still takes keys off the page.
-	 */
-	[kFocusDialog](): void {
-		this[kPreviouslyFocused] = this[kDocument][kActiveElement];
-		const walker = shadowIncludingInclusiveDescendants(this);
-		let fallback: Element | null = null;
-		for (const node of walker) {
-			if (node === this || node.nodeType !== ELEMENT_NODE) {
-				continue;
-			}
-			const element = node as Element;
-			if (!isFocusableArea(element)) {
-				continue;
-			}
-			if (element.hasAttribute("autofocus")) {
-				(element as HTMLElement).focus();
-				return;
-			}
-			if (fallback === null) {
-				fallback = element;
-			}
-		}
-		if (fallback !== null) {
-			(fallback as HTMLElement).focus();
-			return;
-		}
-		this[kDocument][kActiveElement] = this;
+		focusDialog(this);
 	}
 
 	/**
@@ -9930,7 +9894,7 @@ export class HTMLDialogElement extends HTMLElement {
 	}
 
 	close(returnValue?: string): void {
-		this[kClose](returnValue, false);
+		close(this, returnValue, false);
 	}
 
 	requestClose(returnValue?: string): void {
@@ -9941,32 +9905,81 @@ export class HTMLDialogElement extends HTMLElement {
 		if (canceled) {
 			return;
 		}
-		this[kClose](returnValue, false);
+		close(this, returnValue, false);
 	}
+}
 
-	[kClose](returnValue: string | undefined, _fromRequest: boolean): void {
-		if (!this.hasAttribute("open")) {
+/**
+ * The dialog focusing steps, as the popover focusing steps reach them: a
+ * dialog shown as a popover focuses like a dialog, not like a popover.
+ */
+function dialogFocusingSteps(
+	self: HTMLDialogElement,
+): void {
+	focusDialog(self);
+}
+
+/**
+ * HTML's dialog focusing steps: focus goes to the descendant asking for it
+ * with `autofocus`, else to the first one that can take focus, else to the
+ * dialog itself -- which is focusable for exactly as long as it is the
+ * modal one, so a dialog of plain text still takes keys off the page.
+ */
+function focusDialog(
+	self: HTMLDialogElement,
+): void {
+	self[kPreviouslyFocused] = self[kDocument][kActiveElement];
+	const walker = shadowIncludingInclusiveDescendants(self);
+	let fallback: Element | null = null;
+	for (const node of walker) {
+		if (node === self || node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
+		const element = node as Element;
+		if (!isFocusableArea(element)) {
+			continue;
+		}
+		if (element.hasAttribute("autofocus")) {
+			(element as HTMLElement).focus();
 			return;
 		}
-		this.removeAttribute("open");
-		topLayerOf(this[kDocument]).delete(this);
-		// The page gets its focus back where the dialog took it from, so the
-		// keyboard returns to what the user was doing before it opened.
-		if (this[kPreviouslyFocused] !== null) {
-			const previous = this[kPreviouslyFocused];
-			this[kPreviouslyFocused] = null;
-			if (
-				this[kDocument][kActiveElement] === this ||
-				this.contains(this[kDocument][kActiveElement])
-			) {
-				(previous as HTMLElement).focus();
-			}
+		if (fallback === null) {
+			fallback = element;
 		}
-		if (returnValue !== undefined) {
-			this[kReturnValue] = String(returnValue);
-		}
-		dispatch(this, new Event("close"));
 	}
+	if (fallback !== null) {
+		(fallback as HTMLElement).focus();
+		return;
+	}
+	self[kDocument][kActiveElement] = self;
+}
+
+function close(
+	self: HTMLDialogElement,
+	returnValue: string | undefined,
+	_fromRequest: boolean,
+): void {
+	if (!self.hasAttribute("open")) {
+		return;
+	}
+	self.removeAttribute("open");
+	topLayerOf(self[kDocument]).delete(self);
+	// The page gets its focus back where the dialog took it from, so the
+	// keyboard returns to what the user was doing before it opened.
+	if (self[kPreviouslyFocused] !== null) {
+		const previous = self[kPreviouslyFocused];
+		self[kPreviouslyFocused] = null;
+		if (
+			self[kDocument][kActiveElement] === self ||
+			self.contains(self[kDocument][kActiveElement])
+		) {
+			(previous as HTMLElement).focus();
+		}
+	}
+	if (returnValue !== undefined) {
+		self[kReturnValue] = String(returnValue);
+	}
+	dispatch(self, new Event("close"));
 }
 
 const kTopLayer = Symbol("the document's top layer");
@@ -10221,7 +10234,6 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kMatching = Symbol("matching");
 /**
  * The controls of a form, which answers a name with every control that has
  * it: one element, or a list of the radio buttons that share it.
@@ -10239,7 +10251,7 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		if (key === "") {
 			return null;
 		}
-		const matches = this[kMatching](key);
+		const matches = matching(this, key);
 		if (matches.length === 0) {
 			return null;
 		}
@@ -10249,7 +10261,7 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		// The list is what the interface answers with for a shared name; the
 		// declared type is the collection's, which has no way to say so.
 		return new RadioNodeList(
-			() => this[kMatching](key),
+			() => matching(this, key),
 			this[kOwner],
 		) as unknown as Element;
 	}
@@ -10280,27 +10292,30 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 				list.length === 1 ?
 					list[0] :
 						(new RadioNodeList(
-							() => this[kMatching](key),
+							() => matching(this, key),
 							this[kOwner],
 						) as unknown as Node),
 			);
 		}
 		return named;
 	}
+}
 
-	[kMatching](key: string): Node[] {
-		const matches: Node[] = [];
-		for (const item of this[kEnsure]()) {
-			const element = item as Element;
-			if (
-				element.getAttribute("id") === key ||
-				element.getAttribute("name") === key
-			) {
-				matches.push(element);
-			}
+function matching(
+	self: HTMLFormControlsCollection,
+	key: string,
+): Node[] {
+	const matches: Node[] = [];
+	for (const item of self[kEnsure]()) {
+		const element = item as Element;
+		if (
+			element.getAttribute("id") === key ||
+			element.getAttribute("name") === key
+		) {
+			matches.push(element);
 		}
-		return matches;
 	}
+	return matches;
 }
 Object.defineProperty(
 	HTMLFormControlsCollection.prototype,
@@ -11134,7 +11149,6 @@ function tableRows(table: Element): Element[] {
 	return [...head, ...middle, ...foot];
 }
 
-const kTable = Symbol("table");
 const kCells = Symbol("cells");
 
 /** One row of a table, and the cells it holds. */
@@ -11147,8 +11161,8 @@ export class HTMLTableRowElement extends HTMLElement {
 	declare [kCells]: HTMLCollection | null;
 
 	get rowIndex(): number {
-		const table = this[kTable]();
-		return table === null ? -1 : tableRows(table).indexOf(this);
+		const owner = table(this);
+		return owner === null ? -1 : tableRows(owner).indexOf(this);
 	}
 
 	get sectionRowIndex(): number {
@@ -11194,23 +11208,25 @@ export class HTMLTableRowElement extends HTMLElement {
 		}
 		removeNode(cells[at]);
 	}
+}
 
-	[kTable](): Element | null {
-		const parent = this[kParent];
-		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
-			return null;
-		}
-		if ((parent as Element)[kLocalName] === "table") {
-			return parent as Element;
-		}
-		const grandparent = parent[kParent];
-		if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
-			return null;
-		}
-		return (grandparent as Element)[kLocalName] === "table" ?
-				(grandparent as Element) :
-			null;
+function table(
+	self: HTMLTableRowElement,
+): Element | null {
+	const parent = self[kParent];
+	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+		return null;
 	}
+	if ((parent as Element)[kLocalName] === "table") {
+		return parent as Element;
+	}
+	const grandparent = parent[kParent];
+	if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
+	return (grandparent as Element)[kLocalName] === "table" ?
+			(grandparent as Element) :
+		null;
 }
 /** The cells of a row: its td and th children, in order. */
 function rowCells(row: Element): Element[] {
@@ -11872,18 +11888,14 @@ const kSelectionEnd = Symbol("selectionEnd");
 const kSelectionDirection = Symbol("selectionDirection");
 const kChecked = Symbol("checked");
 const kDirtyChecked = Symbol("dirtyChecked");
-const kSetCheckedness = Symbol("setCheckedness");
 const kIndeterminate = Symbol("indeterminate");
-const kRequireSelectable = Symbol("requireSelectable");
 const kPreviousRadio = Symbol("previousRadio");
 const kPreviouslyChecked = Symbol("previouslyChecked");
 const kPreviouslyIndeterminate = Symbol("previouslyIndeterminate");
 const kValueText = Symbol("valueText");
 const kEngine = Symbol("engine");
-const kBuild = Symbol("build");
 const kOnKeydown = Symbol("onKeydown");
 const kOnBeforeInput = Symbol("onBeforeInput");
-const kKindFor = Symbol("kindFor");
 const kKind = Symbol("kind");
 const kPlaceholderText = Symbol("placeholderText");
 const kGlyphText = Symbol("glyphText");
@@ -11926,7 +11938,7 @@ export class HTMLInputElement extends HTMLElement {
 			if (event.defaultPrevented || event.data == null) {
 				return;
 			}
-			if (this[kKindFor]() !== "field") {
+			if (kindFor(this) !== "field") {
 				return;
 			}
 			if (event.inputType === "insertText") {
@@ -12110,7 +12122,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set checked(value: boolean) {
 		this[kDirtyChecked] = true;
-		this[kSetCheckedness](Boolean(value));
+		setCheckedness(this, Boolean(value));
 	}
 
 	get indeterminate(): boolean {
@@ -12129,7 +12141,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	set selectionStart(value: number | null) {
-		this[kRequireSelectable]();
+		requireSelectable(this);
 		const start = toUnsignedLong(value ?? 0);
 		this.setSelectionRange(
 			start,
@@ -12146,7 +12158,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	set selectionEnd(value: number | null) {
-		this[kRequireSelectable]();
+		requireSelectable(this);
 		this.setSelectionRange(
 			this[kSelectionStart],
 			toUnsignedLong(value ?? 0),
@@ -12162,7 +12174,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	set selectionDirection(value: string | null) {
-		this[kRequireSelectable]();
+		requireSelectable(this);
 		this.setSelectionRange(
 			this[kSelectionStart],
 			this[kSelectionEnd],
@@ -12181,7 +12193,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
-		this[kRequireSelectable]();
+		requireSelectable(this);
 		this[kSetUASelection](start, end, direction);
 	}
 
@@ -12225,7 +12237,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (arguments.length < 1) {
 			throw new TypeError("setRangeText needs a replacement");
 		}
-		this[kRequireSelectable]();
+		requireSelectable(this);
 		this[kDirtyValue] = true;
 		const result = replaceTextRange(
 			this[kValue],
@@ -12257,7 +12269,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (localName === "value" && !this[kDirtyValue]) {
 			this[kValue] = sanitizeInputValue(this, value ?? "");
 		} else if (localName === "checked" && !this[kDirtyChecked]) {
-			this[kSetCheckedness](value !== null);
+			setCheckedness(this, value !== null);
 		} else if (localName === "type") {
 			this[kValue] = sanitizeInputValue(this, this[kValue]);
 		}
@@ -12278,53 +12290,6 @@ export class HTMLInputElement extends HTMLElement {
 		this[kDirtyChecked] = false;
 		this[kIndeterminate] = false;
 		widgetChanged(this);
-	}
-
-	/**
-	 * A checkbox and a radio button change before the click is dispatched, so
-	 * a listener sees the new state, and change back if the click is canceled.
-	 */
-	[kLegacyPreActivationBehavior](): void {
-		// The reference the canceled half puts back is this click's, so a run
-		// that takes none leaves none behind.
-		this[kPreviousRadio] = null;
-		if (this.type === "checkbox") {
-			this[kPreviouslyChecked] = this[kChecked];
-			this[kPreviouslyIndeterminate] = this[kIndeterminate];
-			this[kIndeterminate] = false;
-			this[kDirtyChecked] = true;
-			this[kSetCheckedness](!this[kChecked]);
-		} else if (this.type === "radio") {
-			this[kPreviousRadio] = checkedRadioIn(this) ?? null;
-			this[kDirtyChecked] = true;
-			this[kSetCheckedness](true);
-		}
-	}
-
-	/**
-	 * Put back what the pre-activation behavior changed.
-	 *
-	 * The type is read again here rather than remembered: a listener may have
-	 * changed it during the click, and the state to restore is the state the
-	 * type it has now keeps. A radio button's reference is this click's and is
-	 * honored only while the button it names is still in the group this
-	 * element has now.
-	 */
-	[kLegacyCanceledActivationBehavior](): void {
-		if (this.type === "checkbox") {
-			this[kIndeterminate] = this[kPreviouslyIndeterminate];
-			this[kChecked] = this[kPreviouslyChecked];
-			return;
-		}
-		if (this.type !== "radio") {
-			return;
-		}
-		const previous = this[kPreviousRadio];
-		this[kPreviousRadio] = null;
-		this[kChecked] = false;
-		if (previous !== null && radioGroupOf(this).includes(previous)) {
-			previous[kChecked] = true;
-		}
 	}
 
 	/**
@@ -12367,30 +12332,6 @@ export class HTMLInputElement extends HTMLElement {
 		popoverTargetActivationBehavior(this, event.target);
 	}
 
-	/** Set checkedness, unchecking the rest of a radio button's group. */
-	[kSetCheckedness](checked: boolean): void {
-		this[kChecked] = checked;
-		widgetChanged(this);
-		if (!checked || this.type !== "radio") {
-			return;
-		}
-		for (const other of radioGroupOf(this)) {
-			if (other !== this) {
-				other[kChecked] = false;
-				widgetChanged(other);
-			}
-		}
-	}
-
-	[kRequireSelectable](): void {
-		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
-			throw domError(
-				"InvalidStateError",
-				`An input of type ${this.type} has no text selection`,
-			);
-		}
-	}
-
 	/* --------------------------------------------------- the rendered tree */
 
 	get [kUAValueText](): UAText | null {
@@ -12417,7 +12358,7 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		this[kEngine] = engine;
-		this[kBuild]();
+		build(this);
 		// Editing is the control's own default action, like a browser input's --
 		// a keydown listener; typed characters and pastes arrive as beforeinput,
 		// which is the default action of the keypress and of the paste that
@@ -12426,56 +12367,12 @@ export class HTMLInputElement extends HTMLElement {
 		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 	}
 
-	/** field for a text-ish input, toggle for checkbox/radio. */
-	[kKindFor](): "field" | "toggle" {
-		const type = this.type;
-		return type === "checkbox" || type === "radio" ? "toggle" : "field";
-	}
-
 	/**
 	 * A typed character arrives as an insertText; a paste as an
 	 * insertFromPaste, whose line breaks a single-line input strips (HTML
 	 * value sanitization). A toggle takes neither: it holds no text.
 	 */
 	declare [kOnBeforeInput]: (event: InputEvent) => void;
-
-	/**
-	 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
-	 * field tree carries value / placeholder parts; the toggle tree a single
-	 * glyph part the painter fills from live `.checked` (a radio's group
-	 * exclusivity unchecks siblings with no hook to reconcile on).
-	 */
-	[kBuild](): void {
-		const engine = this[kEngine]!;
-		let root = this[kRoot];
-		if (root === null) {
-			root = buildUARoot(this, engine, FIELD_UA_STYLES);
-		} else {
-			// A rebuild keeps the root -- and its enrollment -- and replaces only
-			// what hangs under it, the stylesheet included.
-			while (root.firstChild) {
-				root.removeChild(root.firstChild);
-			}
-			engine.invalidateStructure();
-			root.appendChild(uaStyleElement(this, FIELD_UA_STYLES));
-		}
-		this[kRoot] = root;
-		this[kKind] = this[kKindFor]();
-
-		if (this[kKind] === "field") {
-			this[kValueText] = addPart(root, "value").firstChild as UAText;
-			this[kPlaceholderText] = addPart(
-				root,
-				"placeholder",
-			).firstChild as UAText;
-		} else {
-			this[kValueText] = null;
-			this[kPlaceholderText] = null;
-			this[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
-		}
-		engine.layout.invalidate(this);
-		this[kUAReconcile]();
-	}
 
 	/**
 	 * Bring the field tree back into step with the input's own
@@ -12491,8 +12388,8 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		// A type flip is a different tree, not a different value.
-		if (this[kKindFor]() !== this[kKind]) {
-			this[kBuild]();
+		if (kindFor(this) !== this[kKind]) {
+			build(this);
 			return;
 		}
 		if (this[kKind] !== "field") {
@@ -12558,6 +12455,134 @@ export class HTMLInputElement extends HTMLElement {
 	 * logic.
 	 */
 	declare [kOnKeydown]: (event: KeyboardEvent) => void;
+}
+
+/**
+ * A checkbox and a radio button change before the click is dispatched, so
+ * a listener sees the new state, and change back if the click is canceled.
+ */
+function legacyPreActivationBehavior(
+	self: HTMLInputElement,
+): void {
+	// The reference the canceled half puts back is this click's, so a run
+	// that takes none leaves none behind.
+	self[kPreviousRadio] = null;
+	if (self.type === "checkbox") {
+		self[kPreviouslyChecked] = self[kChecked];
+		self[kPreviouslyIndeterminate] = self[kIndeterminate];
+		self[kIndeterminate] = false;
+		self[kDirtyChecked] = true;
+		setCheckedness(self, !self[kChecked]);
+	} else if (self.type === "radio") {
+		self[kPreviousRadio] = checkedRadioIn(self) ?? null;
+		self[kDirtyChecked] = true;
+		setCheckedness(self, true);
+	}
+}
+
+/**
+ * Put back what the pre-activation behavior changed.
+ *
+ * The type is read again here rather than remembered: a listener may have
+ * changed it during the click, and the state to restore is the state the
+ * type it has now keeps. A radio button's reference is this click's and is
+ * honored only while the button it names is still in the group this
+ * element has now.
+ */
+function legacyCanceledActivationBehavior(
+	self: HTMLInputElement,
+): void {
+	if (self.type === "checkbox") {
+		self[kIndeterminate] = self[kPreviouslyIndeterminate];
+		self[kChecked] = self[kPreviouslyChecked];
+		return;
+	}
+	if (self.type !== "radio") {
+		return;
+	}
+	const previous = self[kPreviousRadio];
+	self[kPreviousRadio] = null;
+	self[kChecked] = false;
+	if (previous !== null && radioGroupOf(self).includes(previous)) {
+		previous[kChecked] = true;
+	}
+}
+
+/** Set checkedness, unchecking the rest of a radio button's group. */
+function setCheckedness(
+	self: HTMLInputElement,
+	checked: boolean,
+): void {
+	self[kChecked] = checked;
+	widgetChanged(self);
+	if (!checked || self.type !== "radio") {
+		return;
+	}
+	for (const other of radioGroupOf(self)) {
+		if (other !== self) {
+			other[kChecked] = false;
+			widgetChanged(other);
+		}
+	}
+}
+
+function requireSelectable(
+	self: HTMLInputElement,
+): void {
+	if (!SELECTABLE_INPUT_TYPES.has(self.type)) {
+		throw domError(
+			"InvalidStateError",
+			`An input of type ${self.type} has no text selection`,
+		);
+	}
+}
+
+/** field for a text-ish input, toggle for checkbox/radio. */
+function kindFor(
+	self: HTMLInputElement,
+): "field" | "toggle" {
+	const type = self.type;
+	return type === "checkbox" || type === "radio" ? "toggle" : "field";
+}
+
+/**
+ * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
+ * field tree carries value / placeholder parts; the toggle tree a single
+ * glyph part the painter fills from live `.checked` (a radio's group
+ * exclusivity unchecks siblings with no hook to reconcile on).
+ */
+function build(
+	self: HTMLInputElement,
+): void {
+	const engine = self[kEngine]!;
+	let root = self[kRoot];
+	if (root === null) {
+		root = buildUARoot(self, engine, FIELD_UA_STYLES);
+	} else {
+		// A rebuild keeps the root -- and its enrollment -- and replaces only
+		// what hangs under it, the stylesheet included.
+		while (root.firstChild) {
+			root.removeChild(root.firstChild);
+		}
+		engine.invalidateStructure();
+		root.appendChild(uaStyleElement(self, FIELD_UA_STYLES));
+	}
+	self[kRoot] = root;
+	self[kKind] = kindFor(self);
+
+	if (self[kKind] === "field") {
+		self[kValueText] = addPart(root, "value").firstChild as UAText;
+		self[kPlaceholderText] = addPart(
+			root,
+			"placeholder",
+		).firstChild as UAText;
+	} else {
+		self[kValueText] = null;
+		self[kPlaceholderText] = null;
+		self[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
+	}
+	engine.layout.invalidate(self);
+	self[kUAReconcile]();
 }
 /** How an input's type reads and writes its value. */
 function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
@@ -12992,13 +13017,7 @@ const kSelectedOptions = Symbol("selectedOptions");
 const kPicker = Symbol("picker");
 const kOnMousedown = Symbol("onMousedown");
 const kOnBlur = Symbol("onBlur");
-const kOptionList = Symbol("optionList");
 const kHighlight = Symbol("highlight");
-const kReconcileRows = Symbol("reconcileRows");
-const kPickerRows = Symbol("pickerRows");
-const kStep = Symbol("step");
-const kCommit = Symbol("commit");
-const kOpenPicker = Symbol("openPicker");
 
 /**
  * A control that picks among its options.
@@ -13026,7 +13045,7 @@ export class HTMLSelectElement extends HTMLElement {
 				return;
 			}
 			const key = event.key;
-			const options = this[kOptionList]();
+			const options = optionList(this);
 			if (options.length === 0) {
 				return;
 			}
@@ -13035,17 +13054,17 @@ export class HTMLSelectElement extends HTMLElement {
 			if (this[kHighlight] !== null) {
 				const highlight = this[kHighlight];
 				if (key === "ArrowDown") {
-					this[kHighlight] = this[kStep](highlight, 1);
+					this[kHighlight] = step(this, highlight, 1);
 				} else if (key === "ArrowUp") {
-					this[kHighlight] = this[kStep](highlight, -1);
+					this[kHighlight] = step(this, highlight, -1);
 				} else if (key === "Home") {
-					this[kHighlight] = this[kStep](-1, 1);
+					this[kHighlight] = step(this, -1, 1);
 				} else if (key === "End") {
-					this[kHighlight] = this[kStep](options.length, -1);
+					this[kHighlight] = step(this, options.length, -1);
 				} else if (key === "Enter" || key === " ") {
 					this[kHighlight] = null;
 					if (highlight !== current && !optionIsDisabled(options[highlight])) {
-						this[kCommit](highlight);
+						commit(this, highlight);
 						return;
 					}
 					this[kUAReconcile](); // No change: just close.
@@ -13061,23 +13080,23 @@ export class HTMLSelectElement extends HTMLElement {
 
 			// CLOSED: Space or Enter opens; arrows change the value in place.
 			if (key === "Enter" || key === " ") {
-				this[kOpenPicker]();
+				openPicker(this);
 				return;
 			}
 			let target = current;
 			if (key === "ArrowDown" || key === "ArrowRight") {
-				target = this[kStep](current, 1);
+				target = step(this, current, 1);
 			} else if (key === "ArrowUp" || key === "ArrowLeft") {
-				target = this[kStep](current, -1);
+				target = step(this, current, -1);
 			} else if (key === "Home") {
-				target = this[kStep](-1, 1);
+				target = step(this, -1, 1);
 			} else if (key === "End") {
-				target = this[kStep](options.length, -1);
+				target = step(this, options.length, -1);
 			} else {
 				return;
 			}
 			if (target !== current && target >= 0) {
-				this[kCommit](target);
+				commit(this, target);
 			}
 		};
 		this[kOnMousedown] = (event: MouseEvent): void => {
@@ -13087,7 +13106,7 @@ export class HTMLSelectElement extends HTMLElement {
 			const engine = this[kEngine]!;
 			this.focus(); // A press focuses the control, as in a browser.
 			if (this[kHighlight] === null) {
-				this[kOpenPicker]();
+				openPicker(this);
 				return;
 			}
 			const {clientX: x, clientY: y} = event;
@@ -13101,11 +13120,11 @@ export class HTMLSelectElement extends HTMLElement {
 			if (row) {
 				const index = optionIndexOfRow(picker, row);
 				// A disabled row is inert: the sheet stays up, nothing commits.
-				const option = this[kOptionList]()[index];
+				const option = optionList(this)[index];
 				if (option && !optionIsDisabled(option)) {
 					this[kHighlight] = null;
 					if (index !== this.selectedIndex) {
-						this[kCommit](index);
+						commit(this, index);
 					} else {
 						this[kUAReconcile]();
 					} // Re-press the selection: just close.
@@ -13255,14 +13274,6 @@ export class HTMLSelectElement extends HTMLElement {
 		widgetChanged(this);
 	}
 
-	/* --------------------------------------------------- the rendered tree */
-
-	/** The options the tree renders: `options`, without building a collection. */
-	[kOptionList](): HTMLOptionElement[] {
-		askForAReset(this);
-		return optionsOf(this);
-	}
-
 	[kUAUpgrade](): void {
 		if (this[kEngine] !== null) {
 			this[kUAReconcile]();
@@ -13309,9 +13320,9 @@ export class HTMLSelectElement extends HTMLElement {
 		if (engine === null || picker === null) {
 			return;
 		}
-		const optionList = this[kOptionList]();
+		const options = optionList(this);
 		const selectedIndex = this.selectedIndex;
-		const selected = selectedIndex >= 0 ? optionList[selectedIndex] : null;
+		const selected = selectedIndex >= 0 ? options[selectedIndex] : null;
 		const label = selected ? selected.label : "";
 		if (this[kValueText]!.data !== label) {
 			this[kValueText]!.data = label;
@@ -13325,7 +13336,7 @@ export class HTMLSelectElement extends HTMLElement {
 			return;
 		}
 
-		this[kReconcileRows](picker);
+		reconcileRows(this, picker);
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's containing
 		// block is the ICB), matching the field's width.
@@ -13350,119 +13361,6 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	/**
-	 * The rows the picker shows, in tree order: a heading for each option
-	 * group, and every option under the group it belongs to. A heading is not
-	 * an option, so it takes no index and cannot be picked.
-	 */
-	[kPickerRows](): PickerRow[] {
-		askForAReset(this);
-		const rows: PickerRow[] = [];
-		let index = 0;
-		const addOption = (option: HTMLOptionElement, grouped: boolean): void => {
-			rows.push({
-				part: "option",
-				label: option.label,
-				disabled: optionIsDisabled(option),
-				grouped,
-				highlighted: index === this[kHighlight],
-			});
-			index++;
-		};
-		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-			if (node instanceof HTMLOptionElement) {
-				addOption(node, false);
-			} else if (node instanceof HTMLOptGroupElement) {
-				rows.push({
-					part: "optgroup",
-					label: node.label,
-					disabled: node.disabled,
-					grouped: false,
-					highlighted: false,
-				});
-				for (
-					let child = node[kFirstChild];
-					child !== null;
-					child = child[kNext]
-				) {
-					if (child instanceof HTMLOptionElement) {
-						addOption(child, true);
-					}
-				}
-			}
-		}
-		return rows;
-	}
-
-	/**
-	 * Bring the picker's rows into step with the option list; cheap at
-	 * option-list scale. Rows are updated in place rather than rebuilt: this
-	 * root is observed, and a rebuild every reconcile is a frame that schedules
-	 * the next one.
-	 */
-	[kReconcileRows](picker: UAElement): void {
-		const document = uaDocumentOf(this);
-		const rows = this[kPickerRows]();
-		while (picker.childNodes.length > rows.length) {
-			picker.removeChild(picker.lastChild!);
-		}
-		while (picker.childNodes.length < rows.length) {
-			picker.appendChild(document.createElement("div"));
-		}
-		rows.forEach((row, index) => {
-			const node = picker.childNodes[index] as UAElement;
-			// Attribute writes are guarded: setAttribute queues a mutation record
-			// even when unchanged, and this root is observed -- an unconditional
-			// write is an infinite render loop.
-			if (node.getAttribute("part") !== row.part) {
-				node.setAttribute("part", row.part);
-			}
-			if (node.textContent !== row.label) {
-				node.textContent = row.label;
-			}
-			setRowFlag(node, "data-disabled", row.disabled);
-			setRowFlag(node, "data-grouped", row.grouped);
-			setRowFlag(node, "data-highlighted", row.highlighted);
-		});
-	}
-
-	/** Step to the next enabled option in `direction`, or stay put. */
-	[kStep](from: number, direction: 1 | -1): number {
-		const options = this[kOptionList]();
-		for (
-			let i = from + direction;
-			i >= 0 && i < options.length;
-			i += direction
-		) {
-			if (!optionIsDisabled(options[i])) {
-				return i;
-			}
-		}
-		return from;
-	}
-
-	/** Open the picker with the highlight on the current selection. */
-	[kOpenPicker](): void {
-		const options = this[kOptionList]();
-		if (options.length === 0) {
-			return;
-		}
-		let index = this.selectedIndex;
-		if (index < 0) {
-			index = options.findIndex((o) => !optionIsDisabled(o));
-		}
-		this[kHighlight] = index;
-		this[kUAReconcile]();
-	}
-
-	/** Commit `index` as the selection, close, and fire input then change. */
-	[kCommit](index: number): void {
-		this[kHighlight] = null;
-		this.selectedIndex = index; // The setter reconciles (closes + label).
-		dispatch(this, new Event("input", {bubbles: true, cancelable: false}));
-		dispatch(this, new Event("change", {bubbles: true, cancelable: false}));
-	}
-
-	/**
 	 * The select's editing default action. OPEN: arrows move the highlight
 	 * without committing, Enter/Space commit, Escape dismisses. CLOSED:
 	 * Enter/Space open the picker; arrows change the selection in place -- the
@@ -13479,6 +13377,143 @@ export class HTMLSelectElement extends HTMLElement {
 	declare [kOnMousedown]: (event: MouseEvent) => void;
 
 	declare [kOnBlur]: () => void;
+}
+
+/* --------------------------------------------------- the rendered tree */
+
+/** The options the tree renders: `options`, without building a collection. */
+function optionList(
+	self: HTMLSelectElement,
+): HTMLOptionElement[] {
+	askForAReset(self);
+	return optionsOf(self);
+}
+
+/**
+ * The rows the picker shows, in tree order: a heading for each option
+ * group, and every option under the group it belongs to. A heading is not
+ * an option, so it takes no index and cannot be picked.
+ */
+function pickerRows(
+	self: HTMLSelectElement,
+): PickerRow[] {
+	askForAReset(self);
+	const rows: PickerRow[] = [];
+	let index = 0;
+	const addOption = (option: HTMLOptionElement, grouped: boolean): void => {
+		rows.push({
+			part: "option",
+			label: option.label,
+			disabled: optionIsDisabled(option),
+			grouped,
+			highlighted: index === self[kHighlight],
+		});
+		index++;
+	};
+	for (let node = self[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node instanceof HTMLOptionElement) {
+			addOption(node, false);
+		} else if (node instanceof HTMLOptGroupElement) {
+			rows.push({
+				part: "optgroup",
+				label: node.label,
+				disabled: node.disabled,
+				grouped: false,
+				highlighted: false,
+			});
+			for (
+				let child = node[kFirstChild];
+				child !== null;
+				child = child[kNext]
+			) {
+				if (child instanceof HTMLOptionElement) {
+					addOption(child, true);
+				}
+			}
+		}
+	}
+	return rows;
+}
+
+/**
+ * Bring the picker's rows into step with the option list; cheap at
+ * option-list scale. Rows are updated in place rather than rebuilt: this
+ * root is observed, and a rebuild every reconcile is a frame that schedules
+ * the next one.
+ */
+function reconcileRows(
+	self: HTMLSelectElement,
+	picker: UAElement,
+): void {
+	const document = uaDocumentOf(self);
+	const rows = pickerRows(self);
+	while (picker.childNodes.length > rows.length) {
+		picker.removeChild(picker.lastChild!);
+	}
+	while (picker.childNodes.length < rows.length) {
+		picker.appendChild(document.createElement("div"));
+	}
+	rows.forEach((row, index) => {
+		const node = picker.childNodes[index] as UAElement;
+		// Attribute writes are guarded: setAttribute queues a mutation record
+		// even when unchanged, and this root is observed -- an unconditional
+		// write is an infinite render loop.
+		if (node.getAttribute("part") !== row.part) {
+			node.setAttribute("part", row.part);
+		}
+		if (node.textContent !== row.label) {
+			node.textContent = row.label;
+		}
+		setRowFlag(node, "data-disabled", row.disabled);
+		setRowFlag(node, "data-grouped", row.grouped);
+		setRowFlag(node, "data-highlighted", row.highlighted);
+	});
+}
+
+/** Step to the next enabled option in `direction`, or stay put. */
+function step(
+	self: HTMLSelectElement,
+	from: number,
+	direction: 1 | -1,
+): number {
+	const options = optionList(self);
+	for (
+		let i = from + direction;
+		i >= 0 && i < options.length;
+		i += direction
+	) {
+		if (!optionIsDisabled(options[i])) {
+			return i;
+		}
+	}
+	return from;
+}
+
+/** Open the picker with the highlight on the current selection. */
+function openPicker(
+	self: HTMLSelectElement,
+): void {
+	const options = optionList(self);
+	if (options.length === 0) {
+		return;
+	}
+	let index = self.selectedIndex;
+	if (index < 0) {
+		index = options.findIndex((o) => !optionIsDisabled(o));
+	}
+	self[kHighlight] = index;
+	self[kUAReconcile]();
+}
+
+/** Commit `index` as the selection, close, and fire input then change. */
+function commit(
+	self: HTMLSelectElement,
+	index: number,
+): void {
+	self[kHighlight] = null;
+	self.selectedIndex = index; // The setter reconciles (closes + label).
+	dispatch(self, new Event("input", {bubbles: true, cancelable: false}));
+	dispatch(self, new Event("change", {bubbles: true, cancelable: false}));
 }
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
@@ -13593,7 +13628,6 @@ function askForAReset(select: HTMLSelectElement): void {
 
 const kPlaceholderSpan = Symbol("placeholderSpan");
 const kGoalColumn = Symbol("goalColumn");
-const kVerticalTarget = Symbol("verticalTarget");
 
 /**
  * A multi-line control, whose default value is its child text.
@@ -13663,7 +13697,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
 				engine.layout.calculateLayout();
-				const target = this[kVerticalTarget](
+				const target = verticalTarget(
+					this,
 					caret,
 					key === "ArrowDown" ? 1 : -1,
 				);
@@ -13983,47 +14018,51 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * back laid-out geometry, so it flushes layout first.
 	 */
 	declare [kOnKeydown]: (event: KeyboardEvent) => void;
+}
 
-	/**
-	 * The caret offset one visual line up or down from `caret`, keeping the
-	 * column (in cells) where the target line allows -- soft wraps count as
-	 * lines, exactly as in a browser. First line up collapses to 0, last line
-	 * down to the end.
-	 */
-	[kVerticalTarget](caret: number, direction: 1 | -1): number {
-		const visual = textareaVisualLines(this, this[kEngine]!.layout);
-		if (!visual) {
-			return caret;
-		}
-		const lineIndex = textareaLineAt(visual.lines, caret);
-		const targetIndex = lineIndex + direction;
-		if (targetIndex < 0) {
-			return 0;
-		}
-		if (targetIndex >= visual.lines.length) {
-			return visual.value.length;
-		}
-		const line = visual.lines[lineIndex];
-		const lineText = visual.value.slice(line.startOffset, line.endOffset);
-		const currentColumn = stringWidth(
-			lineText.slice(0, Math.max(0, caret - line.startOffset)),
-		);
-		// Consecutive vertical moves aim for the column travel STARTED at, even
-		// across shorter lines that clamp the caret -- the browser's goal column.
-		const column = this[kGoalColumn] ?? currentColumn;
-		this[kGoalColumn] = column;
-		const target = visual.lines[targetIndex];
-		const targetText = visual.value.slice(target.startOffset, target.endOffset);
-		let cells = 0;
-		for (let i = 0; i < targetText.length; i++) {
-			const charCells = stringWidth(targetText[i]);
-			if (cells + charCells > column) {
-				return target.startOffset + i;
-			}
-			cells += charCells;
-		}
-		return target.endOffset;
+/**
+ * The caret offset one visual line up or down from `caret`, keeping the
+ * column (in cells) where the target line allows -- soft wraps count as
+ * lines, exactly as in a browser. First line up collapses to 0, last line
+ * down to the end.
+ */
+function verticalTarget(
+	self: HTMLTextAreaElement,
+	caret: number,
+	direction: 1 | -1,
+): number {
+	const visual = textareaVisualLines(self, self[kEngine]!.layout);
+	if (!visual) {
+		return caret;
 	}
+	const lineIndex = textareaLineAt(visual.lines, caret);
+	const targetIndex = lineIndex + direction;
+	if (targetIndex < 0) {
+		return 0;
+	}
+	if (targetIndex >= visual.lines.length) {
+		return visual.value.length;
+	}
+	const line = visual.lines[lineIndex];
+	const lineText = visual.value.slice(line.startOffset, line.endOffset);
+	const currentColumn = stringWidth(
+		lineText.slice(0, Math.max(0, caret - line.startOffset)),
+	);
+	// Consecutive vertical moves aim for the column travel STARTED at, even
+	// across shorter lines that clamp the caret -- the browser's goal column.
+	const column = self[kGoalColumn] ?? currentColumn;
+	self[kGoalColumn] = column;
+	const target = visual.lines[targetIndex];
+	const targetText = visual.value.slice(target.startOffset, target.endOffset);
+	let cells = 0;
+	for (let i = 0; i < targetText.length; i++) {
+		const charCells = stringWidth(targetText[i]);
+		if (cells + charCells > column) {
+			return target.startOffset + i;
+		}
+		cells += charCells;
+	}
+	return target.endOffset;
 }
 /**
  * One visual (soft-wrapped or hard-broken) line of a laid-out textarea: the
@@ -14148,7 +14187,6 @@ function setGaugeFill(bar: UAElement, fraction: number | null): void {
 }
 
 const kBar = Symbol("bar");
-const kLevel = Symbol("level");
 
 /**
  * A gauge, whose six numbers are each read inside the ones around them.
@@ -14190,33 +14228,10 @@ export class HTMLMeterElement extends HTMLElement {
 		const min = this.min;
 		const span = this.max - min;
 		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
-		const level = this[kLevel]();
-		if (bar.getAttribute("data-level") !== level) {
-			bar.setAttribute("data-level", level);
+		const barLevel = level(this);
+		if (bar.getAttribute("data-level") !== barLevel) {
+			bar.setAttribute("data-level", barLevel);
 		}
-	}
-
-	/**
-	 * Which of the three readings the value falls in, by the rendering rules
-	 * HTML gives: the optimum region is measured from where `optimum` sits
-	 * relative to `low` and `high`, and a value in it is optimum, one region
-	 * away suboptimum, two away even less good.
-	 */
-	[kLevel](): string {
-		const {low, high, optimum, value} = this;
-		if (optimum < low) {
-			if (value < low) {
-				return "optimum";
-			}
-			return value <= high ? "suboptimum" : "even-less-good";
-		}
-		if (optimum > high) {
-			if (value > high) {
-				return "optimum";
-			}
-			return value >= low ? "suboptimum" : "even-less-good";
-		}
-		return value >= low && value <= high ? "optimum" : "suboptimum";
 	}
 
 	override [kAttributeChanged](
@@ -14296,6 +14311,31 @@ export class HTMLMeterElement extends HTMLElement {
 	get labels(): NodeList {
 		return labelsOf(this);
 	}
+}
+
+/**
+ * Which of the three readings the value falls in, by the rendering rules
+ * HTML gives: the optimum region is measured from where `optimum` sits
+ * relative to `low` and `high`, and a value in it is optimum, one region
+ * away suboptimum, two away even less good.
+ */
+function level(
+	self: HTMLMeterElement,
+): string {
+	const {low, high, optimum, value} = self;
+	if (optimum < low) {
+		if (value < low) {
+			return "optimum";
+		}
+		return value <= high ? "suboptimum" : "even-less-good";
+	}
+	if (optimum > high) {
+		if (value > high) {
+			return "optimum";
+		}
+		return value >= low ? "suboptimum" : "even-less-good";
+	}
+	return value >= low && value <= high ? "optimum" : "suboptimum";
 }
 /** The attributes a meter's own rendering is read from. */
 const METER_ATTRIBUTES = new Set([
@@ -14894,7 +14934,7 @@ export function topmostClickedPopover(node: object): Element | null {
  */
 function popoverFocusingSteps(element: Element): void {
 	if (element instanceof HTMLDialogElement) {
-		element[kDialogFocusingSteps]();
+		dialogFocusingSteps(element);
 		return;
 	}
 	if (element.hasAttribute("autofocus")) {
@@ -15279,48 +15319,50 @@ export class DOMStringMap {
 		this[kDatasetNames] = [];
 		this[kDatasetElement] = element;
 	}
+}
 
-	/** Bring the map's own properties into line with the element's attributes. */
-	[kSyncDataset](): void {
-		const element = this[kDatasetElement];
-		const names: string[] = [];
-		for (const attribute of element[kAttributeList]) {
-			if (attribute[kNamespace] !== null) {
-				continue;
-			}
-			const property = datasetPropertyName(attribute[kLocalName]);
-			if (property === null) {
-				continue;
-			}
-			names.push(property);
+/** Bring the map's own properties into line with the element's attributes. */
+function syncDataset(
+	self: DOMStringMap,
+): void {
+	const element = self[kDatasetElement];
+	const names: string[] = [];
+	for (const attribute of element[kAttributeList]) {
+		if (attribute[kNamespace] !== null) {
+			continue;
 		}
-		names.sort();
-		for (const name of this[kDatasetNames]) {
-			if (!names.includes(name)) {
-				delete (this as never)[name];
-			}
+		const property = datasetPropertyName(attribute[kLocalName]);
+		if (property === null) {
+			continue;
 		}
-		for (const name of names) {
-			if (this[kDatasetNames].includes(name)) {
-				continue;
-			}
-			const attribute = datasetAttributeName(name);
-			Object.defineProperty(this, name, {
-				get(this: DOMStringMap): string {
-					return this[kDatasetElement].getAttribute(attribute) as string;
-				},
-				set: wrapWithReactions(function (
-					this: DOMStringMap,
-					value: unknown,
-				): void {
-					this[kDatasetElement].setAttribute(attribute, String(value));
-				}) as (value: unknown) => void,
-				enumerable: true,
-				configurable: true,
-			});
-		}
-		this[kDatasetNames] = names;
+		names.push(property);
 	}
+	names.sort();
+	for (const name of self[kDatasetNames]) {
+		if (!names.includes(name)) {
+			delete (self as never)[name];
+		}
+	}
+	for (const name of names) {
+		if (self[kDatasetNames].includes(name)) {
+			continue;
+		}
+		const attribute = datasetAttributeName(name);
+		Object.defineProperty(self, name, {
+			get(this: DOMStringMap): string {
+				return self[kDatasetElement].getAttribute(attribute) as string;
+			},
+			set: wrapWithReactions(function (
+				this: DOMStringMap,
+				value: unknown,
+			): void {
+				this[kDatasetElement].setAttribute(attribute, String(value));
+			}) as (value: unknown) => void,
+			enumerable: true,
+			configurable: true,
+		});
+	}
+	self[kDatasetNames] = names;
 }
 
 Object.defineProperty(DOMStringMap.prototype, Symbol.toStringTag, {
@@ -15753,7 +15795,6 @@ Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
 });
 
 const kValidity = Symbol("validity");
-const kRequireFormAssociated = Symbol("requireFormAssociated");
 const kValidationMessage = Symbol("validation message");
 const kValidationAnchor = Symbol("validation anchor");
 const kSubmissionValue = Symbol("submission value");
@@ -15799,12 +15840,12 @@ export class ElementInternals {
 	}
 
 	get form(): HTMLFormElement | null {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return formOwner(this[kElementInternalsTarget]);
 	}
 
 	get labels(): NodeList {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return labelsOf(this[kElementInternalsTarget]);
 	}
 
@@ -15821,7 +15862,7 @@ export class ElementInternals {
 		if (arguments.length < 1) {
 			throw new TypeError("setFormValue needs a value");
 		}
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		this[kSubmissionValue] =
 			value === null || value === undefined ?
 				null :
@@ -15836,7 +15877,7 @@ export class ElementInternals {
 		message?: string,
 		anchor?: HTMLElement,
 	): void {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		const given = toDictionary<Partial<ValidityFlags>>(
 			flags ?? {},
 			"A ValidityStateFlags",
@@ -15869,37 +15910,39 @@ export class ElementInternals {
 	}
 
 	get willValidate(): boolean {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return willValidate(this[kElementInternalsTarget]);
 	}
 
 	get validity(): ValidityState {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return this[kValidity];
 	}
 
 	get validationMessage(): string {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return this[kValidationMessage];
 	}
 
 	checkValidity(): boolean {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return checkValidity(this[kElementInternalsTarget]);
 	}
 
 	reportValidity(): boolean {
-		this[kRequireFormAssociated]();
+		requireFormAssociated(this);
 		return checkValidity(this[kElementInternalsTarget]);
 	}
+}
 
-	[kRequireFormAssociated](): void {
-		if (!isFormAssociatedCustom(this[kElementInternalsTarget])) {
-			throw domError(
-				"NotSupportedError",
-				"That element's definition is not form-associated",
-			);
-		}
+function requireFormAssociated(
+	self: ElementInternals,
+): void {
+	if (!isFormAssociatedCustom(self[kElementInternalsTarget])) {
+		throw domError(
+			"NotSupportedError",
+			"That element's definition is not form-associated",
+		);
 	}
 }
 
@@ -16355,11 +16398,6 @@ export function createFlatTreeWalker<N>(
 }
 
 const kDissolved = Symbol("dissolved");
-const kIsLastContent = Symbol("isLastContent");
-const kLastDescendant = Symbol("lastDescendant");
-const kIsDissolved = Symbol("isDissolved");
-const kHead = Symbol("head");
-const kTail = Symbol("tail");
 
 class FlatWalker {
 	declare readonly root: Node;
@@ -16408,7 +16446,7 @@ class FlatWalker {
 				// An element's ::after follows the last of its content.
 				if (parent.nodeType === ELEMENT_NODE) {
 					const after = pseudoSlot(parent as Element, "::after");
-					if (after !== null && this[kIsLastContent](node, parent as Element)) {
+					if (after !== null && isLastContent(this, node, parent as Element)) {
 						if (accepts(after)) {
 							this.currentNode = after;
 							return after;
@@ -16443,12 +16481,12 @@ class FlatWalker {
 		for (;;) {
 			const previousSibling = this[kPreviousSibling](node);
 			if (previousSibling !== null) {
-				const lastDescendant = this[kLastDescendant](previousSibling);
-				if (accepts(lastDescendant)) {
-					this.currentNode = lastDescendant;
-					return lastDescendant;
+				const descendant = lastDescendant(this, previousSibling);
+				if (accepts(descendant)) {
+					this.currentNode = descendant;
+					return descendant;
 				}
-				node = lastDescendant;
+				node = descendant;
 				continue;
 			}
 			const parent = this[kParent](node);
@@ -16542,54 +16580,11 @@ class FlatWalker {
 		return sibling;
 	}
 
-	/* The dissolving layer: composed hops with the caller's dissolved elements
-	   spliced away, so their children join the parent's child sequence. This is
-	   how a <slot> disappears from a box tree while its projected content flows
-	   through. */
-
-	[kIsDissolved](node: Node): boolean {
-		return (
-			this[kDissolved] !== null &&
-			node.nodeType === ELEMENT_NODE &&
-			this[kDissolved](node)
-		);
-	}
-
-	/** The first undissolved node at a node's position, or null if it has none. */
-	[kHead](node: Node): Node | null {
-		if (!this[kIsDissolved](node)) {
-			return node;
-		}
-		for (let child = composedFirstChild(node); child !== null;) {
-			const head = this[kHead](child);
-			if (head !== null) {
-				return head;
-			}
-			child = composedNextSibling(child);
-		}
-		return null;
-	}
-
-	/** Mirror of kHead: the last undissolved node at a node's position. */
-	[kTail](node: Node): Node | null {
-		if (!this[kIsDissolved](node)) {
-			return node;
-		}
-		for (let child = composedLastChild(node); child !== null;) {
-			const tail = this[kTail](child);
-			if (tail !== null) {
-				return tail;
-			}
-			child = composedPreviousSibling(child);
-		}
-		return null;
-	}
-
 	[kFirstChild](node: Node): Node | null {
 		for (let child = composedFirstChild(node); child !== null;) {
-			const head = this[kHead](child);
-			if (head !== null) {
-				return head;
+			const found = head(this, child);
+			if (found !== null) {
+				return found;
 			}
 			child = composedNextSibling(child);
 		}
@@ -16598,9 +16593,9 @@ class FlatWalker {
 
 	[kLastChild](node: Node): Node | null {
 		for (let child = composedLastChild(node); child !== null;) {
-			const tail = this[kTail](child);
-			if (tail !== null) {
-				return tail;
+			const found = tail(this, child);
+			if (found !== null) {
+				return found;
 			}
 			child = composedPreviousSibling(child);
 		}
@@ -16615,15 +16610,15 @@ class FlatWalker {
 				sibling !== null;
 				sibling = composedNextSibling(sibling)
 			) {
-				const head = this[kHead](sibling);
-				if (head !== null) {
-					return head;
+				const found = head(this, sibling);
+				if (found !== null) {
+					return found;
 				}
 			}
 			// Out of composed siblings: a dissolved parent's siblings continue
 			// the sequence.
 			const parent = composedParentNode(current);
-			if (parent === null || !this[kIsDissolved](parent)) {
+			if (parent === null || !isDissolved(this, parent)) {
 				return null;
 			}
 			current = parent;
@@ -16638,13 +16633,13 @@ class FlatWalker {
 				sibling !== null;
 				sibling = composedPreviousSibling(sibling)
 			) {
-				const tail = this[kTail](sibling);
-				if (tail !== null) {
-					return tail;
+				const found = tail(this, sibling);
+				if (found !== null) {
+					return found;
 				}
 			}
 			const parent = composedParentNode(current);
-			if (parent === null || !this[kIsDissolved](parent)) {
+			if (parent === null || !isDissolved(this, parent)) {
 				return null;
 			}
 			current = parent;
@@ -16653,45 +16648,103 @@ class FlatWalker {
 
 	[kParent](node: Node): Node | null {
 		let parent = composedParentNode(node);
-		while (parent !== null && this[kIsDissolved](parent)) {
+		while (parent !== null && isDissolved(this, parent)) {
 			parent = composedParentNode(parent);
 		}
 		return parent;
 	}
+}
 
-	[kLastDescendant](node: Node): Node {
-		let current = node;
-		for (
-			let child = this[kLastChild](current);
-			child !== null;
-			child = this[kLastChild](current)
-		) {
-			current = child;
-		}
-		return current;
+/* The dissolving layer: composed hops with the caller's dissolved elements
+   spliced away, so their children join the parent's child sequence. This is
+   how a <slot> disappears from a box tree while its projected content flows
+   through. */
+function isDissolved(
+	self: FlatWalker,
+	node: Node,
+): boolean {
+	return (
+		self[kDissolved] !== null &&
+		node.nodeType === ELEMENT_NODE &&
+		self[kDissolved](node)
+	);
+}
+
+/** The first undissolved node at a node's position, or null if it has none. */
+function head(
+	self: FlatWalker,
+	node: Node,
+): Node | null {
+	if (!isDissolved(self, node)) {
+		return node;
 	}
+	for (let child = composedFirstChild(node); child !== null;) {
+		const found = head(self, child);
+		if (found !== null) {
+			return found;
+		}
+		child = composedNextSibling(child);
+	}
+	return null;
+}
 
-	/** Whether a node ends an element's content, ::after aside. */
-	[kIsLastContent](node: Node, element: Element): boolean {
-		const shadow = element[kShadowRoot];
-		const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
-		if (last === null) {
-			return false;
+/** Mirror of kHead: the last undissolved node at a node's position. */
+function tail(
+	self: FlatWalker,
+	node: Node,
+): Node | null {
+	if (!isDissolved(self, node)) {
+		return node;
+	}
+	for (let child = composedLastChild(node); child !== null;) {
+		const found = tail(self, child);
+		if (found !== null) {
+			return found;
 		}
-		if (node === last) {
-			return true;
-		}
-		for (
-			let ancestor = composedParentNode(node);
-			ancestor !== null;
-			ancestor = composedParentNode(ancestor)
-		) {
-			if (ancestor === last) {
-				return true;
-			}
-		}
+		child = composedPreviousSibling(child);
+	}
+	return null;
+}
+
+function lastDescendant(
+	self: FlatWalker,
+	node: Node,
+): Node {
+	let current = node;
+	for (
+		let child = self[kLastChild](current);
+		child !== null;
+		child = self[kLastChild](current)
+	) {
+		current = child;
+	}
+	return current;
+}
+
+/** Whether a node ends an element's content, ::after aside. */
+function isLastContent(
+	self: FlatWalker,
+	node: Node,
+	element: Element,
+): boolean {
+	const shadow = element[kShadowRoot];
+	const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
+	if (last === null) {
 		return false;
 	}
+	if (node === last) {
+		return true;
+	}
+	for (
+		let ancestor = composedParentNode(node);
+		ancestor !== null;
+		ancestor = composedParentNode(ancestor)
+	) {
+		if (ancestor === last) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /** Only elements and text generate boxes; every other node type is skipped. */
@@ -19668,8 +19721,6 @@ Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kSelectionChanged = Symbol("the selection's range or direction changed");
-
 /* -------------------------------------------------------------- selection */
 
 /**
@@ -19682,7 +19733,7 @@ function rangeBoundaryPointsChanged(
 ): void {
 	const selection = range[kRangeSelection];
 	if (selection !== null) {
-		selection[kSelectionChanged](which);
+		selectionChanged(selection, which);
 	}
 }
 
@@ -19788,16 +19839,9 @@ function createSelection(document: Document): Selection {
 }
 
 const kRange = Symbol("range");
-const kInDocument = Symbol("inDocument");
 const kDirection = Symbol("direction");
 const kStart = Symbol("start");
 const kEnd = Symbol("end");
-const kComposedOrder = Symbol("composedOrder");
-const kAnchorPoint = Symbol("anchorPoint");
-const kFocusPoint = Symbol("focusPoint");
-const kDocumentRange = Symbol("documentRange");
-const kAssociate = Symbol("associate");
-const kRangeFor = Symbol("rangeFor");
 
 export class Selection {
 	declare [kDocument]: Document;
@@ -19823,144 +19867,33 @@ export class Selection {
 		this[kDocument] = selectionUnderConstruction;
 	}
 
-	/** Whether a node is in the selection's document, shadow trees included. */
-	[kInDocument](node: Node): boolean {
-		return shadowIncludingRoot(node) === this[kDocument];
-	}
-
-	/**
-	 * The range the Range API is allowed to see: the selection has one while
-	 * its range is in the document, a shadow tree of the document included. A
-	 * range that has left the document is not one the selection answers with.
-	 */
-	[kDocumentRange](): Range | null {
-		const range = this[kRange];
-		if (range === null) {
-			return null;
-		}
-		return this[kInDocument](range[kStartNode]) ? range : null;
-	}
-
-	[kAnchorPoint](): [Node, number] | null {
-		const range = this[kRange];
-		if (range === null) {
-			return null;
-		}
-		return this[kDirection] === "forwards" ?
-				[range[kStartNode], range[kStartOffset]] :
-				[range[kEndNode], range[kEndOffset]];
-	}
-
-	[kFocusPoint](): [Node, number] | null {
-		const range = this[kRange];
-		if (range === null) {
-			return null;
-		}
-		return this[kDirection] === "forwards" ?
-				[range[kEndNode], range[kEndOffset]] :
-				[range[kStartNode], range[kStartOffset]];
-	}
-
-	/** The range the Range API builds from an ordered pair of points. */
-	[kRangeFor](start: [Node, number], end: [Node, number]): Range {
-		const range = new Range();
-		setRangeBoundary(range, start[0], start[1], true);
-		setRangeBoundary(range, end[0], end[1], false);
-		return range;
-	}
-
-	/** Take a range, and the composed points it was built from, as the own. */
-	[kAssociate](
-		range: Range,
-		anchor: [Node, number],
-		focus: [Node, number],
-		direction: "forwards" | "backwards" | "directionless",
-	): void {
-		const previous = this[kRange];
-		if (previous !== null) {
-			previous[kRangeSelection] = null;
-		}
-		this[kRange] = range;
-		range[kRangeSelection] = this;
-		const anchorFirst =
-			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
-		const start = anchorFirst ? anchor : focus;
-		const end = anchorFirst ? focus : anchor;
-		this[kStart] = livePoint(start[0], start[1]);
-		this[kEnd] = livePoint(end[0], end[1]);
-		this[kDirection] = direction;
-		scheduleSelectionChange(this[kDocument]);
-	}
-
-	/**
-	 * The steps a change to the selection's range through the Range API takes:
-	 * the composed point the change moved follows it, and a range that leaves
-	 * the document takes the selection with it.
-	 */
-	[kSelectionChanged](which: "start" | "end" | "both"): void {
-		const range = this[kRange];
-		if (range === null) {
-			return;
-		}
-		if (!this[kInDocument](range[kStartNode])) {
-			this.removeAllRanges();
-			return;
-		}
-		const start = livePoint(range[kStartNode], range[kStartOffset]);
-		const end = livePoint(range[kEndNode], range[kEndOffset]);
-		if (which === "both" || this[kStart] === null || this[kEnd] === null) {
-			this[kStart] = start;
-			this[kEnd] = end;
-		} else if (which === "start") {
-			this[kStart] = start;
-			if (this[kComposedOrder](start, this[kEnd]) === AFTER) {
-				this[kEnd] = start;
-			}
-		} else {
-			this[kEnd] = end;
-			if (this[kComposedOrder](end, this[kStart]) === BEFORE) {
-				this[kStart] = end;
-			}
-		}
-		scheduleSelectionChange(this[kDocument]);
-	}
-
-	[kComposedOrder](point: Range, other: Range): number {
-		return compareComposedPoints(
-			point[kStartNode],
-			point[kStartOffset],
-			other[kStartNode],
-			other[kStartOffset],
-		);
-	}
-
 	get anchorNode(): Node | null {
-		const anchor = this[kAnchorPoint]();
-		if (anchor === null || !this[kInDocument](anchor[0])) {
+		const anchor = anchorPoint(this);
+		if (anchor === null || !inDocument(this, anchor[0])) {
 			return null;
 		}
 		return anchor[0];
 	}
 
 	get anchorOffset(): number {
-		const anchor = this[kAnchorPoint]();
-		if (anchor === null || !this[kInDocument](anchor[0])) {
+		const anchor = anchorPoint(this);
+		if (anchor === null || !inDocument(this, anchor[0])) {
 			return 0;
 		}
 		return anchor[1];
 	}
 
 	get focusNode(): Node | null {
-		const focus = this[kFocusPoint]();
-		if (focus === null || !this[kInDocument](focus[0])) {
+		const focus = focusPoint(this);
+		if (focus === null || !inDocument(this, focus[0])) {
 			return null;
 		}
 		return focus[0];
 	}
 
 	get focusOffset(): number {
-		const focus = this[kFocusPoint]();
-		if (focus === null || !this[kInDocument](focus[0])) {
+		const focus = focusPoint(this);
+		if (focus === null || !inDocument(this, focus[0])) {
 			return 0;
 		}
 		return focus[1];
@@ -19972,11 +19905,11 @@ export class Selection {
 	}
 
 	get rangeCount(): number {
-		return this[kDocumentRange]() === null ? 0 : 1;
+		return documentRange(this) === null ? 0 : 1;
 	}
 
 	get type(): string {
-		const range = this[kDocumentRange]();
+		const range = documentRange(this);
 		if (range === null) {
 			return "None";
 		}
@@ -20000,7 +19933,7 @@ export class Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("getRangeAt needs an index");
 		}
-		const range = this[kDocumentRange]();
+		const range = documentRange(this);
 		if (toUnsignedLong(index) !== 0 || range === null) {
 			throw indexSizeError("The selection has no range at that index");
 		}
@@ -20014,13 +19947,14 @@ export class Selection {
 		if (!(range instanceof Range)) {
 			throw new TypeError("That is not a range");
 		}
-		if (!this[kInDocument](range[kStartNode])) {
+		if (!inDocument(this, range[kStartNode])) {
 			return;
 		}
 		if (this.rangeCount !== 0) {
 			return;
 		}
-		this[kAssociate](
+		associate(
+			this,
 			range,
 			[range[kStartNode], range[kStartOffset]],
 			[range[kEndNode], range[kEndOffset]],
@@ -20148,8 +20082,9 @@ export class Selection {
 			return;
 		}
 		const point: [Node, number] = [node, at];
-		this[kAssociate](
-			this[kRangeFor](point, point),
+		associate(
+			this,
+			rangeFor(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -20169,8 +20104,9 @@ export class Selection {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
 		const point: [Node, number] = [range[kStartNode], range[kStartOffset]];
-		this[kAssociate](
-			this[kRangeFor](point, point),
+		associate(
+			this,
+			rangeFor(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -20183,8 +20119,9 @@ export class Selection {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
 		const point: [Node, number] = [range[kEndNode], range[kEndOffset]];
-		this[kAssociate](
-			this[kRangeFor](point, point),
+		associate(
+			this,
+			rangeFor(this, point, point),
 			point,
 			point,
 			this[kDirection],
@@ -20204,14 +20141,15 @@ export class Selection {
 		if (this[kRange] === null) {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
-		const anchor = this[kAnchorPoint]() as [Node, number];
+		const anchor = anchorPoint(this) as [Node, number];
 		const focus: [Node, number] = [node, toUnsignedLong(offset)];
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 		const range = anchorFirst ?
-				this[kRangeFor](anchor, focus) :
-				this[kRangeFor](focus, anchor);
-		this[kAssociate](
+				rangeFor(this, anchor, focus) :
+				rangeFor(this, focus, anchor);
+		associate(
+			this,
 			range,
 			anchor,
 			focus,
@@ -20247,9 +20185,10 @@ export class Selection {
 		const anchorFirst =
 			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
 		const range = anchorFirst ?
-				this[kRangeFor](anchor, focus) :
-				this[kRangeFor](focus, anchor);
-		this[kAssociate](
+				rangeFor(this, anchor, focus) :
+				rangeFor(this, focus, anchor);
+		associate(
+			this,
 			range,
 			anchor,
 			focus,
@@ -20279,11 +20218,11 @@ export class Selection {
 		}
 		const anchor: [Node, number] = [node, 0];
 		const focus: [Node, number] = [node, childCount];
-		this[kAssociate](this[kRangeFor](anchor, focus), anchor, focus, "forwards");
+		associate(this, rangeFor(this, anchor, focus), anchor, focus, "forwards");
 	}
 
 	deleteFromDocument(): void {
-		const range = this[kDocumentRange]();
+		const range = documentRange(this);
 		if (range === null) {
 			return;
 		}
@@ -20324,6 +20263,138 @@ export class Selection {
 		const range = this[kRange];
 		return range === null ? "" : range.toString();
 	}
+}
+
+/** Whether a node is in the selection's document, shadow trees included. */
+function inDocument(
+	self: Selection,
+	node: Node,
+): boolean {
+	return shadowIncludingRoot(node) === self[kDocument];
+}
+
+/**
+ * The range the Range API is allowed to see: the selection has one while
+ * its range is in the document, a shadow tree of the document included. A
+ * range that has left the document is not one the selection answers with.
+ */
+function documentRange(
+	self: Selection,
+): Range | null {
+	const range = self[kRange];
+	if (range === null) {
+		return null;
+	}
+	return inDocument(self, range[kStartNode]) ? range : null;
+}
+
+function anchorPoint(
+	self: Selection,
+): [Node, number] | null {
+	const range = self[kRange];
+	if (range === null) {
+		return null;
+	}
+	return self[kDirection] === "forwards" ?
+			[range[kStartNode], range[kStartOffset]] :
+			[range[kEndNode], range[kEndOffset]];
+}
+
+function focusPoint(
+	self: Selection,
+): [Node, number] | null {
+	const range = self[kRange];
+	if (range === null) {
+		return null;
+	}
+	return self[kDirection] === "forwards" ?
+			[range[kEndNode], range[kEndOffset]] :
+			[range[kStartNode], range[kStartOffset]];
+}
+
+/** The range the Range API builds from an ordered pair of points. */
+function rangeFor(
+	self: Selection,
+	start: [Node, number],
+	end: [Node, number],
+): Range {
+	const range = new Range();
+	setRangeBoundary(range, start[0], start[1], true);
+	setRangeBoundary(range, end[0], end[1], false);
+	return range;
+}
+
+/** Take a range, and the composed points it was built from, as the own. */
+function associate(
+	self: Selection,
+	range: Range,
+	anchor: [Node, number],
+	focus: [Node, number],
+	direction: "forwards" | "backwards" | "directionless",
+): void {
+	const previous = self[kRange];
+	if (previous !== null) {
+		previous[kRangeSelection] = null;
+	}
+	self[kRange] = range;
+	range[kRangeSelection] = self;
+	const anchorFirst =
+		compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
+	const start = anchorFirst ? anchor : focus;
+	const end = anchorFirst ? focus : anchor;
+	self[kStart] = livePoint(start[0], start[1]);
+	self[kEnd] = livePoint(end[0], end[1]);
+	self[kDirection] = direction;
+	scheduleSelectionChange(self[kDocument]);
+}
+
+/**
+ * The steps a change to the selection's range through the Range API takes:
+ * the composed point the change moved follows it, and a range that leaves
+ * the document takes the selection with it.
+ */
+function selectionChanged(
+	self: Selection,
+	which: "start" | "end" | "both",
+): void {
+	const range = self[kRange];
+	if (range === null) {
+		return;
+	}
+	if (!inDocument(self, range[kStartNode])) {
+		self.removeAllRanges();
+		return;
+	}
+	const start = livePoint(range[kStartNode], range[kStartOffset]);
+	const end = livePoint(range[kEndNode], range[kEndOffset]);
+	if (which === "both" || self[kStart] === null || self[kEnd] === null) {
+		self[kStart] = start;
+		self[kEnd] = end;
+	} else if (which === "start") {
+		self[kStart] = start;
+		if (composedOrder(self, start, self[kEnd]) === AFTER) {
+			self[kEnd] = start;
+		}
+	} else {
+		self[kEnd] = end;
+		if (composedOrder(self, end, self[kStart]) === BEFORE) {
+			self[kStart] = end;
+		}
+	}
+	scheduleSelectionChange(self[kDocument]);
+}
+
+function composedOrder(
+	self: Selection,
+	point: Range,
+	other: Range,
+): number {
+	return compareComposedPoints(
+		point[kStartNode],
+		point[kStartOffset],
+		other[kStartNode],
+		other[kStartOffset],
+	);
 }
 
 ceReactions(Selection.prototype, ["deleteFromDocument"]);
@@ -20425,7 +20496,6 @@ const kReference = Symbol("reference");
 const kWhatToShow = Symbol("whatToShow");
 const kFilter = Symbol("filter");
 const kPointerBefore = Symbol("pointerBefore");
-const kTraverse = Symbol("traverse");
 const kActive = Symbol("active");
 
 export class NodeIterator {
@@ -20466,58 +20536,15 @@ export class NodeIterator {
 	}
 
 	nextNode(): Node | null {
-		return this[kTraverse](true);
+		return traverse(this, true);
 	}
 
 	previousNode(): Node | null {
-		return this[kTraverse](false);
+		return traverse(this, false);
 	}
 
 	detach(): void {
 		// The spec keeps this as a no-op.
-	}
-
-	[kTraverse](forward: boolean): Node | null {
-		let node: Node | null = this[kReference];
-		let before = this[kPointerBefore];
-		const state = {
-			root: this[kRoot],
-			whatToShow: this[kWhatToShow],
-			filter: this[kFilter],
-			active: this[kActive],
-		};
-		for (;;) {
-			if (forward) {
-				if (!before) {
-					node = followingWithin(node as Node, this[kRoot]);
-					if (node === null) {
-						return null;
-					}
-				} else {
-					before = false;
-				}
-			} else {
-				if (before) {
-					node = precedingWithin(node as Node, this[kRoot]);
-					if (node === null) {
-						return null;
-					}
-				} else {
-					before = true;
-				}
-			}
-			if (filterNode(state, node as Node) === FILTER_ACCEPT) {
-				// A filter that removed the very node it was filtering leaves
-				// the reference where the pre-removing steps put it: a node
-				// outside the root can never be the reference.
-				if (isInclusiveAncestor(this[kRoot], node as Node)) {
-					this[kReference] = node as Node;
-					this[kPointerBefore] = before;
-				}
-				break;
-			}
-		}
-		return node;
 	}
 
 	/** The spec's NodeIterator pre-removing steps. */
@@ -20552,6 +20579,52 @@ export class NodeIterator {
 	}
 }
 
+function traverse(
+	self: NodeIterator,
+	forward: boolean,
+): Node | null {
+	let node: Node | null = self[kReference];
+	let before = self[kPointerBefore];
+	const state = {
+		root: self[kRoot],
+		whatToShow: self[kWhatToShow],
+		filter: self[kFilter],
+		active: self[kActive],
+	};
+	for (;;) {
+		if (forward) {
+			if (!before) {
+				node = followingWithin(node as Node, self[kRoot]);
+				if (node === null) {
+					return null;
+				}
+			} else {
+				before = false;
+			}
+		} else {
+			if (before) {
+				node = precedingWithin(node as Node, self[kRoot]);
+				if (node === null) {
+					return null;
+				}
+			} else {
+				before = true;
+			}
+		}
+		if (filterNode(state, node as Node) === FILTER_ACCEPT) {
+			// A filter that removed the very node it was filtering leaves
+			// the reference where the pre-removing steps put it: a node
+			// outside the root can never be the reference.
+			if (isInclusiveAncestor(self[kRoot], node as Node)) {
+				self[kReference] = node as Node;
+				self[kPointerBefore] = before;
+			}
+			break;
+		}
+	}
+	return node;
+}
+
 function preRemoveFromIterator(iterator: NodeIterator, node: Node): void {
 	iterator[kPreRemove](node);
 }
@@ -20562,8 +20635,6 @@ Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
 });
 
 const kCurrent = Symbol("current");
-const kTraverseChildren = Symbol("traverseChildren");
-const kTraverseSiblings = Symbol("traverseSiblings");
 
 export class TreeWalker {
 	declare [kRoot]: Node;
@@ -20630,19 +20701,19 @@ export class TreeWalker {
 	}
 
 	firstChild(): Node | null {
-		return this[kTraverseChildren](true);
+		return traverseChildren(this, true);
 	}
 
 	lastChild(): Node | null {
-		return this[kTraverseChildren](false);
+		return traverseChildren(this, false);
 	}
 
 	previousSibling(): Node | null {
-		return this[kTraverseSiblings](false);
+		return traverseSiblings(this, false);
 	}
 
 	nextSibling(): Node | null {
-		return this[kTraverseSiblings](true);
+		return traverseSiblings(this, true);
 	}
 
 	previousNode(): Node | null {
@@ -20710,71 +20781,77 @@ export class TreeWalker {
 			}
 		}
 	}
+}
 
-	[kTraverseChildren](first: boolean): Node | null {
-		let node: Node | null = first ?
-			this[kCurrent][kFirstChild] :
-			this[kCurrent][kLastChild];
-		while (node !== null) {
-			const result = filterNode(this[kState], node);
-			if (result === FILTER_ACCEPT) {
-				this[kCurrent] = node;
-				return node;
-			}
-			if (result === FILTER_SKIP) {
-				const child = first ? node[kFirstChild] : node[kLastChild];
-				if (child !== null) {
-					node = child;
-					continue;
-				}
-			}
-			for (;;) {
-				const sibling = first ? node[kNext] : node[kPrevious];
-				if (sibling !== null) {
-					node = sibling;
-					break;
-				}
-				const parent: Node | null = node[kParent];
-				if (
-					parent === null ||
-					parent === this[kRoot] ||
-					parent === this[kCurrent]
-				) {
-					return null;
-				}
-				node = parent;
-			}
+function traverseChildren(
+	self: TreeWalker,
+	first: boolean,
+): Node | null {
+	let node: Node | null = first ?
+		self[kCurrent][kFirstChild] :
+		self[kCurrent][kLastChild];
+	while (node !== null) {
+		const result = filterNode(self[kState], node);
+		if (result === FILTER_ACCEPT) {
+			self[kCurrent] = node;
+			return node;
 		}
-		return null;
-	}
-
-	[kTraverseSiblings](next: boolean): Node | null {
-		let node = this[kCurrent];
-		if (node === this[kRoot]) {
-			return null;
+		if (result === FILTER_SKIP) {
+			const child = first ? node[kFirstChild] : node[kLastChild];
+			if (child !== null) {
+				node = child;
+				continue;
+			}
 		}
 		for (;;) {
-			let sibling = next ? node[kNext] : node[kPrevious];
-			while (sibling !== null) {
+			const sibling = first ? node[kNext] : node[kPrevious];
+			if (sibling !== null) {
 				node = sibling;
-				const result = filterNode(this[kState], node);
-				if (result === FILTER_ACCEPT) {
-					this[kCurrent] = node;
-					return node;
-				}
-				sibling = next ? node[kFirstChild] : node[kLastChild];
-				if (result === FILTER_REJECT || sibling === null) {
-					sibling = next ? node[kNext] : node[kPrevious];
-				}
+				break;
 			}
-			const parent = node[kParent];
-			if (parent === null || parent === this[kRoot]) {
+			const parent: Node | null = node[kParent];
+			if (
+				parent === null ||
+				parent === self[kRoot] ||
+				parent === self[kCurrent]
+			) {
 				return null;
 			}
 			node = parent;
-			if (filterNode(this[kState], node) === FILTER_ACCEPT) {
-				return null;
+		}
+	}
+	return null;
+}
+
+function traverseSiblings(
+	self: TreeWalker,
+	next: boolean,
+): Node | null {
+	let node = self[kCurrent];
+	if (node === self[kRoot]) {
+		return null;
+	}
+	for (;;) {
+		let sibling = next ? node[kNext] : node[kPrevious];
+		while (sibling !== null) {
+			node = sibling;
+			const result = filterNode(self[kState], node);
+			if (result === FILTER_ACCEPT) {
+				self[kCurrent] = node;
+				return node;
 			}
+			sibling = next ? node[kFirstChild] : node[kLastChild];
+			if (result === FILTER_REJECT || sibling === null) {
+				sibling = next ? node[kNext] : node[kPrevious];
+			}
+		}
+		const parent = node[kParent];
+		if (parent === null || parent === self[kRoot]) {
+			return null;
+		}
+		node = parent;
+		if (filterNode(self[kState], node) === FILTER_ACCEPT) {
+			return null;
 		}
 	}
 }
