@@ -1624,7 +1624,6 @@ const kSpare = Symbol("spare");
 const kNeedsScreenReset = Symbol("needsScreenReset");
 const kResetAtRow = Symbol("resetAtRow");
 const kHasSavedCursor = Symbol("hasSavedCursor");
-const kForgetScreen = Symbol("forgetScreen");
 const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
 const kTakeGrid = Symbol("takeGrid");
@@ -1744,7 +1743,7 @@ export class Screen {
 		this[kNeedsScreenReset] = true;
 		this[kResetAtRow] = Math.max(0, fromRow);
 		this[kHasSavedCursor] = false;
-		this[kForgetScreen]();
+		this.repaintAll();
 	}
 
 	/**
@@ -1765,10 +1764,6 @@ export class Screen {
 	 * every cell again, in place.
 	 */
 	repaintAll(): void {
-		this[kForgetScreen]();
-	}
-
-	[kForgetScreen](): void {
 		this[kSpare] = this[kPrev];
 		this[kPrev] = null;
 		this[kPrevContentHeight] = 0;
