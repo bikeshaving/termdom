@@ -34,6 +34,185 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
+const kBubbles = Symbol("bubbles");
+const kCancelable = Symbol("cancelable");
+const kComposed = Symbol("composed");
+const kTimeStamp = Symbol("timeStamp");
+const kState = Symbol("state");
+const kDetail = Symbol("detail");
+const kReturnValue = Symbol("returnValue");
+const kWhich = Symbol("which");
+const kScreenX = Symbol("screenX");
+const kScreenY = Symbol("screenY");
+const kClientX = Symbol("clientX");
+const kClientY = Symbol("clientY");
+const kButton = Symbol("button");
+const kButtons = Symbol("buttons");
+const kModifiers = Symbol("modifiers");
+const kKey = Symbol("key");
+const kCode = Symbol("code");
+const kLocation = Symbol("location");
+const kRepeat = Symbol("repeat");
+const kIsComposing = Symbol("isComposing");
+const kCharCode = Symbol("charCode");
+const kKeyCode = Symbol("keyCode");
+const kInputType = Symbol("inputType");
+const kDeltaX = Symbol("deltaX");
+const kDeltaY = Symbol("deltaY");
+const kDeltaZ = Symbol("deltaZ");
+const kDeltaMode = Symbol("deltaMode");
+const kPointerId = Symbol("pointerId");
+const kWidth = Symbol("width");
+const kHeight = Symbol("height");
+const kPressure = Symbol("pressure");
+const kTangentialPressure = Symbol("tangentialPressure");
+const kTiltX = Symbol("tiltX");
+const kTiltY = Symbol("tiltY");
+const kTwist = Symbol("twist");
+const kAltitudeAngle = Symbol("altitudeAngle");
+const kAzimuthAngle = Symbol("azimuthAngle");
+const kPointerType = Symbol("pointerType");
+const kIsPrimary = Symbol("isPrimary");
+const kCoalesced = Symbol("coalesced");
+const kPredicted = Symbol("predicted");
+const kHandlers = Symbol("handlers");
+const kAttributeName = Symbol("attributeName");
+const kAttributeNamespace = Symbol("attributeNamespace");
+const kOldValue = Symbol("oldValue");
+const kAddedNodes = Symbol("addedNodes");
+const kRemovedNodes = Symbol("removedNodes");
+const kPreviousSibling = Symbol("previousSibling");
+const kNextSibling = Symbol("nextSibling");
+const kCallback = Symbol("callback");
+const kLiveNodes = Symbol("liveNodes");
+const kNodes = Symbol("nodes");
+const kRecords = Symbol("records");
+const kLive = Symbol("live");
+const kOwner = Symbol("owner");
+const kChildMember = Symbol("childMember");
+const kTold = Symbol("told");
+const kExact = Symbol("exact");
+const kVersion = Symbol("version");
+const kItems = Symbol("items");
+const kMaterialize = Symbol("materialize");
+const kRecompute = Symbol("recompute");
+const kRegistered = Symbol("registered");
+const kStanding = Symbol("standing");
+const kSplice = Symbol("splice");
+const kDefineIndices = Symbol("defineIndices");
+const kDefined = Symbol("defined");
+const kNames = Symbol("names");
+const kCompute = Symbol("compute");
+const kRoot = Symbol("root");
+const kWatched = Symbol("watched");
+const kMatches = Symbol("matches");
+const kMembersOf = Symbol("membersOf");
+const kMembers = Symbol("members");
+const kElement = Symbol("element");
+const kAttribute = Symbol("attribute");
+const kSupported = Symbol("supported");
+const kTokens = Symbol("tokens");
+const kWrite = Symbol("write");
+const kByName = Symbol("byName");
+const kDefinitions = Symbol("definitions");
+const kDefinitionIsRunning = Symbol("definitionIsRunning");
+const kWhenDefined = Symbol("whenDefined");
+const kScoped = Symbol("scoped");
+const kOptions = Symbol("options");
+const kToggleQueued = Symbol("toggleQueued");
+const kStateAtQueue = Symbol("stateAtQueue");
+const kOldState = Symbol("oldState");
+const kNewState = Symbol("newState");
+const kSource = Symbol("source");
+const kFocusDialog = Symbol("focusDialog");
+const kPreviouslyFocused = Symbol("previouslyFocused");
+const kClose = Symbol("close");
+const kElements = Symbol("elements");
+const kFiringReset = Symbol("firingReset");
+const kSubmitter = Symbol("submitter");
+const kMatching = Symbol("matching");
+const kAreas = Symbol("areas");
+const kCurrentTime = Symbol("currentTime");
+const kVolume = Symbol("volume");
+const kMuted = Symbol("muted");
+const kPlaybackRate = Symbol("playbackRate");
+const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
+const kPreservesPitch = Symbol("preservesPitch");
+const kTBodies = Symbol("tBodies");
+const kRows = Symbol("rows");
+const kTable = Symbol("table");
+const kCells = Symbol("cells");
+const kDirtyValue = Symbol("dirtyValue");
+const kSelectionStart = Symbol("selectionStart");
+const kSelectionEnd = Symbol("selectionEnd");
+const kSelectionDirection = Symbol("selectionDirection");
+const kChecked = Symbol("checked");
+const kDirtyChecked = Symbol("dirtyChecked");
+const kSetCheckedness = Symbol("setCheckedness");
+const kIndeterminate = Symbol("indeterminate");
+const kRequireSelectable = Symbol("requireSelectable");
+const kPreviousRadio = Symbol("previousRadio");
+const kPreviouslyChecked = Symbol("previouslyChecked");
+const kPreviouslyIndeterminate = Symbol("previouslyIndeterminate");
+const kValueText = Symbol("valueText");
+const kEngine = Symbol("engine");
+const kBuild = Symbol("build");
+const kOnKeydown = Symbol("onKeydown");
+const kOnBeforeInput = Symbol("onBeforeInput");
+const kKindFor = Symbol("kindFor");
+const kKind = Symbol("kind");
+const kPlaceholderText = Symbol("placeholderText");
+const kGlyphText = Symbol("glyphText");
+const kSelect = Symbol("select");
+const kDirty = Symbol("dirty");
+const kStored = Symbol("stored");
+const kSelectedOptions = Symbol("selectedOptions");
+const kPicker = Symbol("picker");
+const kOnMousedown = Symbol("onMousedown");
+const kOnBlur = Symbol("onBlur");
+const kOptionList = Symbol("optionList");
+const kHighlight = Symbol("highlight");
+const kReconcileRows = Symbol("reconcileRows");
+const kPickerRows = Symbol("pickerRows");
+const kStep = Symbol("step");
+const kCommit = Symbol("commit");
+const kOpenPicker = Symbol("openPicker");
+const kPlaceholderSpan = Symbol("placeholderSpan");
+const kGoalColumn = Symbol("goalColumn");
+const kVerticalTarget = Symbol("verticalTarget");
+const kBar = Symbol("bar");
+const kLevel = Symbol("level");
+const kFlags = Symbol("flags");
+const kValidity = Symbol("validity");
+const kRequireFormAssociated = Symbol("requireFormAssociated");
+const kDissolved = Symbol("dissolved");
+const kIsLastContent = Symbol("isLastContent");
+const kLastDescendant = Symbol("lastDescendant");
+const kIsDissolved = Symbol("isDissolved");
+const kHead = Symbol("head");
+const kTail = Symbol("tail");
+const kImplementation = Symbol("implementation");
+const kRange = Symbol("range");
+const kInDocument = Symbol("inDocument");
+const kDirection = Symbol("direction");
+const kStart = Symbol("start");
+const kEnd = Symbol("end");
+const kComposedOrder = Symbol("composedOrder");
+const kAnchorPoint = Symbol("anchorPoint");
+const kFocusPoint = Symbol("focusPoint");
+const kDocumentRange = Symbol("documentRange");
+const kAssociate = Symbol("associate");
+const kRangeFor = Symbol("rangeFor");
+const kReference = Symbol("reference");
+const kWhatToShow = Symbol("whatToShow");
+const kFilter = Symbol("filter");
+const kPointerBefore = Symbol("pointerBefore");
+const kTraverse = Symbol("traverse");
+const kActive = Symbol("active");
+const kCurrent = Symbol("current");
+const kTraverseChildren = Symbol("traverseChildren");
+const kTraverseSiblings = Symbol("traverseSiblings");
+
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -560,26 +739,12 @@ const hostInstallsIsTrusted = ((): boolean => {
 
 /** An event, and the flags a listener sets on it while it is dispatched. */
 export class Event extends HostEvent {
-	#type: string;
-	#bubbles: boolean;
-	#cancelable: boolean;
-	#composed: boolean;
-	#timeStamp: number;
-	#state: DispatchState = {
-		target: null,
-		relatedTarget: null,
-		currentTarget: null,
-		eventPhase: NONE,
-		path: [],
-		initialized: false,
-		dispatch: false,
-		stopPropagation: false,
-		stopImmediate: false,
-		canceled: false,
-		inPassiveListener: false,
-		trusted: false,
-		foreign: false,
-	};
+	declare [kType]: string;
+	declare [kBubbles]: boolean;
+	declare [kCancelable]: boolean;
+	declare [kComposed]: boolean;
+	declare [kTimeStamp]: number;
+	declare [kState]: DispatchState;
 
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
@@ -599,24 +764,39 @@ export class Event extends HostEvent {
 		const cancelable = Boolean(init.cancelable);
 		const composed = Boolean(init.composed);
 		super(name, {bubbles, cancelable, composed});
-		this.#type = name;
-		this.#bubbles = bubbles;
-		this.#cancelable = cancelable;
-		this.#composed = composed;
-		this.#timeStamp = performance.now();
-		this.#state.initialized = true;
+		this[kState] = {
+			target: null,
+			relatedTarget: null,
+			currentTarget: null,
+			eventPhase: NONE,
+			path: [],
+			initialized: false,
+			dispatch: false,
+			stopPropagation: false,
+			stopImmediate: false,
+			canceled: false,
+			inPassiveListener: false,
+			trusted: false,
+			foreign: false,
+		};
+		this[kType] = name;
+		this[kBubbles] = bubbles;
+		this[kCancelable] = cancelable;
+		this[kComposed] = composed;
+		this[kTimeStamp] = performance.now();
+		this[kState].initialized = true;
 		if (!hostInstallsIsTrusted) {
 			Object.defineProperty(this, "isTrusted", isTrustedProperty);
 		}
 	}
 
 	get [kDispatchState](): DispatchState {
-		return this.#state;
+		return this[kState];
 	}
 
 	/** Swap the type a dispatch invokes listeners under, for the legacy pass. */
 	[kSetEventType](type: string): void {
-		this.#type = type;
+		this[kType] = type;
 	}
 
 	/**
@@ -628,7 +808,7 @@ export class Event extends HostEvent {
 	}
 
 	override get type(): string {
-		return this.#type;
+		return this[kType];
 	}
 
 	// The members a dispatch owns -- the path and the flags a listener sets --
@@ -637,43 +817,43 @@ export class Event extends HostEvent {
 	// same way through either half of its interface.
 
 	get target(): EventTarget | null {
-		return this.#state.target;
+		return this[kState].target;
 	}
 
 	get srcElement(): EventTarget | null {
-		return this.#state.target;
+		return this[kState].target;
 	}
 
 	get currentTarget(): EventTarget | null {
-		return this.#state.currentTarget;
+		return this[kState].currentTarget;
 	}
 
 	override get eventPhase(): number {
-		return this.#state.eventPhase;
+		return this[kState].eventPhase;
 	}
 
 	override get bubbles(): boolean {
-		return this.#bubbles;
+		return this[kBubbles];
 	}
 
 	override get cancelable(): boolean {
-		return this.#cancelable;
+		return this[kCancelable];
 	}
 
 	override get composed(): boolean {
-		return this.#composed;
+		return this[kComposed];
 	}
 
 	override get defaultPrevented(): boolean {
-		return this.#state.canceled;
+		return this[kState].canceled;
 	}
 
 	override get timeStamp(): number {
-		return this.#timeStamp;
+		return this[kTimeStamp];
 	}
 
 	override get returnValue(): boolean {
-		return !this.#state.canceled;
+		return !this[kState].canceled;
 	}
 
 	override set returnValue(value: boolean) {
@@ -683,28 +863,28 @@ export class Event extends HostEvent {
 	}
 
 	override get cancelBubble(): boolean {
-		return this.#state.stopPropagation;
+		return this[kState].stopPropagation;
 	}
 
 	override set cancelBubble(value: boolean) {
 		if (value) {
-			this.#state.stopPropagation = true;
+			this[kState].stopPropagation = true;
 			super.stopPropagation();
 		}
 	}
 
 	composedPath(): EventTarget[] {
-		return composedPath(this.#state);
+		return composedPath(this[kState]);
 	}
 
 	override stopPropagation(): void {
-		this.#state.stopPropagation = true;
+		this[kState].stopPropagation = true;
 		super.stopPropagation();
 	}
 
 	override stopImmediatePropagation(): void {
-		this.#state.stopPropagation = true;
-		this.#state.stopImmediate = true;
+		this[kState].stopPropagation = true;
+		this[kState].stopImmediate = true;
 		super.stopImmediatePropagation();
 	}
 
@@ -716,18 +896,18 @@ export class Event extends HostEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initEvent needs a type");
 		}
-		if (this.#state.dispatch) {
+		if (this[kState].dispatch) {
 			return;
 		}
-		this.#type = String(type);
-		this.#bubbles = Boolean(bubbles);
-		this.#cancelable = Boolean(cancelable);
-		this.#state.initialized = true;
-		this.#state.stopPropagation = false;
-		this.#state.stopImmediate = false;
-		this.#state.canceled = false;
-		this.#state.trusted = false;
-		this.#state.target = null;
+		this[kType] = String(type);
+		this[kBubbles] = Boolean(bubbles);
+		this[kCancelable] = Boolean(cancelable);
+		this[kState].initialized = true;
+		this[kState].stopPropagation = false;
+		this[kState].stopImmediate = false;
+		this[kState].canceled = false;
+		this[kState].trusted = false;
+		this[kState].target = null;
 	}
 }
 
@@ -820,7 +1000,7 @@ function composedPath(state: DispatchState): EventTarget[] {
  * a platform CustomEvent.
  */
 export class CustomEvent<T = unknown> extends Event {
-	#detail: T | null;
+	declare [kDetail]: T | null;
 
 	constructor(type: string, eventInitDict: CustomEventInit<T> = {}) {
 		super(type, eventInitDict);
@@ -828,11 +1008,11 @@ export class CustomEvent<T = unknown> extends Event {
 			eventInitDict,
 			"An event init",
 		);
-		this.#detail = init.detail ?? null;
+		this[kDetail] = init.detail ?? null;
 	}
 
 	get detail(): T | null {
-		return this.#detail;
+		return this[kDetail];
 	}
 
 	initCustomEvent(
@@ -848,7 +1028,7 @@ export class CustomEvent<T = unknown> extends Event {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
-		this.#detail = detail;
+		this[kDetail] = detail;
 	}
 }
 
@@ -870,10 +1050,11 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
  * preventDefault(), and a returnValue set to anything but the empty string.
  */
 export class BeforeUnloadEvent extends Event {
-	#returnValue = "";
+	declare [kReturnValue]: string;
 
 	constructor() {
 		super("beforeunload", {cancelable: true});
+		this[kReturnValue] = "";
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -886,11 +1067,11 @@ export class BeforeUnloadEvent extends Event {
 	 * resolution the platform's own type definitions reach.
 	 */
 	override get returnValue(): any {
-		return this.#returnValue;
+		return this[kReturnValue];
 	}
 
 	override set returnValue(value: any) {
-		this.#returnValue = String(value);
+		this[kReturnValue] = String(value);
 	}
 }
 
@@ -1060,8 +1241,8 @@ function initModifiers(init: EventModifierInit): Set<string> {
  * value quietly dropped.
  */
 export class UIEvent extends Event {
-	#detail: number;
-	#which: number;
+	declare [kDetail]: number;
+	declare [kWhich]: number;
 
 	constructor(type: string, eventInitDict: UIEventInit = {}) {
 		super(type, eventInitDict);
@@ -1069,8 +1250,8 @@ export class UIEvent extends Event {
 		if (init.view !== undefined && init.view !== null) {
 			throw new TypeError("There is no window for an event to come through");
 		}
-		this.#detail = toLong(init.detail ?? 0);
-		this.#which = toUnsignedLong(init.which ?? 0);
+		this[kDetail] = toLong(init.detail ?? 0);
+		this[kWhich] = toUnsignedLong(init.which ?? 0);
 	}
 
 	get view(): null {
@@ -1078,11 +1259,11 @@ export class UIEvent extends Event {
 	}
 
 	get detail(): number {
-		return this.#detail;
+		return this[kDetail];
 	}
 
 	get which(): number {
-		return this.#which;
+		return this[kWhich];
 	}
 
 	initUIEvent(
@@ -1102,7 +1283,7 @@ export class UIEvent extends Event {
 		if (view !== undefined && view !== null) {
 			throw new TypeError("There is no window for an event to come through");
 		}
-		this.#detail = toLong(detail);
+		this[kDetail] = toLong(detail);
 	}
 }
 
@@ -1118,24 +1299,24 @@ Object.defineProperty(UIEvent.prototype, Symbol.toStringTag, {
  * for, which is what `[kIsMouseEvent]` answers.
  */
 export class MouseEvent extends UIEvent {
-	#screenX: number;
-	#screenY: number;
-	#clientX: number;
-	#clientY: number;
-	#button: number;
-	#buttons: number;
-	#modifiers: Set<string>;
+	declare [kScreenX]: number;
+	declare [kScreenY]: number;
+	declare [kClientX]: number;
+	declare [kClientY]: number;
+	declare [kButton]: number;
+	declare [kButtons]: number;
+	declare [kModifiers]: Set<string>;
 
 	constructor(type: string, eventInitDict: MouseEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<MouseEventInit>(eventInitDict, "An event init");
-		this.#screenX = toLong(init.screenX ?? 0);
-		this.#screenY = toLong(init.screenY ?? 0);
-		this.#clientX = toLong(init.clientX ?? 0);
-		this.#clientY = toLong(init.clientY ?? 0);
-		this.#button = toShort(init.button ?? 0);
-		this.#buttons = toUnsignedShort(init.buttons ?? 0);
-		this.#modifiers = initModifiers(init);
+		this[kScreenX] = toLong(init.screenX ?? 0);
+		this[kScreenY] = toLong(init.screenY ?? 0);
+		this[kClientX] = toLong(init.clientX ?? 0);
+		this[kClientY] = toLong(init.clientY ?? 0);
+		this[kButton] = toShort(init.button ?? 0);
+		this[kButtons] = toUnsignedShort(init.buttons ?? 0);
+		this[kModifiers] = initModifiers(init);
 		this[kDispatchState].relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
@@ -1144,43 +1325,43 @@ export class MouseEvent extends UIEvent {
 	}
 
 	get screenX(): number {
-		return this.#screenX;
+		return this[kScreenX];
 	}
 
 	get screenY(): number {
-		return this.#screenY;
+		return this[kScreenY];
 	}
 
 	get clientX(): number {
-		return this.#clientX;
+		return this[kClientX];
 	}
 
 	get clientY(): number {
-		return this.#clientY;
+		return this[kClientY];
 	}
 
 	get ctrlKey(): boolean {
-		return this.#modifiers.has("Control");
+		return this[kModifiers].has("Control");
 	}
 
 	get shiftKey(): boolean {
-		return this.#modifiers.has("Shift");
+		return this[kModifiers].has("Shift");
 	}
 
 	get altKey(): boolean {
-		return this.#modifiers.has("Alt");
+		return this[kModifiers].has("Alt");
 	}
 
 	get metaKey(): boolean {
-		return this.#modifiers.has("Meta");
+		return this[kModifiers].has("Meta");
 	}
 
 	get button(): number {
-		return this.#button;
+		return this[kButton];
 	}
 
 	get buttons(): number {
-		return this.#buttons;
+		return this[kButtons];
 	}
 
 	get relatedTarget(): EventTarget | null {
@@ -1188,14 +1369,14 @@ export class MouseEvent extends UIEvent {
 	}
 
 	override get which(): number {
-		return this.#button + 1;
+		return this[kButton] + 1;
 	}
 
 	getModifierState(keyArg: string): boolean {
 		if (arguments.length < 1) {
 			throw new TypeError("getModifierState needs a key");
 		}
-		return this.#modifiers.has(String(keyArg));
+		return this[kModifiers].has(String(keyArg));
 	}
 
 	initMouseEvent(
@@ -1222,12 +1403,12 @@ export class MouseEvent extends UIEvent {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, detail);
-		this.#screenX = toLong(screenX);
-		this.#screenY = toLong(screenY);
-		this.#clientX = toLong(clientX);
-		this.#clientY = toLong(clientY);
-		this.#modifiers = initModifiers({ctrlKey, altKey, shiftKey, metaKey});
-		this.#button = toShort(button);
+		this[kScreenX] = toLong(screenX);
+		this[kScreenY] = toLong(screenY);
+		this[kClientX] = toLong(clientX);
+		this[kClientY] = toLong(clientY);
+		this[kModifiers] = initModifiers({ctrlKey, altKey, shiftKey, metaKey});
+		this[kButton] = toShort(button);
 		this[kDispatchState].relatedTarget = toEventTarget(relatedTarget);
 	}
 }
@@ -1262,14 +1443,14 @@ const DOM_KEY_LOCATION_NUMPAD = 3;
 
 /** An event of a key, named by the character it types and the key it is. */
 export class KeyboardEvent extends UIEvent {
-	#key: string;
-	#code: string;
-	#location: number;
-	#repeat: boolean;
-	#isComposing: boolean;
-	#charCode: number;
-	#keyCode: number;
-	#modifiers: Set<string>;
+	declare [kKey]: string;
+	declare [kCode]: string;
+	declare [kLocation]: number;
+	declare [kRepeat]: boolean;
+	declare [kIsComposing]: boolean;
+	declare [kCharCode]: number;
+	declare [kKeyCode]: number;
+	declare [kModifiers]: Set<string>;
 
 	static readonly DOM_KEY_LOCATION_STANDARD = DOM_KEY_LOCATION_STANDARD;
 	static readonly DOM_KEY_LOCATION_LEFT = DOM_KEY_LOCATION_LEFT;
@@ -1282,69 +1463,69 @@ export class KeyboardEvent extends UIEvent {
 			eventInitDict,
 			"An event init",
 		);
-		this.#key = String(init.key ?? "");
-		this.#code = String(init.code ?? "");
-		this.#location = toUnsignedLong(init.location ?? 0);
-		this.#repeat = Boolean(init.repeat);
-		this.#isComposing = Boolean(init.isComposing);
-		this.#charCode = toUnsignedLong(init.charCode ?? 0);
-		this.#keyCode = toUnsignedLong(init.keyCode ?? 0);
-		this.#modifiers = initModifiers(init);
+		this[kKey] = String(init.key ?? "");
+		this[kCode] = String(init.code ?? "");
+		this[kLocation] = toUnsignedLong(init.location ?? 0);
+		this[kRepeat] = Boolean(init.repeat);
+		this[kIsComposing] = Boolean(init.isComposing);
+		this[kCharCode] = toUnsignedLong(init.charCode ?? 0);
+		this[kKeyCode] = toUnsignedLong(init.keyCode ?? 0);
+		this[kModifiers] = initModifiers(init);
 	}
 
 	get key(): string {
-		return this.#key;
+		return this[kKey];
 	}
 
 	get code(): string {
-		return this.#code;
+		return this[kCode];
 	}
 
 	get location(): number {
-		return this.#location;
+		return this[kLocation];
 	}
 
 	get ctrlKey(): boolean {
-		return this.#modifiers.has("Control");
+		return this[kModifiers].has("Control");
 	}
 
 	get shiftKey(): boolean {
-		return this.#modifiers.has("Shift");
+		return this[kModifiers].has("Shift");
 	}
 
 	get altKey(): boolean {
-		return this.#modifiers.has("Alt");
+		return this[kModifiers].has("Alt");
 	}
 
 	get metaKey(): boolean {
-		return this.#modifiers.has("Meta");
+		return this[kModifiers].has("Meta");
 	}
 
 	get repeat(): boolean {
-		return this.#repeat;
+		return this[kRepeat];
 	}
 
 	get isComposing(): boolean {
-		return this.#isComposing;
+		return this[kIsComposing];
 	}
 
 	get charCode(): number {
-		return this.#charCode;
+		return this[kCharCode];
 	}
 
 	get keyCode(): number {
-		return this.#keyCode;
+		return this[kKeyCode];
 	}
 
 	override get which(): number {
-		return this.#keyCode;
+		return this[kKeyCode];
 	}
 
 	getModifierState(keyArg: string): boolean {
 		if (arguments.length < 1) {
 			throw new TypeError("getModifierState needs a key");
 		}
-		return this.#modifiers.has(String(keyArg));
+		return this[kModifiers].has(String(keyArg));
 	}
 
 	initKeyboardEvent(
@@ -1366,9 +1547,9 @@ export class KeyboardEvent extends UIEvent {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
-		this.#key = String(key);
-		this.#location = toUnsignedLong(location);
-		this.#modifiers = initModifiers({ctrlKey, altKey, shiftKey, metaKey});
+		this[kKey] = String(key);
+		this[kLocation] = toUnsignedLong(location);
+		this[kModifiers] = initModifiers({ctrlKey, altKey, shiftKey, metaKey});
 	}
 }
 
@@ -1385,7 +1566,7 @@ Object.defineProperties(KeyboardEvent.prototype, {
 
 /** An event of text being composed by an input method. */
 export class CompositionEvent extends UIEvent {
-	#data: string;
+	declare [kData]: string;
 
 	constructor(type: string, eventInitDict: CompositionEventInit = {}) {
 		super(type, eventInitDict);
@@ -1393,11 +1574,11 @@ export class CompositionEvent extends UIEvent {
 			eventInitDict,
 			"An event init",
 		);
-		this.#data = String(init.data ?? "");
+		this[kData] = String(init.data ?? "");
 	}
 
 	get data(): string {
-		return this.#data;
+		return this[kData];
 	}
 
 	initCompositionEvent(
@@ -1414,7 +1595,7 @@ export class CompositionEvent extends UIEvent {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
-		this.#data = String(data);
+		this[kData] = String(data);
 	}
 }
 
@@ -1425,29 +1606,29 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 
 /** An event of an editing host's text changing, and how it changed. */
 export class InputEvent extends UIEvent {
-	#data: string | null;
-	#isComposing: boolean;
-	#inputType: string;
+	declare [kData]: string | null;
+	declare [kIsComposing]: boolean;
+	declare [kInputType]: string;
 
 	constructor(type: string, eventInitDict: InputEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<InputEventInit>(eventInitDict, "An event init");
-		this.#data =
+		this[kData] =
 			init.data === undefined || init.data === null ? null : String(init.data);
-		this.#isComposing = Boolean(init.isComposing);
-		this.#inputType = String(init.inputType ?? "");
+		this[kIsComposing] = Boolean(init.isComposing);
+		this[kInputType] = String(init.inputType ?? "");
 	}
 
 	get data(): string | null {
-		return this.#data;
+		return this[kData];
 	}
 
 	get isComposing(): boolean {
-		return this.#isComposing;
+		return this[kIsComposing];
 	}
 
 	get inputType(): string {
-		return this.#inputType;
+		return this[kInputType];
 	}
 }
 
@@ -1462,10 +1643,10 @@ const DOM_DELTA_PAGE = 0x02;
 
 /** An event of a wheel turning over a target. */
 export class WheelEvent extends MouseEvent {
-	#deltaX: number;
-	#deltaY: number;
-	#deltaZ: number;
-	#deltaMode: number;
+	declare [kDeltaX]: number;
+	declare [kDeltaY]: number;
+	declare [kDeltaZ]: number;
+	declare [kDeltaMode]: number;
 
 	static readonly DOM_DELTA_PIXEL = DOM_DELTA_PIXEL;
 	static readonly DOM_DELTA_LINE = DOM_DELTA_LINE;
@@ -1474,26 +1655,26 @@ export class WheelEvent extends MouseEvent {
 	constructor(type: string, eventInitDict: WheelEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<WheelEventInit>(eventInitDict, "An event init");
-		this.#deltaX = toDouble(init.deltaX ?? 0);
-		this.#deltaY = toDouble(init.deltaY ?? 0);
-		this.#deltaZ = toDouble(init.deltaZ ?? 0);
-		this.#deltaMode = toUnsignedLong(init.deltaMode ?? 0);
+		this[kDeltaX] = toDouble(init.deltaX ?? 0);
+		this[kDeltaY] = toDouble(init.deltaY ?? 0);
+		this[kDeltaZ] = toDouble(init.deltaZ ?? 0);
+		this[kDeltaMode] = toUnsignedLong(init.deltaMode ?? 0);
 	}
 
 	get deltaX(): number {
-		return this.#deltaX;
+		return this[kDeltaX];
 	}
 
 	get deltaY(): number {
-		return this.#deltaY;
+		return this[kDeltaY];
 	}
 
 	get deltaZ(): number {
-		return this.#deltaZ;
+		return this[kDeltaZ];
 	}
 
 	get deltaMode(): number {
-		return this.#deltaMode;
+		return this[kDeltaMode];
 	}
 }
 
@@ -1527,60 +1708,60 @@ export interface PointerEventInit extends MouseEventInit {
  * dispatch runs the activation behavior it reaches.
  */
 export class PointerEvent extends MouseEvent {
-	#pointerId: number;
-	#width: number;
-	#height: number;
-	#pressure: number;
-	#tangentialPressure: number;
-	#tiltX: number | null;
-	#tiltY: number | null;
-	#twist: number;
-	#altitudeAngle: number | null;
-	#azimuthAngle: number | null;
-	#pointerType: string;
-	#isPrimary: boolean;
-	#coalesced: PointerEvent[];
-	#predicted: PointerEvent[];
+	declare [kPointerId]: number;
+	declare [kWidth]: number;
+	declare [kHeight]: number;
+	declare [kPressure]: number;
+	declare [kTangentialPressure]: number;
+	declare [kTiltX]: number | null;
+	declare [kTiltY]: number | null;
+	declare [kTwist]: number;
+	declare [kAltitudeAngle]: number | null;
+	declare [kAzimuthAngle]: number | null;
+	declare [kPointerType]: string;
+	declare [kIsPrimary]: boolean;
+	declare [kCoalesced]: PointerEvent[];
+	declare [kPredicted]: PointerEvent[];
 
 	constructor(type: string, eventInitDict: PointerEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<PointerEventInit>(eventInitDict, "An event init");
-		this.#pointerId = toLong(init.pointerId ?? 0);
-		this.#width = toDouble(init.width ?? 1);
-		this.#height = toDouble(init.height ?? 1);
-		this.#pressure = toDouble(init.pressure ?? 0);
-		this.#tangentialPressure = toDouble(init.tangentialPressure ?? 0);
-		this.#tiltX = init.tiltX === undefined ? null : toLong(init.tiltX);
-		this.#tiltY = init.tiltY === undefined ? null : toLong(init.tiltY);
-		this.#twist = toLong(init.twist ?? 0);
-		this.#altitudeAngle =
+		this[kPointerId] = toLong(init.pointerId ?? 0);
+		this[kWidth] = toDouble(init.width ?? 1);
+		this[kHeight] = toDouble(init.height ?? 1);
+		this[kPressure] = toDouble(init.pressure ?? 0);
+		this[kTangentialPressure] = toDouble(init.tangentialPressure ?? 0);
+		this[kTiltX] = init.tiltX === undefined ? null : toLong(init.tiltX);
+		this[kTiltY] = init.tiltY === undefined ? null : toLong(init.tiltY);
+		this[kTwist] = toLong(init.twist ?? 0);
+		this[kAltitudeAngle] =
 			init.altitudeAngle === undefined ? null : toDouble(init.altitudeAngle);
-		this.#azimuthAngle =
+		this[kAzimuthAngle] =
 			init.azimuthAngle === undefined ? null : toDouble(init.azimuthAngle);
-		this.#pointerType = String(init.pointerType ?? "");
-		this.#isPrimary = Boolean(init.isPrimary);
-		this.#coalesced = [...(init.coalescedEvents ?? [])];
-		this.#predicted = [...(init.predictedEvents ?? [])];
+		this[kPointerType] = String(init.pointerType ?? "");
+		this[kIsPrimary] = Boolean(init.isPrimary);
+		this[kCoalesced] = [...(init.coalescedEvents ?? [])];
+		this[kPredicted] = [...(init.predictedEvents ?? [])];
 	}
 
 	get pointerId(): number {
-		return this.#pointerId;
+		return this[kPointerId];
 	}
 
 	get width(): number {
-		return this.#width;
+		return this[kWidth];
 	}
 
 	get height(): number {
-		return this.#height;
+		return this[kHeight];
 	}
 
 	get pressure(): number {
-		return this.#pressure;
+		return this[kPressure];
 	}
 
 	get tangentialPressure(): number {
-		return this.#tangentialPressure;
+		return this[kTangentialPressure];
 	}
 
 	/**
@@ -1589,69 +1770,69 @@ export class PointerEvent extends MouseEvent {
 	 * gives neither leaves a pen upright.
 	 */
 	get tiltX(): number {
-		if (this.#tiltX !== null) {
-			return this.#tiltX;
+		if (this[kTiltX] !== null) {
+			return this[kTiltX];
 		}
-		if (this.#altitudeAngle === null && this.#azimuthAngle === null) {
+		if (this[kAltitudeAngle] === null && this[kAzimuthAngle] === null) {
 			return 0;
 		}
 		return sphericalToTilt(
-			this.#altitudeAngle ?? Math.PI / 2,
-			this.#azimuthAngle ?? 0,
+			this[kAltitudeAngle] ?? Math.PI / 2,
+			this[kAzimuthAngle] ?? 0,
 		)[0];
 	}
 
 	get tiltY(): number {
-		if (this.#tiltY !== null) {
-			return this.#tiltY;
+		if (this[kTiltY] !== null) {
+			return this[kTiltY];
 		}
-		if (this.#altitudeAngle === null && this.#azimuthAngle === null) {
+		if (this[kAltitudeAngle] === null && this[kAzimuthAngle] === null) {
 			return 0;
 		}
 		return sphericalToTilt(
-			this.#altitudeAngle ?? Math.PI / 2,
-			this.#azimuthAngle ?? 0,
+			this[kAltitudeAngle] ?? Math.PI / 2,
+			this[kAzimuthAngle] ?? 0,
 		)[1];
 	}
 
 	get twist(): number {
-		return this.#twist;
+		return this[kTwist];
 	}
 
 	get altitudeAngle(): number {
-		if (this.#altitudeAngle !== null) {
-			return this.#altitudeAngle;
+		if (this[kAltitudeAngle] !== null) {
+			return this[kAltitudeAngle];
 		}
-		if (this.#tiltX === null && this.#tiltY === null) {
+		if (this[kTiltX] === null && this[kTiltY] === null) {
 			return Math.PI / 2;
 		}
-		return tiltToSpherical(this.#tiltX ?? 0, this.#tiltY ?? 0)[0];
+		return tiltToSpherical(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[0];
 	}
 
 	get azimuthAngle(): number {
-		if (this.#azimuthAngle !== null) {
-			return this.#azimuthAngle;
+		if (this[kAzimuthAngle] !== null) {
+			return this[kAzimuthAngle];
 		}
-		if (this.#tiltX === null && this.#tiltY === null) {
+		if (this[kTiltX] === null && this[kTiltY] === null) {
 			return 0;
 		}
-		return tiltToSpherical(this.#tiltX ?? 0, this.#tiltY ?? 0)[1];
+		return tiltToSpherical(this[kTiltX] ?? 0, this[kTiltY] ?? 0)[1];
 	}
 
 	get pointerType(): string {
-		return this.#pointerType;
+		return this[kPointerType];
 	}
 
 	get isPrimary(): boolean {
-		return this.#isPrimary;
+		return this[kIsPrimary];
 	}
 
 	getCoalescedEvents(): PointerEvent[] {
-		return [...this.#coalesced];
+		return [...this[kCoalesced]];
 	}
 
 	getPredictedEvents(): PointerEvent[] {
-		return [...this.#predicted];
+		return [...this[kPredicted]];
 	}
 }
 
@@ -1872,9 +2053,14 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 
 /** An event target: a listener list, and the parent a dispatch walks to. */
 export class EventTarget {
-	#listeners: Listener[] = [];
+	constructor() {
+		this[kListeners] = [];
+		this[kHandlers] = null;
+	}
+
+	declare [kListeners]: Listener[];
 	/** Null until this target is given an event handler, which most never are. */
-	#handlers: Map<string, EventHandlerRecord> | null = null;
+	declare [kHandlers]: Map<string, EventHandlerRecord> | null;
 
 	addEventListener(
 		type: string,
@@ -1895,7 +2081,7 @@ export class EventTarget {
 		}
 		const passive =
 			flat.passive === null ? defaultPassiveValue(name, this) : flat.passive;
-		for (const existing of this.#listeners) {
+		for (const existing of this[kListeners]) {
 			if (
 				existing.type === name &&
 				existing.callback === listenerCallback &&
@@ -1912,10 +2098,10 @@ export class EventTarget {
 			passive,
 			removed: false,
 		};
-		this.#listeners.push(listener);
+		this[kListeners].push(listener);
 		if (flat.signal !== null) {
 			flat.signal.addEventListener("abort", () => {
-				removeListener(this.#listeners, listener);
+				removeListener(this[kListeners], listener);
 			});
 		}
 	}
@@ -1934,13 +2120,13 @@ export class EventTarget {
 		if (listenerCallback === null) {
 			return;
 		}
-		for (const listener of this.#listeners) {
+		for (const listener of this[kListeners]) {
 			if (
 				listener.type === name &&
 				listener.callback === listenerCallback &&
 				listener.capture === capture
 			) {
-				removeListener(this.#listeners, listener);
+				removeListener(this[kListeners], listener);
 				return;
 			}
 		}
@@ -1964,21 +2150,16 @@ export class EventTarget {
 		return dispatch(this, event);
 	}
 
-	/** The listeners this target holds, for the dispatch algorithm. */
-	get [kListeners](): Listener[] {
-		return this.#listeners;
-	}
-
 	/**
 	 * The event handler map, for the handler IDL attributes. Created only when
 	 * a handler is being set: reading a handler off a target that has none
 	 * allocates nothing.
 	 */
 	[kEventHandlerMap](create: boolean): Map<string, EventHandlerRecord> | null {
-		if (this.#handlers === null && create) {
-			this.#handlers = new Map();
+		if (this[kHandlers] === null && create) {
+			this[kHandlers] = new Map();
 		}
-		return this.#handlers;
+		return this[kHandlers];
 	}
 
 	/**
@@ -2053,8 +2234,10 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null) ?
-				(value as EventHandlerValue) :
+		typeof value === "function" || (typeof value === "object" && value !== null)
+		?
+				(value as EventHandlerValue)
+		:
 			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
 	if (handlers === null) {
@@ -2803,17 +2986,17 @@ let nodeSerial = 0;
 const kSerial = Symbol("node serial");
 
 export class Node extends EventTarget {
-	[kRegistry]: CustomElementRegistry | null = null;
-	[kParent]: Node | null = null;
-	[kFirstChild]: Node | null = null;
-	[kLastChild]: Node | null = null;
-	[kPrevious]: Node | null = null;
-	[kNext]: Node | null = null;
+	[kRegistry]: CustomElementRegistry | null;
+	[kParent]: Node | null;
+	[kFirstChild]: Node | null;
+	[kLastChild]: Node | null;
+	[kPrevious]: Node | null;
+	[kNext]: Node | null;
 	[kDocument]: Document;
-	[kChildNodes]: NodeList | null = null;
-	[kLiveLists]: Set<Materializable> | null = null;
-	[kSerial]: number = ++nodeSerial;
-	[kRegisteredObservers]: RegisteredObserver[] | null = null;
+	[kChildNodes]: NodeList | null;
+	[kLiveLists]: Set<Materializable> | null;
+	[kSerial]: number;
+	[kRegisteredObservers]: RegisteredObserver[] | null;
 
 	static readonly ELEMENT_NODE = ELEMENT_NODE;
 	static readonly ATTRIBUTE_NODE = ATTRIBUTE_NODE;
@@ -2841,6 +3024,16 @@ export class Node extends EventTarget {
 
 	constructor() {
 		super();
+		this[kRegistry] = null;
+		this[kParent] = null;
+		this[kFirstChild] = null;
+		this[kLastChild] = null;
+		this[kPrevious] = null;
+		this[kNext] = null;
+		this[kChildNodes] = null;
+		this[kLiveLists] = null;
+		this[kSerial] = ++nodeSerial;
+		this[kRegisteredObservers] = null;
 		if (new.target === Node) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -4055,15 +4248,15 @@ function removeTransientObservers(
 
 /** A record of one mutation, as an observer's callback receives it. */
 export class MutationRecord {
-	#type: string;
-	#target: Node;
-	#addedNodes: NodeList;
-	#removedNodes: NodeList;
-	#previousSibling: Node | null;
-	#nextSibling: Node | null;
-	#attributeName: string | null;
-	#attributeNamespace: string | null;
-	#oldValue: string | null;
+	declare [kType]: string;
+	declare [kTarget]: Node;
+	declare [kAddedNodes]: NodeList;
+	declare [kRemovedNodes]: NodeList;
+	declare [kPreviousSibling]: Node | null;
+	declare [kNextSibling]: Node | null;
+	declare [kAttributeName]: string | null;
+	declare [kAttributeNamespace]: string | null;
+	declare [kOldValue]: string | null;
 
 	constructor(
 		type: string,
@@ -4076,51 +4269,51 @@ export class MutationRecord {
 		previousSibling: Node | null,
 		nextSibling: Node | null,
 	) {
-		this.#type = type;
-		this.#target = target;
-		this.#attributeName = attributeName;
-		this.#attributeNamespace = attributeNamespace;
-		this.#oldValue = oldValue;
-		this.#addedNodes = createStaticNodeList(addedNodes);
-		this.#removedNodes = createStaticNodeList(removedNodes);
-		this.#previousSibling = previousSibling;
-		this.#nextSibling = nextSibling;
+		this[kType] = type;
+		this[kTarget] = target;
+		this[kAttributeName] = attributeName;
+		this[kAttributeNamespace] = attributeNamespace;
+		this[kOldValue] = oldValue;
+		this[kAddedNodes] = createStaticNodeList(addedNodes);
+		this[kRemovedNodes] = createStaticNodeList(removedNodes);
+		this[kPreviousSibling] = previousSibling;
+		this[kNextSibling] = nextSibling;
 	}
 
 	get type(): string {
-		return this.#type;
+		return this[kType];
 	}
 
 	get target(): Node {
-		return this.#target;
+		return this[kTarget];
 	}
 
 	get addedNodes(): NodeList {
-		return this.#addedNodes;
+		return this[kAddedNodes];
 	}
 
 	get removedNodes(): NodeList {
-		return this.#removedNodes;
+		return this[kRemovedNodes];
 	}
 
 	get previousSibling(): Node | null {
-		return this.#previousSibling;
+		return this[kPreviousSibling];
 	}
 
 	get nextSibling(): Node | null {
-		return this.#nextSibling;
+		return this[kNextSibling];
 	}
 
 	get attributeName(): string | null {
-		return this.#attributeName;
+		return this[kAttributeName];
 	}
 
 	get attributeNamespace(): string | null {
-		return this.#attributeNamespace;
+		return this[kAttributeNamespace];
 	}
 
 	get oldValue(): string | null {
-		return this.#oldValue;
+		return this[kOldValue];
 	}
 }
 
@@ -4204,20 +4397,22 @@ function toStringSequence(value: Iterable<string>): string[] {
 
 /** An observer of a tree: what it watches, and the records it has to deliver. */
 export class MutationObserver {
-	#callback: MutationCallback;
+	declare [kCallback]: MutationCallback;
 	/** The targets observe() named, and the nodes whose transient
 	 * registrations outlived a checkpoint, all weakly held. */
-	#nodes: Array<WeakRef<Node>> = [];
-	#records: MutationRecord[] = [];
+	declare [kNodes]: Array<WeakRef<Node>>;
+	declare [kRecords]: MutationRecord[];
 
 	constructor(callback: MutationCallback) {
+		this[kNodes] = [];
+		this[kRecords] = [];
 		if (arguments.length < 1) {
 			throw new TypeError("MutationObserver needs a callback");
 		}
 		if (typeof callback !== "function") {
 			throw new TypeError("A MutationObserver callback must be a function");
 		}
-		this.#callback = callback;
+		this[kCallback] = callback;
 	}
 
 	observe(target: Node, options: MutationObserverInit = {}): void {
@@ -4233,7 +4428,7 @@ export class MutationObserver {
 			if (registered.observer !== this || registered.source !== null) {
 				continue;
 			}
-			for (const node of [...this.#liveNodes(), ...transientNodes]) {
+			for (const node of [...this[kLiveNodes](), ...transientNodes]) {
 				removeTransientObservers(node, (entry) => entry.source === registered);
 			}
 			registered.options = normalized;
@@ -4245,7 +4440,7 @@ export class MutationObserver {
 	}
 
 	disconnect(): void {
-		for (const node of [...this.#liveNodes(), ...transientNodes]) {
+		for (const node of [...this[kLiveNodes](), ...transientNodes]) {
 			const list = node[kRegisteredObservers];
 			if (list === null) {
 				continue;
@@ -4258,49 +4453,49 @@ export class MutationObserver {
 				registeredObserverCount--;
 			}
 		}
-		this.#nodes.length = 0;
-		this.#records.length = 0;
+		this[kNodes].length = 0;
+		this[kRecords].length = 0;
 	}
 
 	takeRecords(): MutationRecord[] {
-		const records = this.#records;
-		this.#records = [];
+		const records = this[kRecords];
+		this[kRecords] = [];
 		return records;
 	}
 
 	/** The nodes still alive whose registered observer list names this one. */
-	#liveNodes(): Node[] {
+	[kLiveNodes](): Node[] {
 		const nodes: Node[] = [];
 		let write = 0;
-		for (let read = 0; read < this.#nodes.length; read++) {
-			const node = this.#nodes[read].deref();
+		for (let read = 0; read < this[kNodes].length; read++) {
+			const node = this[kNodes][read].deref();
 			if (node === undefined) {
 				continue;
 			}
-			this.#nodes[write++] = this.#nodes[read];
+			this[kNodes][write++] = this[kNodes][read];
 			nodes.push(node);
 		}
-		this.#nodes.length = write;
+		this[kNodes].length = write;
 		return nodes;
 	}
 
 	[kObserveNode](node: Node): void {
-		for (const reference of this.#nodes) {
+		for (const reference of this[kNodes]) {
 			if (reference.deref() === node) {
 				return;
 			}
 		}
-		this.#nodes.push(new WeakRef(node));
+		this[kNodes].push(new WeakRef(node));
 	}
 
 	[kEnqueueRecord](record: MutationRecord): void {
-		this.#records.push(record);
+		this[kRecords].push(record);
 	}
 
 	[kNotifyObserver](): void {
-		const records = this.#records;
-		this.#records = [];
-		for (const node of this.#liveNodes()) {
+		const records = this[kRecords];
+		this[kRecords] = [];
+		for (const node of this[kLiveNodes]()) {
 			removeTransientObservers(node, () => true);
 		}
 		for (const node of transientNodes) {
@@ -4310,7 +4505,7 @@ export class MutationObserver {
 			return;
 		}
 		try {
-			this.#callback.call(this, records, this);
+			this[kCallback].call(this, records, this);
 		} catch (error) {
 			reportError(error);
 		}
@@ -4453,16 +4648,16 @@ const kAttributeSync = Symbol("resynchronize after an attribute change");
  * resynchronizes, since those can be observed without a read.
  */
 abstract class LiveList implements Materializable {
-	#version = -1;
-	#items: Node[] = [];
-	#defined = 0;
-	#registered = false;
-	#exact = false;
-	#generation = 0;
-	#live: boolean;
-	#owner: Node | null;
-	#childMember: ((node: Node) => boolean) | null;
-	#told: boolean;
+	declare [kVersion]: number;
+	declare [kItems]: Node[];
+	declare [kDefined]: number;
+	declare [kRegistered]: boolean;
+	declare [kExact]: boolean;
+	declare [kGeneration]: number;
+	declare [kLive]: boolean;
+	declare [kOwner]: Node | null;
+	declare [kChildMember]: ((node: Node) => boolean) | null;
+	declare [kTold]: boolean;
 
 	/**
 	 * @param childMember - which of the owner's children the list holds, where
@@ -4480,23 +4675,30 @@ abstract class LiveList implements Materializable {
 		childMember: ((node: Node) => boolean) | null = null,
 		told = childMember !== null,
 	) {
-		this.#live = live;
-		this.#owner = owner;
-		this.#childMember = childMember;
-		this.#told = told;
+		this[kVersion] = -1;
+		this[kItems] = [];
+		this[kDefined] = 0;
+		this[kRegistered] = false;
+		this[kExact] = false;
+		this[kGeneration] = 0;
+		this[kNames] = [];
+		this[kLive] = live;
+		this[kOwner] = owner;
+		this[kChildMember] = childMember;
+		this[kTold] = told;
 	}
 
 	/** Whether the list stands as the list the tree holds now. */
-	get #standing(): boolean {
-		return this.#exact && (this.#told || this.#version === treeVersion);
+	get [kStanding](): boolean {
+		return this[kExact] && (this[kTold] || this[kVersion] === treeVersion);
 	}
 
-	#recompute(): void {
-		this.#version = treeVersion;
-		this.#items = this.compute();
-		this.#exact = true;
-		this.#generation++;
-		this.#materialize();
+	[kRecompute](): void {
+		this[kVersion] = treeVersion;
+		this[kItems] = this.compute();
+		this[kExact] = true;
+		this[kGeneration]++;
+		this[kMaterialize]();
 	}
 
 	/**
@@ -4504,10 +4706,6 @@ abstract class LiveList implements Materializable {
 	 * the list that the list under it is another one. The array itself is not:
 	 * a splice moves members within the one array the collection holds.
 	 */
-	[kGeneration](): number {
-		return this.#generation;
-	}
-
 	abstract compute(): Node[];
 
 	/** Extra own properties this collection exposes, by name. */
@@ -4522,7 +4720,7 @@ abstract class LiveList implements Materializable {
 	 * to be computed again to find out.
 	 */
 	shapeMembers(changed: readonly Node[]): Node[] | null {
-		const member = this.#childMember;
+		const member = this[kChildMember];
 		if (member === null) {
 			return null;
 		}
@@ -4535,30 +4733,30 @@ abstract class LiveList implements Materializable {
 		return members;
 	}
 
-	#names: string[] = [];
+	declare [kNames]: string[];
 
 	[kEnsure](): Node[] {
-		if (!this.#live) {
-			if (!this.#exact) {
-				this.#recompute();
+		if (!this[kLive]) {
+			if (!this[kExact]) {
+				this[kRecompute]();
 			}
-			return this.#items;
+			return this[kItems];
 		}
-		if (!this.#registered) {
-			this.#registered = true;
-			registerMaterialized(this, this.#owner);
+		if (!this[kRegistered]) {
+			this[kRegistered] = true;
+			registerMaterialized(this, this[kOwner]);
 		}
-		if (!this.#standing) {
-			this.#recompute();
+		if (!this[kStanding]) {
+			this[kRecompute]();
 		}
-		return this.#items;
+		return this[kItems];
 	}
 
 	[kSync](): void {
-		if (!this.#registered) {
+		if (!this[kRegistered]) {
 			return;
 		}
-		this.#recompute();
+		this[kRecompute]();
 	}
 
 	/**
@@ -4578,22 +4776,22 @@ abstract class LiveList implements Materializable {
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void {
-		if (!this.#registered) {
+		if (!this[kRegistered]) {
 			return;
 		}
-		if (this.#standing) {
-			if (this.#childMember !== null && point !== this.#owner) {
+		if (this[kStanding]) {
+			if (this[kChildMember] !== null && point !== this[kOwner]) {
 				return;
 			}
 			if (changed !== null) {
 				const members = this.shapeMembers(changed);
-				if (members !== null && this.#splice(point, changed, members, added)) {
-					this.#version = treeVersion;
+				if (members !== null && this[kSplice](point, changed, members, added)) {
+					this[kVersion] = treeVersion;
 					return;
 				}
 			}
 		}
-		this.#recompute();
+		this[kRecompute]();
 	}
 
 	/**
@@ -4607,13 +4805,13 @@ abstract class LiveList implements Materializable {
 	 * where they go. Members leaving take their place with them, and they sit
 	 * together, so the first of them finds the run.
 	 */
-	#splice(
+	[kSplice](
 		point: Node,
 		changed: readonly Node[],
 		members: readonly Node[],
 		added: boolean,
 	): boolean {
-		const items = this.#items;
+		const items = this[kItems];
 		if (members.length === 0) {
 			return true;
 		}
@@ -4654,8 +4852,8 @@ abstract class LiveList implements Materializable {
 			}
 			items.splice(at, members.length);
 		}
-		this.#generation++;
-		this.#defineIndices(items.length);
+		this[kGeneration]++;
+		this[kDefineIndices](items.length);
 		return true;
 	}
 
@@ -4664,7 +4862,7 @@ abstract class LiveList implements Materializable {
 	 * holds; null where the tree has moved on from it.
 	 */
 	[kComputed](): Node[] | null {
-		return this.#standing ? this.#items : null;
+		return this[kStanding] ? this[kItems] : null;
 	}
 
 	/**
@@ -4679,10 +4877,10 @@ abstract class LiveList implements Materializable {
 	}
 
 	/** Define an index for every member the collection has, and no more. */
-	#defineIndices(length: number): void {
+	[kDefineIndices](length: number): void {
 		const self = this as unknown as Record<number | string, unknown>;
 		const list = this;
-		for (let index = this.#defined; index < length; index++) {
+		for (let index = this[kDefined]; index < length; index++) {
 			const at = index;
 			Object.defineProperty(this, at, {
 				// The recompute is reached through the captured method, not
@@ -4695,20 +4893,20 @@ abstract class LiveList implements Materializable {
 				configurable: true,
 			});
 		}
-		for (let index = length; index < this.#defined; index++) {
+		for (let index = length; index < this[kDefined]; index++) {
 			delete self[index];
 		}
-		this.#defined = length;
+		this[kDefined] = length;
 	}
 
-	#materialize(): void {
-		const items = this.#items;
+	[kMaterialize](): void {
+		const items = this[kItems];
 		const self = this as unknown as Record<number | string, unknown>;
-		this.#defineIndices(items.length);
-		for (const name of this.#names) {
+		this[kDefineIndices](items.length);
+		for (const name of this[kNames]) {
 			delete self[name];
 		}
-		this.#names = [];
+		this[kNames] = [];
 		const named = this.namedProperties(items);
 		if (named !== null) {
 			for (const [name, node] of named) {
@@ -4718,7 +4916,7 @@ abstract class LiveList implements Materializable {
 				if (name in (this.constructor as {prototype: object}).prototype) {
 					continue;
 				}
-				this.#names.push(name);
+				this[kNames].push(name);
 				Object.defineProperty(this, name, {
 					value: node,
 					enumerable: false,
@@ -4754,7 +4952,7 @@ export class NodeList extends LiveList {
 	declare entries: () => IterableIterator<[number, Node]>;
 	declare [Symbol.iterator]: () => IterableIterator<Node>;
 
-	#compute: () => Node[];
+	declare [kCompute]: () => Node[];
 
 	constructor(
 		compute: () => Node[],
@@ -4764,11 +4962,11 @@ export class NodeList extends LiveList {
 		told = childMember !== null,
 	) {
 		super(live, owner, childMember, told);
-		this.#compute = compute;
+		this[kCompute] = compute;
 	}
 
 	override compute(): Node[] {
-		return this.#compute();
+		return this[kCompute]();
 	}
 
 	get length(): number {
@@ -4790,7 +4988,7 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 export class HTMLCollection extends LiveList {
 	declare [Symbol.iterator]: () => IterableIterator<Element>;
 
-	#compute: () => Element[];
+	declare [kCompute]: () => Element[];
 
 	constructor(
 		compute: () => Element[],
@@ -4799,11 +4997,11 @@ export class HTMLCollection extends LiveList {
 		told = childMember !== null,
 	) {
 		super(true, owner, childMember, told);
-		this.#compute = compute;
+		this[kCompute] = compute;
 	}
 
 	override compute(): Node[] {
-		return this.#compute();
+		return this[kCompute]();
 	}
 
 	override shapeMembers(changed: readonly Node[]): Node[] | null {
@@ -4952,11 +5150,11 @@ function areNameless(members: readonly Node[]): boolean {
  * element neither joined nor left holds what it held before.
  */
 class MatchingCollection extends HTMLCollection {
-	#root: Node;
-	#watched: string | null;
-	#matches: (element: Element) => boolean;
-	#members = new Set<Node>();
-	#membersOf = -1;
+	declare [kRoot]: Node;
+	declare [kWatched]: string | null;
+	declare [kMatches]: (element: Element) => boolean;
+	declare [kMembers]: Set<Node>;
+	declare [kMembersOf]: number;
 
 	/**
 	 * @param watched - the attribute the test reads, if it reads one.
@@ -4980,9 +5178,11 @@ class MatchingCollection extends HTMLCollection {
 			null,
 			true,
 		);
-		this.#root = root;
-		this.#watched = watched;
-		this.#matches = matches;
+		this[kMembers] = new Set<Node>();
+		this[kMembersOf] = -1;
+		this[kRoot] = root;
+		this[kWatched] = watched;
+		this[kMatches] = matches;
 	}
 
 	/**
@@ -4997,7 +5197,7 @@ class MatchingCollection extends HTMLCollection {
 						descendantElements(node, [node as Element]) :
 						descendantElements(node, []);
 			for (const element of elements) {
-				if (this.#matches(element)) {
+				if (this[kMatches](element)) {
 					members.push(element);
 				}
 			}
@@ -5009,7 +5209,7 @@ class MatchingCollection extends HTMLCollection {
 		// A collection answers to the id and the name of what it holds, so a
 		// change to either moves its named properties whatever the test says.
 		if (localName !== "id" && localName !== "name") {
-			if (localName !== this.#watched) {
+			if (localName !== this[kWatched]) {
 				return;
 			}
 			const items = this[kComputed]();
@@ -5017,13 +5217,13 @@ class MatchingCollection extends HTMLCollection {
 				this[kSync]();
 				return;
 			}
-			if (this.#membersOf !== this[kGeneration]()) {
-				this.#members = new Set(items);
-				this.#membersOf = this[kGeneration]();
+			if (this[kMembersOf] !== this[kGeneration]) {
+				this[kMembers] = new Set(items);
+				this[kMembersOf] = this[kGeneration];
 			}
 			if (
-				this.#matches(element) === this.#members.has(element) ||
-				!isInclusiveAncestor(this.#root, element)
+				this[kMatches](element) === this[kMembers].has(element) ||
+				!isInclusiveAncestor(this[kRoot], element)
 			) {
 				return;
 			}
@@ -5175,15 +5375,15 @@ export class DOMTokenList extends LiveList {
 	declare entries: () => IterableIterator<[number, string]>;
 	declare [Symbol.iterator]: () => IterableIterator<string>;
 
-	#element: Element;
-	#attribute: string;
-	#supported: Set<string> | null;
+	declare [kElement]: Element;
+	declare [kAttribute]: string;
+	declare [kSupported]: Set<string> | null;
 
 	constructor(element: Element, attribute: string, supported?: string[]) {
 		super(true, element, null, true);
-		this.#element = element;
-		this.#attribute = attribute;
-		this.#supported = supported === undefined ? null : new Set(supported);
+		this[kElement] = element;
+		this[kAttribute] = attribute;
+		this[kSupported] = supported === undefined ? null : new Set(supported);
 	}
 
 	/** An attribute's tokens are no part of the shape of a tree. */
@@ -5192,7 +5392,7 @@ export class DOMTokenList extends LiveList {
 	}
 
 	override compute(): Node[] {
-		const value = this.#element.getAttribute(this.#attribute);
+		const value = this[kElement].getAttribute(this[kAttribute]);
 		const tokens = value === null ? [] : splitOnAsciiWhitespace(value);
 		const ordered: string[] = [];
 		for (const token of tokens) {
@@ -5203,59 +5403,59 @@ export class DOMTokenList extends LiveList {
 		return ordered as unknown as Node[];
 	}
 
-	get #tokens(): string[] {
+	get [kTokens](): string[] {
 		return this[kEnsure]() as unknown as string[];
 	}
 
 	get length(): number {
-		return this.#tokens.length;
+		return this[kTokens].length;
 	}
 
 	item(index: number): string | null {
-		const tokens = this.#tokens;
+		const tokens = this[kTokens];
 		const at = toUnsignedLong(index);
 		return at < tokens.length ? tokens[at] : null;
 	}
 
 	contains(token: string): boolean {
-		return this.#tokens.includes(String(token));
+		return this[kTokens].includes(String(token));
 	}
 
 	add(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = this.#tokens.slice();
+		const current = this[kTokens].slice();
 		for (const token of tokens) {
 			if (!current.includes(token)) {
 				current.push(String(token));
 			}
 		}
-		this.#write(current);
+		this[kWrite](current);
 	}
 
 	remove(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = this.#tokens.filter(
+		const current = this[kTokens].filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
-		this.#write(current);
+		this[kWrite](current);
 	}
 
 	toggle(token: string, force?: boolean): boolean {
 		validateTokens([token]);
 		const name = String(token);
-		const current = this.#tokens.slice();
+		const current = this[kTokens].slice();
 		const index = current.indexOf(name);
 		if (index !== -1) {
 			if (force === undefined || force === false) {
 				current.splice(index, 1);
-				this.#write(current);
+				this[kWrite](current);
 				return false;
 			}
 			return true;
 		}
 		if (force === undefined || force === true) {
 			current.push(name);
-			this.#write(current);
+			this[kWrite](current);
 			return true;
 		}
 		return false;
@@ -5265,7 +5465,7 @@ export class DOMTokenList extends LiveList {
 		validateTokens([token, newToken]);
 		const name = String(token);
 		const replacement = String(newToken);
-		const current = this.#tokens.slice();
+		const current = this[kTokens].slice();
 		if (!current.includes(name)) {
 			return false;
 		}
@@ -5284,36 +5484,36 @@ export class DOMTokenList extends LiveList {
 				replaced.push(current[index]);
 			}
 		}
-		this.#write(replaced);
+		this[kWrite](replaced);
 		return true;
 	}
 
 	supports(token: string): boolean {
-		if (this.#supported === null) {
-			throw new TypeError(`${this.#attribute} has no supported tokens`);
+		if (this[kSupported] === null) {
+			throw new TypeError(`${this[kAttribute]} has no supported tokens`);
 		}
-		return this.#supported.has(asciiLowercase(String(token)));
+		return this[kSupported].has(asciiLowercase(String(token)));
 	}
 
 	get value(): string {
-		return this.#element.getAttribute(this.#attribute) ?? "";
+		return this[kElement].getAttribute(this[kAttribute]) ?? "";
 	}
 
 	set value(value: string) {
-		this.#element.setAttribute(this.#attribute, String(value));
+		this[kElement].setAttribute(this[kAttribute], String(value));
 	}
 
 	override toString(): string {
 		return this.value;
 	}
 
-	#write(tokens: string[]): void {
-		if (this.#element.getAttributeNode(this.#attribute) === null) {
+	[kWrite](tokens: string[]): void {
+		if (this[kElement].getAttributeNode(this[kAttribute]) === null) {
 			if (tokens.length === 0) {
 				return;
 			}
 		}
-		this.#element.setAttribute(this.#attribute, tokens.join(" "));
+		this[kElement].setAttribute(this[kAttribute], tokens.join(" "));
 	}
 }
 
@@ -5519,11 +5719,13 @@ function queueCharacterDataMutationRecord(
 }
 
 export class Text extends CharacterData {
-	[kAssignedSlot]: HTMLSlotElement | null = null;
-	[kManualSlot]: HTMLSlotElement | null = null;
+	[kAssignedSlot]: HTMLSlotElement | null;
+	[kManualSlot]: HTMLSlotElement | null;
 
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
+		this[kAssignedSlot] = null;
+		this[kManualSlot] = null;
 		this[kDocument] = currentDocument();
 	}
 
@@ -5733,10 +5935,11 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 });
 
 export class DocumentFragment extends Node {
-	[kHost]: Element | null = null;
+	[kHost]: Element | null;
 
 	constructor() {
 		super();
+		this[kHost] = null;
 		this[kDocument] = currentDocument();
 	}
 
@@ -5821,7 +6024,7 @@ export class Attr extends Node {
 	[kPrefix]: string | null;
 	[kLocalName]: string;
 	[kValue]: string;
-	[kOwnerElement]: Element | null = null;
+	[kOwnerElement]: Element | null;
 
 	constructor(
 		namespace: string | null,
@@ -5830,6 +6033,7 @@ export class Attr extends Node {
 		value: string,
 	) {
 		super();
+		this[kOwnerElement] = null;
 		this[kNamespace] = namespace;
 		this[kPrefix] = prefix;
 		this[kLocalName] = localName;
@@ -6081,11 +6285,11 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 export class NamedNodeMap extends LiveList {
 	declare [Symbol.iterator]: () => IterableIterator<Attr>;
 
-	#element: Element;
+	declare [kElement]: Element;
 
 	constructor(element: Element) {
 		super(true, element, null, true);
-		this.#element = element;
+		this[kElement] = element;
 	}
 
 	/** An element's attributes are no part of the shape of a tree. */
@@ -6094,14 +6298,14 @@ export class NamedNodeMap extends LiveList {
 	}
 
 	override compute(): Node[] {
-		return this.#element[kAttributeList].slice();
+		return this[kElement][kAttributeList].slice();
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		const html =
-			this.#element[kNamespace] === HTML_NAMESPACE &&
-			isHTMLDocument(this.#element[kDocument]);
+			this[kElement][kNamespace] === HTML_NAMESPACE &&
+			isHTMLDocument(this[kElement][kDocument]);
 		for (const item of items) {
 			const attribute = item as Attr;
 			const name = attribute[kQualifiedName];
@@ -6126,40 +6330,44 @@ export class NamedNodeMap extends LiveList {
 	}
 
 	getNamedItem(qualifiedName: string): Attr | null {
-		return getAttributeByName(this.#element, String(qualifiedName));
+		return getAttributeByName(this[kElement], String(qualifiedName));
 	}
 
 	getNamedItemNS(namespace: string | null, localName: string): Attr | null {
-		return getAttributeByNamespace(this.#element, namespace, String(localName));
+		return getAttributeByNamespace(
+			this[kElement],
+			namespace,
+			String(localName),
+		);
 	}
 
 	setNamedItem(attr: Attr): Attr | null {
-		return setAttributeNode(this.#element, attr);
+		return setAttributeNode(this[kElement], attr);
 	}
 
 	setNamedItemNS(attr: Attr): Attr | null {
-		return setAttributeNode(this.#element, attr);
+		return setAttributeNode(this[kElement], attr);
 	}
 
 	removeNamedItem(qualifiedName: string): Attr {
-		const attribute = getAttributeByName(this.#element, String(qualifiedName));
+		const attribute = getAttributeByName(this[kElement], String(qualifiedName));
 		if (attribute === null) {
 			throw notFoundError("There is no such attribute");
 		}
-		removeAttributeNode(this.#element, attribute);
+		removeAttributeNode(this[kElement], attribute);
 		return attribute;
 	}
 
 	removeNamedItemNS(namespace: string | null, localName: string): Attr {
 		const attribute = getAttributeByNamespace(
-			this.#element,
+			this[kElement],
 			namespace,
 			String(localName),
 		);
 		if (attribute === null) {
 			throw notFoundError("There is no such attribute");
 		}
-		removeAttributeNode(this.#element, attribute);
+		removeAttributeNode(this[kElement], attribute);
 		return attribute;
 	}
 }
@@ -6205,21 +6413,25 @@ type CustomElementState =
  * is a separate table with a separate lifetime.
  */
 class ElementRegistry {
-	#byName = new Map<string, new () => Element>();
+	constructor() {
+		this[kByName] = new Map<string, new () => Element>();
+	}
+
+	declare [kByName]: Map<string, new () => Element>;
 
 	define(
 		namespace: string | null,
 		localName: string,
 		constructor: new () => Element,
 	): void {
-		this.#byName.set(`${namespace}|${localName}`, constructor);
+		this[kByName].set(`${namespace}|${localName}`, constructor);
 	}
 
 	lookup(
 		namespace: string | null,
 		localName: string,
 	): (new () => Element) | null {
-		return this.#byName.get(`${namespace}|${localName}`) ?? null;
+		return this[kByName].get(`${namespace}|${localName}`) ?? null;
 	}
 }
 
@@ -6236,33 +6448,57 @@ const builtinRegistry = new ElementRegistry();
 let internalConstruction = false;
 
 export class Element extends Node {
-	[kNamespace]: string | null = null;
-	[kPrefix]: string | null = null;
-	[kLocalName] = "";
-	[kAttributeList]: Attr[] = [];
-	[kCustomState]: CustomElementState = "uncustomized";
-	[kDefinition]: CustomElementDefinition | null = null;
-	[kIsValue]: string | null = null;
-	[kClassList]: DOMTokenList | null = null;
-	[kClassTokens]: Set<string> | null = null;
-	[kTokenLists]: Map<string, DOMTokenList> | null = null;
-	[kAriaElements]: Map<string, Element[]> | null = null;
-	[kDataset]: DOMStringMap | null = null;
-	[kClickInProgress] = false;
-	[kInternals]: ElementInternals | null = null;
-	[kAttributesMap]: NamedNodeMap | null = null;
-	[kChildren]: HTMLCollection | null = null;
-	[kShadowRoot]: ShadowRoot | null = null;
-	[kSlottableName] = "";
-	[kAssignedSlot]: HTMLSlotElement | null = null;
-	[kManualSlot]: HTMLSlotElement | null = null;
-	[kReactionQueue]: Reaction[] | null = null;
-	[kPseudoElements]: Map<string, Element> | null = null;
-	[kPseudoHost]: Element | null = null;
-	[kPseudoName]: string | null = null;
+	[kNamespace]: string | null;
+	[kPrefix]: string | null;
+	[kLocalName]: string;
+	[kAttributeList]: Attr[];
+	[kCustomState]: CustomElementState;
+	[kDefinition]: CustomElementDefinition | null;
+	[kIsValue]: string | null;
+	[kClassList]: DOMTokenList | null;
+	[kClassTokens]: Set<string> | null;
+	[kTokenLists]: Map<string, DOMTokenList> | null;
+	[kAriaElements]: Map<string, Element[]> | null;
+	[kDataset]: DOMStringMap | null;
+	[kClickInProgress]: boolean;
+	[kInternals]: ElementInternals | null;
+	[kAttributesMap]: NamedNodeMap | null;
+	[kChildren]: HTMLCollection | null;
+	[kShadowRoot]: ShadowRoot | null;
+	[kSlottableName]: string;
+	[kAssignedSlot]: HTMLSlotElement | null;
+	[kManualSlot]: HTMLSlotElement | null;
+	[kReactionQueue]: Reaction[] | null;
+	[kPseudoElements]: Map<string, Element> | null;
+	[kPseudoHost]: Element | null;
+	[kPseudoName]: string | null;
 
 	constructor() {
 		super();
+		this[kNamespace] = null;
+		this[kPrefix] = null;
+		this[kLocalName] = "";
+		this[kAttributeList] = [];
+		this[kCustomState] = "uncustomized";
+		this[kDefinition] = null;
+		this[kIsValue] = null;
+		this[kClassList] = null;
+		this[kClassTokens] = null;
+		this[kTokenLists] = null;
+		this[kAriaElements] = null;
+		this[kDataset] = null;
+		this[kClickInProgress] = false;
+		this[kInternals] = null;
+		this[kAttributesMap] = null;
+		this[kChildren] = null;
+		this[kShadowRoot] = null;
+		this[kSlottableName] = "";
+		this[kAssignedSlot] = null;
+		this[kManualSlot] = null;
+		this[kReactionQueue] = null;
+		this[kPseudoElements] = null;
+		this[kPseudoHost] = null;
+		this[kPseudoName] = null;
 		this[kDocument] = currentDocument();
 	}
 
@@ -7842,21 +8078,28 @@ export class CustomElementRegistry {
 	 * Whether this registry is one an author built. The registry a realm hands
 	 * every document is not scoped, and is the only one a document may hold.
 	 */
-	#scoped = !internalConstruction;
-	#definitions: CustomElementDefinition[] = [];
-	#definitionIsRunning = false;
+	declare [kScoped]: boolean;
+	declare [kDefinitions]: CustomElementDefinition[];
+	declare [kDefinitionIsRunning]: boolean;
 
 	constructor() {
+		this[kScoped] = !internalConstruction;
+		this[kDefinitions] = [];
+		this[kDefinitionIsRunning] = false;
+		this[kWhenDefined] = new Map<
+			string,
+			{
+				promise: Promise<CustomElementConstructor>;
+				resolve: (value: CustomElementConstructor) => void;
+			}
+		>();
 		registries.push(this);
 	}
 
-	#whenDefined = new Map<
-		string,
-		{
-			promise: Promise<CustomElementConstructor>;
-			resolve: (value: CustomElementConstructor) => void;
-		}
-	>();
+	declare [kWhenDefined]: Map<string, {
+		promise: Promise<CustomElementConstructor>;
+		resolve: (value: CustomElementConstructor) => void;
+	}>;
 
 	define(
 		name: string,
@@ -7876,10 +8119,10 @@ export class CustomElementRegistry {
 				`"${localName}" is not a valid custom element name`,
 			);
 		}
-		if (this.#definitions.some((entry) => entry.name === localName)) {
+		if (this[kDefinitions].some((entry) => entry.name === localName)) {
 			throw domError("NotSupportedError", `"${localName}" is already defined`);
 		}
-		if (this.#definitions.some((entry) => entry.constructor === constructor)) {
+		if (this[kDefinitions].some((entry) => entry.constructor === constructor)) {
 			throw domError(
 				"NotSupportedError",
 				"That constructor is already defining an element",
@@ -7895,10 +8138,10 @@ export class CustomElementRegistry {
 				"A customized built-in element is not implemented here",
 			);
 		}
-		if (this.#definitionIsRunning) {
+		if (this[kDefinitionIsRunning]) {
 			throw domError("NotSupportedError", "A definition is already being read");
 		}
-		this.#definitionIsRunning = true;
+		this[kDefinitionIsRunning] = true;
 		let observedAttributes: string[] = [];
 		let formAssociated = false;
 		let disableInternals = false;
@@ -7948,7 +8191,7 @@ export class CustomElementRegistry {
 				}
 			}
 		} finally {
-			this.#definitionIsRunning = false;
+			this[kDefinitionIsRunning] = false;
 		}
 		const definition: CustomElementDefinition = {
 			registry: this,
@@ -7962,7 +8205,7 @@ export class CustomElementRegistry {
 			disableInternals,
 			disableShadow,
 		};
-		this.#definitions.push(definition);
+		this[kDefinitions].push(definition);
 		const document = currentDocument();
 		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
 			if (candidate.nodeType !== ELEMENT_NODE) {
@@ -7980,16 +8223,16 @@ export class CustomElementRegistry {
 			}
 			enqueueUpgradeReaction(element, definition);
 		}
-		const pending = this.#whenDefined.get(localName);
+		const pending = this[kWhenDefined].get(localName);
 		if (pending !== undefined) {
 			pending.resolve(constructor);
-			this.#whenDefined.delete(localName);
+			this[kWhenDefined].delete(localName);
 		}
 	}
 
 	get(name: string): CustomElementConstructor | undefined {
 		const localName = String(name);
-		const definition = this.#definitions.find(
+		const definition = this[kDefinitions].find(
 			(entry) => entry.name === localName,
 		);
 		return definition === undefined ? undefined : definition.constructor;
@@ -8002,7 +8245,7 @@ export class CustomElementRegistry {
 		if (typeof constructor !== "function") {
 			throw new TypeError("That is not a constructor");
 		}
-		const definition = this.#definitions.find(
+		const definition = this[kDefinitions].find(
 			(entry) => entry.constructor === constructor,
 		);
 		return definition === undefined ? null : definition.name;
@@ -8018,18 +8261,20 @@ export class CustomElementRegistry {
 				),
 			);
 		}
-		const defined = this.#definitions.find((entry) => entry.name === localName);
+		const defined = this[kDefinitions].find(
+			(entry) => entry.name === localName,
+		);
 		if (defined !== undefined) {
 			return Promise.resolve(defined.constructor);
 		}
-		let pending = this.#whenDefined.get(localName);
+		let pending = this[kWhenDefined].get(localName);
 		if (pending === undefined) {
 			let resolve: (value: CustomElementConstructor) => void = () => {};
 			const promise = new Promise<CustomElementConstructor>((settle) => {
 				resolve = settle;
 			});
 			pending = {promise, resolve};
-			this.#whenDefined.set(localName, pending);
+			this[kWhenDefined].set(localName, pending);
 		}
 		return pending.promise;
 	}
@@ -8057,7 +8302,7 @@ export class CustomElementRegistry {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		if (!this.#scoped && root.nodeType === DOCUMENT_NODE) {
+		if (!this[kScoped] && root.nodeType === DOCUMENT_NODE) {
 			throw domError(
 				"NotSupportedError",
 				"A document already holds the registry of its realm",
@@ -8071,14 +8316,14 @@ export class CustomElementRegistry {
 	}
 
 	get [kIsScopedRegistry](): boolean {
-		return this.#scoped;
+		return this[kScoped];
 	}
 
 	[kDefinitionFor](
 		constructor: CustomElementConstructor,
 	): CustomElementDefinition | null {
 		return (
-			this.#definitions.find((entry) => entry.constructor === constructor) ??
+			this[kDefinitions].find((entry) => entry.constructor === constructor) ??
 			null
 		);
 	}
@@ -8091,12 +8336,12 @@ export class CustomElementRegistry {
 		if (namespace !== HTML_NAMESPACE) {
 			return null;
 		}
-		for (const definition of this.#definitions) {
+		for (const definition of this[kDefinitions]) {
 			if (definition.name === localName && definition.localName === localName) {
 				return definition;
 			}
 		}
-		for (const definition of this.#definitions) {
+		for (const definition of this[kDefinitions]) {
 			if (definition.name === is && definition.localName === localName) {
 				return definition;
 			}
@@ -8349,17 +8594,25 @@ interface ShadowRootInit {
  * retargeting, the composed path -- work across it without a second concept.
  */
 export class ShadowRoot extends DocumentFragment {
-	[kShadowMode]: "open" | "closed" = "open";
-	[kUAInternal] = false;
-	[kDelegatesFocus] = false;
-	[kSlotAssignment]: "named" | "manual" = "named";
-	[kClonable] = false;
-	[kSerializable] = false;
-	[kDeclarative] = false;
-	[kAvailableToInternals] = false;
+	[kShadowMode]: "open" | "closed";
+	[kUAInternal]: boolean;
+	[kDelegatesFocus]: boolean;
+	[kSlotAssignment]: "named" | "manual";
+	[kClonable]: boolean;
+	[kSerializable]: boolean;
+	[kDeclarative]: boolean;
+	[kAvailableToInternals]: boolean;
 
 	constructor() {
 		super();
+		this[kShadowMode] = "open";
+		this[kUAInternal] = false;
+		this[kDelegatesFocus] = false;
+		this[kSlotAssignment] = "named";
+		this[kClonable] = false;
+		this[kSerializable] = false;
+		this[kDeclarative] = false;
+		this[kAvailableToInternals] = false;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -8813,9 +9066,16 @@ function updateSlotName(
  * that cannot drift.
  */
 export class HTMLSlotElement extends HTMLElement {
-	[kSlotName] = "";
-	[kAssignedNodes]: Slottable[] = [];
-	[kManualAssignment]: Slottable[] = [];
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kSlotName] = "";
+		this[kAssignedNodes] = [];
+		this[kManualAssignment] = [];
+	}
+
+	[kSlotName]: string;
+	[kAssignedNodes]: Slottable[];
+	[kManualAssignment]: Slottable[];
 
 	get name(): string {
 		return this.getAttribute("name") ?? "";
@@ -8903,7 +9163,12 @@ builtinRegistry.define(HTML_NAMESPACE, "slot", HTMLSlotElement);
  * stops a template from being appended into its own contents.
  */
 export class HTMLTemplateElement extends HTMLElement {
-	[kTemplateContent]: DocumentFragment | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kTemplateContent] = null;
+	}
+
+	[kTemplateContent]: DocumentFragment | null;
 
 	get content(): DocumentFragment {
 		let content = this[kTemplateContent];
@@ -9465,10 +9730,15 @@ export class HTMLDataElement extends HTMLElement {}
 
 /** A list of suggestions, whose options an input reaches through it. */
 export class HTMLDataListElement extends HTMLElement {
-	#options: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kOptions] = null;
+	}
+
+	declare [kOptions]: HTMLCollection | null;
 
 	get options(): HTMLCollection {
-		let options = this.#options;
+		let options = this[kOptions];
 		if (options === null) {
 			options = new HTMLCollection(() => {
 				const found: Element[] = [];
@@ -9479,7 +9749,7 @@ export class HTMLDataListElement extends HTMLElement {
 				}
 				return found;
 			}, this);
-			this.#options = options;
+			this[kOptions] = options;
 		}
 		return options;
 	}
@@ -9492,8 +9762,14 @@ export class HTMLDataListElement extends HTMLElement {
  * so a run of changes inside one turn reports the state it settled on.
  */
 export class HTMLDetailsElement extends HTMLElement {
-	#toggleQueued = false;
-	#stateAtQueue = "closed";
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kToggleQueued] = false;
+		this[kStateAtQueue] = "closed";
+	}
+
+	declare [kToggleQueued]: boolean;
+	declare [kStateAtQueue]: string;
 
 	override [kAttributeChanged](
 		localName: string,
@@ -9508,19 +9784,19 @@ export class HTMLDetailsElement extends HTMLElement {
 		if ((oldValue === null) === (value === null)) {
 			return;
 		}
-		if (!this.#toggleQueued) {
-			this.#toggleQueued = true;
-			this.#stateAtQueue = oldValue === null ? "closed" : "open";
+		if (!this[kToggleQueued]) {
+			this[kToggleQueued] = true;
+			this[kStateAtQueue] = oldValue === null ? "closed" : "open";
 			queueMicrotask(() => {
-				this.#toggleQueued = false;
+				this[kToggleQueued] = false;
 				const now = this.hasAttribute("open") ? "open" : "closed";
-				if (now === this.#stateAtQueue) {
+				if (now === this[kStateAtQueue]) {
 					return;
 				}
 				dispatch(
 					this,
 					new ToggleEvent("toggle", {
-						oldState: this.#stateAtQueue,
+						oldState: this[kStateAtQueue],
 						newState: now,
 					}),
 				);
@@ -9564,29 +9840,29 @@ export interface ToggleEventInit extends EventInit {
 }
 /** The event a details or a popover fires when it opens or closes. */
 export class ToggleEvent extends Event {
-	#oldState: string;
-	#newState: string;
-	#source: Element | null;
+	declare [kOldState]: string;
+	declare [kNewState]: string;
+	declare [kSource]: Element | null;
 
 	constructor(type: string, eventInitDict: ToggleEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
-		this.#oldState = String(init.oldState ?? "");
-		this.#newState = String(init.newState ?? "");
-		this.#source = init.source ?? null;
+		this[kOldState] = String(init.oldState ?? "");
+		this[kNewState] = String(init.newState ?? "");
+		this[kSource] = init.source ?? null;
 	}
 
 	get oldState(): string {
-		return this.#oldState;
+		return this[kOldState];
 	}
 
 	get newState(): string {
-		return this.#newState;
+		return this[kNewState];
 	}
 
 	/** The element whose activation opened or closed the popover, if any. */
 	get source(): Element | null {
-		return this.#source;
+		return this[kSource];
 	}
 }
 Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
@@ -9604,16 +9880,22 @@ const kDialogFocusingSteps = Symbol("the dialog focusing steps");
  * leaves it exactly where it is, an ordinary box that happens to be visible.
  */
 export class HTMLDialogElement extends HTMLElement {
-	#returnValue = "";
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kReturnValue] = "";
+		this[kPreviouslyFocused] = null;
+	}
+
+	declare [kReturnValue]: string;
 	// Where focus was when the dialog took it, so closing can give it back.
-	#previouslyFocused: Element | null = null;
+	declare [kPreviouslyFocused]: Element | null;
 
 	get returnValue(): string {
-		return this.#returnValue;
+		return this[kReturnValue];
 	}
 
 	set returnValue(value: string) {
-		this.#returnValue = String(value);
+		this[kReturnValue] = String(value);
 	}
 
 	show(): void {
@@ -9644,7 +9926,7 @@ export class HTMLDialogElement extends HTMLElement {
 		// reads membership rather than a flag of its own.
 		topLayerOf(this[kDocument]).add(this);
 		this.setAttribute("open", "");
-		this.#focusDialog();
+		this[kFocusDialog]();
 	}
 
 	/**
@@ -9652,7 +9934,7 @@ export class HTMLDialogElement extends HTMLElement {
 	 * dialog shown as a popover focuses like a dialog, not like a popover.
 	 */
 	[kDialogFocusingSteps](): void {
-		this.#focusDialog();
+		this[kFocusDialog]();
 	}
 
 	/**
@@ -9661,8 +9943,8 @@ export class HTMLDialogElement extends HTMLElement {
 	 * dialog itself -- which is focusable for exactly as long as it is the
 	 * modal one, so a dialog of plain text still takes keys off the page.
 	 */
-	#focusDialog(): void {
-		this.#previouslyFocused = this[kDocument][kActiveElement];
+	[kFocusDialog](): void {
+		this[kPreviouslyFocused] = this[kDocument][kActiveElement];
 		const walker = shadowIncludingInclusiveDescendants(this);
 		let fallback: Element | null = null;
 		for (const node of walker) {
@@ -9699,7 +9981,7 @@ export class HTMLDialogElement extends HTMLElement {
 	}
 
 	close(returnValue?: string): void {
-		this.#close(returnValue, false);
+		this[kClose](returnValue, false);
 	}
 
 	requestClose(returnValue?: string): void {
@@ -9710,10 +9992,10 @@ export class HTMLDialogElement extends HTMLElement {
 		if (canceled) {
 			return;
 		}
-		this.#close(returnValue, false);
+		this[kClose](returnValue, false);
 	}
 
-	#close(returnValue: string | undefined, _fromRequest: boolean): void {
+	[kClose](returnValue: string | undefined, _fromRequest: boolean): void {
 		if (!this.hasAttribute("open")) {
 			return;
 		}
@@ -9721,9 +10003,9 @@ export class HTMLDialogElement extends HTMLElement {
 		topLayerOf(this[kDocument]).delete(this);
 		// The page gets its focus back where the dialog took it from, so the
 		// keyboard returns to what the user was doing before it opened.
-		if (this.#previouslyFocused !== null) {
-			const previous = this.#previouslyFocused;
-			this.#previouslyFocused = null;
+		if (this[kPreviouslyFocused] !== null) {
+			const previous = this[kPreviouslyFocused];
+			this[kPreviouslyFocused] = null;
 			if (
 				this[kDocument][kActiveElement] === this ||
 				this.contains(this[kDocument][kActiveElement])
@@ -9732,7 +10014,7 @@ export class HTMLDialogElement extends HTMLElement {
 			}
 		}
 		if (returnValue !== undefined) {
-			this.#returnValue = String(returnValue);
+			this[kReturnValue] = String(returnValue);
 		}
 		dispatch(this, new Event("close"));
 	}
@@ -9777,7 +10059,12 @@ export class HTMLEmbedElement extends HTMLElement {
 
 /** A group of controls, and the group's own disabling. */
 export class HTMLFieldSetElement extends HTMLElement {
-	#elements: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kElements] = null;
+	}
+
+	declare [kElements]: HTMLCollection | null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -9788,7 +10075,7 @@ export class HTMLFieldSetElement extends HTMLElement {
 	}
 
 	get elements(): HTMLCollection {
-		let elements = this.#elements;
+		let elements = this[kElements];
 		if (elements === null) {
 			elements = new HTMLCollection(() => {
 				const listed: Element[] = [];
@@ -9802,7 +10089,7 @@ export class HTMLFieldSetElement extends HTMLElement {
 				}
 				return listed;
 			}, this);
-			this.#elements = elements;
+			this[kElements] = elements;
 		}
 		return elements;
 	}
@@ -9819,17 +10106,23 @@ export class HTMLFontElement extends HTMLElement {}
  * every control it owns to its default.
  */
 export class HTMLFormElement extends HTMLElement {
-	#elements: HTMLFormControlsCollection | null = null;
-	#firingReset = false;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kElements] = null;
+		this[kFiringReset] = false;
+	}
+
+	declare [kElements]: HTMLFormControlsCollection | null;
+	declare [kFiringReset]: boolean;
 
 	get elements(): HTMLFormControlsCollection {
-		let elements = this.#elements;
+		let elements = this[kElements];
 		if (elements === null) {
 			elements = new HTMLFormControlsCollection(
 				() => listedControls(this),
 				this,
 			);
-			this.#elements = elements;
+			this[kElements] = elements;
 		}
 		return elements;
 	}
@@ -9857,10 +10150,10 @@ export class HTMLFormElement extends HTMLElement {
 	}
 
 	reset(): void {
-		if (this.#firingReset) {
+		if (this[kFiringReset]) {
 			return;
 		}
-		this.#firingReset = true;
+		this[kFiringReset] = true;
 		let canceled: boolean;
 		try {
 			canceled = !dispatch(
@@ -9868,7 +10161,7 @@ export class HTMLFormElement extends HTMLElement {
 				new Event("reset", {bubbles: true, cancelable: true}),
 			);
 		} finally {
-			this.#firingReset = false;
+			this[kFiringReset] = false;
 		}
 		if (canceled) {
 			return;
@@ -9954,16 +10247,16 @@ export interface SubmitEventInit extends EventInit {
 }
 /** The event a form fires before it is submitted, naming the button. */
 export class SubmitEvent extends Event {
-	#submitter: HTMLElement | null;
+	declare [kSubmitter]: HTMLElement | null;
 
 	constructor(type: string, eventInitDict: SubmitEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<SubmitEventInit>(eventInitDict, "An event init");
-		this.#submitter = init.submitter ?? null;
+		this[kSubmitter] = init.submitter ?? null;
 	}
 
 	get submitter(): HTMLElement | null {
-		return this.#submitter;
+		return this[kSubmitter];
 	}
 }
 Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
@@ -9975,11 +10268,11 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
  * it: one element, or a list of the radio buttons that share it.
  */
 export class HTMLFormControlsCollection extends HTMLCollection {
-	#owner: Node | null;
+	declare [kOwner]: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
 		super(compute, owner);
-		this.#owner = owner;
+		this[kOwner] = owner;
 	}
 
 	override namedItem(name: string): Element | null {
@@ -9987,7 +10280,7 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		if (key === "") {
 			return null;
 		}
-		const matches = this.#matching(key);
+		const matches = this[kMatching](key);
 		if (matches.length === 0) {
 			return null;
 		}
@@ -9997,8 +10290,8 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		// The list is what the interface answers with for a shared name; the
 		// declared type is the collection's, which has no way to say so.
 		return new RadioNodeList(
-			() => this.#matching(key),
-			this.#owner,
+			() => this[kMatching](key),
+			this[kOwner],
 		) as unknown as Element;
 	}
 
@@ -10028,15 +10321,15 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 				list.length === 1 ?
 					list[0] :
 						(new RadioNodeList(
-							() => this.#matching(key),
-							this.#owner,
+							() => this[kMatching](key),
+							this[kOwner],
 						) as unknown as Node),
 			);
 		}
 		return named;
 	}
 
-	#matching(key: string): Node[] {
+	[kMatching](key: string): Node[] {
 		const matches: Node[] = [];
 		for (const item of this[kEnsure]()) {
 			const element = item as Element;
@@ -10251,10 +10544,15 @@ export class HTMLLinkElement extends HTMLElement {
 
 /** An image map, and the areas inside it. */
 export class HTMLMapElement extends HTMLElement {
-	#areas: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kAreas] = null;
+	}
+
+	declare [kAreas]: HTMLCollection | null;
 
 	get areas(): HTMLCollection {
-		let areas = this.#areas;
+		let areas = this[kAreas];
 		if (areas === null) {
 			areas = new HTMLCollection(() => {
 				const found: Element[] = [];
@@ -10265,7 +10563,7 @@ export class HTMLMapElement extends HTMLElement {
 				}
 				return found;
 			}, this);
-			this.#areas = areas;
+			this[kAreas] = areas;
 		}
 		return areas;
 	}
@@ -10297,12 +10595,22 @@ const HAVE_ENOUGH_DATA = 4;
  * are absent rather than answering with an empty stand-in.
  */
 export class HTMLMediaElement extends HTMLElement {
-	#volume = 1;
-	#muted = false;
-	#playbackRate = 1;
-	#defaultPlaybackRate = 1;
-	#preservesPitch = true;
-	#currentTime = 0;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kVolume] = 1;
+		this[kMuted] = false;
+		this[kPlaybackRate] = 1;
+		this[kDefaultPlaybackRate] = 1;
+		this[kPreservesPitch] = true;
+		this[kCurrentTime] = 0;
+	}
+
+	declare [kVolume]: number;
+	declare [kMuted]: boolean;
+	declare [kPlaybackRate]: number;
+	declare [kDefaultPlaybackRate]: number;
+	declare [kPreservesPitch]: boolean;
+	declare [kCurrentTime]: number;
 
 	static readonly NETWORK_EMPTY = NETWORK_EMPTY;
 	static readonly NETWORK_IDLE = NETWORK_IDLE;
@@ -10343,15 +10651,15 @@ export class HTMLMediaElement extends HTMLElement {
 	}
 
 	get currentTime(): number {
-		return this.#currentTime;
+		return this[kCurrentTime];
 	}
 
 	set currentTime(value: number) {
-		this.#currentTime = toDouble(value);
+		this[kCurrentTime] = toDouble(value);
 	}
 
 	get volume(): number {
-		return this.#volume;
+		return this[kVolume];
 	}
 
 	set volume(value: number) {
@@ -10359,43 +10667,43 @@ export class HTMLMediaElement extends HTMLElement {
 		if (volume < 0 || volume > 1) {
 			throw indexSizeError("A volume is between zero and one");
 		}
-		this.#volume = volume;
+		this[kVolume] = volume;
 	}
 
 	get muted(): boolean {
-		return this.#muted;
+		return this[kMuted];
 	}
 
 	set muted(value: boolean) {
-		this.#muted = Boolean(value);
+		this[kMuted] = Boolean(value);
 	}
 
 	get playbackRate(): number {
-		return this.#playbackRate;
+		return this[kPlaybackRate];
 	}
 
 	set playbackRate(value: number) {
-		this.#playbackRate = toDouble(value);
+		this[kPlaybackRate] = toDouble(value);
 	}
 
 	get defaultPlaybackRate(): number {
-		return this.#defaultPlaybackRate;
+		return this[kDefaultPlaybackRate];
 	}
 
 	set defaultPlaybackRate(value: number) {
-		this.#defaultPlaybackRate = toDouble(value);
+		this[kDefaultPlaybackRate] = toDouble(value);
 	}
 
 	get preservesPitch(): boolean {
-		return this.#preservesPitch;
+		return this[kPreservesPitch];
 	}
 
 	set preservesPitch(value: boolean) {
-		this.#preservesPitch = Boolean(value);
+		this[kPreservesPitch] = Boolean(value);
 	}
 
 	load(): void {
-		this.#currentTime = 0;
+		this[kCurrentTime] = 0;
 	}
 
 	canPlayType(type: string): string {
@@ -10584,8 +10892,14 @@ export class HTMLTableColElement extends HTMLElement {}
 
 /** A table, and the rows and sections a caller reaches and builds. */
 export class HTMLTableElement extends HTMLElement {
-	#tBodies: HTMLCollection | null = null;
-	#rows: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kTBodies] = null;
+		this[kRows] = null;
+	}
+
+	declare [kTBodies]: HTMLCollection | null;
+	declare [kRows]: HTMLCollection | null;
 
 	get caption(): Element | null {
 		return firstChildElement(this, "caption");
@@ -10711,14 +11025,14 @@ export class HTMLTableElement extends HTMLElement {
 	}
 
 	get tBodies(): HTMLCollection {
-		let bodies = this.#tBodies;
+		let bodies = this[kTBodies];
 		if (bodies === null) {
 			bodies = new HTMLCollection(
 				() => childElementsNamed(this, "tbody"),
 				this,
 				(node) => isHTMLElementNamed(node, "tbody"),
 			);
-			this.#tBodies = bodies;
+			this[kTBodies] = bodies;
 		}
 		return bodies;
 	}
@@ -10736,10 +11050,10 @@ export class HTMLTableElement extends HTMLElement {
 	}
 
 	get rows(): HTMLCollection {
-		let rows = this.#rows;
+		let rows = this[kRows];
 		if (rows === null) {
 			rows = new HTMLCollection(() => tableRows(this), this);
-			this.#rows = rows;
+			this[kRows] = rows;
 		}
 		return rows;
 	}
@@ -10849,10 +11163,15 @@ function tableRows(table: Element): Element[] {
 
 /** One row of a table, and the cells it holds. */
 export class HTMLTableRowElement extends HTMLElement {
-	#cells: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kCells] = null;
+	}
+
+	declare [kCells]: HTMLCollection | null;
 
 	get rowIndex(): number {
-		const table = this.#table();
+		const table = this[kTable]();
 		return table === null ? -1 : tableRows(table).indexOf(this);
 	}
 
@@ -10865,14 +11184,14 @@ export class HTMLTableRowElement extends HTMLElement {
 	}
 
 	get cells(): HTMLCollection {
-		let cells = this.#cells;
+		let cells = this[kCells];
 		if (cells === null) {
 			cells = new HTMLCollection(
 				() => rowCells(this),
 				this,
 				(node) => node instanceof HTMLTableCellElement,
 			);
-			this.#cells = cells;
+			this[kCells] = cells;
 		}
 		return cells;
 	}
@@ -10900,7 +11219,7 @@ export class HTMLTableRowElement extends HTMLElement {
 		removeNode(cells[at]);
 	}
 
-	#table(): Element | null {
+	[kTable](): Element | null {
 		const parent = this[kParent];
 		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 			return null;
@@ -10930,17 +11249,22 @@ function rowCells(row: Element): Element[] {
 
 /** A head, body or foot of a table, and the rows it holds. */
 export class HTMLTableSectionElement extends HTMLElement {
-	#rows: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kRows] = null;
+	}
+
+	declare [kRows]: HTMLCollection | null;
 
 	get rows(): HTMLCollection {
-		let rows = this.#rows;
+		let rows = this[kRows];
 		if (rows === null) {
 			rows = new HTMLCollection(
 				() => childElementsNamed(this, "tr"),
 				this,
 				(node) => isHTMLElementNamed(node, "tr"),
 			);
-			this.#rows = rows;
+			this[kRows] = rows;
 		}
 		return rows;
 	}
@@ -11569,29 +11893,112 @@ export class HTMLButtonElement extends HTMLElement {
  */
 export class HTMLInputElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kValue] = "";
+		this[kDirtyValue] = false;
+		this[kChecked] = false;
+		this[kDirtyChecked] = false;
+		this[kIndeterminate] = false;
+		this[kSelectionStart] = 0;
+		this[kSelectionEnd] = 0;
+		this[kSelectionDirection] = "none";
+		this[kPreviouslyChecked] = false;
+		this[kPreviouslyIndeterminate] = false;
+		this[kPreviousRadio] = null;
+		this[kEngine] = null;
+		this[kKind] = null;
+		this[kRoot] = null;
+		this[kValueText] = null;
+		this[kPlaceholderText] = null;
+		this[kGlyphText] = null;
+		this[kOnBeforeInput] = (event: InputEvent): void => {
+			if (event.defaultPrevented || event.data == null) {
+				return;
+			}
+			if (this[kKindFor]() !== "field") {
+				return;
+			}
+			if (event.inputType === "insertText") {
+				event.preventDefault();
+				applyFieldEdit(this, printableFieldEdit(this, event.data));
+				return;
+			}
+			if (event.inputType !== "insertFromPaste") {
+				return;
+			}
+			event.preventDefault();
+			insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+		};
+		this[kOnKeydown] = (event: KeyboardEvent): void => {
+			if (event.defaultPrevented) {
+				return;
+			}
+			const {key, shiftKey, ctrlKey} = event;
+
+			if (this.type === "checkbox" || this.type === "radio") {
+			// Either key activates the control, and activation is what toggles it:
+			// the pre-activation behavior flips the checkedness, the activation
+			// behavior fires input then change, and a canceled click puts the
+			// checkedness back.
+			//
+			// Enter toggles here where a browser leaves it dead. In a browser
+			// Enter on a checkbox submits the form the control belongs to, and
+			// does nothing at all outside one; a terminal has no implicit
+			// submission to inherit, so the key would simply be inert on a focused
+			// control. It toggles, for the same reason the readline chords edit.
+				if (key === " " || key === "Enter") {
+					this.click();
+				}
+				return;
+			}
+
+			const value = this[kUAValue];
+			const {start, end, direction} = uaSelectionOf(this);
+			const anchor = direction === "backward" ? end : start;
+			const caret = direction === "backward" ? start : end;
+
+			let result: FieldEditResult | null;
+			if (key === "Home" || (ctrlKey && key === "a")) {
+				result = fieldSelectionMove(value, anchor, 0, shiftKey);
+			} else if (key === "End" || (ctrlKey && key === "e")) {
+				result = fieldSelectionMove(value, anchor, value.length, shiftKey);
+			} else if (ctrlKey && key === "k") {
+				result = collapsedEdit(value.slice(0, caret), caret);
+			} else if (ctrlKey && key === "u") {
+				result = collapsedEdit(value.slice(caret), 0);
+			} else {
+				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+			}
+			if (result) {
+				applyFieldEdit(this, result);
+			}
+		};
+	}
+
 	declare type: string;
 
-	#value = "";
-	#dirtyValue = false;
-	#checked = false;
-	#dirtyChecked = false;
-	#indeterminate = false;
-	#selectionStart = 0;
-	#selectionEnd = 0;
-	#selectionDirection = "none";
-	#previouslyChecked = false;
-	#previouslyIndeterminate = false;
-	#previousRadio: HTMLInputElement | null = null;
+	declare [kValue]: string;
+	declare [kDirtyValue]: boolean;
+	declare [kChecked]: boolean;
+	declare [kDirtyChecked]: boolean;
+	declare [kIndeterminate]: boolean;
+	declare [kSelectionStart]: number;
+	declare [kSelectionEnd]: number;
+	declare [kSelectionDirection]: string;
+	declare [kPreviouslyChecked]: boolean;
+	declare [kPreviouslyIndeterminate]: boolean;
+	declare [kPreviousRadio]: HTMLInputElement | null;
 
 	// The rendered tree and what it was built for. "field" for a text-ish
 	// input, "toggle" for checkbox/radio; null until built. The two are
 	// different trees, so a type flip rebuilds.
-	#engine: UAEngine | null = null;
-	#kind: "field" | "toggle" | null = null;
-	#root: UARoot | null = null;
-	#valueText: UAText | null = null;
-	#placeholderText: UAText | null = null;
-	#glyphText: UAText | null = null;
+	declare [kEngine]: UAEngine | null;
+	declare [kKind]: "field" | "toggle" | null;
+	declare [kRoot]: UARoot | null;
+	declare [kValueText]: UAText | null;
+	declare [kPlaceholderText]: UAText | null;
+	declare [kGlyphText]: UAText | null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -11623,7 +12030,7 @@ export class HTMLInputElement extends HTMLElement {
 	get value(): string {
 		switch (inputValueMode(this.type)) {
 			case "value":
-				return this.#value;
+				return this[kValue];
 			case "default":
 				return this.getAttribute("value") ?? "";
 			case "on":
@@ -11637,13 +12044,13 @@ export class HTMLInputElement extends HTMLElement {
 		const string = value === null ? "" : String(value);
 		switch (inputValueMode(this.type)) {
 			case "value": {
-				const previous = this.#value;
-				this.#value = sanitizeInputValue(this, string);
-				this.#dirtyValue = true;
-				if (previous !== this.#value) {
-					this.#selectionStart = this.#value.length;
-					this.#selectionEnd = this.#value.length;
-					this.#selectionDirection = "none";
+				const previous = this[kValue];
+				this[kValue] = sanitizeInputValue(this, string);
+				this[kDirtyValue] = true;
+				if (previous !== this[kValue]) {
+					this[kSelectionStart] = this[kValue].length;
+					this[kSelectionEnd] = this[kValue].length;
+					this[kSelectionDirection] = "none";
 				}
 				break;
 			}
@@ -11668,7 +12075,7 @@ export class HTMLInputElement extends HTMLElement {
 	 * so their value here is the empty string a caret would sit in.
 	 */
 	get [kUAValue](): string {
-		return inputValueMode(this.type) === "value" ? this.#value : "";
+		return inputValueMode(this.type) === "value" ? this[kValue] : "";
 	}
 
 	/**
@@ -11682,42 +12089,42 @@ export class HTMLInputElement extends HTMLElement {
 		if (inputValueMode(this.type) !== "value") {
 			return;
 		}
-		this.#value = sanitizeInputValue(this, value);
-		this.#dirtyValue = true;
+		this[kValue] = sanitizeInputValue(this, value);
+		this[kDirtyValue] = true;
 		widgetChanged(this);
 	}
 
 	get checked(): boolean {
-		return this.#checked;
+		return this[kChecked];
 	}
 
 	set checked(value: boolean) {
-		this.#dirtyChecked = true;
-		this.#setCheckedness(Boolean(value));
+		this[kDirtyChecked] = true;
+		this[kSetCheckedness](Boolean(value));
 	}
 
 	get indeterminate(): boolean {
-		return this.#indeterminate;
+		return this[kIndeterminate];
 	}
 
 	set indeterminate(value: boolean) {
-		this.#indeterminate = Boolean(value);
+		this[kIndeterminate] = Boolean(value);
 	}
 
 	get selectionStart(): number | null {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return this.#selectionStart;
+		return this[kSelectionStart];
 	}
 
 	set selectionStart(value: number | null) {
-		this.#requireSelectable();
+		this[kRequireSelectable]();
 		const start = toUnsignedLong(value ?? 0);
 		this.setSelectionRange(
 			start,
-			Math.max(start, this.#selectionEnd),
-			this.#selectionDirection,
+			Math.max(start, this[kSelectionEnd]),
+			this[kSelectionDirection],
 		);
 	}
 
@@ -11725,15 +12132,15 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return this.#selectionEnd;
+		return this[kSelectionEnd];
 	}
 
 	set selectionEnd(value: number | null) {
-		this.#requireSelectable();
+		this[kRequireSelectable]();
 		this.setSelectionRange(
-			this.#selectionStart,
+			this[kSelectionStart],
 			toUnsignedLong(value ?? 0),
-			this.#selectionDirection,
+			this[kSelectionDirection],
 		);
 	}
 
@@ -11741,14 +12148,14 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return null;
 		}
-		return this.#selectionDirection;
+		return this[kSelectionDirection];
 	}
 
 	set selectionDirection(value: string | null) {
-		this.#requireSelectable();
+		this[kRequireSelectable]();
 		this.setSelectionRange(
-			this.#selectionStart,
-			this.#selectionEnd,
+			this[kSelectionStart],
+			this[kSelectionEnd],
 			value === null ? undefined : String(value),
 		);
 	}
@@ -11757,14 +12164,14 @@ export class HTMLInputElement extends HTMLElement {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			return;
 		}
-		this.setSelectionRange(0, this.#value.length, "none");
+		this.setSelectionRange(0, this[kValue].length, "none");
 	}
 
 	setSelectionRange(start: number, end: number, direction?: string): void {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
-		this.#requireSelectable();
+		this[kRequireSelectable]();
 		this[kSetUASelection](start, end, direction);
 	}
 
@@ -11778,9 +12185,9 @@ export class HTMLInputElement extends HTMLElement {
 	 */
 	[kUASelection](): {start: number; end: number; direction: string} {
 		return {
-			start: this.#selectionStart,
-			end: this.#selectionEnd,
-			direction: this.#selectionDirection,
+			start: this[kSelectionStart],
+			end: this[kSelectionEnd],
+			direction: this[kSelectionDirection],
 		};
 	}
 
@@ -11790,11 +12197,11 @@ export class HTMLInputElement extends HTMLElement {
 			toUnsignedLong(start),
 			toUnsignedLong(end),
 			direction,
-			this.#value.length,
+			this[kValue].length,
 			(selection) => {
-				this.#selectionStart = selection[0];
-				this.#selectionEnd = selection[1];
-				this.#selectionDirection = selection[2];
+				this[kSelectionStart] = selection[0];
+				this[kSelectionEnd] = selection[1];
+				this[kSelectionDirection] = selection[2];
 			},
 		);
 	}
@@ -11808,21 +12215,21 @@ export class HTMLInputElement extends HTMLElement {
 		if (arguments.length < 1) {
 			throw new TypeError("setRangeText needs a replacement");
 		}
-		this.#requireSelectable();
-		this.#dirtyValue = true;
+		this[kRequireSelectable]();
+		this[kDirtyValue] = true;
 		const result = replaceTextRange(
-			this.#value,
+			this[kValue],
 			String(replacement),
-			start === undefined ? this.#selectionStart : toUnsignedLong(start),
-			end === undefined ? this.#selectionEnd : toUnsignedLong(end),
+			start === undefined ? this[kSelectionStart] : toUnsignedLong(start),
+			end === undefined ? this[kSelectionEnd] : toUnsignedLong(end),
 			selectMode === undefined ? "preserve" : String(selectMode),
-			this.#selectionStart,
-			this.#selectionEnd,
+			this[kSelectionStart],
+			this[kSelectionEnd],
 		);
-		this.#value = result.value;
-		this.#selectionStart = result.start;
-		this.#selectionEnd = result.end;
-		this.#selectionDirection = "none";
+		this[kValue] = result.value;
+		this[kSelectionStart] = result.start;
+		this[kSelectionEnd] = result.end;
+		this[kSelectionDirection] = "none";
 		widgetChanged(this);
 		scheduleTextSelectionChange(this);
 	}
@@ -11837,29 +12244,29 @@ export class HTMLInputElement extends HTMLElement {
 		if (namespace !== null) {
 			return;
 		}
-		if (localName === "value" && !this.#dirtyValue) {
-			this.#value = sanitizeInputValue(this, value ?? "");
-		} else if (localName === "checked" && !this.#dirtyChecked) {
-			this.#setCheckedness(value !== null);
+		if (localName === "value" && !this[kDirtyValue]) {
+			this[kValue] = sanitizeInputValue(this, value ?? "");
+		} else if (localName === "checked" && !this[kDirtyChecked]) {
+			this[kSetCheckedness](value !== null);
 		} else if (localName === "type") {
-			this.#value = sanitizeInputValue(this, this.#value);
+			this[kValue] = sanitizeInputValue(this, this[kValue]);
 		}
 	}
 
 	override [kCloningSteps](copy: Node): void {
 		const clone = copy as HTMLInputElement;
-		clone.#value = this.#value;
-		clone.#dirtyValue = this.#dirtyValue;
-		clone.#checked = this.#checked;
-		clone.#dirtyChecked = this.#dirtyChecked;
+		clone[kValue] = this[kValue];
+		clone[kDirtyValue] = this[kDirtyValue];
+		clone[kChecked] = this[kChecked];
+		clone[kDirtyChecked] = this[kDirtyChecked];
 	}
 
 	[kResetControl](): void {
-		this.#value = sanitizeInputValue(this, this.getAttribute("value") ?? "");
-		this.#dirtyValue = false;
-		this.#checked = this.hasAttribute("checked");
-		this.#dirtyChecked = false;
-		this.#indeterminate = false;
+		this[kValue] = sanitizeInputValue(this, this.getAttribute("value") ?? "");
+		this[kDirtyValue] = false;
+		this[kChecked] = this.hasAttribute("checked");
+		this[kDirtyChecked] = false;
+		this[kIndeterminate] = false;
 		widgetChanged(this);
 	}
 
@@ -11870,17 +12277,17 @@ export class HTMLInputElement extends HTMLElement {
 	[kLegacyPreActivationBehavior](): void {
 		// The reference the canceled half puts back is this click's, so a run
 		// that takes none leaves none behind.
-		this.#previousRadio = null;
+		this[kPreviousRadio] = null;
 		if (this.type === "checkbox") {
-			this.#previouslyChecked = this.#checked;
-			this.#previouslyIndeterminate = this.#indeterminate;
-			this.#indeterminate = false;
-			this.#dirtyChecked = true;
-			this.#setCheckedness(!this.#checked);
+			this[kPreviouslyChecked] = this[kChecked];
+			this[kPreviouslyIndeterminate] = this[kIndeterminate];
+			this[kIndeterminate] = false;
+			this[kDirtyChecked] = true;
+			this[kSetCheckedness](!this[kChecked]);
 		} else if (this.type === "radio") {
-			this.#previousRadio = checkedRadioIn(this) ?? null;
-			this.#dirtyChecked = true;
-			this.#setCheckedness(true);
+			this[kPreviousRadio] = checkedRadioIn(this) ?? null;
+			this[kDirtyChecked] = true;
+			this[kSetCheckedness](true);
 		}
 	}
 
@@ -11895,18 +12302,18 @@ export class HTMLInputElement extends HTMLElement {
 	 */
 	[kLegacyCanceledActivationBehavior](): void {
 		if (this.type === "checkbox") {
-			this.#indeterminate = this.#previouslyIndeterminate;
-			this.#checked = this.#previouslyChecked;
+			this[kIndeterminate] = this[kPreviouslyIndeterminate];
+			this[kChecked] = this[kPreviouslyChecked];
 			return;
 		}
 		if (this.type !== "radio") {
 			return;
 		}
-		const previous = this.#previousRadio;
-		this.#previousRadio = null;
-		this.#checked = false;
+		const previous = this[kPreviousRadio];
+		this[kPreviousRadio] = null;
+		this[kChecked] = false;
 		if (previous !== null && radioGroupOf(this).includes(previous)) {
-			previous.#checked = true;
+			previous[kChecked] = true;
 		}
 	}
 
@@ -11951,21 +12358,21 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	/** Set checkedness, unchecking the rest of a radio button's group. */
-	#setCheckedness(checked: boolean): void {
-		this.#checked = checked;
+	[kSetCheckedness](checked: boolean): void {
+		this[kChecked] = checked;
 		widgetChanged(this);
 		if (!checked || this.type !== "radio") {
 			return;
 		}
 		for (const other of radioGroupOf(this)) {
 			if (other !== this) {
-				other.#checked = false;
+				other[kChecked] = false;
 				widgetChanged(other);
 			}
 		}
 	}
 
-	#requireSelectable(): void {
+	[kRequireSelectable](): void {
 		if (!SELECTABLE_INPUT_TYPES.has(this.type)) {
 			throw domError(
 				"InvalidStateError",
@@ -11977,19 +12384,19 @@ export class HTMLInputElement extends HTMLElement {
 	/* --------------------------------------------------- the rendered tree */
 
 	get [kUAValueText](): UAText | null {
-		return this.#valueText;
+		return this[kValueText];
 	}
 
 	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this.#valueText);
+		return textCaretRange(this, this[kValueText]);
 	}
 
 	[kUASelectionRange](): UARange | null {
-		return textSelectionRange(this, this.#valueText);
+		return textSelectionRange(this, this[kValueText]);
 	}
 
 	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
+		if (this[kEngine] !== null) {
 			// A control that left the tree and came back keeps its tree; only the
 			// state it drifted from needs catching up.
 			this[kUAReconcile]();
@@ -11999,18 +12406,18 @@ export class HTMLInputElement extends HTMLElement {
 		if (engine === undefined) {
 			return;
 		}
-		this.#engine = engine;
-		this.#build();
+		this[kEngine] = engine;
+		this[kBuild]();
 		// Editing is the control's own default action, like a browser input's --
 		// a keydown listener; typed characters and pastes arrive as beforeinput,
 		// which is the default action of the keypress and of the paste that
 		// produced them.
-		this.addEventListener("keydown", this.#onKeydown as UAListener);
-		this.addEventListener("beforeinput", this.#onBeforeInput as UAListener);
+		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
+		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 	}
 
 	/** field for a text-ish input, toggle for checkbox/radio. */
-	#kindFor(): "field" | "toggle" {
+	[kKindFor](): "field" | "toggle" {
 		const type = this.type;
 		return type === "checkbox" || type === "radio" ? "toggle" : "field";
 	}
@@ -12020,24 +12427,7 @@ export class HTMLInputElement extends HTMLElement {
 	 * insertFromPaste, whose line breaks a single-line input strips (HTML
 	 * value sanitization). A toggle takes neither: it holds no text.
 	 */
-	#onBeforeInput = (event: InputEvent): void => {
-		if (event.defaultPrevented || event.data == null) {
-			return;
-		}
-		if (this.#kindFor() !== "field") {
-			return;
-		}
-		if (event.inputType === "insertText") {
-			event.preventDefault();
-			applyFieldEdit(this, printableFieldEdit(this, event.data));
-			return;
-		}
-		if (event.inputType !== "insertFromPaste") {
-			return;
-		}
-		event.preventDefault();
-		insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
-	};
+	declare [kOnBeforeInput]: (event: InputEvent) => void;
 
 	/**
 	 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
@@ -12045,9 +12435,9 @@ export class HTMLInputElement extends HTMLElement {
 	 * glyph part the painter fills from live `.checked` (a radio's group
 	 * exclusivity unchecks siblings with no hook to reconcile on).
 	 */
-	#build(): void {
-		const engine = this.#engine!;
-		let root = this.#root;
+	[kBuild](): void {
+		const engine = this[kEngine]!;
+		let root = this[kRoot];
 		if (root === null) {
 			root = buildUARoot(this, engine, FIELD_UA_STYLES);
 		} else {
@@ -12059,16 +12449,19 @@ export class HTMLInputElement extends HTMLElement {
 			engine.invalidateStructure();
 			root.appendChild(uaStyleElement(this, FIELD_UA_STYLES));
 		}
-		this.#root = root;
-		this.#kind = this.#kindFor();
+		this[kRoot] = root;
+		this[kKind] = this[kKindFor]();
 
-		if (this.#kind === "field") {
-			this.#valueText = addPart(root, "value").firstChild as UAText;
-			this.#placeholderText = addPart(root, "placeholder").firstChild as UAText;
+		if (this[kKind] === "field") {
+			this[kValueText] = addPart(root, "value").firstChild as UAText;
+			this[kPlaceholderText] = addPart(
+				root,
+				"placeholder",
+			).firstChild as UAText;
 		} else {
-			this.#valueText = null;
-			this.#placeholderText = null;
-			this.#glyphText = addPart(root, "glyph").firstChild as UAText;
+			this[kValueText] = null;
+			this[kPlaceholderText] = null;
+			this[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
 		}
 		engine.layout.invalidate(this);
 		this[kUAReconcile]();
@@ -12084,16 +12477,16 @@ export class HTMLInputElement extends HTMLElement {
 	 * same mutation every other change is.
 	 */
 	[kUAReconcile](): void {
-		if (this.#engine === null) {
+		if (this[kEngine] === null) {
 			return;
 		}
 		// A type flip is a different tree, not a different value.
-		if (this.#kindFor() !== this.#kind) {
-			this.#build();
+		if (this[kKindFor]() !== this[kKind]) {
+			this[kBuild]();
 			return;
 		}
-		if (this.#kind !== "field") {
-			if (this.#glyphText) {
+		if (this[kKind] !== "field") {
+			if (this[kGlyphText]) {
 				const mark =
 					this.type === "checkbox" ?
 						this.checked ?
@@ -12102,13 +12495,13 @@ export class HTMLInputElement extends HTMLElement {
 						this.checked ?
 							"(x)" :
 							"( )";
-				if (this.#glyphText.data !== mark) {
-					this.#glyphText.data = mark;
+				if (this[kGlyphText].data !== mark) {
+					this[kGlyphText].data = mark;
 				}
 			}
 			return;
 		}
-		if (!this.#valueText) {
+		if (!this[kValueText]) {
 			return;
 		}
 		const value = this[kUAValue];
@@ -12119,19 +12512,19 @@ export class HTMLInputElement extends HTMLElement {
 		// the BMP, keeping caret and scroll window aligned.
 		const shown = this.type === "password" ? "•".repeat(value.length) : value;
 		let changed = false;
-		if (this.#valueText.data !== shown) {
-			this.#valueText.data = shown;
+		if (this[kValueText].data !== shown) {
+			this[kValueText].data = shown;
 			changed = true;
 		}
-		if (this.#placeholderText!.data !== placeholder) {
-			this.#placeholderText!.data = placeholder;
+		if (this[kPlaceholderText]!.data !== placeholder) {
+			this[kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		// Exactly one occupies the slot: value when present, else placeholder.
 		const valueDisplay = value ? "inline-block" : "none";
 		const placeholderDisplay = value ? "none" : "inline-block";
-		const valueSpan = this.#valueText.parentElement!;
-		const placeholderSpan = this.#placeholderText!.parentElement!;
+		const valueSpan = this[kValueText].parentElement!;
+		const placeholderSpan = this[kPlaceholderText]!.parentElement!;
 		if (valueSpan.style.display !== valueDisplay) {
 			valueSpan.style.display = valueDisplay;
 			changed = true;
@@ -12144,7 +12537,7 @@ export class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only hear it on a
 		// microtask.
 		if (changed) {
-			this.#engine.layout.invalidate(this);
+			this[kEngine].layout.invalidate(this);
 		}
 	}
 
@@ -12154,50 +12547,7 @@ export class HTMLInputElement extends HTMLElement {
 	 * ends (an input has no visual lines), everything else is the shared field
 	 * logic.
 	 */
-	#onKeydown = (event: KeyboardEvent): void => {
-		if (event.defaultPrevented) {
-			return;
-		}
-		const {key, shiftKey, ctrlKey} = event;
-
-		if (this.type === "checkbox" || this.type === "radio") {
-			// Either key activates the control, and activation is what toggles it:
-			// the pre-activation behavior flips the checkedness, the activation
-			// behavior fires input then change, and a canceled click puts the
-			// checkedness back.
-			//
-			// Enter toggles here where a browser leaves it dead. In a browser
-			// Enter on a checkbox submits the form the control belongs to, and
-			// does nothing at all outside one; a terminal has no implicit
-			// submission to inherit, so the key would simply be inert on a focused
-			// control. It toggles, for the same reason the readline chords edit.
-			if (key === " " || key === "Enter") {
-				this.click();
-			}
-			return;
-		}
-
-		const value = this[kUAValue];
-		const {start, end, direction} = uaSelectionOf(this);
-		const anchor = direction === "backward" ? end : start;
-		const caret = direction === "backward" ? start : end;
-
-		let result: FieldEditResult | null;
-		if (key === "Home" || (ctrlKey && key === "a")) {
-			result = fieldSelectionMove(value, anchor, 0, shiftKey);
-		} else if (key === "End" || (ctrlKey && key === "e")) {
-			result = fieldSelectionMove(value, anchor, value.length, shiftKey);
-		} else if (ctrlKey && key === "k") {
-			result = collapsedEdit(value.slice(0, caret), caret);
-		} else if (ctrlKey && key === "u") {
-			result = collapsedEdit(value.slice(caret), 0);
-		} else {
-			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
-		}
-		if (result) {
-			applyFieldEdit(this, result);
-		}
-	};
+	declare [kOnKeydown]: (event: KeyboardEvent) => void;
 }
 /** How an input's type reads and writes its value. */
 function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
@@ -12337,14 +12687,21 @@ function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
 }
 
 const kSelectedness = Symbol("an option's selectedness");
+const kSelectednessValue = Symbol("selectedness value");
 const kOptionDirty = Symbol("an option's dirtiness");
 /** One choice of a select, whose selectedness is its own state. */
 export class HTMLOptionElement extends HTMLElement {
 	/** Installed from the element table, and read by the select's own tree. */
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kSelectednessValue] = false;
+		this[kOptionDirty] = false;
+	}
+
 	declare disabled: boolean;
 
-	#selectedness = false;
-	[kOptionDirty] = false;
+	declare [kSelectednessValue]: boolean;
+	[kOptionDirty]: boolean;
 
 	/**
 	 * An option's selectedness. A select's `selectedOptions` is a live list
@@ -12352,14 +12709,14 @@ export class HTMLOptionElement extends HTMLElement {
 	 * moving selectedness is moving the tree as far as that list can tell.
 	 */
 	get [kSelectedness](): boolean {
-		return this.#selectedness;
+		return this[kSelectednessValue];
 	}
 
 	set [kSelectedness](value: boolean) {
-		if (this.#selectedness === value) {
+		if (this[kSelectednessValue] === value) {
 			return;
 		}
-		this.#selectedness = value;
+		this[kSelectednessValue] = value;
 		bumpVersion();
 	}
 
@@ -12472,11 +12829,11 @@ function selectOf(option: Element): HTMLSelectElement | null {
 
 /** The options of a select, which can be added to and taken from by index. */
 export class HTMLOptionsCollection extends HTMLCollection {
-	#select: HTMLSelectElement;
+	declare [kSelect]: HTMLSelectElement;
 
 	constructor(select: HTMLSelectElement) {
 		super(() => optionsOf(select), select);
-		this.#select = select;
+		this[kSelect] = select;
 	}
 
 	override get length(): number {
@@ -12485,18 +12842,18 @@ export class HTMLOptionsCollection extends HTMLCollection {
 
 	override set length(value: number) {
 		const wanted = toUnsignedLong(value);
-		const options = optionsOf(this.#select);
+		const options = optionsOf(this[kSelect]);
 		if (wanted > options.length) {
 			if (wanted > 100000) {
 				return;
 			}
 			for (let index = options.length; index < wanted; index++) {
 				const option = createElementInternal(
-					this.#select[kDocument],
+					this[kSelect][kDocument],
 					"option",
 					HTML_NAMESPACE,
 				);
-				appendNode(option, this.#select);
+				appendNode(option, this[kSelect]);
 			}
 			return;
 		}
@@ -12506,11 +12863,11 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	}
 
 	get selectedIndex(): number {
-		return this.#select.selectedIndex;
+		return this[kSelect].selectedIndex;
 	}
 
 	set selectedIndex(value: number) {
-		this.#select.selectedIndex = value;
+		this[kSelect].selectedIndex = value;
 	}
 
 	add(element: Element, before?: Element | number | null): void {
@@ -12520,7 +12877,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 		) {
 			throw new TypeError("Only an option or an option group can be added");
 		}
-		if (isInclusiveAncestor(element, this.#select)) {
+		if (isInclusiveAncestor(element, this[kSelect])) {
 			throw hierarchyRequestError(
 				"A select cannot be put inside its own option",
 			);
@@ -12528,7 +12885,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 		let reference: Node | null = null;
 		if (before !== undefined && before !== null) {
 			if (typeof before === "number") {
-				const options = optionsOf(this.#select);
+				const options = optionsOf(this[kSelect]);
 				const index = toLong(before);
 				reference =
 					index >= 0 && index < options.length ? options[index] : null;
@@ -12536,19 +12893,19 @@ export class HTMLOptionsCollection extends HTMLCollection {
 				if (!(before instanceof Element)) {
 					throw new TypeError("That is not an element");
 				}
-				if (!optionsOf(this.#select).includes(before as HTMLOptionElement)) {
+				if (!optionsOf(this[kSelect]).includes(before as HTMLOptionElement)) {
 					throw notFoundError("That option is not in this select");
 				}
 				reference = before;
 			}
 		}
 		const parent =
-			reference === null ? this.#select : (reference[kParent] as Node);
+			reference === null ? this[kSelect] : (reference[kParent] as Node);
 		preInsert(element, parent, reference);
 	}
 
 	remove(index: number): void {
-		const options = optionsOf(this.#select);
+		const options = optionsOf(this[kSelect]);
 		const at = toLong(index);
 		if (at < 0 || at >= options.length) {
 			return;
@@ -12563,8 +12920,14 @@ Object.defineProperty(HTMLOptionsCollection.prototype, Symbol.toStringTag, {
 
 /** The result of a calculation, whose value resets to its child text. */
 export class HTMLOutputElement extends HTMLElement {
-	#dirty = false;
-	#stored = "";
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kDirty] = false;
+		this[kStored] = "";
+	}
+
+	declare [kDirty]: boolean;
+	declare [kStored]: string;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -12579,12 +12942,12 @@ export class HTMLOutputElement extends HTMLElement {
 	}
 
 	get defaultValue(): string {
-		return this.#dirty ? this.#stored : descendantText(this);
+		return this[kDirty] ? this[kStored] : descendantText(this);
 	}
 
 	set defaultValue(value: string) {
-		if (this.#dirty) {
-			this.#stored = String(value);
+		if (this[kDirty]) {
+			this[kStored] = String(value);
 			return;
 		}
 		setDescendantText(this, String(value));
@@ -12595,18 +12958,18 @@ export class HTMLOutputElement extends HTMLElement {
 	}
 
 	set value(value: string) {
-		if (!this.#dirty) {
-			this.#stored = descendantText(this);
+		if (!this[kDirty]) {
+			this[kStored] = descendantText(this);
 		}
-		this.#dirty = true;
+		this[kDirty] = true;
 		setDescendantText(this, String(value));
 	}
 
 	[kResetControl](): void {
-		if (this.#dirty) {
-			setDescendantText(this, this.#stored);
+		if (this[kDirty]) {
+			setDescendantText(this, this[kStored]);
 		}
-		this.#dirty = false;
+		this[kDirty] = false;
 	}
 }
 
@@ -12623,14 +12986,129 @@ export class HTMLOutputElement extends HTMLElement {
  * is the control's own default action.
  */
 export class HTMLSelectElement extends HTMLElement {
-	#options: HTMLOptionsCollection | null = null;
-	#selectedOptions: HTMLCollection | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kOptions] = null;
+		this[kSelectedOptions] = null;
+		this[kEngine] = null;
+		this[kValueText] = null;
+		this[kPicker] = null;
+		this[kHighlight] = null;
+		this[kOnKeydown] = (event: KeyboardEvent): void => {
+			if (event.defaultPrevented) {
+				return;
+			}
+			const key = event.key;
+			const options = this[kOptionList]();
+			if (options.length === 0) {
+				return;
+			}
+			const current = this.selectedIndex;
 
-	#engine: UAEngine | null = null;
-	#valueText: UAText | null = null;
-	#picker: UAElement | null = null;
+			if (this[kHighlight] !== null) {
+				const highlight = this[kHighlight];
+				if (key === "ArrowDown") {
+					this[kHighlight] = this[kStep](highlight, 1);
+				} else if (key === "ArrowUp") {
+					this[kHighlight] = this[kStep](highlight, -1);
+				} else if (key === "Home") {
+					this[kHighlight] = this[kStep](-1, 1);
+				} else if (key === "End") {
+					this[kHighlight] = this[kStep](options.length, -1);
+				} else if (key === "Enter" || key === " ") {
+					this[kHighlight] = null;
+					if (highlight !== current && !optionIsDisabled(options[highlight])) {
+						this[kCommit](highlight);
+						return;
+					}
+					this[kUAReconcile](); // No change: just close.
+					return;
+				} else if (key === "Escape") {
+					this[kHighlight] = null;
+				} else {
+					return;
+				}
+				this[kUAReconcile]();
+				return;
+			}
+
+			// CLOSED: Space or Enter opens; arrows change the value in place.
+			if (key === "Enter" || key === " ") {
+				this[kOpenPicker]();
+				return;
+			}
+			let target = current;
+			if (key === "ArrowDown" || key === "ArrowRight") {
+				target = this[kStep](current, 1);
+			} else if (key === "ArrowUp" || key === "ArrowLeft") {
+				target = this[kStep](current, -1);
+			} else if (key === "Home") {
+				target = this[kStep](-1, 1);
+			} else if (key === "End") {
+				target = this[kStep](options.length, -1);
+			} else {
+				return;
+			}
+			if (target !== current && target >= 0) {
+				this[kCommit](target);
+			}
+		};
+		this[kOnMousedown] = (event: MouseEvent): void => {
+			if (event.defaultPrevented || event.button !== 0) {
+				return;
+			}
+			const engine = this[kEngine]!;
+			this.focus(); // A press focuses the control, as in a browser.
+			if (this[kHighlight] === null) {
+				this[kOpenPicker]();
+				return;
+			}
+			const {clientX: x, clientY: y} = event;
+			const picker = this[kPicker]!;
+			const row = (Array.from(
+				picker.childNodes,
+			) as UAElement[]).find((node) => {
+				const rect = engine.layout.getRect(node);
+				return rect ? rectContains(rect, x, y) : false;
+			});
+			if (row) {
+				const index = optionIndexOfRow(picker, row);
+				// A disabled row is inert: the sheet stays up, nothing commits.
+				const option = this[kOptionList]()[index];
+				if (option && !optionIsDisabled(option)) {
+					this[kHighlight] = null;
+					if (index !== this.selectedIndex) {
+						this[kCommit](index);
+					} else {
+						this[kUAReconcile]();
+					} // Re-press the selection: just close.
+				}
+				return;
+			}
+			// Off every row: a press inside the picker's own padding does nothing; a
+			// press outside it (the closed face) dismisses.
+			const pickerRect = engine.layout.getRect(picker);
+			if (!(pickerRect && rectContains(pickerRect, x, y))) {
+				this[kHighlight] = null;
+				this[kUAReconcile]();
+			}
+		};
+		this[kOnBlur] = (): void => {
+			if (this[kHighlight] !== null) {
+				this[kHighlight] = null;
+				this[kUAReconcile]();
+			}
+		};
+	}
+
+	declare [kOptions]: HTMLOptionsCollection | null;
+	declare [kSelectedOptions]: HTMLCollection | null;
+
+	declare [kEngine]: UAEngine | null;
+	declare [kValueText]: UAText | null;
+	declare [kPicker]: UAElement | null;
 	// The highlighted option index while the picker is OPEN; null = closed.
-	#highlight: number | null = null;
+	declare [kHighlight]: number | null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -12645,10 +13123,10 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	get options(): HTMLOptionsCollection {
-		let options = this.#options;
+		let options = this[kOptions];
 		if (options === null) {
 			options = new HTMLOptionsCollection(this);
-			this.#options = options;
+			this[kOptions] = options;
 		}
 		askForAReset(this);
 		return options;
@@ -12685,13 +13163,13 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	get selectedOptions(): HTMLCollection {
-		let selected = this.#selectedOptions;
+		let selected = this[kSelectedOptions];
 		if (selected === null) {
 			selected = new HTMLCollection(
 				() => optionsOf(this).filter((option) => option[kSelectedness]),
 				this,
 			);
-			this.#selectedOptions = selected;
+			this[kSelectedOptions] = selected;
 		}
 		askForAReset(this);
 		return selected;
@@ -12753,13 +13231,13 @@ export class HTMLSelectElement extends HTMLElement {
 	/* --------------------------------------------------- the rendered tree */
 
 	/** The options the tree renders: `options`, without building a collection. */
-	#optionList(): HTMLOptionElement[] {
+	[kOptionList](): HTMLOptionElement[] {
 		askForAReset(this);
 		return optionsOf(this);
 	}
 
 	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
+		if (this[kEngine] !== null) {
 			this[kUAReconcile]();
 			return;
 		}
@@ -12767,23 +13245,23 @@ export class HTMLSelectElement extends HTMLElement {
 		if (engine === undefined) {
 			return;
 		}
-		this.#engine = engine;
+		this[kEngine] = engine;
 		const document = uaDocumentOf(this);
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, holding one row
 		// per option). Composition hides the light option list.
 		const root = buildUARoot(this, engine, SELECT_UA_STYLES);
-		this.#valueText = addPart(root, "value").firstChild as UAText;
+		this[kValueText] = addPart(root, "value").firstChild as UAText;
 		(addPart(root, "indicator").firstChild as UAText).data = " ▾";
 		const picker = document.createElement("div");
 		picker.setAttribute("part", "picker");
 		root.appendChild(picker);
-		this.#picker = picker;
+		this[kPicker] = picker;
 
-		this.addEventListener("keydown", this.#onKeydown as UAListener);
-		this.addEventListener("mousedown", this.#onMousedown as UAListener);
+		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
+		this.addEventListener("mousedown", this[kOnMousedown] as UAListener);
 		// Losing focus closes the picker, as everywhere.
-		this.addEventListener("blur", this.#onBlur);
+		this.addEventListener("blur", this[kOnBlur]);
 		// The displayed label and picker rows track the option list; a framework
 		// mutating the options must re-reconcile. (Selection changes reach the
 		// tree through the control's own setters.)
@@ -12799,28 +13277,28 @@ export class HTMLSelectElement extends HTMLElement {
 
 	/** Bring the UA tree back into step with the selection and open state. */
 	[kUAReconcile](): void {
-		const engine = this.#engine;
-		const picker = this.#picker;
+		const engine = this[kEngine];
+		const picker = this[kPicker];
 		if (engine === null || picker === null) {
 			return;
 		}
-		const optionList = this.#optionList();
+		const optionList = this[kOptionList]();
 		const selectedIndex = this.selectedIndex;
 		const selected = selectedIndex >= 0 ? optionList[selectedIndex] : null;
 		const label = selected ? selected.label : "";
-		if (this.#valueText!.data !== label) {
-			this.#valueText!.data = label;
+		if (this[kValueText]!.data !== label) {
+			this[kValueText]!.data = label;
 			engine.layout.invalidate(this);
 		}
 
-		if (this.#highlight === null) {
+		if (this[kHighlight] === null) {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
 			return;
 		}
 
-		this.#reconcileRows(picker);
+		this[kReconcileRows](picker);
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's containing
 		// block is the ICB), matching the field's width.
@@ -12849,7 +13327,7 @@ export class HTMLSelectElement extends HTMLElement {
 	 * group, and every option under the group it belongs to. A heading is not
 	 * an option, so it takes no index and cannot be picked.
 	 */
-	#pickerRows(): PickerRow[] {
+	[kPickerRows](): PickerRow[] {
 		askForAReset(this);
 		const rows: PickerRow[] = [];
 		let index = 0;
@@ -12859,7 +13337,7 @@ export class HTMLSelectElement extends HTMLElement {
 				label: option.label,
 				disabled: optionIsDisabled(option),
 				grouped,
-				highlighted: index === this.#highlight,
+				highlighted: index === this[kHighlight],
 			});
 			index++;
 		};
@@ -12894,9 +13372,9 @@ export class HTMLSelectElement extends HTMLElement {
 	 * root is observed, and a rebuild every reconcile is a frame that schedules
 	 * the next one.
 	 */
-	#reconcileRows(picker: UAElement): void {
+	[kReconcileRows](picker: UAElement): void {
 		const document = uaDocumentOf(this);
-		const rows = this.#pickerRows();
+		const rows = this[kPickerRows]();
 		while (picker.childNodes.length > rows.length) {
 			picker.removeChild(picker.lastChild!);
 		}
@@ -12921,8 +13399,8 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	/** Step to the next enabled option in `direction`, or stay put. */
-	#step(from: number, direction: 1 | -1): number {
-		const options = this.#optionList();
+	[kStep](from: number, direction: 1 | -1): number {
+		const options = this[kOptionList]();
 		for (
 			let i = from + direction;
 			i >= 0 && i < options.length;
@@ -12936,8 +13414,8 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	/** Open the picker with the highlight on the current selection. */
-	#openPicker(): void {
-		const options = this.#optionList();
+	[kOpenPicker](): void {
+		const options = this[kOptionList]();
 		if (options.length === 0) {
 			return;
 		}
@@ -12945,13 +13423,13 @@ export class HTMLSelectElement extends HTMLElement {
 		if (index < 0) {
 			index = options.findIndex((o) => !optionIsDisabled(o));
 		}
-		this.#highlight = index;
+		this[kHighlight] = index;
 		this[kUAReconcile]();
 	}
 
 	/** Commit `index` as the selection, close, and fire input then change. */
-	#commit(index: number): void {
-		this.#highlight = null;
+	[kCommit](index: number): void {
+		this[kHighlight] = null;
 		this.selectedIndex = index; // The setter reconciles (closes + label).
 		dispatch(this, new Event("input", {bubbles: true, cancelable: false}));
 		dispatch(this, new Event("change", {bubbles: true, cancelable: false}));
@@ -12963,65 +13441,7 @@ export class HTMLSelectElement extends HTMLElement {
 	 * Enter/Space open the picker; arrows change the selection in place -- the
 	 * browser's closed-select keyboard model, no popup to degrade.
 	 */
-	#onKeydown = (event: KeyboardEvent): void => {
-		if (event.defaultPrevented) {
-			return;
-		}
-		const key = event.key;
-		const options = this.#optionList();
-		if (options.length === 0) {
-			return;
-		}
-		const current = this.selectedIndex;
-
-		if (this.#highlight !== null) {
-			const highlight = this.#highlight;
-			if (key === "ArrowDown") {
-				this.#highlight = this.#step(highlight, 1);
-			} else if (key === "ArrowUp") {
-				this.#highlight = this.#step(highlight, -1);
-			} else if (key === "Home") {
-				this.#highlight = this.#step(-1, 1);
-			} else if (key === "End") {
-				this.#highlight = this.#step(options.length, -1);
-			} else if (key === "Enter" || key === " ") {
-				this.#highlight = null;
-				if (highlight !== current && !optionIsDisabled(options[highlight])) {
-					this.#commit(highlight);
-					return;
-				}
-				this[kUAReconcile](); // No change: just close.
-				return;
-			} else if (key === "Escape") {
-				this.#highlight = null;
-			} else {
-				return;
-			}
-			this[kUAReconcile]();
-			return;
-		}
-
-		// CLOSED: Space or Enter opens; arrows change the value in place.
-		if (key === "Enter" || key === " ") {
-			this.#openPicker();
-			return;
-		}
-		let target = current;
-		if (key === "ArrowDown" || key === "ArrowRight") {
-			target = this.#step(current, 1);
-		} else if (key === "ArrowUp" || key === "ArrowLeft") {
-			target = this.#step(current, -1);
-		} else if (key === "Home") {
-			target = this.#step(-1, 1);
-		} else if (key === "End") {
-			target = this.#step(options.length, -1);
-		} else {
-			return;
-		}
-		if (target !== current && target >= 0) {
-			this.#commit(target);
-		}
-	};
+	declare [kOnKeydown]: (event: KeyboardEvent) => void;
 
 	/**
 	 * The mouse default action: a press opens a closed picker, and with the
@@ -13029,51 +13449,9 @@ export class HTMLSelectElement extends HTMLElement {
 	 * a press on the closed face dismisses. The row under the point is found
 	 * from the rows' own document rects -- no renderer hit-test.
 	 */
-	#onMousedown = (event: MouseEvent): void => {
-		if (event.defaultPrevented || event.button !== 0) {
-			return;
-		}
-		const engine = this.#engine!;
-		this.focus(); // A press focuses the control, as in a browser.
-		if (this.#highlight === null) {
-			this.#openPicker();
-			return;
-		}
-		const {clientX: x, clientY: y} = event;
-		const picker = this.#picker!;
-		const row = (Array.from(picker.childNodes) as UAElement[]).find((node) => {
-			const rect = engine.layout.getRect(node);
-			return rect ? rectContains(rect, x, y) : false;
-		});
-		if (row) {
-			const index = optionIndexOfRow(picker, row);
-			// A disabled row is inert: the sheet stays up, nothing commits.
-			const option = this.#optionList()[index];
-			if (option && !optionIsDisabled(option)) {
-				this.#highlight = null;
-				if (index !== this.selectedIndex) {
-					this.#commit(index);
-				} else {
-					this[kUAReconcile]();
-				} // Re-press the selection: just close.
-			}
-			return;
-		}
-		// Off every row: a press inside the picker's own padding does nothing; a
-		// press outside it (the closed face) dismisses.
-		const pickerRect = engine.layout.getRect(picker);
-		if (!(pickerRect && rectContains(pickerRect, x, y))) {
-			this.#highlight = null;
-			this[kUAReconcile]();
-		}
-	};
+	declare [kOnMousedown]: (event: MouseEvent) => void;
 
-	#onBlur = (): void => {
-		if (this.#highlight !== null) {
-			this.#highlight = null;
-			this[kUAReconcile]();
-		}
-	};
+	declare [kOnBlur]: () => void;
 }
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
@@ -13195,17 +13573,121 @@ function askForAReset(select: HTMLSelectElement): void {
  * keys are the control's own default action.
  */
 export class HTMLTextAreaElement extends HTMLElement {
-	#value = "";
-	#dirty = false;
-	#selectionStart = 0;
-	#selectionEnd = 0;
-	#selectionDirection = "none";
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kValue] = "";
+		this[kDirty] = false;
+		this[kSelectionStart] = 0;
+		this[kSelectionEnd] = 0;
+		this[kSelectionDirection] = "none";
+		this[kEngine] = null;
+		this[kValueText] = null;
+		this[kPlaceholderText] = null;
+		this[kPlaceholderSpan] = null;
+		this[kGoalColumn] = null;
+		this[kOnBeforeInput] = (event: InputEvent): void => {
+			if (event.defaultPrevented || event.data == null) {
+				return;
+			}
+			if (event.inputType === "insertText") {
+				event.preventDefault();
+				applyFieldEdit(this, printableFieldEdit(this, event.data));
+				return;
+			}
+			if (event.inputType !== "insertFromPaste") {
+				return;
+			}
+			event.preventDefault();
+			insertPaste(this, event.data);
+		};
+		this[kOnKeydown] = (event: KeyboardEvent): void => {
+		// Editing is a default action: an author's keydown preventDefault
+		// suppresses it, exactly as it suppresses a browser textarea's edit.
+			if (event.defaultPrevented) {
+				return;
+			}
+			const engine = this[kEngine];
+			if (engine === null) {
+				return;
+			}
+			const {key, shiftKey, ctrlKey} = event;
+			// The goal column survives only an unbroken run of vertical moves.
+			if (key !== "ArrowUp" && key !== "ArrowDown") {
+				this[kGoalColumn] = null;
+			}
 
-	#engine: UAEngine | null = null;
-	#valueText: UAText | null = null;
-	#placeholderText: UAText | null = null;
-	#placeholderSpan: UAElement | null = null;
-	#goalColumn: number | null = null;
+			const value = this[kUAValue];
+			const {start, end, direction} = uaSelectionOf(this);
+			const backward = direction === "backward";
+			const caret = backward ? start : end;
+			const anchor = backward ? end : start;
+
+			let result: FieldEditResult | null;
+			if (key === "Enter" || (ctrlKey && key === "j")) {
+			// A newline, inserted like any typed character, replacing the
+			// selection. A terminal sends line feed for Ctrl+J, which is the chord
+			// that reaches a field whose Enter an application has taken.
+				const next = value.slice(0, start) + "\n" + value.slice(end);
+				const pos = start + 1;
+				result = {value: next, start: pos, end: pos, direction: "none"};
+			} else if (key === "ArrowUp" || key === "ArrowDown") {
+				engine.layout.calculateLayout();
+				const target = this[kVerticalTarget](
+					caret,
+					key === "ArrowDown" ? 1 : -1,
+				);
+				result = fieldSelectionMove(value, anchor, target, shiftKey);
+			} else if (
+				key === "Home" ||
+				key === "End" ||
+				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
+			) {
+				engine.layout.calculateLayout();
+				const visual = textareaVisualLines(this, engine.layout);
+				const line = visual ?
+					visual.lines[textareaLineAt(visual.lines, caret)] :
+					null;
+				const lineStart = line?.startOffset ?? 0;
+				const lineEnd = line?.endOffset ?? value.length;
+				if (ctrlKey && key === "k") {
+					result = collapsedEdit(
+						value.slice(0, caret) + value.slice(lineEnd),
+						caret,
+					);
+				} else if (ctrlKey && key === "u") {
+					result = collapsedEdit(
+						value.slice(0, lineStart) + value.slice(caret),
+						lineStart,
+					);
+				} else {
+					const toStart = key === "Home" || key === "a";
+					result = fieldSelectionMove(
+						value,
+						anchor,
+						toStart ? lineStart : lineEnd,
+						shiftKey,
+					);
+				}
+			} else {
+				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+			}
+			if (result) {
+				applyFieldEdit(this, result);
+			}
+		};
+	}
+
+	declare [kValue]: string;
+	declare [kDirty]: boolean;
+	declare [kSelectionStart]: number;
+	declare [kSelectionEnd]: number;
+	declare [kSelectionDirection]: string;
+
+	declare [kEngine]: UAEngine | null;
+	declare [kValueText]: UAText | null;
+	declare [kPlaceholderText]: UAText | null;
+	declare [kPlaceholderSpan]: UAElement | null;
+	declare [kGoalColumn]: number | null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -13233,12 +13715,12 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	set value(value: string) {
 		const previous = this[kUAValue];
-		this.#value = normalizeNewlines(value === null ? "" : String(value));
-		this.#dirty = true;
-		if (previous !== this.#value) {
-			this.#selectionStart = this.#value.length;
-			this.#selectionEnd = this.#value.length;
-			this.#selectionDirection = "none";
+		this[kValue] = normalizeNewlines(value === null ? "" : String(value));
+		this[kDirty] = true;
+		if (previous !== this[kValue]) {
+			this[kSelectionStart] = this[kValue].length;
+			this[kSelectionEnd] = this[kValue].length;
+			this[kSelectionDirection] = "none";
 		}
 		widgetChanged(this);
 	}
@@ -13249,7 +13731,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * until then. @see HTMLInputElement's own door.
 	 */
 	get [kUAValue](): string {
-		return this.#dirty ? this.#value : normalizeNewlines(descendantText(this));
+		return this[kDirty] ?
+			this[kValue] :
+				normalizeNewlines(descendantText(this));
 	}
 
 	/**
@@ -13257,8 +13741,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * value flag is set, leaving the selection to the edit that made it.
 	 */
 	[kSetUAValue](value: string): void {
-		this.#value = normalizeNewlines(value);
-		this.#dirty = true;
+		this[kValue] = normalizeNewlines(value);
+		this[kDirty] = true;
 		widgetChanged(this);
 	}
 
@@ -13267,38 +13751,38 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get selectionStart(): number {
-		return this.#selectionStart;
+		return this[kSelectionStart];
 	}
 
 	set selectionStart(value: number) {
 		const start = toUnsignedLong(value);
 		this.setSelectionRange(
 			start,
-			Math.max(start, this.#selectionEnd),
-			this.#selectionDirection,
+			Math.max(start, this[kSelectionEnd]),
+			this[kSelectionDirection],
 		);
 	}
 
 	get selectionEnd(): number {
-		return this.#selectionEnd;
+		return this[kSelectionEnd];
 	}
 
 	set selectionEnd(value: number) {
 		this.setSelectionRange(
-			this.#selectionStart,
+			this[kSelectionStart],
 			toUnsignedLong(value),
-			this.#selectionDirection,
+			this[kSelectionDirection],
 		);
 	}
 
 	get selectionDirection(): string {
-		return this.#selectionDirection;
+		return this[kSelectionDirection];
 	}
 
 	set selectionDirection(value: string) {
 		this.setSelectionRange(
-			this.#selectionStart,
-			this.#selectionEnd,
+			this[kSelectionStart],
+			this[kSelectionEnd],
 			String(value),
 		);
 	}
@@ -13317,9 +13801,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 	/** A textarea's selection is always its own; see the input's door. */
 	[kUASelection](): {start: number; end: number; direction: string} {
 		return {
-			start: this.#selectionStart,
-			end: this.#selectionEnd,
-			direction: this.#selectionDirection,
+			start: this[kSelectionStart],
+			end: this[kSelectionEnd],
+			direction: this[kSelectionDirection],
 		};
 	}
 
@@ -13331,9 +13815,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 			direction,
 			this[kUAValue].length,
 			(selection) => {
-				this.#selectionStart = selection[0];
-				this.#selectionEnd = selection[1];
-				this.#selectionDirection = selection[2];
+				this[kSelectionStart] = selection[0];
+				this[kSelectionEnd] = selection[1];
+				this[kSelectionDirection] = selection[2];
 			},
 		);
 	}
@@ -13350,49 +13834,49 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const result = replaceTextRange(
 			this.value,
 			String(replacement),
-			start === undefined ? this.#selectionStart : toUnsignedLong(start),
-			end === undefined ? this.#selectionEnd : toUnsignedLong(end),
+			start === undefined ? this[kSelectionStart] : toUnsignedLong(start),
+			end === undefined ? this[kSelectionEnd] : toUnsignedLong(end),
 			selectMode === undefined ? "preserve" : String(selectMode),
-			this.#selectionStart,
-			this.#selectionEnd,
+			this[kSelectionStart],
+			this[kSelectionEnd],
 		);
-		this.#value = result.value;
-		this.#dirty = true;
-		this.#selectionStart = result.start;
-		this.#selectionEnd = result.end;
-		this.#selectionDirection = "none";
+		this[kValue] = result.value;
+		this[kDirty] = true;
+		this[kSelectionStart] = result.start;
+		this[kSelectionEnd] = result.end;
+		this[kSelectionDirection] = "none";
 		widgetChanged(this);
 		scheduleTextSelectionChange(this);
 	}
 
 	override [kCloningSteps](copy: Node): void {
 		const clone = copy as HTMLTextAreaElement;
-		clone.#value = this.#value;
-		clone.#dirty = this.#dirty;
+		clone[kValue] = this[kValue];
+		clone[kDirty] = this[kDirty];
 	}
 
 	[kResetControl](): void {
-		this.#value = "";
-		this.#dirty = false;
+		this[kValue] = "";
+		this[kDirty] = false;
 		widgetChanged(this);
 	}
 
 	/* --------------------------------------------------- the rendered tree */
 
 	get [kUAValueText](): UAText | null {
-		return this.#valueText;
+		return this[kValueText];
 	}
 
 	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this.#valueText);
+		return textCaretRange(this, this[kValueText]);
 	}
 
 	[kUASelectionRange](): UARange | null {
-		return textSelectionRange(this, this.#valueText);
+		return textSelectionRange(this, this[kValueText]);
 	}
 
 	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
+		if (this[kEngine] !== null) {
 			this[kUAReconcile]();
 			return;
 		}
@@ -13400,12 +13884,12 @@ export class HTMLTextAreaElement extends HTMLElement {
 		if (engine === undefined) {
 			return;
 		}
-		this.#engine = engine;
+		this[kEngine] = engine;
 		const document = uaDocumentOf(this);
 		const root = buildUARoot(this, engine, TEXTAREA_UA_STYLES);
-		this.#valueText = addPart(root, "value").firstChild as UAText;
-		this.#placeholderSpan = addPart(root, "placeholder");
-		this.#placeholderText = this.#placeholderSpan.firstChild as UAText;
+		this[kValueText] = addPart(root, "value").firstChild as UAText;
+		this[kPlaceholderSpan] = addPart(root, "placeholder");
+		this[kPlaceholderText] = this[kPlaceholderSpan].firstChild as UAText;
 		// The trailing <br> anchor, the same trick a browser's editor uses: it
 		// makes the run's content always end in exactly one line break, so the
 		// line count equals the LOGICAL line count -- the breaker never emits a
@@ -13415,28 +13899,14 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 		// Editing is the control's own default action, the same as a browser
 		// textarea's: its keydown listener does the edit.
-		this.addEventListener("keydown", this.#onKeydown as UAListener);
-		this.addEventListener("beforeinput", this.#onBeforeInput as UAListener);
+		this.addEventListener("keydown", this[kOnKeydown] as UAListener);
+		this.addEventListener("beforeinput", this[kOnBeforeInput] as UAListener);
 
 		this[kUAReconcile]();
 	}
 
 	// A typed character arrives as an insertText; a paste keeps its newlines.
-	#onBeforeInput = (event: InputEvent): void => {
-		if (event.defaultPrevented || event.data == null) {
-			return;
-		}
-		if (event.inputType === "insertText") {
-			event.preventDefault();
-			applyFieldEdit(this, printableFieldEdit(this, event.data));
-			return;
-		}
-		if (event.inputType !== "insertFromPaste") {
-			return;
-		}
-		event.preventDefault();
-		insertPaste(this, event.data);
-	};
+	declare [kOnBeforeInput]: (event: InputEvent) => void;
 
 	/**
 	 * Bring the UA tree back into step with the element's own state -- the
@@ -13445,24 +13915,24 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * sees it.
 	 */
 	[kUAReconcile](): void {
-		const engine = this.#engine;
+		const engine = this[kEngine];
 		if (engine === null) {
 			return;
 		}
 		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
-		if (this.#valueText!.data !== value) {
-			this.#valueText!.data = value;
+		if (this[kValueText]!.data !== value) {
+			this[kValueText]!.data = value;
 			changed = true;
 		}
-		if (this.#placeholderText!.data !== placeholder) {
-			this.#placeholderText!.data = placeholder;
+		if (this[kPlaceholderText]!.data !== placeholder) {
+			this[kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
 		const placeholderDisplay = value ? "none" : "";
-		if (this.#placeholderSpan!.style.display !== placeholderDisplay) {
-			this.#placeholderSpan!.style.display = placeholderDisplay;
+		if (this[kPlaceholderSpan]!.style.display !== placeholderDisplay) {
+			this[kPlaceholderSpan]!.style.display = placeholderDisplay;
 			changed = true;
 		}
 		if (!changed) {
@@ -13481,78 +13951,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * a browser), and every other editing key is the shared field logic. Reads
 	 * back laid-out geometry, so it flushes layout first.
 	 */
-	#onKeydown = (event: KeyboardEvent): void => {
-		// Editing is a default action: an author's keydown preventDefault
-		// suppresses it, exactly as it suppresses a browser textarea's edit.
-		if (event.defaultPrevented) {
-			return;
-		}
-		const engine = this.#engine;
-		if (engine === null) {
-			return;
-		}
-		const {key, shiftKey, ctrlKey} = event;
-		// The goal column survives only an unbroken run of vertical moves.
-		if (key !== "ArrowUp" && key !== "ArrowDown") {
-			this.#goalColumn = null;
-		}
-
-		const value = this[kUAValue];
-		const {start, end, direction} = uaSelectionOf(this);
-		const backward = direction === "backward";
-		const caret = backward ? start : end;
-		const anchor = backward ? end : start;
-
-		let result: FieldEditResult | null;
-		if (key === "Enter" || (ctrlKey && key === "j")) {
-			// A newline, inserted like any typed character, replacing the
-			// selection. A terminal sends line feed for Ctrl+J, which is the chord
-			// that reaches a field whose Enter an application has taken.
-			const next = value.slice(0, start) + "\n" + value.slice(end);
-			const pos = start + 1;
-			result = {value: next, start: pos, end: pos, direction: "none"};
-		} else if (key === "ArrowUp" || key === "ArrowDown") {
-			engine.layout.calculateLayout();
-			const target = this.#verticalTarget(caret, key === "ArrowDown" ? 1 : -1);
-			result = fieldSelectionMove(value, anchor, target, shiftKey);
-		} else if (
-			key === "Home" ||
-			key === "End" ||
-			(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
-		) {
-			engine.layout.calculateLayout();
-			const visual = textareaVisualLines(this, engine.layout);
-			const line = visual ?
-				visual.lines[textareaLineAt(visual.lines, caret)] :
-				null;
-			const lineStart = line?.startOffset ?? 0;
-			const lineEnd = line?.endOffset ?? value.length;
-			if (ctrlKey && key === "k") {
-				result = collapsedEdit(
-					value.slice(0, caret) + value.slice(lineEnd),
-					caret,
-				);
-			} else if (ctrlKey && key === "u") {
-				result = collapsedEdit(
-					value.slice(0, lineStart) + value.slice(caret),
-					lineStart,
-				);
-			} else {
-				const toStart = key === "Home" || key === "a";
-				result = fieldSelectionMove(
-					value,
-					anchor,
-					toStart ? lineStart : lineEnd,
-					shiftKey,
-				);
-			}
-		} else {
-			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
-		}
-		if (result) {
-			applyFieldEdit(this, result);
-		}
-	};
+	declare [kOnKeydown]: (event: KeyboardEvent) => void;
 
 	/**
 	 * The caret offset one visual line up or down from `caret`, keeping the
@@ -13560,8 +13959,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 	 * lines, exactly as in a browser. First line up collapses to 0, last line
 	 * down to the end.
 	 */
-	#verticalTarget(caret: number, direction: 1 | -1): number {
-		const visual = textareaVisualLines(this, this.#engine!.layout);
+	[kVerticalTarget](caret: number, direction: 1 | -1): number {
+		const visual = textareaVisualLines(this, this[kEngine]!.layout);
 		if (!visual) {
 			return caret;
 		}
@@ -13580,8 +13979,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 		);
 		// Consecutive vertical moves aim for the column travel STARTED at, even
 		// across shorter lines that clamp the caret -- the browser's goal column.
-		const column = this.#goalColumn ?? currentColumn;
-		this.#goalColumn = column;
+		const column = this[kGoalColumn] ?? currentColumn;
+		this[kGoalColumn] = column;
 		const target = visual.lines[targetIndex];
 		const targetText = visual.value.slice(target.startOffset, target.endOffset);
 		let cells = 0;
@@ -13726,11 +14125,17 @@ function setGaugeFill(bar: UAElement, fraction: number | null): void {
  * colors the bar from.
  */
 export class HTMLMeterElement extends HTMLElement {
-	#engine: UAEngine | null = null;
-	#bar: UAElement | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kEngine] = null;
+		this[kBar] = null;
+	}
+
+	declare [kEngine]: UAEngine | null;
+	declare [kBar]: UAElement | null;
 
 	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
+		if (this[kEngine] !== null) {
 			this[kUAReconcile]();
 			return;
 		}
@@ -13738,20 +14143,20 @@ export class HTMLMeterElement extends HTMLElement {
 		if (engine === undefined) {
 			return;
 		}
-		this.#engine = engine;
-		this.#bar = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
+		this[kEngine] = engine;
+		this[kBar] = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
 		this[kUAReconcile]();
 	}
 
 	[kUAReconcile](): void {
-		if (this.#engine === null) {
+		if (this[kEngine] === null) {
 			return;
 		}
-		const bar = this.#bar!;
+		const bar = this[kBar]!;
 		const min = this.min;
 		const span = this.max - min;
 		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
-		const level = this.#level();
+		const level = this[kLevel]();
 		if (bar.getAttribute("data-level") !== level) {
 			bar.setAttribute("data-level", level);
 		}
@@ -13763,7 +14168,7 @@ export class HTMLMeterElement extends HTMLElement {
 	 * relative to `low` and `high`, and a value in it is optimum, one region
 	 * away suboptimum, two away even less good.
 	 */
-	#level(): string {
+	[kLevel](): string {
 		const {low, high, optimum, value} = this;
 		if (optimum < low) {
 			if (value < low) {
@@ -13877,11 +14282,17 @@ const METER_ATTRIBUTES = new Set([
  * the difference the way a browser does.
  */
 export class HTMLProgressElement extends HTMLElement {
-	#engine: UAEngine | null = null;
-	#bar: UAElement | null = null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kEngine] = null;
+		this[kBar] = null;
+	}
+
+	declare [kEngine]: UAEngine | null;
+	declare [kBar]: UAElement | null;
 
 	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
+		if (this[kEngine] !== null) {
 			this[kUAReconcile]();
 			return;
 		}
@@ -13889,17 +14300,17 @@ export class HTMLProgressElement extends HTMLElement {
 		if (engine === undefined) {
 			return;
 		}
-		this.#engine = engine;
-		this.#bar = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
+		this[kEngine] = engine;
+		this[kBar] = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
 		this[kUAReconcile]();
 	}
 
 	[kUAReconcile](): void {
-		if (this.#engine === null) {
+		if (this[kEngine] === null) {
 			return;
 		}
 		const position = this.position;
-		setGaugeFill(this.#bar!, position < 0 ? null : position);
+		setGaugeFill(this[kBar]!, position < 0 ? null : position);
 	}
 
 	override [kAttributeChanged](
@@ -14830,9 +15241,10 @@ const kDatasetNames = Symbol("the names a data map has materialized");
  */
 export class DOMStringMap {
 	[kDatasetElement]: Element;
-	[kDatasetNames]: string[] = [];
+	[kDatasetNames]: string[];
 
 	constructor(element: Element) {
+		this[kDatasetNames] = [];
 		this[kDatasetElement] = element;
 	}
 
@@ -15194,21 +15606,21 @@ function noValidityFlags(): ValidityFlags {
 
 /** The ten constraints a control can fail, and whether it fails none. */
 export class ValidityState {
-	#flags: () => ValidityFlags;
+	declare [kFlags]: () => ValidityFlags;
 
 	constructor(flags: () => ValidityFlags) {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
-		this.#flags = flags;
+		this[kFlags] = flags;
 	}
 
 	get [kValidityFlags](): ValidityFlags {
-		return this.#flags();
+		return this[kFlags]();
 	}
 
 	get valid(): boolean {
-		const flags = this.#flags();
+		const flags = this[kFlags]();
 		return !VALIDITY_FLAG_NAMES.some((name) => flags[name]);
 	}
 }
@@ -15235,23 +15647,24 @@ Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, {
  * and nothing else in this DOM does.
  */
 export class CustomStateSet {
-	#states = new Set<string>();
+	declare [kStates]: Set<string>;
 
 	constructor() {
+		this[kStates] = new Set<string>();
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
 	}
 
 	get size(): number {
-		return this.#states.size;
+		return this[kStates].size;
 	}
 
 	add(value: string): CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("add needs a value");
 		}
-		this.#states.add(String(value));
+		this[kStates].add(String(value));
 		return this;
 	}
 
@@ -15259,18 +15672,18 @@ export class CustomStateSet {
 		if (arguments.length < 1) {
 			throw new TypeError("delete needs a value");
 		}
-		return this.#states.delete(String(value));
+		return this[kStates].delete(String(value));
 	}
 
 	has(value: string): boolean {
 		if (arguments.length < 1) {
 			throw new TypeError("has needs a value");
 		}
-		return this.#states.has(String(value));
+		return this[kStates].has(String(value));
 	}
 
 	clear(): void {
-		this.#states.clear();
+		this[kStates].clear();
 	}
 
 	forEach(
@@ -15280,25 +15693,25 @@ export class CustomStateSet {
 		if (typeof callback !== "function") {
 			throw new TypeError("That is not a callback");
 		}
-		for (const value of [...this.#states]) {
+		for (const value of [...this[kStates]]) {
 			callback.call(thisArg, value, value, this);
 		}
 	}
 
 	keys(): IterableIterator<string> {
-		return this.#states.values();
+		return this[kStates].values();
 	}
 
 	values(): IterableIterator<string> {
-		return this.#states.values();
+		return this[kStates].values();
 	}
 
 	entries(): IterableIterator<[string, string]> {
-		return this.#states.entries();
+		return this[kStates].entries();
 	}
 
 	[Symbol.iterator](): IterableIterator<string> {
-		return this.#states.values();
+		return this[kStates].values();
 	}
 }
 
@@ -15314,21 +15727,28 @@ Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
  */
 export class ElementInternals {
 	[kElementInternalsTarget]: Element;
-	[kFormOwner]: HTMLFormElement | null = null;
-	[kFormDisabled] = false;
-	[kSubmissionValue]: unknown = null;
-	[kValidityFlags]: ValidityFlags = noValidityFlags();
-	[kValidationMessage] = "";
-	[kValidationAnchor]: HTMLElement | null = null;
-	[kStates]: CustomStateSet | null = null;
-	#validity: ValidityState;
+	[kFormOwner]: HTMLFormElement | null;
+	[kFormDisabled]: boolean;
+	[kSubmissionValue]: unknown;
+	[kValidityFlags]: ValidityFlags;
+	[kValidationMessage]: string;
+	[kValidationAnchor]: HTMLElement | null;
+	[kStates]: CustomStateSet | null;
+	declare [kValidity]: ValidityState;
 
 	constructor(target: Element) {
+		this[kFormOwner] = null;
+		this[kFormDisabled] = false;
+		this[kSubmissionValue] = null;
+		this[kValidityFlags] = noValidityFlags();
+		this[kValidationMessage] = "";
+		this[kValidationAnchor] = null;
+		this[kStates] = null;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
 		this[kElementInternalsTarget] = target;
-		this.#validity = new ValidityState(() => this[kValidityFlags]);
+		this[kValidity] = new ValidityState(() => this[kValidityFlags]);
 	}
 
 	get shadowRoot(): ShadowRoot | null {
@@ -15340,12 +15760,12 @@ export class ElementInternals {
 	}
 
 	get form(): HTMLFormElement | null {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return formOwner(this[kElementInternalsTarget]);
 	}
 
 	get labels(): NodeList {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return labelsOf(this[kElementInternalsTarget]);
 	}
 
@@ -15362,7 +15782,7 @@ export class ElementInternals {
 		if (arguments.length < 1) {
 			throw new TypeError("setFormValue needs a value");
 		}
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		this[kSubmissionValue] =
 			value === null || value === undefined ?
 				null :
@@ -15377,7 +15797,7 @@ export class ElementInternals {
 		message?: string,
 		anchor?: HTMLElement,
 	): void {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		const given = toDictionary<Partial<ValidityFlags>>(
 			flags ?? {},
 			"A ValidityStateFlags",
@@ -15410,31 +15830,31 @@ export class ElementInternals {
 	}
 
 	get willValidate(): boolean {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return willValidate(this[kElementInternalsTarget]);
 	}
 
 	get validity(): ValidityState {
-		this.#requireFormAssociated();
-		return this.#validity;
+		this[kRequireFormAssociated]();
+		return this[kValidity];
 	}
 
 	get validationMessage(): string {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return this[kValidationMessage];
 	}
 
 	checkValidity(): boolean {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return checkValidity(this[kElementInternalsTarget]);
 	}
 
 	reportValidity(): boolean {
-		this.#requireFormAssociated();
+		this[kRequireFormAssociated]();
 		return checkValidity(this[kElementInternalsTarget]);
 	}
 
-	#requireFormAssociated(): void {
+	[kRequireFormAssociated](): void {
 		if (!isFormAssociatedCustom(this[kElementInternalsTarget])) {
 			throw domError(
 				"NotSupportedError",
@@ -15898,18 +16318,18 @@ export function createFlatTreeWalker<N>(
 class FlatWalker {
 	declare readonly root: Node;
 	currentNode: Node;
-	#dissolved: ((node: Node) => boolean) | null;
+	declare [kDissolved]: ((node: Node) => boolean) | null;
 
 	constructor(root: Node, dissolved?: (node: Node) => boolean) {
 		Object.defineProperty(this, "root", {value: root, enumerable: true});
 		this.currentNode = root;
-		this.#dissolved = dissolved ?? null;
+		this[kDissolved] = dissolved ?? null;
 	}
 
 	nextNode(): Node | null {
 		let node = this.currentNode;
 		for (;;) {
-			const firstChild = this.#firstChild(node);
+			const firstChild = this[kFirstChild](node);
 			if (firstChild !== null) {
 				if (accepts(firstChild)) {
 					this.currentNode = firstChild;
@@ -15927,7 +16347,7 @@ class FlatWalker {
 				return null;
 			}
 
-			const nextSibling = this.#nextSibling(node);
+			const nextSibling = this[kNextSibling](node);
 			if (nextSibling !== null) {
 				if (accepts(nextSibling)) {
 					this.currentNode = nextSibling;
@@ -15937,12 +16357,12 @@ class FlatWalker {
 				continue;
 			}
 
-			let parent = this.#parent(node);
+			let parent = this[kParent](node);
 			while (parent !== null && parent !== this.root) {
 				// An element's ::after follows the last of its content.
 				if (parent.nodeType === ELEMENT_NODE) {
 					const after = pseudoSlot(parent as Element, "::after");
-					if (after !== null && this.#isLastContent(node, parent as Element)) {
+					if (after !== null && this[kIsLastContent](node, parent as Element)) {
 						if (accepts(after)) {
 							this.currentNode = after;
 							return after;
@@ -15951,7 +16371,7 @@ class FlatWalker {
 						continue;
 					}
 				}
-				const parentNextSibling = this.#nextSibling(parent);
+				const parentNextSibling = this[kNextSibling](parent);
 				if (parentNextSibling !== null) {
 					if (accepts(parentNextSibling)) {
 						this.currentNode = parentNextSibling;
@@ -15960,7 +16380,7 @@ class FlatWalker {
 					node = parentNextSibling;
 					break;
 				}
-				parent = this.#parent(parent);
+				parent = this[kParent](parent);
 			}
 
 			if (parent === null || parent === this.root) {
@@ -15975,9 +16395,9 @@ class FlatWalker {
 			return null;
 		}
 		for (;;) {
-			const previousSibling = this.#previousSibling(node);
+			const previousSibling = this[kPreviousSibling](node);
 			if (previousSibling !== null) {
-				const lastDescendant = this.#lastDescendant(previousSibling);
+				const lastDescendant = this[kLastDescendant](previousSibling);
 				if (accepts(lastDescendant)) {
 					this.currentNode = lastDescendant;
 					return lastDescendant;
@@ -15985,7 +16405,7 @@ class FlatWalker {
 				node = lastDescendant;
 				continue;
 			}
-			const parent = this.#parent(node);
+			const parent = this[kParent](node);
 			if (parent === null) {
 				return null;
 			}
@@ -16003,7 +16423,7 @@ class FlatWalker {
 	parentNode(): Node | null {
 		let node: Node | null = this.currentNode;
 		while (node !== null && node !== this.root) {
-			const parent = this.#parent(node);
+			const parent = this[kParent](node);
 			if (parent !== null && accepts(parent)) {
 				this.currentNode = parent;
 				return parent;
@@ -16014,9 +16434,9 @@ class FlatWalker {
 	}
 
 	firstChild(): Node | null {
-		let child = this.#firstChild(this.currentNode);
+		let child = this[kFirstChild](this.currentNode);
 		while (child !== null && !accepts(child)) {
-			child = this.#nextSibling(child);
+			child = this[kNextSibling](child);
 		}
 		if (child === null) {
 			return null;
@@ -16026,9 +16446,9 @@ class FlatWalker {
 	}
 
 	lastChild(): Node | null {
-		let child = this.#lastChild(this.currentNode);
+		let child = this[kLastChild](this.currentNode);
 		while (child !== null && !accepts(child)) {
-			child = this.#previousSibling(child);
+			child = this[kPreviousSibling](child);
 		}
 		if (child === null) {
 			return null;
@@ -16049,9 +16469,9 @@ class FlatWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		let sibling = this.#nextSibling(this.currentNode);
+		let sibling = this[kNextSibling](this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
-			sibling = this.#nextSibling(sibling);
+			sibling = this[kNextSibling](sibling);
 		}
 		if (sibling === null) {
 			return null;
@@ -16065,9 +16485,9 @@ class FlatWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		let sibling = this.#previousSibling(this.currentNode);
+		let sibling = this[kPreviousSibling](this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
-			sibling = this.#previousSibling(sibling);
+			sibling = this[kPreviousSibling](sibling);
 		}
 		if (sibling === null) {
 			return null;
@@ -16081,21 +16501,21 @@ class FlatWalker {
 	   how a <slot> disappears from a box tree while its projected content flows
 	   through. */
 
-	#isDissolved(node: Node): boolean {
+	[kIsDissolved](node: Node): boolean {
 		return (
-			this.#dissolved !== null &&
+			this[kDissolved] !== null &&
 			node.nodeType === ELEMENT_NODE &&
-			this.#dissolved(node)
+			this[kDissolved](node)
 		);
 	}
 
 	/** The first undissolved node at a node's position, or null if it has none. */
-	#head(node: Node): Node | null {
-		if (!this.#isDissolved(node)) {
+	[kHead](node: Node): Node | null {
+		if (!this[kIsDissolved](node)) {
 			return node;
 		}
 		for (let child = composedFirstChild(node); child !== null;) {
-			const head = this.#head(child);
+			const head = this[kHead](child);
 			if (head !== null) {
 				return head;
 			}
@@ -16105,12 +16525,12 @@ class FlatWalker {
 	}
 
 	/** Mirror of #head: the last undissolved node at a node's position. */
-	#tail(node: Node): Node | null {
-		if (!this.#isDissolved(node)) {
+	[kTail](node: Node): Node | null {
+		if (!this[kIsDissolved](node)) {
 			return node;
 		}
 		for (let child = composedLastChild(node); child !== null;) {
-			const tail = this.#tail(child);
+			const tail = this[kTail](child);
 			if (tail !== null) {
 				return tail;
 			}
@@ -16119,9 +16539,9 @@ class FlatWalker {
 		return null;
 	}
 
-	#firstChild(node: Node): Node | null {
+	[kFirstChild](node: Node): Node | null {
 		for (let child = composedFirstChild(node); child !== null;) {
-			const head = this.#head(child);
+			const head = this[kHead](child);
 			if (head !== null) {
 				return head;
 			}
@@ -16130,9 +16550,9 @@ class FlatWalker {
 		return null;
 	}
 
-	#lastChild(node: Node): Node | null {
+	[kLastChild](node: Node): Node | null {
 		for (let child = composedLastChild(node); child !== null;) {
-			const tail = this.#tail(child);
+			const tail = this[kTail](child);
 			if (tail !== null) {
 				return tail;
 			}
@@ -16141,7 +16561,7 @@ class FlatWalker {
 		return null;
 	}
 
-	#nextSibling(node: Node): Node | null {
+	[kNextSibling](node: Node): Node | null {
 		let current = node;
 		for (;;) {
 			for (
@@ -16149,7 +16569,7 @@ class FlatWalker {
 				sibling !== null;
 				sibling = composedNextSibling(sibling)
 			) {
-				const head = this.#head(sibling);
+				const head = this[kHead](sibling);
 				if (head !== null) {
 					return head;
 				}
@@ -16157,14 +16577,14 @@ class FlatWalker {
 			// Out of composed siblings: a dissolved parent's siblings continue
 			// the sequence.
 			const parent = composedParentNode(current);
-			if (parent === null || !this.#isDissolved(parent)) {
+			if (parent === null || !this[kIsDissolved](parent)) {
 				return null;
 			}
 			current = parent;
 		}
 	}
 
-	#previousSibling(node: Node): Node | null {
+	[kPreviousSibling](node: Node): Node | null {
 		let current = node;
 		for (;;) {
 			for (
@@ -16172,33 +16592,33 @@ class FlatWalker {
 				sibling !== null;
 				sibling = composedPreviousSibling(sibling)
 			) {
-				const tail = this.#tail(sibling);
+				const tail = this[kTail](sibling);
 				if (tail !== null) {
 					return tail;
 				}
 			}
 			const parent = composedParentNode(current);
-			if (parent === null || !this.#isDissolved(parent)) {
+			if (parent === null || !this[kIsDissolved](parent)) {
 				return null;
 			}
 			current = parent;
 		}
 	}
 
-	#parent(node: Node): Node | null {
+	[kParent](node: Node): Node | null {
 		let parent = composedParentNode(node);
-		while (parent !== null && this.#isDissolved(parent)) {
+		while (parent !== null && this[kIsDissolved](parent)) {
 			parent = composedParentNode(parent);
 		}
 		return parent;
 	}
 
-	#lastDescendant(node: Node): Node {
+	[kLastDescendant](node: Node): Node {
 		let current = node;
 		for (
-			let child = this.#lastChild(current);
+			let child = this[kLastChild](current);
 			child !== null;
-			child = this.#lastChild(current)
+			child = this[kLastChild](current)
 		) {
 			current = child;
 		}
@@ -16206,7 +16626,7 @@ class FlatWalker {
 	}
 
 	/** Whether a node ends an element's content, ::after aside. */
-	#isLastContent(node: Node, element: Element): boolean {
+	[kIsLastContent](node: Node, element: Element): boolean {
 		const shadow = element[kShadowRoot];
 		const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
 		if (last === null) {
@@ -16606,25 +17026,47 @@ function isHTMLDocument(document: Document): boolean {
 }
 
 export class Document extends Node {
-	[kDocumentURL] = "about:blank";
-	[kMode]: "no-quirks" | "quirks" | "limited-quirks" = "no-quirks";
-	[kType]: "xml" | "html" = "xml";
-	[kContentType] = "application/xml";
-	[kEncoding] = "UTF-8";
-	[kIdMap] = new Map<string, Element[]>();
-	[kNodeIterators]: Array<WeakRef<NodeIterator>> = [];
-	[kSelection]: Selection | null = null;
-	[kSelectionChangeScheduled] = false;
-	[kNwsapi]: ReturnType<typeof NWSAPI> | null = null;
-	[kActiveElement]: Element | null = null;
-	[kDefaultView]: object | null = null;
-	[kStyleElements] = 0;
-	[kChildren]: HTMLCollection | null = null;
-	[kTopLayer] = new Set<Element>();
+	constructor(...args: ConstructorParameters<typeof Node>) {
+		super(...args);
+		this[kDocumentURL] = "about:blank";
+		this[kMode] = "no-quirks";
+		this[kType] = "xml";
+		this[kContentType] = "application/xml";
+		this[kEncoding] = "UTF-8";
+		this[kIdMap] = new Map<string, Element[]>();
+		this[kNodeIterators] = [];
+		this[kSelection] = null;
+		this[kSelectionChangeScheduled] = false;
+		this[kNwsapi] = null;
+		this[kActiveElement] = null;
+		this[kDefaultView] = null;
+		this[kStyleElements] = 0;
+		this[kChildren] = null;
+		this[kTopLayer] = new Set<Element>();
+		this[kPopoverShowing] = false;
+		this[kPopoverHidingCount] = 0;
+		this[kImplementation] = null;
+	}
+
+	[kDocumentURL]: string;
+	[kMode]: "no-quirks" | "quirks" | "limited-quirks";
+	[kType]: "xml" | "html";
+	[kContentType]: string;
+	[kEncoding]: string;
+	[kIdMap]: Map<string, Element[]>;
+	[kNodeIterators]: Array<WeakRef<NodeIterator>>;
+	[kSelection]: Selection | null;
+	[kSelectionChangeScheduled]: boolean;
+	[kNwsapi]: ReturnType<typeof NWSAPI> | null;
+	[kActiveElement]: Element | null;
+	[kDefaultView]: object | null;
+	[kStyleElements]: number;
+	[kChildren]: HTMLCollection | null;
+	[kTopLayer]: Set<Element>;
 	// The reentrancy guards the popover algorithms hold on the document: one
 	// popover opening at a time, and a count of the ones closing under it.
-	[kPopoverShowing] = false;
-	[kPopoverHidingCount] = 0;
+	[kPopoverShowing]: boolean;
+	[kPopoverHidingCount]: number;
 
 	/** Parse a document, declarative shadow roots included. */
 	static parseHTMLUnsafe(html: string): Document {
@@ -16668,15 +17110,15 @@ export class Document extends Node {
 	}
 
 	get implementation(): DOMImplementation {
-		let implementation = this.#implementation;
+		let implementation = this[kImplementation];
 		if (implementation === null) {
 			implementation = new DOMImplementation(this);
-			this.#implementation = implementation;
+			this[kImplementation] = implementation;
 		}
 		return implementation;
 	}
 
-	#implementation: DOMImplementation | null = null;
+	declare [kImplementation]: DOMImplementation | null;
 
 	get doctype(): DocumentType | null {
 		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
@@ -17274,10 +17716,10 @@ function removeIdEntry(document: Document, id: string, element: Element): void {
 /* ------------------------------------------------------------ implementation */
 
 export class DOMImplementation {
-	#document: Document;
+	declare [kDocument]: Document;
 
 	constructor(document: Document) {
-		this.#document = document;
+		this[kDocument] = document;
 	}
 
 	createDocumentType(
@@ -17291,7 +17733,7 @@ export class DOMImplementation {
 		const name = String(qualifiedName);
 		validateDoctypeName(name);
 		const doctype = new DocumentType(name, String(publicId), String(systemId));
-		doctype[kDocument] = this.#document;
+		doctype[kDocument] = this[kDocument];
 		return doctype;
 	}
 
@@ -18773,7 +19215,7 @@ function insertIntoRange(range: Range, node: Node): void {
 }
 
 export class Range extends AbstractRange {
-	[kRangeSelection]: Selection | null = null;
+	[kRangeSelection]: Selection | null;
 
 	static readonly START_TO_START = START_TO_START;
 	static readonly START_TO_END = START_TO_END;
@@ -18783,6 +19225,7 @@ export class Range extends AbstractRange {
 	constructor() {
 		const document = currentDocument();
 		super(document, 0, document, 0);
+		this[kRangeSelection] = null;
 		registerLiveRange(this);
 	}
 
@@ -19285,28 +19728,32 @@ function createSelection(document: Document): Selection {
 }
 
 export class Selection {
-	#document: Document;
+	declare [kDocument]: Document;
 	/** The range the Range API sees, which lives in a single tree. */
-	#range: Range | null = null;
+	declare [kRange]: Range | null;
 	/**
 	 * The composed boundary points, in tree order and each held as a collapsed
 	 * live range so that a tree mutation moves it. A selection that crosses a
 	 * shadow boundary keeps both of these while its range collapses.
 	 */
-	#start: Range | null = null;
-	#end: Range | null = null;
-	#direction: "forwards" | "backwards" | "directionless" = "directionless";
+	declare [kStart]: Range | null;
+	declare [kEnd]: Range | null;
+	declare [kDirection]: "forwards" | "backwards" | "directionless";
 
 	constructor() {
+		this[kRange] = null;
+		this[kStart] = null;
+		this[kEnd] = null;
+		this[kDirection] = "directionless";
 		if (selectionUnderConstruction === null) {
 			throw new TypeError("Selection cannot be constructed");
 		}
-		this.#document = selectionUnderConstruction;
+		this[kDocument] = selectionUnderConstruction;
 	}
 
 	/** Whether a node is in the selection's document, shadow trees included. */
-	#inDocument(node: Node): boolean {
-		return shadowIncludingRoot(node) === this.#document;
+	[kInDocument](node: Node): boolean {
+		return shadowIncludingRoot(node) === this[kDocument];
 	}
 
 	/**
@@ -19314,36 +19761,36 @@ export class Selection {
 	 * its range is in the document, a shadow tree of the document included. A
 	 * range that has left the document is not one the selection answers with.
 	 */
-	#documentRange(): Range | null {
-		const range = this.#range;
+	[kDocumentRange](): Range | null {
+		const range = this[kRange];
 		if (range === null) {
 			return null;
 		}
-		return this.#inDocument(range[kStartNode]) ? range : null;
+		return this[kInDocument](range[kStartNode]) ? range : null;
 	}
 
-	#anchorPoint(): [Node, number] | null {
-		const range = this.#range;
+	[kAnchorPoint](): [Node, number] | null {
+		const range = this[kRange];
 		if (range === null) {
 			return null;
 		}
-		return this.#direction === "forwards" ?
+		return this[kDirection] === "forwards" ?
 				[range[kStartNode], range[kStartOffset]] :
 				[range[kEndNode], range[kEndOffset]];
 	}
 
-	#focusPoint(): [Node, number] | null {
-		const range = this.#range;
+	[kFocusPoint](): [Node, number] | null {
+		const range = this[kRange];
 		if (range === null) {
 			return null;
 		}
-		return this.#direction === "forwards" ?
+		return this[kDirection] === "forwards" ?
 				[range[kEndNode], range[kEndOffset]] :
 				[range[kStartNode], range[kStartOffset]];
 	}
 
 	/** The range the Range API builds from an ordered pair of points. */
-	#rangeFor(start: [Node, number], end: [Node, number]): Range {
+	[kRangeFor](start: [Node, number], end: [Node, number]): Range {
 		const range = new Range();
 		setRangeBoundary(range, start[0], start[1], true);
 		setRangeBoundary(range, end[0], end[1], false);
@@ -19351,26 +19798,26 @@ export class Selection {
 	}
 
 	/** Take a range, and the composed points it was built from, as the own. */
-	#associate(
+	[kAssociate](
 		range: Range,
 		anchor: [Node, number],
 		focus: [Node, number],
 		direction: "forwards" | "backwards" | "directionless",
 	): void {
-		const previous = this.#range;
+		const previous = this[kRange];
 		if (previous !== null) {
 			previous[kRangeSelection] = null;
 		}
-		this.#range = range;
+		this[kRange] = range;
 		range[kRangeSelection] = this;
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 		const start = anchorFirst ? anchor : focus;
 		const end = anchorFirst ? focus : anchor;
-		this.#start = livePoint(start[0], start[1]);
-		this.#end = livePoint(end[0], end[1]);
-		this.#direction = direction;
-		scheduleSelectionChange(this.#document);
+		this[kStart] = livePoint(start[0], start[1]);
+		this[kEnd] = livePoint(end[0], end[1]);
+		this[kDirection] = direction;
+		scheduleSelectionChange(this[kDocument]);
 	}
 
 	/**
@@ -19379,34 +19826,34 @@ export class Selection {
 	 * the document takes the selection with it.
 	 */
 	[kSelectionChanged](which: "start" | "end" | "both"): void {
-		const range = this.#range;
+		const range = this[kRange];
 		if (range === null) {
 			return;
 		}
-		if (!this.#inDocument(range[kStartNode])) {
+		if (!this[kInDocument](range[kStartNode])) {
 			this.removeAllRanges();
 			return;
 		}
 		const start = livePoint(range[kStartNode], range[kStartOffset]);
 		const end = livePoint(range[kEndNode], range[kEndOffset]);
-		if (which === "both" || this.#start === null || this.#end === null) {
-			this.#start = start;
-			this.#end = end;
+		if (which === "both" || this[kStart] === null || this[kEnd] === null) {
+			this[kStart] = start;
+			this[kEnd] = end;
 		} else if (which === "start") {
-			this.#start = start;
-			if (this.#composedOrder(start, this.#end) === AFTER) {
-				this.#end = start;
+			this[kStart] = start;
+			if (this[kComposedOrder](start, this[kEnd]) === AFTER) {
+				this[kEnd] = start;
 			}
 		} else {
-			this.#end = end;
-			if (this.#composedOrder(end, this.#start) === BEFORE) {
-				this.#start = end;
+			this[kEnd] = end;
+			if (this[kComposedOrder](end, this[kStart]) === BEFORE) {
+				this[kStart] = end;
 			}
 		}
-		scheduleSelectionChange(this.#document);
+		scheduleSelectionChange(this[kDocument]);
 	}
 
-	#composedOrder(point: Range, other: Range): number {
+	[kComposedOrder](point: Range, other: Range): number {
 		return compareComposedPoints(
 			point[kStartNode],
 			point[kStartOffset],
@@ -19416,48 +19863,48 @@ export class Selection {
 	}
 
 	get anchorNode(): Node | null {
-		const anchor = this.#anchorPoint();
-		if (anchor === null || !this.#inDocument(anchor[0])) {
+		const anchor = this[kAnchorPoint]();
+		if (anchor === null || !this[kInDocument](anchor[0])) {
 			return null;
 		}
 		return anchor[0];
 	}
 
 	get anchorOffset(): number {
-		const anchor = this.#anchorPoint();
-		if (anchor === null || !this.#inDocument(anchor[0])) {
+		const anchor = this[kAnchorPoint]();
+		if (anchor === null || !this[kInDocument](anchor[0])) {
 			return 0;
 		}
 		return anchor[1];
 	}
 
 	get focusNode(): Node | null {
-		const focus = this.#focusPoint();
-		if (focus === null || !this.#inDocument(focus[0])) {
+		const focus = this[kFocusPoint]();
+		if (focus === null || !this[kInDocument](focus[0])) {
 			return null;
 		}
 		return focus[0];
 	}
 
 	get focusOffset(): number {
-		const focus = this.#focusPoint();
-		if (focus === null || !this.#inDocument(focus[0])) {
+		const focus = this[kFocusPoint]();
+		if (focus === null || !this[kInDocument](focus[0])) {
 			return 0;
 		}
 		return focus[1];
 	}
 
 	get isCollapsed(): boolean {
-		const range = this.#range;
+		const range = this[kRange];
 		return range === null || range.collapsed;
 	}
 
 	get rangeCount(): number {
-		return this.#documentRange() === null ? 0 : 1;
+		return this[kDocumentRange]() === null ? 0 : 1;
 	}
 
 	get type(): string {
-		const range = this.#documentRange();
+		const range = this[kDocumentRange]();
 		if (range === null) {
 			return "None";
 		}
@@ -19465,13 +19912,13 @@ export class Selection {
 	}
 
 	get direction(): string {
-		if (this.#range === null) {
+		if (this[kRange] === null) {
 			return "none";
 		}
-		if (this.#direction === "forwards") {
+		if (this[kDirection] === "forwards") {
 			return "forward";
 		}
-		if (this.#direction === "backwards") {
+		if (this[kDirection] === "backwards") {
 			return "backward";
 		}
 		return "none";
@@ -19481,7 +19928,7 @@ export class Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("getRangeAt needs an index");
 		}
-		const range = this.#documentRange();
+		const range = this[kDocumentRange]();
 		if (toUnsignedLong(index) !== 0 || range === null) {
 			throw indexSizeError("The selection has no range at that index");
 		}
@@ -19495,13 +19942,13 @@ export class Selection {
 		if (!(range instanceof Range)) {
 			throw new TypeError("That is not a range");
 		}
-		if (!this.#inDocument(range[kStartNode])) {
+		if (!this[kInDocument](range[kStartNode])) {
 			return;
 		}
 		if (this.rangeCount !== 0) {
 			return;
 		}
-		this.#associate(
+		this[kAssociate](
 			range,
 			[range[kStartNode], range[kStartOffset]],
 			[range[kEndNode], range[kEndOffset]],
@@ -19516,23 +19963,23 @@ export class Selection {
 		if (!(range instanceof Range)) {
 			throw new TypeError("That is not a range");
 		}
-		if (range !== this.#range) {
+		if (range !== this[kRange]) {
 			throw notFoundError("That range is not the selection's range");
 		}
 		this.removeAllRanges();
 	}
 
 	removeAllRanges(): void {
-		const range = this.#range;
+		const range = this[kRange];
 		if (range === null) {
 			return;
 		}
 		range[kRangeSelection] = null;
-		this.#range = null;
-		this.#start = null;
-		this.#end = null;
-		this.#direction = "directionless";
-		scheduleSelectionChange(this.#document);
+		this[kRange] = null;
+		this[kStart] = null;
+		this[kEnd] = null;
+		this[kDirection] = "directionless";
+		scheduleSelectionChange(this[kDocument]);
 	}
 
 	empty(): void {
@@ -19556,8 +20003,8 @@ export class Selection {
 				roots.push(root);
 			}
 		}
-		const start = this.#start;
-		const end = this.#end;
+		const start = this[kStart];
+		const end = this[kEnd];
 		if (start === null || end === null) {
 			return [];
 		}
@@ -19625,15 +20072,15 @@ export class Selection {
 		if (at > nodeLength(node)) {
 			throw indexSizeError("The offset is past the end of the node");
 		}
-		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) {
+		if (!isShadowIncludingInclusiveAncestor(this[kDocument], node)) {
 			return;
 		}
 		const point: [Node, number] = [node, at];
-		this.#associate(
-			this.#rangeFor(point, point),
+		this[kAssociate](
+			this[kRangeFor](point, point),
 			point,
 			point,
-			this.#direction,
+			this[kDirection],
 		);
 	}
 
@@ -19645,30 +20092,30 @@ export class Selection {
 	}
 
 	collapseToStart(): void {
-		const range = this.#range;
+		const range = this[kRange];
 		if (range === null) {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
 		const point: [Node, number] = [range[kStartNode], range[kStartOffset]];
-		this.#associate(
-			this.#rangeFor(point, point),
+		this[kAssociate](
+			this[kRangeFor](point, point),
 			point,
 			point,
-			this.#direction,
+			this[kDirection],
 		);
 	}
 
 	collapseToEnd(): void {
-		const range = this.#range;
+		const range = this[kRange];
 		if (range === null) {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
 		const point: [Node, number] = [range[kEndNode], range[kEndOffset]];
-		this.#associate(
-			this.#rangeFor(point, point),
+		this[kAssociate](
+			this[kRangeFor](point, point),
 			point,
 			point,
-			this.#direction,
+			this[kDirection],
 		);
 	}
 
@@ -19679,20 +20126,20 @@ export class Selection {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) {
+		if (!isShadowIncludingInclusiveAncestor(this[kDocument], node)) {
 			return;
 		}
-		if (this.#range === null) {
+		if (this[kRange] === null) {
 			throw domError("InvalidStateError", "The selection has no range");
 		}
-		const anchor = this.#anchorPoint() as [Node, number];
+		const anchor = this[kAnchorPoint]() as [Node, number];
 		const focus: [Node, number] = [node, toUnsignedLong(offset)];
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 		const range = anchorFirst ?
-				this.#rangeFor(anchor, focus) :
-				this.#rangeFor(focus, anchor);
-		this.#associate(
+				this[kRangeFor](anchor, focus) :
+				this[kRangeFor](focus, anchor);
+		this[kAssociate](
 			range,
 			anchor,
 			focus,
@@ -19718,8 +20165,8 @@ export class Selection {
 			throw indexSizeError("The offset is past the end of the node");
 		}
 		if (
-			!isShadowIncludingInclusiveAncestor(this.#document, anchorNode) ||
-			!isShadowIncludingInclusiveAncestor(this.#document, focusNode)
+			!isShadowIncludingInclusiveAncestor(this[kDocument], anchorNode) ||
+			!isShadowIncludingInclusiveAncestor(this[kDocument], focusNode)
 		) {
 			return;
 		}
@@ -19728,9 +20175,9 @@ export class Selection {
 		const anchorFirst =
 			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
 		const range = anchorFirst ?
-				this.#rangeFor(anchor, focus) :
-				this.#rangeFor(focus, anchor);
-		this.#associate(
+				this[kRangeFor](anchor, focus) :
+				this[kRangeFor](focus, anchor);
+		this[kAssociate](
 			range,
 			anchor,
 			focus,
@@ -19751,7 +20198,7 @@ export class Selection {
 				"A boundary point cannot be a doctype",
 			);
 		}
-		if (getRoot(node) !== this.#document) {
+		if (getRoot(node) !== this[kDocument]) {
 			return;
 		}
 		let childCount = 0;
@@ -19760,11 +20207,11 @@ export class Selection {
 		}
 		const anchor: [Node, number] = [node, 0];
 		const focus: [Node, number] = [node, childCount];
-		this.#associate(this.#rangeFor(anchor, focus), anchor, focus, "forwards");
+		this[kAssociate](this[kRangeFor](anchor, focus), anchor, focus, "forwards");
 	}
 
 	deleteFromDocument(): void {
-		const range = this.#documentRange();
+		const range = this[kDocumentRange]();
 		if (range === null) {
 			return;
 		}
@@ -19778,11 +20225,11 @@ export class Selection {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		const range = this.#range;
-		if (range === null || getRoot(node) !== this.#document) {
+		const range = this[kRange];
+		if (range === null || getRoot(node) !== this[kDocument]) {
 			return false;
 		}
-		if (rangeRoot(range) !== this.#document) {
+		if (rangeRoot(range) !== this[kDocument]) {
 			return false;
 		}
 		const length = nodeLength(node);
@@ -19802,7 +20249,7 @@ export class Selection {
 	}
 
 	toString(): string {
-		const range = this.#range;
+		const range = this[kRange];
 		return range === null ? "" : range.toString();
 	}
 }
@@ -19903,65 +20350,67 @@ function precedingWithin(node: Node, root: Node): Node | null {
 const kPreRemove = Symbol("node iterator pre-removing steps");
 
 export class NodeIterator {
-	#root: Node;
-	#reference: Node;
-	#pointerBefore = true;
-	#whatToShow: number;
-	#filter: NodeFilterInput;
-	#active = {value: false};
+	declare [kRoot]: Node;
+	declare [kReference]: Node;
+	declare [kPointerBefore]: boolean;
+	declare [kWhatToShow]: number;
+	declare [kFilter]: NodeFilterInput;
+	declare [kActive]: {value: boolean};
 
 	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
-		this.#root = root;
-		this.#reference = root;
-		this.#whatToShow = whatToShow;
-		this.#filter = filter ?? null;
+		this[kPointerBefore] = true;
+		this[kActive] = {value: false};
+		this[kRoot] = root;
+		this[kReference] = root;
+		this[kWhatToShow] = whatToShow;
+		this[kFilter] = filter ?? null;
 	}
 
 	get root(): Node {
-		return this.#root;
+		return this[kRoot];
 	}
 
 	get referenceNode(): Node {
-		return this.#reference;
+		return this[kReference];
 	}
 
 	get pointerBeforeReferenceNode(): boolean {
-		return this.#pointerBefore;
+		return this[kPointerBefore];
 	}
 
 	get whatToShow(): number {
-		return this.#whatToShow;
+		return this[kWhatToShow];
 	}
 
 	get filter(): NodeFilterInput {
-		return this.#filter;
+		return this[kFilter];
 	}
 
 	nextNode(): Node | null {
-		return this.#traverse(true);
+		return this[kTraverse](true);
 	}
 
 	previousNode(): Node | null {
-		return this.#traverse(false);
+		return this[kTraverse](false);
 	}
 
 	detach(): void {
 		// The spec keeps this as a no-op.
 	}
 
-	#traverse(forward: boolean): Node | null {
-		let node: Node | null = this.#reference;
-		let before = this.#pointerBefore;
+	[kTraverse](forward: boolean): Node | null {
+		let node: Node | null = this[kReference];
+		let before = this[kPointerBefore];
 		const state = {
-			root: this.#root,
-			whatToShow: this.#whatToShow,
-			filter: this.#filter,
-			active: this.#active,
+			root: this[kRoot],
+			whatToShow: this[kWhatToShow],
+			filter: this[kFilter],
+			active: this[kActive],
 		};
 		for (;;) {
 			if (forward) {
 				if (!before) {
-					node = followingWithin(node as Node, this.#root);
+					node = followingWithin(node as Node, this[kRoot]);
 					if (node === null) {
 						return null;
 					}
@@ -19970,7 +20419,7 @@ export class NodeIterator {
 				}
 			} else {
 				if (before) {
-					node = precedingWithin(node as Node, this.#root);
+					node = precedingWithin(node as Node, this[kRoot]);
 					if (node === null) {
 						return null;
 					}
@@ -19982,9 +20431,9 @@ export class NodeIterator {
 				// A filter that removed the very node it was filtering leaves
 				// the reference where the pre-removing steps put it: a node
 				// outside the root can never be the reference.
-				if (isInclusiveAncestor(this.#root, node as Node)) {
-					this.#reference = node as Node;
-					this.#pointerBefore = before;
+				if (isInclusiveAncestor(this[kRoot], node as Node)) {
+					this[kReference] = node as Node;
+					this[kPointerBefore] = before;
 				}
 				break;
 			}
@@ -19995,32 +20444,32 @@ export class NodeIterator {
 	/** The spec's NodeIterator pre-removing steps. */
 	[kPreRemove](toBeRemoved: Node): void {
 		if (
-			!isInclusiveAncestor(toBeRemoved, this.#reference) ||
-			isInclusiveAncestor(toBeRemoved, this.#root)
+			!isInclusiveAncestor(toBeRemoved, this[kReference]) ||
+			isInclusiveAncestor(toBeRemoved, this[kRoot])
 		) {
 			return;
 		}
-		if (this.#pointerBefore) {
-			let next = followingWithin(toBeRemoved, this.#root);
+		if (this[kPointerBefore]) {
+			let next = followingWithin(toBeRemoved, this[kRoot]);
 			while (next !== null && isInclusiveAncestor(toBeRemoved, next)) {
-				next = followingWithin(next, this.#root);
+				next = followingWithin(next, this[kRoot]);
 			}
 			if (next !== null) {
-				this.#reference = next;
+				this[kReference] = next;
 				return;
 			}
-			this.#pointerBefore = false;
+			this[kPointerBefore] = false;
 		}
 		const previous = toBeRemoved[kPrevious];
 		if (previous === null) {
-			this.#reference = toBeRemoved[kParent] as Node;
+			this[kReference] = toBeRemoved[kParent] as Node;
 			return;
 		}
 		let last: Node = previous;
 		while (last[kLastChild] !== null) {
 			last = last[kLastChild] as Node;
 		}
-		this.#reference = last;
+		this[kReference] = last;
 	}
 }
 
@@ -20034,62 +20483,63 @@ Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
 });
 
 export class TreeWalker {
-	#root: Node;
-	#current: Node;
-	#whatToShow: number;
-	#filter: NodeFilterInput;
-	#active = {value: false};
+	declare [kRoot]: Node;
+	declare [kCurrent]: Node;
+	declare [kWhatToShow]: number;
+	declare [kFilter]: NodeFilterInput;
+	declare [kActive]: {value: boolean};
 
 	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
-		this.#root = root;
-		this.#current = root;
-		this.#whatToShow = whatToShow;
-		this.#filter = filter ?? null;
+		this[kActive] = {value: false};
+		this[kRoot] = root;
+		this[kCurrent] = root;
+		this[kWhatToShow] = whatToShow;
+		this[kFilter] = filter ?? null;
 	}
 
 	get root(): Node {
-		return this.#root;
+		return this[kRoot];
 	}
 
 	get whatToShow(): number {
-		return this.#whatToShow;
+		return this[kWhatToShow];
 	}
 
 	get filter(): NodeFilterInput {
-		return this.#filter;
+		return this[kFilter];
 	}
 
 	get currentNode(): Node {
-		return this.#current;
+		return this[kCurrent];
 	}
 
 	set currentNode(node: Node) {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		this.#current = node;
+		this[kCurrent] = node;
 	}
 
-	get #state(): {
+	get [kState](): {
 		root: Node;
 		whatToShow: number;
 		filter: NodeFilterInput;
 		active: {value: boolean};
 	} {
 		return {
-			root: this.#root,
-			whatToShow: this.#whatToShow,
-			filter: this.#filter,
-			active: this.#active,
+			root: this[kRoot],
+			whatToShow: this[kWhatToShow],
+			filter: this[kFilter],
+			active: this[kActive],
 		};
 	}
 
 	parentNode(): Node | null {
-		let node: Node | null = this.#current;
-		while (node !== null && node !== this.#root) {
+		let node: Node | null = this[kCurrent];
+		while (node !== null && node !== this[kRoot]) {
 			node = node[kParent];
-			if (node !== null && filterNode(this.#state, node) === FILTER_ACCEPT) {
-				this.#current = node;
+			if (node !== null && filterNode(this[kState], node) === FILTER_ACCEPT) {
+				this[kCurrent] = node;
 				return node;
 			}
 		}
@@ -20097,45 +20547,45 @@ export class TreeWalker {
 	}
 
 	firstChild(): Node | null {
-		return this.#traverseChildren(true);
+		return this[kTraverseChildren](true);
 	}
 
 	lastChild(): Node | null {
-		return this.#traverseChildren(false);
+		return this[kTraverseChildren](false);
 	}
 
 	previousSibling(): Node | null {
-		return this.#traverseSiblings(false);
+		return this[kTraverseSiblings](false);
 	}
 
 	nextSibling(): Node | null {
-		return this.#traverseSiblings(true);
+		return this[kTraverseSiblings](true);
 	}
 
 	previousNode(): Node | null {
-		let node = this.#current;
-		while (node !== this.#root) {
+		let node = this[kCurrent];
+		while (node !== this[kRoot]) {
 			let sibling = node[kPrevious];
 			while (sibling !== null) {
 				node = sibling;
-				let result = filterNode(this.#state, node);
+				let result = filterNode(this[kState], node);
 				while (result !== FILTER_REJECT && node[kLastChild] !== null) {
 					node = node[kLastChild] as Node;
-					result = filterNode(this.#state, node);
+					result = filterNode(this[kState], node);
 				}
 				if (result === FILTER_ACCEPT) {
-					this.#current = node;
+					this[kCurrent] = node;
 					return node;
 				}
 				sibling = node[kPrevious];
 			}
 			const parent = node[kParent];
-			if (node === this.#root || parent === null) {
+			if (node === this[kRoot] || parent === null) {
 				return null;
 			}
 			node = parent;
-			if (filterNode(this.#state, node) === FILTER_ACCEPT) {
-				this.#current = node;
+			if (filterNode(this[kState], node) === FILTER_ACCEPT) {
+				this[kCurrent] = node;
 				return node;
 			}
 		}
@@ -20143,21 +20593,21 @@ export class TreeWalker {
 	}
 
 	nextNode(): Node | null {
-		let node = this.#current;
+		let node = this[kCurrent];
 		let result = FILTER_ACCEPT;
 		for (;;) {
 			while (result !== FILTER_REJECT && node[kFirstChild] !== null) {
 				node = node[kFirstChild] as Node;
-				result = filterNode(this.#state, node);
+				result = filterNode(this[kState], node);
 				if (result === FILTER_ACCEPT) {
-					this.#current = node;
+					this[kCurrent] = node;
 					return node;
 				}
 			}
 			let sibling: Node | null = null;
 			let temporary: Node | null = node;
 			while (temporary !== null) {
-				if (temporary === this.#root) {
+				if (temporary === this[kRoot]) {
 					return null;
 				}
 				sibling = temporary[kNext];
@@ -20170,22 +20620,22 @@ export class TreeWalker {
 				return null;
 			}
 			node = sibling;
-			result = filterNode(this.#state, node);
+			result = filterNode(this[kState], node);
 			if (result === FILTER_ACCEPT) {
-				this.#current = node;
+				this[kCurrent] = node;
 				return node;
 			}
 		}
 	}
 
-	#traverseChildren(first: boolean): Node | null {
+	[kTraverseChildren](first: boolean): Node | null {
 		let node: Node | null = first ?
-			this.#current[kFirstChild] :
-			this.#current[kLastChild];
+			this[kCurrent][kFirstChild] :
+			this[kCurrent][kLastChild];
 		while (node !== null) {
-			const result = filterNode(this.#state, node);
+			const result = filterNode(this[kState], node);
 			if (result === FILTER_ACCEPT) {
-				this.#current = node;
+				this[kCurrent] = node;
 				return node;
 			}
 			if (result === FILTER_SKIP) {
@@ -20204,8 +20654,8 @@ export class TreeWalker {
 				const parent: Node | null = node[kParent];
 				if (
 					parent === null ||
-					parent === this.#root ||
-					parent === this.#current
+					parent === this[kRoot] ||
+					parent === this[kCurrent]
 				) {
 					return null;
 				}
@@ -20215,18 +20665,18 @@ export class TreeWalker {
 		return null;
 	}
 
-	#traverseSiblings(next: boolean): Node | null {
-		let node = this.#current;
-		if (node === this.#root) {
+	[kTraverseSiblings](next: boolean): Node | null {
+		let node = this[kCurrent];
+		if (node === this[kRoot]) {
 			return null;
 		}
 		for (;;) {
 			let sibling = next ? node[kNext] : node[kPrevious];
 			while (sibling !== null) {
 				node = sibling;
-				const result = filterNode(this.#state, node);
+				const result = filterNode(this[kState], node);
 				if (result === FILTER_ACCEPT) {
-					this.#current = node;
+					this[kCurrent] = node;
 					return node;
 				}
 				sibling = next ? node[kFirstChild] : node[kLastChild];
@@ -20235,11 +20685,11 @@ export class TreeWalker {
 				}
 			}
 			const parent = node[kParent];
-			if (parent === null || parent === this.#root) {
+			if (parent === null || parent === this[kRoot]) {
 				return null;
 			}
 			node = parent;
-			if (filterNode(this.#state, node) === FILTER_ACCEPT) {
+			if (filterNode(this[kState], node) === FILTER_ACCEPT) {
 				return null;
 			}
 		}
