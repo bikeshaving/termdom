@@ -13,7 +13,9 @@ function documentWindow(html: string) {
 }
 
 test("inspectElement formats basic elements", () => {
-	const dom = documentWindow(`<div id="test" class="container">Hello</div>`);
+	const dom = documentWindow(
+		"<div id=\"test\" class=\"container\">Hello</div>",
+	);
 	const div = dom.window.document.getElementById("test");
 
 	const output = inspectElement(div!, {colorize: false});
@@ -61,7 +63,7 @@ test("inspectElement respects maxDepth", () => {
 
 test("inspectElement compact mode", () => {
 	const dom = documentWindow(
-		`<div><span>A</span><span>B</span><span>C</span></div>`,
+		"<div><span>A</span><span>B</span><span>C</span></div>",
 	);
 	const div = dom.window.document.querySelector("div");
 
@@ -72,7 +74,7 @@ test("inspectElement compact mode", () => {
 
 test("inspectElement shows important attributes", () => {
 	const dom = documentWindow(
-		`<input type="text" name="username" value="john" placeholder="Enter name">`,
+		"<input type=\"text\" name=\"username\" value=\"john\" placeholder=\"Enter name\">",
 	);
 	const input = dom.window.document.querySelector("input");
 
@@ -86,7 +88,7 @@ test("inspectElement shows important attributes", () => {
 
 test("inspectElement handles self-closing tags", () => {
 	const dom = documentWindow(
-		`<div><img src="test.jpg" alt="Test"><br><hr></div>`,
+		"<div><img src=\"test.jpg\" alt=\"Test\"><br><hr></div>",
 	);
 	const div = dom.window.document.querySelector("div");
 
@@ -112,7 +114,7 @@ test("inspectElement truncates long text", () => {
 
 test("inspectDocument includes doctype and root", () => {
 	const dom = documentWindow(
-		`<!DOCTYPE html><html><head><title>Test</title></head><body>Hello</body></html>`,
+		"<!DOCTYPE html><html><head><title>Test</title></head><body>Hello</body></html>",
 	);
 
 	const output = inspectDocument(dom.window.document, {
@@ -128,7 +130,7 @@ test("inspectDocument includes doctype and root", () => {
 });
 
 test("inspectNode handles different node types", () => {
-	const dom = documentWindow(`<div>Text<!-- comment --></div>`);
+	const dom = documentWindow("<div>Text<!-- comment --></div>");
 	const div = dom.window.document.querySelector("div");
 
 	// Text node
@@ -143,7 +145,7 @@ test("inspectNode handles different node types", () => {
 });
 
 test("setupInspectMethods adds inspect to prototypes", () => {
-	const dom = documentWindow(`<div id="test">Hello</div>`);
+	const dom = documentWindow("<div id=\"test\">Hello</div>");
 	setupInspectMethods(dom.window);
 
 	const div = dom.window.document.getElementById("test");
@@ -159,7 +161,7 @@ test("setupInspectMethods adds inspect to prototypes", () => {
 
 test("showStyles option includes style attribute", () => {
 	const dom = documentWindow(
-		`<div style="color: red; background: blue;">Styled</div>`,
+		"<div style=\"color: red; background: blue;\">Styled</div>",
 	);
 	const div = dom.window.document.querySelector("div");
 
@@ -178,7 +180,7 @@ test("showStyles option includes style attribute", () => {
 
 test("showAll option includes all attributes", () => {
 	const dom = documentWindow(
-		`<div id="test" data-foo="bar" aria-label="Test" custom="value">Content</div>`,
+		"<div id=\"test\" data-foo=\"bar\" aria-label=\"Test\" custom=\"value\">Content</div>",
 	);
 	const div = dom.window.document.querySelector("div");
 

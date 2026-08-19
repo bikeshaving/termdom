@@ -47,9 +47,13 @@ const TIMEOUT_MS = 15000;
 
 async function cached(path: string): Promise<string | null> {
 	const file = join(CACHE, path);
-	if (existsSync(file)) return readFileSync(file, "utf8");
+	if (existsSync(file)) {
+		return readFileSync(file, "utf8");
+	}
 	const response = await fetch(`${RAW}/${path}`);
-	if (!response.ok) return null;
+	if (!response.ok) {
+		return null;
+	}
 	const text = await response.text();
 	mkdirSync(dirname(file), {recursive: true});
 	writeFileSync(file, text);
@@ -58,7 +62,9 @@ async function cached(path: string): Promise<string | null> {
 
 async function suiteFiles(): Promise<string[]> {
 	const listing = join(CACHE, "listing.json");
-	if (existsSync(listing)) return JSON.parse(readFileSync(listing, "utf8"));
+	if (existsSync(listing)) {
+		return JSON.parse(readFileSync(listing, "utf8"));
+	}
 	const response = await fetch(
 		`https://api.github.com/repos/web-platform-tests/wpt/contents/${SUITE}`,
 	);
@@ -203,7 +209,9 @@ const mounts = new Map<
  * document the element belongs to rather than closing over one of them.
  */
 function installGeometry(window: EngineWindow): void {
-	if (geometryInstalled) return;
+	if (geometryInstalled) {
+		return;
+	}
 	geometryInstalled = true;
 	const mountOf = (
 		element: Element,
@@ -213,7 +221,9 @@ function installGeometry(window: EngineWindow): void {
 		element: Element,
 	): {width: number; height: number} | null => {
 		const rect = mountOf(element)?.styleManager.usedRect(element);
-		if (!rect) return null;
+		if (!rect) {
+			return null;
+		}
 		const box = getBoxModel(element);
 		return {
 			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
@@ -235,7 +245,9 @@ function installGeometry(window: EngineWindow): void {
 	Object.defineProperty(window.Element.prototype, "getBoundingClientRect", {
 		value(this: Element): DOMRect {
 			const mount = mountOf(this);
-			if (!mount) return new DOMRect();
+			if (!mount) {
+				return new DOMRect();
+			}
 			return (
 				mount.styleManager.usedRect(this) ?? mount.layoutEngine.createDOMRect()
 			);
@@ -246,7 +258,9 @@ function installGeometry(window: EngineWindow): void {
 	Object.defineProperty(window.Element.prototype, "getClientRects", {
 		value(this: Element): DOMRectList {
 			const mount = mountOf(this);
-			if (!mount) return [] as unknown as DOMRectList;
+			if (!mount) {
+				return [] as unknown as DOMRectList;
+			}
 			// usedRect for the flush; getRects for the fragments, which a box
 			// broken across lines has more than one of.
 			mount.styleManager.usedRect(this);
@@ -353,14 +367,16 @@ let framesInstalled = false;
 let documentURL = "about:blank";
 
 function installFrames(window: EngineWindow): void {
-	if (framesInstalled) return;
+	if (framesInstalled) {
+		return;
+	}
 	framesInstalled = true;
 	const contextOf = (frame: Element): {document: Document; window: unknown} => {
 		let context = frames.get(frame);
 		if (context === undefined) {
 			const inner = createDocumentWindow(
 				frame.getAttribute("srcdoc") ??
-					"<!doctype html><html><head></head><body></body></html>",
+				"<!doctype html><html><head></head><body></body></html>",
 				documentURL,
 			);
 			mountEngine(inner);
@@ -405,13 +421,19 @@ function installFrames(window: EngineWindow): void {
 	};
 	documentPrototype.close = function (this: Document): void {
 		const html = written.get(this);
-		if (html === undefined) return;
+		if (html === undefined) {
+			return;
+		}
 		written.delete(this);
 		const parsed = createDocumentWindow(html, documentURL).document;
 		const root = this.documentElement;
 		const source = parsed.documentElement;
-		if (root === null || source === null) return;
-		while (root.firstChild !== null) root.removeChild(root.firstChild);
+		if (root === null || source === null) {
+			return;
+		}
+		while (root.firstChild !== null) {
+			root.removeChild(root.firstChild);
+		}
 		while (source.firstChild !== null) {
 			root.appendChild(this.importNode(source.firstChild, true));
 			source.removeChild(source.firstChild);
@@ -421,7 +443,9 @@ function installFrames(window: EngineWindow): void {
 
 /** Resolve a script's src against the suite directory, as a repo path. */
 function resolveScript(src: string): string {
-	if (src.startsWith("/")) return src.slice(1);
+	if (src.startsWith("/")) {
+		return src.slice(1);
+	}
 	return `${SUITE}/${src}`;
 }
 
@@ -467,8 +491,12 @@ async function runFile(file: string): Promise<Outcome> {
 	for (const script of document.querySelectorAll("script")) {
 		const src = script.getAttribute("src");
 		if (src) {
-			if (/testharnessreport\.js$/.test(src)) continue;
-			if (/testharness\.js$/.test(src)) harnessLoaded = true;
+			if (/testharnessreport\.js$/.test(src)) {
+				continue;
+			}
+			if (/testharness\.js$/.test(src)) {
+				harnessLoaded = true;
+			}
 			const text = await cached(resolveScript(src));
 			if (text === null) {
 				return {
@@ -530,7 +558,9 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 
 	await done;
-	if (timer !== null) clearTimeout(timer);
+	if (timer !== null) {
+		clearTimeout(timer);
+	}
 	// The harness reports its results from a callback of its own after the
 	// completion one, so let it run before the file is done with.
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -571,7 +601,9 @@ function createRealm(window: EngineWindow, url: string): object {
 		for (const [name, descriptor] of Object.entries(
 			Object.getOwnPropertyDescriptors(level),
 		)) {
-			if (name === "constructor") continue;
+			if (name === "constructor") {
+				continue;
+			}
 			if (descriptor.get || descriptor.set) {
 				const {get, set} = descriptor;
 				Object.defineProperty(scope, name, {
@@ -586,9 +618,9 @@ function createRealm(window: EngineWindow, url: string): object {
 				...descriptor,
 				value:
 					typeof descriptor.value === "function" &&
-					descriptor.value.prototype === undefined
-						? descriptor.value.bind(window)
-						: descriptor.value,
+					descriptor.value.prototype === undefined ?
+							descriptor.value.bind(window) :
+						descriptor.value,
 				configurable: true,
 			});
 		}
@@ -626,8 +658,12 @@ function createRealm(window: EngineWindow, url: string): object {
 		const id = element.getAttribute("id") ?? "";
 		// A name the realm already carries is the realm's -- `document`,
 		// `location`, the CSSOM constructors. An id never takes one of those over.
-		if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) continue;
-		if (Object.prototype.hasOwnProperty.call(scope, id)) continue;
+		if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) {
+			continue;
+		}
+		if (Object.prototype.hasOwnProperty.call(scope, id)) {
+			continue;
+		}
 		scope[id] = element;
 	}
 	const realm = createContext(scope);
@@ -668,13 +704,17 @@ async function flattenModule(
 	const prefix: string[] = [];
 	for (const match of imports) {
 		const specifier = match[1];
-		const path = specifier.startsWith("/")
-			? specifier.slice(1)
-			: `${SUITE}/${specifier.replace(/^\.\//, "")}`;
+		const path = specifier.startsWith("/") ?
+				specifier.slice(1) :
+			`${SUITE}/${specifier.replace(/^\.\//, "")}`;
 		const text = await cached(path);
-		if (text === null) return null;
+		if (text === null) {
+			return null;
+		}
 		const nested = await flattenModule(text, file);
-		if (nested === null) return null;
+		if (nested === null) {
+			return null;
+		}
 		prefix.push(nested);
 	}
 	out = `${prefix.join("\n")}\n${out}`;
@@ -730,7 +770,7 @@ const brokenFiles = outcomes.filter(
 const lines: string[] = [
 	"# CSSOM conformance: web-platform-tests css/cssom",
 	"",
-	`Generated by \`bun scripts/wpt-cssom.ts\`.`,
+	"Generated by `bun scripts/wpt-cssom.ts`.",
 	"",
 	`- Test files in the suite: ${outcomes.length}`,
 	`- Reference tests (scored by pixels, not runnable here): ${reftests.length}`,
@@ -781,7 +821,9 @@ for (const outcome of outcomes) {
 lines.push("", "## Failing subtests", "");
 for (const outcome of outcomes) {
 	const fails = outcome.subtests.filter((test) => test.status !== 0);
-	if (fails.length === 0) continue;
+	if (fails.length === 0) {
+		continue;
+	}
 	lines.push(`### ${outcome.file}`, "");
 	for (const test of fails) {
 		lines.push(`- ${test.name}: ${(test.message ?? "").split("\n")[0]}`);
@@ -794,7 +836,9 @@ for (const outcome of outcomes) {
 if (filter) {
 	for (const outcome of outcomes) {
 		for (const test of outcome.subtests) {
-			if (test.status === 0) continue;
+			if (test.status === 0) {
+				continue;
+			}
 			console.info(`  ${outcome.file} :: ${test.name}: ${test.message ?? ""}`);
 		}
 	}

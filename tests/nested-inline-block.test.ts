@@ -220,7 +220,7 @@ test("mixed content in nested inline-blocks", async () => {
 test("a run continues past a nested inline-block, not just past its parent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<span><span style="display: inline-block">badge</span></span> and the rest`;
+	dom.document.body.innerHTML = "<span><span style=\"display: inline-block\">badge</span></span> and the rest";
 
 	await nextFrame(dom);
 
@@ -234,7 +234,7 @@ test("a run continues past a nested inline-block, not just past its parent", asy
 test("a run continues past a boxless child of a nested inline", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<span>lead<span style="display: none">gone</span></span> tail`;
+	dom.document.body.innerHTML = "<span>lead<span style=\"display: none\">gone</span></span> tail";
 
 	await nextFrame(dom);
 
@@ -248,7 +248,7 @@ test("a run continues past a boxless child of a nested inline", async () => {
 test("a widget alone inside an inline-block paints where the box measured it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="display: inline-block; padding: 0 2ch"><input value="typed"></div>`;
+	dom.document.body.innerHTML = "<div style=\"display: inline-block; padding: 0 2ch\"><input value=\"typed\"></div>";
 
 	await nextFrame(dom);
 
@@ -266,7 +266,7 @@ test("a widget alone inside an inline-block paints where the box measured it", a
 test("a block between two runs does not blank the earlier one", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `heading<div>middle</div><input value="field">`;
+	dom.document.body.innerHTML = "heading<div>middle</div><input value=\"field\">";
 
 	await nextFrame(dom);
 

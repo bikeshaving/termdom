@@ -20,7 +20,7 @@ function makeDOM(html = "") {
 }
 
 test("insertRule on a style element's sheet repaints", async () => {
-	const {terminal, dom} = makeDOM(`<div class="box">Boxed</div>`);
+	const {terminal, dom} = makeDOM("<div class=\"box\">Boxed</div>");
 	const style = dom.document.createElement("style");
 	dom.document.head.appendChild(style);
 	await nextFrame(dom);
@@ -46,7 +46,7 @@ test("insertRule on a style element's sheet repaints", async () => {
 });
 
 test("adoptedStyleSheets with replaceSync repaints", async () => {
-	const {terminal, dom} = makeDOM(`<div class="box">Boxed</div>`);
+	const {terminal, dom} = makeDOM("<div class=\"box\">Boxed</div>");
 	await nextFrame(dom);
 
 	const sheet = new dom.window.CSSStyleSheet();
@@ -75,9 +75,9 @@ test("adoptedStyleSheets with replaceSync repaints", async () => {
 });
 
 test("writing a rule's declaration block repaints", async () => {
-	const {dom} = makeDOM(`<div class="box">Boxed</div>`);
+	const {dom} = makeDOM("<div class=\"box\">Boxed</div>");
 	const style = dom.document.createElement("style");
-	style.textContent = `.box { color: red; }`;
+	style.textContent = ".box { color: red; }";
 	dom.document.head.appendChild(style);
 	await nextFrame(dom);
 
@@ -102,7 +102,7 @@ test("writing a rule's declaration block repaints", async () => {
 test("text mutation rebuilds the sheet; sheet mutation leaves the text alone", async () => {
 	const {dom} = makeDOM();
 	const style = dom.document.createElement("style");
-	style.textContent = `div { color: red; }`;
+	style.textContent = "div { color: red; }";
 	dom.document.head.appendChild(style);
 	await nextFrame(dom);
 
@@ -111,9 +111,9 @@ test("text mutation rebuilds the sheet; sheet mutation leaves the text alone", a
 
 	sheet.insertRule("span { color: blue; }", 1);
 	expect(sheet.cssRules.length).toBe(2);
-	expect(style.textContent).toBe(`div { color: red; }`);
+	expect(style.textContent).toBe("div { color: red; }");
 
-	style.textContent = `p { color: green; }`;
+	style.textContent = "p { color: green; }";
 	expect(sheet.cssRules.length).toBe(1);
 	expect((sheet.cssRules[0] as CSSStyleRule).selectorText).toBe("p");
 
@@ -121,10 +121,10 @@ test("text mutation rebuilds the sheet; sheet mutation leaves the text alone", a
 });
 
 test("the whole CSSOM an author can reach is this engine's", async () => {
-	const {dom} = makeDOM(`<div id="box" style="color: red">Boxed</div>`);
+	const {dom} = makeDOM("<div id=\"box\" style=\"color: red\">Boxed</div>");
 	const {window, document} = dom;
 	const style = document.createElement("style");
-	style.textContent = `@media (min-width: 1px) { #box { color: red } } div { margin: 1px }`;
+	style.textContent = "@media (min-width: 1px) { #box { color: red } } div { margin: 1px }";
 	document.head.appendChild(style);
 	const adopted = new window.CSSStyleSheet();
 	adopted.replaceSync("#box { padding: 1px }");
@@ -176,7 +176,9 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 	const foreign: string[] = [];
 	const walkRules = (rules: CSSRuleList, where: string): void => {
 		for (const rule of Array.from(rules)) {
-			if (!isOurs(rule, "CSSRule")) foreign.push(`${where} rule`);
+			if (!isOurs(rule, "CSSRule")) {
+				foreign.push(`${where} rule`);
+			}
 			const block = (rule as CSSStyleRule).style;
 			if (block && !isOurs(block, "CSSStyleDeclaration")) {
 				foreign.push(`${where} rule.style`);
@@ -188,7 +190,9 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 				foreign.push(`${where} rule.parentStyleSheet`);
 			}
 			const nested = (rule as CSSMediaRule).cssRules;
-			if (nested) walkRules(nested, `${where} >`);
+			if (nested) {
+				walkRules(nested, `${where} >`);
+			}
 		}
 	};
 	for (const [where, sheets] of [
@@ -196,7 +200,9 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 		["adoptedStyleSheets", document.adoptedStyleSheets],
 	] as const) {
 		for (const sheet of sheets) {
-			if (!isOurs(sheet, "CSSStyleSheet")) foreign.push(where);
+			if (!isOurs(sheet, "CSSStyleSheet")) {
+				foreign.push(where);
+			}
 			walkRules(sheet.cssRules, where);
 		}
 	}
@@ -214,7 +220,7 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 });
 
 test("getComputedStyle is read-only and enumerates the property index", async () => {
-	const {dom} = makeDOM(`<div id="box" style="margin: 1px">Boxed</div>`);
+	const {dom} = makeDOM("<div id=\"box\" style=\"margin: 1px\">Boxed</div>");
 	await nextFrame(dom);
 	const style = dom.window.getComputedStyle(
 		dom.document.getElementById("box")!,
@@ -238,7 +244,7 @@ test("getComputedStyle is read-only and enumerates the property index", async ()
 });
 
 test("a declaration block stores longhands and serializes shorthands", () => {
-	const {dom} = makeDOM(`<div id="box"></div>`);
+	const {dom} = makeDOM("<div id=\"box\"></div>");
 	const style = dom.document.getElementById("box")!.style;
 
 	style.margin = "1px";
@@ -274,7 +280,7 @@ test("a declaration block stores longhands and serializes shorthands", () => {
 });
 
 test("border-radius stores its corners and serializes both axes", () => {
-	const {dom} = makeDOM(`<div id="box"></div>`);
+	const {dom} = makeDOM("<div id=\"box\"></div>");
 	const style = dom.document.getElementById("box")!.style;
 
 	style.borderRadius = "1px";
@@ -334,7 +340,7 @@ test("border-radius stores its corners and serializes both axes", () => {
 });
 
 test("the accessor surface follows the CSSOM attribute-mapping rules", () => {
-	const {dom} = makeDOM(`<div id="box"></div>`);
+	const {dom} = makeDOM("<div id=\"box\"></div>");
 	const style = dom.document.getElementById("box")!.style;
 
 	style.cssFloat = "left";
@@ -398,7 +404,7 @@ test("rules serialize as CSSOM says, and @import parses inert", async () => {
 test("stylesheet mutation errors follow the spec", async () => {
 	const {dom} = makeDOM();
 	const style = dom.document.createElement("style");
-	style.textContent = `div { color: red }`;
+	style.textContent = "div { color: red }";
 	dom.document.head.appendChild(style);
 	await nextFrame(dom);
 	const sheet = style.sheet!;
@@ -424,9 +430,9 @@ test("stylesheet mutation errors follow the spec", async () => {
 });
 
 test("a disabled sheet contributes nothing to the cascade", async () => {
-	const {dom} = makeDOM(`<div class="box">Boxed</div>`);
+	const {dom} = makeDOM("<div class=\"box\">Boxed</div>");
 	const style = dom.document.createElement("style");
-	style.textContent = `.box { color: red }`;
+	style.textContent = ".box { color: red }";
 	dom.document.head.appendChild(style);
 	await nextFrame(dom);
 	const box = dom.document.querySelector(".box")!;
@@ -444,10 +450,10 @@ test("a disabled sheet contributes nothing to the cascade", async () => {
 });
 
 test("a shadow root's stylesheets and adopted sheets are the same CSSOM", async () => {
-	const {dom} = makeDOM(`<div id="host"></div>`);
+	const {dom} = makeDOM("<div id=\"host\"></div>");
 	const host = dom.document.getElementById("host")!;
 	const root = host.attachShadow({mode: "open"});
-	root.innerHTML = `<style>span { color: red }</style><span>Shadowed</span>`;
+	root.innerHTML = "<style>span { color: red }</style><span>Shadowed</span>";
 	await nextFrame(dom);
 
 	expect(root.styleSheets.length).toBe(1);

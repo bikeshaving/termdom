@@ -512,7 +512,7 @@ test("a click inside a widget's UA shadow content focuses the widget", async () 
 	// to the shadow HOST from outside the tree: the click is on the input.
 	const {proc, termdom} = makeDocumentModeApp();
 	const {document} = termdom;
-	document.body.innerHTML = `<div>row0</div><div><input id="i" value="hello"></div>`;
+	document.body.innerHTML = "<div>row0</div><div><input id=\"i\" value=\"hello\"></div>";
 	await nextFrame(termdom);
 
 	expect(document.elementFromPoint(2, 1)?.id).toBe("i");

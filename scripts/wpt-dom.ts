@@ -37,7 +37,7 @@ let moduleCounter = 0;
 
 async function freshDOM(): Promise<DOMModule> {
 	return (await import(
-		`../src/internal/dom.ts?wpt=${moduleCounter++}`
+		`../src/internal/dom.ts?wpt=${moduleCounter++}`,
 	)) as DOMModule;
 }
 
@@ -170,7 +170,9 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 	];
 	const globals: Record<string, unknown> = {};
 	const source = dom as unknown as Record<string, unknown>;
-	for (const name of names) globals[name] = source[name];
+	for (const name of names) {
+		globals[name] = source[name];
+	}
 	return globals;
 }
 
@@ -245,14 +247,20 @@ async function listDirectory(suite: string): Promise<string[]> {
 	}
 	const names: string[] = [];
 	for (const entry of tree.tree) {
-		if (entry.type !== "blob") continue;
+		if (entry.type !== "blob") {
+			continue;
+		}
 		const parts = entry.path.split("/");
 		const name = parts[parts.length - 1];
 		if (parts.slice(0, -1).some((part) => NON_TEST_DIRECTORIES.has(part))) {
 			continue;
 		}
-		if (!/\.html$/.test(name) && !/\.(any|window)\.js$/.test(name)) continue;
-		if (/-ref\.html$|-manual\.html$|-crash\.html$/.test(name)) continue;
+		if (!/\.html$/.test(name) && !/\.(any|window)\.js$/.test(name)) {
+			continue;
+		}
+		if (/-ref\.html$|-manual\.html$|-crash\.html$/.test(name)) {
+			continue;
+		}
 		names.push(`${suite}/${entry.path}`);
 	}
 	return names;
@@ -260,7 +268,9 @@ async function listDirectory(suite: string): Promise<string[]> {
 
 async function suiteFiles(suite: string): Promise<string[]> {
 	const listing = join(CACHE, `${suite.replace(/\//g, "-")}-listing.json`);
-	if (existsSync(listing)) return JSON.parse(readFileSync(listing, "utf8"));
+	if (existsSync(listing)) {
+		return JSON.parse(readFileSync(listing, "utf8"));
+	}
 	const names = (await listDirectory(suite)).sort();
 	mkdirSync(CACHE, {recursive: true});
 	writeFileSync(listing, JSON.stringify(names, null, "\t"));
@@ -747,7 +757,9 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 
 function excludedDirectory(file: string): string | null {
 	for (const [prefix, reason] of EXCLUDED_DIRECTORIES) {
-		if (file.startsWith(prefix)) return reason;
+		if (file.startsWith(prefix)) {
+			return reason;
+		}
 	}
 	return null;
 }
@@ -847,14 +859,21 @@ interface Outcome {
 
 /** Resolve a script's src against a test file, as a repo path. */
 function resolveScript(src: string, file: string): string {
-	if (src.startsWith("/")) return src.slice(1);
+	if (src.startsWith("/")) {
+		return src.slice(1);
+	}
 	const base = dirname(file);
 	const parts = `${base}/${src}`.split("/");
 	const stack: string[] = [];
 	for (const part of parts) {
-		if (part === "." || part === "") continue;
-		if (part === "..") stack.pop();
-		else stack.push(part);
+		if (part === "." || part === "") {
+			continue;
+		}
+		if (part === "..") {
+			stack.pop();
+		} else {
+			stack.push(part);
+		}
 	}
 	return stack.join("/");
 }
@@ -959,8 +978,12 @@ function installGlobals(
 	// the harness itself installed is never shadowed.
 	for (const element of document.getElementsByTagName("*")) {
 		const id = element.getAttribute("id");
-		if (id === null || id === "" || saved.has(id)) continue;
-		if (Object.prototype.hasOwnProperty.call(scope, id)) continue;
+		if (id === null || id === "" || saved.has(id)) {
+			continue;
+		}
+		if (Object.prototype.hasOwnProperty.call(scope, id)) {
+			continue;
+		}
 		saved.set(id, {had: false, value: undefined});
 		scope[id] = element;
 	}
@@ -992,9 +1015,9 @@ async function runFile(file: string): Promise<Outcome> {
 	if (source === null) {
 		return {file, harness: "ERROR", subtests: [], error: "not fetched"};
 	}
-	const html = /\.(any|window)\.js$/.test(file)
-		? generatedDocument(file, source)
-		: source;
+	const html = /\.(any|window)\.js$/.test(file) ?
+			generatedDocument(file, source) :
+		source;
 	const url = `http://web-platform.test/${file}`;
 
 	const dom = await freshDOM();
@@ -1015,7 +1038,9 @@ async function runFile(file: string): Promise<Outcome> {
 	for (const script of document.getElementsByTagName("script")) {
 		const src = script.getAttribute("src");
 		if (src !== null) {
-			if (/testharnessreport\.js$/.test(src)) continue;
+			if (/testharnessreport\.js$/.test(src)) {
+				continue;
+			}
 			if (/testharness\.js$/.test(src)) {
 				harnessLoaded = true;
 				const harness = await cached("resources/testharness.js");
@@ -1108,9 +1133,9 @@ async function runFile(file: string): Promise<Outcome> {
 		}
 		const timer = setTimeout(
 			settle,
-			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html)
-				? LONG_TIMEOUT_MS
-				: TIMEOUT_MS,
+			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html) ?
+				LONG_TIMEOUT_MS :
+				TIMEOUT_MS,
 		);
 		timer.unref?.();
 		await done;
@@ -1119,7 +1144,9 @@ async function runFile(file: string): Promise<Outcome> {
 		delete scope.__complete;
 		globals.restore();
 		for (const name of Object.keys(scope)) {
-			if (!before.has(name)) delete scope[name];
+			if (!before.has(name)) {
+				delete scope[name];
+			}
 		}
 	}
 	return outcome;
@@ -1132,7 +1159,9 @@ process.on("unhandledRejection", () => {});
 
 const filter = process.argv[2];
 const files: string[] = [];
-for (const suite of SUITES) files.push(...(await suiteFiles(suite)));
+for (const suite of SUITES) {
+	files.push(...(await suiteFiles(suite)));
+}
 const selected = files.filter((file) => !filter || file.includes(filter));
 
 const outcomes: Outcome[] = [];
@@ -1231,7 +1260,9 @@ for (const outcome of outcomes) {
 lines.push("", "## Failing subtests", "");
 for (const outcome of outcomes) {
 	const fails = outcome.subtests.filter((test) => test.status !== 0);
-	if (fails.length === 0) continue;
+	if (fails.length === 0) {
+		continue;
+	}
 	lines.push(`### ${outcome.file}`, "");
 	for (const test of fails) {
 		lines.push(`- ${test.name}: ${(test.message ?? "").split("\n")[0]}`);
@@ -1242,7 +1273,9 @@ for (const outcome of outcomes) {
 if (filter) {
 	for (const outcome of outcomes) {
 		for (const test of outcome.subtests) {
-			if (test.status === 0) continue;
+			if (test.status === 0) {
+				continue;
+			}
 			console.info(`  ${outcome.file} :: ${test.name}: ${test.message ?? ""}`);
 		}
 	}

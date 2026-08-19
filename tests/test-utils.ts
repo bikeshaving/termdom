@@ -53,20 +53,28 @@ const TABLE_UNICODE_VERSION = {
 		if (preceding !== 0) {
 			// A zero-width joiner keeps the cluster open and says so, so the
 			// codepoint after it -- wide in its own right -- knows to join too.
-			if (codepoint === 0x200d) return join(precedingWidth, ZWJ_PENDING);
+			if (codepoint === 0x200d) {
+				return join(precedingWidth, ZWJ_PENDING);
+			}
 			if (precedingKind === ZWJ_PENDING) {
 				return join(Math.max(precedingWidth, width));
 			}
 			// The presentation selectors decide between the text form and the
 			// emoji form, and the emoji form is the wide one.
-			if (codepoint === 0xfe0f) return join(2);
-			if (codepoint === 0xfe0e) return join(1);
+			if (codepoint === 0xfe0f) {
+				return join(2);
+			}
+			if (codepoint === 0xfe0e) {
+				return join(1);
+			}
 			// Skin tone: part of the emoji before it, not a glyph of its own.
 			if (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff) {
 				return join(precedingWidth);
 			}
 			// Combining marks and the rest of the zero-width kind.
-			if (width === 0 && precedingWidth !== 0) return join(precedingWidth);
+			if (width === 0 && precedingWidth !== 0) {
+				return join(precedingWidth);
+			}
 		}
 
 		return (width & 3) << 1;
@@ -89,8 +97,8 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	constructor(
 		terminal: Terminal,
 		stdin: MockReadStream,
-		cols: number = 80,
-		rows: number = 24,
+		cols = 80,
+		rows = 24,
 	) {
 		super();
 		this.terminal = terminal;
@@ -308,7 +316,9 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
-			if (!line) continue;
+			if (!line) {
+				continue;
+			}
 
 			let outputCol = 0;
 			for (
@@ -317,9 +327,13 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				xtermCol++
 			) {
 				const cell = line.getCell(xtermCol);
-				if (!cell) continue;
+				if (!cell) {
+					continue;
+				}
 				// A width-0 cell continues the wide glyph to its left.
-				if (cell.getWidth() === 0) continue;
+				if (cell.getWidth() === 0) {
+					continue;
+				}
 
 				const chars = cell.getChars() || " ";
 				// XTerm reports theme colors for default cells; only explicit

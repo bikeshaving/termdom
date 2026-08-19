@@ -173,7 +173,9 @@ function updateAnimations() {
 	bounce.textContent =
 		" ".repeat(bouncePos) + "●" + " ".repeat(bounceWidth - bouncePos);
 	bouncePos += bounceDir;
-	if (bouncePos >= bounceWidth || bouncePos <= 0) bounceDir *= -1;
+	if (bouncePos >= bounceWidth || bouncePos <= 0) {
+		bounceDir *= -1;
+	}
 
 	frame++;
 }

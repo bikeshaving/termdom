@@ -82,7 +82,9 @@ let busy = false;
 
 async function send(): Promise<void> {
 	const text = input.value.trim();
-	if (busy || !text) return;
+	if (busy || !text) {
+		return;
+	}
 	busy = true;
 	input.value = "";
 	turns.push({role: "user", text});
@@ -102,13 +104,17 @@ async function send(): Promise<void> {
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 60000);
 		const res = await fetch(url, {signal: controller.signal});
-		if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+		if (!res.ok || !res.body) {
+			throw new Error(`HTTP ${res.status}`);
+		}
 		const reader = res.body.getReader();
 		const decoder = new TextDecoder();
 		let raw = "";
 		for (;;) {
 			const {done, value} = await reader.read();
-			if (done) break;
+			if (done) {
+				break;
+			}
 			raw += decoder.decode(value, {stream: true});
 			const answer = answerFrom(raw);
 			if (answer) {

@@ -40,9 +40,9 @@ export function inspectDocument(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -105,9 +105,9 @@ function formatElement(
 		showAll = false,
 		currentDepth = 0,
 	} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -179,9 +179,9 @@ function formatAttributes(
 	options: {colorize?: boolean; showAll?: boolean; showStyles?: boolean} = {},
 ): string {
 	const {colorize = true, showAll = false, showStyles = false} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -269,9 +269,9 @@ function formatChildren(
 	options: InspectorOptions & {currentDepth?: number},
 ): string {
 	const {colorize = true, compact = false} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -326,9 +326,9 @@ function formatChildren(
  */
 function inspectText(text: Text, options: InspectorOptions = {}): string {
 	const {colorize = true} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -359,9 +359,9 @@ function inspectComment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -384,9 +384,9 @@ function inspectFragment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -417,9 +417,9 @@ function inspectCSSStyleDeclaration(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true, compact = false} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -465,9 +465,9 @@ function inspectCSSStyleDeclaration(
  */
 function inspectDOMRect(rect: any, options: InspectorOptions = {}): string {
 	const {colorize = true} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -489,9 +489,9 @@ function inspectNodeList(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true, maxDepth = 0, compact = false} = options;
-	const c = colorize
-		? colors
-		: {
+	const c = colorize ?
+		colors :
+			{
 				tag: "",
 				attr: "",
 				value: "",
@@ -514,7 +514,9 @@ function inspectNodeList(
 		const preview = Array.from(nodeList)
 			.slice(0, 3)
 			.map((node: any) => {
-				if (!node) return "null";
+				if (!node) {
+					return "null";
+				}
 				return node.tagName ? `<${node.tagName.toLowerCase()}>` : node.nodeName;
 			});
 		const previewStr = preview.join(", ");

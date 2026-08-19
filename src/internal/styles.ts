@@ -24,7 +24,7 @@ import {
 import * as cssTree from "css-tree";
 import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
-import {type LayoutEngine} from "./layout.js";
+import type {LayoutEngine} from "./layout.js";
 import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
@@ -69,14 +69,18 @@ export function parseUnitValue(
 
 	if (value.endsWith("%")) {
 		const num = parseFloat(value.slice(0, -1));
-		if (isNaN(num)) return null;
+		if (isNaN(num)) {
+			return null;
+		}
 		return {percentage: num};
 	}
 
 	// Handle "ch" units (character width) - treat as character units
 	if (value.endsWith("ch")) {
 		const num = parseFloat(value.slice(0, -2));
-		if (isNaN(num)) return null;
+		if (isNaN(num)) {
+			return null;
+		}
 		return num; // In TermDOM, 1ch = 1 character
 	}
 
@@ -116,7 +120,9 @@ export function parseSignedUnitValue(
 	const trimmed = value?.trim();
 	if (trimmed?.startsWith("-")) {
 		const inner = parseUnitValue(trimmed.slice(1));
-		if (typeof inner === "number") return -inner;
+		if (typeof inner === "number") {
+			return -inner;
+		}
 		if (inner && "percentage" in inner) {
 			return {percentage: -inner.percentage};
 		}
@@ -189,7 +195,9 @@ function readBoxModel(computedStyle: ComputedStyle): BoxModel {
 	// `border-style: none` must release the space, not just the glyphs.
 	const borderWidthFor = (side: string) => {
 		const style = computedStyle.computedValueOf(`border-${side}-style`);
-		if (!style || style === "none" || style === "hidden") return null;
+		if (!style || style === "none" || style === "hidden") {
+			return null;
+		}
 		return parseBorderWidthValue(
 			computedStyle.computedValueOf(`border-${side}-width`),
 		);
@@ -283,7 +291,9 @@ function isValidDeclaration(
 	value: string,
 	atRule = "",
 ): boolean {
-	if (!matchesGrammar(property, value, atRule)) return false;
+	if (!matchesGrammar(property, value, atRule)) {
+		return false;
+	}
 	if (!LENGTH_PROPERTIES.has(property)) {
 		return true;
 	}
@@ -336,19 +346,29 @@ const grammarMatches = new Map<string, boolean>();
  * the custom property holds, which is not known here.
  */
 function matchesGrammar(property: string, value: string, atRule = ""): boolean {
-	if (property.startsWith("--")) return true;
-	if (!atRule && !SUPPORTED_PROPERTIES.has(property)) return true;
+	if (property.startsWith("--")) {
+		return true;
+	}
+	if (!atRule && !SUPPORTED_PROPERTIES.has(property)) {
+		return true;
+	}
 	const text = value.trim();
-	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) return true;
-	if (/\b(?:var|env|attr)\(/i.test(text)) return true;
+	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) {
+		return true;
+	}
+	if (/\b(?:var|env|attr)\(/i.test(text)) {
+		return true;
+	}
 	const key = `${atRule}|${property}|${text}`;
 	const memoized = grammarMatches.get(key);
-	if (memoized !== undefined) return memoized;
+	if (memoized !== undefined) {
+		return memoized;
+	}
 	let valid = true;
 	try {
-		const match = atRule
-			? grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text)
-			: grammarLexer.matchProperty(property, text);
+		const match = atRule ?
+				grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text) :
+				grammarLexer.matchProperty(property, text);
 		// A descriptor or property the grammars do not describe is one this
 		// cannot judge.
 		valid =
@@ -357,7 +377,9 @@ function matchesGrammar(property: string, value: string, atRule = ""): boolean {
 	} catch {
 		valid = true;
 	}
-	if (grammarMatches.size > 4096) grammarMatches.clear();
+	if (grammarMatches.size > 4096) {
+		grammarMatches.clear();
+	}
 	grammarMatches.set(key, valid);
 	return valid;
 }
@@ -412,7 +434,9 @@ function unquoteContent(content: string): string {
 			// its own, which is spelling, not content.
 			let close = index + 1;
 			for (; close < content.length && content[close] !== char; close++) {
-				if (content[close] === "\\") close++;
+				if (content[close] === "\\") {
+					close++;
+				}
 			}
 			out += content.slice(index + 1, close).replace(/\\(.)/g, "$1");
 			index = close + 1;
@@ -425,9 +449,13 @@ function unquoteContent(content: string): string {
 			let end = index;
 			for (; end < content.length; end++) {
 				const c = content[end];
-				if (c === "(") depth++;
-				else if (c === ")") depth--;
-				else if (depth === 0 && /\s/.test(c)) break;
+				if (c === "(") {
+					depth++;
+				} else if (c === ")") {
+					depth--;
+				} else if (depth === 0 && /\s/.test(c)) {
+					break;
+				}
 			}
 			out += content.slice(index, end);
 			index = end;
@@ -461,11 +489,15 @@ function getListGutterWidth(listElement: Element): number {
 
 		let widest = 0;
 		for (const child of Array.from(listElement.children)) {
-			if (child.tagName !== "LI") continue;
-			const marker = styleManager
-				? styleManager.getMarkerContent(child)
-				: withMarkerSeparator(getListMarker(child, listElement));
-			if (!marker) continue;
+			if (child.tagName !== "LI") {
+				continue;
+			}
+			const marker = styleManager ?
+					styleManager.getMarkerContent(child) :
+					withMarkerSeparator(getListMarker(child, listElement));
+			if (!marker) {
+				continue;
+			}
 			widest = Math.max(widest, stringWidth(marker));
 		}
 		return Math.max(DEFAULT_LIST_GUTTER, widest);
@@ -532,9 +564,13 @@ const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
  */
 function hexColorToRgb(hex: string): string | null {
 	const digits = hex.slice(1);
-	if (!/^[0-9a-fA-F]+$/.test(digits)) return null;
+	if (!/^[0-9a-fA-F]+$/.test(digits)) {
+		return null;
+	}
 	const short = digits.length === 3 || digits.length === 4;
-	if (!short && digits.length !== 6 && digits.length !== 8) return null;
+	if (!short && digits.length !== 6 && digits.length !== 8) {
+		return null;
+	}
 	const size = short ? 1 : 2;
 	const channel = (index: number): number => {
 		const part = digits.substr(index * size, size);
@@ -555,9 +591,13 @@ function hexColorToRgb(hex: string): string | null {
  */
 function computedNumber(token: string): string {
 	const match = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-zA-Z%]*)$/.exec(token);
-	if (!match) return token;
+	if (!match) {
+		return token;
+	}
 	const number = parseFloat(match[1]);
-	if (!Number.isFinite(number)) return token;
+	if (!Number.isFinite(number)) {
+		return token;
+	}
 	const unit = match[2].toLowerCase() || (number === 0 ? "px" : "");
 	return `${number}${unit}`;
 }
@@ -609,11 +649,19 @@ function normalizeValue(property: string, declared: string): string {
  */
 function serializeColor(value: string): string | null {
 	const text = value.trim();
-	if (!text || text.toLowerCase() === "currentcolor") return null;
-	if (/^transparent$/i.test(text)) return "rgba(0, 0, 0, 0)";
-	if (text.startsWith("#")) return hexColorToRgb(text);
+	if (!text || text.toLowerCase() === "currentcolor") {
+		return null;
+	}
+	if (/^transparent$/i.test(text)) {
+		return "rgba(0, 0, 0, 0)";
+	}
+	if (text.startsWith("#")) {
+		return hexColorToRgb(text);
+	}
 	const packed = parseCSSColor(text);
-	if (packed === null) return null;
+	if (packed === null) {
+		return null;
+	}
 	const red = (packed >> 16) & 0xff;
 	const green = (packed >> 8) & 0xff;
 	const blue = packed & 0xff;
@@ -622,9 +670,9 @@ function serializeColor(value: string): string | null {
 	const parts = functional ? functional[1].split(/\s*[,/]\s*/) : [];
 	if (parts.length === 4) {
 		const raw = parts[3].trim();
-		const opacity = raw.endsWith("%")
-			? Number(raw.slice(0, -1)) / 100
-			: Number(raw);
+		const opacity = raw.endsWith("%") ?
+			Number(raw.slice(0, -1)) / 100 :
+				Number(raw);
 		if (Number.isFinite(opacity) && opacity < 1) {
 			return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
 		}
@@ -679,7 +727,9 @@ const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
 const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
 function computedEntry(property: string, declared: string): ComputedEntry {
-	if (!declared) return EMPTY_ENTRY;
+	if (!declared) {
+		return EMPTY_ENTRY;
+	}
 	let byValue = computedValues.get(property);
 	if (!byValue) {
 		byValue = new Map();
@@ -696,7 +746,9 @@ function computedEntry(property: string, declared: string): ComputedEntry {
 					value.includes("calc(") ||
 					(FONT_RELATIVE_PERCENTAGES.has(property) && value.includes("%"))),
 		};
-		if (byValue.size >= 512) byValue.clear();
+		if (byValue.size >= 512) {
+			byValue.clear();
+		}
 		byValue.set(declared, entry);
 	}
 	return entry;
@@ -780,9 +832,9 @@ function absolutizeLengths(value: string, context: LengthContext): string {
 		LENGTH_TOKEN,
 		(token, number: string, unit: string) => {
 			const factor = unitFactor(unit, context);
-			return factor === null
-				? token
-				: absoluteLength(parseFloat(number) * factor);
+			return factor === null ?
+				token :
+					absoluteLength(parseFloat(number) * factor);
 		},
 	);
 }
@@ -801,8 +853,11 @@ function replaceCalc(value: string, context: LengthContext): string {
 		let depth = 0;
 		let end = start + 4;
 		for (; end < value.length; end++) {
-			if (value[end] === "(") depth++;
-			else if (value[end] === ")" && --depth === 0) break;
+			if (value[end] === "(") {
+				depth++;
+			} else if (value[end] === ")" && --depth === 0) {
+				break;
+			}
 		}
 		const body = value.slice(start + 5, end);
 		const terms = evaluateCalc(body, context);
@@ -833,9 +888,15 @@ function serializeCalc(terms: CalcTerms): string {
 	const px = round(terms.px);
 	const percent = round(terms.percent);
 	const number = round(terms.number);
-	if (percent === 0 && px === 0 && number !== 0) return `${number}`;
-	if (percent === 0) return `${px}px`;
-	if (px === 0 && number === 0) return `${percent}%`;
+	if (percent === 0 && px === 0 && number !== 0) {
+		return `${number}`;
+	}
+	if (percent === 0) {
+		return `${px}px`;
+	}
+	if (px === 0 && number === 0) {
+		return `${percent}%`;
+	}
 	return `calc(${px}px ${percent < 0 ? "-" : "+"} ${Math.abs(percent)}%)`;
 }
 
@@ -848,7 +909,9 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 	const tokens = body.match(
 		/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g,
 	);
-	if (!tokens) return null;
+	if (!tokens) {
+		return null;
+	}
 	let position = 0;
 	const peek = (): string | undefined => tokens[position];
 
@@ -860,10 +923,14 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 
 	const primary = (): CalcTerms | null => {
 		const token = tokens[position++];
-		if (token === undefined) return null;
+		if (token === undefined) {
+			return null;
+		}
 		if (token === "(") {
 			const inner = sum();
-			if (inner === null || tokens[position++] !== ")") return null;
+			if (inner === null || tokens[position++] !== ")") {
+				return null;
+			}
 			return inner;
 		}
 		if (token === "-" || token === "+") {
@@ -871,15 +938,23 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 			return inner === null ? null : scale(inner, token === "-" ? -1 : 1);
 		}
 		const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)?$/.exec(token);
-		if (!match) return null;
+		if (!match) {
+			return null;
+		}
 		const number = parseFloat(match[1]);
-		if (!match[2]) return {px: 0, percent: 0, number};
-		if (match[2] === "px") return {px: number, percent: 0, number: 0};
+		if (!match[2]) {
+			return {px: 0, percent: 0, number};
+		}
+		if (match[2] === "px") {
+			return {px: number, percent: 0, number: 0};
+		}
 		if (match[2] === "%" && context.percent === null) {
 			return {px: 0, percent: number, number: 0};
 		}
 		const factor = unitFactor(match[2], context);
-		if (factor === null) return null;
+		if (factor === null) {
+			return null;
+		}
 		return {px: number * factor, percent: 0, number: 0};
 	};
 
@@ -888,7 +963,9 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 		while (left !== null && (peek() === "*" || peek() === "/")) {
 			const operator = tokens[position++];
 			const right = primary();
-			if (right === null) return null;
+			if (right === null) {
+				return null;
+			}
 			if (operator === "/") {
 				if (right.px !== 0 || right.percent !== 0 || right.number === 0) {
 					return null;
@@ -910,7 +987,9 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 		while (left !== null && (peek() === "+" || peek() === "-")) {
 			const operator = tokens[position++];
 			const right = product();
-			if (right === null) return null;
+			if (right === null) {
+				return null;
+			}
 			const sign = operator === "-" ? -1 : 1;
 			left = {
 				px: left.px + sign * right.px,
@@ -959,10 +1038,16 @@ function declaredName(
 	let winner: string | null = null;
 	let winningOrder = -1;
 	for (const name of names) {
-		if (block.declarations[name] === undefined) continue;
-		if (Boolean(block.important[name]) !== important) continue;
+		if (block.declarations[name] === undefined) {
+			continue;
+		}
+		if (Boolean(block.important[name]) !== important) {
+			continue;
+		}
 		const order = block.order[name] ?? 0;
-		if (order < winningOrder || !accepts(name)) continue;
+		if (order < winningOrder || !accepts(name)) {
+			continue;
+		}
 		winner = name;
 		winningOrder = order;
 	}
@@ -1072,9 +1157,13 @@ function physicalProperty(
  */
 function slotNames(property: string, direction: string): readonly string[] {
 	const physical = physicalProperty(property, direction);
-	if (physical) return [physical];
+	if (physical) {
+		return [physical];
+	}
 	const logical = PHYSICAL_TO_LOGICAL.get(property);
-	if (!logical) return [];
+	if (!logical) {
+		return [];
+	}
 	return logical.filter(
 		(name) => physicalProperty(name, direction) === property,
 	);
@@ -1104,12 +1193,12 @@ const CORNER_NAMES = [
  * sequence of components.
  */
 type ShorthandShape =
-	| "box"
-	| "radius"
-	| "pair"
-	| "line"
-	| "border"
-	| "sequence";
+	| "box" |
+	"radius" |
+	"pair" |
+	"line" |
+	"border" |
+	"sequence";
 
 /**
  * Each shorthand's longhands, in the order its grammar names them: the
@@ -1136,9 +1225,9 @@ const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
 
 for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	const reset = CSS_RESET_ONLY_LONGHANDS[shorthand];
-	const indexed = reset
-		? all.filter((longhand) => !reset.includes(longhand))
-		: all;
+	const indexed = reset ?
+			all.filter((longhand) => !reset.includes(longhand)) :
+		all;
 	const box = boxOrder(indexed, EDGE_NAMES) ?? boxOrder(indexed, CORNER_NAMES);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
@@ -1148,29 +1237,28 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
 	SHORTHAND_SHAPES.set(
 		shorthand,
-		box
-			? radius
-				? "radius"
-				: "box"
-			: // A width, a style and a color stated once for several sides:
-				// four for `border`, the axis's two for `border-block` and
-				// `border-inline`.
-				indexed.length >= 2 * LINE_COMPONENTS.length &&
-				  LINE_COMPONENTS.every(
-						(kind) =>
-							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-								.length ===
-							indexed.length / LINE_COMPONENTS.length,
-				  )
-				? "border"
-				: indexed.length === LINE_COMPONENTS.length &&
-					  indexed.every((longhand, index) =>
-							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-					  )
-					? "line"
-					: indexed.length === 2 && axisPair(shorthand, indexed)
-						? "pair"
-						: "sequence",
+		box ?
+			radius ?
+				"radius" :
+				"box" : // A width, a style and a color stated once for several sides:
+		// four for `border`, the axis's two for `border-block` and
+		// `border-inline`.
+			indexed.length >= 2 * LINE_COMPONENTS.length &&
+			LINE_COMPONENTS.every(
+				(kind) =>
+					indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+						.length ===
+						indexed.length / LINE_COMPONENTS.length,
+			) ?
+				"border" :
+				indexed.length === LINE_COMPONENTS.length &&
+				indexed.every((longhand, index) =>
+					longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+				) ?
+					"line" :
+					indexed.length === 2 && axisPair(shorthand, indexed) ?
+						"pair" :
+						"sequence",
 	);
 }
 
@@ -1205,7 +1293,9 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
 		for (const longhand of longhands) {
 			let shorthands = byLonghand.get(longhand);
-			if (!shorthands) byLonghand.set(longhand, (shorthands = []));
+			if (!shorthands) {
+				byLonghand.set(longhand, (shorthands = []));
+			}
 			shorthands.push(shorthand);
 		}
 	}
@@ -1214,7 +1304,7 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 			(a, b) =>
 				Number(a.startsWith("-")) - Number(b.startsWith("-")) ||
 				SHORTHAND_LONGHANDS.get(b)!.length -
-					SHORTHAND_LONGHANDS.get(a)!.length ||
+				SHORTHAND_LONGHANDS.get(a)!.length ||
 				(a < b ? -1 : 1),
 		);
 		LONGHAND_SHORTHANDS.set(longhand, shorthands);
@@ -1237,8 +1327,11 @@ function serializeCSSValue(input: string, property = ""): string {
 	let out = "";
 	let space = false;
 	const emit = (token: string): void => {
-		if (out.endsWith(",")) out += " ";
-		else if (space && out !== "" && !out.endsWith("(")) out += " ";
+		if (out.endsWith(",")) {
+			out += " ";
+		} else if (space && out !== "" && !out.endsWith("(")) {
+			out += " ";
+		}
 		space = false;
 		out += token;
 	};
@@ -1272,10 +1365,12 @@ function serializeCSSValue(input: string, property = ""): string {
 			)![0];
 			i += number.length;
 			const unit = /^(?:%|[a-zA-Z\u0080-\uFFFF]+)/.exec(input.slice(i))?.[0];
-			if (unit) i += unit.length;
+			if (unit) {
+				i += unit.length;
+			}
 			emit(
 				(custom ? number : serializeCSSNumber(number)) +
-					(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
+				(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
 			);
 			i--;
 			continue;
@@ -1289,9 +1384,9 @@ function serializeCSSValue(input: string, property = ""): string {
 				const end = input.indexOf(")", i);
 				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
 				const url =
-					body.startsWith('"') || body.startsWith("'")
-						? unescapeCSSString(body.slice(1, -1))
-						: unescapeCSSString(body);
+					body.startsWith('"') || body.startsWith("'") ?
+							unescapeCSSString(body.slice(1, -1)) :
+							unescapeCSSString(body);
 				emit(`url(${serializeCSSString(url)})`);
 				i = end === -1 ? input.length : end;
 				continue;
@@ -1362,9 +1457,9 @@ function canonicalizeValue(property: string, value: string): string {
 			const lower = name.toLowerCase();
 			return FAMILY_IDENTIFIERS.test(name) &&
 				!CSS_WIDE_KEYWORDS.has(lower) &&
-				!RESERVED_FAMILY_NAMES.has(lower)
-				? name
-				: quoted;
+				!RESERVED_FAMILY_NAMES.has(lower) ?
+				name :
+				quoted;
 		});
 	}
 	// `counter(name, decimal)` counts what `counter(name)` counts, and the
@@ -1374,7 +1469,9 @@ function canonicalizeValue(property: string, value: string): string {
 		(whole, name: string, args: string) => {
 			const parts = args.split(",").map((part) => part.trim());
 			const wanted = name.toLowerCase() === "counters" ? 3 : 2;
-			if (parts.length !== wanted) return whole;
+			if (parts.length !== wanted) {
+				return whole;
+			}
 			if (parts[wanted - 1].toLowerCase() !== DEFAULT_COUNTER_STYLE) {
 				return whole;
 			}
@@ -1389,8 +1486,11 @@ const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 function endOfString(input: string, start: number): number {
 	const quote = input[start];
 	for (let i = start + 1; i < input.length; i++) {
-		if (input[i] === "\\") i++;
-		else if (input[i] === quote) return i;
+		if (input[i] === "\\") {
+			i++;
+		} else if (input[i] === quote) {
+			return i;
+		}
 	}
 	return input.length;
 }
@@ -1416,8 +1516,12 @@ function startsIdentifier(input: string, index: number): boolean {
  */
 function serializeCSSNumber(text: string): string {
 	const value = Number(text);
-	if (!Number.isFinite(value)) return text;
-	if (Object.is(value, -0)) return "0";
+	if (!Number.isFinite(value)) {
+		return text;
+	}
+	if (Object.is(value, -0)) {
+		return "0";
+	}
 	const out = String(value);
 	return out.includes("e") ? expandExponential(out) : out;
 }
@@ -1428,12 +1532,16 @@ function serializeCSSNumber(text: string): string {
  */
 function expandExponential(text: string): string {
 	const parts = /^([+-]?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(text);
-	if (!parts) return text;
+	if (!parts) {
+		return text;
+	}
 	const [, sign, whole, fraction = "", exponentText] = parts;
 	const exponent = Number(exponentText);
 	const digits = whole + fraction;
 	const point = whole.length + exponent;
-	if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+	if (point <= 0) {
+		return `${sign}0.${"0".repeat(-point)}${digits}`;
+	}
 	if (point >= digits.length) {
 		return `${sign}${digits}${"0".repeat(point - digits.length)}`;
 	}
@@ -1493,16 +1601,26 @@ function cssSupports(conditionOrProperty: string, value?: string): boolean {
 		// `selector(...)` asks whether a selector parses, which is exactly
 		// what the cascade's own selector parser answers.
 		const selector = /^selector\(([\s\S]*)\)$/.exec(condition);
-		if (selector) return parseSelectorList(selector[1]) !== null;
-		if (!condition.startsWith("(") || !condition.endsWith(")")) return false;
+		if (selector) {
+			return parseSelectorList(selector[1]) !== null;
+		}
+		if (!condition.startsWith("(") || !condition.endsWith(")")) {
+			return false;
+		}
 		const inner = condition.slice(1, -1);
 		const colon = inner.indexOf(":");
-		if (colon === -1) return false;
+		if (colon === -1) {
+			return false;
+		}
 		return cssSupports(inner.slice(0, colon), inner.slice(colon + 1));
 	}
 	const property = normalizePropertyName(conditionOrProperty);
-	if (property.startsWith("--")) return true;
-	if (!SUPPORTED_PROPERTIES.has(property)) return false;
+	if (property.startsWith("--")) {
+		return true;
+	}
+	if (!SUPPORTED_PROPERTIES.has(property)) {
+		return false;
+	}
 	const text = serializeCSSValue(String(value), property);
 	return text !== "" && isValidDeclaration(property, text);
 }
@@ -1534,9 +1652,13 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 		const source = text.slice(start, end);
 		start = end + 1;
 		const colon = source.indexOf(":");
-		if (colon === -1) return;
+		if (colon === -1) {
+			return;
+		}
 		const name = parsePropertyName(source.slice(0, colon));
-		if (!name) return;
+		if (!name) {
+			return;
+		}
 		let value = serializeCSSValue(source.slice(colon + 1), name);
 		let important = false;
 		// `!` and `important` are two tokens, and whitespace or a comment may
@@ -1546,7 +1668,9 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 			important = true;
 			value = value.slice(0, bang.index).trim();
 		}
-		if (!value) return;
+		if (!value) {
+			return;
+		}
 		declarations.push({name, value, important});
 	};
 	for (let i = 0; i < text.length; i++) {
@@ -1558,7 +1682,9 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 			i = end === -1 ? text.length : end + 1;
 		} else if (character === '"' || character === "'") {
 			for (i++; i < text.length && text[i] !== character; i++) {
-				if (text[i] === "\\") i++;
+				if (text[i] === "\\") {
+					i++;
+				}
 			}
 		} else if (character === "(" || character === "[" || character === "{") {
 			depth++;
@@ -1583,7 +1709,9 @@ function expandShorthandValue(
 	value: string,
 ): Record<string, string> | null {
 	const longhands = SHORTHAND_LONGHANDS.get(property);
-	if (!longhands) return null;
+	if (!longhands) {
+		return null;
+	}
 	// A CSS-wide keyword is the whole value of every longhand the shorthand
 	// covers -- which is all of them, for `all`.
 	if (CSS_WIDE_KEYWORDS.has(value.toLowerCase())) {
@@ -1595,20 +1723,30 @@ function expandShorthandValue(
 	const out: Record<string, string> = {};
 	let decomposed = false;
 	for (const longhand of longhands) {
-		if (expanded[longhand] === undefined) continue;
+		if (expanded[longhand] === undefined) {
+			continue;
+		}
 		out[longhand] = expanded[longhand];
 		decomposed = true;
 	}
-	if (!decomposed) return null;
+	if (!decomposed) {
+		return null;
+	}
 	for (const longhand of longhands) {
-		if (longhand in out) continue;
+		if (longhand in out) {
+			continue;
+		}
 		const initial = CSS_INITIAL_VALUES[longhand];
-		if (initial) out[longhand] = initial;
+		if (initial) {
+			out[longhand] = initial;
+		}
 	}
 	// Longhand order follows the shorthand's grammar, not the fill order.
 	const ordered: Record<string, string> = {};
 	for (const longhand of longhands) {
-		if (longhand in out) ordered[longhand] = out[longhand];
+		if (longhand in out) {
+			ordered[longhand] = out[longhand];
+		}
 	}
 	return ordered;
 }
@@ -1627,9 +1765,15 @@ function radiusAxes(value: string): [string, string] {
 /** The four values of a box shorthand, collapsed to the shortest equivalent. */
 function collapseSides(values: string[]): string {
 	const [top, right, bottom, left] = values;
-	if (left !== right) return `${top} ${right} ${bottom} ${left}`;
-	if (bottom !== top) return `${top} ${right} ${bottom}`;
-	if (right !== top) return `${top} ${right}`;
+	if (left !== right) {
+		return `${top} ${right} ${bottom} ${left}`;
+	}
+	if (bottom !== top) {
+		return `${top} ${right} ${bottom}`;
+	}
+	if (right !== top) {
+		return `${top} ${right}`;
+	}
 	return top;
 }
 
@@ -1642,27 +1786,40 @@ function boxOrder(
 	longhands: readonly string[],
 	parts: readonly string[],
 ): string[] | null {
-	if (longhands.length !== parts.length) return null;
+	if (longhands.length !== parts.length) {
+		return null;
+	}
 	const byPart = new Map<string, string>();
 	let stem: string | null = null;
 	for (const longhand of longhands) {
 		let matched: string | null = null;
 		for (const part of parts) {
 			const pattern = new RegExp(`(^|-)${part}(-|$)`);
-			if (!pattern.test(longhand)) continue;
-			if (matched === null || part.length > matched.length) matched = part;
+			if (!pattern.test(longhand)) {
+				continue;
+			}
+			if (matched === null || part.length > matched.length) {
+				matched = part;
+			}
 		}
-		if (matched === null) return null;
+		if (matched === null) {
+			return null;
+		}
 		const rest = longhand.replace(new RegExp(`(^|-)${matched}(-|$)`), "$1$2");
-		if (stem === null) stem = rest;
-		else if (stem !== rest) return null;
-		if (byPart.has(matched)) return null;
+		if (stem === null) {
+			stem = rest;
+		} else if (stem !== rest) {
+			return null;
+		}
+		if (byPart.has(matched)) {
+			return null;
+		}
 		byPart.set(matched, longhand);
 	}
 	const ordered = parts.map((part) => byPart.get(part));
-	return ordered.every((name): name is string => name !== undefined)
-		? ordered
-		: null;
+	return ordered.every((name): name is string => name !== undefined) ?
+		ordered :
+		null;
 }
 
 /** A shorthand's value, reconstructed from its longhands' values. */
@@ -1692,9 +1849,9 @@ function serializeShorthandValue(
 			}
 		}
 	}
-	const stated = reset
-		? longhands.filter((longhand) => !reset.has(longhand))
-		: longhands;
+	const stated = reset ?
+			longhands.filter((longhand) => !reset.has(longhand)) :
+		longhands;
 	const values = reset ? stated.map(valueOf) : all;
 
 	switch (SHORTHAND_SHAPES.get(shorthand)) {
@@ -1718,7 +1875,9 @@ function serializeShorthandValue(
 					longhand.endsWith(`-${kind}`),
 				);
 				const sideValues = sides.map(valueOf);
-				if (sideValues.some((value) => value !== sideValues[0])) return "";
+				if (sideValues.some((value) => value !== sideValues[0])) {
+					return "";
+				}
 				components.push([sides[0], sideValues[0]]);
 			}
 			return dropInitials(components);
@@ -1749,12 +1908,16 @@ function dropInitials(
 ): string {
 	const kept = components
 		.filter(([longhand, value], index) => {
-			if (index === required) return true;
+			if (index === required) {
+				return true;
+			}
 			const initial = CSS_INITIAL_VALUES[longhand];
 			return !initial || value !== initial;
 		})
 		.map(([, value]) => value);
-	if (kept.length > 0) return kept.join(" ");
+	if (kept.length > 0) {
+		return kept.join(" ");
+	}
 	return components.length > 0 ? components[0][1] : "";
 }
 
@@ -1840,9 +2003,13 @@ export class CSSStyleDeclaration implements DeclarationSource {
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
 	#sync(): void {
-		if (!this.#element) return;
+		if (!this.#element) {
+			return;
+		}
 		const text = this.#element.getAttribute("style") ?? "";
-		if (text === this.#attributeText) return;
+		if (text === this.#attributeText) {
+			return;
+		}
 		this.#attributeText = text;
 		this.#declarations = [];
 		this.#byName.clear();
@@ -1865,14 +2032,20 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		// any of its longhands: the declarations do not change under the walk.
 		const unserializable = new Set<string>();
 		for (const declaration of this.#declarations) {
-			if (serialized.has(declaration.name)) continue;
+			if (serialized.has(declaration.name)) {
+				continue;
+			}
 			let text = "";
 			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
-				if (unserializable.has(shorthand)) continue;
+				if (unserializable.has(shorthand)) {
+					continue;
+				}
 				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
 				// A shorthand covering more properties than the block holds
 				// cannot be serialized from it, and `all` covers hundreds.
-				if (longhands.length > this.#declarations.length) continue;
+				if (longhands.length > this.#declarations.length) {
+					continue;
+				}
 				const value = this.#shorthandValue(shorthand, longhands);
 				if (!value) {
 					unserializable.add(shorthand);
@@ -1880,7 +2053,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 				}
 				const important = this.#find(longhands[0])!.important;
 				text = `${shorthand}: ${value}${important ? " !important" : ""};`;
-				for (const longhand of longhands) serialized.add(longhand);
+				for (const longhand of longhands) {
+					serialized.add(longhand);
+				}
 				break;
 			}
 			if (!text) {
@@ -1928,7 +2103,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	#supports(name: string): boolean {
 		// A keyframe's block is a step of an animation, and the animation's own
 		// properties describe the whole rather than the step.
-		if (this.#keyframe && KEYFRAME_EXCLUDED.test(name)) return false;
+		if (this.#keyframe && KEYFRAME_EXCLUDED.test(name)) {
+			return false;
+		}
 		if (this.#descriptors) {
 			// An at-rule's block holds its own descriptors. One this engine
 			// has no descriptor list for holds whatever it is given, which is
@@ -1958,7 +2135,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		if (declared) {
 			// Parsing a block is a cascade in miniature: a normal declaration
 			// does not displace the important one already standing there.
-			if (cascade && declared.important && !important) return false;
+			if (cascade && declared.important && !important) {
+				return false;
+			}
 			if (declared.value === value && declared.important === important) {
 				return false;
 			}
@@ -1972,7 +2151,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 
 	#remove(name: string): boolean {
 		const index = this.#declarations.findIndex((entry) => entry.name === name);
-		if (index === -1) return false;
+		if (index === -1) {
+			return false;
+		}
 		this.#declarations.splice(index, 1);
 		this.#byName.delete(name);
 		return true;
@@ -1988,13 +2169,21 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		// A declaration whose value does not parse is not stored at all, so a
 		// shorthand with one bad component drops whole rather than leaving its
 		// good components behind.
-		if (!isValidDeclaration(name, value, this.#descriptors)) return false;
+		if (!isValidDeclaration(name, value, this.#descriptors)) {
+			return false;
+		}
 		const expanded = expandShorthandValue(name, value);
-		if (!expanded) return this.#store(name, value, important, cascade);
+		if (!expanded) {
+			return this.#store(name, value, important, cascade);
+		}
 		let changed = this.#remove(name);
 		for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
-			if (longhand in expanded) continue;
-			if (cascade && this.#find(longhand)?.important && !important) continue;
+			if (longhand in expanded) {
+				continue;
+			}
+			if (cascade && this.#find(longhand)?.important && !important) {
+				continue;
+			}
 			changed = this.#remove(longhand) || changed;
 		}
 		for (const [longhand, longhandValue] of Object.entries(expanded)) {
@@ -2009,9 +2198,14 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		let important: boolean | null = null;
 		for (const longhand of longhands) {
 			const declared = this.#find(longhand);
-			if (!declared) return "";
-			if (important === null) important = declared.important;
-			else if (important !== declared.important) return "";
+			if (!declared) {
+				return "";
+			}
+			if (important === null) {
+				important = declared.important;
+			} else if (important !== declared.important) {
+				return "";
+			}
 		}
 		return serializeShorthandValue(
 			shorthand,
@@ -2023,8 +2217,12 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	/** The declarations as the cascade consumes them: longhands, importance included. */
 	declarationBlock(): DeclarationBlock {
 		this.#sync();
-		if (this.#declarations.length === 0) return EMPTY_DECLARATIONS;
-		if (this.#block) return this.#block;
+		if (this.#declarations.length === 0) {
+			return EMPTY_DECLARATIONS;
+		}
+		if (this.#block) {
+			return this.#block;
+		}
 
 		const declarations: Record<string, string> = {};
 		const important: Record<string, boolean> = {};
@@ -2034,14 +2232,18 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#declarations.forEach((entry, index) => {
 			// An invalid declaration never enters the cascade: dropping it is
 			// what lets a lower-priority rule keep winning, as a browser does.
-			if (!isValidDeclaration(entry.name, entry.value)) return;
+			if (!isValidDeclaration(entry.name, entry.value)) {
+				return;
+			}
 			declarations[entry.name] = entry.value;
 			order[entry.name] = index;
 			if (entry.important) {
 				important[entry.name] = true;
 				importantValues[entry.name] = entry.value;
 			}
-			if (SHORTHAND_LONGHANDS.has(entry.name)) undecomposed = true;
+			if (SHORTHAND_LONGHANDS.has(entry.name)) {
+				undecomposed = true;
+			}
 		});
 
 		// The block holds longhands, which is what the cascade consults --
@@ -2055,7 +2257,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			}
 			this.#declarations.forEach((entry, index) => {
 				const expanded = expandShorthands({[entry.name]: entry.value});
-				for (const property in expanded) order[property] = index;
+				for (const property in expanded) {
+					order[property] = index;
+				}
 			});
 			return (this.#block = {
 				declarations: expandShorthands(declarations),
@@ -2089,7 +2293,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		const declared = this.#find(name);
-		if (declared) return declared.value;
+		if (declared) {
+			return declared.value;
+		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
 		return longhands ? this.#shorthandValue(name, longhands) : "";
 	}
@@ -2098,7 +2304,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		const declared = this.#find(name);
-		if (declared) return declared.important ? "important" : "";
+		if (declared) {
+			return declared.important ? "important" : "";
+		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
 		if (
 			longhands &&
@@ -2112,7 +2320,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	setProperty(property: string, value: string, priority?: string): void {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		if (!this.#supports(name)) return;
+		if (!this.#supports(name)) {
+			return;
+		}
 		// `[LegacyNullToEmptyString]`: null names the empty value, which removes
 		// the declaration. Every other value is stringified, and `undefined`
 		// stringifies to a value no property has -- so the call does nothing.
@@ -2122,7 +2332,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			return;
 		}
 		const priorityText = String(priority ?? "").toLowerCase();
-		if (priorityText !== "" && priorityText !== "important") return;
+		if (priorityText !== "" && priorityText !== "important") {
+			return;
+		}
 		if (this.#apply(name, text, priorityText === "important")) {
 			this.#flush();
 		}
@@ -2136,7 +2348,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
 			changed = this.#remove(longhand) || changed;
 		}
-		if (changed) this.#flush();
+		if (changed) {
+			this.#flush();
+		}
 		return previous;
 	}
 
@@ -2150,7 +2364,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#declarations = [];
 		this.#byName.clear();
 		for (const declaration of parseDeclarationText(text ?? "")) {
-			if (!this.#supports(declaration.name)) continue;
+			if (!this.#supports(declaration.name)) {
+				continue;
+			}
 			this.#apply(
 				declaration.name,
 				declaration.value,
@@ -2183,10 +2399,12 @@ function normalizePropertyName(property: string): string {
  */
 function parsePropertyName(source: string): string {
 	const name = String(source).trim();
-	if (!name.startsWith("--")) return normalizePropertyName(name);
-	return name.includes("\\")
-		? `--${cssTree.ident.decode(name.slice(2))}`
-		: name;
+	if (!name.startsWith("--")) {
+		return normalizePropertyName(name);
+	}
+	return name.includes("\\") ?
+		`--${cssTree.ident.decode(name.slice(2))}` :
+		name;
 }
 
 /**
@@ -2195,9 +2413,9 @@ function parsePropertyName(source: string): string {
  * name already an identifier.
  */
 function serializePropertyName(property: string): string {
-	return property.startsWith("--")
-		? `--${serializeCSSIdentifier(property.slice(2))}`
-		: property;
+	return property.startsWith("--") ?
+		`--${serializeCSSIdentifier(property.slice(2))}` :
+		property;
 }
 
 for (const property of CSS_PROPERTIES) {
@@ -2215,8 +2433,12 @@ for (const property of CSS_PROPERTIES) {
 	if (property.startsWith("-webkit-")) {
 		names.push(camelCaseProperty(property, true));
 	}
-	if (property !== names[0]) names.push(property);
-	if (property === "float") names.push("cssFloat");
+	if (property !== names[0]) {
+		names.push(property);
+	}
+	if (property === "float") {
+		names.push("cssFloat");
+	}
 	for (const [index, name] of names.entries()) {
 		Object.defineProperty(CSSStyleProperties.prototype, name, {
 			...descriptor,
@@ -2240,7 +2462,9 @@ const kInvalidationHooksInstalled = Symbol("termdom.invalidationHooks");
 function installInvalidationHooks(window: EngineWindow): void {
 	const Element = window.Element;
 	const owner = Element.prototype as unknown as Record<symbol, unknown>;
-	if (owner[kInvalidationHooksInstalled]) return;
+	if (owner[kInvalidationHooksInstalled]) {
+		return;
+	}
 	owner[kInvalidationHooksInstalled] = true;
 
 	const managerOf = (element: Element): StyleManager | undefined =>
@@ -2294,15 +2518,21 @@ function installInvalidationHooks(window: EngineWindow): void {
 export function installInlineStyle(window: EngineWindow): void {
 	const roots = [window.HTMLElement?.prototype, window.SVGElement?.prototype];
 	for (const root of roots) {
-		if (!root) continue;
+		if (!root) {
+			continue;
+		}
 		let declaring: object | null = root;
 		while (declaring) {
-			if (Object.prototype.hasOwnProperty.call(declaring, "style")) break;
+			if (Object.prototype.hasOwnProperty.call(declaring, "style")) {
+				break;
+			}
 			declaring = Object.getPrototypeOf(declaring);
 		}
 		const prototype: object = declaring ?? root;
 		const owner = prototype as Record<string | symbol, unknown>;
-		if (owner[kInlineStyleInstalled]) continue;
+		if (owner[kInlineStyleInstalled]) {
+			continue;
+		}
 		owner[kInlineStyleInstalled] = true;
 		Object.defineProperty(prototype, "style", {
 			get(this: Element) {
@@ -2383,7 +2613,9 @@ const RULE_TYPES = {
 const sheetNotifiers = new WeakMap<CSSStyleSheet, () => void>();
 
 function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
-	if (sheet) sheetNotifiers.get(sheet)?.();
+	if (sheet) {
+		sheetNotifiers.get(sheet)?.();
+	}
 }
 
 /** An indexed CSSOM collection: `list[0]` alongside `list.item(0)`. */
@@ -2443,11 +2675,15 @@ function splitMediaConditions(text: string): string[] {
 	let start = 0;
 	for (let index = 0; index < text.length; index++) {
 		const character = text[index];
-		if (character === "(") depth++;
-		else if (character === ")") depth--;
-		else if (depth === 0 && WHITESPACE.has(character)) {
+		if (character === "(") {
+			depth++;
+		} else if (character === ")") {
+			depth--;
+		} else if (depth === 0 && WHITESPACE.has(character)) {
 			const joiner = /^\s+and\s+/i.exec(text.slice(index));
-			if (!joiner) continue;
+			if (!joiner) {
+				continue;
+			}
 			parts.push(text.slice(start, index));
 			index += joiner[0].length - 1;
 			start = index + 1;
@@ -2461,7 +2697,9 @@ function splitMediaConditions(text: string): string[] {
 function serializeMediaFeature(feature: string): string {
 	const body = feature.slice(1, -1).trim();
 	const colon = body.indexOf(":");
-	if (colon === -1) return `(${body.toLowerCase()})`;
+	if (colon === -1) {
+		return `(${body.toLowerCase()})`;
+	}
 	const name = body.slice(0, colon).trim().toLowerCase();
 	return `(${name}: ${serializeCSSValue(body.slice(colon + 1))})`;
 }
@@ -2474,9 +2712,13 @@ function serializeMediaFeature(feature: string): string {
  */
 function serializeMediaQuery(query: string): string {
 	const text = String(query ?? "").trim();
-	if (!text) return "";
+	if (!text) {
+		return "";
+	}
 	const parts = splitMediaConditions(text);
-	if (parts.length === 0) return "";
+	if (parts.length === 0) {
+		return "";
+	}
 	let head = parts[0];
 	let modifier = "";
 	const prefixed = /^(not|only)\s+([^]*)$/i.exec(head);
@@ -2508,9 +2750,11 @@ function splitMediaQueryList(text: string): string[] {
 	let start = 0;
 	for (let index = 0; index < text.length; index++) {
 		const character = text[index];
-		if (character === "(") depth++;
-		else if (character === ")") depth--;
-		else if (character === "," && depth === 0) {
+		if (character === "(") {
+			depth++;
+		} else if (character === ")") {
+			depth--;
+		} else if (character === "," && depth === 0) {
 			queries.push(text.slice(start, index));
 			start = index + 1;
 		}
@@ -2537,7 +2781,9 @@ export class MediaList {
 		this.#media.length = 0;
 		for (const query of splitMediaQueryList(String(text ?? ""))) {
 			const serialized = serializeMediaQuery(query);
-			if (serialized) this.#media.push(serialized);
+			if (serialized) {
+				this.#media.push(serialized);
+			}
 		}
 	}
 
@@ -2568,9 +2814,13 @@ export class MediaList {
 			throw typeError("appendMedium requires a medium");
 		}
 		const text = String(medium);
-		if (splitMediaQueryList(text).length !== 1) return;
+		if (splitMediaQueryList(text).length !== 1) {
+			return;
+		}
 		const query = serializeMediaQuery(text);
-		if (!query || this.#media.includes(query)) return;
+		if (!query || this.#media.includes(query)) {
+			return;
+		}
 		this.#media.push(query);
 		this.#onChange?.();
 	}
@@ -2613,7 +2863,9 @@ function detachRule(rule: CSSRule): void {
 	ruleSheets.set(rule, null);
 	const group = rule as {cssRules?: CSSRuleList};
 	if (group.cssRules) {
-		for (const child of Array.from(group.cssRules)) detachRule(child);
+		for (const child of Array.from(group.cssRules)) {
+			detachRule(child);
+		}
 	}
 }
 
@@ -2678,7 +2930,9 @@ export abstract class CSSGroupingRule extends CSSRule {
 	) {
 		super(parentStyleSheet, parentRule);
 		this.#ruleList = createRuleList(this.#rules);
-		if (build) this.#rules.push(...build(this));
+		if (build) {
+			this.#rules.push(...build(this));
+		}
 	}
 
 	get cssRules(): CSSRuleList {
@@ -2788,7 +3042,9 @@ export class CSSStyleRule extends CSSGroupingRule {
 	/** A selector that does not parse leaves the rule as it was. */
 	set selectorText(selector: string) {
 		const selectors = parseSelectorList(selector);
-		if (!selectors) return;
+		if (!selectors) {
+			return;
+		}
 		this.#selectors = selectors;
 		this.#selectorText = null;
 		notifyRule(this);
@@ -2812,7 +3068,9 @@ export class CSSStyleRule extends CSSGroupingRule {
 		const declarations = this.#style.cssText;
 		const nested = serializeGroupRules(this);
 		const selector = this.selectorText;
-		if (nested) return `${selector} { ${declarations}${nested}\n}`;
+		if (nested) {
+			return `${selector} { ${declarations}${nested}\n}`;
+		}
 		return declarations ? `${selector} { ${declarations} }` : `${selector} { }`;
 	}
 }
@@ -2838,7 +3096,9 @@ function selectorNamespace(
 	namespaces: SelectorNamespaces,
 ): {selector: string; namespace?: string | null; valid: boolean} {
 	const list = parseSelectorList(selector);
-	if (!list) return {selector, valid: true};
+	if (!list) {
+		return {selector, valid: true};
+	}
 	let subject: string | null | undefined;
 	let subjectStated = false;
 	let sawPrefix = false;
@@ -2847,13 +3107,19 @@ function selectorNamespace(
 		const parts = childrenOf(one);
 		let start = 0;
 		for (const [index, part] of parts.entries()) {
-			if (part.type === "Combinator") start = index + 1;
+			if (part.type === "Combinator") {
+				start = index + 1;
+			}
 		}
 		for (const [index, part] of parts.entries()) {
-			if (part.type !== "TypeSelector") continue;
+			if (part.type !== "TypeSelector") {
+				continue;
+			}
 			const name = part.name as string;
 			const bar = name.lastIndexOf("|");
-			if (bar === -1) continue;
+			if (bar === -1) {
+				continue;
+			}
 			sawPrefix = true;
 			part.name = name.slice(bar + 1);
 			const prefix = name.slice(0, bar);
@@ -2864,7 +3130,9 @@ function selectorNamespace(
 				uri = namespaces.prefixes.get(cssTree.ident.decode(prefix));
 				// A prefix no @namespace declared makes the selector invalid,
 				// and an invalid selector matches nothing.
-				if (uri === undefined) valid = false;
+				if (uri === undefined) {
+					valid = false;
+				}
 			}
 			if (index >= start) {
 				subject = uri;
@@ -2872,7 +3140,9 @@ function selectorNamespace(
 			}
 		}
 	}
-	if (!subjectStated) subject = namespaces.default ?? undefined;
+	if (!subjectStated) {
+		subject = namespaces.default ?? undefined;
+	}
 	return {
 		selector: sawPrefix ? serializeSelectorList(list) : selector,
 		namespace: subject,
@@ -2881,12 +3151,17 @@ function selectorNamespace(
 }
 
 function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
-	if (!sheet) return NO_NAMESPACES;
+	if (!sheet) {
+		return NO_NAMESPACES;
+	}
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
 	for (const rule of Array.from(sheet.cssRules)) {
-		if (!(rule instanceof CSSNamespaceRule)) continue;
-		if (rule.prefix === "") namespaces.default = rule.namespaceURI;
-		else {
+		if (!(rule instanceof CSSNamespaceRule)) {
+			continue;
+		}
+		if (rule.prefix === "") {
+			namespaces.default = rule.namespaceURI;
+		} else {
 			namespaces.prefixes.set(
 				cssTree.ident.decode(rule.prefix),
 				rule.namespaceURI,
@@ -2924,7 +3199,9 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	for (const descriptor of descriptors) {
 		const attribute = camelCaseProperty(descriptor);
 		for (const [index, key] of [attribute, descriptor].entries()) {
-			if (index === 1 && key === attribute) continue;
+			if (index === 1 && key === attribute) {
+				continue;
+			}
 			Object.defineProperty(block.prototype, key, {
 				get(this: CSSStyleDeclaration) {
 					return this.getPropertyValue(descriptor);
@@ -2978,9 +3255,9 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 
 	get cssText(): string {
 		const declarations = this.#style.cssText;
-		return declarations
-			? `${this.prelude} { ${declarations} }`
-			: `${this.prelude} { }`;
+		return declarations ?
+			`${this.prelude} { ${declarations} }` :
+			`${this.prelude} { }`;
 	}
 }
 
@@ -3042,12 +3319,18 @@ const PAGE_PSEUDO_CLASSES = new Set(["blank", "first", "left", "right"]);
  */
 function serializePageSelector(selector: string): string {
 	const text = String(selector).trim();
-	if (!text) return "";
+	if (!text) {
+		return "";
+	}
 	const match = /^([^\s:]*)((?::[^\s:]+)*)$/.exec(text);
-	if (!match) return "";
+	if (!match) {
+		return "";
+	}
 	const pseudos = match[2] ? match[2].slice(1).split(":") : [];
 	for (const pseudo of pseudos) {
-		if (!PAGE_PSEUDO_CLASSES.has(pseudo.toLowerCase())) return "";
+		if (!PAGE_PSEUDO_CLASSES.has(pseudo.toLowerCase())) {
+			return "";
+		}
 	}
 	const name = match[1] ? serializeCSSIdentifier(match[1]) : "";
 	return name + pseudos.map((pseudo) => `:${pseudo.toLowerCase()}`).join("");
@@ -3079,7 +3362,9 @@ export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
 
 	set name(name: string) {
 		const text = String(name).trim();
-		if (!text) return;
+		if (!text) {
+			return;
+		}
 		this.#name = text;
 		notifyRule(this);
 	}
@@ -3222,11 +3507,15 @@ function serializeKeyText(text: string): string {
 	const keys: string[] = [];
 	for (const part of String(text).split(",")) {
 		const key = part.trim().toLowerCase();
-		if (key === "from") keys.push("0%");
-		else if (key === "to") keys.push("100%");
-		else if (/^[+-]?(\d+\.?\d*|\.\d+)%$/.test(key)) {
+		if (key === "from") {
+			keys.push("0%");
+		} else if (key === "to") {
+			keys.push("100%");
+		} else if (/^[+-]?(\d+\.?\d*|\.\d+)%$/.test(key)) {
 			keys.push(`${serializeCSSNumber(key.slice(0, -1))}%`);
-		} else return "";
+		} else {
+			return "";
+		}
 	}
 	return keys.join(", ");
 }
@@ -3322,9 +3611,9 @@ export class CSSContainerRule extends CSSTextConditionRule {
 
 	get containerQuery(): string {
 		const name = this.containerName;
-		return name
-			? this.conditionText.slice(name.length).trim()
-			: this.conditionText;
+		return name ?
+				this.conditionText.slice(name.length).trim() :
+			this.conditionText;
 	}
 }
 
@@ -3522,9 +3811,13 @@ export class CSSImportRule extends CSSRule {
 		if (this.#layerName !== null) {
 			out += this.#layerName ? ` layer(${this.#layerName})` : " layer";
 		}
-		if (this.#supportsText !== null) out += ` supports(${this.#supportsText})`;
+		if (this.#supportsText !== null) {
+			out += ` supports(${this.#supportsText})`;
+		}
 		const media = this.#media.mediaText;
-		if (media) out += ` ${media}`;
+		if (media) {
+			out += ` ${media}`;
+		}
 		return `${out};`;
 	}
 }
@@ -3542,7 +3835,9 @@ export class CSSFontFeatureValuesRule extends CSSRule {
 		super(parentStyleSheet, null);
 		this.#fontFamily = fontFamily.trim();
 		for (const child of nodesOf(node.block ?? {})) {
-			if (child.type !== "Atrule" || !child.name) continue;
+			if (child.type !== "Atrule" || !child.name) {
+				continue;
+			}
 			const block = new CSSStyleDeclaration({
 				parentRule: this,
 				onChange: () => notifyRule(this),
@@ -3608,7 +3903,9 @@ export class CSSFontFeatureValuesRule extends CSSRule {
 		const blocks: string[] = [];
 		for (const [name, block] of this.#blocks) {
 			const declarations = block.cssText;
-			if (declarations) blocks.push(`\n  @${name} { ${declarations} }`);
+			if (declarations) {
+				blocks.push(`\n  @${name} { ${declarations} }`);
+			}
 		}
 		return `@font-feature-values ${this.#fontFamily} {${blocks.join("")}\n}`;
 	}
@@ -3628,7 +3925,9 @@ export class CSSKeyframesRule extends CSSRule {
 		super(parentStyleSheet, null);
 		this.#name = name.trim();
 		this.#ruleList = createRuleList(this.#rules);
-		if (build) this.#rules.push(...build(this));
+		if (build) {
+			this.#rules.push(...build(this));
+		}
 		return indexed(this, this.#rules);
 	}
 
@@ -3668,7 +3967,9 @@ export class CSSKeyframesRule extends CSSRule {
 	deleteRule(select: string): void {
 		const key = serializeKeyText(String(select));
 		for (let index = this.#rules.length - 1; index >= 0; index--) {
-			if ((this.#rules[index] as CSSKeyframeRule).keyText !== key) continue;
+			if ((this.#rules[index] as CSSKeyframeRule).keyText !== key) {
+				continue;
+			}
 			this.#rules.splice(index, 1);
 			notifyRule(this);
 			return;
@@ -3679,7 +3980,9 @@ export class CSSKeyframesRule extends CSSRule {
 		const key = serializeKeyText(String(select));
 		for (let index = this.#rules.length - 1; index >= 0; index--) {
 			const rule = this.#rules[index] as CSSKeyframeRule;
-			if (rule.keyText === key) return rule;
+			if (rule.keyText === key) {
+				return rule;
+			}
 		}
 		return null;
 	}
@@ -3692,9 +3995,9 @@ export class CSSKeyframesRule extends CSSRule {
 		// strings they are.
 		const reserved = this.#name.toLowerCase();
 		const name =
-			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
-				? serializeCSSString(this.#name)
-				: serializeCSSIdentifier(this.#name);
+			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none" ?
+					serializeCSSString(this.#name) :
+					serializeCSSIdentifier(this.#name);
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 }
@@ -3779,7 +4082,9 @@ export class CSSStyleSheet {
 	) {
 		this.#ownerNode = ownerNode;
 		this.#constructed = ownerNode === null;
-		if (this.#constructed) constructedSheets.add(this);
+		if (this.#constructed) {
+			constructedSheets.add(this);
+		}
 		this.#href = ownerNode?.getAttribute("href") ?? null;
 		this.#title = ownerNode?.getAttribute("title") ?? options.title ?? null;
 		this.#disabled = Boolean(options.disabled);
@@ -3797,9 +4102,13 @@ export class CSSStyleSheet {
 	/** Reparse the owner element's text when it says something new. */
 	#sync(): void {
 		const node = this.#ownerNode;
-		if (!node || node.tagName !== "STYLE") return;
+		if (!node || node.tagName !== "STYLE") {
+			return;
+		}
 		const text = node.textContent ?? "";
-		if (text === this.#text) return;
+		if (text === this.#text) {
+			return;
+		}
 		this.#text = text;
 		this.#rules.length = 0;
 		this.#rules.push(...parseRules(text, this, null));
@@ -3863,7 +4172,9 @@ export class CSSStyleSheet {
 
 	set disabled(disabled: boolean) {
 		const value = Boolean(disabled);
-		if (value === this.#disabled) return;
+		if (value === this.#disabled) {
+			return;
+		}
 		this.#disabled = value;
 		this.#changed();
 	}
@@ -3924,8 +4235,12 @@ export class CSSStyleSheet {
 			return;
 		}
 		if (rule instanceof CSSNamespaceRule) {
-			if (before.some((other) => !prelude(other))) hierarchy();
-			if (after.some((other) => other instanceof CSSImportRule)) hierarchy();
+			if (before.some((other) => !prelude(other))) {
+				hierarchy();
+			}
+			if (after.some((other) => other instanceof CSSImportRule)) {
+				hierarchy();
+			}
 			if (this.#rules.some((other) => !prelude(other))) {
 				throw domException(
 					"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
@@ -3935,7 +4250,9 @@ export class CSSStyleSheet {
 			}
 			return;
 		}
-		if (after.some(prelude)) hierarchy();
+		if (after.some(prelude)) {
+			hierarchy();
+		}
 	}
 
 	deleteRule(index: number): void {
@@ -4181,7 +4498,9 @@ interface SelectorNode {
 
 function childrenOf(node: SelectorNode): SelectorNode[] {
 	const children = node.children;
-	if (!children) return [];
+	if (!children) {
+		return [];
+	}
 	return Array.isArray(children) ? children : children.toArray();
 }
 
@@ -4197,7 +4516,9 @@ function serializeQualifiedName(
 	const local = bar === -1 ? name : name.slice(bar + 1);
 	const prefix = bar === -1 ? null : name.slice(0, bar);
 	const localText = local === "*" ? "*" : serializeIdentifierSource(local);
-	if (prefix === null) return localText;
+	if (prefix === null) {
+		return localText;
+	}
 	// A prefix is written only where it says something an unprefixed name does
 	// not: `*|E` says "any namespace", which is what `E` already means with no
 	// default namespace declared, and a prefix bound to the default namespace
@@ -4302,8 +4623,12 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 	};
 	const argumentWeight = (node: SelectorNode): Specificity => {
 		for (const child of childrenOf(node)) {
-			if (child.type === "SelectorList") return listSpecificity(child);
-			if (child.type === "Selector") return selectorSpecificityOf(child);
+			if (child.type === "SelectorList") {
+				return listSpecificity(child);
+			}
+			if (child.type === "Selector") {
+				return selectorSpecificityOf(child);
+			}
 			if (child.type === "Nth" && child.selector) {
 				return listSpecificity(child.selector);
 			}
@@ -4322,7 +4647,9 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 			// The universal selector weighs nothing, in any namespace.
 			case "TypeSelector": {
 				const name = String(part.name ?? "");
-				if (!name.endsWith("*")) total[2]++;
+				if (!name.endsWith("*")) {
+					total[2]++;
+				}
 				break;
 			}
 			// `::slotted(.a)` and `::part(name)`: the pseudo-element weighs as
@@ -4340,7 +4667,9 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 					break;
 				}
 				// `:where()` contributes nothing at all, arguments included.
-				if (name === "where") break;
+				if (name === "where") {
+					break;
+				}
 				if (ARGUMENT_WEIGHTED_PSEUDO_CLASSES.has(name)) {
 					add(argumentWeight(part));
 					break;
@@ -4424,7 +4753,9 @@ function selectorCompounds(selector: string): string[] {
 	for (let i = 0; i < selector.length; i++) {
 		const char = selector[i];
 		if (quote) {
-			if (char === quote && selector[i - 1] !== "\\") quote = "";
+			if (char === quote && selector[i - 1] !== "\\") {
+				quote = "";
+			}
 			continue;
 		}
 		if (char === '"' || char === "'") {
@@ -4447,11 +4778,15 @@ function selectorCompounds(selector: string): string[] {
 				char === "+" ||
 				char === "~")
 		) {
-			if (i > start) compounds.push(selector.slice(start, i));
+			if (i > start) {
+				compounds.push(selector.slice(start, i));
+			}
 			start = i + 1;
 		}
 	}
-	if (selector.length > start) compounds.push(selector.slice(start));
+	if (selector.length > start) {
+		compounds.push(selector.slice(start));
+	}
 	return compounds;
 }
 
@@ -4470,9 +4805,11 @@ function selectorSubjectTag(selector: string): string | undefined {
 	let start = 0;
 	for (let i = 0; i < selector.length; i++) {
 		const c = selector[i];
-		if (c === "(" || c === "[") depth++;
-		else if (c === ")" || c === "]") depth--;
-		else if (
+		if (c === "(" || c === "[") {
+			depth++;
+		} else if (c === ")" || c === "]") {
+			depth--;
+		} else if (
 			depth === 0 &&
 			(c === " " || c === ">" || c === "+" || c === "~")
 		) {
@@ -4481,10 +4818,14 @@ function selectorSubjectTag(selector: string): string | undefined {
 	}
 	const subject = selector.slice(start);
 	const name = /^[A-Za-z][\w-]*/.exec(subject);
-	if (!name) return undefined;
+	if (!name) {
+		return undefined;
+	}
 	// A namespace prefix leaves the type after the bar, which the caller has
 	// already resolved away; anything still carrying one is not read here.
-	if (subject.includes("|")) return undefined;
+	if (subject.includes("|")) {
+		return undefined;
+	}
 	return name[0].toLowerCase();
 }
 
@@ -4540,7 +4881,9 @@ function serializeSelector(
 			const text = serializeQualifiedName(part.name as string, namespaces);
 			const next = parts[index + 1];
 			const alone = !next || next.type === "Combinator";
-			if (text === "*" && !alone) continue;
+			if (text === "*" && !alone) {
+				continue;
+			}
 			out += text;
 			continue;
 		}
@@ -4571,11 +4914,13 @@ function serializeSimpleSelector(
 			let out = `[${serializeQualifiedName(name.name, ATTRIBUTE_NAMESPACES)}`;
 			if (node.matcher && node.value) {
 				const value =
-					node.value.type === "String"
-						? (node.value.value ?? "")
-						: (node.value.name ?? "");
+					node.value.type === "String" ?
+							(node.value.value ?? "") :
+							(node.value.name ?? "");
 				out += `${node.matcher}${serializeCSSString(value)}`;
-				if (node.flags) out += ` ${node.flags.toLowerCase()}`;
+				if (node.flags) {
+					out += ` ${node.flags.toLowerCase()}`;
+				}
 			}
 			return `${out}]`;
 		}
@@ -4590,7 +4935,9 @@ function serializeSimpleSelector(
 			const colons = element ? "::" : ":";
 			const name = serializeCSSIdentifier(decoded);
 			const args = childrenOf(node);
-			if (args.length === 0) return `${colons}${name}`;
+			if (args.length === 0) {
+				return `${colons}${name}`;
+			}
 			const text = args
 				.map((argument) => serializeSelectorArgument(argument, namespaces))
 				.join(", ");
@@ -4611,12 +4958,12 @@ function serializeSelectorArgument(
 		case "Selector":
 			return serializeSelector(node, namespaces);
 		case "Nth": {
-			const nth = node.nth
-				? serializeSelectorArgument(node.nth, namespaces)
-				: "";
-			const of = node.selector
-				? ` of ${serializeSelectorList(node.selector, namespaces)}`
-				: "";
+			const nth = node.nth ?
+					serializeSelectorArgument(node.nth, namespaces) :
+				"";
+			const of = node.selector ?
+				` of ${serializeSelectorList(node.selector, namespaces)}` :
+				"";
 			return `${nth}${of}`;
 		}
 		case "AnPlusB":
@@ -4624,8 +4971,12 @@ function serializeSelectorArgument(
 		case "Identifier": {
 			// `even` and `odd` are An+B written in words.
 			const word = ((node.name as string) ?? "").toLowerCase();
-			if (word === "even") return "2n";
-			if (word === "odd") return "2n+1";
+			if (word === "even") {
+				return "2n";
+			}
+			if (word === "odd") {
+				return "2n+1";
+			}
 			return serializeIdentifierSource((node.name as string) ?? "");
 		}
 		case "String":
@@ -4635,9 +4986,9 @@ function serializeSelectorArgument(
 			// An argument that is one identifier -- `::highlight(name)`,
 			// `:lang(ja)` -- serializes as the identifier its escapes spell.
 			// Anything else the parser handed over whole stays as written.
-			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text)
-				? serializeIdentifierSource(text)
-				: text;
+			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text) ?
+					serializeIdentifierSource(text) :
+				text;
 		}
 		default:
 			return "";
@@ -4646,12 +4997,17 @@ function serializeSelectorArgument(
 
 /** `An+B` in the one spelling CSSOM writes: `2n`, `2n+1`, `-n+5`, `10`. */
 function serializeAnPlusB(a: string | null, b: string | null): string {
-	if (a === null) return String(Number(b ?? 0));
+	if (a === null) {
+		return String(Number(b ?? 0));
+	}
 	const step = Number(a);
 	let out = step === 1 ? "n" : step === -1 ? "-n" : `${step}n`;
 	const offset = Number(b ?? 0);
-	if (offset > 0) out += `+${offset}`;
-	else if (offset < 0) out += `${offset}`;
+	if (offset > 0) {
+		out += `+${offset}`;
+	} else if (offset < 0) {
+		out += `${offset}`;
+	}
 	return out;
 }
 
@@ -4665,7 +5021,9 @@ function serializeAnPlusB(a: string | null, b: string | null): string {
  * declaration is the answer.
  */
 function parsePseudoElementArgument(text: string): string | null {
-	if (!text.startsWith(":")) return "";
+	if (!text.startsWith(":")) {
+		return "";
+	}
 	const double = text.startsWith("::");
 	let name = text.slice(double ? 2 : 1);
 	// CSS tokenization closes a function left open at the end of the input, so
@@ -4675,23 +5033,38 @@ function parsePseudoElementArgument(text: string): string | null {
 	let open = 0;
 	for (let index = 0; index < name.length; index++) {
 		const char = name[index];
-		if (char === "\\") index++;
-		else if (char === "(") open++;
-		else if (char === ")") open--;
+		if (char === "\\") {
+			index++;
+		} else if (char === "(") {
+			open++;
+		} else if (char === ")") {
+			open--;
+		}
 		// A comma outside the arguments starts a second selector, and a list
 		// of them names no one pseudo-element.
-		else if (char === "," && open === 0) return null;
+		else if (char === "," && open === 0) {
+			return null;
+		}
 	}
-	if (open > 0) name += ")".repeat(open);
-	else if (name !== name.trimEnd()) return null;
+	if (open > 0) {
+		name += ")".repeat(open);
+	} else if (name !== name.trimEnd()) {
+		return null;
+	}
 	// One colon is the CSS 2 spelling, which only the four CSS 2
 	// pseudo-elements answer to.
-	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(pseudoName(name))) return null;
+	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(pseudoName(name))) {
+		return null;
+	}
 	const selectors = parseSelectorList(`*::${name}`);
-	if (!selectors) return null;
+	if (!selectors) {
+		return null;
+	}
 	// One pseudo-element, not a list of them.
 	const list = childrenOf(selectors);
-	if (list.length !== 1) return null;
+	if (list.length !== 1) {
+		return null;
+	}
 	const compound = childrenOf(list[0] ?? {type: ""});
 	const pseudo = compound[compound.length - 1];
 	if (
@@ -4716,8 +5089,11 @@ function splitSelectorList(text: string): string[] {
 	for (let index = 0; index < text.length; index++) {
 		const char = text[index];
 		if (quote) {
-			if (char === "\\") index++;
-			else if (char === quote) quote = "";
+			if (char === "\\") {
+				index++;
+			} else if (char === quote) {
+				quote = "";
+			}
 		} else if (char === '"' || char === "'") {
 			quote = char;
 		} else if (char === "(" || char === "[") {
@@ -4741,7 +5117,9 @@ function splitSelectorList(text: string): string[] {
 function parseSelectorList(text: string): SelectorNode | null {
 	let list: SelectorNode;
 	// A selector list has to select something: the empty string is not one.
-	if (!String(text).trim()) return null;
+	if (!String(text).trim()) {
+		return null;
+	}
 	try {
 		list = cssTree.parse(String(text), {
 			context: "selectorList",
@@ -4752,10 +5130,14 @@ function parseSelectorList(text: string): SelectorNode | null {
 	} catch {
 		return null;
 	}
-	if (list.type !== "SelectorList") return null;
+	if (list.type !== "SelectorList") {
+		return null;
+	}
 	let valid = true;
 	const checkSimple = (node: SelectorNode): void => {
-		if (!valid) return;
+		if (!valid) {
+			return;
+		}
 		switch (node.type) {
 			case "PseudoClassSelector": {
 				const name = pseudoName(node.name as string);
@@ -4787,10 +5169,13 @@ function parseSelectorList(text: string): SelectorNode | null {
 		// that take them; `::part(title)` and `:lang(ja)` name something else,
 		// and their arguments carry no selector to validate.
 		for (const child of childrenOf(node)) {
-			if (child.type === "SelectorList") checkList(child);
-			else if (child.type === "Selector") checkSelector(child);
-			else if (child.type === "Nth" && child.selector)
+			if (child.type === "SelectorList") {
+				checkList(child);
+			} else if (child.type === "Selector") {
+				checkSelector(child);
+			} else if (child.type === "Nth" && child.selector) {
 				checkList(child.selector);
+			}
 		}
 	};
 	const checkSelector = (selector: SelectorNode): void => {
@@ -4799,10 +5184,14 @@ function parseSelectorList(text: string): SelectorNode | null {
 			valid = false;
 			return;
 		}
-		for (const part of parts) checkSimple(part);
+		for (const part of parts) {
+			checkSimple(part);
+		}
 	};
 	const checkList = (node: SelectorNode): void => {
-		for (const selector of childrenOf(node)) checkSelector(selector);
+		for (const selector of childrenOf(node)) {
+			checkSelector(selector);
+		}
 	};
 	checkList(list);
 	return valid ? list : null;
@@ -4817,24 +5206,32 @@ function validPseudoElementArguments(
 	name: string,
 	args: SelectorNode[],
 ): boolean {
-	if (!FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) return args.length === 0;
-	if (args.length === 0) return false;
+	if (!FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
+		return args.length === 0;
+	}
+	if (args.length === 0) {
+		return false;
+	}
 	if (name === "slotted") {
 		return args.every((argument) => argument.type === "Selector");
 	}
 	const text = args
 		.map((argument) =>
-			argument.type === "Raw"
-				? String((argument as {value?: string}).value ?? "")
-				: "",
+			argument.type === "Raw" ?
+					String((argument as {value?: string}).value ?? "") :
+				"",
 		)
 		.join("")
 		.trim();
 	// The argument is an identifier, so the escapes in it spell the name.
-	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) return false;
+	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
+		return false;
+	}
 	const identifier = cssTree.ident.decode(text);
 	// `::picker` names the element whose picker it is, and nothing else does.
-	if (name === "picker") return identifier === "select";
+	if (name === "picker") {
+		return identifier === "select";
+	}
 	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier);
 }
 
@@ -4861,15 +5258,21 @@ function nodesOf(container: {
 /** The declarations of a rule's block, in source order. */
 function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
-	if (!node.block) return declarations;
+	if (!node.block) {
+		return declarations;
+	}
 	for (const child of nodesOf(node.block)) {
-		if (child.type !== "Declaration") continue;
+		if (child.type !== "Declaration") {
+			continue;
+		}
 		const name = parsePropertyName(child.property ?? "");
 		const value = serializeCSSValue(
 			cssTree.generate(child.value as never),
 			name,
 		);
-		if (!value) continue;
+		if (!value) {
+			continue;
+		}
 		declarations.push({
 			name,
 			value,
@@ -4958,10 +5361,13 @@ function convertRules(
 	const rules: CSSRule[] = [];
 	for (const node of source) {
 		const rule = convertRule(node, sheet, parentRule, namespaces);
-		if (!rule) continue;
+		if (!rule) {
+			continue;
+		}
 		if (rule instanceof CSSNamespaceRule) {
-			if (rule.prefix === "") namespaces.default = rule.namespaceURI;
-			else {
+			if (rule.prefix === "") {
+				namespaces.default = rule.namespaceURI;
+			} else {
 				namespaces.prefixes.set(
 					cssTree.ident.decode(rule.prefix),
 					rule.namespaceURI,
@@ -4987,7 +5393,9 @@ function convertRule(
 	if (node.type === "Rule") {
 		const prelude = preludeText(node);
 		const selectors = parseSelectorList(prelude);
-		if (!selectors) return null;
+		if (!selectors) {
+			return null;
+		}
 		// A prefix no @namespace declared names no namespace, and a selector
 		// naming one does not parse.
 		if (
@@ -5004,7 +5412,9 @@ function convertRule(
 			(rule) => convertRules(nestedRules(node), sheet, rule, namespaces),
 		);
 	}
-	if (node.type !== "Atrule") return null;
+	if (node.type !== "Atrule") {
+		return null;
+	}
 	const prelude = preludeText(node);
 	switch ((node.name ?? "").toLowerCase()) {
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
@@ -5040,11 +5450,11 @@ function convertRule(
 					),
 			);
 		case "layer":
-			return node.block
-				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
+			return node.block ?
+					new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
 						convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-					)
-				: new CSSLayerStatementRule(prelude, sheet, parentRule);
+					) :
+					new CSSLayerStatementRule(prelude, sheet, parentRule);
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
 				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
@@ -5119,8 +5529,9 @@ function convertImportRule(
 		let depth = 0;
 		let end = rest.length;
 		for (let i = "supports(".length - 1; i < rest.length; i++) {
-			if (rest[i] === "(") depth++;
-			else if (rest[i] === ")" && --depth === 0) {
+			if (rest[i] === "(") {
+				depth++;
+			} else if (rest[i] === ")" && --depth === 0) {
 				end = i;
 				break;
 			}
@@ -5162,7 +5573,9 @@ for (const type of [
 		descriptor = Object.getOwnPropertyDescriptor(prototype, "cssText");
 		prototype = Object.getPrototypeOf(prototype);
 	}
-	if (!descriptor?.get) continue;
+	if (!descriptor?.get) {
+		continue;
+	}
 	Object.defineProperty(type.prototype, "cssText", {
 		...descriptor,
 		set() {},
@@ -5184,7 +5597,9 @@ function sheetFor(element: Element): CSSStyleSheet {
 		sheet = new CSSStyleSheet({}, element);
 		sheetNotifiers.set(sheet, () => {
 			const window = element.ownerDocument?.defaultView;
-			if (window) styleManagers.get(window)?.refreshStylesheets();
+			if (window) {
+				styleManagers.get(window)?.refreshStylesheets();
+			}
 		});
 		elementSheets.set(element, sheet);
 	}
@@ -5235,9 +5650,9 @@ function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 /** The cascade a tree's sheets belong to. */
 function managerForTree(tree: Node): StyleManager | undefined {
 	const document =
-		tree.nodeType === tree.DOCUMENT_NODE
-			? (tree as Document)
-			: tree.ownerDocument;
+		tree.nodeType === tree.DOCUMENT_NODE ?
+				(tree as Document) :
+			tree.ownerDocument;
 	return document ? documentManagers.get(document) : undefined;
 }
 
@@ -5268,10 +5683,13 @@ function adopt(target: Node, sheets: unknown): void {
 	// One array per tree, replaced in place: the observable array an author
 	// already holds is the same object after a whole reassignment.
 	let list = adoptedSheets.get(target);
-	if (!list) adoptedSheets.set(target, (list = []));
+	if (!list) {
+		adoptedSheets.set(target, (list = []));
+	}
 	list.length = 0;
-	for (const [index, sheet] of adopted.entries())
+	for (const [index, sheet] of adopted.entries()) {
 		defineIndex(list, index, sheet);
+	}
 }
 
 /**
@@ -5310,7 +5728,9 @@ function observableAdopted(
 	list: CSSStyleSheet[],
 ): CSSStyleSheet[] {
 	let proxy = adoptedProxies.get(target);
-	if (proxy) return proxy;
+	if (proxy) {
+		return proxy;
+	}
 	const changed = (): void => {
 		managerForTree(target)?.refreshStylesheets();
 	};
@@ -5319,11 +5739,15 @@ function observableAdopted(
 			if (typeof property === "string" && /^\d+$/.test(property)) {
 				checkAdoptable(target, value);
 				const defined = defineIndex(array, property, value);
-				if (defined) changed();
+				if (defined) {
+					changed();
+				}
 				return defined;
 			}
 			const ok = Reflect.set(array, property, value);
-			if (ok) changed();
+			if (ok) {
+				changed();
+			}
 			return ok;
 		},
 		deleteProperty(array, property) {
@@ -5365,11 +5789,15 @@ function installStyleSheets(window: EngineWindow): void {
 		});
 
 		for (const prototype of [documentPrototype, window.ShadowRoot?.prototype]) {
-			if (!prototype) continue;
+			if (!prototype) {
+				continue;
+			}
 			Object.defineProperty(prototype, "adoptedStyleSheets", {
 				get(this: Node) {
 					let list = adoptedSheets.get(this);
-					if (!list) adoptedSheets.set(this, (list = []));
+					if (!list) {
+						adoptedSheets.set(this, (list = []));
+					}
 					return observableAdopted(this, list);
 				},
 				set(this: Node, sheets: unknown) {
@@ -5543,7 +5971,7 @@ const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
 
 /** The block-level display an inline-level box takes as a flex or grid item. */
 const BLOCKIFIED_DISPLAYS: Record<string, string> = {
-	inline: "block",
+	"inline": "block",
 	"inline-block": "block",
 	"inline-flex": "flex",
 	"inline-grid": "grid",
@@ -5571,13 +5999,17 @@ const OPPOSITE_INSET: Record<string, string> = {
  * measure.
  */
 function insetLength(computed: string, basis: number): number | null {
-	if (!computed || computed === "auto") return null;
+	if (!computed || computed === "auto") {
+		return null;
+	}
 	const calc = /^calc\(([+-]?[\d.]+)px ([+-]) ([\d.]+)%\)$/.exec(computed);
 	if (calc) {
 		const percentage = (parseFloat(calc[3]) / 100) * basis;
 		return parseFloat(calc[1]) + (calc[2] === "-" ? -percentage : percentage);
 	}
-	if (computed.endsWith("%")) return (parseFloat(computed) / 100) * basis;
+	if (computed.endsWith("%")) {
+		return (parseFloat(computed) / 100) * basis;
+	}
 	const length = parseFloat(computed);
 	return Number.isFinite(length) ? length : null;
 }
@@ -5604,24 +6036,28 @@ export function computedStyleOf(element: Element): ComputedStyle {
 	const host = pseudoHostOf<Element>(element);
 	if (host !== null) {
 		const name = pseudoNameOf(element) as string;
-		const manager = host.ownerDocument
-			? documentManagers.get(host.ownerDocument)
-			: undefined;
-		return manager
-			? manager.pseudoNodeStyleFor(element, host, name)
-			: pseudoStyleOf(host, name);
+		const manager = host.ownerDocument ?
+				documentManagers.get(host.ownerDocument) :
+			undefined;
+		return manager ?
+				manager.pseudoNodeStyleFor(element, host, name) :
+				pseudoStyleOf(host, name);
 	}
 	const document = element.ownerDocument;
-	if (!document) return EMPTY_COMPUTED_STYLE;
+	if (!document) {
+		return EMPTY_COMPUTED_STYLE;
+	}
 	const manager = documentManagers.get(document);
-	if (manager) return manager.declarationFor(element);
+	if (manager) {
+		return manager.declarationFor(element);
+	}
 	// A document with no cascade of this engine's behind it -- a bare document,
 	// which the tree walker is exercised against -- still answers, through
 	// whatever getComputedStyle it has.
 	const window = document.defaultView;
-	return window
-		? foreignComputedStyle(window.getComputedStyle(element))
-		: EMPTY_COMPUTED_STYLE;
+	return window ?
+			foreignComputedStyle(window.getComputedStyle(element)) :
+		EMPTY_COMPUTED_STYLE;
 }
 
 function foreignComputedStyle(
@@ -5639,13 +6075,17 @@ export function pseudoStyleOf(
 	pseudoElement: string,
 ): ComputedStyle {
 	const document = element.ownerDocument;
-	if (!document) return EMPTY_COMPUTED_STYLE;
+	if (!document) {
+		return EMPTY_COMPUTED_STYLE;
+	}
 	const manager = documentManagers.get(document);
-	if (manager) return manager.pseudoDeclarationFor(element, pseudoElement);
+	if (manager) {
+		return manager.pseudoDeclarationFor(element, pseudoElement);
+	}
 	const window = document.defaultView;
-	return window
-		? foreignComputedStyle(window.getComputedStyle(element, pseudoElement))
-		: EMPTY_COMPUTED_STYLE;
+	return window ?
+			foreignComputedStyle(window.getComputedStyle(element, pseudoElement)) :
+		EMPTY_COMPUTED_STYLE;
 }
 
 /**
@@ -5742,11 +6182,16 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	#usedValue(property: string): string {
 		const manager = this.#manager!;
 		const epoch = manager.layoutEpoch;
-		if (!this.#used) this.#used = new Map();
-		else if (epoch !== this.#usedEpoch) this.#used.clear();
+		if (!this.#used) {
+			this.#used = new Map();
+		} else if (epoch !== this.#usedEpoch) {
+			this.#used.clear();
+		}
 		this.#usedEpoch = epoch;
 		const memoized = this.#used.get(property);
-		if (memoized !== undefined) return memoized;
+		if (memoized !== undefined) {
+			return memoized;
+		}
 
 		const computed = this.computedValueOf(property);
 		const value = this.#measure(property, computed);
@@ -5762,7 +6207,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 */
 	#computed(property: string): string {
 		const entry = computedEntry(property, this.#resolvePropertyValue(property));
-		if (!entry.contextual) return entry.value;
+		if (!entry.contextual) {
+			return entry.value;
+		}
 		const absolute = absolutizeLengths(
 			entry.value,
 			this.#lengthContext(property),
@@ -5783,11 +6230,11 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	#lengthContext(property: string): LengthContext {
 		const own = property === "font-size";
 		const parent = own ? flatParentElement<Element>(this.#element) : null;
-		const font = own
-			? parent
-				? fontSizeOf(computedStyleOf(parent))
-				: INITIAL_FONT_SIZE
-			: fontSizeOf(this);
+		const font = own ?
+			parent ?
+					fontSizeOf(computedStyleOf(parent)) :
+				INITIAL_FONT_SIZE :
+				fontSizeOf(this);
 		const root = this.#rootFontSize(own);
 		const viewport = this.#manager?.viewportSize();
 		return {
@@ -5811,9 +6258,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (!root || (ownFontSize && root === this.#element)) {
 			return INITIAL_FONT_SIZE;
 		}
-		return root === this.#element
-			? fontSizeOf(this)
-			: fontSizeOf(computedStyleOf(root));
+		return root === this.#element ?
+				fontSizeOf(this) :
+				fontSizeOf(computedStyleOf(root));
 	}
 
 	/**
@@ -5822,15 +6269,16 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * would feed layout its own output.
 	 */
 	computedValueOf(property: string): string {
-		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) {
+			this.#refresh();
+		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
-			value = longhands
-				? this.#shorthand(property, longhands, (longhand) =>
+			value = longhands ?
+					this.#shorthand(property, longhands, (longhand) =>
 						this.computedValueOf(longhand),
-					)
-				: // A flow-relative longhand shares its computed value with the
+					) : // A flow-relative longhand shares its computed value with the
 					// physical longhand it maps to, so it is answered as that one.
 					this.#computed(this.#physicalOf(property));
 			this.#resolved.set(property, value);
@@ -5843,7 +6291,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * longhand -- the physical longhand this element's `direction` maps it to.
 	 */
 	#physicalOf(property: string): string {
-		if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) return property;
+		if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) {
+			return property;
+		}
 		return (
 			physicalProperty(property, this.computedValueOf("direction")) ?? property
 		);
@@ -5875,20 +6325,28 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			const style = this.computedValueOf(
 				`${property.slice(0, -"-width".length)}-style`,
 			);
-			if (!style || style === "none" || style === "hidden") return "0px";
+			if (!style || style === "none" || style === "hidden") {
+				return "0px";
+			}
 		}
 		const inset = INSET_PROPERTIES.has(property);
 		// An inset only applies to a positioned box; on a static one it stays
 		// as declared.
 		const position = inset ? this.getPropertyValue("position") : "";
-		if (inset && position === "static") return computed;
+		if (inset && position === "static") {
+			return computed;
+		}
 
 		const rect = this.#manager!.usedRect(this.#element);
 		// No box -- display:none, or a tree layout never reached -- so the
 		// computed value is the answer, exactly as CSSOM says.
-		if (!rect) return computed;
+		if (!rect) {
+			return computed;
+		}
 
-		if (inset) return this.#usedInset(property, computed, rect, position);
+		if (inset) {
+			return this.#usedInset(property, computed, rect, position);
+		}
 
 		if (property === "width" || property === "height") {
 			const vertical = property === "height";
@@ -5900,9 +6358,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			const border = vertical ? rect.height : rect.width;
 			// `box-sizing: border-box` measures the border box itself.
 			const content =
-				this.getPropertyValue("box-sizing") === "border-box"
-					? border
-					: border - edges;
+				this.getPropertyValue("box-sizing") === "border-box" ?
+					border :
+					border - edges;
 			return usedLength(Math.max(0, content));
 		}
 
@@ -5917,7 +6375,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// to be resolved, against the containing block's width.
 		if (computed.endsWith("%")) {
 			const basis = this.#containingWidth();
-			if (basis === null) return computed;
+			if (basis === null) {
+				return computed;
+			}
 			return usedLength((parseFloat(computed) / 100) * basis);
 		}
 		return computed || "0px";
@@ -5938,21 +6398,29 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		position: string,
 	): string {
 		const block = this.#containingBlockBox(position);
-		if (!block) return computed;
+		if (!block) {
+			return computed;
+		}
 		const vertical = property === "top" || property === "bottom";
 		const basis = vertical ? block.height : block.width;
 		const own = insetLength(computed, basis);
-		if (own !== null) return usedLength(own);
+		if (own !== null) {
+			return usedLength(own);
+		}
 		// A sticky box keeps its `auto`: it names an edge that constrains
 		// nothing, not a distance.
-		if (position === "sticky") return computed;
+		if (position === "sticky") {
+			return computed;
+		}
 
 		const opposite = OPPOSITE_INSET[property];
 		const other = insetLength(this.computedValueOf(opposite), basis);
 		// A relatively positioned box is offset from where it already was, so
 		// an `auto` inset is the negative of its opposite -- and zero when both
 		// are auto, which moves the box nowhere.
-		if (position === "relative") return usedLength(other === null ? 0 : -other);
+		if (position === "relative") {
+			return usedLength(other === null ? 0 : -other);
+		}
 
 		// Out of flow: the box hangs in its containing block, so the used
 		// inset is the distance from that block's edge to the box's margin
@@ -5990,7 +6458,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * this one flows in.
 	 */
 	#containingBlockBox(position: string): DOMRect | null {
-		if (position === "fixed") return this.#viewportBox();
+		if (position === "fixed") {
+			return this.#viewportBox();
+		}
 		if (position === "absolute") {
 			for (
 				let ancestor = flatParentElement<Element>(this.#element);
@@ -6024,7 +6494,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
 	#boxOf(element: Element, content: boolean): DOMRect | null {
 		const rect = this.#manager!.usedRect(element);
-		if (!rect) return null;
+		if (!rect) {
+			return null;
+		}
 		const style = computedStyleOf(element);
 		const edge = (name: string): number =>
 			parseFloat(style.computedValueOf(name)) || 0;
@@ -6049,9 +6521,13 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	/** The initial containing block: the grid itself. */
 	#viewportBox(): DOMRect | null {
 		const viewport = this.#manager!.viewportSize();
-		if (!viewport) return null;
+		if (!viewport) {
+			return null;
+		}
 		const rect = this.#manager!.usedRect(this.#element);
-		if (!rect) return null;
+		if (!rect) {
+			return null;
+		}
 		return new (rect.constructor as typeof DOMRect)(
 			0,
 			0,
@@ -6069,7 +6545,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * value CSSOM reports.
 	 */
 	#resolvedMinSize(computed: string): string {
-		if (computed !== "auto") return computed;
+		if (computed !== "auto") {
+			return computed;
+		}
 		// A box that was never generated has no automatic minimum, whatever
 		// else its style says.
 		for (
@@ -6081,11 +6559,13 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 				return "0px";
 			}
 		}
-		if (this.computedValueOf("aspect-ratio") !== "auto") return "auto";
+		if (this.computedValueOf("aspect-ratio") !== "auto") {
+			return "auto";
+		}
 		const parent = flatParentElement<Element>(this.#element);
-		const display = parent
-			? computedStyleOf(parent).computedValueOf("display")
-			: "";
+		const display = parent ?
+				computedStyleOf(parent).computedValueOf("display") :
+			"";
 		return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 	}
 
@@ -6098,7 +6578,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	#autoMargin(property: string, rect: DOMRect): number {
 		const parent = flatParentElement<Element>(this.#element);
 		const parentRect = parent ? this.#manager!.usedRect(parent) : null;
-		if (!parent || !parentRect) return 0;
+		if (!parent || !parentRect) {
+			return 0;
+		}
 		const parentStyle = computedStyleOf(parent);
 		const edge = (name: string): number =>
 			parseFloat(parentStyle.computedValueOf(name)) || 0;
@@ -6130,7 +6612,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	/** The width a percentage on this element resolves against. */
 	#containingWidth(): number | null {
 		const parent = flatParentElement<Element>(this.#element);
-		if (!parent) return null;
+		if (!parent) {
+			return null;
+		}
 		const rect = this.#manager!.usedRect(parent);
 		return rect ? rect.width : null;
 	}
@@ -6146,7 +6630,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * hottest path in the engine, under every property read of every element.
 	 */
 	#refresh(): void {
-		if (!this.#manager) return;
+		if (!this.#manager) {
+			return;
+		}
 		this.#stale = false;
 		this.#seenEpoch = this.#epoch.value;
 		this.#cssRules = this.#manager.matchingRules(this.#element);
@@ -6164,15 +6650,17 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 */
 	#inlineDeclarations(): DeclarationBlock {
 		const style = (this.#element as HTMLElement).style;
-		return style instanceof CSSStyleDeclaration
-			? style.declarationBlock()
-			: EMPTY_DECLARATIONS;
+		return style instanceof CSSStyleDeclaration ?
+				style.declarationBlock() :
+			EMPTY_DECLARATIONS;
 	}
 
 	/** This element's flat-tree parent's computed value for `property`, or null at the root. */
 	#resolveFromParent(property: string): string | null {
 		const parent = flatParentElement<Element>(this.#element);
-		if (!parent) return null;
+		if (!parent) {
+			return null;
+		}
 		return computedStyleOf(parent).computedValueOf(property) || null;
 	}
 
@@ -6187,7 +6675,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * A depth guard stops a property that (invalidly) refers to itself.
 	 */
 	#substituteVar(value: string, depth = 0): string {
-		if (depth > 8 || !value.includes("var(")) return value;
+		if (depth > 8 || !value.includes("var(")) {
+			return value;
+		}
 
 		let out = "";
 		let i = 0;
@@ -6202,8 +6692,11 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			let parenDepth = 1;
 			let j = start + 4;
 			for (; j < value.length && parenDepth > 0; j++) {
-				if (value[j] === "(") parenDepth++;
-				else if (value[j] === ")") parenDepth--;
+				if (value[j] === "(") {
+					parenDepth++;
+				} else if (value[j] === ")") {
+					parenDepth--;
+				}
 			}
 			const inner = value.slice(start + 4, j - 1);
 			const commaIndex = inner.indexOf(",");
@@ -6244,11 +6737,11 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// A custom property holds the tokens it was given; substituting it
 		// into a property of its own grammar re-serializes them in that
 		// property's spelling.
-		const value = raw
-			? property.startsWith("--")
-				? this.#substituteVar(raw)
-				: serializeCSSValue(this.#substituteVar(raw), property)
-			: raw;
+		const value = raw ?
+			property.startsWith("--") ?
+					this.#substituteVar(raw) :
+					serializeCSSValue(this.#substituteVar(raw), property) :
+			raw;
 		// `currentcolor` is the element's own color, which is what a resolved
 		// value says; on `color` itself it means the parent's.
 		if (
@@ -6260,9 +6753,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			// drains mutations and lays the document out, from inside the
 			// resolution of a style that layout is waiting on. `color` has no
 			// used value to wait for, so the two answer alike.
-			return property === "color"
-				? (this.#resolveFromParent("color") ?? "")
-				: this.computedValueOf("color");
+			return property === "color" ?
+					(this.#resolveFromParent("color") ?? "") :
+					this.computedValueOf("color");
 		}
 		return value;
 	}
@@ -6287,14 +6780,14 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 
 		const inline = this.#inlineDeclarations();
 		const inlineName = declaredName(inline, names, false, mapsHere);
-		const inlineValue = inlineName
-			? inline.declarations[inlineName].trim()
-			: undefined;
+		const inlineValue = inlineName ?
+				inline.declarations[inlineName].trim() :
+			undefined;
 		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
 		const inlineImportantName = declaredName(inline, names, true, mapsHere);
-		const inlineImportantValue = inlineImportantName
-			? inline.declarations[inlineImportantName].trim()
-			: undefined;
+		const inlineImportantValue = inlineImportantName ?
+				inline.declarations[inlineImportantName].trim() :
+			undefined;
 		const inlineImportant =
 			!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
 
@@ -6321,7 +6814,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		let importantLayer = 0;
 		for (const rule of this.#cssRules) {
 			const name = declaredName(rule, names, false, mapsHere);
-			if (name !== null) ruleValue = rule.declarations[name];
+			if (name !== null) {
+				ruleValue = rule.declarations[name];
+			}
 			const importantName = declaredName(rule, names, true, mapsHere);
 			if (
 				importantName !== null &&
@@ -6339,19 +6834,27 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// parent's, and the rest send resolution on to the defaults below, as
 		// though the declaration were not there.
 		const declaredByRule = (value: string): string | null => {
-			if (value === "inherit") return this.#resolveFromParent(property) ?? "";
+			if (value === "inherit") {
+				return this.#resolveFromParent(property) ?? "";
+			}
 			return INITIAL_KEYWORDS.has(value) ? null : value;
 		};
 
-		if (inlineImportant) return inlineImportantValue!;
+		if (inlineImportant) {
+			return inlineImportantValue!;
+		}
 		if (importantRuleValue) {
 			const resolved = declaredByRule(importantRuleValue);
-			if (resolved !== null) return resolved;
+			if (resolved !== null) {
+				return resolved;
+			}
 		} else if (inlineUsable) {
 			return inlineValue!;
 		} else if (ruleValue) {
 			const resolved = declaredByRule(ruleValue);
-			if (resolved !== null) return resolved;
+			if (resolved !== null) {
+				return resolved;
+			}
 		}
 
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
@@ -6377,7 +6880,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			property === "list-style-type" &&
 			(tagName === "ul" || tagName === "ol")
 		) {
-			if (tagName === "ol") return "decimal";
+			if (tagName === "ol") {
+				return "decimal";
+			}
 			const bullets = ["disc", "circle", "square"];
 			const depth = listNestingDepth(this.#element);
 			return bullets[Math.min(depth, bullets.length - 1)];
@@ -6424,7 +6929,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// engine reads through computedValueOf, which takes no flush -- style
 		// is resolved from inside layout, which this would re-enter.
 		this.#manager?.flushStyle();
-		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) {
+			this.#refresh();
+		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same answer.
 		property = this.#physicalOf(property);
@@ -6487,11 +6994,15 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		const names: string[] = [];
 		for (const rule of this.#cssRules) {
 			for (const name of Object.keys(rule.declarations)) {
-				if (name.startsWith("--") && !names.includes(name)) names.push(name);
+				if (name.startsWith("--") && !names.includes(name)) {
+					names.push(name);
+				}
 			}
 		}
 		for (const name of Object.keys(this.#inlineDeclarations().declarations)) {
-			if (name.startsWith("--") && !names.includes(name)) names.push(name);
+			if (name.startsWith("--") && !names.includes(name)) {
+				names.push(name);
+			}
 		}
 		return names;
 	}
@@ -6504,8 +7015,12 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * this element's computed style whichever element declared it.
 	 */
 	#customNames(): string[] {
-		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
-		if (this.#custom) return this.#custom;
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) {
+			this.#refresh();
+		}
+		if (this.#custom) {
+			return this.#custom;
+		}
 		const names = new Set<string>();
 		for (
 			let element: Element | null = this.#element;
@@ -6546,9 +7061,13 @@ function isBeingRendered(element: Element): boolean {
 	let node: Node = element;
 	for (let depth = 0; depth < 32; depth++) {
 		const root = node.getRootNode();
-		if (root === element.ownerDocument) break;
+		if (root === element.ownerDocument) {
+			break;
+		}
 		const host = (root as ShadowRoot).host;
-		if (!host) return false;
+		if (!host) {
+			return false;
+		}
 		node = host;
 	}
 	// A light-DOM child an open shadow root never slots is outside the flat
@@ -6639,21 +7158,23 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * with the initial values a computed style carries.
 	 */
 	computedValueOf(property: string): string {
-		if (this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (this.#epoch.value !== this.#seenEpoch) {
+			this.#refresh();
+		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value =
-				longhands && this.#declarations[property] === undefined
-					? serializeShorthandValue(
+				longhands && this.#declarations[property] === undefined ?
+						serializeShorthandValue(
 							property,
 							longhands,
 							(longhand) =>
 								this.computedValueOf(longhand) ||
 								CSS_INITIAL_VALUES[longhand] ||
 								"",
-						)
-					: computedValue(property, this.#declarations[property] ?? "");
+						) :
+						computedValue(property, this.#declarations[property] ?? "");
 			this.#resolved.set(property, value);
 		}
 		return value;
@@ -6675,7 +7196,9 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 			// cascade rather than the one it was first read under.
 			style = {
 				computedValueOf: (property: string): string => {
-					if (this.#epoch.value !== this.#seenEpoch) this.#refresh();
+					if (this.#epoch.value !== this.#seenEpoch) {
+						this.#refresh();
+					}
 					let value = this.#nodeResolved.get(property);
 					if (value === undefined) {
 						value =
@@ -6717,9 +7240,13 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * exactly as an element with no box does.
 	 */
 	#usedValue(property: string, computed: string): string {
-		if (!computed.endsWith("%")) return computed;
+		if (!computed.endsWith("%")) {
+			return computed;
+		}
 		const display = this.getPropertyValue("display");
-		if (display === "none" || display === "contents") return computed;
+		if (display === "none" || display === "contents") {
+			return computed;
+		}
 		// An originating element with `display: contents` generates no box of
 		// its own, so its pseudo-elements hang in the box its own parent
 		// makes -- the same box its children hang in.
@@ -6731,7 +7258,9 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 			host = flatParentElement<Element>(host);
 		}
 		const box = host && this.#manager!.contentBox(host);
-		if (!box) return computed;
+		if (!box) {
+			return computed;
+		}
 		// Every percentage but the block-axis sizes measures against the
 		// containing block's width, block direction included.
 		const vertical =
@@ -6907,7 +7436,9 @@ for (const property of ACCESSOR_PROPERTIES) {
 			ComputedStyleDeclaration.prototype,
 			PseudoStyleDeclaration.prototype,
 		] as object[]) {
-			if (name in prototype) continue;
+			if (name in prototype) {
+				continue;
+			}
 			Object.defineProperty(prototype, name, {
 				get(this: ComputedStyleDeclaration | PseudoStyleDeclaration) {
 					return this.getPropertyValue(property);
@@ -7079,9 +7610,9 @@ export function resolveBorderSides(element: Element): BorderSides {
 			return undefined;
 		}
 		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style as LineStyle["style"])
-			? (style as LineStyle["style"])
-			: "solid";
+		return LINE_KEYWORDS.has(style as LineStyle["style"]) ?
+				(style as LineStyle["style"]) :
+			"solid";
 	};
 
 	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
@@ -7092,16 +7623,18 @@ export function resolveBorderSides(element: Element): BorderSides {
 			.computedValueOf(`border-${corner}-radius`)
 			.split(/\s+/)
 			.filter(Boolean);
-		if (radii.length === 0) return false;
+		if (radii.length === 0) {
+			return false;
+		}
 		return radii.every((radius) => parseFloat(radius) > 0);
 	};
 
 	const of = (side: string): LineStyle["style"] | undefined =>
 		sideOf(
 			computedStyle.computedValueOf(`border-${side}-width`) ||
-				computedStyle.computedValueOf("border-width"),
+			computedStyle.computedValueOf("border-width"),
 			computedStyle.computedValueOf(`border-${side}-style`) ||
-				computedStyle.computedValueOf("border-style"),
+			computedStyle.computedValueOf("border-style"),
 		);
 
 	return {
@@ -7155,7 +7688,9 @@ function listNestingDepth(element: Element): number {
 		parent;
 		parent = parent.parentElement
 	) {
-		if (parent.tagName === "UL" || parent.tagName === "OL") depth++;
+		if (parent.tagName === "UL" || parent.tagName === "OL") {
+			depth++;
+		}
 	}
 	return depth;
 }
@@ -7209,8 +7744,12 @@ function listItemOrdinal(listItem: Element, listParent: Element): number {
 
 	for (const item of items) {
 		const value = parseInt(item.getAttribute("value") ?? "", 10);
-		if (Number.isFinite(value)) counter = value;
-		if (item === listItem) return counter;
+		if (Number.isFinite(value)) {
+			counter = value;
+		}
+		if (item === listItem) {
+			return counter;
+		}
 		counter += reversed ? -1 : 1;
 	}
 
@@ -7227,9 +7766,9 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
 			return ordinal > 0 ? toAlpha(ordinal) : `${ordinal}`;
 		case "lower-roman":
 			// Roman numerals are undefined outside 1-3999; CSS falls back to decimal.
-			return ordinal > 0 && ordinal < 4000
-				? toRoman(ordinal).toLowerCase()
-				: `${ordinal}`;
+			return ordinal > 0 && ordinal < 4000 ?
+					toRoman(ordinal).toLowerCase() :
+				`${ordinal}`;
 		case "upper-alpha":
 		case "upper-latin":
 			return ordinal > 0 ? toAlpha(ordinal).toUpperCase() : `${ordinal}`;
@@ -7252,16 +7791,22 @@ function getListMarker(listItem: Element, listParent: Element): string {
 	const listStyleType =
 		computedStyleOf(listItem).computedValueOf("list-style-type");
 
-	if (!listStyleType || listStyleType === "none") return "";
+	if (!listStyleType || listStyleType === "none") {
+		return "";
+	}
 
 	const bullet = BULLET_MARKERS[listStyleType];
-	if (bullet) return bullet;
+	if (bullet) {
+		return bullet;
+	}
 
 	if (COUNTER_STYLES.has(listStyleType)) {
 		const items = Array.from(listParent.children).filter(
 			(child) => child.tagName === "LI",
 		);
-		if (!items.includes(listItem)) return "";
+		if (!items.includes(listItem)) {
+			return "";
+		}
 		return `${formatOrdinal(listItemOrdinal(listItem, listParent), listStyleType)}.`;
 	}
 
@@ -7368,11 +7913,13 @@ function scopeRootMatches(
 	condition: ScopeCondition,
 	outer: Element | null,
 ): boolean {
-	if (condition.start === null) return element === condition.owner;
+	if (condition.start === null) {
+		return element === condition.owner;
+	}
 	return splitSelectorList(condition.start).some((selector) =>
-		outer
-			? matchesInScope(element, selector, outer)
-			: matchesSelector(element, selector),
+		outer ?
+				matchesInScope(element, selector, outer) :
+				matchesSelector(element, selector),
 	);
 }
 
@@ -7422,20 +7969,28 @@ function matchesInScope(
 	root: Element,
 ): boolean {
 	let text = selector.trim();
-	if (/^[>+~]/.test(text)) text = `:scope ${text}`;
+	if (/^[>+~]/.test(text)) {
+		text = `:scope ${text}`;
+	}
 	try {
-		if (!text.includes(":scope")) return element.matches(text);
+		if (!text.includes(":scope")) {
+			return element.matches(text);
+		}
 		if (element === root) {
 			const subject = subjectCompoundStart(text);
 			// `:scope` on a non-subject compound asks the root to be a strict
 			// descendant of itself.
-			if (text.slice(0, subject).includes(":scope")) return false;
+			if (text.slice(0, subject).includes(":scope")) {
+				return false;
+			}
 			return element.matches(
 				text.slice(0, subject) + text.slice(subject).replaceAll(":scope", "*"),
 			);
 		}
 		for (const found of root.querySelectorAll(text)) {
-			if (found === element) return true;
+			if (found === element) {
+				return true;
+			}
 		}
 		return false;
 	} catch {
@@ -7451,8 +8006,11 @@ function subjectCompoundStart(selector: string): number {
 	for (let index = 0; index < selector.length; index++) {
 		const char = selector[index];
 		if (quote) {
-			if (char === "\\") index++;
-			else if (char === quote) quote = "";
+			if (char === "\\") {
+				index++;
+			} else if (char === quote) {
+				quote = "";
+			}
 		} else if (char === '"' || char === "'") {
 			quote = char;
 		} else if (char === "(" || char === "[") {
@@ -7487,6 +8045,7 @@ export class StyleManager {
 		Element,
 		{of: ComputedStyleDeclaration; proxy: ComputedStyleDeclaration}
 	>();
+
 	/**
 	 * The counter every computed style watches. A bump means the whole cascade
 	 * changed -- new rules, a new sheet -- and every declaration handed out
@@ -7503,6 +8062,7 @@ export class StyleManager {
 		Element,
 		Map<string, PseudoStyleDeclaration>
 	>();
+
 	#parsedRules: ParsedCSSRule[] = [];
 	#stylesheetsDirty = false;
 	/**
@@ -7627,10 +8187,14 @@ export class StyleManager {
 		// Not re-entrant: layout and paint resolve styles as they run, and a
 		// read taken from inside the flush sees the layout being computed --
 		// asking for it again would compute it inside itself.
-		if (this.#flushing || !this.#layoutFlush) return;
+		if (this.#flushing || !this.#layoutFlush) {
+			return;
+		}
 		this.#flushing = true;
 		try {
-			if (this.#layoutFlush()) this.#usedGeneration++;
+			if (this.#layoutFlush()) {
+				this.#usedGeneration++;
+			}
 		} finally {
 			this.#flushing = false;
 		}
@@ -7643,7 +8207,9 @@ export class StyleManager {
 	 * layout engine is wired up, where `1vw` has nothing to be a hundredth of.
 	 */
 	viewportSize(): {width: number; height: number} | null {
-		if (!this.#layoutEngine) return null;
+		if (!this.#layoutEngine) {
+			return null;
+		}
 		return {
 			width: this.#layoutEngine.terminalWidth,
 			height: this.#layoutEngine.terminalHeight,
@@ -7655,7 +8221,9 @@ export class StyleManager {
 		// Without a renderer there is no layout pass, and so no used value to
 		// report: the computed value is the answer, as it is for any element
 		// with no box.
-		if (!this.#layoutEngine || !this.#layoutFlush) return null;
+		if (!this.#layoutEngine || !this.#layoutFlush) {
+			return null;
+		}
 		// The flush is taken once per layout generation, not once per read: an
 		// invalidation moves the engine's epoch, and until it does the layout
 		// standing behind the last flush is still the answer. A caller reading
@@ -7678,7 +8246,9 @@ export class StyleManager {
 	contentBox(element: Element): DOMRect | null {
 		// The flush first, since the engine's own derivation reads the layout
 		// and this read has to stand behind the same one.
-		if (!this.usedRect(element)) return null;
+		if (!this.usedRect(element)) {
+			return null;
+		}
 		return this.#layoutEngine!.contentRect(element);
 	}
 
@@ -7906,7 +8476,9 @@ export class StyleManager {
 
 	/** Set the `:focus-visible` state; returns whether it changed. */
 	setFocusVisible(active: boolean): boolean {
-		if (this.#focusVisibleActive === active) return false;
+		if (this.#focusVisibleActive === active) {
+			return false;
+		}
 		this.#focusVisibleActive = active;
 		return true;
 	}
@@ -7946,7 +8518,9 @@ export class StyleManager {
 		if (pseudoElementCount(element) > 0) {
 			for (const name of PSEUDO_ELEMENT_NAMES) {
 				const node = pseudoElement<Element>(element, name);
-				if (node) this.#pseudoNodeStyles.delete(node);
+				if (node) {
+					this.#pseudoNodeStyles.delete(node);
+				}
 			}
 		}
 		this.#counterScopes.delete(element);
@@ -7966,12 +8540,14 @@ export class StyleManager {
 	// Phase C computes the gutter during block layout and deletes this.
 	#invalidateEnclosingList(target: Node): void {
 		let element: Element | null =
-			target.nodeType === this.#window.Node.ELEMENT_NODE
-				? (target as Element)
-				: target.parentElement;
+			target.nodeType === this.#window.Node.ELEMENT_NODE ?
+					(target as Element) :
+				target.parentElement;
 
 		for (; element; element = element.parentElement) {
-			if (element.tagName !== "UL" && element.tagName !== "OL") continue;
+			if (element.tagName !== "UL" && element.tagName !== "OL") {
+				continue;
+			}
 
 			this.#invalidateElementCaches(element);
 			this.#layoutEngine?.invalidate(element);
@@ -8096,7 +8672,9 @@ export class StyleManager {
 		const cached = this.#pseudoElementStyleCache
 			.get(element)
 			?.get(pseudoElement);
-		if (cached) return cached;
+		if (cached) {
+			return cached;
+		}
 		const declarations = this.pseudoDeclarations(element, pseudoElement);
 		const declaration = new PseudoStyleDeclaration(
 			declarations,
@@ -8138,7 +8716,9 @@ export class StyleManager {
 		for (const property of INHERITED_PROPERTIES) {
 			if (!declarations[property]) {
 				const inherited = hostStyle.computedValueOf(property);
-				if (inherited) declarations[property] = inherited;
+				if (inherited) {
+					declarations[property] = inherited;
+				}
 			}
 		}
 		// A pseudo-element of a flex or grid container is one of its items, and
@@ -8201,9 +8781,9 @@ export class StyleManager {
 		const layerRanks = this.#rankLayers();
 		for (const rule of this.#parsedRules) {
 			rule.layerRank =
-				rule.layer === null
-					? this.#unlayeredRank
-					: (layerRanks.get(rule.layer) ?? this.#unlayeredRank);
+				rule.layer === null ?
+					this.#unlayeredRank :
+						(layerRanks.get(rule.layer) ?? this.#unlayeredRank);
 		}
 
 		// Sort rules for cascade resolution: origin first (UA rules sort
@@ -8216,7 +8796,9 @@ export class StyleManager {
 			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
 				return a.uaOrigin ? -1 : 1;
 			}
-			if (a.layerRank !== b.layerRank) return a.layerRank - b.layerRank;
+			if (a.layerRank !== b.layerRank) {
+				return a.layerRank - b.layerRank;
+			}
 			if (a.specificity !== b.specificity) {
 				return a.specificity < b.specificity ? -1 : 1;
 			}
@@ -8244,7 +8826,9 @@ export class StyleManager {
 		const segments = path.split(".");
 		for (let depth = 1; depth <= segments.length; depth++) {
 			const prefix = segments.slice(0, depth).join(".");
-			if (!this.#layerPaths.includes(prefix)) this.#layerPaths.push(prefix);
+			if (!this.#layerPaths.includes(prefix)) {
+				this.#layerPaths.push(prefix);
+			}
 		}
 		return path;
 	}
@@ -8263,14 +8847,21 @@ export class StyleManager {
 			const dot = path.lastIndexOf(".");
 			const outer = dot === -1 ? "" : path.slice(0, dot);
 			const siblings = nested.get(outer);
-			if (siblings) siblings.push(path);
-			else nested.set(outer, [path]);
+			if (siblings) {
+				siblings.push(path);
+			} else {
+				nested.set(outer, [path]);
+			}
 		}
 		const ranks = new Map<string, number>();
 		let next = 0;
 		const rank = (path: string): void => {
-			for (const inner of nested.get(path) ?? []) rank(inner);
-			if (path !== "") ranks.set(path, next++);
+			for (const inner of nested.get(path) ?? []) {
+				rank(inner);
+			}
+			if (path !== "") {
+				ranks.set(path, next++);
+			}
 		};
 		rank("");
 		this.#unlayeredRank = next;
@@ -8299,8 +8890,12 @@ export class StyleManager {
 		context: RuleContext = UNCONDITIONAL,
 	): void {
 		if (container instanceof CSSStyleSheet) {
-			if (container.disabled) return;
-			if (!this.mediaQueryMatches(container.media.mediaText)) return;
+			if (container.disabled) {
+				return;
+			}
+			if (!this.mediaQueryMatches(container.media.mediaText)) {
+				return;
+			}
 		}
 		for (const rule of container.cssRules) {
 			if (rule instanceof CSSStyleRule) {
@@ -8320,9 +8915,9 @@ export class StyleManager {
 			} else if (rule instanceof CSSLayerBlockRule) {
 				// An unnamed block opens a layer nothing else can name or reach,
 				// which is a layer of its own wherever it stands.
-				const layer = rule.name
-					? this.#declareLayer(context.layer, rule.name)
-					: this.#declareLayer(context.layer, ` ${this.#anonymousLayers++}`);
+				const layer = rule.name ?
+						this.#declareLayer(context.layer, rule.name) :
+						this.#declareLayer(context.layer, ` ${this.#anonymousLayers++}`);
 				this.#parseStyleSheet(rule, scope, uaOrigin, {...context, layer});
 			} else if (rule instanceof CSSScopeRule) {
 				const owner = rule.parentStyleSheet?.ownerNode ?? null;
@@ -8360,7 +8955,9 @@ export class StyleManager {
 	 */
 	mediaQueryMatches(mediaText: string): boolean {
 		const text = mediaText.trim();
-		if (!text) return true;
+		if (!text) {
+			return true;
+		}
 		return text.split(",").some((query) => this.#mediaQueryPartMatches(query));
 	}
 
@@ -8393,18 +8990,24 @@ export class StyleManager {
 		const match = feature.match(
 			/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
 		);
-		if (!match) return true; // unrecognized feature: permissive default
+		if (!match) {
+			return true;
+		} // unrecognized feature: permissive default
 
 		const [, boundRaw, dimension, numRaw] = match;
 		const bound = boundRaw?.toLowerCase();
 		const num = parseFloat(numRaw);
 		const actual =
-			dimension.toLowerCase() === "width"
-				? this.#window.innerWidth
-				: this.#window.innerHeight;
+			dimension.toLowerCase() === "width" ?
+				this.#window.innerWidth :
+				this.#window.innerHeight;
 
-		if (bound === "min-") return actual >= num;
-		if (bound === "max-") return actual <= num;
+		if (bound === "min-") {
+			return actual >= num;
+		}
+		if (bound === "max-") {
+			return actual <= num;
+		}
 		return actual === num;
 	}
 
@@ -8498,14 +9101,22 @@ export class StyleManager {
 		name: string,
 		oldValue: string | null,
 	): boolean {
-		if (name === "style") return true;
+		if (name === "style") {
+			return true;
+		}
 		if (name === "class") {
-			if (this.#reachingAttributes.has("class")) return true;
-			if (this.#reachingClasses.size === 0) return false;
+			if (this.#reachingAttributes.has("class")) {
+				return true;
+			}
+			if (this.#reachingClasses.size === 0) {
+				return false;
+			}
 			// A record with no old value can be one for an attribute that did
 			// not exist, or one from an observer that records none; the classes
 			// that LEFT are unknowable either way.
-			if (oldValue === null) return element.hasAttribute("class");
+			if (oldValue === null) {
+				return element.hasAttribute("class");
+			}
 			// Only the classes that came or went can have changed a match.
 			const before = new Set(oldValue.split(/\s+/));
 			const after = element.classList;
@@ -8526,12 +9137,18 @@ export class StyleManager {
 			return false;
 		}
 		if (name === "id") {
-			if (this.#reachingAttributes.has("id")) return true;
-			if (oldValue !== null && this.#reachingIds.has(oldValue)) return true;
+			if (this.#reachingAttributes.has("id")) {
+				return true;
+			}
+			if (oldValue !== null && this.#reachingIds.has(oldValue)) {
+				return true;
+			}
 			const id = element.getAttribute("id");
 			return id !== null && this.#reachingIds.has(id);
 		}
-		if (this.#reachingAttributes.has(name)) return true;
+		if (this.#reachingAttributes.has(name)) {
+			return true;
+		}
 		return this.#reachingStates && STATE_ATTRIBUTES.has(name);
 	}
 
@@ -8556,7 +9173,9 @@ export class StyleManager {
 		let namespace: string | null | undefined;
 		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
 			const resolved = selectorNamespace(selector, sheetNamespaces);
-			if (!resolved.valid) return;
+			if (!resolved.valid) {
+				return;
+			}
 			selector = resolved.selector;
 			namespace = resolved.namespace;
 		}
@@ -8648,8 +9267,11 @@ export class StyleManager {
 			};
 			this.#parsedRules.push(rule);
 			const byType = this.#pseudoRulesByType.get(pseudoElement);
-			if (byType) byType.push(rule);
-			else this.#pseudoRulesByType.set(pseudoElement, [rule]);
+			if (byType) {
+				byType.push(rule);
+			} else {
+				this.#pseudoRulesByType.set(pseudoElement, [rule]);
+			}
 		} else {
 			this.#parsedRules.push({
 				selector,
@@ -8713,7 +9335,9 @@ export class StyleManager {
 		// is infinitely far from one. The rules arrive in cascade order and
 		// the sort is stable, so a comparison that only answers for proximity
 		// leaves every other tier as it found it.
-		if (!this.#scopedRulesExist) return matched;
+		if (!this.#scopedRulesExist) {
+			return matched;
+		}
 		const proximity = new Map(
 			matched.map(
 				(rule) =>
@@ -8724,9 +9348,15 @@ export class StyleManager {
 			),
 		);
 		return matched.sort((a, b) => {
-			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) return 0;
-			if (a.layerRank !== b.layerRank) return 0;
-			if (a.specificity !== b.specificity) return 0;
+			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+				return 0;
+			}
+			if (a.layerRank !== b.layerRank) {
+				return 0;
+			}
+			if (a.specificity !== b.specificity) {
+				return 0;
+			}
 			return proximity.get(b)! - proximity.get(a)!;
 		});
 	}
@@ -8742,7 +9372,9 @@ export class StyleManager {
 		rule: ParsedCSSRule,
 		selector: string,
 	): boolean {
-		if (!rule.scopes) return element.matches(selector);
+		if (!rule.scopes) {
+			return element.matches(selector);
+		}
 		return this.#scopingRoot(element, {...rule, selector}) !== null;
 	}
 
@@ -8754,7 +9386,9 @@ export class StyleManager {
 	 */
 	#scopeProximity(element: Element, rule: ParsedCSSRule): number {
 		const root = this.#scopingRoot(element, rule);
-		if (!root) return UNSCOPED;
+		if (!root) {
+			return UNSCOPED;
+		}
 		let generations = 0;
 		for (
 			let node: Element | null = element;
@@ -8789,18 +9423,28 @@ export class StyleManager {
 				candidate;
 				candidate = candidate.parentElement
 			) {
-				if (outer && candidate !== outer && !outer.contains(candidate)) break;
-				if (!scopeRootMatches(candidate, condition, outer)) continue;
-				if (!inScopeOf(element, candidate, condition)) continue;
+				if (outer && candidate !== outer && !outer.contains(candidate)) {
+					break;
+				}
+				if (!scopeRootMatches(candidate, condition, outer)) {
+					continue;
+				}
+				if (!inScopeOf(element, candidate, condition)) {
+					continue;
+				}
 				if (innermost) {
-					if (!matchesInScope(element, rule.selector, candidate)) continue;
+					if (!matchesInScope(element, rule.selector, candidate)) {
+						continue;
+					}
 					// The nearest root the rule reaches the element from.
 					found = candidate;
 					break;
 				}
 				found = candidate;
 			}
-			if (!found) return null;
+			if (!found) {
+				return null;
+			}
 			outer = found;
 		}
 		return outer;
@@ -8868,12 +9512,22 @@ export class StyleManager {
 			if (rule.host) {
 				const scope = rule.scope as ShadowRoot;
 				const host = scope.host;
-				if (!host) return false;
+				if (!host) {
+					return false;
+				}
 				const {predicate, rest, child} = rule.host;
-				if (predicate && !host.matches(predicate)) return false;
-				if (!rest) return element === host;
-				if (element.getRootNode() !== scope) return false;
-				if (!element.matches(rest)) return false;
+				if (predicate && !host.matches(predicate)) {
+					return false;
+				}
+				if (!rest) {
+					return element === host;
+				}
+				if (element.getRootNode() !== scope) {
+					return false;
+				}
+				if (!element.matches(rest)) {
+					return false;
+				}
 				return child ? element.parentNode === scope : true;
 			}
 			const root = element.getRootNode();
@@ -8908,7 +9562,9 @@ export class StyleManager {
 		pseudoElement: string,
 	): Record<string, string> {
 		const matchingRules = this.#parsedRules.filter((rule) => {
-			if (rule.pseudoElement !== pseudoElement) return false;
+			if (rule.pseudoElement !== pseudoElement) {
+				return false;
+			}
 			return this.#ruleMatches(element, rule);
 		});
 
@@ -9035,7 +9691,7 @@ export class StyleManager {
 		}
 
 		// Remove quotes from content string
-		let textContent = unquoteContent(content);
+		const textContent = unquoteContent(content);
 
 		// Resolve counter() functions in the content
 		return this.resolveCounterFunction(hostElement, textContent);
@@ -9090,7 +9746,9 @@ export class StyleManager {
 		// fresh node per refresh strands every mapped one. Attach handles
 		// content updates in place and removal when a pseudo stops matching.
 		// Walks every element on stylesheet change.
-		if (!this.#document.documentElement) return;
+		if (!this.#document.documentElement) {
+			return;
+		}
 		const walker = this.#document.createTreeWalker(
 			this.#document.documentElement,
 			this.#window.NodeFilter.SHOW_ELEMENT,
@@ -9181,7 +9839,9 @@ export class StyleManager {
 	#pseudoSubjectTags: Set<string> | null | undefined;
 
 	#pseudoSubjects(): Set<string> | null {
-		if (this.#pseudoSubjectTags !== undefined) return this.#pseudoSubjectTags;
+		if (this.#pseudoSubjectTags !== undefined) {
+			return this.#pseudoSubjectTags;
+		}
 		if (this.#counterRulesExist || this.#listItemRulesExist) {
 			return (this.#pseudoSubjectTags = null);
 		}
@@ -9193,7 +9853,9 @@ export class StyleManager {
 		// widget trees already hold.
 		for (const type of ["::before", "::after"]) {
 			for (const rule of this.#pseudoRulesByType.get(type) ?? []) {
-				if (!rule.subjectTag) return (this.#pseudoSubjectTags = null);
+				if (!rule.subjectTag) {
+					return (this.#pseudoSubjectTags = null);
+				}
 				tags.add(rule.subjectTag.toUpperCase());
 			}
 		}
@@ -9248,10 +9910,14 @@ export class StyleManager {
 			);
 		}
 		const rules = this.#pseudoRulesByType.get(pseudoType);
-		if (!rules) return false;
+		if (!rules) {
+			return false;
+		}
 		for (const rule of rules) {
 			try {
-				if (element.matches(rule.selector)) return true;
+				if (element.matches(rule.selector)) {
+					return true;
+				}
 			} catch {
 				return true;
 			}
@@ -9298,9 +9964,9 @@ export class StyleManager {
 		}
 
 		// Compute what the pseudo should hold now; null means "none".
-		const content = this.shouldCreatePseudoElement(element, pseudoType)
-			? this.#pseudoContentFor(element, pseudoType)
-			: null;
+		const content = this.shouldCreatePseudoElement(element, pseudoType) ?
+				this.#pseudoContentFor(element, pseudoType) :
+			null;
 		const existing = pseudoElement<Element>(element, pseudoType);
 
 		// Pseudo NODE IDENTITY is stable: attaches re-run on every element
@@ -9309,7 +9975,9 @@ export class StyleManager {
 		// (an absolutely positioned button's ::after glyph simply vanished).
 		// The slot keeps the node; only its text changes.
 		if (content === null) {
-			if (existing) this.#removePseudoElement(element, pseudoType);
+			if (existing) {
+				this.#removePseudoElement(element, pseudoType);
+			}
 			return;
 		}
 		if (existing) {
@@ -9328,7 +9996,9 @@ export class StyleManager {
 
 	/** Drop an element's pseudo-element node, and the boxes it held. */
 	#removePseudoElement(element: Element, pseudoType: string): void {
-		if (!pseudoElement(element, pseudoType)) return;
+		if (!pseudoElement(element, pseudoType)) {
+			return;
+		}
 		clearPseudoElement(element, pseudoType);
 		this.#layoutEngine?.invalidateStructure();
 		this.#layoutEngine?.invalidate(element);
@@ -9426,9 +10096,9 @@ export class StyleManager {
 
 		// Get parent scope if parent exists (but don't recursively initialize parents)
 		const parentElement = element.parentElement;
-		const parentScope = parentElement
-			? this.#counterScopes.get(parentElement)
-			: undefined;
+		const parentScope = parentElement ?
+				this.#counterScopes.get(parentElement) :
+			undefined;
 
 		// Create counter scope for this element
 		const scope: CounterScope = {
@@ -9446,9 +10116,9 @@ export class StyleManager {
 		// Handle automatic list-item counter for ol/ul elements
 		if (element.tagName === "OL" || element.tagName === "UL") {
 			const startValue =
-				element.tagName === "OL"
-					? parseInt(element.getAttribute("start") || "1", 10)
-					: 0;
+				element.tagName === "OL" ?
+						parseInt(element.getAttribute("start") || "1", 10) :
+					0;
 			scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
 		}
 
@@ -9525,7 +10195,9 @@ export class StyleManager {
 			parent = parent.parentElement;
 		}
 
-		if (!parent) return 0;
+		if (!parent) {
+			return 0;
+		}
 
 		// Get the reset value from the OL/UL
 		const parentScope = this.#counterScopes.get(parent);
@@ -9565,7 +10237,9 @@ export class StyleManager {
 
 	getCounterValue(element: Element, counterName: string): number {
 		const scope = this.#counterScopes.get(element);
-		if (!scope) return 0;
+		if (!scope) {
+			return 0;
+		}
 
 		// Look for counter in current scope or parent scopes
 		let currentScope: CounterScope | undefined = scope;

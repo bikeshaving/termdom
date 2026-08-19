@@ -3,7 +3,7 @@
  * computed for the frame.
  */
 
-import {type LayoutEngine} from "./layout.js";
+import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
 
 /**
@@ -48,7 +48,9 @@ function contentBoxOf(
 	}
 	const border = layoutEngine.getRect(element);
 	const content = layoutEngine.contentRect(element);
-	if (!border || !content) return null;
+	if (!border || !content) {
+		return null;
+	}
 	// Origin relative to the border box: what precedes the content on each axis.
 	return {
 		width: content.width,
@@ -135,11 +137,15 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 				frame,
 				observation.options,
 			);
-			if (!result) continue;
+			if (!result) {
+				continue;
+			}
 			observation.last = result.state;
 			entries.push(result.entry);
 		}
-		if (entries.length > 0) this[kDeliver](entries);
+		if (entries.length > 0) {
+			this[kDeliver](entries);
+		}
 	}
 }
 
@@ -234,12 +240,12 @@ export class ResizeObserver extends LayoutObserver<
 		// device-pixel-content-box is the content box: a cell is the device
 		// pixel here, so the two can never diverge.
 		const watched =
-			options?.box === "border-box"
-				? {
+			options?.box === "border-box" ?
+					{
 						width: border?.width ?? content.width,
 						height: border?.height ?? content.height,
-					}
-				: {width: content.width, height: content.height};
+					} :
+					{width: content.width, height: content.height};
 
 		if (
 			last &&
@@ -344,13 +350,19 @@ function applyRootMargin(
 	layoutEngine: LayoutEngine,
 ): DOMRect {
 	const parts = margin.trim().split(/\s+/).filter(Boolean);
-	if (parts.length === 0) return rect;
+	if (parts.length === 0) {
+		return rect;
+	}
 
 	const resolve = (value: string, basis: number): number => {
 		const match = /^(-?[\d.]+)(px|ch|%)?$/.exec(value);
-		if (!match) return 0;
+		if (!match) {
+			return 0;
+		}
 		const n = parseFloat(match[1]);
-		if (!Number.isFinite(n)) return 0;
+		if (!Number.isFinite(n)) {
+			return 0;
+		}
 		return match[2] === "%" ? (n / 100) * basis : n;
 	};
 
@@ -411,7 +423,9 @@ export class IntersectionObserver extends LayoutObserver<
 		while (index < this.thresholds.length && ratio >= this.thresholds[index]) {
 			// A zero threshold means "any overlap at all", so a ratio of exactly
 			// zero has not reached it.
-			if (this.thresholds[index] === 0 && ratio === 0) break;
+			if (this.thresholds[index] === 0 && ratio === 0) {
+				break;
+			}
 			index++;
 		}
 		return index;
@@ -425,18 +439,24 @@ export class IntersectionObserver extends LayoutObserver<
 		frame: number,
 	): {state: number; entry: IntersectionObserverEntry} | null {
 		const box = layoutEngine.getRect(target);
-		if (!box) return null;
+		if (!box) {
+			return null;
+		}
 
 		// The root: an explicit element's border box, or the viewport. Either way
 		// grown by rootMargin, which is the whole point of that option -- it is
 		// what lets a list start loading a row before it scrolls into view.
 		const rootBox = this.#root ? layoutEngine.getRect(this.#root) : viewport;
-		if (!rootBox) return null;
+		if (!rootBox) {
+			return null;
+		}
 		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
 
 		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
 		const index = this.#thresholdIndex(ratio);
-		if (last === index) return null;
+		if (last === index) {
+			return null;
+		}
 
 		return {
 			state: index,
@@ -490,7 +510,9 @@ export class ObserverManager {
 
 	/** Run every observer against the current layout. Called after each render. */
 	flush(viewport: DOMRect, frame: number): void {
-		if (this.#observers.size === 0) return;
+		if (this.#observers.size === 0) {
+			return;
+		}
 		// A copy: a callback may observe or disconnect, and mutating the set
 		// mid-iteration would visit the new observer against a layout it has not
 		// been measured for, or skip one that is still live.

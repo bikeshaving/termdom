@@ -70,7 +70,9 @@ const rows: string[] = [];
 let bgRects = "";
 for (let y = 0; y < ROWS; y++) {
 	const line = buffer.getLine(y);
-	if (!line) continue;
+	if (!line) {
+		continue;
+	}
 	let spans = "";
 	let run = "";
 	let runFg = DEFAULT_FG;
@@ -116,7 +118,9 @@ for (let y = 0; y < ROWS; y++) {
 			runUnderline = underline;
 		}
 		run += chars;
-		if (cell && cell.getWidth() === 2) x++;
+		if (cell && cell.getWidth() === 2) {
+			x++;
+		}
 	}
 	flush(COLS);
 	rows.push(spans);

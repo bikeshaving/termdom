@@ -71,9 +71,11 @@ export default {
 		document.addEventListener("keydown", (event: Event) => {
 			const key = (event as KeyboardEvent).key;
 			const current = rows()[selected];
-			if (key === "j") select(selected + 1);
-			else if (key === "k") select(selected - 1);
-			else if (key === "Enter" && current?.dataset.kind === "dir") {
+			if (key === "j") {
+				select(selected + 1);
+			} else if (key === "k") {
+				select(selected - 1);
+			} else if (key === "Enter" && current?.dataset.kind === "dir") {
 				if (current.dataset.open === "true") {
 					current.nextElementSibling?.remove();
 					current.dataset.open = "false";
@@ -83,9 +85,9 @@ export default {
 					const depth =
 						Math.floor((parseInt(current.style.paddingLeft) - 1) / 2) + 1;
 					const dir =
-						current.dataset.path === "src/"
-							? "./src"
-							: "./" + current.dataset.path!.replace(/\/$/, "");
+						current.dataset.path === "src/" ?
+							"./src" :
+							"./" + current.dataset.path!.replace(/\/$/, "");
 					fill(children, dir, depth);
 					current.after(children);
 					current.dataset.open = "true";

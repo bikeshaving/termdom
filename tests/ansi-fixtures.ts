@@ -324,13 +324,13 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(10, 24, "rgb");
 			const paint =
 				(top: number) =>
-				(ctx: import("../src/internal/ansi.js").DrawingContext) => {
-					for (let row = 0; row < 10; row++) {
-						ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
-							fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
-						});
-					}
-				};
+					(ctx: import("../src/internal/ansi.js").DrawingContext) => {
+						for (let row = 0; row < 10; row++) {
+							ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
+								fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
+							});
+						}
+					};
 			let out = renderFrame(
 				renderer,
 				{offset: 0, cursorRow: 0, regionRows: 10},
@@ -381,7 +381,9 @@ export const scenarios: Scenario[] = [
 				renderer,
 				{offset: 0, cursorRow: 0, regionRows: 9},
 				(ctx) => {
-					for (let row = 0; row < 9; row++) ctx.drawText(`L${row}`, 0, row);
+					for (let row = 0; row < 9; row++) {
+						ctx.drawText(`L${row}`, 0, row);
+					}
 				},
 			);
 			out += "|";

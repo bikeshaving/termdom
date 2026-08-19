@@ -19,7 +19,9 @@ function walk(
 	out: string[],
 	budget: number,
 ): void {
-	if (out.length >= budget) return;
+	if (out.length >= budget) {
+		return;
+	}
 	let entries;
 	try {
 		entries = readdirSync(dir, {withFileTypes: true});
@@ -27,11 +29,18 @@ function walk(
 		return;
 	}
 	for (const entry of entries) {
-		if (entry.name === ".git" || entry.name === "node_modules") continue;
+		if (entry.name === ".git" || entry.name === "node_modules") {
+			continue;
+		}
 		const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-		if (entry.isDirectory()) walk(join(dir, entry.name), rel, out, budget);
-		else out.push(rel);
-		if (out.length >= budget) return;
+		if (entry.isDirectory()) {
+			walk(join(dir, entry.name), rel, out, budget);
+		} else {
+			out.push(rel);
+		}
+		if (out.length >= budget) {
+			return;
+		}
 	}
 }
 
@@ -39,7 +48,9 @@ const arg = process.argv[2];
 const items: string[] = [];
 if (arg) {
 	for (const line of readFileSync(arg, "utf8").split("\n")) {
-		if (line.trim()) items.push(line);
+		if (line.trim()) {
+			items.push(line);
+		}
 	}
 } else {
 	walk(process.cwd(), "", items, 5000);
@@ -47,7 +58,9 @@ if (arg) {
 
 // ---- fuzzy match: subsequence with a light score (earlier, tighter = better) -
 function score(item: string, query: string): number | null {
-	if (!query) return 0;
+	if (!query) {
+		return 0;
+	}
 	const hay = item.toLowerCase();
 	const needle = query.toLowerCase();
 	let i = 0;
@@ -55,12 +68,16 @@ function score(item: string, query: string): number | null {
 	let last = -1;
 	for (let j = 0; j < hay.length && i < needle.length; j++) {
 		if (hay[j] === needle[i]) {
-			if (first < 0) first = j;
+			if (first < 0) {
+				first = j;
+			}
 			last = j;
 			i++;
 		}
 	}
-	if (i < needle.length) return null;
+	if (i < needle.length) {
+		return null;
+	}
 	// Prefer matches that start early and span few characters.
 	return first + (last - first);
 }
@@ -111,21 +128,23 @@ function rows(): HTMLElement[] {
 
 function render(): void {
 	const query = input.value;
-	matches = query
-		? items
+	matches = query ?
+			items
 				.map((item) => ({item, s: score(item, query)}))
 				.filter((m): m is {item: string; s: number} => m.s !== null)
 				.sort((a, b) => a.s - b.s || a.item.length - b.item.length)
 				.slice(0, 500)
-				.map((m) => m.item)
-		: items.slice(0, 500); // no query: original order
+				.map((m) => m.item) :
+			items.slice(0, 500); // no query: original order
 
 	selected = Math.max(0, Math.min(selected, matches.length - 1));
 	results.textContent = "";
 	for (const [i, item] of matches.entries()) {
 		const row = document.createElement("div");
 		row.className = "row";
-		if (i === selected) row.classList.add("selected");
+		if (i === selected) {
+			row.classList.add("selected");
+		}
 		const mark = document.createElement("span");
 		mark.className = "mark";
 		mark.textContent = i === selected ? "\u203a\u00a0" : "\u00a0\u00a0";
@@ -139,17 +158,23 @@ function render(): void {
 }
 
 function setSelected(row: HTMLElement | undefined, on: boolean): void {
-	if (!row) return;
+	if (!row) {
+		return;
+	}
 	row.classList.toggle("selected", on);
-	row.querySelector<HTMLElement>(".mark")!.textContent = on
-		? "\u203a\u00a0"
-		: "\u00a0\u00a0";
+	row.querySelector<HTMLElement>(".mark")!.textContent = on ?
+		"\u203a\u00a0" :
+		"\u00a0\u00a0";
 }
 
 function move(delta: number): void {
-	if (matches.length === 0) return;
+	if (matches.length === 0) {
+		return;
+	}
 	const next = Math.max(0, Math.min(selected + delta, matches.length - 1));
-	if (next === selected) return;
+	if (next === selected) {
+		return;
+	}
 	// Only the two rows that changed: an arrow key is two rows of work, not
 	// a walk over the whole list.
 	const all = rows();
@@ -163,7 +188,9 @@ async function finish(pick: string | null): Promise<void> {
 	// dispose() resolves once the final flush has reached the terminal, so
 	// the picked line prints below the paid-out UI, not into it.
 	await term.dispose();
-	if (pick !== null) process.stdout.write(pick + "\n");
+	if (pick !== null) {
+		process.stdout.write(pick + "\n");
+	}
 	process.exit(pick === null ? 1 : 0);
 }
 
@@ -178,11 +205,17 @@ input.addEventListener("input", () => {
 document.addEventListener("keydown", (event: Event) => {
 	const e = event as KeyboardEvent;
 	const ctrl = e.ctrlKey;
-	if (e.key === "Escape" || (ctrl && e.key === "c")) void finish(null);
-	else if (e.key === "Enter") void finish(matches[selected] ?? null);
-	else if (e.key === "ArrowDown" || (ctrl && e.key === "n")) move(1);
-	else if (e.key === "ArrowUp" || (ctrl && e.key === "p")) move(-1);
-	else return;
+	if (e.key === "Escape" || (ctrl && e.key === "c")) {
+		void finish(null);
+	} else if (e.key === "Enter") {
+		void finish(matches[selected] ?? null);
+	} else if (e.key === "ArrowDown" || (ctrl && e.key === "n")) {
+		move(1);
+	} else if (e.key === "ArrowUp" || (ctrl && e.key === "p")) {
+		move(-1);
+	} else {
+		return;
+	}
 	e.preventDefault();
 });
 

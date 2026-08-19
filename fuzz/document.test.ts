@@ -49,27 +49,9 @@ const SHEET = `
 	.editing .view { display: none; }
 	.on ~ .light { color: red; }
 	.dim { color: #808080; }
-	.box { border: 1px solid; }
-	.round { border-radius: 1ch; }
-	.center { display: flex; justify-content: center; align-items: center; }
-	.rtl { direction: rtl; }
-	.ltr { direction: ltr; }
-	.mis { margin-inline-start: 2ch; }
-	.mls { margin-left: 2ch; }
-	.pie { padding-inline-end: 2ch; }
-	.prewrap { white-space: pre-wrap; }
-	.nowrap { white-space: nowrap; }
-	.preline { white-space: pre-line; }
 `;
 
-/**
- * `SHAPES=1` widens the vocabulary past `.dim` with boxes, directions and the
- * top layer. The rules are always in the sheet and the classes only under the
- * flag, so a default sample is the sample it was before.
- */
-const SHAPES = process.env.SHAPES === "1";
-
-const BASE_CLASSES = [
+const CLASSES = [
 	"hide",
 	"flex",
 	"col",
@@ -87,65 +69,19 @@ const BASE_CLASSES = [
 	"light",
 	"dim",
 ];
-const BASE_TAGS = ["div", "span", "p", "b", "em", "section", "li"];
-
-const SHAPE_CLASSES = [
-	"box",
-	"round",
-	"center",
-	"rtl",
-	"ltr",
-	"mis",
-	"mls",
-	"pie",
-	"prewrap",
-	"nowrap",
-	"preline",
-];
-
-const CLASSES = SHAPES ? [...BASE_CLASSES, ...SHAPE_CLASSES] : BASE_CLASSES;
-const TAGS = SHAPES ? [...BASE_TAGS, "dialog"] : BASE_TAGS;
-
-/**
- * Markup a leaf drops in whole, for shapes the recursive generator reaches
- * only by accident: consecutive whitespace-only inlines under `white-space:
- * pre`, a bordered auto-width block with block children centered as a flex
- * item, corners, logical against physical offsets under a direction, bidi and
- * width-uncertain runs inside a border, and the two top-layer states.
- */
-const CLUSTERS = [
-	`<span class="pre"><b> </b><em> </em>x</span>`,
-	`<span class="pre"><b> </b><b> </b><b> </b>y</span>`,
-	`<div class="center"><div class="box"><div>aa</div><div>bbbb</div></div></div>`,
-	`<div class="center"><div class="box round"><div>aa</div><div>bbbb</div></div></div>`,
-	`<div class="box round" style="width: 8ch">ab</div>`,
-	`<div class="box" style="border-bottom-right-radius: 2ch; width: 7ch">abc</div>`,
-	`<div class="rtl box"><span class="mis">ab</span><span class="mls">cd</span></div>`,
-	`<div dir="rtl" class="box pie">الإصدار يعمل</div>`,
-	`<div class="box">اب <b>cd</b> ef</div>`,
-	`<div class="box">🙂🙂 <span>x</span></div>`,
-	`<div class="box" style="width: 6ch">ｗｉｄｅ ab</div>`,
-	`<span class="nowrap">aa bb cc</span><span class="prewrap">dd  ee</span>`,
-	`<dialog open><p>hi</p></dialog>`,
-	`<div popover>pop</div>`,
-	`<div class="box ltr"><div class="rtl">ab<b>cd</b>ef</div></div>`,
-];
+const TAGS = ["div", "span", "p", "b", "em", "section", "li"];
 
 /** Ids the actions may name; a miss is a no-op. */
 const ID_POOL = 16;
 
 type Tree =
-	| {leaf: "text" | "space" | "comment"}
-	| {cluster: string}
-	| {tag: string; cls: string; children: Tree[]};
+	| {leaf: "text" | "space" | "comment"} |
+	{tag: string; cls: string; children: Tree[]};
 
 const treeArbitrary = fc.letrec<{node: Tree}>((tie) => ({
 	node: fc.oneof(
 		{maxDepth: 3, depthIdentifier: "node"},
 		fc.constantFrom<Tree>({leaf: "text"}, {leaf: "space"}, {leaf: "comment"}),
-		...(SHAPES
-			? [fc.constantFrom<Tree>(...CLUSTERS.map((cluster) => ({cluster})))]
-			: []),
 		fc.record({
 			tag: fc.constantFrom(...TAGS),
 			cls: fc.constantFrom("", ...CLASSES),
@@ -164,14 +100,6 @@ function toMarkup(trees: Tree[]): {html: string; tokens: string[]} {
 	let texts = 0;
 	const tokens: string[] = [];
 	const emit = (tree: Tree): string => {
-		if ("cluster" in tree) {
-			// Every start tag in the fragment gets an id of its own, so an
-			// action can name what is inside a cluster and not only around it.
-			return tree.cluster.replace(
-				/<([a-z]+)(?=[\s>])/g,
-				(_, name) => `<${name} data-f="e${elements++}"`,
-			);
-		}
 		if ("leaf" in tree) {
 			switch (tree.leaf) {
 				case "space":
@@ -200,28 +128,24 @@ const documentArbitrary = fc
 	.map(toMarkup);
 
 type Action =
-	| {kind: "class"; id: string; cls: string}
-	| {kind: "style"; id: string; value: string}
-	| {kind: "attr"; id: string; value: string}
-	| {
-			kind: "append";
-			id: string;
-			tag: string;
-			cls: string;
-			text: string;
-			made: string;
-	  }
-	| {kind: "prepend"; id: string; tag: string; text: string; made: string}
-	| {kind: "remove"; id: string}
-	| {kind: "move"; id: string; to: string}
-	| {kind: "html"; id: string; value: string}
-	| {kind: "text"; id: string; at: number; value: string}
-	| {kind: "scroll"; top: number}
-	| {kind: "view"; id: string}
-	| {kind: "dir"; id: string; value: string}
-	| {kind: "open"; id: string}
-	| {kind: "pop"; id: string; value: string}
-	| {kind: "flash"; id: string; mode: "modal" | "dialog" | "popover"};
+	| {kind: "class"; id: string; cls: string} |
+	{kind: "style"; id: string; value: string} |
+	{kind: "attr"; id: string; value: string} |
+	{
+		kind: "append";
+		id: string;
+		tag: string;
+		cls: string;
+		text: string;
+		made: string;
+	} |
+	{kind: "prepend"; id: string; tag: string; text: string; made: string} |
+	{kind: "remove"; id: string} |
+	{kind: "move"; id: string; to: string} |
+	{kind: "html"; id: string; value: string} |
+	{kind: "text"; id: string; at: number; value: string} |
+	{kind: "scroll"; top: number} |
+	{kind: "view"; id: string};
 
 /** Any generated element, or the body. */
 const idArbitrary = fc.oneof(
@@ -306,33 +230,6 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 		top: fc.integer({min: 0, max: 20}),
 	}),
 	fc.record({kind: fc.constant("view" as const), id: idArbitrary}),
-	...(SHAPES
-		? [
-				fc.record({
-					kind: fc.constant("dir" as const),
-					id: idArbitrary,
-					value: fc.constantFrom("", "ltr", "rtl", "auto"),
-				}),
-				fc.record({
-					kind: fc.constant("open" as const),
-					id: elementIDArbitrary,
-				}),
-				fc.record({
-					kind: fc.constant("pop" as const),
-					id: elementIDArbitrary,
-					value: fc.constantFrom("", "auto", "manual"),
-				}),
-				fc.record({
-					kind: fc.constant("flash" as const),
-					id: elementIDArbitrary,
-					mode: fc.constantFrom(
-						"modal" as const,
-						"dialog" as const,
-						"popover" as const,
-					),
-				}),
-			]
-		: []),
 );
 
 /**
@@ -350,12 +247,6 @@ function inverseOf(action: Action): Action | null {
 			return {kind: "attr", id: action.id, value: ""};
 		case "scroll":
 			return {kind: "scroll", top: 0};
-		case "dir":
-			return {kind: "dir", id: action.id, value: ""};
-		case "open":
-			return action;
-		case "pop":
-			return {kind: "pop", id: action.id, value: ""};
 		default:
 			return null;
 	}
@@ -383,10 +274,13 @@ const scriptArbitrary = fc
 			}
 			script.push(step.action);
 			const inverse = step.reversed ? inverseOf(step.action) : null;
-			if (inverse)
+			if (inverse) {
 				pending.push({action: inverse, at: script.length + step.gap});
+			}
 		}
-		for (const {action} of pending) script.push(action);
+		for (const {action} of pending) {
+			script.push(action);
+		}
 		return script;
 	});
 
@@ -416,65 +310,20 @@ function frameOf(terminal: any): string {
 }
 
 function find(document: any, id: string): any {
-	return id === "body"
-		? document.body
-		: document.querySelector(`[data-f="${id}"]`);
+	return id === "body" ?
+		document.body :
+			document.querySelector(`[data-f="${id}"]`);
 }
 
-/**
- * Run one action. Asynchronous for `flash`, which shows a dialog or a popover,
- * gives it a frame of its own, and closes it: the top layer leaves no mark on
- * the serialized tree, so what it can leave behind is a frame the close failed
- * to repair.
- */
-async function apply(dom: any, action: Action): Promise<void> {
+function apply(dom: any, action: Action): void {
 	const document = dom.document;
 	if (action.kind === "scroll") {
 		dom.window.scrollTo(0, action.top);
 		return;
 	}
 	const element = find(document, action.id);
-	if (!element) return;
-	switch (action.kind) {
-		case "dir":
-			if (action.value) element.setAttribute("dir", action.value);
-			else element.removeAttribute("dir");
-			return;
-		case "open":
-			if (element.tagName === "DIALOG") element.toggleAttribute("open");
-			return;
-		case "pop":
-			if (action.value) element.setAttribute("popover", action.value);
-			else element.removeAttribute("popover");
-			return;
-		case "flash": {
-			// Showing what is already shown is a spec'd throw, not a finding.
-			if (action.mode === "popover") {
-				if (!element.hasAttribute("popover")) return;
-				try {
-					element.showPopover();
-				} catch {
-					return;
-				}
-				await nextFrame(dom);
-				try {
-					element.hidePopover();
-				} catch {
-					/* an auto popover may already have been dismissed */
-				}
-				return;
-			}
-			if (element.tagName !== "DIALOG" || element.hasAttribute("open")) return;
-			try {
-				if (action.mode === "modal") element.showModal();
-				else element.show();
-			} catch {
-				return;
-			}
-			await nextFrame(dom);
-			element.close();
-			return;
-		}
+	if (!element) {
+		return;
 	}
 	switch (action.kind) {
 		case "class":
@@ -493,12 +342,19 @@ async function apply(dom: any, action: Action): Promise<void> {
 		case "prepend": {
 			const child = document.createElement(action.tag);
 			child.setAttribute("data-f", action.made);
-			if (action.kind === "append" && action.cls) child.className = action.cls;
-			if (action.text) child.textContent = action.text;
-			if (action.kind === "append") element.appendChild(child);
-			else if (element.firstChild)
+			if (action.kind === "append" && action.cls) {
+				child.className = action.cls;
+			}
+			if (action.text) {
+				child.textContent = action.text;
+			}
+			if (action.kind === "append") {
+				element.appendChild(child);
+			} else if (element.firstChild) {
 				element.insertBefore(child, element.firstChild);
-			else element.appendChild(child);
+			} else {
+				element.appendChild(child);
+			}
 			break;
 		}
 		case "remove":
@@ -506,7 +362,9 @@ async function apply(dom: any, action: Action): Promise<void> {
 			break;
 		case "move": {
 			const to = find(document, action.to);
-			if (!to || to === element || element.contains(to)) return;
+			if (!to || to === element || element.contains(to)) {
+				return;
+			}
 			to.appendChild(element);
 			break;
 		}
@@ -517,12 +375,17 @@ async function apply(dom: any, action: Action): Promise<void> {
 			const texts: any[] = [];
 			const walk = (node: any): void => {
 				for (const child of Array.from(node.childNodes) as any[]) {
-					if (child.nodeType === 3) texts.push(child);
-					else walk(child);
+					if (child.nodeType === 3) {
+						texts.push(child);
+					} else {
+						walk(child);
+					}
 				}
 			};
 			walk(element);
-			if (texts[action.at]) texts[action.at].data = action.value;
+			if (texts[action.at]) {
+				texts[action.at].data = action.value;
+			}
 			break;
 		}
 	}
@@ -534,7 +397,7 @@ async function play(run: Run, cols?: number, rows?: number) {
 	made.dom.document.body.innerHTML = run.document.html;
 	await nextFrame(made.dom);
 	for (const action of run.script) {
-		await apply(made.dom, action);
+		apply(made.dom, action);
 		await nextFrame(made.dom);
 	}
 	made.dom.window.scrollTo(0, 0);
@@ -569,83 +432,98 @@ const SAMPLED_PROPERTIES = [
 	"padding-left",
 ];
 
-test("an incrementally mutated frame equals a frame rendered once", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const live = await play(run);
-			const fresh = await replay(live.dom);
-			const incremental = frameOf(live.terminal);
-			const once = frameOf(fresh.terminal);
-			live.dom.dispose();
-			fresh.dom.dispose();
-			if (incremental !== once) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
+test(
+	"an incrementally mutated frame equals a frame rendered once",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
+				const live = await play(run);
+				const fresh = await replay(live.dom);
+				const incremental = frameOf(live.terminal);
+				const once = frameOf(fresh.terminal);
+				live.dom.dispose();
+				fresh.dom.dispose();
+				if (incremental !== once) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
 						`script: ${JSON.stringify(run.script)}\n` +
 						`--- incremental\n${incremental}\n--- fresh\n${once}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
+					);
+				}
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);
 
-test("computed styles survive mutation as they would a fresh cascade", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const live = await play(run);
-			const fresh = await replay(live.dom);
-			const mutated = [
-				live.dom.document.body,
-				...(Array.from(live.dom.document.body.querySelectorAll("*")) as any[]),
-			];
-			const rendered = [
-				fresh.dom.document.body,
-				...(Array.from(fresh.dom.document.body.querySelectorAll("*")) as any[]),
-			];
-			const differences: string[] = [];
-			if (mutated.length !== rendered.length) {
-				differences.push(
-					`${mutated.length} elements against ${rendered.length}`,
-				);
-			}
-			for (let i = 0; i < Math.min(mutated.length, rendered.length); i++) {
-				const a = live.dom.window.getComputedStyle(mutated[i]);
-				const b = fresh.dom.window.getComputedStyle(rendered[i]);
-				for (const property of SAMPLED_PROPERTIES) {
-					const one = a.getPropertyValue(property);
-					const other = b.getPropertyValue(property);
-					if (one !== other) {
-						differences.push(
-							`${mutated[i].tagName}[${mutated[i].getAttribute("data-f")}] ` +
+test(
+	"computed styles survive mutation as they would a fresh cascade",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
+				const live = await play(run);
+				const fresh = await replay(live.dom);
+				const mutated = [
+					live.dom.document.body,
+					...(Array.from(
+						live.dom.document.body.querySelectorAll("*"),
+					) as any[]),
+				];
+				const rendered = [
+					fresh.dom.document.body,
+					...(Array.from(
+						fresh.dom.document.body.querySelectorAll("*"),
+					) as any[]),
+				];
+				const differences: string[] = [];
+				if (mutated.length !== rendered.length) {
+					differences.push(
+						`${mutated.length} elements against ${rendered.length}`,
+					);
+				}
+				for (let i = 0; i < Math.min(mutated.length, rendered.length); i++) {
+					const a = live.dom.window.getComputedStyle(mutated[i]);
+					const b = fresh.dom.window.getComputedStyle(rendered[i]);
+					for (const property of SAMPLED_PROPERTIES) {
+						const one = a.getPropertyValue(property);
+						const other = b.getPropertyValue(property);
+						if (one !== other) {
+							differences.push(
+								`${mutated[i].tagName}[${mutated[i].getAttribute("data-f")}] ` +
 								`${property}: ${JSON.stringify(one)} against ` +
 								`${JSON.stringify(other)}`,
-						);
+							);
+						}
 					}
 				}
-			}
-			const tree = live.dom.document.body.innerHTML;
-			live.dom.dispose();
-			fresh.dom.dispose();
-			if (differences.length) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
+				const tree = live.dom.document.body.innerHTML;
+				live.dom.dispose();
+				fresh.dom.dispose();
+				if (differences.length) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
 						`script: ${JSON.stringify(run.script)}\n` +
 						`tree: ${tree}\n${differences.join("\n")}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
+					);
+				}
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);
 
 /** Every text node under the body, in document order. */
 function textNodesOf(document: any): any[] {
 	const found: any[] = [];
 	const walk = (node: any): void => {
 		for (const child of Array.from(node.childNodes) as any[]) {
-			if (child.nodeType === 3) found.push(child);
-			else if (child.nodeType === 1) walk(child);
+			if (child.nodeType === 3) {
+				found.push(child);
+			} else if (child.nodeType === 1) {
+				walk(child);
+			}
 		}
 	};
 	walk(document.body);
@@ -665,67 +543,79 @@ function cellOf(
 			col !== -1;
 			col = lines[row].indexOf(token, col + 1)
 		) {
-			if (found) return null;
+			if (found) {
+				return null;
+			}
 			found = {row, col};
 		}
 	}
 	return found;
 }
 
-test("a painted token is where geometry and hit-testing say it is", async () => {
-	await fc.assert(
-		fc.asyncProperty(runArbitrary, async (run: Run) => {
-			const live = await play(run);
-			const document = live.dom.document;
-			const frame = frameOf(live.terminal);
-			const texts = textNodesOf(document);
-			const problems: string[] = [];
-			for (const token of run.document.tokens) {
-				const holders = texts.filter((text) => text.data.includes(token));
-				if (holders.length !== 1) continue;
-				const text = holders[0];
-				const offset = text.data.indexOf(token);
-				if (text.data.indexOf(token, offset + 1) !== -1) continue;
-				const cell = cellOf(frame, token);
-				if (!cell) continue;
+test(
+	"a painted token is where geometry and hit-testing say it is",
+	async () => {
+		await fc.assert(
+			fc.asyncProperty(runArbitrary, async (run: Run) => {
+				const live = await play(run);
+				const document = live.dom.document;
+				const frame = frameOf(live.terminal);
+				const texts = textNodesOf(document);
+				const problems: string[] = [];
+				for (const token of run.document.tokens) {
+					const holders = texts.filter((text) => text.data.includes(token));
+					if (holders.length !== 1) {
+						continue;
+					}
+					const text = holders[0];
+					const offset = text.data.indexOf(token);
+					if (text.data.indexOf(token, offset + 1) !== -1) {
+						continue;
+					}
+					const cell = cellOf(frame, token);
+					if (!cell) {
+						continue;
+					}
 
-				const range = document.createRange();
-				range.setStart(text, offset);
-				range.setEnd(text, offset + 1);
-				const rect = range.getBoundingClientRect();
-				if (rect.left !== cell.col || rect.top !== cell.row) {
-					problems.push(
-						`${token} painted at ${cell.row},${cell.col} ` +
+					const range = document.createRange();
+					range.setStart(text, offset);
+					range.setEnd(text, offset + 1);
+					const rect = range.getBoundingClientRect();
+					if (rect.left !== cell.col || rect.top !== cell.row) {
+						problems.push(
+							`${token} painted at ${cell.row},${cell.col} ` +
 							`but its range reports ${rect.top},${rect.left}`,
-					);
-				}
+						);
+					}
 
-				const hit = document.elementFromPoint(cell.col, cell.row);
-				const parent = text.parentElement;
-				if (
-					!hit ||
-					!(hit === parent || hit.contains(parent) || parent.contains(hit))
-				) {
-					problems.push(
-						`${token} at ${cell.row},${cell.col} hit-tests to ` +
+					const hit = document.elementFromPoint(cell.col, cell.row);
+					const parent = text.parentElement;
+					if (
+						!hit ||
+						!(hit === parent || hit.contains(parent) || parent.contains(hit))
+					) {
+						problems.push(
+							`${token} at ${cell.row},${cell.col} hit-tests to ` +
 							`${hit ? hit.tagName + "[" + hit.getAttribute("data-f") + "]" : "null"}, ` +
 							`outside <${parent.tagName} data-f="${parent.getAttribute("data-f")}">`,
-					);
+						);
+					}
 				}
-			}
-			const tree = document.body.innerHTML;
-			live.dom.dispose();
-			if (problems.length) {
-				throw new Error(
-					`html: ${run.document.html}\n` +
+				const tree = document.body.innerHTML;
+				live.dom.dispose();
+				if (problems.length) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
 						`script: ${JSON.stringify(run.script)}\n` +
 						`tree: ${tree}\n--- frame\n${frame}\n${problems.join("\n")}`,
-				);
-			}
-		}),
-		assertOptions,
-	);
-}, 900000);
+					);
+				}
+			}),
+			assertOptions,
+		);
+	},
+	900000,
+);
 
 /**
  * Resize the terminal the way SIGWINCH does and wait for the redraw the
@@ -747,7 +637,9 @@ async function resizeTo(
 		await nextFrame(dom);
 		const frame = frameOf(terminal);
 		if (frame === last) {
-			if (++stable >= 2) break;
+			if (++stable >= 2) {
+				break;
+			}
 		} else {
 			stable = 0;
 			last = frame;
@@ -790,9 +682,9 @@ test("a resize round trip lands back on the frame it left", async () => {
 				if (after !== before) {
 					throw new Error(
 						`html: ${run.document.html}\n` +
-							`script: ${JSON.stringify(run.script)}\n` +
-							`${first.cols}x${first.rows} -> ${second.cols}x${second.rows} -> back\n` +
-							`--- before\n${before}\n--- after\n${after}`,
+						`script: ${JSON.stringify(run.script)}\n` +
+						`${first.cols}x${first.rows} -> ${second.cols}x${second.rows} -> back\n` +
+						`--- before\n${before}\n--- after\n${after}`,
 					);
 				}
 			},

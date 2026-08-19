@@ -619,9 +619,9 @@ test("order lays flex items out in order-modified document order", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display: flex; flex-direction: row; gap: 1ch">` +
-		`<span style="order: 1">last</span><span>mid1</span>` +
-		`<span style="order: -1">first</span><span>mid2</span></div>`;
+		"<div style=\"display: flex; flex-direction: row; gap: 1ch\">" +
+		"<span style=\"order: 1\">last</span><span>mid1</span>" +
+		"<span style=\"order: -1\">first</span><span>mid2</span></div>";
 	await nextFrame(dom);
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
 		"first mid1 mid2 last",
@@ -672,7 +672,7 @@ test("a runtime order change reorders live flex items", async () => {
 test("text between flex items forms its own anonymous item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<p style="display: flex">text <input> more</p>`;
+	dom.document.body.innerHTML = "<p style=\"display: flex\">text <input> more</p>";
 
 	await nextFrame(dom);
 
@@ -689,7 +689,7 @@ test("text between flex items forms its own anonymous item", async () => {
 test("a flex item's width applies even when it is an inline box", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="display: flex"><span style="width: 30ch">aaaa</span><span style="width: 30ch">bbbb</span></div>`;
+	dom.document.body.innerHTML = "<div style=\"display: flex\"><span style=\"width: 30ch\">aaaa</span><span style=\"width: 30ch\">bbbb</span></div>";
 
 	await nextFrame(dom);
 
@@ -709,7 +709,7 @@ test("a flex item's width applies even when it is an inline box", async () => {
 test("flex-shrink: 0 keeps an item at its width while the rest give way", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="display: flex"><div style="width: 30ch; flex-shrink: 0">aaaa</div><div style="width: 30ch">bbbb</div></div>`;
+	dom.document.body.innerHTML = "<div style=\"display: flex\"><div style=\"width: 30ch; flex-shrink: 0\">aaaa</div><div style=\"width: 30ch\">bbbb</div></div>";
 
 	await nextFrame(dom);
 
@@ -735,7 +735,7 @@ test("an inline element that becomes a flex item keeps its padding", async () =>
 	style.textContent = `.row{display:flex;flex-direction:row}
 .row span{padding:0 2ch}`;
 	document.head.appendChild(style);
-	document.body.innerHTML = `<div class="row"><span id="s">LBL</span><span>val</span></div>`;
+	document.body.innerHTML = "<div class=\"row\"><span id=\"s\">LBL</span><span>val</span></div>";
 	await nextFrame(dom);
 
 	// 3 cells of text plus 2ch padding on each side = 7 cells wide.
@@ -761,7 +761,7 @@ test("a blockified inline flex item offsets its content by padding", async () =>
 	style.textContent = `.row{display:flex;flex-direction:row}
 .pad{padding:2ch}`;
 	document.head.appendChild(style);
-	document.body.innerHTML = `<div class="row"><span class="pad">Z</span></div>`;
+	document.body.innerHTML = "<div class=\"row\"><span class=\"pad\">Z</span></div>";
 	await nextFrame(dom);
 
 	// 2ch padding on every side: the "Z" lands at row 2, column 2, not (0,0).
@@ -777,10 +777,10 @@ test("the flex shorthand in a stylesheet expands: flex 1 grows", async () => {
 	// declaration. It must work from a stylesheet, not only element.style.
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>.grow { flex: 1; }</style>`;
+	dom.document.head.innerHTML = "<style>.grow { flex: 1; }</style>";
 	dom.document.body.innerHTML =
-		`<div style="display:flex;width:40ch">` +
-		`<span>x</span><div id="g" class="grow">y</div></div>`;
+		"<div style=\"display:flex;width:40ch\">" +
+		"<span>x</span><div id=\"g\" class=\"grow\">y</div></div>";
 	await nextFrame(dom);
 
 	const g = dom.document.getElementById("g")!;
@@ -791,10 +791,10 @@ test("the flex shorthand in a stylesheet expands: flex 1 grows", async () => {
 test("flex: none from a stylesheet pins the item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>.pin { flex: none; width: 10ch; }</style>`;
+	dom.document.head.innerHTML = "<style>.pin { flex: none; width: 10ch; }</style>";
 	dom.document.body.innerHTML =
-		`<div style="display:flex;width:20ch">` +
-		`<div id="p" class="pin">abc</div><div style="width:30ch">overflow</div></div>`;
+		"<div style=\"display:flex;width:20ch\">" +
+		"<div id=\"p\" class=\"pin\">abc</div><div style=\"width:30ch\">overflow</div></div>";
 	await nextFrame(dom);
 
 	// flex: none = 0 0 auto -- the item neither grows nor shrinks.
@@ -857,7 +857,7 @@ test.todo("white-space: pre keeps whitespace items, per spec", async () => {
 	// Non-collapsible white space DOES generate an anonymous item.
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="display:flex;white-space:pre"><div id="a">A</div>  <div id="b">B</div></div>`;
+	dom.document.body.innerHTML = "<div style=\"display:flex;white-space:pre\"><div id=\"a\">A</div>  <div id=\"b\">B</div></div>";
 	await nextFrame(dom);
 	expect(dom.document.getElementById("b")!.getBoundingClientRect().left).toBe(
 		3, // A(1) + two preserved spaces

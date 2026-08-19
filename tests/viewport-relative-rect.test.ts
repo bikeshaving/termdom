@@ -135,7 +135,7 @@ test("scrollIntoView still brings an off-screen element into view", async () => 
 test("an element's own scrollLeft shifts its descendants, distinct from the camera", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 5});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="s" style="overflow:hidden; width:5px"><span id="c">abcdefghij</span></div>`;
+	dom.document.body.innerHTML = "<div id=\"s\" style=\"overflow:hidden; width:5px\"><span id=\"c\">abcdefghij</span></div>";
 	await nextFrame(dom);
 
 	const content = dom.document.getElementById("c")!;

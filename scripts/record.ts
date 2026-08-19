@@ -35,9 +35,11 @@ function makeRecorder(
 	const stdout = {
 		isTTY: true,
 		columns: cols,
-		rows: rows,
+		rows,
 		write(chunk: any, encoding?: any, callback?: any): boolean {
-			if (typeof encoding === "function") callback = encoding;
+			if (typeof encoding === "function") {
+				callback = encoding;
+			}
 			events.push({time: clock.now, data: String(chunk)});
 			callback?.();
 			return true;
@@ -49,12 +51,15 @@ function makeRecorder(
 		setRawMode() {
 			return this;
 		}
+
 		resume() {
 			return this;
 		}
+
 		pause() {
 			return this;
 		}
+
 		setEncoding() {
 			return this;
 		}
@@ -110,7 +115,9 @@ async function record(
 		await settle();
 	}
 
-	if (typeof teardown === "function") teardown();
+	if (typeof teardown === "function") {
+		teardown();
+	}
 	termdom.dispose();
 
 	const header = {

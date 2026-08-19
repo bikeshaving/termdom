@@ -17,20 +17,20 @@ const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 25);
 const SEED = Number(process.env.FC_SEED ?? 1);
 
 type Command =
-	| {kind: "type"; text: string}
-	| {kind: "left"}
-	| {kind: "right"}
-	| {kind: "home"}
-	| {kind: "end"}
-	| {kind: "back"}
-	| {kind: "forward"}
-	| {kind: "killToEnd"}
-	| {kind: "killToStart"}
-	| {kind: "killWord"}
-	| {kind: "deleteForward"}
-	| {kind: "backspace"}
-	| {kind: "newline"}
-	| {kind: "paste"; text: string};
+	| {kind: "type"; text: string} |
+	{kind: "left"} |
+	{kind: "right"} |
+	{kind: "home"} |
+	{kind: "end"} |
+	{kind: "back"} |
+	{kind: "forward"} |
+	{kind: "killToEnd"} |
+	{kind: "killToStart"} |
+	{kind: "killWord"} |
+	{kind: "deleteForward"} |
+	{kind: "backspace"} |
+	{kind: "newline"} |
+	{kind: "paste"; text: string};
 
 const BYTES: Record<string, string> = {
 	left: "\x1b[D",
@@ -49,7 +49,9 @@ const BYTES: Record<string, string> = {
 
 /** The bytes a terminal sends for a command. */
 function encode(command: Command): string {
-	if (command.kind === "type") return command.text;
+	if (command.kind === "type") {
+		return command.text;
+	}
 	if (command.kind === "paste") {
 		// A pasted newline arrives as a carriage return, the way a terminal
 		// sends one.
@@ -113,8 +115,12 @@ function step(model: Model, command: Command, multiline: boolean): Model {
 			return cut(model, lineStart(value, caret), caret);
 		case "killWord": {
 			let start = caret;
-			while (start > 0 && /\s/.test(value[start - 1])) start--;
-			while (start > 0 && !/\s/.test(value[start - 1])) start--;
+			while (start > 0 && /\s/.test(value[start - 1])) {
+				start--;
+			}
+			while (start > 0 && !/\s/.test(value[start - 1])) {
+				start--;
+			}
 			return cut(model, start, caret);
 		}
 		case "deleteForward":
@@ -173,9 +179,9 @@ async function play(tag: "input" | "textarea", script: Command[]) {
 		model = step(model, command, multiline);
 		trace.push(
 			`${command.kind}${"text" in command ? `(${JSON.stringify(command.text)})` : ""}` +
-				` -> model ${JSON.stringify(model.value)}@${model.caret}` +
-				` field ${JSON.stringify(field.value)}` +
-				`@${field.selectionStart},${field.selectionEnd}`,
+			` -> model ${JSON.stringify(model.value)}@${model.caret}` +
+			` field ${JSON.stringify(field.value)}` +
+			`@${field.selectionStart},${field.selectionEnd}`,
 		);
 		if (
 			field.value !== model.value ||

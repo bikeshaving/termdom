@@ -59,7 +59,9 @@ const bunStringWidth =
 			const mismatches: string[] = [];
 			for (let code = 0; code <= 0x3ffff; code++) {
 				// Lone surrogates are not characters.
-				if (code >= 0xd800 && code <= 0xdfff) continue;
+				if (code >= 0xd800 && code <= 0xdfff) {
+					continue;
+				}
 				const char = String.fromCodePoint(code);
 				if (stringWidthFallback(char) !== bunStringWidth!(char)) {
 					mismatches.push(`U+${code.toString(16).toUpperCase()}`);

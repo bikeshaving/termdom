@@ -18,8 +18,8 @@ test("a bordered inline-block in a flex ROW is not double-counted in height", as
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display:flex"><span>x</span>` +
-		`<div id="box" style="display:inline-block;border:1px solid;flex-grow:1">y</div></div>`;
+		"<div style=\"display:flex\"><span>x</span>" +
+		"<div id=\"box\" style=\"display:inline-block;border:1px solid;flex-grow:1\">y</div></div>";
 	await nextFrame(dom);
 	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(3);
 	dom.dispose();
@@ -29,8 +29,8 @@ test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async
 	const terminal = new MockProcess({cols: 118, rows: 30});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display:flex"><span>› </span>` +
-		`<textarea rows="1" placeholder="message ch.at…" style="flex-grow:1"></textarea></div>`;
+		"<div style=\"display:flex\"><span>› </span>" +
+		"<textarea rows=\"1\" placeholder=\"message ch.at…\" style=\"flex-grow:1\"></textarea></div>";
 	await nextFrame(dom);
 	expect(heightOf(dom, dom.document.querySelector("textarea")!)).toBe(3);
 	dom.dispose();
@@ -40,8 +40,8 @@ test("a flex-grow textarea wraps its value at the grown width, not its flex-basi
 	const terminal = new MockProcess({cols: 60, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display:flex"><span>x</span>` +
-		`<textarea style="flex-grow:1"></textarea></div>`;
+		"<div style=\"display:flex\"><span>x</span>" +
+		"<textarea style=\"flex-grow:1\"></textarea></div>";
 	const ta = dom.document.querySelector("textarea") as HTMLTextAreaElement;
 	ta.value = "Testing this out from a wide flex composer";
 	await nextFrame(dom);
@@ -56,8 +56,8 @@ test("a flex-shrink inline-block wraps its content at the shrunk width, not its 
 	const terminal = new MockProcess({cols: 20, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display:flex;width:20ch">` +
-		`<div id="box" style="display:inline-block;width:40ch">aaaa bbbb cccc dddd eeee ffff</div></div>`;
+		"<div style=\"display:flex;width:20ch\">" +
+		"<div id=\"box\" style=\"display:inline-block;width:40ch\">aaaa bbbb cccc dddd eeee ffff</div></div>";
 	await nextFrame(dom);
 	// 29 columns of text in a box shrunk from 40ch to the container's 20:
 	// two lines at the USED width, not one overflowing line at the basis.
@@ -68,7 +68,7 @@ test("a flex-shrink inline-block wraps its content at the shrunk width, not its 
 test("a max-width-capped inline-block wraps its content at the capped width", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div><div id="box" style="display:inline-block;max-width:10ch">aa bb cc dd</div></div>`;
+	dom.document.body.innerHTML = "<div><div id=\"box\" style=\"display:inline-block;max-width:10ch\">aa bb cc dd</div></div>";
 	await nextFrame(dom);
 	// 11 columns of text capped at 10: the content re-wraps inside the cap
 	// instead of overflowing a box whose reported width was merely clamped.
@@ -409,7 +409,7 @@ test("an empty inline flex item measures zero, not its next sibling's width", as
 	// progress bar whenever its fill or track emptied (0% and 100%).
 	const terminal = new MockProcess({cols: 40, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="display:flex"><span></span><span>ABC</span><span>XY</span></div>`;
+	dom.document.body.innerHTML = "<div style=\"display:flex\"><span></span><span>ABC</span><span>XY</span></div>";
 	await nextFrame(dom);
 
 	const spans = [...dom.document.querySelectorAll("span")];
@@ -432,9 +432,9 @@ test("a progress bar stays intact when its fill or track empties", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
-		`<div style="display:flex">` +
-		`<span id="fill"></span><span id="track"></span><span id="pct"></span>` +
-		`</div>`;
+		"<div style=\"display:flex\">" +
+		"<span id=\"fill\"></span><span id=\"track\"></span><span id=\"pct\"></span>" +
+		"</div>";
 	const fill = dom.document.getElementById("fill")!;
 	const track = dom.document.getElementById("track")!;
 	const pct = dom.document.getElementById("pct")!;

@@ -96,7 +96,9 @@ function upgradeControlsIn(root: Element): void {
 	const stack: Element[] = [root];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
-		if (UPGRADEABLE_CONTROLS.has(element.tagName)) upgradeUAWidget(element);
+		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
+			upgradeUAWidget(element);
+		}
 		for (
 			let child = element.firstElementChild;
 			child !== null;
@@ -151,7 +153,7 @@ export class FullscreenManager {
 	#write: (output: string) => void;
 
 	#fullscreenStack: Element[] = [];
-	#isInFullscreenMode: boolean = false;
+	#isInFullscreenMode = false;
 
 	constructor(write: (output: string) => void) {
 		this.#write = write;
@@ -215,9 +217,9 @@ export class FullscreenManager {
 	 * Get the current fullscreen element
 	 */
 	get fullscreenElement(): Element | null {
-		return this.#fullscreenStack.length > 0
-			? this.#fullscreenStack[this.#fullscreenStack.length - 1]
-			: null;
+		return this.#fullscreenStack.length > 0 ?
+			this.#fullscreenStack[this.#fullscreenStack.length - 1] :
+			null;
 	}
 
 	/**
@@ -244,7 +246,9 @@ export class FullscreenManager {
 
 	#fireFullscreenChangeEvent(element: Element): void {
 		const window = this.#getWindow(element);
-		if (!window) return;
+		if (!window) {
+			return;
+		}
 
 		const event = new window.CustomEvent("fullscreenchange", {
 			bubbles: true,
@@ -259,7 +263,9 @@ export class FullscreenManager {
 
 	#fireFullscreenErrorEvent(element: Element, error: Error): void {
 		const window = this.#getWindow(element);
-		if (!window) return;
+		if (!window) {
+			return;
+		}
 
 		const event = new window.CustomEvent("fullscreenerror", {
 			bubbles: true,
@@ -308,7 +314,7 @@ type WindowEventHandlerAttributes = Omit<
 
 export interface EngineWindow
 	extends EventTarget,
-		WindowEventHandlerAttributes {
+	WindowEventHandlerAttributes {
 	readonly document: Document;
 	readonly window: EngineWindow;
 	readonly self: EngineWindow;
@@ -424,12 +430,18 @@ export interface EngineWindow
 function domInterfaces(): Record<string, unknown> {
 	const named: Record<string, unknown> = {};
 	for (const [name, value] of Object.entries(DOM)) {
-		if (typeof value !== "function") continue;
+		if (typeof value !== "function") {
+			continue;
+		}
 		// A module export is an interface when it is a class: an interface
 		// has a prototype object of its own, and a plain function does not.
 		const prototype = (value as {prototype?: unknown}).prototype;
-		if (prototype === undefined || prototype === null) continue;
-		if (!/^[A-Z]/.test(name)) continue;
+		if (prototype === undefined || prototype === null) {
+			continue;
+		}
+		if (!/^[A-Z]/.test(name)) {
+			continue;
+		}
 		named[name] = value;
 	}
 	return named;
@@ -589,16 +601,20 @@ export class TermDOM {
 	#frameDamage: Map<Element, DOMRect | null> | null = new Map();
 
 	#addFrameDamage(node: Node): void {
-		if (!this.#frameDamage) return;
+		if (!this.#frameDamage) {
+			return;
+		}
 		const element =
-			node.nodeType === node.ELEMENT_NODE
-				? (node as Element)
-				: (node.parentElement ?? null);
+			node.nodeType === node.ELEMENT_NODE ?
+					(node as Element) :
+					(node.parentElement ?? null);
 		if (!element) {
 			this.#frameDamage = null;
 			return;
 		}
-		if (this.#frameDamage.has(element)) return;
+		if (this.#frameDamage.has(element)) {
+			return;
+		}
 		if (this.#frameDamage.size >= 24) {
 			this.#frameDamage = null;
 			return;
@@ -657,10 +673,11 @@ export class TermDOM {
 	// consumed inside #renderInteractive after its layout flush. Last
 	// edit before the frame wins.
 	#pendingCaretReveal:
-		| HTMLInputElement
-		| HTMLTextAreaElement
-		| HTMLSelectElement
-		| null = null;
+		| HTMLInputElement |
+		HTMLTextAreaElement |
+		HTMLSelectElement |
+		null = null;
+
 	// A drag that started inside a text field extends the FIELD's own
 	// selection (selectionStart/End, bounded to the field) rather than the
 	// document selection -- the browser's exact split. The anchor is a
@@ -670,6 +687,7 @@ export class TermDOM {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
 	} | null = null;
+
 	// The target and time of the last completed click, to detect a second one
 	// close enough behind it to be a dblclick -- browsers' own double-click
 	// interval varies by OS/user setting; 500ms is the common default.
@@ -797,8 +815,12 @@ export class TermDOM {
 	 */
 	#onDisclosureToggle = (event: Event): void => {
 		const details = event.target as HTMLElement | null;
-		if (details === null || !("open" in details)) return;
-		if (!(details as HTMLDetailsElement).open) return;
+		if (details === null || !("open" in details)) {
+			return;
+		}
+		if (!(details as HTMLDetailsElement).open) {
+			return;
+		}
 		details.scrollIntoView({block: "nearest"});
 	};
 
@@ -902,9 +924,9 @@ export class TermDOM {
 			y?: number,
 		): void => {
 			const dy =
-				typeof xOrOptions === "object" && xOrOptions !== null
-					? (xOrOptions.top ?? 0)
-					: (y ?? 0);
+				typeof xOrOptions === "object" && xOrOptions !== null ?
+						(xOrOptions.top ?? 0) :
+						(y ?? 0);
 			termDOM.#scrollCamera(dy);
 		}) as typeof window.scrollBy;
 
@@ -919,9 +941,9 @@ export class TermDOM {
 			y?: number,
 		): void => {
 			const targetY =
-				typeof xOrOptions === "object" && xOrOptions !== null
-					? (xOrOptions.top ?? termDOM.#viewport.scrollTop)
-					: (y ?? 0);
+				typeof xOrOptions === "object" && xOrOptions !== null ?
+						(xOrOptions.top ?? termDOM.#viewport.scrollTop) :
+						(y ?? 0);
 			termDOM.#viewport.scrollTop = Math.max(0, targetY);
 			void termDOM.#render();
 		};
@@ -983,9 +1005,13 @@ export class TermDOM {
 						// An event-handler attribute IS a listener, per spec:
 						// route it through add/removeEventListener so dispatch
 						// order and dedup behave like any other handler.
-						if (onchange) mql.removeEventListener("change", onchange);
+						if (onchange) {
+							mql.removeEventListener("change", onchange);
+						}
 						onchange = typeof value === "function" ? value : null;
-						if (onchange) mql.addEventListener("change", onchange);
+						if (onchange) {
+							mql.addEventListener("change", onchange);
+						}
 					},
 					enumerable: true,
 					configurable: true,
@@ -994,20 +1020,26 @@ export class TermDOM {
 				// code calls: plain aliases for the EventTarget pair.
 				addListener: {
 					value: (cb: ((ev: Event) => void) | null) => {
-						if (cb) mql.addEventListener("change", cb);
+						if (cb) {
+							mql.addEventListener("change", cb);
+						}
 					},
 					configurable: true,
 				},
 				removeListener: {
 					value: (cb: ((ev: Event) => void) | null) => {
-						if (cb) mql.removeEventListener("change", cb);
+						if (cb) {
+							mql.removeEventListener("change", cb);
+						}
 					},
 					configurable: true,
 				},
 			});
 			termDOM.#mediaQueryUpdaters.add(() => {
 				const now = termDOM.#styleManager.mediaQueryMatches(media);
-				if (now === notified) return;
+				if (now === notified) {
+					return;
+				}
 				notified = now;
 				const event = new window.Event("change");
 				Object.defineProperties(event, {
@@ -1043,9 +1075,13 @@ export class TermDOM {
 			// everything dispose queued must reach the wire before the
 			// transport acts on the close (a process transport exits).
 			void (async () => {
-				if (wasAttached) await termDOM.#attachReady;
+				if (wasAttached) {
+					await termDOM.#attachReady;
+				}
 				await termDOM.dispose();
-				if (wasAttached) termDOM.#transport.close({status: 0});
+				if (wasAttached) {
+					termDOM.#transport.close({status: 0});
+				}
 			})();
 		};
 
@@ -1167,7 +1203,9 @@ export class TermDOM {
 	static #prototypesInstalled = false;
 
 	static #installPrototypes(window: EngineWindow): void {
-		if (TermDOM.#prototypesInstalled) return;
+		if (TermDOM.#prototypesInstalled) {
+			return;
+		}
 		TermDOM.#prototypesInstalled = true;
 		const {Element, Document, Range} = window;
 
@@ -1203,9 +1241,9 @@ export class TermDOM {
 			rect: DOMRect,
 			element?: Element,
 		): DOMRect =>
-			element && termDOM[kLayoutEngine].isInFixedSpace(element)
-				? rect
-				: termDOM[kLayoutEngine].createDOMRect(
+			element && termDOM[kLayoutEngine].isInFixedSpace(element) ?
+				rect :
+					termDOM[kLayoutEngine].createDOMRect(
 						rect.x,
 						rect.y - termDOM.#viewport.scrollTop,
 						rect.width,
@@ -1254,9 +1292,9 @@ export class TermDOM {
 			termDOM.#processPendingMutationsAndRender();
 			const container = this.startContainer;
 			const anchor =
-				container.nodeType === container.ELEMENT_NODE
-					? (container as Element)
-					: (container.parentElement ?? undefined);
+				container.nodeType === container.ELEMENT_NODE ?
+						(container as Element) :
+						(container.parentElement ?? undefined);
 			const rects = termDOM[kLayoutEngine]
 				.getRangeRects(this)
 				.map((rect) => toViewportRect(termDOM, rect, anchor));
@@ -1268,9 +1306,9 @@ export class TermDOM {
 			termDOM.#processPendingMutationsAndRender();
 			const container = this.startContainer;
 			const anchor =
-				container.nodeType === container.ELEMENT_NODE
-					? (container as Element)
-					: (container.parentElement ?? undefined);
+				container.nodeType === container.ELEMENT_NODE ?
+						(container as Element) :
+						(container.parentElement ?? undefined);
 			return toViewportRect(
 				termDOM,
 				termDOM[kLayoutEngine].unionRect(
@@ -1296,7 +1334,9 @@ export class TermDOM {
 		// rounds the *difference* of two rects, not each rect independently, so
 		// rounding here first would double-round and drift by a cell).
 		const layoutRectOf = (element: Element): DOMRect | null => {
-			if (!element.isConnected) return null;
+			if (!element.isConnected) {
+				return null;
+			}
 			const termDOM = engineOf(element);
 			termDOM.#processPendingMutationsAndRender();
 			return termDOM[kLayoutEngine].getRect(element);
@@ -1328,7 +1368,9 @@ export class TermDOM {
 			element: Element,
 		): {width: number; height: number} | null => {
 			const rect = layoutRectOf(element);
-			if (!rect) return null;
+			if (!rect) {
+				return null;
+			}
 			const box = getBoxModel(element);
 			return {
 				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
@@ -1367,7 +1409,9 @@ export class TermDOM {
 		Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
 			get(this: Element) {
 				const rect = layoutRectOf(this);
-				if (!rect) return 0;
+				if (!rect) {
+					return 0;
+				}
 				const parent = offsetParentOf(this);
 				const parentRect = parent ? layoutRectOf(parent) : null;
 				return Math.round(rect.top - (parentRect?.top ?? 0));
@@ -1379,7 +1423,9 @@ export class TermDOM {
 		Object.defineProperty(window.HTMLElement.prototype, "offsetLeft", {
 			get(this: Element) {
 				const rect = layoutRectOf(this);
-				if (!rect) return 0;
+				if (!rect) {
+					return 0;
+				}
 				const parent = offsetParentOf(this);
 				const parentRect = parent ? layoutRectOf(parent) : null;
 				return Math.round(rect.left - (parentRect?.left ?? 0));
@@ -1527,11 +1573,13 @@ export class TermDOM {
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
-			get: function (this: Document) {
+			get(this: Document) {
 				// Style computation consults this during construction, before
 				// the manager field is assigned.
 				const termDOM = engines.get(this);
-				if (termDOM === undefined) return null;
+				if (termDOM === undefined) {
+					return null;
+				}
 				return termDOM.#fullscreenManager?.fullscreenElement ?? null;
 			},
 			configurable: true,
@@ -1626,7 +1674,9 @@ export class TermDOM {
 			this: HTMLElement,
 			_arg?: boolean | ScrollIntoViewOptions,
 		) {
-			if (!this.isConnected) return;
+			if (!this.isConnected) {
+				return;
+			}
 			const termDOM = engineOf(this);
 			termDOM.#processPendingMutationsAndRender();
 
@@ -1634,7 +1684,9 @@ export class TermDOM {
 			// this compares directly against the camera's scrollTop below, so it needs
 			// the same coordinate space getRect() already provides.
 			const rect = termDOM[kLayoutEngine].getRect(this);
-			if (!rect) return;
+			if (!rect) {
+				return;
+			}
 
 			// The camera shows [scrollTop, scrollTop + region).
 			// Move it the minimal amount that brings the element into it -- the
@@ -1672,7 +1724,9 @@ export class TermDOM {
 		for (const mutation of mutations) {
 			this.#addFrameDamage(mutation.target);
 			if (mutation.type === "childList") {
-				for (const node of mutation.addedNodes) this.#addFrameDamage(node);
+				for (const node of mutation.addedNodes) {
+					this.#addFrameDamage(node);
+				}
 				// Removed nodes have no rows of their own; their damage is the
 				// parent's, already added.
 			}
@@ -1687,20 +1741,28 @@ export class TermDOM {
 		// intermediate value never rendered, so skipping is correct, and a
 		// same-batch pair still processes via the B->A record.
 		const relevant = mutations.filter((record) => {
-			if (record.type !== "attributes" || !record.attributeName) return true;
+			if (record.type !== "attributes" || !record.attributeName) {
+				return true;
+			}
 			const target = record.target as Element;
 			return record.oldValue !== target.getAttribute(record.attributeName);
 		});
-		if (relevant.length === 0) return;
+		if (relevant.length === 0) {
+			return;
+		}
 		// Upgrade UA form controls the moment they connect -- before layout reads
 		// their shadow and before the painter walks it -- the way a browser
 		// upgrades a custom element on connect, not lazily at first paint. The
 		// shell drives it here, the one place every insert -- observer-driven or
 		// drained from a synchronous render -- passes through.
 		for (const record of relevant) {
-			if (record.type !== "childList") continue;
+			if (record.type !== "childList") {
+				continue;
+			}
 			for (const added of record.addedNodes) {
-				if (added.nodeType !== added.ELEMENT_NODE) continue;
+				if (added.nodeType !== added.ELEMENT_NODE) {
+					continue;
+				}
 				upgradeControlsIn(added as Element);
 			}
 		}
@@ -1815,12 +1877,14 @@ export class TermDOM {
 			if (rebinding) {
 				throw new Error(
 					"attach(): cannot re-attach a live TermDOM to a different " +
-						"transport; attach once, before the first render.",
+					"transport; attach once, before the first render.",
 				);
 			}
 			return this.#attachReady;
 		}
-		if (rebinding) this.#rebindTransport(transport);
+		if (rebinding) {
+			this.#rebindTransport(transport);
+		}
 		this.#attached = true;
 
 		// Begin once the transport is established (a process tty already is;
@@ -1927,7 +1991,9 @@ export class TermDOM {
 		if (sizeChanged) {
 			this.window.dispatchEvent(new this.window.Event("resize"));
 		}
-		for (const update of this.#mediaQueryUpdaters) update();
+		for (const update of this.#mediaQueryUpdaters) {
+			update();
+		}
 	}
 
 	/**
@@ -1943,7 +2009,9 @@ export class TermDOM {
 	#updateMouseReporting(): void {
 		const wanted =
 			this.#attached && this.#interactive && !this.#mouseCaptureYielded;
-		if (wanted === this.#mouseReportingEnabled) return;
+		if (wanted === this.#mouseReportingEnabled) {
+			return;
+		}
 		this.#mouseReportingEnabled = wanted;
 		// 1002: button presses, releases, wheel, and drag motion (no move flood
 		// while nothing is pressed). 1006: SGR encoding, the only one that is
@@ -1975,7 +2043,9 @@ export class TermDOM {
 		// mutations keep the DOM and layout live but write nothing. Rendering
 		// resumes -- starting with whatever the document holds by then -- the
 		// moment attach() runs, which ends by scheduling this render.
-		if (!this.#attached) return;
+		if (!this.#attached) {
+			return;
+		}
 
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
@@ -2019,20 +2089,28 @@ export class TermDOM {
 	}
 
 	#drainFrameCallbacks(): void {
-		if (this.#frameCallbacks.size === 0) return;
+		if (this.#frameCallbacks.size === 0) {
+			return;
+		}
 		const callbacks = [...this.#frameCallbacks.values()];
 		this.#frameCallbacks.clear();
 		const now = performance.now();
-		for (const cb of callbacks) cb(now);
+		for (const cb of callbacks) {
+			cb(now);
+		}
 	}
 
 	async #renderOnce(): Promise<void> {
 		// An in-flight render loop can outlive dispose() by one queued frame;
 		// everything below assumes a live document.
-		if (this.#disposed) return;
+		if (this.#disposed) {
+			return;
+		}
 		if (this.#attachBeginning) {
 			await this.#attachBegun;
-			if (this.#disposed) return;
+			if (this.#disposed) {
+				return;
+			}
 		}
 		if (!this.#interactive) {
 			await this.#renderStatic();
@@ -2051,9 +2129,13 @@ export class TermDOM {
 	#documentPaintHeight(): number {
 		let height = this.document.body.scrollHeight;
 		for (const element of this.#topLayer) {
-			if (!flatIsConnected(element)) continue;
+			if (!flatIsConnected(element)) {
+				continue;
+			}
 			const rect = this[kLayoutEngine].getRect(element);
-			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
+			if (rect) {
+				height = Math.max(height, Math.ceil(rect.bottom));
+			}
 		}
 		return height;
 	}
@@ -2073,14 +2155,18 @@ export class TermDOM {
 		// and for a password that text is the bullets, which is what was
 		// painted and so what the point lands on.
 		const valueText = fieldValueText(element);
-		if (!valueText) return null;
+		if (!valueText) {
+			return null;
+		}
 		const found = this[kLayoutEngine].caretPositionFromPoint(
 			x,
 			y,
 			valueText,
 			true,
 		);
-		if (!found) return null;
+		if (!found) {
+			return null;
+		}
 		return Math.min(found.offset, valueText.data.length);
 	}
 
@@ -2110,11 +2196,15 @@ export class TermDOM {
 	): void {
 		this.#processPendingMutationsAndRender();
 		const rect = this[kLayoutEngine].getRect(element);
-		if (!rect) return;
+		if (!rect) {
+			return;
+		}
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
 			const caret = this[kLayoutEngine].caretRectOf(element);
-			if (!caret) return;
+			if (!caret) {
+				return;
+			}
 			caretY = caret.y;
 		}
 		// The row span to reveal: the caret's row -- widened to the field's
@@ -2141,7 +2231,9 @@ export class TermDOM {
 			revealBottom,
 			regionHeight,
 		);
-		if (delta) this.#scrollCamera(delta);
+		if (delta) {
+			this.#scrollCamera(delta);
+		}
 	}
 
 	/**
@@ -2151,27 +2243,37 @@ export class TermDOM {
 	#scrollFieldCaretIntoView(input: HTMLInputElement): void {
 		const valueText = fieldValueText(input);
 		const valueSpan = valueText?.parentElement as HTMLElement | null;
-		if (!valueText || !valueSpan) return;
+		if (!valueText || !valueSpan) {
+			return;
+		}
 		const content = this[kLayoutEngine].contentRect(input);
-		if (!content) return;
+		if (!content) {
+			return;
+		}
 		const contentWidth = Math.round(content.width);
-		if (contentWidth <= 0) return;
+		if (contentWidth <= 0) {
+			return;
+		}
 
 		const shown = valueText.data;
 		// Seed from the current scrollLeft so a settled window doesn't jitter.
 		const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
 		let scrollOffset = 0;
-		for (let acc = 0; scrollOffset < shown.length && acc < currentScroll; ) {
+		for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
 			acc += stringWidth(shown[scrollOffset]);
 			scrollOffset++;
 		}
 		// The caret is wherever the input renders it, in the value text's own
 		// offsets -- the same text `shown` is read from.
 		const caret = caretRangeOf(input);
-		if (!caret) return;
+		if (!caret) {
+			return;
+		}
 		const cursor = caret.startOffset;
 		// Keep the caret's cell in the box, then pull back when a deletion left slack.
-		if (cursor < scrollOffset) scrollOffset = cursor;
+		if (cursor < scrollOffset) {
+			scrollOffset = cursor;
+		}
 		while (
 			scrollOffset < cursor &&
 			stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
@@ -2185,7 +2287,9 @@ export class TermDOM {
 			scrollOffset--;
 		}
 		const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
-		if (scrollLeft !== currentScroll) valueSpan.scrollLeft = scrollLeft;
+		if (scrollLeft !== currentScroll) {
+			valueSpan.scrollLeft = scrollLeft;
+		}
 	}
 
 	#processPendingMutationsAndRender(): boolean {
@@ -2231,7 +2335,9 @@ export class TermDOM {
 		// anchor while the terminal is rewrapping under us.
 		this.#resizeInProgress = true;
 		this.#resizeEpoch++;
-		if (this.#resizeTimer !== null) clearTimeout(this.#resizeTimer);
+		if (this.#resizeTimer !== null) {
+			clearTimeout(this.#resizeTimer);
+		}
 		this.#resizeTimer = setTimeout(() => {
 			this.#resizeTimer = null;
 			this.#handleResize();
@@ -2320,11 +2426,15 @@ export class TermDOM {
 				.queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
-					if (epoch !== this.#resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) {
+						return;
+					}
 					place(Math.max(0, cursorRow - wrappedRowsAbove));
 				})
 				.catch(() => {
-					if (epoch !== this.#resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) {
+						return;
+					}
 					place(computedReanchor());
 				});
 		} else {
@@ -2386,7 +2496,9 @@ export class TermDOM {
 	#topmostModalDialog(): HTMLDialogElement | null {
 		let modal: HTMLDialogElement | null = null;
 		for (const element of this.#topLayer) {
-			if (isModalDialog(element)) modal = element as HTMLDialogElement;
+			if (isModalDialog(element)) {
+				modal = element as HTMLDialogElement;
+			}
 		}
 		return modal;
 	}
@@ -2401,7 +2513,9 @@ export class TermDOM {
 		const popover = topmostAutoPopover(this.document) as Element | null;
 		let target: Element | null = null;
 		for (const element of this.#topLayer) {
-			if (isModalDialog(element) || element === popover) target = element;
+			if (isModalDialog(element) || element === popover) {
+				target = element;
+			}
 		}
 		return target;
 	}
@@ -2415,7 +2529,9 @@ export class TermDOM {
 		// order is the dialog's own, and it wraps within it.
 		const scope = this.#topmostModalDialog() ?? this.document;
 		const focusable = getFocusableElements(scope, this[kLayoutEngine]);
-		if (focusable.length === 0) return;
+		if (focusable.length === 0) {
+			return;
+		}
 
 		const current = this.document.activeElement;
 		const currentIndex = focusable.indexOf(current as Element);
@@ -2603,7 +2719,9 @@ export class TermDOM {
 
 		// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
 		// encoding; SGR names the button even on release, so 3 carries nothing.
-		if (base > 2) return;
+		if (base > 2) {
+			return;
+		}
 		const eventInit = {
 			button,
 			buttons,
@@ -2696,9 +2814,9 @@ export class TermDOM {
 				// field's own bounded selectionStart/End world, never the
 				// document selection: the same split a browser makes.
 				const field =
-					base === 0 && point && isTextField(target as Element)
-						? (target as HTMLInputElement | HTMLTextAreaElement)
-						: null;
+					base === 0 && point && isTextField(target as Element) ?
+							(target as HTMLInputElement | HTMLTextAreaElement) :
+						null;
 				if (field) {
 					const offset = this.#fieldOffsetAtPoint(field, x, y);
 					if (offset !== null) {
@@ -2799,12 +2917,12 @@ export class TermDOM {
 				el instanceof (this.window as any).HTMLInputElement &&
 				((el as HTMLInputElement).type === "checkbox" ||
 					(el as HTMLInputElement).type === "radio");
-			const control = isCheckable(target)
-				? target
-				: target instanceof (this.window as any).HTMLLabelElement &&
-					  isCheckable((target as any).control)
-					? ((target as any).control as HTMLInputElement)
-					: null;
+			const control = isCheckable(target) ?
+				target :
+				target instanceof (this.window as any).HTMLLabelElement &&
+				isCheckable((target as any).control) ?
+						((target as any).control as HTMLInputElement) :
+					null;
 			if (control) {
 				control.focus();
 				this.#render();
@@ -2844,7 +2962,9 @@ export class TermDOM {
 		// a field's own handlers never see a bare CR.
 		text = text.replace(/\r\n?/g, "\n");
 		const target = this.document.activeElement;
-		if (!target || target === this.document.body) return;
+		if (!target || target === this.document.body) {
+			return;
+		}
 		target.dispatchEvent(
 			new this.window.InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
@@ -2867,7 +2987,9 @@ export class TermDOM {
 	 */
 	#dispatchInsertText(target: Element, text: string): void {
 		const tag = target.tagName;
-		if (tag !== "INPUT" && tag !== "TEXTAREA") return;
+		if (tag !== "INPUT" && tag !== "TEXTAREA") {
+			return;
+		}
 		target.dispatchEvent(
 			new this.window.InputEvent("beforeinput", {
 				inputType: "insertText",
@@ -2892,7 +3014,9 @@ export class TermDOM {
 		// duplicate terminal reply, not a keystroke: decodeKey returns null and
 		// nothing is dispatched.
 		const stroke = decodeKey(key);
-		if (!stroke) return;
+		if (!stroke) {
+			return;
+		}
 		const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
 			stroke;
 
@@ -2914,9 +3038,9 @@ export class TermDOM {
 		// the fullscreen element), which the old dispatch ignored.
 		const active = this.document.activeElement;
 		const targetElement =
-			active && active !== this.document.body
-				? active
-				: this.#fullscreenManager.fullscreenElement || this.document.body;
+			active && active !== this.document.body ?
+				active :
+				this.#fullscreenManager.fullscreenElement || this.document.body;
 
 		// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
 		// all, the same as a real browser: fullscreen exit is a user-agent
@@ -2930,7 +3054,7 @@ export class TermDOM {
 		const keydownEvent = new this.window.KeyboardEvent("keydown", {
 			key: keyName,
 			code: domCodeFor(keyName),
-			keyCode: keyCode,
+			keyCode,
 			charCode: 0,
 			which: keyCode,
 			ctrlKey,
@@ -3006,10 +3130,10 @@ export class TermDOM {
 		// code, and DEL and the control codes are the keys named elsewhere.
 		if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
 			const keypressEvent = new this.window.KeyboardEvent("keypress", {
-				key: key,
+				key,
 				code: domCodeFor(key),
 				keyCode: charCode,
-				charCode: charCode,
+				charCode,
 				which: charCode,
 				ctrlKey,
 				shiftKey,
@@ -3027,7 +3151,7 @@ export class TermDOM {
 		const keyupEvent = new this.window.KeyboardEvent("keyup", {
 			key: keyName,
 			code: domCodeFor(keyName),
-			keyCode: keyCode,
+			keyCode,
 			charCode: 0,
 			which: keyCode,
 			ctrlKey,
@@ -3061,7 +3185,9 @@ export class TermDOM {
 		this.#painter.paint(frame.context);
 		const output = frame.end();
 
-		if (output) await this.#write(output);
+		if (output) {
+			await this.#write(output);
+		}
 		this.#afterRender();
 	}
 
@@ -3086,11 +3212,15 @@ export class TermDOM {
 	 * output survives, because it was already printed.
 	 */
 	#flushDocument(): void {
-		if (!this.#interactive) return;
+		if (!this.#interactive) {
+			return;
+		}
 
 		const top = this.#viewport.screenTop;
 		const output = this[kRenderStatic]("\r\n");
-		if (!output) return;
+		if (!output) {
+			return;
+		}
 
 		// Back to the top of our region; every payout line then clears ITSELF
 		// (\x1b[K before its text) and one partial erase covers whatever the
@@ -3114,7 +3244,9 @@ export class TermDOM {
 	[kRenderStatic](lineEnding: "\n" | "\r\n"): string {
 		this.#processPendingMutationsAndRender();
 		const contentHeight = this.document.body.scrollHeight;
-		if (contentHeight === 0) return "";
+		if (contentHeight === 0) {
+			return "";
+		}
 		const frame = this.#screen.beginStatic({
 			rows: contentHeight,
 			lineEnding,
@@ -3165,7 +3297,9 @@ export class TermDOM {
 		// await would defer the rest of this frame a microtask even with nothing
 		// to wait for, and a downstream synchronous scroll clamp depends on it.
 		const detectionPending = this.#session.cursorDetectionPending;
-		if (detectionPending) await detectionPending;
+		if (detectionPending) {
+			await detectionPending;
+		}
 
 		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
@@ -3223,9 +3357,9 @@ export class TermDOM {
 		// document's scroll position survives untouched underneath -- the
 		// fixed, Canvas-backed fullscreen element covers it regardless.
 		const isFullscreen = this.#fullscreenManager.isFullscreen;
-		const contentHeight = isFullscreen
-			? this.#height
-			: this.#documentPaintHeight();
+		const contentHeight = isFullscreen ?
+			this.#height :
+				this.#documentPaintHeight();
 		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
@@ -3257,8 +3391,8 @@ export class TermDOM {
 		const documentSelection = this.window.getSelection?.();
 		const liveSelection = Boolean(
 			documentSelection &&
-				documentSelection.rangeCount > 0 &&
-				!documentSelection.isCollapsed,
+			documentSelection.rangeCount > 0 &&
+			!documentSelection.isCollapsed,
 		);
 		transform: if (
 			!isFullscreen &&
@@ -3266,7 +3400,7 @@ export class TermDOM {
 			regionHeight === this.#height &&
 			this.#lastFrameScrollTop !== null &&
 			this[kLayoutEngine].structuralGeneration ===
-				this.#lastFrameStructuralGeneration &&
+			this.#lastFrameStructuralGeneration &&
 			!liveSelection &&
 			!this.#lastFrameSelectionLive &&
 			this.#selectionDragAnchor === null &&
@@ -3276,7 +3410,9 @@ export class TermDOM {
 			styleDamage !== null
 		) {
 			const delta = scrollTop - this.#lastFrameScrollTop;
-			if (Math.abs(delta) >= regionHeight) break transform;
+			if (Math.abs(delta) >= regionHeight) {
+				break transform;
+			}
 			if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
 				break transform;
 			}
@@ -3298,14 +3434,19 @@ export class TermDOM {
 				}
 			};
 
-			if (delta > 0) addBand(regionHeight - delta, regionHeight);
-			else if (delta < 0) addBand(0, -delta);
+			if (delta > 0) {
+				addBand(regionHeight - delta, regionHeight);
+			} else if (delta < 0) {
+				addBand(0, -delta);
+			}
 			for (const band of this[kLayoutEngine].fixedRowBands(this.#height)) {
 				addBand(band[0], band[1]);
 				// The scroll moved fixed content too, leaving a stale copy at
 				// the shifted position; model and screen agree on it, so only
 				// a repaint of that row corrects it.
-				if (delta !== 0) addBand(band[0] - delta, band[1] - delta);
+				if (delta !== 0) {
+					addBand(band[0] - delta, band[1] - delta);
+				}
 			}
 			// The focused field's rows repaint: its caret cell and the real
 			// cursor park come from the painter visiting it.
@@ -3319,16 +3460,22 @@ export class TermDOM {
 
 			// A focus move flips :focus/:focus-visible on both elements.
 			const damaged = new Set<Element>(frameDamage.keys());
-			for (const element of styleDamage) damaged.add(element);
+			for (const element of styleDamage) {
+				damaged.add(element);
+			}
 			if (active !== this.#lastFrameActiveElement) {
-				if (active) damaged.add(active);
+				if (active) {
+					damaged.add(active);
+				}
 				if (this.#lastFrameActiveElement) {
 					damaged.add(this.#lastFrameActiveElement);
 				}
 			}
 
 			for (const element of damaged) {
-				if (coverage > bandBudget) break transform;
+				if (coverage > bandBudget) {
+					break transform;
+				}
 				// Damage reaches as far as the selector invalidation scope; the
 				// whole document is unbounded.
 				const scope = this.#styleManager.invalidationScopeFor(element);
@@ -3344,7 +3491,9 @@ export class TermDOM {
 					// An inline element has no box of its own, so its rows are
 					// not recoverable here: unbounded. A removed element's
 					// damage is its parent's, already recorded.
-					if (scope.isConnected) break transform;
+					if (scope.isConnected) {
+						break transform;
+					}
 					continue;
 				}
 				// A geometry change cascades to everything after the element.
@@ -3365,15 +3514,19 @@ export class TermDOM {
 					}
 				}
 				if (before) {
-					const beforeTop = fixedSpace
-						? before.top
-						: before.top - this.#lastFrameScrollTop;
+					const beforeTop = fixedSpace ?
+						before.top :
+						before.top - this.#lastFrameScrollTop;
 					addBand(beforeTop - delta, beforeTop + before.height - delta);
 				}
 			}
 
-			if (delta === 0 && bands.length === 0) break transform;
-			if (coverage > bandBudget) break transform;
+			if (delta === 0 && bands.length === 0) {
+				break transform;
+			}
+			if (coverage > bandBudget) {
+				break transform;
+			}
 
 			scroll = {delta, bands};
 		}
@@ -3395,7 +3548,9 @@ export class TermDOM {
 		this.#lastFrameSelectionLive = liveSelection;
 		this.#lastFrameActiveElement = this.document.activeElement;
 
-		if (ansi) await this.#write(ansi);
+		if (ansi) {
+			await this.#write(ansi);
+		}
 		this.#afterRender();
 	}
 
@@ -3512,7 +3667,9 @@ export class TermDOM {
 			html,
 			this.#attached && this.#interactive ? "\r\n" : "\n",
 		);
-		if (!output) return Promise.resolve();
+		if (!output) {
+			return Promise.resolve();
+		}
 		return this.#session.write(output);
 	}
 
@@ -3531,7 +3688,9 @@ export class TermDOM {
 	 * awaiting still leaves the shell usable.
 	 */
 	dispose(): Promise<void> {
-		if (this.#disposed) return Promise.resolve();
+		if (this.#disposed) {
+			return Promise.resolve();
+		}
 		this.#disposed = true;
 
 		// A TermDOM that never attached owes the terminal nothing: no final
@@ -3544,7 +3703,9 @@ export class TermDOM {
 		// but only if a frame was ever painted: with none, there is nothing
 		// of ours on screen, and the payout's cursor moves and erases would
 		// land on someone else's rows.
-		if (wasAttached && this.#renderCount > 0) this.#flushDocument();
+		if (wasAttached && this.#renderCount > 0) {
+			this.#flushDocument();
+		}
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse

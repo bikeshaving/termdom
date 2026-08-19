@@ -9,7 +9,7 @@ const term = new TermDOM();
 
 term.attach();
 term.document.body.innerHTML =
-	`<div>☀️☁️\u{1F324}️⛅️❤️ ` + `<span id="token">AAAA</span> end</div>`;
+	"<div>☀️☁️\u{1F324}️⛅️❤️ " + "<span id=\"token\">AAAA</span> end</div>";
 
 setTimeout(() => {
 	term.document.getElementById("token")!.textContent = "BBBB";

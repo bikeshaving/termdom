@@ -444,7 +444,7 @@ test("rows/cols size the CONTENT: removing the UA chrome shrinks the box", async
 	const {document} = dom;
 	// A stylesheet rather than inline styles: the inline route is covered in
 	// styles.test.ts, and the UA defaults must yield to either.
-	document.head.innerHTML = `<style>textarea { border: none; padding: 0; }</style>`;
+	document.head.innerHTML = "<style>textarea { border: none; padding: 0; }</style>";
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "1");
 	document.body.appendChild(textarea);

@@ -15,7 +15,7 @@ function documentWindow(html: string) {
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
 		const dom = documentWindow(
-			`<!DOCTYPE html><html><body><div id="test"></div></body></html>`,
+			"<!DOCTYPE html><html><body><div id=\"test\"></div></body></html>",
 		);
 		const styleManager = new StyleManager(dom.window);
 		const layoutEngine = new LayoutEngine(dom.window);
@@ -613,7 +613,7 @@ test("a nonzero length without a unit is invalid and never enters the cascade", 
 		.box { padding-top: 1; }
 		.shorthand { padding: 1px 2; }
 	</style>`;
-	dom.document.body.innerHTML = `<div class="box">B</div><div class="shorthand">S</div>`;
+	dom.document.body.innerHTML = "<div class=\"box\">B</div><div class=\"shorthand\">S</div>";
 	await nextFrame(dom);
 	const value = (sel: string, prop: string) =>
 		dom.window
@@ -680,7 +680,7 @@ test("bare numbers stay valid where CSS says they are", async () => {
 		.numeric { line-height: 2; z-index: 5; flex-grow: 2; font-weight: 700; }
 		.units { width: 50%; min-width: 10ch; max-width: 20px; margin: 0 auto; }
 	</style>`;
-	dom.document.body.innerHTML = `<div class="zero">Z</div><div class="numeric">N</div><div class="units">U</div>`;
+	dom.document.body.innerHTML = "<div class=\"zero\">Z</div><div class=\"numeric\">N</div><div class=\"units\">U</div>";
 	await nextFrame(dom);
 	const value = (sel: string, prop: string) =>
 		dom.window
@@ -711,7 +711,7 @@ test("min-width applies to ordinary block boxes", async () => {
 		#narrow { width: 5ch; min-width: 20ch; }
 		#wide { width: 30ch; max-width: 5ch; }
 	</style>`;
-	dom.document.body.innerHTML = `<div id="narrow">a</div><div id="wide">b</div>`;
+	dom.document.body.innerHTML = "<div id=\"narrow\">a</div><div id=\"wide\">b</div>";
 
 	await nextFrame(dom);
 
@@ -730,8 +730,8 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 	// `text-decoration-line: underline` leaves the shorthand computing to "none".
 	const terminal = new MockProcess({cols: 20, rows: 3});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>#p { text-decoration-line: underline; }</style>`;
-	dom.document.body.innerHTML = `<div id="p">abc</div>`;
+	dom.document.head.innerHTML = "<style>#p { text-decoration-line: underline; }</style>";
+	dom.document.body.innerHTML = "<div id=\"p\">abc</div>";
 
 	await nextFrame(dom);
 
@@ -786,8 +786,8 @@ test("a border style of none zeroes the USED border width", async () => {
 	// or hidden -- the box reserves no space however wide the width says.
 	const terminal = new MockProcess({cols: 60, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>#box { border: 2px solid; border-style: none; width: 10px; }</style>`;
-	dom.document.body.innerHTML = `<div id="box">x</div>`;
+	dom.document.head.innerHTML = "<style>#box { border: 2px solid; border-style: none; width: 10px; }</style>";
+	dom.document.body.innerHTML = "<div id=\"box\">x</div>";
 	await nextFrame(dom);
 
 	const box = dom.document.getElementById("box")!;
@@ -815,8 +815,8 @@ test("style.background = 'none' overrides a stylesheet background", async () => 
 	// which have to reach the cascade to beat a class background.
 	const terminal = new MockProcess({cols: 20, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>.paint { background: red; }</style>`;
-	dom.document.body.innerHTML = `<div class="paint" id="box" style="background: none">x</div>`;
+	dom.document.head.innerHTML = "<style>.paint { background: red; }</style>";
+	dom.document.body.innerHTML = "<div class=\"paint\" id=\"box\" style=\"background: none\">x</div>";
 	await nextFrame(dom);
 
 	const computed = dom.window.getComputedStyle(
@@ -867,7 +867,7 @@ test("an inline shorthand's !important carries to its longhands", async () => {
 		#a { border: 2px solid !important; }
 		#b { margin-top: 5px !important; }
 	</style>`;
-	dom.document.body.innerHTML = `<div id="a">x</div><div id="b">y</div>`;
+	dom.document.body.innerHTML = "<div id=\"a\">x</div><div id=\"b\">y</div>";
 	const a = dom.document.getElementById("a")!;
 	const b = dom.document.getElementById("b")!;
 	(a as HTMLElement).style.setProperty("border", "none", "important");
@@ -891,8 +891,8 @@ test("border: solid means a visible medium border, sheet and inline alike", asyn
 	// thin/medium/thick). The stylesheet and inline paths must agree on it.
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.head.innerHTML = `<style>#sheet { border: solid; }</style>`;
-	dom.document.body.innerHTML = `<div id="sheet">a</div><div id="inline" style="border: solid">b</div>`;
+	dom.document.head.innerHTML = "<style>#sheet { border: solid; }</style>";
+	dom.document.body.innerHTML = "<div id=\"sheet\">a</div><div id=\"inline\" style=\"border: solid\">b</div>";
 	await nextFrame(dom);
 
 	for (const id of ["sheet", "inline"]) {
@@ -1019,8 +1019,8 @@ test("an author's shorthand read does not poison the computed value", async () =
  * something on each longhand the grammar names.
  */
 const EXPANDED_SHORTHANDS: Record<string, string> = {
-	background: "red",
-	border: "1px solid red",
+	"background": "red",
+	"border": "1px solid red",
 	"border-block": "1px solid red",
 	"border-block-color": "red blue",
 	"border-block-end": "1px solid red",
@@ -1042,19 +1042,19 @@ const EXPANDED_SHORTHANDS: Record<string, string> = {
 	"border-style": "solid",
 	"border-top": "1px solid red",
 	"border-width": "1px",
-	flex: "1 1 auto",
+	"flex": "1 1 auto",
 	"flex-flow": "column wrap",
-	gap: "1px 2ch",
-	inset: "1px 2ch",
+	"gap": "1px 2ch",
+	"inset": "1px 2ch",
 	"inset-block": "1px 2px",
 	"inset-inline": "1ch 2ch",
 	"list-style": "square inside",
-	margin: "1px 2ch",
+	"margin": "1px 2ch",
 	"margin-block": "1px 2px",
 	"margin-inline": "1ch 2ch",
-	outline: "1px solid red",
-	overflow: "hidden scroll",
-	padding: "1px 2ch",
+	"outline": "1px solid red",
+	"overflow": "hidden scroll",
+	"padding": "1px 2ch",
 	"padding-block": "1px 2px",
 	"padding-inline": "1ch 2ch",
 	"place-content": "space-between center",
@@ -1075,15 +1075,15 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"-webkit-border-start": "vendor alias for border-inline-start",
 	"-webkit-mask": "vendor alias for mask, which needs pixels",
 	"-webkit-text-stroke": "glyph outlines, which the emulator owns",
-	all: "stands for every property there is; the cascade reads it directly",
-	animation: "no animation clock",
+	"all": "stands for every property there is; the cascade reads it directly",
+	"animation": "no animation clock",
 	"animation-range": "no animation clock",
 	"background-position": "an image to position, which needs pixels",
-	caret: "the caret is the terminal's own cursor",
+	"caret": "the caret is the terminal's own cursor",
 	"column-rule": "multi-column layout",
-	columns: "multi-column layout",
+	"columns": "multi-column layout",
 	"contain-intrinsic-size": "containment",
-	container: "container queries",
+	"container": "container queries",
 	"corner-block-end-shape": "corner shapes are finer than a cell",
 	"corner-block-start-shape": "corner shapes are finer than a cell",
 	"corner-bottom-shape": "corner shapes are finer than a cell",
@@ -1093,17 +1093,17 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"corner-right-shape": "corner shapes are finer than a cell",
 	"corner-shape": "corner shapes are finer than a cell",
 	"corner-top-shape": "corner shapes are finer than a cell",
-	font: "system font keywords and a line-height the grid fixes",
-	grid: "grid layout",
+	"font": "system font keywords and a line-height the grid fixes",
+	"grid": "grid layout",
 	"grid-area": "grid layout",
 	"grid-column": "grid layout",
 	"grid-gap": "grid layout",
 	"grid-row": "grid layout",
 	"grid-template": "grid layout",
 	"interest-delay": "no interest timers",
-	mask: "masking, which needs pixels",
+	"mask": "masking, which needs pixels",
 	"mask-border": "masking, which needs pixels",
-	offset: "motion paths, which need sub-cell geometry",
+	"offset": "motion paths, which need sub-cell geometry",
 	"overscroll-behavior": "overscroll behavior",
 	"position-try": "anchor positioning",
 	"scroll-margin": "scroll snapping",
@@ -1118,7 +1118,7 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"timeline-trigger": "no animation clock",
 	"timeline-trigger-activation-range": "no animation clock",
 	"timeline-trigger-active-range": "no animation clock",
-	transition: "no transitions",
+	"transition": "no transitions",
 	"view-timeline": "scroll-driven animations",
 };
 
@@ -1132,7 +1132,9 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 		expect(`${shorthand}: ${expanded !== unexpanded}`).toBe(
 			`${shorthand}: true`,
 		);
-		if (!expanded) continue;
+		if (!expanded) {
+			continue;
+		}
 		const value = EXPANDED_SHORTHANDS[shorthand];
 		const longhands = Object.keys(
 			expandShorthands({[shorthand]: value}),

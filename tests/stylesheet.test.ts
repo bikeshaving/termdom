@@ -31,8 +31,12 @@ test("CSS specificity calculation", async () => {
 	// rule wins in getComputedStyle -- rather than by reading the parser's table.
 	const colorOf = (className: string, id: string): string => {
 		const el = document.createElement("div");
-		if (className) el.className = className;
-		if (id) el.id = id;
+		if (className) {
+			el.className = className;
+		}
+		if (id) {
+			el.id = id;
+		}
 		document.body.appendChild(el);
 		return termdom.window.getComputedStyle(el).getPropertyValue("color");
 	};
@@ -72,10 +76,10 @@ test("selector-list pseudo-classes weigh their most specific argument", async ()
 
 	const host = document.createElement("div");
 	host.innerHTML =
-		`<div class="is-target other a b"></div>` +
-		`<div class="where-target a"></div>` +
-		`<div class="not-target a b"></div>` +
-		`<div class="has-target a b"><span id="child"></span></div>`;
+		"<div class=\"is-target other a b\"></div>" +
+		"<div class=\"where-target a\"></div>" +
+		"<div class=\"not-target a b\"></div>" +
+		"<div class=\"has-target a b\"><span id=\"child\"></span></div>";
 	document.body.appendChild(host);
 
 	const colorOf = (selector: string): string =>

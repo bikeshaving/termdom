@@ -22,7 +22,7 @@ test("mutations produce no stdout before attach()", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>should not paint</div>`;
+	dom.document.body.innerHTML = "<div>should not paint</div>";
 	dom.document.body.appendChild(dom.document.createElement("p"));
 	// Let the mutation observer microtask and any stray timers run.
 	await new Promise((r) => setTimeout(r, 50));
@@ -33,7 +33,7 @@ test("mutations produce no stdout before attach()", async () => {
 test("attach() paints the document built before it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>early content</div>`;
+	dom.document.body.innerHTML = "<div>early content</div>";
 	await new Promise((r) => setTimeout(r, 20));
 	expect(terminal.getVisibleText()).not.toContain("early content");
 
@@ -47,7 +47,7 @@ test("geometry reads work unattached, and stay silent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="box" style="width:10px">x</div>`;
+	dom.document.body.innerHTML = "<div id=\"box\" style=\"width:10px\">x</div>";
 	const rect = dom.document.getElementById("box")!.getBoundingClientRect();
 	expect(rect.width).toBe(10);
 	expect(writes.count()).toBe(0);
@@ -58,7 +58,7 @@ test("dispose() before attach() writes nothing", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>never shown</div>`;
+	dom.document.body.innerHTML = "<div>never shown</div>";
 	await new Promise((r) => setTimeout(r, 20));
 	dom.dispose();
 	expect(writes.count()).toBe(0);
@@ -68,7 +68,7 @@ test("requestFullscreen before attach() rejects and stays silent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="stage">x</div>`;
+	dom.document.body.innerHTML = "<div id=\"stage\">x</div>";
 	await expect(
 		dom.document.getElementById("stage")!.requestFullscreen(),
 	).rejects.toThrow();
@@ -80,9 +80,9 @@ test("renderANSI transforms HTML at the transport's width, touching nothing", ()
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>the instance's own document</div>`;
+	dom.document.body.innerHTML = "<div>the instance's own document</div>";
 
-	const ansi = dom.renderANSI(`<div style="color:red">static content</div>`);
+	const ansi = dom.renderANSI("<div style=\"color:red\">static content</div>");
 	expect(ansi).toContain("static content");
 	expect(ansi).toContain("\x1b[38;2;255;0;0m");
 	// A document string, not a terminal session: no modes, no cursor control.
@@ -90,7 +90,7 @@ test("renderANSI transforms HTML at the transport's width, touching nothing", ()
 	expect(ansi).not.toContain("\x1b[2J");
 	// Styles in the fragment join the cascade.
 	expect(
-		dom.renderANSI(`<style>p { color: #00ff00 }</style><p>green</p>`),
+		dom.renderANSI("<style>p { color: #00ff00 }</style><p>green</p>"),
 	).toContain("\x1b[38;2;0;255;0m");
 	// The instance's document was neither consulted nor mutated, and the
 	// transport saw no bytes.
@@ -104,7 +104,7 @@ test("print() writes the rendered HTML through the transport once", async () => 
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
-	await dom.print(`<div>printed line</div>`);
+	await dom.print("<div>printed line</div>");
 	expect(writes.count()).toBe(1);
 	await new Promise((r) => setTimeout(r, 20));
 	expect(terminal.getVisibleText()).toContain("printed line");
@@ -122,7 +122,7 @@ test("a geometry read never strands the mutations it drained", async () => {
 	// consumed.
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="a">before</div>`;
+	dom.document.body.innerHTML = "<div id=\"a\">before</div>";
 	dom.attach();
 	await nextFrame(dom);
 	expect(terminal.getVisibleText()).toContain("before");
@@ -178,7 +178,7 @@ test("awaiting dispose() means the final flush has landed", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>document payout line</div>`;
+	dom.document.body.innerHTML = "<div>document payout line</div>";
 	await nextFrame(dom);
 
 	await dom.dispose();
@@ -204,7 +204,7 @@ test("window.close() before the first frame leaves prior screen content alone", 
 	};
 	const dom = new TermDOM({transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>closing content</div>`;
+	dom.document.body.innerHTML = "<div>closing content</div>";
 	dom.window.close();
 	await new Promise((r) => setTimeout(r, 150));
 
@@ -241,7 +241,7 @@ test("window.close() fires beforeunload, then tears down", async () => {
 	const watched = closeCountingTransport(terminal);
 	const dom = new TermDOM({transport: watched.transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>still here</div>`;
+	dom.document.body.innerHTML = "<div>still here</div>";
 	await nextFrame(dom);
 
 	const events: any[] = [];
@@ -261,7 +261,7 @@ test("a beforeunload listener that preventDefaults keeps the session", async () 
 	const watched = closeCountingTransport(terminal);
 	const dom = new TermDOM({transport: watched.transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	dom.document.body.innerHTML = "<div>unsaved work</div>";
 	await nextFrame(dom);
 
 	let asked = 0;
@@ -276,7 +276,7 @@ test("a beforeunload listener that preventDefaults keeps the session", async () 
 	expect(asked).toBe(1);
 	expect(watched.closes()).toBe(0);
 	// The session is still live: a mutation after the canceled close paints.
-	dom.document.body.innerHTML = `<div>saved now</div>`;
+	dom.document.body.innerHTML = "<div>saved now</div>";
 	await nextFrame(dom);
 	expect(terminal.getVisibleText()).toContain("saved now");
 
@@ -292,7 +292,7 @@ test("a beforeunload returnValue keeps the session", async () => {
 	const watched = closeCountingTransport(terminal);
 	const dom = new TermDOM({transport: watched.transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	dom.document.body.innerHTML = "<div>unsaved work</div>";
 	await nextFrame(dom);
 
 	dom.window.addEventListener("beforeunload", (event: any) => {
@@ -310,7 +310,7 @@ test("Ctrl-C fires beforeunload, and a listener can keep the session", async () 
 	const watched = closeCountingTransport(terminal);
 	const dom = new TermDOM({transport: watched.transport});
 	dom.attach();
-	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	dom.document.body.innerHTML = "<div>unsaved work</div>";
 	await nextFrame(dom);
 
 	let asked = 0;

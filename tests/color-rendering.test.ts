@@ -213,8 +213,8 @@ test("a blockquote's left border covers margin rows and every paragraph", async 
 		p { margin-top: 1px; }
 	</style>`;
 	dom.document.body.innerHTML =
-		`<div>Blockquote</div>` +
-		`<blockquote><p>first quote line</p><p>second quote line</p></blockquote>`;
+		"<div>Blockquote</div>" +
+		"<blockquote><p>first quote line</p><p>second quote line</p></blockquote>";
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -237,10 +237,10 @@ test("each border side paints its own border color", async () => {
 	const {document} = dom;
 
 	document.body.innerHTML =
-		`<style>#p { width: 6ch; border: 1px solid; ` +
-		`border-top-color: red; border-right-color: lime; ` +
-		`border-bottom-color: blue; border-left-color: yellow; }</style>` +
-		`<div id="p">x</div>`;
+		"<style>#p { width: 6ch; border: 1px solid; " +
+		"border-top-color: red; border-right-color: lime; " +
+		"border-bottom-color: blue; border-left-color: yellow; }</style>" +
+		"<div id=\"p\">x</div>";
 	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
@@ -261,8 +261,8 @@ test("an inline background paints its fragments, not the box enclosing them", as
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML =
-		`<p>aaaaaaaaaa <span id="s" style="background-color: #202020">` +
-		`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</span> cccccccccc</p>`;
+		"<p>aaaaaaaaaa <span id=\"s\" style=\"background-color: #202020\">" +
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</span> cccccccccc</p>";
 	await nextFrame(dom);
 
 	const text = terminal.getPlainText().split("\n");

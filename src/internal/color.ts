@@ -188,7 +188,9 @@ export function parseCSSColor(color: string): number | null {
 		} else {
 			return null;
 		}
-		if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+		if (isNaN(r) || isNaN(g) || isNaN(b)) {
+			return null;
+		}
 		return (r << 16) | (g << 8) | b;
 	}
 
@@ -217,12 +219,19 @@ export function parseCSSColor(color: string): number | null {
 		let r1 = 0,
 			g1 = 0,
 			b1 = 0;
-		if (h < 60) [r1, g1, b1] = [c, x, 0];
-		else if (h < 120) [r1, g1, b1] = [x, c, 0];
-		else if (h < 180) [r1, g1, b1] = [0, c, x];
-		else if (h < 240) [r1, g1, b1] = [0, x, c];
-		else if (h < 300) [r1, g1, b1] = [x, 0, c];
-		else [r1, g1, b1] = [c, 0, x];
+		if (h < 60) {
+			[r1, g1, b1] = [c, x, 0];
+		} else if (h < 120) {
+			[r1, g1, b1] = [x, c, 0];
+		} else if (h < 180) {
+			[r1, g1, b1] = [0, c, x];
+		} else if (h < 240) {
+			[r1, g1, b1] = [0, x, c];
+		} else if (h < 300) {
+			[r1, g1, b1] = [x, 0, c];
+		} else {
+			[r1, g1, b1] = [c, 0, x];
+		}
 		const r = Math.round((r1 + m) * 255);
 		const g = Math.round((g1 + m) * 255);
 		const b = Math.round((b1 + m) * 255);
@@ -238,11 +247,17 @@ export function parseCSSColor(color: string): number | null {
  */
 export function isTransparentColor(color: string): boolean {
 	const text = color.trim().toLowerCase();
-	if (!text || text === "transparent" || text === "none") return true;
+	if (!text || text === "transparent" || text === "none") {
+		return true;
+	}
 	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/.exec(text);
-	if (!functional) return false;
+	if (!functional) {
+		return false;
+	}
 	const parts = functional[1].split(/\s*[,/]\s*/);
-	if (parts.length !== 4) return false;
+	if (parts.length !== 4) {
+		return false;
+	}
 	const raw = parts[3].trim();
 	const alpha = raw.endsWith("%") ? Number(raw.slice(0, -1)) : Number(raw);
 	return alpha === 0;

@@ -13,7 +13,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 test("offsetWidth/offsetHeight report an element's own border-box size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="box" style="width:12px; height:4px"></div>`;
+	dom.document.body.innerHTML = "<div id=\"box\" style=\"width:12px; height:4px\"></div>";
 	await nextFrame(dom);
 
 	const box = dom.document.getElementById("box")!;
@@ -57,7 +57,7 @@ test("offsetParent is the nearest positioned ancestor", async () => {
 test("offsetParent falls back to body when no ancestor is positioned", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="a"><div id="b">x</div></div>`;
+	dom.document.body.innerHTML = "<div id=\"a\"><div id=\"b\">x</div></div>";
 	await nextFrame(dom);
 
 	const b = dom.document.getElementById("b")!;
@@ -95,7 +95,7 @@ test("offsetTop/offsetLeft are relative to offsetParent's own box, including mar
 test("clientWidth/clientHeight exclude border but include padding, for any element", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="bordered" style="width:10px; height:4px; border:1px solid; padding:1px"></div>`;
+	dom.document.body.innerHTML = "<div id=\"bordered\" style=\"width:10px; height:4px; border:1px solid; padding:1px\"></div>";
 	await nextFrame(dom);
 
 	const bordered = dom.document.getElementById("bordered")!;
@@ -110,7 +110,7 @@ test("clientWidth/clientHeight exclude border but include padding, for any eleme
 test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn't overflow", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div id="box" style="width:8px; height:3px"></div>`;
+	dom.document.body.innerHTML = "<div id=\"box\" style=\"width:8px; height:3px\"></div>";
 	await nextFrame(dom);
 
 	const box = dom.document.getElementById("box")!;
@@ -122,7 +122,7 @@ test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn
 test("body's own clientHeight/scrollHeight (viewport height, real content height) are not shadowed", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>one</div><div>two</div>`;
+	dom.document.body.innerHTML = "<div>one</div><div>two</div>";
 	await nextFrame(dom);
 
 	// clientHeight is the terminal's own height, unrelated to content.

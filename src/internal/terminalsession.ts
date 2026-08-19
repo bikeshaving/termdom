@@ -1,6 +1,6 @@
-import {type LayoutEngine} from "./layout.js";
-import {type Viewport} from "./viewport.js";
-import {type ColorDepth, type WidthMeasurer} from "./ansi.js";
+import type {LayoutEngine} from "./layout.js";
+import type {Viewport} from "./viewport.js";
+import type {ColorDepth, WidthMeasurer} from "./ansi.js";
 import {recordClusterAdvance} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
@@ -123,12 +123,16 @@ export interface ProcessLike {
  */
 function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
-	if (esc === -1 || esc === chunk.length - 1) return 0;
+	if (esc === -1 || esc === chunk.length - 1) {
+		return 0;
+	}
 	const kind = chunk[esc + 1];
 	if (kind === "[") {
 		for (let i = esc + 2; i < chunk.length; i++) {
 			const code = chunk.charCodeAt(i);
-			if (code >= 0x40 && code <= 0x7e) return 0; // finished
+			if (code >= 0x40 && code <= 0x7e) {
+				return 0;
+			} // finished
 		}
 		return chunk.length - esc;
 	}
@@ -161,7 +165,9 @@ const undisposedProcesses = new Set<ProcessLike>();
 let exitHookInstalled = false;
 
 function installCursorRestoreOnExit(): void {
-	if (exitHookInstalled) return;
+	if (exitHookInstalled) {
+		return;
+	}
 	exitHookInstalled = true;
 	process.on("exit", () => {
 		for (const proc of undisposedProcesses) {
@@ -195,12 +201,14 @@ export function transportFromProcess(
 
 	let engaged = false;
 	let dataListener:
-		| ((chunk: string | Uint8Array | ArrayBuffer) => void)
-		| null = null;
+		| ((chunk: string | Uint8Array | ArrayBuffer) => void) |
+		null = null;
 	const signalListeners: Array<[ProcessSignal, () => void]> = [];
 
 	const disengage = () => {
-		if (!engaged) return;
+		if (!engaged) {
+			return;
+		}
 		engaged = false;
 		undisposedProcesses.delete(proc);
 		// Restore SYNCHRONOUSLY: the engine's own restores ride the writable's
@@ -223,7 +231,9 @@ export function transportFromProcess(
 	const readable = new ReadableStream<string>(
 		{
 			pull: (controller) => {
-				if (engaged || !proc.stdin?.isTTY) return;
+				if (engaged || !proc.stdin?.isTTY) {
+					return;
+				}
 				engaged = true;
 
 				const stdin = proc.stdin;
@@ -235,9 +245,9 @@ export function transportFromProcess(
 				const decoder = new TextDecoder();
 				dataListener = (chunk: string | Uint8Array | ArrayBuffer) => {
 					controller.enqueue(
-						typeof chunk === "string"
-							? chunk
-							: decoder.decode(chunk, {stream: true}),
+						typeof chunk === "string" ?
+							chunk :
+								decoder.decode(chunk, {stream: true}),
 					);
 				};
 				stdin.on("data", dataListener);
@@ -253,7 +263,9 @@ export function transportFromProcess(
 				const closeOn = (signal: ProcessSignal, exitAfter: boolean) => {
 					const listener = () => {
 						closedResolve({reason: signal});
-						if (exitAfter) setImmediate(() => proc.exit(0));
+						if (exitAfter) {
+							setImmediate(() => proc.exit(0));
+						}
 					};
 					signalListeners.push([signal, listener]);
 					proc.on(signal, listener);
@@ -279,8 +291,11 @@ export function transportFromProcess(
 		write: (chunk) =>
 			new Promise<void>((resolve, reject) => {
 				proc.stdout.write(chunk, "utf8", (error?: Error) => {
-					if (error) reject(error);
-					else resolve();
+					if (error) {
+						reject(error);
+					} else {
+						resolve();
+					}
 				});
 			}),
 	});
@@ -289,7 +304,9 @@ export function transportFromProcess(
 	const resizes = new ReadableStream<TerminalSize>(
 		{
 			pull: (controller) => {
-				if (resizeListener) return;
+				if (resizeListener) {
+					return;
+				}
 				resizeListener = () => {
 					controller.enqueue({
 						cols: proc.stdout.columns || 80,
@@ -436,6 +453,7 @@ export class TerminalSession {
 		sequence: number;
 		sentAt: number;
 	}> = [];
+
 	/**
 	 * Clusters whose advance this session no longer wonders about: the terminal
 	 * answered for them, or answered unreadably and the tables keep them.
@@ -493,9 +511,13 @@ export class TerminalSession {
 	 * from the oldest of them.
 	 */
 	#armWidthProbeTimer(): void {
-		if (this.#widthProbeTimer !== null) return;
+		if (this.#widthProbeTimer !== null) {
+			return;
+		}
 		const oldest = this.#widthProbes[0];
-		if (oldest === undefined) return;
+		if (oldest === undefined) {
+			return;
+		}
 		const remaining = Math.max(
 			0,
 			oldest.sentAt + TerminalSession.#WIDTH_PROBE_TIMEOUT_MS - Date.now(),
@@ -538,8 +560,12 @@ export class TerminalSession {
 	 * one that has proven it does not answer.
 	 */
 	get widthMeasurer(): WidthMeasurer | undefined {
-		if (!this.#interactive || !this.#widthProbing) return undefined;
-		if (this.#graphemeClustersNegotiated) return undefined;
+		if (!this.#interactive || !this.#widthProbing) {
+			return undefined;
+		}
+		if (this.#graphemeClustersNegotiated) {
+			return undefined;
+		}
 		return this.#widthMeasurer;
 	}
 
@@ -580,7 +606,9 @@ export class TerminalSession {
 		// An earlier reading in this run could not be believed, so the drift the
 		// glyphs before this one introduced is unknown and its column means
 		// nothing. Wait for a run whose arithmetic is whole.
-		if (this.#widthRunLost) return;
+		if (this.#widthRunLost) {
+			return;
+		}
 
 		// Terminal columns are 1-based; the ledger counts cells.
 		const advance = replyColumn - 1 - (probe.column + this.#widthDrift);
@@ -630,6 +658,7 @@ export class TerminalSession {
 	get hasDetectedCommandStart(): boolean {
 		return this.#hasDetectedCommandStart;
 	}
+
 	set hasDetectedCommandStart(value: boolean) {
 		this.#hasDetectedCommandStart = value;
 	}
@@ -644,7 +673,9 @@ export class TerminalSession {
 		// each write ends the batch that can share a drift correction.
 		this.#writeEpoch++;
 		// A disposed session has released the wire; late writes are dropped.
-		if (this.#disposed && !this.#writer) return Promise.resolve();
+		if (this.#disposed && !this.#writer) {
+			return Promise.resolve();
+		}
 		if (!this.#writer) {
 			this.#writer = this.#transport.writable.getWriter();
 		}
@@ -665,7 +696,9 @@ export class TerminalSession {
 	 * closure to the engine's handlers. Idempotent.
 	 */
 	start(): void {
-		if (this.#started) return;
+		if (this.#started) {
+			return;
+		}
 		this.#started = true;
 
 		this.#reader = this.#transport.readable.getReader();
@@ -675,7 +708,9 @@ export class TerminalSession {
 		void this.#resizeLoop(this.#resizeReader);
 
 		void this.#transport.closed.then((info) => {
-			if (!this.#disposed) this.#handlers.onClosed(info);
+			if (!this.#disposed) {
+				this.#handlers.onClosed(info);
+			}
 		});
 	}
 
@@ -683,8 +718,12 @@ export class TerminalSession {
 		try {
 			for (;;) {
 				const {done, value} = await reader.read();
-				if (done) return;
-				if (!value) continue;
+				if (done) {
+					return;
+				}
+				if (!value) {
+					continue;
+				}
 				let chunk = this.#partialEscape + value;
 				this.#partialEscape = "";
 				const held = splitTrailingEscape(chunk);
@@ -692,7 +731,9 @@ export class TerminalSession {
 					this.#partialEscape = chunk.slice(-held);
 					chunk = chunk.slice(0, -held);
 				}
-				if (chunk) this.#route(chunk);
+				if (chunk) {
+					this.#route(chunk);
+				}
 			}
 		} catch {
 			// Reader cancelled by dispose, or the transport died; either way the
@@ -706,8 +747,12 @@ export class TerminalSession {
 		try {
 			for (;;) {
 				const {done, value} = await reader.read();
-				if (done) return;
-				if (value) this.#handlers.onResize(value);
+				if (done) {
+					return;
+				}
+				if (value) {
+					this.#handlers.onResize(value);
+				}
 			}
 		} catch {
 			// As above: teardown, not error.
@@ -732,13 +777,17 @@ export class TerminalSession {
 			this.#handlers.onPaste(this.#pasteBuffer + dataStr.slice(0, end));
 			this.#pasteBuffer = null;
 			const after = dataStr.slice(end + 6);
-			if (after.length) this.#route(after);
+			if (after.length) {
+				this.#route(after);
+			}
 			return;
 		}
 		const pasteStart = dataStr.indexOf("\x1b[200~");
 		if (pasteStart !== -1) {
 			const before = dataStr.slice(0, pasteStart);
-			if (before.length) this.#route(before);
+			if (before.length) {
+				this.#route(before);
+			}
 			this.#pasteBuffer = "";
 			this.#route(dataStr.slice(pasteStart + 6));
 			return;
@@ -755,7 +804,9 @@ export class TerminalSession {
 				const rest =
 					dataStr.slice(0, modeReport.index) +
 					dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-				if (rest.length > 0) this.#route(rest);
+				if (rest.length > 0) {
+					this.#route(rest);
+				}
 				return;
 			}
 		}
@@ -765,7 +816,9 @@ export class TerminalSession {
 			const rest =
 				dataStr.slice(0, report.index) +
 				dataStr.slice((report.index ?? 0) + report[0].length);
-			if (rest.length > 0) this.#route(rest);
+			if (rest.length > 0) {
+				this.#route(rest);
+			}
 			return;
 		}
 
@@ -792,7 +845,9 @@ export class TerminalSession {
 				keyInput += token;
 			}
 		}
-		if (keyInput.length === 0) return;
+		if (keyInput.length === 0) {
+			return;
+		}
 
 		this.#handlers.onKeys(keyInput);
 	}
@@ -800,7 +855,9 @@ export class TerminalSession {
 	/** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
 	#feedModeReport(mode: string, value: number): boolean {
 		const waiting = this.#modeProbeHandlers.get(mode);
-		if (!waiting) return false;
+		if (!waiting) {
+			return false;
+		}
 		this.#modeProbeHandlers.delete(mode);
 		waiting(value);
 		return true;
@@ -916,12 +973,16 @@ export class TerminalSession {
 	 * is treated as "no bidi", which is what silence has always meant here.
 	 */
 	async negotiateBidi(): Promise<void> {
-		if (!this.#interactive) return;
+		if (!this.#interactive) {
+			return;
+		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
 		const answer = await this.#probeMode("8", "\x1b[8l\x1b[8$p");
 
-		if (answer === null || answer === 0) return; // No bidi: cells as written.
+		if (answer === null || answer === 0) {
+			return;
+		} // No bidi: cells as written.
 		this.#priorBidiMode = answer;
 
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
@@ -955,12 +1016,16 @@ export class TerminalSession {
 	 * of any echo, so the first frame starts on a clean row.
 	 */
 	scrubProbeEcho(): void {
-		if (!this.#interactive) return;
+		if (!this.#interactive) {
+			return;
+		}
 		void this.write("\r\x1b[K");
 	}
 
 	async negotiateGraphemeClusters(): Promise<void> {
-		if (!this.#interactive) return;
+		if (!this.#interactive) {
+			return;
+		}
 
 		const answer = await this.#probeMode("?2027", "\x1b[?2027h\x1b[?2027$p");
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
@@ -1097,7 +1162,9 @@ export class TerminalSession {
 	 * terminal already was.
 	 */
 	dispose(): void {
-		if (this.#disposed) return;
+		if (this.#disposed) {
+			return;
+		}
 		this.#disposed = true;
 
 		// We asked for explicit bidi on the way in; give the terminal back the
@@ -1113,7 +1180,9 @@ export class TerminalSession {
 			void this.write("\x1b[?2027l");
 			this.#graphemeClustersNegotiated = false;
 		}
-		for (const timer of this.#modeProbeTimers) clearTimeout(timer);
+		for (const timer of this.#modeProbeTimers) {
+			clearTimeout(timer);
+		}
 		this.#modeProbeTimers.clear();
 		this.#modeProbeHandlers.clear();
 		if (this.#cursorDetectionTimer !== null) {

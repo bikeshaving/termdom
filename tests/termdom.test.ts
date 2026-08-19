@@ -242,7 +242,7 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
-	document.body.innerHTML = `<div>doc row</div><div id="fs">STAGE</div>`;
+	document.body.innerHTML = "<div>doc row</div><div id=\"fs\">STAGE</div>";
 	await nextFrame(dom);
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
@@ -263,7 +263,7 @@ test("no frame straddles a screen switch, even mid-animation", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
-	document.body.innerHTML = `<div>alpha doc row</div><div id="fs">STAGE</div>`;
+	document.body.innerHTML = "<div>alpha doc row</div><div id=\"fs\">STAGE</div>";
 	await nextFrame(dom);
 	const stage = document.getElementById("fs")!;
 	await stage.requestFullscreen();
@@ -292,7 +292,7 @@ test("exiting fullscreen restores a coherent document frame", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
-	document.body.innerHTML = `<div>alpha document row</div><div>beta document row</div><div id="fs">stage content</div>`;
+	document.body.innerHTML = "<div>alpha document row</div><div>beta document row</div><div id=\"fs\">stage content</div>";
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("alpha document row");
 

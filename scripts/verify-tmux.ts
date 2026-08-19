@@ -33,10 +33,12 @@ function newestMtime(dir: string): number {
 	let newest = 0;
 	for (const entry of readdirSync(dir, {withFileTypes: true})) {
 		const path = join(dir, entry.name);
-		const mtime = entry.isDirectory()
-			? newestMtime(path)
-			: statSync(path).mtimeMs;
-		if (mtime > newest) newest = mtime;
+		const mtime = entry.isDirectory() ?
+				newestMtime(path) :
+			statSync(path).mtimeMs;
+		if (mtime > newest) {
+			newest = mtime;
+		}
 	}
 	return newest;
 }
@@ -115,7 +117,9 @@ class Pane {
 }
 
 function assert(condition: boolean, message: string): void {
-	if (!condition) throw new Error(message);
+	if (!condition) {
+		throw new Error(message);
+	}
 }
 
 const scenarios: Scenario[] = [

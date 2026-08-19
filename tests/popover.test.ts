@@ -35,12 +35,12 @@ async function click(terminal: MockProcess, col: number, row: number) {
 
 test("the popover attribute's states are auto, manual, and not a popover", async () => {
 	const {document, dom} = await open(
-		`<div id=empty popover></div>` +
-			`<div id=auto popover=auto></div>` +
-			`<div id=manual popover=manual></div>` +
-			`<div id=hint popover=hint></div>` +
-			`<div id=bogus popover=sideways></div>` +
-			`<div id=none></div>`,
+		"<div id=empty popover></div>" +
+		"<div id=auto popover=auto></div>" +
+		"<div id=manual popover=manual></div>" +
+		"<div id=hint popover=hint></div>" +
+		"<div id=bogus popover=sideways></div>" +
+		"<div id=none></div>",
 	);
 	const state = (id: string) =>
 		(document.getElementById(id) as HTMLElement).popover;
@@ -61,7 +61,7 @@ test("the popover attribute's states are auto, manual, and not a popover", async
 });
 
 test("the popover attribute reflects both ways", async () => {
-	const {document, dom} = await open(`<div id=box></div>`);
+	const {document, dom} = await open("<div id=box></div>");
 	const box = document.getElementById("box") as HTMLElement;
 	box.popover = "auto";
 	expect(box.getAttribute("popover")).toBe("auto");
@@ -74,7 +74,7 @@ test("the popover attribute reflects both ways", async () => {
 
 test("a popover is hidden until it is shown, and paints over the page", async () => {
 	const {terminal, dom, popover} = await open(
-		`<p>page one</p><p>page two</p><div popover><p>the popover</p></div>`,
+		"<p>page one</p><p>page two</p><div popover><p>the popover</p></div>",
 	);
 	// Hidden until shown: the UA sheet's display: none, not a special case in
 	// the painter -- the content is not on screen at all.
@@ -95,8 +95,8 @@ test("a popover is hidden until it is shown, and paints over the page", async ()
 
 test("an author's ::backdrop rule paints behind a showing popover", async () => {
 	const {terminal, dom, popover} = await open(
-		`<style>[popover]::backdrop { background-color: Canvas; }</style>` +
-			`<p>page one</p><p>page two</p><div popover><p>hello</p></div>`,
+		"<style>[popover]::backdrop { background-color: Canvas; }</style>" +
+		"<p>page one</p><p>page two</p><div popover><p>hello</p></div>",
 	);
 	popover.showPopover();
 	await nextFrame(dom);
@@ -111,7 +111,7 @@ test("an author's ::backdrop rule paints behind a showing popover", async () => 
 /* ------------------------------------------------------- show, hide, toggle */
 
 test(":popover-open matches a popover while it is showing", async () => {
-	const {document, dom, popover} = await open(`<div popover>hi</div>`);
+	const {document, dom, popover} = await open("<div popover>hi</div>");
 	expect(popover.matches(":popover-open")).toBe(false);
 
 	popover.showPopover();
@@ -125,7 +125,7 @@ test(":popover-open matches a popover while it is showing", async () => {
 });
 
 test("showing a shown popover and hiding a hidden one do nothing", async () => {
-	const {dom, popover} = await open(`<div popover>hi</div>`);
+	const {dom, popover} = await open("<div popover>hi</div>");
 	popover.hidePopover();
 	expect(popover.matches(":popover-open")).toBe(false);
 
@@ -136,7 +136,7 @@ test("showing a shown popover and hiding a hidden one do nothing", async () => {
 });
 
 test("a popover out of the document cannot be shown", async () => {
-	const {document, dom} = await open(`<p>page</p>`);
+	const {document, dom} = await open("<p>page</p>");
 	const detached = document.createElement("div") as HTMLElement;
 	detached.setAttribute("popover", "");
 	expect(() => detached.showPopover()).toThrow(/connected/);
@@ -144,7 +144,7 @@ test("a popover out of the document cannot be shown", async () => {
 });
 
 test("a dialog showing modally cannot also show as a popover", async () => {
-	const {document, dom} = await open(`<dialog popover>hi</dialog>`);
+	const {document, dom} = await open("<dialog popover>hi</dialog>");
 	const dialog = document.querySelector("dialog") as HTMLDialogElement;
 	dialog.showModal();
 	expect(() => (dialog as HTMLElement).showPopover()).toThrow(/modally/);
@@ -153,7 +153,7 @@ test("a dialog showing modally cannot also show as a popover", async () => {
 });
 
 test("togglePopover flips the state, and force names the half to run", async () => {
-	const {dom, popover} = await open(`<div popover>hi</div>`);
+	const {dom, popover} = await open("<div popover>hi</div>");
 	expect(popover.togglePopover()).toBe(true);
 	expect(popover.togglePopover()).toBe(false);
 
@@ -167,7 +167,7 @@ test("togglePopover flips the state, and force names the half to run", async () 
 
 test("removing a showing popover takes it out of the top layer", async () => {
 	const {terminal, dom, popover} = await open(
-		`<p>page one</p><div popover>the popover</div>`,
+		"<p>page one</p><div popover>the popover</div>",
 	);
 	popover.showPopover();
 	await nextFrame(dom);
@@ -181,7 +181,7 @@ test("removing a showing popover takes it out of the top layer", async () => {
 });
 
 test("changing the attribute's state closes a showing popover", async () => {
-	const {dom, popover} = await open(`<div popover=auto>hi</div>`);
+	const {dom, popover} = await open("<div popover=auto>hi</div>");
 	popover.showPopover();
 	popover.setAttribute("popover", "manual");
 	expect(popover.matches(":popover-open")).toBe(false);
@@ -191,7 +191,7 @@ test("changing the attribute's state closes a showing popover", async () => {
 /* ---------------------------------------------------------------- events */
 
 test("beforetoggle and toggle report the states either side of the move", async () => {
-	const {dom, popover} = await open(`<div popover>hi</div>`);
+	const {dom, popover} = await open("<div popover>hi</div>");
 	const seen: string[] = [];
 	for (const type of ["beforetoggle", "toggle"]) {
 		popover.addEventListener(type, (event: any) => {
@@ -214,7 +214,7 @@ test("beforetoggle and toggle report the states either side of the move", async 
 });
 
 test("a canceled beforetoggle keeps the popover closed", async () => {
-	const {dom, popover} = await open(`<div popover>hi</div>`);
+	const {dom, popover} = await open("<div popover>hi</div>");
 	const seen: string[] = [];
 	popover.addEventListener("beforetoggle", (event: Event) => {
 		seen.push("beforetoggle");
@@ -233,7 +233,7 @@ test("a canceled beforetoggle keeps the popover closed", async () => {
 });
 
 test("a show and a hide in one turn report one toggle, of the state it settled on", async () => {
-	const {dom, popover} = await open(`<div popover>hi</div>`);
+	const {dom, popover} = await open("<div popover>hi</div>");
 	const seen: string[] = [];
 	popover.addEventListener("toggle", (event: any) => {
 		seen.push(`${event.oldState}->${event.newState}`);
@@ -250,7 +250,7 @@ test("a show and a hide in one turn report one toggle, of the state it settled o
 
 test("a button with popovertarget toggles the popover it names", async () => {
 	const {document, dom, popover} = await open(
-		`<button popovertarget=pop>Open</button><div id=pop popover>hi</div>`,
+		"<button popovertarget=pop>Open</button><div id=pop popover>hi</div>",
 	);
 	const button = document.querySelector("button") as HTMLButtonElement;
 	expect(button.popoverTargetElement).toBe(popover);
@@ -265,9 +265,9 @@ test("a button with popovertarget toggles the popover it names", async () => {
 
 test("popovertargetaction names which half of the toggle runs", async () => {
 	const {document, dom, popover} = await open(
-		`<button id=show popovertarget=pop popovertargetaction=show>Show</button>` +
-			`<button id=hide popovertarget=pop popovertargetaction=hide>Hide</button>` +
-			`<div id=pop popover>hi</div>`,
+		"<button id=show popovertarget=pop popovertargetaction=show>Show</button>" +
+		"<button id=hide popovertarget=pop popovertargetaction=hide>Hide</button>" +
+		"<div id=pop popover>hi</div>",
 	);
 	const show = document.getElementById("show") as HTMLButtonElement;
 	const hide = document.getElementById("hide") as HTMLButtonElement;
@@ -284,9 +284,9 @@ test("popovertargetaction names which half of the toggle runs", async () => {
 
 test("an input that is a button invokes; one that is not does nothing", async () => {
 	const {document, dom, popover} = await open(
-		`<input id=button type=button popovertarget=pop value=Open>` +
-			`<input id=text type=text popovertarget=pop>` +
-			`<div id=pop popover>hi</div>`,
+		"<input id=button type=button popovertarget=pop value=Open>" +
+		"<input id=text type=text popovertarget=pop>" +
+		"<div id=pop popover>hi</div>",
 	);
 	const text = document.getElementById("text") as HTMLInputElement;
 	text.click();
@@ -299,9 +299,9 @@ test("an input that is a button invokes; one that is not does nothing", async ()
 
 test("a submit button is not an invoker, and a disabled one is not either", async () => {
 	const {document, dom, popover} = await open(
-		`<form><button id=submit popovertarget=pop>Send</button></form>` +
-			`<button id=off popovertarget=pop disabled>Open</button>` +
-			`<div id=pop popover>hi</div>`,
+		"<form><button id=submit popovertarget=pop>Send</button></form>" +
+		"<button id=off popovertarget=pop disabled>Open</button>" +
+		"<div id=pop popover>hi</div>",
 	);
 	const submit = document.getElementById("submit") as HTMLButtonElement;
 	// The attribute is on it, but its activation is the submission.
@@ -316,7 +316,7 @@ test("a submit button is not an invoker, and a disabled one is not either", asyn
 
 test("popoverTargetElement takes an element, not only an id", async () => {
 	const {document, dom, popover} = await open(
-		`<button>Open</button><div popover>hi</div>`,
+		"<button>Open</button><div popover>hi</div>",
 	);
 	const button = document.querySelector("button") as HTMLButtonElement;
 	expect(button.popoverTargetElement).toBe(null);
@@ -336,7 +336,7 @@ test("popoverTargetElement takes an element, not only an id", async () => {
 
 test("a click outside an auto popover closes it, and one inside does not", async () => {
 	const {terminal, dom, popover} = await open(
-		`<p>page one</p><div popover><p>the popover</p></div>`,
+		"<p>page one</p><div popover><p>the popover</p></div>",
 	);
 	popover.showPopover();
 	await nextFrame(dom);
@@ -358,7 +358,7 @@ test("a click outside an auto popover closes it, and one inside does not", async
 
 test("a click on a popover's own invoker toggles rather than reopens", async () => {
 	const {terminal, dom, popover} = await open(
-		`<button popovertarget=pop>Open</button><div id=pop popover>hi</div>`,
+		"<button popovertarget=pop>Open</button><div id=pop popover>hi</div>",
 	);
 	// The button is the first thing on the first row.
 	await click(terminal, 3, 1);
@@ -373,7 +373,7 @@ test("a click on a popover's own invoker toggles rather than reopens", async () 
 
 test("Escape closes the topmost auto popover", async () => {
 	const {terminal, dom, popover} = await open(
-		`<p>page</p><div popover>the popover</div>`,
+		"<p>page</p><div popover>the popover</div>",
 	);
 	popover.showPopover();
 	await nextFrame(dom);
@@ -385,7 +385,7 @@ test("Escape closes the topmost auto popover", async () => {
 
 test("a manual popover ignores both the click outside and Escape", async () => {
 	const {terminal, dom, popover} = await open(
-		`<p>page one</p><div popover=manual><p>the popover</p></div>`,
+		"<p>page one</p><div popover=manual><p>the popover</p></div>",
 	);
 	popover.showPopover();
 	await nextFrame(dom);
@@ -404,8 +404,8 @@ test("a manual popover ignores both the click outside and Escape", async () => {
 
 test("showing an auto popover closes the open ones it is unrelated to", async () => {
 	const {document, dom} = await open(
-		`<div id=one popover>one</div><div id=two popover>two</div>` +
-			`<div id=manual popover=manual>manual</div>`,
+		"<div id=one popover>one</div><div id=two popover>two</div>" +
+		"<div id=manual popover=manual>manual</div>",
 	);
 	const one = document.getElementById("one") as HTMLElement;
 	const two = document.getElementById("two") as HTMLElement;
@@ -423,8 +423,8 @@ test("showing an auto popover closes the open ones it is unrelated to", async ()
 
 test("a nested popover joins the stack rather than closing it", async () => {
 	const {document, dom} = await open(
-		`<div id=outer popover>outer<div id=inner popover>inner</div></div>` +
-			`<div id=other popover>other</div>`,
+		"<div id=outer popover>outer<div id=inner popover>inner</div></div>" +
+		"<div id=other popover>other</div>",
 	);
 	const outer = document.getElementById("outer") as HTMLElement;
 	const inner = document.getElementById("inner") as HTMLElement;
@@ -451,9 +451,9 @@ test("a nested popover joins the stack rather than closing it", async () => {
 
 test("a popover invoked from inside another is the inner one of a stack", async () => {
 	const {document, dom} = await open(
-		`<div id=outer popover>` +
-			`<button popovertarget=inner>More</button></div>` +
-			`<div id=inner popover>inner</div>`,
+		"<div id=outer popover>" +
+		"<button popovertarget=inner>More</button></div>" +
+		"<div id=inner popover>inner</div>",
 	);
 	const outer = document.getElementById("outer") as HTMLElement;
 	const inner = document.getElementById("inner") as HTMLElement;
@@ -471,9 +471,9 @@ test("a popover invoked from inside another is the inner one of a stack", async 
 
 test("focus moves into a popover only where the content asks for it", async () => {
 	const {document, dom} = await open(
-		`<button id=page>page</button>` +
-			`<div id=plain popover><button id=first>first</button></div>` +
-			`<div id=asking popover><button id=second autofocus>second</button></div>`,
+		"<button id=page>page</button>" +
+		"<div id=plain popover><button id=first>first</button></div>" +
+		"<div id=asking popover><button id=second autofocus>second</button></div>",
 	);
 	const plain = document.getElementById("plain") as HTMLElement;
 	const asking = document.getElementById("asking") as HTMLElement;

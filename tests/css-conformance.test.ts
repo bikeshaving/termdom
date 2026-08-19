@@ -28,77 +28,77 @@ const FIXTURES: Fixture[] = [
 	// --- Box model -----------------------------------------------------------
 	{
 		name: "block with border and padding",
-		html: `<div style="border: 1px solid white; padding: 1px 2px; width: 20px">Boxed</div>`,
+		html: "<div style=\"border: 1px solid white; padding: 1px 2px; width: 20px\">Boxed</div>",
 		contains: ["Boxed"],
 	},
 	{
 		name: "margin offsets a block from the edge",
-		html: `<div style="margin-left: 4px; margin-top: 1px">Indented</div>`,
+		html: "<div style=\"margin-left: 4px; margin-top: 1px\">Indented</div>",
 		contains: ["Indented"],
 	},
 	{
 		name: "nested blocks stack vertically",
-		html: `<div>First</div><div>Second</div><div>Third</div>`,
+		html: "<div>First</div><div>Second</div><div>Third</div>",
 		contains: ["First", "Second", "Third"],
 	},
 
 	// --- Display -------------------------------------------------------------
 	{
 		name: "inline elements share a line",
-		html: `<span>one</span><span>two</span><span>three</span>`,
+		html: "<span>one</span><span>two</span><span>three</span>",
 		contains: ["one", "two", "three"],
 	},
 	{
 		name: "inline-block reserves a box on the line",
-		html: `<span style="display:inline-block; width:8px; border:1px solid white">A</span><span style="display:inline-block; width:8px; border:1px solid white">B</span>`,
+		html: "<span style=\"display:inline-block; width:8px; border:1px solid white\">A</span><span style=\"display:inline-block; width:8px; border:1px solid white\">B</span>",
 		contains: ["A", "B"],
 	},
 	{
 		name: "display:none removes the element",
-		html: `<div>visible</div><div style="display:none">hidden</div><div>after</div>`,
+		html: "<div>visible</div><div style=\"display:none\">hidden</div><div>after</div>",
 		contains: ["visible", "after"],
 	},
 
 	// --- Text styling --------------------------------------------------------
 	{
 		name: "bold italic underline strikethrough",
-		html: `<span style="font-weight:bold">B</span> <span style="font-style:italic">I</span> <span style="text-decoration:underline">U</span> <span style="text-decoration:line-through">S</span>`,
+		html: "<span style=\"font-weight:bold\">B</span> <span style=\"font-style:italic\">I</span> <span style=\"text-decoration:underline\">U</span> <span style=\"text-decoration:line-through\">S</span>",
 		contains: ["B", "I", "U", "S"],
 	},
 	{
 		name: "white-space:pre preserves spacing",
-		html: `<pre style="white-space:pre">a    b\n  c</pre>`,
+		html: "<pre style=\"white-space:pre\">a    b\n  c</pre>",
 		contains: ["a    b"],
 	},
 
 	// --- Color ---------------------------------------------------------------
 	{
 		name: "named, hex, and rgb foreground colors",
-		html: `<div style="color:red">named</div><div style="color:#00ff00">hex</div><div style="color:rgb(0,0,255)">rgb</div>`,
+		html: "<div style=\"color:red\">named</div><div style=\"color:#00ff00\">hex</div><div style=\"color:rgb(0,0,255)\">rgb</div>",
 		contains: ["named", "hex", "rgb"],
 	},
 	{
 		name: "background color fills the box",
-		html: `<div style="background:blue; color:white; width:10px">bg</div>`,
+		html: "<div style=\"background:blue; color:white; width:10px\">bg</div>",
 		contains: ["bg"],
 	},
 
 	// --- Lists ---------------------------------------------------------------
 	{
 		name: "unordered list markers",
-		html: `<ul><li>alpha</li><li>beta</li></ul>`,
+		html: "<ul><li>alpha</li><li>beta</li></ul>",
 		contains: ["alpha", "beta"],
 	},
 	{
 		name: "ordered list numbering",
-		html: `<ol><li>first</li><li>second</li></ol>`,
+		html: "<ol><li>first</li><li>second</li></ol>",
 		contains: ["first", "second"],
 	},
 
 	// --- Tables --------------------------------------------------------------
 	{
 		name: "table with cells",
-		html: `<table><tr><td>r1c1</td><td>r1c2</td></tr><tr><td>r2c1</td><td>r2c2</td></tr></table>`,
+		html: "<table><tr><td>r1c1</td><td>r1c2</td></tr><tr><td>r2c1</td><td>r2c2</td></tr></table>",
 		contains: ["r1c1", "r2c2"],
 	},
 
@@ -106,46 +106,46 @@ const FIXTURES: Fixture[] = [
 	{
 		name: "flex row with justify-content space-between",
 		cols: 24,
-		html: `<div style="display:flex; justify-content:space-between; width:20px"><span>L</span><span>R</span></div>`,
+		html: "<div style=\"display:flex; justify-content:space-between; width:20px\"><span>L</span><span>R</span></div>",
 		contains: ["L", "R"],
 	},
 	{
 		name: "flex column stacks children",
-		html: `<div style="display:flex; flex-direction:column"><span>top</span><span>bottom</span></div>`,
+		html: "<div style=\"display:flex; flex-direction:column\"><span>top</span><span>bottom</span></div>",
 		contains: ["top", "bottom"],
 	},
 
 	// --- Cascade / inheritance ----------------------------------------------
 	{
 		name: "color inherits through nested elements",
-		html: `<div style="color:magenta"><p>outer <span>inner</span></p></div>`,
+		html: "<div style=\"color:magenta\"><p>outer <span>inner</span></p></div>",
 		contains: ["outer", "inner"],
 	},
 	{
 		name: "id selector beats element selector (specificity)",
-		html: `<style>p{color:green} #x{color:red}</style><p id="x">wins-red</p>`,
+		html: "<style>p{color:green} #x{color:red}</style><p id=\"x\">wins-red</p>",
 		contains: ["wins-red"],
 	},
 	{
 		name: "later rule wins on equal specificity (source order)",
-		html: `<style>p{color:green} p{color:blue}</style><p>wins-blue</p>`,
+		html: "<style>p{color:green} p{color:blue}</style><p>wins-blue</p>",
 		contains: ["wins-blue"],
 	},
 
 	// --- text-transform (paint-time; can't affect layout in a monospace grid) -
 	{
 		name: "text-transform:uppercase",
-		html: `<div style="text-transform:uppercase">shout</div>`,
+		html: "<div style=\"text-transform:uppercase\">shout</div>",
 		contains: ["SHOUT"],
 	},
 	{
 		name: "text-transform:lowercase",
-		html: `<div style="text-transform:lowercase">LOUD</div>`,
+		html: "<div style=\"text-transform:lowercase\">LOUD</div>",
 		contains: ["loud"],
 	},
 	{
 		name: "text-transform:capitalize",
-		html: `<div style="text-transform:capitalize">hi there</div>`,
+		html: "<div style=\"text-transform:capitalize\">hi there</div>",
 		contains: ["Hi There"],
 	},
 ];
@@ -186,7 +186,7 @@ test("css: border-radius draws the rounded corner glyphs", async () => {
 		name: "border-radius",
 		cols: 12,
 		rows: 5,
-		html: `<div style="border:1px solid; border-radius:1ch; width:4px; height:3px">ab</div>`,
+		html: "<div style=\"border:1px solid; border-radius:1ch; width:4px; height:3px\">ab</div>",
 	});
 	expect(text.split("\n").filter(Boolean)).toEqual(["╭──╮", "│ab│", "╰──╯"]);
 });
@@ -196,7 +196,7 @@ test("css: a corner longhand rounds its own corner alone", async () => {
 		name: "border-radius-longhand",
 		cols: 12,
 		rows: 5,
-		html: `<div style="border:1px solid; border-bottom-right-radius:2px; width:4px; height:3px">ab</div>`,
+		html: "<div style=\"border:1px solid; border-bottom-right-radius:2px; width:4px; height:3px\">ab</div>",
 	});
 	expect(text.split("\n").filter(Boolean)).toEqual(["┌──┐", "│ab│", "└──╯"]);
 });
@@ -206,7 +206,7 @@ test("css: border-radius leaves a double border's corners square", async () => {
 		name: "border-radius-double",
 		cols: 12,
 		rows: 5,
-		html: `<div style="border:1px double; border-radius:1ch; width:4px; height:3px">ab</div>`,
+		html: "<div style=\"border:1px double; border-radius:1ch; width:4px; height:3px\">ab</div>",
 	});
 	// Unicode draws no rounded double corner, so the box keeps ╔╗╚╝.
 	expect(text.split("\n").filter(Boolean)).toEqual(["╔══╗", "║ab║", "╚══╝"]);
@@ -217,7 +217,7 @@ test("css: a zero radius leaves every corner square", async () => {
 		name: "border-radius-zero",
 		cols: 12,
 		rows: 5,
-		html: `<div style="border:1px solid; border-radius:0; width:4px; height:3px">ab</div>`,
+		html: "<div style=\"border:1px solid; border-radius:0; width:4px; height:3px\">ab</div>",
 	});
 	expect(text.split("\n").filter(Boolean)).toEqual(["┌──┐", "│ab│", "└──┘"]);
 });
@@ -225,7 +225,7 @@ test("css: a zero radius leaves every corner square", async () => {
 test("css: visibility:hidden paints nothing, but reserves its box", async () => {
 	const {text} = await renderFixture({
 		name: "visibility",
-		html: `<div>a</div><div style="visibility:hidden">gone</div><div>b</div>`,
+		html: "<div>a</div><div style=\"visibility:hidden\">gone</div><div>b</div>",
 	});
 	expect(text).toContain("a");
 	expect(text).toContain("b");
@@ -235,7 +235,7 @@ test("css: visibility:hidden paints nothing, but reserves its box", async () => 
 test("css: visibility:visible on a descendant re-shows inside a hidden ancestor", async () => {
 	const {text} = await renderFixture({
 		name: "visibility-override",
-		html: `<div style="visibility:hidden">gone<span style="visibility:visible">shown</span></div>`,
+		html: "<div style=\"visibility:hidden\">gone<span style=\"visibility:visible\">shown</span></div>",
 	});
 	expect(text).toContain("shown");
 	expect(text).not.toContain("gone");
@@ -249,7 +249,7 @@ test("css: overflow:hidden clips content taller than the box", async () => {
 		name: "overflow-hidden-vertical",
 		cols: 20,
 		rows: 6,
-		html: `<div style="overflow:hidden; width:20px; height:2px"><div>line1</div><div>line2</div><div>line3</div><div>line4</div></div>`,
+		html: "<div style=\"overflow:hidden; width:20px; height:2px\"><div>line1</div><div>line2</div><div>line3</div><div>line4</div></div>",
 	});
 	expect(text).toBe("line1\nline2\n");
 });
@@ -259,7 +259,7 @@ test("css: overflow:hidden clips a child's border that sticks out past the box",
 		name: "overflow-hidden-border",
 		cols: 20,
 		rows: 6,
-		html: `<div style="overflow:hidden; width:8px; height:3px"><div style="border:1px solid; width:20px; height:5px">x</div></div>`,
+		html: "<div style=\"overflow:hidden; width:8px; height:3px\"><div style=\"border:1px solid; width:20px; height:5px\">x</div></div>",
 	});
 	const lines = text.split("\n").filter(Boolean);
 	// The border's right/bottom edges would land at col 19/row 4 -- well outside
@@ -272,7 +272,7 @@ test("css: overflow-x:hidden alone does not clip vertical overflow", async () =>
 		name: "overflow-x-only",
 		cols: 20,
 		rows: 6,
-		html: `<div style="overflow-x:hidden; width:6px; height:1px">aa bb cc dd ee</div>`,
+		html: "<div style=\"overflow-x:hidden; width:6px; height:1px\">aa bb cc dd ee</div>",
 	});
 	// height:1px is not clipped because only overflow-x, not overflow-y, is
 	// hidden -- all three wrapped lines still show, just narrowed to 6 columns.
@@ -284,7 +284,7 @@ test("css: nested overflow:hidden clips intersect", async () => {
 		name: "overflow-hidden-nested",
 		cols: 20,
 		rows: 8,
-		html: `<div style="overflow:hidden; width:20px; height:1px"><div style="overflow:hidden; width:5px; height:5px">nested clip here abc</div></div>`,
+		html: "<div style=\"overflow:hidden; width:20px; height:1px\"><div style=\"overflow:hidden; width:5px; height:5px\">nested clip here abc</div></div>",
 	});
 	// The inner box wraps to 5 lines on its own, but the outer's height:1px
 	// clips the intersection down to just the first.
@@ -299,7 +299,7 @@ test("css: text-align:center centers a line within its container width", async (
 	const {text} = await renderFixture({
 		name: "text-align-center",
 		cols: 20,
-		html: `<div style="text-align:center; width:20px">mid</div>`,
+		html: "<div style=\"text-align:center; width:20px\">mid</div>",
 	});
 	expect(text.split("\n")[0]).toBe("         mid");
 });
@@ -308,7 +308,7 @@ test("css: text-align:right pushes a line to the container's right edge", async 
 	const {text} = await renderFixture({
 		name: "text-align-right",
 		cols: 20,
-		html: `<div style="text-align:right; width:20px">end</div>`,
+		html: "<div style=\"text-align:right; width:20px\">end</div>",
 	});
 	expect(text.split("\n")[0]).toBe("                 end");
 });
@@ -317,7 +317,7 @@ test("css: text-align:left (the default) does not shift the line", async () => {
 	const {text} = await renderFixture({
 		name: "text-align-left",
 		cols: 20,
-		html: `<div style="width:20px">start</div>`,
+		html: "<div style=\"width:20px\">start</div>",
 	});
 	expect(text.split("\n")[0]).toBe("start");
 });
@@ -327,7 +327,7 @@ test("css: text-align:center re-centers each wrapped line independently", async 
 		name: "text-align-center-wrap",
 		cols: 20,
 		rows: 6,
-		html: `<div style="text-align:center; width:20px">aa bb cc dd ee ff gg hh ii jj kk ll</div>`,
+		html: "<div style=\"text-align:center; width:20px\">aa bb cc dd ee ff gg hh ii jj kk ll</div>",
 	});
 	const lines = text.split("\n").filter((l) => l.trim());
 	// Each wrapped line is a different length, so a shared center offset would
@@ -340,7 +340,7 @@ test("css: text-indent shifts the first line", async () => {
 	const {text} = await renderFixture({
 		name: "text-indent-basic",
 		cols: 20,
-		html: `<div style="text-indent:3px; width:20px">hi</div>`,
+		html: "<div style=\"text-indent:3px; width:20px\">hi</div>",
 	});
 	expect(text.split("\n")[0]).toBe("   hi");
 });
@@ -350,7 +350,7 @@ test("css: text-indent affects only the first wrapped line, not later ones", asy
 		name: "text-indent-wrap",
 		cols: 20,
 		rows: 6,
-		html: `<div style="text-indent:3px; width:10px">aa bb cc dd ee</div>`,
+		html: "<div style=\"text-indent:3px; width:10px\">aa bb cc dd ee</div>",
 	});
 	const lines = text.split("\n").filter(Boolean);
 	expect(lines).toEqual(["   aa bb cc ", "dd ee"]);
@@ -360,7 +360,7 @@ test("css: text-indent resolves a percentage against the container width", async
 	const {text} = await renderFixture({
 		name: "text-indent-percent",
 		cols: 20,
-		html: `<div style="text-indent:25%; width:20px">hi</div>`,
+		html: "<div style=\"text-indent:25%; width:20px\">hi</div>",
 	});
 	expect(text.split("\n")[0]).toBe("     hi");
 });
@@ -397,7 +397,7 @@ async function colorOf(html: string, sel: string): Promise<string> {
 test("css: var() resolves custom properties, inherited from an ancestor", async () => {
 	expect(
 		await colorOf(
-			`<style>:root{--fg:red} p{color:var(--fg)}</style><p>x</p>`,
+			"<style>:root{--fg:red} p{color:var(--fg)}</style><p>x</p>",
 			"p",
 		),
 	).toBe("rgb(255, 0, 0)");
@@ -405,14 +405,14 @@ test("css: var() resolves custom properties, inherited from an ancestor", async 
 
 test("css: var() falls back when the custom property is unset", async () => {
 	expect(
-		await colorOf(`<p style="color:var(--missing, blue)">x</p>`, "p"),
+		await colorOf("<p style=\"color:var(--missing, blue)\">x</p>", "p"),
 	).toBe("rgb(0, 0, 255)");
 });
 
 test("css: !important wins the cascade over higher specificity", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue!important} #a{color:green}</style><p id="a">x</p>`,
+			"<style>p{color:blue!important} #a{color:green}</style><p id=\"a\">x</p>",
 			"#a",
 		),
 	).toBe("rgb(0, 0, 255)");
@@ -421,7 +421,7 @@ test("css: !important wins the cascade over higher specificity", async () => {
 test("css: an important inline style beats an important stylesheet rule", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue!important}</style><p style="color:orange!important">x</p>`,
+			"<style>p{color:blue!important}</style><p style=\"color:orange!important\">x</p>",
 			"p",
 		),
 	).toBe("rgb(255, 165, 0)");
@@ -429,14 +429,14 @@ test("css: an important inline style beats an important stylesheet rule", async 
 
 test("css: @media rules apply when the query matches", async () => {
 	expect(
-		await colorOf(`<style>@media all{p{color:orange}}</style><p>x</p>`, "p"),
+		await colorOf("<style>@media all{p{color:orange}}</style><p>x</p>", "p"),
 	).toBe("rgb(255, 165, 0)");
 });
 
 test("css: @media rules do not apply when the query fails", async () => {
 	expect(
 		await colorOf(
-			`<style>@media (min-width: 999999px){p{color:orange}}</style><p>x</p>`,
+			"<style>@media (min-width: 999999px){p{color:orange}}</style><p>x</p>",
 			"p",
 		),
 	).not.toBe("rgb(255, 165, 0)");
@@ -445,7 +445,7 @@ test("css: @media rules do not apply when the query fails", async () => {
 test("css: color:inherit resolves the parent's value", async () => {
 	expect(
 		await colorOf(
-			`<div style="color:purple"><span id="s" style="color:inherit">x</span></div>`,
+			"<div style=\"color:purple\"><span id=\"s\" style=\"color:inherit\">x</span></div>",
 			"#s",
 		),
 	).toBe("rgb(128, 0, 128)");
@@ -457,7 +457,7 @@ const BLUE = "rgb(0, 0, 255)";
 test("css: @layer rules lose to unlayered rules of the same origin", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer base{#a{color:red}} p{color:blue}</style><p id="a">x</p>`,
+			"<style>@layer base{#a{color:red}} p{color:blue}</style><p id=\"a\">x</p>",
 			"#a",
 		),
 	).toBe(BLUE);
@@ -466,7 +466,7 @@ test("css: @layer rules lose to unlayered rules of the same origin", async () =>
 test("css: layers cascade in the order their names were declared", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>`,
+			"<style>@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(RED);
@@ -475,8 +475,8 @@ test("css: layers cascade in the order their names were declared", async () => {
 test("css: a @layer statement declares the order rules later fall into", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer early, late;` +
-				`@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>`,
+			"<style>@layer early, late;" +
+			"@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(BLUE);
@@ -485,8 +485,8 @@ test("css: a @layer statement declares the order rules later fall into", async (
 test("css: a nested layer loses to its own layer's unnested rules", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer outer{@layer inner{p{color:red}} p{color:blue}}</style>` +
-				`<p>x</p>`,
+			"<style>@layer outer{@layer inner{p{color:red}} p{color:blue}}</style>" +
+			"<p>x</p>",
 			"p",
 		),
 	).toBe(BLUE);
@@ -495,7 +495,7 @@ test("css: a nested layer loses to its own layer's unnested rules", async () => 
 test("css: each unnamed @layer block is a layer of its own", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer{p{color:blue}}@layer{p{color:red}}</style><p>x</p>`,
+			"<style>@layer{p{color:blue}}@layer{p{color:red}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(RED);
@@ -504,8 +504,8 @@ test("css: each unnamed @layer block is a layer of its own", async () => {
 test("css: !important reverses the layer order", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer a{p{color:red!important}} p{color:blue!important}</style>` +
-				`<p>x</p>`,
+			"<style>@layer a{p{color:red!important}} p{color:blue!important}</style>" +
+			"<p>x</p>",
 			"p",
 		),
 	).toBe(RED);
@@ -514,9 +514,9 @@ test("css: !important reverses the layer order", async () => {
 test("css: !important makes the earliest layer win", async () => {
 	expect(
 		await colorOf(
-			`<style>@layer first, second;` +
-				`@layer second{p{color:blue!important}}` +
-				`@layer first{p{color:red!important}}</style><p>x</p>`,
+			"<style>@layer first, second;" +
+			"@layer second{p{color:blue!important}}" +
+			"@layer first{p{color:red!important}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(RED);
@@ -525,8 +525,8 @@ test("css: !important makes the earliest layer win", async () => {
 test("css: @scope rules apply inside their root", async () => {
 	expect(
 		await colorOf(
-			`<style>@scope (.card){p{color:red}}</style>` +
-				`<div class="card"><p>x</p></div>`,
+			"<style>@scope (.card){p{color:red}}</style>" +
+			"<div class=\"card\"><p>x</p></div>",
 			"p",
 		),
 	).toBe(RED);
@@ -535,8 +535,8 @@ test("css: @scope rules apply inside their root", async () => {
 test("css: @scope rules do not apply outside their root", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue} @scope (.card){p{color:red}}</style>` +
-				`<div class="other"><p>x</p></div>`,
+			"<style>p{color:blue} @scope (.card){p{color:red}}</style>" +
+			"<div class=\"other\"><p>x</p></div>",
 			"p",
 		),
 	).toBe(BLUE);
@@ -545,8 +545,8 @@ test("css: @scope rules do not apply outside their root", async () => {
 test("css: a @scope limit ends the scope above the element", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue} @scope (.card) to (.inner){p{color:red}}</style>` +
-				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"<style>p{color:blue} @scope (.card) to (.inner){p{color:red}}</style>" +
+			"<div class=\"card\"><div class=\"inner\"><p>x</p></div></div>",
 			"p",
 		),
 	).toBe(BLUE);
@@ -555,8 +555,8 @@ test("css: a @scope limit ends the scope above the element", async () => {
 test("css: :scope selects the scoping root itself", async () => {
 	expect(
 		await colorOf(
-			`<style>@scope (.card){:scope{color:red}}</style>` +
-				`<div class="card"><p>x</p></div>`,
+			"<style>@scope (.card){:scope{color:red}}</style>" +
+			"<div class=\"card\"><p>x</p></div>",
 			".card",
 		),
 	).toBe(RED);
@@ -565,8 +565,8 @@ test("css: :scope selects the scoping root itself", async () => {
 test("css: a scoped selector may be written relative to its root", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue} @scope (.inner){> p{color:red}}</style>` +
-				`<div class="inner"><p>x</p></div>`,
+			"<style>p{color:blue} @scope (.inner){> p{color:red}}</style>" +
+			"<div class=\"inner\"><p>x</p></div>",
 			"p",
 		),
 	).toBe(RED);
@@ -575,15 +575,15 @@ test("css: a scoped selector may be written relative to its root", async () => {
 test("css: the nearer scoping root wins, whatever the source order", async () => {
 	expect(
 		await colorOf(
-			`<style>@scope (.inner){p{color:red}} @scope (.card){p{color:blue}}</style>` +
-				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"<style>@scope (.inner){p{color:red}} @scope (.card){p{color:blue}}</style>" +
+			"<div class=\"card\"><div class=\"inner\"><p>x</p></div></div>",
 			"p",
 		),
 	).toBe(RED);
 	expect(
 		await colorOf(
-			`<style>@scope (.card){p{color:blue}} @scope (.inner){p{color:red}}</style>` +
-				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"<style>@scope (.card){p{color:blue}} @scope (.inner){p{color:red}}</style>" +
+			"<div class=\"card\"><div class=\"inner\"><p>x</p></div></div>",
 			"p",
 		),
 	).toBe(RED);
@@ -592,8 +592,8 @@ test("css: the nearer scoping root wins, whatever the source order", async () =>
 test("css: specificity outranks scope proximity", async () => {
 	expect(
 		await colorOf(
-			`<style>@scope (.inner){p{color:red}} @scope (.card){p#a{color:blue}}</style>` +
-				`<div class="card"><div class="inner"><p id="a">x</p></div></div>`,
+			"<style>@scope (.inner){p{color:red}} @scope (.card){p#a{color:blue}}</style>" +
+			"<div class=\"card\"><div class=\"inner\"><p id=\"a\">x</p></div></div>",
 			"#a",
 		),
 	).toBe(BLUE);
@@ -602,7 +602,7 @@ test("css: specificity outranks scope proximity", async () => {
 test("css: @starting-style declares nothing to the cascade", async () => {
 	expect(
 		await colorOf(
-			`<style>p{color:blue} @starting-style{p{color:red}}</style><p>x</p>`,
+			"<style>p{color:blue} @starting-style{p{color:red}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(BLUE);
@@ -613,7 +613,7 @@ test("css: an unrecognized grouping rule cascades its rules through", async () =
 	// without its query, rather than not at all.
 	expect(
 		await colorOf(
-			`<style>@container (min-width: 1px){p{color:red}}</style><p>x</p>`,
+			"<style>@container (min-width: 1px){p{color:red}}</style><p>x</p>",
 			"p",
 		),
 	).toBe(RED);

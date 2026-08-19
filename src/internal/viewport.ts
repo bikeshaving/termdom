@@ -11,6 +11,7 @@ export class Viewport {
 	get scrollTop(): number {
 		return this.#scrollTop;
 	}
+
 	set scrollTop(value: number) {
 		this.#scrollTop = Math.max(0, value);
 	}
@@ -19,6 +20,7 @@ export class Viewport {
 	get screenTop(): number {
 		return this.#screenTop;
 	}
+
 	set screenTop(value: number) {
 		this.#screenTop = value;
 	}
@@ -27,6 +29,7 @@ export class Viewport {
 	get anchorScrollTop(): number {
 		return this.#anchorScrollTop;
 	}
+
 	set anchorScrollTop(value: number) {
 		this.#anchorScrollTop = value;
 	}
@@ -64,7 +67,9 @@ export class Viewport {
 	 */
 	reserveRows(rows: number, height: number): number {
 		const overflow = this.#screenTop + rows - height;
-		if (overflow <= 0) return 0;
+		if (overflow <= 0) {
+			return 0;
+		}
 		const push = Math.min(overflow, this.#screenTop);
 		this.#screenTop -= push;
 		return push;
@@ -81,7 +86,9 @@ export class Viewport {
 		revealBottom: number,
 		regionHeight: number,
 	): number {
-		if (revealTop < this.#scrollTop) return revealTop - this.#scrollTop;
+		if (revealTop < this.#scrollTop) {
+			return revealTop - this.#scrollTop;
+		}
 		if (revealBottom > this.#scrollTop + regionHeight) {
 			return revealBottom - (this.#scrollTop + regionHeight);
 		}

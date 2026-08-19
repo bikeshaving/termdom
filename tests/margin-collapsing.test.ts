@@ -19,7 +19,9 @@ function rectOf(dom: TermDOM, el: Element) {
 async function layout(html: string, head = "") {
 	const terminal = new MockProcess({cols: 60, rows: 16});
 	const dom = new TermDOM({transport: terminal.transport});
-	if (head) dom.document.head.innerHTML = head;
+	if (head) {
+		dom.document.head.innerHTML = head;
+	}
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	return {terminal, dom};
@@ -27,8 +29,8 @@ async function layout(html: string, head = "") {
 
 test("adjacent sibling margins collapse to the larger", async () => {
 	const {dom} = await layout(
-		`<div id="a" style="margin-bottom:2px">A</div>` +
-			`<div id="b" style="margin-top:1px">B</div>`,
+		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
+		"<div id=\"b\" style=\"margin-top:1px\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -40,11 +42,11 @@ test("a first child's margin collapses through a borderless-top parent", async (
 	// The blockquote case: border-left only, so the first paragraph's
 	// margin-top escapes the box. The bar starts at the first text row.
 	const {dom} = await layout(
-		`<div id="h">Heading</div>` +
-			`<blockquote id="bq" style="border-left:1px solid;padding-left:1ch;margin-top:1px">` +
-			`<p id="p1" style="margin-top:1px">first</p>` +
-			`<p id="p2" style="margin-top:1px">second</p>` +
-			`</blockquote>`,
+		"<div id=\"h\">Heading</div>" +
+		"<blockquote id=\"bq\" style=\"border-left:1px solid;padding-left:1ch;margin-top:1px\">" +
+		"<p id=\"p1\" style=\"margin-top:1px\">first</p>" +
+		"<p id=\"p2\" style=\"margin-top:1px\">second</p>" +
+		"</blockquote>",
 	);
 	const h = rectOf(dom, dom.document.getElementById("h")!);
 	const bq = rectOf(dom, dom.document.getElementById("bq")!);
@@ -61,10 +63,10 @@ test("a first child's margin collapses through a borderless-top parent", async (
 
 test("padding-top stops the collapse: the child margin stays inside", async () => {
 	const {dom} = await layout(
-		`<div id="h">Heading</div>` +
-			`<blockquote id="bq" style="border-left:1px solid;padding-top:1px;margin-top:1px">` +
-			`<p id="p" style="margin-top:1px">quote</p>` +
-			`</blockquote>`,
+		"<div id=\"h\">Heading</div>" +
+		"<blockquote id=\"bq\" style=\"border-left:1px solid;padding-top:1px;margin-top:1px\">" +
+		"<p id=\"p\" style=\"margin-top:1px\">quote</p>" +
+		"</blockquote>",
 	);
 	const h = rectOf(dom, dom.document.getElementById("h")!);
 	const bq = rectOf(dom, dom.document.getElementById("bq")!);
@@ -77,8 +79,8 @@ test("padding-top stops the collapse: the child margin stays inside", async () =
 
 test("a last child's margin collapses through a borderless-bottom parent", async () => {
 	const {dom} = await layout(
-		`<div id="wrap"><p id="p" style="margin-bottom:2px">text</p></div>` +
-			`<div id="after">after</div>`,
+		"<div id=\"wrap\"><p id=\"p\" style=\"margin-bottom:2px\">text</p></div>" +
+		"<div id=\"after\">after</div>",
 	);
 	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
 	const p = rectOf(dom, dom.document.getElementById("p")!);
@@ -90,10 +92,10 @@ test("a last child's margin collapses through a borderless-bottom parent", async
 
 test("overflow:hidden establishes a BFC: no collapse through its edges", async () => {
 	const {dom} = await layout(
-		`<div id="h">Heading</div>` +
-			`<div id="box" style="overflow:hidden;margin-top:1px">` +
-			`<p id="p" style="margin-top:1px">inside</p>` +
-			`</div>`,
+		"<div id=\"h\">Heading</div>" +
+		"<div id=\"box\" style=\"overflow:hidden;margin-top:1px\">" +
+		"<p id=\"p\" style=\"margin-top:1px\">inside</p>" +
+		"</div>",
 	);
 	const h = rectOf(dom, dom.document.getElementById("h")!);
 	const box = rectOf(dom, dom.document.getElementById("box")!);
@@ -105,10 +107,10 @@ test("overflow:hidden establishes a BFC: no collapse through its edges", async (
 
 test("flex items never collapse margins", async () => {
 	const {dom} = await layout(
-		`<div style="display:flex;flex-direction:column">` +
-			`<div id="a" style="margin-bottom:2px">A</div>` +
-			`<div id="b" style="margin-top:1px">B</div>` +
-			`</div>`,
+		"<div style=\"display:flex;flex-direction:column\">" +
+		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
+		"<div id=\"b\" style=\"margin-top:1px\">B</div>" +
+		"</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -118,7 +120,7 @@ test("flex items never collapse margins", async () => {
 
 test("a negative margin pulls the box up", async () => {
 	const {dom} = await layout(
-		`<div id="a">A</div><div id="b" style="margin-top:-1px">B</div>`,
+		"<div id=\"a\">A</div><div id=\"b\" style=\"margin-top:-1px\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -131,8 +133,8 @@ test("a negative margin subtracts from the collapsed positive", async () => {
 	// §8.3.1: the collapsed margin is the largest positive plus the most
 	// negative of the adjoining set.
 	const {dom} = await layout(
-		`<div id="a" style="margin-bottom:2px">A</div>` +
-			`<div id="b" style="margin-top:-1px">B</div>`,
+		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
+		"<div id=\"b\" style=\"margin-top:-1px\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -142,7 +144,7 @@ test("a negative margin subtracts from the collapsed positive", async () => {
 
 test("negative values stay rejected where CSS forbids them", async () => {
 	const {dom} = await layout(
-		`<div id="w" style="width:-5px;padding-top:-1px">x</div>`,
+		"<div id=\"w\" style=\"width:-5px;padding-top:-1px\">x</div>",
 	);
 	// Invalid declarations fall back: auto width fills the line, padding 0.
 	const w = rectOf(dom, dom.document.getElementById("w")!);
@@ -153,9 +155,9 @@ test("negative values stay rejected where CSS forbids them", async () => {
 
 test("an empty block self-collapses: one margin passes through it", async () => {
 	const {dom} = await layout(
-		`<div id="a">A</div>` +
-			`<div id="e" style="margin-top:2px;margin-bottom:3px"></div>` +
-			`<div id="b">B</div>`,
+		"<div id=\"a\">A</div>" +
+		"<div id=\"e\" style=\"margin-top:2px;margin-bottom:3px\"></div>" +
+		"<div id=\"b\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const e = rectOf(dom, dom.document.getElementById("e")!);
@@ -168,10 +170,10 @@ test("an empty block self-collapses: one margin passes through it", async () => 
 
 test("a chain of empty blocks still collapses to one margin", async () => {
 	const {dom} = await layout(
-		`<div id="a">A</div>` +
-			`<div style="margin-bottom:2px"></div>` +
-			`<div style="margin-top:1px"></div>` +
-			`<div id="b" style="margin-top:1px">B</div>`,
+		"<div id=\"a\">A</div>" +
+		"<div style=\"margin-bottom:2px\"></div>" +
+		"<div style=\"margin-top:1px\"></div>" +
+		"<div id=\"b\" style=\"margin-top:1px\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -181,9 +183,9 @@ test("a chain of empty blocks still collapses to one margin", async () => {
 
 test("border or height stops self-collapse", async () => {
 	const {dom} = await layout(
-		`<div id="a">A</div>` +
-			`<div id="e" style="height:1px;margin-top:1px;margin-bottom:1px"></div>` +
-			`<div id="b">B</div>`,
+		"<div id=\"a\">A</div>" +
+		"<div id=\"e\" style=\"height:1px;margin-top:1px;margin-bottom:1px\"></div>" +
+		"<div id=\"b\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -194,9 +196,9 @@ test("border or height stops self-collapse", async () => {
 
 test("a self-collapsing block collapses its parent through both edges", async () => {
 	const {dom} = await layout(
-		`<div id="a">A</div>` +
-			`<div id="wrap"><div id="e" style="margin-top:2px;margin-bottom:3px"></div></div>` +
-			`<div id="b">B</div>`,
+		"<div id=\"a\">A</div>" +
+		"<div id=\"wrap\"><div id=\"e\" style=\"margin-top:2px;margin-bottom:3px\"></div></div>" +
+		"<div id=\"b\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
@@ -211,9 +213,9 @@ test("a self-collapsing block collapses its parent through both edges", async ()
 
 test("a negative margin inside a self-collapsing block passes through", async () => {
 	const {dom} = await layout(
-		`<div id="a" style="margin-bottom:3px">A</div>` +
-			`<div id="e" style="margin-top:-1px;margin-bottom:1px"></div>` +
-			`<div id="b">B</div>`,
+		"<div id=\"a\" style=\"margin-bottom:3px\">A</div>" +
+		"<div id=\"e\" style=\"margin-top:-1px;margin-bottom:1px\"></div>" +
+		"<div id=\"b\">B</div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
@@ -224,8 +226,8 @@ test("a negative margin inside a self-collapsing block passes through", async ()
 
 test("a negative margin collapses through a parent's top edge", async () => {
 	const {dom} = await layout(
-		`<div id="a" style="margin-bottom:2px">A</div>` +
-			`<div id="wrap"><div id="c" style="margin-top:-1px">C</div></div>`,
+		"<div id=\"a\" style=\"margin-bottom:2px\">A</div>" +
+		"<div id=\"wrap\"><div id=\"c\" style=\"margin-top:-1px\">C</div></div>",
 	);
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
@@ -237,8 +239,8 @@ test("a negative margin collapses through a parent's top edge", async () => {
 
 test("a trailing self-collapsing child pushes the gap outside its parent", async () => {
 	const {dom} = await layout(
-		`<div id="wrap"><div id="c">C</div><div id="e" style="margin-top:2px"></div></div>` +
-			`<div id="after">after</div>`,
+		"<div id=\"wrap\"><div id=\"c\">C</div><div id=\"e\" style=\"margin-top:2px\"></div></div>" +
+		"<div id=\"after\">after</div>",
 	);
 	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
 	const c = rectOf(dom, dom.document.getElementById("c")!);

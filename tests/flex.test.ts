@@ -599,8 +599,9 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 	function textItem(parent: Node, longest: number, full: number): Node {
 		const item = box(parent);
 		item.setMeasureFunc((width, widthMode) => {
-			if (widthMode === Flex.MEASURE_MODE_UNDEFINED)
+			if (widthMode === Flex.MEASURE_MODE_UNDEFINED) {
 				return {width: full, height: 1};
+			}
 			// Wrap into the offered width, but never below the longest single word.
 			const fitted = Math.max(longest, Math.min(full, width));
 			return {width: fitted, height: Math.ceil(full / Math.max(fitted, 1))};
@@ -692,7 +693,9 @@ describe("what a measurement produced, not only how big it was", () => {
 				current = candidate;
 			}
 		}
-		if (current) lines.push(current);
+		if (current) {
+			lines.push(current);
+		}
 		return lines;
 	}
 
@@ -701,11 +704,13 @@ describe("what a measurement produced, not only how big it was", () => {
 		const item = box(parent);
 		item.setMeasureFunc((width, widthMode, _height, _heightMode, placing) => {
 			const limit =
-				widthMode === Flex.MEASURE_MODE_UNDEFINED
-					? Number.MAX_SAFE_INTEGER
-					: width;
+				widthMode === Flex.MEASURE_MODE_UNDEFINED ?
+					Number.MAX_SAFE_INTEGER :
+					width;
 			const lines = breakWords(limit);
-			if (placing) placed.lines = lines;
+			if (placing) {
+				placed.lines = lines;
+			}
 			return {
 				width: Math.max(...lines.map((line) => line.length)),
 				height: lines.length,

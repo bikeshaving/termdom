@@ -36,8 +36,12 @@ const atRules = require("mdn-data/css/at-rules.json") as Record<
  * the custom-property placeholder are not properties an author can name.
  */
 function isSupported(name: string): boolean {
-	if (name === "--*") return false;
-	if (name.startsWith("-webkit-")) return true;
+	if (name === "--*") {
+		return false;
+	}
+	if (name.startsWith("-webkit-")) {
+		return true;
+	}
 	return !name.startsWith("-");
 }
 
@@ -54,13 +58,19 @@ for (const name of supported) {
 /** A shorthand's longhands, with nested shorthands (`border`) flattened out. */
 function flatten(name: string, seen = new Set<string>()): string[] {
 	const direct = directLonghands.get(name);
-	if (!direct || seen.has(name)) return [name];
+	if (!direct || seen.has(name)) {
+		return [name];
+	}
 	seen.add(name);
 	const out: string[] = [];
 	for (const part of direct) {
-		if (!supported.includes(part)) continue;
+		if (!supported.includes(part)) {
+			continue;
+		}
 		for (const leaf of flatten(part, seen)) {
-			if (!out.includes(leaf)) out.push(leaf);
+			if (!out.includes(leaf)) {
+				out.push(leaf);
+			}
 		}
 	}
 	return out.length > 0 ? out : [name];
@@ -106,8 +116,9 @@ for (const [shorthand, reset] of Object.entries(resetOnly)) {
  * every name that does not.
  */
 function propertyOrder(a: string, b: string): number {
-	if (a.startsWith("-") !== b.startsWith("-"))
+	if (a.startsWith("-") !== b.startsWith("-")) {
 		return a.startsWith("-") ? 1 : -1;
+	}
 	return a < b ? -1 : 1;
 }
 
@@ -129,13 +140,18 @@ shorthands["all"] = longhands.filter(
 const initials: Record<string, string> = {};
 for (const name of longhands) {
 	const initial = properties[name].initial;
-	if (typeof initial !== "string") continue;
-	if (/[A-Z]/.test(initial) && !initial.includes(" ")) continue;
+	if (typeof initial !== "string") {
+		continue;
+	}
+	if (/[A-Z]/.test(initial) && !initial.includes(" ")) {
+		continue;
+	}
 	if (
 		initial.includes(" ") &&
 		/^[a-z]+ [a-z]+ [a-z]+ [a-z]+ [a-z]/.test(initial)
-	)
+	) {
 		continue;
+	}
 	initials[name] = initial;
 }
 
@@ -169,7 +185,9 @@ for (const name of new Set([
 	]
 		.filter((descriptor) => !descriptor.includes("("))
 		.sort();
-	if (names.length > 0) descriptors[name] = names;
+	if (names.length > 0) {
+		descriptors[name] = names;
+	}
 }
 
 function list(values: readonly string[]): string {

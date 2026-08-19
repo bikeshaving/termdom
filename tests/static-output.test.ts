@@ -29,7 +29,9 @@ async function renderPiped(html: string, cols = 40): Promise<string> {
 		written.push(String(chunk));
 		// A real stdout invokes the callback once flushed, and TermDOM waits for it.
 		const done = typeof encoding === "function" ? encoding : callback;
-		if (typeof done === "function") (done as () => void)();
+		if (typeof done === "function") {
+			(done as () => void)();
+		}
 		return true;
 	};
 
@@ -42,7 +44,7 @@ async function renderPiped(html: string, cols = 40): Promise<string> {
 }
 
 test("piped output contains no terminal control sequences", async () => {
-	const output = await renderPiped(`<div>hello</div><div>world</div>`);
+	const output = await renderPiped("<div>hello</div><div>world</div>");
 
 	// Every one of these would be garbage in a file.
 	expect(output).not.toContain("\x1b[?25l"); // hide cursor
@@ -55,7 +57,7 @@ test("piped output contains no terminal control sequences", async () => {
 });
 
 test("piped output is the document, as plain lines", async () => {
-	const output = await renderPiped(`<div>hello</div><div>world</div>`);
+	const output = await renderPiped("<div>hello</div><div>world</div>");
 	const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
 
 	expect(lines[0]).toBe("hello");
@@ -66,7 +68,7 @@ test("layout still happens when piped -- a table is still a table", async () => 
 	// The layout engine does not care whether stdout is a terminal. Only the
 	// emitter does.
 	const output = await renderPiped(
-		`<table style="border-collapse:collapse"><tr><td>a</td><td>b</td></tr></table>`,
+		"<table style=\"border-collapse:collapse\"><tr><td>a</td><td>b</td></tr></table>",
 	);
 	const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
 
@@ -77,7 +79,7 @@ test("layout still happens when piped -- a table is still a table", async () => 
 
 test("lines are not padded out to the terminal width", async () => {
 	// A file should not be full of trailing spaces.
-	const output = await renderPiped(`<div>hi</div>`, 40);
+	const output = await renderPiped("<div>hi</div>", 40);
 	const line = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n")[0];
 
 	expect(line).toBe("hi");
@@ -102,7 +104,7 @@ test("wide characters keep their columns in static output", async () => {
 	// A wide grapheme occupies two buffer columns: its glyph cell and a
 	// continuation. The continuation must not ALSO print as a space, or every
 	// emoji shifts the rest of its line one column right.
-	const output = await renderPiped(`<div>🙂 ok</div><div>a🙂b end</div>`);
+	const output = await renderPiped("<div>🙂 ok</div><div>a🙂b end</div>");
 	const stripped = output.replace(/\x1b\[[0-9;]*m/g, "");
 
 	expect(stripped).toContain("🙂 ok");

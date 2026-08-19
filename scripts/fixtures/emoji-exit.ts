@@ -6,9 +6,9 @@ const term = new TermDOM();
 
 term.attach();
 term.document.body.innerHTML =
-	`<div>🙂 one wide</div>` +
-	`<div>a🙂b🎉c end-marker</div>` +
-	`<div>plain ascii row</div>`;
+	"<div>🙂 one wide</div>" +
+	"<div>a🙂b🎉c end-marker</div>" +
+	"<div>plain ascii row</div>";
 setTimeout(() => {
 	term.dispose();
 	process.exit(0);

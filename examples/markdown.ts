@@ -25,7 +25,9 @@ marked.use(
 	markedHighlight({
 		highlight(code: string, lang: string): string {
 			const grammar = Prism.languages[lang];
-			if (grammar) return Prism.highlight(code, grammar, lang);
+			if (grammar) {
+				return Prism.highlight(code, grammar, lang);
+			}
 			return code
 				.replace(/&/g, "&amp;")
 				.replace(/</g, "&lt;")
@@ -228,20 +230,20 @@ function updateStatus() {
 }
 updateStatus();
 const bindings: Record<string, () => void> = {
-	q: () => {
+	"q": () => {
 		term.window.close();
 	},
 	" ": () => window.scrollBy(0, page()),
-	f: () => window.scrollBy(0, page()),
-	PageDown: () => window.scrollBy(0, page()),
-	b: () => window.scrollBy(0, -page()),
-	PageUp: () => window.scrollBy(0, -page()),
-	j: () => window.scrollBy(0, 1),
-	ArrowDown: () => window.scrollBy(0, 1),
-	k: () => window.scrollBy(0, -1),
-	ArrowUp: () => window.scrollBy(0, -1),
-	g: () => window.scrollBy(0, -height()),
-	G: () => window.scrollBy(0, height()),
+	"f": () => window.scrollBy(0, page()),
+	"PageDown": () => window.scrollBy(0, page()),
+	"b": () => window.scrollBy(0, -page()),
+	"PageUp": () => window.scrollBy(0, -page()),
+	"j": () => window.scrollBy(0, 1),
+	"ArrowDown": () => window.scrollBy(0, 1),
+	"k": () => window.scrollBy(0, -1),
+	"ArrowUp": () => window.scrollBy(0, -1),
+	"g": () => window.scrollBy(0, -height()),
+	"G": () => window.scrollBy(0, height()),
 };
 document.addEventListener("keydown", (event: Event) => {
 	bindings[(event as KeyboardEvent).key]?.();

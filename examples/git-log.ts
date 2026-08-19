@@ -82,13 +82,17 @@ function makeRow(c: (typeof commits)[number]): HTMLElement {
 	return row;
 }
 
-for (const c of commits) listEl.appendChild(makeRow(c));
+for (const c of commits) {
+	listEl.appendChild(makeRow(c));
+}
 
 // Built detail blocks ride along on their row, so re-expanding is free.
 const detailsOf = new WeakMap<HTMLElement, HTMLElement>();
 
 function expand(row: HTMLElement): void {
-	if (row.dataset.open === "true") return;
+	if (row.dataset.open === "true") {
+		return;
+	}
 	let details = detailsOf.get(row);
 	if (!details) {
 		details = document.createElement("div");
@@ -113,7 +117,9 @@ function expand(row: HTMLElement): void {
 }
 
 function collapse(row: HTMLElement): void {
-	if (row.dataset.open !== "true") return;
+	if (row.dataset.open !== "true") {
+		return;
+	}
 	detailsOf.get(row)?.remove();
 	row.dataset.open = "false";
 }
@@ -133,7 +139,9 @@ function select(index: number): void {
 
 async function refresh(): Promise<void> {
 	rows()[selected]?.scrollIntoView();
-	if (selected === 0) window.scrollBy(0, -document.body.scrollHeight);
+	if (selected === 0) {
+		window.scrollBy(0, -document.body.scrollHeight);
+	}
 	await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 }
 
@@ -151,10 +159,13 @@ document.addEventListener("keydown", (event: Event) => {
 	} else if (key === "G") {
 		select(rows().length - 1);
 	} else if (key === "Enter" || key === "l" || key === "ArrowRight") {
-		if (current)
+		if (current) {
 			current.dataset.open === "true" ? collapse(current) : expand(current);
+		}
 	} else if (key === "h" || key === "ArrowLeft") {
-		if (current) collapse(current);
+		if (current) {
+			collapse(current);
+		}
 	} else {
 		return;
 	}
@@ -163,7 +174,9 @@ document.addEventListener("keydown", (event: Event) => {
 
 document.addEventListener("click", (event: Event) => {
 	const row = (event.target as Element).closest(".row") as HTMLElement | null;
-	if (!row) return;
+	if (!row) {
+		return;
+	}
 	select(rows().indexOf(row));
 	row.dataset.open === "true" ? collapse(row) : expand(row);
 	void refresh();

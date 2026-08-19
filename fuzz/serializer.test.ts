@@ -53,14 +53,14 @@ const RAW_TEXT = [
 
 /** Attribute values, where quoting and escaping differ from text. */
 const ATTRIBUTES = [
-	`<div title="a&quot;b"></div>`,
-	`<div title='a<b'></div>`,
-	`<div title="a&amp;b"></div>`,
-	`<div title="a&nbsp;b"></div>`,
-	`<div title="a'b"></div>`,
-	`<div title=unquoted></div>`,
-	`<div data-x></div>`,
-	`<div title="&"></div>`,
+	"<div title=\"a&quot;b\"></div>",
+	"<div title='a<b'></div>",
+	"<div title=\"a&amp;b\"></div>",
+	"<div title=\"a&nbsp;b\"></div>",
+	"<div title=\"a'b\"></div>",
+	"<div title=unquoted></div>",
+	"<div data-x></div>",
+	"<div title=\"&\"></div>",
 ];
 
 const COMMENTS = [
@@ -132,7 +132,9 @@ test("innerHTML reaches a fixpoint after one round trip", async () => {
 	try {
 		await fc.assert(
 			fc.asyncProperty(documentArbitrary, async (markup: string) => {
-				if (served++ % 50 === 0) fresh();
+				if (served++ % 50 === 0) {
+					fresh();
+				}
 				host.innerHTML = markup;
 				const once = host.innerHTML;
 				host.innerHTML = once;
@@ -140,8 +142,8 @@ test("innerHTML reaches a fixpoint after one round trip", async () => {
 				if (once !== twice) {
 					throw new Error(
 						`markup: ${JSON.stringify(markup)}\n` +
-							`once:   ${JSON.stringify(once)}\n` +
-							`twice:  ${JSON.stringify(twice)}`,
+						`once:   ${JSON.stringify(once)}\n` +
+						`twice:  ${JSON.stringify(twice)}`,
 					);
 				}
 			}),

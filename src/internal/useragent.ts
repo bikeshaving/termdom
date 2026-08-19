@@ -64,11 +64,15 @@ function splitComponents(value: string): string[] {
 	let start = 0;
 	for (let i = 0; i <= value.length; i++) {
 		const char = value[i];
-		if (char === "(") depth++;
-		else if (char === ")") depth--;
-		else if ((i === value.length || /\s/.test(char)) && depth === 0) {
+		if (char === "(") {
+			depth++;
+		} else if (char === ")") {
+			depth--;
+		} else if ((i === value.length || /\s/.test(char)) && depth === 0) {
 			const component = value.slice(start, i).trim();
-			if (component) components.push(component);
+			if (component) {
+				components.push(component);
+			}
 			start = i + 1;
 		}
 	}
@@ -89,10 +93,13 @@ function splitLineValue(value: string): {
 	let lineStyle: string | null = null;
 	let color: string | null = null;
 	for (const token of splitComponents(value)) {
-		if (BORDER_STYLE_KEYWORDS.has(token)) lineStyle = token;
-		else if (/^[\d.]/.test(token) || LINE_WIDTH_KEYWORDS.has(token)) {
+		if (BORDER_STYLE_KEYWORDS.has(token)) {
+			lineStyle = token;
+		} else if (/^[\d.]/.test(token) || LINE_WIDTH_KEYWORDS.has(token)) {
 			width = token;
-		} else if (token) color = token;
+		} else if (token) {
+			color = token;
+		}
 	}
 	return {width, lineStyle, color};
 }
@@ -125,8 +132,11 @@ function expandFlexFlow(value: string): Record<string, string> {
 	};
 	for (const token of splitComponents(value)) {
 		const keyword = token.toLowerCase();
-		if (FLEX_DIRECTIONS.has(keyword)) out["flex-direction"] = keyword;
-		else if (FLEX_WRAPS.has(keyword)) out["flex-wrap"] = keyword;
+		if (FLEX_DIRECTIONS.has(keyword)) {
+			out["flex-direction"] = keyword;
+		} else if (FLEX_WRAPS.has(keyword)) {
+			out["flex-wrap"] = keyword;
+		}
 	}
 	return out;
 }
@@ -153,7 +163,9 @@ function expandPlace(
 			values.push(token);
 		}
 	}
-	if (values.length === 0) return {};
+	if (values.length === 0) {
+		return {};
+	}
 	return {[block]: values[0], [inline]: values[1] ?? values[0]};
 }
 
@@ -180,16 +192,22 @@ function expandFlex(value: string): Record<string, string> | null {
 	let basis: string | undefined;
 	for (const token of v.split(/\s+/)) {
 		if (/^[\d.]+$/.test(token)) {
-			if (grow === undefined) grow = token;
-			else if (shrink === undefined) shrink = token;
-			else return null;
+			if (grow === undefined) {
+				grow = token;
+			} else if (shrink === undefined) {
+				shrink = token;
+			} else {
+				return null;
+			}
 		} else if (basis === undefined) {
 			basis = token;
 		} else {
 			return null;
 		}
 	}
-	if (grow === undefined && basis === undefined) return null;
+	if (grow === undefined && basis === undefined) {
+		return null;
+	}
 	return {
 		"flex-grow": grow ?? "1",
 		"flex-shrink": shrink ?? "1",
@@ -206,7 +224,9 @@ function expandFlex(value: string): Record<string, string> | null {
 function expandListStyle(value: string): Record<string, string> {
 	const parts: Record<string, string> = {};
 	for (const token of value.trim().split(/\s+/)) {
-		if (!token) continue;
+		if (!token) {
+			continue;
+		}
 		if (LIST_STYLE_POSITIONS.has(token)) {
 			parts["list-style-position"] = token;
 		} else if (token.startsWith("url(")) {
@@ -261,14 +281,26 @@ function expandBorderImage(value: string): Record<string, string> {
 	const slice: string[] = [];
 	const repeat: string[] = [];
 	for (const token of splitComponents(groups[0] ?? "")) {
-		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) repeat.push(token);
-		else if (IMAGE_VALUE.test(token)) out["border-image-source"] = token;
-		else slice.push(token);
+		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) {
+			repeat.push(token);
+		} else if (IMAGE_VALUE.test(token)) {
+			out["border-image-source"] = token;
+		} else {
+			slice.push(token);
+		}
 	}
-	if (slice.length > 0) out["border-image-slice"] = slice.join(" ");
-	if (repeat.length > 0) out["border-image-repeat"] = repeat.join(" ");
-	if (groups[1]) out["border-image-width"] = groups[1];
-	if (groups[2]) out["border-image-outset"] = groups[2];
+	if (slice.length > 0) {
+		out["border-image-slice"] = slice.join(" ");
+	}
+	if (repeat.length > 0) {
+		out["border-image-repeat"] = repeat.join(" ");
+	}
+	if (groups[1]) {
+		out["border-image-width"] = groups[1];
+	}
+	if (groups[2]) {
+		out["border-image-outset"] = groups[2];
+	}
 	return out;
 }
 
@@ -281,7 +313,9 @@ function expandBorderImage(value: string): Record<string, string> {
 function expandBorderRadius(value: string): Record<string, string> {
 	const [across, down] = value.split("/");
 	const horizontal = splitComponents(across ?? "");
-	if (horizontal.length === 0) return {};
+	if (horizontal.length === 0) {
+		return {};
+	}
 	const vertical = down === undefined ? horizontal : splitComponents(down);
 	const horizontalCorners = perEdge(horizontal);
 	const verticalCorners = perEdge(
@@ -327,7 +361,9 @@ export function expandShorthands(
 				const {width, lineStyle, color} = splitLineValue(value);
 				setEdges("width", [width ?? "medium"]);
 				setEdges("style", [lineStyle ?? "none"]);
-				if (color) setEdges("color", [color]);
+				if (color) {
+					setEdges("color", [color]);
+				}
 				break;
 			}
 			case "border-image":
@@ -344,7 +380,9 @@ export function expandShorthands(
 				break;
 			case "border-radius": {
 				const corners = expandBorderRadius(value);
-				if (Object.keys(corners).length === 0) break;
+				if (Object.keys(corners).length === 0) {
+					break;
+				}
 				Object.assign(out, corners);
 				// The shorthand itself is serialized from these on read.
 				continue;
@@ -357,14 +395,18 @@ export function expandShorthands(
 				const {width, lineStyle, color} = splitLineValue(value);
 				out[`border-${edge}-width`] = width ?? "medium";
 				out[`border-${edge}-style`] = lineStyle ?? "none";
-				if (color) out[`border-${edge}-color`] = color;
+				if (color) {
+					out[`border-${edge}-color`] = color;
+				}
 				break;
 			}
 			case "outline": {
 				const {width, lineStyle, color} = splitLineValue(value);
 				out["outline-width"] = width ?? "medium";
 				out["outline-style"] = lineStyle ?? "none";
-				if (color) out["outline-color"] = color;
+				if (color) {
+					out["outline-color"] = color;
+				}
 				break;
 			}
 			// The flow-relative pairs (css-logical-1 §4): one value for both
@@ -393,7 +435,9 @@ export function expandShorthands(
 				for (const end of AXIS_ENDS) {
 					out[`border-${axis}-${end}-width`] = width ?? "medium";
 					out[`border-${axis}-${end}-style`] = lineStyle ?? "none";
-					if (color) out[`border-${axis}-${end}-color`] = color;
+					if (color) {
+						out[`border-${axis}-${end}-color`] = color;
+					}
 				}
 				break;
 			}
@@ -406,7 +450,9 @@ export function expandShorthands(
 				const {width, lineStyle, color} = splitLineValue(value);
 				out[`border-${edge}-width`] = width ?? "medium";
 				out[`border-${edge}-style`] = lineStyle ?? "none";
-				if (color) out[`border-${edge}-color`] = color;
+				if (color) {
+					out[`border-${edge}-color`] = color;
+				}
 				break;
 			}
 			// One line component across an axis: `border-inline-width: 1px 2px`.
@@ -483,7 +529,9 @@ export function expandShorthands(
 						/^(none|underline|overline|line-through|blink)$/.test(token),
 					)
 					.join(" ");
-				if (line) out["text-decoration-line"] = line;
+				if (line) {
+					out["text-decoration-line"] = line;
+				}
 				break;
 			}
 		}
@@ -497,7 +545,7 @@ export function expandShorthands(
  * CSS specification defaults for properties
  */
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
-	display: "inline",
+	"display": "inline",
 	"margin-top": "0",
 	"margin-right": "0",
 	"margin-bottom": "0",
@@ -522,7 +570,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
 	"background-color": "transparent",
-	color: "#000000",
+	"color": "#000000",
 	// One cell tall: the terminal's font is the grid, and a length written in
 	// em is a length written in cells.
 	"font-size": "1px",
@@ -530,10 +578,10 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"font-style": "normal",
 	"text-decoration": "none",
 	"white-space": "normal",
-	overflow: "visible",
-	position: "static",
-	width: "auto",
-	height: "auto",
+	"overflow": "visible",
+	"position": "static",
+	"width": "auto",
+	"height": "auto",
 	"box-sizing": "border-box",
 	// Terminal-optimized flexbox defaults
 	// Container properties
@@ -542,7 +590,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"justify-content": "flex-start",
 	"align-items": "stretch",
 	"align-content": "flex-start",
-	gap: "0",
+	"gap": "0",
 	"row-gap": "0",
 	"column-gap": "0",
 	// Item properties
@@ -550,7 +598,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"flex-shrink": "1",
 	"flex-basis": "auto",
 	"align-self": "auto",
-	order: "0",
+	"order": "0",
 };
 
 // ---- Terminal element defaults ----
@@ -588,7 +636,7 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 		padding: "0 1ch",
 	},
 	legend: {
-		display: "block",
+		"display": "block",
 		"margin-top": "-1px",
 		"font-weight": "bold",
 	},
@@ -603,42 +651,42 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	h5: {display: "block"},
 	h6: {display: "block"},
 	header: {display: "block"},
-	hr: {display: "block", "border-top": "1px solid"},
+	hr: {"display": "block", "border-top": "1px solid"},
 	html: {display: "block"},
 	li: {display: "list-item"},
 	main: {display: "block"},
 	nav: {display: "block"},
-	ol: {display: "block", "padding-left": "4ch"},
+	ol: {"display": "block", "padding-left": "4ch"},
 	p: {display: "block"},
-	pre: {display: "block", "white-space": "pre"},
+	pre: {"display": "block", "white-space": "pre"},
 	// A gauge is a flat field in the input family, sized like a browser's own
 	// unstyled progress bar: a fixed track the fill is a fraction of.
-	progress: {display: "inline-block", width: "10ch", "white-space": "pre"},
-	meter: {display: "inline-block", width: "10ch", "white-space": "pre"},
+	progress: {"display": "inline-block", "width": "10ch", "white-space": "pre"},
+	meter: {"display": "inline-block", "width": "10ch", "white-space": "pre"},
 	section: {display: "block"},
-	ul: {display: "block", "padding-left": "4ch"},
+	ul: {"display": "block", "padding-left": "4ch"},
 
 	// Inline elements
 	a: {display: "inline"},
 	abbr: {display: "inline"},
-	b: {display: "inline", "font-weight": "bold"},
+	b: {"display": "inline", "font-weight": "bold"},
 	br: {display: "inline"},
-	cite: {display: "inline", "font-style": "italic"},
-	code: {display: "inline", "background-color": "rgba(0, 0, 0, 0.1)"},
-	dfn: {display: "inline", "font-style": "italic"},
-	em: {display: "inline", "font-style": "italic"},
-	i: {display: "inline", "font-style": "italic"},
+	cite: {"display": "inline", "font-style": "italic"},
+	code: {"display": "inline", "background-color": "rgba(0, 0, 0, 0.1)"},
+	dfn: {"display": "inline", "font-style": "italic"},
+	em: {"display": "inline", "font-style": "italic"},
+	i: {"display": "inline", "font-style": "italic"},
 	// A key is a keycap: bold text inside brackets, "[q]", the form every
 	// terminal help screen and man page uses for a key to press. A browser
 	// draws the cap with a border and a monospace face; a terminal is already
 	// monospace and cannot afford a box around one glyph, so the brackets are
 	// the cap. They are UA ::before/::after rules in the UA document
 	// stylesheet, so author content rules replace them.
-	kbd: {display: "inline", "font-weight": "bold"},
+	kbd: {"display": "inline", "font-weight": "bold"},
 	label: {display: "inline"},
 	mark: {display: "inline"},
 	q: {display: "inline"},
-	s: {display: "inline", "text-decoration": "line-through"},
+	s: {"display": "inline", "text-decoration": "line-through"},
 	samp: {display: "inline"},
 	// As in browsers: a slot generates no box of its own -- its projected
 	// (or fallback) content is spliced into the parent's child sequence by
@@ -646,14 +694,14 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// still works for inherited properties, exactly the browser behavior.
 	slot: {display: "contents"},
 	// SGR faint is the terminal's small: same glyph cells, reduced ink.
-	small: {display: "inline", "font-weight": "lighter"},
+	small: {"display": "inline", "font-weight": "lighter"},
 	span: {display: "inline"},
-	strong: {display: "inline", "font-weight": "bold"},
+	strong: {"display": "inline", "font-weight": "bold"},
 	sub: {display: "inline"},
 	sup: {display: "inline"},
 	time: {display: "inline"},
-	u: {display: "inline", "text-decoration": "underline"},
-	var: {display: "inline", "font-style": "italic"},
+	u: {"display": "inline", "text-decoration": "underline"},
+	var: {"display": "inline", "font-style": "italic"},
 
 	// Terminal UI controls. The button joins the flat field family: no
 	// border (three rows and two columns per button, in a world of one-row
@@ -677,9 +725,9 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// a non-modal one, which has no backdrop clearing the viewport for it,
 	// still hide the content it covers rather than tangle with it.
 	dialog: {
-		display: "block",
-		border: "1px solid",
-		padding: "0 1ch",
+		"display": "block",
+		"border": "1px solid",
+		"padding": "0 1ch",
 		"background-color": "Canvas",
 	},
 	// A text input is a flat field: bare when blurred (dim placeholder and
@@ -695,8 +743,8 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// Width mirrors the browser's own size=20 default. This is the UA
 	// baseline, deliberately lightweight; authors who want chrome add it.
 	input: {
-		display: "inline-block",
-		width: "20ch",
+		"display": "inline-block",
+		"width": "20ch",
 		// A field's value never wraps or collapses -- runs of spaces are
 		// real content, and the painter's scroll-window handles overflow.
 		"white-space": "pre",
@@ -705,7 +753,7 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// label plus a dim indicator, underlined when focused (see
 	// getElementDefaults for the dynamic width and focus underline).
 	select: {
-		display: "inline-block",
+		"display": "inline-block",
 		"white-space": "pre",
 	},
 	// A textarea preserves newlines and soft-wraps at its edge, exactly the
@@ -714,9 +762,9 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// and break-word (the browser's own textarea UA rule) is what makes a
 	// long unbroken word wrap at the field edge instead of escaping it.
 	textarea: {
-		display: "inline-block",
-		border: "1px solid",
-		padding: "0 1ch",
+		"display": "inline-block",
+		"border": "1px solid",
+		"padding": "0 1ch",
 		"white-space": "pre-wrap",
 		"overflow-wrap": "break-word",
 	},
@@ -725,10 +773,10 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	caption: {display: "table-caption"},
 	col: {display: "table-column"},
 	colgroup: {display: "table-column-group"},
-	table: {display: "table", "border-collapse": "collapse"},
+	table: {"display": "table", "border-collapse": "collapse"},
 	tbody: {display: "table-row-group"},
 	td: {
-		display: "table-cell",
+		"display": "table-cell",
 		"border-top-width": "1px",
 		"border-right-width": "1px",
 		"border-bottom-width": "1px",
@@ -742,7 +790,7 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	},
 	tfoot: {display: "table-footer-group"},
 	th: {
-		display: "table-cell",
+		"display": "table-cell",
 		"border-top-width": "1px",
 		"border-right-width": "1px",
 		"border-bottom-width": "1px",
@@ -791,7 +839,9 @@ export function getElementDefaults(
 	// The sheet is HTML's. An element of the same local name in another
 	// namespace -- the <select> a stray `<svg>` puts its children under -- is
 	// not that element and has none of its interface.
-	if (element.namespaceURI !== HTML_NAMESPACE) return undefined;
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return undefined;
+	}
 	const name = element.localName;
 	const document = element.ownerDocument;
 	// The browser's UA :fullscreen treatment: the fullscreen element fills
@@ -806,11 +856,11 @@ export function getElementDefaults(
 				// The browser's :fullscreen block: fixed at the viewport
 				// origin, viewport-sized, opaque over the document (Canvas =
 				// the terminal's own background, the ::backdrop stand-in).
-				position: "fixed",
-				top: "0px",
-				left: "0px",
-				width: `${window.innerWidth}ch`,
-				height: `${window.innerHeight}px`,
+				"position": "fixed",
+				"top": "0px",
+				"left": "0px",
+				"width": `${window.innerWidth}ch`,
+				"height": `${window.innerHeight}px`,
 				"background-color": "Canvas",
 			};
 		}
@@ -858,9 +908,9 @@ export function getElementDefaults(
 		if (input.type === "checkbox" || input.type === "radio") {
 			// The compact glyph is bare when blurred; focus underlines it --
 			// same live-wire language as the text field.
-			return focused
-				? {...CHECKBOX_DEFAULTS, "text-decoration-line": "underline"}
-				: CHECKBOX_DEFAULTS;
+			return focused ?
+					{...CHECKBOX_DEFAULTS, "text-decoration-line": "underline"} :
+				CHECKBOX_DEFAULTS;
 		}
 		// The size attribute drives a text input's default width, one column
 		// per character position, exactly as a browser sizes an unstyled

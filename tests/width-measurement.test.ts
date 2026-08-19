@@ -74,22 +74,30 @@ function scriptTerminal(
 	stdout.write = (...args: unknown[]) => {
 		const data = String(args[0]);
 		written.push(data);
-		if (!data.includes("\x1b[6n")) return original(...args);
+		if (!data.includes("\x1b[6n")) {
+			return original(...args);
+		}
 
 		const count = data.split("\x1b[6n").length - 1;
 		const replies: string[] = [];
 		for (let i = 0; i < count; i++) {
 			const answer = reply(probes++);
-			if (answer !== null) replies.push(answer);
+			if (answer !== null) {
+				replies.push(answer);
+			}
 		}
 		if (replies.length > 0) {
 			setTimeout(() => stdin.simulateResponse(replies.join("")), 0);
 		}
 
 		const rest = data.split("\x1b[6n").join("");
-		if (rest) return original(rest, ...args.slice(1));
+		if (rest) {
+			return original(rest, ...args.slice(1));
+		}
 		const callback = args.find((arg) => typeof arg === "function");
-		if (callback) (callback as () => void)();
+		if (callback) {
+			(callback as () => void)();
+		}
 		return true;
 	};
 
@@ -292,7 +300,7 @@ test("a terminal that agrees is asked once and nothing repaints", async () => {
 	// 1-based, which is what the tables predicted.
 	const script = scriptTerminal(terminal, () => "\x1b[1;3R");
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>\u{1F325}️</div>`; // 🌥️
+	dom.document.body.innerHTML = "<div>\u{1F325}️</div>"; // 🌥️
 
 	await nextFrame(dom);
 	await settle();
@@ -479,7 +487,7 @@ test("a terminal that never answers is asked once and then left alone", async ()
 	const terminal = new MockProcess({cols: 20, rows: 6});
 	const script = scriptTerminal(terminal, () => null);
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>\u{1F32A}️</div>`; // 🌪️
+	dom.document.body.innerHTML = "<div>\u{1F32A}️</div>"; // 🌪️
 
 	await nextFrame(dom);
 	expect(script.probeCount()).toBe(1);
@@ -487,7 +495,7 @@ test("a terminal that never answers is asked once and then left alone", async ()
 	// Past the no-reply timeout, probing is off for the session: a cluster the
 	// frame has never seen before goes unasked.
 	await settle(2100);
-	dom.document.body.innerHTML = `<div>\u{1F32B}️</div>`; // 🌫️
+	dom.document.body.innerHTML = "<div>\u{1F32B}️</div>"; // 🌫️
 	await nextFrame(dom);
 	await settle();
 
@@ -554,9 +562,13 @@ test("a terminal that measures in grapheme clusters is not asked at all", async 
 				agreed();
 			}, 0);
 			const rest = data.replace("\x1b[?2027h", "").replace("\x1b[?2027$p", "");
-			if (rest) return original(rest, ...args.slice(1));
+			if (rest) {
+				return original(rest, ...args.slice(1));
+			}
 			const callback = args.find((arg) => typeof arg === "function");
-			if (callback) (callback as () => void)();
+			if (callback) {
+				(callback as () => void)();
+			}
 			return true;
 		}
 		return original(...args);
@@ -568,7 +580,7 @@ test("a terminal that measures in grapheme clusters is not asked at all", async 
 	await negotiated;
 	await settle();
 	written.length = 0;
-	dom.document.body.innerHTML = `<div>\u{1F32C}️</div>`; // 🌬️
+	dom.document.body.innerHTML = "<div>\u{1F32C}️</div>"; // 🌬️
 	await nextFrame(dom);
 	await settle();
 
@@ -604,7 +616,7 @@ test("a transport with no terminal behind it is never probed", async () => {
 		},
 	});
 
-	dom.document.body.innerHTML = `<div>\u{1F32D}</div>`; // 🌭
+	dom.document.body.innerHTML = "<div>\u{1F32D}</div>"; // 🌭
 	await dom.attach();
 	await settle();
 

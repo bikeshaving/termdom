@@ -64,9 +64,9 @@ function update(): void {
 	counter.textContent = `${headline.length}/50`;
 	counter.className = over ? "counter over" : "counter";
 	const bodyLines = body.value ? body.value.split("\n").length : 0;
-	status.textContent = subject.value
-		? `→ ${headline}${bodyLines ? `  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})` : ""}`
-		: "";
+	status.textContent = subject.value ?
+		`→ ${headline}${bodyLines ? `  (+${bodyLines} body line${bodyLines === 1 ? "" : "s"})` : ""}` :
+		"";
 }
 
 type.addEventListener("change", update);

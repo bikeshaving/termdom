@@ -168,7 +168,7 @@ test("document mode waits for cursor detection so the anchor never shifts", asyn
 	// NOT await it -- the render must, which is the fix. (detectCursor defaults off
 	// for a non-real process, so enable it to exercise the path.)
 	const dom = new TermDOM({transport: terminal.sharedTransport});
-	dom.document.body.innerHTML = `<div id="a">A-0</div><div id="b">B</div>`;
+	dom.document.body.innerHTML = "<div id=\"a\">A-0</div><div id=\"b\">B</div>";
 	await nextFrame(dom);
 
 	// A second frame, well after detection has resolved.
@@ -201,7 +201,7 @@ test("a render arriving mid-frame is coalesced, not dropped", async () => {
 	const terminal = new MockProcess({rows: 20, cols: 40});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
-		`<div id="dyn">frame 0</div>` +
+		"<div id=\"dyn\">frame 0</div>" +
 		Array.from({length: 8}, (_, i) => `<div>static ${i + 1}</div>`).join("");
 	await nextFrame(dom);
 
@@ -232,8 +232,8 @@ test("culling never drops an absolute child positioned far from its parent", asy
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
-		`<div style="position:relative">top row` +
-		`<div style="position:absolute;top:45ch;left:0">ABS-DEEP</div></div>` +
+		"<div style=\"position:relative\">top row" +
+		"<div style=\"position:absolute;top:45ch;left:0\">ABS-DEEP</div></div>" +
 		Array.from({length: 58}, (_, i) => `<div>row ${i + 1}</div>`).join("");
 	await nextFrame(dom);
 
@@ -290,14 +290,14 @@ test("growing past the prompt keeps the diff aligned with the screen", async () 
 
 test("close() seals the document into scrollback; a later mutation starts a fresh block below", async () => {
 	const {terminal, dom} = await withPriorOutput();
-	dom.document.body.innerHTML = `<div>first block</div>`;
+	dom.document.body.innerHTML = "<div>first block</div>";
 	await nextFrame(dom);
 
 	// close() flushes the live region to scrollback and freezes it -- res.end().
 	dom.document.close();
 
 	// A new mutation is a fresh document, rendered below the sealed block.
-	dom.document.body.innerHTML = `<div>second block</div>`;
+	dom.document.body.innerHTML = "<div>second block</div>";
 	await nextFrame(dom);
 
 	// The prior command's output, the sealed block, and the new block all survive;

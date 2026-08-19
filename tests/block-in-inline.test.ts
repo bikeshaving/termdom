@@ -27,7 +27,7 @@ async function render(html: string, cols = 40, rows = 8) {
 }
 
 test("an inline breaks into fragments around a block-level child", async () => {
-	const {dom, lines} = await render(`<span>alpha<div>beta</div>gamma</span>`);
+	const {dom, lines} = await render("<span>alpha<div>beta</div>gamma</span>");
 
 	expect(lines().slice(0, 3)).toEqual(["alpha", "beta", "gamma"]);
 
@@ -35,7 +35,7 @@ test("an inline breaks into fragments around a block-level child", async () => {
 });
 
 test("a block-only inline still renders its block", async () => {
-	const {dom, lines} = await render(`<a href="#"><div>card</div></a>`);
+	const {dom, lines} = await render("<a href=\"#\"><div>card</div></a>");
 
 	// The leading fragment is empty, so the inline's own run measures zero
 	// height -- which is not a licence to cull the box the split handed to the
@@ -46,7 +46,7 @@ test("a block-only inline still renders its block", async () => {
 });
 
 test("fragments keep document order with content after the inline", async () => {
-	const {dom, lines} = await render(`<span>a<div>b</div>c</span>d`);
+	const {dom, lines} = await render("<span>a<div>b</div>c</span>d");
 
 	// "c" and "d" share a line: the trailing fragment continues past </span>.
 	expect(lines().slice(0, 3)).toEqual(["a", "b", "cd"]);
@@ -55,7 +55,7 @@ test("fragments keep document order with content after the inline", async () => 
 });
 
 test("nested inlines split at the same block", async () => {
-	const {dom, lines} = await render(`<span>a<em>b<div>c</div>d</em>e</span>`);
+	const {dom, lines} = await render("<span>a<em>b<div>c</div>d</em>e</span>");
 
 	expect(lines().slice(0, 3)).toEqual(["ab", "c", "de"]);
 
@@ -64,7 +64,7 @@ test("nested inlines split at the same block", async () => {
 
 test("fragments survive a rebuild", async () => {
 	const {dom, terminal, lines} = await render(
-		`<p>before<span>a<div>b</div>c</span>after</p>`,
+		"<p>before<span>a<div>b</div>c</span>after</p>",
 	);
 	const first = lines();
 	expect(first.slice(0, 3)).toEqual(["beforea", "b", "cafter"]);
@@ -89,7 +89,7 @@ test("fragments survive a rebuild", async () => {
 test("an inline-block child does not split its inline", async () => {
 	// It establishes its own formatting context, so it stays on the line.
 	const {dom, lines} = await render(
-		`<span>a<span style="display: inline-block">b</span>c</span>`,
+		"<span>a<span style=\"display: inline-block\">b</span>c</span>",
 	);
 
 	expect(lines()[0]).toBe("abc");
@@ -106,7 +106,7 @@ test("an inline-block child does not split its inline", async () => {
 
 test("an inline-block lays out block-level children inside itself", async () => {
 	const {dom, lines} = await render(
-		`<span style="display: inline-block"><div>one</div><div>two</div></span>`,
+		"<span style=\"display: inline-block\"><div>one</div><div>two</div></span>",
 	);
 
 	expect(lines().slice(0, 2)).toEqual(["one", "two"]);
@@ -116,7 +116,7 @@ test("an inline-block lays out block-level children inside itself", async () => 
 
 test("inline content around a block inside an inline-block still paints", async () => {
 	const {dom, lines} = await render(
-		`<div style="display: inline-block">before<p>block</p>after</div>`,
+		"<div style=\"display: inline-block\">before<p>block</p>after</div>",
 	);
 
 	// "before" is an anonymous block INSIDE the box, not part of the run the
@@ -129,7 +129,7 @@ test("inline content around a block inside an inline-block still paints", async 
 
 test("an inline-block shrinks to fit its block content", async () => {
 	const {dom, terminal, lines} = await render(
-		`<span style="display: inline-block; border: 1px solid"><div>one</div><div>two</div></span>`,
+		"<span style=\"display: inline-block; border: 1px solid\"><div>one</div><div>two</div></span>",
 	);
 
 	// Shrink-to-fit: three cells of content plus the border box.
@@ -143,7 +143,7 @@ test("an inline-block shrinks to fit its block content", async () => {
 
 test("a widget inside an inline-block's block content paints in place", async () => {
 	const {dom, terminal} = await render(
-		`<span style="display: inline-block"><p>x<input value="typed">tail</p></span>`,
+		"<span style=\"display: inline-block\"><p>x<input value=\"typed\">tail</p></span>",
 	);
 
 	const input = dom.document.querySelector("input")!;
@@ -160,7 +160,7 @@ test("an inline-block's content survives sitting inside another inline", async (
 	// Nested this way the box is a run MEMBER, and #addElementNode is never
 	// called on one, so its measurement is what gives it a content root.
 	const {dom, lines} = await render(
-		`<span><span style="display: inline-block"><p>deep</p></span> tail</span>`,
+		"<span><span style=\"display: inline-block\"><p>deep</p></span> tail</span>",
 	);
 
 	expect(lines()[0]).toBe("deep tail");
@@ -170,7 +170,7 @@ test("an inline-block's content survives sitting inside another inline", async (
 
 test("a widget in an inline-block does not take a box of its own", async () => {
 	const {dom, lines} = await render(
-		`heading<span style="display: inline-block"><input value="V"></span>`,
+		"heading<span style=\"display: inline-block\"><input value=\"V\"></span>",
 	);
 
 	// The run measures the box and everything in it. Manufacturing a layout
@@ -186,7 +186,7 @@ test("text between two blocks keeps its place in the order", async () => {
 	// holding the text sits between the two blocks. A box placed among its DOM
 	// siblings cannot see the anonymous boxes between them, so the second block
 	// was landing in the text's slot and rendering above it.
-	const {dom, lines} = await render(`<b><section>A</section>B<div>C</div></b>`);
+	const {dom, lines} = await render("<b><section>A</section>B<div>C</div></b>");
 
 	expect(lines().slice(0, 3)).toEqual(["A", "B", "C"]);
 
@@ -198,7 +198,7 @@ test("a block added to an inline breaks it, and rejoins it on removal", async ()
 	// changes a box list the inline itself never announces. Deferred to the
 	// re-add sweep, the block was hung off the nearest laid-out ancestor and
 	// never drawn at all.
-	const {dom, lines} = await render(`<section><em>A<b>B</b>C</em></section>`);
+	const {dom, lines} = await render("<section><em>A<b>B</b>C</em></section>");
 	expect(lines()[0]).toBe("ABC");
 
 	const block = dom.document.createElement("div");
@@ -219,7 +219,7 @@ test("a display: contents element added brings its children with it", async () =
 	// container has to be told to enumerate again, or the children it
 	// dissolves into are never boxed.
 	const {dom, lines} = await render(
-		`<style>.c { display: contents; }</style><div>A</div>`,
+		"<style>.c { display: contents; }</style><div>A</div>",
 	);
 	expect(lines()[0]).toBe("A");
 
@@ -239,7 +239,7 @@ test("an inline flex item holding a block is a block container", async () => {
 	// Measured as a run instead, its content ends at the first block inside it
 	// -- and everything from there on, which here is everything, is dropped.
 	const {dom, lines} = await render(
-		`<b style="display: flex"><span><p>X</p></span></b>`,
+		"<b style=\"display: flex\"><span><p>X</p></span></b>",
 	);
 
 	expect(lines()[0]).toBe("X");
@@ -252,9 +252,9 @@ test("an inline-block inside an inline-block takes a block child", async () => {
 	// own, and a block arriving there belongs to that box's children like any
 	// other.
 	const {dom, lines} = await render(
-		`<section style="display: inline-block">` +
-			`<b style="display: inline-block" id="s">A<div></div></b>` +
-			`</section>C`,
+		"<section style=\"display: inline-block\">" +
+		"<b style=\"display: inline-block\" id=\"s\">A<div></div></b>" +
+		"</section>C",
 	);
 	expect(lines()[0]).toBe("AC");
 

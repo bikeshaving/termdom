@@ -34,20 +34,20 @@ test("list-style-type comes from the computed value, not the tag name", async ()
 	// An `ol` can be bulleted and a `ul` can be numbered. Deriving the marker from
 	// the tag made both impossible.
 	expect(
-		await renderRows(`<ol style="list-style-type:disc"><li>A</li></ol>`),
+		await renderRows("<ol style=\"list-style-type:disc\"><li>A</li></ol>"),
 	).toEqual(["  • A"]);
 	expect(
-		await renderRows(`<ul style="list-style-type:decimal"><li>A</li></ul>`),
+		await renderRows("<ul style=\"list-style-type:decimal\"><li>A</li></ul>"),
 	).toEqual([" 1. A"]);
 });
 
 test("list-style-type: none suppresses the marker on ol as well as ul", async () => {
 	// Content still sits at the content edge; only the marker is gone.
 	expect(
-		await renderRows(`<ol style="list-style-type:none"><li>A</li></ol>`),
+		await renderRows("<ol style=\"list-style-type:none\"><li>A</li></ol>"),
 	).toEqual(["    A"]);
 	expect(
-		await renderRows(`<ul style="list-style-type:none"><li>A</li></ul>`),
+		await renderRows("<ul style=\"list-style-type:none\"><li>A</li></ul>"),
 	).toEqual(["    A"]);
 });
 
@@ -56,7 +56,7 @@ test("list-style-type on the li itself wins", async () => {
 	// the item overrides the list.
 	expect(
 		await renderRows(
-			`<ul><li>A</li><li style="list-style-type:square">B</li></ul>`,
+			"<ul><li>A</li><li style=\"list-style-type:square\">B</li></ul>",
 		),
 	).toEqual(["  • A", "  ▪ B"]);
 });
@@ -65,15 +65,17 @@ test("the list-style shorthand is expanded", async () => {
 	// An unexpanded `list-style` leaves list-style-type undeclared, and the
 	// default marker is drawn regardless of what the author wrote.
 	expect(
-		await renderRows(`<ul style="list-style: none"><li>A</li></ul>`),
+		await renderRows("<ul style=\"list-style: none\"><li>A</li></ul>"),
 	).toEqual(["    A"]);
 	expect(
-		await renderRows(`<ul style="list-style: square"><li>A</li></ul>`),
+		await renderRows("<ul style=\"list-style: square\"><li>A</li></ul>"),
 	).toEqual(["  ▪ A"]);
 	// Components may appear in any order, and a position keyword must not be
 	// mistaken for a type.
 	expect(
-		await renderRows(`<ul style="list-style: outside square"><li>A</li></ul>`),
+		await renderRows(
+			"<ul style=\"list-style: outside square\"><li>A</li></ul>",
+		),
 	).toEqual(["  ▪ A"]);
 });
 
@@ -81,7 +83,7 @@ test("nested lists cycle the bullet like a browser's UA stylesheet", async () =>
 	// disc, then circle, then square, and square from there down.
 	expect(
 		await renderRows(
-			`<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li></ul>`,
+			"<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li></ul>",
 		),
 	).toEqual([
 		"  • a",
@@ -96,7 +98,7 @@ test("alphabetic counters are bijective base-26", async () => {
 	// and wrapped straight back to "a" at 27.
 	expect(
 		await renderRows(
-			`<ol start="25" style="list-style-type:lower-alpha"><li>Y</li><li>Z</li><li>AA</li></ol>`,
+			"<ol start=\"25\" style=\"list-style-type:lower-alpha\"><li>Y</li><li>Z</li><li>AA</li></ol>",
 		),
 	).toEqual([" y. Y", " z. Z", "aa. AA"]);
 });
@@ -105,14 +107,14 @@ test("roman numerals fall back to decimal outside their range", async () => {
 	// toRoman(0) is the empty string, which rendered a bare ". Zero".
 	expect(
 		await renderRows(
-			`<ol start="0" style="list-style-type:lower-roman"><li>Zero</li></ol>`,
+			"<ol start=\"0\" style=\"list-style-type:lower-roman\"><li>Zero</li></ol>",
 		),
 	).toEqual([" 0. Zero"]);
 });
 
 test("an invalid start attribute falls back to 1", async () => {
 	// parseInt("abc") is NaN, which rendered a literal "NaN." marker.
-	expect(await renderRows(`<ol start="abc"><li>A</li></ol>`)).toEqual([
+	expect(await renderRows("<ol start=\"abc\"><li>A</li></ol>")).toEqual([
 		" 1. A",
 	]);
 });
@@ -120,14 +122,14 @@ test("an invalid start attribute falls back to 1", async () => {
 test("li value resets the counter and later items carry on from it", async () => {
 	expect(
 		await renderRows(
-			`<ol><li>One</li><li value="5">Five</li><li>Six</li></ol>`,
+			"<ol><li>One</li><li value=\"5\">Five</li><li>Six</li></ol>",
 		),
 	).toEqual([" 1. One", " 5. Five", " 6. Six"]);
 });
 
 test("ol reversed counts down", async () => {
 	expect(
-		await renderRows(`<ol reversed><li>a</li><li>b</li><li>c</li></ol>`),
+		await renderRows("<ol reversed><li>a</li><li>b</li><li>c</li></ol>"),
 	).toEqual([" 3. a", " 2. b", " 1. c"]);
 });
 
@@ -136,7 +138,7 @@ test("the gutter fits the widest marker, so wide markers keep their separator", 
 	// fixed 4-cell gutter: the item's text overwrote the space, giving "iii.Third".
 	expect(
 		await renderRows(
-			`<ol style="list-style-type:lower-roman"><li>One</li><li>Two</li><li>Three</li></ol>`,
+			"<ol style=\"list-style-type:lower-roman\"><li>One</li><li>Two</li><li>Three</li></ol>",
 		),
 	).toEqual(["  i. One", " ii. Two", "iii. Three"]);
 });
@@ -147,7 +149,7 @@ test("the gutter is measured in cells, not code units", async () => {
 	// character.
 	expect(
 		await renderRows(
-			`<style>li::marker{content:"日本 ";}</style><ul><li>First</li></ul>`,
+			"<style>li::marker{content:\"日本 \";}</style><ul><li>First</li></ul>",
 		),
 	).toEqual(["日本 First"]);
 });
@@ -157,7 +159,7 @@ test("a custom ::marker content is what the gutter is sized to", async () => {
 	// drew the ::marker content, so any custom marker overran it.
 	expect(
 		await renderRows(
-			`<style>li::marker{content:">>>>>> ";}</style><ul><li>First</li></ul>`,
+			"<style>li::marker{content:\">>>>>> \";}</style><ul><li>First</li></ul>",
 		),
 	).toEqual([">>>>>> First"]);
 });
@@ -167,7 +169,7 @@ test("counter() in ::marker content keeps its quotes out of the output", async (
 	// whole value was one quoted string left literal `"` characters in the marker.
 	expect(
 		await renderRows(
-			`<style>li::marker{content:counter(list-item) ") ";}</style><ol><li>First</li></ol>`,
+			"<style>li::marker{content:counter(list-item) \") \";}</style><ol><li>First</li></ol>",
 		),
 	).toEqual([" 1) First"]);
 });
@@ -179,7 +181,7 @@ test("counter() past 26 spells the ordinal list-style-type would", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const items = Array.from({length: 27}, () => "<li>x</li>").join("");
 	dom.document.body.innerHTML =
-		`<style>li::marker{content:counter(list-item, lower-latin) ". ";}</style>` +
+		"<style>li::marker{content:counter(list-item, lower-latin) \". \";}</style>" +
 		`<ol>${items}</ol>`;
 	await nextFrame(dom);
 	const rows = stripControlCodes(terminal.getStaticANSI())
@@ -202,7 +204,7 @@ test("the gutter is recomputed when items are added", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
-	document.body.innerHTML = `<ol style="list-style-type:lower-roman"><li>one</li><li>two</li><li>three</li></ol>`;
+	document.body.innerHTML = "<ol style=\"list-style-type:lower-roman\"><li>one</li><li>two</li><li>three</li></ol>";
 	await nextFrame(dom);
 
 	const list = document.querySelector("ol")!;
@@ -226,7 +228,7 @@ test("the gutter is recomputed when items are added", async () => {
 test("::marker inherits color from its list item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<ul><li style="color:green">A</li></ul>`;
+	dom.document.body.innerHTML = "<ul><li style=\"color:green\">A</li></ul>";
 	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 	dom.dispose();

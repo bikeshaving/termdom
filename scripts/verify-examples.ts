@@ -67,7 +67,9 @@ function rendered(text: string, command: string): boolean {
 async function awaitRender(command: string): Promise<string> {
 	for (let waited = 0; waited < 10000; waited += 500) {
 		const text = capture();
-		if (rendered(text, command)) return text;
+		if (rendered(text, command)) {
+			return text;
+		}
 		await sleep(500);
 	}
 	return capture();
@@ -129,7 +131,9 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 };
 
 for (const file of readdirSync("examples").sort()) {
-	if (!file.endsWith(".ts")) continue;
+	if (!file.endsWith(".ts")) {
+		continue;
+	}
 	const command = `node examples/${file}`;
 	const interact = INTERACTIVE[file];
 	checks.push({
@@ -153,7 +157,9 @@ for (const file of readdirSync("examples").sort()) {
 
 // A WPT harness cache in the working tree pollutes examples that index it.
 const wptAside = existsSync(".wpt");
-if (wptAside) execSync("mv .wpt /tmp/verify-examples-wpt-aside");
+if (wptAside) {
+	execSync("mv .wpt /tmp/verify-examples-wpt-aside");
+}
 
 let failed = 0;
 for (const check of checks) {
@@ -166,6 +172,8 @@ for (const check of checks) {
 	}
 }
 tmux(`kill-session -t ${SESSION} 2>/dev/null`);
-if (wptAside) execSync("mv /tmp/verify-examples-wpt-aside .wpt");
+if (wptAside) {
+	execSync("mv /tmp/verify-examples-wpt-aside .wpt");
+}
 console.log(`\n${checks.length - failed}/${checks.length} examples verified`);
 process.exit(failed === 0 ? 0 : 1);

@@ -48,7 +48,7 @@ function* PasswordStrength(this: Context) {
 
 	// Idiomatic Crank: this yields the component's props each iteration; {}
 	// says none are used.
-	// eslint-disable-next-line no-empty-pattern
+
 	for ({} of this) {
 		yield jsx`
 			<div class="card">
