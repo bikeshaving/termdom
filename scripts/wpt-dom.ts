@@ -22,6 +22,7 @@ import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
+import type * as DOM from "../src/internal/dom.ts";
 
 /**
  * A test file's DOM.
@@ -31,7 +32,7 @@ import type {Document} from "../src/internal/dom.ts";
  * that prototype tampered with for every file after it. In a browser each file
  * is its own realm; here a fresh module evaluation is the same isolation.
  */
-type DOMModule = typeof import("../src/internal/dom.ts");
+type DOMModule = typeof DOM;
 
 let moduleCounter = 0;
 

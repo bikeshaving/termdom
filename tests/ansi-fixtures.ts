@@ -8,6 +8,7 @@
  */
 
 import {Screen, type ColorDepth, type CellStyle} from "../src/internal/ansi.js";
+import type {DrawingContext} from "../src/internal/ansi.js";
 import {drawBox} from "../src/internal/ansi.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
@@ -324,7 +325,7 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(10, 24, "rgb");
 			const paint =
 				(top: number) =>
-					(ctx: import("../src/internal/ansi.js").DrawingContext) => {
+					(ctx: DrawingContext) => {
 						for (let row = 0; row < 10; row++) {
 							ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
 								fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,

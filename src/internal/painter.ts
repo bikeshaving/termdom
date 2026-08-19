@@ -13,6 +13,7 @@ import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 import {drawBox} from "./ansi.js";
+import type {CellStyle, DrawingContext, LineStyle} from "./ansi.js";
 
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
@@ -159,7 +160,7 @@ function backgroundFill(value: string): number | "default" | "inverse" | null {
  */
 function cellStyleFromComputed(
 	computedStyle: ComputedStyle,
-): import("./ansi.js").CellStyle {
+): CellStyle {
 	const color = computedStyle.computedValueOf("color");
 	const bgColor = computedStyle.computedValueOf("background-color");
 	const {bold, dim} = resolveFontWeight(
@@ -210,8 +211,8 @@ function cellStyleFromComputed(
  */
 function selectionStyleFor(
 	element: Element,
-	base: import("./ansi.js").CellStyle,
-): import("./ansi.js").CellStyle {
+	base: CellStyle,
+): CellStyle {
 	const declaration = pseudoStyleOf(element, "::selection");
 	const fg = declaration.computedValueOf("color");
 	const bg = declaration.computedValueOf("background-color");
@@ -300,7 +301,7 @@ export class Painter {
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
-	paint(ctx: import("./ansi.js").DrawingContext): void {
+	paint(ctx: DrawingContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		this[kRenderStackingContext](this[kDocument].body, ctx, layers);
@@ -332,7 +333,7 @@ export class Painter {
 	 */
 	[kRenderBackdrop](
 		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 	): void {
 		const fill = backgroundFill(
 			pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
@@ -347,7 +348,7 @@ export class Painter {
 
 	[kRenderElement](
 		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 		afterOwnBox?: () => void,
 	): void {
 		// Viewport culling. The buffer only keeps document rows in
@@ -490,9 +491,9 @@ export class Painter {
 			// behavior authors use for invisible spacing borders; layout reads
 			// the widths elsewhere and is unaffected.
 			const sideFor = (
-				line: import("./ansi.js").LineStyle["style"] | undefined,
+				line: LineStyle["style"] | undefined,
 				prop: string,
-			): import("./ansi.js").LineStyle | undefined => {
+			): LineStyle | undefined => {
 				if (!line) {
 					return undefined;
 				}
@@ -726,8 +727,8 @@ export class Painter {
 				if (sides.top || sides.right || sides.bottom || sides.left) {
 					if (hasColor) {
 						const ring = (
-							line: import("./ansi.js").LineStyle["style"] | undefined,
-						): import("./ansi.js").LineStyle | undefined =>
+							line: LineStyle["style"] | undefined,
+						): LineStyle | undefined =>
 							line && {style: line, color: cssColorToNumber(outlineColor)};
 						drawBox(
 							ctx,
@@ -768,8 +769,8 @@ export class Painter {
 	[kPositionedClipFor](
 		element: Element,
 		contextRoot: Element,
-		contextClip: import("./ansi.js").DrawingContext["clipRect"],
-	): import("./ansi.js").DrawingContext["clipRect"] {
+		contextClip: DrawingContext["clipRect"],
+	): DrawingContext["clipRect"] {
 		let clip = contextClip;
 		for (
 			let ancestor = flatParentElement<Element>(element);
@@ -806,7 +807,7 @@ export class Painter {
 	 */
 	[kRenderStackingContext](
 		root: Element,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 	): void {
 		const bucket = layers.get(root);
@@ -857,7 +858,7 @@ export class Painter {
 	/** Render outside-positioned list markers, once per element per frame. */
 	[kRenderOutsideMarker](
 		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 	): void {
 		const computedStyle = computedStyleOf(element);
 		const display = computedStyle.computedValueOf("display");
@@ -940,7 +941,7 @@ export class Painter {
 	 */
 	[kRenderToggleGlyph](
 		element: HTMLInputElement,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 	): void {
 		const root = shadowRootOf<ShadowRoot>(element);
 		if (!root) {
@@ -971,7 +972,7 @@ export class Painter {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	[kRenderText](textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
+	[kRenderText](textNode: Text, ctx: DrawingContext): void {
 		const textContent = textNode.data;
 		if (!textContent) {
 			return;
@@ -1093,9 +1094,9 @@ export class Painter {
 	 */
 	[kRenderTextSelection](
 		textNode: Text,
-		textStyle: import("./ansi.js").CellStyle,
+		textStyle: CellStyle,
 		textTransform: string,
-		ctx: import("./ansi.js").DrawingContext,
+		ctx: DrawingContext,
 	): void {
 		const found = this[kSelectionRangeFor](textNode);
 		if (!found) {
