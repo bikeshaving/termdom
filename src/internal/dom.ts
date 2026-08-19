@@ -2234,8 +2234,8 @@ function setEventHandler(
 	value: unknown,
 ): void {
 	const handler =
-		typeof value === "function" || (typeof value === "object" && value !== null)		?
-				(value as EventHandlerValue)		:
+		typeof value === "function" || (typeof value === "object" && value !== null) ?
+				(value as EventHandlerValue) :
 			null;
 	const handlers = target[kEventHandlerMap](handler !== null);
 	if (handlers === null) {
