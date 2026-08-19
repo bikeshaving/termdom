@@ -973,7 +973,7 @@ function apiProbe(
 			const dom = new TermDOM({transport: terminal.transport});
 			try {
 				return {supported: await run(dom), note};
-			} catch {
+			} catch (_err) {
 				return {supported: false, note: "throws"};
 			} finally {
 				dom.dispose();

@@ -39,7 +39,7 @@ function ensureFreshDist(): void {
 	// is enough to catch the common case of running straight after an edit.
 	try {
 		statSync(join(ROOT, "dist/index.js"));
-	} catch {
+	} catch (_err) {
 		execSync("npm run build", {cwd: ROOT, stdio: "inherit"});
 	}
 }
@@ -143,12 +143,12 @@ class TerminalWindow {
 			for (const pid of pids) {
 				try {
 					process.kill(pid);
-				} catch {
+				} catch (_err) {
 					// Already gone, or not ours (login is root's); the shell
 					// dying is what frees the tab either way.
 				}
 			}
-		} catch {
+		} catch (_err) {
 			// No processes on the tty; it already exited.
 		}
 		await sleep(500);
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
 	ensureFreshDist();
 	try {
 		osascript("tell application \"Terminal\" to count windows");
-	} catch {
+	} catch (_err) {
 		console.error(
 			"cannot control Terminal.app -- grant Automation permission to this terminal in System Settings > Privacy & Security > Automation",
 		);

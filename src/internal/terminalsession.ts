@@ -219,7 +219,7 @@ function installCursorRestoreOnExit(): void {
 			try {
 				// Mouse capture off, cursor back on, bracketed paste off.
 				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h\x1b[?2004l");
-			} catch {
+			} catch (_err) {
 				// The stream may already be gone; the shell will survive.
 			}
 		}
@@ -811,7 +811,7 @@ export class TerminalSession {
 					this[kRoute](chunk);
 				}
 			}
-		} catch {
+		} catch (_err) {
 			// Reader cancelled by dispose, or the transport died; either way the
 			// conversation is over and closed/dispose carry the follow-up.
 		}
@@ -830,7 +830,7 @@ export class TerminalSession {
 					this[kHandlers].onResize(value);
 				}
 			}
-		} catch {
+		} catch (_err) {
 			// As above: teardown, not error.
 		}
 	}

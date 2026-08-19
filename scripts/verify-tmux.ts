@@ -49,7 +49,7 @@ function ensureFreshDist(): void {
 	let distTime = 0;
 	try {
 		distTime = statSync(join(ROOT, "dist/index.js")).mtimeMs;
-	} catch {
+	} catch (_err) {
 		// No dist at all; build below.
 	}
 	if (newestMtime(join(ROOT, "src")) > distTime) {
@@ -333,7 +333,7 @@ async function main(): Promise<void> {
 	ensureFreshDist();
 	try {
 		tmux("kill-server");
-	} catch {
+	} catch (_err) {
 		// No server running on the private socket; fine.
 	}
 
@@ -364,7 +364,7 @@ async function main(): Promise<void> {
 		} finally {
 			try {
 				tmux("kill-session", "-t", session);
-			} catch {
+			} catch (_err) {
 				// Session already gone.
 			}
 		}
@@ -372,7 +372,7 @@ async function main(): Promise<void> {
 
 	try {
 		tmux("kill-server");
-	} catch {
+	} catch (_err) {
 		// Last session's exit already stopped it.
 	}
 	if (failures > 0) {

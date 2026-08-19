@@ -23,7 +23,7 @@ function rememberCity(name: string): void {
 	try {
 		mkdirSync(STATE_DIR, {recursive: true});
 		writeFileSync(CITY_FILE, name);
-	} catch {
+	} catch (_err) {
 		// A read-only home just means the city is forgotten.
 	}
 }
@@ -31,7 +31,7 @@ function rememberCity(name: string): void {
 function rememberedCity(): string | null {
 	try {
 		return readFileSync(CITY_FILE, "utf8").trim() || null;
-	} catch {
+	} catch (_err) {
 		return null;
 	}
 }
@@ -151,7 +151,7 @@ async function search(query: string): Promise<void> {
 		};
 		rememberCity(hit.name);
 		await forecast(generation);
-	} catch {
+	} catch (_err) {
 		if (generation === searchGeneration) {
 			show("error", "the weather is unreachable (network error)");
 		}
@@ -176,7 +176,7 @@ async function forecast(generation: number): Promise<void> {
 		lastData = data;
 		dayIndex = 0;
 		render(data);
-	} catch {
+	} catch (_err) {
 		if (generation === searchGeneration) {
 			show("error", "the weather is unreachable (network error)");
 		}

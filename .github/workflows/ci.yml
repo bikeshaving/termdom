@@ -55,11 +55,11 @@ jobs:
           node-version: 22
 
       - name: Smoke test on Node
-        run: node scripts/smoke.mjs
+        run: node scripts/smoke.js
 
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
       - name: Smoke test on Deno
-        run: deno run -A --node-modules-dir=manual scripts/smoke.mjs
+        run: deno run -A --node-modules-dir=manual scripts/smoke.js

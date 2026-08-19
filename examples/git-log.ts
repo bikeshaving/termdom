@@ -16,7 +16,7 @@ function git(args: string[]): string {
 
 try {
 	git(["rev-parse", "--is-inside-work-tree"]);
-} catch {
+} catch (_err) {
 	process.stderr.write("not a git repository\n");
 	process.exit(1);
 }

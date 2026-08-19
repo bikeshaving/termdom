@@ -528,7 +528,7 @@ function matchesGrammar(property: string, value: string, atRule = ""): boolean {
 		valid =
 			match.matched !== null ||
 			/Unknown (?:property|at-rule)/i.test(match.error?.message ?? "");
-	} catch {
+	} catch (_err) {
 		valid = true;
 	}
 	if (grammarMatches.size > 4096) {
@@ -4873,7 +4873,7 @@ function selectorSpecificity(selector: string): string {
 				throw error;
 			},
 		}) as unknown as SelectorNode;
-	} catch {
+	} catch (_err) {
 		list = null;
 	}
 	const weight =
@@ -5298,7 +5298,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 				throw error;
 			},
 		}) as unknown as SelectorNode;
-	} catch {
+	} catch (_err) {
 		return null;
 	}
 	if (list.type !== "SelectorList") {
@@ -5477,7 +5477,7 @@ function parseRules(
 			parseRulePrelude: false,
 			parseCustomProperty: false,
 		}) as never;
-	} catch {
+	} catch (_err) {
 		return [];
 	}
 	return convertRules(ast.children.toArray(), sheet, parentRule);
@@ -5501,7 +5501,7 @@ function parseRuleText(
 				throw error;
 			},
 		}) as never;
-	} catch {
+	} catch (_err) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
 	const nodes = ast.children.toArray();
@@ -7640,24 +7640,25 @@ for (const property of ACCESSOR_PROPERTIES) {
 // BORDER UTILITIES
 // ============================================================================
 
-export enum BorderEdgeStyle {
+export const BorderEdgeStyle = {
 	// Style values (bits 3-0)
-	None = 0b0000,
-	Dotted = 0b0001,
-	Dashed = 0b0010,
-	Solid = 0b0011,
-	Groove = 0b0100,
-	Ridge = 0b0101,
-	Inset = 0b0110,
-	Outset = 0b0111,
-	Double = 0b1000,
-	Hidden = 0b1111,
+	None: 0b0000,
+	Dotted: 0b0001,
+	Dashed: 0b0010,
+	Solid: 0b0011,
+	Groove: 0b0100,
+	Ridge: 0b0101,
+	Inset: 0b0110,
+	Outset: 0b0111,
+	Double: 0b1000,
+	Hidden: 0b1111,
 
 	// Flags (bit 4+)
 	// Set on the edges that meet in a corner cell whose radius rounds it, and
 	// on nothing else: the runs between corners are the same line either way.
-	Rounded = 0b00010000,
-}
+	Rounded: 0b00010000,
+} as const;
+export type BorderEdgeStyle = number;
 
 interface BoxCharSet {
 	horizontal: string;
@@ -8134,7 +8135,7 @@ function inScopeOf(
 function matchesSelector(element: Element, selector: string): boolean {
 	try {
 		return element.matches(selector);
-	} catch {
+	} catch (_err) {
 		return false;
 	}
 }
@@ -8180,7 +8181,7 @@ function matchesInScope(
 			}
 		}
 		return false;
-	} catch {
+	} catch (_err) {
 		return false;
 	}
 }
@@ -10145,7 +10146,7 @@ export class StyleManager {
 				if (element.matches(rule.selector)) {
 					return true;
 				}
-			} catch {
+			} catch (_err) {
 				return true;
 			}
 		}

@@ -108,7 +108,7 @@ function expand(row: HTMLElement): void {
 		children = document.createElement("div");
 		try {
 			fill(children, row.dataset.path!, depthOf(row) + 1);
-		} catch {
+		} catch (_err) {
 			row.querySelector(".name")!.classList.add("denied");
 			return;
 		}

@@ -142,7 +142,7 @@ async function record(
 	for (const event of events) {
 		lines.push(JSON.stringify([event.time, "o", event.data]));
 	}
-	// eslint-disable-next-line no-console
+
 	console.log(lines.join("\n"));
 }
 

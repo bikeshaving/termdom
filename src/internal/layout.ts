@@ -2958,8 +2958,10 @@ export class LayoutEngine {
 		// unless the body generates no box of its own, and the box its content
 		// is laid out in is the root element's.
 		const paintRoot =
-			root === document.documentElement && !dissolvesIntoChildren(document.body)			?
-				document.body			:
+			root === document.documentElement && !dissolvesIntoChildren(document.body)
+			?
+				document.body
+			:
 				root;
 		for (const element of [...topLayer].reverse()) {
 			if (!flatIsConnected(element)) {
@@ -3043,7 +3045,7 @@ export class LayoutEngine {
 		if (!boxless) {
 			try {
 				contained = isPointInRects(x, y, this.getRects(element));
-			} catch {
+			} catch (_err) {
 				return null;
 			}
 			if (!contained && !this[kSplitsAroundBlock](element)) {

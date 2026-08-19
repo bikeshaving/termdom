@@ -4,7 +4,7 @@
 import * as nodeModule from "node:module";
 try {
 	(nodeModule as {enableCompileCache?: () => void}).enableCompileCache?.();
-} catch {
+} catch (_err) {
 	// Nothing to do; the runtime just recompiles.
 }
 

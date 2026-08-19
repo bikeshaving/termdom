@@ -30,25 +30,28 @@ const asciiPrintable = /^[\x20-\x7e]*$/;
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
-const enum Color {
-	Mask = 0xffffff,
-}
+const Color = {
+	Mask: 0xffffff,
+} as const;
+type Color = number;
 
-const enum BorderMask {
-	Top = 0x000000ff,
-	Right = 0x0000ff00,
-	Bottom = 0x00ff0000,
-	Left = 0xff000000,
-	Edge = 0xff,
-	Style = 0b00001111,
-}
+const BorderMask = {
+	Top: 0x000000ff,
+	Right: 0x0000ff00,
+	Bottom: 0x00ff0000,
+	Left: 0xff000000,
+	Edge: 0xff,
+	Style: 0b00001111,
+} as const;
+type BorderMask = number;
 
-const enum BorderShift {
-	Top = 0,
-	Right = 8,
-	Bottom = 16,
-	Left = 24,
-}
+const BorderShift = {
+	Top: 0,
+	Right: 8,
+	Bottom: 16,
+	Left: 24,
+} as const;
+type BorderShift = number;
 
 const BORDER_EDGE_MASKS = [
 	{shift: BorderShift.Top, mask: BorderMask.Top},
@@ -255,10 +258,10 @@ export interface CellStyle {
  * never re-measures. WidthWide is the escape for a cluster wider than the
  * field (a base carrying many spacing marks); the emitter measures those.
  */
-const enum Attr {
-	Bold = 1 << 0,
-	Italic = 1 << 1,
-	Underline = 1 << 2,
+const AttrFlags = {
+	Bold: 1 << 0,
+	Italic: 1 << 1,
+	Underline: 1 << 2,
 	// Styled underline (SGR 4:2, the kitty extension most modern terminals
 	// adopted). Only meaningful alongside Underline: emission sends plain 4
 	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
@@ -267,24 +270,33 @@ const enum Attr {
 	// time and forwards it to a client without the usstyle feature in a form
 	// Apple Terminal drops entirely. Author-land CSS for terminals known to
 	// support it -- the UA defaults deliberately never use it.
-	DoubleUnderline = 1 << 3,
-	Strikethrough = 1 << 4,
-	Overline = 1 << 5,
-	Inverse = 1 << 6,
-	Blink = 1 << 7,
-	Dim = 1 << 8,
-	FGGroup = Bold |
-		Italic |
-		Underline |
-		DoubleUnderline |
-		Strikethrough |
-		Overline,
-	BGGroup = Inverse | Blink | Dim,
-	StyleMask = FGGroup | BGGroup,
-	WidthShift = 9,
-	WidthMask = 0x1f << 9,
-	WidthWide = 0x1f,
-}
+	DoubleUnderline: 1 << 3,
+	Strikethrough: 1 << 4,
+	Overline: 1 << 5,
+	Inverse: 1 << 6,
+	Blink: 1 << 7,
+	Dim: 1 << 8,
+} as const;
+
+const kFGGroup =
+	AttrFlags.Bold |
+	AttrFlags.Italic |
+	AttrFlags.Underline |
+	AttrFlags.DoubleUnderline |
+	AttrFlags.Strikethrough |
+	AttrFlags.Overline;
+const kBGGroup = AttrFlags.Inverse | AttrFlags.Blink | AttrFlags.Dim;
+
+const Attr = {
+	...AttrFlags,
+	FGGroup: kFGGroup,
+	BGGroup: kBGGroup,
+	StyleMask: kFGGroup | kBGGroup,
+	WidthShift: 9,
+	WidthMask: 0x1f << 9,
+	WidthWide: 0x1f,
+} as const;
+type Attr = number;
 
 /**
  * A char-plane value at or above this is an index into `internedGraphemes`

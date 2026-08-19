@@ -433,7 +433,7 @@ export function getFocusableElements(
 		}
 		try {
 			return layoutEngine.getRects(element).length > 0;
-		} catch {
+		} catch (_err) {
 			return false;
 		}
 	});
