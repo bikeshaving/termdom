@@ -8,8 +8,7 @@
  */
 
 import {Screen, type ColorDepth, type CellStyle} from "../src/internal/ansi.js";
-import type {DrawingContext} from "../src/internal/ansi.js";
-import {drawBox} from "../src/internal/ansi.js";
+import type {CellContext} from "../src/internal/ansi.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
 export interface Scenario {
@@ -145,38 +144,38 @@ export const scenarios: Scenario[] = [
 		run: (): string => {
 			const renderer = new Screen(9, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				drawBox(ctx, 0, 0, 6, 3, {
+				ctx.drawBox(0, 0, 6, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				drawBox(ctx, 5, 0, 6, 3, {
+				ctx.drawBox(5, 0, 6, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				drawBox(ctx, 0, 2, 6, 3, {
+				ctx.drawBox(0, 2, 6, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				drawBox(ctx, 5, 2, 6, 3, {
+				ctx.drawBox(5, 2, 6, 3, {
 					top: {style: "double"},
 					right: {style: "double"},
 					bottom: {style: "double"},
 					left: {style: "double"},
 				});
-				drawBox(ctx, 12, 0, 8, 5, {
+				ctx.drawBox(12, 0, 8, 5, {
 					top: {style: "solid", color: 0x00ff00},
 					right: {style: "solid", color: 0x0000ff},
 					bottom: {style: "solid", color: 0xffff00},
 					left: {style: "solid", color: 0xff00ff},
 				});
-				drawBox(ctx, 0, 5, 10, 4, {left: {style: "solid"}});
-				drawBox(ctx, 12, 5, 10, 4, {
+				ctx.drawBox(0, 5, 10, 4, {left: {style: "solid"}});
+				ctx.drawBox(12, 5, 10, 4, {
 					top: {style: "dashed"},
 					right: {style: "dotted"},
 					bottom: {style: "groove"},
@@ -325,7 +324,7 @@ export const scenarios: Scenario[] = [
 			const renderer = new Screen(10, 24, "rgb");
 			const paint =
 				(top: number) =>
-					(ctx: DrawingContext) => {
+					(ctx: CellContext) => {
 						for (let row = 0; row < 10; row++) {
 							ctx.drawText(`line ${top + row}`.padEnd(12), 0, row, {
 								fg: (top + row) % 2 === 0 ? 0x00ff00 : undefined,
@@ -431,7 +430,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("clipped horizontally", 0, 1);
 				ctx.drawText("also clipped", 0, 2);
 				ctx.drawText("outside the clip", 0, 3);
-				drawBox(ctx, 0, 1, 14, 3, {
+				ctx.drawBox(0, 1, 14, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -450,7 +449,7 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("plain", 0, 0);
 				ctx.drawText("styled", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.drawText("日本語 wide", 0, 2);
-				drawBox(ctx, 0, 3, 8, 2, {
+				ctx.drawBox(0, 3, 8, 2, {
 					top: {style: "solid", color: 0x00ff00},
 					right: {style: "solid", color: 0x00ff00},
 					bottom: {style: "solid", color: 0x00ff00},

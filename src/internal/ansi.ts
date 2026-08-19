@@ -279,7 +279,7 @@ function joinTouchingBorders(grid: CellGrid): void {
  * in, escape sequences out -- with nothing calling back into the caller.
  */
 export interface Frame {
-	context: DrawingContext;
+	context: CellContext;
 	end(): string;
 }
 
@@ -327,6 +327,20 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
  * and the field are canvas's own original TextMetrics; further fields join
  * if a consumer ever appears, the way canvas itself grew.
  */
+/** A box's sides and which of its corners round, drawBox's vocabulary. */
+export interface BoxSides {
+	top?: LineStyle;
+	right?: LineStyle;
+	bottom?: LineStyle;
+	left?: LineStyle;
+	corners?: {
+		topLeft?: boolean;
+		topRight?: boolean;
+		bottomRight?: boolean;
+		bottomLeft?: boolean;
+	};
+}
+
 export interface TextMetrics {
 	width: number;
 }
@@ -1218,7 +1232,7 @@ const kSetCell = Symbol("setCell");
 const kInClip = Symbol("inClip");
 const kSetBorderCell = Symbol("setBorderCell");
 
-export class DrawingContext {
+export class CellContext {
 	grid: CellGrid;
 	rows: number;
 	cols: number;
@@ -1466,6 +1480,65 @@ export class DrawingContext {
 		}
 	}
 
+	/**
+	 * Four lines and their caps: the box composition drawLine callers would
+	 * otherwise write. An end that meets an adjacent side stops at center
+	 * (and curves when the corner rounds); a free end projects through its
+	 * cell.
+	 */
+	drawBox(
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		sides: BoxSides,
+	): void {
+		if (width < 1 || height < 1) {
+			return;
+		}
+		const r = x + width - 1;
+		const b = y + height - 1;
+		const c = sides.corners;
+		const cap = (
+			adjacent: LineStyle | undefined,
+			rounds: boolean | undefined,
+		): "round" | "square" | undefined =>
+			adjacent ? (rounds ? "round" : undefined) : "square";
+
+		// Verticals first: a corner cell's glyph spans two sides but holds one
+		// color, and the horizontal side's wins -- the closest a cell gets to
+		// the browser's diagonal miter.
+		if (sides.left) {
+			this.drawLine(x, y, x, b + 1, {
+				...sides.left,
+				startCap: cap(sides.top, c?.topLeft),
+				endCap: cap(sides.bottom, c?.bottomLeft),
+			});
+		}
+		if (sides.right) {
+			this.drawLine(r, y, r, b + 1, {
+				...sides.right,
+				startCap: cap(sides.top, c?.topRight),
+				endCap: cap(sides.bottom, c?.bottomRight),
+			});
+		}
+		if (sides.top) {
+			this.drawLine(x, y, r + 1, y, {
+				...sides.top,
+				startCap: cap(sides.left, c?.topLeft),
+				endCap: cap(sides.right, c?.topRight),
+			});
+		}
+		// A 1-row box's bottom shares the top's row; the top already drew it.
+		if (sides.bottom && !(b === y && sides.top)) {
+			this.drawLine(x, b, r + 1, b, {
+				...sides.bottom,
+				startCap: cap(sides.left, c?.bottomLeft),
+				endCap: cap(sides.right, c?.bottomRight),
+			});
+		}
+	}
+
 	[kInClip](row: number, col: number): boolean {
 		if (!this.clipRect) {
 			return true;
@@ -1549,84 +1622,6 @@ export class DrawingContext {
 				borderEncoding,
 			style,
 		);
-	}
-}
-
-/**
- * Four lines and their caps: the box composition `drawLine` callers write.
- * An end that meets an adjacent side stops at center (and curves when the
- * corner rounds); a free end projects through its cell.
- */
-export function drawBox(
-	ctx: {
-		drawLine(
-			x1: number,
-			y1: number,
-			x2: number,
-			y2: number,
-			line: LineStyle,
-		): void;
-	},
-	x: number,
-	y: number,
-	width: number,
-	height: number,
-	sides: {
-		top?: LineStyle;
-		right?: LineStyle;
-		bottom?: LineStyle;
-		left?: LineStyle;
-		corners?: {
-			topLeft?: boolean;
-			topRight?: boolean;
-			bottomRight?: boolean;
-			bottomLeft?: boolean;
-		};
-	},
-): void {
-	if (width < 1 || height < 1) {
-		return;
-	}
-	const r = x + width - 1;
-	const b = y + height - 1;
-	const c = sides.corners;
-	const cap = (
-		adjacent: LineStyle | undefined,
-		rounds: boolean | undefined,
-	): "round" | "square" | undefined =>
-		adjacent ? (rounds ? "round" : undefined) : "square";
-
-	// Verticals first: a corner cell's glyph spans two sides but holds one
-	// color, and the horizontal side's wins -- the closest a cell gets to
-	// the browser's diagonal miter.
-	if (sides.left) {
-		ctx.drawLine(x, y, x, b + 1, {
-			...sides.left,
-			startCap: cap(sides.top, c?.topLeft),
-			endCap: cap(sides.bottom, c?.bottomLeft),
-		});
-	}
-	if (sides.right) {
-		ctx.drawLine(r, y, r, b + 1, {
-			...sides.right,
-			startCap: cap(sides.top, c?.topRight),
-			endCap: cap(sides.bottom, c?.bottomRight),
-		});
-	}
-	if (sides.top) {
-		ctx.drawLine(x, y, r + 1, y, {
-			...sides.top,
-			startCap: cap(sides.left, c?.topLeft),
-			endCap: cap(sides.right, c?.topRight),
-		});
-	}
-	// A 1-row box's bottom shares the top's row; the top already drew it.
-	if (sides.bottom && !(b === y && sides.top)) {
-		ctx.drawLine(x, b, r + 1, b, {
-			...sides.bottom,
-			startCap: cap(sides.left, c?.bottomLeft),
-			endCap: cap(sides.right, c?.bottomRight),
-		});
 	}
 }
 
@@ -1843,14 +1838,14 @@ export class Screen {
 		if (rows === 0) {
 			const empty = new CellGrid(0, this[kCols]);
 			return {
-				context: new DrawingContext(empty, 0, this[kCols], 0),
+				context: new CellContext(empty, 0, this[kCols], 0),
 				end: () => "",
 			};
 		}
 
 		const cols = this[kCols];
 		const grid = new CellGrid(rows, cols);
-		const context = new DrawingContext(grid, rows, cols, 0);
+		const context = new CellContext(grid, rows, cols, 0);
 		return {
 			context,
 			end: (): string => {
@@ -2047,7 +2042,7 @@ export class Screen {
 		}
 
 		// Create drawing context and execute drawing operations
-		const context = new DrawingContext(next, frameRows, cols, offset);
+		const context = new CellContext(next, frameRows, cols, offset);
 		if (scrolling) {
 			context.paintBands = scroll!.bands;
 		}
