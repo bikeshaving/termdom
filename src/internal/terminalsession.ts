@@ -4,6 +4,51 @@ import type {ColorDepth, WidthMeasurer} from "./ansi.js";
 import {recordClusterAdvance} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
+const kWidthSettled = Symbol("widthSettled");
+const kWidthProbes = Symbol("widthProbes");
+const kWriteEpoch = Symbol("writeEpoch");
+const kDsrSequence = Symbol("dsrSequence");
+const kArmWidthProbeTimer = Symbol("armWidthProbeTimer");
+const kWidthProbeTimer = Symbol("widthProbeTimer");
+const kWIDTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
+const kWidthAnswered = Symbol("widthAnswered");
+const kWidthProbing = Symbol("widthProbing");
+const kInteractive = Symbol("interactive");
+const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
+const kWidthMeasurer = Symbol("widthMeasurer");
+const kWidthRunEpoch = Symbol("widthRunEpoch");
+const kWidthRun = Symbol("widthRun");
+const kWidthDrift = Symbol("widthDrift");
+const kWidthRunLost = Symbol("widthRunLost");
+const kLayout = Symbol("layout");
+const kHandlers = Symbol("handlers");
+const kTransport = Symbol("transport");
+const kViewport = Symbol("viewport");
+const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
+const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
+const kDisposed = Symbol("disposed");
+const kWriter = Symbol("writer");
+const kLastWrite = Symbol("lastWrite");
+const kStarted = Symbol("started");
+const kReader = Symbol("reader");
+const kReadLoop = Symbol("readLoop");
+const kResizeReader = Symbol("resizeReader");
+const kResizeLoop = Symbol("resizeLoop");
+const kPartialEscape = Symbol("partialEscape");
+const kRoute = Symbol("route");
+const kPasteBuffer = Symbol("pasteBuffer");
+const kFeedModeReport = Symbol("feedModeReport");
+const kFeedCursorReport = Symbol("feedCursorReport");
+const kModeProbeHandlers = Symbol("modeProbeHandlers");
+const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
+const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
+const kSettleWidthProbe = Symbol("settleWidthProbe");
+const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
+const kModeProbeTimers = Symbol("modeProbeTimers");
+const kProbeMode = Symbol("probeMode");
+const kPriorBidiMode = Symbol("priorBidiMode");
+const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
+
 /**
  * The wire between the engine and a terminal: an established session as
  * duplex streams plus lifecycle, the common subset of WebTransport and
@@ -386,41 +431,41 @@ interface TerminalSessionHandlers {
 }
 
 export class TerminalSession {
-	#transport: TerminalTransport;
-	#viewport: Viewport;
-	#layout: LayoutEngine;
-	#interactive: boolean;
-	#anchorDetectionEnabled: boolean;
-	#handlers: TerminalSessionHandlers;
+	declare [kTransport]: TerminalTransport;
+	declare [kViewport]: Viewport;
+	declare [kLayout]: LayoutEngine;
+	declare [kInteractive]: boolean;
+	declare [kAnchorDetectionEnabled]: boolean;
+	declare [kHandlers]: TerminalSessionHandlers;
 
-	#writer: WritableStreamDefaultWriter<string> | null = null;
-	#reader: ReadableStreamDefaultReader<string> | null = null;
-	#resizeReader: ReadableStreamDefaultReader<TerminalSize> | null = null;
-	#started = false;
-	#disposed = false;
+	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
+	declare [kReader]: ReadableStreamDefaultReader<string> | null;
+	declare [kResizeReader]: ReadableStreamDefaultReader<TerminalSize> | null;
+	declare [kStarted]: boolean;
+	declare [kDisposed]: boolean;
 	// The last queued write, so flush() can await everything before it.
-	#lastWrite: Promise<void> = Promise.resolve();
+	declare [kLastWrite]: Promise<void>;
 
 	// Body of a bracketed paste (ESC[200~..ESC[201~) across chunks; null when
 	// no paste is in flight.
-	#pasteBuffer: string | null = null;
+	declare [kPasteBuffer]: string | null;
 	// A trailing incomplete escape sequence, held for the next chunk: network
 	// transports fragment arbitrarily, and half a CSI decodes as garbage
 	// keystrokes. A bare trailing ESC is NOT held -- it is the Escape key
 	// far more often than a split, and holding it would delay every Escape.
-	#partialEscape = "";
+	declare [kPartialEscape]: string;
 
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
-	#hasDetectedCommandStart = false;
+	declare [kHasDetectedCommandStart]: boolean;
 	// The pending DSR reply handler and its timeout. Cursor detection and the
 	// resize re-anchor share these slots so input routing and dispose can see
 	// them; overlapping queries check handler identity before clearing.
-	#cursorDetectionHandler: ((data: string) => void) | null = null;
-	#cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+	declare [kCursorDetectionHandler]: ((data: string) => void) | null;
+	declare [kCursorDetectionTimer]: ReturnType<typeof setTimeout> | null;
 	// Resolves when startup command-start detection settles (or times out), so
 	// the first frame waits for the anchor rather than painting at row 0 first.
-	#cursorDetectionPromise: Promise<void> | null = null;
+	declare [kCursorDetectionPromise]: Promise<void> | null;
 
 	/**
 	 * Outstanding DECRQM queries, keyed by the mode as it appears in the reply
@@ -428,23 +473,23 @@ export class TerminalSession {
 	 * answers can arrive in either order, so they are matched by mode number
 	 * rather than by whoever asked last.
 	 */
-	#modeProbeHandlers = new Map<string, (value: number) => void>();
-	#modeProbeTimers = new Set<ReturnType<typeof setTimeout>>();
+	declare [kModeProbeHandlers]: Map<string, (value: number) => void>;
+	declare [kModeProbeTimers]: Set<ReturnType<typeof setTimeout>>;
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
-	#priorBidiMode: number | null = null;
+	declare [kPriorBidiMode]: number | null;
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
-	#graphemeClustersNegotiated = false;
+	declare [kGraphemeClustersNegotiated]: boolean;
 
 	/**
 	 * DSR queries in the order they went out. A terminal answers them in that
 	 * order, so the sequence number is what keeps cursor detection and width
 	 * measurement from taking each other's replies.
 	 */
-	#dsrSequence = 0;
+	declare [kDsrSequence]: number;
 	/** The sequence number of the outstanding cursor query, if any. */
-	#cursorDetectionSequence = 0;
+	declare [kCursorDetectionSequence]: number;
 	/** Width probes written and not yet answered, oldest first. */
-	#widthProbes: Array<{
+	declare [kWidthProbes]: Array<{
 		cluster: string;
 		run: number;
 		epoch: number;
@@ -452,7 +497,7 @@ export class TerminalSession {
 		width: number;
 		sequence: number;
 		sentAt: number;
-	}> = [];
+	}>;
 
 	/**
 	 * Clusters whose advance this session no longer wonders about: the terminal
@@ -464,91 +509,76 @@ export class TerminalSession {
 	 * every glyph whose advance is still in question carries its own query, and
 	 * the replies come back in the same order the glyphs were painted.
 	 */
-	#widthSettled = new Set<string>();
+	declare [kWidthSettled]: Set<string>;
 	/** Whether frames may still probe. */
-	#widthProbing = true;
+	declare [kWidthProbing]: boolean;
 	/** Whether the terminal has ever answered a width probe. */
-	#widthAnswered = false;
-	#widthProbeTimer: ReturnType<typeof setTimeout> | null = null;
+	declare [kWidthAnswered]: boolean;
+	declare [kWidthProbeTimer]: ReturnType<typeof setTimeout> | null;
 	// The emission run the running divergence belongs to, and the divergence
 	// itself: within one run each cluster's cells are reached by advancing
 	// through the ones before it, so an earlier miscount displaces every column
 	// after it by exactly this much. A reading that cannot be believed leaves
 	// the drift unknown, and the rest of that run unreadable with it.
-	#widthRunEpoch = -1;
-	#widthRun = -1;
-	#widthDrift = 0;
-	#widthRunLost = false;
+	declare [kWidthRunEpoch]: number;
+	declare [kWidthRun]: number;
+	declare [kWidthDrift]: number;
+	declare [kWidthRunLost]: boolean;
 	// Bumped by every write, so probes taken while building one frame are told
 	// apart from probes taken while building the next.
-	#writeEpoch = 0;
+	declare [kWriteEpoch]: number;
 	/**
 	 * Generous: the reply crosses whatever the transport is, and a terminal
 	 * answering late is still answering. Only a session that gets NOTHING back
 	 * gives up probing, and it can afford to wait to be sure.
 	 */
-	static readonly #WIDTH_PROBE_TIMEOUT_MS = 2000;
+	static readonly [kWIDTH_PROBE_TIMEOUT_MS] = 2000;
 
-	#widthMeasurer: WidthMeasurer = {
-		wants: (cluster: string) => !this.#widthSettled.has(cluster),
-		probe: (cluster: string, run: number, column: number, width: number) => {
-			this.#widthProbes.push({
-				cluster,
-				run,
-				epoch: this.#writeEpoch,
-				column,
-				width,
-				sequence: this.#dsrSequence++,
-				sentAt: Date.now(),
-			});
-			this.#armWidthProbeTimer();
-			return "\x1b[6n";
-		},
-	};
+	declare [kWidthMeasurer]: WidthMeasurer;
 
 	/**
 	 * Keep a deadline running for as long as any probe is outstanding, timed
 	 * from the oldest of them.
 	 */
-	#armWidthProbeTimer(): void {
-		if (this.#widthProbeTimer !== null) {
+	[kArmWidthProbeTimer](): void {
+		if (this[kWidthProbeTimer] !== null) {
 			return;
 		}
-		const oldest = this.#widthProbes[0];
+		const oldest = this[kWidthProbes][0];
 		if (oldest === undefined) {
 			return;
 		}
 		const remaining = Math.max(
 			0,
-			oldest.sentAt + TerminalSession.#WIDTH_PROBE_TIMEOUT_MS - Date.now(),
+			oldest.sentAt + TerminalSession[kWIDTH_PROBE_TIMEOUT_MS] - Date.now(),
 		);
-		this.#widthProbeTimer = setTimeout(() => {
-			this.#widthProbeTimer = null;
+		this[kWidthProbeTimer] = setTimeout(() => {
+			this[kWidthProbeTimer] = null;
 			// Unanswered this long is unanswered. The queue is what matches
 			// replies to probes, so an abandoned probe must leave it; its
 			// cluster keeps the tables' answer and is not asked again. Probes
 			// written since the deadline was set are not late yet and keep
 			// their place -- the deadline is per probe, and re-arms for the
 			// oldest one still waiting.
-			const deadline = Date.now() - TerminalSession.#WIDTH_PROBE_TIMEOUT_MS;
+			const deadline = Date.now() - TerminalSession[kWIDTH_PROBE_TIMEOUT_MS];
 			let expired = 0;
 			while (
-				expired < this.#widthProbes.length &&
-				this.#widthProbes[expired].sentAt <= deadline
+				expired < this[kWidthProbes].length &&
+				this[kWidthProbes][expired].sentAt <= deadline
 			) {
-				this.#widthSettled.add(this.#widthProbes[expired].cluster);
+				this[kWidthSettled].add(this[kWidthProbes][expired].cluster);
 				expired++;
 			}
 			// Nothing has ever come back: this terminal does not answer DSR,
 			// and asking it again each frame is asking forever. Fall open to
 			// the tables.
-			if (expired > 0 && !this.#widthAnswered) {
-				this.#widthProbing = false;
-				this.#widthProbes.length = 0;
+			if (expired > 0 && !this[kWidthAnswered]) {
+				this[kWidthProbing] = false;
+				this[kWidthProbes].length = 0;
 				return;
 			}
-			this.#widthProbes.splice(0, expired);
-			this.#armWidthProbeTimer();
+			this[kWidthProbes].splice(0, expired);
+			this[kArmWidthProbeTimer]();
 		}, remaining);
 	}
 
@@ -560,13 +590,13 @@ export class TerminalSession {
 	 * one that has proven it does not answer.
 	 */
 	get widthMeasurer(): WidthMeasurer | undefined {
-		if (!this.#interactive || !this.#widthProbing) {
+		if (!this[kInteractive] || !this[kWidthProbing]) {
 			return undefined;
 		}
-		if (this.#graphemeClustersNegotiated) {
+		if (this[kGraphemeClustersNegotiated]) {
 			return undefined;
 		}
-		return this.#widthMeasurer;
+		return this[kWidthMeasurer];
 	}
 
 	/**
@@ -577,7 +607,7 @@ export class TerminalSession {
 	 * the drift the earlier unmeasured clusters of the same run introduced,
 	 * which their own replies have just established.
 	 */
-	#settleWidthProbe(
+	[kSettleWidthProbe](
 		probe: {
 			cluster: string;
 			run: number;
@@ -587,45 +617,45 @@ export class TerminalSession {
 		},
 		replyColumn: number,
 	): void {
-		this.#widthAnswered = true;
+		this[kWidthAnswered] = true;
 		// The deadline belonged to the probe just answered; whatever is still
 		// waiting gets its own.
-		if (this.#widthProbeTimer !== null) {
-			clearTimeout(this.#widthProbeTimer);
-			this.#widthProbeTimer = null;
+		if (this[kWidthProbeTimer] !== null) {
+			clearTimeout(this[kWidthProbeTimer]);
+			this[kWidthProbeTimer] = null;
 		}
-		this.#armWidthProbeTimer();
+		this[kArmWidthProbeTimer]();
 
-		if (probe.epoch !== this.#widthRunEpoch || probe.run !== this.#widthRun) {
-			this.#widthRunEpoch = probe.epoch;
-			this.#widthRun = probe.run;
-			this.#widthDrift = 0;
-			this.#widthRunLost = false;
+		if (probe.epoch !== this[kWidthRunEpoch] || probe.run !== this[kWidthRun]) {
+			this[kWidthRunEpoch] = probe.epoch;
+			this[kWidthRun] = probe.run;
+			this[kWidthDrift] = 0;
+			this[kWidthRunLost] = false;
 		}
 
 		// An earlier reading in this run could not be believed, so the drift the
 		// glyphs before this one introduced is unknown and its column means
 		// nothing. Wait for a run whose arithmetic is whole.
-		if (this.#widthRunLost) {
+		if (this[kWidthRunLost]) {
 			return;
 		}
 
 		// Terminal columns are 1-based; the ledger counts cells.
-		const advance = replyColumn - 1 - (probe.column + this.#widthDrift);
+		const advance = replyColumn - 1 - (probe.column + this[kWidthDrift]);
 		// A reading no cluster could produce means the reply describes
 		// something else -- a screen that scrolled under the frame, a terminal
 		// answering out of turn. The tables keep the cluster, and the rest of
 		// the run is read against a drift this reading did not establish.
 		if (advance < 0 || advance > 4) {
-			this.#widthRunLost = true;
+			this[kWidthRunLost] = true;
 			return;
 		}
 
-		this.#widthSettled.add(probe.cluster);
-		this.#widthDrift += advance - probe.width;
+		this[kWidthSettled].add(probe.cluster);
+		this[kWidthDrift] += advance - probe.width;
 		if (recordClusterAdvance(probe.cluster, advance)) {
-			this.#layout.invalidateTextMeasurement();
-			this.#handlers.onWidthCorrection();
+			this[kLayout].invalidateTextMeasurement();
+			this[kHandlers].onWidthCorrection();
 		}
 	}
 
@@ -637,17 +667,61 @@ export class TerminalSession {
 		anchorDetection: boolean;
 		handlers: TerminalSessionHandlers;
 	}) {
-		this.#transport = deps.transport;
-		this.#viewport = deps.viewport;
-		this.#layout = deps.layout;
-		this.#interactive = deps.interactive;
-		this.#anchorDetectionEnabled = deps.anchorDetection && deps.interactive;
-		this.#handlers = deps.handlers;
+		this[kWriter] = null;
+		this[kReader] = null;
+		this[kResizeReader] = null;
+		this[kStarted] = false;
+		this[kDisposed] = false;
+		this[kLastWrite] = Promise.resolve();
+		this[kPasteBuffer] = null;
+		this[kPartialEscape] = "";
+		this[kHasDetectedCommandStart] = false;
+		this[kCursorDetectionHandler] = null;
+		this[kCursorDetectionTimer] = null;
+		this[kCursorDetectionPromise] = null;
+		this[kModeProbeHandlers] = new Map<string, (value: number) => void>();
+		this[kModeProbeTimers] = new Set<ReturnType<typeof setTimeout>>();
+		this[kPriorBidiMode] = null;
+		this[kGraphemeClustersNegotiated] = false;
+		this[kDsrSequence] = 0;
+		this[kCursorDetectionSequence] = 0;
+		this[kWidthProbes] = [];
+		this[kWidthSettled] = new Set<string>();
+		this[kWidthProbing] = true;
+		this[kWidthAnswered] = false;
+		this[kWidthProbeTimer] = null;
+		this[kWidthRunEpoch] = -1;
+		this[kWidthRun] = -1;
+		this[kWidthDrift] = 0;
+		this[kWidthRunLost] = false;
+		this[kWriteEpoch] = 0;
+		this[kWidthMeasurer] = {
+			wants: (cluster: string) => !this[kWidthSettled].has(cluster),
+			probe: (cluster: string, run: number, column: number, width: number) => {
+				this[kWidthProbes].push({
+					cluster,
+					run,
+					epoch: this[kWriteEpoch],
+					column,
+					width,
+					sequence: this[kDsrSequence]++,
+					sentAt: Date.now(),
+				});
+				this[kArmWidthProbeTimer]();
+				return "\x1b[6n";
+			},
+		};
+		this[kTransport] = deps.transport;
+		this[kViewport] = deps.viewport;
+		this[kLayout] = deps.layout;
+		this[kInteractive] = deps.interactive;
+		this[kAnchorDetectionEnabled] = deps.anchorDetection && deps.interactive;
+		this[kHandlers] = deps.handlers;
 	}
 
 	/** Whether command-start anchoring runs: the default process transport only. */
 	get anchorDetectionEnabled(): boolean {
-		return this.#anchorDetectionEnabled;
+		return this[kAnchorDetectionEnabled];
 	}
 
 	/**
@@ -656,11 +730,11 @@ export class TerminalSession {
 	 * rather than a stale detection, then restores it.
 	 */
 	get hasDetectedCommandStart(): boolean {
-		return this.#hasDetectedCommandStart;
+		return this[kHasDetectedCommandStart];
 	}
 
 	set hasDetectedCommandStart(value: boolean) {
-		this.#hasDetectedCommandStart = value;
+		this[kHasDetectedCommandStart] = value;
 	}
 
 	/**
@@ -671,24 +745,24 @@ export class TerminalSession {
 	write(output: string): Promise<void> {
 		// Probes are taken while a frame is being built and go out with it, so
 		// each write ends the batch that can share a drift correction.
-		this.#writeEpoch++;
+		this[kWriteEpoch]++;
 		// A disposed session has released the wire; late writes are dropped.
-		if (this.#disposed && !this.#writer) {
+		if (this[kDisposed] && !this[kWriter]) {
 			return Promise.resolve();
 		}
-		if (!this.#writer) {
-			this.#writer = this.#transport.writable.getWriter();
+		if (!this[kWriter]) {
+			this[kWriter] = this[kTransport].writable.getWriter();
 		}
-		this.#lastWrite = this.#writer.write(output).catch(() => {
+		this[kLastWrite] = this[kWriter].write(output).catch(() => {
 			// A transport torn down mid-write (disconnect) is a close, not a
 			// crash; the closed promise carries the real signal.
 		});
-		return this.#lastWrite;
+		return this[kLastWrite];
 	}
 
 	/** Resolves when everything written so far has reached the transport. */
 	flush(): Promise<void> {
-		return this.#lastWrite;
+		return this[kLastWrite];
 	}
 
 	/**
@@ -696,25 +770,27 @@ export class TerminalSession {
 	 * closure to the engine's handlers. Idempotent.
 	 */
 	start(): void {
-		if (this.#started) {
+		if (this[kStarted]) {
 			return;
 		}
-		this.#started = true;
+		this[kStarted] = true;
 
-		this.#reader = this.#transport.readable.getReader();
-		void this.#readLoop(this.#reader);
+		this[kReader] = this[kTransport].readable.getReader();
+		void this[kReadLoop](this[kReader]);
 
-		this.#resizeReader = this.#transport.resizes.getReader();
-		void this.#resizeLoop(this.#resizeReader);
+		this[kResizeReader] = this[kTransport].resizes.getReader();
+		void this[kResizeLoop](this[kResizeReader]);
 
-		void this.#transport.closed.then((info) => {
-			if (!this.#disposed) {
-				this.#handlers.onClosed(info);
+		void this[kTransport].closed.then((info) => {
+			if (!this[kDisposed]) {
+				this[kHandlers].onClosed(info);
 			}
 		});
 	}
 
-	async #readLoop(reader: ReadableStreamDefaultReader<string>): Promise<void> {
+	async [kReadLoop](
+		reader: ReadableStreamDefaultReader<string>,
+	): Promise<void> {
 		try {
 			for (;;) {
 				const {done, value} = await reader.read();
@@ -724,15 +800,15 @@ export class TerminalSession {
 				if (!value) {
 					continue;
 				}
-				let chunk = this.#partialEscape + value;
-				this.#partialEscape = "";
+				let chunk = this[kPartialEscape] + value;
+				this[kPartialEscape] = "";
 				const held = splitTrailingEscape(chunk);
 				if (held > 0 && held <= 32) {
-					this.#partialEscape = chunk.slice(-held);
+					this[kPartialEscape] = chunk.slice(-held);
 					chunk = chunk.slice(0, -held);
 				}
 				if (chunk) {
-					this.#route(chunk);
+					this[kRoute](chunk);
 				}
 			}
 		} catch {
@@ -741,7 +817,7 @@ export class TerminalSession {
 		}
 	}
 
-	async #resizeLoop(
+	async [kResizeLoop](
 		reader: ReadableStreamDefaultReader<TerminalSize>,
 	): Promise<void> {
 		try {
@@ -751,7 +827,7 @@ export class TerminalSession {
 					return;
 				}
 				if (value) {
-					this.#handlers.onResize(value);
+					this[kHandlers].onResize(value);
 				}
 			}
 		} catch {
@@ -764,21 +840,21 @@ export class TerminalSession {
 	 * priority order; re-entered with the remainder whenever a reply or paste
 	 * fence is spliced out of a chunk that also holds real typing.
 	 */
-	#route(dataStr: string): void {
+	[kRoute](dataStr: string): void {
 		// Bracketed paste: its body is literal text (a pasted newline must not
 		// fire Enter), buffered across chunks until ESC[201~. Checked before the
 		// report routes so paste content isn't parsed as a reply.
-		if (this.#pasteBuffer !== null) {
+		if (this[kPasteBuffer] !== null) {
 			const end = dataStr.indexOf("\x1b[201~");
 			if (end === -1) {
-				this.#pasteBuffer += dataStr;
+				this[kPasteBuffer] += dataStr;
 				return;
 			}
-			this.#handlers.onPaste(this.#pasteBuffer + dataStr.slice(0, end));
-			this.#pasteBuffer = null;
+			this[kHandlers].onPaste(this[kPasteBuffer] + dataStr.slice(0, end));
+			this[kPasteBuffer] = null;
 			const after = dataStr.slice(end + 6);
 			if (after.length) {
-				this.#route(after);
+				this[kRoute](after);
 			}
 			return;
 		}
@@ -786,10 +862,10 @@ export class TerminalSession {
 		if (pasteStart !== -1) {
 			const before = dataStr.slice(0, pasteStart);
 			if (before.length) {
-				this.#route(before);
+				this[kRoute](before);
 			}
-			this.#pasteBuffer = "";
-			this.#route(dataStr.slice(pasteStart + 6));
+			this[kPasteBuffer] = "";
+			this[kRoute](dataStr.slice(pasteStart + 6));
 			return;
 		}
 
@@ -800,24 +876,24 @@ export class TerminalSession {
 		const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
 		if (modeReport) {
 			const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-			if (this.#feedModeReport(mode, parseInt(modeReport[3], 10))) {
+			if (this[kFeedModeReport](mode, parseInt(modeReport[3], 10))) {
 				const rest =
 					dataStr.slice(0, modeReport.index) +
 					dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
 				if (rest.length > 0) {
-					this.#route(rest);
+					this[kRoute](rest);
 				}
 				return;
 			}
 		}
 
 		const report = dataStr.match(/\x1b\[(\d+);(\d+)R/);
-		if (report && this.#feedCursorReport(report[0], parseInt(report[2], 10))) {
+		if (report && this[kFeedCursorReport](report[0], parseInt(report[2], 10))) {
 			const rest =
 				dataStr.slice(0, report.index) +
 				dataStr.slice((report.index ?? 0) + report[0].length);
 			if (rest.length > 0) {
-				this.#route(rest);
+				this[kRoute](rest);
 			}
 			return;
 		}
@@ -825,7 +901,7 @@ export class TerminalSession {
 		// Ctrl-C: raw mode delivers it as data, and its default action is the
 		// engine's to decide (window.close()), not this layer's.
 		if (dataStr.charCodeAt(0) === 0x03) {
-			this.#handlers.onCloseRequest();
+			this[kHandlers].onCloseRequest();
 			return;
 		}
 
@@ -835,7 +911,7 @@ export class TerminalSession {
 		for (const token of tokenizeInput(dataStr)) {
 			const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 			if (mouse) {
-				this.#handlers.onMouse(
+				this[kHandlers].onMouse(
 					parseInt(mouse[1]),
 					parseInt(mouse[2]),
 					parseInt(mouse[3]),
@@ -849,16 +925,16 @@ export class TerminalSession {
 			return;
 		}
 
-		this.#handlers.onKeys(keyInput);
+		this[kHandlers].onKeys(keyInput);
 	}
 
 	/** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
-	#feedModeReport(mode: string, value: number): boolean {
-		const waiting = this.#modeProbeHandlers.get(mode);
+	[kFeedModeReport](mode: string, value: number): boolean {
+		const waiting = this[kModeProbeHandlers].get(mode);
 		if (!waiting) {
 			return false;
 		}
-		this.#modeProbeHandlers.delete(mode);
+		this[kModeProbeHandlers].delete(mode);
 		waiting(value);
 		return true;
 	}
@@ -872,18 +948,18 @@ export class TerminalSession {
 	 * oldest outstanding query owns the reply, and neither kind can take the
 	 * other's.
 	 */
-	#feedCursorReport(report: string, column: number): boolean {
-		const probe = this.#widthProbes[0];
+	[kFeedCursorReport](report: string, column: number): boolean {
+		const probe = this[kWidthProbes][0];
 		if (
-			this.#cursorDetectionHandler !== null &&
-			(probe === undefined || this.#cursorDetectionSequence < probe.sequence)
+			this[kCursorDetectionHandler] !== null &&
+			(probe === undefined || this[kCursorDetectionSequence] < probe.sequence)
 		) {
-			this.#cursorDetectionHandler(report);
+			this[kCursorDetectionHandler](report);
 			return true;
 		}
 		if (probe !== undefined) {
-			this.#widthProbes.shift();
-			this.#settleWidthProbe(probe, column);
+			this[kWidthProbes].shift();
+			this[kSettleWidthProbe](probe, column);
 			return true;
 		}
 		return false;
@@ -899,24 +975,24 @@ export class TerminalSession {
 	 * depends on the frame running straight through.
 	 */
 	get cursorDetectionPending(): Promise<void> | null {
-		return this.#cursorDetectionPromise;
+		return this[kCursorDetectionPromise];
 	}
 
 	/** Startup command-start detection, awaited by the first frame's anchor. */
 	initializeCursorDetection(): void {
-		this.#cursorDetectionPromise = null;
-		if (this.#anchorDetectionEnabled) {
-			this.#cursorDetectionPromise = Promise.race([
+		this[kCursorDetectionPromise] = null;
+		if (this[kAnchorDetectionEnabled]) {
+			this[kCursorDetectionPromise] = Promise.race([
 				this.detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it.
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
-					this.#hasDetectedCommandStart = false;
+					this[kHasDetectedCommandStart] = false;
 				})
 				.finally(() => {
 					// Clear the promise so subsequent renders don't wait.
-					this.#cursorDetectionPromise = null;
+					this[kCursorDetectionPromise] = null;
 				});
 		}
 	}
@@ -931,19 +1007,19 @@ export class TerminalSession {
 	 * permanently set, 4 permanently reset. 0 and silence mean the same thing
 	 * to every caller here -- the terminal has no opinion, so ours stands.
 	 */
-	#probeMode(mode: string, request: string): Promise<number | null> {
+	[kProbeMode](mode: string, request: string): Promise<number | null> {
 		return new Promise<number | null>((resolve) => {
 			// The same second the cursor probe allows: a cold start or a slow SSH
 			// link can outlast a tighter window, and answering late is answering.
 			const timer = setTimeout(() => {
-				this.#modeProbeTimers.delete(timer);
-				this.#modeProbeHandlers.delete(mode);
+				this[kModeProbeTimers].delete(timer);
+				this[kModeProbeHandlers].delete(mode);
 				resolve(null);
 			}, 1000);
-			this.#modeProbeTimers.add(timer);
-			this.#modeProbeHandlers.set(mode, (value: number) => {
+			this[kModeProbeTimers].add(timer);
+			this[kModeProbeHandlers].set(mode, (value: number) => {
 				clearTimeout(timer);
-				this.#modeProbeTimers.delete(timer);
+				this[kModeProbeTimers].delete(timer);
 				resolve(value);
 			});
 			void this.write(request);
@@ -973,22 +1049,22 @@ export class TerminalSession {
 	 * is treated as "no bidi", which is what silence has always meant here.
 	 */
 	async negotiateBidi(): Promise<void> {
-		if (!this.#interactive) {
+		if (!this[kInteractive]) {
 			return;
 		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await this.#probeMode("8", "\x1b[8l\x1b[8$p");
+		const answer = await this[kProbeMode]("8", "\x1b[8l\x1b[8$p");
 
 		if (answer === null || answer === 0) {
 			return;
 		} // No bidi: cells as written.
-		this.#priorBidiMode = answer;
+		this[kPriorBidiMode] = answer;
 
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			this.#layout.setTerminalReordersText(true);
+			this[kLayout].setTerminalReordersText(true);
 		}
 	}
 
@@ -1016,20 +1092,20 @@ export class TerminalSession {
 	 * of any echo, so the first frame starts on a clean row.
 	 */
 	scrubProbeEcho(): void {
-		if (!this.#interactive) {
+		if (!this[kInteractive]) {
 			return;
 		}
 		void this.write("\r\x1b[K");
 	}
 
 	async negotiateGraphemeClusters(): Promise<void> {
-		if (!this.#interactive) {
+		if (!this[kInteractive]) {
 			return;
 		}
 
-		const answer = await this.#probeMode("?2027", "\x1b[?2027h\x1b[?2027$p");
+		const answer = await this[kProbeMode]("?2027", "\x1b[?2027h\x1b[?2027$p");
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
-		this.#graphemeClustersNegotiated = answer === 1 || answer === 3;
+		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
 	}
 
 	/**
@@ -1038,7 +1114,7 @@ export class TerminalSession {
 	 */
 	detectCommandStart(): Promise<number> {
 		return new Promise<number>((resolve, reject) => {
-			if (!this.#interactive) {
+			if (!this[kInteractive]) {
 				reject(new Error("Cannot detect cursor position: not interactive"));
 				return;
 			}
@@ -1046,14 +1122,14 @@ export class TerminalSession {
 			let responseBuffer = "";
 
 			const finish = () => {
-				this.#cursorDetectionHandler = null;
-				if (this.#cursorDetectionTimer !== null) {
-					clearTimeout(this.#cursorDetectionTimer);
-					this.#cursorDetectionTimer = null;
+				this[kCursorDetectionHandler] = null;
+				if (this[kCursorDetectionTimer] !== null) {
+					clearTimeout(this[kCursorDetectionTimer]);
+					this[kCursorDetectionTimer] = null;
 				}
 			};
 
-			this.#cursorDetectionHandler = (dataStr: string) => {
+			this[kCursorDetectionHandler] = (dataStr: string) => {
 				responseBuffer += dataStr;
 
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
@@ -1063,26 +1139,26 @@ export class TerminalSession {
 					const row = parseInt(match[1], 10);
 					// Convert 1-based terminal row to the 0-based anchor.
 					const screenTop = row - 1;
-					this.#viewport.screenTop = screenTop;
+					this[kViewport].screenTop = screenTop;
 
 					// Content shifts up to the terminal top from the command start.
-					this.#viewport.anchorScrollTop = -this.#viewport.screenTop;
+					this[kViewport].anchorScrollTop = -this[kViewport].screenTop;
 
-					this.#hasDetectedCommandStart = true;
+					this[kHasDetectedCommandStart] = true;
 					resolve(row);
 				}
 			};
 
-			this.#cursorDetectionSequence = this.#dsrSequence++;
+			this[kCursorDetectionSequence] = this[kDsrSequence]++;
 			void this.write("\x1b[6n");
 
 			// Timeout after 1000ms. The timer is held so it can be cleared the
 			// moment a response arrives --
 			// otherwise it keeps the event loop alive a further second.
-			this.#cursorDetectionTimer = setTimeout(() => {
-				this.#cursorDetectionTimer = null;
-				if (this.#cursorDetectionHandler) {
-					this.#cursorDetectionHandler = null;
+			this[kCursorDetectionTimer] = setTimeout(() => {
+				this[kCursorDetectionTimer] = null;
+				if (this[kCursorDetectionHandler]) {
+					this[kCursorDetectionHandler] = null;
 					reject(new Error("Timeout waiting for cursor position response"));
 				}
 			}, 1000);
@@ -1100,7 +1176,7 @@ export class TerminalSession {
 	 */
 	queryCursorRow(): Promise<number> {
 		return new Promise<number>((resolve, reject) => {
-			if (!this.#interactive) {
+			if (!this[kInteractive]) {
 				reject(new Error("not interactive"));
 				return;
 			}
@@ -1118,13 +1194,13 @@ export class TerminalSession {
 				responseBuffer += dataStr;
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
-					if (this.#cursorDetectionHandler === handler) {
-						this.#cursorDetectionHandler = null;
+					if (this[kCursorDetectionHandler] === handler) {
+						this[kCursorDetectionHandler] = null;
 					}
 					if (localTimer !== null) {
 						clearTimeout(localTimer);
-						if (this.#cursorDetectionTimer === localTimer) {
-							this.#cursorDetectionTimer = null;
+						if (this[kCursorDetectionTimer] === localTimer) {
+							this[kCursorDetectionTimer] = null;
 						}
 						localTimer = null;
 					}
@@ -1134,24 +1210,24 @@ export class TerminalSession {
 
 			// Replacing a stale handler is fine: its own timeout still fires and
 			// rejects it, and the caller's epoch check discards the stale result.
-			this.#cursorDetectionHandler = handler;
+			this[kCursorDetectionHandler] = handler;
 
-			this.#cursorDetectionSequence = this.#dsrSequence++;
+			this[kCursorDetectionSequence] = this[kDsrSequence]++;
 			void this.write("\x1b[6n");
 
 			// Short timeout: the redraw should feel immediate, and a terminal
 			// that does not answer promptly falls back to the computed re-anchor.
 			localTimer = setTimeout(() => {
-				if (this.#cursorDetectionHandler === handler) {
-					this.#cursorDetectionHandler = null;
+				if (this[kCursorDetectionHandler] === handler) {
+					this[kCursorDetectionHandler] = null;
 				}
-				if (this.#cursorDetectionTimer === localTimer) {
-					this.#cursorDetectionTimer = null;
+				if (this[kCursorDetectionTimer] === localTimer) {
+					this[kCursorDetectionTimer] = null;
 				}
 				localTimer = null;
 				reject(new Error("Timeout waiting for cursor position response"));
 			}, 200);
-			this.#cursorDetectionTimer = localTimer;
+			this[kCursorDetectionTimer] = localTimer;
 		});
 	}
 
@@ -1162,56 +1238,56 @@ export class TerminalSession {
 	 * terminal already was.
 	 */
 	dispose(): void {
-		if (this.#disposed) {
+		if (this[kDisposed]) {
 			return;
 		}
-		this.#disposed = true;
+		this[kDisposed] = true;
 
 		// We asked for explicit bidi on the way in; give the terminal back the
 		// mode it reported, so the next command inherits its own settings rather
 		// than ours. Only when it was SET -- reset is where we left it anyway.
-		if (this.#priorBidiMode === 1) {
+		if (this[kPriorBidiMode] === 1) {
 			void this.write("\x1b[8h");
-			this.#priorBidiMode = null;
+			this[kPriorBidiMode] = null;
 		}
 		// Mode 2027 likewise: we turned it on, so turn it off. A terminal that
 		// never had it does not see this, having answered nothing.
-		if (this.#graphemeClustersNegotiated) {
+		if (this[kGraphemeClustersNegotiated]) {
 			void this.write("\x1b[?2027l");
-			this.#graphemeClustersNegotiated = false;
+			this[kGraphemeClustersNegotiated] = false;
 		}
-		for (const timer of this.#modeProbeTimers) {
+		for (const timer of this[kModeProbeTimers]) {
 			clearTimeout(timer);
 		}
-		this.#modeProbeTimers.clear();
-		this.#modeProbeHandlers.clear();
-		if (this.#cursorDetectionTimer !== null) {
-			clearTimeout(this.#cursorDetectionTimer);
-			this.#cursorDetectionTimer = null;
+		this[kModeProbeTimers].clear();
+		this[kModeProbeHandlers].clear();
+		if (this[kCursorDetectionTimer] !== null) {
+			clearTimeout(this[kCursorDetectionTimer]);
+			this[kCursorDetectionTimer] = null;
 		}
-		this.#cursorDetectionHandler = null;
-		if (this.#widthProbeTimer !== null) {
-			clearTimeout(this.#widthProbeTimer);
-			this.#widthProbeTimer = null;
+		this[kCursorDetectionHandler] = null;
+		if (this[kWidthProbeTimer] !== null) {
+			clearTimeout(this[kWidthProbeTimer]);
+			this[kWidthProbeTimer] = null;
 		}
-		this.#widthProbes.length = 0;
-		this.#widthProbing = false;
+		this[kWidthProbes].length = 0;
+		this[kWidthProbing] = false;
 
 		// Release the wire: cancelling the readable is what hands a process
 		// transport its tty back (raw mode off, stdin paused). The writer is
 		// released after the restores above have been queued on it.
-		if (this.#reader) {
-			void this.#reader.cancel().catch(() => {});
-			this.#reader = null;
+		if (this[kReader]) {
+			void this[kReader].cancel().catch(() => {});
+			this[kReader] = null;
 		}
-		if (this.#resizeReader) {
-			void this.#resizeReader.cancel().catch(() => {});
-			this.#resizeReader = null;
+		if (this[kResizeReader]) {
+			void this[kResizeReader].cancel().catch(() => {});
+			this[kResizeReader] = null;
 		}
-		if (this.#writer) {
-			const writer = this.#writer;
-			this.#writer = null;
-			void this.#lastWrite.then(() => writer.releaseLock());
+		if (this[kWriter]) {
+			const writer = this[kWriter];
+			this[kWriter] = null;
+			void this[kLastWrite].then(() => writer.releaseLock());
 		}
 	}
 }
