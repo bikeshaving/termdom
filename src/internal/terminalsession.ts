@@ -1034,12 +1034,12 @@ function armWidthProbeTimer(
 function settleWidthProbe(
 	self: TerminalSession,
 	probe: {
-			cluster: string;
-			run: number;
-			epoch: number;
-			column: number;
-			width: number;
-		},
+		cluster: string;
+		run: number;
+		epoch: number;
+		column: number;
+		width: number;
+	},
 	replyColumn: number,
 ): void {
 	self[kWidthAnswered] = true;

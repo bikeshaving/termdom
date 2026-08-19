@@ -811,7 +811,8 @@ export class TermDOM {
 			) {
 				return;
 			}
-			queueCaretReveal(this, 
+			queueCaretReveal(
+				this,
 				target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 			);
 			void render(this);
@@ -1339,7 +1340,8 @@ export class TermDOM {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same conversion
 			// getBoundingClientRect's toViewportRect makes in the other direction.
-			return findElementAtDocumentPoint(termDOM, 
+			return findElementAtDocumentPoint(
+				termDOM,
 				x,
 				y + termDOM[kViewport].scrollTop,
 			);
@@ -1586,7 +1588,8 @@ export class TermDOM {
 	 * session holds the terminal, since raw mode does not translate newlines.
 	 */
 	print(html: string): Promise<void> {
-		const output = renderStaticHTML(this, 
+		const output = renderStaticHTML(
+			this,
 			html,
 			this[kAttached] && this[kInteractive] ? "\r\n" : "\n",
 		);
