@@ -38,6 +38,7 @@ import {
 	renderWhiteSpaceOffsets,
 	shiftRenderedOffsets,
 	type RenderedOffsets,
+	preservesSpaces,
 	stringWidth as runtimeStringWidth,
 	toVisualOrder,
 	writeClusterWidths,
@@ -270,14 +271,6 @@ function isInlineLevel(node: Node): boolean {
 }
 
 /** Whether a `white-space` value keeps a space as content rather than collapsing it. */
-function preservesSpaces(whiteSpace: string): boolean {
-	return (
-		whiteSpace === "pre" ||
-		whiteSpace === "pre-wrap" ||
-		whiteSpace === "break-spaces"
-	);
-}
-
 /**
  * Put a flex node at a position under a parent. A node is one child of one
  * parent: one already under this parent is MOVED, because a build that reaches
