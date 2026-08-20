@@ -6325,14 +6325,14 @@ function shorthand(
 }
 
 function measure(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
 ): string {
 	// A border with no style draws nothing and takes no space, whatever
 	// width it declares.
 	if (property.startsWith("border-") && property.endsWith("-width")) {
-		const style = self.computedValueOf(
+		const style = declaration.computedValueOf(
 			`${property.slice(0, -"-width".length)}-style`,
 		);
 		if (!style || style === "none" || style === "hidden") {
@@ -6342,12 +6342,12 @@ function measure(
 	const inset = INSET_PROPERTIES.has(property);
 	// An inset only applies to a positioned box; on a static one it stays
 	// as declared.
-	const position = inset ? self.getPropertyValue("position") : "";
+	const position = inset ? declaration.getPropertyValue("position") : "";
 	if (inset && position === "static") {
 		return computed;
 	}
 
-	const rect = self[kManager]!.usedRect(self[kElement]);
+	const rect = declaration[kManager]!.usedRect(declaration[kElement]);
 	// No box -- display:none, or a tree layout never reached -- so the
 	// computed value is the answer, exactly as CSSOM says.
 	if (!rect) {
@@ -6355,20 +6355,23 @@ function measure(
 	}
 
 	if (inset) {
-		return usedInset(self, property, computed, rect, position);
+		return usedInset(declaration, property, computed, rect, position);
 	}
 
 	if (property === "width" || property === "height") {
 		const vertical = property === "height";
 		const edges =
-			edge(self, vertical ? "border-top-width" : "border-left-width") +
-			edge(self, vertical ? "border-bottom-width" : "border-right-width") +
-			edge(self, vertical ? "padding-top" : "padding-left") +
-			edge(self, vertical ? "padding-bottom" : "padding-right");
+			edge(declaration, vertical ? "border-top-width" : "border-left-width") +
+			edge(
+				declaration,
+				vertical ? "border-bottom-width" : "border-right-width",
+			) +
+			edge(declaration, vertical ? "padding-top" : "padding-left") +
+			edge(declaration, vertical ? "padding-bottom" : "padding-right");
 		const border = vertical ? rect.height : rect.width;
 		// `box-sizing: border-box` measures the border box itself.
 		const content =
-			self.getPropertyValue("box-sizing") === "border-box" ?
+			declaration.getPropertyValue("box-sizing") === "border-box" ?
 				border :
 				border - edges;
 		return usedLength(Math.max(0, content));
@@ -6377,14 +6380,14 @@ function measure(
 	// An `auto` margin is whatever space the box was given: the distance
 	// between its border box and its containing block's content edge.
 	if (computed === "auto" && property.startsWith("margin-")) {
-		return usedLength(autoMargin(self, property, rect));
+		return usedLength(autoMargin(declaration, property, rect));
 	}
 
 	// Every other used length is already absolute in this engine's own
 	// unit, so the computed value carries it; only a percentage still has
 	// to be resolved, against the containing block's width.
 	if (computed.endsWith("%")) {
-		const basis = containingWidth(self);
+		const basis = containingWidth(declaration);
 		if (basis === null) {
 			return computed;
 		}
@@ -6402,13 +6405,13 @@ function measure(
  * that has to be measured: it is whatever distance the box ended up at.
  */
 function usedInset(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
 	rect: DOMRect,
 	position: string,
 ): string {
-	const block = containingBlockBox(self, position);
+	const block = containingBlockBox(declaration, position);
 	if (!block) {
 		return computed;
 	}
@@ -6425,7 +6428,7 @@ function usedInset(
 	}
 
 	const opposite = OPPOSITE_INSET[property];
-	const other = insetLength(self.computedValueOf(opposite), basis);
+	const other = insetLength(declaration.computedValueOf(opposite), basis);
 	// A relatively positioned box is offset from where it already was, so
 	// an `auto` inset is the negative of its opposite -- and zero when both
 	// are auto, which moves the box nowhere.
@@ -6442,22 +6445,24 @@ function usedInset(
 	if (other !== null) {
 		const size =
 			(vertical ? rect.height : rect.width) +
-			edge(self, start) +
-			edge(self, end);
+			edge(declaration, start) +
+			edge(declaration, end);
 		return usedLength(basis - other - size);
 	}
 	switch (property) {
 		case "top":
-			return usedLength(rect.y - edge(self, start) - block.y);
+			return usedLength(rect.y - edge(declaration, start) - block.y);
 		case "left":
-			return usedLength(rect.x - edge(self, start) - block.x);
+			return usedLength(rect.x - edge(declaration, start) - block.x);
 		case "bottom":
 			return usedLength(
-				block.y + block.height - (rect.y + rect.height + edge(self, end)),
+				block.y +
+				block.height -
+				(rect.y + rect.height + edge(declaration, end)),
 			);
 		default:
 			return usedLength(
-				block.x + block.width - (rect.x + rect.width + edge(self, end)),
+				block.x + block.width - (rect.x + rect.width + edge(declaration, end)),
 			);
 	}
 }
@@ -6469,49 +6474,49 @@ function usedInset(
  * this one flows in.
  */
 function containingBlockBox(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
-		return viewportBox(self);
+		return viewportBox(declaration);
 	}
 	if (position === "absolute") {
 		for (
-			let ancestor = flatParentElement<Element>(self[kElement]);
+			let ancestor = flatParentElement<Element>(declaration[kElement]);
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const ancestorPosition =
 				computedStyleOf(ancestor).computedValueOf("position");
 			if (ancestorPosition && ancestorPosition !== "static") {
-				return boxOf(self, ancestor, false);
+				return boxOf(declaration, ancestor, false);
 			}
 		}
-		return viewportBox(self);
+		return viewportBox(declaration);
 	}
 	if (position === "sticky") {
 		for (
-			let ancestor = flatParentElement<Element>(self[kElement]);
+			let ancestor = flatParentElement<Element>(declaration[kElement]);
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
 			if (overflow && overflow !== "visible") {
-				return boxOf(self, ancestor, true);
+				return boxOf(declaration, ancestor, true);
 			}
 		}
 	}
-	const parent = flatParentElement<Element>(self[kElement]);
-	return parent ? boxOf(self, parent, true) : viewportBox(self);
+	const parent = flatParentElement<Element>(declaration[kElement]);
+	return parent ? boxOf(declaration, parent, true) : viewportBox(declaration);
 }
 
 /** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
 function boxOf(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = self[kManager]!.usedRect(element);
+	const rect = declaration[kManager]!.usedRect(element);
 	if (!rect) {
 		return null;
 	}
@@ -6538,13 +6543,13 @@ function boxOf(
 
 /** The initial containing block: the grid itself. */
 function viewportBox(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const viewport = self[kManager]!.viewportSize();
+	const viewport = declaration[kManager]!.viewportSize();
 	if (!viewport) {
 		return null;
 	}
-	const rect = self[kManager]!.usedRect(self[kElement]);
+	const rect = declaration[kManager]!.usedRect(declaration[kElement]);
 	if (!rect) {
 		return null;
 	}
@@ -6594,20 +6599,20 @@ function resolvedMinSize(
 
 /** One edge length in cells, for the arithmetic above. */
 function edge(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 ): number {
-	return parseFloat(self.getPropertyValue(property)) || 0;
+	return parseFloat(declaration.getPropertyValue(property)) || 0;
 }
 
 /** The space an `auto` margin actually took, measured off the two boxes. */
 function autoMargin(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	rect: DOMRect,
 ): number {
-	const parent = flatParentElement<Element>(self[kElement]);
-	const parentRect = parent ? self[kManager]!.usedRect(parent) : null;
+	const parent = flatParentElement<Element>(declaration[kElement]);
+	const parentRect = parent ? declaration[kManager]!.usedRect(parent) : null;
 	if (!parent || !parentRect) {
 		return 0;
 	}
@@ -6641,13 +6646,13 @@ function autoMargin(
 
 /** The width a percentage on this element resolves against. */
 function containingWidth(
-	self: MeasuredDeclaration,
+	declaration: MeasuredDeclaration,
 ): number | null {
-	const parent = flatParentElement<Element>(self[kElement]);
+	const parent = flatParentElement<Element>(declaration[kElement]);
 	if (!parent) {
 		return null;
 	}
-	const rect = self[kManager]!.usedRect(parent);
+	const rect = declaration[kManager]!.usedRect(parent);
 	return rect ? rect.width : null;
 }
 
