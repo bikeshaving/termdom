@@ -1434,10 +1434,7 @@ export class TermDOM {
 			// The camera shows [scrollTop, scrollTop + region).
 			// Move it the minimal amount that brings the element into it -- the
 			// standard block: "nearest" behavior.
-			const regionHeight = Math.min(
-				termDOM[kHeight],
-				termDOM.document.body.scrollHeight,
-			);
+			const regionHeight = cameraRegionHeight(termDOM);
 			const top = termDOM[kViewport].scrollTop;
 			if (rect.top < top) {
 				scrollCamera(termDOM, rect.top - top);
@@ -2440,6 +2437,21 @@ function documentPaintHeight(
 }
 
 /**
+ * The height of the window the camera shows, for the scroll-to-reveal
+ * math. Fullscreen owns the whole screen from row zero, and the
+ * fullscreen element has left the flow -- body.scrollHeight measures
+ * next to nothing there, and a reveal sized by it would scroll the
+ * camera by the target's whole row.
+ */
+function cameraRegionHeight(
+	self: TermDOM,
+): number {
+	return self[kFullscreenManager].isFullscreen ?
+		self[kHeight] :
+			Math.min(self[kHeight], self.document.body.scrollHeight);
+}
+
+/**
  * The value offset under a document-space point in a text field --
  * cell-width aware, clamped to the nearest offset so a drag that
  * leaves the field still resolves (the browser's capture model:
@@ -2524,10 +2536,7 @@ function scrollCaretIntoView(
 	) {
 		revealBottom = Math.round(rect.bottom);
 	}
-	const regionHeight = Math.min(
-		self[kHeight],
-		self.document.body.scrollHeight,
-	);
+	const regionHeight = cameraRegionHeight(self);
 	const delta = self[kViewport].scrollDeltaToReveal(
 		revealTop,
 		revealBottom,
@@ -3354,10 +3363,20 @@ function dispatchGlobalKeyboardEvent(
 			active :
 			self[kFullscreenManager].fullscreenElement || self.document.body;
 
-	// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
-	// all, the same as a real browser: fullscreen exit is a user-agent
-	// guarantee an app can't trap the user past with preventDefault.
+	// Escape in fullscreen is the user agent's key, never dispatched to the
+	// DOM: an app can't trap the user past it with preventDefault. It spends
+	// itself on the innermost trap first -- a focused text field owns the
+	// keyboard, so the first Escape gives it back, and only a free
+	// keyboard's Escape exits the screen.
 	if (keyName === "Escape" && self[kFullscreenManager].isFullscreen) {
+		if (
+			active &&
+			active !== self.document.body &&
+			isTextField(active as Element)
+		) {
+			(active as HTMLElement).blur();
+			return;
+		}
 		self[kFullscreenManager].exitFullscreen().catch(() => {});
 		return;
 	}
