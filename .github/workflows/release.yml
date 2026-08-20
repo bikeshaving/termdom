@@ -61,6 +61,17 @@ jobs:
             exit 1
           fi
 
+      # The release is created after approval as the record of a version that
+      # is already live, so a release-triggered run has nothing to stage.
+      - name: Skip staging when the version is already published
+        id: published
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if npm view "@b9g/termdom@$PKG" version > /dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # Provenance comes from the OIDC attestation; the trusted publisher
       # mints the token, so no npm secret exists anywhere in this repo.
-      - run: npx libuild stage
+      - if: steps.published.outputs.skip != 'true'
+        run: npx libuild stage
