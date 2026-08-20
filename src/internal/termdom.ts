@@ -170,10 +170,11 @@ const BARE_MODIFIER_KEYS = new Set([
  * rather than something happening to them.
  *
  * These are the spec's -- a key that is neither Escape nor a bare modifier, a
- * mouse press, release or click. A resize, a focus move, pointer motion and a
- * wheel tick are the user agent's events too, and none of them is a request.
- * A paste arrives as the beforeinput its text rides in on, which is the event
- * a listener sees that gesture as.
+ * mouse press, release or click, a paste. A paste's default action carries
+ * the text on to a field as a beforeinput, which is activation-triggering
+ * too: a listener that sees the gesture only there still has the gate open.
+ * A resize, a focus move, pointer motion and a wheel tick are the user
+ * agent's events too, and none of them is a request.
  */
 function isActivationTriggering(event: DOM.Event): boolean {
 	switch (event.type) {
@@ -185,6 +186,7 @@ function isActivationTriggering(event: DOM.Event): boolean {
 		case "mouseup":
 		case "click":
 		case "pointerup":
+		case "paste":
 			return true;
 		case "beforeinput":
 			return (event as DOM.InputEvent).inputType === "insertFromPaste";
@@ -502,6 +504,15 @@ export interface EngineWindow
 	KeyboardEvent: typeof globalThis.KeyboardEvent;
 	FocusEvent: typeof globalThis.FocusEvent;
 	InputEvent: typeof globalThis.InputEvent;
+	ClipboardEvent: typeof DOM.ClipboardEvent;
+	DataTransfer: typeof DOM.DataTransfer;
+	DataTransferItem: typeof DOM.DataTransferItem;
+	DataTransferItemList: typeof DOM.DataTransferItemList;
+	FileList: typeof DOM.FileList;
+	Clipboard: typeof Clipboard;
+	ClipboardItem: typeof ClipboardItem;
+	Permissions: typeof Permissions;
+	PermissionStatus: typeof PermissionStatus;
 	CompositionEvent: typeof globalThis.CompositionEvent;
 	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
 	DOMException: typeof globalThis.DOMException;
@@ -2060,6 +2071,315 @@ function sealToScrollback(
 	self[kSealed] = true;
 }
 
+/** The brand an interface with no constructor is built through internally. */
+const kInternalConstruction = Symbol("internal construction");
+const kClipboardEngine = Symbol("engine");
+const kItemEntries = Symbol("entries");
+const kPermissionName = Symbol("name");
+const kPermissionEngine = Symbol("engine");
+
+/** Refuse a clipboard request the user has not asked for. */
+function clipboardDenied(why: string): Promise<never> {
+	return Promise.reject(new globalThis.DOMException(why, "NotAllowedError"));
+}
+
+/**
+ * Whether the clipboard is reachable right now, and the refusal if it is not.
+ *
+ * The clipboard is the user's to grant, so it is reachable only from a
+ * trusted activation-triggering event while it is being dispatched -- a
+ * keystroke, a mouse press or release, a click, a paste. This is stricter
+ * than a browser on purpose: a browser's transient activation outlives the
+ * dispatch that granted it, because its window is a span of time, so a
+ * handler there may await and still write the clipboard. Here the gate is the
+ * dispatch itself, and the clipboard is reachable only synchronously within
+ * it. A timer, a microtask, a resolved fetch and an event an application
+ * dispatched itself are all outside.
+ */
+function clipboardRefusal(
+	self: TermDOM,
+	what: string,
+): Promise<never> | null {
+	if (!self[kAttached] || !self[kInteractive]) {
+		return clipboardDenied(
+			"clipboard requires an attached interactive terminal",
+		);
+	}
+	if (!isUserActive(self)) {
+		return clipboardDenied(`clipboard ${what} need a user gesture`);
+	}
+	return null;
+}
+
+/** A media type, lowercased with the surrounding whitespace dropped. */
+function normalizeMediaType(type: unknown): string {
+	return String(type).trim().toLowerCase();
+}
+
+/** The payload OSC 52 carries, which is text and only text. */
+const CLIPBOARD_TEXT_TYPE = "text/plain";
+
+/**
+ * A payload the clipboard moves, held under the media types it reads as.
+ *
+ * Blob is the platform's, which Node and Bun both have as a global. OSC 52
+ * carries one payload a terminal treats as text, so text/plain is the only
+ * type a write sends and the only type a read answers with; an item may hold
+ * others, and the clipboard passes over them.
+ */
+class ClipboardItem {
+	declare [kItemEntries]: Map<string, Promise<Blob>>;
+
+	constructor(
+		items: Record<string, string | Blob | Promise<string | Blob>>,
+		_options?: unknown,
+	) {
+		if (items === null || typeof items !== "object") {
+			throw new TypeError("A clipboard item takes a record of types");
+		}
+		const entries = new Map<string, Promise<Blob>>();
+		for (const [type, value] of Object.entries(items)) {
+			const mediaType = normalizeMediaType(type);
+			entries.set(
+				mediaType,
+				Promise.resolve(value).then((held) =>
+					held instanceof Blob ?
+						held :
+							new Blob([String(held)], {type: mediaType}),
+				),
+			);
+		}
+		if (entries.size === 0) {
+			throw new TypeError("A clipboard item carries at least one type");
+		}
+		this[kItemEntries] = entries;
+	}
+
+	get types(): readonly string[] {
+		return Object.freeze(Array.from(this[kItemEntries].keys()));
+	}
+
+	getType(type: string): Promise<Blob> {
+		const held = this[kItemEntries].get(normalizeMediaType(type));
+		if (held === undefined) {
+			return Promise.reject(
+				new globalThis.DOMException(
+					`That item carries no ${normalizeMediaType(type)}`,
+					"NotFoundError",
+				),
+			);
+		}
+		return held;
+	}
+
+	static supports(type: string): boolean {
+		return normalizeMediaType(type) === CLIPBOARD_TEXT_TYPE;
+	}
+}
+
+Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
+	value: "ClipboardItem",
+	configurable: true,
+});
+
+/**
+ * The clipboard, as navigator.clipboard.
+ *
+ * writeText() carries the text to the system clipboard over OSC 52, which
+ * travels in-band -- across SSH too. Terminals without OSC 52 ignore it;
+ * there is no way to know, so the promise resolves when the transport has the
+ * bytes. readText() asks for the clipboard the same way (OSC 52 with `?` for
+ * the payload) and resolves with what comes back. write() and read() are the
+ * same two round trips over a ClipboardItem.
+ *
+ * It is an EventTarget because the interface says so; the user agent fires
+ * nothing at it.
+ */
+class Clipboard extends DOM.EventTarget {
+	declare [kClipboardEngine]: TermDOM;
+
+	constructor(brand?: unknown, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kClipboardEngine] = engine as TermDOM;
+	}
+
+	writeText(text: string): Promise<void> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "writes");
+		if (refusal !== null) {
+			return refusal;
+		}
+		return engine[kSession].write(
+			`\x1b]52;c;${base64OfText(String(text))}\x07`,
+		);
+	}
+
+	async readText(): Promise<string> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "reads");
+		if (refusal !== null) {
+			return refusal;
+		}
+		const payload = await engine[kSession].queryClipboard();
+		if (payload === null) {
+			// Silence is a refusal: most terminals gate clipboard reads on
+			// their own configuration and answer nothing when they are off.
+			return clipboardDenied("the terminal did not answer the clipboard query");
+		}
+		return textOfBase64(payload);
+	}
+
+	async write(items: Iterable<ClipboardItem>): Promise<void> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "writes");
+		if (refusal !== null) {
+			return refusal;
+		}
+		let carrier: ClipboardItem | null = null;
+		for (const item of items) {
+			if (item.types.includes(CLIPBOARD_TEXT_TYPE)) {
+				carrier = item;
+				break;
+			}
+		}
+		if (carrier === null) {
+			return clipboardDenied(
+				`a clipboard write needs a ${CLIPBOARD_TEXT_TYPE} entry`,
+			);
+		}
+		const text = await (await carrier.getType(CLIPBOARD_TEXT_TYPE)).text();
+		return engine[kSession].write(`\x1b]52;c;${base64OfText(text)}\x07`);
+	}
+
+	async read(): Promise<ClipboardItem[]> {
+		const text = await this.readText();
+		return [new ClipboardItem({[CLIPBOARD_TEXT_TYPE]: text})];
+	}
+}
+
+Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
+	value: "Clipboard",
+	configurable: true,
+});
+
+// The permission names the clipboard here answers for, and the ones the
+// Permissions API defines that a terminal has nothing behind: no camera, no
+// microphone, no location, no notification surface, so the answer is denied
+// rather than a prompt nobody could ever answer.
+const CLIPBOARD_PERMISSIONS = new Set(["clipboard-read", "clipboard-write"]);
+const UNBACKED_PERMISSIONS = new Set([
+	"accelerometer",
+	"ambient-light-sensor",
+	"background-sync",
+	"bluetooth",
+	"camera",
+	"display-capture",
+	"geolocation",
+	"gyroscope",
+	"idle-detection",
+	"local-fonts",
+	"magnetometer",
+	"microphone",
+	"midi",
+	"notifications",
+	"payment-handler",
+	"periodic-background-sync",
+	"persistent-storage",
+	"push",
+	"screen-wake-lock",
+	"speaker-selection",
+	"storage-access",
+	"window-management",
+	"xr-spatial-tracking",
+]);
+
+/**
+ * The standing of one permission.
+ *
+ * `state` is read at the moment it is asked, and for the clipboard that
+ * answer is granted while a gesture is being dispatched and prompt outside
+ * one. Nothing fires `change`: the gesture opens and closes inside a single
+ * dispatch, and a listener would be told about a state that had already
+ * passed.
+ */
+class PermissionStatus extends DOM.EventTarget {
+	declare [kPermissionName]: string;
+	declare [kPermissionEngine]: TermDOM | null;
+
+	constructor(brand?: unknown, name?: string, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionName] = String(name);
+		this[kPermissionEngine] = engine ?? null;
+	}
+
+	get name(): string {
+		return this[kPermissionName];
+	}
+
+	get state(): string {
+		const engine = this[kPermissionEngine];
+		if (engine === null || !CLIPBOARD_PERMISSIONS.has(this[kPermissionName])) {
+			return "denied";
+		}
+		if (!engine[kAttached] || !engine[kInteractive]) {
+			return "denied";
+		}
+		return isUserActive(engine) ? "granted" : "prompt";
+	}
+}
+
+DOM.installEventHandlers(PermissionStatus.prototype, ["onchange"]);
+
+Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
+	value: "PermissionStatus",
+	configurable: true,
+});
+
+/** navigator.permissions: what the gate above answers, asked by name. */
+class Permissions extends DOM.EventTarget {
+	declare [kPermissionEngine]: TermDOM;
+
+	constructor(brand?: unknown, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionEngine] = engine as TermDOM;
+	}
+
+	query(descriptor: {name?: string}): Promise<PermissionStatus> {
+		if (descriptor === null || typeof descriptor !== "object") {
+			return Promise.reject(
+				new TypeError("A permission query takes a descriptor"),
+			);
+		}
+		const name = String(descriptor.name);
+		if (!CLIPBOARD_PERMISSIONS.has(name) && !UNBACKED_PERMISSIONS.has(name)) {
+			return Promise.reject(
+				new TypeError(`"${name}" is not a permission name`),
+			);
+		}
+		return Promise.resolve(
+			new PermissionStatus(
+				kInternalConstruction,
+				name,
+				this[kPermissionEngine],
+			),
+		);
+	}
+}
+
+Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
+	value: "Permissions",
+	configurable: true,
+});
+
 function installWindowExtensions(
 	self: TermDOM,
 ): void {
@@ -2309,61 +2629,27 @@ function installWindowExtensions(
 		});
 	}
 
-	// navigator.clipboard: writeText() carries the text to the system
-	// clipboard over OSC 52, which travels in-band -- across SSH too.
-	// Terminals without OSC 52 ignore it; there is no way to know, so the
-	// promise resolves when the transport has the bytes. readText() asks for
-	// the clipboard the same way (OSC 52 with `?` for the payload) and
-	// resolves with what comes back.
+	// The clipboard and the permission it stands behind, which the classes
+	// above implement over OSC 52.
 	//
-	// Both are the user's to grant, so both are reachable only from a trusted
-	// activation-triggering event while it is being dispatched -- a keystroke,
-	// a mouse press or release, a click, a paste. This is stricter than a
-	// browser on purpose: a browser's transient activation outlives the
-	// dispatch that granted it, because its window is a span of time, so a
-	// handler there may await and still write the clipboard. Here the gate is
-	// the dispatch itself, and the clipboard is reachable only synchronously
-	// within it. A timer, a microtask, a resolved fetch and an event an
-	// application dispatched itself are all outside.
-	const clipboardDenied = (why: string): Promise<never> =>
-		Promise.reject(
-			new (window as any).DOMException(why, "NotAllowedError"),
-		);
+	// `copy` and `cut` are here as interfaces and event types, so a listener
+	// attaches and an application can build one and dispatch it, and the user
+	// agent fires neither. The terminal keeps the copy gesture for itself --
+	// Cmd+C, Shift+drag -- and does not report it, and Ctrl+C is the
+	// interrupt. A document learns of a copy the terminal made only by
+	// writing the clipboard itself.
+	Object.assign(window as unknown as Record<string, unknown>, {
+		Clipboard,
+		ClipboardItem,
+		Permissions,
+		PermissionStatus,
+	});
 	Object.defineProperty(window.navigator, "clipboard", {
-		value: {
-			writeText: (text: string): Promise<void> => {
-				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
-					return clipboardDenied(
-						"clipboard requires an attached interactive terminal",
-					);
-				}
-				if (!isUserActive(termDOM)) {
-					return clipboardDenied("clipboard writes need a user gesture");
-				}
-				return termDOM[kSession].write(
-					`\x1b]52;c;${base64OfText(String(text))}\x07`,
-				);
-			},
-			readText: async (): Promise<string> => {
-				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
-					return clipboardDenied(
-						"clipboard requires an attached interactive terminal",
-					);
-				}
-				if (!isUserActive(termDOM)) {
-					return clipboardDenied("clipboard reads need a user gesture");
-				}
-				const payload = await termDOM[kSession].queryClipboard();
-				if (payload === null) {
-					// Silence is a refusal: most terminals gate clipboard reads on
-					// their own configuration and answer nothing when they are off.
-					return clipboardDenied(
-						"the terminal did not answer the clipboard query",
-					);
-				}
-				return textOfBase64(payload);
-			},
-		},
+		value: new Clipboard(kInternalConstruction, termDOM),
+		configurable: true,
+	});
+	Object.defineProperty(window.navigator, "permissions", {
+		value: new Permissions(kInternalConstruction, termDOM),
 		configurable: true,
 	});
 
@@ -3788,8 +4074,12 @@ function handleMouseReport(
 }
 
 /**
- * Deliver a paste to the focused control as an `insertFromPaste` beforeinput;
- * its own listener does the edit. Dropped if nothing editable is focused.
+ * Deliver a paste as a `paste` event carrying the text, at the focused
+ * element or at the body when nothing is focused. A paste nobody cancels
+ * runs its default action: into a text field, an `insertFromPaste`
+ * beforeinput whose listener does the edit. Anywhere else the event is the
+ * whole of it, and an application that wants the text reads it off
+ * `clipboardData`.
  */
 function dispatchPaste(
 	self: TermDOM,
@@ -3801,19 +4091,32 @@ function dispatchPaste(
 	// boundary, so a multi-line paste into a textarea is multi-line and
 	// a field's own handlers never see a bare CR.
 	text = text.replace(/\r\n?/g, "\n");
-	const target = self.document.activeElement;
-	if (!target || target === self.document.body) {
-		return;
-	}
-	fireAsUserAgent(
+	const focused = self.document.activeElement;
+	const target =
+		focused && focused !== self.document.body ? focused : self.document.body;
+	const clipboardData = new DOM.DataTransfer();
+	clipboardData.setData("text/plain", text);
+	DOM.lockDataTransfer(clipboardData);
+	const proceed = fireAsUserAgent(
 		target,
-		new self.window.InputEvent("beforeinput", {
-			inputType: "insertFromPaste",
-			data: text,
+		new self.window.ClipboardEvent("paste", {
+			clipboardData,
 			bubbles: true,
 			cancelable: true,
 		}),
 	);
+	const tag = target.tagName;
+	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
+		fireAsUserAgent(
+			target,
+			new self.window.InputEvent("beforeinput", {
+				inputType: "insertFromPaste",
+				data: text,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}
 	void render(self);
 }
 
