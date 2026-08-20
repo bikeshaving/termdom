@@ -165,6 +165,47 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		// Right-aligned Arabic is where in-place measurement starves: every
+		// shaped form lands against the right margin, where the guard turns it
+		// away, so the frame asks about them on a probe train at the far left
+		// of a row it is repainting anyway. What tmux must witness is a screen
+		// that shows no sign of it -- the boxes square, the row the train stood
+		// on holding its own text.
+		name: "right-aligned Arabic: the probe train leaves the screen square",
+		command: "node examples/rtl.ts",
+		cols: 40,
+		settle: 3000,
+		run: async (pane) => {
+			const screen = pane.screen();
+			const trained = screen.find((line) => line.includes("RTL rendering"));
+			assert(
+				trained?.trimEnd() === "  RTL rendering",
+				`the train left something behind: ${JSON.stringify(trained)}`,
+			);
+
+			// The Arabic card: its content row and the borders above and below
+			// it must end in the same column, which they do only if every
+			// cluster on the row advanced the way the frame counted.
+			// Arabic proper and the presentation forms the shaper emits.
+			const content = screen.findIndex((line) =>
+				/[\u0600-\u06FF\uFB50-\uFEFC]/.test(line),
+			);
+			assert(content > 0, "no Arabic row on screen");
+			const width = (line: string): number => line.trimEnd().length;
+			assert(
+				width(screen[content - 1]) === width(screen[content]) &&
+				width(screen[content]) === width(screen[content + 1]),
+				`Arabic box borders do not line up: ${JSON.stringify(
+					screen.slice(content - 1, content + 2),
+				)}`,
+			);
+			assert(
+				screen[content].trimEnd().endsWith("│"),
+				"Arabic row does not end at the box's right border",
+			);
+		},
+	},
+	{
 		// tmux measures these clusters the way the width tables do, so what it
 		// witnesses is the asking rather than the learning: a frame that appends
 		// DSR after emoji-presentation glyphs and repaints over itself must

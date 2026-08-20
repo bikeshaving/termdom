@@ -384,6 +384,12 @@ interface TerminalSessionHandlers {
 	 * that cluster need repainting against the corrected measurement.
 	 */
 	onWidthCorrection(): void;
+	/**
+	 * A cluster the margin keeps turning away needs a frame to carry its probe
+	 * train, and the document is not producing one. Repaint the least that
+	 * gives the train a row to stand on.
+	 */
+	onWidthStarvation(): void;
 	/** The transport's `closed` settled: the terminal is gone. */
 	onClosed(info: TerminalCloseInfo): void;
 }
@@ -393,12 +399,16 @@ const kWidthProbes = Symbol("widthProbes");
 const kWriteEpoch = Symbol("writeEpoch");
 const kDsrSequence = Symbol("dsrSequence");
 const kWidthProbeTimer = Symbol("widthProbeTimer");
-const kWIdTH_PROBE_TIMEOUT_MS = Symbol("WIDTH_PROBE_TIMEOUT_MS");
+const kWidthProbeTimeout = Symbol("widthProbeTimeout");
 const kWidthAnswered = Symbol("widthAnswered");
 const kWidthProbing = Symbol("widthProbing");
 const kInteractive = Symbol("interactive");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 const kWidthMeasurer = Symbol("widthMeasurer");
+const kWidthAsked = Symbol("widthAsked");
+const kWidthStarved = Symbol("widthStarved");
+const kStarvationTimer = Symbol("starvationTimer");
+const kWidthStarvationWait = Symbol("widthStarvationWait");
 const kWidthRunEpoch = Symbol("widthRunEpoch");
 const kWidthRun = Symbol("widthRun");
 const kWidthDrift = Symbol("widthDrift");
@@ -505,6 +515,23 @@ export class TerminalSession {
 	 * the replies come back in the same order the glyphs were painted.
 	 */
 	declare [kWidthSettled]: Set<string>;
+	/**
+	 * Every cluster that has ever carried a query, wherever it was asked from.
+	 * A cluster in here is not starved however often the margin turns it away:
+	 * it has had its question put, and the answer's fate is the queue's
+	 * business. This is what bounds the probe train to one per cluster.
+	 */
+	declare [kWidthAsked]: Set<string>;
+	/**
+	 * Clusters the margin guard turned away that have never been asked about
+	 * at all, waiting for a frame to carry their probe train. Right-aligned
+	 * text is what fills this: its clusters land against the last column every
+	 * time they are painted, so in place they would be deferred for the whole
+	 * session.
+	 */
+	declare [kWidthStarved]: Set<string>;
+	/** The wait for a frame the starved clusters could have ridden. */
+	declare [kStarvationTimer]: ReturnType<typeof setTimeout> | null;
 	/** Whether frames may still probe. */
 	declare [kWidthProbing]: boolean;
 	/** Whether the terminal has ever answered a width probe. */
@@ -527,7 +554,13 @@ export class TerminalSession {
 	 * answering late is still answering. Only a session that gets NOTHING back
 	 * gives up probing, and it can afford to wait to be sure.
 	 */
-	static readonly [kWIdTH_PROBE_TIMEOUT_MS] = 2000;
+	static readonly [kWidthProbeTimeout] = 2000;
+	/**
+	 * How long a starved cluster waits for a frame of the document's own
+	 * before one is asked for on its behalf. Long enough that anything still
+	 * animating, typing or scrolling carries the train for free.
+	 */
+	static readonly [kWidthStarvationWait] = 500;
 
 	declare [kWidthMeasurer]: WidthMeasurer;
 
@@ -584,9 +617,30 @@ export class TerminalSession {
 		this[kWidthDrift] = 0;
 		this[kWidthRunLost] = false;
 		this[kWriteEpoch] = 0;
+		this[kWidthAsked] = new Set();
+		this[kWidthStarved] = new Set();
+		this[kStarvationTimer] = null;
 		this[kWidthMeasurer] = {
 			wants: (cluster: string) => !this[kWidthSettled].has(cluster),
+			starved: () => this[kWidthStarved],
+			defer: (cluster: string) => {
+				// A cluster that has been asked about somewhere is not
+				// starving, whatever this frame's margin did to it. So one
+				// deferral of a cluster nothing has ever asked about IS the
+				// starvation: the layout that put it there will put it there
+				// again.
+				if (
+					this[kWidthAsked].has(cluster) ||
+					this[kWidthStarved].has(cluster)
+				) {
+					return;
+				}
+				this[kWidthStarved].add(cluster);
+				requestStarvationFrame(this);
+			},
 			probe: (cluster: string, run: number, column: number, width: number) => {
+				this[kWidthAsked].add(cluster);
+				this[kWidthStarved].delete(cluster);
 				this[kWidthProbes].push({
 					cluster,
 					run,
@@ -953,6 +1007,10 @@ export class TerminalSession {
 			clearTimeout(this[kWidthProbeTimer]);
 			this[kWidthProbeTimer] = null;
 		}
+		if (this[kStarvationTimer] !== null) {
+			clearTimeout(this[kStarvationTimer]);
+			this[kStarvationTimer] = null;
+		}
 		this[kWidthProbes].length = 0;
 		this[kWidthProbing] = false;
 
@@ -976,6 +1034,30 @@ export class TerminalSession {
 }
 
 /**
+ * Wait for a frame the starved clusters can ride, and ask for one if none
+ * comes.
+ *
+ * Starvation is discovered while a frame is being emitted, and that frame is
+ * already past the point where its train would have gone -- so the clusters
+ * need a later frame. A document still painting gives them one for nothing:
+ * every frame carries whatever is starved when it starts. Only a document
+ * that has gone quiet needs to be made to paint, and the wait is what tells
+ * the two apart.
+ */
+function requestStarvationFrame(self: TerminalSession): void {
+	if (self[kStarvationTimer] !== null) {
+		return;
+	}
+	self[kStarvationTimer] = setTimeout(() => {
+		self[kStarvationTimer] = null;
+		if (self[kDisposed] || self[kWidthStarved].size === 0) {
+			return;
+		}
+		self[kHandlers].onWidthStarvation();
+	}, TerminalSession[kWidthStarvationWait]);
+}
+
+/**
  * Keep a deadline running for as long as any probe is outstanding, timed
  * from the oldest of them.
  */
@@ -991,7 +1073,7 @@ function armWidthProbeTimer(
 	}
 	const remaining = Math.max(
 		0,
-		oldest.sentAt + TerminalSession[kWIdTH_PROBE_TIMEOUT_MS] - Date.now(),
+		oldest.sentAt + TerminalSession[kWidthProbeTimeout] - Date.now(),
 	);
 	self[kWidthProbeTimer] = setTimeout(() => {
 		self[kWidthProbeTimer] = null;
@@ -1001,7 +1083,7 @@ function armWidthProbeTimer(
 		// written since the deadline was set are not late yet and keep
 		// their place -- the deadline is per probe, and re-arms for the
 		// oldest one still waiting.
-		const deadline = Date.now() - TerminalSession[kWIdTH_PROBE_TIMEOUT_MS];
+		const deadline = Date.now() - TerminalSession[kWidthProbeTimeout];
 		let expired = 0;
 		while (
 			expired < self[kWidthProbes].length &&
@@ -1016,6 +1098,7 @@ function armWidthProbeTimer(
 		if (expired > 0 && !self[kWidthAnswered]) {
 			self[kWidthProbing] = false;
 			self[kWidthProbes].length = 0;
+			self[kWidthStarved].clear();
 			return;
 		}
 		self[kWidthProbes].splice(0, expired);

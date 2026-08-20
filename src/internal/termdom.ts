@@ -2194,6 +2194,10 @@ function buildSession(
 				self[kScreen].repaintAll();
 				void render(self);
 			},
+			onWidthStarvation: () => {
+				self[kScreen].repaintTopRow();
+				void render(self);
+			},
 			// The terminal went away (hangup, disconnect, process exit):
 			// clean up this side. The transport is already closing; there
 			// is nothing to close back.
