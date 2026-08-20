@@ -62,7 +62,8 @@ setInterval(() => {
 - **Events** Keyboard, mouse, focus, and paste events fire on elements, the
   document, and the window, decoded from stdin.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
-  `ResizeObserver`, and `getBoundingClientRect()` read the layout engine.
+  `ResizeObserver`, and `getBoundingClientRect()` work and report
+  cell-based layout.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
   terminal-native looks, restylable with CSS; Tab and `:focus` work.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
@@ -82,9 +83,8 @@ is one row, `1ch` is one column — so the box model, flexbox, and tables
 lay out in whole cells. On each frame the engine recomputes style and
 layout for whatever mutated, paints the result into a cell buffer, diffs
 it against the previous frame, and writes the difference to stdout as
-ANSI escape sequences. Input runs the other way: escape sequences from
-stdin are decoded into keyboard, mouse, and paste events and dispatched
-to DOM nodes.
+ANSI escape sequences. Escape sequences from stdin are decoded into
+keyboard, mouse, and paste events and dispatched to DOM nodes.
 
 ## Examples
 

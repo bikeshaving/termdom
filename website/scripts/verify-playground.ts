@@ -7,8 +7,54 @@
  *   node scripts/verify-playground.ts [origin]
  */
 import {chromium} from "playwright";
+import {createServer} from "node:http";
+import {createReadStream, existsSync, statSync} from "node:fs";
+import {extname, join, normalize} from "node:path";
+import {fileURLToPath} from "node:url";
 
-const ORIGIN = process.argv[2] ?? "http://127.0.0.1:8632";
+const MIME: Record<string, string> = {
+	".html": "text/html",
+	".js": "text/javascript",
+	".css": "text/css",
+	".json": "application/json",
+	".svg": "image/svg+xml",
+	".gif": "image/gif",
+	".ico": "image/x-icon",
+	".wasm": "application/wasm",
+};
+
+/**
+ * Serve dist/public from this process. An external single-threaded server
+ * queues the sandbox's asset requests behind the browser's kept-alive
+ * connections and the checks time out on the queue, not the pages.
+ */
+function serveSite(): Promise<string> {
+	const root = fileURLToPath(new URL("../dist/public", import.meta.url));
+	const server = createServer((req, res) => {
+		const path = normalize(decodeURIComponent((req.url ?? "/").split("?")[0]));
+		let file = join(root, path);
+		if (existsSync(file) && statSync(file).isDirectory()) {
+			file = join(file, "index.html");
+		}
+		if (!file.startsWith(root) || !existsSync(file)) {
+			res.writeHead(404).end("not found");
+			return;
+		}
+		res.writeHead(200, {
+			"content-type": MIME[extname(file)] ?? "application/octet-stream",
+		});
+		createReadStream(file).pipe(res);
+	});
+	return new Promise((resolve) => {
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address() as {port: number};
+			server.unref();
+			resolve(`http://127.0.0.1:${address.port}`);
+		});
+	});
+}
+
+const ORIGIN = process.argv[2] ?? (await serveSite());
 let failures = 0;
 
 function report(ok: boolean, name: string, detail = ""): void {
@@ -17,7 +63,7 @@ function report(ok: boolean, name: string, detail = ""): void {
 }
 
 const browser = await chromium.launch();
-const page = await browser.newPage();
+let page = await browser.newPage();
 const errors: string[] = [];
 page.on("pageerror", (err) => errors.push(String(err)));
 page.on("console", (msg) => {
@@ -25,13 +71,15 @@ page.on("console", (msg) => {
 });
 
 /** All terminal text on the page, joined. */
-// The emulator's DOM rows render some spaces as no-break spaces, so the
-// text is normalized before any needle is looked for.
+// Reads textContent of the row containers: innerText answers for layout,
+// and the emulator's renderer keeps glyph text innerText considers hidden.
+// The rows render some spaces as no-break spaces, so the text is normalized
+// before any needle is looked for.
 const terminalText = async () =>
 	(
 		await page.evaluate(() =>
-			Array.from(document.querySelectorAll(".xterm"))
-				.map((el) => (el as HTMLElement).innerText)
+			Array.from(document.querySelectorAll(".xterm-rows"))
+				.map((el) => el.textContent ?? "")
 				.join("\n"),
 		)
 	).replace(/\u00a0/g, " ");
@@ -99,7 +147,14 @@ report(await waitForText("Markdown in the Terminal", 15000), "playground: markdo
 // The first one is above the fold, so it is checked where a reader meets
 // it -- before any scrolling, which would carry it away faster than the
 // observer that mounts it.
+// A fresh page, as a first visit is: the playground page above has been
+// through a dozen sandbox boots by now.
+await page.close();
+page = await browser.newPage();
 await page.goto(`${ORIGIN}/`, {waitUntil: "load"});
+// The emulator renders only terminals inside the viewport, so the check
+// scrolls to the embed the way a reader would reach it.
+await page.locator("[data-playground]").first().scrollIntoViewIfNeeded();
 report(await waitForText("Installing"), "home: progress-bar embed paints");
 
 // The walk down the page mirrors a reader scrolling: each stop lets the
