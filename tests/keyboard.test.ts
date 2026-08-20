@@ -1397,6 +1397,56 @@ test("Escape still exits fullscreen, now dispatched from the general pipeline", 
 	dom.dispose();
 });
 
+test("Escape blurs a focused text field first; only the next Escape exits fullscreen", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	const container = document.createElement("div");
+	const input = document.createElement("input");
+	container.appendChild(input);
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+	input.focus();
+	expect(document.activeElement).toBe(input);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(document.activeElement).not.toBe(input);
+	expect(document.fullscreenElement).toBe(container);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(document.fullscreenElement).toBe(null);
+	dom.dispose();
+});
+
+test("focusing a field inside a fullscreen element leaves the camera alone", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document, window} = dom;
+	const container = document.createElement("div");
+	const style = document.createElement("style");
+	style.textContent = "input { margin-top: 5px; }";
+	document.head.appendChild(style);
+	const input = document.createElement("input");
+	container.appendChild(input);
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+
+	// The fullscreen element left the flow, so body.scrollHeight measures
+	// next to nothing; a reveal sized by it scrolled the camera by the
+	// field's whole row and carried the caret off the screen.
+	input.focus();
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(window.scrollY).toBe(0);
+	dom.dispose();
+});
+
 test("a focused descendant inside a fullscreen element still wins over the element itself", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
