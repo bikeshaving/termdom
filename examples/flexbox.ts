@@ -80,8 +80,11 @@ function show(index: number): void {
 show(0);
 
 document.addEventListener("keydown", (ev) => {
-	if (ev.key === "ArrowDown") show((selected + 1) % SECTIONS.length);
-	else if (ev.key === "ArrowUp") {
+	if (ev.key === "ArrowDown") {
+		show((selected + 1) % SECTIONS.length);
+	} else if (ev.key === "ArrowUp") {
 		show((selected + SECTIONS.length - 1) % SECTIONS.length);
-	} else if (ev.key === "q") term.window.close();
+	} else if (ev.key === "q") {
+		term.window.close();
+	}
 });
