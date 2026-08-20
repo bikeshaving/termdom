@@ -160,6 +160,63 @@ const NAMED_COLORS: Record<string, number> = {
 	yellowgreen: 0x9acd32,
 };
 
+/**
+ * The CSS system colors, mapped onto what a terminal already has: its default
+ * colors and the theme-resolved ANSI palette. A system color names whatever
+ * the user's environment says, which is the same contract the palette keeps,
+ * so the mapping invents no colors. 0 is the cell grid's "no SGR color"
+ * sentinel -- the terminal's own default foreground or background -- and a
+ * nonzero value is packed RGB that the emitter renders at any color depth.
+ *
+ * Canvas, CanvasText, Highlight and HighlightText keep their special painter
+ * translations (default-background clear, default foreground, SGR inverse);
+ * the values here only answer for the paths those guards do not intercept,
+ * such as a border or outline color.
+ */
+const SYSTEM_COLORS: Record<string, number> = {
+	accentcolor: 0x0000ff, // the accent: blue
+	accentcolortext: 0, // text on the accent: the terminal's default background
+	activetext: 0xff0000, // an active link: red
+	buttonborder: 0, // a control's border: the default foreground
+	buttonface: 0, // a control's face: the default background
+	buttontext: 0, // a control's label: the default foreground
+	canvas: 0, // the document background: the default background
+	canvastext: 0, // document text: the default foreground
+	field: 0, // an input's background: the default background
+	fieldtext: 0, // an input's text: the default foreground
+	graytext: 0x808080, // disabled text: bright black, the dim gray
+	highlight: 0x0000ff, // the selection, when inverse cannot express it: blue
+	highlighttext: 0, // selected text, likewise: the default background
+	linktext: 0x0000ff, // a link: blue
+	mark: 0xffff00, // a <mark>'s background: yellow
+	marktext: 0, // a <mark>'s text: black, which this engine stores as 0
+	selecteditem: 0x0000ff, // a selected item, when not inverse: blue
+	selecteditemtext: 0, // its text, likewise: the default background
+	visitedtext: 0xff00ff, // a visited link: magenta
+	activeborder: 0, // deprecated -> ButtonBorder
+	activecaption: 0, // deprecated -> Canvas
+	appworkspace: 0, // deprecated -> Canvas
+	background: 0, // deprecated -> Canvas
+	buttonhighlight: 0, // deprecated -> ButtonFace
+	buttonshadow: 0, // deprecated -> ButtonFace
+	captiontext: 0, // deprecated -> CanvasText
+	inactiveborder: 0, // deprecated -> ButtonBorder
+	inactivecaption: 0, // deprecated -> Canvas
+	inactivecaptiontext: 0x808080, // deprecated -> GrayText
+	infobackground: 0, // deprecated -> Canvas
+	infotext: 0, // deprecated -> CanvasText
+	menu: 0, // deprecated -> Canvas
+	menutext: 0, // deprecated -> CanvasText
+	scrollbar: 0, // deprecated -> Canvas
+	threeddarkshadow: 0, // deprecated -> ButtonBorder
+	threedface: 0, // deprecated -> ButtonFace
+	threedhighlight: 0, // deprecated -> ButtonBorder
+	threedlightshadow: 0, // deprecated -> ButtonBorder
+	threedshadow: 0, // deprecated -> ButtonBorder
+	window: 0, // deprecated -> Canvas
+	windowtext: 0, // deprecated -> CanvasText
+};
+
 /** A parsed CSS color: packed 24-bit RGB, and its alpha in [0, 1]. */
 function parseColor(text: string): {color: number; alpha: number} | null {
 	const color = text.trim().toLowerCase();
@@ -259,7 +316,10 @@ export function isTransparentColor(color: string): boolean {
 /**
  * A color's computed spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
  * is not opaque. Null for a value that names no color -- `currentcolor`
- * before it resolves, a keyword the color table does not carry.
+ * before it resolves, a keyword the color table does not carry. A system
+ * color is deliberately null: it computes as its keyword, since the value it
+ * stands for belongs to the terminal's theme and this process cannot state it
+ * as an rgb().
  */
 export function serializeCSSColor(value: string): string | null {
 	const text = value.trim();
@@ -284,13 +344,18 @@ export function serializeCSSColor(value: string): string | null {
 }
 
 /**
- * Parse a CSS color to packed 24-bit RGB (0xRRGGBB). Empty, `transparent`, and
- * `none` -- and anything unrecognized -- resolve to 0: a painter has no null to
- * carry into a cell.
+ * Parse a CSS color to packed 24-bit RGB (0xRRGGBB). A system color answers
+ * through the palette mapping, where 0 is the terminal's own default color.
+ * Empty, `transparent`, and `none` -- and anything unrecognized -- resolve to
+ * 0: a painter has no null to carry into a cell.
  */
 export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 		return 0;
+	}
+	const system = SYSTEM_COLORS[cssColor.trim().toLowerCase()];
+	if (system !== undefined) {
+		return system;
 	}
 	return parseColor(cssColor)?.color ?? 0;
 }
