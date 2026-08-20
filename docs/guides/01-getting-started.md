@@ -39,9 +39,9 @@ writes one as ordinary command output.
 
 ## Units
 
-A terminal is a grid of character cells. `1ch` is one cell wide and `1px`
-is one cell tall, so `width: 12ch` is twelve columns and `height: 3px` is
-three rows. Lengths that land between cells resolve to whole cells.
+A terminal is a grid of character cells. `1px` and `1ch` are both one
+cell, so `width: 12ch` is twelve columns and `height: 3px` is three rows.
+Lengths that land between cells resolve to whole cells.
 
 ## Stylesheets
 

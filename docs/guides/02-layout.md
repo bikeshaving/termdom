@@ -3,8 +3,8 @@ title: Layout
 description: The box model, flexbox, and tables on a cell grid.
 ---
 
-Sizes are in cells: `1ch` is one column, `1px` is one row. Lengths that land
-between cells resolve to whole cells.
+Sizes are in cells: `1px` and `1ch` are both one cell, and the property
+supplies the axis. Lengths that land between cells resolve to whole cells.
 
 ## Boxes
 
