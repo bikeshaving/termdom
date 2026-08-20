@@ -35,6 +35,15 @@ import {
 } from "./useragent.js";
 
 import {HTML_NAMESPACE} from "./useragent.js";
+import {
+	inspectComment,
+	inspectDocument,
+	inspectElement,
+	inspectFragment,
+	inspectDOMRect,
+	inspectNodeList,
+	inspectText,
+} from "./inspector.js";
 export {HTML_NAMESPACE};
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -4849,7 +4858,23 @@ const shapeSyncMethod = (
 
 const kCompute = Symbol("compute");
 
+/** How node:util's inspect shows a value, bridged to the inspector's options. */
+const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
+
+interface NodeInspectOptions {
+	colors?: boolean;
+	breakLength?: number;
+	showHidden?: boolean;
+}
+
 export class NodeList extends LiveList {
+	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
+		return inspectNodeList(this, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		});
+	}
+
 	declare forEach: (
 		callback: (node: Node, index: number, list: NodeList) => void,
 		thisArg?: unknown,
@@ -5645,6 +5670,10 @@ function queueCharacterDataMutationRecord(
 const kManualSlot = Symbol("manual slot assignment");
 
 export class Text extends CharacterData {
+	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
+		return inspectText(this, {colorize: options.colors !== false});
+	}
+
 	[kAssignedSlot]: HTMLSlotElement | null;
 	[kManualSlot]: HTMLSlotElement | null;
 
@@ -5747,6 +5776,10 @@ Object.defineProperty(CDATASection.prototype, Symbol.toStringTag, {
 });
 
 export class Comment extends CharacterData {
+	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
+		return inspectComment(this, {colorize: options.colors !== false});
+	}
+
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kDocument] = currentDocument();
@@ -5859,6 +5892,13 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 });
 
 export class DocumentFragment extends Node {
+	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
+		return inspectFragment(this, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		});
+	}
+
 	[kHost]: Element | null;
 
 	constructor() {
@@ -6056,6 +6096,32 @@ const kAttributeChanged = Symbol("attribute change steps");
  * orders them: an element's own steps read the element, and what they must read
  * is the tree the rest of the world will see.
  */
+type AttributeChangeListener = (element: Element, localName: string) => void;
+const attributeChangeListeners: AttributeChangeListener[] = [];
+
+/**
+ * Hear every attribute change, whoever writes it: setAttribute, classList,
+ * className, toggleAttribute, the parser. Fires synchronously at the change
+ * algorithms, so a read that follows a write sees a world the listener has
+ * already seen.
+ */
+export function onAttributeChange(listener: AttributeChangeListener): void {
+	attributeChangeListeners.push(listener);
+}
+
+function notifyAttributeChange(element: Element, localName: string): void {
+	for (const listener of attributeChangeListeners) {
+		listener(element, localName);
+	}
+}
+
+const shadowAttachedListeners: Array<(root: ShadowRoot) => void> = [];
+
+/** Hear every shadow root the moment it attaches, declarative ones included. */
+export function onShadowAttached(listener: (root: ShadowRoot) => void): void {
+	shadowAttachedListeners.push(listener);
+}
+
 function changeAttribute(attribute: Attr, value: string): void {
 	const element = attribute[kOwnerElement] as Element;
 	const oldValue = attribute[kValue];
@@ -6069,6 +6135,7 @@ function changeAttribute(attribute: Attr, value: string): void {
 	);
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
+	notifyAttributeChange(element, attribute[kLocalName]);
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -6084,6 +6151,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	);
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
+	notifyAttributeChange(element, attribute[kLocalName]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
@@ -6103,6 +6171,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	);
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
+	notifyAttributeChange(element, attribute[kLocalName]);
 }
 
 function replaceAttribute(
@@ -6124,6 +6193,7 @@ function replaceAttribute(
 	);
 	bumpVersion();
 	syncAttributeCollections(element, newAttribute[kLocalName]);
+	notifyAttributeChange(element, newAttribute[kLocalName]);
 }
 
 /** Queue a record for a change to an element's attribute. */
@@ -6373,6 +6443,15 @@ const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
 
 export class Element extends Node {
+	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
+		return inspectElement(this, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+			compact: !options.breakLength || options.breakLength === Infinity,
+			showStyles: options.showHidden,
+		});
+	}
+
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
@@ -8726,6 +8805,9 @@ function attachShadowRoot(
 	shadow[kSerializable] = serializable;
 	shadow[kRegistry] = registry;
 	element[kShadowRoot] = shadow;
+	for (const listener of shadowAttachedListeners) {
+		listener(shadow);
+	}
 }
 
 /**
@@ -17038,6 +17120,10 @@ Object.defineProperty(DOMRectReadOnly.prototype, Symbol.toStringTag, {
 
 /** A rectangle whose origin and size can be written. */
 export class DOMRect extends DOMRectReadOnly {
+	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
+		return inspectDOMRect(this, {colorize: options.colors !== false});
+	}
+
 	static override fromRect(other: DOMRectInit = {}): DOMRect {
 		return new DOMRect(other.x, other.y, other.width, other.height);
 	}
@@ -17121,6 +17207,14 @@ const kIdMap = Symbol("id map");
 const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
+	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
+		return inspectDocument(this, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+			compact: !options.breakLength || options.breakLength === Infinity,
+		});
+	}
+
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
 		this[kDocumentURL] = "about:blank";

@@ -14,6 +14,15 @@ const colors = {
 	value: "\x1b[32m", // Green for values
 };
 
+import type {
+	Comment,
+	Document,
+	DocumentFragment,
+	Element,
+	Node,
+	Text,
+} from "./dom.js";
+
 interface InspectorOptions {
 	maxDepth?: number;
 	colorize?: boolean;
@@ -324,7 +333,10 @@ function formatChildren(
 /**
  * Inspect a text node
  */
-function inspectText(text: Text, options: InspectorOptions = {}): string {
+export function inspectText(
+	text: Text,
+	options: InspectorOptions = {},
+): string {
 	const {colorize = true} = options;
 	const c = colorize ?
 		colors :
@@ -354,7 +366,7 @@ function inspectText(text: Text, options: InspectorOptions = {}): string {
 /**
  * Inspect a comment node
  */
-function inspectComment(
+export function inspectComment(
 	comment: Comment,
 	options: InspectorOptions = {},
 ): string {
@@ -379,7 +391,7 @@ function inspectComment(
 /**
  * Inspect a document fragment
  */
-function inspectFragment(
+export function inspectFragment(
 	fragment: DocumentFragment,
 	options: InspectorOptions = {},
 ): string {
@@ -412,7 +424,7 @@ function inspectFragment(
 /**
  * Inspect a CSSStyleDeclaration, as the properties it actually declares
  */
-function inspectCSSStyleDeclaration(
+export function inspectCSSStyleDeclaration(
 	styles: any,
 	options: InspectorOptions = {},
 ): string {
@@ -463,7 +475,10 @@ function inspectCSSStyleDeclaration(
 /**
  * Inspect a DOMRect - much more concise than default
  */
-function inspectDOMRect(rect: any, options: InspectorOptions = {}): string {
+export function inspectDOMRect(
+	rect: any,
+	options: InspectorOptions = {},
+): string {
 	const {colorize = true} = options;
 	const c = colorize ?
 		colors :
@@ -484,7 +499,7 @@ function inspectDOMRect(rect: any, options: InspectorOptions = {}): string {
 /**
  * Inspect a NodeList/HTMLCollection - more concise than default
  */
-function inspectNodeList(
+export function inspectNodeList(
 	nodeList: any,
 	options: InspectorOptions = {},
 ): string {
@@ -544,155 +559,4 @@ function inspectNodeList(
 
 	result += "]";
 	return result;
-}
-
-/**
- * Setup inspect methods on DOM prototypes
- */
-export function setupInspectMethods(window: any): void {
-	const inspect = Symbol.for("nodejs.util.inspect.custom");
-
-	// Element
-	if (!window.Element.prototype[inspect]) {
-		window.Element.prototype[inspect] = function (
-			this: Element,
-			depth: number,
-			options: any,
-		) {
-			return inspectElement(this, {
-				maxDepth: depth,
-				colorize: options.colors !== false,
-				compact: !options.breakLength || options.breakLength === Infinity,
-				showStyles: options.showHidden,
-			});
-		};
-	}
-
-	// Document
-	if (!window.Document.prototype[inspect]) {
-		window.Document.prototype[inspect] = function (
-			this: Document,
-			depth: number,
-			options: any,
-		) {
-			return inspectDocument(this, {
-				maxDepth: depth,
-				colorize: options.colors !== false,
-				compact: !options.breakLength || options.breakLength === Infinity,
-			});
-		};
-	}
-
-	// Text
-	if (!window.Text.prototype[inspect]) {
-		window.Text.prototype[inspect] = function (
-			this: Text,
-			depth: number,
-			options: any,
-		) {
-			return inspectText(this, {
-				colorize: options.colors !== false,
-			});
-		};
-	}
-
-	// Comment
-	if (!window.Comment.prototype[inspect]) {
-		window.Comment.prototype[inspect] = function (
-			this: Comment,
-			depth: number,
-			options: any,
-		) {
-			return inspectComment(this, {
-				colorize: options.colors !== false,
-			});
-		};
-	}
-
-	// DocumentFragment
-	if (!window.DocumentFragment.prototype[inspect]) {
-		window.DocumentFragment.prototype[inspect] = function (
-			this: DocumentFragment,
-			depth: number,
-			options: any,
-		) {
-			return inspectFragment(this, {
-				maxDepth: depth,
-				colorize: options.colors !== false,
-			});
-		};
-	}
-
-	// CSSStyleDeclaration, as the properties it actually declares
-	if (
-		window.CSSStyleDeclaration &&
-		!window.CSSStyleDeclaration.prototype[inspect]
-	) {
-		window.CSSStyleDeclaration.prototype[inspect] = function (
-			this: any,
-			depth: number,
-			options: any,
-		) {
-			// Only compact when nested (depth less than 2 means we're nested)
-			const isNested = depth < 2;
-
-			return inspectCSSStyleDeclaration(this, {
-				colorize: options.colors !== false,
-				compact: isNested,
-			});
-		};
-	}
-
-	// NodeList - Make more concise
-	if (window.NodeList && !window.NodeList.prototype[inspect]) {
-		window.NodeList.prototype[inspect] = function (
-			this: any,
-			depth: number,
-			options: any,
-		) {
-			const isNested = depth < 2;
-			const explicitlyCompact = options.compact;
-			const hasBreakLength =
-				options.breakLength && options.breakLength !== Infinity;
-
-			return inspectNodeList(this, {
-				maxDepth: depth,
-				colorize: options.colors !== false,
-				compact: explicitlyCompact || (isNested && hasBreakLength),
-			});
-		};
-	}
-
-	// HTMLCollection - Make more concise
-	if (window.HTMLCollection && !window.HTMLCollection.prototype[inspect]) {
-		window.HTMLCollection.prototype[inspect] = function (
-			this: any,
-			depth: number,
-			options: any,
-		) {
-			const isNested = depth < 2;
-			const explicitlyCompact = options.compact;
-			const hasBreakLength =
-				options.breakLength && options.breakLength !== Infinity;
-
-			return inspectNodeList(this, {
-				maxDepth: depth,
-				colorize: options.colors !== false,
-				compact: explicitlyCompact || (isNested && hasBreakLength),
-			});
-		};
-	}
-
-	// DOMRect - Make much more concise
-	if (window.DOMRect && !window.DOMRect.prototype[inspect]) {
-		window.DOMRect.prototype[inspect] = function (
-			this: any,
-			depth: number,
-			options: any,
-		) {
-			return inspectDOMRect(this, {
-				colorize: options.colors !== false,
-			});
-		};
-	}
 }

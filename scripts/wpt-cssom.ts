@@ -2,8 +2,8 @@
  * Run the web-platform-tests css/cssom suite against this engine's CSSOM.
  *
  * Each test is a testharness.js document of this engine's own DOM, displayed
- * in a window with the engine's CSSOM installed -- the same installInlineStyle
- * + StyleManager a TermDOM builds. Its harness scripts are evaluated in
+ * in a window with the engine's CSSOM, which the styles module defines on
+ * the DOM's own prototypes at load, plus the StyleManager a TermDOM builds. Its harness scripts are evaluated in
  * document order, at the global scope of a realm of the file's own whose
  * global is that window, because nothing here runs a document's scripts on
  * its own.
@@ -20,7 +20,6 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {
 	getBoxModel,
-	installInlineStyle,
 	MediaList,
 	StyleManager,
 } from "../src/internal/styles.ts";
@@ -307,7 +306,6 @@ function mountEngine(window: EngineWindow): StyleManager {
 		configurable: true,
 	});
 
-	installInlineStyle(window);
 	const styleManager = new StyleManager(window);
 	const layoutEngine = new LayoutEngine(window);
 	styleManager.setLayoutEngine(layoutEngine);

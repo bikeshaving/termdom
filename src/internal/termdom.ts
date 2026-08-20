@@ -41,7 +41,6 @@ import {
 	ResizeObserver as TermResizeObserver,
 	IntersectionObserver as TermIntersectionObserver,
 } from "./observers.js";
-import {setupInspectMethods} from "./inspector.js";
 import {
 	FOCUSABLE_SELECTOR,
 	decodeKey,
@@ -834,9 +833,6 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 		this[kTopLayer] = topLayerOf(this.document) as unknown as Set<Element>;
-
-		// Setup DOM inspector
-		setupInspectMethods(this.window);
 
 		// One bag of getters and callbacks, shared by everything that patches
 		// the window below. Built here, before the fields it exposes exist:

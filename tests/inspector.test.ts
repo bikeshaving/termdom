@@ -3,9 +3,13 @@ import {
 	inspectElement,
 	inspectDocument,
 	inspectNode,
-	setupInspectMethods,
 } from "../src/internal/inspector.js";
+import type {Document, Element, Node} from "../src/internal/dom.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
+
+function asElement(value: unknown): Element {
+	return value as Element;
+}
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {
@@ -20,7 +24,7 @@ test("inspectElement formats basic elements", () => {
 	);
 	const div = dom.window.document.getElementById("test");
 
-	const output = inspectElement(div!, {colorize: false});
+	const output = inspectElement(asElement(div), {colorize: false});
 
 	expect(output).toBe('<div id="test" class="container">Hello</div>');
 });
@@ -36,7 +40,7 @@ test("inspectElement handles nested elements", () => {
 	`);
 	const nav = dom.window.document.querySelector("nav");
 
-	const output = inspectElement(nav!, {colorize: false, maxDepth: 3});
+	const output = inspectElement(asElement(nav), {colorize: false, maxDepth: 3});
 
 	expect(output).toContain("<nav>");
 	expect(output).toContain('<ul class="menu">');
@@ -56,7 +60,7 @@ test("inspectElement respects maxDepth", () => {
 	`);
 	const div = dom.window.document.querySelector("div");
 
-	const output = inspectElement(div!, {colorize: false, maxDepth: 2});
+	const output = inspectElement(asElement(div), {colorize: false, maxDepth: 2});
 
 	expect(output).toContain("<div>");
 	expect(output).toContain("...");
@@ -69,7 +73,9 @@ test("inspectElement compact mode", () => {
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const output = inspectElement(div!, {colorize: false, compact: true});
+	const output = inspectElement(asElement(
+		div,
+	), {colorize: false, compact: true});
 
 	expect(output).toBe("<div><span>A</span><span>B</span><span>C</span></div>");
 });
@@ -80,7 +86,7 @@ test("inspectElement shows important attributes", () => {
 	);
 	const input = dom.window.document.querySelector("input");
 
-	const output = inspectElement(input!, {colorize: false});
+	const output = inspectElement(asElement(input), {colorize: false});
 
 	expect(output).toContain('type="text"');
 	expect(output).toContain('name="username"');
@@ -94,7 +100,7 @@ test("inspectElement handles self-closing tags", () => {
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const output = inspectElement(div!, {colorize: false});
+	const output = inspectElement(asElement(div), {colorize: false});
 
 	expect(output).toContain('<img src="test.jpg" alt="Test">');
 	expect(output).toContain("<br>");
@@ -107,7 +113,7 @@ test("inspectElement truncates long text", () => {
 	const dom = documentWindow(`<p>${longText}</p>`);
 	const p = dom.window.document.querySelector("p");
 
-	const output = inspectElement(p!, {colorize: false});
+	const output = inspectElement(asElement(p), {colorize: false});
 
 	expect(output).toContain(
 		"<p>This is a very long text that should be truncat...</p>",
@@ -119,7 +125,7 @@ test("inspectDocument includes doctype and root", () => {
 		"<!DOCTYPE html><html><head><title>Test</title></head><body>Hello</body></html>",
 	);
 
-	const output = inspectDocument(dom.window.document, {
+	const output = inspectDocument(dom.window.document as unknown as Document, {
 		colorize: false,
 		maxDepth: 2,
 	});
@@ -137,26 +143,25 @@ test("inspectNode handles different node types", () => {
 
 	// Text node
 	const textNode = div!.firstChild!;
-	const textOutput = inspectNode(textNode, {colorize: false});
+	const textOutput = inspectNode(textNode as unknown as Node, {
+		colorize: false,
+	});
 	expect(textOutput).toBe("Text");
 
 	// Comment node
 	const commentNode = div!.childNodes[1];
-	const commentOutput = inspectNode(commentNode, {colorize: false});
+	const commentOutput = inspectNode(commentNode as unknown as Node, {
+		colorize: false,
+	});
 	expect(commentOutput).toBe("<!-- comment -->");
 });
 
-test("setupInspectMethods adds inspect to prototypes", () => {
+test("elements carry the node:util inspect method", () => {
 	const dom = documentWindow("<div id=\"test\">Hello</div>");
-	setupInspectMethods(dom.window);
-
 	const div = dom.window.document.getElementById("test");
 	const inspect = Symbol.for("nodejs.util.inspect.custom");
 
-	// Check that inspect method exists
 	expect(typeof (div as any)![inspect]).toBe("function");
-
-	// Test that it works
 	const output = (div as any)![inspect](2, {colors: false});
 	expect(output).toBe('<div id="test">Hello</div>');
 });
@@ -167,13 +172,13 @@ test("showStyles option includes style attribute", () => {
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const withStyles = inspectElement(div!, {
+	const withStyles = inspectElement(asElement(div), {
 		colorize: false,
 		showStyles: true,
 	});
 	expect(withStyles).toContain('style="color: red; background: blue;"');
 
-	const withoutStyles = inspectElement(div!, {
+	const withoutStyles = inspectElement(asElement(div), {
 		colorize: false,
 		showStyles: false,
 	});
@@ -186,12 +191,18 @@ test("showAll option includes all attributes", () => {
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const withAll = inspectElement(div!, {colorize: false, showAll: true});
+	const withAll = inspectElement(asElement(div), {
+		colorize: false,
+		showAll: true,
+	});
 	expect(withAll).toContain('data-foo="bar"');
 	expect(withAll).toContain('aria-label="Test"');
 	expect(withAll).toContain('custom="value"');
 
-	const withoutAll = inspectElement(div!, {colorize: false, showAll: false});
+	const withoutAll = inspectElement(asElement(div), {
+		colorize: false,
+		showAll: false,
+	});
 	expect(withoutAll).toContain('id="test"'); // id is always shown
 	expect(withoutAll).not.toContain('data-foo="bar"');
 });
