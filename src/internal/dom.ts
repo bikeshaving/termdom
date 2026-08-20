@@ -20,7 +20,7 @@ import {
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
-} from "./domhtml.ts";
+} from "./domhtml.js";
 import {
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
@@ -34,7 +34,8 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
-export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+import {HTML_NAMESPACE} from "./useragent.js";
+export {HTML_NAMESPACE};
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
@@ -2223,7 +2224,7 @@ export function installEventHandlers(
 }
 
 /** The tables a window's own interface is installed from, which the engine owns. */
-export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.ts";
+export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.js";
 
 const kDefaultView = Symbol("the window this document is displayed in");
 

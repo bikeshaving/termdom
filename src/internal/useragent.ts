@@ -8,7 +8,7 @@
  * cell's colors -- load-bearing, not decorative.
  */
 import {CSS_INITIAL_VALUES} from "./cssproperties.js";
-import {HTML_NAMESPACE} from "./dom.js";
+export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 import {stringWidth} from "./text.js";
 
 // ---- Shorthand expansion (the UA table is built on it) ----
