@@ -2506,3 +2506,63 @@ test("moving focus and opening a disclosure bring their target into view", async
 
 	dom.dispose();
 });
+
+test("a decoded keystroke is trusted; a constructed event is not", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
+	const {document, window} = termdom;
+	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const trust: Array<{type: string; isTrusted: boolean}> = [];
+	for (const type of ["keydown", "keypress", "keyup"]) {
+		document.body.addEventListener(type, (event: any) => {
+			trust.push({type: event.type, isTrusted: event.isTrusted});
+		});
+	}
+
+	await (terminal.stdin as any).simulateKeypress("a");
+	expect(trust).toEqual([
+		{type: "keydown", isTrusted: true},
+		{type: "keypress", isTrusted: true},
+		{type: "keyup", isTrusted: true},
+	]);
+
+	// The same event type, constructed by an app and dispatched by it: the
+	// engine never fired it, so nothing about it is the user's.
+	trust.length = 0;
+	document.body.dispatchEvent(
+		new window.KeyboardEvent("keydown", {key: "a", bubbles: true}),
+	);
+	expect(trust).toEqual([{type: "keydown", isTrusted: false}]);
+
+	termdom.dispose();
+});
+
+test("a mouse report is trusted, and so is the focus move it causes", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	const {document} = dom;
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	document.body.innerHTML = "<button id=\"b\">press</button>";
+	await nextFrame(dom);
+	const trust: Array<{type: string; isTrusted: boolean}> = [];
+	for (const type of ["mousedown", "mouseup", "click", "focus"]) {
+		document
+			.getElementById("b")!
+			.addEventListener(type, (event: any) =>
+				trust.push({type: event.type, isTrusted: event.isTrusted}),
+			);
+	}
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M"));
+	await new Promise((r) => setTimeout(r, 0));
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1m"));
+	await new Promise((r) => setTimeout(r, 0));
+	expect(trust.every((entry) => entry.isTrusted)).toBe(true);
+	expect(trust.map((entry) => entry.type)).toContain("click");
+
+	dom.dispose();
+});

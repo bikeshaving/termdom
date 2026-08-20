@@ -114,6 +114,22 @@ function upgradeControlsIn(root: Element): void {
 // closing over one.
 const engines = new WeakMap<object, TermDOM>();
 
+/**
+ * Fire an event as the user agent.
+ *
+ * Every event this file dispatches comes from outside the document -- decoded
+ * terminal input, a terminal that resized, a focus move the engine itself
+ * made -- so it is the user agent's, and reads isTrusted true. Provenance is
+ * decided here, once, for all of them: an event an application constructs and
+ * hands to dispatchEvent() is script's, and is never trusted.
+ */
+function fireAsUserAgent(target: unknown, event: unknown): boolean {
+	return DOM.dispatchAsUserAgent(
+		target as DOM.EventTarget,
+		event as DOM.Event,
+	);
+}
+
 export {
 	transportFromProcess,
 	type TerminalTransport,
@@ -280,7 +296,7 @@ function fireFullscreenChangeEvent(
 	// Per spec: fired on the element, and it BUBBLES -- document listeners
 	// hear it through the bubble; dispatching on the document as well
 	// delivered every transition twice.
-	element.dispatchEvent(event);
+	fireAsUserAgent(element, event);
 }
 
 function fireFullscreenErrorEvent(
@@ -300,8 +316,10 @@ function fireFullscreenErrorEvent(
 	});
 
 	// Fire on both element and document
-	element.dispatchEvent(event);
-	element.ownerDocument?.dispatchEvent(event);
+	fireAsUserAgent(element, event);
+	if (element.ownerDocument) {
+		fireAsUserAgent(element.ownerDocument, event);
+	}
 }
 
 function getWindow(
@@ -1363,26 +1381,30 @@ export class TermDOM {
 				termDOM[kStyleManager].handleFocusChange(prev, this);
 				void render(termDOM);
 				if (prev && prev !== document.body) {
-					prev.dispatchEvent(
+					fireAsUserAgent(
+						prev,
 						new window.FocusEvent("blur", {
 							relatedTarget: this,
 							bubbles: false,
 						}),
 					);
-					prev.dispatchEvent(
+					fireAsUserAgent(
+						prev,
 						new window.FocusEvent("focusout", {
 							relatedTarget: this,
 							bubbles: true,
 						}),
 					);
 				}
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focus", {
 						relatedTarget: prev,
 						bubbles: false,
 					}),
 				);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focusin", {
 						relatedTarget: prev,
 						bubbles: true,
@@ -1398,13 +1420,15 @@ export class TermDOM {
 			if (wasFocused) {
 				termDOM[kStyleManager].handleFocusChange(this);
 				void render(termDOM);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("blur", {
 						relatedTarget: null,
 						bubbles: false,
 					}),
 				);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focusout", {
 						relatedTarget: null,
 						bubbles: true,
@@ -1907,7 +1931,7 @@ function installWindowExtensions(
 				matches: {value: now, enumerable: true},
 				media: {value: media, enumerable: true},
 			});
-			mql.dispatchEvent(event);
+			fireAsUserAgent(mql, event);
 		});
 		return mql as MediaQueryList;
 	}) as typeof window.matchMedia;
@@ -1924,7 +1948,7 @@ function installWindowExtensions(
 		// user says yes. Every close asks: the event carries nothing from
 		// the last one.
 		const unloadEvent = DOM.createBeforeUnloadEvent();
-		(window as unknown as DOM.EventTarget).dispatchEvent(unloadEvent);
+		fireAsUserAgent(window, unloadEvent);
 		if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
 			return;
 		}
@@ -2274,7 +2298,7 @@ function applyTerminalSize(
 	// Per the rendering steps, resize fires before media query "change"
 	// events, and everything a listener reads already has the new size.
 	if (sizeChanged) {
-		self.window.dispatchEvent(new self.window.Event("resize"));
+		fireAsUserAgent(self.window, new self.window.Event("resize"));
 	}
 	for (const update of self[kMediaQueryUpdaters]) {
 		update();
@@ -2995,7 +3019,8 @@ function handleMouseReport(
 		(point && findElementAtDocumentPoint(self, x, y)) || self.document.body;
 
 	if (wheelDeltaY !== null) {
-		const notCanceled = target.dispatchEvent(
+		const notCanceled = fireAsUserAgent(
+			target,
 			new self.window.WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1, // DOM_DELTA_LINE
@@ -3058,7 +3083,10 @@ function handleMouseReport(
 	};
 
 	if (isMotion) {
-		target.dispatchEvent(new self.window.MouseEvent("mousemove", eventInit));
+		fireAsUserAgent(
+			target,
+			new self.window.MouseEvent("mousemove", eventInit),
+		);
 		// A field drag extends the field's own selection to the offset
 		// under the pointer -- clamped into the field, whichever element
 		// the pointer is over now (the field holds the capture).
@@ -3110,7 +3138,8 @@ function handleMouseReport(
 			self[kStyleManager].handleFocusChange(self.document.activeElement);
 			void render(self);
 		}
-		const notCanceled = target.dispatchEvent(
+		const notCanceled = fireAsUserAgent(
+			target,
 			new self.window.MouseEvent("mousedown", eventInit),
 		);
 		// Default action: mousedown moves focus, exactly as in a browser --
@@ -3187,7 +3216,7 @@ function handleMouseReport(
 		return;
 	}
 
-	target.dispatchEvent(new self.window.MouseEvent("mouseup", eventInit));
+	fireAsUserAgent(target, new self.window.MouseEvent("mouseup", eventInit));
 	// LIGHT DISMISS: a release closes every auto popover the released
 	// point is not inside of and did not open -- the invoker of a popover
 	// counts as part of it, so the click that follows toggles rather than
@@ -3224,7 +3253,8 @@ function handleMouseReport(
 		return;
 	}
 	if (self[kMouseDownTarget] === target) {
-		target.dispatchEvent(
+		fireAsUserAgent(
+			target,
 			new self.window.MouseEvent("click", {...eventInit, buttons: 0}),
 		);
 		// A checkbox/radio's .checked already flipped -- the activation behavior's
@@ -3262,7 +3292,8 @@ function handleMouseReport(
 			self[kLastClickTarget] === target &&
 			now - self[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
 		) {
-			target.dispatchEvent(
+			fireAsUserAgent(
+				target,
 				new self.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
 			);
 			self[kLastClickTarget] = null;
@@ -3293,7 +3324,8 @@ function dispatchPaste(
 	if (!target || target === self.document.body) {
 		return;
 	}
-	target.dispatchEvent(
+	fireAsUserAgent(
+		target,
 		new self.window.InputEvent("beforeinput", {
 			inputType: "insertFromPaste",
 			data: text,
@@ -3322,7 +3354,8 @@ function dispatchInsertText(
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
 		return;
 	}
-	target.dispatchEvent(
+	fireAsUserAgent(
+		target,
 		new self.window.InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
@@ -3410,7 +3443,7 @@ function dispatchGlobalKeyboardEvent(
 		cancelable: true,
 	});
 
-	const notCanceled = targetElement.dispatchEvent(keydownEvent);
+	const notCanceled = fireAsUserAgent(targetElement, keydownEvent);
 
 	// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
 	// answers one: a modal dialog fires cancel and closes unless a
@@ -3487,7 +3520,7 @@ function dispatchGlobalKeyboardEvent(
 			bubbles: true,
 			cancelable: true,
 		});
-		if (targetElement.dispatchEvent(keypressEvent)) {
+		if (fireAsUserAgent(targetElement, keypressEvent)) {
 			dispatchInsertText(self, targetElement, key);
 		}
 	}
@@ -3506,7 +3539,7 @@ function dispatchGlobalKeyboardEvent(
 		bubbles: true,
 		cancelable: true,
 	});
-	targetElement.dispatchEvent(keyupEvent);
+	fireAsUserAgent(targetElement, keyupEvent);
 }
 
 /**
