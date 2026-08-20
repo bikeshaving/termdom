@@ -190,7 +190,6 @@ document.addEventListener("click", (event: Event) => {
 });
 
 select(0);
-refresh();
 
 if (!process.stdout.isTTY) {
 	term.window.close();
