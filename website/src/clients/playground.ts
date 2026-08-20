@@ -768,24 +768,31 @@ function* Workbench(
 	this: Context,
 	{
 		value,
+		valueEpoch = 0,
 		name,
 		title,
 		geometry,
 		fill,
+		oncode,
 		controls: extraControls,
 	}: {
 		value: string;
+		/** Bumped to re-seat `value` even when the string is unchanged. */
+		valueEpoch?: number;
 		name: string;
 		/** The file in the editor, where nothing else in the bar names it. */
 		title?: string;
 		geometry: {cols: number; rows: number; editorLines: number};
 		/** Fill the box this is given instead of sizing to the geometry. */
 		fill?: boolean;
+		/** Hears what the editor holds, the outside value included. */
+		oncode?: (code: string) => void;
 		controls?: unknown;
 	},
 ) {
 	let code = value;
 	let shown = value;
+	let shownEpoch = valueEpoch;
 	let updateEditor = true;
 	let status: Status = {message: "", failed: false};
 	// Bumped to ask the terminal pane for a run that does not wait out the
@@ -796,6 +803,7 @@ function* Workbench(
 	this.addEventListener("contentchange", (ev: any) => {
 		this.refresh(() => {
 			code = ev.target.value;
+			oncode?.(code);
 		});
 	});
 
@@ -829,11 +837,21 @@ function* Workbench(
 		this.cleanup(() => root.removeEventListener("keydown", onkeydown, true));
 	});
 
-	for ({value, name, title, geometry, fill, controls: extraControls} of this) {
+	for ({
+		value,
+		valueEpoch = 0,
+		name,
+		title,
+		geometry,
+		fill,
+		oncode,
+		controls: extraControls,
+	} of this) {
 		// A value from outside is a new program; a value this component's own
 		// editor produced is already in `code`.
-		if (value !== shown) {
+		if (value !== shown || valueEpoch !== shownEpoch) {
 			shown = code = value;
+			shownEpoch = valueEpoch;
 			updateEditor = true;
 		}
 
@@ -886,6 +904,12 @@ function* Workbench(
 function* Playground(this: Context) {
 	const examples = readExamples();
 	let example = examples[0];
+	// True when the editor's text matches no example; the picker shows its
+	// placeholder instead of an example name.
+	let custom = false;
+	// Bumped on every pick, so choosing the example the edits started from
+	// still resets the editor to it.
+	let pickEpoch = 0;
 
 	const onexamplechange = (ev: Event) => {
 		const id = (ev.target as HTMLSelectElement).value;
@@ -893,23 +917,25 @@ function* Playground(this: Context) {
 		if (!chosen) return;
 		this.refresh(() => {
 			example = chosen;
+			custom = false;
+			pickEpoch++;
 		});
 	};
 
-	const picker = jsx`
-		<label for="playground-examples">Example</label>
-		<select
-			id="playground-examples"
-			value=${example.id}
-			onchange=${onexamplechange}
-		>
-			${examples.map(
-				(each) => jsx`
-					<option key=${each.id} value=${each.id}>${each.label}</option>
-				`,
-			)}
-		</select>
-	`;
+	const oncode = (code: string) => {
+		const match = examples.find((each) => each.code === code);
+		const isCustom = match === undefined;
+		if (match !== undefined && match !== example) {
+			this.refresh(() => {
+				example = match;
+				custom = false;
+			});
+		} else if (isCustom !== custom) {
+			this.refresh(() => {
+				custom = isCustom;
+			});
+		}
+	};
 
 	for ({} of this) {
 		yield jsx`
@@ -920,10 +946,28 @@ function* Playground(this: Context) {
 				`}>Playground</h1>
 				<${Workbench}
 					value=${example.code}
+					valueEpoch=${pickEpoch}
 					name="playground"
 					geometry=${PAGE_GEOMETRY}
 					fill
-					controls=${picker}
+					oncode=${oncode}
+					controls=${jsx`
+						<label for="playground-examples">Example</label>
+						<select
+							id="playground-examples"
+							value=${custom ? "" : example.id}
+							onchange=${onexamplechange}
+						>
+							<option value="" disabled hidden>Pick an example…</option>
+							${examples.map(
+								(each) => jsx`
+									<option key=${each.id} value=${each.id}>
+										${each.label}
+									</option>
+								`,
+							)}
+						</select>
+					`}
 				/>
 			</main>
 		`;

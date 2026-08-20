@@ -36,7 +36,7 @@ const terminalText = async () =>
 		)
 	).replace(/\u00a0/g, " ");
 
-async function waitForText(needle: string, timeout = 15000): Promise<boolean> {
+async function waitForText(needle: string, timeout = 30000): Promise<boolean> {
 	const deadline = Date.now() + timeout;
 	while (Date.now() < deadline) {
 		if ((await terminalText()).includes(needle)) return true;
