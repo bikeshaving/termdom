@@ -66,6 +66,7 @@ const LONG = "the quick brown fox jumps over the lazy dog again and again";
 /** A word no line of the probe document is wide enough to hold. */
 const UNBREAKABLE = "supercalifragilisticexpialidocious";
 const FLEX = "#parent { display: flex; }";
+const GRID = "#parent { display: grid; grid-template-columns: 12ch 12ch; }";
 const NARROW = "#probe { width: 10ch; }";
 
 const FEATURES: Record<string, Feature> = {
@@ -215,19 +216,21 @@ const FEATURES: Record<string, Feature> = {
 	},
 	"column-gap": {value: "2ch", target: "parent", setup: FLEX},
 
-	// Grid -- probed so its absence is measured rather than assumed
+	// Grid. `subgrid` (css-grid-2 §9.5) and `masonry` (css-grid-3) are refused
+	// values, not missing ones: the track-list parser rejects them by name,
+	// and a property probed here reports on the rest of its grammar.
 	"grid-template-columns": {
 		value: "1fr 1fr",
 		target: "parent",
 		setup: "#parent { display: grid; }",
 	},
 	"grid-template-rows": {
-		value: "1fr 1fr",
+		value: "3px 1px",
 		target: "parent",
 		setup: "#parent { display: grid; }",
 	},
-	"grid-column": {value: "1 / 3", setup: "#parent { display: grid; }"},
-	"grid-row": {value: "1 / 3", setup: "#parent { display: grid; }"},
+	"grid-column": {value: "2 / 3", setup: GRID},
+	"grid-row": {value: "3", setup: "#parent { display: grid; }"},
 	"grid-auto-flow": {
 		value: "column",
 		target: "parent",
@@ -435,12 +438,10 @@ function generatedFeatures(): Record<string, Feature> {
 		value: "flex-end",
 		setup: `${FLEX} #parent { height: 6px; }`,
 	};
-	out["justify-items"] = {
-		value: "flex-end",
-		target: "parent",
-		setup: FLEX,
-	};
-	out["justify-self"] = {value: "flex-end", setup: FLEX};
+	// The inline-axis item alignments are grid's: a flex container's inline
+	// axis belongs to justify-content, so probing them there measures nothing.
+	out["justify-items"] = {value: "end", target: "parent", setup: GRID};
+	out["justify-self"] = {value: "end", setup: GRID};
 
 	// Table properties.
 	out["border-spacing"] = {
@@ -487,7 +488,7 @@ function generatedFeatures(): Record<string, Feature> {
 			'<ul id="parent"><li id="probe">item</li><li id="sibling">two</li></ul>',
 	};
 
-	// Grid, so its absence stays measured across the whole family.
+	// The rest of the grid family, so the whole of it is measured.
 	for (const name of [
 		"grid",
 		"grid-area",
@@ -501,16 +502,18 @@ function generatedFeatures(): Record<string, Feature> {
 		"grid-template-areas",
 	]) {
 		out[name] = {
+			// Each value has to MOVE something: a track list that resolves to
+			// the size the box already had measures as no support at all.
 			value:
 				name === "grid-template-areas" ?
-					'"a" "b"' :
+					'"a a" "b b"' :
 					name === "grid-template" || name === "grid" ?
-						"1fr / 1fr" :
+						"3px 1px / 6ch 6ch" :
 						name.endsWith("-start") || name.endsWith("-end") ?
-							"1" :
+							"3" :
 							name === "grid-area" ?
-								"1 / 1 / 2 / 2" :
-								"1fr",
+								"2 / 2 / 3 / 3" :
+								"3px",
 			target:
 				name.startsWith("grid-auto") ||
 				name === "grid" ||
@@ -518,7 +521,15 @@ function generatedFeatures(): Record<string, Feature> {
 				name === "grid-template-areas" ?
 					"parent" :
 					"probe",
-			setup: "#parent { display: grid; }",
+			// grid-auto-columns sizes the implicit COLUMNS, which only exist
+			// where the flow makes them: a row-flow grid never creates one.
+			setup:
+				name === "grid-auto-columns" ?
+					"#parent { display: grid; grid-auto-flow: column; }" : // An area map only moves a box that names one of its
+				// areas, and only against columns it can span.
+					name === "grid-template-areas" ?
+						`${GRID} #probe { grid-area: b; }` :
+						"#parent { display: grid; }",
 		};
 	}
 

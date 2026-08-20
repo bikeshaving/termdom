@@ -1,6 +1,6 @@
 ---
 title: Layout
-description: The box model, flexbox, and tables on a cell grid.
+description: The box model, flexbox, grid and tables on a cell grid.
 ---
 
 Sizes are in cells: `1ch` is one column, `1px` is one row. Lengths that land
@@ -33,6 +33,29 @@ row.style.alignItems = "center";
 `flex-grow`, `flex-shrink`, `flex-wrap`, `order`, and the alignment
 properties all work.
 
+## Grid
+
+```ts
+page.style.display = "grid";
+page.style.gridTemplateAreas = `"head head" "side main" "foot foot"`;
+page.style.gridTemplateColumns = "18ch 1fr";
+page.style.gridTemplateRows = "1px 1fr 1px";
+page.style.gap = "0 1ch";
+
+sidebar.style.gridArea = "side";
+```
+
+Track lists take lengths, percentages, `fr`, `auto`, `min-content`,
+`max-content`, `minmax()`, `fit-content()` and `repeat()` — including
+`repeat(auto-fill, ...)` and `repeat(auto-fit, ...)`. Items are placed by line
+number (negative numbers count from the end), by `span`, by named line, or by
+named area; whatever is left over is auto-placed, sparsely or `dense`, along
+`grid-auto-flow`. `justify-items`, `justify-self`, `align-items`,
+`align-self`, `justify-content` and `align-content` all apply.
+
+Flexible tracks tile the terminal exactly: `repeat(3, 1fr)` across 80 columns
+is 27, 26 and 27 cells, meeting with no gap and no overlap.
+
 ## Tables
 
 A `<table>` of `<tr>` and `<td>` elements lays out as a table: shared column
@@ -52,4 +75,5 @@ clip the same way and make the box scrollable: `scrollTop`, `scrollTo`,
 
 ## Not implemented
 
-CSS Grid and floats. The [compatibility matrix](/compatibility/) has the full list.
+Floats, `subgrid` and masonry. The [compatibility matrix](/compatibility/) has
+the full list.
