@@ -123,6 +123,30 @@ reaching for the clipboard is already too late. Most terminals refuse clipboard 
 when one does not answer. The terminal's own select-to-copy remains
 available as Shift+drag, which bypasses mouse reporting.
 
+`navigator.clipboard` is a `Clipboard`, and `write()` and `read()` work over
+`ClipboardItem` under the same gate. OSC 52 carries one payload a terminal
+treats as text, so `text/plain` is the type it sends and answers with, and
+`ClipboardItem.supports()` says so. `navigator.permissions.query({name:
+"clipboard-read"})` and `"clipboard-write"` report `granted` while a gesture
+is being dispatched and `prompt` outside one.
+
+A paste from the terminal arrives as a cancelable `paste` event at the
+focused element, or at `document.body` when nothing is focused, with the text
+on `event.clipboardData`. A paste nobody cancels goes on to insert into a
+focused text field:
+
+```ts
+document.addEventListener("paste", (event) => {
+	console.log(event.clipboardData.getData("text/plain"));
+	event.preventDefault();
+});
+```
+
+`ClipboardEvent` and `DataTransfer` are here, and `copy` and `cut` listeners
+attach and receive what an application dispatches, but nothing fires them for
+the user: the terminal keeps the copy gesture -- Cmd+C, Shift+drag -- and
+never reports it, and Ctrl+C is the interrupt.
+
 ## Scrolling and the camera
 
 Output starts at the command line and flows down. When the document
