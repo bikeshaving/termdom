@@ -3392,6 +3392,15 @@ function containerBox(
 			// Collapsible white space between flex items renders nothing at
 			// all (css-flexbox-1 §4), so it opens no anonymous item.
 			continue;
+		} else if (
+			container.tagName === "DETAILS" &&
+			!container.hasAttribute("open")
+		) {
+			// A closed details shows only its summary. Its element children
+			// hide through the UA sheet, but no selector reaches a text
+			// child, so the box build is where one drops. Toggling `open`
+			// restages the container, which re-decides this.
+			continue;
 		}
 		if (run === null) {
 			run = previous[runCount] ?? new Box("anonymous", null, box);

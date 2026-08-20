@@ -72,6 +72,29 @@ test("an open details shows its body", async () => {
 	dom.dispose();
 });
 
+test("a closed details hides a bare text child", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	// The UA sheet hides element children through a selector, but no
+	// selector reaches a text node, so this child hides in the box build.
+	document.body.innerHTML = "<details><summary>More</summary>secret</details>";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("More");
+	expect(terminal.getPlainText()).not.toContain("secret");
+
+	const details = document.querySelector("details") as HTMLDetailsElement;
+	details.setAttribute("open", "");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("secret");
+
+	details.removeAttribute("open");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("secret");
+
+	dom.dispose();
+});
+
 /* ------------------------------------------------------ details/summary */
 
 test("the disclosure marker follows the open state", async () => {
