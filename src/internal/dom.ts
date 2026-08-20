@@ -8591,12 +8591,14 @@ const SHADOW_HOST_NAMES = new Set([
 ]);
 
 /**
- * A user-agent tree's own slot distribution: given one of the tree's slots,
- * the host children it projects, computed fresh from the light tree on every
- * assignment pass. The details' first-summary/rest split is such a rule --
- * expressible neither as named assignment (no name separates the first
- * summary from the second) nor as manual assignment (whose stored lists
- * would need tending on every child mutation).
+ * A user-agent shadow tree's slotting rule: which of the host's children
+ * the given slot shows. Named slots sort children by their `slot`
+ * attribute, which author content does not carry and the UA must not
+ * write onto the author's nodes; a UA tree that sorts children by what
+ * they are -- details sends its first summary to one slot and everything
+ * else to the other -- carries this function instead. findSlottables
+ * consults it on every assignment pass, so it always answers from the
+ * current child list and needs no upkeep when children change.
  */
 const kUASlotting = Symbol("UA slot distribution");
 
