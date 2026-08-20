@@ -1475,6 +1475,324 @@ Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+// A transfer here carries text under format names and nothing else. There is
+// no drag and drop in a terminal and no file to hand over, so `dropEffect`,
+// `effectAllowed`, `setDragImage()` and `files` are present, answer what the
+// interface says they answer, and do nothing.
+
+/**
+ * A transfer format name, normalized.
+ *
+ * The two shorthands the platform keeps are folded into the media types they
+ * stand for, and what is left is lowercased with the surrounding whitespace
+ * dropped, so `"TEXT/Plain "` and `"text"` name one entry.
+ */
+function normalizeTransferFormat(format: unknown): string {
+	const name = String(format).trim().toLowerCase();
+	if (name === "text") {
+		return "text/plain";
+	}
+	if (name === "url") {
+		return "text/uri-list";
+	}
+	return name;
+}
+
+/** The brand an interface with no constructor is built through internally. */
+const kInternalConstruction = Symbol("internal construction");
+
+/** A list of files, empty here because nothing in a terminal produces one. */
+export class FileList {
+	get length(): number {
+		return 0;
+	}
+
+	item(_index: number): null {
+		return null;
+	}
+
+	* [Symbol.iterator](): Generator<never, void, unknown> {}
+}
+
+Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
+	value: "FileList",
+	configurable: true,
+});
+
+const kTransferEntries = Symbol("entries");
+const kTransferItems = Symbol("items");
+const kTransferFiles = Symbol("files");
+const kTransferMode = Symbol("mode");
+const kDropEffect = Symbol("dropEffect");
+const kEffectAllowed = Symbol("effectAllowed");
+
+const kItemType = Symbol("type");
+const kItemData = Symbol("data");
+
+/** One entry of a transfer: a string under a format name. */
+export class DataTransferItem {
+	declare [kItemType]: string;
+	declare [kItemData]: string;
+
+	constructor(brand?: unknown, type?: string, data?: string) {
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kItemType] = String(type);
+		this[kItemData] = String(data);
+	}
+
+	get kind(): string {
+		return "string";
+	}
+
+	get type(): string {
+		return this[kItemType];
+	}
+
+	getAsString(callback: unknown): void {
+		if (callback === null || callback === undefined) {
+			return;
+		}
+		if (typeof callback !== "function") {
+			throw new TypeError("getAsString needs a function");
+		}
+		const data = this[kItemData];
+		queueMicrotask(() => {
+			(callback as (data: string) => void)(data);
+		});
+	}
+
+	getAsFile(): null {
+		return null;
+	}
+}
+
+Object.defineProperty(DataTransferItem.prototype, Symbol.toStringTag, {
+	value: "DataTransferItem",
+	configurable: true,
+});
+
+const kListOwner = Symbol("owner");
+const kListIndices = Symbol("indices");
+
+/** The entries of a transfer, as a list that indexes and mutates them. */
+export class DataTransferItemList {
+	declare [kListOwner]: DataTransfer;
+	declare [kListIndices]: number;
+
+	constructor(brand?: unknown, owner?: DataTransfer) {
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kListOwner] = owner as DataTransfer;
+		this[kListIndices] = 0;
+	}
+
+	get length(): number {
+		return this[kListOwner][kTransferEntries].size;
+	}
+
+	add(data: unknown, type?: unknown): DataTransferItem | null {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			return null;
+		}
+		if (type === undefined) {
+			throw new TypeError("Adding a string entry needs a format");
+		}
+		const format = normalizeTransferFormat(type);
+		if (owner[kTransferEntries].has(format)) {
+			throw domError(
+				"NotSupportedError",
+				`The transfer already carries a ${format} entry`,
+			);
+		}
+		owner[kTransferEntries].set(format, String(data));
+		syncTransferItems(owner);
+		return (this as unknown as Record<number, DataTransferItem>)[
+			owner[kTransferEntries].size - 1
+		];
+	}
+
+	remove(index: number): void {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			throw domError(
+				"InvalidStateError",
+				"That transfer cannot be modified",
+			);
+		}
+		const formats = Array.from(owner[kTransferEntries].keys());
+		const at = toLong(index);
+		if (at < 0 || at >= formats.length) {
+			return;
+		}
+		owner[kTransferEntries].delete(formats[at]);
+		syncTransferItems(owner);
+	}
+
+	clear(): void {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			return;
+		}
+		owner[kTransferEntries].clear();
+		syncTransferItems(owner);
+	}
+}
+
+Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
+	value: "DataTransferItemList",
+	configurable: true,
+});
+
+/** Bring a list's indexed properties back in line with the entries behind it. */
+function syncTransferItems(transfer: DataTransfer): void {
+	const list = transfer[kTransferItems] as unknown as Record<number, unknown>;
+	const formats = Array.from(transfer[kTransferEntries].keys());
+	for (let i = 0; i < transfer[kTransferItems][kListIndices]; i++) {
+		delete list[i];
+	}
+	for (let i = 0; i < formats.length; i++) {
+		Object.defineProperty(list, i, {
+			value: new DataTransferItem(
+				kInternalConstruction,
+				formats[i],
+				transfer[kTransferEntries].get(formats[i]),
+			),
+			configurable: true,
+			enumerable: true,
+		});
+	}
+	transfer[kTransferItems][kListIndices] = formats.length;
+}
+
+/** The payload a clipboard event carries: text under format names. */
+export class DataTransfer {
+	declare [kTransferEntries]: Map<string, string>;
+	declare [kTransferItems]: DataTransferItemList;
+	declare [kTransferFiles]: FileList;
+	declare [kTransferMode]: "readwrite" | "readonly";
+	declare [kDropEffect]: string;
+	declare [kEffectAllowed]: string;
+
+	constructor() {
+		this[kTransferEntries] = new Map();
+		this[kTransferItems] = new DataTransferItemList(
+			kInternalConstruction,
+			this,
+		);
+		this[kTransferFiles] = new FileList();
+		this[kTransferMode] = "readwrite";
+		this[kDropEffect] = "none";
+		this[kEffectAllowed] = "uninitialized";
+	}
+
+	get dropEffect(): string {
+		return this[kDropEffect];
+	}
+
+	set dropEffect(value: string) {
+		const effect = String(value);
+		if (["none", "copy", "link", "move"].includes(effect)) {
+			this[kDropEffect] = effect;
+		}
+	}
+
+	get effectAllowed(): string {
+		return this[kEffectAllowed];
+	}
+
+	set effectAllowed(value: string) {
+		this[kEffectAllowed] = String(value);
+	}
+
+	get items(): DataTransferItemList {
+		return this[kTransferItems];
+	}
+
+	get types(): readonly string[] {
+		return Object.freeze(Array.from(this[kTransferEntries].keys()));
+	}
+
+	get files(): FileList {
+		return this[kTransferFiles];
+	}
+
+	setDragImage(_image: unknown, _x: unknown, _y: unknown): void {}
+
+	getData(format: unknown): string {
+		return this[kTransferEntries].get(normalizeTransferFormat(format)) ?? "";
+	}
+
+	setData(format: unknown, data: unknown): void {
+		if (this[kTransferMode] !== "readwrite") {
+			return;
+		}
+		this[kTransferEntries].set(normalizeTransferFormat(format), String(data));
+		syncTransferItems(this);
+	}
+
+	clearData(format?: unknown): void {
+		if (this[kTransferMode] !== "readwrite") {
+			return;
+		}
+		if (format === undefined) {
+			this[kTransferEntries].clear();
+		} else {
+			this[kTransferEntries].delete(normalizeTransferFormat(format));
+		}
+		syncTransferItems(this);
+	}
+}
+
+Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
+	value: "DataTransfer",
+	configurable: true,
+});
+
+/**
+ * Put a transfer into the read-only mode a `paste` hands its listeners: the
+ * text is theirs to read, and the clipboard is not theirs to rewrite through
+ * the event.
+ */
+export function lockDataTransfer(transfer: DataTransfer): void {
+	transfer[kTransferMode] = "readonly";
+}
+
+export interface ClipboardEventInit extends EventInit {
+	clipboardData?: DataTransfer | null;
+}
+
+const kClipboardData = Symbol("clipboardData");
+
+/** An event of a clipboard gesture, carrying the payload it moves. */
+export class ClipboardEvent extends Event {
+	declare [kClipboardData]: DataTransfer | null;
+
+	constructor(type: string, eventInitDict: ClipboardEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<ClipboardEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kClipboardData] =
+			init.clipboardData === undefined || init.clipboardData === null ?
+				null :
+				init.clipboardData;
+	}
+
+	get clipboardData(): DataTransfer | null {
+		return this[kClipboardData];
+	}
+}
+
+Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, {
+	value: "ClipboardEvent",
+	configurable: true,
+});
+
 const DOM_DELTA_PIXEL = 0x00;
 const DOM_DELTA_LINE = 0x01;
 const DOM_DELTA_PAGE = 0x02;
