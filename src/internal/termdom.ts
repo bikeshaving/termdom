@@ -2838,13 +2838,26 @@ function moveFocus(
 
 	const current = self.document.activeElement;
 	const currentIndex = focusable.indexOf(current as Element);
-	let nextIndex: number;
 
-	if (reverse) {
-		nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
-	} else {
-		nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+	// Tab past the last focusable (or Shift+Tab before the first) rests on
+	// nothing. That is the leg of a browser's cycle where focus walks the
+	// chrome and the page sees activeElement fall back to body; a terminal
+	// has no chrome, so the blurred stop stands in for it. It is also what
+	// keeps a scope with a single focusable element escapable -- a pure
+	// wrap would cycle Tab onto it forever.
+	const leaving = reverse ?
+		currentIndex === 0 :
+		currentIndex === focusable.length - 1;
+	if (leaving) {
+		(current as HTMLElement).blur();
+		return;
 	}
+
+	// From the blurred stop, Tab enters at the first element and Shift+Tab
+	// at the last, as from a browser's chrome.
+	const nextIndex = reverse ?
+			(currentIndex === -1 ? focusable.length - 1 : currentIndex - 1) :
+		currentIndex + 1;
 
 	const next = focusable[nextIndex] as HTMLElement;
 	next.focus();

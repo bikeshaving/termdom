@@ -1422,6 +1422,38 @@ test("Escape blurs a focused text field first; only the next Escape exits fullsc
 	dom.dispose();
 });
 
+test("Tab rests on nothing past the last focusable, and re-enters at the ends", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<input id=\"a\"><input id=\"b\">";
+	const press = async (key: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(key));
+		await new Promise((r) => setTimeout(r, 10));
+	};
+
+	// Forward: enter at the first, walk to the last, rest on nothing.
+	await press("\t");
+	expect(document.activeElement?.id).toBe("a");
+	await press("\t");
+	expect(document.activeElement?.id).toBe("b");
+	await press("\t");
+	expect(document.activeElement).toBe(document.body);
+	await press("\t");
+	expect(document.activeElement?.id).toBe("a");
+
+	// Backward from nothing enters at the last; before the first, the
+	// blurred stop again. A lone focusable element stays escapable.
+	await press("\x1b[Z"); // Shift+Tab
+	expect(document.activeElement).toBe(document.body);
+	await press("\x1b[Z");
+	expect(document.activeElement?.id).toBe("b");
+	dom.dispose();
+});
+
 test("focusing a field inside a fullscreen element leaves the camera alone", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -1685,8 +1717,13 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
-	// The hidden checkbox and button are not in tab order; the edit input
-	// is the only rendered focusable, so focus stays put.
+	// The hidden checkbox and button are not in tab order: past the edit
+	// input -- the only rendered focusable -- Tab rests on nothing, and
+	// another Tab re-enters at the edit input, never a hidden control.
+	expect(document.activeElement).toBe(document.body);
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
 	expect((document.activeElement as HTMLElement).className).toBe("edit");
 
 	dom.dispose();
@@ -2149,16 +2186,16 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	await nextFrame(dom);
 
 	// Tab order includes both hrefs, in document order, and skips the anchor
-	// with no href.
+	// with no href. Past the last, the blurred stop, then the cycle again.
 	const order: string[] = [];
 	(document.getElementById("text") as HTMLElement).focus();
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < 4; i++) {
 		terminal.stdin.emit("data", Buffer.from("\t"));
 		await new Promise((r) => setTimeout(r, 0));
 		await nextFrame(dom);
 		order.push(document.activeElement?.id ?? "");
 	}
-	expect(order).toEqual(["all", "active", "text"]);
+	expect(order).toEqual(["all", "active", "", "text"]);
 
 	let clicks = 0;
 	const all = document.getElementById("all") as HTMLElement;

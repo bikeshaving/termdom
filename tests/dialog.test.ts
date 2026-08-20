@@ -184,7 +184,10 @@ test("focus enters the dialog and Tab cannot leave it", async () => {
 
 	await press(terminal, "\t");
 	expect(document.activeElement?.id).toBe("cancel");
-	// Tab wraps within the dialog rather than reaching the page behind it.
+	// Tab past the dialog's last control rests on nothing -- the blurred
+	// stop -- and re-enters at its first control, never the page behind it.
+	await press(terminal, "\t");
+	expect(document.activeElement).toBe(document.body);
 	await press(terminal, "\t");
 	expect(document.activeElement?.id).toBe("ok");
 
