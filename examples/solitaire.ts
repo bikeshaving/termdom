@@ -27,7 +27,8 @@
 // time survives retries, which is what makes a deal number a speedrun.
 //
 // Clicking does the same: a card picks up, a pile drops, the deck deals, and
-// a double-click sends a card home.
+// a double-click sends a card home. The menu and the confirm dialog take
+// clicks too.
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {jsx} from "@b9g/crank/standalone";
@@ -429,10 +430,14 @@ function sheet(): string {
   dialog .ask { color: #ffd75f; font-weight: bold; }
   dialog .answers { color: #9ec5ab; padding-top: 1px; }
   dialog .answers { display: flex; flex-direction: row; }
+  /* An answer is one flex item; keeping its width is what keeps its words
+     on one line. */
+  dialog .answers span { flex-shrink: 0; }
   .pick { color: #9ec5ab; }
   .pick.on { color: #ffd75f; font-weight: bold; }
   .pickgap { width: 3ch; }
   dialog .again { color: #7fae90; padding-top: 1px; }
+  dialog .sep { white-space: pre; }
   dialog input { width: 12ch; }
 
   .hint { padding-top: 1px; color: #7fae90; text-align: center; }
@@ -667,7 +672,7 @@ function* App(this: Context) {
 		this.refresh(() => {
 			confirming = {
 				question: "Abandon this run?",
-				yes: `starts ${label}`,
+				yes: `start ${label}`,
 				go: () => reset(number),
 			};
 		});
@@ -849,6 +854,52 @@ function* App(this: Context) {
 		});
 	};
 
+	// The menu answers to clicks as well as keys, so its moves live here
+	// rather than inside the keydown handler.
+
+	/** The typed seed names the deal; empty or nonsense means any deal. */
+	const dealFromMenu = (): void => {
+		const seedField = document.getElementById(
+			"seed",
+		) as HTMLInputElement | null;
+		const seed = Number.parseInt(seedField?.value ?? "", 10);
+		menu = false;
+		reset(Number.isFinite(seed) && seed > 0 ? seed : someDeal());
+	};
+
+	/** Pick a draw mode; picking the one already picked deals. */
+	const pickMode = (picked: 1 | 3): void => {
+		if (mode === picked) {
+			return dealFromMenu();
+		}
+		this.refresh(() => {
+			mode = picked;
+		});
+	};
+
+	/** Back from the menu to the game behind it, when there is one. */
+	const leaveMenu = (): void => {
+		this.refresh(() => {
+			menu = false;
+		});
+	};
+
+	/** Answer the confirm dialog, by key or by click. */
+	const answer = (yes: boolean): void => {
+		const ask = confirming;
+		if (!ask) {
+			return;
+		}
+		if (yes) {
+			confirming = null;
+			ask.go();
+		} else {
+			this.refresh(() => {
+				confirming = null;
+			});
+		}
+	};
+
 	// The cursor is a place on the board, in the board's own geometry: seven
 	// columns, a top row (deck, flip, a gap, four suit homes) and the
 	// tableau below, where a column is a pile and the cursor can rest on any
@@ -963,37 +1014,27 @@ function* App(this: Context) {
 		const key = event.key;
 		if (menu) {
 			// While the seed field has focus, letters and digits belong to it;
-			// only Enter still deals.
+			// Enter still deals, and Tab or Escape hands the keys back to the
+			// menu -- the field is the menu's only focusable element, so Tab
+			// would otherwise cycle onto itself and trap the keyboard.
 			const typing = (event.target as Element | null)?.tagName === "INPUT";
+			if (typing && (key === "Tab" || key === "Escape")) {
+				event.preventDefault();
+				(event.target as HTMLElement).blur();
+				return;
+			}
 			if (typing && key !== "Enter") {
 				return;
 			}
-			// The typed seed names the deal; empty or nonsense means any deal.
-			const dealFromMenu = (): void => {
-				const seedField = document.getElementById(
-					"seed",
-				) as HTMLInputElement | null;
-				const seed = Number.parseInt(seedField?.value ?? "", 10);
-				menu = false;
-				reset(Number.isFinite(seed) && seed > 0 ? seed : someDeal());
-			};
 			if (key === "1" || key === "3") {
 				// The number picks; the same number again deals, so the whole
 				// menu answers to two fingers.
-				const picked = key === "1" ? 1 : 3;
-				if (mode === picked) {
-					return dealFromMenu();
-				}
-				this.refresh(() => {
-					mode = picked;
-				});
+				pickMode(key === "1" ? 1 : 3);
 			} else if (key === "Enter" || key === " " || key === "y") {
 				dealFromMenu();
 			} else if ((key === "n" || key === "b") && startedAt !== null) {
 				// Back only leads somewhere when a game is behind the menu.
-				this.refresh(() => {
-					menu = false;
-				});
+				leaveMenu();
 			} else if (key === "q") {
 				term.window.close();
 			}
@@ -1001,13 +1042,9 @@ function* App(this: Context) {
 		}
 		if (confirming) {
 			if (key === "y" || key === "Enter") {
-				const go = confirming.go;
-				confirming = null;
-				go();
+				answer(true);
 			} else if (key === "n" || key === "Escape") {
-				this.refresh(() => {
-					confirming = null;
-				});
+				answer(false);
 			}
 			return;
 		}
@@ -1018,7 +1055,7 @@ function* App(this: Context) {
 			return this.refresh(() => {
 				confirming = {
 					question: "Quit in the middle of a run?",
-					yes: "quits",
+					yes: "quit",
 					go: () => term.window.close(),
 				};
 			});
@@ -1166,15 +1203,23 @@ function* App(this: Context) {
 						<dialog open>
 							<div class="ask">Solitaire ${MIDDOT} new game</div>
 							<div class="answers">
-								<span class=${modeNow() === 1 ? "pick on" : "pick"}>${"[1] one card"}</span>
+								<span
+									class=${modeNow() === 1 ? "pick on" : "pick"}
+									onclick=${() => pickMode(1)}
+								>${"[1] one card"}</span>
 								<span class="pickgap"> </span>
-								<span class=${modeNow() === 3 ? "pick on" : "pick"}>${"[3] three cards"}</span>
+								<span
+									class=${modeNow() === 3 ? "pick on" : "pick"}
+									onclick=${() => pickMode(3)}
+								>${"[3] three cards"}</span>
 							</div>
 							<div class="again">(press [${modeNow()}] again to deal)</div>
-							<div class="answers">deal${" #"}<input id="seed" placeholder="random" /></div>
-							<div class="answers"><b>[Enter]</b>${" deals"}${
-								startedAt !== null ? jsx` ${MIDDOT} [b]ack` : ""
-							} ${MIDDOT} [q]uit</div>
+							<div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
+							<div class="answers"><span onclick=${dealFromMenu}><b>[Enter]</b>${" deal"}</span>${
+								startedAt !== null ?
+									jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}>[b]ack</span>` :
+									""
+							}<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}>[q]uit</span></div>
 						</dialog>
 					</div>
 				</div>
@@ -1352,7 +1397,7 @@ function* App(this: Context) {
 					jsx`<div class="scrim">
 						<dialog open>
 							<div class="ask">${ask.question}</div>
-							<div class="answers">[y] ${ask.yes} ${MIDDOT} [n] keeps playing</div>
+							<div class="answers"><span onclick=${() => answer(true)}>[y] ${ask.yes}</span><span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => answer(false)}>[n] keep playing</span></div>
 						</dialog>
 					</div>`
 				}
