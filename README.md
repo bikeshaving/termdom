@@ -5,9 +5,9 @@
 ![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-draws actual DOM nodes to terminal output and redraws the screen when they
-mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
-any frontend web framework.
+draws actual DOM nodes to terminal output and redraws the screen when the nodes
+are mutated, so TUIs and interactive CLIs can be written with vanilla
+JavaScript or any frontend web framework.
 
 ```sh
 npm install @b9g/termdom
@@ -77,14 +77,13 @@ setInterval(() => {
 
 ## How it works
 
-TermDOM implements the browser's rendering pipeline against a grid of
-character cells instead of pixels. CSS lengths resolve to cells — `1px`
-and `1ch` are both one cell — so the box model, flexbox, and tables lay
-out in whole cells. On each frame the engine recomputes style and
-layout for whatever mutated, paints the result into a cell buffer, diffs
-it against the previous frame, and writes the difference to stdout as
-ANSI escape sequences. Escape sequences from stdin are decoded into
-keyboard, mouse, and paste events and dispatched to DOM nodes.
+TermDOM implements the browser's rendering pipeline against a grid of character
+cells instead of pixels. All CSS lengths resolve to cells (`1px` and `1ch` are
+both one cell). On each frame the engine recomputes style and layout for
+whatever mutated, paints the result into a cell buffer, diffs it against the
+previous frame, and writes the difference to stdout as ANSI escape sequences.
+Escape sequences from stdin are decoded into keyboard, mouse, and paste events
+and dispatched to DOM nodes.
 
 ## Examples
 
