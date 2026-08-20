@@ -1714,6 +1714,109 @@ export class LayoutEngine {
 		);
 	}
 
+	/**
+	 * The laid-out extent of a box's content -- what scrollWidth/scrollHeight
+	 * report and scroll offsets clamp against: the farthest right/bottom edge
+	 * any child box reaches, measured from the padding-box origin, plus the
+	 * padding on that end, floored at the client size. Children keep their
+	 * natural heights when they overflow a fixed box, so the vertical extent
+	 * is readable off the layout tree directly; a measured inline run's leaf
+	 * takes the width it was offered, so once one is present the horizontal
+	 * extent is unknowable and reported null -- callers must not clamp
+	 * against an answer that does not exist. Null overall for an element the
+	 * tree does not decompose into child boxes at all (an inline, a run
+	 * member, a leaf of its own).
+	 */
+	scrollExtentOf(
+		element: Element,
+	): {width: number | null; height: number} | null {
+		const flexNode = this.nodeMap.get(element);
+		if (!flexNode || flexNode.measureFunc !== null) {
+			return null;
+		}
+		const box = getBoxModel(element);
+		let right: number | null = 0;
+		let bottom = 0;
+		for (const child of flexNode.children) {
+			// A display:none placeholder holds its slot with a stale layout.
+			if (child.getDisplay() === Flex.DISPLAY_NONE) {
+				continue;
+			}
+			if (right !== null) {
+				right =
+					child.measureFunc !== null ?
+						null :
+							Math.max(
+								right,
+								child.getComputedLeft() + child.getComputedWidth(),
+							);
+			}
+			bottom = Math.max(
+				bottom,
+				child.getComputedTop() + child.getComputedHeight(),
+			);
+		}
+		const clientWidth =
+			flexNode.getComputedWidth() -
+			(box.borderLeftWidth || 0) -
+			(box.borderRightWidth || 0);
+		const clientHeight =
+			flexNode.getComputedHeight() -
+			(box.borderTopWidth || 0) -
+			(box.borderBottomWidth || 0);
+		return {
+			width:
+				right === null ?
+					null :
+						Math.round(
+							Math.max(
+								clientWidth,
+								right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
+							),
+						),
+			height: Math.round(
+				Math.max(
+					clientHeight,
+					bottom - (box.borderTopWidth || 0) + (box.paddingBottom || 0),
+				),
+			),
+		};
+	}
+
+	/**
+	 * The rows an element's painted position is shifted up by its scrolled
+	 * ancestors -- the same walk absolutePosition subtracts, minus the
+	 * element's own box. Paint extents are cached in unscrolled layout rows,
+	 * so band culling of a scrolled subtree compares against the band moved
+	 * by this amount rather than recomputing extents per scroll.
+	 */
+	scrolledAncestorRows(element: Element): number {
+		const flexNode = this.nodeMap.get(element) ?? runFlexNode(this, element);
+		if (!flexNode) {
+			return 0;
+		}
+		const document = this.window.document;
+		const root = document.documentElement;
+		const body = document.body;
+		let rows = 0;
+		for (
+			let current = flexNode.getParent();
+			current;
+			current = current.getParent()
+		) {
+			const node = this[kDOMNodeByFlexNode].get(current);
+			if (
+				node &&
+				node.nodeType === node.ELEMENT_NODE &&
+				node !== root &&
+				node !== body
+			) {
+				rows += (node as Element).scrollTop || 0;
+			}
+		}
+		return rows;
+	}
+
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
 

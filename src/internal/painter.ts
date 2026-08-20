@@ -7,7 +7,11 @@ import {isTextField, selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import type {Viewport} from "./viewport.js";
-import {type StyleManager, resolveBorderSides} from "./styles.js";
+import {
+	type StyleManager,
+	getBoxModel,
+	resolveBorderSides,
+} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
@@ -41,17 +45,28 @@ function hasLineThrough(style: ComputedStyle): boolean {
 	return style.computedValueOf("text-decoration-line").includes("line-through");
 }
 
+/** Whether an overflow value clips its axis: everything but visible does. */
+function overflowClips(value: string): boolean {
+	return (
+		value === "hidden" ||
+		value === "clip" ||
+		value === "auto" ||
+		value === "scroll"
+	);
+}
+
 /**
- * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
- * own children, intersected with whatever clip was already active from an
- * ancestor. overflow:auto/scroll/visible impose no clip on that axis -- there
- * are no scrollable containers, only the document camera, so "auto/scroll"
- * degrades to "visible" rather than clipping content nobody can scroll to see.
- * An axis that isn't hidden stays unbounded (+-Infinity), not just "this
- * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
- * columns, matching CSS's independent per-axis overflow.
+ * The clip a non-visible overflow (hidden/clip, and auto/scroll -- a scroll
+ * container clips what is scrolled out of it) imposes on the element's own
+ * children, intersected with whatever clip was already active from an
+ * ancestor. The clip is the PADDING box: content scrolled past the edge must
+ * not paint over the border glyphs, so each clipping axis is inset by that
+ * side's border. An axis that stays visible is unbounded (+-Infinity), not
+ * just "this element's own edge", so overflow-x:hidden;overflow-y:visible
+ * only bounds columns, matching CSS's independent per-axis overflow.
  */
 function overflowClipRect(
+	element: Element,
 	rect: {left: number; top: number; width: number; height: number} | null,
 	overflowX: string,
 	overflowY: string,
@@ -60,16 +75,19 @@ function overflowClipRect(
 	if (!rect) {
 		return parent;
 	}
-	const hiddenX = overflowX === "hidden";
-	const hiddenY = overflowY === "hidden";
-	if (!hiddenX && !hiddenY) {
+	const clipsX = overflowClips(overflowX);
+	const clipsY = overflowClips(overflowY);
+	if (!clipsX && !clipsY) {
 		return parent;
 	}
 
-	const left = hiddenX ? rect.left : -Infinity;
-	const right = hiddenX ? rect.left + rect.width : Infinity;
-	const top = hiddenY ? rect.top : -Infinity;
-	const bottom = hiddenY ? rect.top + rect.height : Infinity;
+	const box = getBoxModel(element);
+	const left = clipsX ? rect.left + (box.borderLeftWidth || 0) : -Infinity;
+	const right =
+		clipsX ? rect.left + rect.width - (box.borderRightWidth || 0) : Infinity;
+	const top = clipsY ? rect.top + (box.borderTopWidth || 0) : -Infinity;
+	const bottom =
+		clipsY ? rect.top + rect.height - (box.borderBottomWidth || 0) : Infinity;
 
 	if (!parent) {
 		return {left, top, right, bottom};
@@ -246,6 +264,7 @@ const kStyleManager = Symbol("styleManager");
 const kViewport = Symbol("viewport");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
+const kScrolledRows = Symbol("scrolledRows");
 
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal
@@ -275,6 +294,11 @@ export class Painter {
 	declare [kTopLayer]: Set<Element>;
 	// List markers already painted this frame; each renders at most once.
 	declare [kRenderedOutsideMarkers]: WeakSet<Element>;
+	// The rows the walk's ancestor scroll boxes have scrolled so far. Paint
+	// extents are cached in unscrolled layout rows while a scrolled subtree
+	// paints that many rows higher, so every band-culling comparison moves
+	// the band by this amount instead of the extents.
+	declare [kScrolledRows]: number;
 
 	constructor(deps: {
 		window: EngineWindow;
@@ -285,6 +309,7 @@ export class Painter {
 		topLayer: Set<Element>;
 	}) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
+		this[kScrolledRows] = 0;
 		this[kWindow] = deps.window;
 		this[kDocument] = deps.document;
 		this[kLayout] = deps.layout;
@@ -296,6 +321,7 @@ export class Painter {
 	/** The whole document: the root stacking context, then the top layer. */
 	paint(ctx: CellContext): void {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
+		this[kScrolledRows] = 0;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
 		for (const element of this[kTopLayer]) {
@@ -307,11 +333,15 @@ export class Painter {
 			}
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
+			// A top-layer element enters the walk from outside its ancestor
+			// chain; seed the culling shift its scrolled ancestors impose.
+			this[kScrolledRows] = this[kLayout].scrolledAncestorRows(element);
 			try {
 				renderBackdrop(this, element, ctx);
 				renderStackingContext(this, element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
+				this[kScrolledRows] = 0;
 			}
 		}
 	}
@@ -355,7 +385,10 @@ function renderElement(
 	// The enclosing band, for the child-enumeration queries below; the
 	// per-band check culls precisely on recursion, and the context's cell
 	// mask makes any overshoot harmless.
-	let bandTop = -ctx.viewportOffset;
+	// Extents are cached in unscrolled layout rows; a subtree inside scrolled
+	// boxes paints that many rows higher, so the band moves down instead.
+	const scrolledRows = self[kScrolledRows];
+	let bandTop = -ctx.viewportOffset + scrolledRows;
 	let bandBottom = bandTop + ctx.rows;
 	if (ctx.paintBands) {
 		// Skip any subtree outside every band.
@@ -363,15 +396,11 @@ function renderElement(
 		bandTop = Infinity;
 		bandBottom = -Infinity;
 		for (const [start, end] of ctx.paintBands) {
-			bandTop = Math.min(bandTop, start - ctx.viewportOffset);
-			bandBottom = Math.max(bandBottom, end - ctx.viewportOffset);
-			if (
-				!self[kLayout].isSubtreeOutsideBand(
-					element,
-					start - ctx.viewportOffset,
-					end - ctx.viewportOffset,
-				)
-			) {
+			const top = start - ctx.viewportOffset + scrolledRows;
+			const bottom = end - ctx.viewportOffset + scrolledRows;
+			bandTop = Math.min(bandTop, top);
+			bandBottom = Math.max(bandBottom, bottom);
+			if (!self[kLayout].isSubtreeOutsideBand(element, top, bottom)) {
 				inside = true;
 			}
 		}
@@ -612,6 +641,19 @@ function renderElement(
 	// kRenderStackingContext). The old per-sibling z sort could never
 	// let a deep overlay escape its parent's siblings; hoisting is what
 	// makes a modal or dropdown paint over unrelated subtrees.
+	// The element's own scroll shifts its children, not itself: the child
+	// walk below culls against the band moved by that much more, and the
+	// walk state carries the accumulated shift to every descendant. The
+	// document roots' scrollTop is the camera, applied at ctx.viewportOffset,
+	// never here.
+	const ownScrolledRows =
+		element === self[kDocument].body ||
+		element === self[kDocument].documentElement ?
+			0 :
+			element.scrollTop || 0;
+	bandTop += ownScrolledRows;
+	bandBottom += ownScrolledRows;
+
 	const children: Node[] = [];
 
 	// Fast path: for a plain vertically-stacked container (no position:
@@ -668,16 +710,21 @@ function renderElement(
 		}
 	}
 
-	// overflow:hidden clips *descendants* to this element's own box -- never
-	// the element's own border/background painted above, which is why this is
-	// scoped to just the children, not the whole function.
-	const overflow = computedStyleOf(element).computedValueOf("overflow");
-	const overflowX =
-		computedStyleOf(element).computedValueOf("overflow-x") || overflow;
-	const overflowY =
-		computedStyleOf(element).computedValueOf("overflow-y") || overflow;
+	// A non-visible overflow clips *descendants* to this element's own box --
+	// never the element's own border/background painted above, which is why
+	// this is scoped to just the children, not the whole function.
+	const overflow = computed.computedValueOf("overflow");
+	const overflowX = computed.computedValueOf("overflow-x") || overflow;
+	const overflowY = computed.computedValueOf("overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
-	ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+	ctx.clipRect = overflowClipRect(
+		element,
+		rect,
+		overflowX,
+		overflowY,
+		previousClip,
+	);
+	self[kScrolledRows] = scrolledRows + ownScrolledRows;
 
 	try {
 		for (const childNode of children) {
@@ -693,6 +740,7 @@ function renderElement(
 		}
 	} finally {
 		ctx.clipRect = previousClip;
+		self[kScrolledRows] = scrolledRows;
 	}
 
 	// A focused textarea's own selection now paints inline while the child
@@ -785,10 +833,10 @@ function positionedClipFor(
 		const overflow = style.computedValueOf("overflow");
 		const overflowX = style.computedValueOf("overflow-x") || overflow;
 		const overflowY = style.computedValueOf("overflow-y") || overflow;
-		if (overflowX === "hidden" || overflowY === "hidden") {
+		if (overflowClips(overflowX) || overflowClips(overflowY)) {
 			const rect = self[kLayout].getRect(ancestor);
 			if (rect) {
-				clip = overflowClipRect(rect, overflowX, overflowY, clip);
+				clip = overflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
 		}
 	}
@@ -821,10 +869,15 @@ function renderStackingContext(
 	const paintMember = (element: Element) => {
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
+		const previousScrolled = self[kScrolledRows];
 		// Clips apply along the CONTAINING BLOCK chain only: an overflow
 		// ancestor that isn't a positioned ancestor doesn't clip a
 		// deferred box, but its own containing blocks' overflow does.
 		ctx.clipRect = positionedClipFor(self, element, root, contextClip);
+		// A hoisted box enters the walk from its stacking context, not its
+		// ancestor chain: re-derive the culling shift its own scrolled
+		// ancestors impose rather than inheriting the context root's.
+		self[kScrolledRows] = self[kLayout].scrolledAncestorRows(element);
 		// position:fixed anchors to the VIEWPORT: cancel the camera by
 		// undoing the scroll offset for the whole subtree. Fixed-space is
 		// a property of the containing-block CHAIN: an absolute box inside
@@ -842,6 +895,7 @@ function renderStackingContext(
 		} finally {
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
+			self[kScrolledRows] = previousScrolled;
 		}
 	};
 	renderElement(self, root, ctx, () => {

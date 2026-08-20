@@ -18444,8 +18444,11 @@ Object.defineProperties(Element.prototype, {
 		writable: true,
 	},
 	// How far a box is scrolled from its content's origin. The number is the
-	// box's own; what it means for what the box shows is the environment's,
-	// which is why writing one scrolls nothing here.
+	// box's own; what it means for what the box shows is the environment's.
+	// These accessors are the bare storage: an environment that can lay out
+	// and paint (the terminal engine) replaces them with accessors that
+	// clamp against the content's laid-out extent and schedule the repaint,
+	// writing through scrollOffsetsOf into the same store.
 	scrollLeft: {
 		get(this: Element): number {
 			return scrollOffsets.get(this)?.left ?? 0;
@@ -18471,7 +18474,7 @@ Object.defineProperties(Element.prototype, {
 /** The scroll offsets of the boxes that have been scrolled at all. */
 const scrollOffsets = new WeakMap<Element, {left: number; top: number}>();
 
-function scrollOffsetsOf(element: Element): {left: number; top: number} {
+export function scrollOffsetsOf(element: Element): {left: number; top: number} {
 	let offsets = scrollOffsets.get(element);
 	if (offsets === undefined) {
 		offsets = {left: 0, top: 0};
