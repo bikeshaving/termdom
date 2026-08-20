@@ -112,9 +112,12 @@ function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 /**
  * Highlight / HighlightText -- the system-color pair whose combined
  * meaning on a terminal is "swap the cell's colors", SGR inverse.
+ * SelectedItem / SelectedItemText name the same thing on a non-text
+ * selection (a chosen option, a picked row), so the pair rides the same
+ * pathway.
  */
 function isSystemHighlightColor(value: string): boolean {
-	return /^highlight(?:text)?$/i.test(value.trim());
+	return /^(?:highlight|selecteditem)(?:text)?$/i.test(value.trim());
 }
 
 /**

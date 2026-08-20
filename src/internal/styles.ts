@@ -323,7 +323,9 @@ function isValidDeclaration(
  * The grammars a value is matched against: the property index's, with the
  * entries it states from an older level of the specs brought up to date.
  * `generic()` family names, the SVG baseline keywords and `outline-color:
- * invert` are all in the current specs and missing from the index.
+ * invert` are all in the current specs and missing from the index. The
+ * deprecated system colors still parse per CSS Color 4 -- each is an alias of
+ * a modern one -- but the index's `<color>` leaves them out.
  */
 const grammarLexer = CSSTree.fork({
 	properties: {
@@ -332,6 +334,7 @@ const grammarLexer = CSSTree.fork({
 		"outline-color": "| invert",
 	},
 	types: {
+		"color": "| <deprecated-system-color>",
 		"family-name":
 			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
 	},
