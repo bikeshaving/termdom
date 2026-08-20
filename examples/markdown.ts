@@ -193,6 +193,12 @@ const article = document.createElement("article");
 article.innerHTML = html;
 document.body.appendChild(article);
 
+// Wait one frame before measuring. The flow-or-pager decision below compares
+// the document's height to the window's, and a transport that settles its
+// size after attach (the browser playground's does) reports the real
+// geometry only after the first frame.
+await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
+
 // Flow mode: a page that fits (or output that isn't a terminal, e.g. piped to a
 // file) just prints and exits -- dispose pays the whole document out to the
 // terminal's scrollback on the way.
