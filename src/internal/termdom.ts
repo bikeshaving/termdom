@@ -10,6 +10,8 @@ import {
 	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
+	flatParentElement,
+	scrollOffsetsOf,
 	closePopover,
 	hidePopoversUntil,
 	installUAEngine,
@@ -524,6 +526,7 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 }
 
 const kFrameDamage = Symbol("frameDamage");
+const kScrolledElements = Symbol("scrolledElements");
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kWidth = Symbol("width");
@@ -676,6 +679,11 @@ export class TermDOM {
 	// BEFORE relayout. Null once the set overflowed; cleared per frame.
 	declare [kFrameDamage]: Map<Element, DOMRect | null> | null;
 
+	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
+	// box's content out from under its offset; each layout flush pulls
+	// these back into range (see clampScrolledOffsets).
+	declare [kScrolledElements]: Set<Element>;
+
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
@@ -778,6 +786,7 @@ export class TermDOM {
 		this[kLastFrameStructuralGeneration] = -1;
 		this[kLastFrameSelectionLive] = false;
 		this[kFrameDamage] = new Map();
+		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
 		this[kMouseCaptureYielded] = false;
@@ -1181,35 +1190,184 @@ export class TermDOM {
 		// html/body-only instance properties defined above (which still win: an
 		// own-property shadows a prototype getter, so document.body's viewport-
 		// height special case is untouched).
-		//
-		// scroll* is set equal to client* here rather than the element's true
-		// unclamped content size, matching the same limitation the paint-extent
-		// culling above already documents for the same reason: nothing in the
-		// layout engine measures a subtree's natural size separately from
-		// whatever box it was actually constrained into. That makes scroll* exact
-		// for the common case (auto-sized boxes, no overflow) and an honest
-		// under-report for a box with both an explicit size *and* overflowing
-		// normal-flow content -- the one case a real browser's scrollWidth/Height
-		// would exceed clientWidth/Height.
-		for (const prop of ["clientWidth", "scrollWidth"] as const) {
-			Object.defineProperty(window.HTMLElement.prototype, prop, {
-				get(this: Element) {
-					return Math.round(contentBoxOf(this)?.width ?? 0);
+		Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
+			get(this: Element) {
+				return Math.round(contentBoxOf(this)?.width ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
+			get(this: Element) {
+				return Math.round(contentBoxOf(this)?.height ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// scroll* is the content's laid-out extent -- how far the box could
+		// scroll, and what its offsets clamp against -- read off the layout
+		// tree, whose children keep their natural sizes when they overflow a
+		// fixed box. A box whose content the tree does not decompose into
+		// child boxes (an inline, a run member) has no readable extent and
+		// falls back to its client size, exact for the no-overflow case.
+		const scrollExtentOf = (
+			element: Element,
+		): {width: number | null; height: number} | null => {
+			if (!element.isConnected) {
+				return null;
+			}
+			const termDOM = engineOf(element);
+			processPendingMutationsAndRender(termDOM);
+			return termDOM[kLayoutEngine].scrollExtentOf(element);
+		};
+
+		Object.defineProperty(window.HTMLElement.prototype, "scrollWidth", {
+			get(this: Element) {
+				return (
+					scrollExtentOf(this)?.width ??
+					Math.round(contentBoxOf(this)?.width ?? 0)
+				);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+			get(this: Element) {
+				return (
+					scrollExtentOf(this)?.height ??
+					Math.round(contentBoxOf(this)?.height ?? 0)
+				);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// scrollTop/scrollLeft writes take effect here, where layout and the
+		// frame loop live: a write rounds to whole cells (everything paints
+		// on the cell grid, like the document camera), clamps into the
+		// scrollable range, and schedules the repaint that shows it. The
+		// value lands in the DOM's own store (scrollOffsetsOf), which is what
+		// the layout's geometry funnel already reads -- so getters stay the
+		// DOM's. An axis whose overflow is visible is not scrollable and
+		// pins to 0; hidden scrolls programmatically, as in a browser. A box
+		// whose extent the layout cannot name (a field's value span, whose
+		// content is an opaque measured run) stores the write unclamped --
+		// the caret-reveal machinery owns those offsets and keeps them sane.
+		const setScrollOffset = (
+			element: Element,
+			axis: "left" | "top",
+			value: number,
+		): void => {
+			const numeric = Number(value);
+			let next =
+				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+			const termDOM = engines.get(element.ownerDocument);
+			if (termDOM && element.isConnected) {
+				processPendingMutationsAndRender(termDOM);
+				const engine = termDOM[kLayoutEngine];
+				const extent = engine.scrollExtentOf(element);
+				const port = engine.contentRect(element);
+				const size =
+					extent === null ?
+						null :
+						axis === "top" ?
+							extent.height :
+							extent.width;
+				if (size !== null && port) {
+					const style = computedStyleOf(element);
+					const overflow =
+						style.computedValueOf(`overflow-${axis === "top" ? "y" : "x"}`) ||
+						style.computedValueOf("overflow");
+					const scrollable =
+						overflow === "auto" ||
+						overflow === "scroll" ||
+						overflow === "hidden";
+					const room =
+						size -
+						Math.round(axis === "top" ? port.height : port.width);
+					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
+				}
+			}
+			const offsets = scrollOffsetsOf(element as never);
+			if (offsets[axis] === next) {
+				return;
+			}
+			offsets[axis] = next;
+			if (termDOM) {
+				if (next !== 0) {
+					termDOM[kScrolledElements].add(element);
+				}
+				// A scroll offset is frame state no MutationObserver sees --
+				// the same footing as input: the generation bump keeps the
+				// "nothing observable moved" gate from skipping the paint,
+				// and the damage keeps that paint banded to the box's rows.
+				termDOM[kInputGeneration]++;
+				addFrameDamage(termDOM, element);
+				void render(termDOM);
+			}
+		};
+
+		for (const axis of ["left", "top"] as const) {
+			const property = axis === "left" ? "scrollLeft" : "scrollTop";
+			const stored = Object.getOwnPropertyDescriptor(
+				Element.prototype,
+				property,
+			);
+			Object.defineProperty(Element.prototype, property, {
+				get: stored?.get,
+				set(this: Element, value: number) {
+					setScrollOffset(this, axis, value);
 				},
 				configurable: true,
 				enumerable: true,
 			});
 		}
 
-		for (const prop of ["clientHeight", "scrollHeight"] as const) {
-			Object.defineProperty(window.HTMLElement.prototype, prop, {
-				get(this: Element) {
-					return Math.round(contentBoxOf(this)?.height ?? 0);
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
+		// scrollTo/scroll/scrollBy, in both their forms; assignment through
+		// the accessors above is what rounds, clamps and repaints. html and
+		// body's own scrollTop accessors map to the camera, so scrolling
+		// them scrolls the document, as everywhere else.
+		const scrollTargetOf = (
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): {left?: number; top?: number} => {
+			if (typeof xOrOptions === "object" && xOrOptions !== null) {
+				return {left: xOrOptions.left, top: xOrOptions.top};
+			}
+			return {left: xOrOptions, top: y};
+		};
+
+		const scrollElementTo = function (
+			this: Element,
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left !== undefined) {
+				this.scrollLeft = target.left;
+			}
+			if (target.top !== undefined) {
+				this.scrollTop = target.top;
+			}
+		};
+		Element.prototype.scrollTo = scrollElementTo as Element["scrollTo"];
+		Element.prototype.scroll = scrollElementTo as Element["scroll"];
+		Element.prototype.scrollBy = function (
+			this: Element,
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left) {
+				this.scrollLeft = this.scrollLeft + target.left;
+			}
+			if (target.top) {
+				this.scrollTop = this.scrollTop + target.top;
+			}
+		} as Element["scrollBy"];
 
 		// The document-rooted MutationObserver never sees inside a shadow
 		// root -- per spec, shadow trees are separate observation scopes. Each
@@ -1413,7 +1571,11 @@ export class TermDOM {
 			}
 		};
 
-		// Override scrollIntoView to adjust scroll offset
+		// scrollIntoView: every scroll box between the element and the
+		// document reveals it within its own port, innermost first -- each
+		// scroll moves the element in every outer port's coordinates, so the
+		// rect is re-read per level -- and the camera reveals what remains.
+		// All moves are the minimal ones: block "nearest".
 		HTMLElement.prototype.scrollIntoView = function (
 			this: HTMLElement,
 			_arg?: boolean | ScrollIntoViewOptions,
@@ -1423,11 +1585,58 @@ export class TermDOM {
 			}
 			const termDOM = engineOf(this);
 			processPendingMutationsAndRender(termDOM);
+			const engine = termDOM[kLayoutEngine];
+
+			const revealIn = (scroller: Element): void => {
+				// Document-relative rects on both sides: the element wherever
+				// its current offsets put it, against the scroller's padding
+				// box -- what the scroller actually shows.
+				const rect = engine.getRect(this);
+				const scrollerRect = engine.getRect(scroller);
+				if (!rect || !scrollerRect) {
+					return;
+				}
+				const box = getBoxModel(scroller);
+				const portTop = scrollerRect.top + (box.borderTopWidth || 0);
+				const portBottom =
+					scrollerRect.bottom - (box.borderBottomWidth || 0);
+				const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
+				const portRight = scrollerRect.right - (box.borderRightWidth || 0);
+				if (rect.top < portTop) {
+					scroller.scrollTop -= Math.round(portTop - rect.top);
+				} else if (rect.bottom > portBottom) {
+					scroller.scrollTop += Math.round(rect.bottom - portBottom);
+				}
+				if (rect.left < portLeft) {
+					scroller.scrollLeft -= Math.round(portLeft - rect.left);
+				} else if (rect.right > portRight) {
+					scroller.scrollLeft += Math.round(rect.right - portRight);
+				}
+			};
+
+			for (
+				let ancestor = flatParentElement<Element>(this);
+				ancestor &&
+				ancestor !== termDOM.document.body &&
+				ancestor !== termDOM.document.documentElement;
+				ancestor = flatParentElement<Element>(ancestor)
+			) {
+				const style = computedStyleOf(ancestor);
+				const overflow = style.computedValueOf("overflow");
+				const scrollable = (value: string) =>
+					value === "auto" || value === "scroll" || value === "hidden";
+				if (
+					scrollable(style.computedValueOf("overflow-y") || overflow) ||
+					scrollable(style.computedValueOf("overflow-x") || overflow)
+				) {
+					revealIn(ancestor);
+				}
+			}
 
 			// Document-relative, not getBoundingClientRect's viewport-relative --
 			// this compares directly against the camera's scrollTop below, so it needs
 			// the same coordinate space getRect() already provides.
-			const rect = termDOM[kLayoutEngine].getRect(this);
+			const rect = engine.getRect(this);
 			if (!rect) {
 				return;
 			}
@@ -2634,7 +2843,55 @@ function processPendingMutationsAndRender(
 		void render(self);
 	}
 	self[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(self);
 	return hadMutations;
+}
+
+/**
+ * Pull every held scroll offset back into its box's scrollable range
+ * against fresh layout: a mutation that shrinks a box's content must not
+ * leave the box scrolled past what remains. Offsets are written to the
+ * store directly -- the accessor's own clamp would re-enter this flush --
+ * and a change repaints the box's rows like any other scroll.
+ */
+function clampScrolledOffsets(
+	self: TermDOM,
+): void {
+	let changed = false;
+	for (const element of self[kScrolledElements]) {
+		const offsets = scrollOffsetsOf(element as never);
+		if (offsets.left === 0 && offsets.top === 0) {
+			self[kScrolledElements].delete(element);
+			continue;
+		}
+		if (!element.isConnected) {
+			continue;
+		}
+		const engine = self[kLayoutEngine];
+		const extent = engine.scrollExtentOf(element);
+		const port = engine.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		// An unknowable horizontal extent leaves that axis unclamped.
+		const maxLeft =
+			extent.width === null ?
+				offsets.left :
+					Math.max(0, extent.width - Math.round(port.width));
+		const maxTop = Math.max(0, extent.height - Math.round(port.height));
+		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
+			continue;
+		}
+		offsets.left = Math.min(offsets.left, maxLeft);
+		offsets.top = Math.min(offsets.top, maxTop);
+		addFrameDamage(self, element);
+		changed = true;
+	}
+	if (changed) {
+		// See setScrollOffset: offsets are frame state no observer sees.
+		self[kInputGeneration]++;
+		void render(self);
+	}
 }
 
 /**
@@ -2955,6 +3212,51 @@ function documentPointToTextPosition(
 }
 
 /**
+ * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
+ * ancestor (the target included) whose overflow-y makes it a scroll
+ * container -- auto or scroll; hidden and visible don't take the wheel, as
+ * in a browser -- and that can still move in the tick's direction. None
+ * means the tick chains past every element scroller to the document camera.
+ */
+function wheelScrollerFor(
+	self: TermDOM,
+	target: Element,
+	deltaY: number,
+): Element | null {
+	const body = self.document.body;
+	const root = self.document.documentElement;
+	const engine = self[kLayoutEngine];
+	for (
+		let element: Element | null = target;
+		element && element !== body && element !== root;
+		element = flatParentElement<Element>(element)
+	) {
+		const style = computedStyleOf(element);
+		const overflowY =
+			style.computedValueOf("overflow-y") ||
+			style.computedValueOf("overflow");
+		if (overflowY !== "auto" && overflowY !== "scroll") {
+			continue;
+		}
+		if (deltaY < 0) {
+			if (element.scrollTop > 0) {
+				return element;
+			}
+			continue;
+		}
+		const extent = engine.scrollExtentOf(element);
+		const port = engine.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		if (element.scrollTop < extent.height - Math.round(port.height)) {
+			return element;
+		}
+	}
+	return null;
+}
+
+/**
  * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
  * These only arrive while capture is on -- see updateMouseReporting.
  *
@@ -3009,6 +3311,15 @@ function handleMouseReport(
 			}),
 		);
 		if (notCanceled) {
+			// The innermost scroll box under the pointer that can still move
+			// in the wheel's direction consumes the tick; an exhausted one
+			// chains outward -- ultimately to the camera and the terminal's
+			// own scrollback below, the browser's scroll chaining.
+			const scroller = wheelScrollerFor(self, target as Element, wheelDeltaY);
+			if (scroller) {
+				scroller.scrollTop += wheelDeltaY;
+				return;
+			}
 			if (
 				wheelDeltaY < 0 &&
 				self[kViewport].scrollTop === 0 &&
@@ -3656,6 +3967,7 @@ async function renderInteractive(
 	}
 
 	self[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(self);
 
 	// The caret reveal an edit queued runs here, against the layout this
 	// frame just flushed -- one camera decision per frame, however many
