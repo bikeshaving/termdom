@@ -46,7 +46,9 @@ Text wraps at the box's width; `white-space`, `word-break`, and
 ## Positioning
 
 `position: relative`, `absolute`, and `fixed`, with `z-index` and stacking
-contexts. `overflow: hidden` clips to the box.
+contexts. `overflow: hidden` clips to the box. `overflow: auto` and `scroll`
+clip the same way and make the box scrollable: `scrollTop`, `scrollTo`,
+`scrollIntoView`, and the mouse wheel move its content by whole rows.
 
 ## Not implemented
 
