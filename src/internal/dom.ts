@@ -12193,22 +12193,25 @@ function applySharedFieldEdit(
 }
 
 /**
- * The characters a field's type lets through. A number input takes only what
- * can spell a floating-point number -- digits, sign, decimal point, and
- * exponent -- the same per-character filter a browser applies to typing and
- * pasting; every other type takes the text as it came.
+ * Insert typed or pasted text at an input's selection.
+ *
+ * A number input's text can be any prefix of a valid floating-point number
+ * and nothing else: an insertion that would take it outside the grammar is
+ * refused whole, the way a browser's number field refuses a second decimal
+ * point. Deletions are never gated, so text a deletion strands outside the
+ * grammar can always be cleared.
  */
-function sanitizeFieldInsertion(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	text: string,
-): string {
-	if (
-		field.tagName === "INPUT" &&
-		(field as HTMLInputElement).type === "number"
-	) {
-		return text.replace(/[^0-9eE+\-.]/g, "");
+function insertFieldText(field: HTMLInputElement, text: string): void {
+	if (!text) {
+		return;
 	}
-	return text;
+	const value = field[kUAValue];
+	const {start, end} = uaSelectionOf(field);
+	const next = value.slice(0, start) + text + value.slice(end);
+	if (field.type === "number" && !isFloatPrefix(next)) {
+		return;
+	}
+	applyFieldEdit(field, collapsedEdit(next, start + text.length));
 }
 
 /**
@@ -12559,23 +12562,14 @@ export class HTMLInputElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				const text = sanitizeFieldInsertion(this, event.data);
-				if (text) {
-					applyFieldEdit(this, printableFieldEdit(this, text));
-				}
+				insertFieldText(this, event.data);
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			const pasted = sanitizeFieldInsertion(
-				this,
-				event.data.replace(/[\r\n]+/g, ""),
-			);
-			if (pasted) {
-				insertPaste(this, pasted);
-			}
+			insertFieldText(this, event.data.replace(/[\r\n]+/g, ""));
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -12596,6 +12590,23 @@ export class HTMLInputElement extends HTMLElement {
 			// control. It toggles, for the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
+				}
+				return;
+			}
+
+			// ArrowUp and ArrowDown step a number input, standing in for
+			// the up/down buttons a browser draws on one -- a terminal has
+			// none, and every hand is already on the keyboard. Stepping is
+			// a user edit, so it fires input and then change, as pressing
+			// those buttons does.
+			if (
+				this.type === "number" &&
+				(key === "ArrowUp" || key === "ArrowDown")
+			) {
+				const stepped = steppedValue(this, key === "ArrowUp" ? 1 : -1);
+				if (stepped !== null) {
+					applyFieldEdit(this, collapsedEdit(stepped, stepped.length));
+					dispatch(this, new Event("change", {bubbles: true}));
 				}
 				return;
 			}
@@ -12723,6 +12734,49 @@ export class HTMLInputElement extends HTMLElement {
 				this.setAttribute("value", string);
 		}
 		widgetChanged(this);
+	}
+
+	/**
+	 * The value as the number it parses to: NaN when it does not, and only
+	 * the numeric types answer. Assigning NaN empties the field; assigning
+	 * a non-finite number is the TypeError the spec makes it.
+	 */
+	get valueAsNumber(): number {
+		if (this.type !== "number" && this.type !== "range") {
+			return NaN;
+		}
+		return parseFloatingPoint(this.value) ?? NaN;
+	}
+
+	set valueAsNumber(value: number) {
+		if (this.type !== "number" && this.type !== "range") {
+			throw domError(
+				"InvalidStateError",
+				"This input type does not hold a number",
+			);
+		}
+		const number = Number(value);
+		if (Number.isNaN(number)) {
+			this.value = "";
+			return;
+		}
+		if (!Number.isFinite(number)) {
+			throw new TypeError("valueAsNumber must be finite");
+		}
+		this.value = String(number);
+	}
+
+	/**
+	 * The spec's step methods: move along the step grid without events, the
+	 * programmatic siblings of the arrow keys. A step of "any" names no grid
+	 * to move on, which is the InvalidStateError the spec makes it.
+	 */
+	stepUp(n = 1): void {
+		stepInputBy(this, Math.trunc(Number(n)));
+	}
+
+	stepDown(n = 1): void {
+		stepInputBy(this, -Math.trunc(Number(n)));
 	}
 
 	/**
@@ -13268,6 +13322,104 @@ function parseFloatingPoint(value: string): number | null {
 	}
 	const number = Number(value);
 	return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Whether `value` is a prefix of a valid floating-point number: the states a
+ * number input's text passes through on the way to one -- "-", "4.", "1e-"
+ * among them. Every state of the grammar either accepts already or accepts
+ * after one more digit, so the prefix test is the grammar itself, twice,
+ * rather than a second grammar that could drift from it.
+ */
+function isFloatPrefix(value: string): boolean {
+	return VALID_FLOAT.test(value) || VALID_FLOAT.test(value + "0");
+}
+
+/**
+ * The decimal places a float literal spells, which is what toFixed needs to
+ * write a step-grid value without binary dust: stepping 0.1 at a time must
+ * produce "0.3", never "0.30000000000000004". An exponent literal names no
+ * place count and answers zero.
+ */
+function decimalPlacesOf(text: string | null | undefined): number {
+	if (!text) {
+		return 0;
+	}
+	const match = /^-?[0-9]*(?:\.([0-9]+))?$/.exec(text.trim());
+	if (!match || match[1] === undefined) {
+		return 0;
+	}
+	return match[1].length;
+}
+
+/** stepUp/stepDown: validate, step, and assign without firing events. */
+function stepInputBy(input: HTMLInputElement, steps: number): void {
+	if (input.type !== "number" && input.type !== "range") {
+		throw domError(
+			"InvalidStateError",
+			"This input type does not step",
+		);
+	}
+	const stepAttribute = input.getAttribute("step")?.trim();
+	if (stepAttribute !== undefined && /^any$/i.test(stepAttribute)) {
+		throw domError(
+			"InvalidStateError",
+			'A step of "any" names no grid to step on',
+		);
+	}
+	if (steps === 0) {
+		return;
+	}
+	const stepped = steppedValue(input, steps);
+	if (stepped !== null) {
+		input.value = stepped;
+	}
+}
+
+/**
+ * The value a number input steps to: `steps` grid points away, on the grid
+ * `step` spaces and `min` anchors (zero anchors it when there is no min),
+ * clamped to [min, max]. A value between grid points moves to the nearest
+ * point in the direction of travel. Null when there is nowhere to go, so a
+ * caller can leave the field untouched. An out-of-range value steps to the
+ * nearest bound whichever way it was pushed, which is how a browser's
+ * up/down buttons pull a field into range.
+ */
+function steppedValue(input: HTMLInputElement, steps: number): string | null {
+	const stepAttribute = input.getAttribute("step")?.trim();
+	const step =
+		stepAttribute === undefined || /^any$/i.test(stepAttribute) ?
+			1 :
+				(parseFloatingPoint(stepAttribute) ?? 1);
+	const spacing = step > 0 ? step : 1;
+	const min = parseFloatingPoint(input.getAttribute("min")?.trim() ?? "");
+	const max = parseFloatingPoint(input.getAttribute("max")?.trim() ?? "");
+	const current = parseFloatingPoint(input[kUAValue]) ?? 0;
+	const base = min ?? 0;
+
+	// The offset in grid units, rounded enough that a value the grid itself
+	// produced counts as on the grid despite binary representation.
+	const offset = Math.round(((current - base) / spacing) * 1e9) / 1e9;
+	const k =
+		steps > 0 ? Math.floor(offset) + steps : Math.ceil(offset) + steps;
+	let next = base + k * spacing;
+	if (max !== null && next > max) {
+		// The last grid point inside the range, not max itself.
+		const room = Math.round(((max - base) / spacing) * 1e9) / 1e9;
+		next = base + Math.floor(room) * spacing;
+	}
+	if (min !== null && next < min) {
+		next = min;
+	}
+	if (next === current) {
+		return null;
+	}
+	const places = Math.max(
+		decimalPlacesOf(stepAttribute),
+		decimalPlacesOf(input.getAttribute("min")),
+		decimalPlacesOf(input[kUAValue]),
+	);
+	return String(Number(next.toFixed(Math.min(places, 20))));
 }
 /**
  * The value an input stores for what was written to it.
