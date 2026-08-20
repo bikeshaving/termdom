@@ -8,8 +8,8 @@
  *
  * Omitted, because the engine resolves them elsewhere or a cell grid has no
  * use for them: writing modes and the direction property -- bidi is resolved
- * when text is shaped, not when boxes are placed -- aspect-ratio, scrollable
- * overflow sizing, and sub-cell scaling, the grid being integer cells, so
+ * when text is shaped, not when boxes are placed -- scrollable overflow
+ * sizing, and sub-cell scaling, the grid being integer cells, so
  * pointScaleFactor is always 1.
  *
  * Undefined values are represented as NaN throughout, matching the convention
@@ -292,6 +292,13 @@ interface Style {
 	minHeight: Value;
 	maxWidth: Value;
 	maxHeight: Value;
+
+	/**
+	 * width / height, counted in CELLS on both axes: one cell is one cell,
+	 * vertical or horizontal, so a ratio of 1 on a box 10 cells wide makes it
+	 * 10 rows tall. NaN means auto.
+	 */
+	aspectRatio: number;
 }
 
 interface LayoutResult {
@@ -380,6 +387,7 @@ function createStyle(): Style {
 		minHeight: UNDEFINED_VALUE,
 		maxWidth: UNDEFINED_VALUE,
 		maxHeight: UNDEFINED_VALUE,
+		aspectRatio: NaN,
 	};
 }
 
@@ -850,6 +858,17 @@ export class Node {
 
 	setHeightAuto(): void {
 		this.style.height = AUTO_VALUE;
+		this.markDirty();
+	}
+
+	/**
+	 * width / height. The ratio counts cells -- one cell is one cell on either
+	 * axis -- so 1 makes a 10-cell-wide box 10 rows tall. A non-finite,
+	 * zero or negative value means auto.
+	 */
+	setAspectRatio(v: number | undefined): void {
+		this.style.aspectRatio =
+			v !== undefined && Number.isFinite(v) && v > 0 ? v : NaN;
 		this.markDirty();
 	}
 
@@ -3526,6 +3545,25 @@ function layoutBlockChild(
 				contentWidth,
 			) + marginRow;
 		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (
+		isDefined(child.style.aspectRatio) &&
+		child.style.aspectRatio > 0 &&
+		styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)
+	) {
+		// A definite height transfers through the box's aspect ratio, and the
+		// transferred width beats fill: the box is as wide as its ratio says,
+		// not as wide as the container (css-sizing-4 §5).
+		const transferred =
+			resolveValue(child.style.height, ownerHeight) *
+			child.style.aspectRatio;
+		childWidth.value =
+			boundAxisWithinMinMax(
+				child,
+				FLEX_DIRECTION_ROW,
+				transferred,
+				contentWidth,
+			) + marginRow;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
 	} else if (isDefined(contentWidth)) {
 		childWidth.value = contentWidth;
 		childWidth.mode = fill ? MEASURE_MODE_EXACTLY : MEASURE_MODE_AT_MOST;
@@ -3832,6 +3870,38 @@ function layoutNode(
 	ownerHeight: number,
 	performLayout: boolean,
 ): void {
+	// css-sizing-4 §5: an aspect ratio takes a box's one settled axis to the
+	// other. An axis offered EXACTLY is settled -- by a definite size or by
+	// stretch-fit -- and the open axis follows it through the ratio; when both
+	// axes are settled the ratio yields. Margins sit outside the box, so they
+	// come off the settled offer and go back onto the derived one. Min/max on
+	// the derived axis still clamp, in setMeasuredDimensions. The ratio counts
+	// cells: one cell is one cell, vertical or horizontal.
+	const ratio = node.style.aspectRatio;
+	if (isDefined(ratio) && ratio > 0) {
+		const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+		const marginColumn = marginForAxis(
+			node,
+			FLEX_DIRECTION_COLUMN,
+			ownerWidth,
+		);
+		if (
+			widthMode === MEASURE_MODE_EXACTLY &&
+			heightMode !== MEASURE_MODE_EXACTLY &&
+			isDefined(availableWidth)
+		) {
+			availableHeight = (availableWidth - marginRow) / ratio + marginColumn;
+			heightMode = MEASURE_MODE_EXACTLY;
+		} else if (
+			heightMode === MEASURE_MODE_EXACTLY &&
+			widthMode !== MEASURE_MODE_EXACTLY &&
+			isDefined(availableHeight)
+		) {
+			availableWidth = (availableHeight - marginColumn) * ratio + marginRow;
+			widthMode = MEASURE_MODE_EXACTLY;
+		}
+	}
+
 	// A clean node under constraints it has already answered: restore the size
 	// and skip the whole subtree. Child geometry is parent-relative and was left
 	// exactly as the cached pass computed it, so nothing below needs touching.

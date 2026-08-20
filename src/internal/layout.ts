@@ -394,6 +394,36 @@ function applyInsets(
 	}
 }
 
+/**
+ * `aspect-ratio`, computed to the width/height quotient the engine works in.
+ *
+ * The ratio counts cells: one cell is one cell, vertical or horizontal.
+ * `1px` and `1ch` are both one cell in this engine, so `aspect-ratio: 1` on a
+ * box 10 cells wide makes it 10 rows tall -- there is no compensation for a
+ * glyph being visually taller than it is wide. `auto`, a value with an `auto`
+ * component, and a zero or negative component all behave as auto.
+ */
+function parseAspectRatio(value: string): number | undefined {
+	if (!value || value.includes("auto")) {
+		return undefined;
+	}
+	const parts = value.split("/");
+	if (parts.length > 2) {
+		return undefined;
+	}
+	const width = parseFloat(parts[0]);
+	const height = parts.length === 2 ? parseFloat(parts[1]) : 1;
+	if (
+		!Number.isFinite(width) ||
+		!Number.isFinite(height) ||
+		width <= 0 ||
+		height <= 0
+	) {
+		return undefined;
+	}
+	return width / height;
+}
+
 function styleFlexNode(
 	element: Element,
 	flexNode: FlexTypes.Node,
@@ -451,6 +481,16 @@ function styleFlexNode(
 		}
 
 		applyMinMax(flexNode, computedStyle);
+	}
+
+	// An aspect ratio sizes a box, which an inline box is not; everything
+	// else carries it to the engine.
+	if (display === "inline" && !parentIsFlex) {
+		flexNode.setAspectRatio(undefined);
+	} else {
+		flexNode.setAspectRatio(
+			parseAspectRatio(computedStyle.computedValueOf("aspect-ratio")),
+		);
 	}
 
 	// Box model properties: clear for inline elements, apply for block/
