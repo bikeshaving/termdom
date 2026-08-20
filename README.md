@@ -5,9 +5,9 @@
 ![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-draws actual DOM nodes to terminal output and redraws the screen when they
-mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
-any frontend web framework.
+draws actual DOM nodes to terminal output and redraws the screen when the nodes
+are mutated, so TUIs and interactive CLIs can be written with vanilla
+JavaScript or any frontend web framework.
 
 ```sh
 npm install @b9g/termdom
@@ -62,7 +62,8 @@ setInterval(() => {
 - **Events** Keyboard, mouse, focus, and paste events fire on elements, the
   document, and the window, decoded from stdin.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
-  `ResizeObserver`, and `getBoundingClientRect()` read the layout engine.
+  `ResizeObserver`, and `getBoundingClientRect()` work and report
+  cell-based layout.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
   terminal-native looks, restylable with CSS; Tab and `:focus` work.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
@@ -76,15 +77,13 @@ setInterval(() => {
 
 ## How it works
 
-TermDOM implements the browser's rendering pipeline against a grid of
-character cells instead of pixels. CSS lengths map onto the grid — `1px`
-is one row, `1ch` is one column — so the box model, flexbox, and tables
-lay out in whole cells. On each frame the engine recomputes style and
-layout for whatever mutated, paints the result into a cell buffer, diffs
-it against the previous frame, and writes the difference to stdout as
-ANSI escape sequences. Input runs the other way: escape sequences from
-stdin are decoded into keyboard, mouse, and paste events and dispatched
-to DOM nodes.
+TermDOM implements the browser's rendering pipeline against a grid of character
+cells instead of pixels. All CSS lengths resolve to cells (`1px` and `1ch` are
+both one cell). On each frame the engine recomputes style and layout for
+whatever mutated, paints the result into a cell buffer, diffs it against the
+previous frame, and writes the difference to stdout as ANSI escape sequences.
+Escape sequences from stdin are decoded into keyboard, mouse, and paste events
+and dispatched to DOM nodes.
 
 ## Examples
 
@@ -105,7 +104,10 @@ to DOM nodes.
 - [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
   keypress counter apiece, each driving that framework's stock renderer.
 
-More runnable examples can be found in [`examples/`](./examples).
+More runnable examples can be found in [`examples/`](./examples). Most of
+them also run in the browser at
+[termdom.org/playground](https://termdom.org/playground/), from the same
+files.
 
 ## Runtimes
 
