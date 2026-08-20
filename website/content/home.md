@@ -49,9 +49,9 @@ Below, the same program browses an in-memory directory. `j`/`k` move, Enter open
 ## How it works
 
 TermDOM implements the browser's rendering pipeline against a grid of
-character cells instead of pixels. CSS lengths map onto the grid — `1px`
-is one row, `1ch` is one column — so the box model, flexbox, and tables
-lay out in whole cells. On each frame the engine recomputes style and
+character cells instead of pixels. CSS lengths resolve to cells — `1px`
+and `1ch` are both one cell — so the box model, flexbox, and tables lay
+out in whole cells. On each frame the engine recomputes style and
 layout for whatever mutated, paints the result into a cell buffer, diffs
 it against the previous frame, and writes the difference to stdout as
 ANSI escape sequences. Escape sequences from stdin are decoded into keyboard,
