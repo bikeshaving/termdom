@@ -9,6 +9,14 @@
 import type {EngineWindow} from "./termdom.js";
 import {LINE_STYLES, type LineStyle} from "./ansi.js";
 import {
+	Document as DOMDocumentClass,
+	HTMLElement as DOMHTMLElement,
+	HTMLLinkElement as DOMHTMLLinkElement,
+	HTMLStyleElement as DOMHTMLStyleElement,
+	SVGElement as DOMSVGElement,
+	ShadowRoot as DOMShadowRoot,
+	onAttributeChange,
+	onShadowAttached,
 	clearPseudoElement,
 	type Document as DOMDocument,
 	flatParentElement,
@@ -2425,112 +2433,6 @@ for (const property of CSS_PROPERTIES) {
 }
 
 /** Marks a prototype whose invalidation hooks are already installed. */
-const kInvalidationHooksInstalled = Symbol("termdom.invalidationHooks");
-
-/**
- * Tell the cascade about the writes that change what a selector matches: a
- * style, class or id attribute, and a shadow root becoming a tree scope of it.
- *
- * The element prototype is the realm's, shared by every document in it, so
- * this runs once and each call finds the cascade its element belongs to.
- * Installing per cascade would wrap a wrapper and leave every earlier one on
- * the chain.
- */
-function installInvalidationHooks(window: EngineWindow): void {
-	const Element = window.Element;
-	const owner = Element.prototype as unknown as Record<symbol, unknown>;
-	if (owner[kInvalidationHooksInstalled]) {
-		return;
-	}
-	owner[kInvalidationHooksInstalled] = true;
-
-	const managerOf = (element: Element): StyleManager | undefined =>
-		documentManagers.get(element.ownerDocument as object);
-
-	const originalSetAttribute = Element.prototype.setAttribute;
-	const originalRemoveAttribute = Element.prototype.removeAttribute;
-	const originalAttachShadow = Element.prototype.attachShadow;
-
-	// A shadow root is a tree scope of the cascade: the rules its own <style>
-	// elements and adopted sheets declare reach its elements and no others, so
-	// the cascade has to be told the tree exists the moment it does.
-	Element.prototype.attachShadow = function (
-		this: Element,
-		init: ShadowRootInit,
-	): ShadowRoot {
-		const root = originalAttachShadow.call(this, init);
-		managerOf(this)?.registerShadowRoot(root);
-		return root;
-	};
-
-	Element.prototype.setAttribute = function (
-		this: Element,
-		name: string,
-		value: string,
-	) {
-		const result = originalSetAttribute.call(this, name, value);
-		if (name === "style" || name === "class" || name === "id") {
-			managerOf(this)?.invalidateElement(this);
-		}
-		return result;
-	};
-
-	Element.prototype.removeAttribute = function (this: Element, name: string) {
-		const result = originalRemoveAttribute.call(this, name);
-		if (name === "style" || name === "class" || name === "id") {
-			managerOf(this)?.invalidateElement(this);
-		}
-		return result;
-	};
-}
-
-const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
-
-/**
- * Put this engine's CSSOM behind `element.style`.
- *
- * ElementCSSInlineStyle is the interface the accessor belongs to, and the DOM
- * of a terminal has no cascade of its own to declare it: the accessor is the
- * cascade's, installed on the HTML and SVG element prototypes that mix the
- * interface in.
- */
-export function installInlineStyle(window: EngineWindow): void {
-	const roots = [window.HTMLElement?.prototype, window.SVGElement?.prototype];
-	for (const root of roots) {
-		if (!root) {
-			continue;
-		}
-		let declaring: object | null = root;
-		while (declaring) {
-			if (Object.prototype.hasOwnProperty.call(declaring, "style")) {
-				break;
-			}
-			declaring = Object.getPrototypeOf(declaring);
-		}
-		const prototype: object = declaring ?? root;
-		const owner = prototype as Record<string | symbol, unknown>;
-		if (owner[kInlineStyleInstalled]) {
-			continue;
-		}
-		owner[kInlineStyleInstalled] = true;
-		Object.defineProperty(prototype, "style", {
-			get(this: Element) {
-				let style = inlineStyles.get(this);
-				if (!style) {
-					style = new CSSStyleProperties({element: this});
-					inlineStyles.set(this, style);
-				}
-				return style;
-			},
-			set(this: Element, value: unknown) {
-				(this as HTMLElement).style.cssText = value == null ? "" : `${value}`;
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-}
-
 // ============================================================================
 // CSSOM: STYLESHEETS AND RULES
 // ============================================================================
@@ -5810,123 +5712,10 @@ function observableAdopted(
 	return proxy;
 }
 
-const kStyleSheetsInstalled = Symbol("termdom.styleSheets");
-
 /**
  * Put this engine's CSSOM behind the document's stylesheet surface: a style
  * element's `sheet`, `document.styleSheets`, and the adopted lists.
  */
-function installStyleSheets(window: EngineWindow): void {
-	cssomWindow = window;
-
-	const documentPrototype = window.Document.prototype;
-	const owner = documentPrototype as unknown as Record<
-		string | symbol,
-		unknown
-	>;
-	// The prototypes are the realm's, shared by every document in it. Redefining
-	// an accessor on one is a change to its shape, so doing it per cascade
-	// deoptimizes every read of it that came before.
-	if (!owner[kStyleSheetsInstalled]) {
-		owner[kStyleSheetsInstalled] = true;
-
-		Object.defineProperty(documentPrototype, "styleSheets", {
-			get(this: Document) {
-				const sheets = declaredStyleSheets(this);
-				const list = new StyleSheetList(sheets);
-				syncIndexed(list);
-				return list;
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		for (const prototype of [documentPrototype, window.ShadowRoot?.prototype]) {
-			if (!prototype) {
-				continue;
-			}
-			Object.defineProperty(prototype, "adoptedStyleSheets", {
-				get(this: Node) {
-					let list = adoptedSheets.get(this);
-					if (!list) {
-						adoptedSheets.set(this, (list = []));
-					}
-					return observableAdopted(this, list);
-				},
-				set(this: Node, sheets: unknown) {
-					adopt(this, sheets);
-					managerForTree(this)?.refreshStylesheets();
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
-
-		if (window.ShadowRoot) {
-			Object.defineProperty(window.ShadowRoot.prototype, "styleSheets", {
-				get(this: ShadowRoot) {
-					const sheets = declaredStyleSheets(this);
-					const list = new StyleSheetList(sheets);
-					syncIndexed(list);
-					return list;
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
-
-		Object.defineProperty(window.HTMLStyleElement.prototype, "sheet", {
-			get(this: Element) {
-				// A style element outside a tree has no sheet, as in a browser.
-				return this.parentNode ? sheetFor(this) : null;
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		// Nothing is fetched over a terminal's document, so a link never resolves
-		// to a sheet.
-		Object.defineProperty(window.HTMLLinkElement.prototype, "sheet", {
-			get() {
-				return null;
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	Object.assign(window, {
-		CSSStyleSheet,
-		StyleSheetList,
-		CSSRuleList,
-		CSSRule,
-		CSSStyleRule,
-		CSSGroupingRule,
-		CSSConditionRule,
-		CSSMediaRule,
-		CSSSupportsRule,
-		CSSImportRule,
-		CSSKeyframesRule,
-		CSSKeyframeRule,
-		CSSNamespaceRule,
-		CSSPageRule,
-		CSSFontFaceRule,
-		CSSCounterStyleRule,
-		CSSPropertyRule,
-		CSSFontPaletteValuesRule,
-		CSSFontFeatureValuesRule,
-		CSSContainerRule,
-		CSSLayerBlockRule,
-		CSSLayerStatementRule,
-		CSSScopeRule,
-		CSSStartingStyleRule,
-		MediaList,
-		CSSStyleDeclaration,
-		CSSStyleProperties,
-		CSS: CSSNamespace,
-	});
-}
-
 /**
  * Every CSSOM interface names itself: `Object.prototype.toString` on one of
  * its objects gives the interface name, as it does for any platform object.
@@ -10293,12 +10082,42 @@ function removePseudoElement(
 function setupInvalidationHooks(
 	self: StyleManager,
 ): void {
-	installInvalidationHooks(self[kWindow]);
-	// A property written through element.style lands on the style attribute,
-	// so the hooks above are the whole invalidation path for inline styles.
-	installInlineStyle(self[kWindow]);
-	installStyleSheets(self[kWindow]);
+	// An error thrown out of a constructed sheet is this realm's own.
+	cssomWindow = self[kWindow];
+	Object.assign(self[kWindow], CSSOM_WINDOW_GLOBALS);
 }
+
+/** The CSSOM interfaces a window exposes as globals. */
+const CSSOM_WINDOW_GLOBALS = {
+	CSSStyleSheet,
+	StyleSheetList,
+	CSSRuleList,
+	CSSRule,
+	CSSStyleRule,
+	CSSGroupingRule,
+	CSSConditionRule,
+	CSSMediaRule,
+	CSSSupportsRule,
+	CSSImportRule,
+	CSSKeyframesRule,
+	CSSKeyframeRule,
+	CSSNamespaceRule,
+	CSSPageRule,
+	CSSFontFaceRule,
+	CSSCounterStyleRule,
+	CSSPropertyRule,
+	CSSFontPaletteValuesRule,
+	CSSFontFeatureValuesRule,
+	CSSContainerRule,
+	CSSLayerBlockRule,
+	CSSLayerStatementRule,
+	CSSScopeRule,
+	CSSStartingStyleRule,
+	MediaList,
+	CSSStyleDeclaration,
+	CSSStyleProperties,
+	CSS: CSSNamespace,
+};
 
 /**
  * Parse counter-reset CSS property
@@ -10425,3 +10244,91 @@ function getCounterValueFromScope(
 function formatCounterValue(value: number, style: string): string {
 	return BULLET_MARKERS[style] ?? formatOrdinal(value, style);
 }
+
+// ---------------------------------------------------------------------------
+// The cascade's half of the DOM interfaces, defined on the DOM's own
+// prototypes once, at load: `element.style`, `document.styleSheets`,
+// `adoptedStyleSheets`, and the `sheet` accessors.
+// ---------------------------------------------------------------------------
+
+for (const prototype of [DOMHTMLElement.prototype, DOMSVGElement.prototype]) {
+	Object.defineProperty(prototype, "style", {
+		get(this: Element) {
+			let style = inlineStyles.get(this);
+			if (!style) {
+				style = new CSSStyleProperties({element: this});
+				inlineStyles.set(this, style);
+			}
+			return style;
+		},
+		set(this: Element, value: unknown) {
+			(this as HTMLElement).style.cssText = value == null ? "" : `${value}`;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+}
+
+for (const prototype of [DOMDocumentClass.prototype, DOMShadowRoot.prototype]) {
+	Object.defineProperty(prototype, "styleSheets", {
+		get(this: Document | ShadowRoot) {
+			const sheets = declaredStyleSheets(this);
+			const list = new StyleSheetList(sheets);
+			syncIndexed(list);
+			return list;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+	Object.defineProperty(prototype, "adoptedStyleSheets", {
+		get(this: Node) {
+			let list = adoptedSheets.get(this);
+			if (!list) {
+				adoptedSheets.set(this, (list = []));
+			}
+			return observableAdopted(this, list);
+		},
+		set(this: Node, sheets: unknown) {
+			adopt(this, sheets);
+			managerForTree(this)?.refreshStylesheets();
+		},
+		configurable: true,
+		enumerable: true,
+	});
+}
+
+Object.defineProperty(DOMHTMLStyleElement.prototype, "sheet", {
+	get(this: Element) {
+		// A style element outside a tree has no sheet, as in a browser.
+		return this.parentNode ? sheetFor(this) : null;
+	},
+	configurable: true,
+	enumerable: true,
+});
+
+// Nothing is fetched over a terminal's document, so a link never resolves to
+// a sheet.
+Object.defineProperty(DOMHTMLLinkElement.prototype, "sheet", {
+	get() {
+		return null;
+	},
+	configurable: true,
+	enumerable: true,
+});
+
+// The cascade hears the DOM's own change algorithms: every attribute writer
+// funnels through them, so classList, className and the parser invalidate
+// exactly as setAttribute does, and a declarative shadow root registers the
+// moment the parser attaches it.
+onAttributeChange((element, localName) => {
+	if (localName === "style" || localName === "class" || localName === "id") {
+		documentManagers
+			.get(element.ownerDocument as object)
+			?.invalidateElement(element as unknown as Element);
+	}
+});
+onShadowAttached((root) => {
+	documentManagers
+		.get((root.host as unknown as Element).ownerDocument as object)
+		?.registerShadowRoot(root as unknown as ShadowRoot);
+});
