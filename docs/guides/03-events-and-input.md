@@ -67,6 +67,8 @@ own select-to-copy is still available by holding `Shift`.
 
 Tab traverses focusable elements in document order, `:focus` styles
 apply, and `element.focus()` works. Typing goes to the focused element.
+Tab past the last focusable element rests on nothing before re-entering
+at the first — the page's view of a browser's cycle through its chrome.
 
 ## Form controls
 

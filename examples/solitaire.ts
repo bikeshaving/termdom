@@ -1014,15 +1014,9 @@ function* App(this: Context) {
 		const key = event.key;
 		if (menu) {
 			// While the seed field has focus, letters and digits belong to it;
-			// Enter still deals, and Tab or Escape hands the keys back to the
-			// menu -- the field is the menu's only focusable element, so Tab
-			// would otherwise cycle onto itself and trap the keyboard.
+			// Enter still deals. Tab and Escape blur it -- the engine's own
+			// defaults.
 			const typing = (event.target as Element | null)?.tagName === "INPUT";
-			if (typing && (key === "Tab" || key === "Escape")) {
-				event.preventDefault();
-				(event.target as HTMLElement).blur();
-				return;
-			}
 			if (typing && key !== "Enter") {
 				return;
 			}
