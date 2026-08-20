@@ -78,6 +78,7 @@ function base64OfText(text: string): string {
 
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
+	"DETAILS",
 	"INPUT",
 	"METER",
 	"PROGRESS",
