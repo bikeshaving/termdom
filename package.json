@@ -88,6 +88,7 @@
     "eslint-plugin-crank": "^0.2.2",
     "eslint-plugin-esfold": "^0.1.0",
     "fast-check": "^4.9.0",
+    "htm": "^3.1.1",
     "marked": "^18.0.9",
     "marked-highlight": "^2.2.4",
     "mdn-data": "2.29.0",

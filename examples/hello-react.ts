@@ -5,8 +5,13 @@
 //   any key  increments the counter
 //   q        quit
 import {TermDOM} from "@b9g/termdom";
-import {createElement as h, useEffect, useState} from "react";
+import {createElement, useEffect, useState} from "react";
 import {createRoot} from "react-dom/client";
+import htm from "htm";
+
+// JSX without a build step: htm parses the same shape from a template
+// literal, straight to createElement.
+const html = htm.bind(createElement);
 
 const term = new TermDOM();
 term.attach();
@@ -41,17 +46,15 @@ function Hello() {
 		return () => document.removeEventListener("keydown", onkeydown);
 	}, []);
 
-	return h(
-		"div",
-		null,
-		h(
-			"div",
-			{className: "card"},
-			h("div", {className: "greeting"}, "Hello from React!"),
-			h("div", {className: "count"}, `Keys pressed: ${count}`),
-		),
-		h("div", {className: "hint"}, "any key counts · [q]uit"),
-	);
+	return html`
+		<div>
+			<div className="card">
+				<div className="greeting">Hello from React!</div>
+				<div className="count">Keys pressed: ${count}</div>
+			</div>
+			<div className="hint">any key counts · [q]uit</div>
+		</div>
+	`;
 }
 
-createRoot(document.body as never).render(h(Hello));
+createRoot(document.body as never).render(createElement(Hello));

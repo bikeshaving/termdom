@@ -17,7 +17,7 @@ globalThis.window = term.window as never;
 globalThis.Element = term.window.Element as never;
 globalThis.SVGElement = term.window.SVGElement as never;
 
-const {createApp, h, ref, onMounted, onUnmounted} = await import("vue");
+const {createApp, ref, onMounted, onUnmounted} = await import("vue");
 
 const style = document.createElement("style");
 style.textContent = `
@@ -42,15 +42,19 @@ const Hello = {
 
 		onMounted(() => document.addEventListener("keydown", onkeydown));
 		onUnmounted(() => document.removeEventListener("keydown", onkeydown));
-		return () =>
-			h("div", [
-				h("div", {class: "card"}, [
-					h("div", {class: "greeting"}, "Hello from Vue!"),
-					h("div", {class: "count"}, `Keys pressed: ${count.value}`),
-				]),
-				h("div", {class: "hint"}, "any key counts · [q]uit"),
-			]);
+		return {count};
 	},
+	// Vue's own template language, through the runtime compiler the Node
+	// build of Vue carries.
+	template: `
+		<div>
+			<div class="card">
+				<div class="greeting">Hello from Vue!</div>
+				<div class="count">Keys pressed: {{ count }}</div>
+			</div>
+			<div class="hint">any key counts · [q]uit</div>
+		</div>
+	`,
 };
 
 createApp(Hello).mount(document.body as never);
