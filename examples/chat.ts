@@ -4,7 +4,7 @@ import {TermDOM} from "@b9g/termdom";
 const term = new TermDOM();
 
 term.attach();
-const {document, window} = term;
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -39,6 +39,7 @@ const sigil = document.createElement("span");
 sigil.className = "sigil";
 sigil.textContent = "› ";
 const input = document.createElement("textarea");
+input.autofocus = true;
 input.setAttribute("rows", "1");
 input.setAttribute("placeholder", "message ch.at…");
 prompt.append(sigil, input);
@@ -65,9 +66,8 @@ function addMessage(role: "user" | "assistant", text: string): Text {
 	return node;
 }
 
-async function scrollToPrompt(): Promise<void> {
+function scrollToPrompt(): void {
 	prompt.scrollIntoView();
-	await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 }
 
 // The reply is streamed. ch.at echoes the whole prompt as `Q: ...` then adds a
@@ -93,7 +93,7 @@ async function send(): Promise<void> {
 	const bot = addMessage("assistant", "…");
 	const botMsg = bot.parentElement!.parentElement as HTMLElement;
 	botMsg.classList.add("pending");
-	await scrollToPrompt();
+	scrollToPrompt();
 
 	const conversation = turns
 		.map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)
@@ -120,7 +120,7 @@ async function send(): Promise<void> {
 			if (answer) {
 				botMsg.classList.remove("pending");
 				bot.data = answer;
-				await scrollToPrompt();
+				scrollToPrompt();
 			}
 		}
 		clearTimeout(timeout);
@@ -134,7 +134,7 @@ async function send(): Promise<void> {
 		turns.pop(); // drop the user turn whose reply failed, so context stays clean
 	} finally {
 		busy = false;
-		await scrollToPrompt();
+		scrollToPrompt();
 	}
 }
 
@@ -162,8 +162,7 @@ document.addEventListener(
 	true,
 );
 
-input.focus();
-await scrollToPrompt();
+scrollToPrompt();
 
 // No terminal (piped/CI): run one scripted exchange so the example is testable
 // and inspectable without typing, then exit.

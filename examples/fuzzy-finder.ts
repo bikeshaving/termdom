@@ -85,7 +85,7 @@ function score(item: string, query: string): number | null {
 // ---- DOM ---------------------------------------------------------------------
 const term = new TermDOM();
 term.attach();
-const {document, window} = term;
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -108,6 +108,7 @@ const sigil = document.createElement("span");
 sigil.className = "sigil";
 sigil.textContent = "\u203a\u00a0";
 const input = document.createElement("input");
+input.autofocus = true;
 input.setAttribute("placeholder", "type to filter…");
 prompt.append(sigil, input);
 
@@ -220,11 +221,9 @@ document.addEventListener("keydown", (event: Event) => {
 });
 
 render();
-input.focus();
 
 // Piped or redirected (no terminal): just print the current list and exit, so
 // the example is inspectable without a TTY.
-await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 if (!process.stdout.isTTY) {
 	term.window.close();
 }

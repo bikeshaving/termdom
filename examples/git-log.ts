@@ -137,12 +137,11 @@ function select(index: number): void {
 	header.textContent = ` ${commits.length} commits · ${selected + 1}`;
 }
 
-async function refresh(): Promise<void> {
+function refresh(): void {
 	rows()[selected]?.scrollIntoView();
 	if (selected === 0) {
 		window.scrollBy(0, -document.body.scrollHeight);
 	}
-	await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 }
 
 document.addEventListener("keydown", (event: Event) => {
@@ -173,7 +172,7 @@ document.addEventListener("keydown", (event: Event) => {
 	} else {
 		return;
 	}
-	void refresh();
+	refresh();
 });
 
 document.addEventListener("click", (event: Event) => {
@@ -187,11 +186,11 @@ document.addEventListener("click", (event: Event) => {
 	} else {
 		expand(row);
 	}
-	void refresh();
+	refresh();
 });
 
 select(0);
-await refresh();
+refresh();
 
 if (!process.stdout.isTTY) {
 	term.window.close();

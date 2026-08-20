@@ -166,7 +166,7 @@ function parentOf(row: HTMLElement): HTMLElement | undefined {
 	return undefined;
 }
 
-async function refresh(): Promise<void> {
+function refresh(): void {
 	// getBoundingClientRect flushes pending mutations itself, so the camera can
 	// be placed before the single paint -- one render per keystroke.
 	rows()[selected]?.scrollIntoView();
@@ -175,7 +175,6 @@ async function refresh(): Promise<void> {
 	if (selected === 0) {
 		window.scrollBy(0, -document.body.scrollHeight);
 	}
-	await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
 }
 
 function rebuild(): void {
@@ -220,7 +219,7 @@ document.addEventListener("keydown", (event: Event) => {
 	} else {
 		return;
 	}
-	void refresh();
+	refresh();
 });
 
 // The whole mouse story: the wheel scrolls the camera on its own (a
@@ -243,4 +242,4 @@ document.addEventListener("click", (event: Event) => {
 });
 
 rebuild();
-await refresh();
+refresh();

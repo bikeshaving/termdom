@@ -1,13 +1,3 @@
-// V8's compile cache: the module graph is most of a CLI invocation's
-// startup. Namespace access because runtimes with their own cache (Bun)
-// do not export it.
-import * as NodeModule from "node:module";
-try {
-	(NodeModule as {enableCompileCache?: () => void}).enableCompileCache?.();
-} catch (_err) {
-	// Nothing to do; the runtime just recompiles.
-}
-
 export {TermDOM} from "./internal/termdom.js";
 export type {TermDOMOptions} from "./internal/termdom.js";
 export {transportFromProcess} from "./internal/terminalsession.js";
