@@ -115,6 +115,7 @@ const FEATURES: Record<string, Feature> = {
 		value: "border-box",
 		setup: "#probe { width: 12ch; padding: 0 2ch; border: 1px solid; }",
 	},
+	"aspect-ratio": {value: "1 / 1", setup: NARROW},
 	"outline": {value: "1px solid red"},
 	"outline-style": {value: "solid", setup: "#probe { outline-width: 1px; }"},
 	// The painted outline is present or absent; a zero width is the only width
@@ -316,7 +317,6 @@ const FEATURES: Record<string, Feature> = {
 	"animation": {value: "spin 1s"},
 	"box-shadow": {value: "1px 1px red"},
 	"filter": {value: "blur(1px)"},
-	"aspect-ratio": {value: "1 / 1", setup: NARROW},
 	"cursor": {value: "pointer"},
 };
 
@@ -1016,6 +1016,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 			"border-bottom-right-radius",
 			"border-bottom-left-radius",
 			"box-sizing",
+			"aspect-ratio",
 			"outline",
 			"outline-style",
 			"outline-width",
@@ -1118,7 +1119,6 @@ const CATEGORIES: Array<[string, string[]]> = [
 			"animation",
 			"box-shadow",
 			"filter",
-			"aspect-ratio",
 			"cursor",
 		],
 	],

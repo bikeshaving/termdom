@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-170 features supported, 54 probed and unsupported,
+171 features supported, 53 probed and unsupported,
 157 CSS properties not applicable to a character grid,
 129 applicable and not implemented,
 4 not yet probed.
@@ -125,6 +125,7 @@ changed.
 | `border-bottom-right-radius` | yes |
 | `border-bottom-left-radius` | yes |
 | `box-sizing` | no (no effect) |
+| `aspect-ratio` | yes |
 | `outline` | yes |
 | `outline-style` | yes |
 | `outline-width` | yes |
@@ -227,7 +228,6 @@ changed.
 | `animation` | no (no effect) |
 | `box-shadow` | no (no effect) |
 | `filter` | no (no effect) |
-| `aspect-ratio` | no (no effect) |
 | `cursor` | no (no effect) |
 
 ## Logical properties
