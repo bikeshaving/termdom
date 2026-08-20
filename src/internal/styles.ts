@@ -562,6 +562,21 @@ const VERBATIM_PROPERTIES = new Set([
 	"counter-reset",
 	"font",
 	"font-family",
+	// A grid value carries custom idents -- line names and area names, which
+	// are case-sensitive -- alongside its keywords, so it cannot be folded.
+	"grid-area",
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-column",
+	"grid-column-end",
+	"grid-column-start",
+	"grid-row",
+	"grid-row-end",
+	"grid-row-start",
+	"grid-template",
+	"grid-template-areas",
+	"grid-template-columns",
+	"grid-template-rows",
 	"list-style-image",
 	"quotes",
 ]);
@@ -636,6 +651,14 @@ function normalizeValue(property: string, declared: string): string {
 const ABSOLUTIZED_PROPERTIES = new Set([
 	...LENGTH_PROPERTIES,
 	"border-spacing",
+	// A track list holds lengths inside functions and among keywords, so it
+	// absolutizes by token rather than by the whitespace-separated split the
+	// length properties take.
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-template",
+	"grid-template-columns",
+	"grid-template-rows",
 	"line-height",
 	"text-underline-offset",
 	"vertical-align",
@@ -1087,6 +1110,12 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 		map(`${prefix}block-size`, `${prefix}height`);
 		map(`${prefix}inline-size`, `${prefix}width`);
 	}
+	// `grid-row-gap` and `grid-column-gap` are not flow-relative at all: they
+	// are the OLD SPELLING of the gap properties (css-align-3 §8.4). Sharing a
+	// cascade slot is what an alias is, though, so they are declared here --
+	// one slot, whichever of the two names the winning declaration used.
+	map("grid-row-gap", "row-gap");
+	map("grid-column-gap", "column-gap");
 }
 
 /** The physical longhand a flow-relative one names under `direction`, if it is one. */
@@ -1145,6 +1174,8 @@ type ShorthandShape =
 	"pair" |
 	"line" |
 	"border" |
+	"grid-line" |
+	"grid-template" |
 	"sequence";
 
 /**
@@ -1157,6 +1188,16 @@ const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
 /** Each shorthand's shape, classified once rather than per serialization. */
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
+
+/** The placement shorthands, whose components are separated by slashes. */
+const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
+
+/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
+function isGridCustomIdent(value: string): boolean {
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
+}
 
 /**
  * The longhands a shorthand resets but whose values its own grammar cannot
@@ -1184,28 +1225,34 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
 	SHORTHAND_SHAPES.set(
 		shorthand,
-		box ?
-			radius ?
-				"radius" :
-				"box" : // A width, a style and a color stated once for several sides:
-		// four for `border`, the axis's two for `border-block` and
-		// `border-inline`.
-			indexed.length >= 2 * LINE_COMPONENTS.length &&
-			LINE_COMPONENTS.every(
-				(kind) =>
-					indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-						.length ===
-						indexed.length / LINE_COMPONENTS.length,
-			) ?
-				"border" :
-				indexed.length === LINE_COMPONENTS.length &&
-				indexed.every((longhand, index) =>
-					longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-				) ?
-					"line" :
-					indexed.length === 2 && axisPair(shorthand, indexed) ?
-						"pair" :
-						"sequence",
+		// The grid shorthands write their components around slashes, which no
+		// other shorthand's grammar does.
+		GRID_LINE_SHORTHANDS.has(shorthand) ?
+			"grid-line" :
+			shorthand === "grid" || shorthand === "grid-template" ?
+				"grid-template" :
+				box ?
+					radius ?
+						"radius" :
+						"box" : // A width, a style and a color stated once for several sides:
+				// four for `border`, the axis's two for `border-block` and
+				// `border-inline`.
+					indexed.length >= 2 * LINE_COMPONENTS.length &&
+					LINE_COMPONENTS.every(
+						(kind) =>
+							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+								.length ===
+								indexed.length / LINE_COMPONENTS.length,
+					) ?
+						"border" :
+						indexed.length === LINE_COMPONENTS.length &&
+						indexed.every((longhand, index) =>
+							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+						) ?
+							"line" :
+							indexed.length === 2 && axisPair(shorthand, indexed) ?
+								"pair" :
+								"sequence",
 	);
 }
 
@@ -1837,6 +1884,50 @@ function serializeShorthandValue(
 			);
 		case "pair":
 			return values[0] === values[1] ? values[0] : values.join(" ");
+		// css-grid-2 §8.4: the components run start / end (and, for
+		// `grid-area`, both axes' of each), and a trailing one is dropped when
+		// it states the value the omission already implies -- the opposite
+		// component when that is a name, and `auto` otherwise.
+		case "grid-line": {
+			const implied = (from: string): string =>
+				isGridCustomIdent(from) ? from : "auto";
+			const kept = [...values];
+			// grid-area's four are [row-start, column-start, row-end,
+			// column-end]; the pair shorthands' two are [start, end].
+			const from = kept.length === 4 ? [-1, 0, 0, 1] : [-1, 0];
+			while (kept.length > 1) {
+				const index = kept.length - 1;
+				if (kept[index] !== implied(values[from[index]])) {
+					break;
+				}
+				kept.pop();
+			}
+			return kept.join(" / ");
+		}
+		// `grid-template` writes its rows and columns around a slash. Its
+		// third form -- the picture of the grid, whose strings and row sizes
+		// interleave -- states an area map, and no rows-and-columns spelling
+		// can carry one: a block holding one serializes as its longhands.
+		case "grid-template": {
+			const at = (longhand: string): string =>
+				values[stated.indexOf(longhand)] ?? "";
+			if (at("grid-template-areas") !== "none") {
+				return "";
+			}
+			for (const longhand of stated) {
+				if (longhand.startsWith("grid-auto-")) {
+					if (at(longhand) !== CSS_INITIAL_VALUES[longhand]) {
+						return "";
+					}
+				}
+			}
+			const rows = at("grid-template-rows");
+			const columns = at("grid-template-columns");
+			if (rows === "none" && columns === "none") {
+				return "none";
+			}
+			return `${rows} / ${columns}`;
+		}
 		default:
 			return dropInitials(
 				stated.map((longhand, index) => [longhand, values[index]] as const),
@@ -5825,6 +5916,16 @@ const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
 /** The two sizes whose `auto` names a minimum only some boxes have. */
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
+/**
+ * The two track lists whose resolved value is the USED track sizes: what the
+ * grid came to, one length per track of the implicit grid, rather than the
+ * sizing functions the author wrote (css-grid-2 §7.2).
+ */
+const USED_TRACK_PROPERTIES = new Set([
+	"grid-template-columns",
+	"grid-template-rows",
+]);
+
 /** The containers whose children have an automatic minimum size. */
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
@@ -6133,6 +6234,15 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		if (this[kManager] && MIN_SIZE_PROPERTIES.has(property)) {
 			return resolvedMinSize(this, this.computedValueOf(property));
+		}
+		if (this[kManager] && USED_TRACK_PROPERTIES.has(property)) {
+			const tracks = this[kManager].usedGridTracks(
+				this[kElement],
+				property === "grid-template-rows",
+			);
+			if (tracks) {
+				return tracks.length > 0 ? tracks.map(usedLength).join(" ") : "none";
+			}
 		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.computedValueOf(property);
@@ -8166,6 +8276,19 @@ export class StyleManager {
 			return null;
 		}
 		return this[kLayoutEngine]!.contentRect(element);
+	}
+
+	/**
+	 * A grid container's used track sizes, measured behind the same flush a
+	 * rect read takes. Null for a box that is not one -- the resolved value
+	 * then stays the computed track list, as CSSOM says of a grid property on
+	 * a box that generated no grid.
+	 */
+	usedGridTracks(element: Element, rows: boolean): number[] | null {
+		if (!this.usedRect(element)) {
+			return null;
+		}
+		return this[kLayoutEngine]!.gridTracks(element, rows);
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */
