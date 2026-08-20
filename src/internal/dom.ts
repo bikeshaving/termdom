@@ -68,7 +68,14 @@ export interface UAEngine {
 		invalidate(node: object): void;
 		calculateLayout(): void;
 		getRect(element: object): UARect | null;
-		lineFragments(text: object): TextareaVisualLine[];
+		lineFragments(text: object): UALineFragment[];
+		getRangeRects(range: object): UARect[];
+		caretPositionFromPoint(
+			x: number,
+			y: number,
+			root: object,
+			clampToNearestLine?: boolean,
+		): {node: UAText; offset: number} | null;
 	};
 	styles: {registerShadowRoot(root: object): void};
 	/**
@@ -97,6 +104,19 @@ type UAText = globalThis.Text;
 type UARange = globalThis.Range;
 type UARect = globalThis.DOMRect;
 type UADocument = globalThis.Document;
+
+/**
+ * One laid-out line of a text node: where it sits, and the range of the
+ * node's raw data it renders. A line is a property of the layout and not of
+ * the string, so this is the only thing that can answer "what line is this
+ * offset on" -- for a textarea's vertical motion and for the document
+ * selection's alike.
+ */
+interface UALineFragment {
+	rect: UARect;
+	startOffset: number;
+	endOffset: number;
+}
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
@@ -11822,6 +11842,18 @@ function wordStartBefore(value: string, caret: number): number {
 	return at;
 }
 
+/** The mirror of wordStartBefore: where a word-wise forward move lands. */
+function wordEndAfter(value: string, caret: number): number {
+	let at = caret;
+	while (at < value.length && /\s/.test(value[at])) {
+		at++;
+	}
+	while (at < value.length && !/\s/.test(value[at])) {
+		at++;
+	}
+	return at;
+}
+
 /** An edit result whose selection is a caret collapsed at `pos`. */
 function collapsedEdit(value: string, pos: number): FieldEditResult {
 	const clamped = Math.max(0, Math.min(pos, value.length));
@@ -11921,9 +11953,13 @@ function uaStyleElement(host: Element, styles: string): UAElement {
 	return style;
 }
 
-/** The engine a document's controls render through, if it has been installed. */
+/**
+ * The engine a document's controls render through, if it has been installed.
+ * A document has no ownerDocument, so it stands for itself: the selection
+ * asks about a whole document where a control asks about a node.
+ */
 function uaEngineOf(node: object): UAEngine | undefined {
-	const document = (node as Node).ownerDocument as unknown as Record<
+	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
 		symbol,
 		UAEngine
 	> | null;
@@ -20454,10 +20490,371 @@ export class Selection {
 		);
 	}
 
+	/**
+	 * Move the caret, or drag the focus, by a unit of text -- the motion a
+	 * keyboard makes, in the one place a page can ask for it.
+	 *
+	 * `alter` is "move" (collapse where the motion lands) or "extend" (take
+	 * the focus there and leave the anchor). A "move" over a range starts
+	 * from the edge it is heading for, so a forward character move over a
+	 * selection collapses to its end without going further -- what browsers
+	 * do. "left" and "right" mean "backward" and "forward": a right-to-left
+	 * run's visual order is not followed.
+	 *
+	 * "character" and "word" are answerable from the text. "line" and
+	 * "lineboundary" are laid-out lines rather than a property of the string,
+	 * so they need a document mounted in a terminal and do nothing without
+	 * one; a line's ends are its first and last text in tree order, which is
+	 * its visual order only where the text runs left to right. "sentence",
+	 * "paragraph" and their boundaries are not implemented. Anything
+	 * unrecognized does nothing, as in a browser.
+	 */
+	modify(alter?: string, direction?: string, granularity?: string): void {
+		const how = String(alter ?? "move").toLowerCase();
+		const where = String(direction ?? "forward").toLowerCase();
+		const unit = String(granularity ?? "character").toLowerCase();
+		if (how !== "move" && how !== "extend") {
+			return;
+		}
+		const forward = where === "forward" || where === "right";
+		if (!forward && where !== "backward" && where !== "left") {
+			return;
+		}
+		const range = documentRange(this);
+		if (range === null) {
+			return;
+		}
+		const extending = how === "extend";
+		const from =
+			extending ?
+					(focusPoint(this) as [Node, number]) :
+				forward ?
+						([range[kEndNode], range[kEndOffset]] as [Node, number]) :
+						([range[kStartNode], range[kStartOffset]] as [Node, number]);
+		// Collapsing a range by a character is the whole motion: the caret
+		// lands on the edge the direction points at, not one character past it.
+		const to =
+			!extending && !range.collapsed && unit === "character" ?
+				from :
+					modifiedPoint(this, from, forward, unit);
+		if (to === null) {
+			return;
+		}
+		if (extending) {
+			this.extend(to[0], to[1]);
+			return;
+		}
+		this.setBaseAndExtent(to[0], to[1], to[0], to[1]);
+	}
+
 	toString(): string {
 		const range = this[kRange];
 		return range === null ? "" : range.toString();
 	}
+}
+
+/**
+ * The text a document paints, as one string with the text node each stretch
+ * of it came from. Character and word motion are string questions, and a
+ * caret crosses from one text node into the next without noticing, so both
+ * are asked of this rather than of a node at a time.
+ *
+ * Built per call: a selection moves at the speed of a keystroke, and a cache
+ * of the document's text would have every mutation to invalidate it.
+ */
+interface SelectionText {
+	text: string;
+	parts: Array<{node: Text; start: number}>;
+}
+
+/** One laid-out line, as offsets into the flattened text. */
+interface SelectionLine {
+	y: number;
+	start: number;
+	end: number;
+}
+
+/** Whether a text node puts anything on the screen. */
+function paintsText(
+	node: Text,
+	layout: UAEngine["layout"] | null,
+): boolean {
+	if (node[kData].length === 0) {
+		return false;
+	}
+	if (layout === null) {
+		return true;
+	}
+	for (const fragment of layout.lineFragments(node)) {
+		if (fragment.endOffset > fragment.startOffset) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/** The painted text nodes of a document, in tree order. */
+function selectionTextNodes(
+	document: Document,
+	layout: UAEngine["layout"] | null,
+): Text[] {
+	const nodes: Text[] = [];
+	const collect = (node: Node): void => {
+		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			if (child.nodeType === TEXT_NODE) {
+				if (paintsText(child as Text, layout)) {
+					nodes.push(child as Text);
+				}
+			} else if (child.nodeType === ELEMENT_NODE) {
+				const name = (child as Element).localName;
+				if (name !== "script" && name !== "style" && name !== "template") {
+					collect(child);
+				}
+			}
+		}
+	};
+	const root = document.body ?? document.documentElement;
+	if (root !== null) {
+		collect(root as unknown as Node);
+	}
+	return nodes;
+}
+
+function flattenSelectionText(nodes: Text[]): SelectionText {
+	let text = "";
+	const parts: Array<{node: Text; start: number}> = [];
+	for (const node of nodes) {
+		parts.push({node, start: text.length});
+		text += node[kData];
+	}
+	return {text, parts};
+}
+
+/**
+ * Where a boundary point sits in the flattened text, or null for a point in
+ * nothing painted. An element boundary point sits before the child at its
+ * offset, so it lands on the first painted text at or after that child --
+ * and past the last child, at the end of the element's own text.
+ */
+function selectionIndexOf(
+	run: SelectionText,
+	node: Node,
+	offset: number,
+): number | null {
+	if (node.nodeType === TEXT_NODE) {
+		for (const part of run.parts) {
+			if (part.node === node) {
+				return part.start + Math.min(offset, part.node[kData].length);
+			}
+		}
+		return null;
+	}
+	let child = node[kFirstChild];
+	for (let i = 0; child !== null && i < offset; i++) {
+		child = child[kNext];
+	}
+	if (child !== null) {
+		for (const part of run.parts) {
+			if (isInclusiveAncestor(child, part.node)) {
+				return part.start;
+			}
+		}
+	}
+	let last: number | null = null;
+	for (const part of run.parts) {
+		if (isInclusiveAncestor(node, part.node)) {
+			last = part.start + part.node[kData].length;
+		}
+	}
+	return last;
+}
+
+/**
+ * The boundary point an offset into the flattened text names. An offset on
+ * the seam between two nodes belongs to the earlier one's end, which is the
+ * same position as the later one's start.
+ */
+function selectionPointAt(
+	run: SelectionText,
+	index: number,
+): [Node, number] | null {
+	const at = Math.max(0, Math.min(index, run.text.length));
+	for (const part of run.parts) {
+		if (at <= part.start + part.node[kData].length) {
+			return [part.node, at - part.start];
+		}
+	}
+	const last = run.parts[run.parts.length - 1];
+	return last === undefined ? null : [last.node, last.node[kData].length];
+}
+
+/**
+ * The document's laid-out lines, as stretches of the flattened text. Two
+ * fragments on the same row are the same line however many nodes they came
+ * from, so a row is keyed by where it sits.
+ */
+function selectionLines(
+	run: SelectionText,
+	layout: UAEngine["layout"],
+): SelectionLine[] {
+	const rows = new Map<number, SelectionLine>();
+	for (const part of run.parts) {
+		for (const fragment of layout.lineFragments(part.node)) {
+			if (fragment.endOffset <= fragment.startOffset) {
+				continue;
+			}
+			const y = Math.round(fragment.rect.y);
+			const start = part.start + fragment.startOffset;
+			const end = part.start + fragment.endOffset;
+			const row = rows.get(y);
+			if (row === undefined) {
+				rows.set(y, {y, start, end});
+			} else {
+				row.start = Math.min(row.start, start);
+				row.end = Math.max(row.end, end);
+			}
+		}
+	}
+	return [...rows.values()].sort((a, b) => a.y - b.y);
+}
+
+/**
+ * The line an offset sits on. A caret exactly at a soft wrap belongs to the
+ * next line's start -- both lines claim the offset, and the later one wins,
+ * the same rule the textarea's vertical motion follows.
+ */
+function selectionLineAt(lines: SelectionLine[], index: number): number {
+	for (let i = 0; i < lines.length; i++) {
+		if (index <= lines[i].end) {
+			const next = lines[i + 1];
+			if (next !== undefined && next.start <= index) {
+				continue;
+			}
+			return i;
+		}
+	}
+	return lines.length - 1;
+}
+
+/** The column a caret paints at, asked of the layout. */
+function caretColumnOf(
+	document: Document,
+	layout: UAEngine["layout"],
+	point: [Node, number],
+): number | null {
+	const range = document.createRange();
+	range.setStart(point[0], point[1]);
+	range.setEnd(point[0], point[1]);
+	const rect = layout.getRangeRects(range)[0];
+	return rect === undefined ? null : rect.x;
+}
+
+/**
+ * The point one laid-out line up or down, keeping the column the caret is at
+ * now. Past the first or last line the motion spends itself on that line's
+ * own end, as a browser's arrow key does.
+ *
+ * The column is a screen column and the target is a screen row, so the
+ * landing offset is the layout's own hit test -- the same answer a click
+ * there would give.
+ */
+function selectionLineMove(
+	document: Document,
+	run: SelectionText,
+	layout: UAEngine["layout"],
+	index: number,
+	forward: boolean,
+): [Node, number] | null {
+	const lines = selectionLines(run, layout);
+	if (lines.length === 0) {
+		return null;
+	}
+	const at = selectionLineAt(lines, index);
+	const target = at + (forward ? 1 : -1);
+	if (target < 0) {
+		return selectionPointAt(run, lines[0].start);
+	}
+	if (target >= lines.length) {
+		return selectionPointAt(run, lines[lines.length - 1].end);
+	}
+	const here = selectionPointAt(run, index);
+	const column = here === null ? null : caretColumnOf(document, layout, here);
+	const root = document.body ?? document.documentElement;
+	const found =
+		column === null || root === null ?
+			null :
+				layout.caretPositionFromPoint(
+					column,
+					lines[target].y,
+					root as unknown as object,
+					true,
+				);
+	if (found === null) {
+		return selectionPointAt(run, lines[target].start);
+	}
+	return [found.node as unknown as Node, found.offset];
+}
+
+/** The point the motion lands on, or null where there is nothing to do. */
+function modifiedPoint(
+	self: Selection,
+	from: [Node, number],
+	forward: boolean,
+	granularity: string,
+): [Node, number] | null {
+	const document = self[kDocument];
+	const layout = uaEngineOf(document)?.layout ?? null;
+	if (layout === null) {
+		if (granularity === "line" || granularity === "lineboundary") {
+			return null;
+		}
+	} else {
+		// Lines are read back off the layout in the same turn, so whatever the
+		// page just mutated has to be laid out before they are asked for.
+		layout.calculateLayout();
+	}
+	const run = flattenSelectionText(selectionTextNodes(document, layout));
+	if (run.parts.length === 0) {
+		return null;
+	}
+	const index = selectionIndexOf(run, from[0], from[1]);
+	if (index === null) {
+		return null;
+	}
+	if (granularity === "character") {
+		return selectionPointAt(
+			run,
+			forward ?
+					nextGraphemeBoundary(run.text, index) :
+					prevGraphemeBoundary(run.text, index),
+		);
+	}
+	if (granularity === "word") {
+		return selectionPointAt(
+			run,
+			forward ?
+					wordEndAfter(run.text, index) :
+					wordStartBefore(run.text, index),
+		);
+	}
+	if (granularity === "documentboundary") {
+		return selectionPointAt(run, forward ? run.text.length : 0);
+	}
+	if (layout === null) {
+		return null;
+	}
+	if (granularity === "lineboundary") {
+		const lines = selectionLines(run, layout);
+		if (lines.length === 0) {
+			return null;
+		}
+		const line = lines[selectionLineAt(lines, index)];
+		return selectionPointAt(run, forward ? line.end : line.start);
+	}
+	if (granularity === "line") {
+		return selectionLineMove(document, run, layout, index, forward);
+	}
+	return null;
 }
 
 /** Whether a node is in the selection's document, shadow trees included. */
