@@ -363,3 +363,104 @@ test.todo(
 		expect(output).toContain("BEFORE MIDDLE AFTER");
 	},
 );
+
+test("a block pseudo-element's resolved width and height are its used box", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = `
+		span.block::before { content: "BB"; display: block }
+		span.sized::before { content: "BB"; display: block; width: 10px }
+	`;
+	document.head.appendChild(style);
+	document.body.innerHTML =
+		"<div><span class=\"block\">hello</span></div>" +
+		"<div><span class=\"sized\">hello</span></div>";
+	await nextFrame(termdom);
+	const {window} = termdom;
+
+	// A block box stretches to its containing block, and the resolved value
+	// reports that used width -- not the computed "auto".
+	const block = window.getComputedStyle(
+		document.querySelector(".block")!,
+		"::before",
+	);
+	expect(block.getPropertyValue("width")).toBe("40px");
+	expect(block.getPropertyValue("height")).toBe("1px");
+
+	// A declared width is the used width.
+	const sized = window.getComputedStyle(
+		document.querySelector(".sized")!,
+		"::before",
+	);
+	expect(sized.getPropertyValue("width")).toBe("10px");
+	expect(sized.getPropertyValue("height")).toBe("1px");
+});
+
+test("an inline pseudo-element measures as an element's inline box does", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = "span.inline::before { content: \"II\" }";
+	document.head.appendChild(style);
+	document.body.innerHTML =
+		"<div><span class=\"inline\">yo</span><span class=\"bare\">yo</span></div>";
+	await nextFrame(termdom);
+	const {window} = termdom;
+
+	// An inline box's resolved width is the union of its fragments, for a
+	// pseudo-element exactly as for an element: the pseudo's two cells, the
+	// bare span's two.
+	const pseudo = window.getComputedStyle(
+		document.querySelector(".inline")!,
+		"::before",
+	);
+	const element = window.getComputedStyle(document.querySelector(".bare")!);
+	expect(element.getPropertyValue("width")).toBe("2px");
+	expect(pseudo.getPropertyValue("width")).toBe("2px");
+	expect(pseudo.getPropertyValue("height")).toBe("1px");
+});
+
+test("a pseudo-element that generates no box keeps its computed value", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent =
+		"span.none::before { content: \"NN\"; display: none; width: 10px }";
+	document.head.appendChild(style);
+	document.body.innerHTML = "<div><span class=\"none\">zz</span></div>";
+	await nextFrame(termdom);
+
+	const none = termdom.window.getComputedStyle(
+		document.querySelector(".none")!,
+		"::before",
+	);
+	expect(none.getPropertyValue("width")).toBe("10px");
+	expect(none.getPropertyValue("height")).toBe("auto");
+});
+
+test("a pseudo-element's used box answers the read that asked for the layout", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = "span.block::before { content: \"BB\"; display: block }";
+	document.head.appendChild(style);
+	document.body.innerHTML = "<div><span class=\"block\">hello</span></div>";
+
+	// No frame yet: the resolved read takes the same flush a rect read does,
+	// so the box it measures is the one this DOM lays out.
+	const cs = termdom.window.getComputedStyle(
+		document.querySelector(".block")!,
+		"::before",
+	);
+	expect(cs.getPropertyValue("width")).toBe("40px");
+	expect(cs.getPropertyValue("height")).toBe("1px");
+});

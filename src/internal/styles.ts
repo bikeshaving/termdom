@@ -5799,6 +5799,20 @@ function usedLength(cells: number): string {
 }
 
 /**
+ * The reads a used-value measurement takes, from whichever declaration owns
+ * the box. An element's computed declaration is one directly; a
+ * pseudo-element's declaration answers through a view whose [kElement] is the
+ * pseudo-element's own node, which is where its box lives -- the measurement
+ * arithmetic is the same either way, so there is one copy of it.
+ */
+interface MeasuredDeclaration {
+	[kElement]: Element;
+	[kManager]: StyleManager | null;
+	computedValueOf(property: string): string;
+	getPropertyValue(property: string): string;
+}
+
+/**
  * The colors whose `auto` names the element's own color: a caret is drawn in
  * the text's color, and an outline whose color was left to the UA takes it
  * too. The resolved value CSSOM reports is that used color.
@@ -6311,7 +6325,7 @@ function shorthand(
 }
 
 function measure(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	property: string,
 	computed: string,
 ): string {
@@ -6388,7 +6402,7 @@ function measure(
  * that has to be measured: it is whatever distance the box ended up at.
  */
 function usedInset(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	property: string,
 	computed: string,
 	rect: DOMRect,
@@ -6455,7 +6469,7 @@ function usedInset(
  * this one flows in.
  */
 function containingBlockBox(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
@@ -6493,7 +6507,7 @@ function containingBlockBox(
 
 /** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
 function boxOf(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
@@ -6524,7 +6538,7 @@ function boxOf(
 
 /** The initial containing block: the grid itself. */
 function viewportBox(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 ): DOMRect | null {
 	const viewport = self[kManager]!.viewportSize();
 	if (!viewport) {
@@ -6580,7 +6594,7 @@ function resolvedMinSize(
 
 /** One edge length in cells, for the arithmetic above. */
 function edge(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	property: string,
 ): number {
 	return parseFloat(self.getPropertyValue(property)) || 0;
@@ -6588,7 +6602,7 @@ function edge(
 
 /** The space an `auto` margin actually took, measured off the two boxes. */
 function autoMargin(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 	property: string,
 	rect: DOMRect,
 ): number {
@@ -6627,7 +6641,7 @@ function autoMargin(
 
 /** The width a percentage on this element resolves against. */
 function containingWidth(
-	self: ComputedStyleDeclaration,
+	self: MeasuredDeclaration,
 ): number | null {
 	const parent = flatParentElement<Element>(self[kElement]);
 	if (!parent) {
@@ -7007,6 +7021,8 @@ const kPseudoDeclarations = Symbol("pseudo declarations");
 const kPseudoElement = Symbol("pseudoElement");
 const kNodeResolved = Symbol("nodeResolved");
 const kNodeStyle = Symbol("nodeStyle");
+const kBoxView = Symbol("boxView");
+const kBoxViewOf = Symbol("boxViewOf");
 
 /**
  * A pseudo-element's computed style: a flat declaration set -- the matched
@@ -7049,6 +7065,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kSeenEpoch] = 0;
 		this[kNodeStyle] = null;
 		this[kNodeResolved] = new Map<string, string>();
+		this[kBoxView] = null;
 		this[kPseudoDeclarations] = declarations;
 		this[kElement] = element ?? null;
 		this[kPseudoElement] = pseudoElement;
@@ -7142,6 +7159,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 
 	declare [kNodeStyle]: ComputedStyle | null;
 	declare [kNodeResolved]: Map<string, string>;
+	declare [kBoxView]: MeasuredDeclaration | null;
 
 	override getPropertyValue(property: string): string {
 		this[kManager]?.flushStyle();
@@ -7158,14 +7176,30 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * A pseudo-element's resolved value, measured behind the same flush an
 	 * element's is.
 	 *
-	 * A pseudo-element box hangs in the content box of the element it
-	 * originates from, which is what its percentages resolve against -- the
-	 * one measurement the layout it was composed into can answer for it. A
-	 * pseudo that generates no box (`display: none`, `display: contents`, an
-	 * originating element with no box of its own) keeps its computed value,
-	 * exactly as an element with no box does.
+	 * A pseudo-element's box belongs to the node the composition pass gave it,
+	 * so its metrics are measured off that node's rect through the same
+	 * arithmetic an element's are: a stretched block pseudo answers its used
+	 * width, an inline one the union of its fragments. A pseudo the
+	 * composition never gave a node -- one whose selector generates no
+	 * content, or a ::selection -- keeps the percentage resolution below,
+	 * against the box it would hang in.
 	 */
 	[kUsedValue](property: string, computed: string): string {
+		const originating = this[kElement];
+		const manager = this[kManager];
+		if (originating && manager) {
+			// The flush before the node lookup: the composition pass that runs
+			// under it is what creates a pseudo-element's node, so a lookup
+			// taken first would answer "no box" for a box one render away.
+			manager.usedRect(originating);
+			const node = pseudoElement<Element>(
+				originating,
+				this[kPseudoElement],
+			);
+			if (node) {
+				return measure(this[kBoxViewOf](node), property, computed);
+			}
+		}
 		if (!computed.endsWith("%")) {
 			return computed;
 		}
@@ -7193,6 +7227,30 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
 		return usedLength((parseFloat(computed) / 100) * basis);
+	}
+
+	/**
+	 * This declaration as the measurement arithmetic reads it: the same
+	 * cascade answers, with the pseudo-element's own node standing where the
+	 * element stands -- its rect is the box being measured, and its flat-tree
+	 * parent is the originating element percentages resolve against. One view
+	 * per node: composition may retire a node and make another, and a view
+	 * naming the old one would measure a rect no layout holds.
+	 */
+	[kBoxViewOf](node: Element): MeasuredDeclaration {
+		let view = this[kBoxView];
+		if (!view || view[kElement] !== node) {
+			view = {
+				[kElement]: node,
+				[kManager]: this[kManager],
+				computedValueOf: (property: string): string =>
+					this.nodeStyle.computedValueOf(property),
+				getPropertyValue: (property: string): string =>
+					this.getPropertyValue(property),
+			};
+			this[kBoxView] = view;
+		}
+		return view;
 	}
 
 	override setProperty(): void {
