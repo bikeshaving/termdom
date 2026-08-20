@@ -35,7 +35,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm 11.5.1+, and staged publishing 11.15.0+
       # (libuild stage checks and says so). libuild spawns `npm`, so the
@@ -62,4 +61,6 @@ jobs:
             exit 1
           fi
 
-      - run: npx libuild stage --provenance
+      # Provenance comes from the OIDC attestation; the trusted publisher
+      # mints the token, so no npm secret exists anywhere in this repo.
+      - run: npx libuild stage

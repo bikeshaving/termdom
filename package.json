@@ -73,7 +73,7 @@
   "devDependencies": {
     "@b9g/crank": "^0.7.11",
     "@b9g/eslint-config": "^0.1.0",
-    "@b9g/libuild": "^0.2.16",
+    "@b9g/libuild": "^0.2.21",
     "@eslint/js": "^9.39.5",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tanstack/table-core": "^8.21.3",
