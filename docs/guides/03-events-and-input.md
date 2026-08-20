@@ -3,7 +3,10 @@ title: Events and Input
 description: Keyboard, mouse, focus, form controls, and selection.
 ---
 
-Input arrives as DOM events, through `addEventListener`.
+Input arrives as DOM events, through `addEventListener`. An event the engine
+fires -- decoded input, a resize, a focus move -- reads `isTrusted` true; an
+event an application constructs and dispatches itself reads false, so a
+listener can tell the two apart.
 
 ## Keyboard
 
@@ -103,11 +106,22 @@ value.
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field. Selection is styled
-through `::selection`. Copying is explicit:
-`navigator.clipboard.writeText(text)` carries the text to the system
-clipboard over OSC 52, which travels in-band and works across SSH. The
-terminal's own select-to-copy remains available as Shift+drag, which
-bypasses mouse reporting.
+through `::selection`. `getSelection().modify(alter, direction,
+granularity)` moves the caret or drags the focus by character, word, line
+or line boundary -- the line granularities read the laid-out lines, so a
+soft wrap counts as a line.
+
+Copying is explicit: `navigator.clipboard.writeText(text)` carries the text
+to the system clipboard over OSC 52, which travels in-band and works across
+SSH, and `readText()` asks the terminal for the clipboard the same way.
+Both are reachable only from inside the dispatch of a trusted event the user
+caused -- a keystroke, a mouse press or release, a click, a paste -- and
+reject with a `NotAllowedError` otherwise; `navigator.userActivation` reports
+the same state. This is stricter than a browser, whose activation window is a
+span of time and survives an `await`: here a handler that awaits before
+reaching for the clipboard is already too late. Most terminals refuse clipboard reads, and `readText()` rejects
+when one does not answer. The terminal's own select-to-copy remains
+available as Shift+drag, which bypasses mouse reporting.
 
 ## Scrolling and the camera
 

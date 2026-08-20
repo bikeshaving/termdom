@@ -36,9 +36,11 @@ these members are wired to the terminal:
 - `matchMedia()` — live `MediaQueryList`s, re-evaluated on resize
 - `resize` — fired at the window when the terminal size changes, before the
   `MediaQueryList` `change` events for the same resize; `onresize` works too
-- `getSelection()` — the document selection
-- `navigator.clipboard.writeText()` — the system clipboard, over OSC 52;
-  `readText()` rejects, since terminals do not answer clipboard reads
+- `getSelection()` — the document selection, `modify()` included
+- `navigator.clipboard.writeText()` / `readText()` — the system clipboard,
+  over OSC 52, and only from inside the dispatch of a trusted user event;
+  `readText()` rejects if the terminal does not answer the query
+- `navigator.userActivation` — `hasBeenActive` and `isActive`
 - `MutationObserver`, `ResizeObserver`, `IntersectionObserver` — entries
   are delivered per rendered frame
 - `close()` — ends the session (detailed below)

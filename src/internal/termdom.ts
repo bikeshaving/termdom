@@ -77,6 +77,24 @@ function base64OfText(text: string): string {
 	return out;
 }
 
+/** The inverse: what OSC 52 answers a clipboard query with, as text. */
+function textOfBase64(payload: string): string {
+	const digits = payload.replace(/[^A-Za-z0-9+/]/g, "");
+	const bytes = new Uint8Array((digits.length * 3) >> 2);
+	let at = 0;
+	let bits = 0;
+	let held = 0;
+	for (const digit of digits) {
+		held = (held << 6) | BASE64_ALPHABET.indexOf(digit);
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[at++] = (held >> bits) & 0xff;
+		}
+	}
+	return new TextDecoder().decode(bytes.subarray(0, at));
+}
+
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
@@ -115,6 +133,66 @@ function upgradeControlsIn(root: Element): void {
 // closing over one.
 const engines = new WeakMap<object, TermDOM>();
 
+/** The engine an event target belongs to, if it is mounted in one. */
+function engineOfTarget(target: unknown): TermDOM | undefined {
+	const node = target as Node | null;
+	if (!node || typeof node.nodeType !== "number") {
+		return undefined;
+	}
+	const document =
+		node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument;
+	return document === null ? undefined : engines.get(document);
+}
+
+/**
+ * The keys that are a modifier and nothing else, which a user pressing them
+ * has not yet asked for anything with.
+ */
+const BARE_MODIFIER_KEYS = new Set([
+	"Alt",
+	"AltGraph",
+	"CapsLock",
+	"Control",
+	"Fn",
+	"FnLock",
+	"Hyper",
+	"Meta",
+	"NumLock",
+	"ScrollLock",
+	"Shift",
+	"Super",
+	"Symbol",
+	"SymbolLock",
+]);
+
+/**
+ * Whether an event is activation-triggering: the user asking for something,
+ * rather than something happening to them.
+ *
+ * These are the spec's -- a key that is neither Escape nor a bare modifier, a
+ * mouse press, release or click. A resize, a focus move, pointer motion and a
+ * wheel tick are the user agent's events too, and none of them is a request.
+ * A paste arrives as the beforeinput its text rides in on, which is the event
+ * a listener sees that gesture as.
+ */
+function isActivationTriggering(event: DOM.Event): boolean {
+	switch (event.type) {
+		case "keydown": {
+			const key = (event as DOM.KeyboardEvent).key;
+			return key !== "Escape" && !BARE_MODIFIER_KEYS.has(key);
+		}
+		case "mousedown":
+		case "mouseup":
+		case "click":
+		case "pointerup":
+			return true;
+		case "beforeinput":
+			return (event as DOM.InputEvent).inputType === "insertFromPaste";
+		default:
+			return false;
+	}
+}
+
 /**
  * Fire an event as the user agent.
  *
@@ -123,12 +201,33 @@ const engines = new WeakMap<object, TermDOM>();
  * made -- so it is the user agent's, and reads isTrusted true. Provenance is
  * decided here, once, for all of them: an event an application constructs and
  * hands to dispatchEvent() is script's, and is never trusted.
+ *
+ * An activation-triggering event also holds user activation open for as long
+ * as its dispatch runs, which is what the clipboard asks about.
  */
 function fireAsUserAgent(target: unknown, event: unknown): boolean {
-	return DOM.dispatchAsUserAgent(
-		target as DOM.EventTarget,
-		event as DOM.Event,
-	);
+	const self = engineOfTarget(target);
+	if (self === undefined || !isActivationTriggering(event as DOM.Event)) {
+		return DOM.dispatchAsUserAgent(
+			target as DOM.EventTarget,
+			event as DOM.Event,
+		);
+	}
+	self[kActivationDepth]++;
+	self[kEverActivated] = true;
+	try {
+		return DOM.dispatchAsUserAgent(
+			target as DOM.EventTarget,
+			event as DOM.Event,
+		);
+	} finally {
+		self[kActivationDepth]--;
+	}
+}
+
+/** Whether an activation-triggering event is being dispatched right now. */
+function isUserActive(self: TermDOM): boolean {
+	return self[kActivationDepth] > 0;
 }
 
 export {
@@ -571,6 +670,8 @@ const kPrototypesInstalled = Symbol("prototypesInstalled");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kInputGeneration = Symbol("inputGeneration");
+const kActivationDepth = Symbol("activationDepth");
+const kEverActivated = Symbol("everActivated");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
@@ -687,6 +788,13 @@ export class TermDOM {
 	// change without mutations; repaint-and-diff is what detects them, so
 	// every input path bumps this and the clean-frame skip compares it.
 	declare [kInputGeneration]: number;
+	/**
+	 * How many activation-triggering events are being dispatched right now,
+	 * and whether one ever has been. What only a user may ask for is asked of
+	 * these, and nothing else writes them.
+	 */
+	declare [kActivationDepth]: number;
+	declare [kEverActivated]: boolean;
 	declare [kLastFrameInputGeneration]: number;
 	declare [kLastFrameActiveElement]: Element | null;
 	declare [kLastFrameStructuralGeneration]: number;
@@ -798,6 +906,8 @@ export class TermDOM {
 		this[kLastFrameScrollTop] = null;
 		this[kLastFrameEpoch] = -1;
 		this[kInputGeneration] = 0;
+		this[kActivationDepth] = 0;
+		this[kEverActivated] = false;
 		this[kLastFrameInputGeneration] = -1;
 		this[kLastFrameActiveElement] = null;
 		this[kLastFrameStructuralGeneration] = -1;
@@ -2202,31 +2312,71 @@ function installWindowExtensions(
 	// navigator.clipboard: writeText() carries the text to the system
 	// clipboard over OSC 52, which travels in-band -- across SSH too.
 	// Terminals without OSC 52 ignore it; there is no way to know, so the
-	// promise resolves when the transport has the bytes. readText()
-	// rejects: terminals do not answer clipboard queries to untrusted
-	// programs, and pretending otherwise would hang.
+	// promise resolves when the transport has the bytes. readText() asks for
+	// the clipboard the same way (OSC 52 with `?` for the payload) and
+	// resolves with what comes back.
+	//
+	// Both are the user's to grant, so both are reachable only from a trusted
+	// activation-triggering event while it is being dispatched -- a keystroke,
+	// a mouse press or release, a click, a paste. This is stricter than a
+	// browser on purpose: a browser's transient activation outlives the
+	// dispatch that granted it, because its window is a span of time, so a
+	// handler there may await and still write the clipboard. Here the gate is
+	// the dispatch itself, and the clipboard is reachable only synchronously
+	// within it. A timer, a microtask, a resolved fetch and an event an
+	// application dispatched itself are all outside.
+	const clipboardDenied = (why: string): Promise<never> =>
+		Promise.reject(
+			new (window as any).DOMException(why, "NotAllowedError"),
+		);
 	Object.defineProperty(window.navigator, "clipboard", {
 		value: {
 			writeText: (text: string): Promise<void> => {
 				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
-					return Promise.reject(
-						new (window as any).DOMException(
-							"clipboard requires an attached interactive terminal",
-							"NotAllowedError",
-						),
+					return clipboardDenied(
+						"clipboard requires an attached interactive terminal",
 					);
+				}
+				if (!isUserActive(termDOM)) {
+					return clipboardDenied("clipboard writes need a user gesture");
 				}
 				return termDOM[kSession].write(
 					`\x1b]52;c;${base64OfText(String(text))}\x07`,
 				);
 			},
-			readText: (): Promise<string> =>
-				Promise.reject(
-					new (window as any).DOMException(
-						"the terminal does not expose clipboard reads",
-						"NotAllowedError",
-					),
-				),
+			readText: async (): Promise<string> => {
+				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
+					return clipboardDenied(
+						"clipboard requires an attached interactive terminal",
+					);
+				}
+				if (!isUserActive(termDOM)) {
+					return clipboardDenied("clipboard reads need a user gesture");
+				}
+				const payload = await termDOM[kSession].queryClipboard();
+				if (payload === null) {
+					// Silence is a refusal: most terminals gate clipboard reads on
+					// their own configuration and answer nothing when they are off.
+					return clipboardDenied(
+						"the terminal did not answer the clipboard query",
+					);
+				}
+				return textOfBase64(payload);
+			},
+		},
+		configurable: true,
+	});
+
+	// navigator.userActivation: the same two questions the gate above asks,
+	// as the page can ask them.
+	Object.defineProperty(window.navigator, "userActivation", {
+		value: {
+			get hasBeenActive(): boolean {
+				return termDOM[kEverActivated];
+			},
+			get isActive(): boolean {
+				return isUserActive(termDOM);
+			},
 		},
 		configurable: true,
 	});
@@ -3820,10 +3970,19 @@ function dispatchGlobalKeyboardEvent(
 				(keyName === "Enter" && activation.enter) ||
 				(key === " " && activation.space)
 			) {
-				// click() rather than a synthesized event: it runs the element's
-				// full activation behavior, so a submit button submits its form
-				// and a link follows its href, exactly as a mouse click would.
-				(targetElement as HTMLElement).click();
+				// The user agent's own click, not click()'s synthetic one: it
+				// is trusted, as the click a browser generates for keyboard
+				// activation is, and dispatching it runs the element's full
+				// activation behavior, so a submit button submits its form and
+				// a link follows its href, exactly as a mouse click would.
+				fireAsUserAgent(
+					targetElement,
+					new self.window.PointerEvent("click", {
+						bubbles: true,
+						cancelable: true,
+						composed: true,
+					}),
+				);
 				render(self);
 			}
 		}
