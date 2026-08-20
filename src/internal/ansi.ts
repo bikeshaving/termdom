@@ -1045,6 +1045,77 @@ export interface WidthMeasurer {
 	 * column. Returns the bytes the frame appends after the glyph.
 	 */
 	probe(cluster: string, run: number, column: number, width: number): string;
+	/**
+	 * The margin guard turned this cluster away: it was painted too near the
+	 * last column for its answer to be readable.
+	 */
+	defer(cluster: string): void;
+	/**
+	 * Clusters the margin has starved: deferred, and never asked about anywhere
+	 * else either. Right-aligned text puts the same glyphs against the last
+	 * column every time it paints them, so in place they would wait forever.
+	 * The frame measures these somewhere with room instead; a cluster leaves
+	 * the set when it is probed.
+	 */
+	starved(): ReadonlySet<string>;
+}
+
+/**
+ * The columns a cluster's residue can reach: the widest advance a probe's
+ * reply is believed to describe, so the widest one a probe can leave behind.
+ */
+const PROBE_RESIDUE_COLUMNS = 4;
+
+/**
+ * Where a frame can paint a probe without being seen and without the margin in
+ * the way: a column in the frame's FIRST painted row whose next four columns
+ * the row's own content covers, far enough from the last column that the reply
+ * is unambiguous.
+ *
+ * The first painted row is the only candidate. Emission runs top to bottom and
+ * never moves the cursor back up, so a probe train on any later row could not
+ * be overwritten by the content that follows it.
+ */
+function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
+	const {rows, cols, char, border} = grid;
+	if (cols <= PROBE_RESIDUE_COLUMNS) {
+		return null;
+	}
+
+	for (let row = 0; row < rows; row++) {
+		const rowStart = row * cols;
+		let spanStart = -1;
+		let col = 0;
+		let rowHasContent = false;
+
+		while (col < cols) {
+			const index = rowStart + col;
+			if (char[index] === 0) {
+				spanStart = -1;
+				col++;
+				continue;
+			}
+			rowHasContent = true;
+			if (spanStart < 0) {
+				spanStart = col;
+			}
+			// A wide glyph covers its continuation column too, which the grid
+			// leaves empty: the span runs on across it.
+			col += border[index] > 0 ? 1 : Math.max(1, grid.widthAt(index));
+			if (
+				col - spanStart >= PROBE_RESIDUE_COLUMNS &&
+				spanStart + PROBE_RESIDUE_COLUMNS < cols
+			) {
+				return {row, col: spanStart};
+			}
+		}
+
+		if (rowHasContent) {
+			return null;
+		}
+	}
+
+	return null;
 }
 
 /**
@@ -1079,6 +1150,38 @@ function generateANSI(
 	const measuring = measurer !== undefined;
 	let run = 0;
 	let unknownInRow = 0;
+
+	// Clusters the margin has starved are asked about off to the side, before
+	// the frame paints anything: the probe train goes to a cell the first
+	// painted row covers, and that row's own content lands on top of it in this
+	// same write, so nothing of it is ever on screen.
+	if (measuring) {
+		const starving = measurer!.starved();
+		if (starving.size > 0) {
+			const cell = safeProbeCell(grid);
+			if (cell !== null) {
+				const [moveSeq, movedRow] = moveCursor(0, 0, cell.row, 0);
+				output += moveSeq;
+				cursorRow = movedRow;
+				cursorCol = 0;
+				// probe() takes the cluster out of the set being iterated.
+				for (const cluster of [...starving]) {
+					output += "\r";
+					if (cell.col > 0) {
+						output += `\x1b[${cell.col}C`; // CUF
+					}
+					// Each probe is reached by naming its column outright, so
+					// no train glyph's advance carries into the next.
+					run++;
+					output +=
+						cluster +
+						measurer!.probe(cluster, run, cell.col, stringWidth(cluster));
+				}
+				output += "\r";
+				run++;
+			}
+		}
+	}
 
 	for (let row = 0; row < rows; row++) {
 		const rowStart = row * cols;
@@ -1182,8 +1285,13 @@ function generateANSI(
 					// pushed the real cursor past the predicted one. Defer --
 					// the cluster keeps its place in line and gets measured
 					// wherever it next appears with room.
-					if (col + 4 + 2 * unknownInRow < cols) {
+					// Defer -- the cluster keeps its place in line and gets
+					// measured wherever it next appears with room -- or, if it
+					// never has room, on a later frame's probe train.
+					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
 						output += measurer!.probe(glyph, run, col, width);
+					} else {
+						measurer!.defer(glyph);
 					}
 					unknownInRow++;
 				}
@@ -1630,6 +1738,7 @@ const kHasSavedCursor = Symbol("hasSavedCursor");
 const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
 const kEndFrame = Symbol("endFrame");
+const kForgotTopRow = Symbol("forgotTopRow");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
 
@@ -1654,12 +1763,16 @@ export class Screen {
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
 	declare [kNeedsScreenReset]: boolean;
+	// A row of the previous frame was dropped for a probe train to stand on:
+	// the next frame paints it again, though the document has not moved.
+	declare [kForgotTopRow]: boolean;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
 	declare [kColorDepth]: ColorDepth;
 
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
+		this[kForgotTopRow] = false;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1740,6 +1853,34 @@ export class Screen {
 	 * describe, or a measurement corrected one it did. The next frame paints
 	 * every cell again, in place.
 	 */
+	/**
+	 * Forget the topmost row the previous frame painted, so the next frame
+	 * paints it again.
+	 *
+	 * A probe train needs a row whose own content lands on top of it, and a
+	 * document that has stopped changing offers none: the frames it produces
+	 * diff to nothing at all. This is the smallest repaint that gives the
+	 * train a place to stand -- one row, no erase, and cells identical to the
+	 * ones already on screen.
+	 */
+	repaintTopRow(): void {
+		const prev = this[kPrev];
+		if (prev === null) {
+			return;
+		}
+		const cols = prev.cols;
+		for (let row = 0; row < prev.rows; row++) {
+			const rowStart = row * cols;
+			for (let col = 0; col < cols; col++) {
+				if (prev.char[rowStart + col] !== 0) {
+					prev.clearRange(rowStart, rowStart + cols);
+					this[kForgotTopRow] = true;
+					return;
+				}
+			}
+		}
+	}
+
 	repaintAll(): void {
 		this[kSpare] = this[kPrev];
 		this[kPrev] = null;
@@ -1762,7 +1903,11 @@ export class Screen {
 
 	/** A reset or clear is pending: the next frame must actually paint. */
 	get needsRepaint(): boolean {
-		return this[kNeedsScreenReset] || this[kNeedsFullClear];
+		return (
+			this[kNeedsScreenReset] ||
+			this[kNeedsFullClear] ||
+			this[kForgotTopRow]
+		);
 	}
 
 	/**
@@ -1887,6 +2032,9 @@ export class Screen {
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
+		// The forgotten row is being painted by this frame, whatever else it
+		// carries; there is nothing left to remember.
+		this[kForgotTopRow] = false;
 
 		const cols = this[kCols];
 		const next = takeGrid(this, frameRows, cols);

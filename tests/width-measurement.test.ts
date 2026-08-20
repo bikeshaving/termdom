@@ -22,13 +22,15 @@ import {
 } from "../src/internal/text.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
-function recordingMeasurer(): {
+function recordingMeasurer(starved = new Set<string>()): {
 	probes: Array<{
 		cluster: string;
 		run: number;
 		column: number;
 		width: number;
 	}>;
+	deferred: string[];
+	starved: Set<string>;
 	measurer: WidthMeasurer;
 } {
 	const probes: Array<{
@@ -37,13 +39,21 @@ function recordingMeasurer(): {
 		column: number;
 		width: number;
 	}> = [];
+	const deferred: string[] = [];
 	const asked = new Set<string>();
 	return {
 		probes,
+		deferred,
+		starved,
 		measurer: {
 			wants: (cluster) => !asked.has(cluster),
+			starved: () => starved,
+			defer: (cluster) => {
+				deferred.push(cluster);
+			},
 			probe: (cluster, run, column, width) => {
 				asked.add(cluster);
+				starved.delete(cluster);
 				probes.push({cluster, run, column, width});
 				return "\x1b[6n";
 			},
@@ -234,6 +244,75 @@ test("a cluster at the right margin is left for a frame with room", () => {
 
 	expect(probes.length).toBe(1);
 	expect(probes[0].column).toBe(0);
+});
+
+test("a cluster the margin turns away is offered to the next frame's train", () => {
+	const {probes, deferred, measurer} = recordingMeasurer();
+	emit(1, 10, [[8, "\u{1F31F}"]], measurer); // 🌟, flush with the margin
+
+	expect(probes).toEqual([]);
+	expect(deferred).toEqual(["\u{1F31F}"]);
+});
+
+test("a starved cluster rides a probe train the frame's own content covers", () => {
+	const cluster = "\uFEE0"; // ﻠ, shaped lam
+	// A row whose content starts at column 4 and runs to the margin: the train
+	// goes to column 4, and those columns are painted over as the row emits.
+	const cells: Array<[number, string]> = [];
+	for (let col = 4; col < 20; col++) {
+		cells.push([col, "-"]);
+	}
+	cells.push([20, "x"]);
+
+	const {probes, measurer} = recordingMeasurer(new Set([cluster]));
+	const output = emit(2, 20, cells, measurer);
+
+	expect(probes.length).toBe(1);
+	expect(probes[0].cluster).toBe(cluster);
+	expect(probes[0].column).toBe(4);
+	// Asked before anything is painted, at a column the row then overwrites.
+	expect(output.indexOf(`${cluster}\x1b[6n`)).toBe(output.indexOf(cluster));
+	expect(output.indexOf(cluster)).toBeLessThan(output.indexOf("-"));
+	expect(output).toContain(`\r\x1b[4C${cluster}\x1b[6n\r`);
+	// One train, and the frame it rode paints the row it stood on.
+	expect(output.split(cluster).length - 1).toBe(1);
+});
+
+test("nothing starving costs the frame nothing", () => {
+	const cells: Array<[number, string]> = [];
+	for (let col = 0; col < 20; col++) {
+		cells.push([col, "-"]);
+	}
+	const {probes, measurer} = recordingMeasurer();
+	const output = emit(1, 20, cells, measurer);
+
+	expect(probes).toEqual([]);
+	expect(output).not.toContain("\x1b[6n");
+});
+
+test("a starved cluster waits for a frame with a cell to hide in", () => {
+	// Nothing painted: there is no row whose content could cover a probe, so
+	// the train stays behind rather than writing where it would be seen.
+	const cluster = "\uFEE1"; // ﻡ, shaped meem, isolated
+	const starved = new Set([cluster]);
+
+	const first = recordingMeasurer(starved);
+	emit(2, 20, [], first.measurer);
+	expect(first.probes).toEqual([]);
+	expect(starved.has(cluster)).toBe(true);
+
+	// A row too short to cover the residue is no better.
+	const second = recordingMeasurer(starved);
+	emit(
+		1,
+		20,
+		[
+			[0, "-"],
+			[1, "-"],
+		],
+		second.measurer,
+	);
+	expect(second.probes).toEqual([]);
 });
 
 test("clusters reached by advancing share a run; a cursor move starts a new one", () => {
@@ -479,6 +558,65 @@ test("a burst of replies is matched to its probes in order", async () => {
 	expect(clusterAdvance(first)).toBe(1);
 	expect(clusterAdvance(second)).toBe(undefined);
 	expect(stringWidth(second)).toBe(2);
+
+	dom.dispose();
+});
+
+test("right-aligned text against the margin is measured anyway", async () => {
+	// The rtl example's case: an Arabic presentation form sits in the last
+	// column of a right-aligned line every frame, where its answer would be
+	// unreadable. Deferred in place, it would go unmeasured for the session
+	// and the box around it would stay one cell out.
+	const cluster = "\uFEE0"; // ﻠ, shaped lam
+	expect(stringWidth(cluster)).toBe(1);
+
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	// The train probes from column 3, where the line starts; two cells where
+	// the tables said one puts the cursor in column 6, 1-based.
+	const script = scriptTerminal(terminal, () => "\x1b[1;6R");
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"text-align:right\">" +
+		`abcdefghijklmnop<span id="e">${cluster}</span></div>`;
+
+	await nextFrame(dom);
+	// Past the wait a starved cluster gives the document to paint on its own.
+	await settle(800);
+
+	expect(clusterAdvance(cluster)).toBe(2);
+	const span = dom.document.getElementById("e")!;
+	expect(span.getBoundingClientRect().width).toBe(2);
+
+	// Asked once, and the frames that follow the correction ask nothing more:
+	// the train does not ride again.
+	const asked = script.probeCount();
+	dom.document.body.innerHTML +=
+		`<div style="text-align:right">${cluster}</div>`;
+	await nextFrame(dom);
+	await settle();
+	expect(script.probeCount()).toBe(asked);
+
+	dom.dispose();
+});
+
+test("the probe train leaves the screen as the frame's content dictates", async () => {
+	const cluster = "\uFEE2"; // ﻢ, shaped meem, final
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const script = scriptTerminal(terminal, () => "\x1b[1;5R");
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<div style="text-align:right">abcdefghijklmnop${cluster}</div>`;
+
+	await nextFrame(dom);
+	await settle(800);
+
+	// The train went out.
+	expect(script.written.join("")).toContain(`${cluster}\x1b[6n`);
+	// And the emulator, which saw everything but the queries, shows the line
+	// the document asked for: the probe wrote where the content lands.
+	expect(terminal.getPlainText().split("\n")[0]).toBe(
+		`   abcdefghijklmnop${cluster}`,
+	);
 
 	dom.dispose();
 });
