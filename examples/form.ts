@@ -23,7 +23,7 @@ const form = document.createElement("div");
 form.className = "form";
 form.innerHTML = `
   <div class="title">New profile</div>
-  <div class="field"><div class="label">Name</div><input id="name" type="text"></div>
+  <div class="field"><div class="label">Name</div><input id="name" type="text" autofocus></div>
   <div class="field"><div class="label">Email</div><input id="email" type="text"></div>
   <div class="field"><div class="label">Handle</div><input id="handle" type="text"></div>
   <div class="preview" id="preview"></div>
@@ -64,5 +64,3 @@ document.addEventListener("keydown", (event: Event) => {
 });
 
 updatePreview();
-fields[0].focus();
-await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));

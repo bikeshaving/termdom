@@ -45,7 +45,7 @@ editor.className = "editor";
 editor.innerHTML = `
   <div class="title">Compose commit</div>
   <div class="row"><div class="label">Type</div><select id="type"><option value="feat">feat</option><option value="fix">fix</option><option value="docs">docs</option><option value="refactor">refactor</option><option value="test">test</option><option value="chore">chore</option></select><div class="counter" id="counter"></div></div>
-  <div class="row"><div class="label">Subject</div><input id="subject" placeholder="imperative, ≤50 chars, no period"></div>
+  <div class="row"><div class="label">Subject</div><input id="subject" autofocus placeholder="imperative, ≤50 chars, no period"></div>
   <div class="row"><div class="label">Body</div><textarea id="body" rows="5" cols="60" placeholder="What and why -- wrapped for you at the field edge; blank line between paragraphs."></textarea></div>
   <div class="status" id="status"></div>
   <div class="hint">tab moves · ↑/↓ changes type / walks lines · ctrl+c quits</div>
@@ -74,5 +74,3 @@ type.addEventListener("change", update);
 subject.addEventListener("input", update);
 body.addEventListener("input", update);
 update();
-
-subject.focus();

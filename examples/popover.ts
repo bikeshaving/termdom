@@ -68,7 +68,7 @@ document.body.innerHTML = `
 		<div>This one stacked on the Help menu.</div>
 	</div>
 	<div id="saved" popover="manual">Saved.</div>
-	<textarea placeholder="type here, then explore the menus…"></textarea>
+	<textarea autofocus placeholder="type here, then explore the menus…"></textarea>
 	<div class="status"> Tab to the menu bar · Enter opens · Escape or a click closes</div>
 `;
 
@@ -106,5 +106,3 @@ document.addEventListener("click", (event) => {
 	}
 	editor.focus();
 });
-
-editor.focus();

@@ -193,9 +193,6 @@ const article = document.createElement("article");
 article.innerHTML = html;
 document.body.appendChild(article);
 
-// Let layout settle and the first frame paint before measuring the page.
-await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
-
 // Flow mode: a page that fits (or output that isn't a terminal, e.g. piped to a
 // file) just prints and exits -- dispose pays the whole document out to the
 // terminal's scrollback on the way.
