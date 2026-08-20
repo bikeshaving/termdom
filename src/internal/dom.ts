@@ -27,6 +27,7 @@ import {
 	stringWidth,
 } from "./text.js";
 import {
+	DETAILS_UA_STYLES,
 	FIELD_UA_STYLES,
 	METER_UA_STYLES,
 	PROGRESS_UA_STYLES,
@@ -8589,6 +8590,16 @@ const SHADOW_HOST_NAMES = new Set([
 	"span",
 ]);
 
+/**
+ * A user-agent tree's own slot distribution: given one of the tree's slots,
+ * the host children it projects, computed fresh from the light tree on every
+ * assignment pass. The details' first-summary/rest split is such a rule --
+ * expressible neither as named assignment (no name separates the first
+ * summary from the second) nor as manual assignment (whose stored lists
+ * would need tending on every child mutation).
+ */
+const kUASlotting = Symbol("UA slot distribution");
+
 interface ShadowRootInit {
 	customElementRegistry?: unknown;
 	mode: "open" | "closed";
@@ -8618,6 +8629,7 @@ export class ShadowRoot extends DocumentFragment {
 	[kUAInternal]: boolean;
 	[kDelegatesFocus]: boolean;
 	[kSlotAssignment]: "named" | "manual";
+	[kUASlotting]: ((slot: object) => Slottable[]) | null;
 	[kClonable]: boolean;
 	[kSerializable]: boolean;
 	[kDeclarative]: boolean;
@@ -8629,6 +8641,7 @@ export class ShadowRoot extends DocumentFragment {
 		this[kUAInternal] = false;
 		this[kDelegatesFocus] = false;
 		this[kSlotAssignment] = "named";
+		this[kUASlotting] = null;
 		this[kClonable] = false;
 		this[kSerializable] = false;
 		this[kDeclarative] = false;
@@ -8942,6 +8955,10 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 	}
 	const shadow = root as ShadowRoot;
 	const host = shadow[kHost] as Element;
+	const slotting = shadow[kUASlotting];
+	if (slotting !== null) {
+		return slotting(slot);
+	}
 	if (shadow[kSlotAssignment] === "manual") {
 		for (const slottable of slot[kManualAssignment]) {
 			if (slottable[kParent] === host) {
@@ -9788,21 +9805,74 @@ export class HTMLDataListElement extends HTMLElement {
 const kToggleQueued = Symbol("toggleQueued");
 const kStateAtQueue = Symbol("stateAtQueue");
 
+const kContent = Symbol("content");
+
 /**
  * A disclosure, whose open attribute is its whole state.
  *
  * The toggle event is queued rather than fired where the attribute changes,
  * so a run of changes inside one turn reports the state it settled on.
+ *
+ * It renders a closed shadow tree it owns, as the form controls do: a slot
+ * the first summary child projects through, and a content container
+ * (part=details-content) whose slot takes every other child -- text nodes
+ * included, which no light-tree selector could reach. Hiding a closed
+ * details' body is then one display flip on that container.
  */
 export class HTMLDetailsElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kToggleQueued] = false;
 		this[kStateAtQueue] = "closed";
+		this[kEngine] = null;
+		this[kContent] = null;
 	}
 
 	declare [kToggleQueued]: boolean;
 	declare [kStateAtQueue]: string;
+
+	declare [kEngine]: UAEngine | null;
+	declare [kContent]: UAElement | null;
+
+	[kUAUpgrade](): void {
+		if (this[kEngine] !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) {
+			return;
+		}
+		this[kEngine] = engine;
+		const document = uaDocumentOf(this);
+		const root = buildUARoot(this, engine, DETAILS_UA_STYLES);
+		const shadow = root as unknown as ShadowRoot;
+		const summarySlot = document.createElement("slot");
+		const content = document.createElement("div");
+		content.setAttribute("part", "details-content");
+		content.appendChild(document.createElement("slot"));
+		// The distribution must be in place before the slots enter the tree:
+		// inserting each one runs the assignment pass that fills it.
+		shadow[kSlotAssignment] = "manual";
+		shadow[kUASlotting] = (slot) =>
+			detailsSlottables(this, slot === summarySlot);
+		root.appendChild(summarySlot);
+		root.appendChild(content);
+		this[kContent] = content;
+		this[kUAReconcile]();
+	}
+
+	/** Show or hide the content container from the `open` attribute. */
+	[kUAReconcile](): void {
+		const content = this[kContent];
+		if (content === null) {
+			return;
+		}
+		const display = this.hasAttribute("open") ? "block" : "none";
+		if (content.style.display !== display) {
+			content.style.display = display;
+		}
+	}
 
 	override [kAttributeChanged](
 		localName: string,
@@ -9837,6 +9907,27 @@ export class HTMLDetailsElement extends HTMLElement {
 		}
 	}
 }
+
+/**
+ * The light children a details' UA slots project: the first summary element
+ * child to the summary slot, every other slottable child to the content
+ * slot. Recomputed from the child list on each assignment pass, which the
+ * tree mutation algorithms run on every insertion and removal.
+ */
+function detailsSlottables(
+	host: HTMLDetailsElement,
+	toSummary: boolean,
+): Slottable[] {
+	const summary = firstChildElement(host, "summary");
+	const result: Slottable[] = [];
+	for (let child = host[kFirstChild]; child !== null; child = child[kNext]) {
+		if (isSlottable(child) && (child === summary) === toSummary) {
+			result.push(child as Slottable);
+		}
+	}
+	return result;
+}
+
 /**
  * A summary opens and closes the details it is the summary of.
  *

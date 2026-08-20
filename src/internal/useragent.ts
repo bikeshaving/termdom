@@ -1068,7 +1068,6 @@ export const UA_DOCUMENT_STYLES = `
 		background-color: Canvas;
 	}
 	:popover-open::backdrop { background-color: transparent; }
-	details:not([open]) > :not(summary) { display: none; }
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }
 	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
@@ -1105,6 +1104,17 @@ export const FIELD_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
+`;
+
+/**
+ * The UA stylesheet of a details' internal shadow tree. The summary projects
+ * through a bare slot; everything else projects into the content container,
+ * a block whose display the disclosure flips inline from its `open` state --
+ * which is what hides a closed details' body, text children included, with
+ * no rule reaching into the light tree.
+ */
+export const DETAILS_UA_STYLES = `
+	[part="details-content"] { display: block; }
 `;
 
 /**
