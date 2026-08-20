@@ -71,7 +71,7 @@ setInterval(() => {
 - **Text** CJK, emoji, and combining characters take correct widths; Hebrew
   and Arabic render in visual order with contextual shaping.
 - **Selection** Drag to select, styled with `::selection`; the caret moves
-  by grapheme.
+  by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
 - **Fullscreen** `Element.requestFullscreen()` renders to the alternate
   screen; exiting restores the shell and its scrollback.
 
