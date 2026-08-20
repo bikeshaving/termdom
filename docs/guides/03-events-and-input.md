@@ -19,34 +19,25 @@ Escape sequences from the terminal are decoded into `KeyboardEvent`s with
 
 ### What a terminal can report
 
-A terminal delivers bytes, not key states, and several distinct keystrokes
-arrive as the same byte. These limits come from the terminal, not from
-TermDOM, and they apply to every terminal application.
+A terminal sends bytes, not key states, and some keystrokes send the same
+byte. These limits apply to every terminal application:
 
-- **`Shift+Enter` cannot be reported.** It sends the same byte as `Enter`.
-  Where an application already binds `Enter`, bind `Ctrl+J` for the second
-  action: that is a distinct byte, and it is what the chat example uses for a
-  soft newline.
-- **`Enter` is `Ctrl+M`, and `Tab` is `Ctrl+I`.** One byte each, so the named
-  key is what you get. `Ctrl+M` and `Ctrl+I` never arrive as chords.
-- **`Ctrl+C` never reaches the document.** It is the interrupt, handled before
-  decoding.
-- **`Ctrl` with a letter arrives as one byte**, so `Ctrl+Shift+A` is
-  indistinguishable from `Ctrl+A`, and `ctrlKey` is never combined with
-  `shiftKey` for letters.
-- **There is no `keyup` for a held key, and no auto-repeat state.** A key
-  press produces one `keydown`, one `keypress` where the key is printable, and
-  one `keyup`. `event.repeat` is always false.
-- **Modifier keys alone are invisible.** Pressing `Shift` on its own sends
-  nothing, so there is no event for it.
-- **The function and arrow keys carry modifiers only where the terminal
-  encodes them**, which most do for `Ctrl` and `Alt` but not uniformly.
+- `Shift+Enter` sends the same byte as `Enter`. Bind `Ctrl+J` for the
+  second action instead.
+- `Enter` is the byte for `Ctrl+M` and `Tab` for `Ctrl+I`; the named key
+  is what you get, and those chords never arrive.
+- `Ctrl+C` is the interrupt; it never reaches the document.
+- `Ctrl+Shift+letter` is indistinguishable from `Ctrl+letter`.
+- A key press is one `keydown`, one `keypress` if printable, one `keyup`.
+  There is no held-key state and `event.repeat` is always false.
+- A modifier pressed on its own sends nothing.
+- Arrow and function keys carry modifiers only where the terminal encodes
+  them, which most do for `Ctrl` and `Alt`.
 
 ### Editing chords in text fields
 
-Because a terminal user's hands expect them, `<input>` and `<textarea>` bind
-the readline motions and cuts as their default action, and an author's
-`preventDefault` on `keydown` suppresses them like any other:
+`<input>` and `<textarea>` bind the readline chords as default actions;
+`preventDefault` on `keydown` suppresses them like any other.
 
 | Chord | Effect |
 | --- | --- |
@@ -57,8 +48,7 @@ the readline motions and cuts as their default action, and an author's
 | `Ctrl+D` | Delete forward |
 | `Ctrl+J` | Insert a newline, in a `<textarea>` |
 
-`Ctrl+A` is a caret motion here rather than the browser's select-all, which
-has no terminal equivalent to inherit.
+`Ctrl+A` moves the caret rather than selecting all, as in a shell.
 
 ## Mouse
 
@@ -69,21 +59,19 @@ focus, `click` clicks, `wheel` scrolls. Coordinates are in cells.
 row.addEventListener("click", () => open(row.dataset.path!));
 ```
 
-A terminal reports a mouse position only while a button is held, or when
-motion reporting is on, so `:hover` is not implemented. Mouse reporting also
-belongs to the application while it runs: a terminal's own text selection is
-usually available by holding `Shift`, which the terminal handles itself and
-TermDOM never sees.
+A terminal reports the mouse position only while a button is down, so
+`:hover` is not implemented. While an app has the mouse, the terminal's
+own select-to-copy is still available by holding `Shift`.
 
 ## Focus
 
-Tab traverses focusable elements in document order, `:focus` styles apply,
-and `element.focus()` works. Typing goes to the focused element.
+Tab traverses focusable elements in document order, `:focus` styles
+apply, and `element.focus()` works. Typing goes to the focused element.
 
 ## Form controls
 
-`<input>` (text, checkbox, radio), `<textarea>`, `<select>` and `<button>` are
-all implemented, and they fire `input` and `change` events:
+`<input>` (text, number, checkbox, radio), `<textarea>`, `<select>`, and
+`<button>` are implemented and fire `input` and `change`:
 
 ```html
 <div class="field">
@@ -95,33 +83,29 @@ all implemented, and they fire `input` and `change` events:
 field.addEventListener("input", updatePreview);
 ```
 
-The controls are UA shadow trees, so `::placeholder` and `::part()` styling
-apply. The caret is the real terminal cursor, and IME composition works:
-CJK input methods compose in the field. `<input type="password">` masks its
-value.
+The controls are UA shadow trees, so `::placeholder` and `::part()`
+styling apply. The caret is the real terminal cursor, and IME composition
+works: CJK input methods compose in the field. `<input type="password">`
+masks its value.
 
 ## Selection and the clipboard
 
-Drag to select, in the document or inside a field. Selection is styled
-through `::selection`. Copying is explicit:
-`navigator.clipboard.writeText(text)` carries the text to the system
-clipboard over OSC 52, which travels in-band and works across SSH. The
-terminal's own select-to-copy remains available as Shift+drag, which
-bypasses mouse reporting.
+Drag to select, in the document or inside a field; style it with
+`::selection`. `navigator.clipboard.writeText(text)` copies to the system
+clipboard over OSC 52, which travels in-band and works across SSH.
 
-## Scrolling and the camera
+## Scrolling
 
-Output starts at the command line and flows down. When the document
-outgrows the terminal, earlier rows scroll into the terminal's scrollback.
-
-A camera scrolls over the document:
+Output starts at the command line and flows down; when the document
+outgrows the terminal, earlier rows move into the terminal's scrollback.
+The document scrolls with the standard calls:
 
 ```ts
 window.scrollTo(0, 0);
 element.scrollIntoView();
 ```
 
-`window.scrollY` and `pageYOffset` report where the camera is.
+`window.scrollY` reports the position.
 
 ## Fullscreen
 
@@ -130,7 +114,8 @@ await element.requestFullscreen();
 ```
 
 `requestFullscreen()` takes the alternate screen and applies `:fullscreen`
-styles. Exiting restores the main screen and scrollback.
+styles. Exiting restores the main screen and scrollback. Escape exits;
+if a text field is focused, the first Escape blurs it instead.
 
 ## Resizing
 
@@ -142,21 +127,13 @@ window.addEventListener("resize", () => {
 });
 ```
 
-The event carries no dimensions; read them off the window, the document, or
-any element — the new size is in place before listeners run. `window.onresize`
-takes a handler too.
+The event carries no dimensions; read them off the window or any element —
+the new size is in place before listeners run.
 
 The same resize re-evaluates `@media` rules and fires `change` on live
-`MediaQueryList` objects:
+`MediaQueryList` objects, after `resize`, as in a browser:
 
 ```ts
 const wide = window.matchMedia("(min-width: 80ch)");
 wide.addEventListener("change", relayout);
 ```
-
-`resize` runs before those `change` events, as in a browser; a `MediaQueryList`
-read from a `resize` listener already answers with the new size.
-
-A burst of resizes — dragging a terminal's edge — is coalesced into one
-redraw, and fires one `resize`, at the size the drag settled on. A resize
-notification that reports the same size fires nothing.
