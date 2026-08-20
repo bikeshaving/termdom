@@ -5,15 +5,15 @@ any frontend web framework.
 
 ![examples/progress-bar.ts](playground:progress-bar)
 
-## Write a web page. Get a TUI.
+## Layout and styles
 
-Every glyph below is a DOM element: a masthead, a sidebar and an article, laid out by flexbox and styled by a stylesheet. The arrow keys are a `keydown` listener; painting is automatic, like the browser.
+The page below is a masthead, a sidebar, and an article, laid out with flexbox and styled by a stylesheet. Arrow keys are handled with a `keydown` listener. Repainting happens automatically when the DOM changes, as in a browser.
 
 ![examples/flexbox.ts](playground:flexbox)
 
-## Interactivity is just DOM events.
+## Events
 
-Keys, clicks, and focus arrive on elements, so a NERDTree-style file browser is `querySelectorAll` for the rows, `classList` for the selection, `keydown` for the keys, and `scrollIntoView()` to move the camera. [examples/tree.ts](https://github.com/bikeshaving/termdom/blob/main/examples/tree.ts) is ~200 lines of that, walking the filesystem of whatever directory you run it in.
+Keyboard, mouse, and focus events fire on elements. [examples/tree.ts](https://github.com/bikeshaving/termdom/blob/main/examples/tree.ts) is a file browser in about 200 lines: it selects rows with `querySelectorAll`, tracks the selection with `classList`, handles keys with a `keydown` listener, and scrolls with `scrollIntoView()`.
 
 ```ts
 document.addEventListener("keydown", (ev) => {
@@ -27,9 +27,9 @@ Below, the same program browses an in-memory directory. `j`/`k` move, Enter open
 
 ![examples/tree.ts](playground:tree)
 
-## Real text input. Real caret. Real IME.
+## Text input
 
-`<input>` elements with focus traversal and `:focus` styling — and the caret is the real terminal cursor, so CJK input methods compose in the field, measured in cells.
+`<input>` and `<textarea>` support focus traversal and `:focus` styling. The caret is the terminal's own cursor, so CJK input methods compose inside the field at the correct cell position.
 
 ![examples/form.ts](playground:form)
 
@@ -39,7 +39,7 @@ Below, the same program browses an in-memory directory. `j`/`k` move, Enter open
 - **Layout** The CSS box model, flexbox, and table layout, computed in whole terminal cells with margins, borders, and padding.
 - **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
 - **Events** Keyboard, mouse, focus, and paste events fire on elements, the document, and the window, decoded from stdin.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` read the layout engine.
+- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` work and report cell-based layout.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have terminal-native looks, restylable with CSS; Tab and `:focus` work.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
 - **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
@@ -54,9 +54,8 @@ is one row, `1ch` is one column — so the box model, flexbox, and tables
 lay out in whole cells. On each frame the engine recomputes style and
 layout for whatever mutated, paints the result into a cell buffer, diffs
 it against the previous frame, and writes the difference to stdout as
-ANSI escape sequences. Input runs the other way: escape sequences from
-stdin are decoded into keyboard, mouse, and paste events and dispatched
-to DOM nodes.
+ANSI escape sequences. Escape sequences from stdin are decoded into keyboard,
+mouse, and paste events and dispatched to DOM nodes.
 
 ## Compatibility
 
@@ -74,7 +73,6 @@ npm install @b9g/termdom
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a
-terminal emulator built out of DOM elements. The two projects are each
-other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
-in a terminal.
+Not to be confused with [DomTerm](https://domterm.org) by Per Bothner.
+DomTerm is a terminal emulator rendered with DOM elements; TermDOM renders
+DOM elements to a terminal.
