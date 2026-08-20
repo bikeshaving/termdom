@@ -171,7 +171,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"getComputedStyle-resolved-colors.html",
-		"A system color has no value here. `Menu`, `Highlight` and the rest name a desktop palette, and a terminal states none, so a declaration naming one is not a value this engine knows and `box-shadow: 1px 1px Menu` declares no shadow. The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is how this engine spells \"swap the cell's colors\", which the selection painter renders as inverse video. Giving the pair rgb() values would erase the signal the painter reads.",
+		"A system color computes as its keyword here, not as an rgb(). The name stands for whatever the user's environment says, which on a terminal is the theme-resolved palette: every system color maps onto the terminal's default colors and ANSI palette at paint time, but the process cannot state the theme's actual channel values, so `getComputedStyle` reports `Menu` as `Menu` where these tests expect a resolved rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is how this engine spells \"swap the cell's colors\", which the selection painter renders as inverse video. Giving the keywords rgb() values would erase the signal the painter reads.",
 	],
 ];
 
