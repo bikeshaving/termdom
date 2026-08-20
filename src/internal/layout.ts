@@ -5015,15 +5015,10 @@ function isSuppressedFlexWhitespace(
 		if (node.nodeType !== node.ELEMENT_NODE) {
 			continue;
 		}
-		const sibling = node as Element;
-		const siblingDisplay = getPropertyValue(sibling, "display");
-		if (siblingDisplay === "none") {
+		// A display: none child generates no box and does not interrupt
+		// the run; any other element is a flex item that ends it.
+		if (getPropertyValue(node as Element, "display") === "none") {
 			continue;
-		}
-		// An inline sibling joins this run and gives it content; anything
-		// block-level ends the run with only white space collected.
-		if (isInlineDisplay(siblingDisplay)) {
-			return false;
 		}
 		break;
 	}
