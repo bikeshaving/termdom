@@ -1479,6 +1479,28 @@ test("focusing a field inside a fullscreen element leaves the camera alone", asy
 	dom.dispose();
 });
 
+test("a number input takes digits and drops the rest", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	const input = document.createElement("input");
+	input.type = "number";
+	document.body.appendChild(input);
+	input.focus();
+
+	(terminal.stdin as any).emit("data", Buffer.from("4a2!"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(input.value).toBe("42");
+
+	// The characters that can spell a float pass: sign, point, exponent.
+	(terminal.stdin as any).emit("data", Buffer.from(".5e-1"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(input.value).toBe("42.5e-1");
+	dom.dispose();
+});
+
 test("a focused descendant inside a fullscreen element still wins over the element itself", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});

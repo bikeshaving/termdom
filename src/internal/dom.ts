@@ -11788,6 +11788,25 @@ function applySharedFieldEdit(
 }
 
 /**
+ * The characters a field's type lets through. A number input takes only what
+ * can spell a floating-point number -- digits, sign, decimal point, and
+ * exponent -- the same per-character filter a browser applies to typing and
+ * pasting; every other type takes the text as it came.
+ */
+function sanitizeFieldInsertion(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): string {
+	if (
+		field.tagName === "INPUT" &&
+		(field as HTMLInputElement).type === "number"
+	) {
+		return text.replace(/[^0-9eE+\-.]/g, "");
+	}
+	return text;
+}
+
+/**
  * A typed character replacing the field's selection.
  *
  * Reached from `beforeinput`, which is where a browser reaches it: the
@@ -12119,14 +12138,23 @@ export class HTMLInputElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				applyFieldEdit(this, printableFieldEdit(this, event.data));
+				const text = sanitizeFieldInsertion(this, event.data);
+				if (text) {
+					applyFieldEdit(this, printableFieldEdit(this, text));
+				}
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+			const pasted = sanitizeFieldInsertion(
+				this,
+				event.data.replace(/[\r\n]+/g, ""),
+			);
+			if (pasted) {
+				insertPaste(this, pasted);
+			}
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -12228,6 +12256,16 @@ export class HTMLInputElement extends HTMLElement {
 	get value(): string {
 		switch (inputValueMode(this.type)) {
 			case "value":
+				// A number input mid-edit holds text on its way to being a
+				// number -- "4.", "4e-" -- which the control keeps and renders;
+				// the IDL attribute reports the empty string until the text
+				// arrives at a number, as a browser's does.
+				if (
+					this.type === "number" &&
+					parseFloatingPoint(this[kValue]) === null
+				) {
+					return "";
+				}
 				return this[kValue];
 			case "default":
 				return this.getAttribute("value") ?? "";
@@ -12287,7 +12325,15 @@ export class HTMLInputElement extends HTMLElement {
 		if (inputValueMode(this.type) !== "value") {
 			return;
 		}
-		this[kValue] = sanitizeInputValue(this, value);
+		// A user edit passes through the states a number passes through on
+		// its way to being one -- "4.", "4e-" -- which full sanitization
+		// would empty on every keystroke. The edit keeps its text (the
+		// insertion filter has already limited the characters); the value
+		// getter is what reports the empty string until the text is a
+		// number. Programmatic writes keep the full sanitization.
+		this[kValue] = this.type === "number" ?
+				value.replace(/[\r\n]/g, "") :
+				sanitizeInputValue(this, value);
 		this[kDirtyValue] = true;
 		widgetChanged(this);
 	}
