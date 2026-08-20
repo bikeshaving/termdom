@@ -88,7 +88,9 @@ field.addEventListener("input", updatePreview);
 The controls are UA shadow trees, so `::placeholder` and `::part()`
 styling apply. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
-masks its value.
+masks its value. A number input takes float syntax only, and ArrowUp and
+ArrowDown step it within `min` and `max` — the spinner, on the keys a
+terminal has.
 
 ## Selection and the clipboard
 
