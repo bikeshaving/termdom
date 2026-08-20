@@ -49,6 +49,7 @@ export function* Root(
 		stylesheets = [],
 		scripts = [],
 		children,
+		footer = true,
 	}: RootProps,
 ) {
 	for ({
