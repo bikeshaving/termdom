@@ -672,6 +672,30 @@ test("isTrusted reads false and cannot be redefined", () => {
 	expect(event.isTrusted).toBe(false);
 });
 
+test("the user agent's own events are trusted, click()'s is not", async () => {
+	const document = make();
+	const details = document.createElement("details");
+	document.body.appendChild(details);
+	let toggleTrusted: boolean | null = null;
+	details.addEventListener("toggle", (event: any) => {
+		toggleTrusted = event.isTrusted;
+	});
+	details.setAttribute("open", "");
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(toggleTrusted).toBe(true);
+
+	// click() fires a synthetic pointer event, which HTML says is untrusted:
+	// a listener can tell it from a press the user made.
+	const button = document.createElement("button");
+	document.body.appendChild(button);
+	let clickTrusted: boolean | null = null;
+	button.addEventListener("click", (event: any) => {
+		clickTrusted = event.isTrusted;
+	});
+	button.click();
+	expect(clickTrusted).toBe(false);
+});
+
 test("a platform CustomEvent dispatches through the tree", () => {
 	const document = make();
 	const outer = document.createElement("div");

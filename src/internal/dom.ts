@@ -523,18 +523,22 @@ const isTrustedProperty: PropertyDescriptor = {
 };
 
 /**
- * Whether the platform's event constructor installs isTrusted itself, as an
- * own property no one can redefine. Where it does, that property is the one
- * every event carries and it reads false; where it does not, the constructor
- * here installs the accessor above.
+ * The base this DOM's events extend.
+ *
+ * Its prototype chain reaches the platform's Event, so an event here is an
+ * instance of the global one and platform code accepts it -- but the platform
+ * constructor never runs on it. Some platforms install isTrusted as an
+ * unforgeable own property that always reads false, which an event this DOM
+ * dispatches as the user agent must be able to answer true, so the accessor
+ * an event carries has to be this DOM's. Every member the platform's base
+ * would have provided is provided below.
  */
-const hostInstallsIsTrusted = ((): boolean => {
-	const descriptor = Object.getOwnPropertyDescriptor(
-		new HostEvent("x"),
-		"isTrusted",
-	);
-	return descriptor !== undefined && !descriptor.configurable;
-})();
+const EventBase = function EventBase(): void {} as unknown as {
+	new (): HostEventInstance;
+	prototype: HostEventInstance;
+};
+
+EventBase.prototype = Object.create(HostEvent.prototype) as HostEventInstance;
 
 const kBubbles = Symbol("bubbles");
 const kCancelable = Symbol("cancelable");
@@ -545,7 +549,7 @@ const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
 /** An event, and the flags a listener sets on it while it is dispatched. */
-export class Event extends HostEvent {
+export class Event extends EventBase {
 	declare [kType]: string;
 	declare [kBubbles]: boolean;
 	declare [kCancelable]: boolean;
@@ -562,15 +566,14 @@ export class Event extends HostEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("Event constructor needs a type");
 		}
-		// The dictionary is converted once, here, and the platform base is
-		// handed the converted members: a member that is an accessor is read
-		// the one time the conversion reads it.
+		// The dictionary is converted once, here: a member that is an accessor
+		// is read the one time the conversion reads it.
 		const name = String(type);
 		const init = toDictionary<EventInit>(eventInitDict, "An event init");
 		const bubbles = Boolean(init.bubbles);
 		const cancelable = Boolean(init.cancelable);
 		const composed = Boolean(init.composed);
-		super(name, {bubbles, cancelable, composed});
+		super();
 		this[kState] = {
 			target: null,
 			relatedTarget: null,
@@ -592,9 +595,7 @@ export class Event extends HostEvent {
 		this[kComposed] = composed;
 		this[kTimeStamp] = performance.now();
 		this[kState].initialized = true;
-		if (!hostInstallsIsTrusted) {
-			Object.defineProperty(this, "isTrusted", isTrustedProperty);
-		}
+		Object.defineProperty(this, "isTrusted", isTrustedProperty);
 	}
 
 	get [kDispatchState](): DispatchState {
@@ -671,7 +672,6 @@ export class Event extends HostEvent {
 	override set cancelBubble(value: boolean) {
 		if (value) {
 			this[kState].stopPropagation = true;
-			super.stopPropagation();
 		}
 	}
 
@@ -681,13 +681,11 @@ export class Event extends HostEvent {
 
 	override stopPropagation(): void {
 		this[kState].stopPropagation = true;
-		super.stopPropagation();
 	}
 
 	override stopImmediatePropagation(): void {
 		this[kState].stopPropagation = true;
 		this[kState].stopImmediate = true;
-		super.stopImmediatePropagation();
 	}
 
 	override preventDefault(): void {
@@ -734,7 +732,11 @@ function setCanceledFlag(event: Event): void {
 	const state = event[kDispatchState];
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
-		HostEvent.prototype.preventDefault.call(event);
+		// A platform event keeps its canceled flag on the platform half, which
+		// is where whoever handed it over will read it back.
+		if (state.foreign) {
+			HostEvent.prototype.preventDefault.call(event);
+		}
 	}
 }
 
@@ -1995,21 +1997,7 @@ export class EventTarget {
 	}
 
 	dispatchEvent(event: Event): boolean {
-		if (!(event instanceof HostEvent)) {
-			throw new TypeError("dispatchEvent needs an Event");
-		}
-		if (!(event instanceof Event)) {
-			adoptForeignEvent(event);
-		}
-		const state = event[kDispatchState];
-		if (state.dispatch || !state.initialized) {
-			throw domError(
-				"InvalidStateError",
-				"That event is already being dispatched",
-			);
-		}
-		state.trusted = false;
-		return dispatch(this, event);
+		return dispatchFromOutside(this, event, false);
 	}
 
 	/**
@@ -2418,6 +2406,50 @@ function syncForeignFlags(event: Event, state: DispatchState): void {
 }
 
 /**
+ * Dispatch an event handed in from outside this module, and say whose it is.
+ *
+ * This is the one place an event's provenance is decided. Script reaches it
+ * through dispatchEvent(), whose events are never trusted; the engine reaches
+ * it through dispatchAsUserAgent(), whose events always are. Everything the
+ * module fires itself goes through dispatch() below, which is the spec's
+ * "fire an event" and therefore trusted as well.
+ */
+function dispatchFromOutside(
+	target: EventTarget,
+	event: Event,
+	trusted: boolean,
+): boolean {
+	if (!(event instanceof HostEvent)) {
+		throw new TypeError("dispatchEvent needs an Event");
+	}
+	if (!(event instanceof Event)) {
+		adoptForeignEvent(event);
+	}
+	const state = event[kDispatchState];
+	if (state.dispatch || !state.initialized) {
+		throw domError(
+			"InvalidStateError",
+			"That event is already being dispatched",
+		);
+	}
+	return dispatch(target, event, trusted);
+}
+
+/**
+ * Dispatch an event as the user agent: the event is trusted.
+ *
+ * The engine calls this where decoded terminal input, a viewport change or a
+ * focus move becomes a DOM event -- everything a user or the terminal itself
+ * caused, as opposed to what an application constructs and dispatches.
+ */
+export function dispatchAsUserAgent(
+	target: EventTarget,
+	event: Event,
+): boolean {
+	return dispatchFromOutside(target, event, true);
+}
+
+/**
  * Dispatch an event at a target.
  *
  * The path is built once, from the target outward, and then walked twice: in
@@ -2427,9 +2459,18 @@ function syncForeignFlags(event: Event, state: DispatchState): void {
  *
  * The spec threads a legacy target override flag through here for HTML's load
  * event, which retargets to a Window; there is no Window in this DOM.
+ *
+ * Firing an event is the user agent's act, so an event dispatched here is
+ * trusted unless the caller says otherwise -- click() says otherwise, since
+ * HTML fires a synthetic, untrusted pointer event there.
  */
-function dispatch(target: EventTarget, event: Event): boolean {
+function dispatch(
+	target: EventTarget,
+	event: Event,
+	trusted = true,
+): boolean {
 	const state = event[kDispatchState];
+	state.trusted = trusted;
 	state.dispatch = true;
 	let activationTarget: EventTarget | null = null;
 	let relatedTarget = retarget(state.relatedTarget, target);
@@ -7388,7 +7429,7 @@ export class HTMLElement extends Element {
 				cancelable: true,
 				composed: true,
 			});
-			dispatch(this, event);
+			dispatch(this, event, false);
 		} finally {
 			this[kClickInProgress] = false;
 		}
