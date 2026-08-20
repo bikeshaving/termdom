@@ -9,6 +9,7 @@ import type {EngineWindow} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
+import * as CSSTree from "css-tree";
 import {
 	getBoxModel,
 	parseBorderWidthValue,
@@ -43,6 +44,417 @@ import {
 	toVisualOrder,
 	writeClusterWidths,
 } from "./text.js";
+
+// ---------------------------------------------------------------------------
+// Grid values (css-grid-2 §7, §8)
+//
+// The compute core takes track lists, area maps and placements already parsed,
+// so this is where CSS text becomes them. css-tree does the tokenizing: a
+// track list nests functions, bracketed line names and strings, and a
+// hand-rolled splitter gets one of those wrong sooner or later.
+//
+// Two values are REFUSED rather than approximated. `subgrid` (css-grid-2 §9.5)
+// takes its tracks from an ancestor grid, which means a grid's own sizing can
+// no longer be decided from its own box; `masonry` (css-grid-3) is not a grid
+// in its second axis at all. A track list naming either is invalid here, and
+// the property falls back to `none` -- the same answer a browser that does not
+// implement them gives.
+// ---------------------------------------------------------------------------
+
+type CSSNode = {
+	type: string;
+	name?: string;
+	value?: string;
+	unit?: string;
+	children?: {toArray(): CSSNode[]};
+};
+
+/** The refused grid values, kept together so the refusal is one list. */
+const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
+
+function cssValueChildren(value: string): CSSNode[] | null {
+	try {
+		const ast = CSSTree.parse(value, {context: "value"}) as unknown as CSSNode;
+		return ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+}
+
+/** A length token in cells: px and ch both measure one cell, and nothing else does. */
+function trackCells(node: CSSNode): number | null {
+	if (node.type !== "Dimension") {
+		return null;
+	}
+	const unit = (node.unit ?? "").toLowerCase();
+	if (unit !== "px" && unit !== "ch") {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	return Number.isFinite(number) ? number : null;
+}
+
+function pointBreadth(cells: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_POINT, value: cells}};
+}
+
+function percentBreadth(percentage: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_PERCENT, value: percentage}};
+}
+
+/** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
+function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
+	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
+		const factor = parseFloat(node.value ?? "");
+		return Number.isFinite(factor) && factor >= 0 ?
+				{kind: "flex", factor} :
+			null;
+	}
+	const cells = trackCells(node);
+	if (cells !== null) {
+		return pointBreadth(cells);
+	}
+	if (node.type === "Percentage") {
+		const percentage = parseFloat(node.value ?? "");
+		return Number.isFinite(percentage) ? percentBreadth(percentage) : null;
+	}
+	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
+		return pointBreadth(0);
+	}
+	if (node.type === "Identifier") {
+		switch ((node.name ?? "").toLowerCase()) {
+			case "auto":
+				return {kind: "auto"};
+			case "min-content":
+				return {kind: "min-content"};
+			case "max-content":
+				return {kind: "max-content"};
+		}
+	}
+	return null;
+}
+
+/** The arguments of a function node, with the comma operators dropped. */
+function functionArguments(node: CSSNode): CSSNode[] {
+	return (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+}
+
+/** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
+function parseTrackSize(node: CSSNode): FlexTypes.TrackSize | null {
+	if (node.type === "Function") {
+		const name = (node.name ?? "").toLowerCase();
+		const args = functionArguments(node);
+		if (name === "minmax") {
+			if (args.length !== 2) {
+				return null;
+			}
+			const min = parseTrackBreadth(args[0]);
+			const max = parseTrackBreadth(args[1]);
+			// An `fr` is a share of leftover space, which is not a minimum
+			// anything can be measured against: the grammar excludes it.
+			if (!min || !max || min.kind === "flex") {
+				return null;
+			}
+			return {min, max};
+		}
+		if (name === "fit-content") {
+			if (args.length !== 1) {
+				return null;
+			}
+			const clamp = parseTrackBreadth(args[0]);
+			if (!clamp || clamp.kind !== "length") {
+				return null;
+			}
+			// fit-content(x) is minmax(auto, max-content) capped at x (§7.2.3).
+			return {
+				min: {kind: "auto"},
+				max: {kind: "max-content"},
+				fitContent: clamp.value,
+			};
+		}
+		return null;
+	}
+	const breadth = parseTrackBreadth(node);
+	if (!breadth) {
+		return null;
+	}
+	// A bare `<flex>` is minmax(auto, <flex>); every other bare breadth is
+	// both ends of the pair.
+	if (breadth.kind === "flex") {
+		return {min: {kind: "auto"}, max: breadth};
+	}
+	return {min: breadth, max: breadth};
+}
+
+/** The identifiers inside a `[a b]` line-name group. */
+function bracketNames(node: CSSNode): string[] {
+	return (node.children?.toArray() ?? [])
+		.filter((child) => child.type === "Identifier")
+		.map((child) => child.name ?? "");
+}
+
+/** A `<track-list>`, or null when the value is not one (and so has no effect). */
+function parseTrackList(value: string): FlexTypes.TrackList | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	if (REFUSED_GRID_VALUES.has(text.toLowerCase())) {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+
+	const parts: FlexTypes.TrackListPart[] = [];
+	let names: string[] = [];
+
+	for (const node of children) {
+		if (node.type === "Brackets") {
+			names = names.concat(bracketNames(node));
+			continue;
+		}
+		if (
+			node.type === "Function" &&
+			(node.name ?? "").toLowerCase() === "repeat"
+		) {
+			const repeat = parseTrackRepeat(node);
+			if (!repeat) {
+				return null;
+			}
+			repeat.tracks[0].names = names.concat(repeat.tracks[0].names);
+			names = [];
+			parts.push({type: "repeat", repeat});
+			continue;
+		}
+		if (
+			node.type === "Identifier" &&
+			REFUSED_GRID_VALUES.has((node.name ?? "").toLowerCase())
+		) {
+			return null;
+		}
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		parts.push({type: "track", track: {names, size}});
+		names = [];
+	}
+
+	if (parts.length === 0) {
+		return null;
+	}
+	return {parts, endNames: names};
+}
+
+function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
+	const args = (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+	if (args.length < 2) {
+		return null;
+	}
+	const first = args[0];
+	let count: number | "auto-fill" | "auto-fit";
+	if (first.type === "Number") {
+		const parsed = parseInt(first.value ?? "", 10);
+		if (!Number.isFinite(parsed) || parsed < 1) {
+			return null;
+		}
+		// A repeat is written by an author and expanded here, so a runaway
+		// count would be paid for in tracks nobody can see.
+		count = Math.min(parsed, 1000);
+	} else if (first.type === "Identifier") {
+		const keyword = (first.name ?? "").toLowerCase();
+		if (keyword !== "auto-fill" && keyword !== "auto-fit") {
+			return null;
+		}
+		count = keyword;
+	} else {
+		return null;
+	}
+
+	const tracks: FlexTypes.TrackListTrack[] = [];
+	let names: string[] = [];
+	for (const child of args.slice(1)) {
+		if (child.type === "Brackets") {
+			names = names.concat(bracketNames(child));
+			continue;
+		}
+		const size = parseTrackSize(child);
+		if (!size) {
+			return null;
+		}
+		tracks.push({names, size});
+		names = [];
+	}
+	if (tracks.length === 0) {
+		return null;
+	}
+	return {count, tracks, endNames: names};
+}
+
+/** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
+function parseTrackSizeList(value: string): FlexTypes.TrackSize[] | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+	const sizes: FlexTypes.TrackSize[] = [];
+	for (const node of children) {
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		sizes.push(size);
+	}
+	return sizes.length > 0 ? sizes : null;
+}
+
+/**
+ * `grid-template-areas`: rows of names, one string per row. The map is invalid
+ * -- and so declares nothing -- unless every row states the same number of
+ * cells and every named area is a solid rectangle (css-grid-2 §7.3).
+ */
+function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	const rows: Array<Array<string | null>> = [];
+	for (const node of children) {
+		if (node.type !== "String") {
+			return null;
+		}
+		const cells = (node.value ?? "")
+			.trim()
+			.split(/\s+/)
+			.filter((cell) => cell.length > 0)
+			// A run of dots is one null cell, however many dots it is written with.
+			.map((cell) => (/^\.+$/.test(cell) ? null : cell));
+		if (cells.length === 0) {
+			return null;
+		}
+		rows.push(cells);
+	}
+
+	const columnCount = rows[0].length;
+	if (rows.some((row) => row.length !== columnCount)) {
+		return null;
+	}
+
+	// Every area is a rectangle, fully filled: `"a b a"` names no area at all.
+	const boxes = new Map<
+		string,
+		{top: number; left: number; bottom: number; right: number}
+	>();
+	rows.forEach((row, rowIndex) => {
+		row.forEach((name, columnIndex) => {
+			if (name === null) {
+				return;
+			}
+			const box = boxes.get(name);
+			if (!box) {
+				boxes.set(name, {
+					top: rowIndex,
+					left: columnIndex,
+					bottom: rowIndex + 1,
+					right: columnIndex + 1,
+				});
+				return;
+			}
+			box.top = Math.min(box.top, rowIndex);
+			box.left = Math.min(box.left, columnIndex);
+			box.bottom = Math.max(box.bottom, rowIndex + 1);
+			box.right = Math.max(box.right, columnIndex + 1);
+		});
+	});
+	for (const [name, box] of boxes) {
+		for (let row = box.top; row < box.bottom; row++) {
+			for (let column = box.left; column < box.right; column++) {
+				if (rows[row][column] !== name) {
+					return null;
+				}
+			}
+		}
+	}
+
+	return {rows, columnCount};
+}
+
+/** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
+function parseGridPlacement(value: string): FlexTypes.GridPlacement | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	let span = false;
+	let index: number | null = null;
+	let name: string | null = null;
+
+	for (const node of children) {
+		if (node.type === "Number") {
+			const parsed = parseInt(node.value ?? "", 10);
+			if (!Number.isFinite(parsed) || parsed === 0) {
+				return null;
+			}
+			if (index !== null) {
+				return null;
+			}
+			index = parsed;
+			continue;
+		}
+		if (node.type !== "Identifier") {
+			return null;
+		}
+		const keyword = node.name ?? "";
+		if (keyword.toLowerCase() === "span") {
+			if (span) {
+				return null;
+			}
+			span = true;
+			continue;
+		}
+		if (keyword.toLowerCase() === "auto") {
+			return null;
+		}
+		if (name !== null) {
+			return null;
+		}
+		name = keyword;
+	}
+
+	if (span) {
+		// A span is a count of tracks or of named lines, never a line number.
+		if (index !== null && index < 1) {
+			return null;
+		}
+		if (index === null && name === null) {
+			return null;
+		}
+	}
+	if (!span && index === null && name === null) {
+		return null;
+	}
+	return {span, index, name};
+}
 
 /**
  * Whether a box takes part in positioned layout -- the predicate both the
@@ -216,9 +628,17 @@ function isOutOfFlow(node: Node): boolean {
 	return position === "absolute" || position === "fixed";
 }
 
+/**
+ * Whether a display makes an ATOMIC inline: a box that sits on a line whole,
+ * measured as one opaque unit, whatever it lays out inside itself.
+ */
+function isAtomicInline(display: string): boolean {
+	return display === "inline-block" || display === "inline-grid";
+}
+
 /** Whether a display value puts a box on a line rather than on rows of its own. */
 function isInlineDisplay(display: string): boolean {
-	return display === "inline" || display === "inline-block";
+	return display === "inline" || isAtomicInline(display);
 }
 
 /** Whether an element lays its children out as flex items. */
@@ -227,19 +647,39 @@ function isFlexContainer(element: Element): boolean {
 	return display === "flex" || display === "inline-flex";
 }
 
+/**
+ * Whether a display puts each child in a box of its own: a flex or grid
+ * container gathers no inline run across its children, and blockifies every
+ * one of them (css-display-3 §2.7).
+ */
+function laysOutItems(display: string): boolean {
+	return display === "flex" || isGridDisplay(display);
+}
+
+/** Whether a display makes a grid container. */
+function isGridDisplay(display: string): boolean {
+	return display === "grid" || display === "inline-grid";
+}
+
 /** Whether an element's box is a flex item of its parent's. */
 function hasFlexParent(element: Element): boolean {
 	const parent = element.parentElement;
 	return parent !== null && getPropertyValue(parent, "display") === "flex";
 }
 
+/** Whether an element's box is an item of a flex or grid container's. */
+function hasItemParent(element: Element): boolean {
+	const parent = element.parentElement;
+	return parent !== null && laysOutItems(getPropertyValue(parent, "display"));
+}
+
 /**
  * Whether an element's box is blockified (css-display-3 §2.7): an out-of-flow
- * box takes a block's box model, and so does every child of a flex container,
- * which has no lines for an inline-level box to sit on.
+ * box takes a block's box model, and so does every child of a flex or grid
+ * container, which has no lines for an inline-level box to sit on.
  */
 function isBlockifiedBox(element: Element): boolean {
-	return isOutOfFlow(element) || hasFlexParent(element);
+	return isOutOfFlow(element) || hasItemParent(element);
 }
 
 /**
@@ -424,6 +864,127 @@ function parseAspectRatio(value: string): number | undefined {
 	return width / height;
 }
 
+/**
+ * An `<self-position>`/`<content-position>` keyword as a layout constant.
+ *
+ * The `safe`/`unsafe` overflow qualifiers say what to do when the item does
+ * not fit, which on a grid of whole cells is the same either way: the item
+ * overflows. `first`/`last baseline` both name the one baseline a cell grid
+ * has (see baselineWithinBorderBox).
+ */
+const ALIGNMENT_CONSTANTS: Record<string, number> = {
+	"normal": Flex.ALIGN_NORMAL,
+	"stretch": Flex.ALIGN_STRETCH,
+	"center": Flex.ALIGN_CENTER,
+	"baseline": Flex.ALIGN_BASELINE,
+	"start": Flex.ALIGN_FLEX_START,
+	"end": Flex.ALIGN_FLEX_END,
+	"flex-start": Flex.ALIGN_FLEX_START,
+	"flex-end": Flex.ALIGN_FLEX_END,
+	"self-start": Flex.ALIGN_FLEX_START,
+	"self-end": Flex.ALIGN_FLEX_END,
+	"left": Flex.ALIGN_FLEX_START,
+	"right": Flex.ALIGN_FLEX_END,
+	"space-between": Flex.ALIGN_SPACE_BETWEEN,
+	"space-around": Flex.ALIGN_SPACE_AROUND,
+	"space-evenly": Flex.ALIGN_SPACE_EVENLY,
+};
+
+/** The inline-axis content distribution constants, which are their own enum. */
+const JUSTIFY_CONTENT_CONSTANTS: Record<string, number> = {
+	"normal": Flex.JUSTIFY_NORMAL,
+	"stretch": Flex.JUSTIFY_STRETCH,
+	"center": Flex.JUSTIFY_CENTER,
+	"start": Flex.JUSTIFY_FLEX_START,
+	"end": Flex.JUSTIFY_FLEX_END,
+	"flex-start": Flex.JUSTIFY_FLEX_START,
+	"flex-end": Flex.JUSTIFY_FLEX_END,
+	"left": Flex.JUSTIFY_FLEX_START,
+	"right": Flex.JUSTIFY_FLEX_END,
+	"space-between": Flex.JUSTIFY_SPACE_BETWEEN,
+	"space-around": Flex.JUSTIFY_SPACE_AROUND,
+	"space-evenly": Flex.JUSTIFY_SPACE_EVENLY,
+};
+
+/** Strip the qualifier a keyword may be written with, and fold its case. */
+function alignmentKeyword(value: string): string {
+	const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	while (
+		tokens.length > 1 &&
+		(tokens[0] === "safe" ||
+			tokens[0] === "unsafe" ||
+			tokens[0] === "first" ||
+			tokens[0] === "last")
+	) {
+		tokens.shift();
+	}
+	return tokens[0] ?? "";
+}
+
+function alignmentConstant(value: string, fallback: number): number {
+	if (!value || value === "auto") {
+		return fallback;
+	}
+	const constant = ALIGNMENT_CONSTANTS[alignmentKeyword(value)];
+	return constant === undefined ? fallback : constant;
+}
+
+function justifyContentConstant(value: string): number {
+	const constant = JUSTIFY_CONTENT_CONSTANTS[alignmentKeyword(value)];
+	return constant === undefined ? Flex.JUSTIFY_NORMAL : constant;
+}
+
+/** The grid container properties, from the cascade to the layout node. */
+function applyGridContainer(
+	flexNode: FlexTypes.Node,
+	computedStyle: ComputedStyle,
+): void {
+	flexNode.setGridTemplateColumns(
+		parseTrackList(computedStyle.computedValueOf("grid-template-columns")),
+	);
+	flexNode.setGridTemplateRows(
+		parseTrackList(computedStyle.computedValueOf("grid-template-rows")),
+	);
+	flexNode.setGridTemplateAreas(
+		parseGridAreas(computedStyle.computedValueOf("grid-template-areas")),
+	);
+	flexNode.setGridAutoColumns(
+		parseTrackSizeList(computedStyle.computedValueOf("grid-auto-columns")),
+	);
+	flexNode.setGridAutoRows(
+		parseTrackSizeList(computedStyle.computedValueOf("grid-auto-rows")),
+	);
+
+	const flow = computedStyle
+		.computedValueOf("grid-auto-flow")
+		.toLowerCase()
+		.split(/\s+/)
+		.filter(Boolean);
+	flexNode.setGridAutoFlow(flow.includes("column"), flow.includes("dense"));
+
+	flexNode.setJustifyContent(
+		justifyContentConstant(computedStyle.computedValueOf("justify-content")),
+	);
+	flexNode.setAlignContent(
+		alignmentConstant(
+			computedStyle.computedValueOf("align-content"),
+			Flex.ALIGN_NORMAL,
+		),
+	);
+	flexNode.setAlignItems(
+		alignmentConstant(
+			computedStyle.computedValueOf("align-items"),
+			Flex.ALIGN_NORMAL,
+		),
+	);
+	flexNode.setJustifyItems(
+		alignmentConstant(
+			computedStyle.computedValueOf("justify-items"),
+			Flex.ALIGN_NORMAL,
+		),
+	);
+}
+
 function styleFlexNode(
 	element: Element,
 	flexNode: FlexTypes.Node,
@@ -442,7 +1003,7 @@ function styleFlexNode(
 	// like any block's. Forcing them auto here let the measure function answer
 	// with the content size instead, and `<span style="width:30ch">` inside a
 	// flex row came out as wide as its text.
-	const parentIsFlex = hasFlexParent(element);
+	const parentIsFlex = hasItemParent(element);
 	// Handle width/height based on display type
 	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
@@ -453,8 +1014,8 @@ function styleFlexNode(
 		flexNode.setMinHeight(undefined);
 		flexNode.setMaxWidth(undefined);
 		flexNode.setMaxHeight(undefined);
-	} else if (display === "inline-block") {
-		// For inline-block elements, unset width/height but preserve min/max constraints
+	} else if (isAtomicInline(display)) {
+		// For atomic inline elements, unset width/height but preserve min/max constraints
 		// This allows the measure function to work while still respecting CSS constraints
 		flexNode.setWidthAuto();
 		flexNode.setHeightAuto();
@@ -672,7 +1233,7 @@ function styleFlexNode(
 	// the flex node must not add padding+border again on the CROSS axis (it
 	// double-counts, e.g. a bordered textarea in a flex row is too tall). Zero the
 	// cross-axis edges only -- the main axis is masked by flex sizing.
-	if (display === "inline-block" && parentIsFlex) {
+	if (display === "inline-block" && hasFlexParent(element)) {
 		const direction = getPropertyValue(
 			element.parentElement!,
 			"flex-direction",
@@ -724,16 +1285,29 @@ function styleFlexNode(
 	}
 
 	const alignSelf = computedStyle.computedValueOf("align-self");
-	if (alignSelf === "auto") {
-		flexNode.setAlignSelf(Flex.ALIGN_AUTO);
-	} else {
-		const alignValue = getFlexConstant("align", alignSelf);
-		if (alignValue !== null) {
-			flexNode.setAlignSelf(alignValue);
-		} else {
-			flexNode.setAlignSelf(Flex.ALIGN_AUTO);
-		}
-	}
+	flexNode.setAlignSelf(alignmentConstant(alignSelf, Flex.ALIGN_AUTO));
+	flexNode.setJustifySelf(
+		alignmentConstant(
+			computedStyle.computedValueOf("justify-self"),
+			Flex.ALIGN_AUTO,
+		),
+	);
+
+	// Grid item placement. Read whatever the parent is, like the flex item
+	// properties above: outside a grid container nothing asks for them, which
+	// is exactly what CSS says of them.
+	flexNode.setGridRowStart(
+		parseGridPlacement(computedStyle.computedValueOf("grid-row-start")),
+	);
+	flexNode.setGridRowEnd(
+		parseGridPlacement(computedStyle.computedValueOf("grid-row-end")),
+	);
+	flexNode.setGridColumnStart(
+		parseGridPlacement(computedStyle.computedValueOf("grid-column-start")),
+	);
+	flexNode.setGridColumnEnd(
+		parseGridPlacement(computedStyle.computedValueOf("grid-column-end")),
+	);
 
 	// gap. The `gap` shorthand is expanded in the cascade, so reading the
 	// longhands here is enough and gets the precedence right.
@@ -749,6 +1323,9 @@ function styleFlexNode(
 
 	if (display === "none") {
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
+	} else if (display === "grid" || display === "inline-grid") {
+		flexNode.setDisplay(Flex.DISPLAY_GRID);
+		applyGridContainer(flexNode, computedStyle);
 	} else if (display === "flex") {
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 	} else if (display === "table") {
@@ -836,7 +1413,12 @@ function styleFlexNode(
 		} else {
 			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
-	} else if (display !== "none" && !display.startsWith("table")) {
+	} else if (
+		display !== "none" &&
+		display !== "grid" &&
+		display !== "inline-grid" &&
+		!display.startsWith("table")
+	) {
 		// Block layout. Displays decided above (table parts, `none`) must not be
 		// overwritten here. Resetting a table-caption to block leaves the table
 		// unable to find its own caption; resetting a runtime-hidden element
@@ -1687,6 +2269,19 @@ export class LayoutEngine {
 	}
 
 	/**
+	 * A grid container's used track sizes, in the implicit grid's own order.
+	 * Null for a box that laid out no grid, which is every box but a grid
+	 * container -- and a grid container that has not been laid out yet.
+	 */
+	gridTracks(element: Element, rows: boolean): number[] | null {
+		const flexNode = containerFlexNode(this, element);
+		if (!flexNode) {
+			return null;
+		}
+		return flexNode.getComputedGridTracks(rows)?.sizes ?? null;
+	}
+
+	/**
 	 * An element's CONTENT box in document coordinates: its border box inset by
 	 * the border and padding on every side. Null for an element that generates
 	 * no box.
@@ -1736,7 +2331,7 @@ export class LayoutEngine {
 			isBlockifiedBox(element);
 
 		if (!isBlockified && isInlineDisplay(display)) {
-			if (display === "inline-block") {
+			if (isAtomicInline(display)) {
 				const rect = inlineBlockRect(this, element);
 				if (rect) {
 					return rect;
@@ -1827,7 +2422,7 @@ export class LayoutEngine {
 
 			// Special case: an inline-block element asked for directly.
 			// The element's breakResult contains itself as an inline-block segment with nested content
-			if (display === "inline-block" && this.isInlineRunHead(element)) {
+			if (isAtomicInline(display) && this.isInlineRunHead(element)) {
 				const breakResult = runBreakResult(this, element);
 				if (breakResult) {
 					// The breakResult contains this inline-block as a segment with nested content
@@ -1967,7 +2562,7 @@ export class LayoutEngine {
 			const runHeadElement = runHead as Element;
 			if (
 				getPropertyValue(runHeadElement, "display") === "inline" &&
-				hasFlexParent(runHeadElement)
+				hasItemParent(runHeadElement)
 			) {
 				const runHeadBox = getBoxModel(runHeadElement);
 				containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
@@ -1993,7 +2588,7 @@ export class LayoutEngine {
 		while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
 			const parent = flatParentElement<Element>(currentNode)!;
 
-			if (getPropertyValue(parent, "display") === "inline-block") {
+			if (isAtomicInline(getPropertyValue(parent, "display"))) {
 				// An overflow-scrolled inline-block (a field's windowed value,
 				// scrollLeft set by the caret-follow) shifts its content by its
 				// own scroll, so the caret stays in view. A property of the box,
@@ -2914,7 +3509,7 @@ function inlineBlockRect(
 	}
 	let descended = false;
 	for (const ancestor of enclosing) {
-		if (getPropertyValue(ancestor, "display") !== "inline-block") {
+		if (!isAtomicInline(getPropertyValue(ancestor, "display"))) {
 			continue;
 		}
 		const hop = findInlineBlockSegment(breakResult, ancestor);
@@ -3388,9 +3983,9 @@ function containerBox(
 	let runCount = 0;
 	// The membership each reused box had before this rebuild.
 	const opened = new Map<Box, Node[]>();
-	// A flex container puts every element child in a box of its own and
-	// gathers only its contiguous text into anonymous ones.
-	const inFlex = getPropertyValue(container, "display") === "flex";
+	// A flex or grid container puts every element child in a box of its own
+	// and gathers only its contiguous text into anonymous ones.
+	const inFlex = laysOutItems(getPropertyValue(container, "display"));
 	let run: Box | null = null;
 	// The enumeration below decides it again; a container that no longer
 	// reaches through a broken inline stops holding its fragments.
@@ -4036,9 +4631,9 @@ function runContainerFrom(
 		if (display === "inline") {
 			continue;
 		}
-		if (display === "inline-block") {
+		if (isAtomicInline(display)) {
 			// A box laying out children of its own establishes a block
-			// container; and an inline-block nested in one starts a run
+			// container; and an atomic inline nested in one starts a run
 			// there rather than joining the run its host sits in.
 			if (self[kBoxes].get(current)?.contentRoot || startsOwnRun) {
 				return current;
@@ -4408,7 +5003,7 @@ function shouldCollapseWhitespaceTextNode(
 
 	// Check parent's display type - only collapse in block formatting contexts
 	const parentDisplay = getPropertyValue(parent, "display");
-	if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+	if (isInlineDisplay(parentDisplay)) {
 		// In inline contexts, preserve whitespace as spaces
 		return false;
 	}
@@ -4440,7 +5035,7 @@ function shouldCollapseWhitespaceTextNode(
 			return false;
 		}
 		const display = getPropertyValue(node as Element, "display");
-		return display !== "inline" && display !== "inline-block";
+		return !isInlineDisplay(display);
 	};
 
 	// If whitespace is between two block elements, collapse it
@@ -4779,7 +5374,7 @@ function measuresAsRun(
 	if (!isInlineDisplay(display)) {
 		return false;
 	}
-	if (display === "inline-block") {
+	if (isAtomicInline(display)) {
 		return true;
 	}
 	if (isInlineLevel(element)) {
@@ -5039,7 +5634,7 @@ function isSuppressedFlexWhitespace(
 	if (!parent) {
 		return false;
 	}
-	if (!isFlexContainer(parent)) {
+	if (!laysOutItems(getPropertyValue(parent, "display"))) {
 		return false;
 	}
 	if (preservesSpaces(getPropertyValue(parent, "white-space"))) {
@@ -5055,10 +5650,19 @@ function isSuppressedFlexWhitespace(
 		if (node.nodeType !== node.ELEMENT_NODE) {
 			continue;
 		}
-		// A display: none child generates no box and does not interrupt
-		// the run; any other element is a flex item that ends it.
-		if (getPropertyValue(node as Element, "display") === "none") {
+		// The USED display: an item of a flex or grid container is
+		// blockified (css-display-3 §2.7), so it opens a box of its own
+		// rather than joining this run -- which leaves the run holding
+		// nothing but the white space, and rendering nothing. A display:
+		// none child generates no box and does not interrupt the run.
+		const siblingDisplay = usedDisplay(node as Element);
+		if (siblingDisplay === "none") {
 			continue;
+		}
+		// An inline sibling joins this run and gives it content; anything
+		// block-level ends the run with only white space collected.
+		if (isInlineDisplay(siblingDisplay)) {
+			return false;
 		}
 		break;
 	}
@@ -5156,12 +5760,19 @@ function syncContentRoot(
 	element: Element,
 ): void {
 	const box = principalBox(self, element);
-	// Only an inline-block, never a plain inline: an inline containing a
-	// block is BROKEN around it, and taking its content here would steal
-	// back the boxes that belong to its container.
+	const display = getPropertyValue(element, "display");
+	// An inline-grid ALWAYS lays its own content out: every one of its
+	// children is a grid item, and a grid is not something a line can
+	// contain piecemeal. An inline-block only needs a root of its own once
+	// it holds a block-level box.
+	//
+	// Never a plain inline: an inline containing a block is BROKEN around
+	// it, and taking its content here would steal back the boxes that
+	// belong to its container.
+	const grid = display === "inline-grid";
 	if (
-		getPropertyValue(element, "display") !== "inline-block" ||
-		!containsBlockLevelBox(self, element)
+		!isAtomicInline(display) ||
+		(!grid && !containsBlockLevelBox(self, element))
 	) {
 		retireContentRoot(self, box);
 		return;
@@ -5170,9 +5781,25 @@ function syncContentRoot(
 	let root = box.contentRoot;
 	if (!root) {
 		root = Flex.Node.createWithConfig(flexConfig);
-		root.setDisplay(Flex.DISPLAY_BLOCK);
 		root.setBlockFormattingContext(true);
 		box.contentRoot = root;
+	}
+	// The root IS the box's formatting context, so it wears the display
+	// and, for a grid, the container properties the element declares --
+	// the element's own layout node is the one the run measures.
+	root.setDisplay(grid ? Flex.DISPLAY_GRID : Flex.DISPLAY_BLOCK);
+	if (grid) {
+		applyGridContainer(root, computedStyleOf(element));
+		const gaps: Array<[string, number]> = [
+			["row-gap", Flex.GUTTER_ROW],
+			["column-gap", Flex.GUTTER_COLUMN],
+		];
+		for (const [property, gutter] of gaps) {
+			const gap = parseUnitValue(
+				computedStyleOf(element).computedValueOf(property),
+			);
+			root.setGap(gutter, typeof gap === "number" ? gap : 0);
+		}
 	}
 
 	const walker = flowWalker(element);
@@ -5191,7 +5818,6 @@ function syncContentRoot(
 		syncContainerRuns(self, element);
 	}
 }
-
 /** Retire a box's content root once its content is all inline again. */
 function retireContentRoot(
 	self: LayoutEngine,
@@ -5296,6 +5922,14 @@ function splitsAroundBlock(
 	if (getPropertyValue(element, "display") !== "inline") {
 		return false;
 	}
+	// A grid item is blockified (css-display-3 §2.7) and is a block
+	// container already: there is nothing to break it around, and handing
+	// its content to the grid would put the item's own children in cells
+	// of their own.
+	const parent = element.parentElement;
+	if (parent && isGridDisplay(getPropertyValue(parent, "display"))) {
+		return false;
+	}
 	return containsBlockLevelBox(self, element);
 }
 
@@ -5313,8 +5947,8 @@ function containsBlockLevelBox(
 			continue;
 		}
 		const display = getPropertyValue(childElement, "display");
-		// An inline-block contains its own blocks without splitting anything.
-		if (display === "none" || display === "inline-block") {
+		// An atomic inline contains its own blocks without splitting anything.
+		if (display === "none" || isAtomicInline(display)) {
 			continue;
 		}
 		if (display === "inline") {
@@ -5460,7 +6094,7 @@ function collectLeafNodes(
 	// its own content out.
 	const parentDisplay = getPropertyValue(parentElement, "display");
 	let traversalRoot: Node;
-	if (parentDisplay === "flex" && node.nodeType === node.ELEMENT_NODE) {
+	if (laysOutItems(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
 		traversalRoot = node;
 	} else {
 		let root: Element = parentElement;
@@ -5480,7 +6114,7 @@ function collectLeafNodes(
 	// out of the contiguous text runs, and every element child is an item
 	// of its own -- so this one ends at the first element.
 	const stopsAtFlexItems =
-		parentDisplay === "flex" && node.nodeType === node.TEXT_NODE;
+		laysOutItems(parentDisplay) && node.nodeType === node.TEXT_NODE;
 
 	collectLeavesUnder(
 		self,
@@ -5565,7 +6199,7 @@ function collectLeavesUnder(
 				if (!walker.nextNode()) {
 					break;
 				}
-			} else if (display === "inline-block") {
+			} else if (isAtomicInline(display)) {
 				const ownBox = principalBox(self, element);
 				// Before anything reads its size or asks what its content
 				// runs from: an inline-block nested inside another inline is
