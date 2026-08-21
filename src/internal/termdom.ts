@@ -11,8 +11,6 @@ import {
 	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
-	scrollOffsetOf,
-	setScrollOffset,
 	closePopover,
 	hidePopoversUntil,
 	installUAEngine,
@@ -1250,9 +1248,9 @@ export class TermDOM {
 		// frame loop live: a write rounds to whole cells (everything paints
 		// on the cell grid, like the document camera), clamps into the
 		// scrollable range, and schedules the repaint that shows it. The
-		// value lands in the DOM's store (setScrollOffset), which is what
-		// the layout's geometry funnel already reads -- so getters stay the
-		// DOM's. An axis whose overflow is visible is not scrollable and
+		// value lands in the engine's store, which the getter installed
+		// below and the layout's geometry funnel (element.scrollTop) both
+		// read. An axis whose overflow is visible is not scrollable and
 		// pins to 0; hidden scrolls programmatically, as in a browser. A box
 		// whose extent the layout cannot name (a field's value span, whose
 		// content is an opaque measured run) stores the write unclamped --
@@ -1292,10 +1290,10 @@ export class TermDOM {
 					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
 				}
 			}
-			if (scrollOffsetOf(element)[axis] === next) {
+			if ((elementScrollOffsets.get(element)?.[axis] ?? 0) === next) {
 				return;
 			}
-			setScrollOffset(element, axis, next);
+			writeElementScroll(element, axis, next);
 			if (termDOM) {
 				if (next !== 0) {
 					termDOM[kScrolledElements].add(element);
@@ -1312,12 +1310,10 @@ export class TermDOM {
 
 		for (const axis of ["left", "top"] as const) {
 			const property = axis === "left" ? "scrollLeft" : "scrollTop";
-			const stored = Object.getOwnPropertyDescriptor(
-				Element.prototype,
-				property,
-			);
 			Object.defineProperty(Element.prototype, property, {
-				get: stored?.get,
+				get(this: Element): number {
+					return elementScrollOffsets.get(this)?.[axis] ?? 0;
+				},
 				set(this: Element, value: number) {
 					scrollAxisTo(this, axis, value);
 				},
@@ -2848,6 +2844,30 @@ function processPendingMutationsAndRender(
 }
 
 /**
+ * The engine's element scroll offsets, in cells. Replacing the DOM's
+ * accessors replaces the storage under them too, so the DOM module keeps no
+ * seam for the engine to reach through; a box nothing scrolled is absent
+ * and reads zero.
+ */
+const elementScrollOffsets = new WeakMap<
+	Element,
+	{left: number; top: number}
+>();
+
+function writeElementScroll(
+	element: Element,
+	axis: "left" | "top",
+	value: number,
+): void {
+	let offsets = elementScrollOffsets.get(element);
+	if (offsets === undefined) {
+		offsets = {left: 0, top: 0};
+		elementScrollOffsets.set(element, offsets);
+	}
+	offsets[axis] = value;
+}
+
+/**
  * Pull every held scroll offset back into its box's scrollable range
  * against fresh layout: a mutation that shrinks a box's content must not
  * leave the box scrolled past what remains. Offsets are written to the
@@ -2859,7 +2879,7 @@ function clampScrolledOffsets(
 ): void {
 	let changed = false;
 	for (const element of self[kScrolledElements]) {
-		const offsets = scrollOffsetOf(element);
+		const offsets = elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		if (offsets.left === 0 && offsets.top === 0) {
 			self[kScrolledElements].delete(element);
 			continue;
@@ -2882,8 +2902,8 @@ function clampScrolledOffsets(
 		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
 			continue;
 		}
-		setScrollOffset(element, "left", Math.min(offsets.left, maxLeft));
-		setScrollOffset(element, "top", Math.min(offsets.top, maxTop));
+		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
+		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
 		addFrameDamage(self, element);
 		changed = true;
 	}
