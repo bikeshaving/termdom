@@ -606,6 +606,16 @@ function renderElement(
 		afterOwnBox();
 	}
 
+	// The fullscreen element is the viewport for its in-flow content: the
+	// box painted above stays pinned at the screen while the children ride
+	// the camera. The culling band shifts with them.
+	const cameraShift =
+		element === self[kDocument].fullscreenElement ?
+			self[kViewport].scrollTop :
+			0;
+	bandTop += cameraShift;
+	bandBottom += cameraShift;
+
 	// The IN-FLOW walk: children paint in tree order, and POSITIONED
 	// children don't paint here at all -- per CSS they are hoisted to
 	// their nearest stacking context and painted in its layer order (see
@@ -677,7 +687,9 @@ function renderElement(
 	const overflowY =
 		computedStyleOf(element).computedValueOf("overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
+	const previousOffset = ctx.viewportOffset;
 	ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+	ctx.viewportOffset -= cameraShift;
 
 	try {
 		for (const childNode of children) {
@@ -693,6 +705,7 @@ function renderElement(
 		}
 	} finally {
 		ctx.clipRect = previousClip;
+		ctx.viewportOffset = previousOffset;
 	}
 
 	// A focused textarea's own selection now paints inline while the child
@@ -818,6 +831,9 @@ function renderStackingContext(
 		return;
 	}
 	const contextClip = ctx.clipRect;
+	// The offset a pinned box paints at: fixed members sit here, and members
+	// that scroll sit a camera below it.
+	const base = ctx.viewportOffset + self[kViewport].scrollTop;
 	const paintMember = (element: Element) => {
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
@@ -825,14 +841,15 @@ function renderStackingContext(
 		// ancestor that isn't a positioned ancestor doesn't clip a
 		// deferred box, but its own containing blocks' overflow does.
 		ctx.clipRect = positionedClipFor(self, element, root, contextClip);
-		// position:fixed anchors to the VIEWPORT: cancel the camera by
-		// undoing the scroll offset for the whole subtree. Fixed-space is
-		// a property of the containing-block CHAIN: an absolute box inside
-		// a fixed bar is laid out against the bar's viewport coordinates
-		// and must ride with it, so the walk includes ancestors.
-		if (self[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + self[kViewport].scrollTop;
-		}
+		// position:fixed anchors to the VIEWPORT: cancel the camera for
+		// the whole subtree. Fixed-space is the containing-block CHAIN's,
+		// so an absolute box inside a fixed bar rides with it and the
+		// query walks ancestors -- and stops at the fullscreen element,
+		// whose content scrolls while the box stays pinned.
+		ctx.viewportOffset =
+			self[kLayout].isInFixedSpace(element) ?
+				base :
+				base - self[kViewport].scrollTop;
 		try {
 			if (self[kLayout].formsStackingContext(element)) {
 				renderStackingContext(self, element, ctx, layers);

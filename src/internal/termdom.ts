@@ -141,6 +141,7 @@ export {kLayoutEngine, kObserver};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");
+const kSavedScrollTop = Symbol("savedScrollTop");
 const kIsInFullscreenMode = Symbol("isInFullscreenMode");
 
 /**
@@ -157,10 +158,17 @@ class FullscreenManager {
 
 	declare [kFullscreenStack]: Element[];
 	declare [kIsInFullscreenMode]: boolean;
+	declare [kViewport]: Viewport;
+	// The document's scroll position, held across the screen switch: while
+	// the alternate screen is up, the camera is the fullscreen element's,
+	// starting from its top; the main screen gets its position back at exit.
+	declare [kSavedScrollTop]: number;
 
-	constructor(write: (output: string) => void) {
+	constructor(viewport: Viewport, write: (output: string) => void) {
 		this[kFullscreenStack] = [];
 		this[kIsInFullscreenMode] = false;
+		this[kViewport] = viewport;
+		this[kSavedScrollTop] = 0;
 		this[kWrite] = write;
 	}
 
@@ -184,6 +192,8 @@ class FullscreenManager {
 			// Enter fullscreen mode if this is the first element
 			if (!this[kIsInFullscreenMode]) {
 				await enterFullscreenMode(this);
+				this[kSavedScrollTop] = this[kViewport].scrollTop;
+				this[kViewport].scrollTop = 0;
 			}
 
 			// Fire fullscreenchange event
@@ -212,6 +222,7 @@ class FullscreenManager {
 		// If no more elements in stack, exit fullscreen mode
 		if (this[kFullscreenStack].length === 0) {
 			await exitFullscreenMode(this);
+			this[kViewport].scrollTop = this[kSavedScrollTop];
 		}
 
 		// Fire fullscreenchange event
@@ -859,9 +870,12 @@ export class TermDOM {
 			processPendingMutationsAndRender(this),
 		);
 		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
-		this[kFullscreenManager] = new FullscreenManager((output) => {
-			void this[kSession].write(output);
-		});
+		this[kFullscreenManager] = new FullscreenManager(
+			this[kViewport],
+			(output) => {
+				void this[kSession].write(output);
+			},
+		);
 		this[kObserverManager] = new ObserverManager(this[kLayoutEngine]);
 
 		installWindowExtensions(this);
@@ -2438,6 +2452,25 @@ function documentPaintHeight(
 }
 
 /**
+ * How far the fullscreen content reaches, in rows: the fullscreen
+ * element's subtree paint extent, never less than the screen. The box
+ * height is pinned to the screen, so the extent -- not the box -- is what
+ * the camera clamps against.
+ */
+function fullscreenPaintHeight(
+	self: TermDOM,
+): number {
+	const element = self[kFullscreenManager].fullscreenElement;
+	if (!element) {
+		return self[kHeight];
+	}
+	return Math.max(
+		self[kHeight],
+		self[kLayoutEngine].subtreePaintBottom(element),
+	);
+}
+
+/**
  * The height of the window the camera shows, for the scroll-to-reveal
  * math. Fullscreen owns the whole screen from row zero, and the
  * fullscreen element has left the flow -- body.scrollHeight measures
@@ -3703,8 +3736,9 @@ async function renderInteractive(
 	// Fullscreen owns the WHOLE alternate screen from row zero: the
 	// main screen's command anchor means nothing there, and reserveRows'
 	// index-scrolls would scroll the alternate screen itself. The
-	// document's scroll position survives untouched underneath -- the
-	// fixed, Canvas-backed fullscreen element covers it regardless.
+	// document's scroll position is saved across the screen switch by the
+	// fullscreen manager: while the alternate screen is up, the camera is
+	// the fullscreen element's.
 	const isFullscreen = self[kFullscreenManager].isFullscreen;
 	const contentHeight = isFullscreen ?
 		self[kHeight] :
@@ -3714,14 +3748,17 @@ async function renderInteractive(
 	// Take the room we need by pushing earlier output up, never over it.
 	const top = isFullscreen ? 0 : reserveRows(self, regionHeight);
 
-	if (!isFullscreen) {
-		// The camera cannot run off the end of the document.
-		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		self[kViewport].scrollTop = Math.min(
-			self[kViewport].scrollTop,
-			maxScroll,
-		);
-	}
+	// The camera cannot run off the end of the content: the document's
+	// paint height -- or in fullscreen the fullscreen element's, whose box
+	// is pinned to the screen while its content scrolls under it.
+	const scrollExtent = isFullscreen ?
+			fullscreenPaintHeight(self) :
+		contentHeight;
+	const maxScroll = Math.max(0, scrollExtent - regionHeight);
+	self[kViewport].scrollTop = Math.min(
+		self[kViewport].scrollTop,
+		maxScroll,
+	);
 
 	// A frame is a TRANSFORM when everything that changed since the last
 	// one is bounded: a camera delta (the terminal scrolls the region via

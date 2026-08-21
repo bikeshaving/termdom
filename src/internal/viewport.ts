@@ -51,7 +51,9 @@ export class Viewport {
 	 * The document point under a terminal cell (screen column, screen row), or
 	 * null for a row above the painted region -- a shell prompt above the
 	 * command start is not part of the document. In fullscreen the alternate
-	 * screen owns row zero, so the anchor supplies the origin directly.
+	 * screen owns row zero, so the anchor supplies the origin; the camera
+	 * offset applies there too, since fullscreen content scrolls under the
+	 * pinned fullscreen box and hit-testing converts back for what is pinned.
 	 */
 	screenToDocumentPoint(
 		x: number,
@@ -59,7 +61,7 @@ export class Viewport {
 		isFullscreen: boolean,
 	): {x: number; y: number} | null {
 		if (isFullscreen) {
-			return {x, y: row + this[kAnchorScrollTop]};
+			return {x, y: row + this[kAnchorScrollTop] + this[kScrollTop]};
 		}
 		const y = row - this[kScreenTop] + this[kScrollTop];
 		return y < 0 ? null : {x, y};

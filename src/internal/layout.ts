@@ -1603,6 +1603,18 @@ export class LayoutEngine {
 	}
 
 	/**
+	 * The bottom of the element's subtree paint extent, in document rows --
+	 * how far its content reaches, regardless of what box it was constrained
+	 * into. The fullscreen camera clamps against this: the fullscreen
+	 * element's box is pinned to the screen, so its box height says nothing
+	 * about how much content there is to scroll.
+	 */
+	subtreePaintBottom(element: Element): number {
+		const node = this.nodeMap.get(element);
+		return node ? Math.ceil(node.extentBottom) : 0;
+	}
+
+	/**
 	 * The direct DOM/pseudo-element children of `element` whose paint extent
 	 * could intersect document rows [top, bottom), in document order -- found
 	 * with a binary search instead of visiting every child, which is what let
@@ -2729,13 +2741,22 @@ export class LayoutEngine {
 	 * is what puts its geometry in viewport space rather than document space.
 	 * The one answer to that question: hit-testing converts its probe point by
 	 * it, and the public client-rect wrappers skip the camera conversion by it.
+	 *
+	 * The fullscreen element is the boundary of that walk: it is the viewport
+	 * for its content, so while its box is pinned (it is UA-styled fixed), a
+	 * descendant that reaches it without crossing a nearer fixed box scrolls
+	 * with the camera.
 	 */
 	isInFixedSpace(element: Element): boolean {
+		const fullscreen = element.ownerDocument?.fullscreenElement ?? null;
 		for (
 			let el: Element | null = element;
 			el;
 			el = flatParentElement<Element>(el)
 		) {
+			if (el === fullscreen) {
+				return el === element;
+			}
 			if (getPropertyValue(el, "position") === "fixed") {
 				return true;
 			}
@@ -3224,15 +3245,21 @@ function hitTestContext(
 	cameraScrollTop: number,
 ): Element | null {
 	const bucket = layers.get(root) ?? null;
+	// The fullscreen element pins its box and scrolls its content: its box
+	// is probed in viewport space, and what it holds lives one camera
+	// conversion below that, back in document space.
+	const fullscreen = root.ownerDocument?.fullscreenElement ?? null;
+	const contentY = root === fullscreen ? y + cameraScrollTop : y;
 	const probeMember = (element: Element): Element | null => {
 		// A fixed box's layout lives in viewport space; convert the
 		// document-space probe point for its whole subtree. Fixed-space is
 		// a property of the containing-block CHAIN, so the check walks
 		// ancestors -- an absolute box inside a fixed bar lives there too.
-		const probeY = self.isInFixedSpace(element) ? y - cameraScrollTop : y;
+		const probeY =
+			self.isInFixedSpace(element) ? contentY - cameraScrollTop : contentY;
 		return self.formsStackingContext(element) ?
 				hitTestContext(self, element, x, probeY, layers, cameraScrollTop) :
-				hitTestInFlow(self, element, x, probeY);
+				hitTestInFlow(self, element, x, probeY, cameraScrollTop);
 	};
 	if (bucket) {
 		for (let i = bucket.pos.length - 1; i >= 0; i--) {
@@ -3248,7 +3275,7 @@ function hitTestContext(
 			}
 		}
 	}
-	const inFlow = hitTestInFlow(self, root, x, y);
+	const inFlow = hitTestInFlow(self, root, x, y, cameraScrollTop);
 	if (inFlow) {
 		return inFlow;
 	}
@@ -3266,13 +3293,16 @@ function hitTestContext(
 /**
  * In-flow descent: the element must contain the point; children are probed
  * in REVERSE tree order (last-painted wins), positioned children skipped --
- * their context probes them.
+ * their context probes them. The fullscreen element probes its box where it
+ * is pinned and its children where the camera put them, the one place a box
+ * and its in-flow content sit in different frames.
  */
 function hitTestInFlow(
 	self: LayoutEngine,
 	element: Element,
 	x: number,
 	y: number,
+	cameraScrollTop: number,
 ): Element | null {
 	if (element.nodeType !== 1) {
 		return null;
@@ -3309,8 +3339,14 @@ function hitTestInFlow(
 		}
 		children.push(child as Element);
 	}
+	// The fullscreen element's box is probed where it is pinned; its content
+	// scrolled under it, so the children are probed one camera down.
+	const childY =
+		element === (element.ownerDocument?.fullscreenElement ?? null) ?
+			y + cameraScrollTop :
+			y;
 	for (let i = children.length - 1; i >= 0; i--) {
-		const hit = hitTestInFlow(self, children[i], x, y);
+		const hit = hitTestInFlow(self, children[i], x, childY, cameraScrollTop);
 		if (hit) {
 			return hit;
 		}
