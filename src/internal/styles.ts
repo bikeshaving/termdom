@@ -323,7 +323,9 @@ function isValidDeclaration(
  * The grammars a value is matched against: the property index's, with the
  * entries it states from an older level of the specs brought up to date.
  * `generic()` family names, the SVG baseline keywords and `outline-color:
- * invert` are all in the current specs and missing from the index.
+ * invert` are all in the current specs and missing from the index. The
+ * deprecated system colors still parse per CSS Color 4 -- each is an alias of
+ * a modern one -- but the index's `<color>` leaves them out.
  */
 const grammarLexer = CSSTree.fork({
 	properties: {
@@ -332,6 +334,7 @@ const grammarLexer = CSSTree.fork({
 		"outline-color": "| invert",
 	},
 	types: {
+		"color": "| <deprecated-system-color>",
 		"family-name":
 			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
 	},
@@ -559,6 +562,21 @@ const VERBATIM_PROPERTIES = new Set([
 	"counter-reset",
 	"font",
 	"font-family",
+	// A grid value carries custom idents -- line names and area names, which
+	// are case-sensitive -- alongside its keywords, so it cannot be folded.
+	"grid-area",
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-column",
+	"grid-column-end",
+	"grid-column-start",
+	"grid-row",
+	"grid-row-end",
+	"grid-row-start",
+	"grid-template",
+	"grid-template-areas",
+	"grid-template-columns",
+	"grid-template-rows",
 	"list-style-image",
 	"quotes",
 ]);
@@ -633,6 +651,14 @@ function normalizeValue(property: string, declared: string): string {
 const ABSOLUTIZED_PROPERTIES = new Set([
 	...LENGTH_PROPERTIES,
 	"border-spacing",
+	// A track list holds lengths inside functions and among keywords, so it
+	// absolutizes by token rather than by the whitespace-separated split the
+	// length properties take.
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-template",
+	"grid-template-columns",
+	"grid-template-rows",
 	"line-height",
 	"text-underline-offset",
 	"vertical-align",
@@ -1084,6 +1110,12 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 		map(`${prefix}block-size`, `${prefix}height`);
 		map(`${prefix}inline-size`, `${prefix}width`);
 	}
+	// `grid-row-gap` and `grid-column-gap` are not flow-relative at all: they
+	// are the OLD SPELLING of the gap properties (css-align-3 §8.4). Sharing a
+	// cascade slot is what an alias is, though, so they are declared here --
+	// one slot, whichever of the two names the winning declaration used.
+	map("grid-row-gap", "row-gap");
+	map("grid-column-gap", "column-gap");
 }
 
 /** The physical longhand a flow-relative one names under `direction`, if it is one. */
@@ -1142,6 +1174,8 @@ type ShorthandShape =
 	"pair" |
 	"line" |
 	"border" |
+	"grid-line" |
+	"grid-template" |
 	"sequence";
 
 /**
@@ -1154,6 +1188,16 @@ const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
 /** Each shorthand's shape, classified once rather than per serialization. */
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
+
+/** The placement shorthands, whose components are separated by slashes. */
+const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
+
+/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
+function isGridCustomIdent(value: string): boolean {
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
+}
 
 /**
  * The longhands a shorthand resets but whose values its own grammar cannot
@@ -1181,28 +1225,34 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
 	SHORTHAND_SHAPES.set(
 		shorthand,
-		box ?
-			radius ?
-				"radius" :
-				"box" : // A width, a style and a color stated once for several sides:
-		// four for `border`, the axis's two for `border-block` and
-		// `border-inline`.
-			indexed.length >= 2 * LINE_COMPONENTS.length &&
-			LINE_COMPONENTS.every(
-				(kind) =>
-					indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-						.length ===
-						indexed.length / LINE_COMPONENTS.length,
-			) ?
-				"border" :
-				indexed.length === LINE_COMPONENTS.length &&
-				indexed.every((longhand, index) =>
-					longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-				) ?
-					"line" :
-					indexed.length === 2 && axisPair(shorthand, indexed) ?
-						"pair" :
-						"sequence",
+		// The grid shorthands write their components around slashes, which no
+		// other shorthand's grammar does.
+		GRID_LINE_SHORTHANDS.has(shorthand) ?
+			"grid-line" :
+			shorthand === "grid" || shorthand === "grid-template" ?
+				"grid-template" :
+				box ?
+					radius ?
+						"radius" :
+						"box" : // A width, a style and a color stated once for several sides:
+				// four for `border`, the axis's two for `border-block` and
+				// `border-inline`.
+					indexed.length >= 2 * LINE_COMPONENTS.length &&
+					LINE_COMPONENTS.every(
+						(kind) =>
+							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+								.length ===
+								indexed.length / LINE_COMPONENTS.length,
+					) ?
+						"border" :
+						indexed.length === LINE_COMPONENTS.length &&
+						indexed.every((longhand, index) =>
+							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+						) ?
+							"line" :
+							indexed.length === 2 && axisPair(shorthand, indexed) ?
+								"pair" :
+								"sequence",
 	);
 }
 
@@ -1834,6 +1884,50 @@ function serializeShorthandValue(
 			);
 		case "pair":
 			return values[0] === values[1] ? values[0] : values.join(" ");
+		// css-grid-2 §8.4: the components run start / end (and, for
+		// `grid-area`, both axes' of each), and a trailing one is dropped when
+		// it states the value the omission already implies -- the opposite
+		// component when that is a name, and `auto` otherwise.
+		case "grid-line": {
+			const implied = (from: string): string =>
+				isGridCustomIdent(from) ? from : "auto";
+			const kept = [...values];
+			// grid-area's four are [row-start, column-start, row-end,
+			// column-end]; the pair shorthands' two are [start, end].
+			const from = kept.length === 4 ? [-1, 0, 0, 1] : [-1, 0];
+			while (kept.length > 1) {
+				const index = kept.length - 1;
+				if (kept[index] !== implied(values[from[index]])) {
+					break;
+				}
+				kept.pop();
+			}
+			return kept.join(" / ");
+		}
+		// `grid-template` writes its rows and columns around a slash. Its
+		// third form -- the picture of the grid, whose strings and row sizes
+		// interleave -- states an area map, and no rows-and-columns spelling
+		// can carry one: a block holding one serializes as its longhands.
+		case "grid-template": {
+			const at = (longhand: string): string =>
+				values[stated.indexOf(longhand)] ?? "";
+			if (at("grid-template-areas") !== "none") {
+				return "";
+			}
+			for (const longhand of stated) {
+				if (longhand.startsWith("grid-auto-")) {
+					if (at(longhand) !== CSS_INITIAL_VALUES[longhand]) {
+						return "";
+					}
+				}
+			}
+			const rows = at("grid-template-rows");
+			const columns = at("grid-template-columns");
+			if (rows === "none" && columns === "none") {
+				return "none";
+			}
+			return `${rows} / ${columns}`;
+		}
 		default:
 			return dropInitials(
 				stated.map((longhand, index) => [longhand, values[index]] as const),
@@ -5799,6 +5893,20 @@ function usedLength(cells: number): string {
 }
 
 /**
+ * The reads a used-value measurement takes, from whichever declaration owns
+ * the box. An element's computed declaration is one directly; a
+ * pseudo-element's declaration answers through a view whose [kElement] is the
+ * pseudo-element's own node, which is where its box lives -- the measurement
+ * arithmetic is the same either way, so there is one copy of it.
+ */
+interface MeasuredDeclaration {
+	[kElement]: Element;
+	[kManager]: StyleManager | null;
+	computedValueOf(property: string): string;
+	getPropertyValue(property: string): string;
+}
+
+/**
  * The colors whose `auto` names the element's own color: a caret is drawn in
  * the text's color, and an outline whose color was left to the UA takes it
  * too. The resolved value CSSOM reports is that used color.
@@ -5807,6 +5915,16 @@ const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
 
 /** The two sizes whose `auto` names a minimum only some boxes have. */
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
+
+/**
+ * The two track lists whose resolved value is the USED track sizes: what the
+ * grid came to, one length per track of the implicit grid, rather than the
+ * sizing functions the author wrote (css-grid-2 §7.2).
+ */
+const USED_TRACK_PROPERTIES = new Set([
+	"grid-template-columns",
+	"grid-template-rows",
+]);
 
 /** The containers whose children have an automatic minimum size. */
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
@@ -6117,6 +6235,15 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (this[kManager] && MIN_SIZE_PROPERTIES.has(property)) {
 			return resolvedMinSize(this, this.computedValueOf(property));
 		}
+		if (this[kManager] && USED_TRACK_PROPERTIES.has(property)) {
+			const tracks = this[kManager].usedGridTracks(
+				this[kElement],
+				property === "grid-template-rows",
+			);
+			if (tracks) {
+				return tracks.length > 0 ? tracks.map(usedLength).join(" ") : "none";
+			}
+		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.computedValueOf(property);
 			return computed === "auto" ? this.getPropertyValue("color") : computed;
@@ -6311,14 +6438,14 @@ function shorthand(
 }
 
 function measure(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
 ): string {
 	// A border with no style draws nothing and takes no space, whatever
 	// width it declares.
 	if (property.startsWith("border-") && property.endsWith("-width")) {
-		const style = self.computedValueOf(
+		const style = declaration.computedValueOf(
 			`${property.slice(0, -"-width".length)}-style`,
 		);
 		if (!style || style === "none" || style === "hidden") {
@@ -6328,12 +6455,12 @@ function measure(
 	const inset = INSET_PROPERTIES.has(property);
 	// An inset only applies to a positioned box; on a static one it stays
 	// as declared.
-	const position = inset ? self.getPropertyValue("position") : "";
+	const position = inset ? declaration.getPropertyValue("position") : "";
 	if (inset && position === "static") {
 		return computed;
 	}
 
-	const rect = self[kManager]!.usedRect(self[kElement]);
+	const rect = declaration[kManager]!.usedRect(declaration[kElement]);
 	// No box -- display:none, or a tree layout never reached -- so the
 	// computed value is the answer, exactly as CSSOM says.
 	if (!rect) {
@@ -6341,20 +6468,23 @@ function measure(
 	}
 
 	if (inset) {
-		return usedInset(self, property, computed, rect, position);
+		return usedInset(declaration, property, computed, rect, position);
 	}
 
 	if (property === "width" || property === "height") {
 		const vertical = property === "height";
 		const edges =
-			edge(self, vertical ? "border-top-width" : "border-left-width") +
-			edge(self, vertical ? "border-bottom-width" : "border-right-width") +
-			edge(self, vertical ? "padding-top" : "padding-left") +
-			edge(self, vertical ? "padding-bottom" : "padding-right");
+			edge(declaration, vertical ? "border-top-width" : "border-left-width") +
+			edge(
+				declaration,
+				vertical ? "border-bottom-width" : "border-right-width",
+			) +
+			edge(declaration, vertical ? "padding-top" : "padding-left") +
+			edge(declaration, vertical ? "padding-bottom" : "padding-right");
 		const border = vertical ? rect.height : rect.width;
 		// `box-sizing: border-box` measures the border box itself.
 		const content =
-			self.getPropertyValue("box-sizing") === "border-box" ?
+			declaration.getPropertyValue("box-sizing") === "border-box" ?
 				border :
 				border - edges;
 		return usedLength(Math.max(0, content));
@@ -6363,14 +6493,14 @@ function measure(
 	// An `auto` margin is whatever space the box was given: the distance
 	// between its border box and its containing block's content edge.
 	if (computed === "auto" && property.startsWith("margin-")) {
-		return usedLength(autoMargin(self, property, rect));
+		return usedLength(autoMargin(declaration, property, rect));
 	}
 
 	// Every other used length is already absolute in this engine's own
 	// unit, so the computed value carries it; only a percentage still has
 	// to be resolved, against the containing block's width.
 	if (computed.endsWith("%")) {
-		const basis = containingWidth(self);
+		const basis = containingWidth(declaration);
 		if (basis === null) {
 			return computed;
 		}
@@ -6388,13 +6518,13 @@ function measure(
  * that has to be measured: it is whatever distance the box ended up at.
  */
 function usedInset(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
 	rect: DOMRect,
 	position: string,
 ): string {
-	const block = containingBlockBox(self, position);
+	const block = containingBlockBox(declaration, position);
 	if (!block) {
 		return computed;
 	}
@@ -6411,7 +6541,7 @@ function usedInset(
 	}
 
 	const opposite = OPPOSITE_INSET[property];
-	const other = insetLength(self.computedValueOf(opposite), basis);
+	const other = insetLength(declaration.computedValueOf(opposite), basis);
 	// A relatively positioned box is offset from where it already was, so
 	// an `auto` inset is the negative of its opposite -- and zero when both
 	// are auto, which moves the box nowhere.
@@ -6428,22 +6558,24 @@ function usedInset(
 	if (other !== null) {
 		const size =
 			(vertical ? rect.height : rect.width) +
-			edge(self, start) +
-			edge(self, end);
+			edge(declaration, start) +
+			edge(declaration, end);
 		return usedLength(basis - other - size);
 	}
 	switch (property) {
 		case "top":
-			return usedLength(rect.y - edge(self, start) - block.y);
+			return usedLength(rect.y - edge(declaration, start) - block.y);
 		case "left":
-			return usedLength(rect.x - edge(self, start) - block.x);
+			return usedLength(rect.x - edge(declaration, start) - block.x);
 		case "bottom":
 			return usedLength(
-				block.y + block.height - (rect.y + rect.height + edge(self, end)),
+				block.y +
+				block.height -
+				(rect.y + rect.height + edge(declaration, end)),
 			);
 		default:
 			return usedLength(
-				block.x + block.width - (rect.x + rect.width + edge(self, end)),
+				block.x + block.width - (rect.x + rect.width + edge(declaration, end)),
 			);
 	}
 }
@@ -6455,49 +6587,49 @@ function usedInset(
  * this one flows in.
  */
 function containingBlockBox(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
-		return viewportBox(self);
+		return viewportBox(declaration);
 	}
 	if (position === "absolute") {
 		for (
-			let ancestor = flatParentElement<Element>(self[kElement]);
+			let ancestor = flatParentElement<Element>(declaration[kElement]);
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const ancestorPosition =
 				computedStyleOf(ancestor).computedValueOf("position");
 			if (ancestorPosition && ancestorPosition !== "static") {
-				return boxOf(self, ancestor, false);
+				return boxOf(declaration, ancestor, false);
 			}
 		}
-		return viewportBox(self);
+		return viewportBox(declaration);
 	}
 	if (position === "sticky") {
 		for (
-			let ancestor = flatParentElement<Element>(self[kElement]);
+			let ancestor = flatParentElement<Element>(declaration[kElement]);
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
 			if (overflow && overflow !== "visible") {
-				return boxOf(self, ancestor, true);
+				return boxOf(declaration, ancestor, true);
 			}
 		}
 	}
-	const parent = flatParentElement<Element>(self[kElement]);
-	return parent ? boxOf(self, parent, true) : viewportBox(self);
+	const parent = flatParentElement<Element>(declaration[kElement]);
+	return parent ? boxOf(declaration, parent, true) : viewportBox(declaration);
 }
 
 /** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
 function boxOf(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = self[kManager]!.usedRect(element);
+	const rect = declaration[kManager]!.usedRect(element);
 	if (!rect) {
 		return null;
 	}
@@ -6524,13 +6656,13 @@ function boxOf(
 
 /** The initial containing block: the grid itself. */
 function viewportBox(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const viewport = self[kManager]!.viewportSize();
+	const viewport = declaration[kManager]!.viewportSize();
 	if (!viewport) {
 		return null;
 	}
-	const rect = self[kManager]!.usedRect(self[kElement]);
+	const rect = declaration[kManager]!.usedRect(declaration[kElement]);
 	if (!rect) {
 		return null;
 	}
@@ -6580,20 +6712,20 @@ function resolvedMinSize(
 
 /** One edge length in cells, for the arithmetic above. */
 function edge(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 ): number {
-	return parseFloat(self.getPropertyValue(property)) || 0;
+	return parseFloat(declaration.getPropertyValue(property)) || 0;
 }
 
 /** The space an `auto` margin actually took, measured off the two boxes. */
 function autoMargin(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 	property: string,
 	rect: DOMRect,
 ): number {
-	const parent = flatParentElement<Element>(self[kElement]);
-	const parentRect = parent ? self[kManager]!.usedRect(parent) : null;
+	const parent = flatParentElement<Element>(declaration[kElement]);
+	const parentRect = parent ? declaration[kManager]!.usedRect(parent) : null;
 	if (!parent || !parentRect) {
 		return 0;
 	}
@@ -6627,13 +6759,13 @@ function autoMargin(
 
 /** The width a percentage on this element resolves against. */
 function containingWidth(
-	self: ComputedStyleDeclaration,
+	declaration: MeasuredDeclaration,
 ): number | null {
-	const parent = flatParentElement<Element>(self[kElement]);
+	const parent = flatParentElement<Element>(declaration[kElement]);
 	if (!parent) {
 		return null;
 	}
-	const rect = self[kManager]!.usedRect(parent);
+	const rect = declaration[kManager]!.usedRect(parent);
 	return rect ? rect.width : null;
 }
 
@@ -7007,6 +7139,8 @@ const kPseudoDeclarations = Symbol("pseudo declarations");
 const kPseudoElement = Symbol("pseudoElement");
 const kNodeResolved = Symbol("nodeResolved");
 const kNodeStyle = Symbol("nodeStyle");
+const kBoxView = Symbol("boxView");
+const kBoxViewOf = Symbol("boxViewOf");
 
 /**
  * A pseudo-element's computed style: a flat declaration set -- the matched
@@ -7049,6 +7183,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kSeenEpoch] = 0;
 		this[kNodeStyle] = null;
 		this[kNodeResolved] = new Map<string, string>();
+		this[kBoxView] = null;
 		this[kPseudoDeclarations] = declarations;
 		this[kElement] = element ?? null;
 		this[kPseudoElement] = pseudoElement;
@@ -7142,6 +7277,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 
 	declare [kNodeStyle]: ComputedStyle | null;
 	declare [kNodeResolved]: Map<string, string>;
+	declare [kBoxView]: MeasuredDeclaration | null;
 
 	override getPropertyValue(property: string): string {
 		this[kManager]?.flushStyle();
@@ -7158,14 +7294,30 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * A pseudo-element's resolved value, measured behind the same flush an
 	 * element's is.
 	 *
-	 * A pseudo-element box hangs in the content box of the element it
-	 * originates from, which is what its percentages resolve against -- the
-	 * one measurement the layout it was composed into can answer for it. A
-	 * pseudo that generates no box (`display: none`, `display: contents`, an
-	 * originating element with no box of its own) keeps its computed value,
-	 * exactly as an element with no box does.
+	 * A pseudo-element's box belongs to the node the composition pass gave it,
+	 * so its metrics are measured off that node's rect through the same
+	 * arithmetic an element's are: a stretched block pseudo answers its used
+	 * width, an inline one the union of its fragments. A pseudo the
+	 * composition never gave a node -- one whose selector generates no
+	 * content, or a ::selection -- keeps the percentage resolution below,
+	 * against the box it would hang in.
 	 */
 	[kUsedValue](property: string, computed: string): string {
+		const originating = this[kElement];
+		const manager = this[kManager];
+		if (originating && manager) {
+			// The flush before the node lookup: the composition pass that runs
+			// under it is what creates a pseudo-element's node, so a lookup
+			// taken first would answer "no box" for a box one render away.
+			manager.usedRect(originating);
+			const node = pseudoElement<Element>(
+				originating,
+				this[kPseudoElement],
+			);
+			if (node) {
+				return measure(this[kBoxViewOf](node), property, computed);
+			}
+		}
 		if (!computed.endsWith("%")) {
 			return computed;
 		}
@@ -7193,6 +7345,30 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
 		return usedLength((parseFloat(computed) / 100) * basis);
+	}
+
+	/**
+	 * This declaration as the measurement arithmetic reads it: the same
+	 * cascade answers, with the pseudo-element's own node standing where the
+	 * element stands -- its rect is the box being measured, and its flat-tree
+	 * parent is the originating element percentages resolve against. One view
+	 * per node: composition may retire a node and make another, and a view
+	 * naming the old one would measure a rect no layout holds.
+	 */
+	[kBoxViewOf](node: Element): MeasuredDeclaration {
+		let view = this[kBoxView];
+		if (!view || view[kElement] !== node) {
+			view = {
+				[kElement]: node,
+				[kManager]: this[kManager],
+				computedValueOf: (property: string): string =>
+					this.nodeStyle.computedValueOf(property),
+				getPropertyValue: (property: string): string =>
+					this.getPropertyValue(property),
+			};
+			this[kBoxView] = view;
+		}
+		return view;
 	}
 
 	override setProperty(): void {
@@ -8100,6 +8276,19 @@ export class StyleManager {
 			return null;
 		}
 		return this[kLayoutEngine]!.contentRect(element);
+	}
+
+	/**
+	 * A grid container's used track sizes, measured behind the same flush a
+	 * rect read takes. Null for a box that is not one -- the resolved value
+	 * then stays the computed track list, as CSSOM says of a grid property on
+	 * a box that generated no grid.
+	 */
+	usedGridTracks(element: Element, rows: boolean): number[] | null {
+		if (!this.usedRect(element)) {
+			return null;
+		}
+		return this[kLayoutEngine]!.gridTracks(element, rows);
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */

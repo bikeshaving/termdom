@@ -428,12 +428,17 @@ test("dragging across text builds a real Selection and paints inverse, without t
 	expect(proc.written).toMatch(/\x1b\[[\d;]*7m/);
 
 	// Releasing a drag is only a selection: the clipboard is written by
-	// navigator.clipboard.writeText(), never as a side effect.
-	await proc.stdin.send("\x1b[<0;6;1m");
+	// navigator.clipboard.writeText() from the app's own release handler --
+	// which is inside the release's dispatch, where the clipboard is
+	// reachable -- and never as a side effect of the drag.
 	expect(proc.written).not.toContain("\x1b]52;");
-
+	let copied: Promise<void> | null = null;
+	document.addEventListener("mouseup", () => {
+		copied = window.navigator.clipboard.writeText(selection.toString());
+	});
+	await proc.stdin.send("\x1b[<0;6;1m");
+	await copied;
 	const payload = Buffer.from("hello", "utf8").toString("base64");
-	await window.navigator.clipboard.writeText(selection.toString());
 	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
 
 	termdom.dispose();

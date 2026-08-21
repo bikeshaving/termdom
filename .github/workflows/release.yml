@@ -4,11 +4,13 @@ name: Release
 # version live.
 #
 # Trigger by publishing a GitHub Release, which creates the tag, or from
-# Actions -> Release -> Run workflow. The job parks on the `npm` environment
-# until a required reviewer approves it, then runs `libuild stage`: the version
-# lands on the registry in a not-installable state, and only a human running
-# `npm stage approve <id>` makes it live. That approval always prompts for 2FA,
-# in the CLI and on the website, so no automation can do it.
+# Actions -> Release -> Run workflow. The job runs straight through to
+# `libuild stage`: the version lands on the registry in a not-installable
+# state, and only a human running `npm stage approve <id>` makes it live.
+# That approval always prompts for 2FA, in the CLI and on the website, so no
+# automation can do it. Staging is the only gate: the `npm` environment
+# exists for the trusted-publisher binding and must carry no protection
+# rules.
 #
 # Restrict this repo's npm trusted publisher to the `npm stage publish` action
 # only. Without that, CI regains the ability to publish directly.
@@ -33,7 +35,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm 11.5.1+, and staged publishing 11.15.0+
       # (libuild stage checks and says so). libuild spawns `npm`, so the
@@ -60,4 +61,17 @@ jobs:
             exit 1
           fi
 
-      - run: npx libuild stage --provenance
+      # The release is created after approval as the record of a version that
+      # is already live, so a release-triggered run has nothing to stage.
+      - name: Skip staging when the version is already published
+        id: published
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if npm view "@b9g/termdom@$PKG" version > /dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Provenance comes from the OIDC attestation; the trusted publisher
+      # mints the token, so no npm secret exists anywhere in this repo.
+      - if: steps.published.outputs.skip != 'true'
+        run: npx libuild stage

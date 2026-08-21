@@ -27,6 +27,7 @@ import {
 	stringWidth,
 } from "./text.js";
 import {
+	DETAILS_UA_STYLES,
 	FIELD_UA_STYLES,
 	METER_UA_STYLES,
 	PROGRESS_UA_STYLES,
@@ -67,7 +68,14 @@ export interface UAEngine {
 		invalidate(node: object): void;
 		calculateLayout(): void;
 		getRect(element: object): UARect | null;
-		lineFragments(text: object): TextareaVisualLine[];
+		lineFragments(text: object): UALineFragment[];
+		getRangeRects(range: object): UARect[];
+		caretPositionFromPoint(
+			x: number,
+			y: number,
+			root: object,
+			clampToNearestLine?: boolean,
+		): {node: UAText; offset: number} | null;
 	};
 	styles: {registerShadowRoot(root: object): void};
 	/**
@@ -96,6 +104,19 @@ type UAText = globalThis.Text;
 type UARange = globalThis.Range;
 type UARect = globalThis.DOMRect;
 type UADocument = globalThis.Document;
+
+/**
+ * One laid-out line of a text node: where it sits, and the range of the
+ * node's raw data it renders. A line is a property of the layout and not of
+ * the string, so this is the only thing that can answer "what line is this
+ * offset on" -- for a textarea's vertical motion and for the document
+ * selection's alike.
+ */
+interface UALineFragment {
+	rect: UARect;
+	startOffset: number;
+	endOffset: number;
+}
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
@@ -502,18 +523,22 @@ const isTrustedProperty: PropertyDescriptor = {
 };
 
 /**
- * Whether the platform's event constructor installs isTrusted itself, as an
- * own property no one can redefine. Where it does, that property is the one
- * every event carries and it reads false; where it does not, the constructor
- * here installs the accessor above.
+ * The base this DOM's events extend.
+ *
+ * Its prototype chain reaches the platform's Event, so an event here is an
+ * instance of the global one and platform code accepts it -- but the platform
+ * constructor never runs on it. Some platforms install isTrusted as an
+ * unforgeable own property that always reads false, which an event this DOM
+ * dispatches as the user agent must be able to answer true, so the accessor
+ * an event carries has to be this DOM's. Every member the platform's base
+ * would have provided is provided below.
  */
-const hostInstallsIsTrusted = ((): boolean => {
-	const descriptor = Object.getOwnPropertyDescriptor(
-		new HostEvent("x"),
-		"isTrusted",
-	);
-	return descriptor !== undefined && !descriptor.configurable;
-})();
+const EventBase = function EventBase(): void {} as unknown as {
+	new (): HostEventInstance;
+	prototype: HostEventInstance;
+};
+
+EventBase.prototype = Object.create(HostEvent.prototype) as HostEventInstance;
 
 const kBubbles = Symbol("bubbles");
 const kCancelable = Symbol("cancelable");
@@ -524,7 +549,7 @@ const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
 /** An event, and the flags a listener sets on it while it is dispatched. */
-export class Event extends HostEvent {
+export class Event extends EventBase {
 	declare [kType]: string;
 	declare [kBubbles]: boolean;
 	declare [kCancelable]: boolean;
@@ -541,15 +566,14 @@ export class Event extends HostEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("Event constructor needs a type");
 		}
-		// The dictionary is converted once, here, and the platform base is
-		// handed the converted members: a member that is an accessor is read
-		// the one time the conversion reads it.
+		// The dictionary is converted once, here: a member that is an accessor
+		// is read the one time the conversion reads it.
 		const name = String(type);
 		const init = toDictionary<EventInit>(eventInitDict, "An event init");
 		const bubbles = Boolean(init.bubbles);
 		const cancelable = Boolean(init.cancelable);
 		const composed = Boolean(init.composed);
-		super(name, {bubbles, cancelable, composed});
+		super();
 		this[kState] = {
 			target: null,
 			relatedTarget: null,
@@ -571,9 +595,7 @@ export class Event extends HostEvent {
 		this[kComposed] = composed;
 		this[kTimeStamp] = performance.now();
 		this[kState].initialized = true;
-		if (!hostInstallsIsTrusted) {
-			Object.defineProperty(this, "isTrusted", isTrustedProperty);
-		}
+		Object.defineProperty(this, "isTrusted", isTrustedProperty);
 	}
 
 	get [kDispatchState](): DispatchState {
@@ -650,7 +672,6 @@ export class Event extends HostEvent {
 	override set cancelBubble(value: boolean) {
 		if (value) {
 			this[kState].stopPropagation = true;
-			super.stopPropagation();
 		}
 	}
 
@@ -660,13 +681,11 @@ export class Event extends HostEvent {
 
 	override stopPropagation(): void {
 		this[kState].stopPropagation = true;
-		super.stopPropagation();
 	}
 
 	override stopImmediatePropagation(): void {
 		this[kState].stopPropagation = true;
 		this[kState].stopImmediate = true;
-		super.stopImmediatePropagation();
 	}
 
 	override preventDefault(): void {
@@ -713,7 +732,11 @@ function setCanceledFlag(event: Event): void {
 	const state = event[kDispatchState];
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
-		HostEvent.prototype.preventDefault.call(event);
+		// A platform event keeps its canceled flag on the platform half, which
+		// is where whoever handed it over will read it back.
+		if (state.foreign) {
+			HostEvent.prototype.preventDefault.call(event);
+		}
 	}
 }
 
@@ -1452,6 +1475,349 @@ Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+// A transfer here carries text under format names and nothing else. There is
+// no drag and drop in a terminal and no file to hand over, so `dropEffect`,
+// `effectAllowed`, `setDragImage()` and `files` are present, answer what the
+// interface says they answer, and do nothing.
+
+/**
+ * A transfer format name, normalized.
+ *
+ * The two shorthands the platform keeps are folded into the media types they
+ * stand for, and what is left is lowercased with the surrounding whitespace
+ * dropped, so `"TEXT/Plain "` and `"text"` name one entry.
+ */
+function normalizeTransferFormat(format: unknown): string {
+	const name = String(format).trim().toLowerCase();
+	if (name === "text") {
+		return "text/plain";
+	}
+	if (name === "url") {
+		return "text/uri-list";
+	}
+	return name;
+}
+
+/** The brand an interface with no constructor is built through internally. */
+const kInternalConstruction = Symbol("internal construction");
+
+/** A list of files, empty here because nothing in a terminal produces one. */
+export class FileList {
+	get length(): number {
+		return 0;
+	}
+
+	item(_index: number): null {
+		return null;
+	}
+
+	* [Symbol.iterator](): Generator<never, void, unknown> {}
+}
+
+Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
+	value: "FileList",
+	configurable: true,
+});
+
+const kTransferEntries = Symbol("entries");
+const kTransferItems = Symbol("items");
+const kTransferFiles = Symbol("files");
+const kTransferMode = Symbol("mode");
+const kDropEffect = Symbol("dropEffect");
+const kEffectAllowed = Symbol("effectAllowed");
+
+const kItemType = Symbol("type");
+const kItemData = Symbol("data");
+
+/** One entry of a transfer: a string under a format name. */
+export class DataTransferItem {
+	declare [kItemType]: string;
+	declare [kItemData]: string;
+
+	constructor(brand?: unknown, type?: string, data?: string) {
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kItemType] = String(type);
+		this[kItemData] = String(data);
+	}
+
+	get kind(): string {
+		return "string";
+	}
+
+	get type(): string {
+		return this[kItemType];
+	}
+
+	getAsString(callback: unknown): void {
+		if (callback === null || callback === undefined) {
+			return;
+		}
+		if (typeof callback !== "function") {
+			throw new TypeError("getAsString needs a function");
+		}
+		const data = this[kItemData];
+		queueMicrotask(() => {
+			(callback as (data: string) => void)(data);
+		});
+	}
+
+	getAsFile(): null {
+		return null;
+	}
+}
+
+Object.defineProperty(DataTransferItem.prototype, Symbol.toStringTag, {
+	value: "DataTransferItem",
+	configurable: true,
+});
+
+const kListOwner = Symbol("owner");
+const kListIndices = Symbol("indices");
+
+/** The entries of a transfer, as a list that indexes and mutates them. */
+export class DataTransferItemList {
+	declare [kListOwner]: DataTransfer;
+	declare [kListIndices]: number;
+
+	constructor(brand?: unknown, owner?: DataTransfer) {
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kListOwner] = owner as DataTransfer;
+		this[kListIndices] = 0;
+	}
+
+	get length(): number {
+		return this[kListOwner][kTransferEntries].size;
+	}
+
+	add(data: unknown, type?: unknown): DataTransferItem | null {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			return null;
+		}
+		if (type === undefined) {
+			throw new TypeError("Adding a string entry needs a format");
+		}
+		const format = normalizeTransferFormat(type);
+		if (owner[kTransferEntries].has(format)) {
+			throw domError(
+				"NotSupportedError",
+				`The transfer already carries a ${format} entry`,
+			);
+		}
+		owner[kTransferEntries].set(format, String(data));
+		syncTransferItems(owner);
+		return (this as unknown as Record<number, DataTransferItem>)[
+			owner[kTransferEntries].size - 1
+		];
+	}
+
+	remove(index: number): void {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			throw domError(
+				"InvalidStateError",
+				"That transfer cannot be modified",
+			);
+		}
+		const formats = Array.from(owner[kTransferEntries].keys());
+		const at = toLong(index);
+		if (at < 0 || at >= formats.length) {
+			return;
+		}
+		owner[kTransferEntries].delete(formats[at]);
+		syncTransferItems(owner);
+	}
+
+	clear(): void {
+		const owner = this[kListOwner];
+		if (owner[kTransferMode] !== "readwrite") {
+			return;
+		}
+		owner[kTransferEntries].clear();
+		syncTransferItems(owner);
+	}
+}
+
+Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
+	value: "DataTransferItemList",
+	configurable: true,
+});
+
+/** Bring a list's indexed properties back in line with the entries behind it. */
+function syncTransferItems(transfer: DataTransfer): void {
+	const list = transfer[kTransferItems] as unknown as Record<number, unknown>;
+	const formats = Array.from(transfer[kTransferEntries].keys());
+	for (let i = 0; i < transfer[kTransferItems][kListIndices]; i++) {
+		delete list[i];
+	}
+	for (let i = 0; i < formats.length; i++) {
+		Object.defineProperty(list, i, {
+			value: new DataTransferItem(
+				kInternalConstruction,
+				formats[i],
+				transfer[kTransferEntries].get(formats[i]),
+			),
+			configurable: true,
+			enumerable: true,
+		});
+	}
+	transfer[kTransferItems][kListIndices] = formats.length;
+}
+
+/** The payload a clipboard event carries: text under format names. */
+export class DataTransfer {
+	declare [kTransferEntries]: Map<string, string>;
+	declare [kTransferItems]: DataTransferItemList;
+	declare [kTransferFiles]: FileList;
+	declare [kTransferMode]: "readwrite" | "readonly" | "protected";
+	declare [kDropEffect]: string;
+	declare [kEffectAllowed]: string;
+
+	constructor() {
+		this[kTransferEntries] = new Map();
+		this[kTransferItems] = new DataTransferItemList(
+			kInternalConstruction,
+			this,
+		);
+		this[kTransferFiles] = new FileList();
+		this[kTransferMode] = "readwrite";
+		this[kDropEffect] = "none";
+		this[kEffectAllowed] = "uninitialized";
+	}
+
+	get dropEffect(): string {
+		return this[kDropEffect];
+	}
+
+	set dropEffect(value: string) {
+		const effect = String(value);
+		if (["none", "copy", "link", "move"].includes(effect)) {
+			this[kDropEffect] = effect;
+		}
+	}
+
+	get effectAllowed(): string {
+		return this[kEffectAllowed];
+	}
+
+	set effectAllowed(value: string) {
+		this[kEffectAllowed] = String(value);
+	}
+
+	get items(): DataTransferItemList {
+		return this[kTransferItems];
+	}
+
+	get types(): readonly string[] {
+		if (this[kTransferMode] === "protected") {
+			return Object.freeze([]);
+		}
+		return Object.freeze(Array.from(this[kTransferEntries].keys()));
+	}
+
+	get files(): FileList {
+		return this[kTransferFiles];
+	}
+
+	setDragImage(_image: unknown, _x: unknown, _y: unknown): void {}
+
+	getData(format: unknown): string {
+		if (this[kTransferMode] === "protected") {
+			return "";
+		}
+		return this[kTransferEntries].get(normalizeTransferFormat(format)) ?? "";
+	}
+
+	setData(format: unknown, data: unknown): void {
+		if (this[kTransferMode] !== "readwrite") {
+			return;
+		}
+		this[kTransferEntries].set(normalizeTransferFormat(format), String(data));
+		syncTransferItems(this);
+	}
+
+	clearData(format?: unknown): void {
+		if (this[kTransferMode] !== "readwrite") {
+			return;
+		}
+		if (format === undefined) {
+			this[kTransferEntries].clear();
+		} else {
+			this[kTransferEntries].delete(normalizeTransferFormat(format));
+		}
+		syncTransferItems(this);
+	}
+}
+
+Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
+	value: "DataTransfer",
+	configurable: true,
+});
+
+/**
+ * Put a transfer into the read-only mode a `paste` hands its listeners: the
+ * text is theirs to read, and the clipboard is not theirs to rewrite through
+ * the event.
+ */
+export function lockDataTransfer(transfer: DataTransfer): void {
+	transfer[kTransferMode] = "readonly";
+}
+
+/**
+ * Empty a transfer when the dispatch it belonged to ends: a clipboard
+ * event's payload is the listener's to read while the event runs and
+ * nothing afterward, which is what a browser hands back.
+ *
+ * This is conformance and not a boundary. An app holding a stale transfer
+ * has lost nothing it could not ask for again through
+ * `navigator.clipboard`, and it wrote the listener the payload arrived in.
+ */
+function protectClipboardData(event: Event): void {
+	if (!(event instanceof ClipboardEvent)) {
+		return;
+	}
+	const transfer = event.clipboardData;
+	if (transfer !== null) {
+		transfer[kTransferMode] = "protected";
+	}
+}
+
+export interface ClipboardEventInit extends EventInit {
+	clipboardData?: DataTransfer | null;
+}
+
+const kClipboardData = Symbol("clipboardData");
+
+/** An event of a clipboard gesture, carrying the payload it moves. */
+export class ClipboardEvent extends Event {
+	declare [kClipboardData]: DataTransfer | null;
+
+	constructor(type: string, eventInitDict: ClipboardEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<ClipboardEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kClipboardData] =
+			init.clipboardData === undefined || init.clipboardData === null ?
+				null :
+				init.clipboardData;
+	}
+
+	get clipboardData(): DataTransfer | null {
+		return this[kClipboardData];
+	}
+}
+
+Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, {
+	value: "ClipboardEvent",
+	configurable: true,
+});
+
 const DOM_DELTA_PIXEL = 0x00;
 const DOM_DELTA_LINE = 0x01;
 const DOM_DELTA_PAGE = 0x02;
@@ -1974,21 +2340,7 @@ export class EventTarget {
 	}
 
 	dispatchEvent(event: Event): boolean {
-		if (!(event instanceof HostEvent)) {
-			throw new TypeError("dispatchEvent needs an Event");
-		}
-		if (!(event instanceof Event)) {
-			adoptForeignEvent(event);
-		}
-		const state = event[kDispatchState];
-		if (state.dispatch || !state.initialized) {
-			throw domError(
-				"InvalidStateError",
-				"That event is already being dispatched",
-			);
-		}
-		state.trusted = false;
-		return dispatch(this, event);
+		return dispatchFromOutside(this, event, false);
 	}
 
 	/**
@@ -2397,6 +2749,50 @@ function syncForeignFlags(event: Event, state: DispatchState): void {
 }
 
 /**
+ * Dispatch an event handed in from outside this module, and say whose it is.
+ *
+ * This is the one place an event's provenance is decided. Script reaches it
+ * through dispatchEvent(), whose events are never trusted; the engine reaches
+ * it through dispatchAsUserAgent(), whose events always are. Everything the
+ * module fires itself goes through dispatch() below, which is the spec's
+ * "fire an event" and therefore trusted as well.
+ */
+function dispatchFromOutside(
+	target: EventTarget,
+	event: Event,
+	trusted: boolean,
+): boolean {
+	if (!(event instanceof HostEvent)) {
+		throw new TypeError("dispatchEvent needs an Event");
+	}
+	if (!(event instanceof Event)) {
+		adoptForeignEvent(event);
+	}
+	const state = event[kDispatchState];
+	if (state.dispatch || !state.initialized) {
+		throw domError(
+			"InvalidStateError",
+			"That event is already being dispatched",
+		);
+	}
+	return dispatch(target, event, trusted);
+}
+
+/**
+ * Dispatch an event as the user agent: the event is trusted.
+ *
+ * The engine calls this where decoded terminal input, a viewport change or a
+ * focus move becomes a DOM event -- everything a user or the terminal itself
+ * caused, as opposed to what an application constructs and dispatches.
+ */
+export function dispatchAsUserAgent(
+	target: EventTarget,
+	event: Event,
+): boolean {
+	return dispatchFromOutside(target, event, true);
+}
+
+/**
  * Dispatch an event at a target.
  *
  * The path is built once, from the target outward, and then walked twice: in
@@ -2406,9 +2802,18 @@ function syncForeignFlags(event: Event, state: DispatchState): void {
  *
  * The spec threads a legacy target override flag through here for HTML's load
  * event, which retargets to a Window; there is no Window in this DOM.
+ *
+ * Firing an event is the user agent's act, so an event dispatched here is
+ * trusted unless the caller says otherwise -- click() says otherwise, since
+ * HTML fires a synthetic, untrusted pointer event there.
  */
-function dispatch(target: EventTarget, event: Event): boolean {
+function dispatch(
+	target: EventTarget,
+	event: Event,
+	trusted = true,
+): boolean {
 	const state = event[kDispatchState];
+	state.trusted = trusted;
 	state.dispatch = true;
 	let activationTarget: EventTarget | null = null;
 	let relatedTarget = retarget(state.relatedTarget, target);
@@ -2533,6 +2938,7 @@ function dispatch(target: EventTarget, event: Event): boolean {
 			legacyCanceledActivationBehavior(activationTarget);
 		}
 	}
+	protectClipboardData(event);
 	return !state.canceled;
 }
 
@@ -7367,7 +7773,7 @@ export class HTMLElement extends Element {
 				cancelable: true,
 				composed: true,
 			});
-			dispatch(this, event);
+			dispatch(this, event, false);
 		} finally {
 			this[kClickInProgress] = false;
 		}
@@ -8589,6 +8995,18 @@ const SHADOW_HOST_NAMES = new Set([
 	"span",
 ]);
 
+/**
+ * A user-agent shadow tree's slotting rule: which of the host's children
+ * the given slot shows. Named slots sort children by their `slot`
+ * attribute, which author content does not carry and the UA must not
+ * write onto the author's nodes; a UA tree that sorts children by what
+ * they are -- details sends its first summary to one slot and everything
+ * else to the other -- carries this function instead. findSlottables
+ * consults it on every assignment pass, so it always answers from the
+ * current child list and needs no upkeep when children change.
+ */
+const kUASlotting = Symbol("UA slot distribution");
+
 interface ShadowRootInit {
 	customElementRegistry?: unknown;
 	mode: "open" | "closed";
@@ -8618,6 +9036,7 @@ export class ShadowRoot extends DocumentFragment {
 	[kUAInternal]: boolean;
 	[kDelegatesFocus]: boolean;
 	[kSlotAssignment]: "named" | "manual";
+	[kUASlotting]: ((slot: object) => Slottable[]) | null;
 	[kClonable]: boolean;
 	[kSerializable]: boolean;
 	[kDeclarative]: boolean;
@@ -8629,6 +9048,7 @@ export class ShadowRoot extends DocumentFragment {
 		this[kUAInternal] = false;
 		this[kDelegatesFocus] = false;
 		this[kSlotAssignment] = "named";
+		this[kUASlotting] = null;
 		this[kClonable] = false;
 		this[kSerializable] = false;
 		this[kDeclarative] = false;
@@ -8942,6 +9362,10 @@ function findSlottables(slot: HTMLSlotElement): Slottable[] {
 	}
 	const shadow = root as ShadowRoot;
 	const host = shadow[kHost] as Element;
+	const slotting = shadow[kUASlotting];
+	if (slotting !== null) {
+		return slotting(slot);
+	}
 	if (shadow[kSlotAssignment] === "manual") {
 		for (const slottable of slot[kManualAssignment]) {
 			if (slottable[kParent] === host) {
@@ -9788,21 +10212,74 @@ export class HTMLDataListElement extends HTMLElement {
 const kToggleQueued = Symbol("toggleQueued");
 const kStateAtQueue = Symbol("stateAtQueue");
 
+const kContent = Symbol("content");
+
 /**
  * A disclosure, whose open attribute is its whole state.
  *
  * The toggle event is queued rather than fired where the attribute changes,
  * so a run of changes inside one turn reports the state it settled on.
+ *
+ * It renders a closed shadow tree it owns, as the form controls do: a slot
+ * the first summary child projects through, and a content container
+ * (part=details-content) whose slot takes every other child -- text nodes
+ * included, which no light-tree selector could reach. Hiding a closed
+ * details' body is then one display flip on that container.
  */
 export class HTMLDetailsElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kToggleQueued] = false;
 		this[kStateAtQueue] = "closed";
+		this[kEngine] = null;
+		this[kContent] = null;
 	}
 
 	declare [kToggleQueued]: boolean;
 	declare [kStateAtQueue]: string;
+
+	declare [kEngine]: UAEngine | null;
+	declare [kContent]: UAElement | null;
+
+	[kUAUpgrade](): void {
+		if (this[kEngine] !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) {
+			return;
+		}
+		this[kEngine] = engine;
+		const document = uaDocumentOf(this);
+		const root = buildUARoot(this, engine, DETAILS_UA_STYLES);
+		const shadow = root as unknown as ShadowRoot;
+		const summarySlot = document.createElement("slot");
+		const content = document.createElement("div");
+		content.setAttribute("part", "details-content");
+		content.appendChild(document.createElement("slot"));
+		// The distribution must be in place before the slots enter the tree:
+		// inserting each one runs the assignment pass that fills it.
+		shadow[kSlotAssignment] = "manual";
+		shadow[kUASlotting] = (slot) =>
+			detailsSlottables(this, slot === summarySlot);
+		root.appendChild(summarySlot);
+		root.appendChild(content);
+		this[kContent] = content;
+		this[kUAReconcile]();
+	}
+
+	/** Show or hide the content container from the `open` attribute. */
+	[kUAReconcile](): void {
+		const content = this[kContent];
+		if (content === null) {
+			return;
+		}
+		const display = this.hasAttribute("open") ? "block" : "none";
+		if (content.style.display !== display) {
+			content.style.display = display;
+		}
+	}
 
 	override [kAttributeChanged](
 		localName: string,
@@ -9837,6 +10314,27 @@ export class HTMLDetailsElement extends HTMLElement {
 		}
 	}
 }
+
+/**
+ * The light children a details' UA slots project: the first summary element
+ * child to the summary slot, every other slottable child to the content
+ * slot. Recomputed from the child list on each assignment pass, which the
+ * tree mutation algorithms run on every insertion and removal.
+ */
+function detailsSlottables(
+	host: HTMLDetailsElement,
+	toSummary: boolean,
+): Slottable[] {
+	const summary = firstChildElement(host, "summary");
+	const result: Slottable[] = [];
+	for (let child = host[kFirstChild]; child !== null; child = child[kNext]) {
+		if (isSlottable(child) && (child === summary) === toSummary) {
+			result.push(child as Slottable);
+		}
+	}
+	return result;
+}
+
 /**
  * A summary opens and closes the details it is the summary of.
  *
@@ -11695,6 +12193,28 @@ function applySharedFieldEdit(
 }
 
 /**
+ * Insert typed or pasted text at an input's selection.
+ *
+ * A number input's text can be any prefix of a valid floating-point number
+ * and nothing else: an insertion that would take it outside the grammar is
+ * refused whole, the way a browser's number field refuses a second decimal
+ * point. Deletions are never gated, so text a deletion strands outside the
+ * grammar can always be cleared.
+ */
+function insertFieldText(field: HTMLInputElement, text: string): void {
+	if (!text) {
+		return;
+	}
+	const value = field[kUAValue];
+	const {start, end} = uaSelectionOf(field);
+	const next = value.slice(0, start) + text + value.slice(end);
+	if (field.type === "number" && !isFloatPrefix(next)) {
+		return;
+	}
+	applyFieldEdit(field, collapsedEdit(next, start + text.length));
+}
+
+/**
  * A typed character replacing the field's selection.
  *
  * Reached from `beforeinput`, which is where a browser reaches it: the
@@ -11725,6 +12245,18 @@ function wordStartBefore(value: string, caret: number): number {
 	}
 	while (at > 0 && !/\s/.test(value[at - 1])) {
 		at--;
+	}
+	return at;
+}
+
+/** The mirror of wordStartBefore: where a word-wise forward move lands. */
+function wordEndAfter(value: string, caret: number): number {
+	let at = caret;
+	while (at < value.length && /\s/.test(value[at])) {
+		at++;
+	}
+	while (at < value.length && !/\s/.test(value[at])) {
+		at++;
 	}
 	return at;
 }
@@ -11828,9 +12360,13 @@ function uaStyleElement(host: Element, styles: string): UAElement {
 	return style;
 }
 
-/** The engine a document's controls render through, if it has been installed. */
+/**
+ * The engine a document's controls render through, if it has been installed.
+ * A document has no ownerDocument, so it stands for itself: the selection
+ * asks about a whole document where a control asks about a node.
+ */
 function uaEngineOf(node: object): UAEngine | undefined {
-	const document = (node as Node).ownerDocument as unknown as Record<
+	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
 		symbol,
 		UAEngine
 	> | null;
@@ -12026,14 +12562,14 @@ export class HTMLInputElement extends HTMLElement {
 			}
 			if (event.inputType === "insertText") {
 				event.preventDefault();
-				applyFieldEdit(this, printableFieldEdit(this, event.data));
+				insertFieldText(this, event.data);
 				return;
 			}
 			if (event.inputType !== "insertFromPaste") {
 				return;
 			}
 			event.preventDefault();
-			insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+			insertFieldText(this, event.data.replace(/[\r\n]+/g, ""));
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
@@ -12054,6 +12590,23 @@ export class HTMLInputElement extends HTMLElement {
 			// control. It toggles, for the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
+				}
+				return;
+			}
+
+			// ArrowUp and ArrowDown step a number input, standing in for
+			// the up/down buttons a browser draws on one -- a terminal has
+			// none, and every hand is already on the keyboard. Stepping is
+			// a user edit, so it fires input and then change, as pressing
+			// those buttons does.
+			if (
+				this.type === "number" &&
+				(key === "ArrowUp" || key === "ArrowDown")
+			) {
+				const stepped = steppedValue(this, key === "ArrowUp" ? 1 : -1);
+				if (stepped !== null) {
+					applyFieldEdit(this, collapsedEdit(stepped, stepped.length));
+					dispatch(this, new Event("change", {bubbles: true}));
 				}
 				return;
 			}
@@ -12135,6 +12688,16 @@ export class HTMLInputElement extends HTMLElement {
 	get value(): string {
 		switch (inputValueMode(this.type)) {
 			case "value":
+				// A number input mid-edit holds text on its way to being a
+				// number -- "4.", "4e-" -- which the control keeps and renders;
+				// the IDL attribute reports the empty string until the text
+				// arrives at a number, as a browser's does.
+				if (
+					this.type === "number" &&
+					parseFloatingPoint(this[kValue]) === null
+				) {
+					return "";
+				}
 				return this[kValue];
 			case "default":
 				return this.getAttribute("value") ?? "";
@@ -12174,6 +12737,49 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	/**
+	 * The value as the number it parses to: NaN when it does not, and only
+	 * the numeric types answer. Assigning NaN empties the field; assigning
+	 * a non-finite number is the TypeError the spec makes it.
+	 */
+	get valueAsNumber(): number {
+		if (this.type !== "number" && this.type !== "range") {
+			return NaN;
+		}
+		return parseFloatingPoint(this.value) ?? NaN;
+	}
+
+	set valueAsNumber(value: number) {
+		if (this.type !== "number" && this.type !== "range") {
+			throw domError(
+				"InvalidStateError",
+				"This input type does not hold a number",
+			);
+		}
+		const number = Number(value);
+		if (Number.isNaN(number)) {
+			this.value = "";
+			return;
+		}
+		if (!Number.isFinite(number)) {
+			throw new TypeError("valueAsNumber must be finite");
+		}
+		this.value = String(number);
+	}
+
+	/**
+	 * The spec's step methods: move along the step grid without events, the
+	 * programmatic siblings of the arrow keys. A step of "any" names no grid
+	 * to move on, which is the InvalidStateError the spec makes it.
+	 */
+	stepUp(n = 1): void {
+		stepInputBy(this, Math.trunc(Number(n)));
+	}
+
+	stepDown(n = 1): void {
+		stepInputBy(this, -Math.trunc(Number(n)));
+	}
+
+	/**
 	 * The control's value itself, which is what the widget below renders and
 	 * edits through. The IDL attribute above it answers with an attribute for
 	 * the types that have no value of their own; those types render no field,
@@ -12194,7 +12800,15 @@ export class HTMLInputElement extends HTMLElement {
 		if (inputValueMode(this.type) !== "value") {
 			return;
 		}
-		this[kValue] = sanitizeInputValue(this, value);
+		// A user edit passes through the states a number passes through on
+		// its way to being one -- "4.", "4e-" -- which full sanitization
+		// would empty on every keystroke. The edit keeps its text (the
+		// insertion filter has already limited the characters); the value
+		// getter is what reports the empty string until the text is a
+		// number. Programmatic writes keep the full sanitization.
+		this[kValue] = this.type === "number" ?
+				value.replace(/[\r\n]/g, "") :
+				sanitizeInputValue(this, value);
 		this[kDirtyValue] = true;
 		widgetChanged(this);
 	}
@@ -12708,6 +13322,104 @@ function parseFloatingPoint(value: string): number | null {
 	}
 	const number = Number(value);
 	return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Whether `value` is a prefix of a valid floating-point number: the states a
+ * number input's text passes through on the way to one -- "-", "4.", "1e-"
+ * among them. Every state of the grammar either accepts already or accepts
+ * after one more digit, so the prefix test is the grammar itself, twice,
+ * rather than a second grammar that could drift from it.
+ */
+function isFloatPrefix(value: string): boolean {
+	return VALID_FLOAT.test(value) || VALID_FLOAT.test(value + "0");
+}
+
+/**
+ * The decimal places a float literal spells, which is what toFixed needs to
+ * write a step-grid value without binary dust: stepping 0.1 at a time must
+ * produce "0.3", never "0.30000000000000004". An exponent literal names no
+ * place count and answers zero.
+ */
+function decimalPlacesOf(text: string | null | undefined): number {
+	if (!text) {
+		return 0;
+	}
+	const match = /^-?[0-9]*(?:\.([0-9]+))?$/.exec(text.trim());
+	if (!match || match[1] === undefined) {
+		return 0;
+	}
+	return match[1].length;
+}
+
+/** stepUp/stepDown: validate, step, and assign without firing events. */
+function stepInputBy(input: HTMLInputElement, steps: number): void {
+	if (input.type !== "number" && input.type !== "range") {
+		throw domError(
+			"InvalidStateError",
+			"This input type does not step",
+		);
+	}
+	const stepAttribute = input.getAttribute("step")?.trim();
+	if (stepAttribute !== undefined && /^any$/i.test(stepAttribute)) {
+		throw domError(
+			"InvalidStateError",
+			'A step of "any" names no grid to step on',
+		);
+	}
+	if (steps === 0) {
+		return;
+	}
+	const stepped = steppedValue(input, steps);
+	if (stepped !== null) {
+		input.value = stepped;
+	}
+}
+
+/**
+ * The value a number input steps to: `steps` grid points away, on the grid
+ * `step` spaces and `min` anchors (zero anchors it when there is no min),
+ * clamped to [min, max]. A value between grid points moves to the nearest
+ * point in the direction of travel. Null when there is nowhere to go, so a
+ * caller can leave the field untouched. An out-of-range value steps to the
+ * nearest bound whichever way it was pushed, which is how a browser's
+ * up/down buttons pull a field into range.
+ */
+function steppedValue(input: HTMLInputElement, steps: number): string | null {
+	const stepAttribute = input.getAttribute("step")?.trim();
+	const step =
+		stepAttribute === undefined || /^any$/i.test(stepAttribute) ?
+			1 :
+				(parseFloatingPoint(stepAttribute) ?? 1);
+	const spacing = step > 0 ? step : 1;
+	const min = parseFloatingPoint(input.getAttribute("min")?.trim() ?? "");
+	const max = parseFloatingPoint(input.getAttribute("max")?.trim() ?? "");
+	const current = parseFloatingPoint(input[kUAValue]) ?? 0;
+	const base = min ?? 0;
+
+	// The offset in grid units, rounded enough that a value the grid itself
+	// produced counts as on the grid despite binary representation.
+	const offset = Math.round(((current - base) / spacing) * 1e9) / 1e9;
+	const k =
+		steps > 0 ? Math.floor(offset) + steps : Math.ceil(offset) + steps;
+	let next = base + k * spacing;
+	if (max !== null && next > max) {
+		// The last grid point inside the range, not max itself.
+		const room = Math.round(((max - base) / spacing) * 1e9) / 1e9;
+		next = base + Math.floor(room) * spacing;
+	}
+	if (min !== null && next < min) {
+		next = min;
+	}
+	if (next === current) {
+		return null;
+	}
+	const places = Math.max(
+		decimalPlacesOf(stepAttribute),
+		decimalPlacesOf(input.getAttribute("min")),
+		decimalPlacesOf(input[kUAValue]),
+	);
+	return String(Number(next.toFixed(Math.min(places, 20))));
 }
 /**
  * The value an input stores for what was written to it.
@@ -18350,15 +19062,18 @@ Object.defineProperties(Element.prototype, {
 		enumerable: true,
 		writable: true,
 	},
-	// How far a box is scrolled from its content's origin. The number is the
-	// box's own; what it means for what the box shows is the environment's,
-	// which is why writing one scrolls nothing here.
+	// How far a box is scrolled from its content's origin. These accessors
+	// are the storage an engineless document answers with: writes land and
+	// read back, and nothing moves. An environment that can lay out and
+	// paint (the terminal engine) replaces them wholesale -- accessor and
+	// storage both -- with ones that clamp against the content's laid-out
+	// extent and schedule the repaint.
 	scrollLeft: {
 		get(this: Element): number {
 			return scrollOffsets.get(this)?.left ?? 0;
 		},
 		set(this: Element, value: number) {
-			scrollOffsetsOf(this).left = toDouble(value);
+			writeScrollOffset(this, "left", toDouble(value));
 		},
 		configurable: true,
 		enumerable: true,
@@ -18368,7 +19083,7 @@ Object.defineProperties(Element.prototype, {
 			return scrollOffsets.get(this)?.top ?? 0;
 		},
 		set(this: Element, value: number) {
-			scrollOffsetsOf(this).top = toDouble(value);
+			writeScrollOffset(this, "top", toDouble(value));
 		},
 		configurable: true,
 		enumerable: true,
@@ -18376,15 +19091,19 @@ Object.defineProperties(Element.prototype, {
 });
 
 /** The scroll offsets of the boxes that have been scrolled at all. */
-const scrollOffsets = new WeakMap<Element, {left: number; top: number}>();
+const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
 
-function scrollOffsetsOf(element: Element): {left: number; top: number} {
+function writeScrollOffset(
+	element: object,
+	axis: "left" | "top",
+	value: number,
+): void {
 	let offsets = scrollOffsets.get(element);
 	if (offsets === undefined) {
 		offsets = {left: 0, top: 0};
 		scrollOffsets.set(element, offsets);
 	}
-	return offsets;
+	offsets[axis] = value;
 }
 
 /** The spec's "insert adjacent" algorithm, shared by element and text. */
@@ -20354,10 +21073,371 @@ export class Selection {
 		);
 	}
 
+	/**
+	 * Move the caret, or drag the focus, by a unit of text -- the motion a
+	 * keyboard makes, in the one place a page can ask for it.
+	 *
+	 * `alter` is "move" (collapse where the motion lands) or "extend" (take
+	 * the focus there and leave the anchor). A "move" over a range starts
+	 * from the edge it is heading for, so a forward character move over a
+	 * selection collapses to its end without going further -- what browsers
+	 * do. "left" and "right" mean "backward" and "forward": a right-to-left
+	 * run's visual order is not followed.
+	 *
+	 * "character" and "word" are answerable from the text. "line" and
+	 * "lineboundary" are laid-out lines rather than a property of the string,
+	 * so they need a document mounted in a terminal and do nothing without
+	 * one; a line's ends are its first and last text in tree order, which is
+	 * its visual order only where the text runs left to right. "sentence",
+	 * "paragraph" and their boundaries are not implemented. Anything
+	 * unrecognized does nothing, as in a browser.
+	 */
+	modify(alter?: string, direction?: string, granularity?: string): void {
+		const how = String(alter ?? "move").toLowerCase();
+		const where = String(direction ?? "forward").toLowerCase();
+		const unit = String(granularity ?? "character").toLowerCase();
+		if (how !== "move" && how !== "extend") {
+			return;
+		}
+		const forward = where === "forward" || where === "right";
+		if (!forward && where !== "backward" && where !== "left") {
+			return;
+		}
+		const range = documentRange(this);
+		if (range === null) {
+			return;
+		}
+		const extending = how === "extend";
+		const from =
+			extending ?
+					(focusPoint(this) as [Node, number]) :
+				forward ?
+						([range[kEndNode], range[kEndOffset]] as [Node, number]) :
+						([range[kStartNode], range[kStartOffset]] as [Node, number]);
+		// Collapsing a range by a character is the whole motion: the caret
+		// lands on the edge the direction points at, not one character past it.
+		const to =
+			!extending && !range.collapsed && unit === "character" ?
+				from :
+					modifiedPoint(this, from, forward, unit);
+		if (to === null) {
+			return;
+		}
+		if (extending) {
+			this.extend(to[0], to[1]);
+			return;
+		}
+		this.setBaseAndExtent(to[0], to[1], to[0], to[1]);
+	}
+
 	toString(): string {
 		const range = this[kRange];
 		return range === null ? "" : range.toString();
 	}
+}
+
+/**
+ * The text a document paints, as one string with the text node each stretch
+ * of it came from. Character and word motion are string questions, and a
+ * caret crosses from one text node into the next without noticing, so both
+ * are asked of this rather than of a node at a time.
+ *
+ * Built per call: a selection moves at the speed of a keystroke, and a cache
+ * of the document's text would have every mutation to invalidate it.
+ */
+interface SelectionText {
+	text: string;
+	parts: Array<{node: Text; start: number}>;
+}
+
+/** One laid-out line, as offsets into the flattened text. */
+interface SelectionLine {
+	y: number;
+	start: number;
+	end: number;
+}
+
+/** Whether a text node puts anything on the screen. */
+function paintsText(
+	node: Text,
+	layout: UAEngine["layout"] | null,
+): boolean {
+	if (node[kData].length === 0) {
+		return false;
+	}
+	if (layout === null) {
+		return true;
+	}
+	for (const fragment of layout.lineFragments(node)) {
+		if (fragment.endOffset > fragment.startOffset) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/** The painted text nodes of a document, in tree order. */
+function selectionTextNodes(
+	document: Document,
+	layout: UAEngine["layout"] | null,
+): Text[] {
+	const nodes: Text[] = [];
+	const collect = (node: Node): void => {
+		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			if (child.nodeType === TEXT_NODE) {
+				if (paintsText(child as Text, layout)) {
+					nodes.push(child as Text);
+				}
+			} else if (child.nodeType === ELEMENT_NODE) {
+				const name = (child as Element).localName;
+				if (name !== "script" && name !== "style" && name !== "template") {
+					collect(child);
+				}
+			}
+		}
+	};
+	const root = document.body ?? document.documentElement;
+	if (root !== null) {
+		collect(root as unknown as Node);
+	}
+	return nodes;
+}
+
+function flattenSelectionText(nodes: Text[]): SelectionText {
+	let text = "";
+	const parts: Array<{node: Text; start: number}> = [];
+	for (const node of nodes) {
+		parts.push({node, start: text.length});
+		text += node[kData];
+	}
+	return {text, parts};
+}
+
+/**
+ * Where a boundary point sits in the flattened text, or null for a point in
+ * nothing painted. An element boundary point sits before the child at its
+ * offset, so it lands on the first painted text at or after that child --
+ * and past the last child, at the end of the element's own text.
+ */
+function selectionIndexOf(
+	run: SelectionText,
+	node: Node,
+	offset: number,
+): number | null {
+	if (node.nodeType === TEXT_NODE) {
+		for (const part of run.parts) {
+			if (part.node === node) {
+				return part.start + Math.min(offset, part.node[kData].length);
+			}
+		}
+		return null;
+	}
+	let child = node[kFirstChild];
+	for (let i = 0; child !== null && i < offset; i++) {
+		child = child[kNext];
+	}
+	if (child !== null) {
+		for (const part of run.parts) {
+			if (isInclusiveAncestor(child, part.node)) {
+				return part.start;
+			}
+		}
+	}
+	let last: number | null = null;
+	for (const part of run.parts) {
+		if (isInclusiveAncestor(node, part.node)) {
+			last = part.start + part.node[kData].length;
+		}
+	}
+	return last;
+}
+
+/**
+ * The boundary point an offset into the flattened text names. An offset on
+ * the seam between two nodes belongs to the earlier one's end, which is the
+ * same position as the later one's start.
+ */
+function selectionPointAt(
+	run: SelectionText,
+	index: number,
+): [Node, number] | null {
+	const at = Math.max(0, Math.min(index, run.text.length));
+	for (const part of run.parts) {
+		if (at <= part.start + part.node[kData].length) {
+			return [part.node, at - part.start];
+		}
+	}
+	const last = run.parts[run.parts.length - 1];
+	return last === undefined ? null : [last.node, last.node[kData].length];
+}
+
+/**
+ * The document's laid-out lines, as stretches of the flattened text. Two
+ * fragments on the same row are the same line however many nodes they came
+ * from, so a row is keyed by where it sits.
+ */
+function selectionLines(
+	run: SelectionText,
+	layout: UAEngine["layout"],
+): SelectionLine[] {
+	const rows = new Map<number, SelectionLine>();
+	for (const part of run.parts) {
+		for (const fragment of layout.lineFragments(part.node)) {
+			if (fragment.endOffset <= fragment.startOffset) {
+				continue;
+			}
+			const y = Math.round(fragment.rect.y);
+			const start = part.start + fragment.startOffset;
+			const end = part.start + fragment.endOffset;
+			const row = rows.get(y);
+			if (row === undefined) {
+				rows.set(y, {y, start, end});
+			} else {
+				row.start = Math.min(row.start, start);
+				row.end = Math.max(row.end, end);
+			}
+		}
+	}
+	return [...rows.values()].sort((a, b) => a.y - b.y);
+}
+
+/**
+ * The line an offset sits on. A caret exactly at a soft wrap belongs to the
+ * next line's start -- both lines claim the offset, and the later one wins,
+ * the same rule the textarea's vertical motion follows.
+ */
+function selectionLineAt(lines: SelectionLine[], index: number): number {
+	for (let i = 0; i < lines.length; i++) {
+		if (index <= lines[i].end) {
+			const next = lines[i + 1];
+			if (next !== undefined && next.start <= index) {
+				continue;
+			}
+			return i;
+		}
+	}
+	return lines.length - 1;
+}
+
+/** The column a caret paints at, asked of the layout. */
+function caretColumnOf(
+	document: Document,
+	layout: UAEngine["layout"],
+	point: [Node, number],
+): number | null {
+	const range = document.createRange();
+	range.setStart(point[0], point[1]);
+	range.setEnd(point[0], point[1]);
+	const rect = layout.getRangeRects(range)[0];
+	return rect === undefined ? null : rect.x;
+}
+
+/**
+ * The point one laid-out line up or down, keeping the column the caret is at
+ * now. Past the first or last line the motion spends itself on that line's
+ * own end, as a browser's arrow key does.
+ *
+ * The column is a screen column and the target is a screen row, so the
+ * landing offset is the layout's own hit test -- the same answer a click
+ * there would give.
+ */
+function selectionLineMove(
+	document: Document,
+	run: SelectionText,
+	layout: UAEngine["layout"],
+	index: number,
+	forward: boolean,
+): [Node, number] | null {
+	const lines = selectionLines(run, layout);
+	if (lines.length === 0) {
+		return null;
+	}
+	const at = selectionLineAt(lines, index);
+	const target = at + (forward ? 1 : -1);
+	if (target < 0) {
+		return selectionPointAt(run, lines[0].start);
+	}
+	if (target >= lines.length) {
+		return selectionPointAt(run, lines[lines.length - 1].end);
+	}
+	const here = selectionPointAt(run, index);
+	const column = here === null ? null : caretColumnOf(document, layout, here);
+	const root = document.body ?? document.documentElement;
+	const found =
+		column === null || root === null ?
+			null :
+				layout.caretPositionFromPoint(
+					column,
+					lines[target].y,
+					root as unknown as object,
+					true,
+				);
+	if (found === null) {
+		return selectionPointAt(run, lines[target].start);
+	}
+	return [found.node as unknown as Node, found.offset];
+}
+
+/** The point the motion lands on, or null where there is nothing to do. */
+function modifiedPoint(
+	self: Selection,
+	from: [Node, number],
+	forward: boolean,
+	granularity: string,
+): [Node, number] | null {
+	const document = self[kDocument];
+	const layout = uaEngineOf(document)?.layout ?? null;
+	if (layout === null) {
+		if (granularity === "line" || granularity === "lineboundary") {
+			return null;
+		}
+	} else {
+		// Lines are read back off the layout in the same turn, so whatever the
+		// page just mutated has to be laid out before they are asked for.
+		layout.calculateLayout();
+	}
+	const run = flattenSelectionText(selectionTextNodes(document, layout));
+	if (run.parts.length === 0) {
+		return null;
+	}
+	const index = selectionIndexOf(run, from[0], from[1]);
+	if (index === null) {
+		return null;
+	}
+	if (granularity === "character") {
+		return selectionPointAt(
+			run,
+			forward ?
+					nextGraphemeBoundary(run.text, index) :
+					prevGraphemeBoundary(run.text, index),
+		);
+	}
+	if (granularity === "word") {
+		return selectionPointAt(
+			run,
+			forward ?
+					wordEndAfter(run.text, index) :
+					wordStartBefore(run.text, index),
+		);
+	}
+	if (granularity === "documentboundary") {
+		return selectionPointAt(run, forward ? run.text.length : 0);
+	}
+	if (layout === null) {
+		return null;
+	}
+	if (granularity === "lineboundary") {
+		const lines = selectionLines(run, layout);
+		if (lines.length === 0) {
+			return null;
+		}
+		const line = lines[selectionLineAt(lines, index)];
+		return selectionPointAt(run, forward ? line.end : line.start);
+	}
+	if (granularity === "line") {
+		return selectionLineMove(document, run, layout, index, forward);
+	}
+	return null;
 }
 
 /** Whether a node is in the selection's document, shadow trees included. */

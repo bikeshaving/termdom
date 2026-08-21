@@ -72,6 +72,73 @@ test("an open details shows its body", async () => {
 	dom.dispose();
 });
 
+test("a closed details hides a bare text child", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	// No light-tree selector reaches a text node: the child hides by
+	// projecting into the UA shadow tree's content container.
+	document.body.innerHTML = "<details><summary>More</summary>secret</details>";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("More");
+	expect(terminal.getPlainText()).not.toContain("secret");
+
+	const details = document.querySelector("details") as HTMLDetailsElement;
+	details.setAttribute("open", "");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("secret");
+
+	details.removeAttribute("open");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("secret");
+
+	dom.dispose();
+});
+
+test("only the first summary stays visible in a closed details", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	// Only the FIRST summary is the disclosure's caption; a second one is
+	// ordinary content, hidden while closed (browser parity).
+	document.body.innerHTML =
+		"<details><summary>First</summary><summary>Second</summary></details>";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("First");
+	expect(terminal.getPlainText()).not.toContain("Second");
+
+	const details = document.querySelector("details") as HTMLDetailsElement;
+	details.setAttribute("open", "");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("Second");
+
+	dom.dispose();
+});
+
+test("children added to a live details slot into the right place", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<details><summary>More</summary></details>";
+	await nextFrame(dom);
+
+	const details = document.querySelector("details") as HTMLDetailsElement;
+	details.appendChild(document.createTextNode("late text"));
+	const paragraph = document.createElement("p");
+	paragraph.textContent = "late element";
+	details.appendChild(paragraph);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("late text");
+	expect(terminal.getPlainText()).not.toContain("late element");
+
+	details.setAttribute("open", "");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("late text");
+	expect(terminal.getPlainText()).toContain("late element");
+
+	dom.dispose();
+});
+
 /* ------------------------------------------------------ details/summary */
 
 test("the disclosure marker follows the open state", async () => {

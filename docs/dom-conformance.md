@@ -431,7 +431,7 @@ Range.getClientRects() and Range.getBoundingClientRect() are not implemented. Th
 
 ### selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html
 
-Selection.modify() is not implemented. Its "character" and "word" granularities could be answered from the tree. Its "line", "lineboundary", "paragraph" and remaining granularities are positions only layout knows.
+Selection.modify() implements the "character", "word", "line", "lineboundary" and document-boundary granularities. "sentence" and "paragraph" do nothing. A line is a laid-out line rather than a property of the string, so the line granularities need a document mounted in a terminal; on the bare DOM this suite runs against, they do nothing.
 
 ### selection/getSelection.html (excluded), and the defaultView sanity checks in it
 

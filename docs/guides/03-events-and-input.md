@@ -3,7 +3,10 @@ title: Events and Input
 description: Keyboard, mouse, focus, form controls, and selection.
 ---
 
-Input arrives as DOM events, through `addEventListener`.
+Input arrives as DOM events, through `addEventListener`. An event the engine
+fires -- decoded input, a resize, a focus move -- reads `isTrusted` true; an
+event an application constructs and dispatches itself reads false, so a
+listener can tell the two apart.
 
 ## Keyboard
 
@@ -89,27 +92,55 @@ The controls are UA shadow trees, so `::placeholder` and `::part()`
 styling apply. The caret is the real terminal cursor, and IME composition
 works: CJK input methods compose in the field. `<input type="password">`
 masks its value. A number input takes float syntax only, and ArrowUp and
-ArrowDown step it within `min` and `max` — the spinner, on the keys a
-terminal has.
+ArrowDown step it within `min` and `max`.
 
 ## Selection and the clipboard
 
 Drag to select, in the document or inside a field; style it with
-`::selection`. `navigator.clipboard.writeText(text)` copies to the system
-clipboard over OSC 52, which travels in-band and works across SSH.
+`::selection`. `getSelection().modify(alter, direction, granularity)`
+moves the caret or drags the focus by character, word, line or line
+boundary; the line granularities read the laid-out lines, so a soft wrap
+counts as a line.
+
+`navigator.clipboard.writeText(text)` copies to the system clipboard over
+OSC 52, which travels in-band and works across SSH. `readText()` asks the
+terminal for its clipboard by OSC 52 query, and rejects when the terminal
+refuses to answer, as most do. Both work only during the dispatch of a
+trusted event the user caused — a keystroke, a mouse press, a click, a
+paste — and reject with `NotAllowedError` otherwise. The gate is stricter
+than a browser's activation window: it does not survive an `await`.
+
+A paste arrives as a cancelable `paste` event at the focused element, or
+at `document.body` when nothing is focused, with the text on
+`event.clipboardData`; left uncanceled, it inserts into a focused text
+field:
+
+```ts
+document.addEventListener("paste", (event) => {
+	console.log(event.clipboardData.getData("text/plain"));
+	event.preventDefault();
+});
+```
+
+`copy` and `cut` never fire from the user: the terminal keeps the copy
+gesture — Cmd+C, Shift+drag — and Ctrl+C is the interrupt.
 
 ## Scrolling
 
 Output starts at the command line and flows down; when the document
 outgrows the terminal, earlier rows move into the terminal's scrollback.
-The document scrolls with the standard calls:
+The document scrolls with the standard calls, and so does a box whose
+`overflow` is `auto` or `scroll`:
 
 ```ts
 window.scrollTo(0, 0);
+pane.scrollTop += 5;
 element.scrollIntoView();
 ```
 
-`window.scrollY` reports the position.
+`window.scrollY` reports the document position. The mouse wheel moves the
+innermost scrollable box under the pointer and hands what remains to its
+ancestors.
 
 ## Fullscreen
 

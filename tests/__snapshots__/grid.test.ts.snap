@@ -1,0 +1,17 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`a grid of bordered cells paints its whole frame 1`] = `┌────────┐┌────────┐
+│[39;3ma[0m       ││[39;3mb[0m       │[0m
+└────────┘└────────┘
+┌────────┐┌────────┐
+│[39;3mc[0m       ││[39;3md[0m       │[0m
+└────────┘└────────┘
+                    
+                    
+`;
+
+exports[`the tiled grid paints without a seam 1`] = `[48;2;255;0;0;3ma[39;23m                          [39;48;2;0;128;0;3mb[39;23m                         [39;48;2;0;0;255;3mc[39;23m                          [0m
+                                                                                
+                                                                                
+                                                                                
+`;

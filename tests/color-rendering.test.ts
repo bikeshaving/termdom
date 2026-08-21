@@ -252,6 +252,94 @@ test("each border side paints its own border color", async () => {
 	dom.dispose();
 });
 
+test("system colors map onto the terminal palette", async () => {
+	// A system color names whatever the user's environment says, which on a
+	// terminal is the theme-resolved palette: GrayText the dim gray, the link
+	// trio blue/magenta/red, Mark the yellow of a highlighter.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div style="color: GrayText">disabled</div>
+		<div style="color: LinkText">link</div>
+		<div style="color: VisitedText">visited</div>
+		<div style="color: ActiveText">active</div>
+		<div style="background-color: Mark">marked</div>
+	`;
+	await nextFrame(dom);
+	const snapshot = terminal.getScreenContents();
+
+	expect(snapshot).toMatch(/38;2;128;128;128/); // GrayText: bright black
+	expect(snapshot).toMatch(/38;2;0;0;255/); // LinkText: blue
+	expect(snapshot).toMatch(/38;2;255;0;255/); // VisitedText: magenta
+	expect(snapshot).toMatch(/38;2;255;0;0/); // ActiveText: red
+	expect(snapshot).toMatch(/48;2;255;255;0/); // Mark: yellow
+
+	dom.dispose();
+});
+
+test("Field and ButtonFace clear to the terminal's default background", async () => {
+	// The surface system colors stand for the terminal's own background: the
+	// box is filled, but with no SGR background color asserted -- the same
+	// clear background-color: Canvas paints.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"background-color: Field; display: block\">field row</div>" +
+		"<div style=\"background-color: ButtonFace; display: block\">button row</div>";
+	await nextFrame(dom);
+	const snapshot = terminal.getScreenContents();
+
+	expect(snapshot).toContain("field row");
+	expect(snapshot).toContain("button row");
+	expect(snapshot).not.toMatch(/48;2;/);
+
+	dom.dispose();
+});
+
+test("SelectedItem paints inverse video, like the Highlight pair", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"background-color: SelectedItem; color: SelectedItemText\">" +
+		"chosen</div>";
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 0).isInverse()).toBeTruthy();
+
+	dom.dispose();
+});
+
+test("deprecated system colors resolve through their modern equivalents", async () => {
+	// CSS Color 4 keeps the desktop-era names as aliases: MenuText is
+	// CanvasText, ThreeDFace is ButtonFace, InactiveCaptionText is GrayText.
+	// The declarations are valid, keep their keyword spelling, and paint as
+	// what they alias.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+
+	const div = document.createElement("div");
+	div.textContent = "inactive";
+	div.style.color = "InactiveCaptionText";
+	div.style.backgroundColor = "ThreeDFace";
+	document.body.appendChild(div);
+	expect(div.style.color).toBe("InactiveCaptionText");
+	expect(div.style.backgroundColor).toBe("ThreeDFace");
+	expect(dom.window.getComputedStyle(div).color).toBe("InactiveCaptionText");
+
+	await nextFrame(dom);
+	const snapshot = terminal.getScreenContents();
+	expect(snapshot).toMatch(/38;2;128;128;128/); // GrayText's gray
+	expect(snapshot).not.toMatch(/48;2;/); // ButtonFace: default background
+
+	dom.dispose();
+});
+
 test("an inline background paints its fragments, not the box enclosing them", async () => {
 	// An inline box that breaks across lines has a fragment on each of them.
 	// Filling the rectangle that encloses those fragments covers the whole

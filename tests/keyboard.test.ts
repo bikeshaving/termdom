@@ -1397,6 +1397,227 @@ test("Escape still exits fullscreen, now dispatched from the general pipeline", 
 	dom.dispose();
 });
 
+test("Escape blurs a focused text field first; only the next Escape exits fullscreen", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	const container = document.createElement("div");
+	const input = document.createElement("input");
+	container.appendChild(input);
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+	input.focus();
+	expect(document.activeElement).toBe(input);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(document.activeElement).not.toBe(input);
+	expect(document.fullscreenElement).toBe(container);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(document.fullscreenElement).toBe(null);
+	dom.dispose();
+});
+
+test("Tab rests on nothing past the last focusable, and re-enters at the ends", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<input id=\"a\"><input id=\"b\">";
+	const press = async (key: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(key));
+		await new Promise((r) => setTimeout(r, 10));
+	};
+
+	// Forward: enter at the first, walk to the last, rest on nothing.
+	await press("\t");
+	expect(document.activeElement?.id).toBe("a");
+	await press("\t");
+	expect(document.activeElement?.id).toBe("b");
+	await press("\t");
+	expect(document.activeElement).toBe(document.body);
+	await press("\t");
+	expect(document.activeElement?.id).toBe("a");
+
+	// Backward from nothing enters at the last; before the first, the
+	// blurred stop again. A lone focusable element stays escapable.
+	await press("\x1b[Z"); // Shift+Tab
+	expect(document.activeElement).toBe(document.body);
+	await press("\x1b[Z");
+	expect(document.activeElement?.id).toBe("b");
+	dom.dispose();
+});
+
+test("focusing a field inside a fullscreen element leaves the camera alone", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document, window} = dom;
+	const container = document.createElement("div");
+	const style = document.createElement("style");
+	style.textContent = "input { margin-top: 5px; }";
+	document.head.appendChild(style);
+	const input = document.createElement("input");
+	container.appendChild(input);
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+
+	// The fullscreen element left the flow, so body.scrollHeight measures
+	// next to nothing; a reveal sized by it scrolled the camera by the
+	// field's whole row and carried the caret off the screen.
+	input.focus();
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 10));
+	expect(window.scrollY).toBe(0);
+	dom.dispose();
+});
+
+async function numberInput(): Promise<{
+	terminal: MockProcess;
+	dom: TermDOM;
+	input: HTMLInputElement;
+	press: (data: string) => Promise<void>;
+}> {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const input = dom.document.createElement("input") as HTMLInputElement;
+	input.type = "number";
+	dom.document.body.appendChild(input);
+	input.focus();
+	const press = async (data: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(data));
+		await new Promise((r) => setTimeout(r, 10));
+	};
+	return {terminal, dom, input, press};
+}
+
+test("a number input's text stays a prefix of a valid float", async () => {
+	const {dom, input, press} = await numberInput();
+
+	// Letters and punctuation outside the grammar never land.
+	await press("4a2!");
+	expect(input.value).toBe("42");
+
+	// The states a float passes through are all reachable...
+	await press(".5e-1");
+	expect(input.value).toBe("42.5e-1");
+
+	// ...but a second decimal point or exponent is refused whole.
+	await press(".");
+	await press("e3");
+	expect(input.value).toBe("42.5e-13");
+
+	dom.dispose();
+});
+
+test("a number input's value reports nothing until the text is a number", async () => {
+	const {dom, input, press} = await numberInput();
+
+	// "-", "-4", "-4." -- the value gate opens exactly when the grammar does.
+	await press("-");
+	expect(input.value).toBe("");
+	await press("4");
+	expect(input.value).toBe("-4");
+	await press(".");
+	expect(input.value).toBe("");
+	await press("2");
+	expect(input.value).toBe("-4.2");
+
+	// A deletion may strand the text outside the grammar -- Ctrl+A to the
+	// start, Ctrl+D deleting the "-" leaves "4.2"; deleting again leaves
+	// ".2", still a number; deleting once more strands "2"... clear with
+	// Ctrl+E then Ctrl+U and the field takes text again.
+	await press("\x01\x04");
+	expect(input.value).toBe("4.2");
+	await press("\x05\x15");
+	expect(input.value).toBe("");
+	await press("7");
+	expect(input.value).toBe("7");
+
+	dom.dispose();
+});
+
+test("arrows step a number input along its grid, inside min and max", async () => {
+	const {dom, input, press} = await numberInput();
+	input.setAttribute("min", "1");
+	input.setAttribute("max", "6");
+	input.setAttribute("step", "2");
+	const events: string[] = [];
+	input.addEventListener("input", () => events.push("input"));
+	input.addEventListener("change", () => events.push("change"));
+
+	// Up from empty lands on the grid's first point inside the range.
+	await press("\x1b[A");
+	expect(input.value).toBe("1");
+	expect(events).toEqual(["input", "change"]);
+	await press("\x1b[A");
+	expect(input.value).toBe("3");
+	await press("\x1b[A");
+	expect(input.value).toBe("5");
+	// The next point is past max, so the field stays and nothing fires.
+	events.length = 0;
+	await press("\x1b[A");
+	expect(input.value).toBe("5");
+	expect(events).toEqual([]);
+	await press("\x1b[B");
+	expect(input.value).toBe("3");
+
+	dom.dispose();
+});
+
+test("a decimal step writes its grid without float dust", async () => {
+	const {dom, input, press} = await numberInput();
+	input.setAttribute("step", "0.1");
+	await press("\x1b[A");
+	await press("\x1b[A");
+	await press("\x1b[A");
+	expect(input.value).toBe("0.3");
+	await press("\x1b[B");
+	expect(input.value).toBe("0.2");
+	dom.dispose();
+});
+
+test("valueAsNumber and the step methods", async () => {
+	const {dom, input} = await numberInput();
+
+	input.value = "1.5e1";
+	expect(input.valueAsNumber).toBe(15);
+	input.valueAsNumber = 42;
+	expect(input.value).toBe("42");
+	input.valueAsNumber = NaN;
+	expect(input.value).toBe("");
+	expect(() => {
+		input.valueAsNumber = Infinity;
+	}).toThrow(TypeError);
+
+	// The methods step silently -- no input or change events.
+	const events: string[] = [];
+	input.addEventListener("input", () => events.push("input"));
+	input.stepUp(3);
+	expect(input.value).toBe("3");
+	input.stepDown();
+	expect(input.value).toBe("2");
+	expect(events).toEqual([]);
+
+	input.setAttribute("step", "any");
+	expect(() => input.stepUp()).toThrow(/any/);
+
+	const text = dom.document.createElement("input") as HTMLInputElement;
+	expect(text.valueAsNumber).toBeNaN();
+	expect(() => text.stepUp()).toThrow(/step/);
+
+	dom.dispose();
+});
+
 test("a focused descendant inside a fullscreen element still wins over the element itself", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
@@ -1635,8 +1856,13 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
-	// The hidden checkbox and button are not in tab order; the edit input
-	// is the only rendered focusable, so focus stays put.
+	// The hidden checkbox and button are not in tab order: past the edit
+	// input -- the only rendered focusable -- Tab rests on nothing, and
+	// another Tab re-enters at the edit input, never a hidden control.
+	expect(document.activeElement).toBe(document.body);
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
 	expect((document.activeElement as HTMLElement).className).toBe("edit");
 
 	dom.dispose();
@@ -2099,16 +2325,16 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	await nextFrame(dom);
 
 	// Tab order includes both hrefs, in document order, and skips the anchor
-	// with no href.
+	// with no href. Past the last, the blurred stop, then the cycle again.
 	const order: string[] = [];
 	(document.getElementById("text") as HTMLElement).focus();
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < 4; i++) {
 		terminal.stdin.emit("data", Buffer.from("\t"));
 		await new Promise((r) => setTimeout(r, 0));
 		await nextFrame(dom);
 		order.push(document.activeElement?.id ?? "");
 	}
-	expect(order).toEqual(["all", "active", "text"]);
+	expect(order).toEqual(["all", "active", "", "text"]);
 
 	let clicks = 0;
 	const all = document.getElementById("all") as HTMLElement;
@@ -2416,6 +2642,66 @@ test("moving focus and opening a disclosure bring their target into view", async
 	await nextFrame(dom);
 	expect(details.open).toBe(true);
 	expect(window.scrollY).toBeGreaterThanOrEqual(scrolledBefore);
+
+	dom.dispose();
+});
+
+test("a decoded keystroke is trusted; a constructed event is not", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
+	const {document, window} = termdom;
+	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const trust: Array<{type: string; isTrusted: boolean}> = [];
+	for (const type of ["keydown", "keypress", "keyup"]) {
+		document.body.addEventListener(type, (event: any) => {
+			trust.push({type: event.type, isTrusted: event.isTrusted});
+		});
+	}
+
+	await (terminal.stdin as any).simulateKeypress("a");
+	expect(trust).toEqual([
+		{type: "keydown", isTrusted: true},
+		{type: "keypress", isTrusted: true},
+		{type: "keyup", isTrusted: true},
+	]);
+
+	// The same event type, constructed by an app and dispatched by it: the
+	// engine never fired it, so nothing about it is the user's.
+	trust.length = 0;
+	document.body.dispatchEvent(
+		new window.KeyboardEvent("keydown", {key: "a", bubbles: true}),
+	);
+	expect(trust).toEqual([{type: "keydown", isTrusted: false}]);
+
+	termdom.dispose();
+});
+
+test("a mouse report is trusted, and so is the focus move it causes", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	const {document} = dom;
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	document.body.innerHTML = "<button id=\"b\">press</button>";
+	await nextFrame(dom);
+	const trust: Array<{type: string; isTrusted: boolean}> = [];
+	for (const type of ["mousedown", "mouseup", "click", "focus"]) {
+		document
+			.getElementById("b")!
+			.addEventListener(type, (event: any) =>
+				trust.push({type: event.type, isTrusted: event.isTrusted}),
+			);
+	}
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M"));
+	await new Promise((r) => setTimeout(r, 0));
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1m"));
+	await new Promise((r) => setTimeout(r, 0));
+	expect(trust.every((entry) => entry.isTrusted)).toBe(true);
+	expect(trust.map((entry) => entry.type)).toContain("click");
 
 	dom.dispose();
 });

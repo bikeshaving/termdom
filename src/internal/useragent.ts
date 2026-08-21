@@ -331,6 +331,243 @@ function expandBorderRadius(value: string): Record<string, string> {
 }
 
 /**
+ * A value's top-level components, split on `/` rather than on whitespace, with
+ * strings, brackets and parentheses kept whole. The grid shorthands are the
+ * only ones whose parts are slash-separated and whose components can contain
+ * a slash-free quoted string.
+ */
+function splitSlashGroups(value: string): string[] {
+	const groups: string[] = [];
+	let depth = 0;
+	let quote = "";
+	let start = 0;
+	for (let i = 0; i < value.length; i++) {
+		const char = value[i];
+		if (quote) {
+			if (char === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if (char === "/" && depth === 0) {
+			groups.push(value.slice(start, i).trim());
+			start = i + 1;
+		}
+	}
+	groups.push(value.slice(start).trim());
+	return groups;
+}
+
+/** A value's top-level components, with strings and bracketed names kept whole. */
+function splitGridComponents(value: string): string[] {
+	const components: string[] = [];
+	let depth = 0;
+	let quote = "";
+	let start = 0;
+	for (let i = 0; i <= value.length; i++) {
+		const char = value[i];
+		if (quote) {
+			if (char === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+			continue;
+		}
+		if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if ((i === value.length || /\s/.test(char)) && depth === 0) {
+			const component = value.slice(start, i).trim();
+			if (component) {
+				components.push(component);
+			}
+			start = i + 1;
+		}
+	}
+	return components;
+}
+
+/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
+function isCustomIdent(value: string): boolean {
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
+}
+
+/**
+ * `grid-row` / `grid-column` (css-grid-2 §8.3.2): a start line and an end
+ * line. An omitted end repeats the start only when the start is a name --
+ * `grid-column: main` means the whole area called main, while
+ * `grid-column: 2` means one track starting at line 2.
+ */
+function expandGridPlacementPair(
+	value: string,
+	start: string,
+	end: string,
+): Record<string, string> {
+	const groups = splitSlashGroups(value);
+	const first = groups[0] || "auto";
+	const second =
+		groups.length > 1 && groups[1] ?
+			groups[1] :
+			isCustomIdent(first) ?
+				first :
+				"auto";
+	return {[start]: first, [end]: second};
+}
+
+/**
+ * `grid-area` (css-grid-2 §8.4): row-start / column-start / row-end /
+ * column-end, each omitted value falling back to the one across from it by the
+ * same custom-ident rule the pair shorthands use.
+ */
+function expandGridArea(value: string): Record<string, string> {
+	const groups = splitSlashGroups(value);
+	const rowStart = groups[0] || "auto";
+	const fallback = (index: number, from: string): string =>
+		groups.length > index && groups[index] ?
+			groups[index] :
+			isCustomIdent(from) ?
+				from :
+				"auto";
+	const columnStart = fallback(1, rowStart);
+	const rowEnd = fallback(2, rowStart);
+	const columnEnd = fallback(3, columnStart);
+	return {
+		"grid-row-start": rowStart,
+		"grid-column-start": columnStart,
+		"grid-row-end": rowEnd,
+		"grid-column-end": columnEnd,
+	};
+}
+
+/**
+ * `grid-template` (css-grid-2 §7.4). Two forms: rows `/` columns, and the
+ * visual one whose rows are written as strings of area names with each row's
+ * track size and line names around them.
+ */
+function expandGridTemplate(value: string): Record<string, string> {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return {
+			"grid-template-rows": "none",
+			"grid-template-columns": "none",
+			"grid-template-areas": "none",
+		};
+	}
+
+	if (!text.includes('"') && !text.includes("'")) {
+		const groups = splitSlashGroups(text);
+		return {
+			"grid-template-rows": groups[0] || "none",
+			"grid-template-columns": groups[1] || "none",
+			"grid-template-areas": "none",
+		};
+	}
+
+	// The visual form: everything up to the last top-level slash states the
+	// rows, and the slash group after it -- if any -- states the columns.
+	const groups = splitSlashGroups(text);
+	const rowsText = groups[0];
+	const columns = groups.length > 1 ? groups.slice(1).join(" / ") : "none";
+
+	const strings: string[] = [];
+	const rowTracks: string[] = [];
+	let pendingNames: string[] = [];
+	let sawString = false;
+	for (const component of splitGridComponents(rowsText)) {
+		if (component.startsWith("[")) {
+			pendingNames.push(component);
+			continue;
+		}
+		if (component.startsWith('"') || component.startsWith("'")) {
+			// A row's own track size follows its string; a row with none is
+			// `auto`, and is written out so the track list stays positional.
+			if (sawString && rowTracks.length < strings.length) {
+				rowTracks.push("auto");
+			}
+			strings.push(component);
+			rowTracks.push(...pendingNames);
+			pendingNames = [];
+			sawString = true;
+			continue;
+		}
+		rowTracks.push(component);
+	}
+	if (sawString && rowTracks.length < strings.length) {
+		rowTracks.push("auto");
+	}
+	rowTracks.push(...pendingNames);
+
+	return {
+		"grid-template-rows": rowTracks.length > 0 ? rowTracks.join(" ") : "none",
+		"grid-template-columns": columns,
+		"grid-template-areas": strings.length > 0 ? strings.join(" ") : "none",
+	};
+}
+
+/**
+ * `grid` (css-grid-2 §7.4): the whole explicit grid, or one axis of it
+ * against an `auto-flow` that sizes the other's implicit tracks. Either way
+ * the shorthand resets every longhand it stands for, which is what makes it
+ * safe to write once at the top of a rule.
+ */
+function expandGrid(value: string): Record<string, string> {
+	const text = value.trim();
+	const reset = {
+		"grid-auto-flow": "row",
+		"grid-auto-rows": "auto",
+		"grid-auto-columns": "auto",
+	};
+	if (!/\bauto-flow\b/.test(text)) {
+		return {...expandGridTemplate(text), ...reset};
+	}
+
+	const groups = splitSlashGroups(text);
+	if (groups.length !== 2) {
+		return {...expandGridTemplate(text), ...reset};
+	}
+
+	const flowInSecond = /\bauto-flow\b/.test(groups[1]);
+	const flowGroup = flowInSecond ? groups[1] : groups[0];
+	const otherGroup = flowInSecond ? groups[0] : groups[1];
+	const dense = /\bdense\b/.test(flowGroup);
+	const sizes = splitGridComponents(flowGroup)
+		.filter((token) => token !== "auto-flow" && token !== "dense")
+		.join(" ");
+
+	// The axis the flow runs along takes the implicit sizes; the other axis
+	// takes the explicit track list written across the slash.
+	return flowInSecond ?
+			{
+				"grid-template-rows": otherGroup || "none",
+				"grid-template-columns": "none",
+				"grid-template-areas": "none",
+				"grid-auto-flow": dense ? "column dense" : "column",
+				"grid-auto-columns": sizes || "auto",
+				"grid-auto-rows": "auto",
+			} :
+			{
+				"grid-template-columns": otherGroup || "none",
+				"grid-template-rows": "none",
+				"grid-template-areas": "none",
+				"grid-auto-flow": dense ? "row dense" : "row",
+				"grid-auto-rows": sizes || "auto",
+				"grid-auto-columns": "auto",
+			};
+}
+
+/**
  * Expand CSS SHORTHANDS into the longhands everything downstream reads.
  * Declarations are consulted per-property, so a `border: 1px solid` that
  * never becomes border-top-width etc. simply doesn't exist to the box model
@@ -490,6 +727,39 @@ export function expandShorthands(
 				out["column-gap"] = values[1] ?? values[0];
 				break;
 			}
+			// The legacy spelling of `gap`, which browsers still accept. Its
+			// longhands share a cascade slot with row-gap/column-gap, so
+			// declaring them is declaring the modern pair.
+			case "grid-gap": {
+				out["grid-row-gap"] = values[0];
+				out["grid-column-gap"] = values[1] ?? values[0];
+				break;
+			}
+			case "grid-row":
+				Object.assign(
+					out,
+					expandGridPlacementPair(value, "grid-row-start", "grid-row-end"),
+				);
+				break;
+			case "grid-column":
+				Object.assign(
+					out,
+					expandGridPlacementPair(
+						value,
+						"grid-column-start",
+						"grid-column-end",
+					),
+				);
+				break;
+			case "grid-area":
+				Object.assign(out, expandGridArea(value));
+				break;
+			case "grid-template":
+				Object.assign(out, expandGridTemplate(value));
+				break;
+			case "grid":
+				Object.assign(out, expandGrid(value));
+				break;
 			case "overflow": {
 				out["overflow-x"] = values[0];
 				out["overflow-y"] = values[1] ?? values[0];
@@ -587,9 +857,13 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	// Container properties
 	"flex-direction": "row",
 	"flex-wrap": "nowrap",
-	"justify-content": "flex-start",
+	// `normal` is CSS's own initial value on both, and the one grid needs: it
+	// is what tells a grid's auto tracks to fill the container. In a flex
+	// container it means what flex-start meant here before, so nothing about
+	// flex layout moves.
+	"justify-content": "normal",
 	"align-items": "stretch",
-	"align-content": "flex-start",
+	"align-content": "normal",
 	"gap": "0",
 	"row-gap": "0",
 	"column-gap": "0",
@@ -1068,7 +1342,6 @@ export const UA_DOCUMENT_STYLES = `
 		background-color: Canvas;
 	}
 	:popover-open::backdrop { background-color: transparent; }
-	details:not([open]) > :not(summary) { display: none; }
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }
 	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
@@ -1105,6 +1378,17 @@ export const FIELD_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
+`;
+
+/**
+ * The UA stylesheet of a details' internal shadow tree. The summary projects
+ * through a bare slot; everything else projects into the content container,
+ * a block whose display the disclosure flips inline from its `open` state --
+ * which is what hides a closed details' body, text children included, with
+ * no rule reaching into the light tree.
+ */
+export const DETAILS_UA_STYLES = `
+	[part="details-content"] { display: block; }
 `;
 
 /**

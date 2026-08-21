@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-170 features supported, 54 probed and unsupported,
+188 features supported, 36 probed and unsupported,
 157 CSS properties not applicable to a character grid,
 129 applicable and not implemented,
 4 not yet probed.
@@ -125,6 +125,7 @@ changed.
 | `border-bottom-right-radius` | yes |
 | `border-bottom-left-radius` | yes |
 | `box-sizing` | no (no effect) |
+| `aspect-ratio` | yes |
 | `outline` | yes |
 | `outline-style` | yes |
 | `outline-width` | yes |
@@ -173,11 +174,11 @@ changed.
 
 | feature | supported |
 | --- | --- |
-| `grid-template-columns` | no (no effect) |
-| `grid-template-rows` | no (no effect) |
-| `grid-column` | no (no effect) |
-| `grid-row` | no (no effect) |
-| `grid-auto-flow` | no (no effect) |
+| `grid-template-columns` | yes |
+| `grid-template-rows` | yes |
+| `grid-column` | yes |
+| `grid-row` | yes |
+| `grid-auto-flow` | yes |
 
 ## Text and paint
 
@@ -227,7 +228,6 @@ changed.
 | `animation` | no (no effect) |
 | `box-shadow` | no (no effect) |
 | `filter` | no (no effect) |
-| `aspect-ratio` | no (no effect) |
 | `cursor` | no (no effect) |
 
 ## Logical properties
@@ -263,8 +263,8 @@ changed.
 | `place-content` | yes |
 | `place-items` | yes |
 | `place-self` | yes |
-| `justify-items` | no (no effect) |
-| `justify-self` | no (no effect) |
+| `justify-items` | yes |
+| `justify-self` | yes |
 | `caption-side` | no (no effect) |
 | `empty-cells` | no (no effect) |
 | `text-align-last` | no (no effect) |
@@ -278,16 +278,16 @@ changed.
 | `counter-set` | no (no effect) |
 | `font` | no (no effect) |
 | `list-style-image` | no (no effect) |
-| `grid` | no (no effect) |
-| `grid-area` | no (no effect) |
-| `grid-auto-columns` | no (no effect) |
-| `grid-auto-rows` | no (no effect) |
-| `grid-column-end` | no (no effect) |
-| `grid-column-start` | no (no effect) |
-| `grid-row-end` | no (no effect) |
-| `grid-row-start` | no (no effect) |
-| `grid-template` | no (no effect) |
-| `grid-template-areas` | no (no effect) |
+| `grid` | yes |
+| `grid-area` | yes |
+| `grid-auto-columns` | yes |
+| `grid-auto-rows` | yes |
+| `grid-column-end` | yes |
+| `grid-column-start` | yes |
+| `grid-row-end` | yes |
+| `grid-row-start` | yes |
+| `grid-template` | yes |
+| `grid-template-areas` | yes |
 | `overflow-block` | no (no effect) |
 | `overflow-inline` | no (no effect) |
 

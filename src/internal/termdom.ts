@@ -10,6 +10,7 @@ import {
 	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
+	flatParentElement,
 	closePopover,
 	hidePopoversUntil,
 	installUAEngine,
@@ -76,8 +77,27 @@ function base64OfText(text: string): string {
 	return out;
 }
 
+/** The inverse: what OSC 52 answers a clipboard query with, as text. */
+function textOfBase64(payload: string): string {
+	const digits = payload.replace(/[^A-Za-z0-9+/]/g, "");
+	const bytes = new Uint8Array((digits.length * 3) >> 2);
+	let at = 0;
+	let bits = 0;
+	let held = 0;
+	for (const digit of digits) {
+		held = (held << 6) | BASE64_ALPHABET.indexOf(digit);
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[at++] = (held >> bits) & 0xff;
+		}
+	}
+	return new TextDecoder().decode(bytes.subarray(0, at));
+}
+
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
+	"DETAILS",
 	"INPUT",
 	"METER",
 	"PROGRESS",
@@ -112,6 +132,105 @@ function upgradeControlsIn(root: Element): void {
 // shared by every document; a patched member finds its engine here rather than
 // closing over one.
 const engines = new WeakMap<object, TermDOM>();
+
+/** The engine an event target belongs to, if it is mounted in one. */
+function engineOfTarget(target: unknown): TermDOM | undefined {
+	const node = target as Node | null;
+	if (!node || typeof node.nodeType !== "number") {
+		return undefined;
+	}
+	const document =
+		node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument;
+	return document === null ? undefined : engines.get(document);
+}
+
+/**
+ * The keys that are a modifier and nothing else, which a user pressing them
+ * has not yet asked for anything with.
+ */
+const BARE_MODIFIER_KEYS = new Set([
+	"Alt",
+	"AltGraph",
+	"CapsLock",
+	"Control",
+	"Fn",
+	"FnLock",
+	"Hyper",
+	"Meta",
+	"NumLock",
+	"ScrollLock",
+	"Shift",
+	"Super",
+	"Symbol",
+	"SymbolLock",
+]);
+
+/**
+ * Whether an event is activation-triggering: the user asking for something,
+ * rather than something happening to them.
+ *
+ * These are the spec's -- a key that is neither Escape nor a bare modifier, a
+ * mouse press, release or click, a paste. A paste's default action carries
+ * the text on to a field as a beforeinput, which is activation-triggering
+ * too: a listener that sees the gesture only there still has the gate open.
+ * A resize, a focus move, pointer motion and a wheel tick are the user
+ * agent's events too, and none of them is a request.
+ */
+function isActivationTriggering(event: DOM.Event): boolean {
+	switch (event.type) {
+		case "keydown": {
+			const key = (event as DOM.KeyboardEvent).key;
+			return key !== "Escape" && !BARE_MODIFIER_KEYS.has(key);
+		}
+		case "mousedown":
+		case "mouseup":
+		case "click":
+		case "pointerup":
+		case "paste":
+			return true;
+		case "beforeinput":
+			return (event as DOM.InputEvent).inputType === "insertFromPaste";
+		default:
+			return false;
+	}
+}
+
+/**
+ * Fire an event as the user agent.
+ *
+ * Every event this file dispatches comes from outside the document -- decoded
+ * terminal input, a terminal that resized, a focus move the engine itself
+ * made -- so it is the user agent's, and reads isTrusted true. Provenance is
+ * decided here, once, for all of them: an event an application constructs and
+ * hands to dispatchEvent() is script's, and is never trusted.
+ *
+ * An activation-triggering event also holds user activation open for as long
+ * as its dispatch runs, which is what the clipboard asks about.
+ */
+function fireAsUserAgent(target: unknown, event: unknown): boolean {
+	const self = engineOfTarget(target);
+	if (self === undefined || !isActivationTriggering(event as DOM.Event)) {
+		return DOM.dispatchAsUserAgent(
+			target as DOM.EventTarget,
+			event as DOM.Event,
+		);
+	}
+	self[kActivationDepth]++;
+	self[kEverActivated] = true;
+	try {
+		return DOM.dispatchAsUserAgent(
+			target as DOM.EventTarget,
+			event as DOM.Event,
+		);
+	} finally {
+		self[kActivationDepth]--;
+	}
+}
+
+/** Whether an activation-triggering event is being dispatched right now. */
+function isUserActive(self: TermDOM): boolean {
+	return self[kActivationDepth] > 0;
+}
 
 export {
 	transportFromProcess,
@@ -279,7 +398,7 @@ function fireFullscreenChangeEvent(
 	// Per spec: fired on the element, and it BUBBLES -- document listeners
 	// hear it through the bubble; dispatching on the document as well
 	// delivered every transition twice.
-	element.dispatchEvent(event);
+	fireAsUserAgent(element, event);
 }
 
 function fireFullscreenErrorEvent(
@@ -299,8 +418,10 @@ function fireFullscreenErrorEvent(
 	});
 
 	// Fire on both element and document
-	element.dispatchEvent(event);
-	element.ownerDocument?.dispatchEvent(event);
+	fireAsUserAgent(element, event);
+	if (element.ownerDocument) {
+		fireAsUserAgent(element.ownerDocument, event);
+	}
 }
 
 function getWindow(
@@ -383,6 +504,15 @@ export interface EngineWindow
 	KeyboardEvent: typeof globalThis.KeyboardEvent;
 	FocusEvent: typeof globalThis.FocusEvent;
 	InputEvent: typeof globalThis.InputEvent;
+	ClipboardEvent: typeof DOM.ClipboardEvent;
+	DataTransfer: typeof DOM.DataTransfer;
+	DataTransferItem: typeof DOM.DataTransferItem;
+	DataTransferItemList: typeof DOM.DataTransferItemList;
+	FileList: typeof DOM.FileList;
+	Clipboard: typeof Clipboard;
+	ClipboardItem: typeof ClipboardItem;
+	Permissions: typeof Permissions;
+	PermissionStatus: typeof PermissionStatus;
 	CompositionEvent: typeof globalThis.CompositionEvent;
 	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
 	DOMException: typeof globalThis.DOMException;
@@ -523,6 +653,7 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 }
 
 const kFrameDamage = Symbol("frameDamage");
+const kScrolledElements = Symbol("scrolledElements");
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kWidth = Symbol("width");
@@ -550,6 +681,8 @@ const kPrototypesInstalled = Symbol("prototypesInstalled");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kInputGeneration = Symbol("inputGeneration");
+const kActivationDepth = Symbol("activationDepth");
+const kEverActivated = Symbol("everActivated");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
@@ -666,6 +799,13 @@ export class TermDOM {
 	// change without mutations; repaint-and-diff is what detects them, so
 	// every input path bumps this and the clean-frame skip compares it.
 	declare [kInputGeneration]: number;
+	/**
+	 * How many activation-triggering events are being dispatched right now,
+	 * and whether one ever has been. What only a user may ask for is asked of
+	 * these, and nothing else writes them.
+	 */
+	declare [kActivationDepth]: number;
+	declare [kEverActivated]: boolean;
 	declare [kLastFrameInputGeneration]: number;
 	declare [kLastFrameActiveElement]: Element | null;
 	declare [kLastFrameStructuralGeneration]: number;
@@ -674,6 +814,11 @@ export class TermDOM {
 	// Elements this frame's mutations touched, with the layout rect each held
 	// BEFORE relayout. Null once the set overflowed; cleared per frame.
 	declare [kFrameDamage]: Map<Element, DOMRect | null> | null;
+
+	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
+	// box's content out from under its offset; each layout flush pulls
+	// these back into range (see clampScrolledOffsets).
+	declare [kScrolledElements]: Set<Element>;
 
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
@@ -772,11 +917,14 @@ export class TermDOM {
 		this[kLastFrameScrollTop] = null;
 		this[kLastFrameEpoch] = -1;
 		this[kInputGeneration] = 0;
+		this[kActivationDepth] = 0;
+		this[kEverActivated] = false;
 		this[kLastFrameInputGeneration] = -1;
 		this[kLastFrameActiveElement] = null;
 		this[kLastFrameStructuralGeneration] = -1;
 		this[kLastFrameSelectionLive] = false;
 		this[kFrameDamage] = new Map();
+		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
 		this[kMouseCaptureYielded] = false;
@@ -1180,35 +1328,181 @@ export class TermDOM {
 		// html/body-only instance properties defined above (which still win: an
 		// own-property shadows a prototype getter, so document.body's viewport-
 		// height special case is untouched).
-		//
-		// scroll* is set equal to client* here rather than the element's true
-		// unclamped content size, matching the same limitation the paint-extent
-		// culling above already documents for the same reason: nothing in the
-		// layout engine measures a subtree's natural size separately from
-		// whatever box it was actually constrained into. That makes scroll* exact
-		// for the common case (auto-sized boxes, no overflow) and an honest
-		// under-report for a box with both an explicit size *and* overflowing
-		// normal-flow content -- the one case a real browser's scrollWidth/Height
-		// would exceed clientWidth/Height.
-		for (const prop of ["clientWidth", "scrollWidth"] as const) {
-			Object.defineProperty(window.HTMLElement.prototype, prop, {
-				get(this: Element) {
-					return Math.round(contentBoxOf(this)?.width ?? 0);
+		Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
+			get(this: Element) {
+				return Math.round(contentBoxOf(this)?.width ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
+			get(this: Element) {
+				return Math.round(contentBoxOf(this)?.height ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// scroll* is the content's laid-out extent -- how far the box could
+		// scroll, and what its offsets clamp against -- read off the layout
+		// tree, whose children keep their natural sizes when they overflow a
+		// fixed box. A box whose content the tree does not decompose into
+		// child boxes (an inline, a run member) has no readable extent and
+		// falls back to its client size, exact for the no-overflow case.
+		const scrollExtentOf = (
+			element: Element,
+		): {width: number | null; height: number} | null => {
+			if (!element.isConnected) {
+				return null;
+			}
+			const termDOM = engineOf(element);
+			processPendingMutationsAndRender(termDOM);
+			return termDOM[kLayoutEngine].scrollExtentOf(element);
+		};
+
+		Object.defineProperty(window.HTMLElement.prototype, "scrollWidth", {
+			get(this: Element) {
+				return (
+					scrollExtentOf(this)?.width ??
+					Math.round(contentBoxOf(this)?.width ?? 0)
+				);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+			get(this: Element) {
+				return (
+					scrollExtentOf(this)?.height ??
+					Math.round(contentBoxOf(this)?.height ?? 0)
+				);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// scrollTop/scrollLeft writes take effect here, where layout and the
+		// frame loop live: a write rounds to whole cells (everything paints
+		// on the cell grid, like the document camera), clamps into the
+		// scrollable range, and schedules the repaint that shows it. The
+		// value lands in the engine's store, which the getter installed
+		// below and the layout's geometry funnel (element.scrollTop) both
+		// read. An axis whose overflow is visible is not scrollable and
+		// pins to 0; hidden scrolls programmatically, as in a browser. A box
+		// whose extent the layout cannot name (a field's value span, whose
+		// content is an opaque measured run) stores the write unclamped --
+		// the caret-reveal machinery owns those offsets and keeps them sane.
+		const scrollAxisTo = (
+			element: Element,
+			axis: "left" | "top",
+			value: number,
+		): void => {
+			const numeric = Number(value);
+			let next =
+				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+			const termDOM = engines.get(element.ownerDocument);
+			if (termDOM && element.isConnected) {
+				processPendingMutationsAndRender(termDOM);
+				const engine = termDOM[kLayoutEngine];
+				const extent = engine.scrollExtentOf(element);
+				const port = engine.contentRect(element);
+				const size =
+					extent === null ?
+						null :
+						axis === "top" ?
+							extent.height :
+							extent.width;
+				if (size !== null && port) {
+					const style = computedStyleOf(element);
+					const overflow =
+						style.computedValueOf(`overflow-${axis === "top" ? "y" : "x"}`) ||
+						style.computedValueOf("overflow");
+					const scrollable =
+						overflow === "auto" ||
+						overflow === "scroll" ||
+						overflow === "hidden";
+					const room =
+						size -
+						Math.round(axis === "top" ? port.height : port.width);
+					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
+				}
+			}
+			if ((elementScrollOffsets.get(element)?.[axis] ?? 0) === next) {
+				return;
+			}
+			writeElementScroll(element, axis, next);
+			if (termDOM) {
+				if (next !== 0) {
+					termDOM[kScrolledElements].add(element);
+				}
+				// A scroll offset is frame state no MutationObserver sees --
+				// the same footing as input: the generation bump keeps the
+				// "nothing observable moved" gate from skipping the paint,
+				// and the damage keeps that paint banded to the box's rows.
+				termDOM[kInputGeneration]++;
+				addFrameDamage(termDOM, element);
+				void render(termDOM);
+			}
+		};
+
+		for (const axis of ["left", "top"] as const) {
+			const property = axis === "left" ? "scrollLeft" : "scrollTop";
+			Object.defineProperty(Element.prototype, property, {
+				get(this: Element): number {
+					return elementScrollOffsets.get(this)?.[axis] ?? 0;
+				},
+				set(this: Element, value: number) {
+					scrollAxisTo(this, axis, value);
 				},
 				configurable: true,
 				enumerable: true,
 			});
 		}
 
-		for (const prop of ["clientHeight", "scrollHeight"] as const) {
-			Object.defineProperty(window.HTMLElement.prototype, prop, {
-				get(this: Element) {
-					return Math.round(contentBoxOf(this)?.height ?? 0);
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
+		// scrollTo/scroll/scrollBy, in both their forms; assignment through
+		// the accessors above is what rounds, clamps and repaints. html and
+		// body's own scrollTop accessors map to the camera, so scrolling
+		// them scrolls the document, as everywhere else.
+		const scrollTargetOf = (
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): {left?: number; top?: number} => {
+			if (typeof xOrOptions === "object" && xOrOptions !== null) {
+				return {left: xOrOptions.left, top: xOrOptions.top};
+			}
+			return {left: xOrOptions, top: y};
+		};
+
+		const scrollElementTo = function (
+			this: Element,
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left !== undefined) {
+				this.scrollLeft = target.left;
+			}
+			if (target.top !== undefined) {
+				this.scrollTop = target.top;
+			}
+		};
+		Element.prototype.scrollTo = scrollElementTo as Element["scrollTo"];
+		Element.prototype.scroll = scrollElementTo as Element["scroll"];
+		Element.prototype.scrollBy = function (
+			this: Element,
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left) {
+				this.scrollLeft = this.scrollLeft + target.left;
+			}
+			if (target.top) {
+				this.scrollTop = this.scrollTop + target.top;
+			}
+		} as Element["scrollBy"];
 
 		// The document-rooted MutationObserver never sees inside a shadow
 		// root -- per spec, shadow trees are separate observation scopes. Each
@@ -1362,26 +1656,30 @@ export class TermDOM {
 				termDOM[kStyleManager].handleFocusChange(prev, this);
 				void render(termDOM);
 				if (prev && prev !== document.body) {
-					prev.dispatchEvent(
+					fireAsUserAgent(
+						prev,
 						new window.FocusEvent("blur", {
 							relatedTarget: this,
 							bubbles: false,
 						}),
 					);
-					prev.dispatchEvent(
+					fireAsUserAgent(
+						prev,
 						new window.FocusEvent("focusout", {
 							relatedTarget: this,
 							bubbles: true,
 						}),
 					);
 				}
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focus", {
 						relatedTarget: prev,
 						bubbles: false,
 					}),
 				);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focusin", {
 						relatedTarget: prev,
 						bubbles: true,
@@ -1397,13 +1695,15 @@ export class TermDOM {
 			if (wasFocused) {
 				termDOM[kStyleManager].handleFocusChange(this);
 				void render(termDOM);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("blur", {
 						relatedTarget: null,
 						bubbles: false,
 					}),
 				);
-				this.dispatchEvent(
+				fireAsUserAgent(
+					this,
 					new window.FocusEvent("focusout", {
 						relatedTarget: null,
 						bubbles: true,
@@ -1412,7 +1712,11 @@ export class TermDOM {
 			}
 		};
 
-		// Override scrollIntoView to adjust scroll offset
+		// scrollIntoView: every scroll box between the element and the
+		// document reveals it within its own port, innermost first -- each
+		// scroll moves the element in every outer port's coordinates, so the
+		// rect is re-read per level -- and the camera reveals what remains.
+		// All moves are the minimal ones: block "nearest".
 		HTMLElement.prototype.scrollIntoView = function (
 			this: HTMLElement,
 			_arg?: boolean | ScrollIntoViewOptions,
@@ -1422,11 +1726,58 @@ export class TermDOM {
 			}
 			const termDOM = engineOf(this);
 			processPendingMutationsAndRender(termDOM);
+			const engine = termDOM[kLayoutEngine];
+
+			const revealIn = (scroller: Element): void => {
+				// Document-relative rects on both sides: the element wherever
+				// its current offsets put it, against the scroller's padding
+				// box -- what the scroller actually shows.
+				const rect = engine.getRect(this);
+				const scrollerRect = engine.getRect(scroller);
+				if (!rect || !scrollerRect) {
+					return;
+				}
+				const box = getBoxModel(scroller);
+				const portTop = scrollerRect.top + (box.borderTopWidth || 0);
+				const portBottom =
+					scrollerRect.bottom - (box.borderBottomWidth || 0);
+				const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
+				const portRight = scrollerRect.right - (box.borderRightWidth || 0);
+				if (rect.top < portTop) {
+					scroller.scrollTop -= Math.round(portTop - rect.top);
+				} else if (rect.bottom > portBottom) {
+					scroller.scrollTop += Math.round(rect.bottom - portBottom);
+				}
+				if (rect.left < portLeft) {
+					scroller.scrollLeft -= Math.round(portLeft - rect.left);
+				} else if (rect.right > portRight) {
+					scroller.scrollLeft += Math.round(rect.right - portRight);
+				}
+			};
+
+			for (
+				let ancestor = flatParentElement<Element>(this);
+				ancestor &&
+				ancestor !== termDOM.document.body &&
+				ancestor !== termDOM.document.documentElement;
+				ancestor = flatParentElement<Element>(ancestor)
+			) {
+				const style = computedStyleOf(ancestor);
+				const overflow = style.computedValueOf("overflow");
+				const scrollable = (value: string) =>
+					value === "auto" || value === "scroll" || value === "hidden";
+				if (
+					scrollable(style.computedValueOf("overflow-y") || overflow) ||
+					scrollable(style.computedValueOf("overflow-x") || overflow)
+				) {
+					revealIn(ancestor);
+				}
+			}
 
 			// Document-relative, not getBoundingClientRect's viewport-relative --
 			// this compares directly against the camera's scrollTop below, so it needs
 			// the same coordinate space getRect() already provides.
-			const rect = termDOM[kLayoutEngine].getRect(this);
+			const rect = engine.getRect(this);
 			if (!rect) {
 				return;
 			}
@@ -1434,10 +1785,7 @@ export class TermDOM {
 			// The camera shows [scrollTop, scrollTop + region).
 			// Move it the minimal amount that brings the element into it -- the
 			// standard block: "nearest" behavior.
-			const regionHeight = Math.min(
-				termDOM[kHeight],
-				termDOM.document.body.scrollHeight,
-			);
+			const regionHeight = cameraRegionHeight(termDOM);
 			const top = termDOM[kViewport].scrollTop;
 			if (rect.top < top) {
 				scrollCamera(termDOM, rect.top - top);
@@ -1723,6 +2071,315 @@ function sealToScrollback(
 	self[kSealed] = true;
 }
 
+/** The brand an interface with no constructor is built through internally. */
+const kInternalConstruction = Symbol("internal construction");
+const kClipboardEngine = Symbol("engine");
+const kItemEntries = Symbol("entries");
+const kPermissionName = Symbol("name");
+const kPermissionEngine = Symbol("engine");
+
+/** Refuse a clipboard request the user has not asked for. */
+function clipboardDenied(why: string): Promise<never> {
+	return Promise.reject(new globalThis.DOMException(why, "NotAllowedError"));
+}
+
+/**
+ * Whether the clipboard is reachable right now, and the refusal if it is not.
+ *
+ * The clipboard is the user's to grant, so it is reachable only from a
+ * trusted activation-triggering event while it is being dispatched -- a
+ * keystroke, a mouse press or release, a click, a paste. This is stricter
+ * than a browser on purpose: a browser's transient activation outlives the
+ * dispatch that granted it, because its window is a span of time, so a
+ * handler there may await and still write the clipboard. Here the gate is the
+ * dispatch itself, and the clipboard is reachable only synchronously within
+ * it. A timer, a microtask, a resolved fetch and an event an application
+ * dispatched itself are all outside.
+ */
+function clipboardRefusal(
+	self: TermDOM,
+	what: string,
+): Promise<never> | null {
+	if (!self[kAttached] || !self[kInteractive]) {
+		return clipboardDenied(
+			"clipboard requires an attached interactive terminal",
+		);
+	}
+	if (!isUserActive(self)) {
+		return clipboardDenied(`clipboard ${what} need a user gesture`);
+	}
+	return null;
+}
+
+/** A media type, lowercased with the surrounding whitespace dropped. */
+function normalizeMediaType(type: unknown): string {
+	return String(type).trim().toLowerCase();
+}
+
+/** The payload OSC 52 carries, which is text and only text. */
+const CLIPBOARD_TEXT_TYPE = "text/plain";
+
+/**
+ * A payload the clipboard moves, held under the media types it reads as.
+ *
+ * Blob is the platform's, which Node and Bun both have as a global. OSC 52
+ * carries one payload a terminal treats as text, so text/plain is the only
+ * type a write sends and the only type a read answers with; an item may hold
+ * others, and the clipboard passes over them.
+ */
+class ClipboardItem {
+	declare [kItemEntries]: Map<string, Promise<Blob>>;
+
+	constructor(
+		items: Record<string, string | Blob | Promise<string | Blob>>,
+		_options?: unknown,
+	) {
+		if (items === null || typeof items !== "object") {
+			throw new TypeError("A clipboard item takes a record of types");
+		}
+		const entries = new Map<string, Promise<Blob>>();
+		for (const [type, value] of Object.entries(items)) {
+			const mediaType = normalizeMediaType(type);
+			entries.set(
+				mediaType,
+				Promise.resolve(value).then((held) =>
+					held instanceof Blob ?
+						held :
+							new Blob([String(held)], {type: mediaType}),
+				),
+			);
+		}
+		if (entries.size === 0) {
+			throw new TypeError("A clipboard item carries at least one type");
+		}
+		this[kItemEntries] = entries;
+	}
+
+	get types(): readonly string[] {
+		return Object.freeze(Array.from(this[kItemEntries].keys()));
+	}
+
+	getType(type: string): Promise<Blob> {
+		const held = this[kItemEntries].get(normalizeMediaType(type));
+		if (held === undefined) {
+			return Promise.reject(
+				new globalThis.DOMException(
+					`That item carries no ${normalizeMediaType(type)}`,
+					"NotFoundError",
+				),
+			);
+		}
+		return held;
+	}
+
+	static supports(type: string): boolean {
+		return normalizeMediaType(type) === CLIPBOARD_TEXT_TYPE;
+	}
+}
+
+Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
+	value: "ClipboardItem",
+	configurable: true,
+});
+
+/**
+ * The clipboard, as navigator.clipboard.
+ *
+ * writeText() carries the text to the system clipboard over OSC 52, which
+ * travels in-band -- across SSH too. Terminals without OSC 52 ignore it;
+ * there is no way to know, so the promise resolves when the transport has the
+ * bytes. readText() asks for the clipboard the same way (OSC 52 with `?` for
+ * the payload) and resolves with what comes back. write() and read() are the
+ * same two round trips over a ClipboardItem.
+ *
+ * It is an EventTarget because the interface says so; the user agent fires
+ * nothing at it.
+ */
+class Clipboard extends DOM.EventTarget {
+	declare [kClipboardEngine]: TermDOM;
+
+	constructor(brand?: unknown, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kClipboardEngine] = engine as TermDOM;
+	}
+
+	writeText(text: string): Promise<void> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "writes");
+		if (refusal !== null) {
+			return refusal;
+		}
+		return engine[kSession].write(
+			`\x1b]52;c;${base64OfText(String(text))}\x07`,
+		);
+	}
+
+	async readText(): Promise<string> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "reads");
+		if (refusal !== null) {
+			return refusal;
+		}
+		const payload = await engine[kSession].queryClipboard();
+		if (payload === null) {
+			// Silence is a refusal: most terminals gate clipboard reads on
+			// their own configuration and answer nothing when they are off.
+			return clipboardDenied("the terminal did not answer the clipboard query");
+		}
+		return textOfBase64(payload);
+	}
+
+	async write(items: Iterable<ClipboardItem>): Promise<void> {
+		const engine = this[kClipboardEngine];
+		const refusal = clipboardRefusal(engine, "writes");
+		if (refusal !== null) {
+			return refusal;
+		}
+		let carrier: ClipboardItem | null = null;
+		for (const item of items) {
+			if (item.types.includes(CLIPBOARD_TEXT_TYPE)) {
+				carrier = item;
+				break;
+			}
+		}
+		if (carrier === null) {
+			return clipboardDenied(
+				`a clipboard write needs a ${CLIPBOARD_TEXT_TYPE} entry`,
+			);
+		}
+		const text = await (await carrier.getType(CLIPBOARD_TEXT_TYPE)).text();
+		return engine[kSession].write(`\x1b]52;c;${base64OfText(text)}\x07`);
+	}
+
+	async read(): Promise<ClipboardItem[]> {
+		const text = await this.readText();
+		return [new ClipboardItem({[CLIPBOARD_TEXT_TYPE]: text})];
+	}
+}
+
+Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
+	value: "Clipboard",
+	configurable: true,
+});
+
+// The permission names the clipboard here answers for, and the ones the
+// Permissions API defines that a terminal has nothing behind: no camera, no
+// microphone, no location, no notification surface, so the answer is denied
+// rather than a prompt nobody could ever answer.
+const CLIPBOARD_PERMISSIONS = new Set(["clipboard-read", "clipboard-write"]);
+const UNBACKED_PERMISSIONS = new Set([
+	"accelerometer",
+	"ambient-light-sensor",
+	"background-sync",
+	"bluetooth",
+	"camera",
+	"display-capture",
+	"geolocation",
+	"gyroscope",
+	"idle-detection",
+	"local-fonts",
+	"magnetometer",
+	"microphone",
+	"midi",
+	"notifications",
+	"payment-handler",
+	"periodic-background-sync",
+	"persistent-storage",
+	"push",
+	"screen-wake-lock",
+	"speaker-selection",
+	"storage-access",
+	"window-management",
+	"xr-spatial-tracking",
+]);
+
+/**
+ * The standing of one permission.
+ *
+ * `state` is read at the moment it is asked, and for the clipboard that
+ * answer is granted while a gesture is being dispatched and prompt outside
+ * one. Nothing fires `change`: the gesture opens and closes inside a single
+ * dispatch, and a listener would be told about a state that had already
+ * passed.
+ */
+class PermissionStatus extends DOM.EventTarget {
+	declare [kPermissionName]: string;
+	declare [kPermissionEngine]: TermDOM | null;
+
+	constructor(brand?: unknown, name?: string, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionName] = String(name);
+		this[kPermissionEngine] = engine ?? null;
+	}
+
+	get name(): string {
+		return this[kPermissionName];
+	}
+
+	get state(): string {
+		const engine = this[kPermissionEngine];
+		if (engine === null || !CLIPBOARD_PERMISSIONS.has(this[kPermissionName])) {
+			return "denied";
+		}
+		if (!engine[kAttached] || !engine[kInteractive]) {
+			return "denied";
+		}
+		return isUserActive(engine) ? "granted" : "prompt";
+	}
+}
+
+DOM.installEventHandlers(PermissionStatus.prototype, ["onchange"]);
+
+Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
+	value: "PermissionStatus",
+	configurable: true,
+});
+
+/** navigator.permissions: what the gate above answers, asked by name. */
+class Permissions extends DOM.EventTarget {
+	declare [kPermissionEngine]: TermDOM;
+
+	constructor(brand?: unknown, engine?: TermDOM) {
+		super();
+		if (brand !== kInternalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionEngine] = engine as TermDOM;
+	}
+
+	query(descriptor: {name?: string}): Promise<PermissionStatus> {
+		if (descriptor === null || typeof descriptor !== "object") {
+			return Promise.reject(
+				new TypeError("A permission query takes a descriptor"),
+			);
+		}
+		const name = String(descriptor.name);
+		if (!CLIPBOARD_PERMISSIONS.has(name) && !UNBACKED_PERMISSIONS.has(name)) {
+			return Promise.reject(
+				new TypeError(`"${name}" is not a permission name`),
+			);
+		}
+		return Promise.resolve(
+			new PermissionStatus(
+				kInternalConstruction,
+				name,
+				this[kPermissionEngine],
+			),
+		);
+	}
+}
+
+Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
+	value: "Permissions",
+	configurable: true,
+});
+
 function installWindowExtensions(
 	self: TermDOM,
 ): void {
@@ -1909,7 +2566,7 @@ function installWindowExtensions(
 				matches: {value: now, enumerable: true},
 				media: {value: media, enumerable: true},
 			});
-			mql.dispatchEvent(event);
+			fireAsUserAgent(mql, event);
 		});
 		return mql as MediaQueryList;
 	}) as typeof window.matchMedia;
@@ -1926,7 +2583,7 @@ function installWindowExtensions(
 		// user says yes. Every close asks: the event carries nothing from
 		// the last one.
 		const unloadEvent = DOM.createBeforeUnloadEvent();
-		(window as unknown as DOM.EventTarget).dispatchEvent(unloadEvent);
+		fireAsUserAgent(window, unloadEvent);
 		if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
 			return;
 		}
@@ -1972,34 +2629,40 @@ function installWindowExtensions(
 		});
 	}
 
-	// navigator.clipboard: writeText() carries the text to the system
-	// clipboard over OSC 52, which travels in-band -- across SSH too.
-	// Terminals without OSC 52 ignore it; there is no way to know, so the
-	// promise resolves when the transport has the bytes. readText()
-	// rejects: terminals do not answer clipboard queries to untrusted
-	// programs, and pretending otherwise would hang.
+	// The clipboard and the permission it stands behind, which the classes
+	// above implement over OSC 52.
+	//
+	// `copy` and `cut` are here as interfaces and event types, so a listener
+	// attaches and an application can build one and dispatch it, and the user
+	// agent fires neither. The terminal keeps the copy gesture for itself --
+	// Cmd+C, Shift+drag -- and does not report it, and Ctrl+C is the
+	// interrupt. A document learns of a copy the terminal made only by
+	// writing the clipboard itself.
+	Object.assign(window as unknown as Record<string, unknown>, {
+		Clipboard,
+		ClipboardItem,
+		Permissions,
+		PermissionStatus,
+	});
 	Object.defineProperty(window.navigator, "clipboard", {
+		value: new Clipboard(kInternalConstruction, termDOM),
+		configurable: true,
+	});
+	Object.defineProperty(window.navigator, "permissions", {
+		value: new Permissions(kInternalConstruction, termDOM),
+		configurable: true,
+	});
+
+	// navigator.userActivation: the same two questions the gate above asks,
+	// as the page can ask them.
+	Object.defineProperty(window.navigator, "userActivation", {
 		value: {
-			writeText: (text: string): Promise<void> => {
-				if (!termDOM[kAttached] || !termDOM[kInteractive]) {
-					return Promise.reject(
-						new (window as any).DOMException(
-							"clipboard requires an attached interactive terminal",
-							"NotAllowedError",
-						),
-					);
-				}
-				return termDOM[kSession].write(
-					`\x1b]52;c;${base64OfText(String(text))}\x07`,
-				);
+			get hasBeenActive(): boolean {
+				return termDOM[kEverActivated];
 			},
-			readText: (): Promise<string> =>
-				Promise.reject(
-					new (window as any).DOMException(
-						"the terminal does not expose clipboard reads",
-						"NotAllowedError",
-					),
-				),
+			get isActive(): boolean {
+				return isUserActive(termDOM);
+			},
 		},
 		configurable: true,
 	});
@@ -2276,7 +2939,7 @@ function applyTerminalSize(
 	// Per the rendering steps, resize fires before media query "change"
 	// events, and everything a listener reads already has the new size.
 	if (sizeChanged) {
-		self.window.dispatchEvent(new self.window.Event("resize"));
+		fireAsUserAgent(self.window, new self.window.Event("resize"));
 	}
 	for (const update of self[kMediaQueryUpdaters]) {
 		update();
@@ -2440,6 +3103,21 @@ function documentPaintHeight(
 }
 
 /**
+ * The height of the window the camera shows, for the scroll-to-reveal
+ * math. Fullscreen owns the whole screen from row zero, and the
+ * fullscreen element has left the flow -- body.scrollHeight measures
+ * next to nothing there, and a reveal sized by it would scroll the
+ * camera by the target's whole row.
+ */
+function cameraRegionHeight(
+	self: TermDOM,
+): number {
+	return self[kFullscreenManager].isFullscreen ?
+		self[kHeight] :
+			Math.min(self[kHeight], self.document.body.scrollHeight);
+}
+
+/**
  * The value offset under a document-space point in a text field --
  * cell-width aware, clamped to the nearest offset so a drag that
  * leaves the field still resolves (the browser's capture model:
@@ -2524,10 +3202,7 @@ function scrollCaretIntoView(
 	) {
 		revealBottom = Math.round(rect.bottom);
 	}
-	const regionHeight = Math.min(
-		self[kHeight],
-		self.document.body.scrollHeight,
-	);
+	const regionHeight = cameraRegionHeight(self);
 	const delta = self[kViewport].scrollDeltaToReveal(
 		revealTop,
 		revealBottom,
@@ -2624,7 +3299,79 @@ function processPendingMutationsAndRender(
 		void render(self);
 	}
 	self[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(self);
 	return hadMutations;
+}
+
+/**
+ * The engine's element scroll offsets, in cells. Replacing the DOM's
+ * accessors replaces the storage under them too, so the DOM module keeps no
+ * seam for the engine to reach through; a box nothing scrolled is absent
+ * and reads zero.
+ */
+const elementScrollOffsets = new WeakMap<
+	Element,
+	{left: number; top: number}
+>();
+
+function writeElementScroll(
+	element: Element,
+	axis: "left" | "top",
+	value: number,
+): void {
+	let offsets = elementScrollOffsets.get(element);
+	if (offsets === undefined) {
+		offsets = {left: 0, top: 0};
+		elementScrollOffsets.set(element, offsets);
+	}
+	offsets[axis] = value;
+}
+
+/**
+ * Pull every held scroll offset back into its box's scrollable range
+ * against fresh layout: a mutation that shrinks a box's content must not
+ * leave the box scrolled past what remains. Offsets are written to the
+ * store directly -- the accessor's own clamp would re-enter this flush --
+ * and a change repaints the box's rows like any other scroll.
+ */
+function clampScrolledOffsets(
+	self: TermDOM,
+): void {
+	let changed = false;
+	for (const element of self[kScrolledElements]) {
+		const offsets = elementScrollOffsets.get(element) ?? {left: 0, top: 0};
+		if (offsets.left === 0 && offsets.top === 0) {
+			self[kScrolledElements].delete(element);
+			continue;
+		}
+		if (!element.isConnected) {
+			continue;
+		}
+		const engine = self[kLayoutEngine];
+		const extent = engine.scrollExtentOf(element);
+		const port = engine.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		// An unknowable horizontal extent leaves that axis unclamped.
+		const maxLeft =
+			extent.width === null ?
+				offsets.left :
+					Math.max(0, extent.width - Math.round(port.width));
+		const maxTop = Math.max(0, extent.height - Math.round(port.height));
+		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
+			continue;
+		}
+		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
+		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
+		addFrameDamage(self, element);
+		changed = true;
+	}
+	if (changed) {
+		// See scrollAxisTo: offsets are frame state no observer sees.
+		self[kInputGeneration]++;
+		void render(self);
+	}
 }
 
 /**
@@ -2829,13 +3576,26 @@ function moveFocus(
 
 	const current = self.document.activeElement;
 	const currentIndex = focusable.indexOf(current as Element);
-	let nextIndex: number;
 
-	if (reverse) {
-		nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
-	} else {
-		nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+	// Tab past the last focusable (or Shift+Tab before the first) rests on
+	// nothing. That is the leg of a browser's cycle where focus walks the
+	// chrome and the page sees activeElement fall back to body; a terminal
+	// has no chrome, so the blurred stop stands in for it. It is also what
+	// keeps a scope with a single focusable element escapable -- a pure
+	// wrap would cycle Tab onto it forever.
+	const leaving = reverse ?
+		currentIndex === 0 :
+		currentIndex === focusable.length - 1;
+	if (leaving) {
+		(current as HTMLElement).blur();
+		return;
 	}
+
+	// From the blurred stop, Tab enters at the first element and Shift+Tab
+	// at the last, as from a browser's chrome.
+	const nextIndex = reverse ?
+			(currentIndex === -1 ? focusable.length - 1 : currentIndex - 1) :
+		currentIndex + 1;
 
 	const next = focusable[nextIndex] as HTMLElement;
 	next.focus();
@@ -2932,6 +3692,51 @@ function documentPointToTextPosition(
 }
 
 /**
+ * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
+ * ancestor (the target included) whose overflow-y makes it a scroll
+ * container -- auto or scroll; hidden and visible don't take the wheel, as
+ * in a browser -- and that can still move in the tick's direction. None
+ * means the tick chains past every element scroller to the document camera.
+ */
+function wheelScrollerFor(
+	self: TermDOM,
+	target: Element,
+	deltaY: number,
+): Element | null {
+	const body = self.document.body;
+	const root = self.document.documentElement;
+	const engine = self[kLayoutEngine];
+	for (
+		let element: Element | null = target;
+		element && element !== body && element !== root;
+		element = flatParentElement<Element>(element)
+	) {
+		const style = computedStyleOf(element);
+		const overflowY =
+			style.computedValueOf("overflow-y") ||
+			style.computedValueOf("overflow");
+		if (overflowY !== "auto" && overflowY !== "scroll") {
+			continue;
+		}
+		if (deltaY < 0) {
+			if (element.scrollTop > 0) {
+				return element;
+			}
+			continue;
+		}
+		const extent = engine.scrollExtentOf(element);
+		const port = engine.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		if (element.scrollTop < extent.height - Math.round(port.height)) {
+			return element;
+		}
+	}
+	return null;
+}
+
+/**
  * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
  * These only arrive while capture is on -- see updateMouseReporting.
  *
@@ -2972,7 +3777,8 @@ function handleMouseReport(
 		(point && findElementAtDocumentPoint(self, x, y)) || self.document.body;
 
 	if (wheelDeltaY !== null) {
-		const notCanceled = target.dispatchEvent(
+		const notCanceled = fireAsUserAgent(
+			target,
 			new self.window.WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1, // DOM_DELTA_LINE
@@ -2986,6 +3792,15 @@ function handleMouseReport(
 			}),
 		);
 		if (notCanceled) {
+			// The innermost scroll box under the pointer that can still move
+			// in the wheel's direction consumes the tick; an exhausted one
+			// chains outward -- ultimately to the camera and the terminal's
+			// own scrollback below, the browser's scroll chaining.
+			const scroller = wheelScrollerFor(self, target as Element, wheelDeltaY);
+			if (scroller) {
+				scroller.scrollTop += wheelDeltaY;
+				return;
+			}
 			if (
 				wheelDeltaY < 0 &&
 				self[kViewport].scrollTop === 0 &&
@@ -3035,7 +3850,10 @@ function handleMouseReport(
 	};
 
 	if (isMotion) {
-		target.dispatchEvent(new self.window.MouseEvent("mousemove", eventInit));
+		fireAsUserAgent(
+			target,
+			new self.window.MouseEvent("mousemove", eventInit),
+		);
 		// A field drag extends the field's own selection to the offset
 		// under the pointer -- clamped into the field, whichever element
 		// the pointer is over now (the field holds the capture).
@@ -3087,7 +3905,8 @@ function handleMouseReport(
 			self[kStyleManager].handleFocusChange(self.document.activeElement);
 			void render(self);
 		}
-		const notCanceled = target.dispatchEvent(
+		const notCanceled = fireAsUserAgent(
+			target,
 			new self.window.MouseEvent("mousedown", eventInit),
 		);
 		// Default action: mousedown moves focus, exactly as in a browser --
@@ -3164,7 +3983,7 @@ function handleMouseReport(
 		return;
 	}
 
-	target.dispatchEvent(new self.window.MouseEvent("mouseup", eventInit));
+	fireAsUserAgent(target, new self.window.MouseEvent("mouseup", eventInit));
 	// LIGHT DISMISS: a release closes every auto popover the released
 	// point is not inside of and did not open -- the invoker of a popover
 	// counts as part of it, so the click that follows toggles rather than
@@ -3201,7 +4020,8 @@ function handleMouseReport(
 		return;
 	}
 	if (self[kMouseDownTarget] === target) {
-		target.dispatchEvent(
+		fireAsUserAgent(
+			target,
 			new self.window.MouseEvent("click", {...eventInit, buttons: 0}),
 		);
 		// A checkbox/radio's .checked already flipped -- the activation behavior's
@@ -3239,7 +4059,8 @@ function handleMouseReport(
 			self[kLastClickTarget] === target &&
 			now - self[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
 		) {
-			target.dispatchEvent(
+			fireAsUserAgent(
+				target,
 				new self.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
 			);
 			self[kLastClickTarget] = null;
@@ -3253,8 +4074,12 @@ function handleMouseReport(
 }
 
 /**
- * Deliver a paste to the focused control as an `insertFromPaste` beforeinput;
- * its own listener does the edit. Dropped if nothing editable is focused.
+ * Deliver a paste as a `paste` event carrying the text, at the focused
+ * element or at the body when nothing is focused. A paste nobody cancels
+ * runs its default action: into a text field, an `insertFromPaste`
+ * beforeinput whose listener does the edit. Anywhere else the event is the
+ * whole of it, and an application that wants the text reads it off
+ * `clipboardData`.
  */
 function dispatchPaste(
 	self: TermDOM,
@@ -3266,18 +4091,32 @@ function dispatchPaste(
 	// boundary, so a multi-line paste into a textarea is multi-line and
 	// a field's own handlers never see a bare CR.
 	text = text.replace(/\r\n?/g, "\n");
-	const target = self.document.activeElement;
-	if (!target || target === self.document.body) {
-		return;
-	}
-	target.dispatchEvent(
-		new self.window.InputEvent("beforeinput", {
-			inputType: "insertFromPaste",
-			data: text,
+	const focused = self.document.activeElement;
+	const target =
+		focused && focused !== self.document.body ? focused : self.document.body;
+	const clipboardData = new DOM.DataTransfer();
+	clipboardData.setData("text/plain", text);
+	DOM.lockDataTransfer(clipboardData);
+	const proceed = fireAsUserAgent(
+		target,
+		new self.window.ClipboardEvent("paste", {
+			clipboardData,
 			bubbles: true,
 			cancelable: true,
 		}),
 	);
+	const tag = target.tagName;
+	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
+		fireAsUserAgent(
+			target,
+			new self.window.InputEvent("beforeinput", {
+				inputType: "insertFromPaste",
+				data: text,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}
 	void render(self);
 }
 
@@ -3299,7 +4138,8 @@ function dispatchInsertText(
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
 		return;
 	}
-	target.dispatchEvent(
+	fireAsUserAgent(
+		target,
 		new self.window.InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
@@ -3354,10 +4194,20 @@ function dispatchGlobalKeyboardEvent(
 			active :
 			self[kFullscreenManager].fullscreenElement || self.document.body;
 
-	// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
-	// all, the same as a real browser: fullscreen exit is a user-agent
-	// guarantee an app can't trap the user past with preventDefault.
+	// Escape in fullscreen is the user agent's key, never dispatched to the
+	// DOM: an app can't trap the user past it with preventDefault. It spends
+	// itself on the innermost trap first -- a focused text field owns the
+	// keyboard, so the first Escape gives it back, and only a free
+	// keyboard's Escape exits the screen.
 	if (keyName === "Escape" && self[kFullscreenManager].isFullscreen) {
+		if (
+			active &&
+			active !== self.document.body &&
+			isTextField(active as Element)
+		) {
+			(active as HTMLElement).blur();
+			return;
+		}
 		self[kFullscreenManager].exitFullscreen().catch(() => {});
 		return;
 	}
@@ -3377,7 +4227,7 @@ function dispatchGlobalKeyboardEvent(
 		cancelable: true,
 	});
 
-	const notCanceled = targetElement.dispatchEvent(keydownEvent);
+	const notCanceled = fireAsUserAgent(targetElement, keydownEvent);
 
 	// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
 	// answers one: a modal dialog fires cancel and closes unless a
@@ -3423,10 +4273,19 @@ function dispatchGlobalKeyboardEvent(
 				(keyName === "Enter" && activation.enter) ||
 				(key === " " && activation.space)
 			) {
-				// click() rather than a synthesized event: it runs the element's
-				// full activation behavior, so a submit button submits its form
-				// and a link follows its href, exactly as a mouse click would.
-				(targetElement as HTMLElement).click();
+				// The user agent's own click, not click()'s synthetic one: it
+				// is trusted, as the click a browser generates for keyboard
+				// activation is, and dispatching it runs the element's full
+				// activation behavior, so a submit button submits its form and
+				// a link follows its href, exactly as a mouse click would.
+				fireAsUserAgent(
+					targetElement,
+					new self.window.PointerEvent("click", {
+						bubbles: true,
+						cancelable: true,
+						composed: true,
+					}),
+				);
 				render(self);
 			}
 		}
@@ -3454,7 +4313,7 @@ function dispatchGlobalKeyboardEvent(
 			bubbles: true,
 			cancelable: true,
 		});
-		if (targetElement.dispatchEvent(keypressEvent)) {
+		if (fireAsUserAgent(targetElement, keypressEvent)) {
 			dispatchInsertText(self, targetElement, key);
 		}
 	}
@@ -3473,7 +4332,7 @@ function dispatchGlobalKeyboardEvent(
 		bubbles: true,
 		cancelable: true,
 	});
-	targetElement.dispatchEvent(keyupEvent);
+	fireAsUserAgent(targetElement, keyupEvent);
 }
 
 /**
@@ -3623,6 +4482,7 @@ async function renderInteractive(
 	}
 
 	self[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(self);
 
 	// The caret reveal an edit queued runs here, against the layout this
 	// frame just flushed -- one camera decision per frame, however many

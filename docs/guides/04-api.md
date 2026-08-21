@@ -37,10 +37,12 @@ are wired to the terminal:
   after the frame that includes your pending mutations has been written
 - `matchMedia()` — live `MediaQueryList`s, re-evaluated on resize
 - `resize` — fired when the terminal size changes, before the
-  `MediaQueryList` `change` events for the same resize
-- `getSelection()` — the document selection
-- `navigator.clipboard.writeText()` — the system clipboard, over OSC 52;
-  `readText()` rejects, since terminals do not answer clipboard reads
+  `MediaQueryList` `change` events that resize triggers
+- `getSelection()` — the document selection, `modify()` included
+- `navigator.clipboard.writeText()` / `readText()` — the system clipboard
+  over OSC 52, reachable only during the dispatch of a trusted user event;
+  `readText()` rejects when the terminal does not answer
+- `navigator.userActivation` — `hasBeenActive` and `isActive`
 - `MutationObserver`, `ResizeObserver`, `IntersectionObserver` — entries
   are delivered per rendered frame
 - `close()` — quit: flush the final frame to scrollback, restore terminal

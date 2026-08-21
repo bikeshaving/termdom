@@ -434,6 +434,11 @@ const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kModeProbeTimers = Symbol("modeProbeTimers");
 const kPriorBidiMode = Symbol("priorBidiMode");
 const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
+const kClipboardHandler = Symbol("clipboardHandler");
+const kClipboardTimer = Symbol("clipboardTimer");
+const kClipboardBuffer = Symbol("clipboardBuffer");
+const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
+const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
 
 export class TerminalSession {
 	declare [kTransport]: TerminalTransport;
@@ -480,6 +485,18 @@ export class TerminalSession {
 	 */
 	declare [kModeProbeHandlers]: Map<string, (value: number) => void>;
 	declare [kModeProbeTimers]: Set<ReturnType<typeof setTimeout>>;
+	/**
+	 * The outstanding OSC 52 clipboard query: the handler its reply resolves,
+	 * the timeout that gives up on it, and the half of a reply held for the
+	 * next chunk. One query at a time -- the reply carries no sequence, so a
+	 * second would have nothing to be told apart by.
+	 *
+	 * The buffer is only ever non-null while a query is outstanding, so a
+	 * typed ESC ] is routed as keystrokes exactly as before.
+	 */
+	declare [kClipboardHandler]: ((payload: string | null) => void) | null;
+	declare [kClipboardTimer]: ReturnType<typeof setTimeout> | null;
+	declare [kClipboardBuffer]: string | null;
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	declare [kPriorBidiMode]: number | null;
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
@@ -561,6 +578,19 @@ export class TerminalSession {
 	 * animating, typing or scrolling carries the train for free.
 	 */
 	static readonly [kWidthStarvationWait] = 500;
+	/**
+	 * How long a clipboard query waits. Short on purpose: most terminals
+	 * refuse clipboard reads and refusing is silence, so this is the delay
+	 * every navigator.clipboard.readText() pays before rejecting. A terminal
+	 * that does answer answers at typing latency.
+	 */
+	static readonly [kClipboardQueryTimeout] = 500;
+	/**
+	 * The most of a clipboard reply that is held while its terminator is
+	 * awaited. A larger payload is not a clipboard the terminal is answering
+	 * with, and the query gives up rather than buffer the wire.
+	 */
+	static readonly [kClipboardReplyLimit] = 1 << 16;
 
 	declare [kWidthMeasurer]: WidthMeasurer;
 
@@ -603,6 +633,9 @@ export class TerminalSession {
 		this[kCursorDetectionPromise] = null;
 		this[kModeProbeHandlers] = new Map<string, (value: number) => void>();
 		this[kModeProbeTimers] = new Set<ReturnType<typeof setTimeout>>();
+		this[kClipboardHandler] = null;
+		this[kClipboardTimer] = null;
+		this[kClipboardBuffer] = null;
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
@@ -969,6 +1002,32 @@ export class TerminalSession {
 	}
 
 	/**
+	 * Ask the terminal for the system clipboard (OSC 52 with `?` where the
+	 * payload goes) and resolve with the base64 the reply carries -- the
+	 * bytes verbatim, since decoding them is the caller's business.
+	 *
+	 * Resolves null when the terminal says nothing before the timeout, which
+	 * is what most of them say: a clipboard read is a capability terminals
+	 * gate on their own configuration, and refusing it looks like silence.
+	 * One query at a time; a second while one is outstanding replaces it, and
+	 * the replaced one resolves null.
+	 */
+	queryClipboard(): Promise<string | null> {
+		if (!this[kInteractive] || this[kDisposed]) {
+			return Promise.resolve(null);
+		}
+		return new Promise<string | null>((resolve) => {
+			settleClipboardQuery(this, null);
+			const timer = setTimeout(() => {
+				settleClipboardQuery(this, null);
+			}, TerminalSession[kClipboardQueryTimeout]);
+			this[kClipboardTimer] = timer;
+			this[kClipboardHandler] = resolve;
+			void this.write("\x1b]52;c;?\x07");
+		});
+	}
+
+	/**
 	 * Hand the terminal back the modes we changed, release the transport, and
 	 * tear down every timer and handler that would otherwise keep the event
 	 * loop open. Only modes we actually set are restored -- reset is where the
@@ -993,6 +1052,7 @@ export class TerminalSession {
 			void this.write("\x1b[?2027l");
 			this[kGraphemeClustersNegotiated] = false;
 		}
+		settleClipboardQuery(this, null);
 		for (const timer of this[kModeProbeTimers]) {
 			clearTimeout(timer);
 		}
@@ -1253,6 +1313,19 @@ function route(
 		return;
 	}
 
+	// The clipboard reply, while one is asked for: its base64 body would not
+	// survive tokenization, and it can arrive split, so it is taken out of
+	// the chunk before anything else looks at it.
+	if (self[kClipboardHandler] !== null) {
+		const rest = routeClipboardReply(self, dataStr);
+		if (rest !== null) {
+			if (rest.length > 0) {
+				route(self, rest);
+			}
+			return;
+		}
+	}
+
 	// Replies (highest priority): the terminal's answer about a mode
 	// (DECRPM) or the cursor position (DSR). Fast typing can land in the
 	// same chunk as a report -- "jjj\x1b[12;1Rjjj" -- so hand the report to
@@ -1310,6 +1383,68 @@ function route(
 	}
 
 	self[kHandlers].onKeys(keyInput);
+}
+
+/**
+ * Answer the outstanding clipboard query and forget it. Called with the
+ * payload the terminal sent, or null wherever the query ends without one:
+ * the timeout, a replacement query, dispose.
+ */
+function settleClipboardQuery(
+	self: TerminalSession,
+	payload: string | null,
+): void {
+	const waiting = self[kClipboardHandler];
+	if (self[kClipboardTimer] !== null) {
+		clearTimeout(self[kClipboardTimer]);
+		self[kClipboardTimer] = null;
+	}
+	self[kClipboardHandler] = null;
+	self[kClipboardBuffer] = null;
+	waiting?.(payload);
+}
+
+/**
+ * Take the OSC 52 reply out of a chunk that may also hold typing, or say the
+ * chunk is not one. Returns the remainder to route on as ordinary input, or
+ * null for "no reply here, route the whole chunk yourself".
+ *
+ * An OSC carries base64 and ends in BEL or ST, and no other branch of the
+ * route table knows either, so a reply split across chunks would be shredded
+ * into keystrokes. It is held whole here instead -- only while a query is
+ * outstanding, so nothing a user types is ever held.
+ */
+function routeClipboardReply(
+	self: TerminalSession,
+	dataStr: string,
+): string | null {
+	let chunk = dataStr;
+	if (self[kClipboardBuffer] !== null) {
+		chunk = self[kClipboardBuffer] + chunk;
+		self[kClipboardBuffer] = null;
+	}
+	const start = chunk.indexOf("\x1b]52;");
+	if (start === -1) {
+		return null;
+	}
+	const before = chunk.slice(0, start);
+	const reply = chunk
+		.slice(start)
+		.match(/^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/);
+	if (!reply) {
+		// The terminator has not arrived. Hold the fragment for the next chunk
+		// and let whatever preceded it through as input.
+		const held = chunk.slice(start);
+		if (held.length <= TerminalSession[kClipboardReplyLimit]) {
+			self[kClipboardBuffer] = held;
+			return before;
+		}
+		settleClipboardQuery(self, null);
+		return before;
+	}
+	const rest = before + chunk.slice(start + reply[0].length);
+	settleClipboardQuery(self, reply[1]);
+	return rest;
 }
 
 /** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
