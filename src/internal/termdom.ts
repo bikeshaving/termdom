@@ -1051,6 +1051,7 @@ export class TermDOM {
 			styleManager: this[kStyleManager],
 			viewport: this[kViewport],
 			topLayer: this[kTopLayer],
+			toolkit: this[kUAToolkit],
 		});
 		this[kSession] = buildSession(this);
 

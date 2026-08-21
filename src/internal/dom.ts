@@ -14006,6 +14006,19 @@ export class HTMLSelectElement extends HTMLElement {
 	// The highlighted option index while the picker is OPEN; null = closed.
 	declare [kHighlight]: number | null;
 
+	/**
+	 * A select's selection record is degenerate -- always collapsed at the
+	 * label's start -- so the cursor-parking path reads a select the way it
+	 * reads a field: the caret is the focus of the selection.
+	 */
+	[kUASelection](): {start: number; end: number; direction: string} {
+		return {start: 0, end: 0, direction: "none"};
+	}
+
+	get [kUAValueText](): UAText | null {
+		return this[kValueText];
+	}
+
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
 	}

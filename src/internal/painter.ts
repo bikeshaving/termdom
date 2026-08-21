@@ -3,7 +3,7 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import {isTextField, selectionRangeOf} from "./dom.js";
+import {isTextField, selectionRangeOf, type UAToolkit} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import type {Viewport} from "./viewport.js";
@@ -265,6 +265,7 @@ const kViewport = Symbol("viewport");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
+const kToolkit = Symbol("toolkit");
 
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal
@@ -299,6 +300,9 @@ export class Painter {
 	// paints that many rows higher, so every band-culling comparison moves
 	// the band by this amount instead of the extents.
 	declare [kScrolledRows]: number;
+	// The UA's capabilities, granted to the engine and shared here: the walk
+	// opens closed shadow trees and reads control selections through it.
+	declare [kToolkit]: UAToolkit;
 
 	constructor(deps: {
 		window: EngineWindow;
@@ -307,6 +311,7 @@ export class Painter {
 		styleManager: StyleManager;
 		viewport: Viewport;
 		topLayer: Set<Element>;
+		toolkit: UAToolkit;
 	}) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
@@ -316,6 +321,7 @@ export class Painter {
 		this[kStyleManager] = deps.styleManager;
 		this[kViewport] = deps.viewport;
 		this[kTopLayer] = deps.topLayer;
+		this[kToolkit] = deps.toolkit;
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
@@ -565,34 +571,37 @@ function renderElement(
 		renderOutsideMarker(self, element, ctx);
 	}
 
-	// A text field's content is its shadow tree, painted by the child walk
-	// below; the rest is parking the caret at its Range position, falling back
-	// to the content origin when the value is empty (no box for the Range).
-	if (rect && visible && isTextField(element)) {
-		const field = element as HTMLInputElement | HTMLTextAreaElement;
-		if (field === self[kDocument].activeElement) {
-			const caret = self[kLayout].caretRectOf(field);
-			if (caret) {
-				ctx.setCaret(caret.x, caret.y);
-			} else {
-				const content = self[kLayout].contentRect(field);
-				if (content) {
-					ctx.setCaret(Math.round(content.x), Math.round(content.y));
+	// The ACTIVE element wears the terminal cursor at the focus of its
+	// selection: a field's caret, a select's label, a toggle's glyph. The
+	// record and the closed tree come through the UA toolkit; the geometry
+	// is the measurement any Range takes. The content origin stands in when
+	// the focus has no box (an empty value); an element with no selection
+	// record leaves the cursor where the frame parked it.
+	if (rect && visible && element === self[kDocument].activeElement) {
+		const record = self[kToolkit].selectionOf(element);
+		if (record !== null) {
+			const focus =
+				record.direction === "backward" ? record.start : record.end;
+			const node =
+				self[kToolkit].valueTextOf(element) ?? glyphTextOf(self, element);
+			let caret: {x: number; y: number} | null = null;
+			if (node) {
+				const range = element.ownerDocument.createRange();
+				range.setStart(node, Math.min(focus, node.data.length));
+				range.collapse(true);
+				const rects = self[kLayout].getRangeRects(range);
+				if (rects.length > 0) {
+					caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
 				}
 			}
-		}
-	}
-
-	// A select's content is its UA shadow tree (label + indicator + picker),
-	// built on connect and painted by the normal child walk; the widget puts
-	// an open picker in the top layer itself. Parking the caret at the field
-	// origin is the painter's share.
-	if (element.tagName === "SELECT" && rect) {
-		const select = element as HTMLSelectElement;
-		if (visible && select === self[kDocument].activeElement) {
-			const content = self[kLayout].contentRect(select);
-			if (content) {
-				ctx.setCaret(Math.round(content.x), Math.round(content.y));
+			if (caret === null) {
+				const content = self[kLayout].contentRect(element);
+				if (content) {
+					caret = {x: Math.round(content.x), y: Math.round(content.y)};
+				}
+			}
+			if (caret !== null) {
+				ctx.setCaret(caret.x, caret.y);
 			}
 		}
 	}
@@ -1009,9 +1018,13 @@ function renderToggleGlyph(
 		contentY,
 		cellStyleFromComputed(computedStyleOf(glyphSpan)),
 	);
-	if (element === self[kDocument].activeElement) {
-		ctx.setCaret(contentX, contentY);
-	}
+}
+
+/** The text a toggle's glyph renders through, from its closed tree. */
+function glyphTextOf(self: Painter, element: Element): Text | null {
+	const root = self[kToolkit].shadowRootOf<ShadowRoot>(element);
+	const glyph = root ? root.querySelector('[part="glyph"]') : null;
+	return (glyph?.firstChild as Text | null) ?? null;
 }
 
 /**
