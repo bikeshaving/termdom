@@ -5,7 +5,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
-import {expandShorthands} from "../src/internal/useragent.js";
+import {expandShorthands} from "../src/internal/styles.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {
