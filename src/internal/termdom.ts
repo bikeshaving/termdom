@@ -7,7 +7,6 @@
  */
 import * as DOM from "./dom.js";
 import {
-	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
@@ -3173,6 +3172,46 @@ function queueCaretReveal(
 }
 
 /**
+ * The focus of a control's selection record, or null for an element with
+ * no record: the caret, in the value text's own offsets.
+ */
+function selectionFocusOf(self: TermDOM, element: Element): number | null {
+	const record = self[kUAToolkit].selectionOf(element);
+	if (record === null) {
+		return null;
+	}
+	return record.direction === "backward" ? record.start : record.end;
+}
+
+/**
+ * Where a control's caret sits on screen, derived as the painter derives
+ * it: the focus of the selection record, measured through the text the
+ * control renders. Null when there is no record, no text, or no box --
+ * an empty value's caret is the caller's fallback.
+ */
+function caretRectFor(
+	self: TermDOM,
+	element: Element,
+): {x: number; y: number} | null {
+	const focus = selectionFocusOf(self, element);
+	if (focus === null) {
+		return null;
+	}
+	const node = self[kUAToolkit].valueTextOf(element);
+	if (node === null) {
+		return null;
+	}
+	const range = element.ownerDocument.createRange();
+	range.setStart(node, Math.min(focus, node.data.length));
+	range.collapse(true);
+	const rects = self[kLayoutEngine].getRangeRects(range);
+	if (rects.length === 0) {
+		return null;
+	}
+	return {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
+}
+
+/**
  * Keep the editing caret inside the camera, the way a browser keeps the
  * caret of a focused control visible on every EDIT (typing, Enter,
  * caret travel) -- and only on edits: wheel-scrolling away from a
@@ -3190,11 +3229,8 @@ function scrollCaretIntoView(
 		return;
 	}
 	let caretY = Math.round(rect.top);
-	if (element.tagName === "TEXTAREA") {
-		const caret = self[kLayoutEngine].caretRectOf(element);
-		if (!caret) {
-			return;
-		}
+	const caret = caretRectFor(self, element);
+	if (caret !== null) {
 		caretY = caret.y;
 	}
 	// The row span to reveal: the caret's row -- widened to the field's
@@ -3255,11 +3291,10 @@ function scrollFieldCaretIntoView(
 	}
 	// The caret is wherever the input renders it, in the value text's own
 	// offsets -- the same text `shown` is read from.
-	const caret = caretRangeOf(input);
-	if (!caret) {
+	const cursor = selectionFocusOf(self, input);
+	if (cursor === null) {
 		return;
 	}
-	const cursor = caret.startOffset;
 	// Keep the caret's cell in the box, then pull back when a deletion left slack.
 	if (cursor < scrollOffset) {
 		scrollOffset = cursor;
