@@ -9,6 +9,103 @@
  * declares Highlight/HighlightText, which is CSS's spelling of swapping a
  * cell's colors -- load-bearing, not decorative.
  */
+
+/**
+ * The element defaults, as the stylesheet they always were: what an
+ * unstyled document looks like on a terminal. UA origin, parsed ahead of
+ * UA_DOCUMENT_STYLES so that sheet's rules win ties. The focused-control
+ * underline lives here as the :focus rules a browser would write; what
+ * cannot be written as CSS -- the fullscreen viewport block, a select
+ * sized to its widest option, the size attribute -- stays with the
+ * cascade's element hook.
+ */
+export const UA_ELEMENT_STYLES = `
+	head { display: none; }
+	link { display: none; }
+	meta { display: none; }
+	script { display: none; }
+	style { display: none; }
+	title { display: none; }
+	article { display: block; }
+	aside { display: block; }
+	blockquote { display: block; }
+	body { display: block; }
+	dd { display: block; }
+	details { display: block; }
+	summary { display: block; cursor: pointer; }
+	div { display: block; }
+	dl { display: block; }
+	dt { display: block; }
+	fieldset { display: block; border: 1px solid; padding: 0 1ch; }
+	legend { display: block; margin-top: -1px; font-weight: bold; }
+	figcaption { display: block; }
+	figure { display: block; }
+	footer { display: block; }
+	form { display: block; }
+	h1 { display: block; }
+	h2 { display: block; }
+	h3 { display: block; }
+	h4 { display: block; }
+	h5 { display: block; }
+	h6 { display: block; }
+	header { display: block; }
+	hr { display: block; border-top: 1px solid; }
+	html { display: block; }
+	li { display: list-item; }
+	main { display: block; }
+	nav { display: block; }
+	ol { display: block; }
+	p { display: block; }
+	pre { display: block; white-space: pre; }
+	progress { display: inline-block; width: 10ch; white-space: pre; }
+	meter { display: inline-block; width: 10ch; white-space: pre; }
+	section { display: block; }
+	ul { display: block; }
+	a { display: inline; }
+	abbr { display: inline; }
+	b { display: inline; font-weight: bold; }
+	br { display: inline; }
+	cite { display: inline; font-style: italic; }
+	code { display: inline; background-color: rgba(0, 0, 0, 0.1); }
+	dfn { display: inline; font-style: italic; }
+	em { display: inline; font-style: italic; }
+	i { display: inline; font-style: italic; }
+	kbd { display: inline; font-weight: bold; text-decoration: underline; }
+	label { display: inline; }
+	mark { display: inline; }
+	q { display: inline; }
+	s { display: inline; text-decoration: line-through; }
+	samp { display: inline; }
+	slot { display: contents; }
+	small { display: inline; font-weight: lighter; }
+	span { display: inline; }
+	strong { display: inline; font-weight: bold; }
+	sub { display: inline; }
+	sup { display: inline; }
+	time { display: inline; }
+	u { display: inline; text-decoration: underline; }
+	var { display: inline; font-style: italic; }
+	button { display: inline-block; cursor: pointer; }
+	dialog { display: block; border: 1px solid; padding: 0 1ch; background-color: Canvas; }
+	input { display: inline-block; white-space: pre; }
+	select { display: inline-block; white-space: pre; }
+	textarea { display: inline-block; border: 1px solid; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: break-word; }
+	caption { display: table-caption; }
+	col { display: table-column; }
+	colgroup { display: table-column-group; }
+	table { display: table; border-collapse: collapse; }
+	tbody { display: table-row-group; }
+	td { display: table-cell; border-top-width: 1px; border-right-width: 1px; border-bottom-width: 1px; border-left-width: 1px; border-top-style: solid; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; padding-left: 1ch; padding-right: 1ch; }
+	tfoot { display: table-footer-group; }
+	th { display: table-cell; border-top-width: 1px; border-right-width: 1px; border-bottom-width: 1px; border-left-width: 1px; border-top-style: solid; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; padding-left: 1ch; padding-right: 1ch; font-weight: bold; }
+	thead { display: table-header-group; }
+	tr { display: table-row; }
+	input[type=checkbox i], input[type=radio i] { width: 3ch; }
+	input:focus, select:focus, button:focus {
+		text-decoration-line: underline;
+	}
+`;
+
 // ---- UA document stylesheet ----
 /**
  * The UA DOCUMENT stylesheet. Rules here are UA origin (every author rule
