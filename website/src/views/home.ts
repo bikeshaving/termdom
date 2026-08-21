@@ -119,7 +119,13 @@ const content = css`
  * browser; the exception is the solitaire recording at the top, whose
  * program needs an import the runner cannot resolve.
  */
-const EMBEDDED = ["progress-bar", "flexbox", "tree", "form"];
+const EMBEDDED = [
+	"hello-world",
+	"progress-bar",
+	"flexbox",
+	"tree",
+	"form",
+];
 
 /**
  * Fetch the playground bundle when the first embed comes near, rather than

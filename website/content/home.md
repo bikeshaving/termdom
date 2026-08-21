@@ -5,39 +5,72 @@ JavaScript or any frontend web framework.
 
 ![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
-## Features
+A terminal UI library asks you to learn its widgets: a Box, a List, a Screen
+and the coordinates that go with them. There is nothing to learn here. Make a
+div, style it, put it in the body. There is no render call — mutations paint on
+the next frame. The examples below run in the page, so edit one and it runs
+again.
 
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits as in the browser, translated to ANSI color and decoration.
-- **Layout** The CSS box model, flexbox, and table layout, computed in whole terminal cells with margins, borders, and padding.
-- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
-- **Events** Keyboard, mouse, focus, and paste events fire on elements, the document, and the window, decoded from stdin.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` work and report cell-based layout.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have terminal-native looks, restylable with CSS; Tab and `:focus` work.
-- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
-- **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
-- **Selection** Drag to select, styled with `::selection`; the caret moves by grapheme.
-- **Fullscreen** `Element.requestFullscreen()` renders to the alternate screen; exiting restores the shell and its scrollback.
-
-## Examples
-
-![examples/progress-bar.ts](playground:progress-bar)
-
-![examples/tree.ts](playground:tree)
-
-![examples/flexbox.ts](playground:flexbox)
-
-![examples/form.ts](playground:form)
+![examples/hello-world.ts](playground:hello-world)
 
 ## How it works
 
-TermDOM implements the browser's rendering pipeline against a grid of character
-cells instead of pixels. All CSS lengths resolve to cells (`1px` and `1ch` are
-both one cell). On each frame the engine recomputes style and layout for
-whatever mutated, paints the result into a cell buffer, diffs it against the
-previous frame, and writes the difference to stdout as ANSI escape sequences.
-Escape sequences from stdin are decoded into keyboard, mouse, and paste events
-and dispatched to DOM nodes.
+Nothing here approximates CSS. TermDOM implements the browser's rendering
+pipeline against a grid of character cells instead of pixels. All CSS lengths
+resolve to cells (`1px` and `1ch` are both one cell). On each frame the engine
+recomputes style and layout for whatever mutated, paints the result into a cell
+buffer, diffs it against the previous frame, and writes the difference to
+stdout as ANSI escape sequences. Escape sequences from stdin are decoded into
+keyboard, mouse, and paste events and dispatched to DOM nodes.
+
+The bar below animates by setting a width. Nothing tells the screen to redraw.
+
+![examples/progress-bar.ts](playground:progress-bar)
+
+## Layout
+
+Placing things in a terminal means arithmetic: track a row, track a column,
+redo it when the window resizes. Write flexbox instead and the engine works out
+the cells — margins, borders, padding, and tables included. Below is a
+masthead, a sidebar, and an article, styled by a stylesheet; the arrow keys
+select a section.
+
+![examples/flexbox.ts](playground:flexbox)
+
+## Events
+
+Terminal UIs usually mean tracking rows and columns by hand and repainting when
+you remember to. Add a listener, change a class, and the row highlights itself.
+Keyboard, mouse, focus, and paste events fire on elements, the document, and
+the window; the file browser below finds its rows with `querySelectorAll` and
+follows the selection with `scrollIntoView()`.
+
+![examples/tree.ts](playground:tree)
+
+## Forms
+
+Text input is where a hand-rolled TUI falls apart: no selection, no input
+methods, a caret drawn a cell away from where the text lands. `<input>`,
+`<textarea>`, `<select>`, checkboxes, and radios are shadow trees with
+terminal-native looks, restylable with CSS. Tab moves focus and `:focus` styles
+it. The caret is the terminal cursor, so input methods compose inside the
+field.
+
+![examples/form.ts](playground:form)
+
+## Features
+
+- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits as in the browser, translated to ANSI color and decoration.
+- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` work and report cell-based layout.
+- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
+- **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
+- **Selection** Drag to select, styled with `::selection`; the caret moves by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
+- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
+- **Fullscreen** `Element.requestFullscreen()` renders to the alternate screen; exiting restores the shell and its scrollback.
 
 ## Compatibility
 
-The [compatibility matrix](/compatibility/) is generated by a probe suite: each DOM API, selector, and CSS property is applied to a real document and rendered, and the table records whether the output changed.
+Claims like these are cheap. The [compatibility matrix](/compatibility/) is
+generated by a probe suite: each DOM API, selector, and CSS property is applied
+to a real document and rendered, and the table records whether the output
+changed.
