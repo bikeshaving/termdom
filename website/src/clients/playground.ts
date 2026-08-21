@@ -237,7 +237,6 @@ function localImports(config: SandboxConfig): Record<string, string> {
 		"node:path": config.nodefs,
 		"node:url": config.nodefs,
 		"node:os": config.nodefs,
-		"node:module": config.nodeModule,
 	};
 }
 

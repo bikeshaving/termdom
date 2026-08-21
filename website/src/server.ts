@@ -26,7 +26,6 @@ import playgroundScript from "./clients/playground.ts" with {assetBase: "/static
 // filesystem. Programs in the playground import them as written.
 import sandboxTermdomScript from "./clients/sandbox-termdom.ts" with {assetBase: "/static/"};
 import virtualFSScript from "./models/virtual-fs.ts" with {assetBase: "/static/"};
-import sandboxNodeModuleScript from "./clients/sandbox-node-module.ts" with {assetBase: "/static/"};
 // The terminal emulator's own stylesheet, linked from the playground alone.
 import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
@@ -44,7 +43,6 @@ export const assets = {
 	playgroundScript,
 	sandboxTermdomScript,
 	virtualFSScript,
-	sandboxNodeModuleScript,
 	xtermCSS,
 	favicon,
 	logo,

@@ -191,7 +191,7 @@ export default async function Home({url}: {url: string}) {
 				<${Raw} value=${serializeExamples(Object.values(playgrounds))} />
 			</script>
 			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
-				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript, nodeModule: assets.sandboxNodeModuleScript})} />
+				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />
 			</script>
 			<script type="module">
 				<${Raw} value=${playgroundLoader(assets.playgroundScript)} />

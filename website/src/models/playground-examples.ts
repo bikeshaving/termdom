@@ -49,7 +49,6 @@ export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
 export interface SandboxConfig {
 	termdom: string;
 	nodefs: string;
-	nodeModule: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */
