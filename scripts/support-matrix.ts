@@ -60,6 +60,12 @@ interface Feature {
 	/** Selector override for the declaration, for properties that only act
 	 * on a pseudo-element (content on #probe::before, not #probe). */
 	selector?: string;
+	/**
+	 * A behaviour check, for properties whose whole effect is interaction:
+	 * no cell and no rect moves under them, so the frame-and-geometry diff
+	 * is blind. Renders the document, then asks the question directly.
+	 */
+	behaves?(dom: TermDOM): boolean | Promise<boolean>;
 }
 
 const LONG = "the quick brown fox jumps over the lazy dog again and again";
@@ -157,6 +163,25 @@ const FEATURES: Record<string, Feature> = {
 			'<div id="sibling">sibling</div></div>',
 	},
 	"float": {value: "right"},
+	// user-select changes what a selection may take, not what paints, so
+	// the probe drives Selection.modify past a none run and asks where the
+	// focus landed.
+	"user-select": {
+		value: "none",
+		async behaves(dom: TermDOM): Promise<boolean> {
+			dom.document.body.innerHTML =
+				"<div id=\"a\">ab</div>" +
+				"<div style=\"user-select: none\">skip</div>" +
+				"<div id=\"b\">cd</div>";
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const a = dom.document.getElementById("a")!.firstChild as Text;
+			const selection = dom.window.getSelection()!;
+			selection.setBaseAndExtent(a, 2, a, 2);
+			selection.modify("move", "forward", "character");
+			const focus = selection.focusNode as Text | null;
+			return focus !== null && focus.data === "cd";
+		},
+	},
 	"clear": {value: "both", setup: "#probe { float: left; }"},
 	// Clipping only shows against content that overflows the box: an
 	// unbreakable word wider than it for the x axis, wrapped lines taller
@@ -860,7 +885,6 @@ const NOT_IMPLEMENTED: string[] = [
 	"transition-timing-function",
 	"trigger-scope",
 	"unicode-bidi",
-	"user-select",
 	"view-transition-class",
 	"view-transition-name",
 	"view-transition-scope",
@@ -953,6 +977,9 @@ function cssProbe(property: string, feature: Feature, category: string): Probe {
 	const context = feature.markup ?
 			(feature.setup ?? "") :
 		`${BASE_CSS} ${feature.setup ?? ""}`;
+	if (feature.behaves) {
+		return apiProbe(property, category, feature.behaves, "behaviour probe");
+	}
 	return {
 		name: property,
 		category,
@@ -1088,6 +1115,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 		[
 			"color",
 			"background-color",
+			"user-select",
 			"background",
 			"font-weight",
 			"font-style",
