@@ -767,10 +767,10 @@ export class Event extends EventBase {
 
 /** Swap the type a dispatch invokes listeners under, for the legacy pass. */
 function setEventType(
-	self: Event,
+	event: Event,
 	type: string,
 ): void {
-	self[kType] = type;
+	event[kType] = type;
 }
 
 Object.defineProperties(Event.prototype, {
@@ -2412,13 +2412,13 @@ export class EventTarget {
  * allocates nothing.
  */
 function eventHandlerMap(
-	self: EventTarget,
+	target: EventTarget,
 	create: boolean,
 ): Map<string, EventHandlerRecord> | null {
-	if (self[kHandlers] === null && create) {
-		self[kHandlers] = new Map();
+	if (target[kHandlers] === null && create) {
+		target[kHandlers] = new Map();
 	}
-	return self[kHandlers];
+	return target[kHandlers];
 }
 
 Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
@@ -4824,41 +4824,41 @@ export class MutationObserver {
 
 /** The nodes whose registered observer list names this one. */
 function liveNodes(
-	self: MutationObserver,
+	observer: MutationObserver,
 ): Node[] {
-	return [...self[kNodes]];
+	return [...observer[kNodes]];
 }
 
 function observeNode(
-	self: MutationObserver,
+	observer: MutationObserver,
 	node: Node,
 ): void {
-	self[kNodes].add(node);
+	observer[kNodes].add(node);
 }
 
 function enqueueRecord(
-	self: MutationObserver,
+	observer: MutationObserver,
 	record: MutationRecord,
 ): void {
-	self[kRecords].push(record);
+	observer[kRecords].push(record);
 }
 
 function notifyObserver(
-	self: MutationObserver,
+	observer: MutationObserver,
 ): void {
-	const records = self[kRecords];
-	self[kRecords] = [];
-	for (const node of liveNodes(self)) {
+	const records = observer[kRecords];
+	observer[kRecords] = [];
+	for (const node of liveNodes(observer)) {
 		removeTransientObservers(node, () => true);
 	}
 	for (const node of transientNodes) {
-		removeTransientObservers(node, (entry) => entry.observer === self);
+		removeTransientObservers(node, (entry) => entry.observer === observer);
 	}
 	if (records.length === 0) {
 		return;
 	}
 	try {
-		self[kCallback].call(self, records, self);
+		observer[kCallback].call(observer, records, observer);
 	} catch (error) {
 		reportError(error);
 	}
@@ -5162,13 +5162,13 @@ abstract class LiveList implements Materializable {
 }
 
 function recompute(
-	self: LiveList,
+	list: LiveList,
 ): void {
-	self[kVersion] = treeVersion;
-	self[kItems] = self.compute();
-	self[kExact] = true;
-	self[kGeneration]++;
-	materialize(self);
+	list[kVersion] = treeVersion;
+	list[kItems] = list.compute();
+	list[kExact] = true;
+	list[kGeneration]++;
+	materialize(list);
 }
 
 /**
@@ -5183,13 +5183,13 @@ function recompute(
  * together, so the first of them finds the run.
  */
 function splice(
-	self: LiveList,
+	list: LiveList,
 	point: Node,
 	changed: readonly Node[],
 	members: readonly Node[],
 	added: boolean,
 ): boolean {
-	const items = self[kItems];
+	const items = list[kItems];
 	if (members.length === 0) {
 		return true;
 	}
@@ -5230,8 +5230,8 @@ function splice(
 		}
 		items.splice(at, members.length);
 	}
-	self[kGeneration]++;
-	defineIndices(self, items.length);
+	list[kGeneration]++;
+	defineIndices(list, items.length);
 	return true;
 }
 
@@ -5240,59 +5240,59 @@ function splice(
  * holds; null where the tree has moved on from it.
  */
 function computed(
-	self: LiveList,
+	list: LiveList,
 ): Node[] | null {
-	return self[kStanding] ? self[kItems] : null;
+	return list[kStanding] ? list[kItems] : null;
 }
 
 /** Define an index for every member the collection has, and no more. */
 function defineIndices(
-	self: LiveList,
+	list: LiveList,
 	length: number,
 ): void {
-	const indexed = self as unknown as Record<number | string, unknown>;
-	for (let index = self[kDefined]; index < length; index++) {
+	const indexed = list as unknown as Record<number | string, unknown>;
+	for (let index = list[kDefined]; index < length; index++) {
 		const at = index;
 		Object.defineProperty(indexed, at, {
 			// The recompute is reached through the captured method, not
 			// through the prototype: a caller may replace the prototype,
 			// and an indexed property is meant to survive that.
 			get(): unknown {
-				return ensureMethod.call(self)[at] ?? undefined;
+				return ensureMethod.call(list)[at] ?? undefined;
 			},
 			enumerable: true,
 			configurable: true,
 		});
 	}
-	for (let index = length; index < self[kDefined]; index++) {
+	for (let index = length; index < list[kDefined]; index++) {
 		delete indexed[index];
 	}
-	self[kDefined] = length;
+	list[kDefined] = length;
 }
 
 function materialize(
-	self: LiveList,
+	list: LiveList,
 ): void {
-	const items = self[kItems];
-	const record = self as unknown as Record<number | string, unknown>;
-	defineIndices(self, items.length);
-	for (const name of self[kNames]) {
+	const items = list[kItems];
+	const record = list as unknown as Record<number | string, unknown>;
+	defineIndices(list, items.length);
+	for (const name of list[kNames]) {
 		delete record[name];
 	}
-	self[kNames] = [];
-	const named = self.namedProperties(items);
+	list[kNames] = [];
+	const named = list.namedProperties(items);
 	if (named !== null) {
 		for (const [name, node] of named) {
 			if (
 				name === "" ||
-				Object.prototype.hasOwnProperty.call(self, name)
+				Object.prototype.hasOwnProperty.call(list, name)
 			) {
 				continue;
 			}
-			if (name in (self.constructor as {prototype: object}).prototype) {
+			if (name in (list.constructor as {prototype: object}).prototype) {
 				continue;
 			}
-			self[kNames].push(name);
+			list[kNames].push(name);
 			Object.defineProperty(record, name, {
 				value: node,
 				enumerable: false,
@@ -5921,15 +5921,15 @@ export class DOMTokenList extends LiveList {
 }
 
 function write(
-	self: DOMTokenList,
+	list: DOMTokenList,
 	tokens: string[],
 ): void {
-	if (self[kElement].getAttributeNode(self[kAttribute]) === null) {
+	if (list[kElement].getAttributeNode(list[kAttribute]) === null) {
 		if (tokens.length === 0) {
 			return;
 		}
 	}
-	self[kElement].setAttribute(self[kAttribute], tokens.join(" "));
+	list[kElement].setAttribute(list[kAttribute], tokens.join(" "));
 }
 
 Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
@@ -8792,17 +8792,17 @@ export class CustomElementRegistry {
 }
 
 function definitionFor(
-	self: CustomElementRegistry,
+	registry: CustomElementRegistry,
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
 	return (
-		self[kDefinitions].find((entry) => entry.constructor === constructor) ??
+		registry[kDefinitions].find((entry) => entry.constructor === constructor) ??
 		null
 	);
 }
 
 function lookUp(
-	self: CustomElementRegistry,
+	registry: CustomElementRegistry,
 	namespace: string | null,
 	localName: string,
 	is: string | null,
@@ -8810,12 +8810,12 @@ function lookUp(
 	if (namespace !== HTML_NAMESPACE) {
 		return null;
 	}
-	for (const definition of self[kDefinitions]) {
+	for (const definition of registry[kDefinitions]) {
 		if (definition.name === localName && definition.localName === localName) {
 			return definition;
 		}
 	}
-	for (const definition of self[kDefinitions]) {
+	for (const definition of registry[kDefinitions]) {
 		if (definition.name === is && definition.localName === localName) {
 			return definition;
 		}
@@ -10549,9 +10549,9 @@ export class HTMLDialogElement extends HTMLElement {
  * dialog shown as a popover focuses like a dialog, not like a popover.
  */
 function dialogFocusingSteps(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 ): void {
-	focusDialog(self);
+	focusDialog(dialog);
 }
 
 /**
@@ -10561,13 +10561,13 @@ function dialogFocusingSteps(
  * modal one, so a dialog of plain text still takes keys off the page.
  */
 function focusDialog(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 ): void {
-	self[kPreviouslyFocused] = self[kDocument][kActiveElement];
-	const walker = shadowIncludingInclusiveDescendants(self);
+	dialog[kPreviouslyFocused] = dialog[kDocument][kActiveElement];
+	const walker = shadowIncludingInclusiveDescendants(dialog);
 	let fallback: Element | null = null;
 	for (const node of walker) {
-		if (node === self || node.nodeType !== ELEMENT_NODE) {
+		if (node === dialog || node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -10586,35 +10586,35 @@ function focusDialog(
 		(fallback as HTMLElement).focus();
 		return;
 	}
-	self[kDocument][kActiveElement] = self;
+	dialog[kDocument][kActiveElement] = dialog;
 }
 
 function close(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 	returnValue: string | undefined,
 	_fromRequest: boolean,
 ): void {
-	if (!self.hasAttribute("open")) {
+	if (!dialog.hasAttribute("open")) {
 		return;
 	}
-	self.removeAttribute("open");
-	topLayerOf(self[kDocument]).delete(self);
+	dialog.removeAttribute("open");
+	topLayerOf(dialog[kDocument]).delete(dialog);
 	// The page gets its focus back where the dialog took it from, so the
 	// keyboard returns to what the user was doing before it opened.
-	if (self[kPreviouslyFocused] !== null) {
-		const previous = self[kPreviouslyFocused];
-		self[kPreviouslyFocused] = null;
+	if (dialog[kPreviouslyFocused] !== null) {
+		const previous = dialog[kPreviouslyFocused];
+		dialog[kPreviouslyFocused] = null;
 		if (
-			self[kDocument][kActiveElement] === self ||
-			self.contains(self[kDocument][kActiveElement])
+			dialog[kDocument][kActiveElement] === dialog ||
+			dialog.contains(dialog[kDocument][kActiveElement])
 		) {
 			(previous as HTMLElement).focus();
 		}
 	}
 	if (returnValue !== undefined) {
-		self[kReturnValue] = String(returnValue);
+		dialog[kReturnValue] = String(returnValue);
 	}
-	dispatch(self, new Event("close"));
+	dispatch(dialog, new Event("close"));
 }
 
 const kTopLayer = Symbol("the document's top layer");
@@ -10937,11 +10937,11 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 }
 
 function matching(
-	self: HTMLFormControlsCollection,
+	collection: HTMLFormControlsCollection,
 	key: string,
 ): Node[] {
 	const matches: Node[] = [];
-	for (const item of self[kEnsure]()) {
+	for (const item of collection[kEnsure]()) {
 		const element = item as Element;
 		if (
 			element.getAttribute("id") === key ||
@@ -11846,9 +11846,9 @@ export class HTMLTableRowElement extends HTMLElement {
 }
 
 function table(
-	self: HTMLTableRowElement,
+	row: HTMLTableRowElement,
 ): Element | null {
-	const parent = self[kParent];
+	const parent = row[kParent];
 	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
@@ -13152,21 +13152,21 @@ export class HTMLInputElement extends HTMLElement {
  * a listener sees the new state, and change back if the click is canceled.
  */
 function legacyPreActivationBehavior(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
 	// The reference the canceled half puts back is this click's, so a run
 	// that takes none leaves none behind.
-	self[kPreviousRadio] = null;
-	if (self.type === "checkbox") {
-		self[kPreviouslyChecked] = self[kChecked];
-		self[kPreviouslyIndeterminate] = self[kIndeterminate];
-		self[kIndeterminate] = false;
-		self[kDirtyChecked] = true;
-		setCheckedness(self, !self[kChecked]);
-	} else if (self.type === "radio") {
-		self[kPreviousRadio] = checkedRadioIn(self) ?? null;
-		self[kDirtyChecked] = true;
-		setCheckedness(self, true);
+	input[kPreviousRadio] = null;
+	if (input.type === "checkbox") {
+		input[kPreviouslyChecked] = input[kChecked];
+		input[kPreviouslyIndeterminate] = input[kIndeterminate];
+		input[kIndeterminate] = false;
+		input[kDirtyChecked] = true;
+		setCheckedness(input, !input[kChecked]);
+	} else if (input.type === "radio") {
+		input[kPreviousRadio] = checkedRadioIn(input) ?? null;
+		input[kDirtyChecked] = true;
+		setCheckedness(input, true);
 	}
 }
 
@@ -13180,36 +13180,36 @@ function legacyPreActivationBehavior(
  * element has now.
  */
 function legacyCanceledActivationBehavior(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	if (self.type === "checkbox") {
-		self[kIndeterminate] = self[kPreviouslyIndeterminate];
-		self[kChecked] = self[kPreviouslyChecked];
+	if (input.type === "checkbox") {
+		input[kIndeterminate] = input[kPreviouslyIndeterminate];
+		input[kChecked] = input[kPreviouslyChecked];
 		return;
 	}
-	if (self.type !== "radio") {
+	if (input.type !== "radio") {
 		return;
 	}
-	const previous = self[kPreviousRadio];
-	self[kPreviousRadio] = null;
-	self[kChecked] = false;
-	if (previous !== null && radioGroupOf(self).includes(previous)) {
+	const previous = input[kPreviousRadio];
+	input[kPreviousRadio] = null;
+	input[kChecked] = false;
+	if (previous !== null && radioGroupOf(input).includes(previous)) {
 		previous[kChecked] = true;
 	}
 }
 
 /** Set checkedness, unchecking the rest of a radio button's group. */
 function setCheckedness(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 	checked: boolean,
 ): void {
-	self[kChecked] = checked;
-	widgetChanged(self);
-	if (!checked || self.type !== "radio") {
+	input[kChecked] = checked;
+	widgetChanged(input);
+	if (!checked || input.type !== "radio") {
 		return;
 	}
-	for (const other of radioGroupOf(self)) {
-		if (other !== self) {
+	for (const other of radioGroupOf(input)) {
+		if (other !== input) {
 			other[kChecked] = false;
 			widgetChanged(other);
 		}
@@ -13217,21 +13217,21 @@ function setCheckedness(
 }
 
 function requireSelectable(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	if (!SELECTABLE_INPUT_TYPES.has(self.type)) {
+	if (!SELECTABLE_INPUT_TYPES.has(input.type)) {
 		throw domError(
 			"InvalidStateError",
-			`An input of type ${self.type} has no text selection`,
+			`An input of type ${input.type} has no text selection`,
 		);
 	}
 }
 
 /** field for a text-ish input, toggle for checkbox/radio. */
 function kindFor(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): "field" | "toggle" {
-	const type = self.type;
+	const type = input.type;
 	return type === "checkbox" || type === "radio" ? "toggle" : "field";
 }
 
@@ -13242,12 +13242,12 @@ function kindFor(
  * exclusivity unchecks siblings with no hook to reconcile on).
  */
 function build(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	const engine = self[kEngine]!;
-	let root = self[kRoot];
+	const engine = input[kEngine]!;
+	let root = input[kRoot];
 	if (root === null) {
-		root = buildUARoot(self, engine, FIELD_UA_STYLES);
+		root = buildUARoot(input, engine, FIELD_UA_STYLES);
 	} else {
 		// A rebuild keeps the root -- and its enrollment -- and replaces only
 		// what hangs under it, the stylesheet included.
@@ -13255,24 +13255,24 @@ function build(
 			root.removeChild(root.firstChild);
 		}
 		engine.invalidateStructure();
-		root.appendChild(uaStyleElement(self, FIELD_UA_STYLES));
+		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
-	self[kRoot] = root;
-	self[kKind] = kindFor(self);
+	input[kRoot] = root;
+	input[kKind] = kindFor(input);
 
-	if (self[kKind] === "field") {
-		self[kValueText] = addPart(root, "value").firstChild as UAText;
-		self[kPlaceholderText] = addPart(
+	if (input[kKind] === "field") {
+		input[kValueText] = addPart(root, "value").firstChild as UAText;
+		input[kPlaceholderText] = addPart(
 			root,
 			"placeholder",
 		).firstChild as UAText;
 	} else {
-		self[kValueText] = null;
-		self[kPlaceholderText] = null;
-		self[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
+		input[kValueText] = null;
+		input[kPlaceholderText] = null;
+		input[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
 	}
-	engine.layout.invalidate(self);
-	self[kUAReconcile]();
+	engine.layout.invalidate(input);
+	input[kUAReconcile]();
 }
 /** How an input's type reads and writes its value. */
 function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
@@ -14188,10 +14188,10 @@ export class HTMLSelectElement extends HTMLElement {
 
 /** The options the tree renders: `options`, without building a collection. */
 function optionList(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): HTMLOptionElement[] {
-	askForAReset(self);
-	return optionsOf(self);
+	askForAReset(select);
+	return optionsOf(select);
 }
 
 /**
@@ -14200,9 +14200,9 @@ function optionList(
  * an option, so it takes no index and cannot be picked.
  */
 function pickerRows(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): PickerRow[] {
-	askForAReset(self);
+	askForAReset(select);
 	const rows: PickerRow[] = [];
 	let index = 0;
 	const addOption = (option: HTMLOptionElement, grouped: boolean): void => {
@@ -14211,11 +14211,11 @@ function pickerRows(
 			label: option.label,
 			disabled: optionIsDisabled(option),
 			grouped,
-			highlighted: index === self[kHighlight],
+			highlighted: index === select[kHighlight],
 		});
 		index++;
 	};
-	for (let node = self[kFirstChild]; node !== null; node = node[kNext]) {
+	for (let node = select[kFirstChild]; node !== null; node = node[kNext]) {
 		if (node instanceof HTMLOptionElement) {
 			addOption(node, false);
 		} else if (node instanceof HTMLOptGroupElement) {
@@ -14247,11 +14247,11 @@ function pickerRows(
  * the next one.
  */
 function reconcileRows(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	picker: UAElement,
 ): void {
-	const document = uaDocumentOf(self);
-	const rows = pickerRows(self);
+	const document = uaDocumentOf(select);
+	const rows = pickerRows(select);
 	while (picker.childNodes.length > rows.length) {
 		picker.removeChild(picker.lastChild!);
 	}
@@ -14277,11 +14277,11 @@ function reconcileRows(
 
 /** Step to the next enabled option in `direction`, or stay put. */
 function step(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	from: number,
 	direction: 1 | -1,
 ): number {
-	const options = optionList(self);
+	const options = optionList(select);
 	for (
 		let i = from + direction;
 		i >= 0 && i < options.length;
@@ -14296,29 +14296,29 @@ function step(
 
 /** Open the picker with the highlight on the current selection. */
 function openPicker(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): void {
-	const options = optionList(self);
+	const options = optionList(select);
 	if (options.length === 0) {
 		return;
 	}
-	let index = self.selectedIndex;
+	let index = select.selectedIndex;
 	if (index < 0) {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
-	self[kHighlight] = index;
-	self[kUAReconcile]();
+	select[kHighlight] = index;
+	select[kUAReconcile]();
 }
 
 /** Commit `index` as the selection, close, and fire input then change. */
 function commit(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	index: number,
 ): void {
-	self[kHighlight] = null;
-	self.selectedIndex = index; // The setter reconciles (closes + label).
-	dispatch(self, new Event("input", {bubbles: true, cancelable: false}));
-	dispatch(self, new Event("change", {bubbles: true, cancelable: false}));
+	select[kHighlight] = null;
+	select.selectedIndex = index; // The setter reconciles (closes + label).
+	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
+	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
 }
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
@@ -14828,11 +14828,11 @@ export class HTMLTextAreaElement extends HTMLElement {
  * down to the end.
  */
 function verticalTarget(
-	self: HTMLTextAreaElement,
+	textarea: HTMLTextAreaElement,
 	caret: number,
 	direction: 1 | -1,
 ): number {
-	const visual = textareaVisualLines(self, self[kEngine]!.layout);
+	const visual = textareaVisualLines(textarea, textarea[kEngine]!.layout);
 	if (!visual) {
 		return caret;
 	}
@@ -14851,8 +14851,8 @@ function verticalTarget(
 	);
 	// Consecutive vertical moves aim for the column travel STARTED at, even
 	// across shorter lines that clamp the caret -- the browser's goal column.
-	const column = self[kGoalColumn] ?? currentColumn;
-	self[kGoalColumn] = column;
+	const column = textarea[kGoalColumn] ?? currentColumn;
+	textarea[kGoalColumn] = column;
 	const target = visual.lines[targetIndex];
 	const targetText = visual.value.slice(target.startOffset, target.endOffset);
 	let cells = 0;
@@ -15121,9 +15121,9 @@ export class HTMLMeterElement extends HTMLElement {
  * away suboptimum, two away even less good.
  */
 function level(
-	self: HTMLMeterElement,
+	meter: HTMLMeterElement,
 ): string {
-	const {low, high, optimum, value} = self;
+	const {low, high, optimum, value} = meter;
 	if (optimum < low) {
 		if (value < low) {
 			return "optimum";
@@ -16124,9 +16124,9 @@ export class DOMStringMap {
 
 /** Bring the map's own properties into line with the element's attributes. */
 function syncDataset(
-	self: DOMStringMap,
+	map: DOMStringMap,
 ): void {
-	const element = self[kDatasetElement];
+	const element = map[kDatasetElement];
 	const names: string[] = [];
 	for (const attribute of element[kAttributeList]) {
 		if (attribute[kNamespace] !== null) {
@@ -16139,19 +16139,19 @@ function syncDataset(
 		names.push(property);
 	}
 	names.sort();
-	for (const name of self[kDatasetNames]) {
+	for (const name of map[kDatasetNames]) {
 		if (!names.includes(name)) {
-			delete (self as never)[name];
+			delete (map as never)[name];
 		}
 	}
 	for (const name of names) {
-		if (self[kDatasetNames].includes(name)) {
+		if (map[kDatasetNames].includes(name)) {
 			continue;
 		}
 		const attribute = datasetAttributeName(name);
-		Object.defineProperty(self, name, {
+		Object.defineProperty(map, name, {
 			get(this: DOMStringMap): string {
-				return self[kDatasetElement].getAttribute(attribute) as string;
+				return map[kDatasetElement].getAttribute(attribute) as string;
 			},
 			set: wrapWithReactions(function (
 				this: DOMStringMap,
@@ -16163,7 +16163,7 @@ function syncDataset(
 			configurable: true,
 		});
 	}
-	self[kDatasetNames] = names;
+	map[kDatasetNames] = names;
 }
 
 Object.defineProperty(DOMStringMap.prototype, Symbol.toStringTag, {
@@ -16737,9 +16737,9 @@ export class ElementInternals {
 }
 
 function requireFormAssociated(
-	self: ElementInternals,
+	internals: ElementInternals,
 ): void {
-	if (!isFormAssociatedCustom(self[kElementInternalsTarget])) {
+	if (!isFormAssociatedCustom(internals[kElementInternalsTarget])) {
 		throw domError(
 			"NotSupportedError",
 			"That element's definition is not form-associated",
@@ -17461,26 +17461,26 @@ class FlatWalker {
    how a <slot> disappears from a box tree while its projected content flows
    through. */
 function isDissolved(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): boolean {
 	return (
-		self[kDissolved] !== null &&
+		walker[kDissolved] !== null &&
 		node.nodeType === ELEMENT_NODE &&
-		self[kDissolved](node)
+		walker[kDissolved](node)
 	);
 }
 
 /** The first undissolved node at a node's position, or null if it has none. */
 function head(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node | null {
-	if (!isDissolved(self, node)) {
+	if (!isDissolved(walker, node)) {
 		return node;
 	}
 	for (let child = composedFirstChild(node); child !== null;) {
-		const found = head(self, child);
+		const found = head(walker, child);
 		if (found !== null) {
 			return found;
 		}
@@ -17491,14 +17491,14 @@ function head(
 
 /** Mirror of kHead: the last undissolved node at a node's position. */
 function tail(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node | null {
-	if (!isDissolved(self, node)) {
+	if (!isDissolved(walker, node)) {
 		return node;
 	}
 	for (let child = composedLastChild(node); child !== null;) {
-		const found = tail(self, child);
+		const found = tail(walker, child);
 		if (found !== null) {
 			return found;
 		}
@@ -17508,14 +17508,14 @@ function tail(
 }
 
 function lastDescendant(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node {
 	let current = node;
 	for (
-		let child = self[kLastChild](current);
+		let child = walker[kLastChild](current);
 		child !== null;
-		child = self[kLastChild](current)
+		child = walker[kLastChild](current)
 	) {
 		current = child;
 	}
@@ -17524,7 +17524,7 @@ function lastDescendant(
 
 /** Whether a node ends an element's content, ::after aside. */
 function isLastContent(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 	element: Element,
 ): boolean {
@@ -21395,12 +21395,12 @@ function selectionLineMove(
 
 /** The point the motion lands on, or null where there is nothing to do. */
 function modifiedPoint(
-	self: Selection,
+	selection: Selection,
 	from: [Node, number],
 	forward: boolean,
 	granularity: string,
 ): [Node, number] | null {
-	const document = self[kDocument];
+	const document = selection[kDocument];
 	const engine = uaEngineOf(document);
 	const layout = engine?.layout ?? null;
 	if (layout === null) {
@@ -21458,10 +21458,10 @@ function modifiedPoint(
 
 /** Whether a node is in the selection's document, shadow trees included. */
 function inDocument(
-	self: Selection,
+	selection: Selection,
 	node: Node,
 ): boolean {
-	return shadowIncludingRoot(node) === self[kDocument];
+	return shadowIncludingRoot(node) === selection[kDocument];
 }
 
 /**
@@ -21470,42 +21470,42 @@ function inDocument(
  * range that has left the document is not one the selection answers with.
  */
 function documentRange(
-	self: Selection,
+	selection: Selection,
 ): Range | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return inDocument(self, range[kStartNode]) ? range : null;
+	return inDocument(selection, range[kStartNode]) ? range : null;
 }
 
 function anchorPoint(
-	self: Selection,
+	selection: Selection,
 ): [Node, number] | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return self[kDirection] === "forwards" ?
+	return selection[kDirection] === "forwards" ?
 			[range[kStartNode], range[kStartOffset]] :
 			[range[kEndNode], range[kEndOffset]];
 }
 
 function focusPoint(
-	self: Selection,
+	selection: Selection,
 ): [Node, number] | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return self[kDirection] === "forwards" ?
+	return selection[kDirection] === "forwards" ?
 			[range[kEndNode], range[kEndOffset]] :
 			[range[kStartNode], range[kStartOffset]];
 }
 
 /** The range the Range API builds from an ordered pair of points. */
 function rangeFor(
-	self: Selection,
+	selection: Selection,
 	start: [Node, number],
 	end: [Node, number],
 ): Range {
@@ -21517,26 +21517,26 @@ function rangeFor(
 
 /** Take a range, and the composed points it was built from, as the own. */
 function associate(
-	self: Selection,
+	selection: Selection,
 	range: Range,
 	anchor: [Node, number],
 	focus: [Node, number],
 	direction: "forwards" | "backwards" | "directionless",
 ): void {
-	const previous = self[kRange];
+	const previous = selection[kRange];
 	if (previous !== null) {
 		previous[kRangeSelection] = null;
 	}
-	self[kRange] = range;
-	range[kRangeSelection] = self;
+	selection[kRange] = range;
+	range[kRangeSelection] = selection;
 	const anchorFirst =
 		compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 	const start = anchorFirst ? anchor : focus;
 	const end = anchorFirst ? focus : anchor;
-	self[kStart] = livePoint(start[0], start[1]);
-	self[kEnd] = livePoint(end[0], end[1]);
-	self[kDirection] = direction;
-	scheduleSelectionChange(self[kDocument]);
+	selection[kStart] = livePoint(start[0], start[1]);
+	selection[kEnd] = livePoint(end[0], end[1]);
+	selection[kDirection] = direction;
+	scheduleSelectionChange(selection[kDocument]);
 }
 
 /**
@@ -21545,38 +21545,40 @@ function associate(
  * the document takes the selection with it.
  */
 function selectionChanged(
-	self: Selection,
+	selection: Selection,
 	which: "start" | "end" | "both",
 ): void {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return;
 	}
-	if (!inDocument(self, range[kStartNode])) {
-		self.removeAllRanges();
+	if (!inDocument(selection, range[kStartNode])) {
+		selection.removeAllRanges();
 		return;
 	}
 	const start = livePoint(range[kStartNode], range[kStartOffset]);
 	const end = livePoint(range[kEndNode], range[kEndOffset]);
-	if (which === "both" || self[kStart] === null || self[kEnd] === null) {
-		self[kStart] = start;
-		self[kEnd] = end;
+	if (
+		which === "both" || selection[kStart] === null || selection[kEnd] === null
+	) {
+		selection[kStart] = start;
+		selection[kEnd] = end;
 	} else if (which === "start") {
-		self[kStart] = start;
-		if (composedOrder(self, start, self[kEnd]) === AFTER) {
-			self[kEnd] = start;
+		selection[kStart] = start;
+		if (composedOrder(selection, start, selection[kEnd]) === AFTER) {
+			selection[kEnd] = start;
 		}
 	} else {
-		self[kEnd] = end;
-		if (composedOrder(self, end, self[kStart]) === BEFORE) {
-			self[kStart] = end;
+		selection[kEnd] = end;
+		if (composedOrder(selection, end, selection[kStart]) === BEFORE) {
+			selection[kStart] = end;
 		}
 	}
-	scheduleSelectionChange(self[kDocument]);
+	scheduleSelectionChange(selection[kDocument]);
 }
 
 function composedOrder(
-	self: Selection,
+	selection: Selection,
 	point: Range,
 	other: Range,
 ): number {
@@ -21771,21 +21773,21 @@ export class NodeIterator {
 }
 
 function traverse(
-	self: NodeIterator,
+	iterator: NodeIterator,
 	forward: boolean,
 ): Node | null {
-	let node: Node | null = self[kReference];
-	let before = self[kPointerBefore];
+	let node: Node | null = iterator[kReference];
+	let before = iterator[kPointerBefore];
 	const state = {
-		root: self[kRoot],
-		whatToShow: self[kWhatToShow],
-		filter: self[kFilter],
-		active: self[kActive],
+		root: iterator[kRoot],
+		whatToShow: iterator[kWhatToShow],
+		filter: iterator[kFilter],
+		active: iterator[kActive],
 	};
 	for (;;) {
 		if (forward) {
 			if (!before) {
-				node = followingWithin(node as Node, self[kRoot]);
+				node = followingWithin(node as Node, iterator[kRoot]);
 				if (node === null) {
 					return null;
 				}
@@ -21794,7 +21796,7 @@ function traverse(
 			}
 		} else {
 			if (before) {
-				node = precedingWithin(node as Node, self[kRoot]);
+				node = precedingWithin(node as Node, iterator[kRoot]);
 				if (node === null) {
 					return null;
 				}
@@ -21806,9 +21808,9 @@ function traverse(
 			// A filter that removed the very node it was filtering leaves
 			// the reference where the pre-removing steps put it: a node
 			// outside the root can never be the reference.
-			if (isInclusiveAncestor(self[kRoot], node as Node)) {
-				self[kReference] = node as Node;
-				self[kPointerBefore] = before;
+			if (isInclusiveAncestor(iterator[kRoot], node as Node)) {
+				iterator[kReference] = node as Node;
+				iterator[kPointerBefore] = before;
 			}
 			break;
 		}
@@ -21975,16 +21977,16 @@ export class TreeWalker {
 }
 
 function traverseChildren(
-	self: TreeWalker,
+	walker: TreeWalker,
 	first: boolean,
 ): Node | null {
 	let node: Node | null = first ?
-		self[kCurrent][kFirstChild] :
-		self[kCurrent][kLastChild];
+		walker[kCurrent][kFirstChild] :
+		walker[kCurrent][kLastChild];
 	while (node !== null) {
-		const result = filterNode(self[kState], node);
+		const result = filterNode(walker[kState], node);
 		if (result === FILTER_ACCEPT) {
-			self[kCurrent] = node;
+			walker[kCurrent] = node;
 			return node;
 		}
 		if (result === FILTER_SKIP) {
@@ -22003,8 +22005,8 @@ function traverseChildren(
 			const parent: Node | null = node[kParent];
 			if (
 				parent === null ||
-				parent === self[kRoot] ||
-				parent === self[kCurrent]
+				parent === walker[kRoot] ||
+				parent === walker[kCurrent]
 			) {
 				return null;
 			}
@@ -22015,20 +22017,20 @@ function traverseChildren(
 }
 
 function traverseSiblings(
-	self: TreeWalker,
+	walker: TreeWalker,
 	next: boolean,
 ): Node | null {
-	let node = self[kCurrent];
-	if (node === self[kRoot]) {
+	let node = walker[kCurrent];
+	if (node === walker[kRoot]) {
 		return null;
 	}
 	for (;;) {
 		let sibling = next ? node[kNext] : node[kPrevious];
 		while (sibling !== null) {
 			node = sibling;
-			const result = filterNode(self[kState], node);
+			const result = filterNode(walker[kState], node);
 			if (result === FILTER_ACCEPT) {
-				self[kCurrent] = node;
+				walker[kCurrent] = node;
 				return node;
 			}
 			sibling = next ? node[kFirstChild] : node[kLastChild];
@@ -22037,11 +22039,11 @@ function traverseSiblings(
 			}
 		}
 		const parent = node[kParent];
-		if (parent === null || parent === self[kRoot]) {
+		if (parent === null || parent === walker[kRoot]) {
 			return null;
 		}
 		node = parent;
-		if (filterNode(self[kState], node) === FILTER_ACCEPT) {
+		if (filterNode(walker[kState], node) === FILTER_ACCEPT) {
 			return null;
 		}
 	}

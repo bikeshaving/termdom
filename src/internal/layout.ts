@@ -201,7 +201,7 @@ const NO_STATIC_POSITION_DISPLAYS = new Set([
  * item its intrinsic size.
  */
 function measuresAsRun(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): boolean {
 	if (isOutOfFlow(element)) {
@@ -217,12 +217,12 @@ function measuresAsRun(
 	if (isInlineLevel(element)) {
 		return true;
 	}
-	return !containsBlockLevelBox(self, element);
+	return !containsBlockLevelBox(layout, element);
 }
 
 /** An inline box with block-level content inside it: CSS breaks it apart. */
 function splitsAroundBlock(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): boolean {
 	if (isOutOfFlow(element)) {
@@ -239,11 +239,11 @@ function splitsAroundBlock(
 	if (parent && isGridDisplay(getPropertyValue(parent, "display"))) {
 		return false;
 	}
-	return containsBlockLevelBox(self, element);
+	return containsBlockLevelBox(layout, element);
 }
 
 function containsBlockLevelBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): boolean {
 	const walker = flowWalker(element);
@@ -261,7 +261,7 @@ function containsBlockLevelBox(
 			continue;
 		}
 		if (display === "inline") {
-			if (containsBlockLevelBox(self, childElement)) {
+			if (containsBlockLevelBox(layout, childElement)) {
 				return true;
 			}
 			continue;
@@ -276,7 +276,7 @@ function containsBlockLevelBox(
  * according to CSS whitespace collapsing rules in block formatting contexts
  */
 function shouldCollapseWhitespaceTextNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	textNode: Text,
 ): boolean {
 	// Only collapse whitespace-only text nodes
@@ -372,7 +372,7 @@ function shouldCollapseWhitespaceTextNode(
  * item, and a run that reaches any inline content is a real item.
  */
 function isSuppressedFlexWhitespace(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	text: Text,
 ): boolean {
 	const parent = text.parentElement;
@@ -1161,20 +1161,20 @@ function styleFlexNode(
  * nothing in flow carries the question.
  */
 function styleNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 	flexNode: FlexTypes.Node,
 ): void {
 	const wasHidden = flexNode.getDisplay() === Flex.DISPLAY_NONE;
-	styleFlexNode(element, flexNode, self.positionedElements);
+	styleFlexNode(element, flexNode, layout.positionedElements);
 	// Turning display:none is what makes the whole subtree box-less, and
 	// this is the one place every path that restyles a box passes through.
 	if (!wasHidden && flexNode.getDisplay() === Flex.DISPLAY_NONE) {
-		retireHiddenContent(self, element);
+		retireHiddenContent(layout, element);
 	}
 	if (isOutOfFlow(element)) {
 		flexNode.setStaticPositionFunc((containingBlock) =>
-			staticPosition(self, element, containingBlock),
+			staticPosition(layout, element, containingBlock),
 		);
 	} else if (flexNode.staticPositionFunc) {
 		flexNode.setStaticPositionFunc(null);
@@ -1407,19 +1407,19 @@ const kRenderedLeaves = Symbol("renderedLeaves");
  * replaces.
  */
 function containerBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 ): Box {
-	const box = principalBox(self, container);
-	const structure = self[kStructuralGeneration];
+	const box = principalBox(layout, container);
+	const structure = layout[kStructuralGeneration];
 	if (
 		box.children &&
 		box.structure === structure &&
-		!self[kStaleContainers].has(container)
+		!layout[kStaleContainers].has(container)
 	) {
 		return box;
 	}
-	self[kStaleContainers].delete(container);
+	layout[kStaleContainers].delete(container);
 
 	const heads = new Map<Node, Box>();
 	const children: Box[] = [];
@@ -1441,13 +1441,13 @@ function containerBox(
 	// The enumeration below decides it again; a container that no longer
 	// reaches through a broken inline stops holding its fragments.
 	box.holdsFragments = false;
-	for (const child of flowChildren(self, container)) {
+	for (const child of flowChildren(layout, container)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			const element = child as Element;
 			const display = getPropertyValue(element, "display");
 			const inlineLevel = isInlineDisplay(display);
 			if (display === "none" || isOutOfFlow(element)) {
-				const own = principalBox(self, child, box);
+				const own = principalBox(layout, child, box);
 				heads.set(child, run ?? own);
 				// A hidden block still holds a box slot. An out-of-flow box
 				// holds none -- it hangs from its containing block, whatever
@@ -1460,13 +1460,13 @@ function containerBox(
 			}
 			if (!inlineLevel) {
 				run = null; // block-level box: the run ends here
-				children.push(principalBox(self, child, box));
+				children.push(principalBox(layout, child, box));
 				continue;
 			}
 			if (inFlex) {
 				// Blockified (css-display-3 §2.7): the element's box is its
 				// own, not an anonymous one gathered around it.
-				const own = principalBox(self, child, box);
+				const own = principalBox(layout, child, box);
 				heads.set(child, own);
 				children.push(own);
 				run = null;
@@ -1474,7 +1474,7 @@ function containerBox(
 			}
 		} else if (child.nodeType !== child.TEXT_NODE) {
 			continue;
-		} else if (isSuppressedFlexWhitespace(self, child as Text)) {
+		} else if (isSuppressedFlexWhitespace(layout, child as Text)) {
 			// Collapsible white space between flex items renders nothing at
 			// all (css-flexbox-1 §4), so it opens no anonymous item.
 			continue;
@@ -1506,7 +1506,7 @@ function containerBox(
 	// Runs the container no longer has: their content merged into a
 	// neighbour's box or left the tree entirely.
 	for (let i = runCount; i < previous.length; i++) {
-		retireAnonymousBox(self, previous[i]);
+		retireAnonymousBox(layout, previous[i]);
 	}
 
 	// A dissolved element is FLATTENED by the walk above: the boxes it
@@ -1514,7 +1514,7 @@ function containerBox(
 	// itself. So a box it held under an earlier display would outlive the
 	// change -- a `display: contents` flip whose invalidation scope was an
 	// ancestor left the old box standing, holding rows nothing removed.
-	retireSteppedOver(self, container);
+	retireSteppedOver(layout, container);
 
 	box.children = children;
 	box.heads = heads;
@@ -1524,14 +1524,14 @@ function containerBox(
 
 /** A DOM node's principal box, created on first mention. */
 function principalBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 	parent: Box | null = null,
 ): Box {
-	let box = self[kBoxes].get(node);
+	let box = layout[kBoxes].get(node);
 	if (!box) {
 		box = new Box("node", node);
-		self[kBoxes].set(node, box);
+		layout[kBoxes].set(node, box);
 	}
 	if (parent) {
 		box.parent = parent;
@@ -1544,11 +1544,11 @@ function principalBox(
  * content root, and otherwise the node its box is laid out by.
  */
 function containerFlexNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 ): FlexTypes.Node | undefined {
 	return (
-		self[kBoxes].get(container)?.contentRoot ?? self.nodeMap.get(container)
+		layout[kBoxes].get(container)?.contentRoot ?? layout.nodeMap.get(container)
 	);
 }
 
@@ -1559,10 +1559,10 @@ function containerFlexNode(
  * at all.
  */
 function retireFlexNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
-	const flexNode = self.nodeMap.get(node);
+	const flexNode = layout.nodeMap.get(node);
 	if (!flexNode) {
 		return;
 	}
@@ -1570,9 +1570,9 @@ function retireFlexNode(
 	while (flexNode.children.length > 0) {
 		flexNode.removeChild(flexNode.children[0]);
 	}
-	self[kMeasureNodes].delete(flexNode);
+	layout[kMeasureNodes].delete(flexNode);
 	flexNode.freeRecursive();
-	untrackNode(self, node);
+	untrackNode(layout, node);
 }
 
 /**
@@ -1583,11 +1583,11 @@ function retireFlexNode(
  * built with no content in it at all. Neither is a re-measurement away.
  */
 function boxKindMatches(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 	flexNode: FlexTypes.Node,
 ): boolean {
-	if (measuresAsRun(self, element) !== self[kMeasureNodes].has(flexNode)) {
+	if (measuresAsRun(layout, element) !== layout[kMeasureNodes].has(flexNode)) {
 		return false;
 	}
 	return (
@@ -1598,7 +1598,7 @@ function boxKindMatches(
 
 /** Free an anonymous box's layout node and forget the box. */
 function retireAnonymousBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	box: Box,
 ): void {
 	const flexNode = box.flexNode;
@@ -1608,24 +1608,24 @@ function retireAnonymousBox(
 		return;
 	}
 	flexNode.getParent()?.removeChild(flexNode);
-	self[kMeasureNodes].delete(flexNode);
-	self[kAnonymousBoxes].delete(flexNode);
-	self[kDOMNodeByFlexNode].delete(flexNode);
+	layout[kMeasureNodes].delete(flexNode);
+	layout[kAnonymousBoxes].delete(flexNode);
+	layout[kDOMNodeByFlexNode].delete(flexNode);
 	flexNode.freeRecursive();
 }
 
 /** The anonymous box a node's content is laid out in, if it is in one. */
 function boxOf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): Box | null {
-	const entry = boxEntryOf(self, node);
+	const entry = boxEntryOf(layout, node);
 	return entry?.kind === "anonymous" ? entry : null;
 }
 
 /** The box a node's content falls under, among its container's children. */
 function boxEntryOf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): Box | null {
 	if (!flatIsConnected(node)) {
@@ -1648,11 +1648,11 @@ function boxEntryOf(
 		return null;
 	}
 
-	const container = runContainerOf(self, node);
+	const container = runContainerOf(layout, node);
 	if (!container) {
-		return principalBox(self, node);
+		return principalBox(layout, node);
 	}
-	const heads = containerBox(self, container).heads!;
+	const heads = containerBox(layout, container).heads!;
 	// Up from the node to whichever of its ancestors the container counts
 	// among its own flow children: that is the box the content falls under.
 	for (let current: Node = node; current !== container;) {
@@ -1660,13 +1660,13 @@ function boxEntryOf(
 		if (entry) {
 			return entry;
 		}
-		const parent = boxParentOf(self, current);
+		const parent = boxParentOf(layout, current);
 		if (!parent) {
-			return principalBox(self, current);
+			return principalBox(layout, current);
 		}
 		current = parent;
 	}
-	return principalBox(self, node);
+	return principalBox(layout, node);
 }
 
 /**
@@ -1675,26 +1675,26 @@ function boxEntryOf(
  * blockified inline children).
  */
 function runFlexNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): FlexTypes.Node | undefined {
-	const box = boxOf(self, node);
+	const box = boxOf(layout, node);
 	if (box) {
 		return box.head === node ? (box.flexNode ?? undefined) : undefined;
 	}
-	return self.nodeMap.get(node);
+	return layout.nodeMap.get(node);
 }
 
 /** The lines the run a node heads was broken into, if it has been measured. */
 function runBreakResult(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): BreakResult | undefined {
-	const box = boxOf(self, node);
+	const box = boxOf(layout, node);
 	if (box) {
 		return box.head === node ? (box.fragments ?? undefined) : undefined;
 	}
-	return self[kBoxes].get(node)?.fragments ?? undefined;
+	return layout[kBoxes].get(node)?.fragments ?? undefined;
 }
 
 /**
@@ -1709,29 +1709,29 @@ function runBreakResult(
  * engine's child order has to say.
  */
 function syncContainerRuns(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 ): void {
-	self[kDirtyRunContainers].delete(container);
+	layout[kDirtyRunContainers].delete(container);
 	if (
 		getPropertyValue(container, "display") === "none" ||
-		hiddenByAncestor(self, container)
+		hiddenByAncestor(layout, container)
 	) {
 		// Content that arrives under the boundary generates no box, and
 		// whatever boxes it brought from where it was visible are retired
 		// here: this is the only pass that ever visits a hidden container.
-		retireHiddenContent(self, container);
+		retireHiddenContent(layout, container);
 		return;
 	}
 	// An inline broken around a block-level box lays out none of its own
 	// content: the fragments and the block between them are boxes of the
 	// CONTAINER (CSS2 §9.2.1.1), reconciled there. Taking them here steals
 	// them from the container that places them.
-	if (splitsAroundBlock(self, container)) {
+	if (splitsAroundBlock(layout, container)) {
 		return;
 	}
 
-	const containerFlex = containerFlexNode(self, container);
+	const containerFlex = containerFlexNode(layout, container);
 	if (!containerFlex || containerFlex.measureFunc) {
 		// One box holds all of it -- the container's own, when it measures
 		// its content as one opaque unit, or the run it is a member of --
@@ -1739,13 +1739,13 @@ function syncContainerRuns(
 		// block. No container's box list names such a box and no child walk
 		// descends into a run to find it, so the derivation that reaches it
 		// is this one.
-		if (containerFlex || boxOf(self, container)) {
-			retireRunContent(self, container);
+		if (containerFlex || boxOf(layout, container)) {
+			retireRunContent(layout, container);
 		}
 		return;
 	}
 
-	const children = containerBox(self, container).children!;
+	const children = containerBox(layout, container).children!;
 	let index = 0;
 	for (const entry of children) {
 		if (entry.kind === "anonymous") {
@@ -1758,7 +1758,7 @@ function syncContainerRuns(
 			// none), so a run that changes hands starts from a fresh node
 			// rather than wearing the last head's margins and flex factors.
 			if (flexNode && entry.styledFrom !== styledFrom) {
-				retireAnonymousBox(self, entry);
+				retireAnonymousBox(layout, entry);
 				flexNode = null;
 			}
 			if (!flexNode) {
@@ -1766,12 +1766,12 @@ function syncContainerRuns(
 				entry.flexNode = flexNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
-					styleFlexNode(styledFrom, flexNode, self.positionedElements);
+					styleFlexNode(styledFrom, flexNode, layout.positionedElements);
 				}
 				flexNode.setMeasureFunc(
 					(width, widthMode, height, heightMode, placing) =>
 						measureInlineRun(
-							self,
+							layout,
 							entry,
 							width,
 							widthMode,
@@ -1780,19 +1780,19 @@ function syncContainerRuns(
 							placing,
 						),
 				);
-				self[kMeasureNodes].add(flexNode);
-				self[kAnonymousBoxes].set(flexNode, entry);
-				self[kDOMNodeByFlexNode].set(flexNode, entry.head);
-			} else if (self[kDOMNodeByFlexNode].get(flexNode) !== entry.head) {
+				layout[kMeasureNodes].add(flexNode);
+				layout[kAnonymousBoxes].set(flexNode, entry);
+				layout[kDOMNodeByFlexNode].set(flexNode, entry.head);
+			} else if (layout[kDOMNodeByFlexNode].get(flexNode) !== entry.head) {
 				// Paint reaches a box through the node that opens it.
-				self[kDOMNodeByFlexNode].set(flexNode, entry.head);
+				layout[kDOMNodeByFlexNode].set(flexNode, entry.head);
 			}
 			if (containerFlex.getChildIndex(flexNode) !== index) {
 				flexNode.getParent()?.removeChild(flexNode);
 				containerFlex.insertChild(flexNode, index);
 			}
 			index++;
-			syncRunMembers(self, entry);
+			syncRunMembers(layout, entry);
 			continue;
 		}
 		// Every box the container lays out, built by the one path that
@@ -1802,14 +1802,14 @@ function syncContainerRuns(
 		// be named here. A box a fresh build would have made differently is
 		// remade; the rest is re-derived onto the node already standing.
 		const node = entry.node!;
-		addNode(self, node, containerFlex);
+		addNode(layout, node, containerFlex);
 		// An out-of-flow box is not one of the container's: it hangs from its
 		// CONTAINING BLOCK, which the build above hoisted it to, and takes no
 		// place among the boxes counted here.
 		if (isOutOfFlow(node)) {
 			continue;
 		}
-		const flexNode = self.nodeMap.get(node);
+		const flexNode = layout.nodeMap.get(node);
 		if (flexNode && flexNode.getParent() === containerFlex) {
 			// The box list is the order. A box placed among its DOM
 			// siblings knows nothing of the anonymous boxes between them --
@@ -1832,7 +1832,7 @@ function syncContainerRuns(
 	// here from its CONTAINING BLOCK -- so it stays where it is.
 	for (let i = containerFlex.children.length - 1; i >= index; i--) {
 		const child = containerFlex.children[i];
-		const node = self[kDOMNodeByFlexNode].get(child);
+		const node = layout[kDOMNodeByFlexNode].get(child);
 		if (node && isOutOfFlow(node)) {
 			continue;
 		}
@@ -1848,7 +1848,7 @@ function syncContainerRuns(
  * into a run.
  */
 function syncRunMembers(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	run: Box,
 ): void {
 	for (const member of run.members) {
@@ -1857,13 +1857,13 @@ function syncRunMembers(
 		}
 		const element = member as Element;
 		if (isOutOfFlow(element)) {
-			addNode(self, element, null);
+			addNode(layout, element, null);
 			continue;
 		}
-		if (!self[kBoxes].get(element)?.contentRoot) {
-			retireFlexNode(self, element);
+		if (!layout[kBoxes].get(element)?.contentRoot) {
+			retireFlexNode(layout, element);
 		}
-		retireRunContent(self, element);
+		retireRunContent(layout, element);
 	}
 }
 
@@ -1883,7 +1883,7 @@ function boxParentElement(node: Node): Element | null {
 
 /** The flat-tree parent that can hold a box, pseudo-elements included. */
 function boxParentOf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): Element | null {
 	return boxParentElement(node);
@@ -1898,17 +1898,17 @@ function boxParentOf(
  * a block container in its own right, and so is an out-of-flow box.
  */
 function runContainerOf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): Element | null {
-	const parent = boxParentOf(self, node);
+	const parent = boxParentOf(layout, node);
 	if (!parent) {
 		return null;
 	}
 	const startsOwnRun =
 		node.nodeType === node.ELEMENT_NODE &&
 		getPropertyValue(node as Element, "display") !== "inline";
-	return runContainerFrom(self, parent, startsOwnRun);
+	return runContainerFrom(layout, parent, startsOwnRun);
 }
 
 /**
@@ -1920,14 +1920,14 @@ function runContainerOf(
  * parent left to climb from.
  */
 function runContainerFrom(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	box: Element,
 	startsOwnRun: boolean,
 ): Element | null {
 	for (
 		let current: Element | null = box;
 		current;
-		current = boxParentOf(self, current)
+		current = boxParentOf(layout, current)
 	) {
 		if (isOutOfFlow(current)) {
 			return current;
@@ -1942,7 +1942,7 @@ function runContainerFrom(
 			// A box laying out children of its own establishes a block
 			// container; and an atomic inline nested in one starts a run
 			// there rather than joining the run its host sits in.
-			if (self[kBoxes].get(current)?.contentRoot || startsOwnRun) {
+			if (layout[kBoxes].get(current)?.contentRoot || startsOwnRun) {
 				return current;
 			}
 			continue;
@@ -1953,7 +1953,7 @@ function runContainerFrom(
 }
 
 function addNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 	parentFlexNode: FlexTypes.Node | null = null,
 ): void {
@@ -1961,12 +1961,12 @@ function addNode(
 	// fresh builds never descend past the none boundary, and rebuild
 	// sweeps must not smuggle descendants back in under the hidden
 	// container (the flex engine does not ignore them).
-	if (hiddenByAncestor(self, node)) {
+	if (hiddenByAncestor(layout, node)) {
 		// Whatever boxes the node brought with it from where it was visible
 		// go with it: nothing under the boundary generates one.
-		retireFlexNode(self, node);
+		retireFlexNode(layout, node);
 		if (node.nodeType === node.ELEMENT_NODE) {
-			retireHiddenContent(self, node as Element);
+			retireHiddenContent(layout, node as Element);
 		}
 		return;
 	}
@@ -1976,14 +1976,14 @@ function addNode(
 	// earlier display value -- its children re-add as the box parent's
 	// own. Retire whatever node it had.
 	if (node.nodeType === node.ELEMENT_NODE && dissolvesIntoChildren(node)) {
-		retireFlexNode(self, node);
+		retireFlexNode(layout, node);
 		// The children it dissolves into are the CONTAINER's boxes, and the
 		// container learns of them only by enumerating again: an element
 		// that generates no box announces nothing else on its way in.
-		const container = runContainerOf(self, node);
+		const container = runContainerOf(layout, node);
 		if (container) {
-			self[kStaleContainers].add(container);
-			self[kDirtyRunContainers].add(container);
+			layout[kStaleContainers].add(container);
+			layout[kDirtyRunContainers].add(container);
 		}
 		return;
 	}
@@ -1998,8 +1998,8 @@ function addNode(
 	if (isOutOfFlow(node)) {
 		const containingBlock =
 			getPropertyValue(node as Element, "position") === "fixed" ?
-				self.viewportRootNode :
-					containingBlockFlexNode(self, node as Element);
+				layout.viewportRootNode :
+					containingBlockFlexNode(layout, node as Element);
 		if (containingBlock) {
 			parentFlexNode = containingBlock;
 		}
@@ -2015,29 +2015,29 @@ function addNode(
 	// inside an inline-block box paints nothing, while the same input
 	// beside a single letter of text paints fine.
 	if (parentFlexNode?.measureFunc) {
-		const stale = self.nodeMap.get(node);
+		const stale = layout.nodeMap.get(node);
 		if (stale && stale.getParent() === parentFlexNode) {
 			parentFlexNode.removeChild(stale);
-			self[kMeasureNodes].delete(stale);
+			layout[kMeasureNodes].delete(stale);
 			stale.freeRecursive();
-			untrackNode(self, node);
+			untrackNode(layout, node);
 		}
 		return;
 	}
 
-	if (self.nodeMap.has(node)) {
+	if (layout.nodeMap.has(node)) {
 		// Node already exists - this might be a moved node that needs reparenting
-		const existingFlexNode = self.nodeMap.get(node)!;
+		const existingFlexNode = layout.nodeMap.get(node)!;
 		// Content that an anonymous box lays out owns no layout node: one
 		// left from when this node was block-level, or headed a run under a
 		// shape the container no longer has, is retired here so the box is
 		// the only thing measuring it.
-		if (isInlineLevel(node) && boxOf(self, node)) {
-			retireFlexNode(self, node);
+		if (isInlineLevel(node) && boxOf(layout, node)) {
+			retireFlexNode(layout, node);
 			if (node.nodeType === node.ELEMENT_NODE) {
-				addElementNode(self, node as Element, parentFlexNode);
+				addElementNode(layout, node as Element, parentFlexNode);
 			} else {
-				addTextNode(self, node as Text, parentFlexNode);
+				addTextNode(layout, node as Text, parentFlexNode);
 			}
 			return;
 		}
@@ -2049,21 +2049,21 @@ function addNode(
 		// mismatched node and rebuild from scratch instead.
 		if (existingFlexNode && node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			if (!boxKindMatches(self, element, existingFlexNode)) {
-				retireFlexNode(self, node);
-				addElementNode(self, element, parentFlexNode);
+			if (!boxKindMatches(layout, element, existingFlexNode)) {
+				retireFlexNode(layout, node);
+				addElementNode(layout, element, parentFlexNode);
 				return;
 			}
 			// Whatever moved the node may also have restyled it (the flip
 			// that hoists a box to its containing block usually did).
-			styleNode(self, element, existingFlexNode);
+			styleNode(layout, element, existingFlexNode);
 			// A box kept is a box re-derived: what an element that measures
 			// its content as one run holds -- a content root, or nothing at
 			// all -- is decided from the styles that stand, exactly as it
 			// would be for a node built here from scratch.
-			if (measuresAsRun(self, element)) {
-				syncContentRoot(self, element);
-				retireRunContent(self, element);
+			if (measuresAsRun(layout, element)) {
+				syncContentRoot(layout, element);
+				retireRunContent(layout, element);
 			}
 		}
 		if (existingFlexNode && parentFlexNode) {
@@ -2081,9 +2081,9 @@ function addNode(
 					existingFlexNode,
 					parentFlexNode.children.length,
 				);
-				const container = runContainerOf(self, node);
+				const container = runContainerOf(layout, node);
 				if (container) {
-					self[kDirtyRunContainers].add(container);
+					layout[kDirtyRunContainers].add(container);
 				}
 			}
 		}
@@ -2091,30 +2091,30 @@ function addNode(
 	}
 
 	if (node.nodeType === node.ELEMENT_NODE) {
-		addElementNode(self, node as Element, parentFlexNode);
+		addElementNode(layout, node as Element, parentFlexNode);
 	} else if (node.nodeType === node.TEXT_NODE) {
-		addTextNode(self, node as Text, parentFlexNode);
+		addTextNode(layout, node as Text, parentFlexNode);
 	}
 }
 
 function addElementNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 	parentFlexNode: FlexTypes.Node | null = null,
 ): void {
 	const display = getPropertyValue(element, "display");
-	const asRun = measuresAsRun(self, element);
+	const asRun = measuresAsRun(layout, element);
 
 	// Inline-level content lays out in its container's anonymous boxes,
 	// which the container reconciles as a whole -- unless the box is out of
 	// flow, which blockifies it per CSS: it never joins a run.
 	if (asRun) {
-		const box = boxOf(self, element);
+		const box = boxOf(layout, element);
 		if (box) {
-			invalidateBox(self, box);
-			self[kDirtyRunContainers].add(box.container);
-			syncContentRoot(self, element);
-			retireRunContent(self, element);
+			invalidateBox(layout, box);
+			layout[kDirtyRunContainers].add(box.container);
+			syncContentRoot(layout, element);
+			retireRunContent(layout, element);
 			return;
 		}
 		// No anonymous box holds it: its own box is what lays it out (a
@@ -2126,13 +2126,13 @@ function addElementNode(
 	// settles the order.
 	const flexIndex = parentFlexNode?.children.length ?? 0;
 
-	let flexNode = self.nodeMap.get(element);
+	let flexNode = layout.nodeMap.get(element);
 	if (!flexNode) {
 		flexNode = Flex.Node.createWithConfig(flexConfig);
-		trackNode(self, element, flexNode);
+		trackNode(layout, element, flexNode);
 	}
 
-	styleNode(self, element, flexNode);
+	styleNode(layout, element, flexNode);
 
 	if (display === "none") {
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
@@ -2141,10 +2141,10 @@ function addElementNode(
 		}
 		return;
 	} else if (asRun) {
-		const box = principalBox(self, element);
+		const box = principalBox(layout, element);
 		flexNode.setMeasureFunc((width, widthMode, height, heightMode, placing) =>
 			measureInlineRun(
-				self,
+				layout,
 				box,
 				width,
 				widthMode,
@@ -2153,7 +2153,7 @@ function addElementNode(
 				placing,
 			),
 		);
-		self[kMeasureNodes].add(flexNode);
+		layout[kMeasureNodes].add(flexNode);
 
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -2161,8 +2161,8 @@ function addElementNode(
 			placeChild(parentFlexNode, flexNode, flexIndex);
 		}
 
-		syncContentRoot(self, element);
-		retireRunContent(self, element);
+		syncContentRoot(layout, element);
+		retireRunContent(layout, element);
 		return;
 	}
 
@@ -2173,7 +2173,7 @@ function addElementNode(
 	// element that stops being an inline-block lays its block content out
 	// here, and a content root left behind would go on claiming the same
 	// children.
-	retireContentRoot(self, principalBox(self, element));
+	retireContentRoot(layout, principalBox(layout, element));
 
 	// Only DIRECT children: an inline child broken apart by a block-level
 	// box holds boxes this container lays out, and those reach the tree
@@ -2184,7 +2184,7 @@ function addElementNode(
 			child.nodeType === child.ELEMENT_NODE ||
 			child.nodeType === child.TEXT_NODE
 		) {
-			addNode(self, child, flexNode);
+			addNode(layout, child, flexNode);
 		}
 	}
 
@@ -2193,8 +2193,8 @@ function addElementNode(
 	// calculateLayout's drain, because a container built from inside a
 	// measure (an inline-block's block content) is laid out the moment the
 	// measure returns, with no drain in between.
-	if (self[kDirtyRunContainers].has(element)) {
-		syncContainerRuns(self, element);
+	if (layout[kDirtyRunContainers].has(element)) {
+		syncContainerRuns(layout, element);
 	}
 
 	if (flexNode && parentFlexNode) {
@@ -2202,15 +2202,15 @@ function addElementNode(
 		// The index above is counted among the element's DOM siblings,
 		// which know nothing of the anonymous boxes between them. The
 		// container's box list is what settles the order, so ask for it.
-		const container = runContainerOf(self, element);
+		const container = runContainerOf(layout, element);
 		if (container) {
-			self[kDirtyRunContainers].add(container);
+			layout[kDirtyRunContainers].add(container);
 		}
 	}
 }
 
 function addTextNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	text: Text,
 	parentFlexNode: FlexTypes.Node | null = null,
 ): void {
@@ -2218,30 +2218,38 @@ function addTextNode(
 		return;
 	}
 
-	if (isSuppressedFlexWhitespace(self, text)) {
+	if (isSuppressedFlexWhitespace(layout, text)) {
 		return;
 	}
 
 	// Text lays out in its container's anonymous box, which the container
 	// reconciles as a whole.
-	const box = boxOf(self, text);
+	const box = boxOf(layout, text);
 	if (box) {
-		invalidateBox(self, box);
-		self[kDirtyRunContainers].add(box.container);
+		invalidateBox(layout, box);
+		layout[kDirtyRunContainers].add(box.container);
 		return;
 	}
 
-	let flexNode = self.nodeMap.get(text);
+	let flexNode = layout.nodeMap.get(text);
 	if (!flexNode) {
 		flexNode = Flex.Node.createWithConfig(flexConfig);
-		trackNode(self, text, flexNode);
+		trackNode(layout, text, flexNode);
 	}
 
-	const own = principalBox(self, text);
+	const own = principalBox(layout, text);
 	flexNode.setMeasureFunc((width, widthMode, height, heightMode, placing) =>
-		measureInlineRun(self, own, width, widthMode, height, heightMode, placing),
+		measureInlineRun(
+			layout,
+			own,
+			width,
+			widthMode,
+			height,
+			heightMode,
+			placing,
+		),
 	);
-	self[kMeasureNodes].add(flexNode);
+	layout[kMeasureNodes].add(flexNode);
 
 	// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -2260,7 +2268,7 @@ function addTextNode(
  * everything from the block onward renders as nothing.
  */
 function flowChildren(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 	into: Node[] = [],
 	root = container,
@@ -2276,11 +2284,11 @@ function flowChildren(
 		// inline's subtree there would cost every off-screen row of a long
 		// list. An inline that stops splitting is told so here, by the
 		// enumeration that stops reaching through it.
-		const splits = splitsAroundBlock(self, child as Element);
-		principalBox(self, child).broken = splits;
+		const splits = splitsAroundBlock(layout, child as Element);
+		principalBox(layout, child).broken = splits;
 		if (splits) {
-			principalBox(self, root).holdsFragments = true;
-			flowChildren(self, child as Element, into, root);
+			principalBox(layout, root).holdsFragments = true;
+			flowChildren(layout, child as Element, into, root);
 		}
 	}
 	return into;
@@ -2296,10 +2304,10 @@ function flowChildren(
  * run that placed the box can say where its content edge is.
  */
 function syncContentRoot(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): void {
-	const box = principalBox(self, element);
+	const box = principalBox(layout, element);
 	const display = getPropertyValue(element, "display");
 	// An inline-grid ALWAYS lays its own content out: every one of its
 	// children is a grid item, and a grid is not something a line can
@@ -2312,9 +2320,9 @@ function syncContentRoot(
 	const grid = display === "inline-grid";
 	if (
 		!isAtomicInline(display) ||
-		(!grid && !containsBlockLevelBox(self, element))
+		(!grid && !containsBlockLevelBox(layout, element))
 	) {
-		retireContentRoot(self, box);
+		retireContentRoot(layout, box);
 		return;
 	}
 
@@ -2348,19 +2356,19 @@ function syncContentRoot(
 			child.nodeType === child.ELEMENT_NODE ||
 			child.nodeType === child.TEXT_NODE
 		) {
-			addNode(self, child, root);
+			addNode(layout, child, root);
 		}
 	}
 
 	// The root is laid out by the measure that reaches it, which may be the
 	// one running right now: its boxes have to be in it before it returns.
-	if (self[kDirtyRunContainers].has(element)) {
-		syncContainerRuns(self, element);
+	if (layout[kDirtyRunContainers].has(element)) {
+		syncContainerRuns(layout, element);
 	}
 }
 /** Retire a box's content root once its content is all inline again. */
 function retireContentRoot(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	box: Box,
 ): void {
 	const root = box.contentRoot;
@@ -2387,19 +2395,19 @@ function retireContentRoot(
  * laid out. Retiring them is what makes the subtree box-less.
  */
 function retireHiddenContent(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): void {
-	retireContainerBoxes(self, element);
-	const box = self[kBoxes].get(element);
+	retireContainerBoxes(layout, element);
+	const box = layout[kBoxes].get(element);
 	if (box) {
-		retireContentRoot(self, box);
+		retireContentRoot(layout, box);
 	}
 	const walker = createFlatTreeWalker<Node>(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-		retireFlexNode(self, child);
+		retireFlexNode(layout, child);
 		if (child.nodeType === child.ELEMENT_NODE) {
-			retireHiddenContent(self, child as Element);
+			retireHiddenContent(layout, child as Element);
 		}
 	}
 }
@@ -2412,21 +2420,21 @@ function retireHiddenContent(
  * next read is answered from.
  */
 function retireContainerBoxes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): void {
-	const box = self[kBoxes].get(element);
+	const box = layout[kBoxes].get(element);
 	if (box?.children) {
 		for (const child of box.children) {
 			if (child.kind === "anonymous") {
-				retireAnonymousBox(self, child);
+				retireAnonymousBox(layout, child);
 			}
 		}
 		box.children = null;
 		box.heads = null;
 		box.structure = -1;
 	}
-	self[kDirtyRunContainers].delete(element);
+	layout[kDirtyRunContainers].delete(element);
 }
 
 /**
@@ -2443,29 +2451,29 @@ function retireContainerBoxes(
  * content out under a root only its own measurement reaches.
  */
 function retireRunContent(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): void {
-	if (self[kBoxes].get(element)?.contentRoot) {
+	if (layout[kBoxes].get(element)?.contentRoot) {
 		return;
 	}
-	retireContainerBoxes(self, element);
+	retireContainerBoxes(layout, element);
 	const walker = flowWalker(element);
 	for (let node = walker.nextNode(); node;) {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const child = node as Element;
 			if (isOutOfFlow(child)) {
-				addNode(self, child, null);
+				addNode(layout, child, null);
 				node = skipSubtree(walker) ? walker.currentNode : null;
 				continue;
 			}
-			if (self[kBoxes].get(child)?.contentRoot) {
+			if (layout[kBoxes].get(child)?.contentRoot) {
 				node = skipSubtree(walker) ? walker.currentNode : null;
 				continue;
 			}
-			retireContainerBoxes(self, child);
+			retireContainerBoxes(layout, child);
 		}
-		retireFlexNode(self, node);
+		retireFlexNode(layout, node);
 		node = walker.nextNode();
 	}
 }
@@ -2479,7 +2487,7 @@ function retireRunContent(
  * cost and nothing for a tree without them.
  */
 function retireSteppedOver(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	parent: Element,
 ): void {
 	const walker = createFlatTreeWalker<Node>(parent);
@@ -2489,14 +2497,14 @@ function retireSteppedOver(
 		}
 		const element = child as Element;
 		const dissolves = dissolvesIntoChildren(element);
-		if (!dissolves && !self[kBoxes].get(element)?.broken) {
+		if (!dissolves && !layout[kBoxes].get(element)?.broken) {
 			continue;
 		}
 		// kAddNode is what retires the box of a box-less element.
-		if (dissolves && self.nodeMap.has(element)) {
-			addNode(self, element, null);
+		if (dissolves && layout.nodeMap.has(element)) {
+			addNode(layout, element, null);
 		}
-		retireSteppedOver(self, element);
+		retireSteppedOver(layout, element);
 	}
 }
 
@@ -2512,7 +2520,7 @@ function retireSteppedOver(
  * positioned boxes.
  */
 function containingBlockFlexNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): FlexTypes.Node | null {
 	for (
@@ -2522,7 +2530,7 @@ function containingBlockFlexNode(
 	) {
 		const position = getPropertyValue(ancestor, "position");
 		if (position && position !== "static") {
-			const flexNode = self.nodeMap.get(ancestor);
+			const flexNode = layout.nodeMap.get(ancestor);
 			// A measure-function node cannot take flex children; a
 			// positioned inline-block can't serve as a flex containing
 			// block, so the hoist keeps climbing.
@@ -2531,12 +2539,12 @@ function containingBlockFlexNode(
 			}
 		}
 	}
-	return self.nodeMap.get(self.rootElement) ?? null;
+	return layout.nodeMap.get(layout.rootElement) ?? null;
 }
 
 /** Hidden by an ancestor's display:none anywhere up the flat tree. */
 function hiddenByAncestor(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): boolean {
 	for (
@@ -2563,16 +2571,16 @@ function hiddenByAncestor(
  * takes its position from that layout instead.
  */
 function documentPosition(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 	flexNode: FlexTypes.Node,
 ): {x: number; y: number} {
-	const position = absolutePosition(self, flexNode);
+	const position = absolutePosition(layout, flexNode);
 	let root = flexNode;
 	for (let parent = root.getParent(); parent; parent = root.getParent()) {
 		root = parent;
 	}
-	if (root === self.viewportRootNode) {
+	if (root === layout.viewportRootNode) {
 		return position;
 	}
 	let host: Element | null = null;
@@ -2581,11 +2589,11 @@ function documentPosition(
 		current && !host;
 		current = boxParentElement(current)
 	) {
-		if (self[kBoxes].get(current)?.contentRoot === root) {
+		if (layout[kBoxes].get(current)?.contentRoot === root) {
 			host = current;
 		}
 	}
-	const hostRect = host && self.getRect(host);
+	const hostRect = host && layout.getRect(host);
 	if (!host || !hostRect) {
 		return position;
 	}
@@ -2646,32 +2654,32 @@ function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 }
 
 function trackNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	domNode: Node,
 	flexNode: FlexTypes.Node,
 ): void {
-	self.nodeMap.set(domNode, flexNode);
-	self[kDOMNodeByFlexNode].set(flexNode, domNode);
+	layout.nodeMap.set(domNode, flexNode);
+	layout[kDOMNodeByFlexNode].set(flexNode, domNode);
 }
 
 function untrackNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	domNode: Node,
 ): void {
-	const flexNode = self.nodeMap.get(domNode);
+	const flexNode = layout.nodeMap.get(domNode);
 	if (flexNode) {
-		self[kDOMNodeByFlexNode].delete(flexNode);
+		layout[kDOMNodeByFlexNode].delete(flexNode);
 	}
 	// The lines a box holds are the product of the layout node that is
 	// going: nothing lays that content out until a box is built for it
 	// again, and the lines would describe a box that no longer exists.
-	const box = self[kBoxes].get(domNode);
+	const box = layout[kBoxes].get(domNode);
 	if (box) {
 		box.fragments = null;
 	}
-	self.nodeMap.delete(domNode);
+	layout.nodeMap.delete(domNode);
 	if (domNode.nodeType === domNode.ELEMENT_NODE) {
-		self.positionedElements.delete(domNode as Element);
+		layout.positionedElements.delete(domNode as Element);
 	}
 }
 
@@ -2680,7 +2688,7 @@ function untrackNode(
  * which are never "connected" themselves -- if its host element is.
  */
 function isNodeLive(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): boolean {
 	// Flat-tree connectivity: a pseudo-element node and a control's
@@ -2690,16 +2698,16 @@ function isNodeLive(
 }
 
 function pruneDisconnectedNodes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 ): void {
 	// A box outlives the nodes that pass through it, but not its container.
-	for (const box of [...self[kAnonymousBoxes].values()]) {
-		if (!isNodeLive(self, box.container)) {
-			retireAnonymousBox(self, box);
+	for (const box of [...layout[kAnonymousBoxes].values()]) {
+		if (!isNodeLive(layout, box.container)) {
+			retireAnonymousBox(layout, box);
 		}
 	}
-	for (const [node, flexNode] of self.nodeMap) {
-		if (node === self.rootElement || isNodeLive(self, node)) {
+	for (const [node, flexNode] of layout.nodeMap) {
+		if (node === layout.rootElement || isNodeLive(layout, node)) {
 			continue;
 		}
 
@@ -2708,10 +2716,10 @@ function pruneDisconnectedNodes(
 			parent.removeChild(flexNode);
 		}
 
-		self[kMeasureNodes].delete(flexNode);
+		layout[kMeasureNodes].delete(flexNode);
 		flexNode.freeRecursive();
-		untrackNode(self, node);
-		self[kInvalidatedNodes].delete(node);
+		untrackNode(layout, node);
+		layout[kInvalidatedNodes].delete(node);
 	}
 }
 
@@ -2722,7 +2730,7 @@ function pruneDisconnectedNodes(
  * terminate leaf collection at position zero.
  */
 function firstComposedRenderableChild(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): Node | null {
 	const walker = flowWalker(element);
@@ -2745,7 +2753,7 @@ function firstComposedRenderableChild(
  * CSS width -- owns its used width.
  */
 function isRowFlexItem(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): boolean {
 	const parent = flatParentElement<Element>(element);
@@ -2778,11 +2786,11 @@ function isRowFlexItem(
  * would throw away a correct enumeration and rebuild it, per mutation.
  */
 function restageContainer(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 ): void {
-	self[kStaleContainers].add(container);
-	self[kDirtyRunContainers].add(container);
+	layout[kStaleContainers].add(container);
+	layout[kDirtyRunContainers].add(container);
 }
 
 /**
@@ -2790,12 +2798,12 @@ function restageContainer(
  * enumeration says.
  */
 function restageBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
-	const container = runContainerOf(self, node);
+	const container = runContainerOf(layout, node);
 	if (container) {
-		restageContainer(self, container);
+		restageContainer(layout, container);
 	}
 }
 
@@ -2806,7 +2814,7 @@ function restageBox(
  * the inline sits on.
  */
 function restageChildren(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	parent: Element,
 ): void {
 	let box: Element | null = parent;
@@ -2816,28 +2824,28 @@ function restageChildren(
 	if (!box) {
 		return;
 	}
-	restageContainer(self, box);
-	const container = runContainerFrom(self, box, false);
+	restageContainer(layout, box);
+	const container = runContainerFrom(layout, box, false);
 	if (container) {
-		restageContainer(self, container);
+		restageContainer(layout, container);
 	}
 }
 
 /** Note that every container in and around a subtree must re-enumerate. */
 function restageSubtree(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
-	restageBox(self, node);
+	restageBox(layout, node);
 	if (node.nodeType !== node.ELEMENT_NODE) {
 		return;
 	}
-	restageChildren(self, node as Element);
+	restageChildren(layout, node as Element);
 	// A subtree layout has never seen holds no enumeration to unsettle, and
 	// the walk to discover that would cost more than the boxes it saves.
 	// Anything that HAS been laid out is reachable from its own record: a
 	// tree assembled off-document announces each piece as it is joined.
-	if (!self.nodeMap.has(node) && !self[kBoxes].get(node)?.children) {
+	if (!layout.nodeMap.has(node) && !layout[kBoxes].get(node)?.children) {
 		return;
 	}
 	// The flat tree, not the flow: which elements dissolve into their
@@ -2846,26 +2854,26 @@ function restageSubtree(
 	const walker = createFlatTreeWalker<Node>(node);
 	for (let child = walker.nextNode(); child; child = walker.nextNode()) {
 		if (child.nodeType === child.ELEMENT_NODE) {
-			restageContainer(self, child as Element);
+			restageContainer(layout, child as Element);
 		}
 	}
 }
 
 function invalidateNode(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
 	// Track this node for re-adding during calculateLayout
-	self[kInvalidatedNodes].add(node);
+	layout[kInvalidatedNodes].add(node);
 
 	// If it's an inline-level node, invalidate the entire run
 	if (isInlineLevel(node)) {
-		self[kInvalidateInlineRun](node);
+		layout[kInvalidateInlineRun](node);
 	} else if (node.nodeType === node.ELEMENT_NODE) {
 		// For block-level elements, remove from nodeMap to force recreation
 		// We can't call markDirty() on container nodes as the engine only allows
 		// leaf nodes with measure functions to be marked dirty
-		const flexNode = self.nodeMap.get(node);
+		const flexNode = layout.nodeMap.get(node);
 		if (flexNode) {
 			// Get parent before removing from map
 			const parent = flexNode.getParent();
@@ -2876,9 +2884,9 @@ function invalidateNode(
 			// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 			if (!node.isConnected) {
 				// Node was truly removed from DOM - free it
-				self[kMeasureNodes].delete(flexNode);
+				layout[kMeasureNodes].delete(flexNode);
 				flexNode.freeRecursive();
-				untrackNode(self, node);
+				untrackNode(layout, node);
 			} else {
 				// Node is still connected - just remove from parent but keep the layout
 				// node for reuse. It will be reattached during layout calculation.
@@ -2887,7 +2895,7 @@ function invalidateNode(
 				// have changed them. A list's padding-left is derived from its items'
 				// markers, so appending a wider item changes the parent's computed
 				// padding, and reusing the node as-is would keep the stale gutter.
-				styleNode(self, node as Element, flexNode);
+				styleNode(layout, node as Element, flexNode);
 
 				// Sever its current flex CHILDREN too: this element's composed
 				// child set may have changed wholesale (attachShadow on a host
@@ -2900,16 +2908,16 @@ function invalidateNode(
 				while (flexNode.children.length > 0) {
 					const childFlexNode = flexNode.children[0];
 					flexNode.removeChild(childFlexNode);
-					const childDOMNode = self[kDOMNodeByFlexNode].get(childFlexNode);
+					const childDOMNode = layout[kDOMNodeByFlexNode].get(childFlexNode);
 					if (childDOMNode) {
-						clearBreakResultCache(self, childDOMNode);
+						clearBreakResultCache(layout, childDOMNode);
 					}
 				}
 			}
 		}
 
 		// Recursively invalidate all children (including inline runs within this block element)
-		invalidateNodeChildren(self, node as Element);
+		invalidateNodeChildren(layout, node as Element);
 	}
 }
 
@@ -2917,29 +2925,29 @@ function invalidateNode(
  * Recursively invalidate all children of an element
  */
 function invalidateNodeChildren(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): void {
 	const walker = flowWalker(element);
 	let child = walker.firstChild();
 
 	while (child) {
-		invalidateNode(self, child);
+		invalidateNode(layout, child);
 		child = walker.nextSibling();
 	}
 }
 
 function clearBreakResultCache(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
-	const entry = boxEntryOf(self, node);
+	const entry = boxEntryOf(layout, node);
 	if (entry?.kind === "anonymous") {
-		invalidateBox(self, entry);
+		invalidateBox(layout, entry);
 	} else if (entry) {
 		// Dirtying the measure is what drops the lines: they are the product of
 		// a size the layout cache holds, and a clean node keeps both.
-		markRunMeasureDirty(self, entry.node!);
+		markRunMeasureDirty(layout, entry.node!);
 	}
 }
 
@@ -2949,13 +2957,13 @@ function clearBreakResultCache(
  * box whose measure is the only thing that ever lays that content out.
  */
 function invalidateBox(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	box: Box,
 ): void {
 	box.flexNode?.markDirty();
-	const host = enclosingContentRoot(self, box.container);
+	const host = enclosingContentRoot(layout, box.container);
 	if (host) {
-		invalidateEnclosingMeasure(self, host);
+		invalidateEnclosingMeasure(layout, host);
 	}
 }
 
@@ -2970,11 +2978,11 @@ function invalidateBox(
  * that ever runs it un-dirtied.
  */
 function enclosingContentRoot(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	from: Element | null,
 ): Element | null {
 	for (let current = from; current; current = boxParentElement(current)) {
-		if (self[kBoxes].get(current)?.contentRoot) {
+		if (layout[kBoxes].get(current)?.contentRoot) {
 			return current;
 		}
 	}
@@ -2989,14 +2997,14 @@ function enclosingContentRoot(
  * such a box measures, lays out at the right rect, and paints nothing.
  */
 function invalidateContainerBoxes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	container: Element,
 ): void {
-	for (const entry of containerBox(self, container).children!) {
+	for (const entry of containerBox(layout, container).children!) {
 		if (entry.kind === "anonymous") {
-			invalidateBox(self, entry);
+			invalidateBox(layout, entry);
 		} else if (entry.fragments) {
-			markRunMeasureDirty(self, entry.node!);
+			markRunMeasureDirty(layout, entry.node!);
 		}
 	}
 }
@@ -3012,30 +3020,30 @@ function invalidateContainerBoxes(
  * break results on the way, and dirties it.
  */
 function invalidateEnclosingMeasure(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	node: Node,
 ): void {
 	// Whatever restyled a node with no box of its own may have given it
 	// one, or taken one away: the container's box list is what says.
-	const runContainer = runContainerOf(self, node);
+	const runContainer = runContainerOf(layout, node);
 	if (runContainer) {
-		self[kDirtyRunContainers].add(runContainer);
+		layout[kDirtyRunContainers].add(runContainer);
 	}
 	// The box a node's content sits in may be its ANCESTOR's box: a node
 	// inside a run member is not itself a member, and the anonymous box
 	// holding it belongs to no DOM node, so the climb below -- which looks
 	// for a layout node with a measure function -- walks straight past it.
-	let entry = boxEntryOf(self, node);
+	let entry = boxEntryOf(layout, node);
 	for (
 		let ancestor = entry === null ? boxParentElement(node) : null;
 		ancestor && entry === null;
 		ancestor = boxParentElement(ancestor)
 	) {
-		entry = boxEntryOf(self, ancestor);
+		entry = boxEntryOf(layout, ancestor);
 	}
 	if (entry?.kind === "anonymous") {
 		if (entry.flexNode) {
-			invalidateBox(self, entry);
+			invalidateBox(layout, entry);
 			return;
 		}
 		// A run with no layout node of its own is measured INSIDE another
@@ -3044,18 +3052,18 @@ function invalidateEnclosingMeasure(
 		// unit its host occupies out there. The measure to drop is that
 		// outer one, which the container it runs in is the way up to.
 		if (entry.container !== node) {
-			invalidateEnclosingMeasure(self, entry.container);
+			invalidateEnclosingMeasure(layout, entry.container);
 			return;
 		}
 	} else if (entry) {
-		const headFlexNode = self.nodeMap.get(entry.node!);
+		const headFlexNode = layout.nodeMap.get(entry.node!);
 		if (headFlexNode && headFlexNode.measureFunc) {
 			headFlexNode.markDirty();
 			// Keep climbing out of any content root this run sits under:
 			// only the box that owns it can run that layout again.
-			const host = enclosingContentRoot(self, boxParentElement(entry.node!));
+			const host = enclosingContentRoot(layout, boxParentElement(entry.node!));
 			if (host) {
-				invalidateEnclosingMeasure(self, host);
+				invalidateEnclosingMeasure(layout, host);
 			}
 			return;
 		}
@@ -3066,19 +3074,19 @@ function invalidateEnclosingMeasure(
 		// anonymous box holding it is what measures it, and everything
 		// nested inside it with it. Nothing further out ever re-runs that
 		// measure, so the climb ends here.
-		const enclosing = boxEntryOf(self, current);
+		const enclosing = boxEntryOf(layout, current);
 		if (enclosing?.kind === "anonymous" && enclosing.flexNode) {
-			invalidateBox(self, enclosing);
+			invalidateBox(layout, enclosing);
 			return;
 		}
-		const flexNode = self.nodeMap.get(current);
+		const flexNode = layout.nodeMap.get(current);
 		if (flexNode) {
 			if (flexNode.measureFunc) {
 				flexNode.markDirty();
 			}
-			const host = enclosingContentRoot(self, boxParentElement(current));
+			const host = enclosingContentRoot(layout, boxParentElement(current));
 			if (host) {
-				invalidateEnclosingMeasure(self, host);
+				invalidateEnclosingMeasure(layout, host);
 			}
 			return;
 		}
@@ -3097,28 +3105,28 @@ function invalidateEnclosingMeasure(
  * holds are derived where every box is derived, from the enumeration.
  */
 function applyRestyles(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 ): void {
-	while (self[kRestyled].size > 0) {
-		const restyled = [...self[kRestyled]];
-		self[kRestyled].clear();
+	while (layout[kRestyled].size > 0) {
+		const restyled = [...layout[kRestyled]];
+		layout[kRestyled].clear();
 		for (const element of restyled) {
 			if (!flatIsConnected(element)) {
 				continue;
 			}
 			// The element's own box may move between runs, and so may the
 			// boxes of its children.
-			restageBox(self, element);
-			restageChildren(self, element);
-			invalidateEnclosingMeasure(self, element);
-			if (self[kBoxes].get(element)?.children) {
-				invalidateContainerBoxes(self, element);
+			restageBox(layout, element);
+			restageChildren(layout, element);
+			invalidateEnclosingMeasure(layout, element);
+			if (layout[kBoxes].get(element)?.children) {
+				invalidateContainerBoxes(layout, element);
 				// The children of a flex container are each a box of their
 				// own, blockified (css-display-3 §2.7), where a block
 				// container gathers the inline ones into anonymous boxes it
 				// shares -- so an element that becomes one, or stops being
 				// one, holds a different set of boxes than it did.
-				self[kDirtyRunContainers].add(element);
+				layout[kDirtyRunContainers].add(element);
 			}
 		}
 	}
@@ -3133,7 +3141,7 @@ function applyRestyles(
  * reconciled from the enumerations, by the one path a fresh build uses.
  */
 function restageForRecord(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	record: MutationRecord,
 ): void {
 	// A record on a shadow root describes the HOST's composed children.
@@ -3147,8 +3155,8 @@ function restageForRecord(
 		// container gives each child a box of its own). Which rules now
 		// match, and what that costs the boxes under them, is the cascade's
 		// to announce -- it does, through styleInvalidated.
-		restageBox(self, target);
-		restageChildren(self, target as Element);
+		restageBox(layout, target);
+		restageChildren(layout, target as Element);
 		if (record.attributeName === "slot") {
 			// Reassigning a slot moves the node in the COMPOSED tree while
 			// the light tree stands still -- no childList record will ever
@@ -3157,14 +3165,14 @@ function restageForRecord(
 			// slot reassignment is rare enough for the hammer.
 			const host = (target as Element).parentElement;
 			if (host && shadowRootOf<ShadowRoot>(host)) {
-				restageSubtree(self, host);
+				restageSubtree(layout, host);
 			}
 		}
 		return;
 	}
 	if (record.type === "characterData") {
-		restageBox(self, target);
-		invalidateEnclosingMeasure(self, target);
+		restageBox(layout, target);
+		invalidateEnclosingMeasure(layout, target);
 		return;
 	}
 	// Added and removed nodes both change the container's run structure --
@@ -3172,15 +3180,15 @@ function restageForRecord(
 	// The removed nodes are already detached, so the container is reached
 	// through the target rather than through them.
 	if (target.nodeType === target.ELEMENT_NODE) {
-		restageChildren(self, target as Element);
+		restageChildren(layout, target as Element);
 	}
 	// A member gaining or losing a descendant is not a change to any
 	// container's box list: the member is still there, holding more or
 	// less. Nothing about the space the box measuring it was offered says
 	// so, so that box is told directly.
-	invalidateEnclosingMeasure(self, target);
+	invalidateEnclosingMeasure(layout, target);
 	for (const node of record.addedNodes) {
-		restageSubtree(self, node);
+		restageSubtree(layout, node);
 	}
 }
 
@@ -3192,19 +3200,19 @@ function restageForRecord(
  * the cleared break result is never rebuilt and the run paints nothing.
  */
 function markRunMeasureDirty(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	runHead: Node,
 ): void {
-	const flexNode = self.nodeMap.get(runHead);
+	const flexNode = layout.nodeMap.get(runHead);
 	if (!flexNode) {
 		return;
 	}
 	if (flexNode.measureFunc) {
 		flexNode.markDirty();
 	}
-	const host = enclosingContentRoot(self, boxParentElement(runHead));
+	const host = enclosingContentRoot(layout, boxParentElement(runHead));
 	if (host) {
-		invalidateEnclosingMeasure(self, host);
+		invalidateEnclosingMeasure(layout, host);
 	}
 }
 
@@ -3424,7 +3432,7 @@ function prefixWidths(
  * laid out in, and painting it renders a stretched item at its narrowest.
  */
 function measureInlineRun(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	box: Box,
 	width: number,
 	widthMode: FlexTypes.MeasureMode,
@@ -3433,7 +3441,7 @@ function measureInlineRun(
 	placing: boolean,
 ): FlexTypes.Size {
 	const breakResult = breakNodes(
-		self,
+		layout,
 		box,
 		width,
 		widthMode,
@@ -3464,7 +3472,7 @@ function measureInlineRun(
  * tree is not among them.
  */
 function collectLeafNodes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	source: Box,
 	availableWidth: number,
 	availableWidthMode: FlexTypes.MeasureMode = Flex.MEASURE_MODE_UNDEFINED,
@@ -3475,7 +3483,7 @@ function collectLeafNodes(
 		// already said where this box's content ends.
 		for (const member of source.members) {
 			collectLeavesUnder(
-				self,
+				layout,
 				member,
 				member,
 				false,
@@ -3525,7 +3533,7 @@ function collectLeafNodes(
 		laysOutItems(parentDisplay) && node.nodeType === node.TEXT_NODE;
 
 	collectLeavesUnder(
-		self,
+		layout,
 		traversalRoot,
 		node,
 		stopsAtFlexItems,
@@ -3538,7 +3546,7 @@ function collectLeafNodes(
 
 /** Collect leaves from `start`, walking within `root`. */
 function collectLeavesUnder(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	root: Node,
 	start: Node,
 	stopsAtFlexItems: boolean,
@@ -3564,7 +3572,7 @@ function collectLeavesUnder(
 
 				if (
 					isWhitespaceOnly &&
-					shouldCollapseWhitespaceTextNode(self, textNode)
+					shouldCollapseWhitespaceTextNode(layout, textNode)
 				) {
 					// Skip this whitespace text node - it should be collapsed to nothing
 					if (!walker.nextNode()) {
@@ -3608,14 +3616,14 @@ function collectLeavesUnder(
 					break;
 				}
 			} else if (isAtomicInline(display)) {
-				const ownBox = principalBox(self, element);
+				const ownBox = principalBox(layout, element);
 				// Before anything reads its size or asks what its content
 				// runs from: an inline-block nested inside another inline is
 				// a run MEMBER, and kAddElementNode is never called on one,
 				// so this is the first moment its block content is known to
 				// need a root.
 				if (!ownBox.contentRoot) {
-					syncContentRoot(self, element);
+					syncContentRoot(layout, element);
 				}
 
 				// Parse CSS box model properties
@@ -3696,7 +3704,7 @@ function collectLeavesUnder(
 				// overflows, it does not re-wrap.
 				let offerOwnsWidth = false;
 				if (
-					Number.isFinite(availableWidth) && isRowFlexItem(self, element)
+					Number.isFinite(availableWidth) && isRowFlexItem(layout, element)
 				) {
 					const offered = Math.max(0, availableWidth - horizontalBoxSpace);
 					if (availableWidthMode === Flex.MEASURE_MODE_EXACTLY) {
@@ -3779,11 +3787,11 @@ function collectLeavesUnder(
 					finalContentWidth = contentRoot.getComputedWidth();
 					finalContentHeight = contentRoot.getComputedHeight();
 				} else {
-					const contentStart = firstComposedRenderableChild(self, element);
+					const contentStart = firstComposedRenderableChild(layout, element);
 					if (contentStart) {
 						inlineBlockResult = breakNodes(
-							self,
-							principalBox(self, contentStart),
+							layout,
+							principalBox(layout, contentStart),
 							contentWidth,
 							contentWidthMode,
 							contentHeight,
@@ -3923,7 +3931,7 @@ function collectLeavesUnder(
 }
 
 function breakNodes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	source: Box,
 	width: number,
 	widthMode: FlexTypes.MeasureMode,
@@ -3935,7 +3943,7 @@ function breakNodes(
 	// against it (NaN); any definite offer, including an AT_MOST 0
 	// min-content probe, resolves them.
 	const leafNodes = collectLeafNodes(
-		self,
+		layout,
 		source,
 		widthMode === Flex.MEASURE_MODE_UNDEFINED ? NaN : width,
 		widthMode,
@@ -3971,7 +3979,7 @@ function breakNodes(
 			width;
 
 	// Process and break the content with dynamic per-element styling
-	const processedContent = processWhitespace(self, leafNodes);
+	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
 	// preserving whitespace and honouring newlines, which kProcessWhitespace
 	// already handles. Treating it as wrappable folds text a browser lets
@@ -3980,8 +3988,8 @@ function breakNodes(
 	const nowrap =
 		preservesLines ||
 		(whiteSpace || "normal") === "nowrap" ||
-		hasNowrapLeaf(self, processedContent);
-	const breaks = findBreakPoints(self, processedContent, {
+		hasNowrapLeaf(layout, processedContent);
+	const breaks = findBreakPoints(layout, processedContent, {
 		maxWidth,
 		whiteSpace: whiteSpace || "normal",
 		nowrap,
@@ -4011,7 +4019,7 @@ function breakNodes(
 					inferParagraphDirection(processedContent.text);
 
 	const lines = buildLines(
-		self,
+		layout,
 		processedContent,
 		breaks,
 		maxWidth,
@@ -4027,17 +4035,17 @@ function breakNodes(
 }
 
 function renderLeaf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	textNode: Text,
 	whiteSpace: string,
 ): {text: string; offsets: RenderedOffsets | null} {
 	const key = `${whiteSpace}\u0000${textNode.data}`;
-	const cached = self[kRenderedLeaves].get(textNode);
+	const cached = layout[kRenderedLeaves].get(textNode);
 	if (cached?.key === key) {
 		return cached;
 	}
 	const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
-	self[kRenderedLeaves].set(textNode, {
+	layout[kRenderedLeaves].set(textNode, {
 		key,
 		text: rendered.text,
 		offsets: rendered.offsets,
@@ -4046,7 +4054,7 @@ function renderLeaf(
 }
 
 function processWhitespace(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	leafNodes: Leaf[],
 ): ProcessedContent {
 	const items: ProcessedContent["items"] = [];
@@ -4063,7 +4071,7 @@ function processWhitespace(
 
 			// Process the text content according to its white-space property,
 			// keeping the mapping back to raw data offsets.
-			const rendered = renderLeaf(self, leaf.node, leafWhiteSpace);
+			const rendered = renderLeaf(layout, leaf.node, leafWhiteSpace);
 			let processed = rendered.text;
 			let dataOffsets = rendered.offsets;
 
@@ -4182,7 +4190,7 @@ function processWhitespace(
 
 /** Does ANY text leaf in the run carry white-space: nowrap? */
 function hasNowrapLeaf(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	content: ProcessedContent,
 ): boolean {
 	return content.items.some((item) => {
@@ -4194,7 +4202,7 @@ function hasNowrapLeaf(
 }
 
 function findBreakPoints(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	content: ProcessedContent,
 	options: BreakOptions,
 ): BreakPoint[] {
@@ -4245,7 +4253,7 @@ function findBreakPoints(
 }
 
 function buildLines(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	content: ProcessedContent,
 	breaks: BreakPoint[],
 	maxWidth: number,
@@ -4285,7 +4293,7 @@ function buildLines(
 		while (low <= high) {
 			const mid = (low + high) >> 1;
 			if (
-				measureText(self, content, lineStart, breaks[mid].position) <=
+				measureText(layout, content, lineStart, breaks[mid].position) <=
 				maxWidth
 			) {
 				lastFitting = mid;
@@ -4301,7 +4309,7 @@ function buildLines(
 		const chosen = required <= lastFitting ? required : lastFitting;
 		if (chosen >= cursor) {
 			bestBreak = breaks[chosen].position;
-			bestBreakWidth = measureText(self, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
 		}
 
 		// No break opportunity fits. Under overflow-wrap: normal the line
@@ -4313,7 +4321,7 @@ function buildLines(
 				cursor < breaks.length ?
 					breaks[cursor].position :
 					content.text.length;
-			bestBreakWidth = measureText(self, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
 		}
 
 		if (bestBreak === lineStart) {
@@ -4336,7 +4344,7 @@ function buildLines(
 					continue; // Try again with the new position
 				}
 
-				const width = measureText(self, content, lineStart, pos);
+				const width = measureText(layout, content, lineStart, pos);
 				if (width > maxWidth && pos > lineStart + 1) {
 					pos--;
 					break;
@@ -4344,11 +4352,11 @@ function buildLines(
 				pos++;
 			}
 			bestBreak = Math.min(pos, content.text.length);
-			bestBreakWidth = measureText(self, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
 		}
 
 		const lineNodes = getNodesInRange(
-			self,
+			layout,
 			content.items,
 			lineStart,
 			bestBreak,
@@ -4372,7 +4380,7 @@ function buildLines(
 			// reorder them for us (see bidi.ts). Doing it here rather than at
 			// paint time means hit-testing and selection read the same
 			// coordinates the user is looking at.
-			toVisualLine(self, lineNodes, bestBreakWidth, base);
+			toVisualLine(layout, lineNodes, bestBreakWidth, base);
 
 			lines.push({
 				segments: lineNodes,
@@ -4392,7 +4400,7 @@ function buildLines(
 
 /** The width of text[start..end) of a run, in terminal cells. */
 function measureText(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	content: ProcessedContent,
 	start: number,
 	end: number,
@@ -4414,12 +4422,12 @@ function measureText(
  * hit-testing and selection all key on.
  */
 function toVisualLine(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	segments: LineResult["segments"],
 	lineWidth: number,
 	base: "ltr" | "rtl",
 ): void {
-	if (self[kTerminalReordersText]) {
+	if (layout[kTerminalReordersText]) {
 		return;
 	} // It insists; let it.
 	if (base === "ltr" && !segments.some((s) => hasRTL(s.processedText))) {
@@ -4562,7 +4570,7 @@ function findInlineBlockSegment(
  *   inline-block toolbar or card -- resolves to no rect and paints nothing.
  */
 function inlineBlockRect(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 ): DOMRect | null {
 	// Climb to the nearest enclosing run that was actually laid out on its
@@ -4592,26 +4600,26 @@ function inlineBlockRect(
 		return true;
 	};
 	const headOutside = (node: Node): Node | null => {
-		const head = self.findInlineRunHead(node);
+		const head = layout.findInlineRunHead(node);
 		return head && outward(head) ? head : null;
 	};
 	let runHead: Node | null = headOutside(element) ?? element;
-	let headFlexNode = runFlexNode(self, runHead);
-	let breakResult = runBreakResult(self, runHead);
+	let headFlexNode = runFlexNode(layout, runHead);
+	let breakResult = runBreakResult(layout, runHead);
 	while (runHead && !(headFlexNode && breakResult)) {
 		const parent = boxParentElement(runHead);
 		if (!parent) {
 			return null;
 		}
 		runHead = headOutside(parent) ?? parent;
-		headFlexNode = runFlexNode(self, runHead);
-		breakResult = runBreakResult(self, runHead);
+		headFlexNode = runFlexNode(layout, runHead);
+		breakResult = runBreakResult(layout, runHead);
 	}
 	if (!runHead || !headFlexNode || !breakResult) {
 		return null;
 	}
 
-	const runPosition = documentPosition(self, runHead, headFlexNode);
+	const runPosition = documentPosition(layout, runHead, headFlexNode);
 	let originX = runPosition.x;
 	let originY = runPosition.y;
 
@@ -4663,12 +4671,12 @@ function inlineBlockRect(
 	// Only the run that owns the box can speak for its position. Once the
 	// walk descends into a nested measurement, any flex node the box still
 	// holds belongs to a layout it is no longer part of.
-	const ownFlexNode = descended ? undefined : runFlexNode(self, element);
+	const ownFlexNode = descended ? undefined : runFlexNode(layout, element);
 	if (ownFlexNode) {
-		const {x, y} = documentPosition(self, element, ownFlexNode);
-		return new self.DOMRect(x, y, target.segment.width, target.line.height);
+		const {x, y} = documentPosition(layout, element, ownFlexNode);
+		return new layout.DOMRect(x, y, target.segment.width, target.line.height);
 	}
-	return new self.DOMRect(
+	return new layout.DOMRect(
 		originX + target.segment.x,
 		originY + target.line.y,
 		target.segment.width,
@@ -4685,14 +4693,14 @@ function inlineBlockRect(
  * paint, getRect, hit-testing, and Range geometry all inherit it at once.
  */
 function absolutePosition(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	flexNode: FlexTypes.Node,
 ): {x: number; y: number} {
 	// The document roots' scrollLeft/scrollTop ARE the camera (the window
 	// shim maps them onto the viewport), and the camera is applied once at
 	// paint, not in this document-space geometry. Only per-element scroll on
 	// other boxes belongs here.
-	const document = self.window.document;
+	const document = layout.window.document;
 	const root = document.documentElement;
 	const body = document.body;
 	let x = 0;
@@ -4705,7 +4713,7 @@ function absolutePosition(
 		x += current.getComputedLeft();
 		y += current.getComputedTop();
 		if (current !== flexNode) {
-			const node = self[kDOMNodeByFlexNode].get(current);
+			const node = layout[kDOMNodeByFlexNode].get(current);
 			if (
 				node &&
 				node.nodeType === node.ELEMENT_NODE &&
@@ -4721,10 +4729,10 @@ function absolutePosition(
 }
 
 function breakResultTextIndex(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	breakResult: BreakResult,
 ): Map<Text, TextFragmentEntry[]> {
-	let index = self[kRectTextIndices].get(breakResult);
+	let index = layout[kRectTextIndices].get(breakResult);
 	if (index) {
 		return index;
 	}
@@ -4766,13 +4774,13 @@ function breakResultTextIndex(
 	for (let i = 0; i < breakResult.lines.length; i++) {
 		visit(breakResult.lines[i].segments, 0, i);
 	}
-	self[kRectTextIndices].set(breakResult, index);
+	layout[kRectTextIndices].set(breakResult, index);
 	return index;
 }
 
 /** The text nodes a range covers, in document order. */
 function rangeTextNodes(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	range: Range,
 ): Text[] {
 	if (range.collapsed) {
@@ -4786,9 +4794,9 @@ function rangeTextNodes(
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
-	const walker = self.window.document.createTreeWalker(
+	const walker = layout.window.document.createTreeWalker(
 		root,
-		self.window.NodeFilter.SHOW_TEXT,
+		layout.window.NodeFilter.SHOW_TEXT,
 	);
 	let node: Node | null;
 	while ((node = walker.nextNode())) {
@@ -4801,11 +4809,11 @@ function rangeTextNodes(
 
 /** A zero-width caret rect at a data offset within a text node. */
 function caretRect(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	textNode: Text,
 	offset: number,
 ): globalThis.DOMRect | null {
-	const lines = self.lineFragments(textNode);
+	const lines = layout.lineFragments(textNode);
 	if (lines.length === 0) {
 		return null;
 	}
@@ -4832,7 +4840,7 @@ function caretRect(
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 	);
 	const x = Math.round(line.rect.x) + runtimeStringWidth(before);
-	return self.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
+	return layout.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
 }
 
 /**
@@ -4842,7 +4850,7 @@ function caretRect(
  * on the same row.
  */
 function offsetInFragment(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	textNode: Text,
 	whiteSpace: string,
 	fragment: LineFragment,
@@ -4884,14 +4892,14 @@ function offsetInFragment(
  * needs, since the only way to restyle a cell is to redraw its glyph.
  */
 function selectionRuns(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	textNode: Text,
 	from: number,
 	to: number,
 ): Array<{rect: globalThis.DOMRect; text: string}> {
 	const runs: Array<{rect: globalThis.DOMRect; text: string}> = [];
 	const whiteSpace = whiteSpaceOf(textNode);
-	for (const fragment of self.lineFragments(textNode)) {
+	for (const fragment of layout.lineFragments(textNode)) {
 		// The line's characters, and the data offset each of them renders --
 		// which is where a collapsing run makes column and offset diverge.
 		const {text, offsets} = renderWhiteSpaceOffsets(
@@ -4913,7 +4921,7 @@ function selectionRuns(
 					runtimeStringWidth(text.slice(0, runStart));
 				const width = runtimeStringWidth(text.slice(runStart, i));
 				runs.push({
-					rect: self.createDOMRect(
+					rect: layout.createDOMRect(
 						x,
 						Math.round(fragment.rect.y),
 						width,
@@ -4934,7 +4942,7 @@ function selectionRuns(
 }
 
 function hitTestContext(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	root: Element,
 	x: number,
 	y: number,
@@ -4947,10 +4955,10 @@ function hitTestContext(
 		// document-space probe point for its whole subtree. Fixed-space is
 		// a property of the containing-block CHAIN, so the check walks
 		// ancestors -- an absolute box inside a fixed bar lives there too.
-		const probeY = self.isInFixedSpace(element) ? y - cameraScrollTop : y;
-		return self.formsStackingContext(element) ?
-				hitTestContext(self, element, x, probeY, layers, cameraScrollTop) :
-				hitTestInFlow(self, element, x, probeY);
+		const probeY = layout.isInFixedSpace(element) ? y - cameraScrollTop : y;
+		return layout.formsStackingContext(element) ?
+				hitTestContext(layout, element, x, probeY, layers, cameraScrollTop) :
+				hitTestInFlow(layout, element, x, probeY);
 	};
 	if (bucket) {
 		for (let i = bucket.pos.length - 1; i >= 0; i--) {
@@ -4966,7 +4974,7 @@ function hitTestContext(
 			}
 		}
 	}
-	const inFlow = hitTestInFlow(self, root, x, y);
+	const inFlow = hitTestInFlow(layout, root, x, y);
 	if (inFlow) {
 		return inFlow;
 	}
@@ -4987,7 +4995,7 @@ function hitTestContext(
  * their context probes them.
  */
 function hitTestInFlow(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 	x: number,
 	y: number,
@@ -5008,11 +5016,11 @@ function hitTestInFlow(
 	let contained = false;
 	if (!boxless) {
 		try {
-			contained = isPointInRects(x, y, self.getRects(element));
+			contained = isPointInRects(x, y, layout.getRects(element));
 		} catch (_err) {
 			return null;
 		}
-		if (!contained && !splitsAroundBlock(self, element)) {
+		if (!contained && !splitsAroundBlock(layout, element)) {
 			return null;
 		}
 	}
@@ -5028,7 +5036,7 @@ function hitTestInFlow(
 		children.push(child as Element);
 	}
 	for (let i = children.length - 1; i >= 0; i--) {
-		const hit = hitTestInFlow(self, children[i], x, y);
+		const hit = hitTestInFlow(layout, children[i], x, y);
 		if (hit) {
 			return hit;
 		}
@@ -5055,11 +5063,11 @@ function hitTestInFlow(
  * not yet final, but it stands in both sums and cancels in the difference.
  */
 function staticPosition(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	element: Element,
 	containingBlock: FlexTypes.Node,
 ): {left: number; top: number} | null {
-	const container = runContainerOf(self, element);
+	const container = runContainerOf(layout, element);
 	if (!container) {
 		return null;
 	}
@@ -5068,13 +5076,13 @@ function staticPosition(
 	) {
 		return null;
 	}
-	const containerNode = containerFlexNode(self, container);
+	const containerNode = containerFlexNode(layout, container);
 	if (!containerNode) {
 		return null;
 	}
 
-	const origin = absolutePosition(self, containerNode);
-	const containingOrigin = absolutePosition(self, containingBlock);
+	const origin = absolutePosition(layout, containerNode);
+	const containingOrigin = absolutePosition(layout, containingBlock);
 	const offsetLeft = origin.x - containingOrigin.x;
 	const offsetTop = origin.y - containingOrigin.y;
 	// The flow starts inside the container's border and padding.
@@ -5085,7 +5093,7 @@ function staticPosition(
 		containerNode.layout.border[Flex.EDGE_TOP] +
 		containerNode.layout.padding[Flex.EDGE_TOP];
 
-	const box = containerBox(self, container);
+	const box = containerBox(layout, container);
 	const children = box.children!;
 	let entry: Box | null = null;
 	for (let current: Node = element; current !== container;) {
@@ -5094,7 +5102,7 @@ function staticPosition(
 			entry = found;
 			break;
 		}
-		const parent = boxParentOf(self, current);
+		const parent = boxParentOf(layout, current);
 		if (!parent) {
 			break;
 		}
@@ -5107,8 +5115,8 @@ function staticPosition(
 	if (entry?.kind === "anonymous") {
 		const runNode = entry.flexNode;
 		if (runNode) {
-			const runOrigin = absolutePosition(self, runNode);
-			const cursor = inlineCursorBefore(self, entry, element);
+			const runOrigin = absolutePosition(layout, runNode);
+			const cursor = inlineCursorBefore(layout, entry, element);
 			return {
 				left: runOrigin.x - containingOrigin.x + cursor.x,
 				top: runOrigin.y - containingOrigin.y + cursor.y,
@@ -5117,13 +5125,13 @@ function staticPosition(
 	}
 
 	// A block container: after the last box that took a position before it.
-	const index = children.indexOf(entry ?? principalBox(self, element));
+	const index = children.indexOf(entry ?? principalBox(layout, element));
 	for (let i = index - 1; i >= 0; i--) {
 		const previous = children[i];
 		const previousNode =
 			previous.kind === "anonymous" ?
 				previous.flexNode :
-					(self.nodeMap.get(previous.node!) ?? null);
+					(layout.nodeMap.get(previous.node!) ?? null);
 		if (!previousNode || previousNode.getParent() !== containerNode) {
 			continue;
 		}
@@ -5147,7 +5155,7 @@ const ZERO_OFFSET = {x: 0, y: 0};
  * node, and the top of the line it landed on, relative to the run's box.
  */
 function inlineCursorBefore(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	run: Box,
 	element: Element,
 ): {x: number; y: number} {
@@ -5169,7 +5177,7 @@ function inlineCursorBefore(
 }
 
 function getNodesInRange(
-	self: LayoutEngine,
+	layout: LayoutEngine,
 	items: ProcessedContent["items"],
 	start: number,
 	end: number,

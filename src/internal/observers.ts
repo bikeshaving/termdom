@@ -130,14 +130,14 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 }
 
 function check<TState, TEntry, TOptions = void>(
-	self: LayoutObserver<TState, TEntry, TOptions>,
+	observer: LayoutObserver<TState, TEntry, TOptions>,
 	layoutEngine: LayoutEngine,
 	viewport: DOMRect,
 	frame: number,
 ): void {
 	const entries: TEntry[] = [];
-	for (const [target, observation] of self[kTargets]) {
-		const result = self[kMeasure](
+	for (const [target, observation] of observer[kTargets]) {
+		const result = observer[kMeasure](
 			target,
 			observation.last,
 			layoutEngine,
@@ -152,7 +152,7 @@ function check<TState, TEntry, TOptions = void>(
 		entries.push(result.entry);
 	}
 	if (entries.length > 0) {
-		self[kDeliver](entries);
+		observer[kDeliver](entries);
 	}
 }
 
@@ -475,14 +475,16 @@ export class IntersectionObserver extends LayoutObserver<
  * threshold arrays decorative.
  */
 function thresholdIndex(
-	self: IntersectionObserver,
+	observer: IntersectionObserver,
 	ratio: number,
 ): number {
 	let index = 0;
-	while (index < self.thresholds.length && ratio >= self.thresholds[index]) {
+	while (
+		index < observer.thresholds.length && ratio >= observer.thresholds[index]
+	) {
 		// A zero threshold means "any overlap at all", so a ratio of exactly
 		// zero has not reached it.
-		if (self.thresholds[index] === 0 && ratio === 0) {
+		if (observer.thresholds[index] === 0 && ratio === 0) {
 			break;
 		}
 		index++;

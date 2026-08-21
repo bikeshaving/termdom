@@ -1274,15 +1274,15 @@ export class Node {
 }
 
 function markDirtyUpward(
-	self: Node,
+	start: Node,
 ): void {
-	for (let node: Node | null = self; node; node = node.parent) {
+	for (let node: Node | null = start; node; node = node.parent) {
 		node.dirty = true;
 	}
 }
 
 function setEdges(
-	self: Node,
+	node: Node,
 	target: Value[],
 	edge: Edge,
 	value: Value,

@@ -227,8 +227,8 @@ function fireAsUserAgent(target: unknown, event: unknown): boolean {
 }
 
 /** Whether an activation-triggering event is being dispatched right now. */
-function isUserActive(self: TermDOM): boolean {
-	return self[kActivationDepth] > 0;
+function isUserActive(termdom: TermDOM): boolean {
+	return termdom[kActivationDepth] > 0;
 }
 
 export {
@@ -362,29 +362,29 @@ class FullscreenManager {
 }
 
 async function enterFullscreenMode(
-	self: FullscreenManager,
+	fullscreen: FullscreenManager,
 ): Promise<void> {
 	// Enter alternate screen buffer, clear it, hide the cursor.
-	self[kWrite]("\x1b[?1049h");
-	self[kWrite]("\x1b[2J\x1b[H\x1b[?25l");
+	fullscreen[kWrite]("\x1b[?1049h");
+	fullscreen[kWrite]("\x1b[2J\x1b[H\x1b[?25l");
 
-	self[kIsInFullscreenMode] = true;
+	fullscreen[kIsInFullscreenMode] = true;
 }
 
 async function exitFullscreenMode(
-	self: FullscreenManager,
+	fullscreen: FullscreenManager,
 ): Promise<void> {
 	// Restore cursor and exit alternate screen buffer
-	self[kWrite]("\x1b[?25h\x1b[?1049l");
+	fullscreen[kWrite]("\x1b[?25h\x1b[?1049l");
 
-	self[kIsInFullscreenMode] = false;
+	fullscreen[kIsInFullscreenMode] = false;
 }
 
 function fireFullscreenChangeEvent(
-	self: FullscreenManager,
+	fullscreen: FullscreenManager,
 	element: Element,
 ): void {
-	const window = getWindow(self, element);
+	const window = getWindow(fullscreen, element);
 	if (!window) {
 		return;
 	}
@@ -401,11 +401,11 @@ function fireFullscreenChangeEvent(
 }
 
 function fireFullscreenErrorEvent(
-	self: FullscreenManager,
+	fullscreen: FullscreenManager,
 	element: Element,
 	error: Error,
 ): void {
-	const window = getWindow(self, element);
+	const window = getWindow(fullscreen, element);
 	if (!window) {
 		return;
 	}
@@ -424,11 +424,11 @@ function fireFullscreenErrorEvent(
 }
 
 function getWindow(
-	self: FullscreenManager,
+	fullscreen: FullscreenManager,
 	element?: Element,
 ): any {
 	// Get window from the element's document, or from the stack
-	const targetElement = element || self[kFullscreenStack][0];
+	const targetElement = element || fullscreen[kFullscreenStack][0];
 	const document = targetElement ? targetElement.ownerDocument : null;
 	return document ? document.defaultView : undefined;
 }
@@ -2034,10 +2034,10 @@ export class TermDOM {
 }
 
 function addFrameDamage(
-	self: TermDOM,
+	termdom: TermDOM,
 	node: Node,
 ): void {
-	if (!self[kFrameDamage]) {
+	if (!termdom[kFrameDamage]) {
 		return;
 	}
 	const element =
@@ -2045,21 +2045,21 @@ function addFrameDamage(
 				(node as Element) :
 				(node.parentElement ?? null);
 	if (!element) {
-		self[kFrameDamage] = null;
+		termdom[kFrameDamage] = null;
 		return;
 	}
-	if (self[kFrameDamage].has(element)) {
+	if (termdom[kFrameDamage].has(element)) {
 		return;
 	}
-	if (self[kFrameDamage].size >= 24) {
-		self[kFrameDamage] = null;
+	if (termdom[kFrameDamage].size >= 24) {
+		termdom[kFrameDamage] = null;
 		return;
 	}
 	// The rect BEFORE this frame's relayout: getRect answers from the
 	// last computed layout until calculateLayout runs.
-	self[kFrameDamage].set(
+	termdom[kFrameDamage].set(
 		element,
-		(self[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
+		(termdom[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
 	);
 }
 
@@ -2068,16 +2068,16 @@ function addFrameDamage(
  * cancelAnimationFrame can name the callback it cancels.
  */
 function allocateFrameHandle(
-	self: TermDOM,
+	termdom: TermDOM,
 ): number {
-	return self[kNextRafId]++;
+	return termdom[kNextRafId]++;
 }
 
 function sealToScrollback(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	flushDocument(self);
-	self[kSealed] = true;
+	flushDocument(termdom);
+	termdom[kSealed] = true;
 }
 
 /** The brand an interface with no constructor is built through internally. */
@@ -2106,15 +2106,15 @@ function clipboardDenied(why: string): Promise<never> {
  * dispatched itself are all outside.
  */
 function clipboardRefusal(
-	self: TermDOM,
+	termdom: TermDOM,
 	what: string,
 ): Promise<never> | null {
-	if (!self[kAttached] || !self[kInteractive]) {
+	if (!termdom[kAttached] || !termdom[kInteractive]) {
 		return clipboardDenied(
 			"clipboard requires an attached interactive terminal",
 		);
 	}
-	if (!isUserActive(self)) {
+	if (!isUserActive(termdom)) {
 		return clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
 	return null;
@@ -2390,9 +2390,9 @@ Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
 });
 
 function installWindowExtensions(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	const termDOM = self;
+	const termDOM = termdom;
 	const window = termDOM.window;
 	const document = window.document;
 	Object.defineProperty(window, "innerWidth", {
@@ -2738,19 +2738,19 @@ function installWindowExtensions(
  * empties the queue for the other.
  */
 function handlePendingMutations(
-	self: TermDOM,
+	termdom: TermDOM,
 	mutations: MutationRecord[],
 ): void {
 	// Any observed mutation can move a node in the flat tree; drop the
 	// memoized composition links before anything reads through them.
-	self[kLayoutEngine].invalidateFrame();
+	termdom[kLayoutEngine].invalidateFrame();
 	// Record damage while the old layout still answers: a banded repaint
 	// must cover the target's pre-mutation rows too.
 	for (const mutation of mutations) {
-		addFrameDamage(self, mutation.target);
+		addFrameDamage(termdom, mutation.target);
 		if (mutation.type === "childList") {
 			for (const node of mutation.addedNodes) {
-				addFrameDamage(self, node);
+				addFrameDamage(termdom, node);
 			}
 			// Removed nodes have no rows of their own; their damage is the
 			// parent's, already added.
@@ -2791,20 +2791,20 @@ function handlePendingMutations(
 			upgradeControlsIn(added as Element);
 		}
 	}
-	self[kStyleManager].handleMutations(relevant);
-	self[kLayoutEngine].handleMutations(relevant);
+	termdom[kStyleManager].handleMutations(relevant);
+	termdom[kLayoutEngine].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 }
 
 function setupMutationObserver(
-	self: TermDOM,
+	termdom: TermDOM,
 ): MutationObserver {
-	const observer = new self.window.MutationObserver((mutations) => {
-		handlePendingMutations(self, mutations);
-		render(self);
+	const observer = new termdom.window.MutationObserver((mutations) => {
+		handlePendingMutations(termdom, mutations);
+		render(termdom);
 	});
 
-	observer.observe(self.document.documentElement, {
+	observer.observe(termdom.document.documentElement, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -2821,41 +2821,41 @@ function setupMutationObserver(
  * started only by attach() -- construction holds no lock and reads nothing.
  */
 function buildSession(
-	self: TermDOM,
+	termdom: TermDOM,
 ): TerminalSession {
 	return new TerminalSession({
-		transport: self[kTransport],
-		viewport: self[kViewport],
-		layout: self[kLayoutEngine],
-		interactive: self[kInteractive],
-		anchorDetection: self[kTransport].sharesScreen,
+		transport: termdom[kTransport],
+		viewport: termdom[kViewport],
+		layout: termdom[kLayoutEngine],
+		interactive: termdom[kInteractive],
+		anchorDetection: termdom[kTransport].sharesScreen,
 		handlers: {
 			onKeys: (keyInput) => {
-				self[kInputGeneration]++;
+				termdom[kInputGeneration]++;
 				// A keystroke means the user is back at the live screen
 				// (terminals snap to the bottom on input): reclaim the mouse
 				// if scroll chaining yielded it.
-				if (self[kMouseCaptureYielded]) {
-					reclaimMouseCapture(self);
+				if (termdom[kMouseCaptureYielded]) {
+					reclaimMouseCapture(termdom);
 				}
-				dispatchGlobalKeyboardEvent(self, keyInput);
+				dispatchGlobalKeyboardEvent(termdom, keyInput);
 			},
 			onMouse: (button, x, y, release) => {
-				self[kInputGeneration]++;
-				handleMouseReport(self, button, x, y, release);
+				termdom[kInputGeneration]++;
+				handleMouseReport(termdom, button, x, y, release);
 			},
 			onPaste: (text) => {
-				self[kInputGeneration]++;
-				dispatchPaste(self, text);
+				termdom[kInputGeneration]++;
+				dispatchPaste(termdom, text);
 			},
 			onResize: () => {
-				scheduleResize(self);
+				scheduleResize(termdom);
 			},
 			// Ctrl-C's default action is the DOM's own way out: close the
 			// window. An app that wants different behavior handles the
 			// keydown; this is what happens when nobody does.
 			onCloseRequest: () => {
-				self.window.close();
+				termdom.window.close();
 			},
 			// A cluster is wider or narrower on this terminal than the
 			// tables said, so every column after one on a painted row is
@@ -2863,18 +2863,18 @@ function buildSession(
 			// that was never drawn: drop it and paint the region again from
 			// the corrected measurements.
 			onWidthCorrection: () => {
-				self[kScreen].repaintAll();
-				void render(self);
+				termdom[kScreen].repaintAll();
+				void render(termdom);
 			},
 			onWidthStarvation: () => {
-				self[kScreen].rideProbeTrain();
-				void render(self);
+				termdom[kScreen].rideProbeTrain();
+				void render(termdom);
 			},
 			// The terminal went away (hangup, disconnect, process exit):
 			// clean up this side. The transport is already closing; there
 			// is nothing to close back.
 			onClosed: () => {
-				self.dispose();
+				termdom.dispose();
 			},
 		},
 	});
@@ -2890,18 +2890,18 @@ function buildSession(
  * resized to the new terminal.
  */
 function rebindTransport(
-	self: TermDOM,
+	termdom: TermDOM,
 	transport: TerminalTransport,
 ): void {
-	self[kTransport] = transport;
-	self[kInteractive] = transport.interactive;
-	applyTerminalSize(self, transport.cols, transport.rows);
-	self[kScreen] = new Screen(
-		self[kHeight],
-		self[kWidth],
+	termdom[kTransport] = transport;
+	termdom[kInteractive] = transport.interactive;
+	applyTerminalSize(termdom, transport.cols, transport.rows);
+	termdom[kScreen] = new Screen(
+		termdom[kHeight],
+		termdom[kWidth],
 		transport.colorDepth,
 	);
-	self[kSession] = buildSession(self);
+	termdom[kSession] = buildSession(termdom);
 }
 
 /**
@@ -2911,23 +2911,23 @@ function rebindTransport(
  * to the caller -- a resize resizes it in place, a rebind replaces it.
  */
 function applyTerminalSize(
-	self: TermDOM,
+	termdom: TermDOM,
 	newWidth: number,
 	newHeight: number,
 ): void {
 	// A SIGWINCH reporting an unchanged size still redraws but fires no
 	// resize event.
-	const sizeChanged = newWidth !== self[kWidth] ||
-		newHeight !== self[kHeight];
-	self[kWidth] = newWidth;
-	self[kHeight] = newHeight;
+	const sizeChanged = newWidth !== termdom[kWidth] ||
+		newHeight !== termdom[kHeight];
+	termdom[kWidth] = newWidth;
+	termdom[kHeight] = newHeight;
 
-	Object.defineProperty(self.window, "innerWidth", {
+	Object.defineProperty(termdom.window, "innerWidth", {
 		value: newWidth,
 		writable: false,
 		configurable: true,
 	});
-	Object.defineProperty(self.window, "innerHeight", {
+	Object.defineProperty(termdom.window, "innerHeight", {
 		value: newHeight,
 		writable: false,
 		configurable: true,
@@ -2935,7 +2935,7 @@ function applyTerminalSize(
 
 	// The layout engine holds the viewport a `vw` is a hundredth of, so it
 	// learns the new size BEFORE any style is resolved against it.
-	self[kLayoutEngine].resize(newWidth, newHeight);
+	termdom[kLayoutEngine].resize(newWidth, newHeight);
 
 	// The viewport changed, so every @media answer may have: re-parse the
 	// stylesheets against the new size (they were parsed against the old one
@@ -2943,14 +2943,14 @@ function applyTerminalSize(
 	// and fire "change" if it flipped. The re-parse also moves the style
 	// epoch, which is what retires the viewport-relative values every
 	// computed style resolved under the old size.
-	self[kStyleManager].refreshStylesheets();
+	termdom[kStyleManager].refreshStylesheets();
 
 	// Per the rendering steps, resize fires before media query "change"
 	// events, and everything a listener reads already has the new size.
 	if (sizeChanged) {
-		fireAsUserAgent(self.window, new self.window.Event("resize"));
+		fireAsUserAgent(termdom.window, new termdom.window.Event("resize"));
 	}
-	for (const update of self[kMediaQueryUpdaters]) {
+	for (const update of termdom[kMediaQueryUpdaters]) {
 		update();
 	}
 }
@@ -2966,18 +2966,20 @@ function applyTerminalSize(
  * changes.
  */
 function updateMouseReporting(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
 	const wanted =
-		self[kAttached] && self[kInteractive] && !self[kMouseCaptureYielded];
-	if (wanted === self[kMouseReportingEnabled]) {
+		termdom[kAttached] &&
+		termdom[kInteractive] &&
+		!termdom[kMouseCaptureYielded];
+	if (wanted === termdom[kMouseReportingEnabled]) {
 		return;
 	}
-	self[kMouseReportingEnabled] = wanted;
+	termdom[kMouseReportingEnabled] = wanted;
 	// 1002: button presses, releases, wheel, and drag motion (no move flood
 	// while nothing is pressed). 1006: SGR encoding, the only one that is
 	// unambiguous past column 223.
-	void self[kSession].write(
+	void termdom[kSession].write(
 		wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
 	);
 }
@@ -2991,37 +2993,37 @@ function updateMouseReporting(
  * but there is no reason to let it) and restore mouse capture.
  */
 function reclaimMouseCapture(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	if (self[kScrollChainTimer] !== null) {
-		clearTimeout(self[kScrollChainTimer]);
-		self[kScrollChainTimer] = null;
+	if (termdom[kScrollChainTimer] !== null) {
+		clearTimeout(termdom[kScrollChainTimer]);
+		termdom[kScrollChainTimer] = null;
 	}
-	self[kMouseCaptureYielded] = false;
-	updateMouseReporting(self);
+	termdom[kMouseCaptureYielded] = false;
+	updateMouseReporting(termdom);
 }
 
 async function render(
-	self: TermDOM,
+	termdom: TermDOM,
 ): Promise<void> {
 	// attach() is the ONLY door to the terminal: until the app calls it,
 	// mutations keep the DOM and layout live but write nothing. Rendering
 	// resumes -- starting with whatever the document holds by then -- the
 	// moment attach() runs, which ends by scheduling this render.
-	if (!self[kAttached]) {
+	if (!termdom[kAttached]) {
 		return;
 	}
 
 	// A resize is settling: suppress every render until handleResize issues the
 	// single re-anchored redraw. See resizeInProgress.
-	if (self[kResizeInProgress]) {
+	if (termdom[kResizeInProgress]) {
 		return;
 	}
 
 	// A screen switch (fullscreen enter/exit) is in progress: no frame
 	// may straddle it -- a frame computed for one screen landing on the
 	// other paints the wrong geometry onto the wrong buffer.
-	if (self[kScreenSwitching]) {
+	if (termdom[kScreenSwitching]) {
 		return;
 	}
 
@@ -3031,36 +3033,36 @@ async function render(
 	// at the wrong place. Instead mark one pending and hand back the running
 	// loop's promise: it will fold this caller's changes into a trailing frame,
 	// so awaiting render() always means "the caller's changes are painted".
-	if (self[kIsRendering]) {
-		self[kRenderQueued] = true;
-		return self[kRenderInFlight] ?? Promise.resolve();
+	if (termdom[kIsRendering]) {
+		termdom[kRenderQueued] = true;
+		return termdom[kRenderInFlight] ?? Promise.resolve();
 	}
 
-	self[kIsRendering] = true;
-	self[kRenderInFlight] = (async () => {
+	termdom[kIsRendering] = true;
+	termdom[kRenderInFlight] = (async () => {
 		try {
 			do {
-				self[kRenderQueued] = false;
-				await renderOnce(self);
-			} while (self[kRenderQueued]);
+				termdom[kRenderQueued] = false;
+				await renderOnce(termdom);
+			} while (termdom[kRenderQueued]);
 			// The frame(s) are written; wake anything awaiting requestAnimationFrame.
-			drainFrameCallbacks(self);
+			drainFrameCallbacks(termdom);
 		} finally {
-			self[kIsRendering] = false;
-			self[kRenderInFlight] = null;
+			termdom[kIsRendering] = false;
+			termdom[kRenderInFlight] = null;
 		}
 	})();
-	return self[kRenderInFlight];
+	return termdom[kRenderInFlight];
 }
 
 function drainFrameCallbacks(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	if (self[kFrameCallbacks].size === 0) {
+	if (termdom[kFrameCallbacks].size === 0) {
 		return;
 	}
-	const callbacks = [...self[kFrameCallbacks].values()];
-	self[kFrameCallbacks].clear();
+	const callbacks = [...termdom[kFrameCallbacks].values()];
+	termdom[kFrameCallbacks].clear();
 	const now = performance.now();
 	for (const cb of callbacks) {
 		cb(now);
@@ -3068,25 +3070,25 @@ function drainFrameCallbacks(
 }
 
 async function renderOnce(
-	self: TermDOM,
+	termdom: TermDOM,
 ): Promise<void> {
 	// An in-flight render loop can outlive dispose() by one queued frame;
 	// everything below assumes a live document.
-	if (self[kDisposed]) {
+	if (termdom[kDisposed]) {
 		return;
 	}
-	if (self[kAttachBeginning]) {
-		await self[kAttachBegun];
-		if (self[kDisposed]) {
+	if (termdom[kAttachBeginning]) {
+		await termdom[kAttachBegun];
+		if (termdom[kDisposed]) {
 			return;
 		}
 	}
-	if (!self[kInteractive]) {
-		await printStatic(self);
+	if (!termdom[kInteractive]) {
+		await printStatic(termdom);
 		return;
 	}
 
-	await renderInteractive(self);
+	await renderInteractive(termdom);
 }
 
 /**
@@ -3096,14 +3098,14 @@ async function renderOnce(
  * edge must still get rows to paint into.
  */
 function documentPaintHeight(
-	self: TermDOM,
+	termdom: TermDOM,
 ): number {
-	let height = self.document.body.scrollHeight;
-	for (const element of self[kTopLayer]) {
+	let height = termdom.document.body.scrollHeight;
+	for (const element of termdom[kTopLayer]) {
 		if (!flatIsConnected(element)) {
 			continue;
 		}
-		const rect = self[kLayoutEngine].getRect(element);
+		const rect = termdom[kLayoutEngine].getRect(element);
 		if (rect) {
 			height = Math.max(height, Math.ceil(rect.bottom));
 		}
@@ -3119,11 +3121,11 @@ function documentPaintHeight(
  * camera by the target's whole row.
  */
 function cameraRegionHeight(
-	self: TermDOM,
+	termdom: TermDOM,
 ): number {
-	return self[kFullscreenManager].isFullscreen ?
-		self[kHeight] :
-			Math.min(self[kHeight], self.document.body.scrollHeight);
+	return termdom[kFullscreenManager].isFullscreen ?
+		termdom[kHeight] :
+			Math.min(termdom[kHeight], termdom.document.body.scrollHeight);
 }
 
 /**
@@ -3133,7 +3135,7 @@ function cameraRegionHeight(
  * a selection begun in a field is the field's until release).
  */
 function fieldOffsetAtPoint(
-	self: TermDOM,
+	termdom: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement,
 	x: number,
 	y: number,
@@ -3145,7 +3147,7 @@ function fieldOffsetAtPoint(
 	if (!valueText) {
 		return null;
 	}
-	const found = self[kLayoutEngine].caretPositionFromPoint(
+	const found = termdom[kLayoutEngine].caretPositionFromPoint(
 		x,
 		y,
 		valueText,
@@ -3165,18 +3167,18 @@ function fieldOffsetAtPoint(
  * flush per keystroke, before the frame's own -- half the typing latency.
  */
 function queueCaretReveal(
-	self: TermDOM,
+	termdom: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
-	self[kPendingCaretReveal] = element;
+	termdom[kPendingCaretReveal] = element;
 }
 
 /**
  * The focus of a control's selection record, or null for an element with
  * no record: the caret, in the value text's own offsets.
  */
-function selectionFocusOf(self: TermDOM, element: Element): number | null {
-	const record = self[kUAToolkit].selectionOf(element);
+function selectionFocusOf(termdom: TermDOM, element: Element): number | null {
+	const record = termdom[kUAToolkit].selectionOf(element);
 	if (record === null) {
 		return null;
 	}
@@ -3190,21 +3192,21 @@ function selectionFocusOf(self: TermDOM, element: Element): number | null {
  * an empty value's caret is the caller's fallback.
  */
 function caretRectFor(
-	self: TermDOM,
+	termdom: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
-	const focus = selectionFocusOf(self, element);
+	const focus = selectionFocusOf(termdom, element);
 	if (focus === null) {
 		return null;
 	}
-	const node = self[kUAToolkit].valueTextOf(element);
+	const node = termdom[kUAToolkit].valueTextOf(element);
 	if (node === null) {
 		return null;
 	}
 	const range = element.ownerDocument.createRange();
 	range.setStart(node, Math.min(focus, node.data.length));
 	range.collapse(true);
-	const rects = self[kLayoutEngine].getRangeRects(range);
+	const rects = termdom[kLayoutEngine].getRangeRects(range);
 	if (rects.length === 0) {
 		return null;
 	}
@@ -3220,16 +3222,16 @@ function caretRectFor(
  * fresh layout; single-row widgets reduce to their own row.
  */
 function scrollCaretIntoView(
-	self: TermDOM,
+	termdom: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
-	processPendingMutationsAndRender(self);
-	const rect = self[kLayoutEngine].getRect(element);
+	processPendingMutationsAndRender(termdom);
+	const rect = termdom[kLayoutEngine].getRect(element);
 	if (!rect) {
 		return;
 	}
 	let caretY = Math.round(rect.top);
-	const caret = caretRectFor(self, element);
+	const caret = caretRectFor(termdom, element);
 	if (caret !== null) {
 		caretY = caret.y;
 	}
@@ -3248,14 +3250,14 @@ function scrollCaretIntoView(
 	) {
 		revealBottom = Math.round(rect.bottom);
 	}
-	const regionHeight = cameraRegionHeight(self);
-	const delta = self[kViewport].scrollDeltaToReveal(
+	const regionHeight = cameraRegionHeight(termdom);
+	const delta = termdom[kViewport].scrollDeltaToReveal(
 		revealTop,
 		revealBottom,
 		regionHeight,
 	);
 	if (delta) {
-		scrollCamera(self, delta);
+		scrollCamera(termdom, delta);
 	}
 }
 
@@ -3264,7 +3266,7 @@ function scrollCaretIntoView(
  * scrollLeft (the layout reads it live, no relayout). Measured in cells.
  */
 function scrollFieldCaretIntoView(
-	self: TermDOM,
+	termdom: TermDOM,
 	input: HTMLInputElement,
 ): void {
 	const valueText = fieldValueText(input);
@@ -3272,7 +3274,7 @@ function scrollFieldCaretIntoView(
 	if (!valueText || !valueSpan) {
 		return;
 	}
-	const content = self[kLayoutEngine].contentRect(input);
+	const content = termdom[kLayoutEngine].contentRect(input);
 	if (!content) {
 		return;
 	}
@@ -3291,7 +3293,7 @@ function scrollFieldCaretIntoView(
 	}
 	// The caret is wherever the input renders it, in the value text's own
 	// offsets -- the same text `shown` is read from.
-	const cursor = selectionFocusOf(self, input);
+	const cursor = selectionFocusOf(termdom, input);
 	if (cursor === null) {
 		return;
 	}
@@ -3318,7 +3320,7 @@ function scrollFieldCaretIntoView(
 }
 
 function processPendingMutationsAndRender(
-	self: TermDOM,
+	termdom: TermDOM,
 ): boolean {
 	// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 	// *layout*, not fresh pixels. A full render() here would make every
@@ -3328,10 +3330,10 @@ function processPendingMutationsAndRender(
 	// mutations and laying out synchronously gives an exact rect; painting
 	// stays with the caller's own render. The dirty-skip makes this free when
 	// nothing changed.
-	const pendingMutations = self[kObserver].takeRecords();
+	const pendingMutations = termdom[kObserver].takeRecords();
 	const hadMutations = pendingMutations.length > 0;
 	if (hadMutations) {
-		handlePendingMutations(self, pendingMutations);
+		handlePendingMutations(termdom, pendingMutations);
 		// takeRecords() stole these from the observer callback that would
 		// have painted them. When the caller's own follow-up (a camera
 		// move, an input's render) never comes -- scrollIntoView on an
@@ -3341,10 +3343,10 @@ function processPendingMutationsAndRender(
 		// frame when one is in flight, and skipping "because a render is
 		// running" leaves the screen one interaction behind the DOM when
 		// keystrokes arrive faster than frames.
-		void render(self);
+		void render(termdom);
 	}
-	self[kLayoutEngine].calculateLayout();
-	clampScrolledOffsets(self);
+	termdom[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(termdom);
 	return hadMutations;
 }
 
@@ -3380,19 +3382,19 @@ function writeElementScroll(
  * and a change repaints the box's rows like any other scroll.
  */
 function clampScrolledOffsets(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
 	let changed = false;
-	for (const element of self[kScrolledElements]) {
+	for (const element of termdom[kScrolledElements]) {
 		const offsets = elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		if (offsets.left === 0 && offsets.top === 0) {
-			self[kScrolledElements].delete(element);
+			termdom[kScrolledElements].delete(element);
 			continue;
 		}
 		if (!element.isConnected) {
 			continue;
 		}
-		const engine = self[kLayoutEngine];
+		const engine = termdom[kLayoutEngine];
 		const extent = engine.scrollExtentOf(element);
 		const port = engine.contentRect(element);
 		if (!extent || !port) {
@@ -3409,13 +3411,13 @@ function clampScrolledOffsets(
 		}
 		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
 		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
-		addFrameDamage(self, element);
+		addFrameDamage(termdom, element);
 		changed = true;
 	}
 	if (changed) {
 		// See scrollAxisTo: offsets are frame state no observer sees.
-		self[kInputGeneration]++;
-		void render(self);
+		termdom[kInputGeneration]++;
+		void render(termdom);
 	}
 }
 
@@ -3429,30 +3431,30 @@ function clampScrolledOffsets(
  * drag to settle turns the whole gesture into one redraw, and one lot of crud.
  */
 function scheduleResize(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
 	// Suppress renders from the very first SIGWINCH, before the debounce
 	// settles, so a drag's worth of animation ticks cannot paint at the stale
 	// anchor while the terminal is rewrapping under us.
-	self[kResizeInProgress] = true;
-	self[kResizeEpoch]++;
-	if (self[kResizeTimer] !== null) {
-		clearTimeout(self[kResizeTimer]);
+	termdom[kResizeInProgress] = true;
+	termdom[kResizeEpoch]++;
+	if (termdom[kResizeTimer] !== null) {
+		clearTimeout(termdom[kResizeTimer]);
 	}
-	self[kResizeTimer] = setTimeout(() => {
-		self[kResizeTimer] = null;
-		handleResize(self);
+	termdom[kResizeTimer] = setTimeout(() => {
+		termdom[kResizeTimer] = null;
+		handleResize(termdom);
 	}, RESIZE_DEBOUNCE_MS);
 }
 
 function handleResize(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	const newWidth = self[kTransport].cols;
-	const newHeight = self[kTransport].rows;
+	const newWidth = termdom[kTransport].cols;
+	const newHeight = termdom[kTransport].rows;
 
-	applyTerminalSize(self, newWidth, newHeight);
-	self[kScreen].resize(newHeight, newWidth);
+	applyTerminalSize(termdom, newWidth, newHeight);
+	termdom[kScreen].resize(newHeight, newWidth);
 
 	// Re-anchor and redraw. The terminal has already rewrapped everything on
 	// screen -- including our old frame -- and how far our content moved depends
@@ -3475,10 +3477,10 @@ function handleResize(
 	// SIGWINCH, so nothing paints at a stale anchor while the query is in
 	// flight. If the terminal does not answer, fall back to the computed
 	// vertical re-anchor (exact for height changes, approximate for width).
-	self[kLayoutEngine].calculateLayout();
-	const contentHeight = self.document.body.scrollHeight;
-	const wrappedRowsAbove = self[kScreen].wrappedRowsAbovePark(newWidth);
-	const epoch = self[kResizeEpoch];
+	termdom[kLayoutEngine].calculateLayout();
+	const contentHeight = termdom.document.body.scrollHeight;
+	const wrappedRowsAbove = termdom[kScreen].wrappedRowsAbovePark(newWidth);
+	const epoch = termdom[kResizeEpoch];
 
 	const redraw = (startRow: number) => {
 		// The recovered row is where the frame stands; whether it still
@@ -3487,22 +3489,22 @@ function handleResize(
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		self[kViewport].screenTop = startRow;
-		self[kViewport].anchorScrollTop = -self[kViewport].screenTop;
-		self[kScreen].replaced(startRow);
+		termdom[kViewport].screenTop = startRow;
+		termdom[kViewport].anchorScrollTop = -termdom[kViewport].screenTop;
+		termdom[kScreen].replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection.
-		self[kResizeInProgress] = false;
-		const wasDetected = self[kSession].hasDetectedCommandStart;
-		self[kSession].hasDetectedCommandStart = false;
-		render(self).then(() => {
-			self[kSession].hasDetectedCommandStart = wasDetected;
+		termdom[kResizeInProgress] = false;
+		const wasDetected = termdom[kSession].hasDetectedCommandStart;
+		termdom[kSession].hasDetectedCommandStart = false;
+		render(termdom).then(() => {
+			termdom[kSession].hasDetectedCommandStart = wasDetected;
 		});
 	};
 
 	const computedReanchor = () => {
-		const previousStart = self[kViewport].screenTop;
+		const previousStart = termdom[kViewport].screenTop;
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};
@@ -3524,18 +3526,18 @@ function handleResize(
 		}
 	};
 
-	if (self[kSession].anchorDetectionEnabled && wrappedRowsAbove !== null) {
-		self[kSession]
+	if (termdom[kSession].anchorDetectionEnabled && wrappedRowsAbove !== null) {
+		termdom[kSession]
 			.queryCursorRow()
 			.then((cursorRow) => {
 				// A newer resize superseded this one; its handler will redraw.
-				if (epoch !== self[kResizeEpoch]) {
+				if (epoch !== termdom[kResizeEpoch]) {
 					return;
 				}
 				place(Math.max(0, cursorRow - wrappedRowsAbove));
 			})
 			.catch(() => {
-				if (epoch !== self[kResizeEpoch]) {
+				if (epoch !== termdom[kResizeEpoch]) {
 					return;
 				}
 				place(computedReanchor());
@@ -3553,18 +3555,18 @@ function handleResize(
  * there is no re-entrancy to guard against here.
  */
 function afterRender(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	self[kRenderCount]++;
+	termdom[kRenderCount]++;
 	// The viewport in document coordinates: the scroll offset, one terminal
 	// high. IntersectionObserver measures targets against it.
-	const viewport = self[kLayoutEngine].createDOMRect(
+	const viewport = termdom[kLayoutEngine].createDOMRect(
 		0,
-		self[kViewport].scrollTop,
-		self[kWidth],
-		self[kHeight],
+		termdom[kViewport].scrollTop,
+		termdom[kWidth],
+		termdom[kHeight],
 	);
-	self[kObserverManager].flush(viewport, self[kRenderCount]);
+	termdom[kObserverManager].flush(viewport, termdom[kRenderCount]);
 }
 
 /**
@@ -3573,10 +3575,10 @@ function afterRender(
  * by way of `showModal`.
  */
 function topmostModalDialog(
-	self: TermDOM,
+	termdom: TermDOM,
 ): HTMLDialogElement | null {
 	let modal: HTMLDialogElement | null = null;
-	for (const element of self[kTopLayer]) {
+	for (const element of termdom[kTopLayer]) {
 		if (isModalDialog(element)) {
 			modal = element as HTMLDialogElement;
 		}
@@ -3591,11 +3593,11 @@ function topmostModalDialog(
  * neither is anything else riding the layer.
  */
 function topmostCloseRequestTarget(
-	self: TermDOM,
+	termdom: TermDOM,
 ): Element | null {
-	const popover = topmostAutoPopover(self.document) as Element | null;
+	const popover = topmostAutoPopover(termdom.document) as Element | null;
 	let target: Element | null = null;
-	for (const element of self[kTopLayer]) {
+	for (const element of termdom[kTopLayer]) {
 		if (isModalDialog(element) || element === popover) {
 			target = element;
 		}
@@ -3607,19 +3609,19 @@ function topmostCloseRequestTarget(
  * Focus the next or previous focusable element
  */
 function moveFocus(
-	self: TermDOM,
+	termdom: TermDOM,
 	reverse: boolean,
 ): void {
 	// A modal dialog makes the rest of the document inert, and the visible
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
-	const scope = topmostModalDialog(self) ?? self.document;
-	const focusable = getFocusableElements(scope, self[kLayoutEngine]);
+	const scope = topmostModalDialog(termdom) ?? termdom.document;
+	const focusable = getFocusableElements(scope, termdom[kLayoutEngine]);
 	if (focusable.length === 0) {
 		return;
 	}
 
-	const current = self.document.activeElement;
+	const current = termdom.document.activeElement;
 	const currentIndex = focusable.indexOf(current as Element);
 
 	// Tab past the last focusable (or Shift+Tab before the first) rests on
@@ -3653,7 +3655,7 @@ function moveFocus(
 	// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 	// :focus styling and the caret (the real terminal cursor, parked in the
 	// focused field) both need one to move.
-	void render(self);
+	void render(termdom);
 }
 
 /**
@@ -3665,17 +3667,17 @@ function moveFocus(
  * entry point.
  */
 function findElementAtDocumentPoint(
-	self: TermDOM,
+	termdom: TermDOM,
 	x: number,
 	y: number,
 ): Element | null {
-	processPendingMutationsAndRender(self);
-	let element = self[kLayoutEngine].hitTest(
-		self.document.documentElement,
+	processPendingMutationsAndRender(termdom);
+	let element = termdom[kLayoutEngine].hitTest(
+		termdom.document.documentElement,
 		x,
 		y,
-		self[kTopLayer],
-		self[kViewport].scrollTop,
+		termdom[kTopLayer],
+		termdom[kViewport].scrollTop,
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -3704,7 +3706,7 @@ function findElementAtDocumentPoint(
 	// the target a browser reports for a click on the dim area, and the
 	// reason nothing behind a modal can be clicked or focused while it is
 	// up.
-	const modal = topmostModalDialog(self);
+	const modal = topmostModalDialog(termdom);
 	if (modal !== null && (element === null || !modal.contains(element))) {
 		return modal as unknown as Element;
 	}
@@ -3721,28 +3723,28 @@ function findElementAtDocumentPoint(
  * a control, per spec.
  */
 function documentPointToTextPosition(
-	self: TermDOM,
+	termdom: TermDOM,
 	x: number,
 	y: number,
 ): {node: Text; offset: number} | null {
-	const element = findElementAtDocumentPoint(self, x, y);
+	const element = findElementAtDocumentPoint(termdom, x, y);
 	if (
 		!element ||
-		element instanceof (self.window as any).HTMLInputElement ||
-		element instanceof (self.window as any).HTMLTextAreaElement
+		element instanceof (termdom.window as any).HTMLInputElement ||
+		element instanceof (termdom.window as any).HTMLTextAreaElement
 	) {
 		return null;
 	}
-	return self[kLayoutEngine].caretPositionFromPoint(x, y, element);
+	return termdom[kLayoutEngine].caretPositionFromPoint(x, y, element);
 }
 
 /** Whether the text at a caret position may enter the document selection. */
 function selectableTextPosition(
-	self: TermDOM,
+	termdom: TermDOM,
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
-	return parent === null || self[kStyleManager].isSelectable(parent);
+	return parent === null || termdom[kStyleManager].isSelectable(parent);
 }
 
 /**
@@ -3753,13 +3755,13 @@ function selectableTextPosition(
  * means the tick chains past every element scroller to the document camera.
  */
 function wheelScrollerFor(
-	self: TermDOM,
+	termdom: TermDOM,
 	target: Element,
 	deltaY: number,
 ): Element | null {
-	const body = self.document.body;
-	const root = self.document.documentElement;
-	const engine = self[kLayoutEngine];
+	const body = termdom.document.body;
+	const root = termdom.document.documentElement;
+	const engine = termdom[kLayoutEngine];
 	for (
 		let element: Element | null = target;
 		element && element !== body && element !== root;
@@ -3800,7 +3802,7 @@ function wheelScrollerFor(
  * focus, mouseup on the mousedown target is a click.
  */
 function handleMouseReport(
-	self: TermDOM,
+	termdom: TermDOM,
 	code: number,
 	col: number,
 	row: number,
@@ -3817,10 +3819,10 @@ function handleMouseReport(
 		buttons,
 	} = decodeMouseReport(code, isRelease);
 
-	const point = self[kViewport].screenToDocumentPoint(
+	const point = termdom[kViewport].screenToDocumentPoint(
 		col - 1,
 		row - 1,
-		self[kFullscreenManager].isFullscreen,
+		termdom[kFullscreenManager].isFullscreen,
 	);
 	const x = point?.x ?? col - 1;
 	const y = point?.y ?? 0;
@@ -3828,12 +3830,13 @@ function handleMouseReport(
 	// than through the public elementFromPoint, which expects viewport-
 	// relative input and would convert it right back.
 	const target =
-		(point && findElementAtDocumentPoint(self, x, y)) || self.document.body;
+		(point && findElementAtDocumentPoint(termdom, x, y)) ||
+		termdom.document.body;
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = fireAsUserAgent(
 			target,
-			new self.window.WheelEvent("wheel", {
+			new termdom.window.WheelEvent("wheel", {
 				deltaY: wheelDeltaY,
 				deltaMode: 1, // DOM_DELTA_LINE
 				clientX: x,
@@ -3850,15 +3853,19 @@ function handleMouseReport(
 			// in the wheel's direction consumes the tick; an exhausted one
 			// chains outward -- ultimately to the camera and the terminal's
 			// own scrollback below, the browser's scroll chaining.
-			const scroller = wheelScrollerFor(self, target as Element, wheelDeltaY);
+			const scroller = wheelScrollerFor(
+				termdom,
+				target as Element,
+				wheelDeltaY,
+			);
 			if (scroller) {
 				scroller.scrollTop += wheelDeltaY;
 				return;
 			}
 			if (
 				wheelDeltaY < 0 &&
-				self[kViewport].scrollTop === 0 &&
-				!self[kFullscreenManager].isFullscreen
+				termdom[kViewport].scrollTop === 0 &&
+				!termdom[kFullscreenManager].isFullscreen
 			) {
 				// Scroll chaining, the browser default: the camera is at the
 				// document top, so the scroll escapes to the parent scroller --
@@ -3870,17 +3877,17 @@ function handleMouseReport(
 				// signal we could otherwise catch that on. An app opts out the
 				// same way it would in a browser: preventDefault on the wheel
 				// event.
-				self[kMouseCaptureYielded] = true;
-				updateMouseReporting(self);
-				if (self[kScrollChainTimer] !== null) {
-					clearTimeout(self[kScrollChainTimer]);
+				termdom[kMouseCaptureYielded] = true;
+				updateMouseReporting(termdom);
+				if (termdom[kScrollChainTimer] !== null) {
+					clearTimeout(termdom[kScrollChainTimer]);
 				}
-				self[kScrollChainTimer] = setTimeout(() => {
-					self[kScrollChainTimer] = null;
-					reclaimMouseCapture(self);
+				termdom[kScrollChainTimer] = setTimeout(() => {
+					termdom[kScrollChainTimer] = null;
+					reclaimMouseCapture(termdom);
 				}, TermDOM[kSCROLL_CHAIN_TIMEOUT_MS]);
 			} else {
-				scrollCamera(self, wheelDeltaY);
+				scrollCamera(termdom, wheelDeltaY);
 			}
 		}
 		return;
@@ -3906,14 +3913,14 @@ function handleMouseReport(
 	if (isMotion) {
 		fireAsUserAgent(
 			target,
-			new self.window.MouseEvent("mousemove", eventInit),
+			new termdom.window.MouseEvent("mousemove", eventInit),
 		);
 		// A field drag extends the field's own selection to the offset
 		// under the pointer -- clamped into the field, whichever element
 		// the pointer is over now (the field holds the capture).
-		if (self[kFieldDragAnchor] && point) {
-			const {element: fieldElement, offset: anchor} = self[kFieldDragAnchor];
-			const focus = fieldOffsetAtPoint(self, fieldElement, x, y);
+		if (termdom[kFieldDragAnchor] && point) {
+			const {element: fieldElement, offset: anchor} = termdom[kFieldDragAnchor];
+			const focus = fieldOffsetAtPoint(termdom, fieldElement, x, y);
 			if (focus !== null) {
 				setUASelection(
 					fieldElement,
@@ -3921,7 +3928,7 @@ function handleMouseReport(
 					Math.max(anchor, focus),
 					focus < anchor ? "backward" : "forward",
 				);
-				render(self);
+				render(termdom);
 			}
 			return;
 		}
@@ -3929,11 +3936,11 @@ function handleMouseReport(
 		// the caret position under the pointer. setBaseAndExtent handles a
 		// backward drag itself; over a textless stretch -- or user-select:
 		// none content -- the focus simply stays where it last was.
-		if (self[kSelectionDragAnchor] && self[kMouseDownTarget] && point) {
-			const focus = documentPointToTextPosition(self, x, y);
-			if (focus && selectableTextPosition(self, focus)) {
-				const anchor = self[kSelectionDragAnchor];
-				self.window
+		if (termdom[kSelectionDragAnchor] && termdom[kMouseDownTarget] && point) {
+			const focus = documentPointToTextPosition(termdom, x, y);
+			if (focus && selectableTextPosition(termdom, focus)) {
+				const anchor = termdom[kSelectionDragAnchor];
+				termdom.window
 					.getSelection()
 					?.setBaseAndExtent(
 						anchor.node,
@@ -3941,40 +3948,40 @@ function handleMouseReport(
 						focus.node,
 						focus.offset,
 					);
-				render(self);
+				render(termdom);
 			}
 		}
 		return;
 	}
 
 	if (!isRelease) {
-		self[kMouseDownTarget] = target;
+		termdom[kMouseDownTarget] = target;
 		// The popover a press belongs to, which the release compares
 		// against: light dismiss is a press and a release in the same
 		// place, so a drag out of a popover does not close it.
-		self[kPopoverPressTarget] = topmostClickedPopover(target);
-		self[kFieldDragAnchor] = null;
+		termdom[kPopoverPressTarget] = topmostClickedPopover(target);
+		termdom[kFieldDragAnchor] = null;
 		// A pointer press suppresses the :focus-visible ring.
-		if (self[kStyleManager].setFocusVisible(false)) {
-			self[kStyleManager].handleFocusChange(self.document.activeElement);
-			void render(self);
+		if (termdom[kStyleManager].setFocusVisible(false)) {
+			termdom[kStyleManager].handleFocusChange(termdom.document.activeElement);
+			void render(termdom);
 		}
 		const notCanceled = fireAsUserAgent(
 			target,
-			new self.window.MouseEvent("mousedown", eventInit),
+			new termdom.window.MouseEvent("mousedown", eventInit),
 		);
 		// Default action: mousedown moves focus, exactly as in a browser --
 		// to the nearest focusable ancestor, or away from the active element
 		// when the click lands on nothing focusable.
 		if (notCanceled) {
 			const focusable = (target as Element).closest?.(FOCUSABLE_SELECTOR);
-			const active = self.document.activeElement;
+			const active = termdom.document.activeElement;
 			if (focusable && focusable !== active) {
 				(focusable as HTMLElement).focus();
-				void render(self);
-			} else if (!focusable && active && active !== self.document.body) {
+				void render(termdom);
+			} else if (!focusable && active && active !== termdom.document.body) {
 				(active as HTMLElement).blur();
-				void render(self);
+				void render(termdom);
 			}
 
 			// A select's press-to-open and option-row commit are the select
@@ -3991,19 +3998,19 @@ function handleMouseReport(
 						(target as HTMLInputElement | HTMLTextAreaElement) :
 					null;
 			if (field) {
-				const offset = fieldOffsetAtPoint(self, field, x, y);
+				const offset = fieldOffsetAtPoint(termdom, field, x, y);
 				if (offset !== null) {
 					setUASelection(field, offset, offset);
-					self[kFieldDragAnchor] = {element: field, offset};
+					termdom[kFieldDragAnchor] = {element: field, offset};
 					// The DOCUMENT selection still clears on entry -- a page
 					// selection doesn't stay highlighted behind a field click
 					// in a browser either. The two worlds just never merge:
 					// getSelection() cannot see inside the field, per spec.
-					const docSelection = self.window.getSelection();
+					const docSelection = termdom.window.getSelection();
 					if (docSelection && !docSelection.isCollapsed) {
 						docSelection.removeAllRanges();
 					}
-					render(self);
+					render(termdom);
 				}
 			}
 
@@ -4012,16 +4019,16 @@ function handleMouseReport(
 			// as in a browser. Left button only -- and preventDefault on
 			// mousedown suppresses it, which is exactly how apps that want
 			// the drag events for themselves opt out.
-			const selection = self.window.getSelection();
-			if (base === 0 && selection && !self[kFieldDragAnchor]) {
-				let anchor = point ? documentPointToTextPosition(self, x, y) : null;
+			const selection = termdom.window.getSelection();
+			if (base === 0 && selection && !termdom[kFieldDragAnchor]) {
+				let anchor = point ? documentPointToTextPosition(termdom, x, y) : null;
 				// user-select: none refuses the anchor: a press on it clears
 				// the selection and starts no drag.
-				if (anchor && !selectableTextPosition(self, anchor)) {
+				if (anchor && !selectableTextPosition(termdom, anchor)) {
 					anchor = null;
 				}
 				const hadSelection = !selection.isCollapsed;
-				self[kSelectionDragAnchor] = anchor;
+				termdom[kSelectionDragAnchor] = anchor;
 				if (anchor) {
 					selection.setBaseAndExtent(
 						anchor.node,
@@ -4033,36 +4040,36 @@ function handleMouseReport(
 					selection.removeAllRanges();
 				}
 				if (hadSelection) {
-					render(self);
+					render(termdom);
 				}
 			}
 		}
 		return;
 	}
 
-	fireAsUserAgent(target, new self.window.MouseEvent("mouseup", eventInit));
+	fireAsUserAgent(target, new termdom.window.MouseEvent("mouseup", eventInit));
 	// LIGHT DISMISS: a release closes every auto popover the released
 	// point is not inside of and did not open -- the invoker of a popover
 	// counts as part of it, so the click that follows toggles rather than
 	// reopens what this closed. It runs before the click, where a browser
 	// runs it, and no listener can prevent it.
 	const dismissAncestor = topmostClickedPopover(target);
-	const samePopoverPress = dismissAncestor === self[kPopoverPressTarget];
-	self[kPopoverPressTarget] = null;
-	if (samePopoverPress && topmostAutoPopover(self.document) !== null) {
-		hidePopoversUntil(self.document, dismissAncestor, false, true);
+	const samePopoverPress = dismissAncestor === termdom[kPopoverPressTarget];
+	termdom[kPopoverPressTarget] = null;
+	if (samePopoverPress && topmostAutoPopover(termdom.document) !== null) {
+		hidePopoversUntil(termdom.document, dismissAncestor, false, true);
 	}
 	// A selection is only a selection: writing the clipboard is a
 	// deliberate act, through navigator.clipboard. The terminal's own
 	// select-to-copy remains available as Shift+drag, which bypasses
 	// mouse reporting.
 	let selectedByDrag = false;
-	if (self[kFieldDragAnchor]) {
-		self[kFieldDragAnchor] = null;
+	if (termdom[kFieldDragAnchor]) {
+		termdom[kFieldDragAnchor] = null;
 	}
-	if (self[kSelectionDragAnchor]) {
-		self[kSelectionDragAnchor] = null;
-		const text = self.window.getSelection()?.toString() ?? "";
+	if (termdom[kSelectionDragAnchor]) {
+		termdom[kSelectionDragAnchor] = null;
+		const text = termdom.window.getSelection()?.toString() ?? "";
 		if (text.length > 0) {
 			selectedByDrag = true;
 		}
@@ -4073,13 +4080,13 @@ function handleMouseReport(
 	// which in a framework app re-renders the very nodes the fresh
 	// selection points into, destroying it on the spot.
 	if (selectedByDrag) {
-		self[kMouseDownTarget] = null;
+		termdom[kMouseDownTarget] = null;
 		return;
 	}
-	if (self[kMouseDownTarget] === target) {
+	if (termdom[kMouseDownTarget] === target) {
 		fireAsUserAgent(
 			target,
-			new self.window.MouseEvent("click", {...eventInit, buttons: 0}),
+			new termdom.window.MouseEvent("click", {...eventInit, buttons: 0}),
 		);
 		// A checkbox/radio's .checked already flipped -- the activation behavior's
 		// activation behavior handles that directly, and forwards it from a
@@ -4093,18 +4100,18 @@ function handleMouseReport(
 		// focused via mousedown's own default action above, so this is a
 		// harmless no-op there).
 		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			el instanceof (self.window as any).HTMLInputElement &&
+			el instanceof (termdom.window as any).HTMLInputElement &&
 			((el as HTMLInputElement).type === "checkbox" ||
 				(el as HTMLInputElement).type === "radio");
 		const control = isCheckable(target) ?
 			target :
-			target instanceof (self.window as any).HTMLLabelElement &&
+			target instanceof (termdom.window as any).HTMLLabelElement &&
 			isCheckable((target as any).control) ?
 					((target as any).control as HTMLInputElement) :
 				null;
 		if (control) {
 			control.focus();
-			render(self);
+			render(termdom);
 		}
 
 		// A second click on the same target within the double-click interval
@@ -4113,21 +4120,21 @@ function handleMouseReport(
 		// starts a fresh pair rather than double-firing again immediately.
 		const now = performance.now();
 		if (
-			self[kLastClickTarget] === target &&
-			now - self[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
+			termdom[kLastClickTarget] === target &&
+			now - termdom[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
 		) {
 			fireAsUserAgent(
 				target,
-				new self.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
+				new termdom.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
 			);
-			self[kLastClickTarget] = null;
-			self[kLastClickTime] = 0;
+			termdom[kLastClickTarget] = null;
+			termdom[kLastClickTime] = 0;
 		} else {
-			self[kLastClickTarget] = target as Element;
-			self[kLastClickTime] = now;
+			termdom[kLastClickTarget] = target as Element;
+			termdom[kLastClickTime] = now;
 		}
 	}
-	self[kMouseDownTarget] = null;
+	termdom[kMouseDownTarget] = null;
 }
 
 /**
@@ -4139,7 +4146,7 @@ function handleMouseReport(
  * `clipboardData`.
  */
 function dispatchPaste(
-	self: TermDOM,
+	termdom: TermDOM,
 	text: string,
 ): void {
 	// A terminal transmits a pasted line break as CR -- the byte Enter
@@ -4148,15 +4155,17 @@ function dispatchPaste(
 	// boundary, so a multi-line paste into a textarea is multi-line and
 	// a field's own handlers never see a bare CR.
 	text = text.replace(/\r\n?/g, "\n");
-	const focused = self.document.activeElement;
+	const focused = termdom.document.activeElement;
 	const target =
-		focused && focused !== self.document.body ? focused : self.document.body;
+		focused && focused !== termdom.document.body ?
+			focused :
+			termdom.document.body;
 	const clipboardData = new DOM.DataTransfer();
 	clipboardData.setData("text/plain", text);
 	DOM.lockDataTransfer(clipboardData);
 	const proceed = fireAsUserAgent(
 		target,
-		new self.window.ClipboardEvent("paste", {
+		new termdom.window.ClipboardEvent("paste", {
 			clipboardData,
 			bubbles: true,
 			cancelable: true,
@@ -4166,7 +4175,7 @@ function dispatchPaste(
 	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
 		fireAsUserAgent(
 			target,
-			new self.window.InputEvent("beforeinput", {
+			new termdom.window.InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
 				data: text,
 				bubbles: true,
@@ -4174,7 +4183,7 @@ function dispatchPaste(
 			}),
 		);
 	}
-	void render(self);
+	void render(termdom);
 }
 
 /**
@@ -4187,7 +4196,7 @@ function dispatchPaste(
  * field takes text -- nothing else in this engine is an editing host.
  */
 function dispatchInsertText(
-	self: TermDOM,
+	termdom: TermDOM,
 	target: Element,
 	text: string,
 ): void {
@@ -4197,7 +4206,7 @@ function dispatchInsertText(
 	}
 	fireAsUserAgent(
 		target,
-		new self.window.InputEvent("beforeinput", {
+		new termdom.window.InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
 			bubbles: true,
@@ -4207,14 +4216,14 @@ function dispatchInsertText(
 }
 
 function dispatchGlobalKeyboardEvent(
-	self: TermDOM,
+	termdom: TermDOM,
 	key: string,
 ): void {
 	// Tokenize multi-key chunks and dispatch each token on its own.
 	const tokens = Array.from(tokenizeInput(key));
 	if (tokens.length > 1) {
 		for (const token of tokens) {
-			dispatchGlobalKeyboardEvent(self, token);
+			dispatchGlobalKeyboardEvent(termdom, token);
 		}
 		return;
 	}
@@ -4230,9 +4239,9 @@ function dispatchGlobalKeyboardEvent(
 		stroke;
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-	if (self[kStyleManager].setFocusVisible(true)) {
-		self[kStyleManager].handleFocusChange(self.document.activeElement);
-		void render(self);
+	if (termdom[kStyleManager].setFocusVisible(true)) {
+		termdom[kStyleManager].handleFocusChange(termdom.document.activeElement);
+		void render(termdom);
 	}
 
 	// Find the focused element. document.activeElement defaults to body when
@@ -4245,32 +4254,32 @@ function dispatchGlobalKeyboardEvent(
 	// the same as the dedicated fullscreen dispatch this replaced -- but
 	// still prefer an explicitly focused descendant (e.g. an input inside
 	// the fullscreen element), which the old dispatch ignored.
-	const active = self.document.activeElement;
+	const active = termdom.document.activeElement;
 	const targetElement =
-		active && active !== self.document.body ?
+		active && active !== termdom.document.body ?
 			active :
-			self[kFullscreenManager].fullscreenElement || self.document.body;
+			termdom[kFullscreenManager].fullscreenElement || termdom.document.body;
 
 	// Escape in fullscreen is the user agent's key, never dispatched to the
 	// DOM: an app can't trap the user past it with preventDefault. It spends
 	// itself on the innermost trap first -- a focused text field owns the
 	// keyboard, so the first Escape gives it back, and only a free
 	// keyboard's Escape exits the screen.
-	if (keyName === "Escape" && self[kFullscreenManager].isFullscreen) {
+	if (keyName === "Escape" && termdom[kFullscreenManager].isFullscreen) {
 		if (
 			active &&
-			active !== self.document.body &&
+			active !== termdom.document.body &&
 			isTextField(active as Element)
 		) {
 			(active as HTMLElement).blur();
 			return;
 		}
-		self[kFullscreenManager].exitFullscreen().catch(() => {});
+		termdom[kFullscreenManager].exitFullscreen().catch(() => {});
 		return;
 	}
 
 	// Create and dispatch keydown event
-	const keydownEvent = new self.window.KeyboardEvent("keydown", {
+	const keydownEvent = new termdom.window.KeyboardEvent("keydown", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -4298,14 +4307,14 @@ function dispatchGlobalKeyboardEvent(
 	// spent does the key reach the page's own modality. Unlike Tab below,
 	// a preventDefault on keydown does not suppress it.
 	if (keyName === "Escape") {
-		const target = topmostCloseRequestTarget(self);
+		const target = topmostCloseRequestTarget(termdom);
 		if (target !== null) {
 			if (isShowingPopover(target)) {
 				closePopover(target);
 			} else {
 				(target as HTMLDialogElement).requestClose();
 			}
-			void render(self);
+			void render(termdom);
 			return;
 		}
 	}
@@ -4314,7 +4323,7 @@ function dispatchGlobalKeyboardEvent(
 	if (notCanceled) {
 		// Tab navigation
 		if (keyName === "Tab") {
-			moveFocus(self, shiftKey);
+			moveFocus(termdom, shiftKey);
 		}
 
 		// Field editing (input and textarea) is each widget's own keydown
@@ -4337,13 +4346,13 @@ function dispatchGlobalKeyboardEvent(
 				// a link follows its href, exactly as a mouse click would.
 				fireAsUserAgent(
 					targetElement,
-					new self.window.PointerEvent("click", {
+					new termdom.window.PointerEvent("click", {
 						bubbles: true,
 						cancelable: true,
 						composed: true,
 					}),
 				);
-				render(self);
+				render(termdom);
 			}
 		}
 		// A select's editing (open/navigate/commit) is the select widget's
@@ -4357,7 +4366,7 @@ function dispatchGlobalKeyboardEvent(
 	// character, not only the ASCII ones: charCode is the character's own
 	// code, and DEL and the control codes are the keys named elsewhere.
 	if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
-		const keypressEvent = new self.window.KeyboardEvent("keypress", {
+		const keypressEvent = new termdom.window.KeyboardEvent("keypress", {
 			key,
 			code: domCodeFor(key),
 			keyCode: charCode,
@@ -4371,12 +4380,12 @@ function dispatchGlobalKeyboardEvent(
 			cancelable: true,
 		});
 		if (fireAsUserAgent(targetElement, keypressEvent)) {
-			dispatchInsertText(self, targetElement, key);
+			dispatchInsertText(termdom, targetElement, key);
 		}
 	}
 
 	// Always dispatch keyup
-	const keyupEvent = new self.window.KeyboardEvent("keyup", {
+	const keyupEvent = new termdom.window.KeyboardEvent("keyup", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -4400,25 +4409,25 @@ function dispatchGlobalKeyboardEvent(
  * of having a viewport, and a pipe does not have one.
  */
 async function printStatic(
-	self: TermDOM,
+	termdom: TermDOM,
 ): Promise<void> {
-	const pending = self[kObserver].takeRecords();
+	const pending = termdom[kObserver].takeRecords();
 	if (pending.length > 0) {
-		handlePendingMutations(self, pending);
+		handlePendingMutations(termdom, pending);
 	}
 
-	self[kLayoutEngine].calculateLayout();
+	termdom[kLayoutEngine].calculateLayout();
 
-	const context = self[kScreen].beginStatic({
-		rows: self.document.body.scrollHeight,
+	const context = termdom[kScreen].beginStatic({
+		rows: termdom.document.body.scrollHeight,
 	});
-	self[kPainter].paint(context);
-	const output = self[kScreen].endFrame();
+	termdom[kPainter].paint(context);
+	const output = termdom[kScreen].endFrame();
 
 	if (output) {
-		await self[kWrite](output);
+		await termdom[kWrite](output);
 	}
-	afterRender(self);
+	afterRender(termdom);
 }
 
 /**
@@ -4442,14 +4451,14 @@ async function printStatic(
  * output survives, because it was already printed.
  */
 function flushDocument(
-	self: TermDOM,
+	termdom: TermDOM,
 ): void {
-	if (!self[kInteractive]) {
+	if (!termdom[kInteractive]) {
 		return;
 	}
 
-	const top = self[kViewport].screenTop;
-	const output = renderStatic(self, "\r\n");
+	const top = termdom[kViewport].screenTop;
+	const output = renderStatic(termdom, "\r\n");
 	if (!output) {
 		return;
 	}
@@ -4460,11 +4469,11 @@ function flushDocument(
 	// preserves a fully-erased screen by pushing it into scrollback (the
 	// courtesy it extends to `clear`), which archived a copy of the final
 	// frame above the payout -- the document twice, interleaved.
-	void self[kSession].write(`\x1b[${top + 1};1H`);
-	void self[kSession].write(
+	void termdom[kSession].write(`\x1b[${top + 1};1H`);
+	void termdom[kSession].write(
 		"\x1b[K" + output.replace(/\r\n(?!$)/g, "\r\n\x1b[K"),
 	);
-	void self[kSession].write("\x1b[J");
+	void termdom[kSession].write("\x1b[J");
 }
 
 /**
@@ -4474,20 +4483,20 @@ function flushDocument(
  * not part of the class's public surface.
  */
 function renderStatic(
-	self: TermDOM,
+	termdom: TermDOM,
 	lineEnding: "\n" | "\r\n",
 ): string {
-	processPendingMutationsAndRender(self);
-	const contentHeight = self.document.body.scrollHeight;
+	processPendingMutationsAndRender(termdom);
+	const contentHeight = termdom.document.body.scrollHeight;
 	if (contentHeight === 0) {
 		return "";
 	}
-	const context = self[kScreen].beginStatic({
+	const context = termdom[kScreen].beginStatic({
 		rows: contentHeight,
 		lineEnding,
 	});
-	self[kPainter].paint(context);
-	return self[kScreen].endFrame();
+	termdom[kPainter].paint(context);
+	return termdom[kScreen].endFrame();
 }
 
 /**
@@ -4504,20 +4513,20 @@ function renderStatic(
  * frozen output, and reflow anywhere is free.
  */
 async function renderInteractive(
-	self: TermDOM,
+	termdom: TermDOM,
 ): Promise<void> {
 	// The previous document was sealed to scrollback by close(). Start a fresh
 	// one below it: re-anchor to where the cursor now sits and reset the diff so
 	// nothing composites over the frozen block.
-	if (self[kSealed]) {
-		self[kSealed] = false;
-		self[kViewport].scrollTop = 0;
-		self[kScreen].repaintAll();
+	if (termdom[kSealed]) {
+		termdom[kSealed] = false;
+		termdom[kViewport].scrollTop = 0;
+		termdom[kScreen].repaintAll();
 		// detectCommandStart waits for a reply on stdin, so the listener must
 		// be attached first (idempotent -- normally already done by now).
-		if (self[kInteractive]) {
-			self.attach();
-			await self[kSession].detectCommandStart();
+		if (termdom[kInteractive]) {
+			termdom.attach();
+			await termdom[kSession].detectCommandStart();
 		}
 	}
 
@@ -4528,60 +4537,60 @@ async function renderInteractive(
 	// as the flow path does. Await only when one is pending: an unconditional
 	// await would defer the rest of this frame a microtask even with nothing
 	// to wait for, and a downstream synchronous scroll clamp depends on it.
-	const detectionPending = self[kSession].cursorDetectionPending;
+	const detectionPending = termdom[kSession].cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
 	}
 
-	const pending = self[kObserver].takeRecords();
+	const pending = termdom[kObserver].takeRecords();
 	if (pending.length > 0) {
-		handlePendingMutations(self, pending);
+		handlePendingMutations(termdom, pending);
 	}
 
-	self[kLayoutEngine].calculateLayout();
-	clampScrolledOffsets(self);
+	termdom[kLayoutEngine].calculateLayout();
+	clampScrolledOffsets(termdom);
 
 	// The caret reveal an edit queued runs here, against the layout this
 	// frame just flushed -- one camera decision per frame, however many
 	// keystrokes coalesced into it. Skipped if focus has already moved
 	// on: revealing a field the user left would yank the camera back.
-	const revealed = self[kPendingCaretReveal] !== null;
-	if (self[kPendingCaretReveal]) {
-		const reveal = self[kPendingCaretReveal];
-		self[kPendingCaretReveal] = null;
-		if (reveal === self.document.activeElement) {
-			scrollCaretIntoView(self, reveal);
+	const revealed = termdom[kPendingCaretReveal] !== null;
+	if (termdom[kPendingCaretReveal]) {
+		const reveal = termdom[kPendingCaretReveal];
+		termdom[kPendingCaretReveal] = null;
+		if (reveal === termdom.document.activeElement) {
+			scrollCaretIntoView(termdom, reveal);
 		}
 	}
 
 	// Nothing observable moved: no mutations, no invalidation, no input,
 	// same focus, no live selection, camera unmoved, no reveal, no pending
 	// reset. Painting would emit nothing; don't pay to discover that.
-	const selection = self.window.getSelection?.();
+	const selection = termdom.window.getSelection?.();
 	if (
 		pending.length === 0 &&
 		!revealed &&
-		self[kLastFrameScrollTop] !== null &&
-		self[kViewport].scrollTop === self[kLastFrameScrollTop] &&
-		self[kLayoutEngine].invalidationEpoch === self[kLastFrameEpoch] &&
-		self[kInputGeneration] === self[kLastFrameInputGeneration] &&
-		self.document.activeElement === self[kLastFrameActiveElement] &&
+		termdom[kLastFrameScrollTop] !== null &&
+		termdom[kViewport].scrollTop === termdom[kLastFrameScrollTop] &&
+		termdom[kLayoutEngine].invalidationEpoch === termdom[kLastFrameEpoch] &&
+		termdom[kInputGeneration] === termdom[kLastFrameInputGeneration] &&
+		termdom.document.activeElement === termdom[kLastFrameActiveElement] &&
 		(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
-		!self[kScreen].needsRepaint
+		!termdom[kScreen].needsRepaint
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
 		// observe() gets its initial entry on the next tick.
-		afterRender(self);
+		afterRender(termdom);
 		return;
 	}
 
 	// Recompute the focused input's scroll window every frame (derived state).
-	const activeField = self.document.activeElement;
+	const activeField = termdom.document.activeElement;
 	if (
-		activeField instanceof (self.window as any).HTMLInputElement &&
+		activeField instanceof (termdom.window as any).HTMLInputElement &&
 		isTextField(activeField as HTMLInputElement)
 	) {
-		scrollFieldCaretIntoView(self, activeField as HTMLInputElement);
+		scrollFieldCaretIntoView(termdom, activeField as HTMLInputElement);
 	}
 
 	// Fullscreen owns the WHOLE alternate screen from row zero: the
@@ -4589,20 +4598,20 @@ async function renderInteractive(
 	// index-scrolls would scroll the alternate screen itself. The
 	// document's scroll position survives untouched underneath -- the
 	// fixed, Canvas-backed fullscreen element covers it regardless.
-	const isFullscreen = self[kFullscreenManager].isFullscreen;
+	const isFullscreen = termdom[kFullscreenManager].isFullscreen;
 	const contentHeight = isFullscreen ?
-		self[kHeight] :
-			documentPaintHeight(self);
-	const regionHeight = Math.min(contentHeight, self[kHeight]);
+		termdom[kHeight] :
+			documentPaintHeight(termdom);
+	const regionHeight = Math.min(contentHeight, termdom[kHeight]);
 
 	// Take the room we need by pushing earlier output up, never over it.
-	const top = isFullscreen ? 0 : reserveRows(self, regionHeight);
+	const top = isFullscreen ? 0 : reserveRows(termdom, regionHeight);
 
 	if (!isFullscreen) {
 		// The camera cannot run off the end of the document.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		self[kViewport].scrollTop = Math.min(
-			self[kViewport].scrollTop,
+		termdom[kViewport].scrollTop = Math.min(
+			termdom[kViewport].scrollTop,
 			maxScroll,
 		);
 	}
@@ -4620,11 +4629,11 @@ async function renderInteractive(
 	// :hover matches nothing -- and adding one means damaging the chains
 	// it entered and left, not giving up the transform.
 	let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
-	const scrollTop = self[kViewport].scrollTop;
-	const styleDamage = self[kStyleManager].drainStyleDamage();
-	const frameDamage = self[kFrameDamage];
-	self[kFrameDamage] = new Map();
-	const documentSelection = self.window.getSelection?.();
+	const scrollTop = termdom[kViewport].scrollTop;
+	const styleDamage = termdom[kStyleManager].drainStyleDamage();
+	const frameDamage = termdom[kFrameDamage];
+	termdom[kFrameDamage] = new Map();
+	const documentSelection = termdom.window.getSelection?.();
 	const liveSelection = Boolean(
 		documentSelection &&
 		documentSelection.rangeCount > 0 &&
@@ -4633,19 +4642,19 @@ async function renderInteractive(
 	transform: if (
 		!isFullscreen &&
 		top === 0 &&
-		regionHeight === self[kHeight] &&
-		self[kLastFrameScrollTop] !== null &&
-		self[kLayoutEngine].structuralGeneration ===
-		self[kLastFrameStructuralGeneration] &&
+		regionHeight === termdom[kHeight] &&
+		termdom[kLastFrameScrollTop] !== null &&
+		termdom[kLayoutEngine].structuralGeneration ===
+		termdom[kLastFrameStructuralGeneration] &&
 		!liveSelection &&
-		!self[kLastFrameSelectionLive] &&
-		self[kSelectionDragAnchor] === null &&
-		self[kFieldDragAnchor] === null &&
-		!self[kResizeInProgress] &&
+		!termdom[kLastFrameSelectionLive] &&
+		termdom[kSelectionDragAnchor] === null &&
+		termdom[kFieldDragAnchor] === null &&
+		!termdom[kResizeInProgress] &&
 		frameDamage !== null &&
 		styleDamage !== null
 	) {
-		const delta = scrollTop - self[kLastFrameScrollTop];
+		const delta = scrollTop - termdom[kLastFrameScrollTop];
 		if (Math.abs(delta) >= regionHeight) {
 			break transform;
 		}
@@ -4675,7 +4684,7 @@ async function renderInteractive(
 		} else if (delta < 0) {
 			addBand(0, -delta);
 		}
-		for (const band of self[kLayoutEngine].fixedRowBands(self[kHeight])) {
+		for (const band of termdom[kLayoutEngine].fixedRowBands(termdom[kHeight])) {
 			addBand(band[0], band[1]);
 			// The scroll moved fixed content too, leaving a stale copy at
 			// the shifted position; model and screen agree on it, so only
@@ -4686,9 +4695,9 @@ async function renderInteractive(
 		}
 		// The focused field's rows repaint: its caret cell and the real
 		// cursor park come from the painter visiting it.
-		const active = self.document.activeElement;
+		const active = termdom.document.activeElement;
 		if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
-			const rect = self[kLayoutEngine].getRect(active);
+			const rect = termdom[kLayoutEngine].getRect(active);
 			if (rect) {
 				addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);
 			}
@@ -4699,12 +4708,12 @@ async function renderInteractive(
 		for (const element of styleDamage) {
 			damaged.add(element);
 		}
-		if (active !== self[kLastFrameActiveElement]) {
+		if (active !== termdom[kLastFrameActiveElement]) {
 			if (active) {
 				damaged.add(active);
 			}
-			if (self[kLastFrameActiveElement]) {
-				damaged.add(self[kLastFrameActiveElement]);
+			if (termdom[kLastFrameActiveElement]) {
+				damaged.add(termdom[kLastFrameActiveElement]);
 			}
 		}
 
@@ -4714,15 +4723,15 @@ async function renderInteractive(
 			}
 			// Damage reaches as far as the selector invalidation scope; the
 			// whole document is unbounded.
-			const scope = self[kStyleManager].invalidationScopeFor(element);
+			const scope = termdom[kStyleManager].invalidationScopeFor(element);
 			if (
-				scope === self.document.body ||
-				scope === self.document.documentElement
+				scope === termdom.document.body ||
+				scope === termdom.document.documentElement
 			) {
 				break transform;
 			}
 			const before = frameDamage.get(element) ?? frameDamage.get(scope);
-			const after = self[kLayoutEngine].getRect(scope);
+			const after = termdom[kLayoutEngine].getRect(scope);
 			if (!after && !before) {
 				// An inline element has no box of its own, so its rows are
 				// not recoverable here: unbounded. A removed element's
@@ -4740,7 +4749,7 @@ async function renderInteractive(
 			) {
 				break transform;
 			}
-			const fixedSpace = self[kLayoutEngine].isInFixedSpace(scope);
+			const fixedSpace = termdom[kLayoutEngine].isInFixedSpace(scope);
 			if (after) {
 				const afterTop = fixedSpace ? after.top : after.top - scrollTop;
 				addBand(afterTop, afterTop + after.height);
@@ -4752,7 +4761,7 @@ async function renderInteractive(
 			if (before) {
 				const beforeTop = fixedSpace ?
 					before.top :
-					before.top - self[kLastFrameScrollTop];
+					before.top - termdom[kLastFrameScrollTop];
 				addBand(beforeTop - delta, beforeTop + before.height - delta);
 			}
 		}
@@ -4767,38 +4776,38 @@ async function renderInteractive(
 		scroll = {delta, bands};
 	}
 
-	const context = self[kScreen].beginFrame({
-		offset: -self[kViewport].scrollTop,
+	const context = termdom[kScreen].beginFrame({
+		offset: -termdom[kViewport].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		scroll,
-		measurer: self[kSession].widthMeasurer,
+		measurer: termdom[kSession].widthMeasurer,
 	});
-	self[kPainter].paint(context);
-	const ansi = self[kScreen].endFrame();
-	self[kLastFrameScrollTop] = scrollTop;
-	self[kLastFrameEpoch] = self[kLayoutEngine].invalidationEpoch;
-	self[kLastFrameInputGeneration] = self[kInputGeneration];
-	self[kLastFrameStructuralGeneration] =
-		self[kLayoutEngine].structuralGeneration;
-	self[kLastFrameSelectionLive] = liveSelection;
-	self[kLastFrameActiveElement] = self.document.activeElement;
+	termdom[kPainter].paint(context);
+	const ansi = termdom[kScreen].endFrame();
+	termdom[kLastFrameScrollTop] = scrollTop;
+	termdom[kLastFrameEpoch] = termdom[kLayoutEngine].invalidationEpoch;
+	termdom[kLastFrameInputGeneration] = termdom[kInputGeneration];
+	termdom[kLastFrameStructuralGeneration] =
+		termdom[kLayoutEngine].structuralGeneration;
+	termdom[kLastFrameSelectionLive] = liveSelection;
+	termdom[kLastFrameActiveElement] = termdom.document.activeElement;
 
 	if (ansi) {
-		await self[kWrite](ansi);
+		await termdom[kWrite](ansi);
 	}
-	afterRender(self);
+	afterRender(termdom);
 }
 
 /** Move the camera over the document. */
 function scrollCamera(
-	self: TermDOM,
+	termdom: TermDOM,
 	rows: number,
 ): void {
-	self[kViewport].scrollBy(rows);
+	termdom[kViewport].scrollBy(rows);
 	// A camera move is invisible to the MutationObserver; schedule the frame
 	// it needs, the same way a DOM mutation would.
-	void render(self);
+	void render(termdom);
 }
 
 /**
@@ -4831,13 +4840,13 @@ function scrollCamera(
  * Returns the screen row our region now starts at.
  */
 function reserveRows(
-	self: TermDOM,
+	termdom: TermDOM,
 	rows: number,
 ): number {
-	const push = self[kViewport].reserveRows(rows, self[kHeight]);
+	const push = termdom[kViewport].reserveRows(rows, termdom[kHeight]);
 	if (push > 0) {
-		void self[kSession].write(
-			`\x1b[${self[kHeight]};1H` + "\x1bD".repeat(push),
+		void termdom[kSession].write(
+			`\x1b[${termdom[kHeight]};1H` + "\x1bD".repeat(push),
 		);
 		// Do NOT shift the renderer's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
@@ -4849,21 +4858,21 @@ function reserveRows(
 		//
 		// A pending post-resize screen reset IS screen-absolute, though, and
 		// must ride the scroll (see shiftScreenReset).
-		self[kScreen].scrolled(push);
+		termdom[kScreen].scrolled(push);
 	}
 
-	return self[kViewport].screenTop;
+	return termdom[kViewport].screenTop;
 }
 
 function staticRenderer(
-	self: TermDOM,
+	termdom: TermDOM,
 ): TermDOM {
-	const cols = self[kTransport].cols;
-	if (self[kStaticSibling] && self[kStaticSibling][kWidth] !== cols) {
-		void self[kStaticSibling].dispose();
-		self[kStaticSibling] = null;
+	const cols = termdom[kTransport].cols;
+	if (termdom[kStaticSibling] && termdom[kStaticSibling][kWidth] !== cols) {
+		void termdom[kStaticSibling].dispose();
+		termdom[kStaticSibling] = null;
 	}
-	self[kStaticSibling] ??= new TermDOM({
+	termdom[kStaticSibling] ??= new TermDOM({
 		transport: {
 			cols,
 			rows: 24,
@@ -4878,15 +4887,15 @@ function staticRenderer(
 			close() {},
 		},
 	});
-	return self[kStaticSibling];
+	return termdom[kStaticSibling];
 }
 
 function renderStaticHTML(
-	self: TermDOM,
+	termdom: TermDOM,
 	html: string,
 	lineEnding: "\n" | "\r\n",
 ): string {
-	const renderer = staticRenderer(self);
+	const renderer = staticRenderer(termdom);
 	renderer.document.body.innerHTML = html;
 	return renderStatic(renderer, lineEnding);
 }

@@ -362,7 +362,7 @@ export class Painter {
  * scrim and one writing `transparent` removes it.
  */
 function renderBackdrop(
-	self: Painter,
+	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 ): void {
@@ -378,7 +378,7 @@ function renderBackdrop(
 }
 
 function renderElement(
-	self: Painter,
+	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 	afterOwnBox?: () => void,
@@ -393,7 +393,7 @@ function renderElement(
 	// mask makes any overshoot harmless.
 	// Extents are cached in unscrolled layout rows; a subtree inside scrolled
 	// boxes paints that many rows higher, so the band moves down instead.
-	const scrolledRows = self[kScrolledRows];
+	const scrolledRows = painter[kScrolledRows];
 	let bandTop = -ctx.viewportOffset + scrolledRows;
 	let bandBottom = bandTop + ctx.rows;
 	if (ctx.paintBands) {
@@ -406,7 +406,7 @@ function renderElement(
 			const bottom = end - ctx.viewportOffset + scrolledRows;
 			bandTop = Math.min(bandTop, top);
 			bandBottom = Math.max(bandBottom, bottom);
-			if (!self[kLayout].isSubtreeOutsideBand(element, top, bottom)) {
+			if (!painter[kLayout].isSubtreeOutsideBand(element, top, bottom)) {
 				inside = true;
 			}
 		}
@@ -414,7 +414,7 @@ function renderElement(
 			return;
 		}
 	} else if (
-		self[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)
+		painter[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)
 	) {
 		return;
 	}
@@ -430,7 +430,7 @@ function renderElement(
 		return;
 	}
 
-	const rect = self[kLayout].getRect(element);
+	const rect = painter[kLayout].getRect(element);
 
 	const color = computed.computedValueOf("color");
 	const backgroundColor = computed.computedValueOf("background-color");
@@ -494,7 +494,7 @@ function renderElement(
 		// of every line it spans, including the cells before the box begins
 		// and after it ends, which are its neighbours' to paint. A box that
 		// did not break has one fragment and fills it.
-		const fragments = self[kLayout].getRects(element);
+		const fragments = painter[kLayout].getRects(element);
 		if (fragments.length > 1) {
 			for (const fragment of fragments) {
 				ctx.drawRect(
@@ -568,7 +568,7 @@ function renderElement(
 
 	// Handle list-style-position: outside markers
 	if (visible) {
-		renderOutsideMarker(self, element, ctx);
+		renderOutsideMarker(painter, element, ctx);
 	}
 
 	// The ACTIVE element wears the terminal cursor at the focus of its
@@ -577,25 +577,25 @@ function renderElement(
 	// is the measurement any Range takes. The content origin stands in when
 	// the focus has no box (an empty value); an element with no selection
 	// record leaves the cursor where the frame parked it.
-	if (rect && visible && element === self[kDocument].activeElement) {
-		const record = self[kToolkit].selectionOf(element);
+	if (rect && visible && element === painter[kDocument].activeElement) {
+		const record = painter[kToolkit].selectionOf(element);
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
 			const node =
-				self[kToolkit].valueTextOf(element) ?? glyphTextOf(self, element);
+				painter[kToolkit].valueTextOf(element) ?? glyphTextOf(painter, element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
 				range.setStart(node, Math.min(focus, node.data.length));
 				range.collapse(true);
-				const rects = self[kLayout].getRangeRects(range);
+				const rects = painter[kLayout].getRangeRects(range);
 				if (rects.length > 0) {
 					caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
 				}
 			}
 			if (caret === null) {
-				const content = self[kLayout].contentRect(element);
+				const content = painter[kLayout].contentRect(element);
 				if (content) {
 					caret = {x: Math.round(content.x), y: Math.round(content.y)};
 				}
@@ -627,8 +627,8 @@ function renderElement(
 	// document roots' scrollTop is the camera, applied at ctx.viewportOffset,
 	// never here.
 	const ownScrolledRows =
-		element === self[kDocument].body ||
-		element === self[kDocument].documentElement ?
+		element === painter[kDocument].body ||
+		element === painter[kDocument].documentElement ?
 			0 :
 			element.scrollTop || 0;
 	bandTop += ownScrolledRows;
@@ -645,7 +645,7 @@ function renderElement(
 	// the longer the list gets, though only ~O(screen) of it can ever be
 	// visible -- because the walker below has no choice but to step
 	// through every sibling to find out which ones are off-band.
-	const fastChildren = self[kLayout].visibleChildrenInBand(
+	const fastChildren = painter[kLayout].visibleChildrenInBand(
 		element,
 		bandTop,
 		bandBottom,
@@ -667,7 +667,7 @@ function renderElement(
 			// wide container of mostly off-screen children O(screen).
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				self[kLayout].isSubtreeOutsideBand(
+				painter[kLayout].isSubtreeOutsideBand(
 					childNode as Element,
 					bandTop,
 					bandBottom,
@@ -678,7 +678,7 @@ function renderElement(
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
 				isPositioned(childNode as Element) &&
-				self[kLayout].positionedElements.has(childNode as Element)
+				painter[kLayout].positionedElements.has(childNode as Element)
 			) {
 				// Hoisted to its stacking context. Registry membership is
 				// the gate: a positioned INLINE run member owns no box of
@@ -704,23 +704,23 @@ function renderElement(
 		overflowY,
 		previousClip,
 	);
-	self[kScrolledRows] = scrolledRows + ownScrolledRows;
+	painter[kScrolledRows] = scrolledRows + ownScrolledRows;
 
 	try {
 		for (const childNode of children) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
-				if (childElement instanceof (self[kWindow] as any).HTMLElement) {
-					renderElement(self, childElement, ctx);
+				if (childElement instanceof (painter[kWindow] as any).HTMLElement) {
+					renderElement(painter, childElement, ctx);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
 				const textNode = childNode as Text;
-				renderText(self, textNode, ctx);
+				renderText(painter, textNode, ctx);
 			}
 		}
 	} finally {
 		ctx.clipRect = previousClip;
-		self[kScrolledRows] = scrolledRows;
+		painter[kScrolledRows] = scrolledRows;
 	}
 
 	// A focused textarea's own selection now paints inline while the child
@@ -795,7 +795,7 @@ function renderElement(
  * ancestors don't clip a box they don't contain.
  */
 function positionedClipFor(
-	self: Painter,
+	painter: Painter,
 	element: Element,
 	contextRoot: Element,
 	contextClip: CellContext["clipRect"],
@@ -814,7 +814,7 @@ function positionedClipFor(
 		const overflowX = style.computedValueOf("overflow-x") || overflow;
 		const overflowY = style.computedValueOf("overflow-y") || overflow;
 		if (overflowClips(overflowX) || overflowClips(overflowY)) {
-			const rect = self[kLayout].getRect(ancestor);
+			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
 				clip = overflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
@@ -835,50 +835,50 @@ function positionedClipFor(
  * clipping is layer-2 work).
  */
 function renderStackingContext(
-	self: Painter,
+	painter: Painter,
 	root: Element,
 	ctx: CellContext,
 	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 ): void {
 	const bucket = layers.get(root);
 	if (!bucket) {
-		renderElement(self, root, ctx);
+		renderElement(painter, root, ctx);
 		return;
 	}
 	const contextClip = ctx.clipRect;
 	const paintMember = (element: Element) => {
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
-		const previousScrolled = self[kScrolledRows];
+		const previousScrolled = painter[kScrolledRows];
 		// Clips apply along the CONTAINING BLOCK chain only: an overflow
 		// ancestor that isn't a positioned ancestor doesn't clip a
 		// deferred box, but its own containing blocks' overflow does.
-		ctx.clipRect = positionedClipFor(self, element, root, contextClip);
+		ctx.clipRect = positionedClipFor(painter, element, root, contextClip);
 		// A hoisted box enters the walk from its stacking context, not its
 		// ancestor chain: re-derive the culling shift its own scrolled
 		// ancestors impose rather than inheriting the context root's.
-		self[kScrolledRows] = self[kLayout].scrolledAncestorRows(element);
+		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
 		// position:fixed anchors to the VIEWPORT: cancel the camera by
 		// undoing the scroll offset for the whole subtree. Fixed-space is
 		// a property of the containing-block CHAIN: an absolute box inside
 		// a fixed bar is laid out against the bar's viewport coordinates
 		// and must ride with it, so the walk includes ancestors.
-		if (self[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + self[kViewport].scrollTop;
+		if (painter[kLayout].isInFixedSpace(element)) {
+			ctx.viewportOffset = previousOffset + painter[kViewport].scrollTop;
 		}
 		try {
-			if (self[kLayout].formsStackingContext(element)) {
-				renderStackingContext(self, element, ctx, layers);
+			if (painter[kLayout].formsStackingContext(element)) {
+				renderStackingContext(painter, element, ctx, layers);
 			} else {
-				renderElement(self, element, ctx);
+				renderElement(painter, element, ctx);
 			}
 		} finally {
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
-			self[kScrolledRows] = previousScrolled;
+			painter[kScrolledRows] = previousScrolled;
 		}
 	};
-	renderElement(self, root, ctx, () => {
+	renderElement(painter, root, ctx, () => {
 		for (const element of bucket.neg) {
 			paintMember(element);
 		}
@@ -893,7 +893,7 @@ function renderStackingContext(
 
 /** Render outside-positioned list markers, once per element per frame. */
 function renderOutsideMarker(
-	self: Painter,
+	painter: Painter,
 	element: Element,
 	ctx: CellContext,
 ): void {
@@ -914,18 +914,18 @@ function renderOutsideMarker(
 	}
 
 	// Prevent duplicate rendering in the same frame
-	if (self[kRenderedOutsideMarkers].has(element)) {
+	if (painter[kRenderedOutsideMarkers].has(element)) {
 		return;
 	}
-	self[kRenderedOutsideMarkers].add(element);
+	painter[kRenderedOutsideMarkers].add(element);
 
 	// Get marker content from StyleManager
-	const markerContent = self[kStyleManager].getMarkerContent(element);
+	const markerContent = painter[kStyleManager].getMarkerContent(element);
 	if (!markerContent) {
 		return;
 	}
 
-	const rect = self[kLayout].getRect(element);
+	const rect = painter[kLayout].getRect(element);
 	if (!rect) {
 		return;
 	}
@@ -968,8 +968,8 @@ function renderOutsideMarker(
 }
 
 /** The text a toggle's glyph renders through, from its closed tree. */
-function glyphTextOf(self: Painter, element: Element): Text | null {
-	const root = self[kToolkit].shadowRootOf<ShadowRoot>(element);
+function glyphTextOf(painter: Painter, element: Element): Text | null {
+	const root = painter[kToolkit].shadowRootOf<ShadowRoot>(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
 }
@@ -978,7 +978,7 @@ function glyphTextOf(self: Painter, element: Element): Text | null {
  * Render a text node with proper styling from its parent element or pseudo-element
  */
 function renderText(
-	self: Painter,
+	painter: Painter,
 	textNode: Text,
 	ctx: CellContext,
 ): void {
@@ -1012,7 +1012,7 @@ function renderText(
 	// node itself, rendered under its own `white-space` and then transformed:
 	// nothing of the line breaker's is read here.
 	const whiteSpace = computedStyle.computedValueOf("white-space");
-	const fragments = self[kLayout].lineFragments(textNode);
+	const fragments = painter[kLayout].lineFragments(textNode);
 	let painted = false;
 	for (const fragment of fragments) {
 		if (fragment.endOffset <= fragment.startOffset) {
@@ -1037,7 +1037,7 @@ function renderText(
 		);
 	}
 	if (painted) {
-		renderTextSelection(self, textNode, textStyle, textTransform, ctx);
+		renderTextSelection(painter, textNode, textStyle, textTransform, ctx);
 	}
 }
 
@@ -1050,10 +1050,10 @@ function renderText(
  * document selection.
  */
 function selectionRangeFor(
-	self: Painter,
+	painter: Painter,
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
-	const active = self[kDocument].activeElement;
+	const active = painter[kDocument].activeElement;
 	if (active && isTextField(active)) {
 		const fieldRange = selectionRangeOf(active);
 		// The control's range names the text it renders its value through, so
@@ -1065,7 +1065,7 @@ function selectionRangeFor(
 		}
 	}
 
-	const selection = self[kWindow].getSelection();
+	const selection = painter[kWindow].getSelection();
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 		return null;
 	}
@@ -1079,7 +1079,7 @@ function selectionRangeFor(
 	}
 	// user-select: none keeps this node's text out of the selection, so no
 	// share of the highlight lands on it either.
-	if (!self[kStyleManager].isSelectable(selectionParent)) {
+	if (!painter[kStyleManager].isSelectable(selectionParent)) {
 		return null;
 	}
 	// Narrowed to this node: ::selection resolves per node's parent, so each
@@ -1108,13 +1108,13 @@ function selectionRangeFor(
  * text repaints exactly the cells the base pass laid down.
  */
 function renderTextSelection(
-	self: Painter,
+	painter: Painter,
 	textNode: Text,
 	textStyle: CellStyle,
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	const found = selectionRangeFor(self, textNode);
+	const found = selectionRangeFor(painter, textNode);
 	if (!found) {
 		return;
 	}
@@ -1124,7 +1124,7 @@ function renderTextSelection(
 		return;
 	} // no ::selection rule reaches here
 
-	for (const run of self[kLayout].getRangeRuns(range)) {
+	for (const run of painter[kLayout].getRangeRuns(range)) {
 		ctx.drawText(
 			applyTextTransform(run.text, textTransform),
 			run.rect.x,

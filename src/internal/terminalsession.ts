@@ -1104,16 +1104,16 @@ export class TerminalSession {
  * that has gone quiet needs to be made to paint, and the wait is what tells
  * the two apart.
  */
-function requestStarvationFrame(self: TerminalSession): void {
-	if (self[kStarvationTimer] !== null) {
+function requestStarvationFrame(session: TerminalSession): void {
+	if (session[kStarvationTimer] !== null) {
 		return;
 	}
-	self[kStarvationTimer] = setTimeout(() => {
-		self[kStarvationTimer] = null;
-		if (self[kDisposed] || self[kWidthStarved].size === 0) {
+	session[kStarvationTimer] = setTimeout(() => {
+		session[kStarvationTimer] = null;
+		if (session[kDisposed] || session[kWidthStarved].size === 0) {
 			return;
 		}
-		self[kHandlers].onWidthStarvation();
+		session[kHandlers].onWidthStarvation();
 	}, TerminalSession[kWidthStarvationWait]);
 }
 
@@ -1122,12 +1122,12 @@ function requestStarvationFrame(self: TerminalSession): void {
  * from the oldest of them.
  */
 function armWidthProbeTimer(
-	self: TerminalSession,
+	session: TerminalSession,
 ): void {
-	if (self[kWidthProbeTimer] !== null) {
+	if (session[kWidthProbeTimer] !== null) {
 		return;
 	}
-	const oldest = self[kWidthProbes][0];
+	const oldest = session[kWidthProbes][0];
 	if (oldest === undefined) {
 		return;
 	}
@@ -1135,8 +1135,8 @@ function armWidthProbeTimer(
 		0,
 		oldest.sentAt + TerminalSession[kWidthProbeTimeout] - Date.now(),
 	);
-	self[kWidthProbeTimer] = setTimeout(() => {
-		self[kWidthProbeTimer] = null;
+	session[kWidthProbeTimer] = setTimeout(() => {
+		session[kWidthProbeTimer] = null;
 		// Unanswered this long is unanswered. The queue is what matches
 		// replies to probes, so an abandoned probe must leave it; its
 		// cluster keeps the tables' answer and is not asked again. Probes
@@ -1146,23 +1146,23 @@ function armWidthProbeTimer(
 		const deadline = Date.now() - TerminalSession[kWidthProbeTimeout];
 		let expired = 0;
 		while (
-			expired < self[kWidthProbes].length &&
-			self[kWidthProbes][expired].sentAt <= deadline
+			expired < session[kWidthProbes].length &&
+			session[kWidthProbes][expired].sentAt <= deadline
 		) {
-			self[kWidthSettled].add(self[kWidthProbes][expired].cluster);
+			session[kWidthSettled].add(session[kWidthProbes][expired].cluster);
 			expired++;
 		}
 		// Nothing has ever come back: this terminal does not answer DSR,
 		// and asking it again each frame is asking forever. Fall open to
 		// the tables.
-		if (expired > 0 && !self[kWidthAnswered]) {
-			self[kWidthProbing] = false;
-			self[kWidthProbes].length = 0;
-			self[kWidthStarved].clear();
+		if (expired > 0 && !session[kWidthAnswered]) {
+			session[kWidthProbing] = false;
+			session[kWidthProbes].length = 0;
+			session[kWidthStarved].clear();
 			return;
 		}
-		self[kWidthProbes].splice(0, expired);
-		armWidthProbeTimer(self);
+		session[kWidthProbes].splice(0, expired);
+		armWidthProbeTimer(session);
 	}, remaining);
 }
 
@@ -1175,7 +1175,7 @@ function armWidthProbeTimer(
  * which their own replies have just established.
  */
 function settleWidthProbe(
-	self: TerminalSession,
+	session: TerminalSession,
 	probe: {
 		cluster: string;
 		run: number;
@@ -1185,50 +1185,52 @@ function settleWidthProbe(
 	},
 	replyColumn: number,
 ): void {
-	self[kWidthAnswered] = true;
+	session[kWidthAnswered] = true;
 	// The deadline belonged to the probe just answered; whatever is still
 	// waiting gets its own.
-	if (self[kWidthProbeTimer] !== null) {
-		clearTimeout(self[kWidthProbeTimer]);
-		self[kWidthProbeTimer] = null;
+	if (session[kWidthProbeTimer] !== null) {
+		clearTimeout(session[kWidthProbeTimer]);
+		session[kWidthProbeTimer] = null;
 	}
-	armWidthProbeTimer(self);
+	armWidthProbeTimer(session);
 
-	if (probe.epoch !== self[kWidthRunEpoch] || probe.run !== self[kWidthRun]) {
-		self[kWidthRunEpoch] = probe.epoch;
-		self[kWidthRun] = probe.run;
-		self[kWidthDrift] = 0;
-		self[kWidthRunLost] = false;
+	if (
+		probe.epoch !== session[kWidthRunEpoch] || probe.run !== session[kWidthRun]
+	) {
+		session[kWidthRunEpoch] = probe.epoch;
+		session[kWidthRun] = probe.run;
+		session[kWidthDrift] = 0;
+		session[kWidthRunLost] = false;
 	}
 
 	// An earlier reading in this run could not be believed, so the drift the
 	// glyphs before this one introduced is unknown and its column means
 	// nothing. Wait for a run whose arithmetic is whole.
-	if (self[kWidthRunLost]) {
+	if (session[kWidthRunLost]) {
 		return;
 	}
 
 	// Terminal columns are 1-based; the ledger counts cells.
-	const advance = replyColumn - 1 - (probe.column + self[kWidthDrift]);
+	const advance = replyColumn - 1 - (probe.column + session[kWidthDrift]);
 	// A reading no cluster could produce means the reply describes
 	// something else -- a screen that scrolled under the frame, a terminal
 	// answering out of turn. The tables keep the cluster, and the rest of
 	// the run is read against a drift this reading did not establish.
 	if (advance < 0 || advance > 4) {
-		self[kWidthRunLost] = true;
+		session[kWidthRunLost] = true;
 		return;
 	}
 
-	self[kWidthSettled].add(probe.cluster);
-	self[kWidthDrift] += advance - probe.width;
+	session[kWidthSettled].add(probe.cluster);
+	session[kWidthDrift] += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		self[kLayout].invalidateTextMeasurement();
-		self[kHandlers].onWidthCorrection();
+		session[kLayout].invalidateTextMeasurement();
+		session[kHandlers].onWidthCorrection();
 	}
 }
 
 async function readLoop(
-	self: TerminalSession,
+	session: TerminalSession,
 	reader: ReadableStreamDefaultReader<string>,
 ): Promise<void> {
 	try {
@@ -1240,15 +1242,15 @@ async function readLoop(
 			if (!value) {
 				continue;
 			}
-			let chunk = self[kPartialEscape] + value;
-			self[kPartialEscape] = "";
+			let chunk = session[kPartialEscape] + value;
+			session[kPartialEscape] = "";
 			const held = splitTrailingEscape(chunk);
 			if (held > 0 && held <= 32) {
-				self[kPartialEscape] = chunk.slice(-held);
+				session[kPartialEscape] = chunk.slice(-held);
 				chunk = chunk.slice(0, -held);
 			}
 			if (chunk) {
-				route(self, chunk);
+				route(session, chunk);
 			}
 		}
 	} catch (_err) {
@@ -1258,7 +1260,7 @@ async function readLoop(
 }
 
 async function resizeLoop(
-	self: TerminalSession,
+	session: TerminalSession,
 	reader: ReadableStreamDefaultReader<TerminalSize>,
 ): Promise<void> {
 	try {
@@ -1268,7 +1270,7 @@ async function resizeLoop(
 				return;
 			}
 			if (value) {
-				self[kHandlers].onResize(value);
+				session[kHandlers].onResize(value);
 			}
 		}
 	} catch (_err) {
@@ -1282,23 +1284,23 @@ async function resizeLoop(
  * fence is spliced out of a chunk that also holds real typing.
  */
 function route(
-	self: TerminalSession,
+	session: TerminalSession,
 	dataStr: string,
 ): void {
 	// Bracketed paste: its body is literal text (a pasted newline must not
 	// fire Enter), buffered across chunks until ESC[201~. Checked before the
 	// report routes so paste content isn't parsed as a reply.
-	if (self[kPasteBuffer] !== null) {
+	if (session[kPasteBuffer] !== null) {
 		const end = dataStr.indexOf("\x1b[201~");
 		if (end === -1) {
-			self[kPasteBuffer] += dataStr;
+			session[kPasteBuffer] += dataStr;
 			return;
 		}
-		self[kHandlers].onPaste(self[kPasteBuffer] + dataStr.slice(0, end));
-		self[kPasteBuffer] = null;
+		session[kHandlers].onPaste(session[kPasteBuffer] + dataStr.slice(0, end));
+		session[kPasteBuffer] = null;
 		const after = dataStr.slice(end + 6);
 		if (after.length) {
-			route(self, after);
+			route(session, after);
 		}
 		return;
 	}
@@ -1306,21 +1308,21 @@ function route(
 	if (pasteStart !== -1) {
 		const before = dataStr.slice(0, pasteStart);
 		if (before.length) {
-			route(self, before);
+			route(session, before);
 		}
-		self[kPasteBuffer] = "";
-		route(self, dataStr.slice(pasteStart + 6));
+		session[kPasteBuffer] = "";
+		route(session, dataStr.slice(pasteStart + 6));
 		return;
 	}
 
 	// The clipboard reply, while one is asked for: its base64 body would not
 	// survive tokenization, and it can arrive split, so it is taken out of
 	// the chunk before anything else looks at it.
-	if (self[kClipboardHandler] !== null) {
-		const rest = routeClipboardReply(self, dataStr);
+	if (session[kClipboardHandler] !== null) {
+		const rest = routeClipboardReply(session, dataStr);
 		if (rest !== null) {
 			if (rest.length > 0) {
-				route(self, rest);
+				route(session, rest);
 			}
 			return;
 		}
@@ -1333,24 +1335,24 @@ function route(
 	const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
 	if (modeReport) {
 		const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-		if (feedModeReport(self, mode, parseInt(modeReport[3], 10))) {
+		if (feedModeReport(session, mode, parseInt(modeReport[3], 10))) {
 			const rest =
 				dataStr.slice(0, modeReport.index) +
 				dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
 			if (rest.length > 0) {
-				route(self, rest);
+				route(session, rest);
 			}
 			return;
 		}
 	}
 
 	const report = dataStr.match(/\x1b\[(\d+);(\d+)R/);
-	if (report && feedCursorReport(self, report[0], parseInt(report[2], 10))) {
+	if (report && feedCursorReport(session, report[0], parseInt(report[2], 10))) {
 		const rest =
 			dataStr.slice(0, report.index) +
 			dataStr.slice((report.index ?? 0) + report[0].length);
 		if (rest.length > 0) {
-			route(self, rest);
+			route(session, rest);
 		}
 		return;
 	}
@@ -1358,7 +1360,7 @@ function route(
 	// Ctrl-C: raw mode delivers it as data, and its default action is the
 	// engine's to decide (window.close()), not this layer's.
 	if (dataStr.charCodeAt(0) === 0x03) {
-		self[kHandlers].onCloseRequest();
+		session[kHandlers].onCloseRequest();
 		return;
 	}
 
@@ -1368,7 +1370,7 @@ function route(
 	for (const token of tokenizeInput(dataStr)) {
 		const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 		if (mouse) {
-			self[kHandlers].onMouse(
+			session[kHandlers].onMouse(
 				parseInt(mouse[1]),
 				parseInt(mouse[2]),
 				parseInt(mouse[3]),
@@ -1382,7 +1384,7 @@ function route(
 		return;
 	}
 
-	self[kHandlers].onKeys(keyInput);
+	session[kHandlers].onKeys(keyInput);
 }
 
 /**
@@ -1391,16 +1393,16 @@ function route(
  * the timeout, a replacement query, dispose.
  */
 function settleClipboardQuery(
-	self: TerminalSession,
+	session: TerminalSession,
 	payload: string | null,
 ): void {
-	const waiting = self[kClipboardHandler];
-	if (self[kClipboardTimer] !== null) {
-		clearTimeout(self[kClipboardTimer]);
-		self[kClipboardTimer] = null;
+	const waiting = session[kClipboardHandler];
+	if (session[kClipboardTimer] !== null) {
+		clearTimeout(session[kClipboardTimer]);
+		session[kClipboardTimer] = null;
 	}
-	self[kClipboardHandler] = null;
-	self[kClipboardBuffer] = null;
+	session[kClipboardHandler] = null;
+	session[kClipboardBuffer] = null;
 	waiting?.(payload);
 }
 
@@ -1415,13 +1417,13 @@ function settleClipboardQuery(
  * outstanding, so nothing a user types is ever held.
  */
 function routeClipboardReply(
-	self: TerminalSession,
+	session: TerminalSession,
 	dataStr: string,
 ): string | null {
 	let chunk = dataStr;
-	if (self[kClipboardBuffer] !== null) {
-		chunk = self[kClipboardBuffer] + chunk;
-		self[kClipboardBuffer] = null;
+	if (session[kClipboardBuffer] !== null) {
+		chunk = session[kClipboardBuffer] + chunk;
+		session[kClipboardBuffer] = null;
 	}
 	const start = chunk.indexOf("\x1b]52;");
 	if (start === -1) {
@@ -1436,28 +1438,28 @@ function routeClipboardReply(
 		// and let whatever preceded it through as input.
 		const held = chunk.slice(start);
 		if (held.length <= TerminalSession[kClipboardReplyLimit]) {
-			self[kClipboardBuffer] = held;
+			session[kClipboardBuffer] = held;
 			return before;
 		}
-		settleClipboardQuery(self, null);
+		settleClipboardQuery(session, null);
 		return before;
 	}
 	const rest = before + chunk.slice(start + reply[0].length);
-	settleClipboardQuery(self, reply[1]);
+	settleClipboardQuery(session, reply[1]);
 	return rest;
 }
 
 /** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
 function feedModeReport(
-	self: TerminalSession,
+	session: TerminalSession,
 	mode: string,
 	value: number,
 ): boolean {
-	const waiting = self[kModeProbeHandlers].get(mode);
+	const waiting = session[kModeProbeHandlers].get(mode);
 	if (!waiting) {
 		return false;
 	}
-	self[kModeProbeHandlers].delete(mode);
+	session[kModeProbeHandlers].delete(mode);
 	waiting(value);
 	return true;
 }
@@ -1472,21 +1474,21 @@ function feedModeReport(
  * other's.
  */
 function feedCursorReport(
-	self: TerminalSession,
+	session: TerminalSession,
 	report: string,
 	column: number,
 ): boolean {
-	const probe = self[kWidthProbes][0];
+	const probe = session[kWidthProbes][0];
 	if (
-		self[kCursorDetectionHandler] !== null &&
-		(probe === undefined || self[kCursorDetectionSequence] < probe.sequence)
+		session[kCursorDetectionHandler] !== null &&
+		(probe === undefined || session[kCursorDetectionSequence] < probe.sequence)
 	) {
-		self[kCursorDetectionHandler](report);
+		session[kCursorDetectionHandler](report);
 		return true;
 	}
 	if (probe !== undefined) {
-		self[kWidthProbes].shift();
-		settleWidthProbe(self, probe, column);
+		session[kWidthProbes].shift();
+		settleWidthProbe(session, probe, column);
 		return true;
 	}
 	return false;
@@ -1503,7 +1505,7 @@ function feedCursorReport(
  * to every caller here -- the terminal has no opinion, so ours stands.
  */
 function probeMode(
-	self: TerminalSession,
+	session: TerminalSession,
 	mode: string,
 	request: string,
 ): Promise<number | null> {
@@ -1511,16 +1513,16 @@ function probeMode(
 		// The same second the cursor probe allows: a cold start or a slow SSH
 		// link can outlast a tighter window, and answering late is answering.
 		const timer = setTimeout(() => {
-			self[kModeProbeTimers].delete(timer);
-			self[kModeProbeHandlers].delete(mode);
+			session[kModeProbeTimers].delete(timer);
+			session[kModeProbeHandlers].delete(mode);
 			resolve(null);
 		}, 1000);
-		self[kModeProbeTimers].add(timer);
-		self[kModeProbeHandlers].set(mode, (value: number) => {
+		session[kModeProbeTimers].add(timer);
+		session[kModeProbeHandlers].set(mode, (value: number) => {
 			clearTimeout(timer);
-			self[kModeProbeTimers].delete(timer);
+			session[kModeProbeTimers].delete(timer);
 			resolve(value);
 		});
-		void self.write(request);
+		void session.write(request);
 	});
 }

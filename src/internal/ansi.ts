@@ -1629,38 +1629,38 @@ export class CellContext {
 }
 
 function inClip(
-	self: CellContext,
+	context: CellContext,
 	row: number,
 	col: number,
 ): boolean {
-	if (!self.clipRect) {
+	if (!context.clipRect) {
 		return true;
 	}
-	const {left, top, right, bottom} = self.clipRect;
+	const {left, top, right, bottom} = context.clipRect;
 	return col >= left && col < right && row >= top && row < bottom;
 }
 
 function setCell(
-	self: CellContext,
+	context: CellContext,
 	row: number,
 	col: number,
 	char: string,
 	style?: CellStyle,
 ): void {
-	const terminalRow = row + self.viewportOffset;
+	const terminalRow = row + context.viewportOffset;
 
 	if (
 		terminalRow < 0 ||
-		terminalRow >= self.rows ||
+		terminalRow >= context.rows ||
 		col < 0 ||
-		col >= self.cols
+		col >= context.cols
 	) {
 		return;
 	}
 
-	if (self.paintBands) {
+	if (context.paintBands) {
 		let inBand = false;
-		for (const [start, end] of self.paintBands) {
+		for (const [start, end] of context.paintBands) {
 			if (terminalRow >= start && terminalRow < end) {
 				inBand = true;
 				break;
@@ -1671,12 +1671,12 @@ function setCell(
 		}
 	}
 
-	if (self.clipRect && !inClip(self, row, col)) {
+	if (context.clipRect && !inClip(context, row, col)) {
 		return;
 	}
 
-	const grid = self.grid;
-	const index = terminalRow * self.cols + col;
+	const grid = context.grid;
+	const index = terminalRow * context.cols + col;
 
 	// A style that names no background of its own takes the one already in
 	// the cell: text painted over a filled box sits ON the fill rather than
@@ -1690,7 +1690,7 @@ function setCell(
 }
 
 function setBorderCell(
-	self: CellContext,
+	context: CellContext,
 	x: number,
 	y: number,
 	borderEncoding: number,
@@ -1700,17 +1700,19 @@ function setBorderCell(
 	// Without the offset, borders were only ever correct at scroll 0: a
 	// scrolled camera stamped off-screen top edges into the band's first
 	// row and lost bottom edges it had scrolled to.
-	const terminalY = y + self.viewportOffset;
+	const terminalY = y + context.viewportOffset;
 
-	if (terminalY < 0 || terminalY >= self.rows || x < 0 || x >= self.cols) {
+	if (
+		terminalY < 0 || terminalY >= context.rows || x < 0 || x >= context.cols
+	) {
 		return;
 	}
-	if (!inClip(self, y, x)) {
+	if (!inClip(context, y, x)) {
 		return;
 	}
 
-	const grid = self.grid;
-	const index = terminalY * self.cols + x;
+	const grid = context.grid;
+	const index = terminalY * context.cols + x;
 
 	// Two boxes sharing a cell union their edges, so a shared wall lands on
 	// a tee or a cross rather than the later box's corner.
@@ -2490,10 +2492,10 @@ export class Screen {
 }
 
 function lineLength(
-	self: Screen,
+	screen: Screen,
 	row: number,
 ): number {
-	const grid = self[kPrev]!;
+	const grid = screen[kPrev]!;
 	const rowStart = row * grid.cols;
 	for (let col = grid.cols - 1; col >= 0; col--) {
 		const index = rowStart + col;
@@ -2508,13 +2510,13 @@ function lineLength(
  * A cleared grid of the given size, reusing a retired one when it fits.
  */
 function takeGrid(
-	self: Screen,
+	screen: Screen,
 	rows: number,
 	cols: number,
 ): CellGrid {
-	const spare = self[kSpare];
+	const spare = screen[kSpare];
 	if (spare !== null && spare.rows === rows && spare.cols === cols) {
-		self[kSpare] = null;
+		screen[kSpare] = null;
 		spare.clear();
 		return spare;
 	}
