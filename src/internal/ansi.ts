@@ -1738,7 +1738,7 @@ const kHasSavedCursor = Symbol("hasSavedCursor");
 const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
 const kEndFrame = Symbol("endFrame");
-const kForgotTopRow = Symbol("forgotTopRow");
+const kRideProbeTrain = Symbol("rideProbeTrain");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
 
@@ -1763,16 +1763,16 @@ export class Screen {
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
 	declare [kNeedsScreenReset]: boolean;
-	// A row of the previous frame was dropped for a probe train to stand on:
-	// the next frame paints it again, though the document has not moved.
-	declare [kForgotTopRow]: boolean;
+	// A probe train is waiting for a frame to ride: the next flush re-emits
+	// the first contentful row as its cover, though the document has not moved.
+	declare [kRideProbeTrain]: boolean;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
 	declare [kColorDepth]: ColorDepth;
 
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
-		this[kForgotTopRow] = false;
+		this[kRideProbeTrain] = false;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1848,39 +1848,26 @@ export class Screen {
 	}
 
 	/**
-	 * What the terminal shows is no longer what this last painted, though it
-	 * still stands where it stood: a frame was written that this did not
-	 * describe, or a measurement corrected one it did. The next frame paints
-	 * every cell again, in place.
+	 * Carry a probe train on the next frame even if the document has stopped
+	 * changing and its frames diff to nothing. A train rides only under
+	 * cells the same write paints over, so the flush re-emits the first
+	 * contentful row verbatim -- identical cells, no erase -- as the cover.
 	 */
-	/**
-	 * Forget the topmost row the previous frame painted, so the next frame
-	 * paints it again.
-	 *
-	 * A probe train needs a row whose own content lands on top of it, and a
-	 * document that has stopped changing offers none: the frames it produces
-	 * diff to nothing at all. This is the smallest repaint that gives the
-	 * train a place to stand -- one row, no erase, and cells identical to the
-	 * ones already on screen.
-	 */
-	repaintTopRow(): void {
-		const prev = this[kPrev];
-		if (prev === null) {
-			return;
-		}
-		const cols = prev.cols;
-		for (let row = 0; row < prev.rows; row++) {
-			const rowStart = row * cols;
-			for (let col = 0; col < cols; col++) {
-				if (prev.char[rowStart + col] !== 0) {
-					prev.clearRange(rowStart, rowStart + cols);
-					this[kForgotTopRow] = true;
-					return;
-				}
-			}
-		}
+	rideProbeTrain(): void {
+		this[kRideProbeTrain] = true;
 	}
 
+	/**
+	 * Repaint the whole visible screen from the top on the next frame: what
+	 * the terminal shows is no longer what this last painted. A resize is
+	 * the loudest case -- it rewraps everything on screen and moves the
+	 * cursor unpredictably, so the saved position DECRC would restore no
+	 * longer points where our content began. Rather than erase relative to
+	 * a position we cannot trust, the next frame homes the cursor, clears
+	 * the visible screen (ED2, not ED3 -- the scrollback is left alone) and
+	 * reprints. The old content the terminal reflowed into scrollback stays
+	 * there, as any command's output would.
+	 */
 	repaintAll(): void {
 		this[kSpare] = this[kPrev];
 		this[kPrev] = null;
@@ -1889,24 +1876,12 @@ export class Screen {
 		this[kRenderedLines].clear();
 	}
 
-	/**
-	 * Repaint the whole visible screen from the top on the next frame.
-	 *
-	 * A resize rewraps everything the terminal is showing, including our previous
-	 * frame, and moves the cursor unpredictably -- the saved position DECRC would
-	 * restore no longer points where our content began. So instead of trying to
-	 * erase relative to a position we can no longer trust, we home the cursor and
-	 * clear the visible screen (ED2, not ED3 -- the scrollback is left alone) and
-	 * reprint. The old content the terminal reflowed into scrollback stays there,
-	 * as any command's output would; the visible frame is clean.
-	 */
-
 	/** A reset or clear is pending: the next frame must actually paint. */
 	get needsRepaint(): boolean {
 		return (
 			this[kNeedsScreenReset] ||
 			this[kNeedsFullClear] ||
-			this[kForgotTopRow]
+			this[kRideProbeTrain]
 		);
 	}
 
@@ -2032,10 +2007,6 @@ export class Screen {
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
-		// The forgotten row is being painted by this frame, whatever else it
-		// carries; there is nothing left to remember.
-		this[kForgotTopRow] = false;
-
 		const cols = this[kCols];
 		const next = takeGrid(this, frameRows, cols);
 
@@ -2265,6 +2236,26 @@ export class Screen {
 				if (diff.char[index] !== 0) {
 					hasContent = true;
 					break;
+				}
+			}
+
+			// A waiting probe train rides only under cells this same write
+			// paints over. A frame that diffs to nothing offers none, so the
+			// first contentful row re-emits verbatim: identical cells, no
+			// erase, and the train goes under them.
+			if (this[kRideProbeTrain]) {
+				this[kRideProbeTrain] = false;
+				if (measurer !== undefined && !hasContent) {
+					for (let row = 0; row < frameRows && !hasContent; row++) {
+						const rowStart = row * cols;
+						for (let col = 0; col < cols; col++) {
+							const index = rowStart + col;
+							if (next.char[index] !== 0) {
+								diff.setFrom(index, next, index);
+								hasContent = true;
+							}
+						}
+					}
 				}
 			}
 

@@ -2867,7 +2867,7 @@ function buildSession(
 				void render(self);
 			},
 			onWidthStarvation: () => {
-				self[kScreen].repaintTopRow();
+				self[kScreen].rideProbeTrain();
 				void render(self);
 			},
 			// The terminal went away (hangup, disconnect, process exit):
