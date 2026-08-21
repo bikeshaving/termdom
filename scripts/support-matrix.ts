@@ -182,7 +182,15 @@ const FEATURES: Record<string, Feature> = {
 			return focus !== null && focus.data === "cd";
 		},
 	},
-	"clear": {value: "both", setup: "#probe { float: left; }"},
+	// clear moves the box BELOW earlier floats, so the probe floats #probe
+	// and clears #sibling -- clearing the document's only float, as this
+	// once did, can never move anything, and the row said "no effect" about
+	// the probe rather than the property.
+	"clear": {
+		value: "both",
+		selector: "#sibling",
+		setup: "#probe { float: left; }",
+	},
 	// Clipping only shows against content that overflows the box: an
 	// unbreakable word wider than it for the x axis, wrapped lines taller
 	// than it for the y axis.
