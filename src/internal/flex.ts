@@ -24,25 +24,25 @@
 // must exist, not just the ones referenced statically.
 // ---------------------------------------------------------------------------
 
-export const ALIGN_AUTO = 0;
-export const ALIGN_FLEX_START = 1;
-export const ALIGN_CENTER = 2;
-export const ALIGN_FLEX_END = 3;
-export const ALIGN_STRETCH = 4;
-export const ALIGN_BASELINE = 5;
-export const ALIGN_SPACE_BETWEEN = 6;
-export const ALIGN_SPACE_AROUND = 7;
-export const ALIGN_SPACE_EVENLY = 8;
+const ALIGN_AUTO = 0;
+const ALIGN_FLEX_START = 1;
+const ALIGN_CENTER = 2;
+const ALIGN_FLEX_END = 3;
+const ALIGN_STRETCH = 4;
+const ALIGN_BASELINE = 5;
+const ALIGN_SPACE_BETWEEN = 6;
+const ALIGN_SPACE_AROUND = 7;
+const ALIGN_SPACE_EVENLY = 8;
 /**
  * css-align-3 `normal`, which names no behaviour of its own: it takes the
  * meaning the layout mode gives it -- stretch for a grid item, flex-start for
  * a flex container's lines.
  */
-export const ALIGN_NORMAL = 9;
+const ALIGN_NORMAL = 9;
 
-export const JUSTIFY_FLEX_START = 0;
+const JUSTIFY_FLEX_START = 0;
 const JUSTIFY_CENTER = 1;
-export const JUSTIFY_FLEX_END = 2;
+const JUSTIFY_FLEX_END = 2;
 const JUSTIFY_SPACE_BETWEEN = 3;
 const JUSTIFY_SPACE_AROUND = 4;
 const JUSTIFY_SPACE_EVENLY = 5;
@@ -50,48 +50,48 @@ const JUSTIFY_SPACE_EVENLY = 5;
 const JUSTIFY_NORMAL = 6;
 const JUSTIFY_STRETCH = 7;
 
-export const WRAP_NO_WRAP = 0;
-export const WRAP_WRAP = 1;
-export const WRAP_WRAP_REVERSE = 2;
+const WRAP_NO_WRAP = 0;
+const WRAP_WRAP = 1;
+const WRAP_WRAP_REVERSE = 2;
 
-export const FLEX_DIRECTION_COLUMN = 0;
-export const FLEX_DIRECTION_COLUMN_REVERSE = 1;
-export const FLEX_DIRECTION_ROW = 2;
-export const FLEX_DIRECTION_ROW_REVERSE = 3;
+const FLEX_DIRECTION_COLUMN = 0;
+const FLEX_DIRECTION_COLUMN_REVERSE = 1;
+const FLEX_DIRECTION_ROW = 2;
+const FLEX_DIRECTION_ROW_REVERSE = 3;
 
-export const GUTTER_COLUMN = 0;
-export const GUTTER_ROW = 1;
-export const GUTTER_ALL = 2;
+const GUTTER_COLUMN = 0;
+const GUTTER_ROW = 1;
+const GUTTER_ALL = 2;
 
-export const DISPLAY_FLEX = 0;
-export const DISPLAY_NONE = 1;
-export const DISPLAY_BLOCK = 2;
-export const DISPLAY_TABLE = 3;
-export const DISPLAY_TABLE_ROW_GROUP = 4;
-export const DISPLAY_TABLE_HEADER_GROUP = 5;
-export const DISPLAY_TABLE_FOOTER_GROUP = 6;
-export const DISPLAY_TABLE_ROW = 7;
-export const DISPLAY_TABLE_CELL = 8;
-export const DISPLAY_TABLE_CAPTION = 9;
-export const DISPLAY_GRID = 10;
+const DISPLAY_FLEX = 0;
+const DISPLAY_NONE = 1;
+const DISPLAY_BLOCK = 2;
+const DISPLAY_TABLE = 3;
+const DISPLAY_TABLE_ROW_GROUP = 4;
+const DISPLAY_TABLE_HEADER_GROUP = 5;
+const DISPLAY_TABLE_FOOTER_GROUP = 6;
+const DISPLAY_TABLE_ROW = 7;
+const DISPLAY_TABLE_CELL = 8;
+const DISPLAY_TABLE_CAPTION = 9;
+const DISPLAY_GRID = 10;
 
-export const POSITION_TYPE_STATIC = 0;
-export const POSITION_TYPE_RELATIVE = 1;
-export const POSITION_TYPE_ABSOLUTE = 2;
+const POSITION_TYPE_STATIC = 0;
+const POSITION_TYPE_RELATIVE = 1;
+const POSITION_TYPE_ABSOLUTE = 2;
 
-export const MEASURE_MODE_UNDEFINED = 0;
-export const MEASURE_MODE_EXACTLY = 1;
-export const MEASURE_MODE_AT_MOST = 2;
+const MEASURE_MODE_UNDEFINED = 0;
+const MEASURE_MODE_EXACTLY = 1;
+const MEASURE_MODE_AT_MOST = 2;
 
-export const EDGE_LEFT = 0;
-export const EDGE_TOP = 1;
-export const EDGE_RIGHT = 2;
-export const EDGE_BOTTOM = 3;
+const EDGE_LEFT = 0;
+const EDGE_TOP = 1;
+const EDGE_RIGHT = 2;
+const EDGE_BOTTOM = 3;
 const EDGE_START = 4;
 const EDGE_END = 5;
 const EDGE_HORIZONTAL = 6;
 const EDGE_VERTICAL = 7;
-export const EDGE_ALL = 8;
+const EDGE_ALL = 8;
 
 const UNIT_UNDEFINED = 0;
 const UNIT_POINT = 1;

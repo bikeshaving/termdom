@@ -8,8 +8,9 @@
  * cell's colors -- load-bearing, not decorative.
  */
 import {CSS_INITIAL_VALUES} from "./cssproperties.js";
-export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 import {stringWidth} from "./text.js";
+
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 // ---- Shorthand expansion (the UA table is built on it) ----
 const BORDER_STYLE_KEYWORDS = new Set([

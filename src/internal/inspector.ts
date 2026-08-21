@@ -422,57 +422,6 @@ export function inspectFragment(
 }
 
 /**
- * Inspect a CSSStyleDeclaration, as the properties it actually declares
- */
-export function inspectCSSStyleDeclaration(
-	styles: any,
-	options: InspectorOptions = {},
-): string {
-	const {colorize = true, compact = false} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
-
-	// Get only the properties that have values
-	const setProps: string[] = [];
-	const limit = compact ? 5 : styles.length; // Only truncate when nested/compact
-
-	for (let i = 0; i < Math.min(styles.length, limit); i++) {
-		const prop = styles[i];
-		const value = styles.getPropertyValue(prop);
-		if (value) {
-			setProps.push(`${c.attr}${prop}${c.reset}: ${c.value}${value}${c.reset}`);
-		}
-	}
-
-	const totalProps = styles.length;
-
-	if (setProps.length === 0) {
-		return `${c.comment}CSSStyleDeclaration(${totalProps} properties)${c.reset} {}`;
-	}
-
-	let result = `${c.comment}CSSStyleDeclaration(${totalProps} properties)${c.reset} {\n`;
-	result += setProps.map((prop) => `  ${prop}`).join(",\n");
-
-	// Only show truncation when in compact mode
-	if (compact && totalProps > limit) {
-		result += `,\n  ${c.dim}... ${totalProps - limit} more properties${c.reset}`;
-	}
-
-	result += "\n}";
-	return result;
-}
-
-/**
  * Inspect a DOMRect - much more concise than default
  */
 export function inspectDOMRect(

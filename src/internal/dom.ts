@@ -35,7 +35,6 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
-import {HTML_NAMESPACE} from "./useragent.js";
 import {
 	inspectComment,
 	inspectDocument,
@@ -45,7 +44,7 @@ import {
 	inspectNodeList,
 	inspectText,
 } from "./inspector.js";
-export {HTML_NAMESPACE};
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
