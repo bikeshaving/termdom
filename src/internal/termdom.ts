@@ -255,7 +255,7 @@ const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
 // The static-render entry renderANSI() reaches through; off the public API
 // like the test handles above.
-export {kLayoutEngine, kObserver};
+export {kLayoutEngine, kObserver, kUAToolkit};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");
@@ -659,6 +659,7 @@ const kInteractive = Symbol("interactive");
 const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
+const kUAToolkit = Symbol("uaToolkit");
 const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
@@ -777,6 +778,14 @@ export class TermDOM {
 	 * route through the renderer, and the renderer paints whatever is there.
 	 */
 	declare [kTopLayer]: Set<Element>;
+
+	/**
+	 * The UA's capabilities, returned by the one installUAEngine handshake:
+	 * open a closed shadow root, read a control's selection past the type
+	 * gate. Holding this object is what makes this engine the document's
+	 * user agent -- it is never re-exported and never reachable from a node.
+	 */
+	declare [kUAToolkit]: DOM.UAToolkit;
 
 	// Timers that must be torn down in dispose(), or they keep the process
 	// alive after the app is done -- which, across a test suite, piles up
@@ -1021,7 +1030,7 @@ export class TermDOM {
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
 		// when a newly connected one should be upgraded.
-		installUAEngine(this.document, {
+		this[kUAToolkit] = installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
 			observer: this[kObserver],

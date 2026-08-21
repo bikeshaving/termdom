@@ -120,9 +120,60 @@ interface UALineFragment {
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
-/** Give a document the collaborators its controls' shadow trees render through. */
-export function installUAEngine(document: object, engine: UAEngine): void {
-	(document as Record<symbol, UAEngine>)[kUAEngine] = engine;
+/**
+ * What the user agent may do that a page may not. The capability is the
+ * return value of the one handshake that makes an engine a document's user
+ * agent: it is never exported on its own, no element reaches it, and a
+ * second install on the same document refuses -- so holding the toolkit IS
+ * being the UA. Page code, including code that deep-imports this module,
+ * has no way in.
+ */
+export interface UAToolkit {
+	/** Open a closed shadow root: the composition privilege. */
+	shadowRootOf<T>(element: object): T | null;
+	/**
+	 * A text control's selection record, past the type gate the author
+	 * meets -- selectionStart is null on a number input per spec, and the
+	 * UA still has a caret to draw. Null for a control with no selection.
+	 */
+	selectionOf(
+		control: object,
+	): {start: number; end: number; direction: string} | null;
+	/** The text node a control's editable value renders through. */
+	valueTextOf(control: object): UAText | null;
+}
+
+/**
+ * Give a document the collaborators its controls' shadow trees render
+ * through, and take the UA's capabilities in exchange. Once per document.
+ */
+export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
+	const doc = document as Record<symbol, UAEngine | undefined>;
+	if (doc[kUAEngine] !== undefined) {
+		throw new Error("This document already has its user agent.");
+	}
+	doc[kUAEngine] = engine;
+	// Each capability answers only for the document it was granted for, so
+	// a toolkit taken by installing on a throwaway document opens nothing.
+	const owns = (target: object): boolean =>
+		(target as Node).ownerDocument === (document as Document);
+	return {
+		shadowRootOf<T>(element: object): T | null {
+			return owns(element) ? shadowRootOf<T>(element) : null;
+		},
+		selectionOf(control: object) {
+			if (!owns(control)) {
+				return null;
+			}
+			const record = (
+				control as {[kUASelection]?: () => ReturnType<typeof uaSelectionOf>}
+			)[kUASelection];
+			return record ? record.call(control) : null;
+		},
+		valueTextOf(control: object): UAText | null {
+			return owns(control) ? fieldValueText(control) : null;
+		},
+	};
 }
 
 const kUAUpgrade = Symbol("build a control's UA widget");
