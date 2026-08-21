@@ -133,8 +133,7 @@ report(await waitForText("city", 15000), "playground: weather paints its search"
 
 // The rest of the roster: chat paints its composer, fuzzy-finder lists and
 // previews the virtual files, and markdown renders its sample through
-// marked from the CDN and Prism, whose CommonJS language packs come from
-// the node:module implementation.
+// marked and Prism, both from the CDN.
 await page.selectOption("select", "chat");
 report(await waitForText("ch.at", 15000), "playground: chat paints");
 await page.selectOption("select", "fuzzy-finder");
@@ -142,6 +141,43 @@ report(await waitForText("type to filter", 15000), "playground: fuzzy-finder pai
 report(await waitForText("termdom", 5000), "playground: fuzzy-finder previews the virtual files");
 await page.selectOption("select", "markdown");
 report(await waitForText("Markdown in the Terminal", 15000), "playground: markdown renders through marked and Prism");
+
+// The fenced code blocks sit below the fold, so the pager pages down to
+// them; their token classes must arrive coloured, not as plain text.
+await page.locator(".xterm").first().click();
+let atCode = false;
+for (let i = 0; i < 8 && !atCode; i++) {
+	await page.keyboard.press("f");
+	atCode = await waitForText("greet", 2000);
+}
+report(atCode, "playground: markdown pages down to its code block");
+const codeColours = await page.evaluate(
+	() =>
+		new Set(
+			Array.from(document.querySelectorAll(".xterm-rows span"))
+				.map((el) => (el as HTMLElement).style.color)
+				.filter(Boolean),
+		).size,
+);
+report(codeColours >= 5, "playground: markdown's code block keeps its token colours", `${codeColours} colours`);
+
+// Prism highlights the sample, its theme colours the token classes, and a
+// number key swaps the language. The colour count is the check that matters:
+// a screen of one colour means the theme reached nothing.
+await page.selectOption("select", "prism");
+report(await waitForText("interface Point", 15000), "playground: prism highlights its TypeScript sample");
+const colours = await page.evaluate(
+	() =>
+		new Set(
+			Array.from(document.querySelectorAll(".xterm-rows span"))
+				.map((el) => (el as HTMLElement).style.color)
+				.filter(Boolean),
+		).size,
+);
+report(colours >= 5, "playground: prism paints the token classes in distinct colours", `${colours} colours`);
+await page.locator(".xterm").first().click();
+await page.keyboard.press("2");
+report(await waitForText(".token.keyword", 5000), "playground: prism switches language on a number key");
 
 // The homepage embeds hydrate as they come near and paint their programs.
 // The first one is above the fold, so it is checked where a reader meets

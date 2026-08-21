@@ -33,6 +33,7 @@ const RUNNABLE = [
 	"lists",
 	"markdown",
 	"password",
+	"prism",
 	"progress-bar",
 	"rtl",
 	"solitaire",
