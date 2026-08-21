@@ -19,21 +19,7 @@ const container = css`
 	padding: 5rem 1.2rem 2rem;
 `;
 
-const heroCommand = css`
-	background-color: var(--surface-color);
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: 1.1rem 1.5rem;
-	font-size: 1.5rem;
-	text-align: center;
-	margin: 0 0 3.5rem;
-	user-select: all;
-	color: var(--text-color);
-`;
-
-/* The content is markdown (content/home.md); this styles what it emits.
-   The one structural opinion: the "Features" list renders as a two-column
-   feature grid. */
+/* The content is markdown (content/home.md); this styles what it emits. */
 const content = css`
 	figure.cast {
 		margin: 2rem 0;
@@ -52,10 +38,6 @@ const content = css`
 		color: var(--muted-color);
 	}
 
-	/* A live embed: the program until it comes near, an editor and a terminal
-	   after. Both states are the same width as the prose above them, and both
-	   are one framed surface with a titled bar across the top, so the swap
-	   changes what the figure does and not what it is. */
 	figure.playground {
 		margin: 2rem 0;
 		min-width: 0;
@@ -76,10 +58,8 @@ const content = css`
 		border-bottom: 1px solid var(--border-color);
 	}
 
-	/* Held to about the height the editor takes, so hydrating an embed does
-	   not move the page under whoever is reading it. Twenty whole lines and
-	   the padding above the first: the box ends where a line does rather than
-	   through the middle of one. */
+	/* About the hydrated editor's height, so booting an embed does not move
+	   the page under the reader. */
 	.playground-preview > pre {
 		margin: 0;
 		border: none;
@@ -88,52 +68,19 @@ const content = css`
 		overflow: auto;
 	}
 
-	ul {
-		list-style: none;
-		padding: 0;
-		display: grid;
-		gap: 1.25rem;
-		grid-template-columns: 1fr;
-
-		@media screen and (min-width: 700px) {
-			grid-template-columns: 1fr 1fr;
-		}
-	}
-
-	ul li {
-		margin: 0;
-		font-size: 0.9rem;
-		color: var(--muted-color);
-	}
-
-	ul li strong {
-		color: var(--highlight-color);
-		display: block;
-		margin-bottom: 0.15rem;
-	}
 `;
 
-/**
- * The programs the page embeds live, keyed the way `playground:id` names them.
- * Each figure on the page but one is a program running in the reader's
- * browser; the exception is the solitaire recording at the top, whose
- * program needs an import the runner cannot resolve.
- */
+/** The programs the page embeds live, as `playground:id` names them. */
 const EMBEDDED = [
 	"hello-world",
-	"progress-bar",
+	"bar-chart",
 	"flexbox",
-	"tree",
 	"form",
 	"prism",
-	"hacker-news",
 ];
 
-/**
- * Fetch the playground bundle when the first embed comes near, rather than
- * with the page. It carries the engine, an emulator and a highlighter, which
- * is a lot to hand someone who came to read.
- */
+/* The playground bundle carries the engine, an emulator and a highlighter,
+   so it loads when the first embed comes near rather than with the page. */
 function playgroundLoader(src: string): string {
 	return `
 const embeds = document.querySelectorAll("[data-playground]");
@@ -183,8 +130,6 @@ export default async function Home({url}: {url: string}) {
 				`}>
 					Build terminal apps with HTML, CSS and the DOM.
 				</p>
-
-				<p class=${heroCommand}>npm install @b9g/termdom</p>
 
 				<div class=${content}>
 					<${Marked}

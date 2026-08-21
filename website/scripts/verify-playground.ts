@@ -101,21 +101,24 @@ report(await waitForText("Hello"), "playground: default example paints");
 // one survives the reset -- a dead realm's queued writes must not drain
 // onto the next program's screen.
 await page.selectOption("select", "flexbox");
-report(await waitForText("masthead"), "playground: switching to flexbox runs it");
+report(await waitForText("TermDOM flexbox"), "playground: switching to flexbox runs it");
 await new Promise((r) => setTimeout(r, 1000));
 report(
 	!(await terminalText()).includes("HTML Terminal"),
 	"playground: previous program's frame is gone after the switch",
 );
 
-// The editor shows the program whole: import, construction, attach.
+// The editor shows the program whole: import, construction, attach, and
+// the TypeScript as written -- bar-chart's casts stand in for types.
+await page.selectOption("select", "bar-chart");
+report(await waitForText("Requests per region", 15000), "playground: bar-chart runs");
 const editor = await page.evaluate(
 	() => (document.querySelector("content-area") as HTMLElement)?.innerText ?? "",
 );
 report(editor.includes('import {TermDOM} from "@b9g/termdom"'), "editor shows the import");
 report(editor.includes("new TermDOM"), "editor shows the construction");
 report(editor.includes("term.attach()"), "editor shows the attach");
-report(editor.includes("index: number"), "editor shows the types, verbatim");
+report(editor.includes("as HTMLElement"), "editor shows the types, verbatim");
 
 // The crank examples run through the import map: todomvc renders its
 // header, and solitaire -- entered through its own main guard against the
@@ -208,23 +211,10 @@ for (let i = 0, n = await embeds.count(); i < n; i++) {
 	await embeds.nth(i).scrollIntoViewIfNeeded();
 	await new Promise((r) => setTimeout(r, 1000));
 }
-report(await waitForText("Installing"), "home: progress-bar embed paints");
-report(await waitForText("workspace/termdom"), "home: tree embed reads the virtual filesystem");
+report(await waitForText("Requests per region"), "home: bar-chart embed paints");
+report(await waitForText("TermDOM flexbox"), "home: flexbox embed paints");
 report(await waitForText("New profile"), "home: form embed paints");
 report(await waitForText("interface Point", 15000), "home: prism embed highlights its sample");
-report(await waitForText("Hacker News", 15000), "home: hacker-news embed paints its masthead");
-
-// The tree embed answers keys. The click lands on whatever row is under
-// it and selects it -- the engine dispatches real clicks -- so g first
-// puts the selection at the top, then j moves to examples/ and Enter
-// opens it. The embed is found by what it shows rather than by its place
-// among the terminals, which the page's order decides.
-const tree = page.locator(".xterm").filter({hasText: "workspace/termdom"}).first();
-await tree.click();
-await page.keyboard.press("g");
-await page.keyboard.press("j");
-await page.keyboard.press("Enter");
-report(await waitForText("solitaire.ts", 5000), "home: tree embed expands on Enter");
 
 const fatal = errors.filter((e) => !e.includes("favicon"));
 report(fatal.length === 0, "no console errors", fatal.slice(0, 3).join(" | "));

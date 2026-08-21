@@ -1,96 +1,66 @@
-TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-draws actual DOM nodes to terminal output and redraws the screen when the nodes
-are mutated, so TUIs and interactive CLIs can be written with vanilla
-JavaScript or any frontend web framework.
+TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
+terminal. It draws actual DOM nodes to terminal output and redraws the screen
+when nodes are mutated, so TUIs and interactive CLIs can be written with
+vanilla JavaScript or any frontend web framework or library.
 
 ![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
-A terminal UI library asks you to learn its widgets: a Box, a List, a Screen
-and the coordinates that go with them. There is nothing to learn here. Make a
-div, style it, put it in the body. There is no render call — mutations paint on
-the next frame. The examples below run in the page, so edit one and it runs
-again.
+Typical terminal UI libraries ask you to learn its widgets: a Box, a List, a
+Screen, and the arbritrary APIs that go with them. By contrast, TermDOM
+implements a real, spec-compliant DOM and CSSOM API. Make a div, style it, put
+it in the body. Just like the browser there is no render call, and changes
+paint on the next frame.
 
 ![examples/hello-world.ts](playground:hello-world)
 
-## How it works
+## Styling
 
-Nothing here approximates CSS. TermDOM implements the browser's rendering
-pipeline against a grid of character cells instead of pixels. CSS lengths
-resolve to cells (`1px` and `1ch` are both one cell). On each frame the engine
-recomputes style and layout for whatever mutated, paints the result into a cell
-buffer, diffs it against the previous frame, and writes the difference to
-stdout as ANSI escape sequences. Escape sequences from stdin are decoded into
-keyboard, mouse, and paste events and dispatched to DOM nodes.
+TermDOM runs your stylesheets and inline styles through a real cascade and
+writes the computed styles to the screen as ANSI escape sequences. It resolves
+colors against the terminal’s palette and draws text decorations as terminal
+attributes: bold, italic, underline, strikethrough.
 
-The bar below animates by setting a width. Nothing tells the screen to redraw.
-
-![examples/progress-bar.ts](playground:progress-bar)
+![examples/bar-chart.ts](playground:bar-chart)
 
 ## Layout
 
-Placing things in a terminal means arithmetic: track a row, track a column,
-redo it when the window resizes. Write flexbox or grid instead and the engine
-works out the cells — margins, borders, padding, and tables included. Below is a
-masthead, a sidebar, and an article, styled by a stylesheet; the arrow keys
-select a section.
+TermDOM lays out boxes with the browser’s algorithms — flexbox, grid, tables,
+the box model — against a grid of character cells. The cell is the unit basis
+for CSS lengths: `1px` and `1ch` both mean one cell. Text wraps at the edge of
+its box and reflows when the terminal resizes.
 
 ![examples/flexbox.ts](playground:flexbox)
 
 ## Events
 
-Input arrives as events, not escape codes to parse: keyboard, mouse, focus,
-and paste fire on elements, the document, and the window. Add a listener,
-change a class, and the row highlights itself. The file browser below finds
-its rows with `querySelectorAll` and follows the selection with
-`scrollIntoView()`.
-
-![examples/tree.ts](playground:tree)
-
-## Forms
-
-Text input is where a hand-rolled TUI falls apart: no selection, no input
-methods, a caret drawn a cell away from where the text lands. `<input>`,
-`<textarea>`, `<select>`, checkboxes, and radios are shadow trees with
-terminal-native looks, restylable with CSS. Tab moves focus and `:focus` styles
-it. The caret is the terminal cursor, so input methods compose inside the
-field.
+TermDOM decodes stdin’s escape sequences into DOM events and dispatches them
+at real targets: `keydown` at the focused element, `click` on the element
+under the pointer, `paste` with the pasted text. Tab moves focus, and `:focus`
+styles follow it.
 
 ![examples/form.ts](playground:form)
 
-## Libraries
+## Libraries & Frameworks
 
-Prism highlights code by wrapping tokens in `<span>`s and shipping its
-themes as CSS files — markup and stylesheets, the two things this engine
-renders. The example imports `prismjs` and a grammar pack unmodified and
-styles the output with a stock Prism theme. Left and right pick the
-language.
+The payoff of implementing a real DOM is that you can use browser libraries in
+the terminal without modification. TermDOM also works with most frontend
+frameworks with [a little bit of setup](/guides/getting-started/#frameworks).
 
 ![examples/prism.ts](playground:prism)
 
-## An application
-
-The reader below is Hacker News, fetched from the live API. Enter opens a
-story fullscreen with a `position: fixed` control bar and the thread in an
-`overflow: auto` box. j and k move the cursor, h and l fold and unfold
-subthreads, Space pages, q backs out.
-
-![examples/hacker-news.ts](playground:hacker-news)
-
-## Features
-
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits, translated to ANSI color and decoration.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` work and report cell-based layout.
-- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
-- **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
-- **Selection** Drag to select, styled with `::selection`; the caret moves by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
-- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()`; a box with `overflow: auto` scrolls by `scrollTop`, the wheel, and `scrollIntoView()`.
-- **Clipboard** `navigator.clipboard` reads and writes over OSC 52, gated on a user gesture; pastes arrive as `paste` events.
-- **Fullscreen** `Element.requestFullscreen()` renders to the alternate screen; exiting restores the shell and its scrollback.
-
 ## Compatibility
 
-Claims like these are cheap. The [compatibility matrix](/compatibility/) is
-generated by a probe suite: each DOM API, selector, and CSS property is applied
-to a real document and rendered, and the table records whether the output
-changed.
+TermDOM tries to follow web specifications as closely as possible, diverging
+only when concepts wouldn’t make sense in the terminal. You can track which
+browser features are implemented via the [compatibility
+table](/compatibility/).
+
+## Get started
+
+```sh
+npm install @b9g/termdom
+```
+
+Read the [getting-started guide](/guides/getting-started/), poke at an example
+in the [playground](/playground/), or read the source on
+[GitHub](https://github.com/bikeshaving/termdom).
