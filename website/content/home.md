@@ -16,7 +16,7 @@ again.
 ## How it works
 
 Nothing here approximates CSS. TermDOM implements the browser's rendering
-pipeline against a grid of character cells instead of pixels. All CSS lengths
+pipeline against a grid of character cells instead of pixels. CSS lengths
 resolve to cells (`1px` and `1ch` are both one cell). On each frame the engine
 recomputes style and layout for whatever mutated, paints the result into a cell
 buffer, diffs it against the previous frame, and writes the difference to
@@ -30,8 +30,8 @@ The bar below animates by setting a width. Nothing tells the screen to redraw.
 ## Layout
 
 Placing things in a terminal means arithmetic: track a row, track a column,
-redo it when the window resizes. Write flexbox instead and the engine works out
-the cells — margins, borders, padding, and tables included. Below is a
+redo it when the window resizes. Write flexbox or grid instead and the engine
+works out the cells — margins, borders, padding, and tables included. Below is a
 masthead, a sidebar, and an article, styled by a stylesheet; the arrow keys
 select a section.
 
@@ -39,11 +39,11 @@ select a section.
 
 ## Events
 
-Terminal UIs usually mean tracking rows and columns by hand and repainting when
-you remember to. Add a listener, change a class, and the row highlights itself.
-Keyboard, mouse, focus, and paste events fire on elements, the document, and
-the window; the file browser below finds its rows with `querySelectorAll` and
-follows the selection with `scrollIntoView()`.
+Input arrives as events, not escape codes to parse: keyboard, mouse, focus,
+and paste fire on elements, the document, and the window. Add a listener,
+change a class, and the row highlights itself. The file browser below finds
+its rows with `querySelectorAll` and follows the selection with
+`scrollIntoView()`.
 
 ![examples/tree.ts](playground:tree)
 
@@ -58,14 +58,34 @@ field.
 
 ![examples/form.ts](playground:form)
 
+## Libraries
+
+Prism highlights code by wrapping tokens in `<span>`s and shipping its
+themes as CSS files — markup and stylesheets, the two things this engine
+renders. The example imports `prismjs` and a grammar pack unmodified and
+styles the output with a stock Prism theme. Left and right pick the
+language.
+
+![examples/prism.ts](playground:prism)
+
+## An application
+
+The reader below is Hacker News, fetched from the live API. Enter opens a
+story fullscreen with a `position: fixed` control bar and the thread in an
+`overflow: auto` box. j and k move the cursor, h and l fold and unfold
+subthreads, Space pages, q backs out.
+
+![examples/hacker-news.ts](playground:hacker-news)
+
 ## Features
 
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits as in the browser, translated to ANSI color and decoration.
+- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits, translated to ANSI color and decoration.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` work and report cell-based layout.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
 - **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
 - **Selection** Drag to select, styled with `::selection`; the caret moves by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
-- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
+- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()`; a box with `overflow: auto` scrolls by `scrollTop`, the wheel, and `scrollIntoView()`.
+- **Clipboard** `navigator.clipboard` reads and writes over OSC 52, gated on a user gesture; pastes arrive as `paste` events.
 - **Fullscreen** `Element.requestFullscreen()` renders to the alternate screen; exiting restores the shell and its scrollback.
 
 ## Compatibility

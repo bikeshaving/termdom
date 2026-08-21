@@ -198,19 +198,21 @@ await page.goto(`${ORIGIN}/`, {waitUntil: "load"});
 // The emulator renders only terminals inside the viewport, so the check
 // scrolls to the embed the way a reader would reach it.
 await page.locator("[data-playground]").first().scrollIntoViewIfNeeded();
-report(await waitForText("Installing"), "home: progress-bar embed paints");
+report(await waitForText("Hello, terminal"), "home: hello-world embed paints");
 
-// The walk down the page mirrors a reader scrolling: each stop lets the
-// observer fire and the programs below boot.
-for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
-	await page.evaluate(
-		(f) => window.scrollTo(0, document.body.scrollHeight * f),
-		fraction,
-	);
+// The walk down the page mirrors a reader scrolling: each embed comes into
+// view in turn, the observer fires, and its program boots. A walk by page
+// fractions can jump over an embed without it ever intersecting.
+const embeds = page.locator("[data-playground]");
+for (let i = 0, n = await embeds.count(); i < n; i++) {
+	await embeds.nth(i).scrollIntoViewIfNeeded();
 	await new Promise((r) => setTimeout(r, 1000));
 }
+report(await waitForText("Installing"), "home: progress-bar embed paints");
 report(await waitForText("workspace/termdom"), "home: tree embed reads the virtual filesystem");
 report(await waitForText("New profile"), "home: form embed paints");
+report(await waitForText("interface Point", 15000), "home: prism embed highlights its sample");
+report(await waitForText("Hacker News", 15000), "home: hacker-news embed paints its masthead");
 
 // The tree embed answers keys. The click lands on whatever row is under
 // it and selects it -- the engine dispatches real clicks -- so g first

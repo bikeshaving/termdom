@@ -115,7 +115,7 @@ const content = css`
 
 /**
  * The programs the page embeds live, keyed the way `playground:id` names them.
- * Every figure on the page but one is a program running in the reader's
+ * Each figure on the page but one is a program running in the reader's
  * browser; the exception is the solitaire recording at the top, whose
  * program needs an import the runner cannot resolve.
  */
@@ -125,6 +125,8 @@ const EMBEDDED = [
 	"flexbox",
 	"tree",
 	"form",
+	"prism",
+	"hacker-news",
 ];
 
 /**
