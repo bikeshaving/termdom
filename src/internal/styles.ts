@@ -33,6 +33,8 @@ import * as CSSTree from "css-tree";
 import {serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
+import Flex from "./flex.js";
+import type * as FlexTypes from "./flex.js";
 import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
@@ -10569,3 +10571,418 @@ onShadowAttached((root) => {
 		.get((root.host as unknown as Element).ownerDocument as object)
 		?.registerShadowRoot(root as unknown as ShadowRoot);
 });
+
+// ---------------------------------------------------------------------------
+// Grid values (css-grid-2 §7, §8)
+//
+// The compute core takes track lists, area maps and placements already parsed,
+// so this is where CSS text becomes them. css-tree does the tokenizing: a
+// track list nests functions, bracketed line names and strings, and a
+// hand-rolled splitter gets one of those wrong sooner or later.
+//
+// Two values are REFUSED rather than approximated. `subgrid` (css-grid-2 §9.5)
+// takes its tracks from an ancestor grid, which means a grid's own sizing can
+// no longer be decided from its own box; `masonry` (css-grid-3) is not a grid
+// in its second axis at all. A track list naming either is invalid here, and
+// the property falls back to `none` -- the same answer a browser that does not
+// implement them gives.
+// ---------------------------------------------------------------------------
+
+type CSSNode = {
+	type: string;
+	name?: string;
+	value?: string;
+	unit?: string;
+	children?: {toArray(): CSSNode[]};
+};
+
+/** The refused grid values, kept together so the refusal is one list. */
+const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
+
+function cssValueChildren(value: string): CSSNode[] | null {
+	try {
+		const ast = CSSTree.parse(value, {context: "value"}) as unknown as CSSNode;
+		return ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+}
+
+/** A length token in cells: px and ch both measure one cell, and nothing else does. */
+function trackCells(node: CSSNode): number | null {
+	if (node.type !== "Dimension") {
+		return null;
+	}
+	const unit = (node.unit ?? "").toLowerCase();
+	if (unit !== "px" && unit !== "ch") {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	return Number.isFinite(number) ? number : null;
+}
+
+function pointBreadth(cells: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_POINT, value: cells}};
+}
+
+function percentBreadth(percentage: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_PERCENT, value: percentage}};
+}
+
+/** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
+function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
+	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
+		const factor = parseFloat(node.value ?? "");
+		return Number.isFinite(factor) && factor >= 0 ?
+				{kind: "flex", factor} :
+			null;
+	}
+	const cells = trackCells(node);
+	if (cells !== null) {
+		return pointBreadth(cells);
+	}
+	if (node.type === "Percentage") {
+		const percentage = parseFloat(node.value ?? "");
+		return Number.isFinite(percentage) ? percentBreadth(percentage) : null;
+	}
+	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
+		return pointBreadth(0);
+	}
+	if (node.type === "Identifier") {
+		switch ((node.name ?? "").toLowerCase()) {
+			case "auto":
+				return {kind: "auto"};
+			case "min-content":
+				return {kind: "min-content"};
+			case "max-content":
+				return {kind: "max-content"};
+		}
+	}
+	return null;
+}
+
+/** The arguments of a function node, with the comma operators dropped. */
+function functionArguments(node: CSSNode): CSSNode[] {
+	return (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+}
+
+/** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
+function parseTrackSize(node: CSSNode): FlexTypes.TrackSize | null {
+	if (node.type === "Function") {
+		const name = (node.name ?? "").toLowerCase();
+		const args = functionArguments(node);
+		if (name === "minmax") {
+			if (args.length !== 2) {
+				return null;
+			}
+			const min = parseTrackBreadth(args[0]);
+			const max = parseTrackBreadth(args[1]);
+			// An `fr` is a share of leftover space, which is not a minimum
+			// anything can be measured against: the grammar excludes it.
+			if (!min || !max || min.kind === "flex") {
+				return null;
+			}
+			return {min, max};
+		}
+		if (name === "fit-content") {
+			if (args.length !== 1) {
+				return null;
+			}
+			const clamp = parseTrackBreadth(args[0]);
+			if (!clamp || clamp.kind !== "length") {
+				return null;
+			}
+			// fit-content(x) is minmax(auto, max-content) capped at x (§7.2.3).
+			return {
+				min: {kind: "auto"},
+				max: {kind: "max-content"},
+				fitContent: clamp.value,
+			};
+		}
+		return null;
+	}
+	const breadth = parseTrackBreadth(node);
+	if (!breadth) {
+		return null;
+	}
+	// A bare `<flex>` is minmax(auto, <flex>); every other bare breadth is
+	// both ends of the pair.
+	if (breadth.kind === "flex") {
+		return {min: {kind: "auto"}, max: breadth};
+	}
+	return {min: breadth, max: breadth};
+}
+
+/** The identifiers inside a `[a b]` line-name group. */
+function bracketNames(node: CSSNode): string[] {
+	return (node.children?.toArray() ?? [])
+		.filter((child) => child.type === "Identifier")
+		.map((child) => child.name ?? "");
+}
+
+/** A `<track-list>`, or null when the value is not one (and so has no effect). */
+export function parseTrackList(value: string): FlexTypes.TrackList | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	if (REFUSED_GRID_VALUES.has(text.toLowerCase())) {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+
+	const parts: FlexTypes.TrackListPart[] = [];
+	let names: string[] = [];
+
+	for (const node of children) {
+		if (node.type === "Brackets") {
+			names = names.concat(bracketNames(node));
+			continue;
+		}
+		if (
+			node.type === "Function" &&
+			(node.name ?? "").toLowerCase() === "repeat"
+		) {
+			const repeat = parseTrackRepeat(node);
+			if (!repeat) {
+				return null;
+			}
+			repeat.tracks[0].names = names.concat(repeat.tracks[0].names);
+			names = [];
+			parts.push({type: "repeat", repeat});
+			continue;
+		}
+		if (
+			node.type === "Identifier" &&
+			REFUSED_GRID_VALUES.has((node.name ?? "").toLowerCase())
+		) {
+			return null;
+		}
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		parts.push({type: "track", track: {names, size}});
+		names = [];
+	}
+
+	if (parts.length === 0) {
+		return null;
+	}
+	return {parts, endNames: names};
+}
+
+function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
+	const args = (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+	if (args.length < 2) {
+		return null;
+	}
+	const first = args[0];
+	let count: number | "auto-fill" | "auto-fit";
+	if (first.type === "Number") {
+		const parsed = parseInt(first.value ?? "", 10);
+		if (!Number.isFinite(parsed) || parsed < 1) {
+			return null;
+		}
+		// A repeat is written by an author and expanded here, so a runaway
+		// count would be paid for in tracks nobody can see.
+		count = Math.min(parsed, 1000);
+	} else if (first.type === "Identifier") {
+		const keyword = (first.name ?? "").toLowerCase();
+		if (keyword !== "auto-fill" && keyword !== "auto-fit") {
+			return null;
+		}
+		count = keyword;
+	} else {
+		return null;
+	}
+
+	const tracks: FlexTypes.TrackListTrack[] = [];
+	let names: string[] = [];
+	for (const child of args.slice(1)) {
+		if (child.type === "Brackets") {
+			names = names.concat(bracketNames(child));
+			continue;
+		}
+		const size = parseTrackSize(child);
+		if (!size) {
+			return null;
+		}
+		tracks.push({names, size});
+		names = [];
+	}
+	if (tracks.length === 0) {
+		return null;
+	}
+	return {count, tracks, endNames: names};
+}
+
+/** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
+export function parseTrackSizeList(
+	value: string,
+): FlexTypes.TrackSize[] | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+	const sizes: FlexTypes.TrackSize[] = [];
+	for (const node of children) {
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		sizes.push(size);
+	}
+	return sizes.length > 0 ? sizes : null;
+}
+
+/**
+ * `grid-template-areas`: rows of names, one string per row. The map is invalid
+ * -- and so declares nothing -- unless every row states the same number of
+ * cells and every named area is a solid rectangle (css-grid-2 §7.3).
+ */
+export function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	const rows: Array<Array<string | null>> = [];
+	for (const node of children) {
+		if (node.type !== "String") {
+			return null;
+		}
+		const cells = (node.value ?? "")
+			.trim()
+			.split(/\s+/)
+			.filter((cell) => cell.length > 0)
+			// A run of dots is one null cell, however many dots it is written with.
+			.map((cell) => (/^\.+$/.test(cell) ? null : cell));
+		if (cells.length === 0) {
+			return null;
+		}
+		rows.push(cells);
+	}
+
+	const columnCount = rows[0].length;
+	if (rows.some((row) => row.length !== columnCount)) {
+		return null;
+	}
+
+	// Every area is a rectangle, fully filled: `"a b a"` names no area at all.
+	const boxes = new Map<
+		string,
+		{top: number; left: number; bottom: number; right: number}
+	>();
+	rows.forEach((row, rowIndex) => {
+		row.forEach((name, columnIndex) => {
+			if (name === null) {
+				return;
+			}
+			const box = boxes.get(name);
+			if (!box) {
+				boxes.set(name, {
+					top: rowIndex,
+					left: columnIndex,
+					bottom: rowIndex + 1,
+					right: columnIndex + 1,
+				});
+				return;
+			}
+			box.top = Math.min(box.top, rowIndex);
+			box.left = Math.min(box.left, columnIndex);
+			box.bottom = Math.max(box.bottom, rowIndex + 1);
+			box.right = Math.max(box.right, columnIndex + 1);
+		});
+	});
+	for (const [name, box] of boxes) {
+		for (let row = box.top; row < box.bottom; row++) {
+			for (let column = box.left; column < box.right; column++) {
+				if (rows[row][column] !== name) {
+					return null;
+				}
+			}
+		}
+	}
+
+	return {rows, columnCount};
+}
+
+/** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
+export function parseGridPlacement(
+	value: string,
+): FlexTypes.GridPlacement | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	let span = false;
+	let index: number | null = null;
+	let name: string | null = null;
+
+	for (const node of children) {
+		if (node.type === "Number") {
+			const parsed = parseInt(node.value ?? "", 10);
+			if (!Number.isFinite(parsed) || parsed === 0) {
+				return null;
+			}
+			if (index !== null) {
+				return null;
+			}
+			index = parsed;
+			continue;
+		}
+		if (node.type !== "Identifier") {
+			return null;
+		}
+		const keyword = node.name ?? "";
+		if (keyword.toLowerCase() === "span") {
+			if (span) {
+				return null;
+			}
+			span = true;
+			continue;
+		}
+		if (keyword.toLowerCase() === "auto") {
+			return null;
+		}
+		if (name !== null) {
+			return null;
+		}
+		name = keyword;
+	}
+
+	if (span) {
+		// A span is a count of tracks or of named lines, never a line number.
+		if (index !== null && index < 1) {
+			return null;
+		}
+		if (index === null && name === null) {
+			return null;
+		}
+	}
+	if (!span && index === null && name === null) {
+		return null;
+	}
+	return {span, index, name};
+}
