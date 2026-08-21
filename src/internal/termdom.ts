@@ -34,7 +34,7 @@ import {
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Screen} from "./ansi.js";
-import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
+import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,

@@ -11,11 +11,11 @@ import {
 	type StyleManager,
 	getBoxModel,
 	resolveBorderSides,
-} from "./styles.js";
+} from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
 import {flatIsConnected, flatParentElement} from "./dom.js";
-import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
+import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./cascade.js";
 import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
 
 /**

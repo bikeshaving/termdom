@@ -18,13 +18,13 @@ import {
 	parseTrackList,
 	parseTrackSizeList,
 	type BoxModel,
-} from "./styles.js";
+} from "./cascade.js";
 import {
 	computedStyleOf,
 	getPropertyValue,
 	parseUnitValue,
 	type ComputedStyle,
-} from "./styles.js";
+} from "./cascade.js";
 import {
 	createFlatTreeWalker,
 	pseudoElementCount,

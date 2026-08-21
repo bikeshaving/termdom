@@ -4,7 +4,7 @@
  */
 
 import type {LayoutEngine} from "./layout.js";
-import {computedStyleOf} from "./styles.js";
+import {computedStyleOf} from "./cascade.js";
 
 /**
  * An element's content box: its size, plus the offset of its top-left corner

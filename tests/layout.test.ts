@@ -4,7 +4,7 @@ import {
 	kInvalidateInlineRun,
 	kRectTexts,
 } from "../src/internal/layout.js";
-import {StyleManager} from "../src/internal/styles.js";
+import {StyleManager} from "../src/internal/cascade.js";
 import {renderTextFragment} from "../src/internal/text.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {ensurePseudoElement} from "../src/internal/dom.js";

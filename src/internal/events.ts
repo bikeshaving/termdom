@@ -8,7 +8,7 @@
 
 import {flatParentElement} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
-import {computedStyleOf} from "./styles.js";
+import {computedStyleOf} from "./cascade.js";
 
 /**
  * The DOM `code` values for the keys whose physical identity a terminal escape
