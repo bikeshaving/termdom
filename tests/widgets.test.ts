@@ -209,27 +209,29 @@ function cellAt(terminal: MockProcess, row: number, col: number): any {
 	return (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
 }
 
-test("a kbd wears brackets and bold", async () => {
+test("a kbd is bold and underlined, the accelerator convention", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = "<kbd>x</kbd>";
+	dom.document.body.innerHTML = "<kbd>q</kbd>uit";
 	await nextFrame(dom);
 
-	expect(terminal.getPlainText()).toContain("[x]");
-	// The brackets are generated content of the kbd, so they carry its weight.
+	// The mark is a decoration, not generated content: no cells are added.
+	expect(terminal.getPlainText()).toContain("quit");
+	expect(terminal.getPlainText()).not.toContain("[");
 	expect(cellAt(terminal, 0, 0).isBold()).toBeTruthy();
-	expect(cellAt(terminal, 0, 1).isBold()).toBeTruthy();
-	expect(cellAt(terminal, 0, 2).isBold()).toBeTruthy();
+	expect(cellAt(terminal, 0, 0).isUnderline()).toBeTruthy();
+	expect(cellAt(terminal, 0, 1).isBold()).toBeFalsy();
+	expect(cellAt(terminal, 0, 1).isUnderline()).toBeFalsy();
 
 	dom.dispose();
 });
 
-test("author rules replace the keycap's brackets and weight", async () => {
+test("author rules restyle the keycap", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		"<style>" +
-		"kbd { font-weight: normal; }" +
+		"kbd { font-weight: normal; text-decoration: none; }" +
 		"kbd::before { content: \"<\"; }" +
 		"kbd::after { content: \">\"; }" +
 		"</style>" +
@@ -238,6 +240,7 @@ test("author rules replace the keycap's brackets and weight", async () => {
 
 	expect(terminal.getPlainText()).toContain("<x>");
 	expect(cellAt(terminal, 0, 1).isBold()).toBeFalsy();
+	expect(cellAt(terminal, 0, 1).isUnderline()).toBeFalsy();
 
 	dom.dispose();
 });
