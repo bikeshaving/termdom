@@ -1158,32 +1158,76 @@ async function runFile(file: string): Promise<Outcome> {
 process.on("uncaughtException", () => {});
 process.on("unhandledRejection", () => {});
 
-const filter = process.argv[2];
-const files: string[] = [];
-for (const suite of SUITES) {
-	files.push(...(await suiteFiles(suite)));
-}
-const selected = files.filter((file) => !filter || file.includes(filter));
+// Each fresh evaluation of dom.ts is pinned in the module registry forever,
+// so one process running every file holds O(files) module graphs and dies
+// near two gigabytes. A worker process per suite bounds the pin to that
+// suite and hands its memory back on exit; the orchestrator only aggregates.
+const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
+const filter = workerSuite === null ? process.argv[2] : process.argv[4];
 
-const outcomes: Outcome[] = [];
-for (const file of selected) {
-	try {
-		outcomes.push(await runFile(file));
-	} catch (error) {
-		outcomes.push({
-			file,
-			harness: "ERROR",
-			subtests: [],
-			error: (error as Error).message,
-		});
-	}
-	const last = outcomes[outcomes.length - 1];
-	const passed = last.subtests.filter((test) => test.status === 0).length;
-	console.info(
-		`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${file}${
-			last.error ? ` -- ${last.error}` : ""
-		}`,
+async function runSuite(suite: string): Promise<Outcome[]> {
+	const files = (await suiteFiles(suite)).filter(
+		(file) => !filter || file.includes(filter),
 	);
+	const outcomes: Outcome[] = [];
+	for (const file of files) {
+		try {
+			outcomes.push(await runFile(file));
+		} catch (error) {
+			outcomes.push({
+				file,
+				harness: "ERROR",
+				subtests: [],
+				error: (error as Error).message,
+			});
+		}
+		const last = outcomes[outcomes.length - 1];
+		const passed = last.subtests.filter((test) => test.status === 0).length;
+		console.error(
+			`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${file}${
+				last.error ? ` -- ${last.error}` : ""
+			}`,
+		);
+	}
+	return outcomes;
+}
+
+if (workerSuite !== null) {
+	const outcomes = await runSuite(workerSuite);
+	// A pipe write is asynchronous and process.exit abandons what has not
+	// flushed, so the exit rides the write's completion callback. The hard
+	// exit itself is required: abandoned TIMEOUT tests leave live timers
+	// that would keep the worker alive forever.
+	process.stdout.write(JSON.stringify(outcomes), () => {
+		process.exit(0);
+	});
+	await new Promise(() => {});
+}
+
+const {spawnSync} = await import("node:child_process");
+const outcomes: Outcome[] = [];
+for (const suite of SUITES) {
+	const result = spawnSync(
+		process.execPath,
+		[
+			process.argv[1],
+			"--suite",
+			suite,
+			...(filter ? [filter] : []),
+		],
+		{stdio: ["ignore", "pipe", "inherit"], maxBuffer: 64 * 1024 * 1024},
+	);
+	if (result.status !== 0) {
+		throw new Error(`worker ${suite} exited ${result.status}/${result.signal}`);
+	}
+	try {
+		outcomes.push(...(JSON.parse(result.stdout.toString()) as Outcome[]));
+	} catch (error) {
+		throw new Error(
+			`worker ${suite} emitted unparseable output ` +
+			`(${result.stdout.length} bytes): ${(error as Error).message}`,
+		);
+	}
 }
 
 const all = outcomes.flatMap((outcome) => outcome.subtests);

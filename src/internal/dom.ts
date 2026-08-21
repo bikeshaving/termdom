@@ -215,7 +215,20 @@ export function claimUAToolkit(document: object): UAToolkit {
 	return buildUAToolkit(document);
 }
 
+/** One toolkit per document: every door hands out the same object. */
+const uaToolkits = new WeakMap<object, UAToolkit>();
+
 function buildUAToolkit(document: object): UAToolkit {
+	const existing = uaToolkits.get(document);
+	if (existing !== undefined) {
+		return existing;
+	}
+	const toolkit = makeUAToolkit(document);
+	uaToolkits.set(document, toolkit);
+	return toolkit;
+}
+
+function makeUAToolkit(document: object): UAToolkit {
 	// Each capability answers only for the document it was granted for, so
 	// a toolkit taken by installing on a throwaway document opens nothing.
 	const owns = (target: object): boolean => {

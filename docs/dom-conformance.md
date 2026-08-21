@@ -21,13 +21,13 @@ The engine that mounts on this DOM is not part of the harness. What the
 engine owns is absent here: layout and the geometry read off it, painting,
 the focus events, and the CSSOM.
 
-- Test files in the suites: 1163
-- Reference tests (no testharness, scored by pixels): 52
+- Test files in the suites: 1173
+- Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 370
-- Files whose harness completed: 632
+- Files whose harness completed: 639
 - Files whose harness did not complete: 109
-- Subtests passed: 94816
-- Subtests failed: 1541
+- Subtests passed: 95047
+- Subtests failed: 1441
 
 ## Exclusions
 
@@ -596,7 +596,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
 | dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
 | dom/nodes/MutationObserver-characterData.html | OK | 23 | 0 |
-| dom/nodes/MutationObserver-childList.html | OK | 38 | 0 |
+| dom/nodes/MutationObserver-childList.html | OK | 38 | 2 |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | EXCLUDED (requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to) | 0 | 0 |
 | dom/nodes/MutationObserver-disconnect.html | OK | 2 | 0 |
 | dom/nodes/MutationObserver-document.html | EXCLUDED (requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions) | 0 | 0 |
@@ -663,7 +663,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/adoption.window.js | OK | 4 | 2 |
 | dom/nodes/append-on-Document.html | OK | 5 | 0 |
 | dom/nodes/attach-shadow-realm-after-adoption.html | EXCLUDED (requires-browsing-context: the shadow host is adopted out of a frame's document) | 0 | 0 |
-| dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 0 | 2 |
+| dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 2 | 0 |
 | dom/nodes/attributes-namednodemap.html | OK | 8 | 0 |
 | dom/nodes/attributes.html | OK | 66 | 1 |
 | dom/nodes/case.html | OK | 285 | 0 |
@@ -737,7 +737,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/popover-preserve.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/preserve-render-blocking-script.html | ERROR (requestAnimationFrame is not defined) | 0 | 0 |
 | dom/nodes/moveBefore/preserve-render-blocking-style.html | ERROR (requestAnimationFrame is not defined) | 0 | 0 |
-| dom/nodes/moveBefore/relevant-mutations.html | TIMEOUT | 0 | 2 |
+| dom/nodes/moveBefore/relevant-mutations.html | TIMEOUT | 0 | 0 |
 | dom/nodes/moveBefore/role-updates-after-move.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/script-move-before.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/select-option-optgroup.html | OK | 0 | 2 |
@@ -782,7 +782,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/traversal/TreeWalker-traversal-skip.html | OK | 6 | 0 |
 | dom/traversal/TreeWalker-walking-outside-a-tree.html | OK | 1 | 0 |
 | dom/traversal/TreeWalker.html | OK | 761 | 0 |
-| dom/collections/HTMLCollection-as-prototype.html | OK | 1 | 1 |
+| dom/collections/HTMLCollection-as-prototype.html | OK | 0 | 2 |
 | dom/collections/HTMLCollection-delete.html | OK | 0 | 4 |
 | dom/collections/HTMLCollection-empty-name.html | OK | 7 | 0 |
 | dom/collections/HTMLCollection-iterator.html | OK | 6 | 0 |
@@ -793,7 +793,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/collections/domstringmap-supported-property-names.html | OK | 2 | 3 |
 | dom/collections/namednodemap-supported-property-names.html | OK | 3 | 0 |
 | dom/lists/DOMTokenList-Iterable.html | OK | 6 | 0 |
-| dom/lists/DOMTokenList-coverage-for-attributes.html | OK | 174 | 1 |
+| dom/lists/DOMTokenList-coverage-for-attributes.html | OK | 173 | 2 |
 | dom/lists/DOMTokenList-iteration.html | OK | 6 | 0 |
 | dom/lists/DOMTokenList-stringifier.html | OK | 1 | 0 |
 | dom/lists/DOMTokenList-value.html | OK | 1 | 0 |
@@ -810,10 +810,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | TIMEOUT | 27 | 6 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 28 | 5 |
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
-| dom/events/Event-dispatch-detached-input-and-change.html | OK | 8 | 4 |
+| dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
 | dom/events/Event-dispatch-handlers-changed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
 | dom/events/Event-dispatch-multiple-cancelBubble.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
@@ -964,7 +964,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/scrolling/wheel-event-transactions-target-move.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | TIMEOUT | 0 | 2 |
+| dom/events/shadow-relatedTarget.html | TIMEOUT | 0 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -974,6 +974,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
 | dom/ranges/Range-attribute-nodes.html | OK | 26 | 0 |
 | dom/ranges/Range-attributes.html | OK | 1 | 0 |
+| dom/ranges/Range-cloneContents-around-shadow.html | OK | 25 | 0 |
+| dom/ranges/Range-cloneContents-around-shadow.tentative.html | OK | 5 | 0 |
 | dom/ranges/Range-cloneContents-in-ShadowRoot.html | OK | 4 | 0 |
 | dom/ranges/Range-cloneContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | dom/ranges/Range-cloneRange.html | OK | 62 | 0 |
@@ -984,9 +986,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-comparePoint-2.html | OK | 3 | 0 |
 | dom/ranges/Range-comparePoint.html | OK | 5580 | 0 |
 | dom/ranges/Range-constructor.html | OK | 1 | 0 |
+| dom/ranges/Range-deleteContents-around-shadow.html | OK | 27 | 0 |
+| dom/ranges/Range-deleteContents-around-shadow.tentative.html | OK | 6 | 0 |
 | dom/ranges/Range-deleteContents-in-ShadowRoot.html | OK | 4 | 0 |
 | dom/ranges/Range-deleteContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | dom/ranges/Range-detach.html | OK | 1 | 0 |
+| dom/ranges/Range-extractContents-around-shadow.html | OK | 44 | 0 |
+| dom/ranges/Range-extractContents-around-shadow.tentative.html | OK | 13 | 0 |
 | dom/ranges/Range-extractContents-dynamic-end.html | EXCLUDED (requires-browsing-context: the end container is removed from inside an iframe's unload event) | 0 | 0 |
 | dom/ranges/Range-extractContents-in-ShadowRoot.html | OK | 4 | 0 |
 | dom/ranges/Range-extractContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
@@ -1053,9 +1059,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/anonymous/details-ancestor.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/anonymous/details-mutate.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 0 | 11 |
-| selection/bidi/modify-extend-by-character.html | OK | 0 | 28 |
-| selection/bidi/modify-move-by-character.html | OK | 0 | 28 |
-| selection/bidi/modify.tentative.html | OK | 0 | 36 |
+| selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
+| selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
+| selection/bidi/modify.tentative.html | OK | 18 | 18 |
 | selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 0 | 24 |
@@ -1070,6 +1076,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/collapse-15.html | OK | 2655 | 0 |
 | selection/collapse-30.html | OK | 5133 | 0 |
 | selection/collapse-45.html | OK | 2655 | 0 |
+| selection/collapse-common-ancestor-1.html | REFTEST | 0 | 0 |
+| selection/collapse-common-ancestor-2.html | REFTEST | 0 | 0 |
+| selection/collapse-common-ancestor-3.html | REFTEST | 0 | 0 |
 | selection/collapseToStartEnd.html | OK | 57 | 0 |
 | selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
@@ -1101,11 +1110,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/getSelection.html | EXCLUDED (requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null) | 0 | 0 |
 | selection/idlharness.window.js | ERROR (missing script /resources/WebIDLParser.js) | 0 | 0 |
 | selection/isCollapsed.html | OK | 29 | 0 |
-| selection/modify-extend-word-trailing-inline-block.tentative.html | OK | 0 | 1 |
+| selection/modify-extend-word-trailing-inline-block.tentative.html | OK | 1 | 0 |
 | selection/modify-line-flex-column.tentative.html | OK | 0 | 2 |
 | selection/modify-line-flex-row.tentative.html | OK | 0 | 2 |
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
-| selection/modify.tentative.html | OK | 0 | 7 |
+| selection/modify.tentative.html | OK | 3 | 4 |
 | selection/move-by-word-korean.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-by-word-with-symbol.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
@@ -1125,7 +1134,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/selection-direction-on-triple-click.tentative.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/selection-focused-element-becomes-nonfocusable.html | EXCLUDED (requires-user-input: the element is focused by a pointer action sequence) | 0 | 0 |
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
-| selection/selection-modify-extend-word-generated-content.html | OK | 0 | 2 |
+| selection/selection-modify-extend-word-generated-content.html | OK | 1 | 1 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | TIMEOUT | 0 | 0 |
@@ -1145,6 +1154,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html | OK | 20 | 4 |
 | selection/shadow-dom/tentative/Range-isPointInRange.html | OK | 2 | 0 |
 | selection/shadow-dom/tentative/Selection-collapse-and-extend.html | OK | 4 | 0 |
+| selection/shadow-dom/tentative/Selection-deleteFromDocument-around-shadow.html | OK | 33 | 0 |
 | selection/shadow-dom/tentative/Selection-direction.html | OK | 3 | 4 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | OK | 1 | 0 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | ERROR (Cannot read properties of null (reading 'search')) | 0 | 0 |
@@ -1159,7 +1169,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-user-input: the control is clicked by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/focus.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
-| selection/textcontrols/onselectionchange-content-attribute.html | TIMEOUT | 0 | 2 |
+| selection/textcontrols/onselectionchange-content-attribute.html | TIMEOUT | 0 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
 | selection/textcontrols/selectionchange.html | OK | 44 | 16 |
@@ -1175,7 +1185,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | shadow-dom/Element-interface-attachShadow.html | OK | 6 | 0 |
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
-| shadow-dom/Extensions-to-Event-Interface.html | OK | 12 | 4 |
+| shadow-dom/Extensions-to-Event-Interface.html | OK | 16 | 0 |
 | shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
 | shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
 | shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 0 | 3 |
@@ -1248,9 +1258,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/directionality-001.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/directionality-002.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/dragenter-related-target.html | TIMEOUT | 0 | 1 |
-| shadow-dom/dragleave-related-target.html | TIMEOUT | 0 | 1 |
+| shadow-dom/dragleave-related-target.html | TIMEOUT | 0 | 0 |
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
-| shadow-dom/event-composed-path-with-related-target.html | OK | 10 | 3 |
+| shadow-dom/event-composed-path-with-related-target.html | OK | 13 | 0 |
 | shadow-dom/event-composed-path.html | OK | 11 | 0 |
 | shadow-dom/event-composed.html | OK | 9 | 0 |
 | shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
@@ -1258,7 +1268,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
 | shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
 | shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
-| shadow-dom/event-with-related-target.html | OK | 14 | 4 |
+| shadow-dom/event-with-related-target.html | OK | 18 | 0 |
 | shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 0 | 1 |
@@ -1402,7 +1412,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slot-reconciliation-at-node-removal.html | OK | 1 | 0 |
 | shadow-dom/slotchange-customelements.html | OK | 0 | 1 |
 | shadow-dom/slotchange-event.html | OK | 32 | 0 |
-| shadow-dom/slotchange.html | TIMEOUT | 16 | 1 |
+| shadow-dom/slotchange.html | TIMEOUT | 0 | 0 |
 | shadow-dom/slots-fallback-in-document.html | OK | 2 | 0 |
 | shadow-dom/slots-fallback.html | OK | 13 | 0 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
@@ -1469,8 +1479,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
 | shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
 | custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 4 | 1 |
-| custom-elements/CustomElementRegistry-getName.html | OK | 1 | 3 |
-| custom-elements/CustomElementRegistry.html | TIMEOUT | 29 | 17 |
+| custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
+| custom-elements/CustomElementRegistry.html | TIMEOUT | 40 | 6 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
 | custom-elements/Document-createElement.html | TIMEOUT | 10 | 26 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
@@ -1479,7 +1489,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/ElementInternals-accessibility.html | OK | 50 | 0 |
 | custom-elements/ElementInternals-accessibility.tentative.html | OK | 3 | 0 |
 | custom-elements/ElementInternals-role.html | EXCLUDED (requires-testdriver: every case reads a computed role out of the browser's own accessibility tree through testdriver.js) | 0 | 0 |
-| custom-elements/HTMLElement-attachInternals.html | OK | 2 | 2 |
+| custom-elements/HTMLElement-attachInternals.html | OK | 3 | 1 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
 | custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
 | custom-elements/adopted-callback.html | TIMEOUT | 42 | 29 |
@@ -1494,9 +1504,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
 | custom-elements/customized-built-in-constructor-exceptions.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | custom-elements/disconnected-callbacks.html | TIMEOUT | 30 | 10 |
-| custom-elements/element-internals-aria-element-reflection.html | OK | 3 | 6 |
+| custom-elements/element-internals-aria-element-reflection.html | OK | 5 | 4 |
 | custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
-| custom-elements/element-internals-shadowroot.html | OK | 4 | 3 |
+| custom-elements/element-internals-shadowroot.html | OK | 7 | 0 |
 | custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | TIMEOUT | 0 | 8 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
@@ -1836,6 +1846,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - tagName should be updated when changing ownerDocument: assert_equals: tagName should be lowercase in XML expected "div" but got "parsererror"
 
+### dom/nodes/MutationObserver-childList.html
+
+- childList ParentNode.replaceChildren: move an existing child: assert_equals: mutation records must match expected 1 but got 2
+- childList ParentNode.replaceChildren: self replacement of only child: assert_equals: mutation records must match expected 1 but got 2
+
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
 - Custom element reactions follow script execution: A customized built-in element is not implemented here
@@ -1870,11 +1885,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - appendChild() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
 - adoptNode() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
-
-### dom/nodes/attributes-namednodemap-cross-document.window.js
-
-- Moving an attribute between documents: assert_equals: expected Document node with 0 children but got Document node with 2 children
-- Replacing an attribute across documents: assert_equals: expected Document node with 0 children but got Document node with 2 children
 
 ### dom/nodes/attributes.html
 
@@ -2104,11 +2114,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - when reparenting an open popover, it shouldn't be closed automatically: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
-### dom/nodes/moveBefore/relevant-mutations.html
-
-- Moving <source> out of <picture> triggers a relevant mutation on sibling <img>: Test timed out
-- Moving <img> into a <picture> triggers a relevant mutation on the <img>, loading <source>: 
-
 ### dom/nodes/moveBefore/role-updates-after-move.html
 
 - header elements role should become sectionheader when moved into a section: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
@@ -2121,7 +2126,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/moveBefore/select-option-optgroup.html
 
 - Option selectedness is updated on option and optgroup DOM moves: document.body.moveBefore is not a function
-- Moving options between select elements.: selectTwo.moveBefore is not a function
+- Selected index is updated when an option moves within the same select: select.moveBefore is not a function
 
 ### dom/nodes/moveBefore/selection-preserve.html
 
@@ -2153,6 +2158,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/collections/HTMLCollection-as-prototype.html
 
+- HTMLCollection as a prototype should not allow getting .length on the base object: assert_throws_js: function "function() {
 - HTMLCollection as a prototype and setting own properties: assert_equals: expected (string) "foo" but got (object) Element node <p id="named"></p>
 
 ### dom/collections/HTMLCollection-delete.html
@@ -2189,6 +2195,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/lists/DOMTokenList-coverage-for-attributes.html
 
 - a.relList in http://www.w3.org/2000/svg namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
+- a.relList in http://www.w3.org/1998/Math/MathML namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 
 ### dom/events/Body-FrameSet-Event-Handlers.html
 
@@ -2244,19 +2251,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - disabling checkbox in onclick listener shouldn't suppress onchange: Test timed out
 - disabling radio in onclick listener shouldn't suppress oninput: Test timed out
 - disabling radio in onclick listener shouldn't suppress onchange: Test timed out
-- disconnected form should not submit: assert_false: expected false got true
 
 ### dom/events/Event-dispatch-click.tentative.html
 
 - checkbox morphed into another type should not mutate checked state: assert_false: expected false got true
 - radio morphed into another type should not steal the existing checked state: assert_false: expected false got true
-
-### dom/events/Event-dispatch-detached-input-and-change.html
-
-- detached checkbox should not emit input or change events on click().: assert_false: expected false got true
-- detached radio should not emit input or change events on click().: assert_false: expected false got true
-- detached checkbox should not emit input or change events on dispatchEvent(new MouseEvent('click')).: assert_false: expected false got true
-- detached radio should not emit input or change events on dispatchEvent(new MouseEvent('click')).: assert_false: expected false got true
 
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
@@ -2326,11 +2325,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Reset targets on early return: assert_equals: expected null but got DocumentFragment node with 2 children
 - Reset targets before activation behavior: assert_equals: expected null but got Element node <input type="checkbox"></input>
 
-### dom/events/shadow-relatedTarget.html
-
-- relatedTarget should not leak at capturing phase, at window object.: Test timed out
-- relatedTarget should not leak at target.: Test timed out
-
 ### selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html
 
 - setBaseAndExtent(use, 0, use, 1) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function
@@ -2347,131 +2341,77 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/bidi/modify-extend-by-character.html
 
-- LTR text in LTR paragraph: extend forward 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend backward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend forward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend backward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend forward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend backward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend forward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend backward 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend forward 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend backward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend forward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend backward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend forward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend backward 3 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend right 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend left 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend right 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend left 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend right 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend left 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend right 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend left 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend right 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend left 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend right 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend left 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend right 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend left 3 chars: selection.modify is not a function
+- RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
+- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 11
+- RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
+- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 10
+- LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 7
+- LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 8
+- RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 10
+- RTL-LTR context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 7 but got 11
+- Mixed context in auto-dir paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 5 but got 18
+- Mixed context in auto-dir paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 17 but got 2
 
 ### selection/bidi/modify-move-by-character.html
 
-- LTR text in LTR paragraph: move forward 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move backward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move forward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move backward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move forward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move backward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move forward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move backward 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move forward 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move backward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move forward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move backward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move forward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move backward 3 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move right 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move left 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move right 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move left 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move right 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move left 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move right 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move left 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move right 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move left 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move right 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move left 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move right 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move left 3 chars: selection.modify is not a function
+- RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 6
+- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 11
+- RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 6
+- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 10
+- LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 7
+- LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 8
+- RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 10
+- RTL-LTR context in LTR paragraph: move left 3 chars: assert_equals: expected 7 but got 11
+- Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 18
+- Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 2
 
 ### selection/bidi/modify.tentative.html
 
-- LTR text with left direction in ltr context: selection.modify is not a function
-- RTL text with left direction in ltr context: selection.modify is not a function
-- RTL+LTR text with left direction in ltr context: selection.modify is not a function
-- LTR+RTL text with left direction in ltr context: selection.modify is not a function
-- LTR+RTL+LTR text with left direction in ltr context: selection.modify is not a function
-- RTL+LTR+RTL text with left direction in ltr context: selection.modify is not a function
-- LTR text with right direction in ltr context: selection.modify is not a function
-- RTL text with right direction in ltr context: selection.modify is not a function
-- RTL+LTR text with right direction in ltr context: selection.modify is not a function
-- LTR+RTL text with right direction in ltr context: selection.modify is not a function
-- LTR+RTL+LTR text with right direction in ltr context: selection.modify is not a function
-- RTL+LTR+RTL text with right direction in ltr context: selection.modify is not a function
-- LTR text with left direction in rtl context: selection.modify is not a function
-- RTL text with left direction in rtl context: selection.modify is not a function
-- RTL+LTR text with left direction in rtl context: selection.modify is not a function
-- LTR+RTL text with left direction in rtl context: selection.modify is not a function
-- LTR+RTL+LTR text with left direction in rtl context: selection.modify is not a function
-- RTL+LTR+RTL text with left direction in rtl context: selection.modify is not a function
-- LTR text with right direction in rtl context: selection.modify is not a function
-- RTL text with right direction in rtl context: selection.modify is not a function
-- RTL+LTR text with right direction in rtl context: selection.modify is not a function
-- LTR+RTL text with right direction in rtl context: selection.modify is not a function
-- LTR+RTL+LTR text with right direction in rtl context: selection.modify is not a function
-- RTL+LTR+RTL text with right direction in rtl context: selection.modify is not a function
-- LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
+- LTR text with right direction in ltr context: assert_equals: expected 11 but got 0
+- RTL text with right direction in ltr context: assert_equals: expected 10 but got 0
+- RTL+LTR text with right direction in ltr context: assert_equals: expected 22 but got 0
+- LTR+RTL text with right direction in ltr context: assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with right direction in ltr context: assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with right direction in ltr context: assert_equals: expected 33 but got 0
+- LTR text with left direction in rtl context: assert_equals: expected 11 but got 0
+- RTL text with left direction in rtl context: assert_equals: expected 10 but got 0
+- RTL+LTR text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL text with left direction in rtl context: assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with left direction in rtl context: assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with left direction in rtl context: assert_equals: expected 33 but got 0
+- LTR text with right direction in ltr context (which was previously rtl): assert_equals: expected 11 but got 0
+- RTL text with right direction in ltr context (which was previously rtl): assert_equals: expected 10 but got 0
+- RTL+LTR text with right direction in ltr context (which was previously rtl): assert_equals: expected 22 but got 0
+- LTR+RTL text with right direction in ltr context (which was previously rtl): assert_equals: expected 22 but got 0
+- LTR+RTL+LTR text with right direction in ltr context (which was previously rtl): assert_equals: expected 34 but got 0
+- RTL+LTR+RTL text with right direction in ltr context (which was previously rtl): assert_equals: expected 33 but got 0
 
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
-- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: selection.modify is not a function
-- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: selection.modify is not a function
-- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: selection.modify is not a function
-- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: selection.modify is not a function
-- Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: selection.modify is not a function
-- Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: selection.modify is not a function
-- Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: selection.modify is not a function
-- Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: selection.modify is not a function
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function
+- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: assert_true: expected true got false
+- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: assert_true: expected true got false
+- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: assert_true: expected true got false
+- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: assert_true: expected true got false
+- Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
+- Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
+- Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: assert_true: expected true got false
+- Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: assert_true: expected true got false
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: assert_true: expected true got false
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: assert_true: expected true got false
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: assert_true: expected true got false
 
 ### selection/contenteditable/collapse.html
 
@@ -2520,40 +2460,40 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/contenteditable/modify-around-non-editable-span.html
 
-- getSelection().modify("move", "forward", "character") when " []<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "forward", "character") when "editable[]<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "right", "character") when " []<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "right", "character") when "editable[]<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "backward", "character") when " <span contenteditable=false>...</span>[]editable": getSelection(...).modify is not a function
-- getSelection().modify("move", "backward", "character") when "editable<span contenteditable=false>...</span>[] ": getSelection(...).modify is not a function
-- getSelection().modify("move", "left", "character") when " <span contenteditable=false>...</span>[]editable": getSelection(...).modify is not a function
-- getSelection().modify("move", "left", "character") when "editable<span contenteditable=false>...</span>[] ": getSelection(...).modify is not a function
-- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": getSelection(...).modify is not a function
-- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": getSelection(...).modify is not a function
-- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": getSelection(...).modify is not a function
-- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": getSelection(...).modify is not a function
-- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": getSelection(...).modify is not a function
+- getSelection().modify("move", "forward", "character") when " []<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 2)", "(#text \"editable\", 0)"]
+- getSelection().modify("move", "forward", "character") when "editable[]<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 4)", "(#text \" \", 0)", "(<div contenteditable=\"\">, 5)", "(#text \" \", 1)"]
+- getSelection().modify("move", "right", "character") when " []<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 2)", "(#text \"editable\", 0)"]
+- getSelection().modify("move", "right", "character") when "editable[]<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 4)", "(#text \" \", 0)", "(<div contenteditable=\"\">, 5)", "(#text \" \", 1)"]
+- getSelection().modify("move", "backward", "character") when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
+- getSelection().modify("move", "backward", "character") when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
+- getSelection().modify("move", "left", "character") when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
+- getSelection().modify("move", "left", "character") when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
+- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 2)", "(#text \"editable\", 0)"]
+- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 4)", "(#text \" \", 0)", "(<div contenteditable=\"\">, 5)", "(#text \" \", 1)"]
+- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 2)", "(#text \"editable\", 0)"]
+- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": assert_in_array: value "(#text \"non-editable\", 1)" not in array ["(<div contenteditable=\"\">, 4)", "(#text \" \", 0)", "(<div contenteditable=\"\">, 5)", "(#text \" \", 1)"]
+- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
+- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
+- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
+- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 
 ### selection/contenteditable/modify.tentative.html
 
-- Selection.modify() must not select outside of the host: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function
+- Selection.modify() must not select outside of the host: assert_equals: expected Element node <div contenteditable="" id="host">Editable</div> but got Element node <div>Non-editable</div>
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusOffset should be the length of the text node expected 8 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusOffset should be the length of the text node expected 8 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusOffset should be the length of the text node expected 8 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusOffset should be the length of the text node expected 8 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusOffset should be the length of the text node expected 8 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusOffset should be the length of the text node expected 4 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: assert_equals: focusOffset should be 0 expected 0 but got 1
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusOffset should be the length of the text node expected 4 but got 1
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: assert_equals: focusOffset should be 0 expected 0 but got 1
 
 ### selection/extend-selection-backward-on-input.html
 
@@ -2563,44 +2503,37 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "TypeError: document.execCommand is not a function"
 
-### selection/modify-extend-word-trailing-inline-block.tentative.html
-
-- Selection.modify: Extending a word towards the end of a line ended by an inline-block.: selection.modify is not a function
-
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: assert_equals: expected Text node "Two" but got Text node "One"
+- backward: assert_equals: expected Text node "Two" but got Text node "Three"
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: assert_equals: expected Text node "Two" but got Text node "One"
+- backward: assert_equals: expected Text node "Two" but got Text node "Three"
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: assert_equals: expected Text node "Two" but got Text node "One"
+- backward: assert_equals: expected Text node "Two" but got Text node "Three"
 
 ### selection/modify.tentative.html
 
-- Stop at previous word boundary when whitespaces are trimmed: selection.modify is not a function
-- Jump linefeed forward: selection.modify is not a function
-- Jump linefeed backward: selection.modify is not a function
-- Jump <br> forward: selection.modify is not a function
-- Jump <br> backward: selection.modify is not a function
-- Jump <br> forward which follows a linefeed: selection.modify is not a function
-- Jump <br> backward which follows a linefeed: selection.modify is not a function
+- Jump <br> forward: assert_equals: expected 0 but got 1
+- Jump <br> backward: assert_equals: expected 3 but got 2
+- Jump <br> forward which follows a linefeed: assert_equals: expected Text node "
+- Jump <br> backward which follows a linefeed: assert_equals: expected 4 but got 3
 
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
-- cross editing boundary: selection.modify is not a function
-- not cross editing boundary: selection.modify is not a function
+- cross editing boundary: assert_equals: expected "P1" but got "World"
+- not cross editing boundary: assert_equals: expected "P1" but got "World"
 
 ### selection/move-paragraphboundary-cross-editing-boundary.tentative.html
 
-- cross editing boundary: selection.modify is not a function
-- Selection.modify(): move by paragraphboundary cross editing boundary: selection.modify is not a function
+- cross editing boundary: assert_equals: expected "this " but got " after"
+- Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
 
 ### selection/move-selection-range-into-different-root.tentative.html
 
@@ -2619,8 +2552,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/selection-modify-extend-word-generated-content.html
 
-- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: getSelection(...).modify is not a function
-- extending selection from middle of last word of the middle line shouldn't extend the range to the next line: getSelection(...).modify is not a function
+- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: assert_in_array: The start container should be in the middle line value Text node "
 
 ### selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html
 
@@ -2645,11 +2577,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Setting the range to start on slotted content and end in shadow tree, should follow DOM tree order.: host is not defined
 - Setting the range to start and end on slotted content, should follow DOM tree order.: host is not defined
 - Setting the range to start on unslotted content and end in shadow tree, should follow DOM tree order.: host is not defined
-
-### selection/textcontrols/onselectionchange-content-attribute.html
-
-- handler set from parser: Test timed out
-- handler set via setAttribute(): 
 
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
@@ -2749,13 +2676,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: host.getBoundingClientRect is not a function
 - elementsFromPoint should return all elements under a point, even when context object is not connected: document.elementsFromPoint is not a function
 
-### shadow-dom/Extensions-to-Event-Interface.html
-
-- The event must not propagate out of open mode shadow boundaries when the composed flag is unset on an event with relatedTarget: assert_array_equals: expected property 0 to be "A2-S" but got "A" (expected array ["A2-S", "A2-S"] got ["A", "A"])
-- The event must not propagate out of closed mode shadow boundaries when the composed flag is unset on an event with relatedTarget: assert_array_equals: expected property 0 to be "A2-S" but got "A" (expected array ["A2-S", "A2-S"] got ["A", "A"])
-- The event must propagate out of open mode shadow tree in which the relative target and the relative related target are the same: assert_array_equals: expected property 0 to be "A2-S" but got "A" (expected array ["A2-S", "A2-S", "A2-S", "A2-S"] got ["A", "A", "A2-S", "A2-S"])
-- The event must propagate out of closed mode shadow tree in which the relative target and the relative related target are the same: assert_array_equals: expected property 0 to be "A2-S" but got "A" (expected array ["A2-S", "A2-S", "A2-S", "A2-S"] got ["A", "A", "A2-S", "A2-S"])
-
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
 
 - CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: CSS is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
@@ -2812,26 +2732,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
 
-### shadow-dom/dragleave-related-target.html
-
-- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
-
-### shadow-dom/event-composed-path-with-related-target.html
-
-- Event path for an event with a relatedTarget. target and relaterTarget share the same shadow-including ancestor. Both are in shadow trees.: assert_equals: relatedTarget at 0 should be same expected "host3" but got "host1"
-- Event path for an event with a relatedTarget. Event should be dispatched at every slots.: assert_equals: relatedTarget at 0 should be same expected "host1" but got "host0"
-- Event path for an event with a relatedTarget. Event should be dispatched at every slots. relatedTarget should be correctly retargeted.: assert_equals: relatedTarget at 0 should be same expected "host1" but got "host0"
-
 ### shadow-dom/event-post-dispatch.html
 
 - Event properties post dispatch when target get moved into the shadow tree by event listener: assert_equals: expected (object) object "[object MouseEvent]" but got (undefined) undefined
-
-### shadow-dom/event-with-related-target.html
-
-- Firing an event at B1a with relatedNode at B1 with open mode shadow trees: assert_array_equals: The related targets must be correct. expected property 1 to be "B1" but got "B" (expected array ["B1", "B1", "B1", "B1", "B1"] got ["B1", "B", "B", "B1", "B1"])
-- Firing an event at B1a with relatedNode at B1 with closed mode shadow trees: assert_array_equals: The related targets must be correct. expected property 1 to be "B1" but got "B" (expected array ["B1", "B1", "B1", "B1", "B1"] got ["B1", "B", "B", "B1", "B1"])
-- Firing an event at B1b1 with relatedNode at B1a with open mode shadow trees: assert_array_equals: The related targets must be correct. expected property 0 to be "B1a" but got "B" (expected array ["B1a", "B1a", "B1a", "B1a", "B1a", "B1a"] got ["B", "B", "B", "B", "B1a", "B1a"])
-- Firing an event at B1b1 with relatedNode at B1a with closed mode shadow trees: assert_array_equals: The related targets must be correct. expected property 0 to be "B1a" but got "B" (expected array ["B1a", "B1a", "B1a", "B1a", "B1a", "B1a"] got ["B", "B", "B", "B", "B1a", "B1a"])
 
 ### shadow-dom/execcommand-insertList-in-shadow.html
 
@@ -3296,10 +3199,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/slotchange.html
-
-- slotchange event: Append a child to a host (onslotchange).: Test timed out
-
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
 
 - A_10_01_02_06_01_T02: s.elementFromPoint is not a function
@@ -3331,28 +3230,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/CustomElementRegistry-getName.html
 
-- customElements.getName must throw when the element interface is not a constructor: assert_throws_js: customElements.getName must throw a TypeError when the element interface is undefined function "function () { customElements.getName(undefined); }" did not throw
-- customElements.getName returns the name of the entry with the given constructor when there is a matching entry.: assert_throws_js: customElements.getName must throw a TypeError when the element interface is undefined function "function () { customElements.getName(customElements.getName(OtherExistingCustomElement)); }" did not throw
 - customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: A customized built-in element is not implemented here
 
 ### custom-elements/CustomElementRegistry.html
 
-- customElements.define must throw when there is already a custom element of the same name: assert_array_equals: customElements.define must validate the custom element name before getting the prototype of the constructor lengths differ, expected array [] length 0, got ["prototype"] length 1
-- customElements.define must throw a NotSupportedError when element definition is running flag is set: assert_array_equals: customElements.define must get "prototype" lengths differ, expected array ["prototype"] length 1, got ["prototype", "prototype", "prototype", "disabledFeatures", "formAssociated", "prototype", "prototype"] length 7
-- customElements.define must validate the custom element name before checking the element definition is running flag: assert_throws_dom: customElements.define must throw a SyntaxError if the specified name is not a valid custom element name function "function () {
 - customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): 
-- Custom Elements: CustomElementRegistry interface: assert_throws_dom: customElements.define must throw a SyntaxError if the specified name is not a valid custom element name function "function () {
-- customElements.define must get "prototype", "disabledFeatures", and "formAssociated" property of the constructor: assert_array_equals: lengths differ, expected array ["prototype", "disabledFeatures", "formAssociated"] length 3, got ["prototype", "prototype", "disabledFeatures", "formAssociated"] length 4
-- customElements.define must rethrow an exception thrown while getting "prototype" property of the constructor: assert_throws_exactly: function "function () { customElements.define('element-with-string-prototype', proxy); }" threw object "TypeError: That is not a constructor" but we expected it to throw object "[object Object]"
 - customElements.define must get callbacks of the constructor prototype: assert_array_equals: lengths differ, expected array ["connectedCallback", "disconnectedCallback", "adoptedCallback", "attributeChangedCallback"] length 4, got ["connectedCallback", "disconnectedCallback", "connectedMoveCallback", "adoptedCallback", "attributeChangedCallback"] length 5
 - customElements.define must rethrow an exception thrown while converting a callback value to Function callback type: assert_array_equals: customElements.define must not get callbacks after one of the conversion throws lengths differ, expected array ["connectedCallback", "disconnectedCallback", "adoptedCallback"] length 3, got ["connectedCallback", "disconnectedCallback", "connectedMoveCallback", "adoptedCallback"] length 4
-- customElements.define must get "observedAttributes" property on the constructor prototype when "attributeChangedCallback" is present: assert_array_equals: lengths differ, expected array [1, "connectedCallback", 2, "disconnectedCallback", 3, "adoptedCallback", 4, "attributeChangedCallback"] length 8, got [2, "connectedCallback", 3, "disconnectedCallback", 4, "connectedMoveCallback", 5, "adoptedCallback", 6, "attributeChangedCallback"] length 10
-- customElements.define must rethrow an exception thrown while getting observedAttributes on the constructor prototype: assert_array_equals: customElements.define must get "prototype" and "observedAttributes" on the constructor lengths differ, expected array ["prototype", "observedAttributes"] length 2, got ["prototype", "prototype", "observedAttributes"] length 3
-- customElements.define must rethrow an exception thrown while converting the value of observedAttributes to sequence<DOMString>: assert_array_equals: customElements.define must get "prototype" and "observedAttributes" on the constructor lengths differ, expected array ["prototype", "observedAttributes"] length 2, got ["prototype", "prototype", "observedAttributes"] length 3
-- customElements.define must rethrow an exception thrown while getting disabledFeatures on the constructor prototype: assert_array_equals: customElements.define must get "prototype" and "disabledFeatures" on the constructor lengths differ, expected array ["prototype", "disabledFeatures"] length 2, got ["prototype", "prototype", "disabledFeatures"] length 3
-- customElements.define must rethrow an exception thrown while converting the value of disabledFeatures to sequence<DOMString>: assert_array_equals: customElements.define must get "prototype" and "disabledFeatures" on the constructor lengths differ, expected array ["prototype", "disabledFeatures"] length 2, got ["prototype", "prototype", "disabledFeatures"] length 3
-- customElements.define must rethrow an exception thrown while getting formAssociated on the constructor prototype: assert_array_equals: customElements.define must get "prototype", "disabledFeatures", and "formAssociated" on the constructor lengths differ, expected array ["prototype", "disabledFeatures", "formAssociated"] length 3, got ["prototype", "prototype", "disabledFeatures", "formAssociated"] length 4
-- customElements.define must get four additional callbacks on the prototype if formAssociated is converted to true: assert_array_equals: customElements.define must get "prototype", "disabledFeatures", and "formAssociated" on the constructor lengths differ, expected array ["prototype", "disabledFeatures", "formAssociated"] length 3, got ["prototype", "prototype", "disabledFeatures", "formAssociated"] length 4
+- customElements.define must get "observedAttributes" property on the constructor prototype when "attributeChangedCallback" is present: assert_array_equals: lengths differ, expected array [1, "connectedCallback", 2, "disconnectedCallback", 3, "adoptedCallback", 4, "attributeChangedCallback"] length 8, got [1, "connectedCallback", 2, "disconnectedCallback", 3, "connectedMoveCallback", 4, "adoptedCallback", 5, "attributeChangedCallback"] length 10
+- customElements.define must get four additional callbacks on the prototype if formAssociated is converted to true: assert_array_equals: customElements.define must get 8 callbacks on the prototype lengths differ, expected array ["connectedCallback", "disconnectedCallback", "adoptedCallback", "attributeChangedCallback", "formAssociatedCallback", "formResetCallback", "formDisabledCallback", "formStateRestoreCallback"] length 8, got ["connectedCallback", "disconnectedCallback", "connectedMoveCallback", "adoptedCallback", "attributeChangedCallback", "formAssociatedCallback", "formResetCallback", "formDisabledCallback", "formStateRestoreCallback"] length 9
 - customElements.define must rethrow an exception thrown while getting additional formAssociated callbacks on the constructor prototype: assert_array_equals: customElements.define must not get callbacks after one of the get throws lengths differ, expected array ["connectedCallback", "disconnectedCallback", "adoptedCallback", "attributeChangedCallback", "formAssociatedCallback", "formResetCallback", "formDisabledCallback"] length 7, got ["connectedCallback", "disconnectedCallback", "connectedMoveCallback", "adoptedCallback", "attributeChangedCallback", "formAssociatedCallback", "formResetCallback", "formDisabledCallback"] length 8
 
 ### custom-elements/Document-createElement.html
@@ -3387,7 +3273,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/HTMLElement-attachInternals.html
 
 - attachInternals() throws a NotSupportedError if it is called for a customized built-in element: A customized built-in element is not implemented here
-- If a custom element definition for the local name of the element doesn't exist, throw an NotSupportedError: assert_throws_dom: function "() => { builtin.attachInternals() }" threw object "TypeError: That element is not a custom element" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
 
 ### custom-elements/HTMLElement-constructor.html
 
@@ -3467,18 +3352,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/element-internals-aria-element-reflection.html
 
-- Getting previously-unset ARIA element reflection properties on ElementInternals should return null.: assert_equals: expected null but got []
-- Setting ARIA element reflection properties on ElementInternals to null should delete any previous value, and not crash: assert_equals: expected null but got []
 - Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
 - Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
 - Caching invariant different attributes.: assert_equals: Caching invariant for ariaControlsElements expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 - Caching invariant different elements.: assert_equals: Caching invariant for ariaDescribedByElements in one elemnt expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
-
-### custom-elements/element-internals-shadowroot.html
-
-- ElementInternals cannot be called before constructor, upgrade case: assert_throws_dom: attachInternals cannot be called before definition exists function "() => element.attachInternals()" threw object "TypeError: That element is not a custom element" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
-- ElementInternals *can* be called after constructor, upgrade case: assert_throws_dom: attachInternals cannot be called before constructor function "() => element.attachInternals()" threw object "TypeError: That element is not a custom element" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
-- ElementInternals disabled by disabledFeatures: assert_throws_dom: attachInternals forbidden by disabledFeatures, pre-upgrade function "() => element.attachInternals()" threw object "TypeError: That element is not a custom element" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
 
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
