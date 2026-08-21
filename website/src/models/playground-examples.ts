@@ -23,6 +23,7 @@ export interface PlaygroundExample {
 const RUNNABLE = [
 	"hello-world",
 	"animated",
+	"bar-chart",
 	"borders",
 	"chat",
 	"commit-editor",
