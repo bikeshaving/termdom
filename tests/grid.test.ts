@@ -1413,6 +1413,43 @@ test("grid-template-areas reports its rows", async () => {
 	expect(resolved("grid-template-areas")).toBe("\"a b\" \"c d\"");
 });
 
+test("an area map lined up as a picture reports one space between cells", async () => {
+	// css-grid-2 §7.3: the value is rows of cell names, so the padding an
+	// author aligns the picture with is not part of it. The map comes off a
+	// stylesheet, where a row can be written across several lines.
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const style = dom.document.createElement("style");
+	style.textContent = `
+		#g {
+			display: grid;
+			grid-template-areas:
+				"head  head"
+				"side  main";
+			grid-template-columns: 8px 1fr;
+			grid-template-rows: 1px 1px;
+		}
+	`;
+	dom.document.head.appendChild(style);
+	dom.document.body.innerHTML =
+		"<div id=\"g\"><i style=\"grid-area:head\">HEAD</i>" +
+		"<i style=\"grid-area:side\">SIDE</i>" +
+		"<i style=\"grid-area:main\">MAIN</i></div>";
+	await nextFrame(dom);
+
+	const grid = dom.document.querySelector("#g")!;
+	const computed = dom.window.getComputedStyle(grid);
+	expect(computed.getPropertyValue("grid-template-areas")).toBe(
+		"\"head head\" \"side main\"",
+	);
+	const main = dom.document.querySelectorAll("i")[2].getBoundingClientRect();
+	expect({left: main.left, top: main.top, width: main.width}).toEqual({
+		left: 8,
+		top: 1,
+		width: 22,
+	});
+});
+
 test("a length in a track list computes to cells", async () => {
 	const {resolved} = await render(
 		"<div id=\"g\" style=\"grid-template-columns: 2ch 1em\"></div>",
