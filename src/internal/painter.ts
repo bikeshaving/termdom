@@ -606,18 +606,6 @@ function renderElement(
 		}
 	}
 
-	// A checkbox/radio is a single glyph (kRenderToggleGlyph) with nothing to
-	// walk; every other input is a text field, painted by the walk below.
-	if (element.tagName === "INPUT" && rect) {
-		const input = element as HTMLInputElement;
-		if (input.type === "checkbox" || input.type === "radio") {
-			if (visible) {
-				renderToggleGlyph(self, input, ctx);
-			}
-			return;
-		}
-	}
-
 	// No manual lifecycle management needed
 
 	// The stacking-context painter slots its negative-z layer here: after
@@ -977,47 +965,6 @@ function renderOutsideMarker(
 
 	// Render the marker (clipped to available space, never mutate the DOM)
 	ctx.drawText(markerContent, markerX, markerY, markerTextStyle);
-}
-
-/**
- * Draw a checkbox or radio's glyph, and park the caret on it when it has
- * focus.
- *
- * The mark is a text node the control writes when its checkedness moves, so
- * what is drawn here is what the tree says rather than a state this read
- * discovers -- a checkedness that changes without an event still schedules
- * the frame that shows it.
- */
-function renderToggleGlyph(
-	self: Painter,
-	element: HTMLInputElement,
-	ctx: CellContext,
-): void {
-	const root = shadowRootOf<ShadowRoot>(element);
-	if (!root) {
-		return;
-	}
-	const glyphSpan = root.querySelector('[part="glyph"]');
-	if (glyphSpan === null) {
-		return;
-	}
-	const glyphText = glyphSpan.firstChild as Text | null;
-	const mark = glyphText === null ? undefined : glyphText.data;
-	if (!mark) {
-		return;
-	}
-	const content = self[kLayout].contentRect(element);
-	if (!content) {
-		return;
-	}
-	const contentX = Math.round(content.x);
-	const contentY = Math.round(content.y);
-	ctx.drawText(
-		mark,
-		contentX,
-		contentY,
-		cellStyleFromComputed(computedStyleOf(glyphSpan)),
-	);
 }
 
 /** The text a toggle's glyph renders through, from its closed tree. */
