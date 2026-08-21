@@ -7,6 +7,7 @@
  */
 import * as DOM from "./dom.js";
 import {installUAEngine} from "./dom.js";
+import {installInspectors} from "./inspector.js";
 import {LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
@@ -591,6 +592,7 @@ class Window extends DOM.EventTarget {}
 // GlobalEventHandlers, which it shares with elements and documents, and
 // WindowEventHandlers, whose members exist as attributes whether or not this
 // engine has anything that fires them.
+installInspectors();
 DOM.installEventHandlers(Window.prototype, DOM.GLOBAL_EVENT_HANDLERS);
 DOM.installEventHandlers(Window.prototype, DOM.WINDOW_EVENT_HANDLERS);
 

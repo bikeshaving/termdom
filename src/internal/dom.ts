@@ -35,15 +35,6 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
-import {
-	inspectComment,
-	inspectDocument,
-	inspectElement,
-	inspectFragment,
-	inspectDOMRect,
-	inspectNodeList,
-	inspectText,
-} from "./inspector.js";
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -62,7 +53,7 @@ const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
  * other, so the control needs the same collaborators the document does. They
  * are installed on a document once, at setup, and reached from there.
  */
-export interface UAEngine {
+interface UAEngine {
 	layout: {
 		invalidate(node: object): void;
 		calculateLayout(): void;
@@ -587,13 +578,13 @@ function validateAndExtract(
 
 /* ------------------------------------------------------------------ events */
 
-export interface EventInit {
+interface EventInit {
 	bubbles?: boolean;
 	cancelable?: boolean;
 	composed?: boolean;
 }
 
-export interface CustomEventInit<T = unknown> extends EventInit {
+interface CustomEventInit<T = unknown> extends EventInit {
 	detail?: T;
 }
 
@@ -1128,13 +1119,13 @@ function createBeforeUnloadEvent(): BeforeUnloadEvent {
 
 /* ------------------------------------------------------------- UI events */
 
-export interface UIEventInit extends EventInit {
+interface UIEventInit extends EventInit {
 	view?: null;
 	detail?: number;
 	which?: number;
 }
 
-export interface EventModifierInit extends UIEventInit {
+interface EventModifierInit extends UIEventInit {
 	ctrlKey?: boolean;
 	shiftKey?: boolean;
 	altKey?: boolean;
@@ -1151,7 +1142,7 @@ export interface EventModifierInit extends UIEventInit {
 	modifierSymbolLock?: boolean;
 }
 
-export interface MouseEventInit extends EventModifierInit {
+interface MouseEventInit extends EventModifierInit {
 	screenX?: number;
 	screenY?: number;
 	clientX?: number;
@@ -1161,11 +1152,11 @@ export interface MouseEventInit extends EventModifierInit {
 	relatedTarget?: EventTarget | null;
 }
 
-export interface FocusEventInit extends UIEventInit {
+interface FocusEventInit extends UIEventInit {
 	relatedTarget?: EventTarget | null;
 }
 
-export interface KeyboardEventInit extends EventModifierInit {
+interface KeyboardEventInit extends EventModifierInit {
 	key?: string;
 	code?: string;
 	location?: number;
@@ -1175,17 +1166,17 @@ export interface KeyboardEventInit extends EventModifierInit {
 	keyCode?: number;
 }
 
-export interface CompositionEventInit extends UIEventInit {
+interface CompositionEventInit extends UIEventInit {
 	data?: string;
 }
 
-export interface InputEventInit extends UIEventInit {
+interface InputEventInit extends UIEventInit {
 	data?: string | null;
 	isComposing?: boolean;
 	inputType?: string;
 }
 
-export interface WheelEventInit extends MouseEventInit {
+interface WheelEventInit extends MouseEventInit {
 	deltaX?: number;
 	deltaY?: number;
 	deltaZ?: number;
@@ -2011,7 +2002,7 @@ function protectClipboardData(event: Event): void {
 	}
 }
 
-export interface ClipboardEventInit extends EventInit {
+interface ClipboardEventInit extends EventInit {
 	clipboardData?: DataTransfer | null;
 }
 
@@ -2096,7 +2087,7 @@ Object.defineProperties(WheelEvent.prototype, {
 	[Symbol.toStringTag]: {value: "WheelEvent", configurable: true},
 });
 
-export interface PointerEventInit extends MouseEventInit {
+interface PointerEventInit extends MouseEventInit {
 	pointerId?: number;
 	width?: number;
 	height?: number;
@@ -4564,7 +4555,7 @@ function adoptNode(node: Node, document: Document): void {
 
 /* ----------------------------------------------------- mutation observers */
 
-export interface MutationObserverInit {
+interface MutationObserverInit {
 	childList?: boolean;
 	attributes?: boolean;
 	characterData?: boolean;
@@ -5489,23 +5480,7 @@ const shapeSyncMethod = (
 
 const kCompute = Symbol("compute");
 
-/** How node:util's inspect shows a value, bridged to the inspector's options. */
-const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
-
-interface NodeInspectOptions {
-	colors?: boolean;
-	breakLength?: number;
-	showHidden?: boolean;
-}
-
 export class NodeList extends LiveList {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectNodeList(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		});
-	}
-
 	declare forEach: (
 		callback: (node: Node, index: number, list: NodeList) => void,
 		thisArg?: unknown,
@@ -6301,10 +6276,6 @@ function queueCharacterDataMutationRecord(
 const kManualSlot = Symbol("manual slot assignment");
 
 export class Text extends CharacterData {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectText(this, {colorize: options.colors !== false});
-	}
-
 	[kAssignedSlot]: HTMLSlotElement | null;
 	[kManualSlot]: HTMLSlotElement | null;
 
@@ -6407,10 +6378,6 @@ Object.defineProperty(CDATASection.prototype, Symbol.toStringTag, {
 });
 
 export class Comment extends CharacterData {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectComment(this, {colorize: options.colors !== false});
-	}
-
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kDocument] = currentDocument();
@@ -6523,13 +6490,6 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 });
 
 export class DocumentFragment extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectFragment(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		});
-	}
-
 	[kHost]: Element | null;
 
 	constructor() {
@@ -7074,15 +7034,6 @@ const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
 
 export class Element extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectElement(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-			compact: !options.breakLength || options.breakLength === Infinity,
-			showStyles: options.showHidden,
-		});
-	}
-
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
@@ -10589,7 +10540,7 @@ Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
 	},
 	configurable: true,
 });
-export interface ToggleEventInit extends EventInit {
+interface ToggleEventInit extends EventInit {
 	oldState?: string;
 	newState?: string;
 	source?: Element | null;
@@ -11016,7 +10967,7 @@ function resetControl(control: Element): void {
 		enqueueCallbackReaction(control, "formResetCallback", []);
 	}
 }
-export interface SubmitEventInit extends EventInit {
+interface SubmitEventInit extends EventInit {
 	submitter?: HTMLElement | null;
 }
 
@@ -18009,10 +17960,6 @@ Object.defineProperty(DOMRectReadOnly.prototype, Symbol.toStringTag, {
 
 /** A rectangle whose origin and size can be written. */
 export class DOMRect extends DOMRectReadOnly {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectDOMRect(this, {colorize: options.colors !== false});
-	}
-
 	static override fromRect(other: DOMRectInit = {}): DOMRect {
 		return new DOMRect(other.x, other.y, other.width, other.height);
 	}
@@ -18096,14 +18043,6 @@ const kIdMap = Symbol("id map");
 const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectDocument(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-			compact: !options.breakLength || options.breakLength === Infinity,
-		});
-	}
-
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
 		this[kDocumentURL] = "about:blank";
@@ -19880,7 +19819,7 @@ Object.defineProperty(AbstractRange.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export interface StaticRangeInit {
+interface StaticRangeInit {
 	startContainer: Node;
 	startOffset: number;
 	endContainer: Node;

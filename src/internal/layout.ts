@@ -3403,7 +3403,7 @@ interface TextFragmentEntry {
  * element covers, so its offsets span from the first node's start to the last
  * node's end -- a range of the run rather than of any one node's data.
  */
-export interface RectText {
+interface RectText {
 	rect: DOMRect;
 	text: string;
 	startOffset: number;

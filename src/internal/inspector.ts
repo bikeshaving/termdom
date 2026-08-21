@@ -14,14 +14,80 @@ const colors = {
 	value: "\x1b[32m", // Green for values
 };
 
-import type {
+import {
 	Comment,
+	DOMRect,
 	Document,
 	DocumentFragment,
 	Element,
-	Node,
+	NodeList,
 	Text,
+	type Node,
 } from "./dom.js";
+
+const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
+
+interface NodeInspectOptions {
+	colors?: boolean;
+}
+
+/**
+ * Put the pretty-printers on the DOM prototypes. Installed from the engine
+ * at load, not imported by the DOM: debug formatting is the most peripheral
+ * concern in the codebase, and the core must not depend on it -- a build
+ * that never inspects can drop this module whole.
+ */
+export function installInspectors(): void {
+	const hook = (
+		prototype: object,
+		render: (
+			target: never,
+			depth: number,
+			options: NodeInspectOptions,
+		) => string,
+	): void => {
+		Object.defineProperty(prototype, kNodeInspect, {
+			value(this: never, depth: number, options: NodeInspectOptions) {
+				return render(this, depth, options);
+			},
+			writable: true,
+			configurable: true,
+		});
+	};
+	hook(Element.prototype, (element: Element, depth, options) =>
+		inspectElement(element, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		}),
+	);
+	hook(Text.prototype, (text: Text, _depth, options) =>
+		inspectText(text, {colorize: options.colors !== false}),
+	);
+	hook(Comment.prototype, (comment: Comment, _depth, options) =>
+		inspectComment(comment, {colorize: options.colors !== false}),
+	);
+	hook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
+		inspectFragment(fragment, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		}),
+	);
+	hook(Document.prototype, (document: Document, depth, options) =>
+		inspectDocument(document, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		}),
+	);
+	hook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
+		inspectDOMRect(rect, {colorize: options.colors !== false}),
+	);
+	hook(NodeList.prototype, (list: NodeList, depth, options) =>
+		inspectNodeList(list, {
+			maxDepth: depth,
+			colorize: options.colors !== false,
+		}),
+	);
+}
 
 interface InspectorOptions {
 	maxDepth?: number;

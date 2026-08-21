@@ -309,7 +309,7 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
 };
 
 /** A box's sides, and "round" on each corner whose radius rounds it. */
-export interface BoxSides {
+interface BoxSides {
 	top?: LineStyle;
 	right?: LineStyle;
 	bottom?: LineStyle;
@@ -326,7 +326,7 @@ export interface BoxSides {
  * and the field are canvas's own original TextMetrics; further fields join
  * if a consumer ever appears, the way canvas itself grew.
  */
-export interface TextMetrics {
+interface TextMetrics {
 	width: number;
 }
 

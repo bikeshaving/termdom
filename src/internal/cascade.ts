@@ -3093,7 +3093,7 @@ const kSync = Symbol("sync");
  * reparses into the object on the next read, recognized by the text differing
  * from what this object last serialized.
  */
-export class CSSStyleDeclaration implements DeclarationSource {
+class CSSStyleDeclaration implements DeclarationSource {
 	[index: number]: string;
 	declare [kElement]: Element | null;
 	declare [kParentRule]: CSSRule | null;
@@ -4081,7 +4081,7 @@ const kStyle = Symbol("style");
 const kSelectorText = Symbol("selectorText");
 
 /** A style rule: a selector and the declaration block it applies. */
-export class CSSStyleRule extends CSSGroupingRule {
+class CSSStyleRule extends CSSGroupingRule {
 	declare [kSelectors]: SelectorNode;
 	declare [kSelectorText]: string | null;
 	declare [kStyle]: CSSStyleDeclaration;
@@ -4605,7 +4605,7 @@ function serializeKeyText(text: string): string {
 }
 
 /** `@media`: the rules that apply when the viewport matches. */
-export class CSSMediaRule extends CSSConditionRule {
+class CSSMediaRule extends CSSConditionRule {
 	declare [kMedia]: MediaList;
 
 	constructor(
@@ -4854,7 +4854,7 @@ const kSupportsText = Symbol("supportsText");
  * and media, whose styleSheet is null. There is no network behind a terminal
  * document, so nothing is fetched and the rule declares nothing.
  */
-export class CSSImportRule extends CSSRule {
+class CSSImportRule extends CSSRule {
 	declare [kHref]: string;
 	declare [kMedia]: MediaList;
 	declare [kLayerName]: string | null;
@@ -5110,7 +5110,7 @@ class CSSKeyframesRule extends CSSRule {
 }
 
 /** The rules of a stylesheet or a grouping rule. */
-export class CSSRuleList {
+class CSSRuleList {
 	declare [kRules]: readonly CSSRule[];
 
 	constructor(rules: readonly CSSRule[]) {
@@ -5139,7 +5139,7 @@ function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 const kSheets = Symbol("sheets");
 
 /** The stylesheets of a document or a shadow root. */
-export class StyleSheetList {
+class StyleSheetList {
 	declare [kSheets]: readonly CSSStyleSheet[];
 
 	constructor(sheets: readonly CSSStyleSheet[]) {
@@ -5175,7 +5175,7 @@ const kOwnerRule = Symbol("ownerRule");
  * rule's declaration block all reach the render through the same invalidation
  * a `<style>` text change does.
  */
-export class CSSStyleSheet {
+class CSSStyleSheet {
 	declare [kRules]: CSSRule[];
 	declare [kRuleList]: CSSRuleList;
 	declare [kMedia]: MediaList;
