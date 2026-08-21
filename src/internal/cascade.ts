@@ -17,22 +17,88 @@ import {
 	ShadowRoot as DOMShadowRoot,
 	onAttributeChange,
 	onShadowAttached,
-	clearPseudoElement,
 	type Document as DOMDocument,
-	flatParentElement,
-	ensurePseudoElement,
-	pseudoElementCount,
-	isUAShadowRoot,
-	pseudoElement,
-	pseudoHostOf,
-	pseudoNameOf,
-	shadowRootOf,
-	styleElementCount,
+	type UAToolkit,
+	claimUAToolkit,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
 import {serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
+
+// ---------------------------------------------------------------------------
+// The UA toolkit, claimed per document
+//
+// The composed-tree and pseudo-element capabilities come from the claim a
+// StyleManager makes when it is built (or from the engine's own install,
+// which closes further claims). The wrappers below keep the capability
+// per-document while the cascade's call sites stay one name deep.
+// ---------------------------------------------------------------------------
+
+const uaByDocument = new WeakMap<object, UAToolkit>();
+
+function uaOf(node: object): UAToolkit | undefined {
+	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
+	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
+	let toolkit = uaByDocument.get(document);
+	if (toolkit === undefined) {
+		// An engineless document claims on first need; an engined one was
+		// stored at construction, and the claim door is shut behind it.
+		try {
+			toolkit = claimUAToolkit(document);
+		} catch (_err) {
+			// The claim door is shut: an engined document whose toolkit was
+			// not stored at construction has no capability here.
+			return undefined;
+		}
+		uaByDocument.set(document, toolkit);
+	}
+	return toolkit;
+}
+
+function flatParentElement<T>(node: object): T | null {
+	return uaOf(node)?.flatParentElement<T>(node) ?? null;
+}
+
+function shadowRootOf<T>(element: object): T | null {
+	return uaOf(element)?.shadowRootOf<T>(element) ?? null;
+}
+
+function pseudoElement<T>(host: object, name: string): T | null {
+	return uaOf(host)?.pseudoElement<T>(host, name) ?? null;
+}
+
+function pseudoElementCount(host: object): number {
+	return uaOf(host)?.pseudoElementCount(host) ?? 0;
+}
+
+function pseudoHostOf<T>(node: object): T | null {
+	return uaOf(node)?.pseudoHostOf<T>(node) ?? null;
+}
+
+function pseudoNameOf(node: object): string | null {
+	return uaOf(node)?.pseudoNameOf(node) ?? null;
+}
+
+function ensurePseudoElement<T>(target: object, name: string): T {
+	const ua = uaOf(target);
+	if (ua === undefined) {
+		throw new Error("No toolkit claimed for this document.");
+	}
+	return ua.ensurePseudoElement<T>(target, name);
+}
+
+function clearPseudoElement(host: object, name: string): void {
+	uaOf(host)?.clearPseudoElement(host, name);
+}
+
+function isUAShadowRoot(node: object): boolean {
+	return uaOf(node)?.isUAShadowRoot(node) ?? false;
+}
+
+function styleElementCount(document: DOMDocument): number {
+	return uaByDocument.get(document)?.styleElementCount() ?? 0;
+}
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import {
@@ -9465,6 +9531,14 @@ export class StyleManager {
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
+		// The composed-tree capability: claimed here while the document is
+		// engineless (tests, WPT, headless windows). On the terminal path
+		// this constructor runs before the engine installs, so the claim is
+		// the UA constructing itself; page code arrives after the install
+		// closes the door.
+		if (!uaByDocument.has(this[kDocument])) {
+			uaByDocument.set(this[kDocument], claimUAToolkit(this[kDocument]));
+		}
 
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this[kGetComputedStyle].bind(this);

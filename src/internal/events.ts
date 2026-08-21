@@ -6,7 +6,7 @@
  * dispatching them belongs to the engine, because that half is the render loop.
  */
 
-import {flatParentElement} from "./dom.js";
+import type {UAToolkit} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./cascade.js";
 
@@ -415,6 +415,7 @@ export const FOCUSABLE_SELECTOR =
 export function getFocusableElements(
 	root: Document | Element,
 	layoutEngine: LayoutEngine,
+	toolkit: UAToolkit,
 ): Element[] {
 	const candidates = root.querySelectorAll(FOCUSABLE_SELECTOR);
 	const elements = Array.from(candidates).filter((element) => {
@@ -425,7 +426,7 @@ export function getFocusableElements(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = flatParentElement<Element>(ancestor)
+			ancestor = toolkit.flatParentElement<Element>(ancestor)
 		) {
 			if (computedStyleOf(ancestor).computedValueOf("display") === "none") {
 				return false;

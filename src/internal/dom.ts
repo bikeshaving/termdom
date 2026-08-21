@@ -167,6 +167,25 @@ export interface UAToolkit {
 		focusPreviousElement: boolean,
 		fireEvents: boolean,
 	): void;
+	/** The composed-tree walk: the parent through slots and shadow roots. */
+	flatParentElement<T>(node: object): T | null;
+	/** Connected through the composed tree, closed roots included. */
+	flatIsConnected(node: object): boolean;
+	createFlatTreeWalker<N>(
+		root: object,
+		dissolved?: (node: N) => boolean,
+	): FlatTreeWalker<N>;
+	/** A control's selection as a Range, measured like any document range. */
+	selectionRangeOf(control: object): UARange | null;
+	pseudoElement<T>(host: object, name: string): T | null;
+	pseudoElementCount(host: object): number;
+	pseudoHostOf<T>(node: object): T | null;
+	pseudoNameOf(node: object): string | null;
+	ensurePseudoElement<T>(target: object, name: string): T;
+	clearPseudoElement(host: object, name: string): void;
+	isUAShadowRoot(node: object): boolean;
+	/** How many style elements the granted document holds. */
+	styleElementCount(): number;
 }
 
 /**
@@ -179,10 +198,35 @@ export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 		throw new Error("This document already has its user agent.");
 	}
 	doc[kUAEngine] = engine;
+	return buildUAToolkit(document);
+}
+
+/**
+ * The engineless door to the capabilities: the cascade and the layout claim
+ * here when they are built for a document no terminal will ever render --
+ * tests, WPT runs, author-created documents. Claims close the moment an
+ * engine installs: page code only ever runs after that, so on a rendered
+ * document this always refuses, and the toolkit stays the UA's.
+ */
+export function claimUAToolkit(document: object): UAToolkit {
+	const doc = document as Record<symbol, UAEngine | undefined>;
+	if (doc[kUAEngine] !== undefined) {
+		throw new Error("This document's user agent holds its own toolkit.");
+	}
+	return buildUAToolkit(document);
+}
+
+function buildUAToolkit(document: object): UAToolkit {
 	// Each capability answers only for the document it was granted for, so
 	// a toolkit taken by installing on a throwaway document opens nothing.
-	const owns = (target: object): boolean =>
-		(target as Node).ownerDocument === (document as Document);
+	const owns = (target: object): boolean => {
+		const node = target as Node & {host?: Node};
+		if (node === (document as unknown as Node)) {
+			return true;
+		}
+		const anchor = node.ownerDocument ?? node.host?.ownerDocument;
+		return anchor === (document as unknown as Document);
+	};
 	return {
 		shadowRootOf<T>(element: object): T | null {
 			return owns(element) ? shadowRootOf<T>(element) : null;
@@ -234,6 +278,53 @@ export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 			fireEvents: boolean,
 		): void {
 			hidePopoversUntil(document, endpoint, focusPreviousElement, fireEvents);
+		},
+		flatParentElement<T>(node: object): T | null {
+			return owns(node) ? flatParentElement<T>(node) : null;
+		},
+		flatIsConnected(node: object): boolean {
+			return owns(node) && flatIsConnected(node);
+		},
+		createFlatTreeWalker<N>(
+			root: object,
+			dissolved?: (node: N) => boolean,
+		): FlatTreeWalker<N> {
+			if (!owns(root)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return createFlatTreeWalker<N>(root as N, dissolved);
+		},
+		selectionRangeOf(control: object): UARange | null {
+			return owns(control) ? selectionRangeOf(control) : null;
+		},
+		pseudoElement<T>(host: object, name: string): T | null {
+			return owns(host) ? pseudoElement<T>(host, name) : null;
+		},
+		pseudoElementCount(host: object): number {
+			return owns(host) ? pseudoElementCount(host) : 0;
+		},
+		pseudoHostOf<T>(node: object): T | null {
+			return owns(node) ? pseudoHostOf<T>(node) : null;
+		},
+		pseudoNameOf(node: object): string | null {
+			return owns(node) ? pseudoNameOf(node) : null;
+		},
+		ensurePseudoElement<T>(target: object, name: string): T {
+			if (!owns(target)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return ensurePseudoElement<T>(target, name);
+		},
+		clearPseudoElement(host: object, name: string): void {
+			if (owns(host)) {
+				clearPseudoElement(host, name);
+			}
+		},
+		isUAShadowRoot(node: object): boolean {
+			return owns(node) && isUAShadowRoot(node);
+		},
+		styleElementCount(): number {
+			return styleElementCount(document as Document);
 		},
 	};
 }
@@ -9379,7 +9470,7 @@ function attachUAShadowRoot<T>(target: object): T {
  * stylesheet of such a tree is a UA rule, which every author rule outranks
  * whatever its specificity.
  */
-export function isUAShadowRoot(node: object): boolean {
+function isUAShadowRoot(node: object): boolean {
 	return node instanceof ShadowRoot && node[kUAInternal];
 }
 
@@ -9389,7 +9480,7 @@ export function isUAShadowRoot(node: object): boolean {
  * this; `Element.shadowRoot` is the author-facing view, which shows an open
  * tree and nothing else.
  */
-export function shadowRootOf<T>(element: object): T | null {
+function shadowRootOf<T>(element: object): T | null {
 	return ((element as Element)[kShadowRoot] as T) ?? null;
 }
 
@@ -11547,7 +11638,7 @@ export class HTMLStyleElement extends HTMLElement {
  * whenever one joins or leaves. A cascade polls this to notice a sheet that
  * appeared since it last parsed, which is cheaper than walking for one.
  */
-export function styleElementCount(document: Document): number {
+function styleElementCount(document: Document): number {
 	return document[kStyleElements];
 }
 /** Mount a document in a window, which is what gives it a `defaultView`. */
@@ -12061,7 +12152,7 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-export function selectionRangeOf(element: object): UARange | null {
+function selectionRangeOf(element: object): UARange | null {
 	return (
 		(element as Record<symbol, (() => UARange | null) | undefined>)[
 			kUASelectionRange
@@ -17103,7 +17194,7 @@ function checkValidity(element: Element): boolean {
  * everything the engine already does with an element -- computed style, a box,
  * text children -- works on it unchanged.
  */
-export function pseudoElement<T>(host: object, name: string): T | null {
+function pseudoElement<T>(host: object, name: string): T | null {
 	const slots = (host as Element)[kPseudoElements];
 	return slots === null || slots === undefined ?
 		null :
@@ -17111,7 +17202,7 @@ export function pseudoElement<T>(host: object, name: string): T | null {
 }
 
 /** How many pseudo-element nodes an element carries. */
-export function pseudoElementCount(host: object): number {
+function pseudoElementCount(host: object): number {
 	const slots = (host as Element)[kPseudoElements];
 	return slots === null || slots === undefined ? 0 : slots.size;
 }
@@ -17121,12 +17212,12 @@ export function pseudoElementCount(host: object): number {
  * every other node: this is what tells a pseudo-element node apart, and where
  * the flat tree finds the parent a node with no parent renders inside.
  */
-export function pseudoHostOf<T>(node: object): T | null {
+function pseudoHostOf<T>(node: object): T | null {
 	return ((node as Element)[kPseudoHost] as T) ?? null;
 }
 
 /** The pseudo-element name a slot node fills, such as "::before". */
-export function pseudoNameOf(node: object): string | null {
+function pseudoNameOf(node: object): string | null {
 	return (node as Element)[kPseudoName];
 }
 
@@ -17135,7 +17226,7 @@ export function pseudoNameOf(node: object): string | null {
  * time it is asked for. The node is an element named after the pseudo-element
  * so a debugger's dump reads plainly; it is never serialized.
  */
-export function ensurePseudoElement<T>(target: object, name: string): T {
+function ensurePseudoElement<T>(target: object, name: string): T {
 	const host = target as Element;
 	let slots = host[kPseudoElements];
 	if (slots === null) {
@@ -17153,7 +17244,7 @@ export function ensurePseudoElement<T>(target: object, name: string): T {
 }
 
 /** Drop an element's pseudo-element node for a name. */
-export function clearPseudoElement(host: object, name: string): void {
+function clearPseudoElement(host: object, name: string): void {
 	(host as Element)[kPseudoElements]?.delete(name);
 }
 
@@ -17191,7 +17282,7 @@ function assignedSlotOf(node: Node): HTMLSlotElement | null {
  * child resolves to the HOST, and a pseudo-element node's is the element it
  * originates from -- and everything else is parentElement.
  */
-export function flatParentElement<T>(target: object): T | null {
+function flatParentElement<T>(target: object): T | null {
 	const node = target as Node;
 	const slot = assignedSlotOf(node);
 	if (slot !== null) {
@@ -17214,7 +17305,7 @@ export function flatParentElement<T>(target: object): T | null {
  * reaches one. A pseudo-element node and a UA shadow tree's contents are both
  * outside the node tree that answers `isConnected` and both render.
  */
-export function flatIsConnected(target: object): boolean {
+function flatIsConnected(target: object): boolean {
 	let node: Node | null = target as Node;
 	while (node !== null) {
 		if (isConnectedNode(node)) {
@@ -17247,7 +17338,7 @@ export interface FlatTreeWalker<N> {
 	previousSibling(): N | null;
 }
 
-export function createFlatTreeWalker<N>(
+function createFlatTreeWalker<N>(
 	root: N,
 	dissolved?: (node: N) => boolean,
 ): FlatTreeWalker<N> {

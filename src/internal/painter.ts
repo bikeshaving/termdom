@@ -3,11 +3,8 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import {
-	type UAToolkit,
-	flatIsConnected,
-	flatParentElement,
-	selectionRangeOf,
+import type {
+	UAToolkit,
 } from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
@@ -339,7 +336,7 @@ export class Painter {
 		for (const element of this[kTopLayer]) {
 			// COMPOSITION-connected: a UA part (the select's picker) lives in
 			// a fragment and is never DOM-connected while very much on screen.
-			if (!flatIsConnected(element)) {
+			if (!this[kToolkit].flatIsConnected(element)) {
 				this[kTopLayer].delete(element);
 				continue;
 			}
@@ -808,9 +805,9 @@ function positionedClipFor(
 ): CellContext["clipRect"] {
 	let clip = contextClip;
 	for (
-		let ancestor = flatParentElement<Element>(element);
+		let ancestor = painter[kToolkit].flatParentElement<Element>(element);
 		ancestor && ancestor !== contextRoot;
-		ancestor = flatParentElement<Element>(ancestor)
+		ancestor = painter[kToolkit].flatParentElement<Element>(ancestor)
 	) {
 		if (!isPositioned(ancestor)) {
 			continue;
@@ -996,7 +993,7 @@ function renderText(
 	// The FLAT-tree parent: slotted bare text draws its inherited styles
 	// through the slot's shadow chain, not from the host it came from, and
 	// the text of a pseudo-element draws the pseudo-element's own.
-	const parentElement = flatParentElement<Element>(textNode);
+	const parentElement = painter[kToolkit].flatParentElement<Element>(textNode);
 	if (!parentElement) {
 		return;
 	}
@@ -1061,7 +1058,7 @@ function selectionRangeFor(
 ): {range: Range; selectionParent: Element} | null {
 	const active = painter[kDocument].activeElement;
 	if (active && painter[kToolkit].isTextField(active)) {
-		const fieldRange = selectionRangeOf(active);
+		const fieldRange = painter[kToolkit].selectionRangeOf(active);
 		// The control's range names the text it renders its value through, so
 		// node identity is the whole test -- no widget anatomy to know.
 		if (fieldRange && fieldRange.startContainer === textNode) {
@@ -1079,7 +1076,9 @@ function selectionRangeFor(
 	if (!documentRange.intersectsNode(textNode)) {
 		return null;
 	}
-	const selectionParent = flatParentElement<Element>(textNode);
+	const selectionParent = painter[kToolkit].flatParentElement<Element>(
+		textNode,
+	);
 	if (!selectionParent) {
 		return null;
 	}

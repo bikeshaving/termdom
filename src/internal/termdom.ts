@@ -6,12 +6,7 @@
  * frame becomes bytes on the session.
  */
 import * as DOM from "./dom.js";
-import {
-	flatIsConnected,
-	flatParentElement,
-	installUAEngine,
-	pseudoHostOf,
-} from "./dom.js";
+import {installUAEngine} from "./dom.js";
 import {LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
@@ -1749,11 +1744,11 @@ export class TermDOM {
 			};
 
 			for (
-				let ancestor = flatParentElement<Element>(this);
+				let ancestor = termDOM[kUAToolkit].flatParentElement<Element>(this);
 				ancestor &&
 				ancestor !== termDOM.document.body &&
 				ancestor !== termDOM.document.documentElement;
-				ancestor = flatParentElement<Element>(ancestor)
+				ancestor = termDOM[kUAToolkit].flatParentElement<Element>(ancestor)
 			) {
 				const style = computedStyleOf(ancestor);
 				const overflow = style.computedValueOf("overflow");
@@ -3086,7 +3081,7 @@ function documentPaintHeight(
 ): number {
 	let height = termdom.document.body.scrollHeight;
 	for (const element of termdom[kTopLayer]) {
-		if (!flatIsConnected(element)) {
+		if (!termdom[kUAToolkit].flatIsConnected(element)) {
 			continue;
 		}
 		const rect = termdom[kLayoutEngine].getRect(element);
@@ -3600,7 +3595,11 @@ function moveFocus(
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
 	const scope = topmostModalDialog(termdom) ?? termdom.document;
-	const focusable = getFocusableElements(scope, termdom[kLayoutEngine]);
+	const focusable = getFocusableElements(
+		scope,
+		termdom[kLayoutEngine],
+		termdom[kUAToolkit],
+	);
 	if (focusable.length === 0) {
 		return;
 	}
@@ -3666,9 +3665,9 @@ function findElementAtDocumentPoint(
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
 	for (
-		let host = element && pseudoHostOf<Element>(element);
+		let host = element && termdom[kUAToolkit].pseudoHostOf<Element>(element);
 		host;
-		host = pseudoHostOf<Element>(element!)
+		host = termdom[kUAToolkit].pseudoHostOf<Element>(element!)
 	) {
 		element = host;
 	}
@@ -3727,7 +3726,7 @@ function selectableTextPosition(
 	termdom: TermDOM,
 	position: {node: Text; offset: number},
 ): boolean {
-	const parent = flatParentElement<Element>(position.node);
+	const parent = termdom[kUAToolkit].flatParentElement<Element>(position.node);
 	return parent === null || termdom[kStyleManager].isSelectable(parent);
 }
 
@@ -3749,7 +3748,7 @@ function wheelScrollerFor(
 	for (
 		let element: Element | null = target;
 		element && element !== body && element !== root;
-		element = flatParentElement<Element>(element)
+		element = termdom[kUAToolkit].flatParentElement<Element>(element)
 	) {
 		const style = computedStyleOf(element);
 		const overflowY =

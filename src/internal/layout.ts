@@ -24,13 +24,63 @@ import {
 	type ComputedStyle,
 } from "./cascade.js";
 import {
-	createFlatTreeWalker,
-	pseudoElementCount,
 	type FlatTreeWalker,
-	flatIsConnected,
-	flatParentElement,
-	shadowRootOf,
+	type UAToolkit,
+	claimUAToolkit,
 } from "./dom.js";
+
+// The composed-tree capability, claimed per document when a LayoutEngine is
+// built for it: the claim door is open exactly while the document is
+// engineless, and on the terminal path this runs before the engine installs.
+// Wrappers keep the capability per-document under the names the module has
+// always used.
+const uaByDocument = new WeakMap<object, UAToolkit>();
+
+function uaOf(node: object): UAToolkit | undefined {
+	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
+	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
+	let toolkit = uaByDocument.get(document);
+	if (toolkit === undefined) {
+		// An engineless document claims on first need; an engined one was
+		// stored at construction, and the claim door is shut behind it.
+		try {
+			toolkit = claimUAToolkit(document);
+		} catch (_err) {
+			// The claim door is shut: an engined document whose toolkit was
+			// not stored at construction has no capability here.
+			return undefined;
+		}
+		uaByDocument.set(document, toolkit);
+	}
+	return toolkit;
+}
+
+function flatParentElement<T>(node: object): T | null {
+	return uaOf(node)?.flatParentElement<T>(node) ?? null;
+}
+
+function flatIsConnected(node: object): boolean {
+	return uaOf(node)?.flatIsConnected(node) ?? false;
+}
+
+function shadowRootOf<T>(element: object): T | null {
+	return uaOf(element)?.shadowRootOf<T>(element) ?? null;
+}
+
+function pseudoElementCount(host: object): number {
+	return uaOf(host)?.pseudoElementCount(host) ?? 0;
+}
+
+function createFlatTreeWalker<N>(
+	root: N,
+	dissolved?: (node: N) => boolean,
+): FlatTreeWalker<N> {
+	const ua = uaOf(root as object);
+	if (ua === undefined) {
+		throw new Error("No toolkit claimed for this document.");
+	}
+	return ua.createFlatTreeWalker<N>(root as object, dissolved);
+}
 import {
 	dataOffsetAt,
 	hasRTL,
@@ -5395,6 +5445,12 @@ export class LayoutEngine {
 	}
 
 	constructor(window: EngineWindow) {
+		// See the module's uaByDocument: the claim door is open exactly
+		// while the document is engineless.
+		const document = window.document as unknown as object;
+		if (!uaByDocument.has(document)) {
+			uaByDocument.set(document, claimUAToolkit(document));
+		}
 		this.positionedElements = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<

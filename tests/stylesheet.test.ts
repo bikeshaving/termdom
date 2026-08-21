@@ -1,11 +1,21 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {
-	pseudoElement,
-	pseudoHostOf,
-	pseudoNameOf,
-} from "../src/internal/dom.js";
+import {kUAToolkit} from "../src/internal/termdom.js";
+
+function pseudoElement<T>(
+	of: TermDOM,
+	host: object,
+	name: string,
+): T | null {
+	return of[kUAToolkit].pseudoElement<T>(host, name);
+}
+function pseudoHostOf<T>(of: TermDOM, node: object): T | null {
+	return of[kUAToolkit].pseudoHostOf<T>(node);
+}
+function pseudoNameOf(of: TermDOM, node: object): string | null {
+	return of[kUAToolkit].pseudoNameOf(node);
+}
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -313,25 +323,25 @@ test("StyleManager createPseudoElementNode", async () => {
 	testDiv.className = "test";
 
 	styleManager.attachPseudoElementsToElement(testDiv);
-	const pseudoNode = pseudoElement<Element>(testDiv, "::before");
+	const pseudoNode = pseudoElement<Element>(termdom, testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
-	expect(pseudoNameOf(pseudoNode!)).toBe("::before");
-	expect(pseudoHostOf(pseudoNode!)).toBe(testDiv);
+	expect(pseudoNameOf(termdom, pseudoNode!)).toBe("::before");
+	expect(pseudoHostOf(termdom, pseudoNode!)).toBe(testDiv);
 
 	// Test element with no content
 	const emptyDiv = document.createElement("div");
 	emptyDiv.className = "empty";
 
 	styleManager.attachPseudoElementsToElement(emptyDiv);
-	expect(pseudoElement(emptyDiv, "::before")).toBeNull();
+	expect(pseudoElement(termdom, emptyDiv, "::before")).toBeNull();
 
 	// Test element with content: normal
 	const normalDiv = document.createElement("div");
 	normalDiv.className = "normal";
 
 	styleManager.attachPseudoElementsToElement(normalDiv);
-	expect(pseudoElement(normalDiv, "::before")).toBeNull();
+	expect(pseudoElement(termdom, normalDiv, "::before")).toBeNull();
 
 	// Test shouldCreatePseudoElement
 	expect(styleManager.shouldCreatePseudoElement(testDiv, "::before")).toBe(
