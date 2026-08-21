@@ -2,21 +2,16 @@ import {TermDOM} from "@b9g/termdom";
 import {marked} from "marked";
 import {markedHighlight} from "marked-highlight";
 import {readFileSync} from "node:fs";
-import {createRequire} from "node:module";
 
 // Prism is a browser syntax highlighter; here it tokenises fenced code blocks
-// into <span class="token ..."> markup that the theme below colours. Loaded
-// through createRequire because its language packs are CommonJS side-effects.
-const require = createRequire(import.meta.url);
-const Prism = require("prismjs");
-require("prismjs/components/index.js")([
-	"javascript",
-	"typescript",
-	"json",
-	"bash",
-	"css",
-	"python",
-]);
+// into <span class="token ..."> markup that the theme below colours. Each pack
+// registers its grammar on the Prism it is imported beside; CSS and JavaScript
+// ship in Prism's core, so only the rest need a line here.
+import Prism from "prismjs";
+import "prismjs/components/prism-typescript.js";
+import "prismjs/components/prism-json.js";
+import "prismjs/components/prism-bash.js";
+import "prismjs/components/prism-python.js";
 
 // marked and marked-highlight are standard Node/browser libraries used here
 // completely unmodified -- the whole point: a real web toolchain feeding a real

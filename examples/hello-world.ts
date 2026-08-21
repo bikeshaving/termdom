@@ -1,21 +1,19 @@
 import {TermDOM} from "@b9g/termdom";
 
-// Create a TermDOM instance and attach it to the terminal.
 const term = new TermDOM();
 term.attach();
 const {document} = term;
 
-// Create standard HTML elements with CSS styling!
-const container = document.createElement("div");
-container.style.setProperty("background-color", "blue");
-container.style.setProperty("color", "white");
-container.textContent = "🎯 Hello, HTML Terminal!";
+const heading = document.createElement("div");
+heading.style.backgroundColor = "blue";
+heading.style.color = "white";
+heading.style.padding = "0 1ch";
+heading.textContent = "Hello, terminal";
 
 const subtitle = document.createElement("div");
-subtitle.style.setProperty("color", "yellow");
-subtitle.style.setProperty("margin-top", "1px");
-subtitle.textContent = "Standard HTML/CSS → ANSI Terminal Output";
+subtitle.style.color = "yellow";
+subtitle.style.marginTop = "1px";
+subtitle.textContent = "HTML and CSS, drawn with ANSI escape sequences";
 
-// Add to document (just like web development!)
-document.body.appendChild(container);
+document.body.appendChild(heading);
 document.body.appendChild(subtitle);

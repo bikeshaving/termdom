@@ -15,14 +15,43 @@ export const components = {
 		return jsx`<${CodeBlock} code=${text} lang=${lang || "ts"} />`;
 	},
 
-	/** `![caption](cast:name)` embeds a recording via the casts map the
-	 * view passes as a prop on Marked. */
+	/**
+	 * `![caption](cast:name)` embeds a recording and `![caption](playground:id)`
+	 * embeds a live one, both through maps the view passes as props on Marked.
+	 *
+	 * A playground embed renders as the program, highlighted here at build
+	 * time. That is what a reader without JavaScript gets, and what everyone
+	 * sees until the instance scrolls into view and the client puts an editor
+	 * and a terminal in its place. It is framed and titled the way the
+	 * workbench that replaces it is, so what a reader sees first is a file
+	 * rather than a slab of code waiting to be told what it is.
+	 */
 	image({token, rootProps}: any) {
 		const {href, text} = token;
 		const gif = href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)];
 		if (gif) {
-			return jsx`<figure class="cast"><img src=${gif} alt=${text} loading="lazy" /></figure>`;
+			return jsx`
+				<figure class="cast">
+					<img src=${gif} alt=${text} loading="lazy" />
+					${text ? jsx`<figcaption>${text}</figcaption>` : null}
+				</figure>
+			`;
 		}
+
+		const example =
+			href?.startsWith("playground:") &&
+			rootProps.playgrounds?.[href.slice("playground:".length)];
+		if (example) {
+			return jsx`
+				<figure class="playground" data-playground=${example.id} aria-label=${text}>
+					<div class="playground-preview">
+						<div class="playground-preview-bar">${example.label}</div>
+						<${CodeBlock} code=${example.code} lang="js" />
+					</div>
+				</figure>
+			`;
+		}
+
 		return jsx`<img src=${href} alt=${text} />`;
 	},
 

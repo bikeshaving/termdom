@@ -242,4 +242,3 @@ document.addEventListener("click", (event: Event) => {
 });
 
 rebuild();
-refresh();

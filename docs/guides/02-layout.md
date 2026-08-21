@@ -3,8 +3,9 @@ title: Layout
 description: The box model, flexbox, grid and tables on a cell grid.
 ---
 
-Sizes are in cells: `1ch` is one column, `1px` is one row. Lengths that land
-between cells resolve to whole cells.
+The cell is the unit basis: `1px` and `1ch` both mean one cell, and the
+property supplies the axis. Lengths that land between cells resolve to whole
+cells.
 
 ## Boxes
 
@@ -15,11 +16,10 @@ box.style.border = "1px solid";
 box.style.margin = "1px 0";
 ```
 
-Borders are drawn with box-drawing characters (`solid` and `double`) and
-take one cell per side. Where one box's border runs into another's, the
-cell they meet in becomes the junction the two strokes make: a rule across
-a bordered box ends in `├` and `┤`, and a column divider under a header
-row makes `┬` and `┴`. Boxes that only sit flush stay separate.
+Borders draw with box-drawing characters (`solid` and `double`) and take
+one cell per side. Borders that meet in a cell join: a rule that reaches
+a box's side ends in `├` or `┤`, and a column divider crossing it makes
+`┬` or `┴`.
 
 ## Flexbox
 
@@ -70,7 +70,7 @@ Text wraps at the box's width; `white-space`, `word-break`, and
 
 `position: relative`, `absolute`, and `fixed`, with `z-index` and stacking
 contexts. `overflow: hidden` clips to the box. `overflow: auto` and `scroll`
-clip the same way and make the box scrollable: `scrollTop`, `scrollTo`,
+clip too, and make the box scrollable: `scrollTop`, `scrollTo`,
 `scrollIntoView`, and the mouse wheel move its content by whole rows.
 
 ## Not implemented

@@ -1,109 +1,59 @@
-TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-draws actual DOM nodes to terminal output and redraws the screen when they
-mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
-any frontend web framework.
+TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
+terminal. It draws actual DOM nodes to terminal output and redraws the screen
+when nodes are mutated, so TUIs and interactive CLIs can be written with
+vanilla JavaScript or any frontend web framework or library.
 
-![Klondike solitaire — examples/solitaire.ts](cast:solitaire)
+![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
-```ts
-import {TermDOM} from "@b9g/termdom";
+Typical terminal UI libraries ask you to learn its widgets: a Box, a List, a
+Screen, and the arbritrary APIs that go with them. By contrast, TermDOM
+implements a real, spec-compliant DOM and CSSOM API. Make a div, style it, put
+it in the body. Just like the browser there is no render call, and changes
+paint on the next frame.
 
-const term = new TermDOM();
-term.attach();
+![examples/hello-world.ts](playground:hello-world)
 
-// The document is a real DOM document.
-const {document} = term;
-document.body.innerHTML = `
-  <style>
-    .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
-    .title { color: #5fafff; font-weight: bold; }
-    .done { color: green; }
-    .rest { color: #444; }
-    .pct { color: #888; }
-  </style>
-  <div class="card">
-    <div class="title">Installing</div>
-    <div>
-      <span class="done" id="done"></span><span class="rest" id="rest"></span>
-      <span class="pct" id="pct"></span>
-    </div>
-  </div>
-`;
+## Styling
 
-// TermDOM observes mutations and re-renders automatically.
-let n = 0;
-setInterval(() => {
-  n = (n + 1) % 101;
-  const cells = Math.round(n / 4);
-  document.getElementById("done").textContent = "█".repeat(cells);
-  document.getElementById("rest").textContent = "░".repeat(25 - cells);
-  document.getElementById("pct").textContent = String(n).padStart(3) + "%";
-}, 50);
-```
+TermDOM runs your stylesheets and inline styles through a real cascade and
+writes the computed styles to the screen as ANSI escape sequences. It resolves
+colors against the terminal’s palette and draws text decorations as terminal
+attributes: bold, italic, underline, strikethrough.
 
-![The card above, running](cast:readme)
+![examples/bar-chart.ts](playground:bar-chart)
 
-One cell is `1ch` wide and `1px` tall. Every box lands on whole cells.
+## Layout
 
-## Write a web page. Get a TUI.
+TermDOM lays out boxes with the browser’s algorithms — flexbox, grid, tables,
+the box model — against a grid of character cells. The cell is the unit basis
+for CSS lengths: `1px` and `1ch` both mean one cell. Text wraps at the edge of
+its box and reflows when the terminal resizes.
 
-Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser.
+![examples/flexbox.ts](playground:flexbox)
 
-```ts
-const spinner = document.createElement("span");
-spinner.className = "spin";           // .spin { color: green }
-section.appendChild(spinner);
-setInterval(() => {
-  spinner.textContent = frames[n++ % frames.length];
-}, 30);                               // no render call -- mutations paint
-```
+## Events
 
-![examples/animated.ts](cast:animated)
+TermDOM decodes stdin’s escape sequences into DOM events and dispatches them
+at real targets: `keydown` at the focused element, `click` on the element
+under the pointer, `paste` with the pasted text. Tab moves focus, and `:focus`
+styles follow it.
 
-## Interactivity is just DOM events.
+![examples/form.ts](playground:form)
 
-A NERDTree-style file browser in ~200 lines of vanilla DOM: `querySelectorAll` for the rows, `classList` for the selection, `keydown` for the keys, and `scrollIntoView()` to move the camera.
+## Libraries & Frameworks
 
-```ts
-document.addEventListener("keydown", (ev) => {
-  if (ev.key === "j") select(selected + 1);
-  if (ev.key === "Enter") expand(rows()[selected]);
-});
-rows()[selected].scrollIntoView();
-```
+The payoff of implementing a real DOM is that you can use browser libraries in
+the terminal without modification. TermDOM also works with most frontend
+frameworks with [a little bit of setup](/guides/getting-started/#frameworks).
 
-![examples/tree.ts](cast:tree)
-
-## Real text input. Real caret. Real IME.
-
-`<input>` elements with focus traversal and `:focus` styling — and the caret is the real terminal cursor, so CJK input methods compose in the field, measured in cells.
-
-```html
-<div class="field">
-  <div class="label">Name</div><input id="name">
-</div>
-
-field.addEventListener("input", updatePreview);
-```
-
-![examples/form.ts](cast:form)
-
-## Features
-
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits like it does in the browser, and is translated to ANSI escapes for color and text decoration.
-- **Layout** The CSS box model, flexbox, and table layout. Sizes resolve to whole cells.
-- **Text** CJK, emoji, and combining characters take their correct widths. Hebrew and Arabic render in visual order with contextual shaping, and the caret moves by grapheme.
-- **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
-- **Events** Events for keys, mouse, focus, and paste fire on elements, the document, and the window, pulled from STDIN.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `Element.getBoundingClientRect()` are hooked up to the layout engine and viewport, following browser standards.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios come with default behavior and terminal-native looks, and can be restyled with ordinary CSS. Tab navigation and `:focus` styles are supported.
-- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles behave like the browser's. The built-in form controls are themselves shadow trees.
-- **Selection** Drag to select, styled with `::selection`.
-- **Fullscreen** `Element.requestFullscreen()` renders an element to the alternate screen. Exiting restores the shell and its scrollback.
+![examples/prism.ts](playground:prism)
 
 ## Compatibility
 
-The [compatibility matrix](/compatibility/) is generated by a probe suite: each DOM API, selector, and CSS property is applied to a real document and rendered, and the table records whether the output changed.
+TermDOM tries to follow web specifications as closely as possible, diverging
+only when concepts wouldn’t make sense in the terminal. You can track which
+browser features are implemented via the [compatibility
+table](/compatibility/).
 
 ## Get started
 
@@ -111,11 +61,6 @@ The [compatibility matrix](/compatibility/) is generated by a probe suite: each 
 npm install @b9g/termdom
 ```
 
-[Guides →](/guides/getting-started/) · [Examples on GitHub →](https://github.com/bikeshaving/termdom/tree/main/examples)
-
-## Name
-
-Not to be confused with [DomTerm](https://domterm.org), Per Bothner's
-terminal emulator built out of DOM elements. The two projects are each
-other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
-in a terminal.
+Read the [getting started guide](/guides/getting-started/), poke at an example
+in the [playground](/playground/), or read the source on
+[GitHub](https://github.com/bikeshaving/termdom).

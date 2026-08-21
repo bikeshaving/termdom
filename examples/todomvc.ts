@@ -1,4 +1,14 @@
-// The official Crank TodoMVC (github.com/bikeshaving/crank, examples/todomvc.js),
+// The official Crank TodoMVC (github.com/bikeshaving/crank, examples/todomvc.js).
+// The components and their logic are that file's; the stylesheet below is
+// written for a terminal. Crank reads no globals: its DOM renderer creates
+// nodes through the render root's ownerDocument.
+//
+//   node examples/todomvc.ts
+//
+//   type and Enter   add a todo
+//   Tab              move between the controls
+//   Space            toggle the focused checkbox or press the button
+//   double-click     edit a todo (Enter saves, Escape cancels)
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {jsx} from "@b9g/crank/standalone";

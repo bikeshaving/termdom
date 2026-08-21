@@ -3,15 +3,13 @@ const term = new TermDOM();
 term.attach();
 const {document} = term;
 
-// Create main container with column layout
 const mainContainer = document.createElement("div");
 mainContainer.style.display = "flex";
 mainContainer.style.flexDirection = "column";
-mainContainer.style.padding = "1px 2px"; // top, right, bottom, left
+mainContainer.style.padding = "1px 2px";
 mainContainer.style.backgroundColor = "darkblue";
 document.body.appendChild(mainContainer);
 
-// Header section
 const header = document.createElement("div");
 header.style.display = "flex";
 header.style.flexDirection = "row";
@@ -31,21 +29,19 @@ headerSubtitle.style.textAlign = "right";
 headerSubtitle.style.color = "white";
 header.appendChild(headerSubtitle);
 
-// Content area with horizontal layout
 const contentArea = document.createElement("div");
 contentArea.style.display = "flex";
 contentArea.style.flexDirection = "row";
 contentArea.style.padding = "1px 0 0";
 mainContainer.appendChild(contentArea);
 
-// Left sidebar
 const sidebar = document.createElement("div");
 sidebar.style.display = "flex";
 sidebar.style.flexDirection = "column";
 sidebar.style.backgroundColor = "darkgreen";
 sidebar.style.padding = "1px";
 sidebar.style.whiteSpace = "nowrap";
-sidebar.style.flexShrink = "0"; // Prevent shrinking to preserve content
+sidebar.style.flexShrink = "0";
 contentArea.appendChild(sidebar);
 
 const sidebarTitle = document.createElement("span");
@@ -63,7 +59,6 @@ for (const item of menuItems) {
 	sidebar.appendChild(menuItem);
 }
 
-// Main content area
 const mainContent = document.createElement("div");
 mainContent.style.display = "flex";
 mainContent.style.flexDirection = "column";
@@ -84,7 +79,6 @@ contentText.style.color = "white";
 contentText.style.padding = "1px 0px 1px 0px";
 mainContent.appendChild(contentText);
 
-// Feature showcase area
 const featuresContainer = document.createElement("div");
 featuresContainer.style.display = "flex";
 featuresContainer.style.flexDirection = "row";
@@ -103,7 +97,7 @@ for (const feature of features) {
 	featureCard.style.flexDirection = "column";
 	featureCard.style.backgroundColor = "darkcyan";
 	featureCard.style.padding = "1px 1px 1px 1px";
-	featureCard.style.flex = "1"; // Make cards flexible to share available width equally
+	featureCard.style.flex = "1";
 	featuresContainer.appendChild(featureCard);
 
 	const featureTitle = document.createElement("span");
@@ -119,7 +113,6 @@ for (const feature of features) {
 	featureCard.appendChild(featureDesc);
 }
 
-// Footer with reverse row layout
 const footer = document.createElement("div");
 footer.style.display = "flex";
 footer.style.flexDirection = "row-reverse";

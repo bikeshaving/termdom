@@ -9,6 +9,7 @@ import {collectDocuments} from "./models/document.js";
 import HomeView from "./views/home.js";
 import GuideView from "./views/guide.js";
 import SupportView from "./views/support.js";
+import PlaygroundView from "./views/playground.js";
 import NotFoundView from "./views/not-found.js";
 
 // Asset imports. Shovel bundles each one and hands back a content-hashed URL,
@@ -19,30 +20,35 @@ import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
 // giant raw SVG controls and a collapsed terminal box.
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
+import playgroundScript from "./clients/playground.ts" with {assetBase: "/static/"};
+// What the sandbox iframe's import map resolves bare specifiers to:
+// "@b9g/termdom" is the engine, "node:fs" and "node:path" are the in-memory
+// filesystem. Programs in the playground import them as written.
+import sandboxTermdomScript from "./clients/sandbox-termdom.ts" with {assetBase: "/static/"};
+import virtualFSScript from "./models/virtual-fs.ts" with {assetBase: "/static/"};
+// The terminal emulator's own stylesheet, linked from the playground alone.
+import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
 import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
-// Recorded terminal sessions, rendered to GIF so they play in any browser
-// with no client JavaScript.
-import readmeGif from "../static/casts/readme.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import animatedGif from "../static/casts/animated.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import treeGif from "../static/casts/tree.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import formGif from "../static/casts/form.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+// A recorded terminal session, rendered to GIF so it plays in any browser
+// with no client JavaScript. Solitaire is the one program the site shows
+// this way: every other figure is the program itself, running in the page.
 import solitaireGif from "../static/casts/solitaire.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
 export const assets = {
 	clientCSS,
 	navbarScript,
 	searchScript,
+	playgroundScript,
+	sandboxTermdomScript,
+	virtualFSScript,
+	xtermCSS,
 	favicon,
 	logo,
 };
 
 export const castGifs: Record<string, string> = {
-	readme: readmeGif,
-	animated: animatedGif,
-	tree: treeGif,
-	form: formGif,
 	solitaire: solitaireGif,
 };
 
@@ -82,6 +88,12 @@ router
 	.route("/guides/:slug/")
 	.get(async (request, context) =>
 		renderView(GuideView, new URL(request.url).pathname, context.params),
+	);
+
+router
+	.route("/playground/")
+	.get(async (request) =>
+		renderView(PlaygroundView, new URL(request.url).pathname),
 	);
 
 router
@@ -162,7 +174,7 @@ async function guideURLs(): Promise<string[]> {
 }
 
 async function allRoutes(): Promise<string[]> {
-	return ["/", "/compatibility/", ...(await guideURLs())];
+	return ["/", "/playground/", "/compatibility/", ...(await guideURLs())];
 }
 
 async function generateSitemap(): Promise<string> {

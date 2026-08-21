@@ -1,10 +1,18 @@
 /**
- * Type declarations for imports TypeScript cannot resolve on its own.
+ * Type declarations for what TypeScript cannot resolve on its own: packages
+ * that ship no types, and the globals shovel gives the worker.
  *
  * Asset imports (`*.svg`, `*.css`, `*.cast`, ...) are NOT declared here:
  * `@b9g/assets` already declares them globally, including a `*` catch-all, and
- * redeclaring them collides. This file is only for packages that ship no types.
+ * redeclaring them collides.
  */
+
+interface Window {
+	/** The directories `shovel.json` names, opened by name. */
+	directories: {
+		open(name: string): Promise<FileSystemDirectoryHandle>;
+	};
+}
 
 declare module "asciinema-player" {
 	export interface CreateOptions {

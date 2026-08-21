@@ -2,14 +2,22 @@
 	"compilerOptions": {
 		"target": "esnext",
 		"module": "esnext",
-		"lib": ["esnext", "dom"],
+		"lib": ["esnext", "dom", "dom.iterable"],
 		"declaration": false,
 		"downlevelIteration": true,
 		"strict": true,
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"esModuleInterop": true,
+		"skipLibCheck": true,
 		"noEmit": true
 	},
-	"include": ["src", "scripts", "dist/server/shovel.d.ts"]
+	// The playground bundles the library from source, so the engine's ambient
+	// module declarations belong to this program too.
+	"include": [
+		"src",
+		"scripts",
+		"dist/server/shovel.d.ts",
+		"../src/internal/externals.d.ts"
+	]
 }

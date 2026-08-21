@@ -6,6 +6,8 @@
 		"static": "MODE=production shovel build src/server.ts --platform node --lifecycle && npm run pagefind",
 		"pagefind": "pagefind --site dist/public",
 		"check-links": "bun run scripts/check-links.ts",
+		"verify:ime": "node scripts/verify-ime.ts",
+		"verify:playground": "node scripts/verify-playground.ts",
 		"predeploy": "npm run static && npm run check-links",
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
@@ -16,10 +18,15 @@
 		"@b9g/filesystem": "^0.2.0",
 		"@b9g/http-errors": "^0.2.1",
 		"@b9g/platform": "^0.1.19",
+		"@b9g/platform-node": "^0.1.17",
+		"@b9g/revise": "^0.1.6",
 		"@b9g/router": "^0.2.5",
 		"@b9g/shovel": "^0.2.21",
 		"@emotion/css": "^11.13.5",
 		"@emotion/server": "^11.11.0",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/addon-unicode11": "^0.9.0",
+		"@xterm/xterm": "^6.0.0",
 		"front-matter": "^4.0.2",
 		"gh-pages": "^6.3.0",
 		"normalize.css": "^8.0.1",
@@ -28,10 +35,12 @@
 		"postcss-preset-env": "^8.5.1",
 		"prism-themes": "^1.9.0",
 		"prismjs": "^1.30.0",
-		"@b9g/platform-node": "^0.1.17"
+		"sucrase": "^3.35.1"
 	},
 	"devDependencies": {
 		"@types/prismjs": "^1.26.5",
+		"esbuild": "^0.27.7",
+		"playwright": "^1.62.1",
 		"svg-to-ico": "^2.0.0"
 	}
 }

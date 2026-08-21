@@ -90,6 +90,10 @@ export function Navbar({url}: {url: string}) {
 					aria-current=${url.startsWith("/guides") && "page"}
 				>Guides</a>
 				<a
+					href="/playground/"
+					aria-current=${url.startsWith("/playground") && "page"}
+				>Playground</a>
+				<a
 					href="/compatibility/"
 					aria-current=${url.startsWith("/compatibility") && "page"}
 				>Compatibility</a>
