@@ -3,19 +3,26 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import {isTextField, selectionRangeOf, type UAToolkit} from "./dom.js";
+import {
+	type UAToolkit,
+	flatIsConnected,
+	flatParentElement,
+	isTextField,
+	selectionRangeOf,
+} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import type {Viewport} from "./viewport.js";
 import {
+	type ComputedStyle,
 	type StyleManager,
+	computedStyleOf,
 	getBoxModel,
+	pseudoStyleOf,
 	resolveBorderSides,
 } from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment} from "./text.js";
-import {flatIsConnected, flatParentElement} from "./dom.js";
-import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./cascade.js";
 import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
 
 /**

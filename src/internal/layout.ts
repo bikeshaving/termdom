@@ -18,8 +18,6 @@ import {
 	parseTrackList,
 	parseTrackSizeList,
 	type BoxModel,
-} from "./cascade.js";
-import {
 	computedStyleOf,
 	getPropertyValue,
 	parseUnitValue,

@@ -231,11 +231,6 @@ function isUserActive(termdom: TermDOM): boolean {
 	return termdom[kActivationDepth] > 0;
 }
 
-export {
-	transportFromProcess,
-	type TerminalTransport,
-} from "./terminalsession.js";
-
 export interface TermDOMOptions {
 	/**
 	 * The terminal this instance renders to. Defaults to a wrapper around the
