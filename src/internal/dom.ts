@@ -186,6 +186,14 @@ export interface UAToolkit {
 	isUAShadowRoot(node: object): boolean;
 	/** How many style elements the granted document holds. */
 	styleElementCount(): number;
+	/**
+	 * Dispatch as the user agent: isTrusted true, default actions armed.
+	 * The one dispatch door script never gets.
+	 */
+	dispatchAsUserAgent(target: object, event: object): boolean;
+	/** Empty and mode-lock a clipboard transfer as its dispatch ends. */
+	lockDataTransfer(transfer: object): void;
+	createBeforeUnloadEvent(): BeforeUnloadEvent;
 }
 
 /**
@@ -224,7 +232,10 @@ function buildUAToolkit(document: object): UAToolkit {
 		if (node === (document as unknown as Node)) {
 			return true;
 		}
-		const anchor = node.ownerDocument ?? node.host?.ownerDocument;
+		const anchor =
+			node.ownerDocument ??
+			node.host?.ownerDocument ??
+			(node as unknown as {document?: object}).document;
 		return anchor === (document as unknown as Document);
 	};
 	return {
@@ -326,6 +337,16 @@ function buildUAToolkit(document: object): UAToolkit {
 		styleElementCount(): number {
 			return styleElementCount(document as Document);
 		},
+		dispatchAsUserAgent(target: object, event: object): boolean {
+			if (!owns(target)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return dispatchAsUserAgent(target as EventTarget, event as Event);
+		},
+		lockDataTransfer(transfer: object): void {
+			lockDataTransfer(transfer as DataTransfer);
+		},
+		createBeforeUnloadEvent,
 	};
 }
 
@@ -1101,7 +1122,7 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 });
 
 /** A beforeunload event, which only a teardown about to happen fires. */
-export function createBeforeUnloadEvent(): BeforeUnloadEvent {
+function createBeforeUnloadEvent(): BeforeUnloadEvent {
 	return constructInternal(() => new BeforeUnloadEvent());
 }
 
@@ -1967,7 +1988,7 @@ Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
  * text is theirs to read, and the clipboard is not theirs to rewrite through
  * the event.
  */
-export function lockDataTransfer(transfer: DataTransfer): void {
+function lockDataTransfer(transfer: DataTransfer): void {
 	transfer[kTransferMode] = "readonly";
 }
 
@@ -2989,7 +3010,7 @@ function dispatchFromOutside(
  * focus move becomes a DOM event -- everything a user or the terminal itself
  * caused, as opposed to what an application constructs and dispatches.
  */
-export function dispatchAsUserAgent(
+function dispatchAsUserAgent(
 	target: EventTarget,
 	event: Event,
 ): boolean {

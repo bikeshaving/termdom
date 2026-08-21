@@ -118,9 +118,15 @@ const engines = new WeakMap<object, TermDOM>();
 
 /** The engine an event target belongs to, if it is mounted in one. */
 function engineOfTarget(target: unknown): TermDOM | undefined {
-	const node = target as Node | null;
-	if (!node || typeof node.nodeType !== "number") {
+	const node = target as (Node & {document?: object}) | null;
+	if (!node) {
 		return undefined;
+	}
+	// A window carries the document it shows; a node carries its owner.
+	if (typeof node.nodeType !== "number") {
+		return node.document === undefined ?
+			undefined :
+				engines.get(node.document);
 	}
 	const document =
 		node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument;
@@ -191,22 +197,26 @@ function isActivationTriggering(event: DOM.Event): boolean {
  * as its dispatch runs, which is what the clipboard asks about.
  */
 function fireAsUserAgent(target: unknown, event: unknown): boolean {
-	const self = engineOfTarget(target);
-	if (self === undefined || !isActivationTriggering(event as DOM.Event)) {
-		return DOM.dispatchAsUserAgent(
-			target as DOM.EventTarget,
-			event as DOM.Event,
-		);
+	const engine = engineOfTarget(target);
+	// A target no engine mounts is engineless by definition, so the claim
+	// door is open for it; a mounted target dispatches through its engine's
+	// own toolkit.
+	const shaped = target as {ownerDocument?: object; document?: object};
+	const toolkit =
+		engine !== undefined ?
+			engine[kUAToolkit] :
+				DOM.claimUAToolkit(
+					shaped.ownerDocument ?? shaped.document ?? (target as object),
+				);
+	if (engine === undefined || !isActivationTriggering(event as DOM.Event)) {
+		return toolkit.dispatchAsUserAgent(target as object, event as object);
 	}
-	self[kActivationDepth]++;
-	self[kEverActivated] = true;
+	engine[kActivationDepth]++;
+	engine[kEverActivated] = true;
 	try {
-		return DOM.dispatchAsUserAgent(
-			target as DOM.EventTarget,
-			event as DOM.Event,
-		);
+		return toolkit.dispatchAsUserAgent(target as object, event as object);
 	} finally {
-		self[kActivationDepth]--;
+		engine[kActivationDepth]--;
 	}
 }
 
@@ -2570,7 +2580,7 @@ function installWindowExtensions(
 		// "are you sure?" however it likes and to close again once the
 		// user says yes. Every close asks: the event carries nothing from
 		// the last one.
-		const unloadEvent = DOM.createBeforeUnloadEvent();
+		const unloadEvent = termdom[kUAToolkit].createBeforeUnloadEvent();
 		fireAsUserAgent(window, unloadEvent);
 		if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
 			return;
@@ -4149,7 +4159,7 @@ function dispatchPaste(
 			termdom.document.body;
 	const clipboardData = new DOM.DataTransfer();
 	clipboardData.setData("text/plain", text);
-	DOM.lockDataTransfer(clipboardData);
+	termdom[kUAToolkit].lockDataTransfer(clipboardData);
 	const proceed = fireAsUserAgent(
 		target,
 		new termdom.window.ClipboardEvent("paste", {
