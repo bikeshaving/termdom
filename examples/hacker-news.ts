@@ -3,10 +3,19 @@
 //
 //   node examples/hacker-news.ts
 //
-//   j/k or arrows   move        Enter   read the comments
-//   g / G           top/bottom  Escape  back to the front page
-//   r               reload      q       quit
-//   a click selects a story and opens it
+//   j/k or up/down     move           Enter / l    read the comments
+//   h / left           fold a reply   Backspace    back to the front page
+//   l / right          unfold         space/f/b    page the thread
+//   g / G              ends           r            reload
+//   q                  quit
+//   a click picks a story or a comment; picking a story opens it
+//
+// In a thread, h folds the comment under the cursor. On a comment that is
+// folded already, or that has no replies, h steps up to the parent.
+//
+// The page takes the alternate screen, where Escape belongs to the terminal:
+// it drops the reader back into the scrollback, and the document keeps
+// rendering there in flow.
 import {TermDOM} from "@b9g/termdom";
 
 const API = "https://hn.algolia.com/api/v1";
@@ -66,7 +75,20 @@ style.textContent = `
 	}
 	.masthead .y { background-color: #ffffff; color: #ff6600; }
 	.masthead .count { font-weight: normal; }
-	.hint { color: #666666; padding: 0 1ch; }
+	/* Fullscreen is fixed space, which the document camera does not move, so
+	   the pane carries the scroll offset in its top margin and the screen-
+	   sized reader clips what runs off either end. The bar keeps the last
+	   row, and the scroll limit leaves that row to it. */
+	.reader { overflow: hidden; }
+	.hint {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		background-color: #262626;
+		color: #9e9e9e;
+		padding: 0 1ch;
+	}
 
 	.story { padding: 0 1ch; }
 	.headline { display: flex; flex-direction: row; }
@@ -88,7 +110,11 @@ style.textContent = `
 	.thread { border-left: 1px solid #3a3a3a; padding-left: 1ch; }
 	.byline { color: #828282; }
 	.byline .who { color: #b0b0b0; }
+	.byline .fold { color: #666666; }
 	.gone { color: #555555; }
+	.comment.on { background-color: #33291a; }
+	.comment.on .thread { border-left: 1px solid #ff6600; }
+	.comment.on .who { color: #ffffff; font-weight: bold; }
 
 	/* The comment body is HN's own markup: paragraphs, links, italics and
 	   the occasional code block, parsed and laid out as it stands. */
@@ -130,10 +156,22 @@ hint.className = "hint";
 const listView = document.createElement("div");
 const readerView = document.createElement("div");
 readerView.style.display = "none";
-document.body.append(masthead, hint, listView, readerView);
+// The pane is what moves under the camera below; the bar is a sibling of it
+// so a scroll leaves the bar where it is.
+const pane = document.createElement("div");
+pane.className = "pane";
+pane.append(masthead, listView, readerView);
+// The reader takes the screen: the alternate screen keeps a thread out of
+// the scrollback and hands the whole terminal to the page.
+const reader = document.createElement("div");
+reader.className = "reader";
+reader.append(pane, hint);
+document.body.appendChild(reader);
+void reader.requestFullscreen();
 
 const LIST_KEYS = " j/k move · enter comments · g/G ends · r reload · q quit";
-const READER_KEYS = " j/k scroll · space page · esc back · r reload · q quit";
+const READER_KEYS =
+	" j/k move · h/l fold · space page · backspace back · r reload · q quit";
 
 function message(kind: string, text: string): HTMLElement {
 	const div = document.createElement("div");
@@ -192,9 +230,26 @@ let reading: Story | null = null;
 // Bumped by anything that changes what the screen is for, so a fetch that
 // lands after the reader has moved on paints nothing.
 let generation = 0;
+// How many rows of the pane have scrolled off the top of the screen.
+let camera = 0;
 
+// The thread in reading order, the ids of the comments whose replies are
+// folded away, the thread positions the screen is showing, and the cursor
+// as an offset into that showing list.
+let thread: Array<[Item, number]> = [];
+const folded = new Set<number>();
+let showing: number[] = [];
+let picked = 0;
+
+/** Whichever list the cursor is walking: stories, or the comments on screen. */
 function rows(): HTMLElement[] {
-	return Array.from(listView.querySelectorAll<HTMLElement>(".story"));
+	const view = reading ? readerView : listView;
+	const selector = reading ? ".comment" : ".story";
+	return Array.from(view.querySelectorAll<HTMLElement>(selector));
+}
+
+function cursor(): number {
+	return reading ? picked : selected;
 }
 
 function makeRow(story: Story, index: number): HTMLElement {
@@ -230,26 +285,56 @@ function makeRow(story: Story, index: number): HTMLElement {
 
 function select(index: number): void {
 	const all = rows();
-	selected = Math.max(0, Math.min(index, all.length - 1));
-	all.forEach((row, i) => row.classList.toggle("on", i === selected));
-	count.textContent = all.length ? `${selected + 1}/${all.length}` : "";
+	const at = Math.max(0, Math.min(index, all.length - 1));
+	if (reading) {
+		picked = at;
+	} else {
+		selected = at;
+	}
+	all.forEach((row, i) => row.classList.toggle("on", i === at));
+	count.textContent = all.length ? `${at + 1}/${all.length}` : "";
 }
 
-function refresh(): void {
-	rows()[selected]?.scrollIntoView();
-	// At the first story, pull the camera the rest of the way up so the
-	// masthead shows too -- scrollIntoView alone stops below it.
-	if (selected === 0) {
-		toTop();
-	}
+/** The rows the pane gets to itself, with the bar holding the last one. */
+function page(): number {
+	return Math.max(1, window.innerHeight - 1);
+}
+
+function scrollTo(offset: number): void {
+	const limit = Math.max(0, pane.scrollHeight - page());
+	camera = Math.max(0, Math.min(Math.round(offset), limit));
+	pane.style.marginTop = `-${camera}px`;
+}
+
+function scrollBy(delta: number): void {
+	scrollTo(camera + delta);
 }
 
 function toTop(): void {
-	window.scrollBy(0, -document.body.scrollHeight);
+	scrollTo(0);
 }
 
-function page(): number {
-	return Math.max(1, window.innerHeight - 1);
+/** Move the pane the least it takes to bring a row above the bar. */
+function reveal(row: HTMLElement): void {
+	const rect = row.getBoundingClientRect();
+	if (rect.top < 0) {
+		scrollTo(camera + rect.top);
+	} else if (rect.bottom > page()) {
+		scrollTo(camera + rect.bottom - page());
+	}
+}
+
+function refresh(): void {
+	// At the first row, pull the camera the rest of the way up so the
+	// masthead shows too -- a reveal alone stops below it.
+	if (cursor() === 0) {
+		toTop();
+		return;
+	}
+	const row = rows()[cursor()];
+	if (row) {
+		reveal(row);
+	}
 }
 
 async function loadStories(): Promise<void> {
@@ -329,12 +414,53 @@ function flatten(item: Item, depth: number, out: Array<[Item, number]>): void {
 	}
 }
 
-function makeComment(item: Item, depth: number): HTMLElement {
+/** How many replies hang under a thread position, down to the last of them. */
+function replyCount(at: number): number {
+	const depth = thread[at][1];
+	let n = 0;
+	for (let i = at + 1; i < thread.length && thread[i][1] > depth; i++) {
+		n++;
+	}
+	return n;
+}
+
+/** The thread position a reply hangs from, or -1 at the top of the thread. */
+function parentOf(at: number): number {
+	const depth = thread[at][1];
+	for (let i = at - 1; i >= 0; i--) {
+		if (thread[i][1] < depth) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/** The thread minus the replies under folded comments, in reading order. */
+function unfolded(): number[] {
+	const out: number[] = [];
+	// Depth of the folded comment whose replies are being skipped, or -1
+	// while nothing is being skipped.
+	let under = -1;
+	for (let i = 0; i < thread.length; i++) {
+		const depth = thread[i][1];
+		if (under >= 0 && depth > under) {
+			continue;
+		}
+		under = -1;
+		out.push(i);
+		if (folded.has(thread[i][0].id)) {
+			under = depth;
+		}
+	}
+	return out;
+}
+
+function makeComment(item: Item, depth: number, hidden: number): HTMLElement {
 	const comment = document.createElement("div");
 	comment.className = "comment";
 	comment.style.paddingLeft = `${1 + Math.min(depth, INDENT_LIMIT) * 2}ch`;
-	const thread = document.createElement("div");
-	thread.className = "thread";
+	const rail = document.createElement("div");
+	rail.className = "thread";
 	const byline = document.createElement("div");
 	byline.className = "byline";
 	if (item.author) {
@@ -348,20 +474,85 @@ function makeComment(item: Item, depth: number): HTMLElement {
 		byline.classList.add("gone");
 		byline.textContent = "[deleted]";
 	}
-	thread.appendChild(byline);
+	if (hidden > 0) {
+		const marker = document.createElement("span");
+		marker.className = "fold";
+		marker.textContent = ` [+${hidden}]`;
+		byline.appendChild(marker);
+	}
+	rail.appendChild(byline);
 	if (item.text) {
 		const body = document.createElement("div");
 		body.className = "body";
 		body.innerHTML = item.text;
-		thread.appendChild(body);
+		rail.appendChild(body);
 	}
-	comment.appendChild(thread);
+	comment.appendChild(rail);
 	return comment;
+}
+
+/**
+ * Repaints the thread from the fold state and puts the cursor back on the
+ * comment at `target`, or on the nearest parent still on screen.
+ */
+function paintThread(story: Story, target: number): void {
+	showing = unfolded();
+	const parts: HTMLElement[] = [storyHead(story)];
+	if (!thread.length) {
+		parts.push(message("loading", "no comments yet"));
+	}
+	for (const at of showing) {
+		const [item, depth] = thread[at];
+		parts.push(
+			makeComment(item, depth, folded.has(item.id) ? replyCount(at) : 0),
+		);
+	}
+	if (thread.length >= COMMENT_LIMIT) {
+		parts.push(message("loading", `the first ${COMMENT_LIMIT} comments`));
+	}
+	readerView.replaceChildren(...parts);
+	let at = target;
+	while (at >= 0 && !showing.includes(at)) {
+		at = parentOf(at);
+	}
+	select(Math.max(0, showing.indexOf(at)));
+	refresh();
+}
+
+function unfold(story: Story): void {
+	const at = showing[picked];
+	if (at === undefined || !folded.has(thread[at][0].id)) {
+		return;
+	}
+	folded.delete(thread[at][0].id);
+	paintThread(story, at);
+}
+
+function fold(story: Story): void {
+	const at = showing[picked];
+	if (at === undefined) {
+		return;
+	}
+	const id = thread[at][0].id;
+	if (!folded.has(id) && replyCount(at) > 0) {
+		folded.add(id);
+		paintThread(story, at);
+		return;
+	}
+	const parent = parentOf(at);
+	if (parent >= 0) {
+		select(showing.indexOf(parent));
+		refresh();
+	}
 }
 
 async function openThread(story: Story): Promise<void> {
 	const mine = ++generation;
 	reading = story;
+	thread = [];
+	showing = [];
+	picked = 0;
+	folded.clear();
 	listView.style.display = "none";
 	readerView.style.display = "";
 	hint.textContent = READER_KEYS;
@@ -380,19 +571,9 @@ async function openThread(story: Story): Promise<void> {
 		if (mine !== generation) {
 			return;
 		}
-		const thread: Array<[Item, number]> = [];
+		thread = [];
 		flatten(item, 0, thread);
-		const parts: HTMLElement[] = [storyHead(story)];
-		if (!thread.length) {
-			parts.push(message("loading", "no comments yet"));
-		}
-		for (const [child, depth] of thread) {
-			parts.push(makeComment(child, depth));
-		}
-		if (thread.length >= COMMENT_LIMIT) {
-			parts.push(message("loading", `the first ${COMMENT_LIMIT} comments`));
-		}
-		readerView.replaceChildren(...parts);
+		paintThread(story, 0);
 		toTop();
 	} catch (_err) {
 		if (mine === generation) {
@@ -410,9 +591,28 @@ function back(): void {
 	readerView.style.display = "none";
 	listView.style.display = "";
 	hint.textContent = LIST_KEYS;
+	// The thread left the camera deep in its own rows; the front page starts
+	// from its masthead and comes down to the story that was open.
+	toTop();
 	select(selected);
 	refresh();
 }
+
+// Escape is the terminal's key, and it drops the page out of the alternate
+// screen. The scrollback has no camera to offset against, so the pane goes
+// back to its top and the document prints from there.
+document.addEventListener("fullscreenchange", () => {
+	if (!document.fullscreenElement) {
+		toTop();
+	}
+});
+
+// A narrower terminal rewraps into more rows, a shorter one shows fewer:
+// either way the camera re-aims at the row under the cursor.
+window.addEventListener("resize", () => {
+	scrollTo(camera);
+	refresh();
+});
 
 document.addEventListener("keydown", (event: Event) => {
 	const key = (event as KeyboardEvent).key;
@@ -421,22 +621,30 @@ document.addEventListener("keydown", (event: Event) => {
 		return;
 	}
 	if (reading) {
-		if (key === "Escape" || key === "h" || key === "ArrowLeft") {
+		if (key === "Backspace") {
 			back();
 		} else if (key === "r") {
 			void openThread(reading);
 		} else if (key === "j" || key === "ArrowDown") {
-			window.scrollBy(0, 1);
+			select(picked + 1);
+			refresh();
 		} else if (key === "k" || key === "ArrowUp") {
-			window.scrollBy(0, -1);
+			select(picked - 1);
+			refresh();
+		} else if (key === "h" || key === "ArrowLeft") {
+			fold(reading);
+		} else if (key === "l" || key === "ArrowRight") {
+			unfold(reading);
 		} else if (key === " " || key === "f" || key === "PageDown") {
-			window.scrollBy(0, page());
+			scrollBy(page());
 		} else if (key === "b" || key === "PageUp") {
-			window.scrollBy(0, -page());
+			scrollBy(-page());
 		} else if (key === "g") {
-			toTop();
+			select(0);
+			refresh();
 		} else if (key === "G") {
-			window.scrollBy(0, document.body.scrollHeight);
+			select(rows().length - 1);
+			refresh();
 		}
 		return;
 	}
@@ -463,10 +671,16 @@ document.addEventListener("keydown", (event: Event) => {
 });
 
 document.addEventListener("click", (event: Event) => {
+	const target = event.target as Element;
 	if (reading) {
+		const comment = target.closest(".comment") as HTMLElement | null;
+		if (comment) {
+			select(rows().indexOf(comment));
+			refresh();
+		}
 		return;
 	}
-	const row = (event.target as Element).closest(".story") as HTMLElement | null;
+	const row = target.closest(".story") as HTMLElement | null;
 	if (!row) {
 		return;
 	}
