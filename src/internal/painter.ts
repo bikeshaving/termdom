@@ -1117,6 +1117,11 @@ function selectionRangeFor(
 	if (!selectionParent) {
 		return null;
 	}
+	// user-select: none keeps this node's text out of the selection, so no
+	// share of the highlight lands on it either.
+	if (!self[kStyleManager].isSelectable(selectionParent)) {
+		return null;
+	}
 	// Narrowed to this node: ::selection resolves per node's parent, so each
 	// node's share of the selection is painted in its own style.
 	const from =

@@ -2557,7 +2557,6 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 
-/** Marks a prototype whose invalidation hooks are already installed. */
 // ============================================================================
 // CSSOM: STYLESHEETS AND RULES
 // ============================================================================
@@ -5838,10 +5837,6 @@ function observableAdopted(
 }
 
 /**
- * Put this engine's CSSOM behind the document's stylesheet surface: a style
- * element's `sheet`, `document.styleSheets`, and the adopted lists.
- */
-/**
  * Every CSSOM interface names itself: `Object.prototype.toString` on one of
  * its objects gives the interface name, as it does for any platform object.
  */
@@ -8494,6 +8489,28 @@ export class StyleManager {
 			return element.parentElement ?? element;
 		}
 		return element;
+	}
+
+	/**
+	 * Whether an element's text can enter a selection: the used value of
+	 * user-select, with `auto` resolved through the parent per css-ui-4.
+	 * Divergence: `text`, `all` and `contain` all behave as plain
+	 * selectable -- `all` and `contain` change selection's shape, and
+	 * nothing implements that shape yet.
+	 */
+	isSelectable(element: object): boolean {
+		let current = element as Element | null;
+		while (current) {
+			const value = computedStyleOf(current).computedValueOf("user-select");
+			if (value === "none") {
+				return false;
+			}
+			if (value !== "auto" && value !== "") {
+				return true;
+			}
+			current = flatParentElement<Element>(current);
+		}
+		return true;
 	}
 
 	/**

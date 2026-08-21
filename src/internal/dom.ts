@@ -77,7 +77,11 @@ export interface UAEngine {
 			clampToNearestLine?: boolean,
 		): {node: UAText; offset: number} | null;
 	};
-	styles: {registerShadowRoot(root: object): void};
+	styles: {
+		registerShadowRoot(root: object): void;
+		/** The used user-select answer selection movement filters through. */
+		isSelectable(element: object): boolean;
+	};
 	/**
 	 * Note that a state no attribute records moved -- a popover shown or
 	 * hidden. Nothing about it is a mutation, so the rules that test it and
@@ -21231,16 +21235,25 @@ function paintsText(
 	return false;
 }
 
-/** The painted text nodes of a document, in tree order. */
+/**
+ * The painted, selectable text nodes of a document, in tree order. The
+ * selectable filter asks per text node's parent rather than pruning the
+ * subtree, because user-select: none does not inherit -- a `text`
+ * descendant inside a `none` ancestor selects again.
+ */
 function selectionTextNodes(
 	document: Document,
-	layout: UAEngine["layout"] | null,
+	engine: UAEngine | undefined,
 ): Text[] {
+	const layout = engine?.layout ?? null;
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			if (child.nodeType === TEXT_NODE) {
-				if (paintsText(child as Text, layout)) {
+				if (
+					paintsText(child as Text, layout) &&
+					(engine === undefined || engine.styles.isSelectable(node))
+				) {
 					nodes.push(child as Text);
 				}
 			} else if (child.nodeType === ELEMENT_NODE) {
@@ -21441,7 +21454,8 @@ function modifiedPoint(
 	granularity: string,
 ): [Node, number] | null {
 	const document = self[kDocument];
-	const layout = uaEngineOf(document)?.layout ?? null;
+	const engine = uaEngineOf(document);
+	const layout = engine?.layout ?? null;
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -21451,7 +21465,7 @@ function modifiedPoint(
 		// page just mutated has to be laid out before they are asked for.
 		layout.calculateLayout();
 	}
-	const run = flattenSelectionText(selectionTextNodes(document, layout));
+	const run = flattenSelectionText(selectionTextNodes(document, engine));
 	if (run.parts.length === 0) {
 		return null;
 	}

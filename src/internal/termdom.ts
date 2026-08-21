@@ -3700,6 +3700,15 @@ function documentPointToTextPosition(
 	return self[kLayoutEngine].caretPositionFromPoint(x, y, element);
 }
 
+/** Whether the text at a caret position may enter the document selection. */
+function selectableTextPosition(
+	self: TermDOM,
+	position: {node: Text; offset: number},
+): boolean {
+	const parent = flatParentElement<Element>(position.node);
+	return parent === null || self[kStyleManager].isSelectable(parent);
+}
+
 /**
  * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
  * ancestor (the target included) whose overflow-y makes it a scroll
@@ -3882,11 +3891,11 @@ function handleMouseReport(
 		}
 		// Dragging with the anchor set extends the document selection to
 		// the caret position under the pointer. setBaseAndExtent handles a
-		// backward drag itself; over a textless stretch the focus simply
-		// stays where it last was.
+		// backward drag itself; over a textless stretch -- or user-select:
+		// none content -- the focus simply stays where it last was.
 		if (self[kSelectionDragAnchor] && self[kMouseDownTarget] && point) {
 			const focus = documentPointToTextPosition(self, x, y);
-			if (focus) {
+			if (focus && selectableTextPosition(self, focus)) {
 				const anchor = self[kSelectionDragAnchor];
 				self.window
 					.getSelection()
@@ -3969,9 +3978,12 @@ function handleMouseReport(
 			// the drag events for themselves opt out.
 			const selection = self.window.getSelection();
 			if (base === 0 && selection && !self[kFieldDragAnchor]) {
-				const anchor = point ?
-						documentPointToTextPosition(self, x, y) :
-					null;
+				let anchor = point ? documentPointToTextPosition(self, x, y) : null;
+				// user-select: none refuses the anchor: a press on it clears
+				// the selection and starts no drag.
+				if (anchor && !selectableTextPosition(self, anchor)) {
+					anchor = null;
+				}
 				const hadSelection = !selection.isCollapsed;
 				self[kSelectionDragAnchor] = anchor;
 				if (anchor) {
