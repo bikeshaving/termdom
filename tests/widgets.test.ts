@@ -16,6 +16,22 @@ function type(terminal: MockProcess, data: string): Promise<void> {
 
 /* ------------------------------------------------------- hidden content */
 
+test("a hidden input is display: none, not a painter skip", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"before<input type=\"hidden\" value=\"secret\">after";
+	await nextFrame(dom);
+
+	// display: none generates no box, so the neighbours meet.
+	expect(terminal.getPlainText()).toContain("beforeafter");
+	expect(terminal.getPlainText()).not.toContain("secret");
+	const input = dom.document.querySelector("input")!;
+	expect(dom.window.getComputedStyle(input).display).toEqual("none");
+
+	dom.dispose();
+});
+
 test("a datalist never renders its options", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});

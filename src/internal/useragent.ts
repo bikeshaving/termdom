@@ -1302,6 +1302,7 @@ export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
+	input[type=hidden i] { display: none !important; }
 	a[href] { text-decoration: underline; }
 	/*
 	 * The dir attribute, so it reaches layout as the direction property it

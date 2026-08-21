@@ -584,25 +584,11 @@ function renderElement(
 	}
 
 	// A select's content is its UA shadow tree (label + indicator + picker),
-	// built on connect and painted by the normal child walk; an OPEN picker
-	// (the widget shows it by flipping display) paints in the top layer, over
-	// following content. Parking the caret at the field origin is the rest.
+	// built on connect and painted by the normal child walk; the widget puts
+	// an open picker in the top layer itself. Parking the caret at the field
+	// origin is the painter's share.
 	if (element.tagName === "SELECT" && rect) {
 		const select = element as HTMLSelectElement;
-		const picker =
-			shadowRootOf<ShadowRoot>(select)?.querySelector<HTMLElement>(
-				'[part="picker"]',
-			);
-		// The widget flips the picker's display inline on open/close, so its
-		// own intent reads straight off style.display -- no style resolution,
-		// and exactly the open/closed signal the top-layer decision wants.
-		if (picker) {
-			if (picker.style.display !== "none") {
-				self[kTopLayer].add(picker);
-			} else {
-				self[kTopLayer].delete(picker);
-			}
-		}
 		if (visible && select === self[kDocument].activeElement) {
 			const content = self[kLayout].contentRect(select);
 			if (content) {
@@ -619,9 +605,6 @@ function renderElement(
 			if (visible) {
 				renderToggleGlyph(self, input, ctx);
 			}
-			return;
-		}
-		if (input.type === "hidden") {
 			return;
 		}
 	}

@@ -14128,6 +14128,7 @@ export class HTMLSelectElement extends HTMLElement {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
+			topLayerOf(this[kDocument]).delete(picker as unknown as Element);
 			return;
 		}
 
@@ -14153,6 +14154,9 @@ export class HTMLSelectElement extends HTMLElement {
 		if (picker.style.display !== "block") {
 			picker.style.display = "block";
 		}
+		// An open picker paints in the top layer, over following content. The
+		// widget owns the membership with the display flip, as one intent.
+		topLayerOf(this[kDocument]).add(picker as unknown as Element);
 	}
 
 	/**
