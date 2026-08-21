@@ -301,7 +301,7 @@ A system color computes as its keyword here, not as an rgb(). The name stands fo
 ### CSSStyleSheet-constructable-disallow-import.tentative.html
 
 - @import rules should not trigger any loads.: promise_test: Unhandled rejection with value: object "ReferenceError: performance is not defined"
-- @import rules are not parsed in CSSStyleSheet.replace: assert_unreached: Promise was rejected (TypeError: null is not an object (evaluating 'node[kPseudoHost]')) when it should have been resolved Reached unreachable code
+- @import rules are not parsed in CSSStyleSheet.replace: assert_unreached: Promise was rejected (TypeError: null is not an object (evaluating 'element.ownerDocument')) when it should have been resolved Reached unreachable code
 
 ### CSSStyleSheet-constructable-replace-on-regular-sheet.html
 

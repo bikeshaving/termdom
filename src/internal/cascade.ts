@@ -38,6 +38,9 @@ import type {LayoutEngine} from "./layout.js";
 const uaByDocument = new WeakMap<object, UAToolkit>();
 
 function uaOf(node: object): UAToolkit | undefined {
+	if ((node as object | null) == null) {
+		return undefined;
+	}
 	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
 	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
 	let toolkit = uaByDocument.get(document);
