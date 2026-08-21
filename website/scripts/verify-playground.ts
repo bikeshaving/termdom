@@ -131,6 +131,13 @@ report(await waitForText("one card", 20000), "playground: solitaire boots throug
 await page.selectOption("select", "weather");
 report(await waitForText("city", 15000), "playground: weather paints its search");
 
+// Hacker News paints its masthead and says it is loading before the API
+// answers, so the check holds offline; the stories themselves need the
+// network and are not this suite's gate.
+await page.selectOption("select", "hacker-news");
+report(await waitForText("Hacker News", 15000), "playground: hacker-news paints its masthead");
+report(await waitForText("loading the front page", 5000), "playground: hacker-news says it is loading");
+
 // The rest of the roster: chat paints its composer, fuzzy-finder lists and
 // previews the virtual files, and markdown renders its sample through
 // marked and Prism, both from the CDN.
@@ -208,8 +215,9 @@ report(await waitForText("New profile"), "home: form embed paints");
 // The tree embed answers keys. The click lands on whatever row is under
 // it and selects it -- the engine dispatches real clicks -- so g first
 // puts the selection at the top, then j moves to examples/ and Enter
-// opens it.
-const tree = page.locator(".xterm").nth(2);
+// opens it. The embed is found by what it shows rather than by its place
+// among the terminals, which the page's order decides.
+const tree = page.locator(".xterm").filter({hasText: "workspace/termdom"}).first();
 await tree.click();
 await page.keyboard.press("g");
 await page.keyboard.press("j");
