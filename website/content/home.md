@@ -61,6 +61,6 @@ table](/compatibility/).
 npm install @b9g/termdom
 ```
 
-Read the [getting-started guide](/guides/getting-started/), poke at an example
+Read the [getting started guide](/guides/getting-started/), poke at an example
 in the [playground](/playground/), or read the source on
 [GitHub](https://github.com/bikeshaving/termdom).
