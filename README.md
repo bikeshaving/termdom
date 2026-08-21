@@ -1,13 +1,13 @@
 # TermDOM
 
-**Build terminal apps with HTML, CSS and the DOM.**
+**Build terminal apps with HTML, CSS and DOM.**
 
 ![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
-TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-draws actual DOM nodes to terminal output and redraws the screen when the nodes
-are mutated, so TUIs and interactive CLIs can be written with vanilla
-JavaScript or any frontend web framework.
+TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
+terminal. It draws actual DOM nodes to terminal output and redraws the screen
+when nodes are mutated, so TUIs and interactive CLIs can be written with
+vanilla JavaScript, or any frontend web framework or library.
 
 ```sh
 npm install @b9g/termdom
@@ -57,19 +57,19 @@ setInterval(() => {
   and inherits as in the browser, translated to ANSI color and decoration.
 - **Layout** The CSS box model, flexbox, and table layout, computed in whole
   terminal cells with margins, borders, and padding.
-- **Scrolling** Documents taller than the terminal scroll with
-  `window.scrollTo()` and `element.scrollIntoView()`.
-- **Events** Keyboard, mouse, focus, and paste events fire on elements, the
-  document, and the window, decoded from stdin.
+- **Text** CJK, emoji, and combining characters take correct widths; Hebrew
+  and Arabic render in visual order with contextual shaping.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
   `ResizeObserver`, and `getBoundingClientRect()` work and report
   cell-based layout.
+- **Events** Keyboard, mouse, focus, and paste events fire on elements, the
+  document, and the window, decoded from stdin.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
   terminal-native looks, restylable with CSS; Tab and `:focus` work.
+- **Scrolling** Documents taller than the terminal scroll with
+  `window.scrollTo()` and `element.scrollIntoView()`.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
   `:host`, and scoped styles; the built-in controls are shadow trees.
-- **Text** CJK, emoji, and combining characters take correct widths; Hebrew
-  and Arabic render in visual order with contextual shaping.
 - **Selection** Drag to select, styled with `::selection`; the caret moves
   by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
 - **Fullscreen** `Element.requestFullscreen()` renders to the alternate
@@ -78,8 +78,8 @@ setInterval(() => {
 ## How it works
 
 TermDOM implements the browser's rendering pipeline against a grid of character
-cells instead of pixels. All CSS lengths resolve to cells (`1px` and `1ch` are
-both one cell). On each frame the engine recomputes style and layout for
+cells instead of pixels. The cell is the unit basis for CSS lengths: `1px` and
+`1ch` both mean one cell. On each frame the engine recomputes style and layout for
 whatever mutated, paints the result into a cell buffer, diffs it against the
 previous frame, and writes the difference to stdout as ANSI escape sequences.
 Escape sequences from stdin are decoded into keyboard, mouse, and paste events
@@ -121,10 +121,10 @@ against the engine.
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a terminal
-emulator built out of DOM elements. The two projects are each
-other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
-in a terminal.
+Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a
+terminal emulator built out of DOM elements. The two projects are each other's
+inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM in a
+terminal.
 
 ## License
 
