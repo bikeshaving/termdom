@@ -442,6 +442,7 @@ function sheet(): string {
 
   .hint { padding-top: 1px; color: #7fae90; text-align: center; }
   .hint b { color: #cfe8d8; font-weight: bold; }
+  .hint kbd { color: #cfe8d8; }
 
   ${css(TIERS.compact)}
   @media (min-width: ${ROOMY_MIN_WIDTH}ch) { ${css(TIERS.roomy)} }
@@ -472,10 +473,27 @@ const MIDDOT = "·";
 const STAR = "★";
 /** The key hints shrink with the cards, never past their own columns. */
 function deckKey(t: Tier): string {
-	return t.width >= 7 ? "[Space]" : t.width >= 5 ? "[Spc]" : "[\u2423]";
+	return t.width >= 7 ? "Space" : t.width >= 5 ? "Spc" : "\u2423";
 }
-function flipKey(t: Tier): string {
-	return t.width >= 7 ? "[0]/[f]lip" : t.width >= 5 ? "[0/f]" : "[0]";
+function FlipKey({tier}: {tier: Tier}) {
+	if (tier.width >= 7) {
+		return jsx`<kbd>0</kbd>/<kbd>f</kbd>lip`;
+	}
+	if (tier.width >= 5) {
+		return jsx`<kbd>0</kbd>/<kbd>f</kbd>`;
+	}
+	return jsx`<kbd>0</kbd>`;
+}
+/** The cells FlipKey takes, which the caption row's padding needs. */
+function flipKeyLength(t: Tier): number {
+	return t.width >= 7 ? 6 : t.width >= 5 ? 3 : 1;
+}
+
+/** A marked key, centered the way `centered` centers text. */
+function CenteredKey({cap, width}: {cap: string; width: number}) {
+	const pad = Math.max(0, width - cap.length);
+	const left = Math.floor(pad / 2);
+	return jsx`${" ".repeat(left)}<kbd>${cap}</kbd>${" ".repeat(pad - left)}`;
 }
 
 const ARROWS_ALL = "↑↓←→";
@@ -1200,20 +1218,20 @@ function* App(this: Context) {
 								<span
 									class=${modeNow() === 1 ? "pick on" : "pick"}
 									onclick=${() => pickMode(1)}
-								>${"[1] one card"}</span>
+								><kbd>1</kbd>${" one card"}</span>
 								<span class="pickgap"> </span>
 								<span
 									class=${modeNow() === 3 ? "pick on" : "pick"}
 									onclick=${() => pickMode(3)}
-								>${"[3] three cards"}</span>
+								><kbd>3</kbd>${" three cards"}</span>
 							</div>
-							<div class="again">(press [${modeNow()}] again to deal)</div>
+							<div class="again">(press <kbd>${modeNow()}</kbd> again to deal)</div>
 							<div class="answers">seed${" #"}<input id="seed" type="number" min="1" placeholder="random" /></div>
-							<div class="answers"><span onclick=${dealFromMenu}><b>[Enter]</b>${" deal"}</span>${
+							<div class="answers"><span onclick=${dealFromMenu}><kbd>Enter</kbd>${" deal"}</span>${
 								startedAt !== null ?
-									jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}>[b]ack</span>` :
+									jsx`<span class="sep">${` ${MIDDOT} `}</span><span onclick=${leaveMenu}><kbd>b</kbd>ack</span>` :
 									""
-							}<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}>[q]uit</span></div>
+							}<span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => term.window.close()}><kbd>q</kbd>uit</span></div>
 						</dialog>
 					</div>
 				</div>
@@ -1257,13 +1275,13 @@ function* App(this: Context) {
 				</div>
 
 				<div class="captions">
-					<span class="caption">${deckKey(t).padEnd(t.width)}</span>
-					<span class="caption">${flipKey(t)}</span>
-					<span class="caption">${blank(2 * t.width - flipKey(t).length)}</span>
-					<span class="caption">${centered("[s]", t.width)}</span>
-					<span class="caption">${centered("[h]", t.width)}</span>
-					<span class="caption">${centered("[d]", t.width)}</span>
-					<span class="caption">${centered("[c]", t.width)}</span>
+					<span class="caption"><kbd>${deckKey(t)}</kbd>${blank(Math.max(0, t.width - deckKey(t).length))}</span>
+					<span class="caption"><${FlipKey} tier=${t} /></span>
+					<span class="caption">${blank(2 * t.width - flipKeyLength(t))}</span>
+					<span class="caption"><${CenteredKey} cap="s" width=${t.width} /></span>
+					<span class="caption"><${CenteredKey} cap="h" width=${t.width} /></span>
+					<span class="caption"><${CenteredKey} cap="d" width=${t.width} /></span>
+					<span class="caption"><${CenteredKey} cap="c" width=${t.width} /></span>
 				</div>
 				<div class="top">
 					<div class="pile">
@@ -1330,7 +1348,7 @@ function* App(this: Context) {
 							<span
 								class=${Boolean(card) && fitsTableau(card, pile) ? "number drop" : "number"}
 								key=${`number-${index}`}
-							>${centered(`[${index + 1}]`, t.width)}</span>
+							><${CenteredKey} cap=${String(index + 1)} width=${t.width} /></span>
 						`,
 					)}
 				</div>
@@ -1391,11 +1409,11 @@ function* App(this: Context) {
 					jsx`<div class="scrim">
 						<dialog open>
 							<div class="ask">${ask.question}</div>
-							<div class="answers"><span onclick=${() => answer(true)}>[y] ${ask.yes}</span><span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => answer(false)}>[n] keep playing</span></div>
+							<div class="answers"><span onclick=${() => answer(true)}><kbd>y</kbd> ${ask.yes}</span><span class="sep">${` ${MIDDOT} `}</span><span onclick=${() => answer(false)}><kbd>n</kbd> keep playing</span></div>
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>${ARROWS_ALL}</b>/<b>[Tab]</b> move${DOT}<b>[Enter]</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>${ARROWS_ALL}</b>/<kbd>Tab</kbd> move${DOT}<kbd>Enter</kbd> take/place${DOT}<kbd>a</kbd>uto${DOT}<kbd>u</kbd>ndo${DOT}<kbd>n</kbd>ew${DOT}<kbd>r</kbd>etry${DOT}<kbd>q</kbd>uit</div>
 			</div>
 		`;
 	}
