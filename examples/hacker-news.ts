@@ -75,11 +75,9 @@ style.textContent = `
 	}
 	.masthead .y { background-color: #ffffff; color: #ff6600; }
 	.masthead .count { font-weight: normal; }
-	/* Fullscreen is fixed space, which the document camera does not move, so
-	   the pane carries the scroll offset in its top margin and the screen-
-	   sized reader clips what runs off either end. The bar keeps the last
-	   row, and the scroll limit leaves that row to it. */
-	.reader { overflow: hidden; }
+	/* The reader fills the screen and scrolls its content; the bar sits on
+	   the last row and stays there while the content scrolls under it. */
+	.reader { overflow-y: auto; }
 	.hint {
 		position: fixed;
 		bottom: 0;
@@ -156,16 +154,12 @@ hint.className = "hint";
 const listView = document.createElement("div");
 const readerView = document.createElement("div");
 readerView.style.display = "none";
-// The pane is what moves under the camera below; the bar is a sibling of it
-// so a scroll leaves the bar where it is.
-const pane = document.createElement("div");
-pane.className = "pane";
-pane.append(masthead, listView, readerView);
 // The reader takes the screen: the alternate screen keeps a thread out of
-// the scrollback and hands the whole terminal to the page.
+// the scrollback and hands the whole terminal to the page. The content
+// scrolls its content; the fixed bar stays on the last row.
 const reader = document.createElement("div");
 reader.className = "reader";
-reader.append(pane, hint);
+reader.append(masthead, listView, readerView, hint);
 document.body.appendChild(reader);
 void reader.requestFullscreen();
 
@@ -230,8 +224,6 @@ let reading: Story | null = null;
 // Bumped by anything that changes what the screen is for, so a fetch that
 // lands after the reader has moved on paints nothing.
 let generation = 0;
-// How many rows of the pane have scrolled off the top of the screen.
-let camera = 0;
 
 // The thread in reading order, the ids of the comments whose replies are
 // folded away, the thread positions the screen is showing, and the cursor
@@ -295,40 +287,30 @@ function select(index: number): void {
 	count.textContent = all.length ? `${at + 1}/${all.length}` : "";
 }
 
-/** The rows the pane gets to itself, with the bar holding the last one. */
+/** The rows above the bar, which holds the last one. */
 function page(): number {
 	return Math.max(1, window.innerHeight - 1);
 }
 
-function scrollTo(offset: number): void {
-	const limit = Math.max(0, pane.scrollHeight - page());
-	camera = Math.max(0, Math.min(Math.round(offset), limit));
-	pane.style.marginTop = `-${camera}px`;
-}
-
-function scrollBy(delta: number): void {
-	scrollTo(camera + delta);
-}
-
-function toTop(): void {
-	scrollTo(0);
-}
-
-/** Move the pane the least it takes to bring a row above the bar. */
+/**
+ * Scroll the reader the least it takes to bring a row above the bar.
+ * scrollIntoView reveals to the screen edge, where the bar would cover the
+ * row, so the last row is reserved here instead.
+ */
 function reveal(row: HTMLElement): void {
 	const rect = row.getBoundingClientRect();
 	if (rect.top < 0) {
-		scrollTo(camera + rect.top);
+		reader.scrollBy(0, rect.top);
 	} else if (rect.bottom > page()) {
-		scrollTo(camera + rect.bottom - page());
+		reader.scrollBy(0, rect.bottom - page());
 	}
 }
 
 function refresh(): void {
-	// At the first row, pull the camera the rest of the way up so the
+	// At the first row, pull the reader the rest of the way up so the
 	// masthead shows too -- a reveal alone stops below it.
 	if (cursor() === 0) {
-		toTop();
+		reader.scrollTo(0, 0);
 		return;
 	}
 	const row = rows()[cursor()];
@@ -345,7 +327,7 @@ async function loadStories(): Promise<void> {
 	hint.textContent = LIST_KEYS;
 	count.textContent = "";
 	listView.replaceChildren(message("loading", "loading the front page…"));
-	toTop();
+	reader.scrollTo(0, 0);
 	try {
 		const since = Math.round(Date.now() / 1000) - WINDOW_SECONDS;
 		const response = await fetch(
@@ -561,7 +543,7 @@ async function openThread(story: Story): Promise<void> {
 		storyHead(story),
 		message("loading", "loading the comments…"),
 	);
-	toTop();
+	reader.scrollTo(0, 0);
 	try {
 		const response = await fetch(`${API}/items/${story.id}`);
 		if (!response.ok) {
@@ -574,7 +556,7 @@ async function openThread(story: Story): Promise<void> {
 		thread = [];
 		flatten(item, 0, thread);
 		paintThread(story, 0);
-		toTop();
+		reader.scrollTo(0, 0);
 	} catch (_err) {
 		if (mine === generation) {
 			readerView.replaceChildren(
@@ -591,26 +573,25 @@ function back(): void {
 	readerView.style.display = "none";
 	listView.style.display = "";
 	hint.textContent = LIST_KEYS;
-	// The thread left the camera deep in its own rows; the front page starts
+	// The thread left the reader deep in its own rows; the front page starts
 	// from its masthead and comes down to the story that was open.
-	toTop();
+	reader.scrollTo(0, 0);
 	select(selected);
 	refresh();
 }
 
 // Escape is the terminal's key, and it drops the page out of the alternate
-// screen. The scrollback has no camera to offset against, so the pane goes
-// back to its top and the document prints from there.
+// screen. Back at the top, the document prints into the scrollback from its
+// first row.
 document.addEventListener("fullscreenchange", () => {
 	if (!document.fullscreenElement) {
-		toTop();
+		reader.scrollTo(0, 0);
 	}
 });
 
 // A narrower terminal rewraps into more rows, a shorter one shows fewer:
-// either way the camera re-aims at the row under the cursor.
+// either way the reader re-aims at the row under the cursor.
 window.addEventListener("resize", () => {
-	scrollTo(camera);
 	refresh();
 });
 
@@ -636,9 +617,9 @@ document.addEventListener("keydown", (event: Event) => {
 		} else if (key === "l" || key === "ArrowRight") {
 			unfold(reading);
 		} else if (key === " " || key === "f" || key === "PageDown") {
-			scrollBy(page());
+			reader.scrollBy(0, page());
 		} else if (key === "b" || key === "PageUp") {
-			scrollBy(-page());
+			reader.scrollBy(0, -page());
 		} else if (key === "g") {
 			select(0);
 			refresh();
