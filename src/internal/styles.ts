@@ -620,16 +620,47 @@ function collapseRadius(value: string): string {
 }
 
 /**
+ * `grid-template-areas` computes to a list of rows, each a list of cell names
+ * (css-grid-2 §7.3), so the spacing an author lines a picture of the grid up
+ * with is not part of the value: every row writes its cells one space apart.
+ * A value that is not a run of strings -- `none`, a var() still to substitute
+ * -- is left as it is written.
+ */
+function normalizeGridAreas(value: string): string {
+	type ValueNode = {type: string; value?: string};
+	let children: ValueNode[];
+	try {
+		const ast = CSSTree.parse(value, {context: "value"}) as unknown as {
+			children?: {toArray(): ValueNode[]};
+		};
+		children = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return value;
+	}
+	if (
+		children.length === 0 ||
+		children.some((node) => node.type !== "String")
+	) {
+		return value;
+	}
+	return children
+		.map((node) => `"${(node.value ?? "").trim().split(/\s+/).join(" ")}"`)
+		.join(" ");
+}
+
+/**
  * The computed spelling of a declared value: the one place a struct becomes
  * a string, at the getPropertyValue boundary.
  */
 function normalizeValue(property: string, declared: string): string {
 	const value = declared.trim();
-	if (
-		!value ||
-		property.startsWith("--") ||
-		VERBATIM_PROPERTIES.has(property)
-	) {
+	if (!value || property.startsWith("--")) {
+		return value;
+	}
+	if (property === "grid-template-areas") {
+		return normalizeGridAreas(value);
+	}
+	if (VERBATIM_PROPERTIES.has(property)) {
 		return value;
 	}
 	if (COLOR_PROPERTIES.has(property)) {
