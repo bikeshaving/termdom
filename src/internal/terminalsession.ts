@@ -4,12 +4,7 @@ import type {ColorDepth, WidthMeasurer} from "./ansi.js";
 import {recordClusterAdvance} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
-/**
- * The wire between the engine and a terminal: an established session as
- * duplex streams plus lifecycle, the common subset of WebTransport and
- * WebSocketStream. Everything Node-flavored -- raw mode, signals, env
- * sniffing -- belongs inside a wrapper, never in this contract.
- */
+/** The terminal's dimensions, in cells. */
 export interface TerminalSize {
 	cols: number;
 	rows: number;
@@ -24,6 +19,12 @@ export interface TerminalCloseInfo {
 	reason?: string;
 }
 
+/**
+ * The wire between the engine and a terminal: an established session as
+ * duplex streams plus lifecycle, the common subset of WebTransport and
+ * WebSocketStream. Everything Node-flavored -- raw mode, signals, env
+ * sniffing -- belongs inside a wrapper, never in this contract.
+ */
 export interface TerminalTransport {
 	/**
 	 * The current size, as LIVE getters: after `resizes` emits, these answer
