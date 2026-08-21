@@ -7,7 +7,6 @@ import {
 	type UAToolkit,
 	flatIsConnected,
 	flatParentElement,
-	isTextField,
 	selectionRangeOf,
 } from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
@@ -1061,7 +1060,7 @@ function selectionRangeFor(
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
 	const active = painter[kDocument].activeElement;
-	if (active && isTextField(active)) {
+	if (active && painter[kToolkit].isTextField(active)) {
 		const fieldRange = selectionRangeOf(active);
 		// The control's range names the text it renders its value through, so
 		// node identity is the whole test -- no widget anatomy to know.

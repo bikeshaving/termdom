@@ -7,21 +7,10 @@
  */
 import * as DOM from "./dom.js";
 import {
-	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
-	closePopover,
-	hidePopoversUntil,
 	installUAEngine,
-	isModalDialog,
-	isShowingPopover,
-	isTextField,
 	pseudoHostOf,
-	setUASelection,
-	topLayerOf,
-	topmostAutoPopover,
-	topmostClickedPopover,
-	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
@@ -110,12 +99,12 @@ const UPGRADEABLE_CONTROLS = new Set([
  * query: every insertion pays this, and a document of ordinary markup must pay
  * as little as a tag comparison per element.
  */
-function upgradeControlsIn(root: Element): void {
+function upgradeControlsIn(termdom: TermDOM, root: Element): void {
 	const stack: Element[] = [root];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
 		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-			upgradeUAWidget(element);
+			termdom[kUAToolkit].upgradeWidget(element);
 		}
 		for (
 			let child = element.firstElementChild;
@@ -983,7 +972,6 @@ export class TermDOM {
 		);
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
-		this[kTopLayer] = topLayerOf(this.document) as unknown as Set<Element>;
 
 		// One bag of getters and callbacks, shared by everything that patches
 		// the window below. Built here, before the fields it exposes exist:
@@ -1038,6 +1026,7 @@ export class TermDOM {
 				void render(this);
 			},
 		});
+		this[kTopLayer] = this[kUAToolkit].topLayer as unknown as Set<Element>;
 		this[kPainter] = new Painter({
 			window: this.window,
 			document: this.document,
@@ -2783,7 +2772,7 @@ function handlePendingMutations(
 			if (added.nodeType !== added.ELEMENT_NODE) {
 				continue;
 			}
-			upgradeControlsIn(added as Element);
+			upgradeControlsIn(termdom, added as Element);
 		}
 	}
 	termdom[kStyleManager].handleMutations(relevant);
@@ -3138,7 +3127,7 @@ function fieldOffsetAtPoint(
 	// The value's own text: a field's selection is measured in ITS offsets,
 	// and for a password that text is the bullets, which is what was
 	// painted and so what the point lands on.
-	const valueText = fieldValueText(element);
+	const valueText = termdom[kUAToolkit].valueTextOf(element);
 	if (!valueText) {
 		return null;
 	}
@@ -3264,7 +3253,7 @@ function scrollFieldCaretIntoView(
 	termdom: TermDOM,
 	input: HTMLInputElement,
 ): void {
-	const valueText = fieldValueText(input);
+	const valueText = termdom[kUAToolkit].valueTextOf(input);
 	const valueSpan = valueText?.parentElement as HTMLElement | null;
 	if (!valueText || !valueSpan) {
 		return;
@@ -3574,7 +3563,7 @@ function topmostModalDialog(
 ): HTMLDialogElement | null {
 	let modal: HTMLDialogElement | null = null;
 	for (const element of termdom[kTopLayer]) {
-		if (isModalDialog(element)) {
+		if (termdom[kUAToolkit].isModalDialog(element)) {
 			modal = element as HTMLDialogElement;
 		}
 	}
@@ -3590,10 +3579,10 @@ function topmostModalDialog(
 function topmostCloseRequestTarget(
 	termdom: TermDOM,
 ): Element | null {
-	const popover = topmostAutoPopover(termdom.document) as Element | null;
+	const popover = termdom[kUAToolkit].topmostAutoPopover() as Element | null;
 	let target: Element | null = null;
 	for (const element of termdom[kTopLayer]) {
-		if (isModalDialog(element) || element === popover) {
+		if (termdom[kUAToolkit].isModalDialog(element) || element === popover) {
 			target = element;
 		}
 	}
@@ -3917,7 +3906,7 @@ function handleMouseReport(
 			const {element: fieldElement, offset: anchor} = termdom[kFieldDragAnchor];
 			const focus = fieldOffsetAtPoint(termdom, fieldElement, x, y);
 			if (focus !== null) {
-				setUASelection(
+				termdom[kUAToolkit].setSelection(
 					fieldElement,
 					Math.min(anchor, focus),
 					Math.max(anchor, focus),
@@ -3954,7 +3943,9 @@ function handleMouseReport(
 		// The popover a press belongs to, which the release compares
 		// against: light dismiss is a press and a release in the same
 		// place, so a drag out of a popover does not close it.
-		termdom[kPopoverPressTarget] = topmostClickedPopover(target);
+		termdom[kPopoverPressTarget] = termdom[kUAToolkit].topmostClickedPopover(
+			target,
+		);
 		termdom[kFieldDragAnchor] = null;
 		// A pointer press suppresses the :focus-visible ring.
 		if (termdom[kStyleManager].setFocusVisible(false)) {
@@ -3989,13 +3980,15 @@ function handleMouseReport(
 			// field's own bounded selectionStart/End world, never the
 			// document selection: the same split a browser makes.
 			const field =
-				base === 0 && point && isTextField(target as Element) ?
+				base === 0 &&
+				point &&
+				termdom[kUAToolkit].isTextField(target as Element) ?
 						(target as HTMLInputElement | HTMLTextAreaElement) :
 					null;
 			if (field) {
 				const offset = fieldOffsetAtPoint(termdom, field, x, y);
 				if (offset !== null) {
-					setUASelection(field, offset, offset);
+					termdom[kUAToolkit].setSelection(field, offset, offset);
 					termdom[kFieldDragAnchor] = {element: field, offset};
 					// The DOCUMENT selection still clears on entry -- a page
 					// selection doesn't stay highlighted behind a field click
@@ -4048,11 +4041,11 @@ function handleMouseReport(
 	// counts as part of it, so the click that follows toggles rather than
 	// reopens what this closed. It runs before the click, where a browser
 	// runs it, and no listener can prevent it.
-	const dismissAncestor = topmostClickedPopover(target);
+	const dismissAncestor = termdom[kUAToolkit].topmostClickedPopover(target);
 	const samePopoverPress = dismissAncestor === termdom[kPopoverPressTarget];
 	termdom[kPopoverPressTarget] = null;
-	if (samePopoverPress && topmostAutoPopover(termdom.document) !== null) {
-		hidePopoversUntil(termdom.document, dismissAncestor, false, true);
+	if (samePopoverPress && termdom[kUAToolkit].topmostAutoPopover() !== null) {
+		termdom[kUAToolkit].hidePopoversUntil(dismissAncestor, false, true);
 	}
 	// A selection is only a selection: writing the clipboard is a
 	// deliberate act, through navigator.clipboard. The terminal's own
@@ -4264,7 +4257,7 @@ function dispatchGlobalKeyboardEvent(
 		if (
 			active &&
 			active !== termdom.document.body &&
-			isTextField(active as Element)
+			termdom[kUAToolkit].isTextField(active as Element)
 		) {
 			(active as HTMLElement).blur();
 			return;
@@ -4304,8 +4297,8 @@ function dispatchGlobalKeyboardEvent(
 	if (keyName === "Escape") {
 		const target = topmostCloseRequestTarget(termdom);
 		if (target !== null) {
-			if (isShowingPopover(target)) {
-				closePopover(target);
+			if (termdom[kUAToolkit].isShowingPopover(target)) {
+				termdom[kUAToolkit].closePopover(target);
 			} else {
 				(target as HTMLDialogElement).requestClose();
 			}
@@ -4583,7 +4576,7 @@ async function renderInteractive(
 	const activeField = termdom.document.activeElement;
 	if (
 		activeField instanceof (termdom.window as any).HTMLInputElement &&
-		isTextField(activeField as HTMLInputElement)
+		termdom[kUAToolkit].isTextField(activeField as HTMLInputElement)
 	) {
 		scrollFieldCaretIntoView(termdom, activeField as HTMLInputElement);
 	}

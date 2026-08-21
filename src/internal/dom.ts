@@ -144,6 +144,29 @@ export interface UAToolkit {
 	): {start: number; end: number; direction: string} | null;
 	/** The text node a control's editable value renders through. */
 	valueTextOf(control: object): UAText | null;
+	/** Whether a control edits text -- the caret-and-chords family. */
+	isTextField(element: {tagName: string; type?: string}): boolean;
+	/** Move a text control's selection, past the type gate the author meets. */
+	setSelection(
+		control: object,
+		start: number,
+		end: number,
+		direction?: string,
+	): void;
+	/** Build a control's UA widget if it has one and does not have it yet. */
+	upgradeWidget(element: object): void;
+	/** The granted document's top layer, by reference. */
+	topLayer: Set<Element>;
+	isModalDialog(node: object): boolean;
+	isShowingPopover(node: object): boolean;
+	topmostAutoPopover(): Element | null;
+	topmostClickedPopover(node: object): Element | null;
+	closePopover(element: object): void;
+	hidePopoversUntil(
+		endpoint: object | null,
+		focusPreviousElement: boolean,
+		fireEvents: boolean,
+	): void;
 }
 
 /**
@@ -176,6 +199,42 @@ export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 		valueTextOf(control: object): UAText | null {
 			return owns(control) ? fieldValueText(control) : null;
 		},
+		isTextField,
+		setSelection(control, start, end, direction?: string): void {
+			if (owns(control)) {
+				setUASelection(control, start, end, direction);
+			}
+		},
+		upgradeWidget(element: object): void {
+			if (owns(element)) {
+				upgradeUAWidget(element);
+			}
+		},
+		topLayer: topLayerOf(document),
+		isModalDialog(node: object): boolean {
+			return owns(node) && isModalDialog(node);
+		},
+		isShowingPopover(node: object): boolean {
+			return owns(node) && isShowingPopover(node);
+		},
+		topmostAutoPopover(): Element | null {
+			return topmostAutoPopover(document);
+		},
+		topmostClickedPopover(node: object): Element | null {
+			return owns(node) ? topmostClickedPopover(node) : null;
+		},
+		closePopover(element: object): void {
+			if (owns(element)) {
+				closePopover(element);
+			}
+		},
+		hidePopoversUntil(
+			endpoint: object | null,
+			focusPreviousElement: boolean,
+			fireEvents: boolean,
+		): void {
+			hidePopoversUntil(document, endpoint, focusPreviousElement, fireEvents);
+		},
 	};
 }
 
@@ -187,7 +246,7 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  * and a control that left the tree and came back only catches up the state it
  * drifted from.
  */
-export function upgradeUAWidget(element: object): void {
+function upgradeUAWidget(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
 }
 
@@ -209,7 +268,7 @@ function uaSelectionOf(control: object): {
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Move a text control's selection, past the type gate the author meets. */
-export function setUASelection(
+function setUASelection(
 	control: object,
 	start: number,
 	end: number,
@@ -10623,7 +10682,7 @@ const kTopLayer = Symbol("the document's top layer");
  * context of the document, in the order they entered it. Membership is what
  * `showModal` grants and `close` revokes, and what the renderer paints last.
  */
-export function topLayerOf(document: object): Set<Element> {
+function topLayerOf(document: object): Set<Element> {
 	return (document as Document)[kTopLayer];
 }
 /**
@@ -10632,7 +10691,7 @@ export function topLayerOf(document: object): Set<Element> {
  * never puts one there and `close()` takes it out, so there is no second
  * flag to keep in step with the first.
  */
-export function isModalDialog(node: object): boolean {
+function isModalDialog(node: object): boolean {
 	return (
 		node instanceof HTMLDialogElement &&
 		topLayerOf(node[kDocument]).has(node as Element)
@@ -11958,7 +12017,7 @@ export class HTMLUListElement extends HTMLElement {}
  * The one spelling of the question: the paint, the caret scroll and the
  * press-to-park default action all have to agree on which elements are fields.
  */
-export function isTextField(element: {
+function isTextField(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
@@ -11983,7 +12042,7 @@ const kUAValueText = Symbol(
  * editing internals reach it: the renderer reads it to place the caret, the
  * editing path to hit-test a point.
  */
-export function fieldValueText(field: object): UAText | null {
+function fieldValueText(field: object): UAText | null {
 	return (
 		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
 	);
@@ -15301,7 +15360,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 }
 
 /** Whether an element is a popover in the showing state -- `:popover-open`. */
-export function isShowingPopover(node: object): boolean {
+function isShowingPopover(node: object): boolean {
 	return (
 		node instanceof HTMLElement &&
 		popoverStates.get(node)?.visibility === "showing"
@@ -15324,7 +15383,7 @@ function showingAutoPopovers(document: Document): Element[] {
 }
 
 /** The auto popover on top of a document's stack, or null while none is up. */
-export function topmostAutoPopover(document: object): Element | null {
+function topmostAutoPopover(document: object): Element | null {
 	const popovers = showingAutoPopovers(document as Document);
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
@@ -15574,7 +15633,7 @@ function hidePopover(
  * Close a popover the way a close request does -- Escape on the topmost auto
  * popover -- which is a hide that gives focus back and fires its events.
  */
-export function closePopover(element: object): void {
+function closePopover(element: object): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
@@ -15612,7 +15671,7 @@ function hidePopoverStackUntil(
  * HTML's hide popovers until, which is the stack unwind light dismiss and an
  * opening popover both run. With no hint stack, it is the auto stack's.
  */
-export function hidePopoversUntil(
+function hidePopoversUntil(
 	document: object,
 	endpoint: object | null,
 	focusPreviousElement: boolean,
@@ -15720,7 +15779,7 @@ function popoverStackPosition(popover: Element | null): number {
  * which is the deeper of the popover the node is in and the popover the node
  * invokes. Light dismiss closes everything stacked above it.
  */
-export function topmostClickedPopover(node: object): Element | null {
+function topmostClickedPopover(node: object): Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
 	const target = nearestInclusiveTargetPopover(node as Node);
 	return popoverStackPosition(clicked) > popoverStackPosition(target) ?
