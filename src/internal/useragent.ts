@@ -953,10 +953,15 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// A key is a keycap: bold text inside brackets, "[q]", the form every
 	// terminal help screen and man page uses for a key to press. A browser
 	// draws the cap with a border and a monospace face; a terminal is already
-	// monospace and cannot afford a box around one glyph, so the brackets are
-	// the cap. They are UA ::before/::after rules in the UA document
-	// stylesheet, so author content rules replace them.
-	kbd: {"display": "inline", "font-weight": "bold"},
+	// monospace and cannot afford a box around one glyph, so the accelerator
+	// convention stands in: the marked keys are bold and underlined, the way
+	// CUA-era TUIs marked a menu's mnemonic letter. A decoration costs no
+	// cells, so marking up a key never moves layout.
+	kbd: {
+		"display": "inline",
+		"font-weight": "bold",
+		"text-decoration": "underline",
+	},
 	label: {display: "inline"},
 	mark: {display: "inline"},
 	q: {display: "inline"},
@@ -1297,8 +1302,6 @@ export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
-	kbd::before { content: "["; }
-	kbd::after { content: "]"; }
 	a[href] { text-decoration: underline; }
 	/*
 	 * The dir attribute, so it reaches layout as the direction property it
