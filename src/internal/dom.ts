@@ -11989,33 +11989,6 @@ export function fieldValueText(field: object): UAText | null {
 	);
 }
 
-/**
- * The range a document answers caret queries with.
- *
- * Every live range is walked by the tree mutation algorithms and held until
- * nothing else refers to it, so a document reuses one range here rather than
- * constructing one per caret read: the callers below read the geometry and are
- * done with it, and a range per frame would grow that walk frame by frame.
- */
-const caretRanges = new WeakMap<UADocument, UARange>();
-
-const kUACaretRange = Symbol("where an element's own caret is");
-
-/**
- * Where an element's caret is, as a collapsed Range the caller can measure --
- * or null for an element that has no caret of its own. The element answers;
- * only it knows what it renders through.
- *
- * The range is the document's own, valid until the next caret read.
- */
-export function caretRangeOf(element: object): UARange | null {
-	return (
-		(element as Record<symbol, (() => UARange | null) | undefined>)[
-			kUACaretRange
-		]?.() ?? null
-	);
-}
-
 const kUASelectionRange = Symbol("what an element's own selection covers");
 
 /**
@@ -12070,36 +12043,6 @@ function textSelectionRange(
 
 /** The range a document answers control-selection queries with. @see caretRanges */
 const selectionRanges = new WeakMap<UADocument, UARange>();
-
-/**
- * A collapsed Range at a text control's caret, inside the value text of the
- * tree it renders. Its geometry is then whatever the layout already placed the
- * offset at -- no bespoke caret walk. Backward selections carry the caret at
- * the start, forward ones at the end, matching the DOM.
- */
-function textCaretRange(
-	control: HTMLInputElement | HTMLTextAreaElement,
-	valueText: UAText | null,
-): UARange | null {
-	if (!valueText) {
-		return null;
-	}
-	const selection = uaSelectionOf(control);
-	const caret =
-		selection.direction === "backward" ? selection.start : selection.end;
-	const document = uaDocumentOf(control);
-	let range = caretRanges.get(document);
-	if (range === undefined) {
-		range = document.createRange();
-		caretRanges.set(document, range);
-	}
-	range.setStart(
-		valueText,
-		Math.max(0, Math.min(caret, valueText.data.length)),
-	);
-	range.collapse(true);
-	return range;
-}
 
 /** A node's own document, as the tree-building code below reads it. */
 function uaDocumentOf(node: object): UADocument {
@@ -13087,10 +13030,6 @@ export class HTMLInputElement extends HTMLElement {
 
 	get [kUAValueText](): UAText | null {
 		return this[kValueText];
-	}
-
-	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this[kValueText]);
 	}
 
 	[kUASelectionRange](): UARange | null {
@@ -14797,10 +14736,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	get [kUAValueText](): UAText | null {
 		return this[kValueText];
-	}
-
-	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this[kValueText]);
 	}
 
 	[kUASelectionRange](): UARange | null {
