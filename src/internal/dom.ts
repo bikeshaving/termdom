@@ -18448,13 +18448,13 @@ Object.defineProperties(Element.prototype, {
 	// These accessors are the bare storage: an environment that can lay out
 	// and paint (the terminal engine) replaces them with accessors that
 	// clamp against the content's laid-out extent and schedule the repaint,
-	// writing through scrollOffsetsOf into the same store.
+	// recording the result through setScrollOffset into that store.
 	scrollLeft: {
 		get(this: Element): number {
 			return scrollOffsets.get(this)?.left ?? 0;
 		},
 		set(this: Element, value: number) {
-			scrollOffsetsOf(this).left = toDouble(value);
+			setScrollOffset(this, "left", toDouble(value));
 		},
 		configurable: true,
 		enumerable: true,
@@ -18464,7 +18464,7 @@ Object.defineProperties(Element.prototype, {
 			return scrollOffsets.get(this)?.top ?? 0;
 		},
 		set(this: Element, value: number) {
-			scrollOffsetsOf(this).top = toDouble(value);
+			setScrollOffset(this, "top", toDouble(value));
 		},
 		configurable: true,
 		enumerable: true,
@@ -18472,15 +18472,40 @@ Object.defineProperties(Element.prototype, {
 });
 
 /** The scroll offsets of the boxes that have been scrolled at all. */
-const scrollOffsets = new WeakMap<Element, {left: number; top: number}>();
+const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
 
-export function scrollOffsetsOf(element: Element): {left: number; top: number} {
+/**
+ * Where a box is scrolled to, in cells. The renderer asks: paint,
+ * hit-testing and the camera all measure against it, and a box nothing has
+ * scrolled reads zero without being recorded.
+ */
+export function scrollOffsetOf(element: object): {
+	readonly left: number;
+	readonly top: number;
+} {
+	const offsets = scrollOffsets.get(element);
+	if (offsets === undefined) {
+		return {left: 0, top: 0};
+	}
+	return {left: offsets.left, top: offsets.top};
+}
+
+/**
+ * Scroll a box along one axis, in cells. The caller has already worked out
+ * what the offset may be -- the extent it clamps against is layout's answer
+ * and not the DOM's -- and this records it.
+ */
+export function setScrollOffset(
+	element: object,
+	axis: "left" | "top",
+	value: number,
+): void {
 	let offsets = scrollOffsets.get(element);
 	if (offsets === undefined) {
 		offsets = {left: 0, top: 0};
 		scrollOffsets.set(element, offsets);
 	}
-	return offsets;
+	offsets[axis] = value;
 }
 
 /** The spec's "insert adjacent" algorithm, shared by element and text. */

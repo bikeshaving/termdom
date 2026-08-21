@@ -11,7 +11,8 @@ import {
 	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
-	scrollOffsetsOf,
+	scrollOffsetOf,
+	setScrollOffset,
 	closePopover,
 	hidePopoversUntil,
 	installUAEngine,
@@ -1249,14 +1250,14 @@ export class TermDOM {
 		// frame loop live: a write rounds to whole cells (everything paints
 		// on the cell grid, like the document camera), clamps into the
 		// scrollable range, and schedules the repaint that shows it. The
-		// value lands in the DOM's own store (scrollOffsetsOf), which is what
+		// value lands in the DOM's store (setScrollOffset), which is what
 		// the layout's geometry funnel already reads -- so getters stay the
 		// DOM's. An axis whose overflow is visible is not scrollable and
 		// pins to 0; hidden scrolls programmatically, as in a browser. A box
 		// whose extent the layout cannot name (a field's value span, whose
 		// content is an opaque measured run) stores the write unclamped --
 		// the caret-reveal machinery owns those offsets and keeps them sane.
-		const setScrollOffset = (
+		const scrollAxisTo = (
 			element: Element,
 			axis: "left" | "top",
 			value: number,
@@ -1291,11 +1292,10 @@ export class TermDOM {
 					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
 				}
 			}
-			const offsets = scrollOffsetsOf(element as never);
-			if (offsets[axis] === next) {
+			if (scrollOffsetOf(element)[axis] === next) {
 				return;
 			}
-			offsets[axis] = next;
+			setScrollOffset(element, axis, next);
 			if (termDOM) {
 				if (next !== 0) {
 					termDOM[kScrolledElements].add(element);
@@ -1319,7 +1319,7 @@ export class TermDOM {
 			Object.defineProperty(Element.prototype, property, {
 				get: stored?.get,
 				set(this: Element, value: number) {
-					setScrollOffset(this, axis, value);
+					scrollAxisTo(this, axis, value);
 				},
 				configurable: true,
 				enumerable: true,
@@ -2859,7 +2859,7 @@ function clampScrolledOffsets(
 ): void {
 	let changed = false;
 	for (const element of self[kScrolledElements]) {
-		const offsets = scrollOffsetsOf(element as never);
+		const offsets = scrollOffsetOf(element);
 		if (offsets.left === 0 && offsets.top === 0) {
 			self[kScrolledElements].delete(element);
 			continue;
@@ -2882,13 +2882,13 @@ function clampScrolledOffsets(
 		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
 			continue;
 		}
-		offsets.left = Math.min(offsets.left, maxLeft);
-		offsets.top = Math.min(offsets.top, maxTop);
+		setScrollOffset(element, "left", Math.min(offsets.left, maxLeft));
+		setScrollOffset(element, "top", Math.min(offsets.top, maxTop));
 		addFrameDamage(self, element);
 		changed = true;
 	}
 	if (changed) {
-		// See setScrollOffset: offsets are frame state no observer sees.
+		// See scrollAxisTo: offsets are frame state no observer sees.
 		self[kInputGeneration]++;
 		void render(self);
 	}
