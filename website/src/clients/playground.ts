@@ -47,10 +47,9 @@ function readExamples(): PlaygroundExample[] {
  * examples are written against: eighty columns, and twenty-four rows, which is
  * one more than the tallest of them paints. An embed is a figure in an
  * argument, and a pane far taller than its program is a black void with a
- * program at the top of it -- the three programs embedded on the home page
- * paint 4x36, 11x35 and 7x45, so an embed gets 56x14 and the slack is
- * deliberate rather than left over. `editorLines` is whole lines, so the box ends where a line
- * does.
+ * program at the top of it, so an embed holds fourteen rows; its columns
+ * widen to the pane, with fifty-six as the floor a narrow box scrolls to.
+ * `editorLines` is whole lines, so the box ends where a line does.
  */
 const PAGE_GEOMETRY = {cols: 80, rows: 24, editorLines: 20};
 const EMBED_GEOMETRY = {cols: 56, rows: 14, editorLines: 13};
@@ -426,9 +425,24 @@ function* TerminalPane(
 	terminal.unicode.activeVersion = "11";
 
 	// A filling pane takes its geometry from its own box, so the terminal is
-	// as big as the window makes it.
-	const fitAddon = fill ? new FitAddon() : null;
-	if (fitAddon) terminal.loadAddon(fitAddon);
+	// as big as the window makes it. A fixed pane keeps its rows but widens
+	// to the box, with `cols` as the floor -- the addon measures the box in
+	// cells either way.
+	const fitAddon = new FitAddon();
+	terminal.loadAddon(fitAddon);
+	const fit = (): void => {
+		if (fill) {
+			fitAddon.fit();
+			return;
+		}
+		const dims = fitAddon.proposeDimensions();
+		if (dims && dims.cols) {
+			const target = Math.max(cols, dims.cols);
+			if (target !== terminal.cols || rows !== terminal.rows) {
+				terminal.resize(target, rows);
+			}
+		}
+	};
 
 	let root!: HTMLDivElement;
 	let current: Run | null = null;
@@ -479,20 +493,18 @@ function* TerminalPane(
 				// After `open`: the emulator's element and textarea, which the
 				// IME work listens on, are made there.
 				installIMEQuirks(terminal);
-				if (fitAddon) {
-					fitAddon.fit();
-					// The box changes with the window, and the program hears
-					// about it the way a program in a terminal does: the
-					// emulator resizes, and the transport carries the new
-					// size to the session.
-					const observer = new ResizeObserver(() => {
-						if (root.clientWidth > 0 && root.clientHeight > 0) {
-							fitAddon.fit();
-						}
-					});
-					observer.observe(root);
-					this.cleanup(() => observer.disconnect());
-				}
+				fit();
+				// The box changes with the window, and the program hears
+				// about it the way a program in a terminal does: the
+				// emulator resizes, and the transport carries the new
+				// size to the session.
+				const observer = new ResizeObserver(() => {
+					if (root.clientWidth > 0 && root.clientHeight > 0) {
+						fit();
+					}
+				});
+				observer.observe(root);
+				this.cleanup(() => observer.disconnect());
 				void run();
 			});
 
