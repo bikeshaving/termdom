@@ -405,6 +405,22 @@ test("a paste's clipboardData is the pasted text, and read-only", async () => {
 	dom.dispose();
 });
 
+test("a transfer held past its event answers with nothing", async () => {
+	const {proc, dom} = await mount();
+	let held: any = null;
+	let duringEvent = "";
+	dom.document.body.addEventListener("paste", (event: any) => {
+		held = event.clipboardData;
+		duringEvent = held.getData("text/plain");
+	});
+	await proc.stdin.send("\x1b[200~held\x1b[201~");
+	await nextFrame(dom);
+	expect(duringEvent).toBe("held");
+	expect(held.getData("text/plain")).toBe("");
+	expect(Array.from(held.types)).toEqual([]);
+	dom.dispose();
+});
+
 test("a paste is a gesture: the clipboard is reachable from its listener", async () => {
 	const {proc, dom} = await mount();
 	let written: Promise<void> | null = null;

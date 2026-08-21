@@ -1673,7 +1673,7 @@ export class DataTransfer {
 	declare [kTransferEntries]: Map<string, string>;
 	declare [kTransferItems]: DataTransferItemList;
 	declare [kTransferFiles]: FileList;
-	declare [kTransferMode]: "readwrite" | "readonly";
+	declare [kTransferMode]: "readwrite" | "readonly" | "protected";
 	declare [kDropEffect]: string;
 	declare [kEffectAllowed]: string;
 
@@ -1713,6 +1713,9 @@ export class DataTransfer {
 	}
 
 	get types(): readonly string[] {
+		if (this[kTransferMode] === "protected") {
+			return Object.freeze([]);
+		}
 		return Object.freeze(Array.from(this[kTransferEntries].keys()));
 	}
 
@@ -1723,6 +1726,9 @@ export class DataTransfer {
 	setDragImage(_image: unknown, _x: unknown, _y: unknown): void {}
 
 	getData(format: unknown): string {
+		if (this[kTransferMode] === "protected") {
+			return "";
+		}
 		return this[kTransferEntries].get(normalizeTransferFormat(format)) ?? "";
 	}
 
@@ -1759,6 +1765,25 @@ Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
  */
 export function lockDataTransfer(transfer: DataTransfer): void {
 	transfer[kTransferMode] = "readonly";
+}
+
+/**
+ * Empty a transfer when the dispatch it belonged to ends: a clipboard
+ * event's payload is the listener's to read while the event runs and
+ * nothing afterward, which is what a browser hands back.
+ *
+ * This is conformance and not a boundary. An app holding a stale transfer
+ * has lost nothing it could not ask for again through
+ * `navigator.clipboard`, and it wrote the listener the payload arrived in.
+ */
+function protectClipboardData(event: Event): void {
+	if (!(event instanceof ClipboardEvent)) {
+		return;
+	}
+	const transfer = event.clipboardData;
+	if (transfer !== null) {
+		transfer[kTransferMode] = "protected";
+	}
 }
 
 export interface ClipboardEventInit extends EventInit {
@@ -2913,6 +2938,7 @@ function dispatch(
 			legacyCanceledActivationBehavior(activationTarget);
 		}
 	}
+	protectClipboardData(event);
 	return !state.canceled;
 }
 
