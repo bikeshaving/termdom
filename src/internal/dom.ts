@@ -20,7 +20,7 @@ import {
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
-} from "./domhtml.js";
+} from "./htmltables.js";
 import {
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
@@ -2801,7 +2801,7 @@ export function installEventHandlers(
 }
 
 /** The tables a window's own interface is installed from, which the engine owns. */
-export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.js";
+export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./htmltables.js";
 
 const kDefaultView = Symbol("the window this document is displayed in");
 
