@@ -2156,8 +2156,14 @@ export class TermDOM {
 		// showed has reached the terminal's scrollback. Pay it all out now --
 		// but only if a frame was ever painted: with none, there is nothing
 		// of ours on screen, and the payout's cursor moves and erases would
-		// land on someone else's rows.
-		if (wasAttached && this[kRenderCount] > 0) {
+		// land on someone else's rows. A document closing WHILE fullscreen
+		// leaves no trace instead, the way an alt-screen program does: the
+		// screen switch restores what stood before entry, and that is the
+		// record. An app that wants its final state in scrollback exits
+		// fullscreen first and lets the flow frame pay out.
+		const closingFullscreen =
+			this[kFullscreenManager].fullscreenElement !== null;
+		if (wasAttached && this[kRenderCount] > 0 && !closingFullscreen) {
 			flushDocument(this);
 		}
 
@@ -2173,8 +2179,14 @@ export class TermDOM {
 			void this[kSession].write("\x1b[?25h\x1b[?2004l\x1b[23;0t");
 		}
 		// The fullscreen manager's own teardown writes the alt-screen restore,
-		// so it must run while the session still holds the wire.
+		// so it must run while the session still holds the wire. The restore
+		// puts the cursor back where the switch saved it -- parked on the
+		// flow content's bottom row -- so step below the content, or the
+		// shell's next line lands on top of ours.
 		this[kFullscreenManager].dispose();
+		if (closingFullscreen && this[kInteractive]) {
+			void this[kSession].write("\r\n");
+		}
 
 		// Restore the terminal modes we negotiated, clear the session's timers
 		// and handlers (a live query timer keeps the event loop open), and

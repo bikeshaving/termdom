@@ -255,6 +255,40 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	dom.dispose();
 });
 
+test("closing while fullscreen leaves no trace, and the shell lands below", async () => {
+	// An alt-screen program vanishes on exit: the switch restores what the
+	// screen held before entry, and that is the record. The payout belongs
+	// to flow mode -- an app that wants its final state in scrollback exits
+	// fullscreen first. The restore also puts the cursor back on the flow
+	// content's bottom row, so teardown steps below it, or the shell's next
+	// prompt overwrites our last line.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = "<div>flow row</div><div id=\"fs\">STAGE</div>";
+	await nextFrame(dom);
+	await document.getElementById("fs")!.requestFullscreen();
+	await nextFrame(dom);
+
+	let written = "";
+	const original = terminal.stdout.write.bind(terminal.stdout);
+	terminal.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
+		written += String(chunk);
+		return original(chunk as never, ...(rest as never[]));
+	}) as typeof terminal.stdout.write;
+
+	await dom.dispose();
+	// The alt screen exits, nothing pays out after it, and the cursor
+	// steps to a fresh line.
+	const restoreAt = written.indexOf("\x1b[?1049l");
+	expect(restoreAt).toBeGreaterThan(-1);
+	const after = written.slice(restoreAt + "\x1b[?1049l".length);
+	expect(after).not.toContain("STAGE");
+	expect(after).not.toContain("flow row");
+	expect(after).toContain("\r\n");
+});
+
 test("no frame straddles a screen switch, even mid-animation", async () => {
 	// An in-flight render finishing its stdout write AFTER ?1049l paints
 	// alternate-screen geometry onto the restored main screen. Transitions
