@@ -650,6 +650,36 @@ const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
 const kUAToolkit = Symbol("uaToolkit");
+
+// The members this module installs on dom.js's prototypes, declared into
+// its types AT the installer: the type is true because this file makes it
+// true. (A bare document no engine ever serves carries the types without
+// the members -- the same promise lib.dom makes for any environment.)
+// Each member declared here comes off the RUNTIME ledger in
+// platform-conformance.ts; the ledger shrinks as installers declare.
+declare module "./dom.js" {
+	interface Element {
+		readonly clientHeight: number;
+		readonly clientLeft: number;
+		readonly clientTop: number;
+		readonly clientWidth: number;
+		scrollLeft: number;
+		scrollTop: number;
+		readonly scrollHeight: number;
+		readonly scrollWidth: number;
+		getBoundingClientRect(): globalThis.DOMRect;
+		getClientRects(): globalThis.DOMRectList;
+		scroll(options?: globalThis.ScrollToOptions): void;
+		scroll(x: number, y: number): void;
+		scrollBy(options?: globalThis.ScrollToOptions): void;
+		scrollBy(x: number, y: number): void;
+		scrollTo(options?: globalThis.ScrollToOptions): void;
+		scrollTo(x: number, y: number): void;
+		scrollIntoView(
+			options?: boolean | globalThis.ScrollIntoViewOptions,
+		): void;
+	}
+}
 const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");

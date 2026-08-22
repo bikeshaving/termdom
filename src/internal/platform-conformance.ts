@@ -93,22 +93,6 @@ type ARIAReflection =
 	| "role" |
 	`aria${string}`;
 
-/** RUNTIME: geometry and scrolling, installed by the engine. */
-type ElementGeometry =
-	| "clientHeight" |
-	"clientLeft" |
-	"clientTop" |
-	"clientWidth" |
-	"scrollHeight" |
-	"scrollLeft" |
-	"scrollTop" |
-	"scrollWidth" |
-	"getBoundingClientRect" |
-	"getClientRects" |
-	"scroll" |
-	"scrollBy" |
-	"scrollIntoView" |
-	"scrollTo";
 
 /** RUNTIME: selector engine entries, installed from the tables. */
 type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
@@ -219,7 +203,6 @@ declare const _checked: [
 		ChildNodeMixin |
 		ParentNodeMixin |
 		ARIAReflection |
-		ElementGeometry |
 		SelectorSurface |
 		PointerSurface |
 		FullscreenSurface |
