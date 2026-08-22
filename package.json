@@ -1,6 +1,6 @@
 {
   "name": "@b9g/termdom",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "HTML, CSS and the DOM for terminal emulators. Real CSS layout, no native or WASM dependency.",
   "license": "MIT",
   "author": "Brian Kim",
