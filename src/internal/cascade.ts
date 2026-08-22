@@ -6731,8 +6731,17 @@ function sheetFor(element: Element): CSSStyleSheet {
 		sheet = new CSSStyleSheet({}, element);
 		sheetNotifiers.set(sheet, () => {
 			const window = element.ownerDocument?.defaultView;
-			if (window) {
-				styleManagers.get(window)?.refreshStylesheets();
+			const manager = window ? styleManagers.get(window) : undefined;
+			if (!manager) {
+				return;
+			}
+			// A shadow sheet's change refreshes its root; only a document
+			// sheet's change rebuilds the document cascade.
+			const root = element.getRootNode();
+			if (root.nodeType === 11 && (root as ShadowRoot).host) {
+				manager.refreshShadowRoot(root as ShadowRoot);
+			} else {
+				manager.refreshStylesheets();
 			}
 		});
 		elementSheets.set(element, sheet);
@@ -9413,11 +9422,78 @@ export class StyleManager {
 	 * through the shared observer.
 	 */
 	registerShadowRoot(root: ShadowRoot): void {
+		if (this[kShadowRoots].has(root)) {
+			return;
+		}
 		this[kShadowRoots].add(root);
-		// UA-internal roots are never observer-enrolled, so no STYLE mutation
-		// record will trigger a refresh for the <style> they already contain;
-		// re-parse lazily on the next style computation instead.
-		this[kStylesheetsDirty] = true;
+		// A new root's sheets parse INCREMENTALLY: rebuilding every sheet
+		// for each widget upgrade made a document of n widgets reparse the
+		// world n times. The new rules join the cascade order by the same
+		// sort, and only the root's own tree -- and its host, for :host
+		// rules -- restyles. A rebuild already pending covers this root,
+		// since it is in kShadowRoots now.
+		this.refreshShadowRoot(root);
+	}
+
+	/**
+	 * Re-parse ONE shadow root's sheets in place: its old rules leave, the
+	 * current sheets parse in, the cascade re-sorts, and only trees the
+	 * root's rules can reach restyle. The full rebuild handles everything
+	 * else; a pending one covers this root already.
+	 */
+	refreshShadowRoot(root: ShadowRoot): void {
+		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
+			this[kStylesheetsDirty] = true;
+			return;
+		}
+		const stale = this[kParsedRules].length;
+		this[kParsedRules] = this[kParsedRules].filter(
+			(rule) => rule.scope !== root,
+		);
+		void stale;
+		const before = this[kParsedRules].length;
+		for (const sheet of shadowStyleSheets(root)) {
+			parseStyleSheet(this, sheet, root);
+		}
+		// The refresh accounted for every sheet the counter has seen; a
+		// document-level sheet arriving in the same batch re-dirties on its
+		// own record. Without the sync, the drift check orders the full
+		// rebuild this path exists to avoid -- once per widget.
+		this[kParsedStyleSheetCount] = styleSheetCount(this);
+		const fresh = this[kParsedRules].slice(before);
+		if (fresh.length === 0) {
+			return;
+		}
+		const layerRanks = rankLayers(this);
+		for (const rule of this[kParsedRules]) {
+			rule.layerRank =
+				rule.layer === null ?
+					this[kUnlayeredRank] :
+						(layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
+		}
+		sortRulesForCascade(this);
+		const host = root.host as Element | null;
+		if (host) {
+			invalidateSubtree(this, host);
+		} else {
+			for (const child of root.children) {
+				invalidateSubtree(this, child);
+			}
+		}
+		// A scoped rule that generates pseudo-element boxes needs the attach
+		// sweep; the widgets' sheets carry none, so the sweep runs only for
+		// the author shadow that does.
+		if (
+			fresh.some(
+				(rule) =>
+					rule.pseudoElement &&
+					rule.pseudoElement !== "::placeholder" &&
+					rule.pseudoElement !== "::selection" &&
+					!rule.pseudoElement.startsWith("::part("),
+			)
+		) {
+			attachPseudoElements(this);
+		}
 	}
 
 	/**
@@ -9430,10 +9506,20 @@ export class StyleManager {
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
 				// A <style> element's children ARE its stylesheet text, so
-				// adding or removing one reparses the sheet.
+				// adding or removing one reparses the sheet. Inside a shadow
+				// root the refresh stays inside it: a widget's sheet must not
+				// rebuild the document's cascade.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					sheetFor(mutation.target as Element).reparseOwnerText();
-					shouldRefreshStylesheets = true;
+					const styleRoot = (mutation.target as Element).getRootNode();
+					if (
+						styleRoot.nodeType === 11 &&
+						(styleRoot as ShadowRoot).host
+					) {
+						this.refreshShadowRoot(styleRoot as ShadowRoot);
+					} else {
+						shouldRefreshStylesheets = true;
+					}
 				}
 				// A list's marker gutter is derived from its children, so adding or
 				// removing an item invalidates the *list*, not just the item that
@@ -9451,7 +9537,16 @@ export class StyleManager {
 							(element.tagName === "LINK" &&
 								element.getAttribute("rel") === "stylesheet")
 						) {
-							shouldRefreshStylesheets = true;
+							const addedRoot = element.getRootNode();
+							if (
+								element.tagName === "STYLE" &&
+								addedRoot.nodeType === 11 &&
+								(addedRoot as ShadowRoot).host
+							) {
+								this.refreshShadowRoot(addedRoot as ShadowRoot);
+							} else {
+								shouldRefreshStylesheets = true;
+							}
 						} else {
 							// Invalidate caches for new elements
 							invalidateElementCaches(this, element);
@@ -9520,11 +9615,20 @@ export class StyleManager {
 					}
 				}
 			} else if (mutation.type === "characterData") {
-				// Check for changes to <style> element content
+				// A <style>'s text changed: reparse the sheet, and keep a
+				// shadow sheet's refresh inside its root.
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
 					sheetFor(owner).reparseOwnerText();
-					shouldRefreshStylesheets = true;
+					const ownerRoot = owner.getRootNode();
+					if (
+						ownerRoot.nodeType === 11 &&
+						(ownerRoot as ShadowRoot).host
+					) {
+						this.refreshShadowRoot(ownerRoot as ShadowRoot);
+					} else {
+						shouldRefreshStylesheets = true;
+					}
 				}
 			}
 		}
@@ -10392,9 +10496,17 @@ function parseStylesheets(
 					(layerRanks.get(rule.layer) ?? manager[kUnlayeredRank]);
 	}
 
-	// Sort rules for cascade resolution: origin first (UA rules sort
-	// below every author rule -- later wins), then cascade layer, then
-	// specificity, then the order the rules were read in.
+	sortRulesForCascade(manager);
+	manager.clearCache();
+	attachPseudoElements(manager);
+}
+
+/**
+ * Sort rules for cascade resolution: origin first (UA rules sort below
+ * every author rule -- later wins), then cascade layer, then specificity,
+ * then the order the rules were read in.
+ */
+function sortRulesForCascade(manager: StyleManager): void {
 	const sourceOrder = new Map(
 		manager[kParsedRules].map((rule, index) => [rule, index] as const),
 	);
@@ -10410,8 +10522,6 @@ function parseStylesheets(
 		}
 		return sourceOrder.get(a)! - sourceOrder.get(b)!;
 	});
-	manager.clearCache();
-	attachPseudoElements(manager);
 }
 
 /** Name a layer, and every layer its path nests inside, in declaration order. */
@@ -10836,6 +10946,7 @@ function getMatchingRules(
 	// internal placeholder element.
 	const partPseudo = partPseudoFor(manager, element);
 	const root = element.getRootNode();
+	const rootNode = root as unknown as Node;
 	const shadowHost =
 		root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
 	const partNames = (element.getAttribute("part") ?? "")
@@ -10863,7 +10974,7 @@ function getMatchingRules(
 				ruleMatches(manager, shadowHost, rule)
 			);
 		}
-		return ruleMatches(manager, element, rule);
+		return ruleMatches(manager, element, rule, rootNode);
 	});
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
@@ -11026,11 +11137,22 @@ function ruleMatches(
 	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
+	elementRoot?: Node,
 ): boolean {
-	// The subject's type, when the selector names one: every rule is tried
-	// against every element, and this is the reject that costs a string
-	// comparison instead of a selector match. A :host rule's subject is the
-	// host, which the branch below resolves for itself.
+	// Every rule is tried against every element, so the rejects that cost a
+	// comparison come first. A scoped rule from another tree can never
+	// match: one identity check retires a widget's whole sheet for every
+	// element outside it.
+	if (
+		rule.scope !== undefined &&
+		rule.host === undefined &&
+		rule.scope !== (elementRoot ?? element.getRootNode())
+	) {
+		return false;
+	}
+	// The subject's type, when the selector names one: this reject costs a
+	// string comparison instead of a selector match. A :host rule's subject
+	// is the host, which the branch below resolves for itself.
 	if (rule.subjectTag !== undefined && rule.host === undefined) {
 		const local = element.localName;
 		// A foreign element's local name keeps its case (feGaussianBlur), and
@@ -11082,7 +11204,7 @@ function ruleMatches(
 			}
 			return child ? element.parentNode === scope : true;
 		}
-		const root = element.getRootNode();
+		const root = elementRoot ?? element.getRootNode();
 		if (rule.scope) {
 			return (
 				root === rule.scope &&
@@ -11115,11 +11237,12 @@ function computePseudoElementStyle(
 	element: Element,
 	pseudoElement: string,
 ): Record<string, string> {
+	const pseudoRoot = element.getRootNode() as unknown as Node;
 	const matchingRules = manager[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement !== pseudoElement) {
 			return false;
 		}
-		return ruleMatches(manager, element, rule);
+		return ruleMatches(manager, element, rule, pseudoRoot);
 	});
 
 	// Apply rules in cascade order. A pseudo-element's declarations are a

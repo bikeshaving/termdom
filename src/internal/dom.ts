@@ -12480,8 +12480,12 @@ function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
 		attributeOldValue: true,
 		characterData: true,
 	});
-	engine.styles.registerShadowRoot(root);
+	// The sheet is in the root BEFORE the cascade hears about it, so the
+	// registration's incremental parse sees it: registered-then-populated
+	// left the cascade to notice the sheet by count drift, which ordered a
+	// full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
+	engine.styles.registerShadowRoot(root);
 	return root;
 }
 
