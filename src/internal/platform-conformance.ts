@@ -93,7 +93,6 @@ type ARIAReflection =
 	| "role" |
 	`aria${string}`;
 
-
 /** RUNTIME: selector engine entries, installed from the tables. */
 type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
 
