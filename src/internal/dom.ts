@@ -8065,7 +8065,10 @@ export class HTMLElement extends Element {
 			return;
 		}
 		const document = this[kDocument];
-		if (getRoot(this).nodeType !== DOCUMENT_NODE) {
+		// Shadow-including connectedness: a node whose tree root is a shadow
+		// root is focusable when its host chain reaches the document -- the
+		// node-tree root test refused every element in a shadow tree.
+		if (!this.isConnected) {
 			return;
 		}
 		document[kActiveElement] = this;
@@ -9333,9 +9336,10 @@ export class ShadowRoot extends DocumentFragment {
 	 */
 	get activeElement(): Element | null {
 		const document = this.ownerDocument as Document | null;
-		let current: Node | null = (document?.activeElement ?? null) as
-			| Node |
-			null;
+		// The RAW focus, not the document's retargeted answer -- that one
+		// already collapsed shadow content to its host.
+		let current: Node | null = ((document ? document[kActiveElement] : null) ??
+			null) as Node | null;
 		while (current !== null) {
 			const root = current.getRootNode() as Node;
 			if (root === (this as unknown as Node)) {
@@ -18280,11 +18284,26 @@ export class Document extends Node {
 	 */
 	get activeElement(): Element | null {
 		const active = this[kActiveElement];
-		if (active !== null && getRoot(active) === (this as Node)) {
-			return active;
+		if (active === null || !active.isConnected) {
+			this[kActiveElement] = null;
+			return this.body;
 		}
-		this[kActiveElement] = null;
-		return this.body;
+		// RETARGET to this scope, per HTML: focus inside a shadow tree reads
+		// as the host from the document; the tree's own root answers with
+		// the real element through ShadowRoot.activeElement.
+		let current: Node = active;
+		for (;;) {
+			const root = getRoot(current);
+			if (root === (this as Node)) {
+				return current as Element;
+			}
+			if (root instanceof ShadowRoot && root.host !== null) {
+				current = root.host as unknown as Node;
+				continue;
+			}
+			this[kActiveElement] = null;
+			return this.body;
+		}
 	}
 
 	/** Whether the document's window has the system focus, which it always has. */

@@ -1939,14 +1939,26 @@ test("createContextualFragment parses in the range's context", () => {
 	expect((fromDocument.firstChild as Element).tagName).toBe("I");
 });
 
-test("a shadow root's activeElement retargets the document's focus", () => {
+test("focus reaches into shadow trees, and each scope retargets", () => {
 	const document = make();
 	const host = document.createElement("div");
+	host.id = "host";
 	document.body.appendChild(host);
 	const root = host.attachShadow({mode: "open"});
-	const inner = document.createElement("span");
-	root.appendChild(inner);
+	const mid = document.createElement("div");
+	root.appendChild(mid);
+	const nested = mid.attachShadow({mode: "open"});
+	const button = document.createElement("button");
+	nested.appendChild(button);
 
-	// Nothing focused: the root answers null, not the document's body.
+	// Nothing focused: the roots answer null, not the document's body.
 	expect(root.activeElement).toBe(null);
+	expect(nested.activeElement).toBe(null);
+
+	button.focus();
+	// The document collapses shadow content to the host; each root
+	// retargets to its own descendant on the chain.
+	expect(document.activeElement).toBe(host);
+	expect(root.activeElement).toBe(mid);
+	expect(nested.activeElement).toBe(button);
 });

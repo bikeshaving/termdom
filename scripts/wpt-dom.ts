@@ -947,6 +947,13 @@ function installGlobals(
 	const values: Record<string, unknown> = {
 		...domGlobals(dom),
 		document,
+		// The engine's window carries these; the harness realm has no
+		// window, so the environment supplies frame callbacks the way it
+		// supplies getSelection -- a timeout-shaped stand-in, since no
+		// frame loop runs here.
+		requestAnimationFrame: (callback: (time: number) => void) =>
+			setTimeout(() => callback(performance.now()), 0),
+		cancelAnimationFrame: (handle: number) => clearTimeout(handle),
 		location: {
 			href: url,
 			search: "",
