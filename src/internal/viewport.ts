@@ -1,6 +1,8 @@
 const kScrollTop = Symbol("scrollTop");
 const kScreenTop = Symbol("screenTop");
-const kAnchorScrollTop = Symbol("anchorScrollTop");/**
+const kAnchorScrollTop = Symbol("anchorScrollTop");
+
+/**
  * Where the visible window is looking in the document, and the mapping between
  * a terminal cell and a document point.
  */

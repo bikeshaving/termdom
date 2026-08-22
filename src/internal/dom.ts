@@ -20,7 +20,7 @@ import {
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
-} from "./domhtml.js";
+} from "./htmltables.js";
 import {
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
@@ -35,17 +35,7 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 
-import {HTML_NAMESPACE} from "./useragent.js";
-import {
-	inspectComment,
-	inspectDocument,
-	inspectElement,
-	inspectFragment,
-	inspectDOMRect,
-	inspectNodeList,
-	inspectText,
-} from "./inspector.js";
-export {HTML_NAMESPACE};
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
@@ -63,7 +53,7 @@ const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
  * other, so the control needs the same collaborators the document does. They
  * are installed on a document once, at setup, and reached from there.
  */
-export interface UAEngine {
+interface UAEngine {
 	layout: {
 		invalidate(node: object): void;
 		calculateLayout(): void;
@@ -77,7 +67,11 @@ export interface UAEngine {
 			clampToNearestLine?: boolean,
 		): {node: UAText; offset: number} | null;
 	};
-	styles: {registerShadowRoot(root: object): void};
+	styles: {
+		registerShadowRoot(root: object): void;
+		/** The used user-select answer selection movement filters through. */
+		isSelectable(element: object): boolean;
+	};
 	/**
 	 * Note that a state no attribute records moved -- a popover shown or
 	 * hidden. Nothing about it is a mutation, so the rules that test it and
@@ -120,9 +114,244 @@ interface UALineFragment {
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
-/** Give a document the collaborators its controls' shadow trees render through. */
-export function installUAEngine(document: object, engine: UAEngine): void {
-	(document as Record<symbol, UAEngine>)[kUAEngine] = engine;
+/**
+ * What the user agent may do that a page may not. The capability is the
+ * return value of the one handshake that makes an engine a document's user
+ * agent: it is never exported on its own, no element reaches it, and a
+ * second install on the same document refuses -- so holding the toolkit IS
+ * being the UA. Page code, including code that deep-imports this module,
+ * has no way in.
+ */
+export interface UAToolkit {
+	/** Open a closed shadow root: the composition privilege. */
+	shadowRootOf<T>(element: object): T | null;
+	/**
+	 * A text control's selection record, past the type gate the author
+	 * meets -- selectionStart is null on a number input per spec, and the
+	 * UA still has a caret to draw. Null for a control with no selection.
+	 */
+	selectionOf(
+		control: object,
+	): {start: number; end: number; direction: string} | null;
+	/** The text node a control's editable value renders through. */
+	valueTextOf(control: object): UAText | null;
+	/** Whether a control edits text -- the caret-and-chords family. */
+	isTextField(element: {tagName: string; type?: string}): boolean;
+	/** Move a text control's selection, past the type gate the author meets. */
+	setSelection(
+		control: object,
+		start: number,
+		end: number,
+		direction?: string,
+	): void;
+	/** Build a control's UA widget if it has one and does not have it yet. */
+	upgradeWidget(element: object): void;
+	/** The granted document's top layer, by reference. */
+	topLayer: Set<Element>;
+	isModalDialog(node: object): boolean;
+	isShowingPopover(node: object): boolean;
+	topmostAutoPopover(): Element | null;
+	topmostClickedPopover(node: object): Element | null;
+	closePopover(element: object): void;
+	hidePopoversUntil(
+		endpoint: object | null,
+		focusPreviousElement: boolean,
+		fireEvents: boolean,
+	): void;
+	/** The composed-tree walk: the parent through slots and shadow roots. */
+	flatParentElement<T>(node: object): T | null;
+	/** Connected through the composed tree, closed roots included. */
+	flatIsConnected(node: object): boolean;
+	createFlatTreeWalker<N>(
+		root: object,
+		dissolved?: (node: N) => boolean,
+	): FlatTreeWalker<N>;
+	/** A control's selection as a Range, measured like any document range. */
+	selectionRangeOf(control: object): UARange | null;
+	pseudoElement<T>(host: object, name: string): T | null;
+	pseudoElementCount(host: object): number;
+	pseudoHostOf<T>(node: object): T | null;
+	pseudoNameOf(node: object): string | null;
+	ensurePseudoElement<T>(target: object, name: string): T;
+	clearPseudoElement(host: object, name: string): void;
+	isUAShadowRoot(node: object): boolean;
+	/** How many style elements the granted document holds. */
+	styleElementCount(): number;
+	/**
+	 * Dispatch as the user agent: isTrusted true, default actions armed.
+	 * The one dispatch door script never gets.
+	 */
+	dispatchAsUserAgent(target: object, event: object): boolean;
+	/** Empty and mode-lock a clipboard transfer as its dispatch ends. */
+	lockDataTransfer(transfer: object): void;
+	createBeforeUnloadEvent(): BeforeUnloadEvent;
+}
+
+/**
+ * Give a document the collaborators its controls' shadow trees render
+ * through, and take the UA's capabilities in exchange. Once per document.
+ */
+export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
+	const doc = document as Record<symbol, UAEngine | undefined>;
+	if (doc[kUAEngine] !== undefined) {
+		throw new Error("This document already has its user agent.");
+	}
+	doc[kUAEngine] = engine;
+	return buildUAToolkit(document);
+}
+
+/**
+ * The engineless door to the capabilities: the cascade and the layout claim
+ * here when they are built for a document no terminal will ever render --
+ * tests, WPT runs, author-created documents. Claims close the moment an
+ * engine installs: page code only ever runs after that, so on a rendered
+ * document this always refuses, and the toolkit stays the UA's.
+ */
+export function claimUAToolkit(document: object): UAToolkit {
+	const doc = document as Record<symbol, UAEngine | undefined>;
+	if (doc[kUAEngine] !== undefined) {
+		throw new Error("This document's user agent holds its own toolkit.");
+	}
+	return buildUAToolkit(document);
+}
+
+/** One toolkit per document: every door hands out the same object. */
+const uaToolkits = new WeakMap<object, UAToolkit>();
+
+function buildUAToolkit(document: object): UAToolkit {
+	const existing = uaToolkits.get(document);
+	if (existing !== undefined) {
+		return existing;
+	}
+	const toolkit = makeUAToolkit(document);
+	uaToolkits.set(document, toolkit);
+	return toolkit;
+}
+
+function makeUAToolkit(document: object): UAToolkit {
+	// Each capability answers only for the document it was granted for, so
+	// a toolkit taken by installing on a throwaway document opens nothing.
+	const owns = (target: object): boolean => {
+		const node = target as Node & {host?: Node};
+		if (node === (document as unknown as Node)) {
+			return true;
+		}
+		const anchor =
+			node.ownerDocument ??
+			node.host?.ownerDocument ??
+			(node as unknown as {document?: object}).document;
+		return anchor === (document as unknown as Document);
+	};
+	return {
+		shadowRootOf<T>(element: object): T | null {
+			return owns(element) ? shadowRootOf<T>(element) : null;
+		},
+		selectionOf(control: object) {
+			if (!owns(control)) {
+				return null;
+			}
+			const record = (
+				control as {[kUASelection]?: () => ReturnType<typeof uaSelectionOf>}
+			)[kUASelection];
+			return record ? record.call(control) : null;
+		},
+		valueTextOf(control: object): UAText | null {
+			return owns(control) ? fieldValueText(control) : null;
+		},
+		isTextField,
+		setSelection(control, start, end, direction?: string): void {
+			if (owns(control)) {
+				setUASelection(control, start, end, direction);
+			}
+		},
+		upgradeWidget(element: object): void {
+			if (owns(element)) {
+				upgradeUAWidget(element);
+			}
+		},
+		topLayer: topLayerOf(document),
+		isModalDialog(node: object): boolean {
+			return owns(node) && isModalDialog(node);
+		},
+		isShowingPopover(node: object): boolean {
+			return owns(node) && isShowingPopover(node);
+		},
+		topmostAutoPopover(): Element | null {
+			return topmostAutoPopover(document);
+		},
+		topmostClickedPopover(node: object): Element | null {
+			return owns(node) ? topmostClickedPopover(node) : null;
+		},
+		closePopover(element: object): void {
+			if (owns(element)) {
+				closePopover(element);
+			}
+		},
+		hidePopoversUntil(
+			endpoint: object | null,
+			focusPreviousElement: boolean,
+			fireEvents: boolean,
+		): void {
+			hidePopoversUntil(document, endpoint, focusPreviousElement, fireEvents);
+		},
+		flatParentElement<T>(node: object): T | null {
+			return owns(node) ? flatParentElement<T>(node) : null;
+		},
+		flatIsConnected(node: object): boolean {
+			return owns(node) && flatIsConnected(node);
+		},
+		createFlatTreeWalker<N>(
+			root: object,
+			dissolved?: (node: N) => boolean,
+		): FlatTreeWalker<N> {
+			if (!owns(root)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return createFlatTreeWalker<N>(root as N, dissolved);
+		},
+		selectionRangeOf(control: object): UARange | null {
+			return owns(control) ? selectionRangeOf(control) : null;
+		},
+		pseudoElement<T>(host: object, name: string): T | null {
+			return owns(host) ? pseudoElement<T>(host, name) : null;
+		},
+		pseudoElementCount(host: object): number {
+			return owns(host) ? pseudoElementCount(host) : 0;
+		},
+		pseudoHostOf<T>(node: object): T | null {
+			return owns(node) ? pseudoHostOf<T>(node) : null;
+		},
+		pseudoNameOf(node: object): string | null {
+			return owns(node) ? pseudoNameOf(node) : null;
+		},
+		ensurePseudoElement<T>(target: object, name: string): T {
+			if (!owns(target)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return ensurePseudoElement<T>(target, name);
+		},
+		clearPseudoElement(host: object, name: string): void {
+			if (owns(host)) {
+				clearPseudoElement(host, name);
+			}
+		},
+		isUAShadowRoot(node: object): boolean {
+			return owns(node) && isUAShadowRoot(node);
+		},
+		styleElementCount(): number {
+			return styleElementCount(document as Document);
+		},
+		dispatchAsUserAgent(target: object, event: object): boolean {
+			if (!owns(target)) {
+				throw new Error("Not this toolkit's document.");
+			}
+			return dispatchAsUserAgent(target as EventTarget, event as Event);
+		},
+		lockDataTransfer(transfer: object): void {
+			lockDataTransfer(transfer as DataTransfer);
+		},
+		createBeforeUnloadEvent,
+	};
 }
 
 const kUAUpgrade = Symbol("build a control's UA widget");
@@ -133,7 +362,7 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  * and a control that left the tree and came back only catches up the state it
  * drifted from.
  */
-export function upgradeUAWidget(element: object): void {
+function upgradeUAWidget(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
 }
 
@@ -155,7 +384,7 @@ function uaSelectionOf(control: object): {
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Move a text control's selection, past the type gate the author meets. */
-export function setUASelection(
+function setUASelection(
 	control: object,
 	start: number,
 	end: number,
@@ -362,13 +591,13 @@ function validateAndExtract(
 
 /* ------------------------------------------------------------------ events */
 
-export interface EventInit {
+interface EventInit {
 	bubbles?: boolean;
 	cancelable?: boolean;
 	composed?: boolean;
 }
 
-export interface CustomEventInit<T = unknown> extends EventInit {
+interface CustomEventInit<T = unknown> extends EventInit {
 	detail?: T;
 }
 
@@ -713,10 +942,10 @@ export class Event extends EventBase {
 
 /** Swap the type a dispatch invokes listeners under, for the legacy pass. */
 function setEventType(
-	self: Event,
+	event: Event,
 	type: string,
 ): void {
-	self[kType] = type;
+	event[kType] = type;
 }
 
 Object.defineProperties(Event.prototype, {
@@ -858,9 +1087,8 @@ const kReturnValue = Symbol("returnValue");
  * keep it.
  *
  * The interface declares no constructor: every instance is one the engine
- * fired, so an author's `new` throws as it does in a browser, and
- * createEvent("BeforeUnloadEvent") throws too -- the name is not in the
- * legacy interface table.
+ * fired or an empty shell createEvent built, so an author's `new` throws as
+ * it does in a browser.
  *
  * Cancellation has two spellings, both of which the teardown honors:
  * preventDefault(), and a returnValue set to anything but the empty string.
@@ -868,8 +1096,11 @@ const kReturnValue = Symbol("returnValue");
 export class BeforeUnloadEvent extends Event {
 	declare [kReturnValue]: string;
 
-	constructor() {
-		super("beforeunload", {cancelable: true});
+	constructor(
+		type = "beforeunload",
+		eventInitDict: EventInit = {cancelable: true},
+	) {
+		super(type, eventInitDict);
 		this[kReturnValue] = "";
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -897,19 +1128,237 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 });
 
 /** A beforeunload event, which only a teardown about to happen fires. */
-export function createBeforeUnloadEvent(): BeforeUnloadEvent {
+function createBeforeUnloadEvent(): BeforeUnloadEvent {
 	return constructInternal(() => new BeforeUnloadEvent());
 }
 
+interface MessageEventInit<T = unknown> extends EventInit {
+	data?: T;
+	origin?: string;
+	lastEventId?: string;
+	source?: null;
+	ports?: unknown[];
+}
+
+const kMessageData = Symbol("message data");
+const kOrigin = Symbol("origin");
+const kLastEventId = Symbol("last event id");
+const kMessageSource = Symbol("message source");
+const kPorts = Symbol("ports");
+
+/**
+ * A message from another context. Nothing in a terminal posts one yet, but
+ * the interface is a constructor authors call and createEvent names, so it
+ * is here whole: data, origin, lastEventId, and the source and ports that
+ * stay empty until there is a second context to fill them.
+ */
+export class MessageEvent<T = unknown> extends Event {
+	declare [kMessageData]: T;
+	declare [kOrigin]: string;
+	declare [kLastEventId]: string;
+	declare [kMessageSource]: null;
+	declare [kPorts]: readonly unknown[];
+
+	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<MessageEventInit<T>>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kMessageData] = (init.data ?? null) as T;
+		this[kOrigin] = String(init.origin ?? "");
+		this[kLastEventId] = String(init.lastEventId ?? "");
+		this[kMessageSource] = init.source ?? null;
+		this[kPorts] = Object.freeze([...(init.ports ?? [])]);
+	}
+
+	get data(): T {
+		return this[kMessageData];
+	}
+
+	get origin(): string {
+		return this[kOrigin];
+	}
+
+	get lastEventId(): string {
+		return this[kLastEventId];
+	}
+
+	get source(): null {
+		return this[kMessageSource];
+	}
+
+	get ports(): readonly unknown[] {
+		return this[kPorts];
+	}
+
+	initMessageEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		data: T = null as T,
+		origin = "",
+		lastEventId = "",
+		source = null,
+		ports: unknown[] = [],
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initMessageEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initEvent(type, bubbles, cancelable);
+		this[kMessageData] = data;
+		this[kOrigin] = String(origin);
+		this[kLastEventId] = String(lastEventId);
+		this[kMessageSource] = source;
+		this[kPorts] = Object.freeze([...ports]);
+	}
+}
+
+Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, {
+	value: "MessageEvent",
+	configurable: true,
+});
+
+interface HashChangeEventInit extends EventInit {
+	oldURL?: string;
+	newURL?: string;
+}
+
+const kOldURL = Symbol("old URL");
+const kNewURL = Symbol("new URL");
+
+/** The event of a document's fragment identifier changing. */
+export class HashChangeEvent extends Event {
+	declare [kOldURL]: string;
+	declare [kNewURL]: string;
+
+	constructor(type: string, eventInitDict: HashChangeEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<HashChangeEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kOldURL] = String(init.oldURL ?? "");
+		this[kNewURL] = String(init.newURL ?? "");
+	}
+
+	get oldURL(): string {
+		return this[kOldURL];
+	}
+
+	get newURL(): string {
+		return this[kNewURL];
+	}
+}
+
+Object.defineProperty(HashChangeEvent.prototype, Symbol.toStringTag, {
+	value: "HashChangeEvent",
+	configurable: true,
+});
+
+interface StorageEventInit extends EventInit {
+	key?: string | null;
+	oldValue?: string | null;
+	newValue?: string | null;
+	url?: string;
+	storageArea?: null;
+}
+
+const kStorageKey = Symbol("storage key");
+const kStorageOldValue = Symbol("storage old value");
+const kStorageNewValue = Symbol("storage new value");
+const kStorageURL = Symbol("storage url");
+const kStorageArea = Symbol("storage area");
+
+/**
+ * The event of a storage area changing. There is no storage area in a
+ * terminal to change, but the interface is a constructor authors call and
+ * createEvent names, so it is here whole.
+ */
+export class StorageEvent extends Event {
+	declare [kStorageKey]: string | null;
+	declare [kStorageOldValue]: string | null;
+	declare [kStorageNewValue]: string | null;
+	declare [kStorageURL]: string;
+	declare [kStorageArea]: null;
+
+	constructor(type: string, eventInitDict: StorageEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<StorageEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kStorageKey] = init.key == null ? null : String(init.key);
+		this[kStorageOldValue] =
+			init.oldValue == null ? null : String(init.oldValue);
+		this[kStorageNewValue] =
+			init.newValue == null ? null : String(init.newValue);
+		this[kStorageURL] = String(init.url ?? "");
+		this[kStorageArea] = init.storageArea ?? null;
+	}
+
+	get key(): string | null {
+		return this[kStorageKey];
+	}
+
+	get oldValue(): string | null {
+		return this[kStorageOldValue];
+	}
+
+	get newValue(): string | null {
+		return this[kStorageNewValue];
+	}
+
+	get url(): string {
+		return this[kStorageURL];
+	}
+
+	get storageArea(): null {
+		return this[kStorageArea];
+	}
+
+	initStorageEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		key: string | null = null,
+		oldValue: string | null = null,
+		newValue: string | null = null,
+		url = "",
+		storageArea = null,
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initStorageEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initEvent(type, bubbles, cancelable);
+		this[kStorageKey] = key == null ? null : String(key);
+		this[kStorageOldValue] = oldValue == null ? null : String(oldValue);
+		this[kStorageNewValue] = newValue == null ? null : String(newValue);
+		this[kStorageURL] = String(url);
+		this[kStorageArea] = storageArea ?? null;
+	}
+}
+
+Object.defineProperty(StorageEvent.prototype, Symbol.toStringTag, {
+	value: "StorageEvent",
+	configurable: true,
+});
+
 /* ------------------------------------------------------------- UI events */
 
-export interface UIEventInit extends EventInit {
+interface UIEventInit extends EventInit {
 	view?: null;
 	detail?: number;
 	which?: number;
 }
 
-export interface EventModifierInit extends UIEventInit {
+interface EventModifierInit extends UIEventInit {
 	ctrlKey?: boolean;
 	shiftKey?: boolean;
 	altKey?: boolean;
@@ -926,21 +1375,23 @@ export interface EventModifierInit extends UIEventInit {
 	modifierSymbolLock?: boolean;
 }
 
-export interface MouseEventInit extends EventModifierInit {
+interface MouseEventInit extends EventModifierInit {
 	screenX?: number;
 	screenY?: number;
 	clientX?: number;
 	clientY?: number;
+	movementX?: number;
+	movementY?: number;
 	button?: number;
 	buttons?: number;
 	relatedTarget?: EventTarget | null;
 }
 
-export interface FocusEventInit extends UIEventInit {
+interface FocusEventInit extends UIEventInit {
 	relatedTarget?: EventTarget | null;
 }
 
-export interface KeyboardEventInit extends EventModifierInit {
+interface KeyboardEventInit extends EventModifierInit {
 	key?: string;
 	code?: string;
 	location?: number;
@@ -950,17 +1401,17 @@ export interface KeyboardEventInit extends EventModifierInit {
 	keyCode?: number;
 }
 
-export interface CompositionEventInit extends UIEventInit {
+interface CompositionEventInit extends UIEventInit {
 	data?: string;
 }
 
-export interface InputEventInit extends UIEventInit {
+interface InputEventInit extends UIEventInit {
 	data?: string | null;
 	isComposing?: boolean;
 	inputType?: string;
 }
 
-export interface WheelEventInit extends MouseEventInit {
+interface WheelEventInit extends MouseEventInit {
 	deltaX?: number;
 	deltaY?: number;
 	deltaZ?: number;
@@ -1113,6 +1564,10 @@ Object.defineProperty(UIEvent.prototype, Symbol.toStringTag, {
 const kScreenX = Symbol("screenX");
 const kScreenY = Symbol("screenY");
 const kClientX = Symbol("clientX");
+const kMovementX = Symbol("movementX");
+const kMovementY = Symbol("movementY");
+const kEventView = Symbol("eventView");
+const kTargetRect = Symbol("targetRect");
 const kClientY = Symbol("clientY");
 const kButton = Symbol("button");
 const kButtons = Symbol("buttons");
@@ -1131,6 +1586,8 @@ export class MouseEvent extends UIEvent {
 	declare [kClientY]: number;
 	declare [kButton]: number;
 	declare [kButtons]: number;
+	declare [kMovementX]: number;
+	declare [kMovementY]: number;
 	declare [kModifiers]: Set<string>;
 
 	constructor(type: string, eventInitDict: MouseEventInit = {}) {
@@ -1140,6 +1597,8 @@ export class MouseEvent extends UIEvent {
 		this[kScreenY] = toLong(init.screenY ?? 0);
 		this[kClientX] = toLong(init.clientX ?? 0);
 		this[kClientY] = toLong(init.clientY ?? 0);
+		this[kMovementX] = toLong(init.movementX ?? 0);
+		this[kMovementY] = toLong(init.movementY ?? 0);
 		this[kButton] = toShort(init.button ?? 0);
 		this[kButtons] = toUnsignedShort(init.buttons ?? 0);
 		this[kModifiers] = initModifiers(init);
@@ -1164,6 +1623,75 @@ export class MouseEvent extends UIEvent {
 
 	get clientY(): number {
 		return this[kClientY];
+	}
+
+	/** The alias pair CSSOM View gives clientX/clientY. */
+	get x(): number {
+		return this[kClientX];
+	}
+
+	get y(): number {
+		return this[kClientY];
+	}
+
+	/**
+	 * Client plus the document scroll. Read live rather than captured at
+	 * creation: dispatch is synchronous here, so a listener's read sees
+	 * the scroll the event was made under, which is the captured value.
+	 */
+	get pageX(): number {
+		return this[kClientX] + (this[kEventView]?.scrollX ?? 0);
+	}
+
+	get pageY(): number {
+		return this[kClientY] + (this[kEventView]?.scrollY ?? 0);
+	}
+
+	/**
+	 * Client relative to the target's box. The border edge stands in for
+	 * the spec's padding edge: a terminal border is one cell, and the
+	 * layout's rect is the border box -- a one-cell divergence declared
+	 * here rather than hidden.
+	 */
+	get offsetX(): number {
+		const rect = this[kTargetRect];
+		return rect === null ? this[kClientX] : this[kClientX] - rect.left;
+	}
+
+	get offsetY(): number {
+		const rect = this[kTargetRect];
+		return rect === null ? this[kClientY] : this[kClientY] - rect.top;
+	}
+
+	get movementX(): number {
+		return this[kMovementX];
+	}
+
+	get movementY(): number {
+		return this[kMovementY];
+	}
+
+	/** The window the event's target renders in, if it is in one. */
+	get [kEventView](): {scrollX: number; scrollY: number} | null {
+		const target = this[kDispatchState].target as Node | null;
+		if (target === null || target.ownerDocument === null) {
+			return null;
+		}
+		const view = target.ownerDocument[kDefaultView];
+		return (view ?? null) as {scrollX: number; scrollY: number} | null;
+	}
+
+	/** The target's viewport-space rect, when an engine can answer. */
+	get [kTargetRect](): {left: number; top: number} | null {
+		const target = this[kDispatchState].target as Element | null;
+		if (
+			target === null ||
+			typeof (target as {getBoundingClientRect?: unknown})
+				.getBoundingClientRect !== "function"
+		) {
+			return null;
+		}
+		return target.getBoundingClientRect();
 	}
 
 	get ctrlKey(): boolean {
@@ -1437,6 +1965,49 @@ export class CompositionEvent extends UIEvent {
 
 Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 	value: "CompositionEvent",
+	configurable: true,
+});
+
+/**
+ * The legacy text-input event of DOM Level 3, which UI Events keeps for the
+ * documents that still listen for it. The interface declares no
+ * constructor; createEvent("TextEvent") is the one door.
+ */
+export class TextEvent extends UIEvent {
+	declare [kData]: string;
+
+	constructor(type = "", eventInitDict: UIEventInit = {}) {
+		super(type, eventInitDict);
+		this[kData] = "";
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	get data(): string {
+		return this[kData];
+	}
+
+	initTextEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		view = null,
+		data = "",
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initTextEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initUIEvent(type, bubbles, cancelable, view, 0);
+		this[kData] = String(data);
+	}
+}
+
+Object.defineProperty(TextEvent.prototype, Symbol.toStringTag, {
+	value: "TextEvent",
 	configurable: true,
 });
 
@@ -1763,7 +2334,7 @@ Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
  * text is theirs to read, and the clipboard is not theirs to rewrite through
  * the event.
  */
-export function lockDataTransfer(transfer: DataTransfer): void {
+function lockDataTransfer(transfer: DataTransfer): void {
 	transfer[kTransferMode] = "readonly";
 }
 
@@ -1786,7 +2357,7 @@ function protectClipboardData(event: Event): void {
 	}
 }
 
-export interface ClipboardEventInit extends EventInit {
+interface ClipboardEventInit extends EventInit {
 	clipboardData?: DataTransfer | null;
 }
 
@@ -1871,7 +2442,7 @@ Object.defineProperties(WheelEvent.prototype, {
 	[Symbol.toStringTag]: {value: "WheelEvent", configurable: true},
 });
 
-export interface PointerEventInit extends MouseEventInit {
+interface PointerEventInit extends MouseEventInit {
 	pointerId?: number;
 	width?: number;
 	height?: number;
@@ -2042,6 +2613,32 @@ Object.defineProperty(PointerEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface DragEventInit extends MouseEventInit {
+	dataTransfer?: DataTransfer | null;
+}
+
+const kEventDataTransfer = Symbol("event data transfer");
+
+/** A drag-and-drop event, carrying the data transfer of its drag session. */
+export class DragEvent extends MouseEvent {
+	declare [kEventDataTransfer]: DataTransfer | null;
+
+	constructor(type: string, eventInitDict: DragEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<DragEventInit>(eventInitDict, "An event init");
+		this[kEventDataTransfer] = init.dataTransfer ?? null;
+	}
+
+	get dataTransfer(): DataTransfer | null {
+		return this[kEventDataTransfer];
+	}
+}
+
+Object.defineProperty(DragEvent.prototype, Symbol.toStringTag, {
+	value: "DragEvent",
+	configurable: true,
+});
+
 /** The tilt angles a pen's altitude and azimuth describe, in degrees. */
 function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 	if (altitude === 0) {
@@ -2085,28 +2682,34 @@ function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
 }
 
 /**
- * The legacy event interface table createEvent builds from.
+ * The legacy event interface table createEvent builds from, each name a
+ * factory for the uninitialized shell the spec has createEvent answer with.
  *
- * The names the table maps to interfaces of other specifications --
- * BeforeUnloadEvent, DeviceMotionEvent, DeviceOrientationEvent, DragEvent,
- * HashChangeEvent, MessageEvent, StorageEvent and TouchEvent -- are absent
- * from it, so createEvent throws for them rather than answering with an event
- * of the wrong interface.
+ * The names the table maps to sensor and touch interfaces --
+ * DeviceMotionEvent, DeviceOrientationEvent and TouchEvent -- are absent
+ * from it: they name hardware a terminal does not have, so createEvent
+ * throws for them rather than answering with an event of the wrong
+ * interface.
  */
-const LEGACY_EVENT_INTERFACES = new Map<string, new (type: string) => Event>([
-	["compositionevent", CompositionEvent],
-	["customevent", CustomEvent],
-	["event", Event],
-	["events", Event],
-	["focusevent", FocusEvent],
-	["htmlevents", Event],
-	["keyboardevent", KeyboardEvent],
-	["mouseevent", MouseEvent],
-	["mouseevents", MouseEvent],
-	["svgevents", Event],
-	["textevent", CompositionEvent],
-	["uievent", UIEvent],
-	["uievents", UIEvent],
+const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
+	["beforeunloadevent", () => new BeforeUnloadEvent("", {})],
+	["compositionevent", () => new CompositionEvent("")],
+	["customevent", () => new CustomEvent("")],
+	["dragevent", () => new DragEvent("")],
+	["event", () => new Event("")],
+	["events", () => new Event("")],
+	["focusevent", () => new FocusEvent("")],
+	["hashchangeevent", () => new HashChangeEvent("")],
+	["htmlevents", () => new Event("")],
+	["keyboardevent", () => new KeyboardEvent("")],
+	["messageevent", () => new MessageEvent("")],
+	["mouseevent", () => new MouseEvent("")],
+	["mouseevents", () => new MouseEvent("")],
+	["storageevent", () => new StorageEvent("")],
+	["svgevents", () => new Event("")],
+	["textevent", () => new TextEvent("")],
+	["uievent", () => new UIEvent("")],
+	["uievents", () => new UIEvent("")],
 ]);
 
 export type EventListenerOrEventListenerObject =
@@ -2358,13 +2961,13 @@ export class EventTarget {
  * allocates nothing.
  */
 function eventHandlerMap(
-	self: EventTarget,
+	target: EventTarget,
 	create: boolean,
 ): Map<string, EventHandlerRecord> | null {
-	if (self[kHandlers] === null && create) {
-		self[kHandlers] = new Map();
+	if (target[kHandlers] === null && create) {
+		target[kHandlers] = new Map();
 	}
-	return self[kHandlers];
+	return target[kHandlers];
 }
 
 Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
@@ -2585,7 +3188,7 @@ export function installEventHandlers(
 }
 
 /** The tables a window's own interface is installed from, which the engine owns. */
-export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.js";
+export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./htmltables.js";
 
 const kDefaultView = Symbol("the window this document is displayed in");
 
@@ -2785,7 +3388,7 @@ function dispatchFromOutside(
  * focus move becomes a DOM event -- everything a user or the terminal itself
  * caused, as opposed to what an application constructs and dispatches.
  */
-export function dispatchAsUserAgent(
+function dispatchAsUserAgent(
 	target: EventTarget,
 	event: Event,
 ): boolean {
@@ -3927,6 +4530,124 @@ const kSlotAssignment = Symbol("slot assignment");
 const kAssignedNodes = Symbol("assigned nodes");
 const kCustomState = Symbol("custom element state");
 
+/**
+ * Move node into newParent before child.
+ *
+ * The tree ends up where remove-then-insert would leave it, but as one
+ * primitive: no removing or insertion steps run, no disconnected or
+ * connected callbacks fire, and everything the node carries -- its shadow
+ * trees, its part of the selection, focus, live ranges and iterators --
+ * rides along. A custom element hears connectedMoveCallback instead, or
+ * the disconnected/connected pair where it declares no move callback.
+ */
+function moveNode(node: Node, newParent: Node, child: Node | null): void {
+	if (shadowIncludingRoot(newParent) !== shadowIncludingRoot(node)) {
+		throw hierarchyRequestError(
+			"A node can only move within the tree it is already in",
+		);
+	}
+	if (isHostIncludingInclusiveAncestor(node, newParent)) {
+		throw hierarchyRequestError("A node cannot be moved into itself");
+	}
+	if (child !== null && child[kParent] !== newParent) {
+		throw notFoundError("The reference child is not a child of that parent");
+	}
+	if (node.nodeType !== ELEMENT_NODE && !isCharacterData(node)) {
+		throw hierarchyRequestError("That node cannot be moved");
+	}
+	if (node.nodeType === TEXT_NODE && newParent.nodeType === DOCUMENT_NODE) {
+		throw hierarchyRequestError("That node cannot go there");
+	}
+	if (
+		newParent.nodeType === DOCUMENT_NODE &&
+		node.nodeType === ELEMENT_NODE &&
+		(countChildren(newParent, ELEMENT_NODE) > 0 ||
+			(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
+			hasFollowing(child, DOCUMENT_TYPE_NODE))
+	) {
+		throw hierarchyRequestError("A document can have one element child");
+	}
+	const oldParent = node[kParent] as Node;
+	liveRangePreRemoveSteps(node);
+	const iterators = nodeIteratorsByRoot.get(getRoot(node));
+	if (iterators !== undefined) {
+		for (const iterator of iterators) {
+			preRemoveFromIterator(iterator, node);
+		}
+	}
+	const oldPreviousSibling = node[kPrevious];
+	const oldNextSibling = node[kNext];
+	unlinkChild(node);
+	const assignedSlot = isSlottable(node) ?
+			(node as Slottable)[kAssignedSlot] :
+		null;
+	if (assignedSlot !== null) {
+		assignSlottables(assignedSlot);
+	}
+	if (
+		isShadowRoot(getRoot(oldParent)) &&
+		oldParent instanceof HTMLSlotElement &&
+		oldParent[kAssignedNodes].length === 0
+	) {
+		signalASlotChange(oldParent);
+	}
+	if (hasInclusiveDescendantSlot(node)) {
+		assignSlottablesForTree(getRoot(oldParent));
+		assignSlottablesForTree(node);
+	}
+	if (child !== null) {
+		liveRangeInsertSteps(newParent, child, 1);
+	}
+	const newPreviousSibling =
+		child !== null ? child[kPrevious] : newParent[kLastChild];
+	linkChild(node, newParent, child);
+	const shadow =
+		newParent.nodeType === ELEMENT_NODE ?
+				(newParent as Element)[kShadowRoot] :
+			null;
+	if (shadow !== null && shadow[kSlotAssignment] === "named") {
+		if (isSlottable(node)) {
+			assignASlot(node as Slottable);
+		}
+	}
+	if (
+		isShadowRoot(getRoot(newParent)) &&
+		newParent instanceof HTMLSlotElement &&
+		newParent[kAssignedNodes].length === 0
+	) {
+		signalASlotChange(newParent);
+	}
+	assignSlottablesForTree(getRoot(node));
+	if (newParent.isConnected) {
+		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+			if (
+				descendant.nodeType !== ELEMENT_NODE ||
+				(descendant as Element)[kCustomState] !== "custom"
+			) {
+				continue;
+			}
+			const element = descendant as Element;
+			const definition = element[kDefinition];
+			if (definition?.lifecycleCallbacks.get("connectedMoveCallback")) {
+				enqueueCallbackReaction(element, "connectedMoveCallback", []);
+			} else {
+				enqueueCallbackReaction(element, "disconnectedCallback", []);
+				enqueueCallbackReaction(element, "connectedCallback", []);
+			}
+		}
+	}
+	bumpTreeVersion(oldParent, [node], false);
+	bumpTreeVersion(newParent, [node], true);
+	queueTreeMutationRecord(
+		oldParent,
+		[],
+		[node],
+		oldPreviousSibling,
+		oldNextSibling,
+	);
+	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
+}
+
 /** Insert node into parent before child. */
 function insertNode(
 	node: Node,
@@ -4339,7 +5060,7 @@ function adoptNode(node: Node, document: Document): void {
 
 /* ----------------------------------------------------- mutation observers */
 
-export interface MutationObserverInit {
+interface MutationObserverInit {
 	childList?: boolean;
 	attributes?: boolean;
 	characterData?: boolean;
@@ -4770,41 +5491,41 @@ export class MutationObserver {
 
 /** The nodes whose registered observer list names this one. */
 function liveNodes(
-	self: MutationObserver,
+	observer: MutationObserver,
 ): Node[] {
-	return [...self[kNodes]];
+	return [...observer[kNodes]];
 }
 
 function observeNode(
-	self: MutationObserver,
+	observer: MutationObserver,
 	node: Node,
 ): void {
-	self[kNodes].add(node);
+	observer[kNodes].add(node);
 }
 
 function enqueueRecord(
-	self: MutationObserver,
+	observer: MutationObserver,
 	record: MutationRecord,
 ): void {
-	self[kRecords].push(record);
+	observer[kRecords].push(record);
 }
 
 function notifyObserver(
-	self: MutationObserver,
+	observer: MutationObserver,
 ): void {
-	const records = self[kRecords];
-	self[kRecords] = [];
-	for (const node of liveNodes(self)) {
+	const records = observer[kRecords];
+	observer[kRecords] = [];
+	for (const node of liveNodes(observer)) {
 		removeTransientObservers(node, () => true);
 	}
 	for (const node of transientNodes) {
-		removeTransientObservers(node, (entry) => entry.observer === self);
+		removeTransientObservers(node, (entry) => entry.observer === observer);
 	}
 	if (records.length === 0) {
 		return;
 	}
 	try {
-		self[kCallback].call(self, records, self);
+		observer[kCallback].call(observer, records, observer);
 	} catch (error) {
 		reportError(error);
 	}
@@ -5108,13 +5829,13 @@ abstract class LiveList implements Materializable {
 }
 
 function recompute(
-	self: LiveList,
+	list: LiveList,
 ): void {
-	self[kVersion] = treeVersion;
-	self[kItems] = self.compute();
-	self[kExact] = true;
-	self[kGeneration]++;
-	materialize(self);
+	list[kVersion] = treeVersion;
+	list[kItems] = list.compute();
+	list[kExact] = true;
+	list[kGeneration]++;
+	materialize(list);
 }
 
 /**
@@ -5129,13 +5850,13 @@ function recompute(
  * together, so the first of them finds the run.
  */
 function splice(
-	self: LiveList,
+	list: LiveList,
 	point: Node,
 	changed: readonly Node[],
 	members: readonly Node[],
 	added: boolean,
 ): boolean {
-	const items = self[kItems];
+	const items = list[kItems];
 	if (members.length === 0) {
 		return true;
 	}
@@ -5176,8 +5897,8 @@ function splice(
 		}
 		items.splice(at, members.length);
 	}
-	self[kGeneration]++;
-	defineIndices(self, items.length);
+	list[kGeneration]++;
+	defineIndices(list, items.length);
 	return true;
 }
 
@@ -5186,59 +5907,59 @@ function splice(
  * holds; null where the tree has moved on from it.
  */
 function computed(
-	self: LiveList,
+	list: LiveList,
 ): Node[] | null {
-	return self[kStanding] ? self[kItems] : null;
+	return list[kStanding] ? list[kItems] : null;
 }
 
 /** Define an index for every member the collection has, and no more. */
 function defineIndices(
-	self: LiveList,
+	list: LiveList,
 	length: number,
 ): void {
-	const indexed = self as unknown as Record<number | string, unknown>;
-	for (let index = self[kDefined]; index < length; index++) {
+	const indexed = list as unknown as Record<number | string, unknown>;
+	for (let index = list[kDefined]; index < length; index++) {
 		const at = index;
 		Object.defineProperty(indexed, at, {
 			// The recompute is reached through the captured method, not
 			// through the prototype: a caller may replace the prototype,
 			// and an indexed property is meant to survive that.
 			get(): unknown {
-				return ensureMethod.call(self)[at] ?? undefined;
+				return ensureMethod.call(list)[at] ?? undefined;
 			},
 			enumerable: true,
 			configurable: true,
 		});
 	}
-	for (let index = length; index < self[kDefined]; index++) {
+	for (let index = length; index < list[kDefined]; index++) {
 		delete indexed[index];
 	}
-	self[kDefined] = length;
+	list[kDefined] = length;
 }
 
 function materialize(
-	self: LiveList,
+	list: LiveList,
 ): void {
-	const items = self[kItems];
-	const record = self as unknown as Record<number | string, unknown>;
-	defineIndices(self, items.length);
-	for (const name of self[kNames]) {
+	const items = list[kItems];
+	const record = list as unknown as Record<number | string, unknown>;
+	defineIndices(list, items.length);
+	for (const name of list[kNames]) {
 		delete record[name];
 	}
-	self[kNames] = [];
-	const named = self.namedProperties(items);
+	list[kNames] = [];
+	const named = list.namedProperties(items);
 	if (named !== null) {
 		for (const [name, node] of named) {
 			if (
 				name === "" ||
-				Object.prototype.hasOwnProperty.call(self, name)
+				Object.prototype.hasOwnProperty.call(list, name)
 			) {
 				continue;
 			}
-			if (name in (self.constructor as {prototype: object}).prototype) {
+			if (name in (list.constructor as {prototype: object}).prototype) {
 				continue;
 			}
-			self[kNames].push(name);
+			list[kNames].push(name);
 			Object.defineProperty(record, name, {
 				value: node,
 				enumerable: false,
@@ -5264,23 +5985,7 @@ const shapeSyncMethod = (
 
 const kCompute = Symbol("compute");
 
-/** How node:util's inspect shows a value, bridged to the inspector's options. */
-const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
-
-interface NodeInspectOptions {
-	colors?: boolean;
-	breakLength?: number;
-	showHidden?: boolean;
-}
-
 export class NodeList extends LiveList {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectNodeList(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		});
-	}
-
 	declare forEach: (
 		callback: (node: Node, index: number, list: NodeList) => void,
 		thisArg?: unknown,
@@ -5867,15 +6572,15 @@ export class DOMTokenList extends LiveList {
 }
 
 function write(
-	self: DOMTokenList,
+	list: DOMTokenList,
 	tokens: string[],
 ): void {
-	if (self[kElement].getAttributeNode(self[kAttribute]) === null) {
+	if (list[kElement].getAttributeNode(list[kAttribute]) === null) {
 		if (tokens.length === 0) {
 			return;
 		}
 	}
-	self[kElement].setAttribute(self[kAttribute], tokens.join(" "));
+	list[kElement].setAttribute(list[kAttribute], tokens.join(" "));
 }
 
 Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
@@ -6076,10 +6781,6 @@ function queueCharacterDataMutationRecord(
 const kManualSlot = Symbol("manual slot assignment");
 
 export class Text extends CharacterData {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectText(this, {colorize: options.colors !== false});
-	}
-
 	[kAssignedSlot]: HTMLSlotElement | null;
 	[kManualSlot]: HTMLSlotElement | null;
 
@@ -6182,10 +6883,6 @@ Object.defineProperty(CDATASection.prototype, Symbol.toStringTag, {
 });
 
 export class Comment extends CharacterData {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectComment(this, {colorize: options.colors !== false});
-	}
-
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kDocument] = currentDocument();
@@ -6298,13 +6995,6 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 });
 
 export class DocumentFragment extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectFragment(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		});
-	}
-
 	[kHost]: Element | null;
 
 	constructor() {
@@ -6849,15 +7539,6 @@ const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
 
 export class Element extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectElement(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-			compact: !options.breakLength || options.breakLength === Infinity,
-			showStyles: options.showHidden,
-		});
-	}
-
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
 	[kLocalName]: string;
@@ -7797,7 +8478,10 @@ export class HTMLElement extends Element {
 			return;
 		}
 		const document = this[kDocument];
-		if (getRoot(this).nodeType !== DOCUMENT_NODE) {
+		// Shadow-including connectedness: a node whose tree root is a shadow
+		// root is focusable when its host chain reaches the document -- the
+		// node-tree root test refused every element in a shadow tree.
+		if (!this.isConnected) {
 			return;
 		}
 		document[kActiveElement] = this;
@@ -8738,17 +9422,17 @@ export class CustomElementRegistry {
 }
 
 function definitionFor(
-	self: CustomElementRegistry,
+	registry: CustomElementRegistry,
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
 	return (
-		self[kDefinitions].find((entry) => entry.constructor === constructor) ??
+		registry[kDefinitions].find((entry) => entry.constructor === constructor) ??
 		null
 	);
 }
 
 function lookUp(
-	self: CustomElementRegistry,
+	registry: CustomElementRegistry,
 	namespace: string | null,
 	localName: string,
 	is: string | null,
@@ -8756,12 +9440,12 @@ function lookUp(
 	if (namespace !== HTML_NAMESPACE) {
 		return null;
 	}
-	for (const definition of self[kDefinitions]) {
+	for (const definition of registry[kDefinitions]) {
 		if (definition.name === localName && definition.localName === localName) {
 			return definition;
 		}
 	}
-	for (const definition of self[kDefinitions]) {
+	for (const definition of registry[kDefinitions]) {
 		if (definition.name === is && definition.localName === localName) {
 			return definition;
 		}
@@ -9058,6 +9742,30 @@ export class ShadowRoot extends DocumentFragment {
 		}
 	}
 
+	/**
+	 * The document's active element, retargeted into this tree: the
+	 * shadow-including ancestor of the focus that is one of THIS root's
+	 * descendants, or null when the focus is elsewhere entirely.
+	 */
+	get activeElement(): Element | null {
+		const document = this.ownerDocument as Document | null;
+		// The RAW focus, not the document's retargeted answer -- that one
+		// already collapsed shadow content to its host.
+		let current: Node | null = ((document ? document[kActiveElement] : null) ??
+			null) as Node | null;
+		while (current !== null) {
+			const root = current.getRootNode() as Node;
+			if (root === (this as unknown as Node)) {
+				return current as Element;
+			}
+			current =
+				root instanceof ShadowRoot ?
+						((root.host ?? null) as Node | null) :
+					null;
+		}
+		return null;
+	}
+
 	get mode(): "open" | "closed" {
 		return this[kShadowMode];
 	}
@@ -9266,7 +9974,7 @@ function attachUAShadowRoot<T>(target: object): T {
  * stylesheet of such a tree is a UA rule, which every author rule outranks
  * whatever its specificity.
  */
-export function isUAShadowRoot(node: object): boolean {
+function isUAShadowRoot(node: object): boolean {
 	return node instanceof ShadowRoot && node[kUAInternal];
 }
 
@@ -9276,7 +9984,7 @@ export function isUAShadowRoot(node: object): boolean {
  * this; `Element.shadowRoot` is the author-facing view, which shows an open
  * tree and nothing else.
  */
-export function shadowRootOf<T>(element: object): T | null {
+function shadowRootOf<T>(element: object): T | null {
 	return ((element as Element)[kShadowRoot] as T) ?? null;
 }
 
@@ -10364,7 +11072,7 @@ Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
 	},
 	configurable: true,
 });
-export interface ToggleEventInit extends EventInit {
+interface ToggleEventInit extends EventInit {
 	oldState?: string;
 	newState?: string;
 	source?: Element | null;
@@ -10495,9 +11203,9 @@ export class HTMLDialogElement extends HTMLElement {
  * dialog shown as a popover focuses like a dialog, not like a popover.
  */
 function dialogFocusingSteps(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 ): void {
-	focusDialog(self);
+	focusDialog(dialog);
 }
 
 /**
@@ -10507,13 +11215,13 @@ function dialogFocusingSteps(
  * modal one, so a dialog of plain text still takes keys off the page.
  */
 function focusDialog(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 ): void {
-	self[kPreviouslyFocused] = self[kDocument][kActiveElement];
-	const walker = shadowIncludingInclusiveDescendants(self);
+	dialog[kPreviouslyFocused] = dialog[kDocument][kActiveElement];
+	const walker = shadowIncludingInclusiveDescendants(dialog);
 	let fallback: Element | null = null;
 	for (const node of walker) {
-		if (node === self || node.nodeType !== ELEMENT_NODE) {
+		if (node === dialog || node.nodeType !== ELEMENT_NODE) {
 			continue;
 		}
 		const element = node as Element;
@@ -10532,35 +11240,35 @@ function focusDialog(
 		(fallback as HTMLElement).focus();
 		return;
 	}
-	self[kDocument][kActiveElement] = self;
+	dialog[kDocument][kActiveElement] = dialog;
 }
 
 function close(
-	self: HTMLDialogElement,
+	dialog: HTMLDialogElement,
 	returnValue: string | undefined,
 	_fromRequest: boolean,
 ): void {
-	if (!self.hasAttribute("open")) {
+	if (!dialog.hasAttribute("open")) {
 		return;
 	}
-	self.removeAttribute("open");
-	topLayerOf(self[kDocument]).delete(self);
+	dialog.removeAttribute("open");
+	topLayerOf(dialog[kDocument]).delete(dialog);
 	// The page gets its focus back where the dialog took it from, so the
 	// keyboard returns to what the user was doing before it opened.
-	if (self[kPreviouslyFocused] !== null) {
-		const previous = self[kPreviouslyFocused];
-		self[kPreviouslyFocused] = null;
+	if (dialog[kPreviouslyFocused] !== null) {
+		const previous = dialog[kPreviouslyFocused];
+		dialog[kPreviouslyFocused] = null;
 		if (
-			self[kDocument][kActiveElement] === self ||
-			self.contains(self[kDocument][kActiveElement])
+			dialog[kDocument][kActiveElement] === dialog ||
+			dialog.contains(dialog[kDocument][kActiveElement])
 		) {
 			(previous as HTMLElement).focus();
 		}
 	}
 	if (returnValue !== undefined) {
-		self[kReturnValue] = String(returnValue);
+		dialog[kReturnValue] = String(returnValue);
 	}
-	dispatch(self, new Event("close"));
+	dispatch(dialog, new Event("close"));
 }
 
 const kTopLayer = Symbol("the document's top layer");
@@ -10569,7 +11277,7 @@ const kTopLayer = Symbol("the document's top layer");
  * context of the document, in the order they entered it. Membership is what
  * `showModal` grants and `close` revokes, and what the renderer paints last.
  */
-export function topLayerOf(document: object): Set<Element> {
+function topLayerOf(document: object): Set<Element> {
 	return (document as Document)[kTopLayer];
 }
 /**
@@ -10578,7 +11286,7 @@ export function topLayerOf(document: object): Set<Element> {
  * never puts one there and `close()` takes it out, so there is no second
  * flag to keep in step with the first.
  */
-export function isModalDialog(node: object): boolean {
+function isModalDialog(node: object): boolean {
 	return (
 		node instanceof HTMLDialogElement &&
 		topLayerOf(node[kDocument]).has(node as Element)
@@ -10791,7 +11499,7 @@ function resetControl(control: Element): void {
 		enqueueCallbackReaction(control, "formResetCallback", []);
 	}
 }
-export interface SubmitEventInit extends EventInit {
+interface SubmitEventInit extends EventInit {
 	submitter?: HTMLElement | null;
 }
 
@@ -10883,11 +11591,11 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 }
 
 function matching(
-	self: HTMLFormControlsCollection,
+	collection: HTMLFormControlsCollection,
 	key: string,
 ): Node[] {
 	const matches: Node[] = [];
-	for (const item of self[kEnsure]()) {
+	for (const item of collection[kEnsure]()) {
 		const element = item as Element;
 		if (
 			element.getAttribute("id") === key ||
@@ -11434,7 +12142,7 @@ export class HTMLStyleElement extends HTMLElement {
  * whenever one joins or leaves. A cascade polls this to notice a sheet that
  * appeared since it last parsed, which is cheaper than walking for one.
  */
-export function styleElementCount(document: Document): number {
+function styleElementCount(document: Document): number {
 	return document[kStyleElements];
 }
 /** Mount a document in a window, which is what gives it a `defaultView`. */
@@ -11792,9 +12500,9 @@ export class HTMLTableRowElement extends HTMLElement {
 }
 
 function table(
-	self: HTMLTableRowElement,
+	row: HTMLTableRowElement,
 ): Element | null {
-	const parent = self[kParent];
+	const parent = row[kParent];
 	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
 		return null;
 	}
@@ -11904,7 +12612,7 @@ export class HTMLUListElement extends HTMLElement {}
  * The one spelling of the question: the paint, the caret scroll and the
  * press-to-park default action all have to agree on which elements are fields.
  */
-export function isTextField(element: {
+function isTextField(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
@@ -11929,36 +12637,9 @@ const kUAValueText = Symbol(
  * editing internals reach it: the renderer reads it to place the caret, the
  * editing path to hit-test a point.
  */
-export function fieldValueText(field: object): UAText | null {
+function fieldValueText(field: object): UAText | null {
 	return (
 		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
-	);
-}
-
-/**
- * The range a document answers caret queries with.
- *
- * Every live range is walked by the tree mutation algorithms and held until
- * nothing else refers to it, so a document reuses one range here rather than
- * constructing one per caret read: the callers below read the geometry and are
- * done with it, and a range per frame would grow that walk frame by frame.
- */
-const caretRanges = new WeakMap<UADocument, UARange>();
-
-const kUACaretRange = Symbol("where an element's own caret is");
-
-/**
- * Where an element's caret is, as a collapsed Range the caller can measure --
- * or null for an element that has no caret of its own. The element answers;
- * only it knows what it renders through.
- *
- * The range is the document's own, valid until the next caret read.
- */
-export function caretRangeOf(element: object): UARange | null {
-	return (
-		(element as Record<symbol, (() => UARange | null) | undefined>)[
-			kUACaretRange
-		]?.() ?? null
 	);
 }
 
@@ -11975,7 +12656,7 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-export function selectionRangeOf(element: object): UARange | null {
+function selectionRangeOf(element: object): UARange | null {
 	return (
 		(element as Record<symbol, (() => UARange | null) | undefined>)[
 			kUASelectionRange
@@ -12016,36 +12697,6 @@ function textSelectionRange(
 
 /** The range a document answers control-selection queries with. @see caretRanges */
 const selectionRanges = new WeakMap<UADocument, UARange>();
-
-/**
- * A collapsed Range at a text control's caret, inside the value text of the
- * tree it renders. Its geometry is then whatever the layout already placed the
- * offset at -- no bespoke caret walk. Backward selections carry the caret at
- * the start, forward ones at the end, matching the DOM.
- */
-function textCaretRange(
-	control: HTMLInputElement | HTMLTextAreaElement,
-	valueText: UAText | null,
-): UARange | null {
-	if (!valueText) {
-		return null;
-	}
-	const selection = uaSelectionOf(control);
-	const caret =
-		selection.direction === "backward" ? selection.start : selection.end;
-	const document = uaDocumentOf(control);
-	let range = caretRanges.get(document);
-	if (range === undefined) {
-		range = document.createRange();
-		caretRanges.set(document, range);
-	}
-	range.setStart(
-		valueText,
-		Math.max(0, Math.min(caret, valueText.data.length)),
-	);
-	range.collapse(true);
-	return range;
-}
 
 /** A node's own document, as the tree-building code below reads it. */
 function uaDocumentOf(node: object): UADocument {
@@ -12348,8 +12999,12 @@ function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
 		attributeOldValue: true,
 		characterData: true,
 	});
-	engine.styles.registerShadowRoot(root);
+	// The sheet is in the root BEFORE the cascade hears about it, so the
+	// registration's incremental parse sees it: registered-then-populated
+	// left the cascade to notice the sheet by count drift, which ordered a
+	// full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
+	engine.styles.registerShadowRoot(root);
 	return root;
 }
 
@@ -13035,10 +13690,6 @@ export class HTMLInputElement extends HTMLElement {
 		return this[kValueText];
 	}
 
-	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this[kValueText]);
-	}
-
 	[kUASelectionRange](): UARange | null {
 		return textSelectionRange(this, this[kValueText]);
 	}
@@ -13159,21 +13810,21 @@ export class HTMLInputElement extends HTMLElement {
  * a listener sees the new state, and change back if the click is canceled.
  */
 function legacyPreActivationBehavior(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
 	// The reference the canceled half puts back is this click's, so a run
 	// that takes none leaves none behind.
-	self[kPreviousRadio] = null;
-	if (self.type === "checkbox") {
-		self[kPreviouslyChecked] = self[kChecked];
-		self[kPreviouslyIndeterminate] = self[kIndeterminate];
-		self[kIndeterminate] = false;
-		self[kDirtyChecked] = true;
-		setCheckedness(self, !self[kChecked]);
-	} else if (self.type === "radio") {
-		self[kPreviousRadio] = checkedRadioIn(self) ?? null;
-		self[kDirtyChecked] = true;
-		setCheckedness(self, true);
+	input[kPreviousRadio] = null;
+	if (input.type === "checkbox") {
+		input[kPreviouslyChecked] = input[kChecked];
+		input[kPreviouslyIndeterminate] = input[kIndeterminate];
+		input[kIndeterminate] = false;
+		input[kDirtyChecked] = true;
+		setCheckedness(input, !input[kChecked]);
+	} else if (input.type === "radio") {
+		input[kPreviousRadio] = checkedRadioIn(input) ?? null;
+		input[kDirtyChecked] = true;
+		setCheckedness(input, true);
 	}
 }
 
@@ -13187,36 +13838,36 @@ function legacyPreActivationBehavior(
  * element has now.
  */
 function legacyCanceledActivationBehavior(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	if (self.type === "checkbox") {
-		self[kIndeterminate] = self[kPreviouslyIndeterminate];
-		self[kChecked] = self[kPreviouslyChecked];
+	if (input.type === "checkbox") {
+		input[kIndeterminate] = input[kPreviouslyIndeterminate];
+		input[kChecked] = input[kPreviouslyChecked];
 		return;
 	}
-	if (self.type !== "radio") {
+	if (input.type !== "radio") {
 		return;
 	}
-	const previous = self[kPreviousRadio];
-	self[kPreviousRadio] = null;
-	self[kChecked] = false;
-	if (previous !== null && radioGroupOf(self).includes(previous)) {
+	const previous = input[kPreviousRadio];
+	input[kPreviousRadio] = null;
+	input[kChecked] = false;
+	if (previous !== null && radioGroupOf(input).includes(previous)) {
 		previous[kChecked] = true;
 	}
 }
 
 /** Set checkedness, unchecking the rest of a radio button's group. */
 function setCheckedness(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 	checked: boolean,
 ): void {
-	self[kChecked] = checked;
-	widgetChanged(self);
-	if (!checked || self.type !== "radio") {
+	input[kChecked] = checked;
+	widgetChanged(input);
+	if (!checked || input.type !== "radio") {
 		return;
 	}
-	for (const other of radioGroupOf(self)) {
-		if (other !== self) {
+	for (const other of radioGroupOf(input)) {
+		if (other !== input) {
 			other[kChecked] = false;
 			widgetChanged(other);
 		}
@@ -13224,21 +13875,21 @@ function setCheckedness(
 }
 
 function requireSelectable(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	if (!SELECTABLE_INPUT_TYPES.has(self.type)) {
+	if (!SELECTABLE_INPUT_TYPES.has(input.type)) {
 		throw domError(
 			"InvalidStateError",
-			`An input of type ${self.type} has no text selection`,
+			`An input of type ${input.type} has no text selection`,
 		);
 	}
 }
 
 /** field for a text-ish input, toggle for checkbox/radio. */
 function kindFor(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): "field" | "toggle" {
-	const type = self.type;
+	const type = input.type;
 	return type === "checkbox" || type === "radio" ? "toggle" : "field";
 }
 
@@ -13249,12 +13900,12 @@ function kindFor(
  * exclusivity unchecks siblings with no hook to reconcile on).
  */
 function build(
-	self: HTMLInputElement,
+	input: HTMLInputElement,
 ): void {
-	const engine = self[kEngine]!;
-	let root = self[kRoot];
+	const engine = input[kEngine]!;
+	let root = input[kRoot];
 	if (root === null) {
-		root = buildUARoot(self, engine, FIELD_UA_STYLES);
+		root = buildUARoot(input, engine, FIELD_UA_STYLES);
 	} else {
 		// A rebuild keeps the root -- and its enrollment -- and replaces only
 		// what hangs under it, the stylesheet included.
@@ -13262,24 +13913,24 @@ function build(
 			root.removeChild(root.firstChild);
 		}
 		engine.invalidateStructure();
-		root.appendChild(uaStyleElement(self, FIELD_UA_STYLES));
+		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
-	self[kRoot] = root;
-	self[kKind] = kindFor(self);
+	input[kRoot] = root;
+	input[kKind] = kindFor(input);
 
-	if (self[kKind] === "field") {
-		self[kValueText] = addPart(root, "value").firstChild as UAText;
-		self[kPlaceholderText] = addPart(
+	if (input[kKind] === "field") {
+		input[kValueText] = addPart(root, "value").firstChild as UAText;
+		input[kPlaceholderText] = addPart(
 			root,
 			"placeholder",
 		).firstChild as UAText;
 	} else {
-		self[kValueText] = null;
-		self[kPlaceholderText] = null;
-		self[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
+		input[kValueText] = null;
+		input[kPlaceholderText] = null;
+		input[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
 	}
-	engine.layout.invalidate(self);
-	self[kUAReconcile]();
+	engine.layout.invalidate(input);
+	input[kUAReconcile]();
 }
 /** How an input's type reads and writes its value. */
 function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
@@ -13951,6 +14602,19 @@ export class HTMLSelectElement extends HTMLElement {
 	// The highlighted option index while the picker is OPEN; null = closed.
 	declare [kHighlight]: number | null;
 
+	/**
+	 * A select's selection record is degenerate -- always collapsed at the
+	 * label's start -- so the cursor-parking path reads a select the way it
+	 * reads a field: the caret is the focus of the selection.
+	 */
+	[kUASelection](): {start: number; end: number; direction: string} {
+		return {start: 0, end: 0, direction: "none"};
+	}
+
+	get [kUAValueText](): UAText | null {
+		return this[kValueText];
+	}
+
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
 	}
@@ -14128,6 +14792,7 @@ export class HTMLSelectElement extends HTMLElement {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
+			topLayerOf(this[kDocument]).delete(picker as unknown as Element);
 			return;
 		}
 
@@ -14153,6 +14818,9 @@ export class HTMLSelectElement extends HTMLElement {
 		if (picker.style.display !== "block") {
 			picker.style.display = "block";
 		}
+		// An open picker paints in the top layer, over following content. The
+		// widget owns the membership with the display flip, as one intent.
+		topLayerOf(this[kDocument]).add(picker as unknown as Element);
 	}
 
 	/**
@@ -14178,10 +14846,10 @@ export class HTMLSelectElement extends HTMLElement {
 
 /** The options the tree renders: `options`, without building a collection. */
 function optionList(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): HTMLOptionElement[] {
-	askForAReset(self);
-	return optionsOf(self);
+	askForAReset(select);
+	return optionsOf(select);
 }
 
 /**
@@ -14190,9 +14858,9 @@ function optionList(
  * an option, so it takes no index and cannot be picked.
  */
 function pickerRows(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): PickerRow[] {
-	askForAReset(self);
+	askForAReset(select);
 	const rows: PickerRow[] = [];
 	let index = 0;
 	const addOption = (option: HTMLOptionElement, grouped: boolean): void => {
@@ -14201,11 +14869,11 @@ function pickerRows(
 			label: option.label,
 			disabled: optionIsDisabled(option),
 			grouped,
-			highlighted: index === self[kHighlight],
+			highlighted: index === select[kHighlight],
 		});
 		index++;
 	};
-	for (let node = self[kFirstChild]; node !== null; node = node[kNext]) {
+	for (let node = select[kFirstChild]; node !== null; node = node[kNext]) {
 		if (node instanceof HTMLOptionElement) {
 			addOption(node, false);
 		} else if (node instanceof HTMLOptGroupElement) {
@@ -14237,11 +14905,11 @@ function pickerRows(
  * the next one.
  */
 function reconcileRows(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	picker: UAElement,
 ): void {
-	const document = uaDocumentOf(self);
-	const rows = pickerRows(self);
+	const document = uaDocumentOf(select);
+	const rows = pickerRows(select);
 	while (picker.childNodes.length > rows.length) {
 		picker.removeChild(picker.lastChild!);
 	}
@@ -14267,11 +14935,11 @@ function reconcileRows(
 
 /** Step to the next enabled option in `direction`, or stay put. */
 function step(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	from: number,
 	direction: 1 | -1,
 ): number {
-	const options = optionList(self);
+	const options = optionList(select);
 	for (
 		let i = from + direction;
 		i >= 0 && i < options.length;
@@ -14286,29 +14954,29 @@ function step(
 
 /** Open the picker with the highlight on the current selection. */
 function openPicker(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 ): void {
-	const options = optionList(self);
+	const options = optionList(select);
 	if (options.length === 0) {
 		return;
 	}
-	let index = self.selectedIndex;
+	let index = select.selectedIndex;
 	if (index < 0) {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
-	self[kHighlight] = index;
-	self[kUAReconcile]();
+	select[kHighlight] = index;
+	select[kUAReconcile]();
 }
 
 /** Commit `index` as the selection, close, and fire input then change. */
 function commit(
-	self: HTMLSelectElement,
+	select: HTMLSelectElement,
 	index: number,
 ): void {
-	self[kHighlight] = null;
-	self.selectedIndex = index; // The setter reconciles (closes + label).
-	dispatch(self, new Event("input", {bubbles: true, cancelable: false}));
-	dispatch(self, new Event("change", {bubbles: true, cancelable: false}));
+	select[kHighlight] = null;
+	select.selectedIndex = index; // The setter reconciles (closes + label).
+	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
+	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
 }
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
@@ -14728,10 +15396,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 		return this[kValueText];
 	}
 
-	[kUACaretRange](): UARange | null {
-		return textCaretRange(this, this[kValueText]);
-	}
-
 	[kUASelectionRange](): UARange | null {
 		return textSelectionRange(this, this[kValueText]);
 	}
@@ -14822,11 +15486,11 @@ export class HTMLTextAreaElement extends HTMLElement {
  * down to the end.
  */
 function verticalTarget(
-	self: HTMLTextAreaElement,
+	textarea: HTMLTextAreaElement,
 	caret: number,
 	direction: 1 | -1,
 ): number {
-	const visual = textareaVisualLines(self, self[kEngine]!.layout);
+	const visual = textareaVisualLines(textarea, textarea[kEngine]!.layout);
 	if (!visual) {
 		return caret;
 	}
@@ -14845,8 +15509,8 @@ function verticalTarget(
 	);
 	// Consecutive vertical moves aim for the column travel STARTED at, even
 	// across shorter lines that clamp the caret -- the browser's goal column.
-	const column = self[kGoalColumn] ?? currentColumn;
-	self[kGoalColumn] = column;
+	const column = textarea[kGoalColumn] ?? currentColumn;
+	textarea[kGoalColumn] = column;
 	const target = visual.lines[targetIndex];
 	const targetText = visual.value.slice(target.startOffset, target.endOffset);
 	let cells = 0;
@@ -15115,9 +15779,9 @@ export class HTMLMeterElement extends HTMLElement {
  * away suboptimum, two away even less good.
  */
 function level(
-	self: HTMLMeterElement,
+	meter: HTMLMeterElement,
 ): string {
-	const {low, high, optimum, value} = self;
+	const {low, high, optimum, value} = meter;
 	if (optimum < low) {
 		if (value < low) {
 			return "optimum";
@@ -15295,7 +15959,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 }
 
 /** Whether an element is a popover in the showing state -- `:popover-open`. */
-export function isShowingPopover(node: object): boolean {
+function isShowingPopover(node: object): boolean {
 	return (
 		node instanceof HTMLElement &&
 		popoverStates.get(node)?.visibility === "showing"
@@ -15318,7 +15982,7 @@ function showingAutoPopovers(document: Document): Element[] {
 }
 
 /** The auto popover on top of a document's stack, or null while none is up. */
-export function topmostAutoPopover(document: object): Element | null {
+function topmostAutoPopover(document: object): Element | null {
 	const popovers = showingAutoPopovers(document as Document);
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
@@ -15568,7 +16232,7 @@ function hidePopover(
  * Close a popover the way a close request does -- Escape on the topmost auto
  * popover -- which is a hide that gives focus back and fires its events.
  */
-export function closePopover(element: object): void {
+function closePopover(element: object): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
@@ -15606,7 +16270,7 @@ function hidePopoverStackUntil(
  * HTML's hide popovers until, which is the stack unwind light dismiss and an
  * opening popover both run. With no hint stack, it is the auto stack's.
  */
-export function hidePopoversUntil(
+function hidePopoversUntil(
 	document: object,
 	endpoint: object | null,
 	focusPreviousElement: boolean,
@@ -15714,7 +16378,7 @@ function popoverStackPosition(popover: Element | null): number {
  * which is the deeper of the popover the node is in and the popover the node
  * invokes. Light dismiss closes everything stacked above it.
  */
-export function topmostClickedPopover(node: object): Element | null {
+function topmostClickedPopover(node: object): Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
 	const target = nearestInclusiveTargetPopover(node as Node);
 	return popoverStackPosition(clicked) > popoverStackPosition(target) ?
@@ -16118,9 +16782,9 @@ export class DOMStringMap {
 
 /** Bring the map's own properties into line with the element's attributes. */
 function syncDataset(
-	self: DOMStringMap,
+	map: DOMStringMap,
 ): void {
-	const element = self[kDatasetElement];
+	const element = map[kDatasetElement];
 	const names: string[] = [];
 	for (const attribute of element[kAttributeList]) {
 		if (attribute[kNamespace] !== null) {
@@ -16133,19 +16797,19 @@ function syncDataset(
 		names.push(property);
 	}
 	names.sort();
-	for (const name of self[kDatasetNames]) {
+	for (const name of map[kDatasetNames]) {
 		if (!names.includes(name)) {
-			delete (self as never)[name];
+			delete (map as never)[name];
 		}
 	}
 	for (const name of names) {
-		if (self[kDatasetNames].includes(name)) {
+		if (map[kDatasetNames].includes(name)) {
 			continue;
 		}
 		const attribute = datasetAttributeName(name);
-		Object.defineProperty(self, name, {
+		Object.defineProperty(map, name, {
 			get(this: DOMStringMap): string {
-				return self[kDatasetElement].getAttribute(attribute) as string;
+				return map[kDatasetElement].getAttribute(attribute) as string;
 			},
 			set: wrapWithReactions(function (
 				this: DOMStringMap,
@@ -16157,7 +16821,7 @@ function syncDataset(
 			configurable: true,
 		});
 	}
-	self[kDatasetNames] = names;
+	map[kDatasetNames] = names;
 }
 
 Object.defineProperty(DOMStringMap.prototype, Symbol.toStringTag, {
@@ -16731,9 +17395,9 @@ export class ElementInternals {
 }
 
 function requireFormAssociated(
-	self: ElementInternals,
+	internals: ElementInternals,
 ): void {
-	if (!isFormAssociatedCustom(self[kElementInternalsTarget])) {
+	if (!isFormAssociatedCustom(internals[kElementInternalsTarget])) {
 		throw domError(
 			"NotSupportedError",
 			"That element's definition is not form-associated",
@@ -17038,7 +17702,7 @@ function checkValidity(element: Element): boolean {
  * everything the engine already does with an element -- computed style, a box,
  * text children -- works on it unchanged.
  */
-export function pseudoElement<T>(host: object, name: string): T | null {
+function pseudoElement<T>(host: object, name: string): T | null {
 	const slots = (host as Element)[kPseudoElements];
 	return slots === null || slots === undefined ?
 		null :
@@ -17046,7 +17710,7 @@ export function pseudoElement<T>(host: object, name: string): T | null {
 }
 
 /** How many pseudo-element nodes an element carries. */
-export function pseudoElementCount(host: object): number {
+function pseudoElementCount(host: object): number {
 	const slots = (host as Element)[kPseudoElements];
 	return slots === null || slots === undefined ? 0 : slots.size;
 }
@@ -17056,12 +17720,12 @@ export function pseudoElementCount(host: object): number {
  * every other node: this is what tells a pseudo-element node apart, and where
  * the flat tree finds the parent a node with no parent renders inside.
  */
-export function pseudoHostOf<T>(node: object): T | null {
+function pseudoHostOf<T>(node: object): T | null {
 	return ((node as Element)[kPseudoHost] as T) ?? null;
 }
 
 /** The pseudo-element name a slot node fills, such as "::before". */
-export function pseudoNameOf(node: object): string | null {
+function pseudoNameOf(node: object): string | null {
 	return (node as Element)[kPseudoName];
 }
 
@@ -17070,7 +17734,7 @@ export function pseudoNameOf(node: object): string | null {
  * time it is asked for. The node is an element named after the pseudo-element
  * so a debugger's dump reads plainly; it is never serialized.
  */
-export function ensurePseudoElement<T>(target: object, name: string): T {
+function ensurePseudoElement<T>(target: object, name: string): T {
 	const host = target as Element;
 	let slots = host[kPseudoElements];
 	if (slots === null) {
@@ -17088,7 +17752,7 @@ export function ensurePseudoElement<T>(target: object, name: string): T {
 }
 
 /** Drop an element's pseudo-element node for a name. */
-export function clearPseudoElement(host: object, name: string): void {
+function clearPseudoElement(host: object, name: string): void {
 	(host as Element)[kPseudoElements]?.delete(name);
 }
 
@@ -17126,7 +17790,7 @@ function assignedSlotOf(node: Node): HTMLSlotElement | null {
  * child resolves to the HOST, and a pseudo-element node's is the element it
  * originates from -- and everything else is parentElement.
  */
-export function flatParentElement<T>(target: object): T | null {
+function flatParentElement<T>(target: object): T | null {
 	const node = target as Node;
 	const slot = assignedSlotOf(node);
 	if (slot !== null) {
@@ -17149,7 +17813,7 @@ export function flatParentElement<T>(target: object): T | null {
  * reaches one. A pseudo-element node and a UA shadow tree's contents are both
  * outside the node tree that answers `isConnected` and both render.
  */
-export function flatIsConnected(target: object): boolean {
+function flatIsConnected(target: object): boolean {
 	let node: Node | null = target as Node;
 	while (node !== null) {
 		if (isConnectedNode(node)) {
@@ -17182,7 +17846,7 @@ export interface FlatTreeWalker<N> {
 	previousSibling(): N | null;
 }
 
-export function createFlatTreeWalker<N>(
+function createFlatTreeWalker<N>(
 	root: N,
 	dissolved?: (node: N) => boolean,
 ): FlatTreeWalker<N> {
@@ -17455,26 +18119,26 @@ class FlatWalker {
    how a <slot> disappears from a box tree while its projected content flows
    through. */
 function isDissolved(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): boolean {
 	return (
-		self[kDissolved] !== null &&
+		walker[kDissolved] !== null &&
 		node.nodeType === ELEMENT_NODE &&
-		self[kDissolved](node)
+		walker[kDissolved](node)
 	);
 }
 
 /** The first undissolved node at a node's position, or null if it has none. */
 function head(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node | null {
-	if (!isDissolved(self, node)) {
+	if (!isDissolved(walker, node)) {
 		return node;
 	}
 	for (let child = composedFirstChild(node); child !== null;) {
-		const found = head(self, child);
+		const found = head(walker, child);
 		if (found !== null) {
 			return found;
 		}
@@ -17485,14 +18149,14 @@ function head(
 
 /** Mirror of kHead: the last undissolved node at a node's position. */
 function tail(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node | null {
-	if (!isDissolved(self, node)) {
+	if (!isDissolved(walker, node)) {
 		return node;
 	}
 	for (let child = composedLastChild(node); child !== null;) {
-		const found = tail(self, child);
+		const found = tail(walker, child);
 		if (found !== null) {
 			return found;
 		}
@@ -17502,14 +18166,14 @@ function tail(
 }
 
 function lastDescendant(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 ): Node {
 	let current = node;
 	for (
-		let child = self[kLastChild](current);
+		let child = walker[kLastChild](current);
 		child !== null;
-		child = self[kLastChild](current)
+		child = walker[kLastChild](current)
 	) {
 		current = child;
 	}
@@ -17518,7 +18182,7 @@ function lastDescendant(
 
 /** Whether a node ends an element's content, ::after aside. */
 function isLastContent(
-	self: FlatWalker,
+	walker: FlatWalker,
 	node: Node,
 	element: Element,
 ): boolean {
@@ -17832,10 +18496,6 @@ Object.defineProperty(DOMRectReadOnly.prototype, Symbol.toStringTag, {
 
 /** A rectangle whose origin and size can be written. */
 export class DOMRect extends DOMRectReadOnly {
-	[kNodeInspect](_depth: number, options: NodeInspectOptions): string {
-		return inspectDOMRect(this, {colorize: options.colors !== false});
-	}
-
 	static override fromRect(other: DOMRectInit = {}): DOMRect {
 		return new DOMRect(other.x, other.y, other.width, other.height);
 	}
@@ -17919,14 +18579,6 @@ const kIdMap = Symbol("id map");
 const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
-	[kNodeInspect](depth: number, options: NodeInspectOptions): string {
-		return inspectDocument(this, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-			compact: !options.breakLength || options.breakLength === Infinity,
-		});
-	}
-
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
 		this[kDocumentURL] = "about:blank";
@@ -18045,11 +18697,26 @@ export class Document extends Node {
 	 */
 	get activeElement(): Element | null {
 		const active = this[kActiveElement];
-		if (active !== null && getRoot(active) === (this as Node)) {
-			return active;
+		if (active === null || !active.isConnected) {
+			this[kActiveElement] = null;
+			return this.body;
 		}
-		this[kActiveElement] = null;
-		return this.body;
+		// RETARGET to this scope, per HTML: focus inside a shadow tree reads
+		// as the host from the document; the tree's own root answers with
+		// the real element through ShadowRoot.activeElement.
+		let current: Node = active;
+		for (;;) {
+			const root = getRoot(current);
+			if (root === (this as Node)) {
+				return current as Element;
+			}
+			if (root instanceof ShadowRoot && root.host !== null) {
+				current = root.host as unknown as Node;
+				continue;
+			}
+			this[kActiveElement] = null;
+			return this.body;
+		}
 	}
 
 	/** Whether the document's window has the system focus, which it always has. */
@@ -18222,6 +18889,26 @@ export class Document extends Node {
 
 	getElementsByClassName(classNames: string): HTMLCollection {
 		return elementsByClassName(this, String(classNames));
+	}
+
+	getElementsByName(elementName: string): NodeList {
+		const name = String(elementName);
+		return new NodeList(
+			() => {
+				const matches: Node[] = [];
+				for (const element of this.getElementsByTagName("*")) {
+					if (
+						element.namespaceURI === HTML_NAMESPACE &&
+						element.getAttribute("name") === name
+					) {
+						matches.push(element);
+					}
+				}
+				return matches;
+			},
+			true,
+			this,
+		);
 	}
 
 	getElementById(elementId: string): Element | null {
@@ -18431,14 +19118,14 @@ export class Document extends Node {
 			throw new TypeError("createEvent needs an interface name");
 		}
 		const name = asciiLowercase(String(interfaceName));
-		const constructor = LEGACY_EVENT_INTERFACES.get(name);
-		if (constructor === undefined) {
+		const factory = LEGACY_EVENT_INTERFACES.get(name);
+		if (factory === undefined) {
 			throw domError(
 				"NotSupportedError",
 				`No event interface is named "${interfaceName}"`,
 			);
 		}
-		const event = new constructor("");
+		const event = constructInternal(factory);
 		event[kDispatchState].initialized = false;
 		return event;
 	}
@@ -18830,6 +19517,27 @@ const parentNodeMembers = {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const node = convertNodesIntoNode(nodes, this[kDocument]);
 			preInsert(node, this, null);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	moveBefore: {
+		value(this: Node, node: Node, child: Node | null): void {
+			if (arguments.length < 2) {
+				throw new TypeError("moveBefore needs a node and a child");
+			}
+			if (!(node instanceof Node)) {
+				throw new TypeError("That is not a node");
+			}
+			if (child !== null && child !== undefined && !(child instanceof Node)) {
+				throw new TypeError("That is not a node");
+			}
+			let reference = child ?? null;
+			if (reference === node) {
+				reference = node[kNext];
+			}
+			moveNode(node, this, reference);
 		},
 		configurable: true,
 		enumerable: true,
@@ -19703,7 +20411,7 @@ Object.defineProperty(AbstractRange.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export interface StaticRangeInit {
+interface StaticRangeInit {
 	startContainer: Node;
 	startOffset: number;
 	endContainer: Node;
@@ -20340,6 +21048,34 @@ export class Range extends AbstractRange {
 			throw new TypeError("insertNode needs a node");
 		}
 		insertIntoRange(this, node);
+	}
+
+	/**
+	 * Parse markup in the range's context: the start node's element (a text
+	 * node's parent; the body when the start is the document), exactly the
+	 * context innerHTML would give the same markup.
+	 */
+	createContextualFragment(markup: string): DocumentFragment {
+		const start = this[kStartNode];
+		let context: Element | null =
+			start instanceof Element ?
+				start :
+				start[kParent] instanceof Element ?
+						(start[kParent] as Element) :
+					null;
+		if (context === null) {
+			const document =
+				start instanceof Document ?
+					start :
+						(start.ownerDocument as Document | null);
+			context = (document?.body ?? document?.documentElement ?? null) as
+			| Element |
+			null;
+		}
+		if (context === null) {
+			throw domError("NotSupportedError", "The range has no context");
+		}
+		return parseFragmentHTML(String(markup ?? ""), context);
 	}
 
 	surroundContents(newParent: Node): void {
@@ -21176,16 +21912,25 @@ function paintsText(
 	return false;
 }
 
-/** The painted text nodes of a document, in tree order. */
+/**
+ * The painted, selectable text nodes of a document, in tree order. The
+ * selectable filter asks per text node's parent rather than pruning the
+ * subtree, because user-select: none does not inherit -- a `text`
+ * descendant inside a `none` ancestor selects again.
+ */
 function selectionTextNodes(
 	document: Document,
-	layout: UAEngine["layout"] | null,
+	engine: UAEngine | undefined,
 ): Text[] {
+	const layout = engine?.layout ?? null;
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			if (child.nodeType === TEXT_NODE) {
-				if (paintsText(child as Text, layout)) {
+				if (
+					paintsText(child as Text, layout) &&
+					(engine === undefined || engine.styles.isSelectable(node))
+				) {
 					nodes.push(child as Text);
 				}
 			} else if (child.nodeType === ELEMENT_NODE) {
@@ -21380,13 +22125,14 @@ function selectionLineMove(
 
 /** The point the motion lands on, or null where there is nothing to do. */
 function modifiedPoint(
-	self: Selection,
+	selection: Selection,
 	from: [Node, number],
 	forward: boolean,
 	granularity: string,
 ): [Node, number] | null {
-	const document = self[kDocument];
-	const layout = uaEngineOf(document)?.layout ?? null;
+	const document = selection[kDocument];
+	const engine = uaEngineOf(document);
+	const layout = engine?.layout ?? null;
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -21396,7 +22142,7 @@ function modifiedPoint(
 		// page just mutated has to be laid out before they are asked for.
 		layout.calculateLayout();
 	}
-	const run = flattenSelectionText(selectionTextNodes(document, layout));
+	const run = flattenSelectionText(selectionTextNodes(document, engine));
 	if (run.parts.length === 0) {
 		return null;
 	}
@@ -21442,10 +22188,10 @@ function modifiedPoint(
 
 /** Whether a node is in the selection's document, shadow trees included. */
 function inDocument(
-	self: Selection,
+	selection: Selection,
 	node: Node,
 ): boolean {
-	return shadowIncludingRoot(node) === self[kDocument];
+	return shadowIncludingRoot(node) === selection[kDocument];
 }
 
 /**
@@ -21454,42 +22200,42 @@ function inDocument(
  * range that has left the document is not one the selection answers with.
  */
 function documentRange(
-	self: Selection,
+	selection: Selection,
 ): Range | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return inDocument(self, range[kStartNode]) ? range : null;
+	return inDocument(selection, range[kStartNode]) ? range : null;
 }
 
 function anchorPoint(
-	self: Selection,
+	selection: Selection,
 ): [Node, number] | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return self[kDirection] === "forwards" ?
+	return selection[kDirection] === "forwards" ?
 			[range[kStartNode], range[kStartOffset]] :
 			[range[kEndNode], range[kEndOffset]];
 }
 
 function focusPoint(
-	self: Selection,
+	selection: Selection,
 ): [Node, number] | null {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return null;
 	}
-	return self[kDirection] === "forwards" ?
+	return selection[kDirection] === "forwards" ?
 			[range[kEndNode], range[kEndOffset]] :
 			[range[kStartNode], range[kStartOffset]];
 }
 
 /** The range the Range API builds from an ordered pair of points. */
 function rangeFor(
-	self: Selection,
+	selection: Selection,
 	start: [Node, number],
 	end: [Node, number],
 ): Range {
@@ -21501,26 +22247,26 @@ function rangeFor(
 
 /** Take a range, and the composed points it was built from, as the own. */
 function associate(
-	self: Selection,
+	selection: Selection,
 	range: Range,
 	anchor: [Node, number],
 	focus: [Node, number],
 	direction: "forwards" | "backwards" | "directionless",
 ): void {
-	const previous = self[kRange];
+	const previous = selection[kRange];
 	if (previous !== null) {
 		previous[kRangeSelection] = null;
 	}
-	self[kRange] = range;
-	range[kRangeSelection] = self;
+	selection[kRange] = range;
+	range[kRangeSelection] = selection;
 	const anchorFirst =
 		compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 	const start = anchorFirst ? anchor : focus;
 	const end = anchorFirst ? focus : anchor;
-	self[kStart] = livePoint(start[0], start[1]);
-	self[kEnd] = livePoint(end[0], end[1]);
-	self[kDirection] = direction;
-	scheduleSelectionChange(self[kDocument]);
+	selection[kStart] = livePoint(start[0], start[1]);
+	selection[kEnd] = livePoint(end[0], end[1]);
+	selection[kDirection] = direction;
+	scheduleSelectionChange(selection[kDocument]);
 }
 
 /**
@@ -21529,38 +22275,40 @@ function associate(
  * the document takes the selection with it.
  */
 function selectionChanged(
-	self: Selection,
+	selection: Selection,
 	which: "start" | "end" | "both",
 ): void {
-	const range = self[kRange];
+	const range = selection[kRange];
 	if (range === null) {
 		return;
 	}
-	if (!inDocument(self, range[kStartNode])) {
-		self.removeAllRanges();
+	if (!inDocument(selection, range[kStartNode])) {
+		selection.removeAllRanges();
 		return;
 	}
 	const start = livePoint(range[kStartNode], range[kStartOffset]);
 	const end = livePoint(range[kEndNode], range[kEndOffset]);
-	if (which === "both" || self[kStart] === null || self[kEnd] === null) {
-		self[kStart] = start;
-		self[kEnd] = end;
+	if (
+		which === "both" || selection[kStart] === null || selection[kEnd] === null
+	) {
+		selection[kStart] = start;
+		selection[kEnd] = end;
 	} else if (which === "start") {
-		self[kStart] = start;
-		if (composedOrder(self, start, self[kEnd]) === AFTER) {
-			self[kEnd] = start;
+		selection[kStart] = start;
+		if (composedOrder(selection, start, selection[kEnd]) === AFTER) {
+			selection[kEnd] = start;
 		}
 	} else {
-		self[kEnd] = end;
-		if (composedOrder(self, end, self[kStart]) === BEFORE) {
-			self[kStart] = end;
+		selection[kEnd] = end;
+		if (composedOrder(selection, end, selection[kStart]) === BEFORE) {
+			selection[kStart] = end;
 		}
 	}
-	scheduleSelectionChange(self[kDocument]);
+	scheduleSelectionChange(selection[kDocument]);
 }
 
 function composedOrder(
-	self: Selection,
+	selection: Selection,
 	point: Range,
 	other: Range,
 ): number {
@@ -21755,21 +22503,21 @@ export class NodeIterator {
 }
 
 function traverse(
-	self: NodeIterator,
+	iterator: NodeIterator,
 	forward: boolean,
 ): Node | null {
-	let node: Node | null = self[kReference];
-	let before = self[kPointerBefore];
+	let node: Node | null = iterator[kReference];
+	let before = iterator[kPointerBefore];
 	const state = {
-		root: self[kRoot],
-		whatToShow: self[kWhatToShow],
-		filter: self[kFilter],
-		active: self[kActive],
+		root: iterator[kRoot],
+		whatToShow: iterator[kWhatToShow],
+		filter: iterator[kFilter],
+		active: iterator[kActive],
 	};
 	for (;;) {
 		if (forward) {
 			if (!before) {
-				node = followingWithin(node as Node, self[kRoot]);
+				node = followingWithin(node as Node, iterator[kRoot]);
 				if (node === null) {
 					return null;
 				}
@@ -21778,7 +22526,7 @@ function traverse(
 			}
 		} else {
 			if (before) {
-				node = precedingWithin(node as Node, self[kRoot]);
+				node = precedingWithin(node as Node, iterator[kRoot]);
 				if (node === null) {
 					return null;
 				}
@@ -21790,9 +22538,9 @@ function traverse(
 			// A filter that removed the very node it was filtering leaves
 			// the reference where the pre-removing steps put it: a node
 			// outside the root can never be the reference.
-			if (isInclusiveAncestor(self[kRoot], node as Node)) {
-				self[kReference] = node as Node;
-				self[kPointerBefore] = before;
+			if (isInclusiveAncestor(iterator[kRoot], node as Node)) {
+				iterator[kReference] = node as Node;
+				iterator[kPointerBefore] = before;
 			}
 			break;
 		}
@@ -21959,16 +22707,16 @@ export class TreeWalker {
 }
 
 function traverseChildren(
-	self: TreeWalker,
+	walker: TreeWalker,
 	first: boolean,
 ): Node | null {
 	let node: Node | null = first ?
-		self[kCurrent][kFirstChild] :
-		self[kCurrent][kLastChild];
+		walker[kCurrent][kFirstChild] :
+		walker[kCurrent][kLastChild];
 	while (node !== null) {
-		const result = filterNode(self[kState], node);
+		const result = filterNode(walker[kState], node);
 		if (result === FILTER_ACCEPT) {
-			self[kCurrent] = node;
+			walker[kCurrent] = node;
 			return node;
 		}
 		if (result === FILTER_SKIP) {
@@ -21987,8 +22735,8 @@ function traverseChildren(
 			const parent: Node | null = node[kParent];
 			if (
 				parent === null ||
-				parent === self[kRoot] ||
-				parent === self[kCurrent]
+				parent === walker[kRoot] ||
+				parent === walker[kCurrent]
 			) {
 				return null;
 			}
@@ -21999,20 +22747,20 @@ function traverseChildren(
 }
 
 function traverseSiblings(
-	self: TreeWalker,
+	walker: TreeWalker,
 	next: boolean,
 ): Node | null {
-	let node = self[kCurrent];
-	if (node === self[kRoot]) {
+	let node = walker[kCurrent];
+	if (node === walker[kRoot]) {
 		return null;
 	}
 	for (;;) {
 		let sibling = next ? node[kNext] : node[kPrevious];
 		while (sibling !== null) {
 			node = sibling;
-			const result = filterNode(self[kState], node);
+			const result = filterNode(walker[kState], node);
 			if (result === FILTER_ACCEPT) {
-				self[kCurrent] = node;
+				walker[kCurrent] = node;
 				return node;
 			}
 			sibling = next ? node[kFirstChild] : node[kLastChild];
@@ -22021,11 +22769,11 @@ function traverseSiblings(
 			}
 		}
 		const parent = node[kParent];
-		if (parent === null || parent === self[kRoot]) {
+		if (parent === null || parent === walker[kRoot]) {
 			return null;
 		}
 		node = parent;
-		if (filterNode(self[kState], node) === FILTER_ACCEPT) {
+		if (filterNode(walker[kState], node) === FILTER_ACCEPT) {
 			return null;
 		}
 	}
@@ -22086,6 +22834,111 @@ function selectorEngine(document: Document): SelectorEngine {
 				modvar: null,
 			}),
 		);
+		// `:focus` per HTML, not per light tree: the focused element
+		// matches wherever it is, and so does every shadow host on the
+		// chain above it -- which the engine's document.activeElement
+		// cannot see, since retargeting stops at the first host.
+		engine.Snapshot.hasFocusState = (element: Element): boolean => {
+			const active = document[kActiveElement];
+			if (active === null) {
+				return false;
+			}
+			if (element === active) {
+				return true;
+			}
+			for (
+				let root = getRoot(active);
+				isShadowRoot(root);
+				root = getRoot(root as unknown as Node)
+			) {
+				const host = (root as ShadowRoot)[kHost] as Element;
+				if (host === element) {
+					return true;
+				}
+				root = host as unknown as Node;
+			}
+			return false;
+		};
+		engine.registerSelector(
+			":-termdom-focus",
+			/^:-termdom-focus(?![\w-])(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.hasFocusState(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
+		// `:focus-within` climbs the same chain and keeps going: every
+		// ancestor and every host above the focused element matches.
+		engine.Snapshot.hasFocusWithinState = (element: Element): boolean => {
+			const active = document[kActiveElement];
+			for (
+				let node: Element | null = active;
+				node !== null;
+
+			) {
+				if (node === element) {
+					return true;
+				}
+				const parent: Element | null = node.parentElement;
+				if (parent !== null) {
+					node = parent;
+					continue;
+				}
+				const root = getRoot(node);
+				node = isShadowRoot(root) ?
+						((root as ShadowRoot)[kHost] as Element) :
+					null;
+			}
+			return false;
+		};
+		engine.registerSelector(
+			":-termdom-focus-within",
+			/^:-termdom-focus-within(?![\w-])(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.hasFocusWithinState(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
+		// The engine's own compiled `:focus` family predates shadow trees:
+		// its focus test wants a focusable-looking shape at
+		// document.activeElement, and its `:focus-within` cannot reach an
+		// ancestor at all. The names above resolve through the raw focus
+		// state instead, and every selector is spelled onto them on the way
+		// in -- the four entry points below are the only doors.
+		const FOCUS_REWRITES: Array<[RegExp, string]> = [
+			[/:focus-within(?![\w-])/gi, ":-termdom-focus-within"],
+			[/:focus-visible(?![\w-])/gi, ":-termdom-focus"],
+			[/:focus(?![\w-])/gi, ":-termdom-focus"],
+		];
+		const rewriteFocus = (selector: string): string => {
+			if (!/:focus/i.test(selector)) {
+				return selector;
+			}
+			let rewritten = selector;
+			for (const [pattern, name] of FOCUS_REWRITES) {
+				rewritten = rewritten.replace(pattern, name);
+			}
+			return rewritten;
+		};
+		const rawMatch = engine.match.bind(engine);
+		const rawFirst = engine.first.bind(engine);
+		const rawSelect = engine.select.bind(engine);
+		const withClosest = engine as unknown as {
+			closest(selector: string, ...rest: unknown[]): unknown;
+		};
+		const rawClosest = withClosest.closest.bind(engine);
+		engine.match = (selector: string, element: unknown, ...rest: unknown[]) =>
+			rawMatch(rewriteFocus(selector), element, ...rest);
+		engine.first = (selector: string, ...rest: unknown[]) =>
+			rawFirst(rewriteFocus(selector), ...rest);
+		engine.select = (selector: string, ...rest: unknown[]) =>
+			rawSelect(rewriteFocus(selector), ...rest);
+		withClosest.closest = (selector: string, ...rest: unknown[]) =>
+			rawClosest(rewriteFocus(selector), ...rest);
 		if (document.documentElement !== null) {
 			document[kNwsapi] = engine;
 		}
@@ -22757,6 +23610,7 @@ ceReactions(Element.prototype, [
 	"insertAdjacentElement",
 	"insertAdjacentHTML",
 	"insertAdjacentText",
+	"moveBefore",
 	"outerHTML",
 	"prepend",
 	"remove",
@@ -22777,6 +23631,7 @@ ceReactions(ShadowRoot.prototype, ["innerHTML", "setHTMLUnsafe"]);
 ceReactions(HTMLSlotElement.prototype, ["assign", "name"]);
 ceReactions(DocumentFragment.prototype, [
 	"append",
+	"moveBefore",
 	"prepend",
 	"replaceChildren",
 ]);
@@ -22786,6 +23641,7 @@ ceReactions(Document.prototype, [
 	"createElement",
 	"createElementNS",
 	"importNode",
+	"moveBefore",
 	"prepend",
 	"replaceChildren",
 	"title",
@@ -22939,3 +23795,185 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 		installForwardedEventHandler(constructor.prototype, name);
 	}
 }
+
+/**
+ * ---- The platform's shape, held by the compiler --------------------------
+ *
+ * For each class above, the members lib.dom declares that the class type
+ * does not, asserted EQUAL to a ledger. A member appearing on neither side is conformance; a member
+ * missing from the ledger is drift the build refuses; a ledger entry the
+ * type grew into is staleness the build refuses just the same.
+ *
+ * The bins the ledger's comments sort by:
+ * - RUNTIME: real on instances -- the tables in htmltables.ts and the
+ *   engine install them -- but invisible to the class type. Type debt,
+ *   not missing behavior.
+ * - GAP: not implemented at all. Work candidates.
+ * - NEVER: deliberately absent on a terminal.
+ *
+ * Key coverage only, by design: whole-interface assignability is
+ * transitively global (one interface drags the entire co-recursive type
+ * graph, including lib.dom's own inaccuracies), so signatures graduate
+ * member by member instead. Nothing here executes; the module erases.
+ */
+
+/** The platform keys an internal type has not declared. */
+type MissingFrom<Platform, Internal> = Exclude<keyof Platform, keyof Internal>;
+
+/** Exact equality of two key unions, either direction's drift refused. */
+type Equal<A, B> =
+	[A] extends [B] ? ([B] extends [A] ? true : never) : never;
+
+/** RUNTIME: the Node interface constants, installed on prototypes at load. */
+type NodeConstants =
+	"ELEMENT_NODE" |
+	"ATTRIBUTE_NODE" |
+	"TEXT_NODE" |
+	"CDATA_SECTION_NODE" |
+	"ENTITY_REFERENCE_NODE" |
+	"ENTITY_NODE" |
+	"PROCESSING_INSTRUCTION_NODE" |
+	"COMMENT_NODE" |
+	"DOCUMENT_NODE" |
+	"DOCUMENT_TYPE_NODE" |
+	"DOCUMENT_FRAGMENT_NODE" |
+	"NOTATION_NODE" |
+	"DOCUMENT_POSITION_DISCONNECTED" |
+	"DOCUMENT_POSITION_PRECEDING" |
+	"DOCUMENT_POSITION_FOLLOWING" |
+	"DOCUMENT_POSITION_CONTAINS" |
+	"DOCUMENT_POSITION_CONTAINED_BY" |
+	"DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC";
+
+/** RUNTIME: the ChildNode mixin, installed from the tables. */
+type ChildNodeMixin =
+	| "after" |
+	"before" |
+	"remove" |
+	"replaceWith" |
+	"nextElementSibling" |
+	"previousElementSibling";
+
+/** RUNTIME: the ParentNode mixin, installed from the tables. */
+type ParentNodeMixin =
+	| "childElementCount" |
+	"children" |
+	"firstElementChild" |
+	"lastElementChild" |
+	"append" |
+	"moveBefore" |
+	"prepend" |
+	"querySelector" |
+	"querySelectorAll" |
+	"replaceChildren";
+
+/** RUNTIME: the ARIA reflection surface, installed from the tables. */
+type ARIAReflection =
+	| "role" |
+	`aria${string}`;
+
+/** RUNTIME: selector engine entries, installed from the tables. */
+type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
+
+/** GAP: pointer capture and locking -- no pointers to capture yet. */
+type PointerSurface =
+	| "hasPointerCapture" |
+	"releasePointerCapture" |
+	"requestPointerLock" |
+	"setPointerCapture";
+
+/** RUNTIME: fullscreen, installed by the engine. */
+type FullscreenSurface =
+	| "requestFullscreen" |
+	"onfullscreenchange" |
+	"onfullscreenerror";
+
+/** GAP or NEVER, per member -- the un-binned remainder of Element. */
+type ElementRemainder =
+	| "currentCSSZoom" | // NEVER: zoom is a browser's
+	"part" | // RUNTIME: reflected from the tables
+	"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
+	"computedStyleMap" | // GAP: Typed OM
+	"animate" | // GAP: no animation timeline
+	"getAnimations"; // GAP
+
+// -- key-complete today, held that way --------------------------------------
+declare const _checked: [
+	Equal<MissingFrom<globalThis.EventTarget, EventTarget>, never>,
+	Equal<MissingFrom<globalThis.Event, Event>, never>,
+	Equal<MissingFrom<globalThis.CustomEvent, CustomEvent>, never>,
+	Equal<MissingFrom<globalThis.StaticRange, StaticRange>, never>,
+	Equal<MissingFrom<globalThis.Selection, Selection>, never>,
+	Equal<MissingFrom<globalThis.MutationObserver, MutationObserver>, never>,
+	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, never>,
+	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
+
+	// -- constants only -----------------------------------------------------
+	Equal<MissingFrom<globalThis.Node, Node>, NodeConstants>,
+	Equal<MissingFrom<globalThis.Attr, Attr>, NodeConstants>,
+	Equal<
+		MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>,
+		| "DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_LEFT" |
+		"DOM_KEY_LOCATION_RIGHT" |
+		"DOM_KEY_LOCATION_NUMPAD"
+	>,
+
+	// -- small curated ledgers ----------------------------------------------
+	// RUNTIME: constants, engine geometry. GAP: createContextualFragment.
+	Equal<
+		MissingFrom<globalThis.Range, Range>,
+		| "START_TO_START" |
+		"START_TO_END" |
+		"END_TO_END" |
+		"END_TO_START" |
+		"getBoundingClientRect" |
+		"getClientRects" |
+		"createContextualFragment"
+	>,
+	// NEVER: layerX/layerY are the pre-standard offsets no spec defines.
+	Equal<
+		MissingFrom<globalThis.MouseEvent, MouseEvent>,
+		"layerX" | "layerY"
+	>,
+	Equal<
+		MissingFrom<globalThis.CharacterData, CharacterData>,
+		NodeConstants | ChildNodeMixin
+	>,
+	Equal<MissingFrom<globalThis.Text, Text>, NodeConstants | ChildNodeMixin>,
+	Equal<
+		MissingFrom<globalThis.Comment, Comment>,
+		NodeConstants | ChildNodeMixin
+	>,
+	Equal<
+		MissingFrom<globalThis.DocumentFragment, DocumentFragment>,
+		NodeConstants | ParentNodeMixin
+	>,
+	Equal<
+		MissingFrom<globalThis.ShadowRoot, ShadowRoot>,
+		| NodeConstants |
+		ParentNodeMixin |
+		// RUNTIME on the document; GAP on the root:
+		"onslotchange" |
+		"fullscreenElement" |
+		"pictureInPictureElement" |
+		"pointerLockElement" |
+		"styleSheets" |
+		"elementFromPoint" |
+		"elementsFromPoint" |
+		"getAnimations"
+	>,
+	Equal<
+		MissingFrom<globalThis.Element, Element>,
+		| NodeConstants |
+		ChildNodeMixin |
+		ParentNodeMixin |
+		ARIAReflection |
+		SelectorSurface |
+		PointerSurface |
+		FullscreenSurface |
+		ElementRemainder
+	>,
+];
+
+export type PlatformShapeChecked = typeof _checked;

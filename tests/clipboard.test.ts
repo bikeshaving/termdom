@@ -7,7 +7,8 @@
  * which is what a gesture is at this layer -- decoded stdin.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, transportFromProcess} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {transportFromProcess} from "../src/internal/terminalsession.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 

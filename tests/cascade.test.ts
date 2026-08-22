@@ -1,11 +1,11 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {StyleManager} from "../src/internal/styles.js";
+import {StyleManager} from "../src/internal/cascade.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
-import {expandShorthands} from "../src/internal/useragent.js";
+import {expandShorthands} from "../src/internal/cascade.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {

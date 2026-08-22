@@ -15,13 +15,13 @@ import {
 	DOMParser,
 	Event as DOMEvent,
 	HTMLElement,
-	isTextField,
 	MutationObserver,
 	NodeFilter,
 	parseHTMLDocument,
 	setAmbientDocument,
 	setDefaultView,
 	Text,
+	installUAEngine,
 } from "../src/internal/dom.js";
 
 function make(): any {
@@ -1850,12 +1850,13 @@ test("one predicate names the elements that edit text", () => {
 	// this question, and a spelling that forgot `hidden` sent a press on a
 	// hidden input down the field-drag path.
 	const document = make();
+	const toolkit = installUAEngine(document, {} as never);
 	const field = (tag: string, type?: string) => {
 		const element = document.createElement(tag);
 		if (type !== undefined) {
 			(element as any).type = type;
 		}
-		return isTextField(element as any);
+		return toolkit.isTextField(element as any);
 	};
 
 	expect(field("textarea")).toBe(true);
@@ -1915,4 +1916,49 @@ test("the selection APIs answer null where they do not apply, and throw when set
 		// select() on an input it does not apply to is a no-op, not a throw.
 		input.select();
 	}
+});
+
+test("createContextualFragment parses in the range's context", () => {
+	const document = make();
+	const div = document.createElement("div");
+	const text = document.createTextNode("anchor");
+	div.appendChild(text);
+	document.body.appendChild(div);
+
+	const range = document.createRange();
+	range.setStart(text, 0);
+	const fragment = range.createContextualFragment("<b>bold</b> tail");
+	expect(fragment.childNodes.length).toBe(2);
+	expect((fragment.firstChild as Element).tagName).toBe("B");
+	expect(fragment.lastChild!.textContent).toBe(" tail");
+
+	// A range anchored at the document parses against the body.
+	const documentRange = document.createRange();
+	documentRange.setStart(document, 0);
+	const fromDocument = documentRange.createContextualFragment("<i>x</i>");
+	expect((fromDocument.firstChild as Element).tagName).toBe("I");
+});
+
+test("focus reaches into shadow trees, and each scope retargets", () => {
+	const document = make();
+	const host = document.createElement("div");
+	host.id = "host";
+	document.body.appendChild(host);
+	const root = host.attachShadow({mode: "open"});
+	const mid = document.createElement("div");
+	root.appendChild(mid);
+	const nested = mid.attachShadow({mode: "open"});
+	const button = document.createElement("button");
+	nested.appendChild(button);
+
+	// Nothing focused: the roots answer null, not the document's body.
+	expect(root.activeElement).toBe(null);
+	expect(nested.activeElement).toBe(null);
+
+	button.focus();
+	// The document collapses shadow content to the host; each root
+	// retargets to its own descendant on the chain.
+	expect(document.activeElement).toBe(host);
+	expect(root.activeElement).toBe(mid);
+	expect(nested.activeElement).toBe(button);
 });

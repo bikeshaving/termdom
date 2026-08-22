@@ -16,7 +16,7 @@ const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
 import {Screen, type ColorDepth} from "../src/internal/ansi.js";
 import {stringWidth} from "../src/internal/text.js";
-import {StyleManager} from "../src/internal/styles.js";
+import {StyleManager} from "../src/internal/cascade.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";

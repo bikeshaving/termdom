@@ -1,12 +1,35 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {
-	ensurePseudoElement,
-	pseudoElement,
-	pseudoHostOf,
-	pseudoNameOf,
-} from "../src/internal/dom.js";
+import {claimUAToolkit, type UAToolkit} from "../src/internal/dom.js";
+import {kUAToolkit} from "../src/internal/termdom.js";
+
+// One claim per bare document: the door is open because nothing here ever
+// installs an engine.
+const toolkits = new WeakMap<object, UAToolkit>();
+function ua(node: object): UAToolkit {
+	const document =
+		(node as {ownerDocument?: object}).ownerDocument ?? node;
+	let toolkit = toolkits.get(document);
+	if (toolkit === undefined) {
+		toolkit = claimUAToolkit(document);
+		toolkits.set(document, toolkit);
+	}
+	return toolkit;
+}
+
+function ensurePseudoElement<T>(host: object, name: string): T {
+	return ua(host).ensurePseudoElement<T>(host, name);
+}
+function pseudoElement<T>(host: object, name: string): T | null {
+	return ua(host).pseudoElement<T>(host, name);
+}
+function pseudoHostOf<T>(node: object): T | null {
+	return ua(node).pseudoHostOf<T>(node);
+}
+function pseudoNameOf(node: object): string | null {
+	return ua(node).pseudoNameOf(node);
+}
 import {flowWalker} from "../src/internal/layout.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 
@@ -513,6 +536,7 @@ test("TermDOM - flat-tree walker basic functionality", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	const div = document.createElement("div");
 	div.textContent = "Hello World";
@@ -536,6 +560,7 @@ test("TermDOM - flat-tree walker with shadow DOM", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Create a custom element with shadow DOM
 	class TestElement extends (termdom.window as any).HTMLElement {
@@ -584,6 +609,7 @@ test("TermDOM - flat-tree walker basic traversal", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	const div = document.createElement("div");
 	div.textContent = "Hello";
@@ -609,6 +635,7 @@ test("flat-tree walker flattens named slots into composed order", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	const host = document.createElement("div");
 	host.innerHTML =
@@ -876,6 +903,7 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Add CSS with ::marker pseudo-element content
 	const style = document.createElement("style");
@@ -937,6 +965,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Add CSS with both ::marker and ::before pseudo-elements
 	const style = document.createElement("style");
@@ -1017,6 +1046,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Add CSS
 	const style = document.createElement("style");
@@ -1097,6 +1127,7 @@ test("TermDOM - ::marker rendering test", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
+	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Add CSS with ::marker and other pseudo-elements
 	const style = document.createElement("style");

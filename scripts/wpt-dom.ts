@@ -1,12 +1,14 @@
 /**
  * Run the web-platform-tests dom suites against TermDOM's own DOM.
  *
- * Each test is a testharness.js document. The document is parsed by this DOM's
- * own HTML parser, its globals are installed on the realm the harness runs in
- * -- so `document`, `Node`, `Element` and the rest are this implementation's --
- * and the file's scripts are evaluated in document order inside one block at
- * global scope, so that a name a script declares is a name the realm has, as
- * it is in a browser.
+ * Each test is a testharness.js document, mounted on a full engine over a
+ * mock transport: the file's markup becomes the engine's initial document,
+ * so layout, the cascade, focus rendering and the rest of the user agent are
+ * live under the test. The engine realm's globals are installed on the realm
+ * the harness runs in -- so `document`, `Node`, `Element` and the rest are
+ * this implementation's -- and the file's scripts are evaluated in document
+ * order inside one block at global scope, so that a name a script declares
+ * is a name the realm has, as it is in a browser.
  *
  * The suites are fetched into .wpt/ on first run and cached. Results are
  * written to docs/dom-conformance.md.
@@ -23,30 +25,209 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
+import type * as TERMDOM from "../src/internal/termdom.ts";
+import type {TerminalTransport} from "../src/internal/terminalsession.ts";
 
 /**
- * A test file's DOM.
+ * A test file's realm: the engine module and the DOM module of one
+ * generation.
  *
- * Each file gets its own instance of the module, because a test that tampers
- * with `NodeList.prototype.length` -- and several do -- would otherwise leave
- * that prototype tampered with for every file after it. In a browser each file
- * is its own realm; here a fresh module evaluation is the same isolation.
+ * Each file gets its own instance of the whole engine graph, because a test
+ * that tampers with `NodeList.prototype.length` -- and several do -- would
+ * otherwise leave that prototype tampered with for every file after it. In a
+ * browser each file is its own realm; here a fresh module evaluation is the
+ * same isolation. The resolver hooks propagate the `?wpt=N` query through
+ * relative imports, so the termdom and dom imports below land on one shared
+ * copy of the graph.
  */
 type DOMModule = typeof DOM;
+type EngineModule = typeof TERMDOM;
+
+interface Realm {
+	dom: DOMModule;
+	termdom: EngineModule;
+}
 
 let moduleCounter = 0;
 
-async function freshDOM(): Promise<DOMModule> {
-	return (await import(
-		`../src/internal/dom.ts?wpt=${moduleCounter++}`,
+async function freshRealm(): Promise<Realm> {
+	const generation = moduleCounter++;
+	const termdom = (await import(
+		`../src/internal/termdom.ts?wpt=${generation}`,
+	)) as EngineModule;
+	const dom = (await import(
+		`../src/internal/dom.ts?wpt=${generation}`,
 	)) as DOMModule;
+	return {dom, termdom};
 }
+
+interface MockTransport extends TerminalTransport {
+	/** Type into the engine: the bytes a terminal would send for the keys. */
+	pushInput(text: string): void;
+}
+
+/**
+ * The terminal a test file's engine renders to: a fixed-size sink that
+ * swallows frames, and whose keyboard is the testdriver shim -- pushInput
+ * feeds the readable stream the session parses, so a driven Tab takes the
+ * same path a user's would. 80x24 is the layout viewport every geometry
+ * subtest measures against.
+ */
+function mockTransport(): MockTransport {
+	let input!: ReadableStreamDefaultController<string>;
+	return {
+		cols: 80,
+		rows: 24,
+		colorDepth: "rgb",
+		readable: new ReadableStream<string>({
+			start(controller) {
+				input = controller;
+			},
+		}),
+		writable: new WritableStream<string>({write() {}}),
+		resizes: new ReadableStream({start() {}}),
+		sharesScreen: false,
+		interactive: true,
+		ready: Promise.resolve(),
+		closed: new Promise(() => {}),
+		close() {},
+		pushInput(text: string) {
+			input.enqueue(text);
+		},
+	} as MockTransport;
+}
+
+/**
+ * The testdriver vendor script, which WPT leaves empty for the automation
+ * backend to fill in. This engine's backend types through the transport:
+ * a WebDriver key becomes the bytes a terminal sends for it, pushed into
+ * the input stream and parsed, dispatched and defaulted by the engine's
+ * own path. `in_automation` makes every action the shim does not implement
+ * throw instead of parking the test on a manual prompt.
+ */
+const TESTDRIVER_VENDOR = String.raw`
+(function() {
+	if (!window.test_driver_internal) {
+		return;
+	}
+	const KEY_BYTES = {
+		"\uE003": "\x7f",
+		"\uE004": "\t",
+		"\uE006": "\r",
+		"\uE007": "\r",
+		"\uE00C": "\x1b",
+		"\uE00D": " ",
+		"\uE010": "\x1b[F",
+		"\uE011": "\x1b[H",
+		"\uE012": "\x1b[D",
+		"\uE013": "\x1b[A",
+		"\uE014": "\x1b[C",
+		"\uE015": "\x1b[B",
+		"\uE017": "\x1b[3~",
+	};
+	const MODIFIERS = new Set([
+		"\uE008", "\uE009", "\uE00A", "\uE03D", "\uE050",
+	]);
+	function isShift(key) {
+		return key === "\uE008" || key === "\uE050";
+	}
+	function bytesFor(key, shift) {
+		if (key === "\uE004" && shift) {
+			return "\x1b[Z";
+		}
+		return KEY_BYTES[key] ?? key;
+	}
+	function settled() {
+		return new Promise((resolve) => {
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => resolve());
+			});
+		});
+	}
+	function cellOf(element) {
+		const rect = element.getBoundingClientRect();
+		return {
+			col: Math.floor(rect.left + rect.width / 2) + 1,
+			row: Math.floor(rect.top + rect.height / 2) + 1,
+		};
+	}
+	window.test_driver_internal.in_automation = true;
+	window.test_driver_internal.send_keys = async function(element, keys) {
+		element.focus();
+		await settled();
+		let shift = false;
+		for (const key of keys) {
+			if (MODIFIERS.has(key)) {
+				shift = shift || isShift(key);
+				continue;
+			}
+			__termdomDriverInput(bytesFor(key, shift));
+		}
+		await settled();
+	};
+	window.test_driver_internal.action_sequence = async function(sources) {
+		const pressed = new Set();
+		let col = 1;
+		let row = 1;
+		for (let tick = 0; ; tick++) {
+			let any = false;
+			for (const source of sources) {
+				const action = source.actions[tick];
+				if (action === undefined) {
+					continue;
+				}
+				any = true;
+				if (source.type === "key") {
+					if (action.type === "keyDown") {
+						if (MODIFIERS.has(action.value)) {
+							pressed.add(action.value);
+						} else {
+							const shift = [...pressed].some(isShift);
+							__termdomDriverInput(bytesFor(action.value, shift));
+						}
+					} else if (action.type === "keyUp") {
+						pressed.delete(action.value);
+					}
+				} else if (source.type === "pointer") {
+					if (action.type === "pointerMove") {
+						const origin = action.origin;
+						if (origin && origin.getBoundingClientRect) {
+							const cell = cellOf(origin);
+							col = cell.col + (action.x ?? 0);
+							row = cell.row + (action.y ?? 0);
+						} else {
+							col = (action.x ?? 0) + 1;
+							row = (action.y ?? 0) + 1;
+						}
+						__termdomDriverInput("\x1b[<35;" + col + ";" + row + "M");
+					} else if (action.type === "pointerDown") {
+						__termdomDriverInput("\x1b[<0;" + col + ";" + row + "M");
+					} else if (action.type === "pointerUp") {
+						__termdomDriverInput("\x1b[<0;" + col + ";" + row + "m");
+					}
+				}
+			}
+			if (!any) {
+				break;
+			}
+		}
+		await settled();
+	};
+	window.test_driver_internal.click = async function(element) {
+		const cell = cellOf(element);
+		__termdomDriverInput("\x1b[<0;" + cell.col + ";" + cell.row + "M");
+		__termdomDriverInput("\x1b[<0;" + cell.col + ";" + cell.row + "m");
+		await settled();
+	};
+})();
+`;
 
 /** The names a test file expects to find on its global. */
 function domGlobals(dom: DOMModule): Record<string, unknown> {
 	const names = [
 		"AbstractRange",
 		"Attr",
+		"BeforeUnloadEvent",
 		"CDATASection",
 		"CharacterData",
 		"Comment",
@@ -59,6 +240,7 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"DocumentFragment",
 		"DocumentType",
 		"DOMImplementation",
+		"DragEvent",
 		"DOMParser",
 		"DOMStringMap",
 		"DOMTokenList",
@@ -90,6 +272,7 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"HTMLFormControlsCollection",
 		"HTMLFormElement",
 		"HTMLFrameElement",
+		"HashChangeEvent",
 		"HTMLFrameSetElement",
 		"HTMLHeadElement",
 		"HTMLHeadingElement",
@@ -144,6 +327,7 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"InputEvent",
 		"KeyboardEvent",
 		"MathMLElement",
+		"MessageEvent",
 		"MouseEvent",
 		"MutationObserver",
 		"MutationRecord",
@@ -159,9 +343,11 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"Selection",
 		"ShadowRoot",
 		"StaticRange",
+		"StorageEvent",
 		"SubmitEvent",
 		"SVGElement",
 		"Text",
+		"TextEvent",
 		"ToggleEvent",
 		"TreeWalker",
 		"UIEvent",
@@ -317,6 +503,12 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the query runs in a frame's load event",
 	"dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html":
 		"requires-browsing-context: a DOMImplementation kept from a detached frame",
+	"dom/nodes/moveBefore/throws-exception.html":
+		"requires-browsing-context: the moved node comes from a frame's document",
+	"dom/nodes/moveBefore/iframe-document-preserve.window.js":
+		"requires-browsing-context: the move happens inside a frame's document",
+	"dom/nodes/moveBefore/css-transition-cross-document.html":
+		"requires-browsing-context: the transitioning node moves into a frame's document",
 	"dom/nodes/node-creation-realm.html":
 		"requires-browsing-context: which realm's constructor a node carries",
 	"dom/nodes/node-realm-adoption-after-frame-removal.html":
@@ -727,6 +919,14 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 		"not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite",
 	],
 	[
+		"shadow-dom/focus-navigation/reading-flow/",
+		"not-a-standard: the CSS reading-flow property these navigate by is a proposal, filed under tentative in the suite",
+	],
+	[
+		"shadow-dom/focus-navigation/tentative/",
+		"not-a-standard: focusgroup and the scroller focus rules are proposals, filed under tentative in the suite",
+	],
+	[
 		"dom/events/scrolling/",
 		"requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns",
 	],
@@ -773,7 +973,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"dom/nodes/Document-createEvent.https.html",
-		"createEvent builds every name in the legacy table whose interface exists here: the Event and CustomEvent names, and the UI Events ones (UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, and the TextEvent alias for a composition event). The names that map to interfaces of other specifications throw NotSupportedError: DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent. Those interfaces are not implemented here.",
+		"createEvent builds every name in the legacy table except three: DeviceMotionEvent, DeviceOrientationEvent and TouchEvent throw NotSupportedError, because sensors and touch digitizers name hardware a terminal does not have. The touch subtests declare the optional feature unsupported and score apart from failure; the sensor subtests fail and stay counted.",
 	],
 	[
 		"dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html",
@@ -781,7 +981,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"dom/events/Event-subclasses-constructors.html",
-		"The UI Events interfaces are implemented: UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent, CompositionEvent, WheelEvent, and the PointerEvent a synthetic click is built through. The failing subtests construct event interfaces from other specifications, which are not implemented.",
+		"The UI Events interfaces are implemented, and so are DragEvent, MessageEvent, HashChangeEvent, StorageEvent, TextEvent and BeforeUnloadEvent. The failing subtests construct interfaces that remain unimplemented: the sensor events, and the interfaces whose specifications this engine does not enter.",
 	],
 	[
 		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
@@ -899,54 +1099,36 @@ interface HarnessGlobals {
 	restore(): void;
 }
 
-/**
- * The CSSOM seam.
- *
- * Several traversal and node tests hide a scratch element with
- * `element.style.display = "none"` before they walk it. `style` belongs to
- * CSSOM, which this DOM does not implement -- the engine owns it -- so the
- * harness supplies the property the environment would, exactly as the CSSOM
- * harness supplies clientWidth off the layout engine. Nothing reads back what
- * a test writes here.
- */
-function installStyleSeam(dom: DOMModule): void {
-	const styles = new WeakMap<object, Record<string, string>>();
-	Object.defineProperty(dom.HTMLElement.prototype, "style", {
-		get(this: object): Record<string, string> {
-			let style = styles.get(this);
-			if (style === undefined) {
-				style = {};
-				styles.set(this, style);
-			}
-			return style;
-		},
-		configurable: true,
-	});
-}
-
-/** Install this DOM as the realm's DOM, and hand back the undo. */
+/** Install this realm's DOM as the harness realm's DOM, and hand back the undo. */
 function installGlobals(
 	dom: DOMModule,
+	engineWindow: TERMDOM.EngineWindow,
 	document: Document,
 	url: string,
 ): HarnessGlobals {
-	installStyleSeam(dom);
 	const scope = globalThis as unknown as Record<string, unknown>;
 	const saved = new Map<string, {had: boolean; value: unknown}>();
-	const target = new dom.EventTarget();
+	const win = engineWindow as unknown as {
+		addEventListener: (...args: unknown[]) => void;
+		removeEventListener: (...args: unknown[]) => void;
+		dispatchEvent: (event: object) => boolean;
+		getSelection: () => unknown;
+		getComputedStyle: (...args: unknown[]) => unknown;
+		requestAnimationFrame: (callback: (time: number) => void) => number;
+		cancelAnimationFrame: (handle: number) => void;
+	};
 	const windowShim = {
-		addEventListener: target.addEventListener.bind(target),
-		removeEventListener: target.removeEventListener.bind(target),
-		dispatchEvent: target.dispatchEvent.bind(target),
-		// The Selection API puts getSelection on both the Window and the
-		// Document, the Window's being defined as a call to the Document's.
-		// There is no Window here, so the environment supplies the one that
-		// forwards, exactly as it supplies element.style.
-		getSelection: () => document.getSelection(),
+		addEventListener: win.addEventListener.bind(win),
+		removeEventListener: win.removeEventListener.bind(win),
+		dispatchEvent: win.dispatchEvent.bind(win),
+		getSelection: win.getSelection.bind(win),
 	};
 	const values: Record<string, unknown> = {
 		...domGlobals(dom),
 		document,
+		getComputedStyle: win.getComputedStyle.bind(win),
+		requestAnimationFrame: win.requestAnimationFrame.bind(win),
+		cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
 		location: {
 			href: url,
 			search: "",
@@ -973,21 +1155,58 @@ function installGlobals(
 	}
 	// The window's named property access. A great many test files name their
 	// fixture by its id alone -- `createTestTree(test1)` over a `<div
-	// id=test1>` -- which is the Window's legacy named access, not the tree's.
-	// The environment supplies it here, over the ids the parsed document
-	// already has, exactly as it supplies the window and element.style; a name
-	// the harness itself installed is never shadowed.
-	for (const element of document.getElementsByTagName("*")) {
-		const id = element.getAttribute("id");
-		if (id === null || id === "" || saved.has(id)) {
-			continue;
+	// id=test1>` -- which is the Window's legacy named access, not the
+	// tree's. The test body runs inside `with (__termdomNamedAccess)`, and
+	// this proxy is that object: a name no global owns resolves to the
+	// element that carries it as an id -- or as a name, for the four
+	// element kinds the Window names that way -- at the moment of the
+	// lookup, so a fixture built after load is as reachable as one the
+	// parser built. An assignment falls through to the global, which then
+	// shadows the name, as writing a window property does in a browser.
+	const NAMED_BY_NAME = ["embed", "form", "img", "object"];
+	const namedElement = (name: string) => {
+		const byId = document.getElementById(name);
+		if (byId !== null) {
+			return byId;
 		}
-		if (Object.prototype.hasOwnProperty.call(scope, id)) {
-			continue;
+		for (const tag of NAMED_BY_NAME) {
+			for (const element of document.getElementsByTagName(tag)) {
+				if (element.getAttribute("name") === name) {
+					return element;
+				}
+			}
 		}
-		saved.set(id, {had: false, value: undefined});
-		scope[id] = element;
-	}
+		return null;
+	};
+
+	// A `with` scope object must answer `has` for names it cannot
+	// enumerate in advance; only a Proxy can.
+	// eslint-disable-next-line no-restricted-globals
+	const namedAccess = new Proxy(Object.create(
+		null,
+	) as Record<string, unknown>, {
+		has(_target, name): boolean {
+			return (
+				typeof name === "string" &&
+				!(name in scope) &&
+				namedElement(name) !== null
+			);
+		},
+		get(_target, name): unknown {
+			return typeof name === "string" ? namedElement(name) : undefined;
+		},
+		set(_target, name, value): boolean {
+			if (typeof name === "string") {
+				scope[name] = value;
+			}
+			return true;
+		},
+	});
+	saved.set("__termdomNamedAccess", {
+		had: Object.prototype.hasOwnProperty.call(scope, "__termdomNamedAccess"),
+		value: scope.__termdomNamedAccess,
+	});
+	scope.__termdomNamedAccess = namedAccess;
 	// The harness reads this before it decides whether to wait for a load.
 	Object.defineProperty(document, "readyState", {
 		value: "complete",
@@ -1021,10 +1240,11 @@ async function runFile(file: string): Promise<Outcome> {
 		source;
 	const url = `http://web-platform.test/${file}`;
 
-	const dom = await freshDOM();
-	let document: Document;
+	const {dom, termdom} = await freshRealm();
+	const transport = mockTransport();
+	let engine: InstanceType<EngineModule["TermDOM"]>;
 	try {
-		document = dom.parseHTMLDocument(html, url);
+		engine = new termdom.TermDOM({transport, html, url});
 	} catch (error) {
 		return {
 			file,
@@ -1033,6 +1253,24 @@ async function runFile(file: string): Promise<Outcome> {
 			error: `parse: ${(error as Error).message}`,
 		};
 	}
+	await engine.attach();
+	try {
+		return await runMountedFile(dom, engine, transport, file, html, url);
+	} finally {
+		engine.dispose();
+	}
+}
+
+/** Run one test file against its mounted engine; the caller disposes. */
+async function runMountedFile(
+	dom: DOMModule,
+	engine: InstanceType<EngineModule["TermDOM"]>,
+	transport: MockTransport,
+	file: string,
+	html: string,
+	url: string,
+): Promise<Outcome> {
+	const document = engine.document as unknown as Document;
 
 	const sources: string[] = [];
 	let harnessLoaded = false;
@@ -1055,6 +1293,10 @@ async function runFile(file: string): Promise<Outcome> {
 				}
 				sources.push(harness);
 				sources.push("setup({output: false});");
+				continue;
+			}
+			if (/testdriver-vendor\.js$/.test(src)) {
+				sources.push(TESTDRIVER_VENDOR);
 				continue;
 			}
 			const text = await cached(resolveScript(src, file));
@@ -1084,7 +1326,14 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
-	const globals = installGlobals(dom, document, url);
+	const globals = installGlobals(dom, engine.window, document, url);
+	const scopeForDriver = globalThis as unknown as Record<string, unknown>;
+	const hadDriverInput = Object.prototype.hasOwnProperty.call(
+		scopeForDriver,
+		"__termdomDriverInput",
+	);
+	scopeForDriver.__termdomDriverInput = (text: string) =>
+		transport.pushInput(text);
 	const scope = globalThis as unknown as Record<string, unknown>;
 	// The names the realm had before the file ran. A classic script's `var` and
 	// function declarations become properties of the global, and the file's are
@@ -1119,7 +1368,7 @@ async function runFile(file: string): Promise<Outcome> {
 			// function declarations land on the global, where a test that evals
 			// a name (`params.map(eval)`) finds them, while `let` and `const`
 			// stay in the file's own scope rather than the realm's.
-			(0, eval)(`{\n${body}\n}`);
+			(0, eval)(`with (__termdomNamedAccess) {\n${body}\n}`);
 			(scope.dispatchEvent as (event: object) => boolean)(
 				new dom.Event("load"),
 			);
@@ -1143,6 +1392,9 @@ async function runFile(file: string): Promise<Outcome> {
 		clearTimeout(timer);
 	} finally {
 		delete scope.__complete;
+		if (!hadDriverInput) {
+			delete scopeForDriver.__termdomDriverInput;
+		}
 		globals.restore();
 		for (const name of Object.keys(scope)) {
 			if (!before.has(name)) {
@@ -1158,37 +1410,115 @@ async function runFile(file: string): Promise<Outcome> {
 process.on("uncaughtException", () => {});
 process.on("unhandledRejection", () => {});
 
-const filter = process.argv[2];
-const files: string[] = [];
-for (const suite of SUITES) {
-	files.push(...(await suiteFiles(suite)));
-}
-const selected = files.filter((file) => !filter || file.includes(filter));
-
-const outcomes: Outcome[] = [];
-for (const file of selected) {
-	try {
-		outcomes.push(await runFile(file));
-	} catch (error) {
-		outcomes.push({
-			file,
-			harness: "ERROR",
-			subtests: [],
-			error: (error as Error).message,
-		});
+// Each fresh evaluation of the engine graph is pinned in the module
+// registry forever, so one process running every file holds O(files)
+// graphs and dies near two gigabytes -- and an engine graph is heavy
+// enough that even one suite's 300 files cross that line. A worker
+// process per bounded slice of a suite hands its memory back on exit;
+// the orchestrator only aggregates.
+const WORKER_FILE_LIMIT = 100;
+const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
+const workerStart =
+	workerSuite !== null && process.argv[4] === "--start" ?
+			Number(process.argv[5]) :
+		null;
+function filterArgument(): string | undefined {
+	if (workerSuite === null) {
+		return process.argv[2];
 	}
-	const last = outcomes[outcomes.length - 1];
-	const passed = last.subtests.filter((test) => test.status === 0).length;
-	console.info(
-		`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${file}${
-			last.error ? ` -- ${last.error}` : ""
-		}`,
+	return workerStart === null ? process.argv[4] : process.argv[6];
+}
+
+const filter = filterArgument();
+
+async function runSuite(suite: string): Promise<Outcome[]> {
+	let files = (await suiteFiles(suite)).filter(
+		(file) => !filter || file.includes(filter),
 	);
+	if (workerStart !== null) {
+		files = files.slice(workerStart, workerStart + WORKER_FILE_LIMIT);
+	}
+	const outcomes: Outcome[] = [];
+	for (const file of files) {
+		try {
+			outcomes.push(await runFile(file));
+		} catch (error) {
+			outcomes.push({
+				file,
+				harness: "ERROR",
+				subtests: [],
+				error: (error as Error).message,
+			});
+		}
+		const last = outcomes[outcomes.length - 1];
+		const passed = last.subtests.filter((test) => test.status === 0).length;
+		console.error(
+			`${last.harness.padEnd(8)} ${passed}/${last.subtests.length} ${file}${
+				last.error ? ` -- ${last.error}` : ""
+			}`,
+		);
+	}
+	return outcomes;
+}
+
+if (workerSuite !== null) {
+	const outcomes = await runSuite(workerSuite);
+	// A pipe write is asynchronous and process.exit abandons what has not
+	// flushed, so the exit rides the write's completion callback. The hard
+	// exit itself is required: abandoned TIMEOUT tests leave live timers
+	// that would keep the worker alive forever.
+	process.stdout.write(JSON.stringify(outcomes), () => {
+		process.exit(0);
+	});
+	await new Promise(() => {});
+}
+
+const {spawnSync} = await import("node:child_process");
+const outcomes: Outcome[] = [];
+for (const suite of SUITES) {
+	const suiteSize = (await suiteFiles(suite)).filter(
+		(file) => !filter || file.includes(filter),
+	).length;
+	for (let start = 0;
+		start === 0 || start < suiteSize;
+		start += WORKER_FILE_LIMIT) {
+		const result = spawnSync(
+			process.execPath,
+			[
+				process.argv[1],
+				"--suite",
+				suite,
+				"--start",
+				String(start),
+				...(filter ? [filter] : []),
+			],
+			{stdio: ["ignore", "pipe", "inherit"], maxBuffer: 64 * 1024 * 1024},
+		);
+		const slice = `${suite}[${start}..]`;
+		if (result.status !== 0) {
+			console.error(`worker ${slice} exited ${result.status}/${result.signal}`);
+			process.exit(1);
+		}
+		try {
+			outcomes.push(...(JSON.parse(result.stdout.toString()) as Outcome[]));
+		} catch (error) {
+			console.error(
+				`worker ${slice} emitted unparseable output ` +
+				`(${result.stdout.length} bytes): ${(error as Error).message}`,
+			);
+			process.exit(1);
+		}
+	}
 }
 
 const all = outcomes.flatMap((outcome) => outcome.subtests);
+// A subtest ending PRECONDITION_FAILED (4) declared an optional feature
+// unsupported; testharness scores it apart from failure, and so does this.
 const passed = all.filter((test) => test.status === 0);
-const failed = all.filter((test) => test.status !== 0);
+const optional = all.filter((test) => test.status === 4);
+const failed = all.filter(
+	(test) => test.status !== 0 && test.status !== 4,
+);
 const reftests = outcomes.filter((outcome) => outcome.harness === "REFTEST");
 const excluded = outcomes.filter((outcome) => outcome.harness === "EXCLUDED");
 const brokenFiles = outcomes.filter(
@@ -1203,28 +1533,22 @@ const lines: string[] = [
 	"",
 	"Generated by `node --experimental-strip-types scripts/wpt-dom.ts`.",
 	"",
-	"Every test runs against `src/internal/dom.ts`. The document is built by",
-	"that file's HTML parser, and `document`, `Node`, `Element` and the rest of",
-	"the realm's DOM globals are its classes. Each file gets its own evaluation",
-	"of the module, so a test that tampers with a prototype cannot reach the",
-	"next file.",
+	"Every test file is mounted as the initial document of a full TermDOM",
+	"engine over a mock 80x24 transport: the tree, the cascade, layout, focus",
+	"and the CSSOM are all live under the test, and `document`, `Node`,",
+	"`Element` and the rest of the realm's DOM globals are the engine's own",
+	"classes. Each file gets its own evaluation of the whole engine graph, so",
+	"a test that tampers with a prototype cannot reach the next file.",
 	"",
-	"The harness supplies three things a browser environment would, none of",
-	"which is part of this DOM. A `window` object carrying addEventListener,",
-	"removeEventListener and dispatchEvent. The `getSelection()` the Selection",
-	"API defines as a call to the document's own. An `element.style` scratch",
-	"object, which several traversal tests use to hide a fixture. CSSOM belongs",
-	"to the engine rather than the tree. That window is a bare event target",
-	"rather than a Window, so an event path ends at the document, as the spec",
-	"says it does for a document with no browsing context.",
-	"",
-	"The engine that mounts on this DOM is not part of the harness. What the",
-	"engine owns is absent here: layout and the geometry read off it, painting,",
-	"the focus events, and the CSSOM.",
+	"The harness realm borrows the engine window's addEventListener,",
+	"getSelection, getComputedStyle and animation frames, and supplies only",
+	"what a terminal cannot have: a `location` for the test's URL, and the",
+	"window's legacy named access to elements by id.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,
 	`- Excluded, each with its reason below: ${excluded.length}`,
+	`- Optional-feature subtests reporting unsupported: ${optional.length}`,
 	`- Files whose harness completed: ${
 		outcomes.length - brokenFiles.length - reftests.length - excluded.length
 	}`,
@@ -1251,16 +1575,21 @@ const lines: string[] = [
 ];
 for (const outcome of outcomes) {
 	const filePassed = outcome.subtests.filter((test) => test.status === 0);
+	const fileFailed = outcome.subtests.filter(
+		(test) => test.status !== 0 && test.status !== 4,
+	);
 	lines.push(
 		`| ${outcome.file} | ${outcome.harness}${
 			outcome.error ? ` (${outcome.error})` : ""
-		} | ${filePassed.length} | ${outcome.subtests.length - filePassed.length} |`,
+		} | ${filePassed.length} | ${fileFailed.length} |`,
 	);
 }
 
 lines.push("", "## Failing subtests", "");
 for (const outcome of outcomes) {
-	const fails = outcome.subtests.filter((test) => test.status !== 0);
+	const fails = outcome.subtests.filter(
+		(test) => test.status !== 0 && test.status !== 4,
+	);
 	if (fails.length === 0) {
 		continue;
 	}

@@ -1,7 +1,15 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {pseudoElement} from "../src/internal/dom.js";
+import {kUAToolkit} from "../src/internal/termdom.js";
+
+function pseudoElement<T>(
+	of: TermDOM,
+	host: object,
+	name: string,
+): T | null {
+	return of[kUAToolkit].pseudoElement<T>(host, name);
+}
 import {flowWalker} from "../src/internal/layout.js";
 
 test("::before and ::after content rendering", async () => {
@@ -58,8 +66,8 @@ test("::before and ::after content rendering", async () => {
 	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check the actual attached pseudo elements using the composition API
-	const beforeQuoteNode = pseudoElement<Element>(quote, "::before");
-	const afterQuoteNode = pseudoElement<Element>(quote, "::after");
+	const beforeQuoteNode = pseudoElement<Element>(termdom, quote, "::before");
+	const afterQuoteNode = pseudoElement<Element>(termdom, quote, "::after");
 
 	// Render to terminal
 	await nextFrame(termdom);
@@ -77,7 +85,7 @@ test("::before and ::after content rendering", async () => {
 	expect(afterQuoteNode).not.toBeNull();
 	expect(afterQuoteNode!.textContent).toBe('"');
 
-	const beforePrefixNode = pseudoElement<Element>(note, "::before");
+	const beforePrefixNode = pseudoElement<Element>(termdom, note, "::before");
 	expect(beforePrefixNode).not.toBeNull();
 	expect(beforePrefixNode!.textContent).toBe("Note: ");
 });

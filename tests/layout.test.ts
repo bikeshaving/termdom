@@ -4,10 +4,15 @@ import {
 	kInvalidateInlineRun,
 	kRectTexts,
 } from "../src/internal/layout.js";
-import {StyleManager} from "../src/internal/styles.js";
+import {StyleManager} from "../src/internal/cascade.js";
 import {renderTextFragment} from "../src/internal/text.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
-import {ensurePseudoElement} from "../src/internal/dom.js";
+import {claimUAToolkit} from "../src/internal/dom.js";
+
+function ensurePseudoElement<T>(host: object, name: string): T {
+	const document = (host as {ownerDocument: object}).ownerDocument;
+	return claimUAToolkit(document).ensurePseudoElement<T>(host, name);
+}
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 

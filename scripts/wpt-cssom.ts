@@ -22,7 +22,7 @@ import {
 	getBoxModel,
 	MediaList,
 	StyleManager,
-} from "../src/internal/styles.ts";
+} from "../src/internal/cascade.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
 import {
 	createDocumentWindow,

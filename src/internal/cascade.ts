@@ -17,22 +17,93 @@ import {
 	ShadowRoot as DOMShadowRoot,
 	onAttributeChange,
 	onShadowAttached,
-	clearPseudoElement,
 	type Document as DOMDocument,
-	flatParentElement,
-	ensurePseudoElement,
-	pseudoElementCount,
-	isUAShadowRoot,
-	pseudoElement,
-	pseudoHostOf,
-	pseudoNameOf,
-	shadowRootOf,
-	styleElementCount,
+	type UAToolkit,
+	claimUAToolkit,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
 import {serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
+
+// ---------------------------------------------------------------------------
+// The UA toolkit, claimed per document
+//
+// The composed-tree and pseudo-element capabilities come from the claim a
+// StyleManager makes when it is built (or from the engine's own install,
+// which closes further claims). The wrappers below keep the capability
+// per-document while the cascade's call sites stay one name deep.
+// ---------------------------------------------------------------------------
+
+const uaByDocument = new WeakMap<object, UAToolkit>();
+
+function uaOf(node: object): UAToolkit | undefined {
+	if ((node as object | null) == null) {
+		return undefined;
+	}
+	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
+	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
+	let toolkit = uaByDocument.get(document);
+	if (toolkit === undefined) {
+		// An engineless document claims on first need; an engined one was
+		// stored at construction, and the claim door is shut behind it.
+		try {
+			toolkit = claimUAToolkit(document);
+		} catch (_err) {
+			// The claim door is shut: an engined document whose toolkit was
+			// not stored at construction has no capability here.
+			return undefined;
+		}
+		uaByDocument.set(document, toolkit);
+	}
+	return toolkit;
+}
+
+function flatParentElement<T>(node: object): T | null {
+	return uaOf(node)?.flatParentElement<T>(node) ?? null;
+}
+
+function shadowRootOf<T>(element: object): T | null {
+	return uaOf(element)?.shadowRootOf<T>(element) ?? null;
+}
+
+function pseudoElement<T>(host: object, name: string): T | null {
+	return uaOf(host)?.pseudoElement<T>(host, name) ?? null;
+}
+
+function pseudoElementCount(host: object): number {
+	return uaOf(host)?.pseudoElementCount(host) ?? 0;
+}
+
+function pseudoHostOf<T>(node: object): T | null {
+	return uaOf(node)?.pseudoHostOf<T>(node) ?? null;
+}
+
+function pseudoNameOf(node: object): string | null {
+	return uaOf(node)?.pseudoNameOf(node) ?? null;
+}
+
+function ensurePseudoElement<T>(target: object, name: string): T {
+	const ua = uaOf(target);
+	if (ua === undefined) {
+		throw new Error("No toolkit claimed for this document.");
+	}
+	return ua.ensurePseudoElement<T>(target, name);
+}
+
+function clearPseudoElement(host: object, name: string): void {
+	uaOf(host)?.clearPseudoElement(host, name);
+}
+
+function isUAShadowRoot(node: object): boolean {
+	return uaOf(node)?.isUAShadowRoot(node) ?? false;
+}
+
+function styleElementCount(document: DOMDocument): number {
+	return uaByDocument.get(document)?.styleElementCount() ?? 0;
+}
+import Flex from "./flex.js";
+import type * as FlexTypes from "./flex.js";
 import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
@@ -41,14 +112,1001 @@ import {
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
 } from "./cssproperties.js";
-import {
-	INHERITED_PROPERTIES,
-	INITIAL_KEYWORDS,
-	UA_DOCUMENT_STYLES,
-	expandShorthands,
-	getElementDefaults,
-	getInitialStyle,
-} from "./useragent.js";
+import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
+
+// ---------------------------------------------------------------------------
+// User-agent element defaults and shorthand expansion
+//
+// Cascade machinery, not stylesheet text: the per-element defaults the
+// cascade resolves against, the shorthand expansion every origin's
+// declarations pass through, and the inheritance and initial-value
+// tables. The UA stylesheet strings stay in useragent.ts.
+// ---------------------------------------------------------------------------
+
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+// ---- Shorthand expansion (the UA table is built on it) ----
+const BORDER_STYLE_KEYWORDS = new Set([
+	"none",
+	"hidden",
+	"dotted",
+	"dashed",
+	"solid",
+	"double",
+	"groove",
+	"ridge",
+	"inset",
+	"outset",
+]);
+const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
+const EDGES = ["top", "right", "bottom", "left"] as const;
+/** The two ends of a flow-relative axis, in the order a pair shorthand states them. */
+const AXIS_ENDS = ["start", "end"] as const;
+
+const CORNERS = [
+	"top-left",
+	"top-right",
+	"bottom-right",
+	"bottom-left",
+] as const;
+const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
+
+/**
+ * CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. The four corners
+ * fill by the same rule, running top-left, top-right, bottom-right,
+ * bottom-left.
+ */
+function perEdge(values: string[]): [string, string, string, string] {
+	const [a, b = a, c = a, d = b] = values;
+	return [a, b, c, d];
+}
+
+/** A flow-relative pair's two values: [both] or [start end]. */
+function perEnd(values: string[]): [string, string] {
+	const [a, b = a] = values;
+	return [a, b];
+}
+
+/**
+ * A value's top-level components. Whitespace INSIDE parentheses separates a
+ * function's own arguments, not components: `rgb(95, 175, 255)` is one color,
+ * however many spaces it carries.
+ */
+function splitComponents(value: string): string[] {
+	const components: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i <= value.length; i++) {
+		const char = value[i];
+		if (char === "(") {
+			depth++;
+		} else if (char === ")") {
+			depth--;
+		} else if ((i === value.length || /\s/.test(char)) && depth === 0) {
+			const component = value.slice(start, i).trim();
+			if (component) {
+				components.push(component);
+			}
+			start = i + 1;
+		}
+	}
+	return components;
+}
+
+/**
+ * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
+ * the per-side border shorthands and `outline`. Components may appear in any
+ * order and any may be omitted.
+ */
+function splitLineValue(value: string): {
+	width: string | null;
+	lineStyle: string | null;
+	color: string | null;
+} {
+	let width: string | null = null;
+	let lineStyle: string | null = null;
+	let color: string | null = null;
+	for (const token of splitComponents(value)) {
+		if (BORDER_STYLE_KEYWORDS.has(token)) {
+			lineStyle = token;
+		} else if (/^[\d.]/.test(token) || LINE_WIDTH_KEYWORDS.has(token)) {
+			width = token;
+		} else if (token) {
+			color = token;
+		}
+	}
+	return {width, lineStyle, color};
+}
+
+/** The values `flex-direction` takes, which is how `flex-flow` knows one. */
+const FLEX_DIRECTIONS = new Set([
+	"row",
+	"row-reverse",
+	"column",
+	"column-reverse",
+]);
+
+/** The values `flex-wrap` takes. */
+const FLEX_WRAPS = new Set(["nowrap", "wrap", "wrap-reverse"]);
+
+/**
+ * The keywords that qualify the alignment keyword after them rather than
+ * standing as a value of their own: `safe center`, `first baseline`.
+ */
+const ALIGNMENT_QUALIFIERS = new Set(["safe", "unsafe", "first", "last"]);
+
+/**
+ * Expand `flex-flow` (css-flexbox-1 §7.1): a direction and a wrap in either
+ * order, either one omitted and left at its initial value.
+ */
+function expandFlexFlow(value: string): Record<string, string> {
+	const out: Record<string, string> = {
+		"flex-direction": "row",
+		"flex-wrap": "nowrap",
+	};
+	for (const token of splitComponents(value)) {
+		const keyword = token.toLowerCase();
+		if (FLEX_DIRECTIONS.has(keyword)) {
+			out["flex-direction"] = keyword;
+		} else if (FLEX_WRAPS.has(keyword)) {
+			out["flex-wrap"] = keyword;
+		}
+	}
+	return out;
+}
+
+/**
+ * Expand a `place-*` shorthand (css-align-3 §10): the block axis first, then
+ * the inline axis, and one value stated for both when only one is written.
+ * A value is one keyword, or two where the first only qualifies the second.
+ */
+function expandPlace(
+	value: string,
+	block: string,
+	inline: string,
+): Record<string, string> {
+	const values: string[] = [];
+	for (const token of splitComponents(value)) {
+		const previous = values[values.length - 1];
+		if (
+			previous !== undefined &&
+			ALIGNMENT_QUALIFIERS.has(previous.toLowerCase())
+		) {
+			values[values.length - 1] = `${previous} ${token}`;
+		} else {
+			values.push(token);
+		}
+	}
+	if (values.length === 0) {
+		return {};
+	}
+	return {[block]: values[0], [inline]: values[1] ?? values[0]};
+}
+
+/**
+ * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
+ * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
+ * a second number is shrink, anything else is the basis -- and a one-value
+ * numeric form (`flex: 1`) sets the basis to 0%, which is what makes it the
+ * everyday grow-to-fill declaration.
+ */
+function expandFlex(value: string): Record<string, string> | null {
+	const v = value.trim();
+	if (v === "none") {
+		return {"flex-grow": "0", "flex-shrink": "0", "flex-basis": "auto"};
+	}
+	if (v === "auto") {
+		return {"flex-grow": "1", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	if (v === "initial") {
+		return {"flex-grow": "0", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	let grow: string | undefined;
+	let shrink: string | undefined;
+	let basis: string | undefined;
+	for (const token of v.split(/\s+/)) {
+		if (/^[\d.]+$/.test(token)) {
+			if (grow === undefined) {
+				grow = token;
+			} else if (shrink === undefined) {
+				shrink = token;
+			} else {
+				return null;
+			}
+		} else if (basis === undefined) {
+			basis = token;
+		} else {
+			return null;
+		}
+	}
+	if (grow === undefined && basis === undefined) {
+		return null;
+	}
+	return {
+		"flex-grow": grow ?? "1",
+		"flex-shrink": shrink ?? "1",
+		"flex-basis": basis ?? (grow !== undefined ? "0%" : "auto"),
+	};
+}
+
+/**
+ * Expand the `list-style` shorthand, whose components may appear in any order.
+ *
+ * `none` is ambiguous -- it sets whichever of type/image has not been given --
+ * but for a terminal there are no images, so it always means "no marker".
+ */
+function expandListStyle(value: string): Record<string, string> {
+	const parts: Record<string, string> = {};
+	for (const token of value.trim().split(/\s+/)) {
+		if (!token) {
+			continue;
+		}
+		if (LIST_STYLE_POSITIONS.has(token)) {
+			parts["list-style-position"] = token;
+		} else if (token.startsWith("url(")) {
+			parts["list-style-image"] = token;
+		} else {
+			parts["list-style-type"] = token;
+		}
+	}
+	return parts;
+}
+
+/**
+ * Expand the `background` shorthand down to the two components a terminal can
+ * render. Positions, repeats and attachments mean nothing on a cell grid and
+ * are dropped; `none` is the IMAGE component, never a color, so the color a
+ * bare `background: none` declares is its initial, transparent.
+ */
+function expandBackground(value: string): Record<string, string> {
+	const tokens = splitComponents(value);
+	if (value.includes("url(")) {
+		return {"background-image": value.trim()};
+	}
+	const color = tokens
+		.filter((token) => token.toLowerCase() !== "none")
+		.join(" ");
+	return {
+		"background-image": "none",
+		"background-color": color || "transparent",
+	};
+}
+
+/** The four ways a border image tiles, which name the repeat component. */
+const BORDER_IMAGE_REPEATS = new Set(["stretch", "repeat", "round", "space"]);
+
+/** An image value: a function that produces one, or the keyword for none. */
+const IMAGE_VALUE =
+	/^(?:none$|(?:url|(?:repeating-)?(?:linear|radial|conic)-gradient|image|image-set|element|cross-fade|paint)\()/i;
+
+/**
+ * Expand the `border-image` shorthand, whose slash-separated groups are the
+ * slice, the width and the outset, and whose first group holds the source,
+ * the slice and the repeat in any order.
+ *
+ * A terminal draws no border image, so nothing here reaches the painter. The
+ * `border` shorthand resets these five longhands and serializes only while
+ * they stand at their initial values, so a declaration block has to know what
+ * they hold.
+ */
+function expandBorderImage(value: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	const groups = value.split("/").map((group) => group.trim());
+	const slice: string[] = [];
+	const repeat: string[] = [];
+	for (const token of splitComponents(groups[0] ?? "")) {
+		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) {
+			repeat.push(token);
+		} else if (IMAGE_VALUE.test(token)) {
+			out["border-image-source"] = token;
+		} else {
+			slice.push(token);
+		}
+	}
+	if (slice.length > 0) {
+		out["border-image-slice"] = slice.join(" ");
+	}
+	if (repeat.length > 0) {
+		out["border-image-repeat"] = repeat.join(" ");
+	}
+	if (groups[1]) {
+		out["border-image-width"] = groups[1];
+	}
+	if (groups[2]) {
+		out["border-image-outset"] = groups[2];
+	}
+	return out;
+}
+
+/**
+ * Expand the `border-radius` shorthand: up to four horizontal radii and,
+ * after a slash, up to four vertical ones, each list filled out by the CSS
+ * 1-4 rule. A corner is elliptical, so its longhand holds both radii -- and
+ * states one value where the two agree, which is how a radius serializes.
+ */
+function expandBorderRadius(value: string): Record<string, string> {
+	const [across, down] = value.split("/");
+	const horizontal = splitComponents(across ?? "");
+	if (horizontal.length === 0) {
+		return {};
+	}
+	const vertical = down === undefined ? horizontal : splitComponents(down);
+	const horizontalCorners = perEdge(horizontal);
+	const verticalCorners = perEdge(
+		vertical.length === 0 ? horizontal : vertical,
+	);
+	const out: Record<string, string> = {};
+	CORNERS.forEach((corner, i) => {
+		const h = horizontalCorners[i];
+		const v = verticalCorners[i];
+		out[`border-${corner}-radius`] = h === v ? h : `${h} ${v}`;
+	});
+	return out;
+}
+
+/**
+ * A value's top-level components, split on `/` rather than on whitespace, with
+ * strings, brackets and parentheses kept whole. The grid shorthands are the
+ * only ones whose parts are slash-separated and whose components can contain
+ * a slash-free quoted string.
+ */
+function splitSlashGroups(value: string): string[] {
+	const groups: string[] = [];
+	let depth = 0;
+	let quote = "";
+	let start = 0;
+	for (let i = 0; i < value.length; i++) {
+		const char = value[i];
+		if (quote) {
+			if (char === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if (char === "/" && depth === 0) {
+			groups.push(value.slice(start, i).trim());
+			start = i + 1;
+		}
+	}
+	groups.push(value.slice(start).trim());
+	return groups;
+}
+
+/** A value's top-level components, with strings and bracketed names kept whole. */
+function splitGridComponents(value: string): string[] {
+	const components: string[] = [];
+	let depth = 0;
+	let quote = "";
+	let start = 0;
+	for (let i = 0; i <= value.length; i++) {
+		const char = value[i];
+		if (quote) {
+			if (char === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+			continue;
+		}
+		if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if ((i === value.length || /\s/.test(char)) && depth === 0) {
+			const component = value.slice(start, i).trim();
+			if (component) {
+				components.push(component);
+			}
+			start = i + 1;
+		}
+	}
+	return components;
+}
+
+/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
+function isCustomIdent(value: string): boolean {
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
+}
+
+/**
+ * `grid-row` / `grid-column` (css-grid-2 §8.3.2): a start line and an end
+ * line. An omitted end repeats the start only when the start is a name --
+ * `grid-column: main` means the whole area called main, while
+ * `grid-column: 2` means one track starting at line 2.
+ */
+function expandGridPlacementPair(
+	value: string,
+	start: string,
+	end: string,
+): Record<string, string> {
+	const groups = splitSlashGroups(value);
+	const first = groups[0] || "auto";
+	const second =
+		groups.length > 1 && groups[1] ?
+			groups[1] :
+			isCustomIdent(first) ?
+				first :
+				"auto";
+	return {[start]: first, [end]: second};
+}
+
+/**
+ * `grid-area` (css-grid-2 §8.4): row-start / column-start / row-end /
+ * column-end, each omitted value falling back to the one across from it by the
+ * same custom-ident rule the pair shorthands use.
+ */
+function expandGridArea(value: string): Record<string, string> {
+	const groups = splitSlashGroups(value);
+	const rowStart = groups[0] || "auto";
+	const fallback = (index: number, from: string): string =>
+		groups.length > index && groups[index] ?
+			groups[index] :
+			isCustomIdent(from) ?
+				from :
+				"auto";
+	const columnStart = fallback(1, rowStart);
+	const rowEnd = fallback(2, rowStart);
+	const columnEnd = fallback(3, columnStart);
+	return {
+		"grid-row-start": rowStart,
+		"grid-column-start": columnStart,
+		"grid-row-end": rowEnd,
+		"grid-column-end": columnEnd,
+	};
+}
+
+/**
+ * `grid-template` (css-grid-2 §7.4). Two forms: rows `/` columns, and the
+ * visual one whose rows are written as strings of area names with each row's
+ * track size and line names around them.
+ */
+function expandGridTemplate(value: string): Record<string, string> {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return {
+			"grid-template-rows": "none",
+			"grid-template-columns": "none",
+			"grid-template-areas": "none",
+		};
+	}
+
+	if (!text.includes('"') && !text.includes("'")) {
+		const groups = splitSlashGroups(text);
+		return {
+			"grid-template-rows": groups[0] || "none",
+			"grid-template-columns": groups[1] || "none",
+			"grid-template-areas": "none",
+		};
+	}
+
+	// The visual form: everything up to the last top-level slash states the
+	// rows, and the slash group after it -- if any -- states the columns.
+	const groups = splitSlashGroups(text);
+	const rowsText = groups[0];
+	const columns = groups.length > 1 ? groups.slice(1).join(" / ") : "none";
+
+	const strings: string[] = [];
+	const rowTracks: string[] = [];
+	let pendingNames: string[] = [];
+	let sawString = false;
+	for (const component of splitGridComponents(rowsText)) {
+		if (component.startsWith("[")) {
+			pendingNames.push(component);
+			continue;
+		}
+		if (component.startsWith('"') || component.startsWith("'")) {
+			// A row's own track size follows its string; a row with none is
+			// `auto`, and is written out so the track list stays positional.
+			if (sawString && rowTracks.length < strings.length) {
+				rowTracks.push("auto");
+			}
+			strings.push(component);
+			rowTracks.push(...pendingNames);
+			pendingNames = [];
+			sawString = true;
+			continue;
+		}
+		rowTracks.push(component);
+	}
+	if (sawString && rowTracks.length < strings.length) {
+		rowTracks.push("auto");
+	}
+	rowTracks.push(...pendingNames);
+
+	return {
+		"grid-template-rows": rowTracks.length > 0 ? rowTracks.join(" ") : "none",
+		"grid-template-columns": columns,
+		"grid-template-areas": strings.length > 0 ? strings.join(" ") : "none",
+	};
+}
+
+/**
+ * `grid` (css-grid-2 §7.4): the whole explicit grid, or one axis of it
+ * against an `auto-flow` that sizes the other's implicit tracks. Either way
+ * the shorthand resets every longhand it stands for, which is what makes it
+ * safe to write once at the top of a rule.
+ */
+function expandGrid(value: string): Record<string, string> {
+	const text = value.trim();
+	const reset = {
+		"grid-auto-flow": "row",
+		"grid-auto-rows": "auto",
+		"grid-auto-columns": "auto",
+	};
+	if (!/\bauto-flow\b/.test(text)) {
+		return {...expandGridTemplate(text), ...reset};
+	}
+
+	const groups = splitSlashGroups(text);
+	if (groups.length !== 2) {
+		return {...expandGridTemplate(text), ...reset};
+	}
+
+	const flowInSecond = /\bauto-flow\b/.test(groups[1]);
+	const flowGroup = flowInSecond ? groups[1] : groups[0];
+	const otherGroup = flowInSecond ? groups[0] : groups[1];
+	const dense = /\bdense\b/.test(flowGroup);
+	const sizes = splitGridComponents(flowGroup)
+		.filter((token) => token !== "auto-flow" && token !== "dense")
+		.join(" ");
+
+	// The axis the flow runs along takes the implicit sizes; the other axis
+	// takes the explicit track list written across the slash.
+	return flowInSecond ?
+			{
+				"grid-template-rows": otherGroup || "none",
+				"grid-template-columns": "none",
+				"grid-template-areas": "none",
+				"grid-auto-flow": dense ? "column dense" : "column",
+				"grid-auto-columns": sizes || "auto",
+				"grid-auto-rows": "auto",
+			} :
+			{
+				"grid-template-columns": otherGroup || "none",
+				"grid-template-rows": "none",
+				"grid-template-areas": "none",
+				"grid-auto-flow": dense ? "row dense" : "row",
+				"grid-auto-rows": sizes || "auto",
+				"grid-auto-columns": "auto",
+			};
+}
+
+/**
+ * Expand CSS SHORTHANDS into the longhands everything downstream reads.
+ * Declarations are consulted per-property, so a `border: 1px solid` that
+ * never becomes border-top-width etc. simply doesn't exist to the box model
+ * or the border painter. Declaration order is preserved, so an explicit
+ * longhand after a shorthand still overrides it.
+ *
+ * A shorthand keeps its own entry alongside the longhands it declares, so
+ * `getPropertyValue("border")` still answers what was authored. `margin`,
+ * `padding` and `border-radius` are the exception: their computed answers are
+ * serialized from the four longhands, so keeping the shorthand would shadow
+ * that.
+ */
+export function expandShorthands(
+	declarations: Record<string, string>,
+): Record<string, string> {
+	const out: Record<string, string> = {};
+	const setEdges = (kind: string, values: string[]) => {
+		const edgeValues = perEdge(values);
+		EDGES.forEach((edge, i) => {
+			out[`border-${edge}-${kind}`] = edgeValues[i];
+		});
+	};
+
+	for (const [property, value] of Object.entries(declarations)) {
+		const values = splitComponents(value);
+		switch (property) {
+			case "border": {
+				const {width, lineStyle, color} = splitLineValue(value);
+				setEdges("width", [width ?? "medium"]);
+				setEdges("style", [lineStyle ?? "none"]);
+				if (color) {
+					setEdges("color", [color]);
+				}
+				break;
+			}
+			case "border-image":
+				Object.assign(out, expandBorderImage(value));
+				break;
+			case "border-width":
+				setEdges("width", values);
+				break;
+			case "border-style":
+				setEdges("style", values);
+				break;
+			case "border-color":
+				setEdges("color", values);
+				break;
+			case "border-radius": {
+				const corners = expandBorderRadius(value);
+				if (Object.keys(corners).length === 0) {
+					break;
+				}
+				Object.assign(out, corners);
+				// The shorthand itself is serialized from these on read.
+				continue;
+			}
+			case "border-top":
+			case "border-right":
+			case "border-bottom":
+			case "border-left": {
+				const edge = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				out[`border-${edge}-width`] = width ?? "medium";
+				out[`border-${edge}-style`] = lineStyle ?? "none";
+				if (color) {
+					out[`border-${edge}-color`] = color;
+				}
+				break;
+			}
+			case "outline": {
+				const {width, lineStyle, color} = splitLineValue(value);
+				out["outline-width"] = width ?? "medium";
+				out["outline-style"] = lineStyle ?? "none";
+				if (color) {
+					out["outline-color"] = color;
+				}
+				break;
+			}
+			// The flow-relative pairs (css-logical-1 §4): one value for both
+			// ends of the axis, or one for each. They state their longhands
+			// and, like `margin` and `padding`, are serialized back from them.
+			case "margin-block":
+			case "margin-inline":
+			case "padding-block":
+			case "padding-inline":
+			case "inset-block":
+			case "inset-inline": {
+				const axis = property.slice(property.lastIndexOf("-") + 1);
+				const kind = property.slice(0, property.lastIndexOf("-"));
+				const ends = perEnd(values);
+				AXIS_ENDS.forEach((end, i) => {
+					out[`${kind}-${axis}-${end}`] = ends[i];
+				});
+				continue;
+			}
+			// `border-block` / `border-inline`: one line drawn on both ends of
+			// the axis.
+			case "border-block":
+			case "border-inline": {
+				const axis = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				for (const end of AXIS_ENDS) {
+					out[`border-${axis}-${end}-width`] = width ?? "medium";
+					out[`border-${axis}-${end}-style`] = lineStyle ?? "none";
+					if (color) {
+						out[`border-${axis}-${end}-color`] = color;
+					}
+				}
+				break;
+			}
+			// One flow-relative edge's line: `border-inline-start: 1px solid`.
+			case "border-block-start":
+			case "border-block-end":
+			case "border-inline-start":
+			case "border-inline-end": {
+				const edge = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				out[`border-${edge}-width`] = width ?? "medium";
+				out[`border-${edge}-style`] = lineStyle ?? "none";
+				if (color) {
+					out[`border-${edge}-color`] = color;
+				}
+				break;
+			}
+			// One line component across an axis: `border-inline-width: 1px 2px`.
+			case "border-block-width":
+			case "border-block-style":
+			case "border-block-color":
+			case "border-inline-width":
+			case "border-inline-style":
+			case "border-inline-color": {
+				const [, axis, kind] = property.split("-");
+				const ends = perEnd(values);
+				AXIS_ENDS.forEach((end, i) => {
+					out[`border-${axis}-${end}-${kind}`] = ends[i];
+				});
+				break;
+			}
+			case "padding":
+			case "margin": {
+				const edgeValues = perEdge(values);
+				EDGES.forEach((edge, i) => {
+					out[`${property}-${edge}`] = edgeValues[i];
+				});
+				// The shorthand itself is serialized from these on read.
+				continue;
+			}
+			case "inset": {
+				const edgeValues = perEdge(values);
+				EDGES.forEach((edge, i) => {
+					out[edge] = edgeValues[i];
+				});
+				break;
+			}
+			case "gap": {
+				out["row-gap"] = values[0];
+				out["column-gap"] = values[1] ?? values[0];
+				break;
+			}
+			// The legacy spelling of `gap`, which browsers still accept. Its
+			// longhands share a cascade slot with row-gap/column-gap, so
+			// declaring them is declaring the modern pair.
+			case "grid-gap": {
+				out["grid-row-gap"] = values[0];
+				out["grid-column-gap"] = values[1] ?? values[0];
+				break;
+			}
+			case "grid-row":
+				Object.assign(
+					out,
+					expandGridPlacementPair(value, "grid-row-start", "grid-row-end"),
+				);
+				break;
+			case "grid-column":
+				Object.assign(
+					out,
+					expandGridPlacementPair(
+						value,
+						"grid-column-start",
+						"grid-column-end",
+					),
+				);
+				break;
+			case "grid-area":
+				Object.assign(out, expandGridArea(value));
+				break;
+			case "grid-template":
+				Object.assign(out, expandGridTemplate(value));
+				break;
+			case "grid":
+				Object.assign(out, expandGrid(value));
+				break;
+			case "overflow": {
+				out["overflow-x"] = values[0];
+				out["overflow-y"] = values[1] ?? values[0];
+				break;
+			}
+			case "flex": {
+				Object.assign(out, expandFlex(value) ?? {});
+				break;
+			}
+			case "flex-flow": {
+				Object.assign(out, expandFlexFlow(value));
+				break;
+			}
+			case "place-content":
+				Object.assign(
+					out,
+					expandPlace(value, "align-content", "justify-content"),
+				);
+				break;
+			case "place-items":
+				Object.assign(out, expandPlace(value, "align-items", "justify-items"));
+				break;
+			case "place-self":
+				Object.assign(out, expandPlace(value, "align-self", "justify-self"));
+				break;
+			case "list-style":
+				Object.assign(out, expandListStyle(value));
+				break;
+			case "background":
+				Object.assign(out, expandBackground(value));
+				break;
+			case "text-decoration": {
+				// `<line> || <style> || <color>`; only the line component has a
+				// terminal rendering, and it is the one the painter reads.
+				const line = values
+					.filter((token) =>
+						/^(none|underline|overline|line-through|blink)$/.test(token),
+					)
+					.join(" ");
+				if (line) {
+					out["text-decoration-line"] = line;
+				}
+				break;
+			}
+		}
+		out[property] = value;
+	}
+	return out;
+}
+
+// ---- CSS spec defaults ----
+/**
+ * CSS specification defaults for properties
+ */
+const CSS_SPEC_DEFAULTS: Record<string, string> = {
+	"display": "inline",
+	"margin-top": "0",
+	"margin-right": "0",
+	"margin-bottom": "0",
+	"margin-left": "0",
+	"padding-top": "0",
+	"padding-right": "0",
+	"padding-bottom": "0",
+	"padding-left": "0",
+	"border-width": "0",
+	"border-style": "none",
+	"border-color": "currentColor",
+	"border-top-width": "0",
+	"border-right-width": "0",
+	"border-bottom-width": "0",
+	"border-left-width": "0",
+	"border-top-style": "none",
+	"border-right-style": "none",
+	"border-bottom-style": "none",
+	"border-left-style": "none",
+	"border-top-color": "currentColor",
+	"border-right-color": "currentColor",
+	"border-bottom-color": "currentColor",
+	"border-left-color": "currentColor",
+	"background-color": "transparent",
+	"color": "#000000",
+	// One cell tall: the terminal's font is the grid, and a length written in
+	// em is a length written in cells.
+	"font-size": "1px",
+	"font-weight": "normal",
+	"font-style": "normal",
+	"text-decoration": "none",
+	"white-space": "normal",
+	"overflow": "visible",
+	"position": "static",
+	"width": "auto",
+	"height": "auto",
+	"box-sizing": "border-box",
+	// Terminal-optimized flexbox defaults
+	// Container properties
+	"flex-direction": "row",
+	"flex-wrap": "nowrap",
+	// `normal` is CSS's own initial value on both, and the one grid needs: it
+	// is what tells a grid's auto tracks to fill the container. In a flex
+	// container it means what flex-start meant here before, so nothing about
+	// flex layout moves.
+	"justify-content": "normal",
+	"align-items": "stretch",
+	"align-content": "normal",
+	"gap": "0",
+	"row-gap": "0",
+	"column-gap": "0",
+	// Item properties
+	"flex-grow": "0",
+	"flex-shrink": "1",
+	"flex-basis": "auto",
+	"align-self": "auto",
+	"order": "0",
+};
+
+// ---- Element defaults the stylesheet cannot express ----
+
+/**
+ * The per-element defaults that are STATE, not stylesheet: the fullscreen
+ * element's viewport block (explicit cells -- the alternate screen IS the
+ * containing geometry), a select sized to its widest option label so the
+ * field never jumps as the selection changes, and the size attribute
+ * driving a text input's width. Everything expressible as CSS lives in
+ * UA_ELEMENT_STYLES; these resolve at the initial-value layer, below it.
+ */
+function getElementDefaults(
+	element: Element,
+): Record<string, string> | undefined {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return undefined;
+	}
+	const name = element.localName;
+	const document = element.ownerDocument;
+	if (document !== null && document.fullscreenElement === element) {
+		const window = document.defaultView;
+		if (window) {
+			return {
+				"position": "fixed",
+				"top": "0px",
+				"left": "0px",
+				"width": `${window.innerWidth}ch`,
+				"height": `${window.innerHeight}px`,
+				"background-color": "Canvas",
+			};
+		}
+	}
+	if (name === "select") {
+		const select = element as HTMLSelectElement;
+		let widest = 0;
+		for (const option of select.options) {
+			widest = Math.max(widest, stringWidth(option.label));
+		}
+		return {width: `${widest + 2}ch`};
+	}
+	if (name === "input") {
+		const input = element as HTMLInputElement;
+		if (input.type === "checkbox" || input.type === "radio") {
+			return undefined;
+		}
+		// A text input's width is attribute state: size columns when the
+		// attribute says so, the spec's 20 otherwise. It lives here rather
+		// than in the sheet so the attribute can beat the default without a
+		// width the sheet cannot spell (there is no attr() length).
+		const size = parseInt(input.getAttribute("size") ?? "", 10);
+		return {
+			width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`,
+		};
+	}
+	return undefined;
+}
+
+// ---- Inheritance / initial-value tables ----
+/**
+ * Properties that inherit by default
+ */
+const INHERITED_PROPERTIES = new Set([
+	"color",
+	"cursor",
+	"direction",
+	"font-family",
+	"font-size",
+	"font-style",
+	"font-variant",
+	"font-weight",
+	"letter-spacing",
+	"line-height",
+	"list-style",
+	"list-style-image",
+	"list-style-position",
+	"list-style-type",
+	"overflow-wrap",
+	"quotes",
+	"text-align",
+	"text-decoration",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"text-decoration-thickness",
+	"text-indent",
+	"text-transform",
+	"visibility",
+	"white-space",
+	"word-break",
+	"word-spacing",
+]);
+
+const INITIAL_KEYWORDS = new Set([
+	"initial",
+	"revert",
+	"revert-layer",
+	"unset",
+]);
+
+/**
+ * A property's initial value on an element, or -- with no element, as for a
+ * pseudo-element -- the initial value alone, which no element default has a
+ * say in.
+ */
+function getInitialStyle(
+	element: Element | null,
+	property: string,
+): string {
+	// Check element-specific defaults first
+	const elementDefaults = element ? getElementDefaults(element) : null;
+	if (elementDefaults && elementDefaults[property]) {
+		return elementDefaults[property];
+	}
+
+	// Fall back to CSS spec default, and past it to the property index --
+	// every longhand has an initial value, and a property this engine does not
+	// lay out still resolves to one.
+	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
+}
 
 /**
  * Helper to get computed style property value for an element.
@@ -2038,7 +3096,7 @@ const kSync = Symbol("sync");
  * reparses into the object on the next read, recognized by the text differing
  * from what this object last serialized.
  */
-export class CSSStyleDeclaration implements DeclarationSource {
+class CSSStyleDeclaration implements DeclarationSource {
 	[index: number]: string;
 	declare [kElement]: Element | null;
 	declare [kParentRule]: CSSRule | null;
@@ -2279,14 +3337,14 @@ export class CSSStyleDeclaration implements DeclarationSource {
 
 /** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
 function serialize(
-	self: CSSStyleDeclaration,
+	block: CSSStyleDeclaration,
 ): string {
 	const parts: string[] = [];
 	const serialized = new Set<string>();
 	// A shorthand this block cannot express is one it cannot express at
 	// any of its longhands: the declarations do not change under the walk.
 	const unserializable = new Set<string>();
-	for (const declaration of self[kDeclarations]) {
+	for (const declaration of block[kDeclarations]) {
 		if (serialized.has(declaration.name)) {
 			continue;
 		}
@@ -2298,15 +3356,15 @@ function serialize(
 			const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
 			// A shorthand covering more properties than the block holds
 			// cannot be serialized from it, and `all` covers hundreds.
-			if (longhands.length > self[kDeclarations].length) {
+			if (longhands.length > block[kDeclarations].length) {
 				continue;
 			}
-			const value = shorthandValue(self, shorthand, longhands);
+			const value = shorthandValue(block, shorthand, longhands);
 			if (!value) {
 				unserializable.add(shorthand);
 				continue;
 			}
-			const important = find(self, longhands[0])!.important;
+			const important = find(block, longhands[0])!.important;
 			text = `${shorthand}: ${value}${important ? " !important" : ""};`;
 			for (const longhand of longhands) {
 				serialized.add(longhand);
@@ -2327,34 +3385,34 @@ function serialize(
 
 /** Serialize to the `style` attribute, which is what invalidation observes. */
 function flush(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 ): void {
-	invalidate(self);
-	if (self[kElement]) {
-		self[kAttributeText] = serialize(self);
-		self[kElement].setAttribute("style", self[kAttributeText]);
+	invalidate(declaration);
+	if (declaration[kElement]) {
+		declaration[kAttributeText] = serialize(declaration);
+		declaration[kElement].setAttribute("style", declaration[kAttributeText]);
 	}
-	self[kOnChange]?.();
+	declaration[kOnChange]?.();
 }
 
 function invalidate(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 ): void {
-	self[kBlock] = null;
-	for (let i = 0; i < self[kIndexed]; i++) {
-		delete self[i];
+	declaration[kBlock] = null;
+	for (let i = 0; i < declaration[kIndexed]; i++) {
+		delete declaration[i];
 	}
-	self[kIndexed] = self[kDeclarations].length;
-	for (let i = 0; i < self[kIndexed]; i++) {
-		self[i] = self[kDeclarations][i].name;
+	declaration[kIndexed] = declaration[kDeclarations].length;
+	for (let i = 0; i < declaration[kIndexed]; i++) {
+		declaration[i] = declaration[kDeclarations][i].name;
 	}
 }
 
 function find(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	property: string,
 ): CSSDeclaration | undefined {
-	return self[kByName].get(property);
+	return declaration[kByName].get(property);
 }
 
 /**
@@ -2363,19 +3421,19 @@ function find(
  * the property index does not describe descriptors.
  */
 function supports(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
 	// A keyframe's block is a step of an animation, and the animation's own
 	// properties describe the whole rather than the step.
-	if (self[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
+	if (declaration[kKeyframe] && KEYFRAME_EXCLUDED.test(name)) {
 		return false;
 	}
-	if (self[kDescriptors]) {
+	if (declaration[kDescriptors]) {
 		// An at-rule's block holds its own descriptors. One this engine
 		// has no descriptor list for holds whatever it is given, which is
 		// what keeps @font-feature-values' feature blocks working.
-		const names = DESCRIPTOR_NAMES.get(self[kDescriptors]);
+		const names = DESCRIPTOR_NAMES.get(declaration[kDescriptors]);
 		return names ? names.has(name) : name !== "";
 	}
 
@@ -2391,13 +3449,13 @@ function supports(
  * a declaration unchanged leaves it where it stands.
  */
 function store(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	name: string,
 	value: string,
 	important: boolean,
 	cascade = false,
 ): boolean {
-	const declared = find(self, name);
+	const declared = find(declaration, name);
 	if (declared) {
 		// Parsing a block is a cascade in miniature: a normal declaration
 		// does not displace the important one already standing there.
@@ -2407,30 +3465,32 @@ function store(
 		if (declared.value === value && declared.important === important) {
 			return false;
 		}
-		remove(self, name);
+		remove(declaration, name);
 	}
 	const entry = {name, value, important};
-	self[kDeclarations].push(entry);
-	self[kByName].set(name, entry);
+	declaration[kDeclarations].push(entry);
+	declaration[kByName].set(name, entry);
 	return true;
 }
 
 function remove(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
-	const index = self[kDeclarations].findIndex((entry) => entry.name === name);
+	const index = declaration[kDeclarations].findIndex(
+		(entry) => entry.name === name,
+	);
 	if (index === -1) {
 		return false;
 	}
-	self[kDeclarations].splice(index, 1);
-	self[kByName].delete(name);
+	declaration[kDeclarations].splice(index, 1);
+	declaration[kByName].delete(name);
 	return true;
 }
 
 /** Store a property as its longhands, or as itself; returns whether it changed. */
 function apply(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	name: string,
 	value: string,
 	important: boolean,
@@ -2439,39 +3499,40 @@ function apply(
 	// A declaration whose value does not parse is not stored at all, so a
 	// shorthand with one bad component drops whole rather than leaving its
 	// good components behind.
-	if (!isValidDeclaration(name, value, self[kDescriptors])) {
+	if (!isValidDeclaration(name, value, declaration[kDescriptors])) {
 		return false;
 	}
 	const expanded = expandShorthandValue(name, value);
 	if (!expanded) {
-		return store(self, name, value, important, cascade);
+		return store(declaration, name, value, important, cascade);
 	}
-	let changed = remove(self, name);
+	let changed = remove(declaration, name);
 	for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
 		if (longhand in expanded) {
 			continue;
 		}
-		if (cascade && find(self, longhand)?.important && !important) {
+		if (cascade && find(declaration, longhand)?.important && !important) {
 			continue;
 		}
-		changed = remove(self, longhand) || changed;
+		changed = remove(declaration, longhand) || changed;
 	}
 	for (const [longhand, longhandValue] of Object.entries(expanded)) {
 		changed =
-			store(self, longhand, longhandValue, important, cascade) || changed;
+			store(declaration, longhand, longhandValue, important, cascade) ||
+			changed;
 	}
 	return changed;
 }
 
 /** The shorthand's value, or "" when its longhands do not agree on one. */
 function shorthandValue(
-	self: CSSStyleDeclaration,
+	declaration: CSSStyleDeclaration,
 	shorthand: string,
 	longhands: readonly string[],
 ): string {
 	let important: boolean | null = null;
 	for (const longhand of longhands) {
-		const declared = find(self, longhand);
+		const declared = find(declaration, longhand);
 		if (!declared) {
 			return "";
 		}
@@ -2484,7 +3545,7 @@ function shorthandValue(
 	return serializeShorthandValue(
 		shorthand,
 		longhands,
-		(longhand) => find(self, longhand)!.value,
+		(longhand) => find(declaration, longhand)!.value,
 	);
 }
 
@@ -2557,7 +3618,6 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 
-/** Marks a prototype whose invalidation hooks are already installed. */
 // ============================================================================
 // CSSOM: STYLESHEETS AND RULES
 // ============================================================================
@@ -2849,17 +3909,17 @@ export class MediaList {
 }
 
 function parse(
-	self: MediaList,
+	list: MediaList,
 	text: string,
 ): void {
-	self[kMedia].length = 0;
+	list[kMedia].length = 0;
 	for (const query of splitMediaQueryList(String(text ?? ""))) {
 		const serialized = serializeMediaQuery(query);
 		if (serialized) {
-			self[kMedia].push(serialized);
+			list[kMedia].push(serialized);
 		}
 	}
-	syncIndexed(self);
+	syncIndexed(list);
 }
 
 /**
@@ -3024,7 +4084,7 @@ const kStyle = Symbol("style");
 const kSelectorText = Symbol("selectorText");
 
 /** A style rule: a selector and the declaration block it applies. */
-export class CSSStyleRule extends CSSGroupingRule {
+class CSSStyleRule extends CSSGroupingRule {
 	declare [kSelectors]: SelectorNode;
 	declare [kSelectorText]: string | null;
 	declare [kStyle]: CSSStyleDeclaration;
@@ -3548,7 +4608,7 @@ function serializeKeyText(text: string): string {
 }
 
 /** `@media`: the rules that apply when the viewport matches. */
-export class CSSMediaRule extends CSSConditionRule {
+class CSSMediaRule extends CSSConditionRule {
 	declare [kMedia]: MediaList;
 
 	constructor(
@@ -3797,7 +4857,7 @@ const kSupportsText = Symbol("supportsText");
  * and media, whose styleSheet is null. There is no network behind a terminal
  * document, so nothing is fetched and the rule declares nothing.
  */
-export class CSSImportRule extends CSSRule {
+class CSSImportRule extends CSSRule {
 	declare [kHref]: string;
 	declare [kMedia]: MediaList;
 	declare [kLayerName]: string | null;
@@ -4053,7 +5113,7 @@ class CSSKeyframesRule extends CSSRule {
 }
 
 /** The rules of a stylesheet or a grouping rule. */
-export class CSSRuleList {
+class CSSRuleList {
 	declare [kRules]: readonly CSSRule[];
 
 	constructor(rules: readonly CSSRule[]) {
@@ -4082,7 +5142,7 @@ function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
 const kSheets = Symbol("sheets");
 
 /** The stylesheets of a document or a shadow root. */
-export class StyleSheetList {
+class StyleSheetList {
 	declare [kSheets]: readonly CSSStyleSheet[];
 
 	constructor(sheets: readonly CSSStyleSheet[]) {
@@ -4118,7 +5178,7 @@ const kOwnerRule = Symbol("ownerRule");
  * rule's declaration block all reach the render through the same invalidation
  * a `<style>` text change does.
  */
-export class CSSStyleSheet {
+class CSSStyleSheet {
 	declare [kRules]: CSSRule[];
 	declare [kRuleList]: CSSRuleList;
 	declare [kMedia]: MediaList;
@@ -4357,9 +5417,9 @@ export class CSSStyleSheet {
 }
 
 function changed(
-	self: CSSStyleSheet,
+	sheet: CSSStyleSheet,
 ): void {
-	sheetNotifiers.get(self)?.();
+	sheetNotifiers.get(sheet)?.();
 }
 
 /**
@@ -4372,7 +5432,7 @@ function changed(
  * selector has been parsed cannot reach it.
  */
 function checkRuleOrder(
-	self: CSSStyleSheet,
+	sheet: CSSStyleSheet,
 	rule: CSSRule,
 	index: number,
 ): void {
@@ -4380,13 +5440,13 @@ function checkRuleOrder(
 		throw domException(
 			"That rule cannot stand at that index",
 			"HierarchyRequestError",
-			self,
+			sheet,
 		);
 	};
 	const prelude = (other: CSSRule): boolean =>
 		other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
-	const before = self[kRules].slice(0, index);
-	const after = self[kRules].slice(index);
+	const before = sheet[kRules].slice(0, index);
+	const after = sheet[kRules].slice(index);
 	if (rule instanceof CSSImportRule) {
 		if (before.some((other) => !(other instanceof CSSImportRule))) {
 			hierarchy();
@@ -4400,11 +5460,11 @@ function checkRuleOrder(
 		if (after.some((other) => other instanceof CSSImportRule)) {
 			hierarchy();
 		}
-		if (self[kRules].some((other) => !prelude(other))) {
+		if (sheet[kRules].some((other) => !prelude(other))) {
 			throw domException(
 				"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
 				"InvalidStateError",
-				self,
+				sheet,
 			);
 		}
 		return;
@@ -5671,8 +6731,17 @@ function sheetFor(element: Element): CSSStyleSheet {
 		sheet = new CSSStyleSheet({}, element);
 		sheetNotifiers.set(sheet, () => {
 			const window = element.ownerDocument?.defaultView;
-			if (window) {
-				styleManagers.get(window)?.refreshStylesheets();
+			const manager = window ? styleManagers.get(window) : undefined;
+			if (!manager) {
+				return;
+			}
+			// A shadow sheet's change refreshes its root; only a document
+			// sheet's change rebuilds the document cascade.
+			const root = element.getRootNode();
+			if (root.nodeType === 11 && (root as ShadowRoot).host) {
+				manager.refreshShadowRoot(root as ShadowRoot);
+			} else {
+				manager.refreshStylesheets();
 			}
 		});
 		elementSheets.set(element, sheet);
@@ -5838,10 +6907,6 @@ function observableAdopted(
 }
 
 /**
- * Put this engine's CSSOM behind the document's stylesheet surface: a style
- * element's `sheet`, `document.styleSheets`, and the adopted lists.
- */
-/**
  * Every CSSOM interface names itself: `Object.prototype.toString` on one of
  * its objects gives the interface name, as it does for any platform object.
  */
@@ -5887,7 +6952,7 @@ let uaDocumentSheet: CSSStyleSheet | null = null;
 function uaStyleSheet(): CSSStyleSheet {
 	if (!uaDocumentSheet) {
 		uaDocumentSheet = new CSSStyleSheet();
-		uaDocumentSheet.replaceSync(UA_DOCUMENT_STYLES);
+		uaDocumentSheet.replaceSync(UA_ELEMENT_STYLES + UA_DOCUMENT_STYLES);
 	}
 	return uaDocumentSheet;
 }
@@ -6363,19 +7428,19 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
  * per-element, per-generation cache that absolutization is paid into once.
  */
 function computed(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
 	const entry = computedEntry(
 		property,
-		resolvePropertyValue(self, property),
+		resolvePropertyValue(declaration, property),
 	);
 	if (!entry.contextual) {
 		return entry.value;
 	}
 	const absolute = absolutizeLengths(
 		entry.value,
-		lengthContext(self, property),
+		lengthContext(declaration, property),
 	);
 	// Two radii that differ as written -- `1ch 1px` -- can measure the same
 	// cell, and a corner whose radii agree states one of them.
@@ -6391,18 +7456,18 @@ function computed(
  * computes first.
  */
 function lengthContext(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): LengthContext {
 	const own = property === "font-size";
-	const parent = own ? flatParentElement<Element>(self[kElement]) : null;
+	const parent = own ? flatParentElement<Element>(declaration[kElement]) : null;
 	const font = own ?
 		parent ?
 				fontSizeOf(computedStyleOf(parent)) :
 			INITIAL_FONT_SIZE :
-			fontSizeOf(self);
-	const root = rootFontSize(self, own);
-	const viewport = self[kManager]?.viewportSize();
+			fontSizeOf(declaration);
+	const root = rootFontSize(declaration, own);
+	const viewport = declaration[kManager]?.viewportSize();
 	return {
 		font,
 		root,
@@ -6418,17 +7483,17 @@ function lengthContext(
 
 /** The font size `rem` measures against: the root element's. */
 function rootFontSize(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	ownFontSize: boolean,
 ): number {
-	const root = self[kElement].ownerDocument?.documentElement;
+	const root = declaration[kElement].ownerDocument?.documentElement;
 	// `rem` in the root's own font-size is the initial value, not the
 	// value being computed.
-	if (!root || (ownFontSize && root === self[kElement])) {
+	if (!root || (ownFontSize && root === declaration[kElement])) {
 		return INITIAL_FONT_SIZE;
 	}
-	return root === self[kElement] ?
-			fontSizeOf(self) :
+	return root === declaration[kElement] ?
+			fontSizeOf(declaration) :
 			fontSizeOf(computedStyleOf(root));
 }
 
@@ -6437,14 +7502,15 @@ function rootFontSize(
  * longhand -- the physical longhand this element's `direction` maps it to.
  */
 function physicalOf(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
 	if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) {
 		return property;
 	}
 	return (
-		physicalProperty(property, self.computedValueOf("direction")) ?? property
+		physicalProperty(property, declaration.computedValueOf("direction")) ??
+		property
 	);
 }
 
@@ -6456,7 +7522,7 @@ function physicalOf(
  * is why only the computed one is memoized.
  */
 function shorthand(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 	longhands: readonly string[],
 	read: (longhand: string) => string,
@@ -6714,7 +7780,7 @@ function viewportBox(
  * value CSSOM reports.
  */
 function resolvedMinSize(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	computed: string,
 ): string {
 	if (computed !== "auto") {
@@ -6723,7 +7789,7 @@ function resolvedMinSize(
 	// A box that was never generated has no automatic minimum, whatever
 	// else its style says.
 	for (
-		let element: Element | null = self[kElement];
+		let element: Element | null = declaration[kElement];
 		element;
 		element = flatParentElement<Element>(element)
 	) {
@@ -6731,10 +7797,10 @@ function resolvedMinSize(
 			return "0px";
 		}
 	}
-	if (self.computedValueOf("aspect-ratio") !== "auto") {
+	if (declaration.computedValueOf("aspect-ratio") !== "auto") {
 		return "auto";
 	}
-	const parent = flatParentElement<Element>(self[kElement]);
+	const parent = flatParentElement<Element>(declaration[kElement]);
 	const display = parent ?
 			computedStyleOf(parent).computedValueOf("display") :
 		"";
@@ -6808,9 +7874,9 @@ function containingWidth(
  * so a shorthand's `!important` covers every longhand it declares.
  */
 function inlineDeclarations(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 ): DeclarationBlock {
-	const style = (self[kElement] as HTMLElement).style;
+	const style = (declaration[kElement] as HTMLElement).style;
 	return style instanceof CSSStyleDeclaration ?
 			style.declarationBlock() :
 		EMPTY_DECLARATIONS;
@@ -6818,10 +7884,10 @@ function inlineDeclarations(
 
 /** This element's flat-tree parent's computed value for `property`, or null at the root. */
 function resolveFromParent(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string | null {
-	const parent = flatParentElement<Element>(self[kElement]);
+	const parent = flatParentElement<Element>(declaration[kElement]);
 	if (!parent) {
 		return null;
 	}
@@ -6839,7 +7905,7 @@ function resolveFromParent(
  * A depth guard stops a property that (invalidly) refers to itself.
  */
 function substituteVar(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	value: string,
 	depth = 0,
 ): string {
@@ -6874,11 +7940,11 @@ function substituteVar(
 		const fallback =
 			commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
 
-		const resolved = resolveCustomProperty(self, name);
+		const resolved = resolveCustomProperty(declaration, name);
 		if (resolved !== null) {
-			out += substituteVar(self, resolved, depth + 1);
+			out += substituteVar(declaration, resolved, depth + 1);
 		} else if (fallback !== undefined) {
-			out += substituteVar(self, fallback, depth + 1);
+			out += substituteVar(declaration, fallback, depth + 1);
 		}
 		// Neither a value nor a fallback: the guaranteed-invalid value -- omit,
 		// which approximates the property's own initial/inherited fallback.
@@ -6889,12 +7955,12 @@ function substituteVar(
 }
 
 function resolveCustomProperty(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	name: string,
 ): string | null {
 	// A custom property is just an ordinary (always-inherited) cascade lookup
 	// -- kResolvePropertyValueRaw's step 4 already walks ancestors for it.
-	return resolvePropertyValueRaw(self, name) || null;
+	return resolvePropertyValueRaw(declaration, name) || null;
 }
 
 /**
@@ -6904,17 +7970,17 @@ function resolveCustomProperty(
  * `var()` references substituted in whatever wins.
  */
 function resolvePropertyValue(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	const raw = resolvePropertyValueRaw(self, property);
+	const raw = resolvePropertyValueRaw(declaration, property);
 	// A custom property holds the tokens it was given; substituting it
 	// into a property of its own grammar re-serializes them in that
 	// property's spelling.
 	const value = raw ?
 		property.startsWith("--") ?
-				substituteVar(self, raw) :
-				serializeCSSValue(substituteVar(self, raw), property) :
+				substituteVar(declaration, raw) :
+				serializeCSSValue(substituteVar(declaration, raw), property) :
 		raw;
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value says; on `color` itself it means the parent's.
@@ -6928,14 +7994,14 @@ function resolvePropertyValue(
 		// resolution of a style that layout is waiting on. `color` has no
 		// used value to wait for, so the two answer alike.
 		return property === "color" ?
-				(resolveFromParent(self, "color") ?? "") :
-				self.computedValueOf("color");
+				(resolveFromParent(declaration, "color") ?? "") :
+				declaration.computedValueOf("color");
 	}
 	return value;
 }
 
 function resolvePropertyValueRaw(
-	self: ComputedStyleDeclaration,
+	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
 	// A physical property and the flow-relative properties that map to it
@@ -6952,10 +8018,10 @@ function resolvePropertyValueRaw(
 		name === property ||
 		physicalProperty(
 			name,
-			(direction ??= self.computedValueOf("direction")),
+			(direction ??= declaration.computedValueOf("direction")),
 		) === property;
 
-	const inline = inlineDeclarations(self);
+	const inline = inlineDeclarations(declaration);
 	const inlineName = declaredName(inline, names, false, mapsHere);
 	const inlineValue = inlineName ?
 			inline.declarations[inlineName].trim() :
@@ -6971,10 +8037,10 @@ function resolvePropertyValueRaw(
 	// `inherit` skips the rest of the cascade and goes straight to the parent's
 	// resolved value, regardless of whether this property normally inherits.
 	if (inlineImportant && inlineImportantValue === "inherit") {
-		return resolveFromParent(self, property) ?? "";
+		return resolveFromParent(declaration, property) ?? "";
 	}
 	if (!inlineImportant && inlineUsable && inlineValue === "inherit") {
-		return resolveFromParent(self, property) ?? "";
+		return resolveFromParent(declaration, property) ?? "";
 	}
 
 	// 1 & 2. Inline style and stylesheet rules, with an !important tier above
@@ -6989,7 +8055,7 @@ function resolvePropertyValueRaw(
 	// keeps it, and later ones only tie it within the same layer.
 	let importantOrigin = false;
 	let importantLayer = 0;
-	for (const rule of self[kCSSRules]) {
+	for (const rule of declaration[kCSSRules]) {
 		const name = declaredName(rule, names, false, mapsHere);
 		if (name !== null) {
 			ruleValue = rule.declarations[name];
@@ -7012,7 +8078,7 @@ function resolvePropertyValueRaw(
 	// though the declaration were not there.
 	const declaredByRule = (value: string): string | null => {
 		if (value === "inherit") {
-			return resolveFromParent(self, property) ?? "";
+			return resolveFromParent(declaration, property) ?? "";
 		}
 		return INITIAL_KEYWORDS.has(value) ? null : value;
 	};
@@ -7036,16 +8102,15 @@ function resolvePropertyValueRaw(
 
 	// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
 	// These take priority over inherited values
-	const tagName = self[kElement].tagName.toLowerCase();
+	const tagName = declaration[kElement].tagName.toLowerCase();
 
 	// A list's marker gutter is sized to its widest marker rather than taken
 	// from the static table, so it has to be resolved before it.
 	if (
 		property === "padding-left" &&
-		(tagName === "ul" || tagName === "ol") &&
-		self[kElement].ownerDocument?.defaultView
+		(tagName === "ul" || tagName === "ol")
 	) {
-		return `${getListGutterWidth(self[kElement])}ch`;
+		return `${getListGutterWidth(declaration[kElement])}ch`;
 	}
 
 	// The UA default marker type depends on nesting depth, exactly as a browser's
@@ -7061,11 +8126,11 @@ function resolvePropertyValueRaw(
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
-		const depth = listNestingDepth(self[kElement]);
+		const depth = listNestingDepth(declaration[kElement]);
 		return bullets[Math.min(depth, bullets.length - 1)];
 	}
 
-	const elementDefaults = getElementDefaults(self[kElement]);
+	const elementDefaults = getElementDefaults(declaration[kElement]);
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
@@ -7074,13 +8139,13 @@ function resolvePropertyValueRaw(
 	// which correctly resolves CSS rules on parent elements. Custom properties
 	// (--x) always inherit -- there's no fixed list for them to be in.
 	if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
-		const window = self[kElement].ownerDocument?.defaultView;
+		const window = declaration[kElement].ownerDocument?.defaultView;
 		if (window) {
 			// Flat-tree parents: inheritance crosses the shadow boundary
 			// (host -> shadow child) and reaches slotted content through
 			// its slot's chain, exactly as in a browser.
 			for (
-				let parent = flatParentElement<Element>(self[kElement]);
+				let parent = flatParentElement<Element>(declaration[kElement]);
 				parent !== null;
 				parent = flatParentElement<Element>(parent)
 			) {
@@ -7093,7 +8158,7 @@ function resolvePropertyValueRaw(
 	}
 
 	// 5. Fallback to universal defaults and CSS spec defaults
-	return getInitialStyle(self[kElement], property);
+	return getInitialStyle(declaration[kElement], property);
 }
 
 /**
@@ -7102,27 +8167,27 @@ function resolvePropertyValueRaw(
  * this element's computed style whichever element declared it.
  */
 function customNames(
-	self: ComputedStyleDeclaration,
+	computed: ComputedStyleDeclaration,
 ): string[] {
-	if (self[kStale] || self[kEpoch].value !== self[kSeenEpoch]) {
-		self[kRefresh]();
+	if (computed[kStale] || computed[kEpoch].value !== computed[kSeenEpoch]) {
+		computed[kRefresh]();
 	}
-	if (self[kCustom]) {
-		return self[kCustom];
+	if (computed[kCustom]) {
+		return computed[kCustom];
 	}
 	const names = new Set<string>();
 	for (
-		let element: Element | null = self[kElement];
+		let element: Element | null = computed[kElement];
 		element;
 		element = flatParentElement<Element>(element)
 	) {
-		const declaration = self[kManager]?.declarationFor(element);
+		const declaration = computed[kManager]?.declarationFor(element);
 		for (const name of declaration?.declaredCustomProperties() ?? []) {
 			names.add(name);
 		}
 	}
-	self[kCustom] = [...names];
-	return self[kCustom];
+	computed[kCustom] = [...names];
+	return computed[kCustom];
 }
 
 /**
@@ -8198,6 +9263,14 @@ export class StyleManager {
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
+		// The composed-tree capability: claimed here while the document is
+		// engineless (tests, WPT, headless windows). On the terminal path
+		// this constructor runs before the engine installs, so the claim is
+		// the UA constructing itself; page code arrives after the install
+		// closes the door.
+		if (!uaByDocument.has(this[kDocument])) {
+			uaByDocument.set(this[kDocument], claimUAToolkit(this[kDocument]));
+		}
 
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this[kGetComputedStyle].bind(this);
@@ -8349,11 +9422,78 @@ export class StyleManager {
 	 * through the shared observer.
 	 */
 	registerShadowRoot(root: ShadowRoot): void {
+		if (this[kShadowRoots].has(root)) {
+			return;
+		}
 		this[kShadowRoots].add(root);
-		// UA-internal roots are never observer-enrolled, so no STYLE mutation
-		// record will trigger a refresh for the <style> they already contain;
-		// re-parse lazily on the next style computation instead.
-		this[kStylesheetsDirty] = true;
+		// A new root's sheets parse INCREMENTALLY: rebuilding every sheet
+		// for each widget upgrade made a document of n widgets reparse the
+		// world n times. The new rules join the cascade order by the same
+		// sort, and only the root's own tree -- and its host, for :host
+		// rules -- restyles. A rebuild already pending covers this root,
+		// since it is in kShadowRoots now.
+		this.refreshShadowRoot(root);
+	}
+
+	/**
+	 * Re-parse ONE shadow root's sheets in place: its old rules leave, the
+	 * current sheets parse in, the cascade re-sorts, and only trees the
+	 * root's rules can reach restyle. The full rebuild handles everything
+	 * else; a pending one covers this root already.
+	 */
+	refreshShadowRoot(root: ShadowRoot): void {
+		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
+			this[kStylesheetsDirty] = true;
+			return;
+		}
+		const stale = this[kParsedRules].length;
+		this[kParsedRules] = this[kParsedRules].filter(
+			(rule) => rule.scope !== root,
+		);
+		void stale;
+		const before = this[kParsedRules].length;
+		for (const sheet of shadowStyleSheets(root)) {
+			parseStyleSheet(this, sheet, root);
+		}
+		// The refresh accounted for every sheet the counter has seen; a
+		// document-level sheet arriving in the same batch re-dirties on its
+		// own record. Without the sync, the drift check orders the full
+		// rebuild this path exists to avoid -- once per widget.
+		this[kParsedStyleSheetCount] = styleSheetCount(this);
+		const fresh = this[kParsedRules].slice(before);
+		if (fresh.length === 0) {
+			return;
+		}
+		const layerRanks = rankLayers(this);
+		for (const rule of this[kParsedRules]) {
+			rule.layerRank =
+				rule.layer === null ?
+					this[kUnlayeredRank] :
+						(layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
+		}
+		sortRulesForCascade(this);
+		const host = root.host as Element | null;
+		if (host) {
+			invalidateSubtree(this, host);
+		} else {
+			for (const child of root.children) {
+				invalidateSubtree(this, child);
+			}
+		}
+		// A scoped rule that generates pseudo-element boxes needs the attach
+		// sweep; the widgets' sheets carry none, so the sweep runs only for
+		// the author shadow that does.
+		if (
+			fresh.some(
+				(rule) =>
+					rule.pseudoElement &&
+					rule.pseudoElement !== "::placeholder" &&
+					rule.pseudoElement !== "::selection" &&
+					!rule.pseudoElement.startsWith("::part("),
+			)
+		) {
+			attachPseudoElements(this);
+		}
 	}
 
 	/**
@@ -8366,10 +9506,20 @@ export class StyleManager {
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
 				// A <style> element's children ARE its stylesheet text, so
-				// adding or removing one reparses the sheet.
+				// adding or removing one reparses the sheet. Inside a shadow
+				// root the refresh stays inside it: a widget's sheet must not
+				// rebuild the document's cascade.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					sheetFor(mutation.target as Element).reparseOwnerText();
-					shouldRefreshStylesheets = true;
+					const styleRoot = (mutation.target as Element).getRootNode();
+					if (
+						styleRoot.nodeType === 11 &&
+						(styleRoot as ShadowRoot).host
+					) {
+						this.refreshShadowRoot(styleRoot as ShadowRoot);
+					} else {
+						shouldRefreshStylesheets = true;
+					}
 				}
 				// A list's marker gutter is derived from its children, so adding or
 				// removing an item invalidates the *list*, not just the item that
@@ -8387,7 +9537,16 @@ export class StyleManager {
 							(element.tagName === "LINK" &&
 								element.getAttribute("rel") === "stylesheet")
 						) {
-							shouldRefreshStylesheets = true;
+							const addedRoot = element.getRootNode();
+							if (
+								element.tagName === "STYLE" &&
+								addedRoot.nodeType === 11 &&
+								(addedRoot as ShadowRoot).host
+							) {
+								this.refreshShadowRoot(addedRoot as ShadowRoot);
+							} else {
+								shouldRefreshStylesheets = true;
+							}
 						} else {
 							// Invalidate caches for new elements
 							invalidateElementCaches(this, element);
@@ -8456,11 +9615,20 @@ export class StyleManager {
 					}
 				}
 			} else if (mutation.type === "characterData") {
-				// Check for changes to <style> element content
+				// A <style>'s text changed: reparse the sheet, and keep a
+				// shadow sheet's refresh inside its root.
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
 					sheetFor(owner).reparseOwnerText();
-					shouldRefreshStylesheets = true;
+					const ownerRoot = owner.getRootNode();
+					if (
+						ownerRoot.nodeType === 11 &&
+						(ownerRoot as ShadowRoot).host
+					) {
+						this.refreshShadowRoot(ownerRoot as ShadowRoot);
+					} else {
+						shouldRefreshStylesheets = true;
+					}
 				}
 			}
 		}
@@ -8497,6 +9665,28 @@ export class StyleManager {
 	}
 
 	/**
+	 * Whether an element's text can enter a selection: the used value of
+	 * user-select, with `auto` resolved through the parent per css-ui-4.
+	 * Divergence: `text`, `all` and `contain` all behave as plain
+	 * selectable -- `all` and `contain` change selection's shape, and
+	 * nothing implements that shape yet.
+	 */
+	isSelectable(element: object): boolean {
+		let current = element as Element | null;
+		while (current) {
+			const value = computedStyleOf(current).computedValueOf("user-select");
+			if (value === "none") {
+				return false;
+			}
+			if (value !== "auto" && value !== "") {
+				return true;
+			}
+			current = flatParentElement<Element>(current);
+		}
+		return true;
+	}
+
+	/**
 	 * Focus moved: the cached ComputedStyleDeclarations of the elements that
 	 * gained and lost focus hold rule sets matched BEFORE the move, so a
 	 * `:focus` rule would never apply (or, symmetrically, never stop
@@ -8508,12 +9698,18 @@ export class StyleManager {
 	 */
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
-			if (element) {
-				invalidateElementCaches(this, element);
-				// A host's focus state reaches into its shadow tree through
-				// :host(:focus) rules (and inheritance from whatever they
-				// set), so the tree's cached styles go stale with it.
-				const shadowRoot = shadowRootOf<ShadowRoot>(element);
+			// The whole flat-tree chain above can observe a focus state:
+			// each ancestor through :focus-within, each shadow host through
+			// :focus, and a host's focus state reaches into its shadow tree
+			// through :host(:focus) rules (and inheritance from whatever
+			// they set), so every stop's caches go stale together.
+			for (
+				let node: Element | null = element;
+				node;
+				node = flatParentElement<Element>(node)
+			) {
+				invalidateElementCaches(this, node);
+				const shadowRoot = shadowRootOf<ShadowRoot>(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
 						invalidateElementCaches(this, descendant);
@@ -9160,10 +10356,10 @@ export class StyleManager {
 }
 
 function styleSheetCount(
-	self: StyleManager,
+	manager: StyleManager,
 ): number {
-	self[kStyleSheetList] ??= documentStyleSheetList(self[kDocument]);
-	return self[kStyleSheetList].length;
+	manager[kStyleSheetList] ??= documentStyleSheetList(manager[kDocument]);
+	return manager[kStyleSheetList].length;
 }
 
 /**
@@ -9172,47 +10368,47 @@ function styleSheetCount(
  * boundary, so a color set on a host reaches the tree it composes.
  */
 function invalidateSubtree(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 ): void {
-	invalidateElementCaches(self, element);
-	self.attachPseudoElementsToElement(element);
+	invalidateElementCaches(manager, element);
+	manager.attachPseudoElementsToElement(element);
 	for (const descendant of element.querySelectorAll("*")) {
-		invalidateElementCaches(self, descendant);
-		self.attachPseudoElementsToElement(descendant);
+		invalidateElementCaches(manager, descendant);
+		manager.attachPseudoElementsToElement(descendant);
 	}
 	const root = element.shadowRoot;
 	if (root) {
 		for (const descendant of root.querySelectorAll("*")) {
-			invalidateSubtree(self, descendant);
+			invalidateSubtree(manager, descendant);
 		}
 	}
 }
 
 function invalidateElementCaches(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 ): void {
 	// Layout measured this element under the style being dropped. This is
 	// the one place an element's computed style goes stale -- attribute
 	// flips, inline styles, subtree and sibling reach, focus all arrive
 	// here -- so it is the one place layout has to be told.
-	self[kLayoutEngine]?.styleInvalidated(element);
+	manager[kLayoutEngine]?.styleInvalidated(element);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade moved on rather than merely dropped.
-	self[kComputedStyleCache].get(element)?.invalidate();
-	self[kComputedStyleCache].delete(element);
-	self[kPseudoElementStyleCache].delete(element);
+	manager[kComputedStyleCache].get(element)?.invalidate();
+	manager[kComputedStyleCache].delete(element);
+	manager[kPseudoElementStyleCache].delete(element);
 	// The pseudo-element nodes read through the declarations just dropped.
 	if (pseudoElementCount(element) > 0) {
 		for (const name of PSEUDO_ELEMENT_NAMES) {
 			const node = pseudoElement<Element>(element, name);
 			if (node) {
-				self[kPseudoNodeStyles].delete(node);
+				manager[kPseudoNodeStyles].delete(node);
 			}
 		}
 	}
-	self[kCounterScopes].delete(element);
+	manager[kCounterScopes].delete(element);
 }
 
 /**
@@ -9228,11 +10424,11 @@ function invalidateElementCaches(
 // the cascade must watch child lists and reach into the layout engine.
 // Phase C computes the gutter during block layout and deletes this.
 function invalidateEnclosingList(
-	self: StyleManager,
+	manager: StyleManager,
 	target: Node,
 ): void {
 	let element: Element | null =
-		target.nodeType === self[kWindow].Node.ELEMENT_NODE ?
+		target.nodeType === manager[kWindow].Node.ELEMENT_NODE ?
 				(target as Element) :
 			target.parentElement;
 
@@ -9241,10 +10437,10 @@ function invalidateEnclosingList(
 			continue;
 		}
 
-		invalidateElementCaches(self, element);
-		self[kLayoutEngine]?.invalidate(element);
+		invalidateElementCaches(manager, element);
+		manager[kLayoutEngine]?.invalidate(element);
 		for (const item of Array.from(element.children)) {
-			invalidateElementCaches(self, item);
+			invalidateElementCaches(manager, item);
 		}
 		return;
 	}
@@ -9260,59 +10456,67 @@ function invalidateEnclosingList(
  * longer describe the cascade, and nothing else would ever tell it so.
  */
 function parseStylesheets(
-	self: StyleManager,
+	manager: StyleManager,
 ): void {
-	self[kLayoutEngine]?.invalidateStructure();
-	const document = self[kDocument];
-	self[kParsedRules] = [];
-	self[kSelectorsReachSiblings] = false;
-	self[kSelectorsReachAncestors] = false;
-	self[kReachingClasses].clear();
-	self[kReachingIds].clear();
-	self[kReachingAttributes].clear();
-	self[kReachingStates] = false;
-	self[kPseudoRulesByType] = new Map();
-	self[kPseudoSubjectTags] = undefined;
-	self[kCounterRulesExist] = false;
-	self[kListItemRulesExist] = false;
-	self[kScopedRulesExist] = false;
-	self[kStylesheetsDirty] = false;
-	self[kLayerPaths] = [];
-	self[kAnonymousLayers] = 0;
-	self[kParsedStyleSheetCount] = styleSheetCount(self);
+	manager[kLayoutEngine]?.invalidateStructure();
+	const document = manager[kDocument];
+	manager[kParsedRules] = [];
+	manager[kSelectorsReachSiblings] = false;
+	manager[kSelectorsReachAncestors] = false;
+	manager[kReachingClasses].clear();
+	manager[kReachingIds].clear();
+	manager[kReachingAttributes].clear();
+	manager[kReachingStates] = false;
+	manager[kPseudoRulesByType] = new Map();
+	manager[kPseudoSubjectTags] = undefined;
+	manager[kCounterRulesExist] = false;
+	manager[kListItemRulesExist] = false;
+	manager[kScopedRulesExist] = false;
+	manager[kStylesheetsDirty] = false;
+	manager[kLayerPaths] = [];
+	manager[kAnonymousLayers] = 0;
+	manager[kParsedStyleSheetCount] = styleSheetCount(manager);
 
 	// The UA document sheet parses first; origin ordering (not source
 	// order) is what keeps it beneath every author rule.
-	parseStyleSheet(self, uaStyleSheet(), undefined, true);
+	parseStyleSheet(manager, uaStyleSheet(), undefined, true);
 
 	for (const sheet of documentStyleSheets(document)) {
-		parseStyleSheet(self, sheet);
+		parseStyleSheet(manager, sheet);
 	}
 
 	// Shadow-tree stylesheets, scoped to their root. Disconnected roots
 	// parse too: attach-populate-connect is the standard order, and a
 	// scope-gated rule matches nothing until its tree renders anyway.
-	for (const root of self[kShadowRoots]) {
+	for (const root of manager[kShadowRoots]) {
 		for (const sheet of shadowStyleSheets(root)) {
-			parseStyleSheet(self, sheet, root);
+			parseStyleSheet(manager, sheet, root);
 		}
 	}
 
-	const layerRanks = rankLayers(self);
-	for (const rule of self[kParsedRules]) {
+	const layerRanks = rankLayers(manager);
+	for (const rule of manager[kParsedRules]) {
 		rule.layerRank =
 			rule.layer === null ?
-				self[kUnlayeredRank] :
-					(layerRanks.get(rule.layer) ?? self[kUnlayeredRank]);
+				manager[kUnlayeredRank] :
+					(layerRanks.get(rule.layer) ?? manager[kUnlayeredRank]);
 	}
 
-	// Sort rules for cascade resolution: origin first (UA rules sort
-	// below every author rule -- later wins), then cascade layer, then
-	// specificity, then the order the rules were read in.
+	sortRulesForCascade(manager);
+	manager.clearCache();
+	attachPseudoElements(manager);
+}
+
+/**
+ * Sort rules for cascade resolution: origin first (UA rules sort below
+ * every author rule -- later wins), then cascade layer, then specificity,
+ * then the order the rules were read in.
+ */
+function sortRulesForCascade(manager: StyleManager): void {
 	const sourceOrder = new Map(
-		self[kParsedRules].map((rule, index) => [rule, index] as const),
+		manager[kParsedRules].map((rule, index) => [rule, index] as const),
 	);
-	self[kParsedRules].sort((a, b) => {
+	manager[kParsedRules].sort((a, b) => {
 		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
 			return a.uaOrigin ? -1 : 1;
 		}
@@ -9324,13 +10528,11 @@ function parseStylesheets(
 		}
 		return sourceOrder.get(a)! - sourceOrder.get(b)!;
 	});
-	self.clearCache();
-	attachPseudoElements(self);
 }
 
 /** Name a layer, and every layer its path nests inside, in declaration order. */
 function declareLayer(
-	self: StyleManager,
+	manager: StyleManager,
 	outer: string | null,
 	name: string,
 ): string {
@@ -9338,8 +10540,8 @@ function declareLayer(
 	const segments = path.split(".");
 	for (let depth = 1; depth <= segments.length; depth++) {
 		const prefix = segments.slice(0, depth).join(".");
-		if (!self[kLayerPaths].includes(prefix)) {
-			self[kLayerPaths].push(prefix);
+		if (!manager[kLayerPaths].includes(prefix)) {
+			manager[kLayerPaths].push(prefix);
 		}
 	}
 	return path;
@@ -9354,10 +10556,10 @@ function declareLayer(
  * reads the same order backwards.
  */
 function rankLayers(
-	self: StyleManager,
+	manager: StyleManager,
 ): Map<string, number> {
 	const nested = new Map<string, string[]>();
-	for (const path of self[kLayerPaths]) {
+	for (const path of manager[kLayerPaths]) {
 		const dot = path.lastIndexOf(".");
 		const outer = dot === -1 ? "" : path.slice(0, dot);
 		const siblings = nested.get(outer);
@@ -9378,7 +10580,7 @@ function rankLayers(
 		}
 	};
 	rank("");
-	self[kUnlayeredRank] = next;
+	manager[kUnlayeredRank] = next;
 	return ranks;
 }
 
@@ -9398,7 +10600,7 @@ function rankLayers(
  * can see, and one that vanishes with the whole at-rule is not.
  */
 function parseStyleSheet(
-	self: StyleManager,
+	manager: StyleManager,
 	container: CSSStyleSheet | CSSGroupingRule,
 	scope?: Node,
 	uaOrigin?: boolean,
@@ -9408,35 +10610,39 @@ function parseStyleSheet(
 		if (container.disabled) {
 			return;
 		}
-		if (!self.mediaQueryMatches(container.media.mediaText)) {
+		if (!manager.mediaQueryMatches(container.media.mediaText)) {
 			return;
 		}
 	}
 	for (const rule of container.cssRules) {
 		if (rule instanceof CSSStyleRule) {
-			parseStyleRule(self, rule, scope, uaOrigin, context);
+			parseStyleRule(manager, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSMediaRule) {
-			if (self.mediaQueryMatches(rule.conditionText)) {
-				parseStyleSheet(self, rule, scope, uaOrigin, context);
+			if (manager.mediaQueryMatches(rule.conditionText)) {
+				parseStyleSheet(manager, rule, scope, uaOrigin, context);
 			}
 		} else if (rule instanceof CSSSupportsRule) {
-			parseStyleSheet(self, rule, scope, uaOrigin, context);
+			parseStyleSheet(manager, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSLayerStatementRule) {
 			// `@layer a, b;` declares the order of layers whose rules come
 			// later, and declares nothing else.
 			for (const name of rule.nameList) {
-				declareLayer(self, context.layer, name);
+				declareLayer(manager, context.layer, name);
 			}
 		} else if (rule instanceof CSSLayerBlockRule) {
 			// An unnamed block opens a layer nothing else can name or reach,
 			// which is a layer of its own wherever it stands.
 			const layer = rule.name ?
-					declareLayer(self, context.layer, rule.name) :
-					declareLayer(self, context.layer, ` ${self[kAnonymousLayers]++}`);
-			parseStyleSheet(self, rule, scope, uaOrigin, {...context, layer});
+					declareLayer(manager, context.layer, rule.name) :
+					declareLayer(
+						manager,
+						context.layer,
+						` ${manager[kAnonymousLayers]++}`,
+					);
+			parseStyleSheet(manager, rule, scope, uaOrigin, {...context, layer});
 		} else if (rule instanceof CSSScopeRule) {
 			const owner = rule.parentStyleSheet?.ownerNode ?? null;
-			parseStyleSheet(self, rule, scope, uaOrigin, {
+			parseStyleSheet(manager, rule, scope, uaOrigin, {
 				...context,
 				scopes: [
 					...context.scopes,
@@ -9455,13 +10661,13 @@ function parseStyleSheet(
 			// cascade never.
 			continue;
 		} else if (rule instanceof CSSGroupingRule) {
-			parseStyleSheet(self, rule, scope, uaOrigin, context);
+			parseStyleSheet(manager, rule, scope, uaOrigin, context);
 		}
 	}
 }
 
 function mediaQueryPartMatches(
-	self: StyleManager,
+	manager: StyleManager,
 	query: string,
 ): boolean {
 	let q = query.trim();
@@ -9480,7 +10686,7 @@ function mediaQueryPartMatches(
 
 	const features = q.match(/\([^)]*\)/g) || [];
 	for (const feature of features) {
-		if (!mediaFeatureMatches(self, feature.slice(1, -1).trim())) {
+		if (!mediaFeatureMatches(manager, feature.slice(1, -1).trim())) {
 			matches = false;
 		}
 	}
@@ -9489,7 +10695,7 @@ function mediaQueryPartMatches(
 }
 
 function mediaFeatureMatches(
-	self: StyleManager,
+	manager: StyleManager,
 	feature: string,
 ): boolean {
 	const match = feature.match(
@@ -9504,8 +10710,8 @@ function mediaFeatureMatches(
 	const num = parseFloat(numRaw);
 	const actual =
 		dimension.toLowerCase() === "width" ?
-			self[kWindow].innerWidth :
-			self[kWindow].innerHeight;
+			manager[kWindow].innerWidth :
+			manager[kWindow].innerHeight;
 
 	if (bound === "min-") {
 		return actual >= num;
@@ -9520,7 +10726,7 @@ function mediaFeatureMatches(
  * Parse a single style rule and extract selector/declarations
  */
 function parseStyleRule(
-	self: StyleManager,
+	manager: StyleManager,
 	styleRule: CSSStyleRule,
 	scope?: Node,
 	uaOriginSheet?: boolean,
@@ -9533,7 +10739,7 @@ function parseStyleRule(
 	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 	for (const selector of splitSelectorList(styleRule.selectorText)) {
 		parseSelector(
-			self,
+			manager,
 			selector,
 			block,
 			scope,
@@ -9554,7 +10760,7 @@ function parseStyleRule(
  * nothing but the element's own box.
  */
 function indexReachingKeys(
-	self: StyleManager,
+	manager: StyleManager,
 	selector: string,
 	declarations: Record<string, string>,
 ): void {
@@ -9580,22 +10786,22 @@ function indexReachingKeys(
 	for (let i = 0; i < last; i++) {
 		const compound = compounds[i];
 		for (const match of compound.matchAll(SELECTOR_CLASS_NAME)) {
-			self[kReachingClasses].add(match[1]);
+			manager[kReachingClasses].add(match[1]);
 		}
 		for (const match of compound.matchAll(SELECTOR_ID_NAME)) {
-			self[kReachingIds].add(match[1]);
+			manager[kReachingIds].add(match[1]);
 		}
 		for (const match of compound.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
-			self[kReachingAttributes].add(match[1].toLowerCase());
+			manager[kReachingAttributes].add(match[1].toLowerCase());
 		}
 		if (STATE_PSEUDO_CLASSES.test(compound)) {
-			self[kReachingStates] = true;
+			manager[kReachingStates] = true;
 		}
 	}
 }
 
 function parseSelector(
-	self: StyleManager,
+	manager: StyleManager,
 	selector: string,
 	block: DeclarationBlock,
 	scope?: Node,
@@ -9611,7 +10817,7 @@ function parseSelector(
 	let scopes: readonly ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
 		scopes = context.scopes;
-		self[kScopedRulesExist] = true;
+		manager[kScopedRulesExist] = true;
 	}
 	let namespace: string | null | undefined;
 	if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
@@ -9623,21 +10829,21 @@ function parseSelector(
 		namespace = resolved.namespace;
 	}
 	if (selector.includes("+") || selector.includes("~")) {
-		self[kSelectorsReachSiblings] = true;
+		manager[kSelectorsReachSiblings] = true;
 	}
 	if (selector.includes(":has")) {
-		self[kSelectorsReachAncestors] = true;
+		manager[kSelectorsReachAncestors] = true;
 	}
-	indexReachingKeys(self, selector, declarations);
+	indexReachingKeys(manager, selector, declarations);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
 		declarations["content"]?.includes("counter")
 	) {
-		self[kCounterRulesExist] = true;
+		manager[kCounterRulesExist] = true;
 	}
 	if (declarations["display"] === "list-item") {
-		self[kListItemRulesExist] = true;
+		manager[kListItemRulesExist] = true;
 	}
 	const specificity = selectorSpecificity(selector);
 	const uaOrigin = Boolean(
@@ -9661,7 +10867,7 @@ function parseSelector(
 			const [, arg, compound, child, restRaw] = hostMatch;
 			const predicate = [arg, compound].filter(Boolean).join("") || null;
 			const rest = restRaw.trim() || null;
-			self[kParsedRules].push({
+			manager[kParsedRules].push({
 				selector,
 				declarations,
 				important,
@@ -9708,15 +10914,15 @@ function parseSelector(
 			layerRank: 0,
 			scopes,
 		};
-		self[kParsedRules].push(rule);
-		const byType = self[kPseudoRulesByType].get(pseudoElement);
+		manager[kParsedRules].push(rule);
+		const byType = manager[kPseudoRulesByType].get(pseudoElement);
 		if (byType) {
 			byType.push(rule);
 		} else {
-			self[kPseudoRulesByType].set(pseudoElement, [rule]);
+			manager[kPseudoRulesByType].set(pseudoElement, [rule]);
 		}
 	} else {
-		self[kParsedRules].push({
+		manager[kParsedRules].push({
 			selector,
 			subjectTag,
 			declarations,
@@ -9737,21 +10943,22 @@ function parseSelector(
  * Get matching CSS rules for an element
  */
 function getMatchingRules(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 ): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles: the host's
 	// ::placeholder rules cascade directly onto the [part="placeholder"]
 	// span, the way a browser resolves ::placeholder onto its input's
 	// internal placeholder element.
-	const partPseudo = partPseudoFor(self, element);
+	const partPseudo = partPseudoFor(manager, element);
 	const root = element.getRootNode();
+	const rootNode = root as unknown as Node;
 	const shadowHost =
 		root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
 	const partNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
-	const matched = self[kParsedRules].filter((rule) => {
+	const matched = manager[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement) {
 			// ::part(name): an author styling an exposed shadow part from
 			// outside. The rule matches the shadow's HOST; its declarations
@@ -9762,7 +10969,7 @@ function getMatchingRules(
 				return (
 					shadowHost !== null &&
 					partNames.includes(partArg[1].trim()) &&
-					ruleMatches(self, shadowHost, rule)
+					ruleMatches(manager, shadowHost, rule)
 				);
 			}
 			// ::placeholder / ::selection: UA-part pseudo aliases.
@@ -9770,10 +10977,10 @@ function getMatchingRules(
 				partPseudo !== null &&
 				shadowHost !== null &&
 				rule.pseudoElement === partPseudo &&
-				ruleMatches(self, shadowHost, rule)
+				ruleMatches(manager, shadowHost, rule)
 			);
 		}
-		return ruleMatches(self, element, rule);
+		return ruleMatches(manager, element, rule, rootNode);
 	});
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
@@ -9781,7 +10988,7 @@ function getMatchingRules(
 	// is infinitely far from one. The rules arrive in cascade order and
 	// the sort is stable, so a comparison that only answers for proximity
 	// leaves every other tier as it found it.
-	if (!self[kScopedRulesExist]) {
+	if (!manager[kScopedRulesExist]) {
 		return matched;
 	}
 	const proximity = new Map(
@@ -9789,7 +10996,7 @@ function getMatchingRules(
 			(rule) =>
 				[
 					rule,
-					rule.scopes ? scopeProximity(self, element, rule) : UNSCOPED,
+					rule.scopes ? scopeProximity(manager, element, rule) : UNSCOPED,
 				] as const,
 		),
 	);
@@ -9814,7 +11021,7 @@ function getMatchingRules(
  * DOM outright.
  */
 function matchesRule(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 	selector: string,
@@ -9822,7 +11029,7 @@ function matchesRule(
 	if (!rule.scopes) {
 		return element.matches(selector);
 	}
-	return scopingRoot(self, element, {...rule, selector}) !== null;
+	return scopingRoot(manager, element, {...rule, selector}) !== null;
 }
 
 /**
@@ -9832,11 +11039,11 @@ function matchesRule(
  * already been filtered out.
  */
 function scopeProximity(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 ): number {
-	const root = scopingRoot(self, element, rule);
+	const root = scopingRoot(manager, element, rule);
 	if (!root) {
 		return UNSCOPED;
 	}
@@ -9863,7 +11070,7 @@ function scopeProximity(
  * element's selector and its proximity are measured from.
  */
 function scopingRoot(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 ): Element | null {
@@ -9912,7 +11119,7 @@ function scopingRoot(
  * are theirs to style from inside.
  */
 function partPseudoFor(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 ): string | null {
 	const root = element.getRootNode();
@@ -9933,14 +11140,25 @@ function partPseudoFor(
  * lets a shadow stylesheet style its own host.
  */
 function ruleMatches(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
+	elementRoot?: Node,
 ): boolean {
-	// The subject's type, when the selector names one: every rule is tried
-	// against every element, and this is the reject that costs a string
-	// comparison instead of a selector match. A :host rule's subject is the
-	// host, which the branch below resolves for itself.
+	// Every rule is tried against every element, so the rejects that cost a
+	// comparison come first. A scoped rule from another tree can never
+	// match: one identity check retires a widget's whole sheet for every
+	// element outside it.
+	if (
+		rule.scope !== undefined &&
+		rule.host === undefined &&
+		rule.scope !== (elementRoot ?? element.getRootNode())
+	) {
+		return false;
+	}
+	// The subject's type, when the selector names one: this reject costs a
+	// string comparison instead of a selector match. A :host rule's subject
+	// is the host, which the branch below resolves for itself.
 	if (rule.subjectTag !== undefined && rule.host === undefined) {
 		const local = element.localName;
 		// A foreign element's local name keeps its case (feGaussianBlur), and
@@ -9966,7 +11184,7 @@ function ruleMatches(
 		// The selector engine treats `:focus-visible` as `:focus`, so gate it
 		// on our own flag.
 		if (
-			!self[kFocusVisibleActive] &&
+			!manager[kFocusVisibleActive] &&
 			rule.selector.includes(":focus-visible")
 		) {
 			return false;
@@ -9992,17 +11210,17 @@ function ruleMatches(
 			}
 			return child ? element.parentNode === scope : true;
 		}
-		const root = element.getRootNode();
+		const root = elementRoot ?? element.getRootNode();
 		if (rule.scope) {
 			return (
 				root === rule.scope &&
-				matchesRule(self, element, rule, rule.selector)
+				matchesRule(manager, element, rule, rule.selector)
 			);
 		}
 		// UA document rules apply in EVERY tree scope, as a browser's own
 		// UA sheet styles shadow trees.
 		if (rule.uaOrigin) {
-			return matchesRule(self, element, rule, rule.selector);
+			return matchesRule(manager, element, rule, rule.selector);
 		}
 		// AUTHOR document rules match everything OUTSIDE shadow trees --
 		// including detached elements (styles resolve before insertion,
@@ -10010,7 +11228,7 @@ function ruleMatches(
 		// shadow root.
 		const inShadowTree =
 			root.nodeType === 11 && Boolean((root as ShadowRoot).host);
-		return !inShadowTree && matchesRule(self, element, rule, rule.selector);
+		return !inShadowTree && matchesRule(manager, element, rule, rule.selector);
 	} catch (err) {
 		// Fallback for unsupported selectors
 		return false;
@@ -10021,15 +11239,16 @@ function ruleMatches(
  * Compute style properties for a pseudo-element
  */
 function computePseudoElementStyle(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	pseudoElement: string,
 ): Record<string, string> {
-	const matchingRules = self[kParsedRules].filter((rule) => {
+	const pseudoRoot = element.getRootNode() as unknown as Node;
+	const matchingRules = manager[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement !== pseudoElement) {
 			return false;
 		}
-		return ruleMatches(self, element, rule);
+		return ruleMatches(manager, element, rule, pseudoRoot);
 	});
 
 	// Apply rules in cascade order. A pseudo-element's declarations are a
@@ -10052,7 +11271,9 @@ function computePseudoElementStyle(
 			) {
 				continue;
 			}
-			direction ??= self.declarationFor(element).computedValueOf("direction");
+			direction ??= manager
+				.declarationFor(element)
+				.computedValueOf("direction");
 			for (const other of slotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
@@ -10067,16 +11288,16 @@ function computePseudoElementStyle(
  * declared `content`, or the one that did declared `none`.
  */
 function pseudoContentFor(
-	self: StyleManager,
+	manager: StyleManager,
 	hostElement: Element,
 	pseudoType: string,
 ): string | null {
-	const styles = computePseudoElementStyle(self, hostElement, pseudoType);
+	const styles = computePseudoElementStyle(manager, hostElement, pseudoType);
 	let content = styles.content;
 
 	// For ::marker pseudo-elements, generate default content if none specified
 	if (pseudoType === "::marker") {
-		const computedStyle = self.declarationFor(hostElement);
+		const computedStyle = manager.declarationFor(hostElement);
 		const display = computedStyle.computedValueOf("display");
 
 		if (display === "list-item") {
@@ -10115,7 +11336,7 @@ function pseudoContentFor(
 	const textContent = unquoteContent(content);
 
 	// Resolve counter() functions in the content
-	return self.resolveCounterFunction(hostElement, textContent);
+	return manager.resolveCounterFunction(hostElement, textContent);
 }
 
 /**
@@ -10124,40 +11345,40 @@ function pseudoContentFor(
  * reaches lose theirs.
  */
 function attachPseudoElements(
-	self: StyleManager,
+	manager: StyleManager,
 ): void {
 	// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
 	// wholesale: layout keys a pseudo's boxes by node instance, and a
 	// fresh node per refresh strands every mapped one. Attach handles
 	// content updates in place and removal when a pseudo stops matching.
 	// Walks every element on stylesheet change.
-	if (!self[kDocument].documentElement) {
+	if (!manager[kDocument].documentElement) {
 		return;
 	}
-	const walker = self[kDocument].createTreeWalker(
-		self[kDocument].documentElement,
-		self[kWindow].NodeFilter.SHOW_ELEMENT,
+	const walker = manager[kDocument].createTreeWalker(
+		manager[kDocument].documentElement,
+		manager[kWindow].NodeFilter.SHOW_ELEMENT,
 		null,
 	);
 	let element = walker.nextNode() as Element;
 	while (element) {
 		if (pseudoElementCount(element) > 0) {
-			self.attachPseudoElementsToElement(element);
+			manager.attachPseudoElementsToElement(element);
 		}
 		element = walker.nextNode() as Element;
 	}
 
-	self.attachPseudoElementsToDocument();
+	manager.attachPseudoElementsToDocument();
 }
 
 function pseudoSubjects(
-	self: StyleManager,
+	manager: StyleManager,
 ): Set<string> | null {
-	if (self[kPseudoSubjectTags] !== undefined) {
-		return self[kPseudoSubjectTags];
+	if (manager[kPseudoSubjectTags] !== undefined) {
+		return manager[kPseudoSubjectTags];
 	}
-	if (self[kCounterRulesExist] || self[kListItemRulesExist]) {
-		return (self[kPseudoSubjectTags] = null);
+	if (manager[kCounterRulesExist] || manager[kListItemRulesExist]) {
+		return (manager[kPseudoSubjectTags] = null);
 	}
 	// A list carries the one counter no rule declares, and its items the
 	// markers that counter numbers.
@@ -10166,14 +11387,14 @@ function pseudoSubjects(
 	// above, and ::placeholder, ::selection and ::part live on nodes the
 	// widget trees already hold.
 	for (const type of ["::before", "::after"]) {
-		for (const rule of self[kPseudoRulesByType].get(type) ?? []) {
+		for (const rule of manager[kPseudoRulesByType].get(type) ?? []) {
 			if (!rule.subjectTag) {
-				return (self[kPseudoSubjectTags] = null);
+				return (manager[kPseudoSubjectTags] = null);
 			}
 			tags.add(rule.subjectTag.toUpperCase());
 		}
 	}
-	return (self[kPseudoSubjectTags] = tags);
+	return (manager[kPseudoSubjectTags] = tags);
 }
 
 /**
@@ -10185,7 +11406,7 @@ function pseudoSubjects(
  * document with no pseudo rules beyond the UA button brackets.
  */
 function pseudoRuleCouldMatch(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
 ): boolean {
@@ -10195,11 +11416,11 @@ function pseudoRuleCouldMatch(
 		// computed-display check below.
 		return (
 			element.tagName === "LI" ||
-			self[kListItemRulesExist] ||
+			manager[kListItemRulesExist] ||
 			(element.getAttribute("style") ?? "").includes("list-item")
 		);
 	}
-	const rules = self[kPseudoRulesByType].get(pseudoType);
+	const rules = manager[kPseudoRulesByType].get(pseudoType);
 	if (!rules) {
 		return false;
 	}
@@ -10219,7 +11440,7 @@ function pseudoRuleCouldMatch(
  * Attach a specific pseudo-element type to an element if it should have one
  */
 function attachPseudoElementToElementForType(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
 ): void {
@@ -10227,18 +11448,18 @@ function attachPseudoElementToElementForType(
 	// computations wholesale. (An attached pseudo still takes the full
 	// path so a rule that STOPPED matching removes it.)
 	if (
-		!pseudoRuleCouldMatch(self, element, pseudoType) &&
+		!pseudoRuleCouldMatch(manager, element, pseudoType) &&
 		!pseudoElement(element, pseudoType)
 	) {
 		return;
 	}
 
 	// Initialize counters for this element first (needed for counter() functions)
-	self.initializeCounters(element);
+	manager.initializeCounters(element);
 
 	// Skip ::marker for elements without display: list-item or with outside positioning
 	if (pseudoType === "::marker") {
-		const computedStyle = self.declarationFor(element);
+		const computedStyle = manager.declarationFor(element);
 		const display = computedStyle.computedValueOf("display");
 		const listStylePosition =
 			computedStyle.computedValueOf("list-style-position") || "outside";
@@ -10249,14 +11470,14 @@ function attachPseudoElementToElementForType(
 
 		// Remove inline markers for outside positioning
 		if (listStylePosition === "outside") {
-			removePseudoElement(self, element, "::marker");
+			removePseudoElement(manager, element, "::marker");
 			return;
 		}
 	}
 
 	// Compute what the pseudo should hold now; null means "none".
-	const content = self.shouldCreatePseudoElement(element, pseudoType) ?
-			pseudoContentFor(self, element, pseudoType) :
+	const content = manager.shouldCreatePseudoElement(element, pseudoType) ?
+			pseudoContentFor(manager, element, pseudoType) :
 		null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
@@ -10267,7 +11488,7 @@ function attachPseudoElementToElementForType(
 	// The slot keeps the node; only its text changes.
 	if (content === null) {
 		if (existing) {
-			removePseudoElement(self, element, pseudoType);
+			removePseudoElement(manager, element, pseudoType);
 		}
 		return;
 	}
@@ -10275,19 +11496,19 @@ function attachPseudoElementToElementForType(
 		const text = existing.firstChild as Text;
 		if (text.data !== content) {
 			text.data = content;
-			self[kLayoutEngine]?.invalidate(element);
+			manager[kLayoutEngine]?.invalidate(element);
 		}
 		return;
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	node.appendChild(element.ownerDocument.createTextNode(content));
-	self[kLayoutEngine]?.invalidateStructure();
-	self[kLayoutEngine]?.invalidate(element);
+	manager[kLayoutEngine]?.invalidateStructure();
+	manager[kLayoutEngine]?.invalidate(element);
 }
 
 /** Drop an element's pseudo-element node, and the boxes it held. */
 function removePseudoElement(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
 ): void {
@@ -10295,16 +11516,16 @@ function removePseudoElement(
 		return;
 	}
 	clearPseudoElement(element, pseudoType);
-	self[kLayoutEngine]?.invalidateStructure();
-	self[kLayoutEngine]?.invalidate(element);
+	manager[kLayoutEngine]?.invalidateStructure();
+	manager[kLayoutEngine]?.invalidate(element);
 }
 
 function setupInvalidationHooks(
-	self: StyleManager,
+	manager: StyleManager,
 ): void {
 	// An error thrown out of a constructed sheet is this realm's own.
-	cssomWindow = self[kWindow];
-	Object.assign(self[kWindow], CSSOM_WINDOW_GLOBALS);
+	cssomWindow = manager[kWindow];
+	Object.assign(manager[kWindow], CSSOM_WINDOW_GLOBALS);
 }
 
 /** The CSSOM interfaces a window exposes as globals. */
@@ -10343,7 +11564,7 @@ const CSSOM_WINDOW_GLOBALS = {
  * Parse counter-reset CSS property
  */
 function parseCounterReset(
-	self: StyleManager,
+	manager: StyleManager,
 	scope: CounterScope,
 	counterReset: string,
 ): void {
@@ -10362,7 +11583,7 @@ function parseCounterReset(
  * Parse counter-increment CSS property
  */
 function parseCounterIncrement(
-	self: StyleManager,
+	manager: StyleManager,
 	scope: CounterScope,
 	counterIncrement: string,
 ): void {
@@ -10372,7 +11593,7 @@ function parseCounterIncrement(
 		const counterName = tokens[i];
 		const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
 		if (counterName && !isNaN(increment)) {
-			incrementCounter(self, scope, counterName, increment);
+			incrementCounter(manager, scope, counterName, increment);
 		}
 	}
 }
@@ -10381,19 +11602,19 @@ function parseCounterIncrement(
  * Increment a counter by a specific amount
  */
 function incrementCounter(
-	self: StyleManager,
+	manager: StyleManager,
 	scope: CounterScope,
 	counterName: string,
 	increment: number,
 ): void {
 	// For list-item counters, we need to check previous siblings for the most recent value
 	if (counterName === "list-item" && scope.element.tagName === "LI") {
-		const currentValue = getListItemCounterValue(self, scope.element);
+		const currentValue = getListItemCounterValue(manager, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
 		// For other counters, get value from parent scopes
 		const currentValue = getCounterValueFromScope(
-			self,
+			manager,
 			scope.parent,
 			counterName,
 		);
@@ -10405,7 +11626,7 @@ function incrementCounter(
  * Get the current list-item counter value by checking previous siblings
  */
 function getListItemCounterValue(
-	self: StyleManager,
+	manager: StyleManager,
 	element: Element,
 ): number {
 	// Find the parent OL/UL that establishes the counter scope
@@ -10419,7 +11640,7 @@ function getListItemCounterValue(
 	}
 
 	// Get the reset value from the OL/UL
-	const parentScope = self[kCounterScopes].get(parent);
+	const parentScope = manager[kCounterScopes].get(parent);
 	let currentValue = parentScope?.counters["list-item"] ?? 0;
 
 	// Add increments from all previous LI siblings
@@ -10440,7 +11661,7 @@ function getListItemCounterValue(
  * Get counter value from a specific scope (without current scope)
  */
 function getCounterValueFromScope(
-	self: StyleManager,
+	manager: StyleManager,
 	scope: CounterScope | undefined,
 	counterName: string,
 ): number {
@@ -10552,3 +11773,418 @@ onShadowAttached((root) => {
 		.get((root.host as unknown as Element).ownerDocument as object)
 		?.registerShadowRoot(root as unknown as ShadowRoot);
 });
+
+// ---------------------------------------------------------------------------
+// Grid values (css-grid-2 §7, §8)
+//
+// The compute core takes track lists, area maps and placements already parsed,
+// so this is where CSS text becomes them. css-tree does the tokenizing: a
+// track list nests functions, bracketed line names and strings, and a
+// hand-rolled splitter gets one of those wrong sooner or later.
+//
+// Two values are REFUSED rather than approximated. `subgrid` (css-grid-2 §9.5)
+// takes its tracks from an ancestor grid, which means a grid's own sizing can
+// no longer be decided from its own box; `masonry` (css-grid-3) is not a grid
+// in its second axis at all. A track list naming either is invalid here, and
+// the property falls back to `none` -- the same answer a browser that does not
+// implement them gives.
+// ---------------------------------------------------------------------------
+
+type CSSNode = {
+	type: string;
+	name?: string;
+	value?: string;
+	unit?: string;
+	children?: {toArray(): CSSNode[]};
+};
+
+/** The refused grid values, kept together so the refusal is one list. */
+const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
+
+function cssValueChildren(value: string): CSSNode[] | null {
+	try {
+		const ast = CSSTree.parse(value, {context: "value"}) as unknown as CSSNode;
+		return ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+}
+
+/** A length token in cells: px and ch both measure one cell, and nothing else does. */
+function trackCells(node: CSSNode): number | null {
+	if (node.type !== "Dimension") {
+		return null;
+	}
+	const unit = (node.unit ?? "").toLowerCase();
+	if (unit !== "px" && unit !== "ch") {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	return Number.isFinite(number) ? number : null;
+}
+
+function pointBreadth(cells: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_POINT, value: cells}};
+}
+
+function percentBreadth(percentage: number): FlexTypes.TrackBreadth {
+	return {kind: "length", value: {unit: Flex.UNIT_PERCENT, value: percentage}};
+}
+
+/** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
+function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
+	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
+		const factor = parseFloat(node.value ?? "");
+		return Number.isFinite(factor) && factor >= 0 ?
+				{kind: "flex", factor} :
+			null;
+	}
+	const cells = trackCells(node);
+	if (cells !== null) {
+		return pointBreadth(cells);
+	}
+	if (node.type === "Percentage") {
+		const percentage = parseFloat(node.value ?? "");
+		return Number.isFinite(percentage) ? percentBreadth(percentage) : null;
+	}
+	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
+		return pointBreadth(0);
+	}
+	if (node.type === "Identifier") {
+		switch ((node.name ?? "").toLowerCase()) {
+			case "auto":
+				return {kind: "auto"};
+			case "min-content":
+				return {kind: "min-content"};
+			case "max-content":
+				return {kind: "max-content"};
+		}
+	}
+	return null;
+}
+
+/** The arguments of a function node, with the comma operators dropped. */
+function functionArguments(node: CSSNode): CSSNode[] {
+	return (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+}
+
+/** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
+function parseTrackSize(node: CSSNode): FlexTypes.TrackSize | null {
+	if (node.type === "Function") {
+		const name = (node.name ?? "").toLowerCase();
+		const args = functionArguments(node);
+		if (name === "minmax") {
+			if (args.length !== 2) {
+				return null;
+			}
+			const min = parseTrackBreadth(args[0]);
+			const max = parseTrackBreadth(args[1]);
+			// An `fr` is a share of leftover space, which is not a minimum
+			// anything can be measured against: the grammar excludes it.
+			if (!min || !max || min.kind === "flex") {
+				return null;
+			}
+			return {min, max};
+		}
+		if (name === "fit-content") {
+			if (args.length !== 1) {
+				return null;
+			}
+			const clamp = parseTrackBreadth(args[0]);
+			if (!clamp || clamp.kind !== "length") {
+				return null;
+			}
+			// fit-content(x) is minmax(auto, max-content) capped at x (§7.2.3).
+			return {
+				min: {kind: "auto"},
+				max: {kind: "max-content"},
+				fitContent: clamp.value,
+			};
+		}
+		return null;
+	}
+	const breadth = parseTrackBreadth(node);
+	if (!breadth) {
+		return null;
+	}
+	// A bare `<flex>` is minmax(auto, <flex>); every other bare breadth is
+	// both ends of the pair.
+	if (breadth.kind === "flex") {
+		return {min: {kind: "auto"}, max: breadth};
+	}
+	return {min: breadth, max: breadth};
+}
+
+/** The identifiers inside a `[a b]` line-name group. */
+function bracketNames(node: CSSNode): string[] {
+	return (node.children?.toArray() ?? [])
+		.filter((child) => child.type === "Identifier")
+		.map((child) => child.name ?? "");
+}
+
+/** A `<track-list>`, or null when the value is not one (and so has no effect). */
+export function parseTrackList(value: string): FlexTypes.TrackList | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	if (REFUSED_GRID_VALUES.has(text.toLowerCase())) {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+
+	const parts: FlexTypes.TrackListPart[] = [];
+	let names: string[] = [];
+
+	for (const node of children) {
+		if (node.type === "Brackets") {
+			names = names.concat(bracketNames(node));
+			continue;
+		}
+		if (
+			node.type === "Function" &&
+			(node.name ?? "").toLowerCase() === "repeat"
+		) {
+			const repeat = parseTrackRepeat(node);
+			if (!repeat) {
+				return null;
+			}
+			repeat.tracks[0].names = names.concat(repeat.tracks[0].names);
+			names = [];
+			parts.push({type: "repeat", repeat});
+			continue;
+		}
+		if (
+			node.type === "Identifier" &&
+			REFUSED_GRID_VALUES.has((node.name ?? "").toLowerCase())
+		) {
+			return null;
+		}
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		parts.push({type: "track", track: {names, size}});
+		names = [];
+	}
+
+	if (parts.length === 0) {
+		return null;
+	}
+	return {parts, endNames: names};
+}
+
+function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
+	const args = (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+	if (args.length < 2) {
+		return null;
+	}
+	const first = args[0];
+	let count: number | "auto-fill" | "auto-fit";
+	if (first.type === "Number") {
+		const parsed = parseInt(first.value ?? "", 10);
+		if (!Number.isFinite(parsed) || parsed < 1) {
+			return null;
+		}
+		// A repeat is written by an author and expanded here, so a runaway
+		// count would be paid for in tracks nobody can see.
+		count = Math.min(parsed, 1000);
+	} else if (first.type === "Identifier") {
+		const keyword = (first.name ?? "").toLowerCase();
+		if (keyword !== "auto-fill" && keyword !== "auto-fit") {
+			return null;
+		}
+		count = keyword;
+	} else {
+		return null;
+	}
+
+	const tracks: FlexTypes.TrackListTrack[] = [];
+	let names: string[] = [];
+	for (const child of args.slice(1)) {
+		if (child.type === "Brackets") {
+			names = names.concat(bracketNames(child));
+			continue;
+		}
+		const size = parseTrackSize(child);
+		if (!size) {
+			return null;
+		}
+		tracks.push({names, size});
+		names = [];
+	}
+	if (tracks.length === 0) {
+		return null;
+	}
+	return {count, tracks, endNames: names};
+}
+
+/** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
+export function parseTrackSizeList(
+	value: string,
+): FlexTypes.TrackSize[] | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children) {
+		return null;
+	}
+	const sizes: FlexTypes.TrackSize[] = [];
+	for (const node of children) {
+		const size = parseTrackSize(node);
+		if (!size) {
+			return null;
+		}
+		sizes.push(size);
+	}
+	return sizes.length > 0 ? sizes : null;
+}
+
+/**
+ * `grid-template-areas`: rows of names, one string per row. The map is invalid
+ * -- and so declares nothing -- unless every row states the same number of
+ * cells and every named area is a solid rectangle (css-grid-2 §7.3).
+ */
+export function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
+	const text = value.trim();
+	if (!text || text === "none") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	const rows: Array<Array<string | null>> = [];
+	for (const node of children) {
+		if (node.type !== "String") {
+			return null;
+		}
+		const cells = (node.value ?? "")
+			.trim()
+			.split(/\s+/)
+			.filter((cell) => cell.length > 0)
+			// A run of dots is one null cell, however many dots it is written with.
+			.map((cell) => (/^\.+$/.test(cell) ? null : cell));
+		if (cells.length === 0) {
+			return null;
+		}
+		rows.push(cells);
+	}
+
+	const columnCount = rows[0].length;
+	if (rows.some((row) => row.length !== columnCount)) {
+		return null;
+	}
+
+	// Every area is a rectangle, fully filled: `"a b a"` names no area at all.
+	const boxes = new Map<
+		string,
+		{top: number; left: number; bottom: number; right: number}
+	>();
+	rows.forEach((row, rowIndex) => {
+		row.forEach((name, columnIndex) => {
+			if (name === null) {
+				return;
+			}
+			const box = boxes.get(name);
+			if (!box) {
+				boxes.set(name, {
+					top: rowIndex,
+					left: columnIndex,
+					bottom: rowIndex + 1,
+					right: columnIndex + 1,
+				});
+				return;
+			}
+			box.top = Math.min(box.top, rowIndex);
+			box.left = Math.min(box.left, columnIndex);
+			box.bottom = Math.max(box.bottom, rowIndex + 1);
+			box.right = Math.max(box.right, columnIndex + 1);
+		});
+	});
+	for (const [name, box] of boxes) {
+		for (let row = box.top; row < box.bottom; row++) {
+			for (let column = box.left; column < box.right; column++) {
+				if (rows[row][column] !== name) {
+					return null;
+				}
+			}
+		}
+	}
+
+	return {rows, columnCount};
+}
+
+/** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
+export function parseGridPlacement(
+	value: string,
+): FlexTypes.GridPlacement | null {
+	const text = value.trim();
+	if (!text || text === "auto") {
+		return null;
+	}
+	const children = cssValueChildren(text);
+	if (!children || children.length === 0) {
+		return null;
+	}
+
+	let span = false;
+	let index: number | null = null;
+	let name: string | null = null;
+
+	for (const node of children) {
+		if (node.type === "Number") {
+			const parsed = parseInt(node.value ?? "", 10);
+			if (!Number.isFinite(parsed) || parsed === 0) {
+				return null;
+			}
+			if (index !== null) {
+				return null;
+			}
+			index = parsed;
+			continue;
+		}
+		if (node.type !== "Identifier") {
+			return null;
+		}
+		const keyword = node.name ?? "";
+		if (keyword.toLowerCase() === "span") {
+			if (span) {
+				return null;
+			}
+			span = true;
+			continue;
+		}
+		if (keyword.toLowerCase() === "auto") {
+			return null;
+		}
+		if (name !== null) {
+			return null;
+		}
+		name = keyword;
+	}
+
+	if (span) {
+		// A span is a count of tracks or of named lines, never a line number.
+		if (index !== null && index < 1) {
+			return null;
+		}
+		if (index === null && name === null) {
+			return null;
+		}
+	}
+	if (!span && index === null && name === null) {
+		return null;
+	}
+	return {span, index, name};
+}
