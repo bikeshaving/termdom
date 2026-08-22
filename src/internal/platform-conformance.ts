@@ -89,7 +89,7 @@ type ParentNodeMixin =
 	"replaceChildren";
 
 /** RUNTIME: the ARIA reflection surface, installed from the tables. */
-type AriaReflection =
+type ARIAReflection =
 	| "role" |
 	`aria${string}`;
 
@@ -136,7 +136,7 @@ type ElementRemainder =
 	"getAnimations"; // GAP
 
 // -- key-complete today, held that way --------------------------------------
-declare const checked: [
+declare const _checked: [
 	Equal<MissingFrom<globalThis.EventTarget, EventTarget>, never>,
 	Equal<MissingFrom<globalThis.Event, Event>, never>,
 	Equal<MissingFrom<globalThis.CustomEvent, CustomEvent>, never>,
@@ -218,7 +218,7 @@ declare const checked: [
 		| NodeConstants |
 		ChildNodeMixin |
 		ParentNodeMixin |
-		AriaReflection |
+		ARIAReflection |
 		ElementGeometry |
 		SelectorSurface |
 		PointerSurface |
@@ -227,4 +227,4 @@ declare const checked: [
 	>,
 ];
 
-export type PlatformConformanceChecked = typeof checked;
+export type PlatformConformanceChecked = typeof _checked;
