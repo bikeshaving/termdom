@@ -1160,6 +1160,8 @@ interface MouseEventInit extends EventModifierInit {
 	screenY?: number;
 	clientX?: number;
 	clientY?: number;
+	movementX?: number;
+	movementY?: number;
 	button?: number;
 	buttons?: number;
 	relatedTarget?: EventTarget | null;
@@ -1342,6 +1344,10 @@ Object.defineProperty(UIEvent.prototype, Symbol.toStringTag, {
 const kScreenX = Symbol("screenX");
 const kScreenY = Symbol("screenY");
 const kClientX = Symbol("clientX");
+const kMovementX = Symbol("movementX");
+const kMovementY = Symbol("movementY");
+const kEventView = Symbol("eventView");
+const kTargetRect = Symbol("targetRect");
 const kClientY = Symbol("clientY");
 const kButton = Symbol("button");
 const kButtons = Symbol("buttons");
@@ -1360,6 +1366,8 @@ export class MouseEvent extends UIEvent {
 	declare [kClientY]: number;
 	declare [kButton]: number;
 	declare [kButtons]: number;
+	declare [kMovementX]: number;
+	declare [kMovementY]: number;
 	declare [kModifiers]: Set<string>;
 
 	constructor(type: string, eventInitDict: MouseEventInit = {}) {
@@ -1369,6 +1377,8 @@ export class MouseEvent extends UIEvent {
 		this[kScreenY] = toLong(init.screenY ?? 0);
 		this[kClientX] = toLong(init.clientX ?? 0);
 		this[kClientY] = toLong(init.clientY ?? 0);
+		this[kMovementX] = toLong(init.movementX ?? 0);
+		this[kMovementY] = toLong(init.movementY ?? 0);
 		this[kButton] = toShort(init.button ?? 0);
 		this[kButtons] = toUnsignedShort(init.buttons ?? 0);
 		this[kModifiers] = initModifiers(init);
@@ -1393,6 +1403,75 @@ export class MouseEvent extends UIEvent {
 
 	get clientY(): number {
 		return this[kClientY];
+	}
+
+	/** The alias pair CSSOM View gives clientX/clientY. */
+	get x(): number {
+		return this[kClientX];
+	}
+
+	get y(): number {
+		return this[kClientY];
+	}
+
+	/**
+	 * Client plus the document scroll. Read live rather than captured at
+	 * creation: dispatch is synchronous here, so a listener's read sees
+	 * the scroll the event was made under, which is the captured value.
+	 */
+	get pageX(): number {
+		return this[kClientX] + (this[kEventView]?.scrollX ?? 0);
+	}
+
+	get pageY(): number {
+		return this[kClientY] + (this[kEventView]?.scrollY ?? 0);
+	}
+
+	/**
+	 * Client relative to the target's box. The border edge stands in for
+	 * the spec's padding edge: a terminal border is one cell, and the
+	 * layout's rect is the border box -- a one-cell divergence declared
+	 * here rather than hidden.
+	 */
+	get offsetX(): number {
+		const rect = this[kTargetRect];
+		return rect === null ? this[kClientX] : this[kClientX] - rect.left;
+	}
+
+	get offsetY(): number {
+		const rect = this[kTargetRect];
+		return rect === null ? this[kClientY] : this[kClientY] - rect.top;
+	}
+
+	get movementX(): number {
+		return this[kMovementX];
+	}
+
+	get movementY(): number {
+		return this[kMovementY];
+	}
+
+	/** The window the event's target renders in, if it is in one. */
+	get [kEventView](): {scrollX: number; scrollY: number} | null {
+		const target = this[kDispatchState].target as Node | null;
+		if (target === null || target.ownerDocument === null) {
+			return null;
+		}
+		const view = target.ownerDocument[kDefaultView];
+		return (view ?? null) as {scrollX: number; scrollY: number} | null;
+	}
+
+	/** The target's viewport-space rect, when an engine can answer. */
+	get [kTargetRect](): {left: number; top: number} | null {
+		const target = this[kDispatchState].target as Element | null;
+		if (
+			target === null ||
+			typeof (target as {getBoundingClientRect?: unknown})
+				.getBoundingClientRect !== "function"
+		) {
+			return null;
+		}
+		return target.getBoundingClientRect();
 	}
 
 	get ctrlKey(): boolean {
@@ -23115,7 +23194,7 @@ type Equal<A, B> =
 
 /** RUNTIME: the Node interface constants, installed on prototypes at load. */
 type NodeConstants =
-	| "ELEMENT_NODE" |
+	"ELEMENT_NODE" |
 	"ATTRIBUTE_NODE" |
 	"TEXT_NODE" |
 	"CDATA_SECTION_NODE" |
@@ -23219,20 +23298,10 @@ declare const _checked: [
 		"getClientRects" |
 		"createContextualFragment"
 	>,
-	// GAP: layer/offset/page/movement coordinate spaces -- the terminal has
-	// client coordinates and, so far, nothing else to offset against.
+	// NEVER: layerX/layerY are the pre-standard offsets no spec defines.
 	Equal<
 		MissingFrom<globalThis.MouseEvent, MouseEvent>,
-		| "layerX" |
-		"layerY" |
-		"movementX" |
-		"movementY" |
-		"offsetX" |
-		"offsetY" |
-		"pageX" |
-		"pageY" |
-		"x" |
-		"y"
+		"layerX" | "layerY"
 	>,
 	Equal<
 		MissingFrom<globalThis.CharacterData, CharacterData>,

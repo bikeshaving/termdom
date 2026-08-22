@@ -586,3 +586,52 @@ test("wheel scrolling moves the screen with a scroll region, not a redraw", asyn
 
 	dom.dispose();
 });
+
+test("a mouse event answers in the standard coordinate spaces", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document} = termdom;
+	document.body.innerHTML =
+		"<div style=\"padding-top: 2px\"><button id=\"b\">[go]</button></div>";
+	await nextFrame(termdom);
+
+	const seen: Array<Record<string, number>> = [];
+	document.addEventListener("mousedown", (event) => {
+		const mouse = event as MouseEvent;
+		seen.push({
+			clientX: mouse.clientX,
+			clientY: mouse.clientY,
+			x: mouse.x,
+			y: mouse.y,
+			pageX: mouse.pageX,
+			pageY: mouse.pageY,
+			offsetY: mouse.offsetY,
+			movementX: mouse.movementX,
+		});
+	});
+	document.addEventListener("mousemove", (event) => {
+		const mouse = event as MouseEvent;
+		seen.push({movementX: mouse.movementX, movementY: mouse.movementY});
+	});
+
+	// Press at col 2, row 3 (1-based reports; the event is 0-based).
+	await proc.stdin.send("\x1b[<0;2;3M");
+	// Motion to col 6, row 4: movement is the delta from the press.
+	await proc.stdin.send("\x1b[<32;6;4M");
+	await proc.stdin.send("\x1b[<0;6;4m");
+
+	expect(seen[0].clientX).toBe(1);
+	expect(seen[0].clientY).toBe(2);
+	expect(seen[0].x).toBe(1);
+	expect(seen[0].y).toBe(2);
+	// No scroll: page equals client.
+	expect(seen[0].pageX).toBe(1);
+	expect(seen[0].pageY).toBe(2);
+	// The button sits below 2px of padding; offsetY is target-relative.
+	expect(seen[0].offsetY).toBe(0);
+	expect(seen[0].movementX).toBe(0);
+	expect(seen[1].movementX).toBe(4);
+	expect(seen[1].movementY).toBe(1);
+
+	termdom.dispose();
+});

@@ -650,6 +650,7 @@ const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
 const kUAToolkit = Symbol("uaToolkit");
+const kLastMouse = Symbol("lastMouse");
 
 // The members this module installs on dom.js's prototypes, declared into
 // its types AT the installer: the type is true because this file makes it
@@ -806,6 +807,9 @@ export class TermDOM {
 	 * user agent -- it is never re-exported and never reachable from a node.
 	 */
 	declare [kUAToolkit]: DOM.UAToolkit;
+
+	// Where the last mouse report landed, for MouseEvent.movementX/Y.
+	declare [kLastMouse]: {x: number; y: number} | null;
 
 	// Timers that must be torn down in dispose(), or they keep the process
 	// alive after the app is done -- which, across a test suite, piles up
@@ -1049,6 +1053,7 @@ export class TermDOM {
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
 		// when a newly connected one should be upgraded.
+		this[kLastMouse] = null;
 		this[kUAToolkit] = installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
@@ -3923,17 +3928,23 @@ function handleMouseReport(
 	if (base > 2) {
 		return;
 	}
+	const last = termdom[kLastMouse];
 	const eventInit = {
 		button,
 		buttons,
 		clientX: x,
 		clientY: y,
+		// The spec's delta from the previous mousemove; the first report
+		// has nothing to move from.
+		movementX: last === null ? 0 : x - last.x,
+		movementY: last === null ? 0 : y - last.y,
 		shiftKey,
 		altKey,
 		ctrlKey,
 		bubbles: true,
 		cancelable: true,
 	};
+	termdom[kLastMouse] = {x, y};
 
 	if (isMotion) {
 		fireAsUserAgent(
