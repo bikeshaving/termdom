@@ -9698,12 +9698,18 @@ export class StyleManager {
 	 */
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
-			if (element) {
-				invalidateElementCaches(this, element);
-				// A host's focus state reaches into its shadow tree through
-				// :host(:focus) rules (and inheritance from whatever they
-				// set), so the tree's cached styles go stale with it.
-				const shadowRoot = shadowRootOf<ShadowRoot>(element);
+			// The whole flat-tree chain above can observe a focus state:
+			// each ancestor through :focus-within, each shadow host through
+			// :focus, and a host's focus state reaches into its shadow tree
+			// through :host(:focus) rules (and inheritance from whatever
+			// they set), so every stop's caches go stale together.
+			for (
+				let node: Element | null = element;
+				node;
+				node = flatParentElement<Element>(node)
+			) {
+				invalidateElementCaches(this, node);
+				const shadowRoot = shadowRootOf<ShadowRoot>(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
 						invalidateElementCaches(this, descendant);

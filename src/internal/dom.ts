@@ -22834,6 +22834,111 @@ function selectorEngine(document: Document): SelectorEngine {
 				modvar: null,
 			}),
 		);
+		// `:focus` per HTML, not per light tree: the focused element
+		// matches wherever it is, and so does every shadow host on the
+		// chain above it -- which the engine's document.activeElement
+		// cannot see, since retargeting stops at the first host.
+		engine.Snapshot.hasFocusState = (element: Element): boolean => {
+			const active = document[kActiveElement];
+			if (active === null) {
+				return false;
+			}
+			if (element === active) {
+				return true;
+			}
+			for (
+				let root = getRoot(active);
+				isShadowRoot(root);
+				root = getRoot(root as unknown as Node)
+			) {
+				const host = (root as ShadowRoot)[kHost] as Element;
+				if (host === element) {
+					return true;
+				}
+				root = host as unknown as Node;
+			}
+			return false;
+		};
+		engine.registerSelector(
+			":-termdom-focus",
+			/^:-termdom-focus(?![\w-])(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.hasFocusState(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
+		// `:focus-within` climbs the same chain and keeps going: every
+		// ancestor and every host above the focused element matches.
+		engine.Snapshot.hasFocusWithinState = (element: Element): boolean => {
+			const active = document[kActiveElement];
+			for (
+				let node: Element | null = active;
+				node !== null;
+
+			) {
+				if (node === element) {
+					return true;
+				}
+				const parent: Element | null = node.parentElement;
+				if (parent !== null) {
+					node = parent;
+					continue;
+				}
+				const root = getRoot(node);
+				node = isShadowRoot(root) ?
+						((root as ShadowRoot)[kHost] as Element) :
+					null;
+			}
+			return false;
+		};
+		engine.registerSelector(
+			":-termdom-focus-within",
+			/^:-termdom-focus-within(?![\w-])(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.hasFocusWithinState(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
+		// The engine's own compiled `:focus` family predates shadow trees:
+		// its focus test wants a focusable-looking shape at
+		// document.activeElement, and its `:focus-within` cannot reach an
+		// ancestor at all. The names above resolve through the raw focus
+		// state instead, and every selector is spelled onto them on the way
+		// in -- the four entry points below are the only doors.
+		const FOCUS_REWRITES: Array<[RegExp, string]> = [
+			[/:focus-within(?![\w-])/gi, ":-termdom-focus-within"],
+			[/:focus-visible(?![\w-])/gi, ":-termdom-focus"],
+			[/:focus(?![\w-])/gi, ":-termdom-focus"],
+		];
+		const rewriteFocus = (selector: string): string => {
+			if (!/:focus/i.test(selector)) {
+				return selector;
+			}
+			let rewritten = selector;
+			for (const [pattern, name] of FOCUS_REWRITES) {
+				rewritten = rewritten.replace(pattern, name);
+			}
+			return rewritten;
+		};
+		const rawMatch = engine.match.bind(engine);
+		const rawFirst = engine.first.bind(engine);
+		const rawSelect = engine.select.bind(engine);
+		const withClosest = engine as unknown as {
+			closest(selector: string, ...rest: unknown[]): unknown;
+		};
+		const rawClosest = withClosest.closest.bind(engine);
+		engine.match = (selector: string, element: unknown, ...rest: unknown[]) =>
+			rawMatch(rewriteFocus(selector), element, ...rest);
+		engine.first = (selector: string, ...rest: unknown[]) =>
+			rawFirst(rewriteFocus(selector), ...rest);
+		engine.select = (selector: string, ...rest: unknown[]) =>
+			rawSelect(rewriteFocus(selector), ...rest);
+		withClosest.closest = (selector: string, ...rest: unknown[]) =>
+			rawClosest(rewriteFocus(selector), ...rest);
 		if (document.documentElement !== null) {
 			document[kNwsapi] = engine;
 		}

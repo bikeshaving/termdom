@@ -408,17 +408,76 @@ export function decodeMouseReport(
 export const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
+/** What a slot looks like from a module that must not import DOM classes. */
+interface SlotLike extends Element {
+	assignedNodes(): Node[];
+}
+
+interface ShadowRootLike {
+	children: ArrayLike<Element> & Iterable<Element>;
+	delegatesFocus?: boolean;
+}
+
+/**
+ * One entry in a focus navigation scope: a single element, or a scope
+ * owner standing for its whole expanded scope. The owner's tabindex
+ * positions the entry among its siblings; the expansion is already in
+ * its own scope's order.
+ */
+interface ScopeEntry {
+	tabindex: number;
+	sequence: number;
+	elements: SequentialEntry[];
+}
+
+/**
+ * One stop in the sequential order. `barrier` names the nearest scope
+ * owner with a negative tabindex above it, if any: such a stop cannot be
+ * tabbed into from outside, but focus scripted inside the owner's scope
+ * still navigates among stops sharing the barrier and exits past it.
+ */
+export interface SequentialEntry {
+	element: Element;
+	barrier: Element | null;
+}
+
+function tabindexOf(element: Element): number {
+	const parsed = parseInt(element.getAttribute("tabindex") || "0", 10);
+	return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 /**
  * Get all focusable elements in tab order, within a root: the document, or
  * the modal dialog whose subtree is the only reachable part of it.
+ *
+ * Tab order is scoped, as HTML's sequential focus navigation defines it:
+ * the document, each shadow root and each slot own a scope of their own,
+ * sorted by tabindex among themselves -- the positive values ascending,
+ * then the zeros in tree order -- and a scope owner's whole expansion sits
+ * at the owner's own position in its parent scope. A host whose shadow
+ * root delegates focus contributes only its expansion; a slot with
+ * nothing assigned expands its fallback children.
  */
 export function getFocusableElements(
 	root: Document | Element,
 	layoutEngine: LayoutEngine,
 	toolkit: UAToolkit,
 ): Element[] {
-	const candidates = root.querySelectorAll(FOCUSABLE_SELECTOR);
-	const elements = Array.from(candidates).filter((element) => {
+	return sequentialFocusEntries(root, layoutEngine, toolkit)
+		.filter((entry) => entry.barrier === null)
+		.map((entry) => entry.element);
+}
+
+/**
+ * Every sequential focus stop under a root, barred ones included, in
+ * scoped tab order.
+ */
+export function sequentialFocusEntries(
+	root: Document | Element,
+	layoutEngine: LayoutEngine,
+	toolkit: UAToolkit,
+): SequentialEntry[] {
+	const isRendered = (element: Element): boolean => {
 		// Browsers keep unrendered elements out of tab order: a hidden
 		// edit-row checkbox must not swallow a Tab press invisibly. An
 		// element is rendered when nothing on its flat-tree chain is
@@ -437,23 +496,91 @@ export function getFocusableElements(
 		} catch (_err) {
 			return false;
 		}
-	});
-	return elements.sort((a, b) => {
-		const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
-		const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
-		if (aTab !== bTab) {
-			if (aTab > 0 && bTab > 0) {
+	};
+	const isFocusable = (element: Element): boolean =>
+		element.matches(FOCUSABLE_SELECTOR) &&
+		tabindexOf(element) >= 0 &&
+		isRendered(element);
+
+	const buildScope = (
+		contents: Iterable<Node>,
+		barrier: Element | null,
+	): SequentialEntry[] => {
+		const entries: ScopeEntry[] = [];
+		let sequence = 0;
+		const push = (tabindex: number, elements: SequentialEntry[]): void => {
+			if (elements.length > 0) {
+				entries.push({tabindex, sequence: sequence++, elements});
+			}
+		};
+		const visit = (node: Node): void => {
+			if (node.nodeType !== 1) {
+				return;
+			}
+			const element = node as Element;
+			const ownerTabindex = tabindexOf(element);
+			const shadow = toolkit.shadowRootOf(element) as
+				| ShadowRootLike |
+				null;
+			if (shadow !== null) {
+				// A negative tabindex on the owner bars the whole expansion
+				// from outside entry; inside it, order still holds.
+				const innerBarrier =
+					ownerTabindex < 0 ? (barrier ?? element) : barrier;
+				// The host's light children surface through the shadow's
+				// slots or nowhere; they are not this scope's to walk.
+				const inner = buildScope(shadow.children, innerBarrier);
+				let expansion = inner;
+				if (shadow.delegatesFocus !== true && isFocusable(element)) {
+					expansion = [{element, barrier}, ...inner];
+				}
+				push(ownerTabindex, expansion);
+				return;
+			}
+			if (element.localName === "slot") {
+				const innerBarrier =
+					ownerTabindex < 0 ? (barrier ?? element) : barrier;
+				const assigned = (element as SlotLike).assignedNodes();
+				const slotContents =
+					assigned.length > 0 ? assigned : element.childNodes;
+				const inner = buildScope(
+					slotContents as Iterable<Node>,
+					innerBarrier,
+				);
+				const expansion = isFocusable(element) ?
+						[{element, barrier}, ...inner] :
+					inner;
+				push(ownerTabindex, expansion);
+				return;
+			}
+			if (isFocusable(element)) {
+				push(ownerTabindex, [{element, barrier}]);
+			}
+			for (const child of element.children) {
+				visit(child);
+			}
+		};
+		for (const node of contents) {
+			visit(node);
+		}
+		entries.sort((a, b) => {
+			const aTab = a.tabindex > 0 ? a.tabindex : Infinity;
+			const bTab = b.tabindex > 0 ? b.tabindex : Infinity;
+			if (aTab !== bTab) {
 				return aTab - bTab;
 			}
-			if (aTab > 0) {
-				return -1;
-			}
-			if (bTab > 0) {
-				return 1;
-			}
-		}
-		return 0;
-	});
+			return a.sequence - b.sequence;
+		});
+		return entries.flatMap((entry) => entry.elements);
+	};
+
+	const roots =
+		root.nodeType === 9 ?
+				((root as Document).documentElement ?
+						[(root as Document).documentElement as Element] :
+						[]) :
+				Array.from((root as Element).children);
+	return buildScope(roots, null);
 }
 
 /**

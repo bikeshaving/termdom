@@ -32,7 +32,7 @@ import {
 	decodeMouseReport,
 	domCodeFor,
 	focusAutofocusedNodes,
-	getFocusableElements,
+	sequentialFocusEntries,
 	keyboardActivation,
 	tokenizeInput,
 } from "./events.js";
@@ -1752,19 +1752,35 @@ export class TermDOM {
 		const originalFocus = HTMLElement.prototype.focus;
 		const originalBlur = HTMLElement.prototype.blur;
 
+		// document.activeElement retargets to the host chain, so a focus
+		// move inside a shadow tree is invisible through it; the raw state
+		// is at the bottom of each root's own activeElement chain.
+		const innermostActive = (termDOM: TermDOM): Element | null => {
+			let current = termDOM.document.activeElement;
+			while (current !== null) {
+				const shadow =
+					termDOM[kUAToolkit].shadowRootOf<ShadowRoot>(current);
+				const inner = shadow?.activeElement ?? null;
+				if (inner === null) {
+					break;
+				}
+				current = inner;
+			}
+			return current;
+		};
+
 		HTMLElement.prototype.focus = function (this: HTMLElement) {
 			const termDOM = engineOf(this);
-			const document = termDOM.document;
-			const prev = document.activeElement;
+			const prev = innermostActive(termDOM);
 			originalFocus.call(this);
-			if (prev !== this && document.activeElement === this) {
+			if (prev !== this && innermostActive(termDOM) === this) {
 				// :focus rules match live, but computed styles are cached and
 				// focus is not a mutation -- both moved elements must drop
 				// their caches, and the repaint must happen even when no
 				// listener mutates anything.
 				termDOM[kStyleManager].handleFocusChange(prev, this);
 				void render(termDOM);
-				if (prev && prev !== document.body) {
+				if (prev && prev !== termDOM.document.body) {
 					fireAsUserAgent(
 						prev,
 						new window.FocusEvent("blur", {
@@ -1799,7 +1815,7 @@ export class TermDOM {
 
 		HTMLElement.prototype.blur = function (this: HTMLElement) {
 			const termDOM = engineOf(this);
-			const wasFocused = termDOM.document.activeElement === this;
+			const wasFocused = innermostActive(termDOM) === this;
 			originalBlur.call(this);
 			if (wasFocused) {
 				termDOM[kStyleManager].handleFocusChange(this);
@@ -3142,14 +3158,19 @@ async function render(
 	termdom[kRenderInFlight] = (async () => {
 		try {
 			do {
-				termdom[kRenderQueued] = false;
-				await renderOnce(termdom);
-				// This frame is written; wake whatever awaited it. A callback
-				// that schedules another frame re-queues the loop, so a chain
-				// of requestAnimationFrame calls ticks frame by frame instead
-				// of stalling after the first.
+				do {
+					termdom[kRenderQueued] = false;
+					await renderOnce(termdom);
+				} while (termdom[kRenderQueued]);
+				// The frames are written; wake everything that awaited them.
+				// A callback that schedules another frame re-queues the
+				// outer loop, so a chain of requestAnimationFrame calls
+				// ticks frame by frame instead of stalling after the first.
 				drainFrameCallbacks(termdom);
-			} while (termdom[kRenderQueued]);
+			} while (
+				termdom[kRenderQueued] ||
+				termdom[kFrameCallbacks].size > 0
+			);
 		} finally {
 			termdom[kIsRendering] = false;
 			termdom[kRenderInFlight] = null;
@@ -3158,9 +3179,7 @@ async function render(
 	return termdom[kRenderInFlight];
 }
 
-function drainFrameCallbacks(
-	termdom: TermDOM,
-): void {
+function drainFrameCallbacks(termdom: TermDOM): void {
 	if (termdom[kFrameCallbacks].size === 0) {
 		return;
 	}
@@ -3719,17 +3738,64 @@ function moveFocus(
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
 	const scope = topmostModalDialog(termdom) ?? termdom.document;
-	const focusable = getFocusableElements(
+	const entries = sequentialFocusEntries(
 		scope,
 		termdom[kLayoutEngine],
 		termdom[kUAToolkit],
 	);
-	if (focusable.length === 0) {
-		return;
-	}
 
-	const current = termdom.document.activeElement;
-	const currentIndex = focusable.indexOf(current as Element);
+	// activeElement retargets to the shadow host at document scope; the
+	// walk needs the innermost focused element, so follow each root's own
+	// activeElement down.
+	let current = termdom.document.activeElement;
+	while (current !== null) {
+		const shadow = termdom[kUAToolkit].shadowRootOf<ShadowRoot>(current);
+		const inner = shadow?.activeElement ?? null;
+		if (inner === null) {
+			break;
+		}
+		current = inner;
+	}
+	const currentIndex = entries.findIndex(
+		(entry) => entry.element === current,
+	);
+	// A stop behind a barrier is only reachable while focus already sits
+	// behind the same barrier -- script put it there; Tab may continue
+	// within and out, but never in.
+	const currentBarrier =
+		currentIndex === -1 ? null : entries[currentIndex].barrier;
+	// From open ground only open stops are reachable; from behind a
+	// barrier, only stops behind the same one -- crossing out is the tree
+	// exit below, and crossing in never happens.
+	const reachable = (index: number): boolean =>
+		entries[index].barrier === currentBarrier;
+	const step = reverse ? -1 : 1;
+	let nextIndex = -1;
+	if (currentIndex === -1) {
+		// From the blurred stop, Tab enters at the first element and
+		// Shift+Tab at the last, as from a browser's chrome.
+		for (
+			let i = reverse ? entries.length - 1 : 0;
+			i >= 0 && i < entries.length;
+			i += step
+		) {
+			if (reachable(i)) {
+				nextIndex = i;
+				break;
+			}
+		}
+	} else {
+		for (
+			let i = currentIndex + step;
+			i >= 0 && i < entries.length;
+			i += step
+		) {
+			if (reachable(i)) {
+				nextIndex = i;
+				break;
+			}
+		}
+	}
 
 	// Tab past the last focusable (or Shift+Tab before the first) rests on
 	// nothing. That is the leg of a browser's cycle where focus walks the
@@ -3737,21 +3803,76 @@ function moveFocus(
 	// has no chrome, so the blurred stop stands in for it. It is also what
 	// keeps a scope with a single focusable element escapable -- a pure
 	// wrap would cycle Tab onto it forever.
-	const leaving = reverse ?
-		currentIndex === 0 :
-		currentIndex === focusable.length - 1;
-	if (leaving) {
-		(current as HTMLElement).blur();
+	// Leaving a barred subtree continues at the barrier owner's tree
+	// successor, whatever its tabindex: the owner opted its subtree out of
+	// the tab order, so the exit rejoins plain tree order beside it.
+	if (nextIndex === -1 && currentBarrier !== null) {
+		const FOLLOWING = 4;
+		const PRECEDING = 2;
+		const wanted = reverse ? PRECEDING : FOLLOWING;
+		for (let i = 0; i < entries.length; i++) {
+			if (
+				entries[i].barrier !== null ||
+				(currentBarrier.compareDocumentPosition(entries[i].element) &
+					wanted) ===
+					0
+			) {
+				continue;
+			}
+			if (nextIndex === -1) {
+				nextIndex = i;
+				continue;
+			}
+			// Of everything on the wanted side, the tree-nearest stop wins:
+			// forward takes the earliest follower, backward the latest
+			// preceder.
+			const beats =
+				(entries[i].element.compareDocumentPosition(
+					entries[nextIndex].element,
+				) &
+				wanted) !==
+				0;
+			if (beats) {
+				nextIndex = i;
+			}
+		}
+		// Backward entry into a scope owner's expansion lands on its last
+		// stop, not the owner: blocks are contiguous in the flat order, so
+		// extend through the run of the owner's shadow-including
+		// descendants.
+		if (reverse && nextIndex !== -1) {
+			const owner = entries[nextIndex].element;
+			const within = (element: Element): boolean => {
+				for (
+					let ancestor: Element | null = element;
+					ancestor !== null;
+					ancestor =
+						termdom[kUAToolkit].flatParentElement<Element>(ancestor)
+				) {
+					if (ancestor === owner) {
+						return true;
+					}
+				}
+				return false;
+			};
+			while (
+				nextIndex + 1 < entries.length &&
+				entries[nextIndex + 1].barrier === null &&
+				within(entries[nextIndex + 1].element)
+			) {
+				nextIndex++;
+			}
+		}
+	}
+
+	if (nextIndex === -1) {
+		if (current !== null) {
+			(current as HTMLElement).blur();
+		}
 		return;
 	}
 
-	// From the blurred stop, Tab enters at the first element and Shift+Tab
-	// at the last, as from a browser's chrome.
-	const nextIndex = reverse ?
-			(currentIndex === -1 ? focusable.length - 1 : currentIndex - 1) :
-		currentIndex + 1;
-
-	const next = focusable[nextIndex] as HTMLElement;
+	const next = entries[nextIndex].element as HTMLElement;
 	next.focus();
 	// A control the camera is not looking at cannot be typed into, so the
 	// move brings it into view -- what a browser does when focus leaves the

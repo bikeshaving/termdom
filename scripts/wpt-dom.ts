@@ -919,6 +919,14 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 		"not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite",
 	],
 	[
+		"shadow-dom/focus-navigation/reading-flow/",
+		"not-a-standard: the CSS reading-flow property these navigate by is a proposal, filed under tentative in the suite",
+	],
+	[
+		"shadow-dom/focus-navigation/tentative/",
+		"not-a-standard: focusgroup and the scroller focus rules are proposals, filed under tentative in the suite",
+	],
+	[
 		"dom/events/scrolling/",
 		"requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns",
 	],
@@ -965,7 +973,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"dom/nodes/Document-createEvent.https.html",
-		"createEvent builds every name in the legacy table whose interface exists here: the Event and CustomEvent names, and the UI Events ones (UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, and the TextEvent alias for a composition event). The names that map to interfaces of other specifications throw NotSupportedError: DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent. Those interfaces are not implemented here.",
+		"createEvent builds every name in the legacy table except three: DeviceMotionEvent, DeviceOrientationEvent and TouchEvent throw NotSupportedError, because sensors and touch digitizers name hardware a terminal does not have. The touch subtests declare the optional feature unsupported and score apart from failure; the sensor subtests fail and stay counted.",
 	],
 	[
 		"dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html",
@@ -973,7 +981,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"dom/events/Event-subclasses-constructors.html",
-		"The UI Events interfaces are implemented: UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent, CompositionEvent, WheelEvent, and the PointerEvent a synthetic click is built through. The failing subtests construct event interfaces from other specifications, which are not implemented.",
+		"The UI Events interfaces are implemented, and so are DragEvent, MessageEvent, HashChangeEvent, StorageEvent, TextEvent and BeforeUnloadEvent. The failing subtests construct interfaces that remain unimplemented: the sensor events, and the interfaces whose specifications this engine does not enter.",
 	],
 	[
 		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
@@ -1170,9 +1178,10 @@ function installGlobals(
 		}
 		return null;
 	};
-	// eslint-disable-next-line no-restricted-globals -- a `with` scope
-	// object must answer `has` for names it cannot enumerate in advance;
-	// only a Proxy can.
+
+	// A `with` scope object must answer `has` for names it cannot
+	// enumerate in advance; only a Proxy can.
+	// eslint-disable-next-line no-restricted-globals
 	const namedAccess = new Proxy(Object.create(
 		null,
 	) as Record<string, unknown>, {
