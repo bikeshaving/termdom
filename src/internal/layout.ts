@@ -1372,7 +1372,9 @@ class Box {
 	}
 }
 
-class DOMRectList extends Array<DOMRect> implements globalThis.DOMRectList {
+export class DOMRectList extends Array<
+	DOMRect
+> implements globalThis.DOMRectList {
 	item(index: number): globalThis.DOMRect | null {
 		if (index < 0 || index >= this.length) {
 			return null;

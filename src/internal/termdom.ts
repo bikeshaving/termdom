@@ -8,7 +8,7 @@
 import * as DOM from "./dom.js";
 import {installUAEngine} from "./dom.js";
 import {installInspectors} from "./inspector.js";
-import {LayoutEngine} from "./layout.js";
+import {DOMRectList as LayoutDOMRectList, LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {
@@ -1155,16 +1155,18 @@ export class TermDOM {
 		TermDOM[kPrototypesInstalled] = true;
 		const {Element, Document, Range} = window;
 
-		/** The engine that mounted a node's document. */
-		const engineOf = (node: Node): TermDOM => {
+		/**
+		 * The engine that mounted a node's document, or null for a node in a
+		 * document nothing mounted -- createHTMLDocument's, DOMParser's. The
+		 * spec's answer for such a document is the no-browsing-context one,
+		 * and every caller below degrades to it: zero geometry, a focus that
+		 * only moves state, a fullscreen that rejects.
+		 */
+		const engineOf = (node: Node): TermDOM | null => {
 			const document = (
 				node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument
 			) as Document;
-			const engine = engines.get(document);
-			if (engine === undefined) {
-				throw new Error("That node's document is not mounted in a terminal");
-			}
-			return engine;
+			return engines.get(document) ?? null;
 		};
 
 		// getRect()/getRects() (the layout engine's own primitives) are
@@ -1196,10 +1198,19 @@ export class TermDOM {
 						rect.height,
 					);
 
+		const ZeroRect = (window as unknown as {
+			DOMRect: new (x: number, y: number, w: number, h: number) => DOMRect;
+		}).DOMRect;
+		const emptyRectList = (): DOMRectList =>
+			new LayoutDOMRectList() as unknown as DOMRectList;
+
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
 		): DOMRect {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return new ZeroRect(0, 0, 0, 0);
+			}
 			if (!this.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
@@ -1216,6 +1227,9 @@ export class TermDOM {
 
 		Element.prototype.getClientRects = function (this: Element): DOMRectList {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return emptyRectList();
+			}
 			if (!this.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRectList();
 			}
@@ -1235,6 +1249,9 @@ export class TermDOM {
 		// getRangeRects() directly, the way scrollIntoView reads getRect().
 		Range.prototype.getClientRects = function (this: Range): DOMRectList {
 			const termDOM = engineOf(this.startContainer);
+			if (termDOM === null) {
+				return emptyRectList();
+			}
 			processPendingMutationsAndRender(termDOM);
 			const container = this.startContainer;
 			const anchor =
@@ -1249,6 +1266,9 @@ export class TermDOM {
 
 		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
 			const termDOM = engineOf(this.startContainer);
+			if (termDOM === null) {
+				return new ZeroRect(0, 0, 0, 0);
+			}
 			processPendingMutationsAndRender(termDOM);
 			const container = this.startContainer;
 			const anchor =
@@ -1284,6 +1304,9 @@ export class TermDOM {
 				return null;
 			}
 			const termDOM = engineOf(element);
+			if (termDOM === null) {
+				return null;
+			}
 			processPendingMutationsAndRender(termDOM);
 			return termDOM[kLayoutEngine].getRect(element);
 		};
@@ -1302,7 +1325,7 @@ export class TermDOM {
 					return ancestor as HTMLElement;
 				}
 			}
-			const body = engineOf(element).document.body;
+			const body = engineOf(element)?.document.body ?? null;
 			return body === element ? null : body;
 		};
 
@@ -1413,6 +1436,9 @@ export class TermDOM {
 				return null;
 			}
 			const termDOM = engineOf(element);
+			if (termDOM === null) {
+				return null;
+			}
 			processPendingMutationsAndRender(termDOM);
 			return termDOM[kLayoutEngine].scrollExtentOf(element);
 		};
@@ -1570,6 +1596,9 @@ export class TermDOM {
 			init: ShadowRootInit,
 		): ShadowRoot {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return originalAttachShadow.call(this, init);
+			}
 			const root = originalAttachShadow.call(this, init);
 			termDOM[kObserver].observe(root, {
 				childList: true,
@@ -1602,6 +1631,11 @@ export class TermDOM {
 			options?: FullscreenOptions,
 		): Promise<void> {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return Promise.reject(
+					new TypeError("The element's document is not displayed"),
+				);
+			}
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
 			// and this is the terminal's equivalent precondition.
@@ -1641,6 +1675,11 @@ export class TermDOM {
 			this: Document,
 		): Promise<void> {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return Promise.reject(
+					new TypeError("The document is not displayed"),
+				);
+			}
 			return (async () => {
 				const element = termDOM[kFullscreenManager].fullscreenElement;
 				termDOM[kScreenSwitching] = true;
@@ -1683,6 +1722,9 @@ export class TermDOM {
 			y: number,
 		): Element | null {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return null;
+			}
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same conversion
 			// getBoundingClientRect's toViewportRect makes in the other direction.
@@ -1703,6 +1745,9 @@ export class TermDOM {
 			y: number,
 		): Element[] {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return [];
+			}
 			const stack: Element[] = [];
 			let current = findElementAtDocumentPoint(
 				termDOM,
@@ -1727,6 +1772,9 @@ export class TermDOM {
 				return false;
 			}
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return false;
+			}
 			for (
 				let ancestor: Element | null = this;
 				ancestor;
@@ -1771,6 +1819,10 @@ export class TermDOM {
 
 		HTMLElement.prototype.focus = function (this: HTMLElement) {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				originalFocus.call(this);
+				return;
+			}
 			const prev = innermostActive(termDOM);
 			originalFocus.call(this);
 			if (prev !== this && innermostActive(termDOM) === this) {
@@ -1815,6 +1867,10 @@ export class TermDOM {
 
 		HTMLElement.prototype.blur = function (this: HTMLElement) {
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				originalBlur.call(this);
+				return;
+			}
 			const wasFocused = innermostActive(termDOM) === this;
 			originalBlur.call(this);
 			if (wasFocused) {
@@ -1850,6 +1906,9 @@ export class TermDOM {
 				return;
 			}
 			const termDOM = engineOf(this);
+			if (termDOM === null) {
+				return;
+			}
 			processPendingMutationsAndRender(termDOM);
 			const engine = termDOM[kLayoutEngine];
 
