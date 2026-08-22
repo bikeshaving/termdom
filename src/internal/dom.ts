@@ -1087,9 +1087,8 @@ const kReturnValue = Symbol("returnValue");
  * keep it.
  *
  * The interface declares no constructor: every instance is one the engine
- * fired, so an author's `new` throws as it does in a browser, and
- * createEvent("BeforeUnloadEvent") throws too -- the name is not in the
- * legacy interface table.
+ * fired or an empty shell createEvent built, so an author's `new` throws as
+ * it does in a browser.
  *
  * Cancellation has two spellings, both of which the teardown honors:
  * preventDefault(), and a returnValue set to anything but the empty string.
@@ -1097,8 +1096,11 @@ const kReturnValue = Symbol("returnValue");
 export class BeforeUnloadEvent extends Event {
 	declare [kReturnValue]: string;
 
-	constructor() {
-		super("beforeunload", {cancelable: true});
+	constructor(
+		type = "beforeunload",
+		eventInitDict: EventInit = {cancelable: true},
+	) {
+		super(type, eventInitDict);
 		this[kReturnValue] = "";
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -1129,6 +1131,224 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 function createBeforeUnloadEvent(): BeforeUnloadEvent {
 	return constructInternal(() => new BeforeUnloadEvent());
 }
+
+interface MessageEventInit<T = unknown> extends EventInit {
+	data?: T;
+	origin?: string;
+	lastEventId?: string;
+	source?: null;
+	ports?: unknown[];
+}
+
+const kMessageData = Symbol("message data");
+const kOrigin = Symbol("origin");
+const kLastEventId = Symbol("last event id");
+const kMessageSource = Symbol("message source");
+const kPorts = Symbol("ports");
+
+/**
+ * A message from another context. Nothing in a terminal posts one yet, but
+ * the interface is a constructor authors call and createEvent names, so it
+ * is here whole: data, origin, lastEventId, and the source and ports that
+ * stay empty until there is a second context to fill them.
+ */
+export class MessageEvent<T = unknown> extends Event {
+	declare [kMessageData]: T;
+	declare [kOrigin]: string;
+	declare [kLastEventId]: string;
+	declare [kMessageSource]: null;
+	declare [kPorts]: readonly unknown[];
+
+	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<MessageEventInit<T>>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kMessageData] = (init.data ?? null) as T;
+		this[kOrigin] = String(init.origin ?? "");
+		this[kLastEventId] = String(init.lastEventId ?? "");
+		this[kMessageSource] = init.source ?? null;
+		this[kPorts] = Object.freeze([...(init.ports ?? [])]);
+	}
+
+	get data(): T {
+		return this[kMessageData];
+	}
+
+	get origin(): string {
+		return this[kOrigin];
+	}
+
+	get lastEventId(): string {
+		return this[kLastEventId];
+	}
+
+	get source(): null {
+		return this[kMessageSource];
+	}
+
+	get ports(): readonly unknown[] {
+		return this[kPorts];
+	}
+
+	initMessageEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		data: T = null as T,
+		origin = "",
+		lastEventId = "",
+		source = null,
+		ports: unknown[] = [],
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initMessageEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initEvent(type, bubbles, cancelable);
+		this[kMessageData] = data;
+		this[kOrigin] = String(origin);
+		this[kLastEventId] = String(lastEventId);
+		this[kMessageSource] = source;
+		this[kPorts] = Object.freeze([...ports]);
+	}
+}
+
+Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, {
+	value: "MessageEvent",
+	configurable: true,
+});
+
+interface HashChangeEventInit extends EventInit {
+	oldURL?: string;
+	newURL?: string;
+}
+
+const kOldURL = Symbol("old URL");
+const kNewURL = Symbol("new URL");
+
+/** The event of a document's fragment identifier changing. */
+export class HashChangeEvent extends Event {
+	declare [kOldURL]: string;
+	declare [kNewURL]: string;
+
+	constructor(type: string, eventInitDict: HashChangeEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<HashChangeEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kOldURL] = String(init.oldURL ?? "");
+		this[kNewURL] = String(init.newURL ?? "");
+	}
+
+	get oldURL(): string {
+		return this[kOldURL];
+	}
+
+	get newURL(): string {
+		return this[kNewURL];
+	}
+}
+
+Object.defineProperty(HashChangeEvent.prototype, Symbol.toStringTag, {
+	value: "HashChangeEvent",
+	configurable: true,
+});
+
+interface StorageEventInit extends EventInit {
+	key?: string | null;
+	oldValue?: string | null;
+	newValue?: string | null;
+	url?: string;
+	storageArea?: null;
+}
+
+const kStorageKey = Symbol("storage key");
+const kStorageOldValue = Symbol("storage old value");
+const kStorageNewValue = Symbol("storage new value");
+const kStorageURL = Symbol("storage url");
+const kStorageArea = Symbol("storage area");
+
+/**
+ * The event of a storage area changing. There is no storage area in a
+ * terminal to change, but the interface is a constructor authors call and
+ * createEvent names, so it is here whole.
+ */
+export class StorageEvent extends Event {
+	declare [kStorageKey]: string | null;
+	declare [kStorageOldValue]: string | null;
+	declare [kStorageNewValue]: string | null;
+	declare [kStorageURL]: string;
+	declare [kStorageArea]: null;
+
+	constructor(type: string, eventInitDict: StorageEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<StorageEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kStorageKey] = init.key == null ? null : String(init.key);
+		this[kStorageOldValue] =
+			init.oldValue == null ? null : String(init.oldValue);
+		this[kStorageNewValue] =
+			init.newValue == null ? null : String(init.newValue);
+		this[kStorageURL] = String(init.url ?? "");
+		this[kStorageArea] = init.storageArea ?? null;
+	}
+
+	get key(): string | null {
+		return this[kStorageKey];
+	}
+
+	get oldValue(): string | null {
+		return this[kStorageOldValue];
+	}
+
+	get newValue(): string | null {
+		return this[kStorageNewValue];
+	}
+
+	get url(): string {
+		return this[kStorageURL];
+	}
+
+	get storageArea(): null {
+		return this[kStorageArea];
+	}
+
+	initStorageEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		key: string | null = null,
+		oldValue: string | null = null,
+		newValue: string | null = null,
+		url = "",
+		storageArea = null,
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initStorageEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initEvent(type, bubbles, cancelable);
+		this[kStorageKey] = key == null ? null : String(key);
+		this[kStorageOldValue] = oldValue == null ? null : String(oldValue);
+		this[kStorageNewValue] = newValue == null ? null : String(newValue);
+		this[kStorageURL] = String(url);
+		this[kStorageArea] = storageArea ?? null;
+	}
+}
+
+Object.defineProperty(StorageEvent.prototype, Symbol.toStringTag, {
+	value: "StorageEvent",
+	configurable: true,
+});
 
 /* ------------------------------------------------------------- UI events */
 
@@ -1748,6 +1968,49 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/**
+ * The legacy text-input event of DOM Level 3, which UI Events keeps for the
+ * documents that still listen for it. The interface declares no
+ * constructor; createEvent("TextEvent") is the one door.
+ */
+export class TextEvent extends UIEvent {
+	declare [kData]: string;
+
+	constructor(type = "", eventInitDict: UIEventInit = {}) {
+		super(type, eventInitDict);
+		this[kData] = "";
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	get data(): string {
+		return this[kData];
+	}
+
+	initTextEvent(
+		type: string,
+		bubbles = false,
+		cancelable = false,
+		view = null,
+		data = "",
+	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initTextEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) {
+			return;
+		}
+		this.initUIEvent(type, bubbles, cancelable, view, 0);
+		this[kData] = String(data);
+	}
+}
+
+Object.defineProperty(TextEvent.prototype, Symbol.toStringTag, {
+	value: "TextEvent",
+	configurable: true,
+});
+
 const kInputType = Symbol("inputType");
 
 /** An event of an editing host's text changing, and how it changed. */
@@ -2350,6 +2613,32 @@ Object.defineProperty(PointerEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface DragEventInit extends MouseEventInit {
+	dataTransfer?: DataTransfer | null;
+}
+
+const kEventDataTransfer = Symbol("event data transfer");
+
+/** A drag-and-drop event, carrying the data transfer of its drag session. */
+export class DragEvent extends MouseEvent {
+	declare [kEventDataTransfer]: DataTransfer | null;
+
+	constructor(type: string, eventInitDict: DragEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<DragEventInit>(eventInitDict, "An event init");
+		this[kEventDataTransfer] = init.dataTransfer ?? null;
+	}
+
+	get dataTransfer(): DataTransfer | null {
+		return this[kEventDataTransfer];
+	}
+}
+
+Object.defineProperty(DragEvent.prototype, Symbol.toStringTag, {
+	value: "DragEvent",
+	configurable: true,
+});
+
 /** The tilt angles a pen's altitude and azimuth describe, in degrees. */
 function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 	if (altitude === 0) {
@@ -2393,28 +2682,34 @@ function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
 }
 
 /**
- * The legacy event interface table createEvent builds from.
+ * The legacy event interface table createEvent builds from, each name a
+ * factory for the uninitialized shell the spec has createEvent answer with.
  *
- * The names the table maps to interfaces of other specifications --
- * BeforeUnloadEvent, DeviceMotionEvent, DeviceOrientationEvent, DragEvent,
- * HashChangeEvent, MessageEvent, StorageEvent and TouchEvent -- are absent
- * from it, so createEvent throws for them rather than answering with an event
- * of the wrong interface.
+ * The names the table maps to sensor and touch interfaces --
+ * DeviceMotionEvent, DeviceOrientationEvent and TouchEvent -- are absent
+ * from it: they name hardware a terminal does not have, so createEvent
+ * throws for them rather than answering with an event of the wrong
+ * interface.
  */
-const LEGACY_EVENT_INTERFACES = new Map<string, new (type: string) => Event>([
-	["compositionevent", CompositionEvent],
-	["customevent", CustomEvent],
-	["event", Event],
-	["events", Event],
-	["focusevent", FocusEvent],
-	["htmlevents", Event],
-	["keyboardevent", KeyboardEvent],
-	["mouseevent", MouseEvent],
-	["mouseevents", MouseEvent],
-	["svgevents", Event],
-	["textevent", CompositionEvent],
-	["uievent", UIEvent],
-	["uievents", UIEvent],
+const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
+	["beforeunloadevent", () => new BeforeUnloadEvent("", {})],
+	["compositionevent", () => new CompositionEvent("")],
+	["customevent", () => new CustomEvent("")],
+	["dragevent", () => new DragEvent("")],
+	["event", () => new Event("")],
+	["events", () => new Event("")],
+	["focusevent", () => new FocusEvent("")],
+	["hashchangeevent", () => new HashChangeEvent("")],
+	["htmlevents", () => new Event("")],
+	["keyboardevent", () => new KeyboardEvent("")],
+	["messageevent", () => new MessageEvent("")],
+	["mouseevent", () => new MouseEvent("")],
+	["mouseevents", () => new MouseEvent("")],
+	["storageevent", () => new StorageEvent("")],
+	["svgevents", () => new Event("")],
+	["textevent", () => new TextEvent("")],
+	["uievent", () => new UIEvent("")],
+	["uievents", () => new UIEvent("")],
 ]);
 
 export type EventListenerOrEventListenerObject =
@@ -4234,6 +4529,124 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 const kSlotAssignment = Symbol("slot assignment");
 const kAssignedNodes = Symbol("assigned nodes");
 const kCustomState = Symbol("custom element state");
+
+/**
+ * Move node into newParent before child.
+ *
+ * The tree ends up where remove-then-insert would leave it, but as one
+ * primitive: no removing or insertion steps run, no disconnected or
+ * connected callbacks fire, and everything the node carries -- its shadow
+ * trees, its part of the selection, focus, live ranges and iterators --
+ * rides along. A custom element hears connectedMoveCallback instead, or
+ * the disconnected/connected pair where it declares no move callback.
+ */
+function moveNode(node: Node, newParent: Node, child: Node | null): void {
+	if (shadowIncludingRoot(newParent) !== shadowIncludingRoot(node)) {
+		throw hierarchyRequestError(
+			"A node can only move within the tree it is already in",
+		);
+	}
+	if (isHostIncludingInclusiveAncestor(node, newParent)) {
+		throw hierarchyRequestError("A node cannot be moved into itself");
+	}
+	if (child !== null && child[kParent] !== newParent) {
+		throw notFoundError("The reference child is not a child of that parent");
+	}
+	if (node.nodeType !== ELEMENT_NODE && !isCharacterData(node)) {
+		throw hierarchyRequestError("That node cannot be moved");
+	}
+	if (node.nodeType === TEXT_NODE && newParent.nodeType === DOCUMENT_NODE) {
+		throw hierarchyRequestError("That node cannot go there");
+	}
+	if (
+		newParent.nodeType === DOCUMENT_NODE &&
+		node.nodeType === ELEMENT_NODE &&
+		(countChildren(newParent, ELEMENT_NODE) > 0 ||
+			(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
+			hasFollowing(child, DOCUMENT_TYPE_NODE))
+	) {
+		throw hierarchyRequestError("A document can have one element child");
+	}
+	const oldParent = node[kParent] as Node;
+	liveRangePreRemoveSteps(node);
+	const iterators = nodeIteratorsByRoot.get(getRoot(node));
+	if (iterators !== undefined) {
+		for (const iterator of iterators) {
+			preRemoveFromIterator(iterator, node);
+		}
+	}
+	const oldPreviousSibling = node[kPrevious];
+	const oldNextSibling = node[kNext];
+	unlinkChild(node);
+	const assignedSlot = isSlottable(node) ?
+			(node as Slottable)[kAssignedSlot] :
+		null;
+	if (assignedSlot !== null) {
+		assignSlottables(assignedSlot);
+	}
+	if (
+		isShadowRoot(getRoot(oldParent)) &&
+		oldParent instanceof HTMLSlotElement &&
+		oldParent[kAssignedNodes].length === 0
+	) {
+		signalASlotChange(oldParent);
+	}
+	if (hasInclusiveDescendantSlot(node)) {
+		assignSlottablesForTree(getRoot(oldParent));
+		assignSlottablesForTree(node);
+	}
+	if (child !== null) {
+		liveRangeInsertSteps(newParent, child, 1);
+	}
+	const newPreviousSibling =
+		child !== null ? child[kPrevious] : newParent[kLastChild];
+	linkChild(node, newParent, child);
+	const shadow =
+		newParent.nodeType === ELEMENT_NODE ?
+				(newParent as Element)[kShadowRoot] :
+			null;
+	if (shadow !== null && shadow[kSlotAssignment] === "named") {
+		if (isSlottable(node)) {
+			assignASlot(node as Slottable);
+		}
+	}
+	if (
+		isShadowRoot(getRoot(newParent)) &&
+		newParent instanceof HTMLSlotElement &&
+		newParent[kAssignedNodes].length === 0
+	) {
+		signalASlotChange(newParent);
+	}
+	assignSlottablesForTree(getRoot(node));
+	if (newParent.isConnected) {
+		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+			if (
+				descendant.nodeType !== ELEMENT_NODE ||
+				(descendant as Element)[kCustomState] !== "custom"
+			) {
+				continue;
+			}
+			const element = descendant as Element;
+			const definition = element[kDefinition];
+			if (definition?.lifecycleCallbacks.get("connectedMoveCallback")) {
+				enqueueCallbackReaction(element, "connectedMoveCallback", []);
+			} else {
+				enqueueCallbackReaction(element, "disconnectedCallback", []);
+				enqueueCallbackReaction(element, "connectedCallback", []);
+			}
+		}
+	}
+	bumpTreeVersion(oldParent, [node], false);
+	bumpTreeVersion(newParent, [node], true);
+	queueTreeMutationRecord(
+		oldParent,
+		[],
+		[node],
+		oldPreviousSibling,
+		oldNextSibling,
+	);
+	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
+}
 
 /** Insert node into parent before child. */
 function insertNode(
@@ -18478,6 +18891,26 @@ export class Document extends Node {
 		return elementsByClassName(this, String(classNames));
 	}
 
+	getElementsByName(elementName: string): NodeList {
+		const name = String(elementName);
+		return new NodeList(
+			() => {
+				const matches: Node[] = [];
+				for (const element of this.getElementsByTagName("*")) {
+					if (
+						element.namespaceURI === HTML_NAMESPACE &&
+						element.getAttribute("name") === name
+					) {
+						matches.push(element);
+					}
+				}
+				return matches;
+			},
+			true,
+			this,
+		);
+	}
+
 	getElementById(elementId: string): Element | null {
 		const id = String(elementId);
 		const entries = this[kIdMap].get(id);
@@ -18685,14 +19118,14 @@ export class Document extends Node {
 			throw new TypeError("createEvent needs an interface name");
 		}
 		const name = asciiLowercase(String(interfaceName));
-		const constructor = LEGACY_EVENT_INTERFACES.get(name);
-		if (constructor === undefined) {
+		const factory = LEGACY_EVENT_INTERFACES.get(name);
+		if (factory === undefined) {
 			throw domError(
 				"NotSupportedError",
 				`No event interface is named "${interfaceName}"`,
 			);
 		}
-		const event = new constructor("");
+		const event = constructInternal(factory);
 		event[kDispatchState].initialized = false;
 		return event;
 	}
@@ -19084,6 +19517,27 @@ const parentNodeMembers = {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const node = convertNodesIntoNode(nodes, this[kDocument]);
 			preInsert(node, this, null);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	moveBefore: {
+		value(this: Node, node: Node, child: Node | null): void {
+			if (arguments.length < 2) {
+				throw new TypeError("moveBefore needs a node and a child");
+			}
+			if (!(node instanceof Node)) {
+				throw new TypeError("That is not a node");
+			}
+			if (child !== null && child !== undefined && !(child instanceof Node)) {
+				throw new TypeError("That is not a node");
+			}
+			let reference = child ?? null;
+			if (reference === node) {
+				reference = node[kNext];
+			}
+			moveNode(node, this, reference);
 		},
 		configurable: true,
 		enumerable: true,
@@ -23051,6 +23505,7 @@ ceReactions(Element.prototype, [
 	"insertAdjacentElement",
 	"insertAdjacentHTML",
 	"insertAdjacentText",
+	"moveBefore",
 	"outerHTML",
 	"prepend",
 	"remove",
@@ -23071,6 +23526,7 @@ ceReactions(ShadowRoot.prototype, ["innerHTML", "setHTMLUnsafe"]);
 ceReactions(HTMLSlotElement.prototype, ["assign", "name"]);
 ceReactions(DocumentFragment.prototype, [
 	"append",
+	"moveBefore",
 	"prepend",
 	"replaceChildren",
 ]);
@@ -23080,6 +23536,7 @@ ceReactions(Document.prototype, [
 	"createElement",
 	"createElementNS",
 	"importNode",
+	"moveBefore",
 	"prepend",
 	"replaceChildren",
 	"title",
@@ -23299,6 +23756,7 @@ type ParentNodeMixin =
 	"firstElementChild" |
 	"lastElementChild" |
 	"append" |
+	"moveBefore" |
 	"prepend" |
 	"querySelector" |
 	"querySelectorAll" |

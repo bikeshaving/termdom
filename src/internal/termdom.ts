@@ -234,6 +234,14 @@ export interface TermDOMOptions {
 	 * size, color depth, input, resizes, lifecycle -- comes from here.
 	 */
 	transport?: TerminalTransport;
+	/**
+	 * The initial document's markup. Defaults to a blank page. A harness
+	 * that mounts a prewritten document -- the WPT runner mounting a test
+	 * file -- passes it here so the engine's own parser builds it.
+	 */
+	html?: string;
+	/** The initial document's URL. */
+	url?: string;
 }
 
 // Exported handles for the internals the test suite must reach (the layout
@@ -1021,7 +1029,8 @@ export class TermDOM {
 		this[kHeight] = this[kTransport].rows;
 
 		this.window = createDocumentWindow(
-			"<!DOCTYPE html><html><head></head><body></body></html>",
+			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
+			options.url,
 		);
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
@@ -3135,9 +3144,12 @@ async function render(
 			do {
 				termdom[kRenderQueued] = false;
 				await renderOnce(termdom);
+				// This frame is written; wake whatever awaited it. A callback
+				// that schedules another frame re-queues the loop, so a chain
+				// of requestAnimationFrame calls ticks frame by frame instead
+				// of stalling after the first.
+				drainFrameCallbacks(termdom);
 			} while (termdom[kRenderQueued]);
-			// The frame(s) are written; wake anything awaiting requestAnimationFrame.
-			drainFrameCallbacks(termdom);
 		} finally {
 			termdom[kIsRendering] = false;
 			termdom[kRenderInFlight] = null;
