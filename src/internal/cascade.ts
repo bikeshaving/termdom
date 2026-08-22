@@ -112,7 +112,7 @@ import {
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
 } from "./cssproperties.js";
-import {UA_DOCUMENT_STYLES} from "./useragent.js";
+import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 // ---------------------------------------------------------------------------
 // User-agent element defaults and shorthand expansion
@@ -989,266 +989,28 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"order": "0",
 };
 
-// ---- Terminal element defaults ----
-const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
-	// Metadata elements - never rendered in terminal
-	head: {display: "none"},
-	link: {display: "none"},
-	meta: {display: "none"},
-	script: {display: "none"},
-	style: {display: "none"},
-	title: {display: "none"},
+// ---- Element defaults the stylesheet cannot express ----
 
-	// Block elements
-	article: {display: "block"},
-	aside: {display: "block"},
-	blockquote: {display: "block"},
-	body: {display: "block"},
-	dd: {display: "block"},
-	// A disclosure and its summary are both blocks, so the summary owns its
-	// row and the body stacks under it. The marker and the open/closed glyph
-	// are ::before rules in the UA document stylesheet.
-	details: {display: "block"},
-	summary: {display: "block", cursor: "pointer"},
-	div: {display: "block"},
-	dl: {display: "block"},
-	dt: {display: "block"},
-	// A group of controls in a labelled box, the way a browser draws one: a
-	// border around the group with the legend sitting IN the top border line.
-	// The legend gets there by rising one row onto the border and painting the
-	// terminal's own background over the cells it covers -- which is what
-	// "interrupting the border" is.
-	fieldset: {
-		display: "block",
-		border: "1px solid",
-		padding: "0 1ch",
-	},
-	legend: {
-		"display": "block",
-		"margin-top": "-1px",
-		"font-weight": "bold",
-	},
-	figcaption: {display: "block"},
-	figure: {display: "block"},
-	footer: {display: "block"},
-	form: {display: "block"},
-	h1: {display: "block"},
-	h2: {display: "block"},
-	h3: {display: "block"},
-	h4: {display: "block"},
-	h5: {display: "block"},
-	h6: {display: "block"},
-	header: {display: "block"},
-	hr: {"display": "block", "border-top": "1px solid"},
-	html: {display: "block"},
-	li: {display: "list-item"},
-	main: {display: "block"},
-	nav: {display: "block"},
-	ol: {"display": "block", "padding-left": "4ch"},
-	p: {display: "block"},
-	pre: {"display": "block", "white-space": "pre"},
-	// A gauge is a flat field in the input family, sized like a browser's own
-	// unstyled progress bar: a fixed track the fill is a fraction of.
-	progress: {"display": "inline-block", "width": "10ch", "white-space": "pre"},
-	meter: {"display": "inline-block", "width": "10ch", "white-space": "pre"},
-	section: {display: "block"},
-	ul: {"display": "block", "padding-left": "4ch"},
-
-	// Inline elements
-	a: {display: "inline"},
-	abbr: {display: "inline"},
-	b: {"display": "inline", "font-weight": "bold"},
-	br: {display: "inline"},
-	cite: {"display": "inline", "font-style": "italic"},
-	code: {"display": "inline", "background-color": "rgba(0, 0, 0, 0.1)"},
-	dfn: {"display": "inline", "font-style": "italic"},
-	em: {"display": "inline", "font-style": "italic"},
-	i: {"display": "inline", "font-style": "italic"},
-	// A key is a keycap: bold text inside brackets, "[q]", the form every
-	// terminal help screen and man page uses for a key to press. A browser
-	// draws the cap with a border and a monospace face; a terminal is already
-	// monospace and cannot afford a box around one glyph, so the accelerator
-	// convention stands in: the marked keys are bold and underlined, the way
-	// CUA-era TUIs marked a menu's mnemonic letter. A decoration costs no
-	// cells, so marking up a key never moves layout.
-	kbd: {
-		"display": "inline",
-		"font-weight": "bold",
-		"text-decoration": "underline",
-	},
-	label: {display: "inline"},
-	mark: {display: "inline"},
-	q: {display: "inline"},
-	s: {"display": "inline", "text-decoration": "line-through"},
-	samp: {display: "inline"},
-	// As in browsers: a slot generates no box of its own -- its projected
-	// (or fallback) content is spliced into the parent's child sequence by
-	// the walker's flat-tree layer (see composition.ts). Styling the slot
-	// still works for inherited properties, exactly the browser behavior.
-	slot: {display: "contents"},
-	// SGR faint is the terminal's small: same glyph cells, reduced ink.
-	small: {"display": "inline", "font-weight": "lighter"},
-	span: {display: "inline"},
-	strong: {"display": "inline", "font-weight": "bold"},
-	sub: {display: "inline"},
-	sup: {display: "inline"},
-	time: {display: "inline"},
-	u: {"display": "inline", "text-decoration": "underline"},
-	var: {"display": "inline", "font-style": "italic"},
-
-	// Terminal UI controls. The button joins the flat field family: no
-	// border (three rows and two columns per button, in a world of one-row
-	// list items), just breathing room and the family's focus underline
-	// (see getElementDefaults). Authors who want chrome add it.
-	// The button is the toggles' visual language extended to labels:
-	// "[ Label ]", the delimited one-row form every terminal tradition
-	// from dialog/whiptail to Midnight Commander to the text-mode
-	// browsers (Lynx, w3m, ELinks render HTML buttons exactly this way)
-	// converged on. The brackets are UA ::before/::after rules in the UA
-	// document stylesheet -- author content rules override them (an
-	// icon button sets its own), and focus underlines the whole token
-	// like the rest of the field family.
-	button: {
-		display: "inline-block",
-		cursor: "pointer",
-	},
-	// A dialog is a box drawn over the page, so it is bordered and opaque:
-	// the border is what says where the dialog ends and the document it sits
-	// on begins, and Canvas -- the terminal's own background -- is what makes
-	// a non-modal one, which has no backdrop clearing the viewport for it,
-	// still hide the content it covers rather than tangle with it.
-	dialog: {
-		"display": "block",
-		"border": "1px solid",
-		"padding": "0 1ch",
-		"background-color": "Canvas",
-	},
-	// A text input is a flat field: bare when blurred (dim placeholder and
-	// the content are the affordance -- the convention of the entire
-	// prompt-tool ecosystem), underlined when FOCUSED (see
-	// getElementDefaults) -- "underline means live." Plain SGR 4 only:
-	// styled underlines (4:2) verified dead through the baseline
-	// tmux+Terminal.app chain, where the intermediary normalizes the
-	// graceful 4-then-4:2 pair into one styled attribute and the terminal
-	// drops it entirely -- the focused field would lose its marker on
-	// exactly the stack we promise works. No borders (three rows and two
-	// columns per field), no backgrounds (no theme-safe color exists).
-	// Width mirrors the browser's own size=20 default. This is the UA
-	// baseline, deliberately lightweight; authors who want chrome add it.
-	input: {
-		"display": "inline-block",
-		"width": "20ch",
-		// A field's value never wraps or collapses -- runs of spaces are
-		// real content, and the painter's scroll-window handles overflow.
-		"white-space": "pre",
-	},
-	// A select is a flat field in the input family: the selected option's
-	// label plus a dim indicator, underlined when focused (see
-	// getElementDefaults for the dynamic width and focus underline).
-	select: {
-		"display": "inline-block",
-		"white-space": "pre",
-	},
-	// A textarea preserves newlines and soft-wraps at its edge, exactly the
-	// browser default. Its UA shadow tree's value text lays out through the
-	// normal pipeline, so this is what makes multiline values multiline --
-	// and break-word (the browser's own textarea UA rule) is what makes a
-	// long unbroken word wrap at the field edge instead of escaping it.
-	textarea: {
-		"display": "inline-block",
-		"border": "1px solid",
-		"padding": "0 1ch",
-		"white-space": "pre-wrap",
-		"overflow-wrap": "break-word",
-	},
-
-	// Tables
-	caption: {display: "table-caption"},
-	col: {display: "table-column"},
-	colgroup: {display: "table-column-group"},
-	table: {"display": "table", "border-collapse": "collapse"},
-	tbody: {display: "table-row-group"},
-	td: {
-		"display": "table-cell",
-		"border-top-width": "1px",
-		"border-right-width": "1px",
-		"border-bottom-width": "1px",
-		"border-left-width": "1px",
-		"border-top-style": "solid",
-		"border-right-style": "solid",
-		"border-bottom-style": "solid",
-		"border-left-style": "solid",
-		"padding-left": "1ch",
-		"padding-right": "1ch",
-	},
-	tfoot: {display: "table-footer-group"},
-	th: {
-		"display": "table-cell",
-		"border-top-width": "1px",
-		"border-right-width": "1px",
-		"border-bottom-width": "1px",
-		"border-left-width": "1px",
-		"border-top-style": "solid",
-		"border-right-style": "solid",
-		"border-bottom-style": "solid",
-		"border-left-style": "solid",
-		"padding-left": "1ch",
-		"padding-right": "1ch",
-		"font-weight": "bold",
-	},
-	thead: {display: "table-header-group"},
-	tr: {display: "table-row"},
-};
-
-// The defaults above may use shorthands; normalize them once so the
-// per-property consultation below always finds longhands.
-for (const [tag, declarations] of Object.entries(TERMINAL_ELEMENT_DEFAULTS)) {
-	TERMINAL_ELEMENT_DEFAULTS[tag] = expandShorthands(declarations);
-}
-// input's own entry in TERMINAL_ELEMENT_DEFAULTS above (bordered box, 20ch
-// wide) is shaped for a text field, whose void-element content has nothing
-// else to size or paint a box from. A checkbox/radio renders as a compact
-// "[ ]"/"[x]" glyph instead -- same reasoning, same
-// problem, opposite answer: 3 cells wide, no border, no padding to pad it
-// out further.
-const CHECKBOX_DEFAULTS: Record<string, string> = {
-	display: "inline-block",
-	width: "3ch",
-};
 /**
- * TERMINAL_ELEMENT_DEFAULTS keyed purely by tag name can't distinguish an
- * <input type="checkbox"> from a text <input> -- both are just "input". This
- * is the one place type has to be checked before falling back to the
- * tag-level defaults.
+ * The per-element defaults that are STATE, not stylesheet: the fullscreen
+ * element's viewport block (explicit cells -- the alternate screen IS the
+ * containing geometry), a select sized to its widest option label so the
+ * field never jumps as the selection changes, and the size attribute
+ * driving a text input's width. Everything expressible as CSS lives in
+ * UA_ELEMENT_STYLES; these resolve at the initial-value layer, below it.
  */
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
-	// The defaults are keyed by the element's own name, which is what the
-	// table is indexed by and what every branch below asks about. `tagName`
-	// answers the same question in the document's case convention, deriving a
-	// fresh string every time it is read; this is read once, per property, per
-	// element, on the resolution path.
-	// The sheet is HTML's. An element of the same local name in another
-	// namespace -- the <select> a stray `<svg>` puts its children under -- is
-	// not that element and has none of its interface.
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return undefined;
 	}
 	const name = element.localName;
 	const document = element.ownerDocument;
-	// The browser's UA :fullscreen treatment: the fullscreen element fills
-	// the viewport. Explicit cells rather than percentages -- the alternate
-	// screen IS the containing geometry, and innerWidth/Height are its size.
 	if (document !== null && document.fullscreenElement === element) {
 		const window = document.defaultView;
-		const base = TERMINAL_ELEMENT_DEFAULTS[name] ?? {};
 		if (window) {
 			return {
-				...base,
-				// The browser's :fullscreen block: fixed at the viewport
-				// origin, viewport-sized, opaque over the document (Canvas =
-				// the terminal's own background, the ::backdrop stand-in).
 				"position": "fixed",
 				"top": "0px",
 				"left": "0px",
@@ -1258,70 +1020,29 @@ function getElementDefaults(
 			};
 		}
 	}
-	// A textarea's rows/cols are NOT defaults here: they size the CONTENT
-	// box, and only layout knows what border and padding the cascade actually
-	// left on the element to add around it. Baking the UA chrome into a
-	// min-height/width constant left authors unable to unbake it with
-	// `border: none`. See the textarea leaf sizing in layout.ts.
-	if (name === "button") {
-		const merged: Record<string, string> = {
-			...TERMINAL_ELEMENT_DEFAULTS.button,
-		};
-		if (document?.activeElement === element) {
-			merged["text-decoration-line"] = "underline";
-		}
-		return merged;
-	}
 	if (name === "select") {
-		// Sized to the LONGEST option label plus the indicator, exactly as a
-		// browser sizes a closed select -- so the field's width never jumps
-		// as the selection changes.
 		const select = element as HTMLSelectElement;
 		let widest = 0;
 		for (const option of select.options) {
 			widest = Math.max(widest, stringWidth(option.label));
 		}
-		const merged: Record<string, string> = {
-			...TERMINAL_ELEMENT_DEFAULTS.select,
-			width: `${widest + 2}ch`,
-		};
-		if (document?.activeElement === select) {
-			merged["text-decoration-line"] = "underline";
-		}
-		return merged;
+		return {width: `${widest + 2}ch`};
 	}
 	if (name === "input") {
 		const input = element as HTMLInputElement;
-		// The FOCUSED field gets the underline -- the UA "this is the live
-		// one" signal, in plain SGR 4, the one underline every terminal and
-		// every intermediary renders. Focus changes invalidate the
-		// computed-style cache (see handleFocusChange), so this is
-		// re-consulted at the right moments.
-		const focused = document?.activeElement === input;
 		if (input.type === "checkbox" || input.type === "radio") {
-			// The compact glyph is bare when blurred; focus underlines it --
-			// same live-wire language as the text field.
-			return focused ?
-					{...CHECKBOX_DEFAULTS, "text-decoration-line": "underline"} :
-				CHECKBOX_DEFAULTS;
+			return undefined;
 		}
-		// The size attribute drives a text input's default width, one column
-		// per character position, exactly as a browser sizes an unstyled
-		// input from size="...". The static defaults entry carries the spec
-		// default of 20.
+		// A text input's width is attribute state: size columns when the
+		// attribute says so, the spec's 20 otherwise. It lives here rather
+		// than in the sheet so the attribute can beat the default without a
+		// width the sheet cannot spell (there is no attr() length).
 		const size = parseInt(input.getAttribute("size") ?? "", 10);
-		if (Number.isFinite(size) || focused) {
-			const merged = {...TERMINAL_ELEMENT_DEFAULTS.input};
-			if (Number.isFinite(size) && size > 0) {
-				merged.width = `${size}ch`;
-			}
-			if (focused) {
-				merged["text-decoration-line"] = "underline";
-			}
-			return merged;
-		}
+		return {
+			width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`,
+		};
 	}
-	return TERMINAL_ELEMENT_DEFAULTS[name];
+	return undefined;
 }
 
 // ---- Inheritance / initial-value tables ----
@@ -7222,7 +6943,7 @@ let uaDocumentSheet: CSSStyleSheet | null = null;
 function uaStyleSheet(): CSSStyleSheet {
 	if (!uaDocumentSheet) {
 		uaDocumentSheet = new CSSStyleSheet();
-		uaDocumentSheet.replaceSync(UA_DOCUMENT_STYLES);
+		uaDocumentSheet.replaceSync(UA_ELEMENT_STYLES + UA_DOCUMENT_STYLES);
 	}
 	return uaDocumentSheet;
 }
@@ -8378,8 +8099,7 @@ function resolvePropertyValueRaw(
 	// from the static table, so it has to be resolved before it.
 	if (
 		property === "padding-left" &&
-		(tagName === "ul" || tagName === "ol") &&
-		declaration[kElement].ownerDocument?.defaultView
+		(tagName === "ul" || tagName === "ol")
 	) {
 		return `${getListGutterWidth(declaration[kElement])}ch`;
 	}
