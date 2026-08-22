@@ -1917,3 +1917,36 @@ test("the selection APIs answer null where they do not apply, and throw when set
 		input.select();
 	}
 });
+
+test("createContextualFragment parses in the range's context", () => {
+	const document = make();
+	const div = document.createElement("div");
+	const text = document.createTextNode("anchor");
+	div.appendChild(text);
+	document.body.appendChild(div);
+
+	const range = document.createRange();
+	range.setStart(text, 0);
+	const fragment = range.createContextualFragment("<b>bold</b> tail");
+	expect(fragment.childNodes.length).toBe(2);
+	expect((fragment.firstChild as Element).tagName).toBe("B");
+	expect(fragment.lastChild!.textContent).toBe(" tail");
+
+	// A range anchored at the document parses against the body.
+	const documentRange = document.createRange();
+	documentRange.setStart(document, 0);
+	const fromDocument = documentRange.createContextualFragment("<i>x</i>");
+	expect((fromDocument.firstChild as Element).tagName).toBe("I");
+});
+
+test("a shadow root's activeElement retargets the document's focus", () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const root = host.attachShadow({mode: "open"});
+	const inner = document.createElement("span");
+	root.appendChild(inner);
+
+	// Nothing focused: the root answers null, not the document's body.
+	expect(root.activeElement).toBe(null);
+});

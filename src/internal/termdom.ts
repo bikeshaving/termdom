@@ -680,6 +680,18 @@ declare module "./dom.js" {
 			options?: boolean | globalThis.ScrollIntoViewOptions,
 		): void;
 	}
+	interface HTMLElement {
+		readonly offsetParent: globalThis.Element | null;
+		readonly offsetTop: number;
+		readonly offsetLeft: number;
+		readonly offsetWidth: number;
+		readonly offsetHeight: number;
+		checkVisibility(options?: globalThis.CheckVisibilityOptions): boolean;
+	}
+	interface Document {
+		elementFromPoint(x: number, y: number): Element | null;
+		elementsFromPoint(x: number, y: number): Element[];
+	}
 }
 const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
@@ -1670,6 +1682,59 @@ export class TermDOM {
 				x,
 				y + termDOM[kViewport].scrollTop,
 			);
+		};
+
+		// The stack CSSOM View asks for, approximated as the hit element and
+		// its flat-tree ancestors: content that overlaps without containing
+		// (an absolutely placed box over a sibling) reports only the winner's
+		// chain. The divergence is declared here rather than hidden.
+		Document.prototype.elementsFromPoint = function (
+			this: Document,
+			x: number,
+			y: number,
+		): Element[] {
+			const termDOM = engineOf(this);
+			const stack: Element[] = [];
+			let current = findElementAtDocumentPoint(
+				termDOM,
+				x,
+				y + termDOM[kViewport].scrollTop,
+			);
+			while (current !== null) {
+				stack.push(current);
+				current = termDOM[kUAToolkit].flatParentElement<Element>(current);
+			}
+			return stack;
+		};
+
+		// checkVisibility, on the definition the focus walk already uses: a
+		// rendered element -- nothing on its flat chain display:none, and it
+		// produced boxes -- with the visibility check the options ask for.
+		window.HTMLElement.prototype.checkVisibility = function (
+			this: Element,
+			options?: globalThis.CheckVisibilityOptions,
+		): boolean {
+			if (!this.isConnected) {
+				return false;
+			}
+			const termDOM = engineOf(this);
+			for (
+				let ancestor: Element | null = this;
+				ancestor;
+				ancestor = termDOM[kUAToolkit].flatParentElement<Element>(ancestor)
+			) {
+				const style = window.getComputedStyle(ancestor);
+				if (style.display === "none") {
+					return false;
+				}
+			}
+			if (
+				(options?.checkVisibilityCSS || options?.visibilityProperty) &&
+				window.getComputedStyle(this).visibility !== "visible"
+			) {
+				return false;
+			}
+			return termDOM[kLayoutEngine].getRects(this).length > 0;
 		};
 
 		// Moving focus is the DOM's; firing the events a move fires, and

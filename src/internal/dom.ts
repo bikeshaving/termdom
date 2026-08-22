@@ -9326,6 +9326,29 @@ export class ShadowRoot extends DocumentFragment {
 		}
 	}
 
+	/**
+	 * The document's active element, retargeted into this tree: the
+	 * shadow-including ancestor of the focus that is one of THIS root's
+	 * descendants, or null when the focus is elsewhere entirely.
+	 */
+	get activeElement(): Element | null {
+		const document = this.ownerDocument as Document | null;
+		let current: Node | null = (document?.activeElement ?? null) as
+			| Node |
+			null;
+		while (current !== null) {
+			const root = current.getRootNode() as Node;
+			if (root === (this as unknown as Node)) {
+				return current as Element;
+			}
+			current =
+				root instanceof ShadowRoot ?
+						((root.host ?? null) as Node | null) :
+					null;
+		}
+		return null;
+	}
+
 	get mode(): "open" | "closed" {
 		return this[kShadowMode];
 	}
@@ -20554,6 +20577,34 @@ export class Range extends AbstractRange {
 		insertIntoRange(this, node);
 	}
 
+	/**
+	 * Parse markup in the range's context: the start node's element (a text
+	 * node's parent; the body when the start is the document), exactly the
+	 * context innerHTML would give the same markup.
+	 */
+	createContextualFragment(markup: string): DocumentFragment {
+		const start = this[kStartNode];
+		let context: Element | null =
+			start instanceof Element ?
+				start :
+				start[kParent] instanceof Element ?
+						(start[kParent] as Element) :
+					null;
+		if (context === null) {
+			const document =
+				start instanceof Document ?
+					start :
+						(start.ownerDocument as Document | null);
+			context = (document?.body ?? document?.documentElement ?? null) as
+			| Element |
+			null;
+		}
+		if (context === null) {
+			throw domError("NotSupportedError", "The range has no context");
+		}
+		return parseFragmentHTML(String(markup ?? ""), context);
+	}
+
 	surroundContents(newParent: Node): void {
 		if (arguments.length < 1) {
 			throw new TypeError("surroundContents needs a node");
@@ -23259,7 +23310,7 @@ type FullscreenSurface =
 type ElementRemainder =
 	| "currentCSSZoom" | // NEVER: zoom is a browser's
 	"part" | // RUNTIME: reflected from the tables
-	"checkVisibility" | // GAP
+	"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
 	"computedStyleMap" | // GAP: Typed OM
 	"animate" | // GAP: no animation timeline
 	"getAnimations"; // GAP
@@ -23322,8 +23373,6 @@ declare const _checked: [
 		ParentNodeMixin |
 		// RUNTIME on the document; GAP on the root:
 		"onslotchange" |
-		"activeElement" |
-		"adoptedStyleSheets" |
 		"fullscreenElement" |
 		"pictureInPictureElement" |
 		"pointerLockElement" |
