@@ -397,6 +397,7 @@ interface TerminalSessionHandlers {
 
 const kWidthSettled = Symbol("widthSettled");
 const kWidthProbes = Symbol("widthProbes");
+const kProbingEnded = Symbol("probingEnded");
 const kWriteEpoch = Symbol("writeEpoch");
 const kDsrSequence = Symbol("dsrSequence");
 const kWidthProbeTimer = Symbol("widthProbeTimer");
@@ -512,6 +513,7 @@ export class TerminalSession {
 	/** The sequence number of the outstanding cursor query, if any. */
 	declare [kCursorDetectionSequence]: number;
 	/** Width probes written and not yet answered, oldest first. */
+	declare [kProbingEnded]: boolean;
 	declare [kWidthProbes]: Array<{
 		cluster: string;
 		run: number;
@@ -642,6 +644,7 @@ export class TerminalSession {
 		this[kDsrSequence] = 0;
 		this[kCursorDetectionSequence] = 0;
 		this[kWidthProbes] = [];
+		this[kProbingEnded] = false;
 		this[kWidthSettled] = new Set<string>();
 		this[kWidthProbing] = true;
 		this[kWidthAnswered] = false;
@@ -673,6 +676,12 @@ export class TerminalSession {
 				requestStarvationFrame(this);
 			},
 			probe: (cluster: string, run: number, column: number, width: number) => {
+				// A teardown frame asks nothing: the reply would arrive
+				// after the tty is handed back, typed into the next shell,
+				// and the width it names will never be reused.
+				if (this[kProbingEnded]) {
+					return "";
+				}
 				this[kWidthAsked].add(cluster);
 				this[kWidthStarved].delete(cluster);
 				this[kWidthProbes].push({
@@ -1034,11 +1043,45 @@ export class TerminalSession {
 	 * loop open. Only modes we actually set are restored -- reset is where the
 	 * terminal already was.
 	 */
+	/**
+	 * Wait for the reply of every outstanding cursor-position query --
+	 * width probes, an anchor query -- or give up when the deadline
+	 * passes. A reply that lands after the tty is handed back is typed
+	 * into the caller's shell, so teardown holds the wire until the debt
+	 * is paid or forfeited. Mode probes are not waited on: they belong to
+	 * attach, and their stragglers have erase handling of their own.
+	 */
+	drainQueries(deadlineMs: number): Promise<void> {
+		this[kProbingEnded] = true;
+		if (!this[kInteractive] || this[kDisposed]) {
+			return Promise.resolve();
+		}
+		const settled = () =>
+			this[kWidthProbes].length === 0 &&
+			this[kCursorDetectionHandler] === null;
+		if (settled()) {
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			const deadline = Date.now() + deadlineMs;
+			const timer = setInterval(() => {
+				if (settled() || Date.now() >= deadline) {
+					clearInterval(timer);
+					resolve();
+				}
+			}, 10);
+			// A process with nothing else to do may exit instead of
+			// waiting out a forfeited deadline.
+			timer.unref?.();
+		});
+	}
+
 	dispose(): void {
 		if (this[kDisposed]) {
 			return;
 		}
 		this[kDisposed] = true;
+		this[kProbingEnded] = true;
 
 		// We asked for explicit bidi on the way in; give the terminal back the
 		// mode it reported, so the next command inherits its own settings rather

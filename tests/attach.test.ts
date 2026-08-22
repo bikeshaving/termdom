@@ -287,6 +287,55 @@ test("a beforeunload listener that preventDefaults keeps the session", async () 
 	expect(watched.closes()).toBe(1);
 });
 
+test("window.close() drains cursor-report debt before the transport closes", async () => {
+	// A frame's width probes ask the terminal where the cursor landed; the
+	// replies to the last frame's probes may still be on the wire when the
+	// app closes. Teardown consumes them before handing the tty back --
+	// otherwise the shell that inherits it reads them as typed input.
+	let output = "";
+	let closes = 0;
+	let pushInput!: (text: string) => void;
+	const transport = {
+		cols: 40,
+		rows: 10,
+		colorDepth: "rgb",
+		readable: new ReadableStream<string>({
+			start(controller) {
+				pushInput = (text) => controller.enqueue(text);
+			},
+		}),
+		writable: new WritableStream<string>({
+			write(chunk) {
+				output += String(chunk);
+			},
+		}),
+		resizes: new ReadableStream({start() {}}),
+		sharesScreen: false,
+		interactive: true,
+		ready: Promise.resolve(),
+		closed: new Promise(() => {}),
+		close: () => {
+			closes++;
+		},
+	};
+	const dom = new TermDOM({transport: transport as never});
+	await dom.attach();
+	dom.document.body.innerHTML = "<div>\u{1F31E} weather</div>";
+	await nextFrame(dom);
+	const debt = output.split("\x1b[6n").length - 1;
+	expect(debt).toBeGreaterThan(0);
+
+	dom.window.close();
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	expect(closes).toBe(0);
+
+	for (let i = 0; i < debt; i++) {
+		pushInput(`\x1b[5;${7 + i}R`);
+	}
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	expect(closes).toBe(1);
+});
+
 test("a beforeunload returnValue keeps the session", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const watched = closeCountingTransport(terminal);

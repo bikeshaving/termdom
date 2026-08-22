@@ -2781,6 +2781,11 @@ function installWindowExtensions(
 		void (async () => {
 			if (wasAttached) {
 				await termDOM[kAttachReady];
+				// The last frames' DSR queries -- width probes above all --
+				// have replies on the wire. Consume them while the session
+				// still reads, or they are typed into the shell that
+				// inherits the tty.
+				await termDOM[kSession].drainQueries(200);
 			}
 			await termDOM.dispose();
 			if (wasAttached) {
