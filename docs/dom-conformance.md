@@ -18,10 +18,10 @@ window's legacy named access to elements by id.
 - Reference tests (no testharness, scored by pixels): 55
 - Excluded, each with its reason below: 397
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 610
-- Files whose harness did not complete: 111
-- Subtests passed: 95064
-- Subtests failed: 1389
+- Files whose harness completed: 611
+- Files whose harness did not complete: 110
+- Subtests passed: 95296
+- Subtests failed: 1157
 
 ## Exclusions
 
@@ -681,7 +681,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Text-constructor.html | EXCLUDED (requires-browsing-context: the shared constructor test builds a frame document) | 0 | 0 |
 | dom/nodes/Text-splitText.html | OK | 6 | 0 |
 | dom/nodes/Text-wholeText.html | OK | 1 | 0 |
-| dom/nodes/adoption.window.js | OK | 2 | 4 |
+| dom/nodes/adoption.window.js | OK | 4 | 2 |
 | dom/nodes/append-on-Document.html | OK | 5 | 0 |
 | dom/nodes/attach-shadow-realm-after-adoption.html | EXCLUDED (requires-browsing-context: the shadow host is adopted out of a frame's document) | 0 | 0 |
 | dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 2 | 0 |
@@ -729,10 +729,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 7 | 0 |
 | dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 1 | 4 |
+| dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/focus-preserve-render.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/focus-preserve.html | OK | 1 | 3 |
-| dom/nodes/moveBefore/focus-within.html | OK | 3 | 2 |
+| dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
+| dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/fullscreen-preserve.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
@@ -1212,7 +1212,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 1 | 2 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
-| shadow-dom/ShadowRoot-interface.html | OK | 8 | 4 |
+| shadow-dom/ShadowRoot-interface.html | OK | 10 | 2 |
 | shadow-dom/Slottable-mixin.html | OK | 4 | 0 |
 | shadow-dom/accesskey.tentative.html | TIMEOUT | 0 | 2 |
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
@@ -1357,7 +1357,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-pseudo-on-shadow-host-3.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-scroll-under-delegatesFocus.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 12 | 0 |
-| shadow-dom/focus/focus-shadowhost-display-none.html | TIMEOUT | 0 | 2 |
+| shadow-dom/focus/focus-shadowhost-display-none.html | OK | 0 | 2 |
 | shadow-dom/focus/focus-slot-box-generated-tabindex-0.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tab-on-shadow-host.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-negative-delegatesFocus.html | OK | 1 | 0 |
@@ -1440,7 +1440,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slots.html | OK | 26 | 0 |
 | shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-user-input: a touch action sequence driven through testdriver) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html | OK | 1 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 0 | 1 |
+| shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
@@ -1449,7 +1449,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html | OK | 0 | 2 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | OK | 1 | 1 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | OK | 0 | 2 |
@@ -1465,8 +1465,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 0 | 2 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 0 | 3 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | OK | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
@@ -1474,20 +1474,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-002.html | REFTEST | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 0 | 14 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 0 | 3 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 0 | 6 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 0 | 18 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-001.html | OK | 0 | 2 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-002.html | OK | 0 | 2 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/shadow-root-001.html | OK | 0 | 4 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | OK | 0 | 2 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | OK | 0 | 2 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html | OK | 0 | 14 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 6 | 8 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 3 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 6 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 18 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-001.html | OK | 2 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-002.html | OK | 2 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/shadow-root-001.html | OK | 4 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | OK | 2 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | OK | 2 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html | OK | 14 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-001.html | OK | 1 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-002.html | OK | 0 | 8 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-003.html | OK | 0 | 111 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-002.html | OK | 8 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-003.html | OK | 111 | 0 |
 | shadow-dom/untriaged/styles/not-apply-in-shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/styles/test-001.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/styles/test-003.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
@@ -1513,18 +1513,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/HTMLElement-attachInternals.html | OK | 3 | 1 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
 | custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
-| custom-elements/adopted-callback.html | TIMEOUT | 34 | 37 |
+| custom-elements/adopted-callback.html | TIMEOUT | 42 | 29 |
 | custom-elements/append-children-to-new-parent-cycle.html | TIMEOUT | 0 | 1 |
 | custom-elements/attribute-changed-callback.html | OK | 13 | 0 |
 | custom-elements/builtin-coverage.html | EXCLUDED (customized built-ins: every case defines a customized built-in with an extends option) | 0 | 0 |
 | custom-elements/connected-callbacks-html-fragment-parsing.html | TIMEOUT | 6 | 2 |
 | custom-elements/connected-callbacks-template.html | EXCLUDED (requires-script-execution: the definition is registered by a script the parser runs inside the template) | 0 | 0 |
-| custom-elements/connected-callbacks.html | TIMEOUT | 18 | 22 |
+| custom-elements/connected-callbacks.html | TIMEOUT | 30 | 10 |
 | custom-elements/createElement-reentrant-construction.window.js | OK | 2 | 0 |
 | custom-elements/cross-realm-callback-report-exception.html | ERROR (Cannot set properties of undefined (setting 'onerror')) | 0 | 0 |
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
 | custom-elements/customized-built-in-constructor-exceptions.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
-| custom-elements/disconnected-callbacks.html | TIMEOUT | 18 | 22 |
+| custom-elements/disconnected-callbacks.html | TIMEOUT | 30 | 10 |
 | custom-elements/element-internals-aria-element-reflection.html | OK | 5 | 4 |
 | custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/element-internals-shadowroot.html | OK | 7 | 0 |
@@ -1659,7 +1659,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/pseudo-class-defined.window.js | OK | 0 | 3 |
 | custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | TIMEOUT | 2 | 21 |
 | custom-elements/registries/scoped-registry-append.html | OK | 2 | 14 |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 4 | 10 |
+| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 5 | 9 |
 | custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
 | custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 0 | 66 |
 | custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 10 | 2 |
@@ -1867,8 +1867,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - appendChild() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
 - adoptNode() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
-- appendChild() and ShadowRoot: That node's document is not mounted in a terminal
-- adoptNode() and ShadowRoot: That node's document is not mounted in a terminal
 
 ### dom/nodes/moveBefore/Node-moveBefore.html
 
@@ -1915,24 +1913,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/moveBefore/css-transition-trigger.html
 
 - Node.moveBefore should trigger CSS transition state (left) if needed: Test timed out
-
-### dom/nodes/moveBefore/fire-focusin-focusout.html
-
-- Don't fire focusin/out when reparenting an element that has focus within: assert_array_equals: lengths differ, expected array ["button.onfocusin"] length 1, got [] length 0
-- Don't fire focusin/out when moving to the same parent: assert_array_equals: lengths differ, expected array ["button.onfocusin"] length 1, got [] length 0
-- Don't fire focusin and then correct when moving to an inert subtree: assert_array_equals: lengths differ, expected array ["button.onfocusin"] length 1, got [] length 0
-- Don't fire focusin and then correct when moving to a tree that is made inert using style: assert_array_equals: lengths differ, expected array ["button.onfocusin"] length 1, got [] length 0
-
-### dom/nodes/moveBefore/focus-preserve.html
-
-- when reparenting a focused element into an inert parent, reset the document focus: promise_test: Unhandled rejection with value: undefined
-- when reparenting a focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: undefined
-- when reparenting an ancestor of an focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: undefined
-
-### dom/nodes/moveBefore/focus-within.html
-
-- :focus-within should be eventually up to date when moving to an inert subtree: assert_array_equals: lengths differ, expected array [] length 0, got ["HTML", "BODY", "inert_parent", "button"] length 4
-- :focus-within should be eventually up to date when moving to a subtree that would become inert via style: assert_array_equals: lengths differ, expected array [] length 0, got ["HTML", "BODY", "inert_when_not_empty_parent", "button"] length 4
 
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
@@ -2509,8 +2489,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/ShadowRoot-interface.html
 
-- ShadowRoot.activeElement must return the focused element of the context object when shadow root is open.: assert_equals: ShadowRoot.host must return null if an open shadow tree lost focus expected null but got Element node <input></input>
-- ShadowRoot.activeElement must return the focused element of the context object when shadow root is closed.: assert_equals: ShadowRoot.host must return null if an closed shadow tree lost focus expected null but got Element node <input></input>
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 - ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: assert_equals: shadowRoot.styleSheets must be empty when the shadow root is not connected expected 0 but got 2
 
@@ -2628,8 +2606,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
-- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: Test timed out
-- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: 
+- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: assert_equals: expected "none" but got "block"
+- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: assert_equals: expected "none" but got "block"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
@@ -2702,34 +2680,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html
-
-- A_10_02_02_01_T01: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html
-
-- A_10_01_02_01_T01: That node's document is not mounted in a terminal
-- A_10_01_02_01_T02: That node's document is not mounted in a terminal
-
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
 
-- A_10_01_02_06_01_T02: That node's document is not mounted in a terminal
+- A_10_01_02_06_01_T02: s.elementFromPoint is not a function
 
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html
 
-- A_10_01_02_06_02_T01: That node's document is not mounted in a terminal
-- A_10_01_02_06_02_T02: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html
-
-- A_08_02_01_T01: That node's document is not mounted in a terminal
-- A_08_02_01_T02: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html
-
-- A_08_02_02_T01: That node's document is not mounted in a terminal
-- A_08_02_02_T02: That node's document is not mounted in a terminal
-- A_08_02_02_T03: That node's document is not mounted in a terminal
+- A_10_01_02_06_02_T01: s.elementFromPoint is not a function
+- A_10_01_02_06_02_T02: s.elementFromPoint is not a function
 
 ### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
 
@@ -2737,225 +2695,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
 
-- <head> and <body> in a shadow tree should not be accessible from owner document's "head" and "body" properties, respectively.: That node's document is not mounted in a terminal
-- The content of title element in a shadow tree should not be accessible from owner document's "title" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's getElementsByName() method.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's getElementsByTagName() method.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's getElementsByTagNameNS() method.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's getElementById() method.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html
-
-- Elements in a shadow tree should be accessible via shadow root's querySelectorAll() DOM tree accessor.: That node's document is not mounted in a terminal
-- Elements with a specific class in a shadow tree should be accessible viashadow root's querySelectorAll() DOM tree accessor.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should be accessible via shadow root's getElementById() DOM tree accessor.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html
-
-- ownerDocument property of a shadow root should be the document of the shadow host, regardless of the location of the shadow host.: That node's document is not mounted in a terminal
-- ownerDocument property of elements in a shadow tree should match the document of the shadow host, regardless of the element's location in a shadow tree.: That node's document is not mounted in a terminal
-- Elements added to a shadow tree should automatically get a valid ownerDocument.: That node's document is not mounted in a terminal
-- ownerDocument property of an element in a shadow tree should be the document of the shadow host, even if the host element is created from another document.: That node's document is not mounted in a terminal
-- All children nodes of a shadow root get a valid ownerDocument when added to a shadow tree.: That node's document is not mounted in a terminal
-- ownerDocument property of a node should remain the same, even if its child is adopted into a shadow tree.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html
-
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "article" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "aside" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "blockquote" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "body" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "div" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "footer" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h1" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h2" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h3" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h4" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h5" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "h6" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "header" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "main" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "nav" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "p" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "section" element.: That node's document is not mounted in a terminal
-- ownerDocument property of any elements in a shadow tree should match the document of the shadow host, when the host is a "span" element.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-001.html
-
-- Elements in a shadow tree should not be accessible from owner document's querySelector() method.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should not be accessible from owner document's querySelectorAll() method.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-002.html
-
-- Elements in a shadow tree should be accessible from shadow root's querySelector() method.: That node's document is not mounted in a terminal
-- Elements in a shadow tree should be accessible from shadow root's querySelectorAll() method.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/shadow-root-001.html
-
-- The parentNode attribute of a shadow root must always return null.: That node's document is not mounted in a terminal
-- The parentElement attribute of a shadow root must always return null.: That node's document is not mounted in a terminal
-- The parentNode attribute of a shadow root must always return null, even if the shadow root is nested inside another shadow root.: That node's document is not mounted in a terminal
-- The parentElement attribute of a shadow root must always return null, even if the shadow root is nested inside another shadow root.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html
-
-- A_04_01_05_T01: That node's document is not mounted in a terminal
-- A_04_01_05_T02: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html
-
-- A_04_01_07_T01: That node's document is not mounted in a terminal
-- A_04_01_07_T02: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html
-
-- A_04_01_09_T01: That node's document is not mounted in a terminal
-- A_04_01_09_T03: That node's document is not mounted in a terminal
-- A_04_01_09_T05: That node's document is not mounted in a terminal
-- A_04_01_09_T06: That node's document is not mounted in a terminal
-- A_04_01_09_T07: That node's document is not mounted in a terminal
-- A_04_01_09_T08: That node's document is not mounted in a terminal
-- A_04_01_09_T09: That node's document is not mounted in a terminal
-- A_04_01_09_T10: That node's document is not mounted in a terminal
-- A_04_01_09_T11: That node's document is not mounted in a terminal
-- A_04_01_09_T12: That node's document is not mounted in a terminal
-- A_04_01_09_T13: That node's document is not mounted in a terminal
-- A_04_01_09_T14: That node's document is not mounted in a terminal
-- A_04_01_09_T15: That node's document is not mounted in a terminal
-- A_04_01_09_T16: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-002.html
-
-- "a" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "applet" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "area" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "embed" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "form" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "frameset" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "img" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "object" element with name attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-
-### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-003.html
-
-- "a" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "abbr" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "address" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "area" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "article" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "aside" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "audio" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "b" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "base" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "bdi" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "bdo" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "blockquote" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "body" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "br" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "button" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "canvas" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "caption" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "cite" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "code" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "col" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "colgroup" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "data" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "datalist" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "dd" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "del" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "details" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "dfn" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "dialog" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "div" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "dl" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "dt" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "em" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "embed" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "fieldset" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "figcaption" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "figure" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "footer" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "form" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h1" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h2" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h3" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h4" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h5" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "h6" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "head" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "header" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "hr" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "html" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "i" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "iframe" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "img" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "input" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "ins" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "kbd" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "label" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "legend" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "li" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "link" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "main" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "map" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "mark" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "menu" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "meta" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "meter" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "nav" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "noscript" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "object" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "ol" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "optgroup" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "option" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "output" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "p" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "param" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "pre" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "progress" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "q" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "rp" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "rt" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "ruby" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "s" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "samp" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "script" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "search" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "section" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "select" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "slot" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "small" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "source" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "span" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "strong" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "style" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "sub" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "sup" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "summary" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "table" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "tbody" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "td" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "template" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "textarea" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "tfoot" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "th" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "thead" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "time" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "title" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "tr" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "track" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "u" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "ul" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "var" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "video" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
-- "wbr" element with id attribute in a shadow tree should not be accessible from window object's named property.: That node's document is not mounted in a terminal
+- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
 
 ### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
 
@@ -3018,14 +2765,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Moving the shadow host of a custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
 - Moving the shadow host's shadow of a custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
 - Inserting a custom element into a detached shadow tree that belongs to the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...]] length 3, got [] length 0
-- Inserting a custom element into a shadow tree in a new document must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a new document must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in a cloned document must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a cloned document must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in a document created by createHTMLDocument must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a document created by createHTMLDocument must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in an HTML document created by createDocument must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to an HTML document created by createDocument must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
 - Inserting a custom element into the document of an iframe must enqueue and invoke adoptedCallback: Test timed out
 - Moving a custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
 - Inserting an ancestor of custom element into the document of an iframe must enqueue and invoke adoptedCallback: 
@@ -3058,18 +2797,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/connected-callbacks.html
 
-- Inserting a custom element into a shadow tree in a new document must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting the shadow host of a custom element into a new document must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a new document must not enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in a cloned document must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting the shadow host of a custom element into a cloned document must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a cloned document must not enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in a document created by createHTMLDocument must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting the shadow host of a custom element into a document created by createHTMLDocument must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to a document created by createHTMLDocument must not enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a shadow tree in an HTML document created by createDocument must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting the shadow host of a custom element into an HTML document created by createDocument must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Inserting a custom element into a detached shadow tree that belongs to an HTML document created by createDocument must not enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
 - Inserting a custom element into the document of an iframe must enqueue and invoke connectedCallback: Test timed out
 - Inserting an ancestor of custom element into the document of an iframe must enqueue and invoke connectedCallback: 
 - Inserting a custom element into a shadow tree in the document of an iframe must enqueue and invoke connectedCallback: 
@@ -3083,18 +2810,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/disconnected-callbacks.html
 
-- Removing a custom element from a shadow tree in a new document must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing the shadow host of a custom element from aa new document must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a detached shadow tree that belongs to a new document must not enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a shadow tree in a cloned document must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing the shadow host of a custom element from aa cloned document must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a detached shadow tree that belongs to a cloned document must not enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a shadow tree in a document created by createHTMLDocument must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing the shadow host of a custom element from aa document created by createHTMLDocument must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a detached shadow tree that belongs to a document created by createHTMLDocument must not enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a shadow tree in an HTML document created by createDocument must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing the shadow host of a custom element from aan HTML document created by createDocument must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
-- Removing a custom element from a detached shadow tree that belongs to an HTML document created by createDocument must not enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "Error: That node's document is not mounted in a terminal"
 - Removing a custom element from the document of an iframe must enqueue and invoke disconnectedCallback: Test timed out
 - Removing an ancestor of custom element from the document of an iframe must enqueue and invoke disconnectedCallback: 
 - Removing a custom element from a shadow tree in the document of an iframe must enqueue and invoke disconnectedCallback: 
@@ -3502,7 +3217,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - initialize() of global registry should throw for nodes from another document: assert_throws_dom: function "() => customElements.initialize(contentDocument.createElement("x"))" did not throw
 - createElement() should throw with global registry from another document: assert_throws_dom: function "() => contentDocument.createElement("div", { customElementRegistry: customElements })" did not throw
 - createElementNS() should throw with global registry from another document: assert_throws_dom: function "() => contentDocument.createElementNS("x", "div", { customElementRegistry: customElements })" did not throw
-- attachShadow() should throw with global registry from another document: assert_throws_dom: function "() => element.attachShadow({ mode: "closed", customElementRegistry: customElements })" threw object "Error: That node's document is not mounted in a terminal" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- attachShadow() should throw with global registry from another document: assert_throws_dom: function "() => element.attachShadow({ mode: "closed", customElementRegistry: customElements })" did not throw
 - importNode() should throw with global registry from another document: assert_throws_dom: function "() => contentDocument.importNode(element, { customElementRegistry: customElements })" did not throw
 
 ### custom-elements/registries/initial-about-blank.window.js
@@ -3571,7 +3286,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
 - Adding definition to scoped registry affects associated shadow roots in all iframes: Cannot read properties of null (reading 'body')
 - Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function
-- Adding definition to scoped registry should not upgrade nodes in constructed documents: That node's document is not mounted in a terminal
 - Adding definition to scoped registry should not upgrade nodes in detached frames: Cannot read properties of null (reading 'body')
 - Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function"
 
@@ -3665,8 +3379,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Serializing a null registry ShadowRoot with a global registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
 - Serializing a scoped registry ShadowRoot with a global registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
 - Serializing a scoped registry ShadowRoot with a null registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
-- Serializing a null registry ShadowRoot with a scoped registry host (document): That node's document is not mounted in a terminal
-- Serializing a scoped registry ShadowRoot with a scoped registry host (document): That node's document is not mounted in a terminal
+- Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
+- Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 
 ### custom-elements/state/state-css-selector-nth-of.html
 
