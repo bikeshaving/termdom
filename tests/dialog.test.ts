@@ -254,8 +254,10 @@ test("a headless document moves focus state through show and close", () => {
 		"<!doctype html><button id=\"page\">page</button>" +
 		"<dialog><button id=\"ok\">OK</button></dialog>",
 	);
-	const dialog = document.querySelector("dialog") as HTMLDialogElement;
-	(document.getElementById("page") as HTMLElement).focus();
+	const dialog = (document as any).querySelector(
+		"dialog",
+	) as HTMLDialogElement;
+	(document.getElementById("page") as any).focus();
 
 	dialog.showModal();
 	expect(document.activeElement?.id).toBe("ok");
