@@ -9127,6 +9127,7 @@ const kPseudoSubjectTags = Symbol("pseudoSubjectTags");
 const kCounterRulesExist = Symbol("counterRulesExist");
 const kListItemRulesExist = Symbol("listItemRulesExist");
 const kScopedRulesExist = Symbol("scopedRulesExist");
+const kHasRulesExist = Symbol("hasRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
@@ -9197,6 +9198,7 @@ export class StyleManager {
 	declare [kListItemRulesExist]: boolean;
 	/** Whether any rule is scoped, which is what puts proximity in the sort. */
 	declare [kScopedRulesExist]: boolean;
+	declare [kHasRulesExist]: boolean;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
 	// (keyboard true, pointer false). kRuleMatches gates such rules on it.
 	declare [kFocusVisibleActive]: boolean;
@@ -9242,6 +9244,7 @@ export class StyleManager {
 		this[kCounterRulesExist] = false;
 		this[kListItemRulesExist] = false;
 		this[kScopedRulesExist] = false;
+		this[kHasRulesExist] = false;
 		this[kFocusVisibleActive] = true;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
@@ -9502,6 +9505,26 @@ export class StyleManager {
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
 		let shouldRefreshStylesheets = false;
+
+		// A :has() subject sits ABOVE what flipped it, so when such rules
+		// exist every mutation restyles its flat-tree ancestor chain too.
+		if (this[kHasRulesExist]) {
+			for (const mutation of mutations) {
+				const start =
+					mutation.target.nodeType === 1 ?
+							(mutation.target as Element) :
+						mutation.target.parentElement;
+				for (
+					let ancestor: Element | null = start;
+					ancestor;
+					ancestor = uaOf(ancestor)?.flatParentElement<Element>(
+						ancestor,
+					) ?? null
+				) {
+					invalidateElementCaches(this, ancestor);
+				}
+			}
+		}
 
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
@@ -10472,6 +10495,7 @@ function parseStylesheets(
 	manager[kCounterRulesExist] = false;
 	manager[kListItemRulesExist] = false;
 	manager[kScopedRulesExist] = false;
+	manager[kHasRulesExist] = false;
 	manager[kStylesheetsDirty] = false;
 	manager[kLayerPaths] = [];
 	manager[kAnonymousLayers] = 0;
@@ -10814,6 +10838,13 @@ function parseSelector(
 	// only known once every sheet has been read: the rank is filled in
 	// then, and this is the value it is filled in from.
 	const layer = context.layer;
+	// A :has() rule reads DOWN the tree, so a mutation anywhere below its
+	// subject can flip it -- the one relational direction the per-target
+	// invalidation cannot see. The flag buys the ancestor sweep only for
+	// documents that actually pay for it.
+	if (selector.includes(":has(")) {
+		manager[kHasRulesExist] = true;
+	}
 	let scopes: readonly ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
 		scopes = context.scopes;

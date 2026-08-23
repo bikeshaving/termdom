@@ -4998,6 +4998,19 @@ function removeNode(node: Node, suppressObservers = false): void {
 		assignSlottablesForTree(getRoot(parent));
 		assignSlottablesForTree(node);
 	}
+	// The focus fixup a removal runs: focus does not survive leaving the
+	// tree, and no blur fires for an element that is already gone -- the
+	// state resets, silently, so the next focus() is a fresh one.
+	const document = node[kDocument];
+	const active = document[kActiveElement];
+	if (active !== null) {
+		for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+			if (descendant === active) {
+				document[kActiveElement] = null;
+				break;
+			}
+		}
+	}
 	const parentWasConnected = parent.isConnected;
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kRemovingSteps](parent);
@@ -8336,6 +8349,18 @@ export class HTMLElement extends Element {
 	}
 
 	/** Hidden reflects as `any`: a string for the third state, else a boolean. */
+	get inert(): boolean {
+		return this.hasAttribute("inert");
+	}
+
+	set inert(value: boolean) {
+		if (value) {
+			this.setAttribute("inert", "");
+		} else {
+			this.removeAttribute("inert");
+		}
+	}
+
 	get hidden(): boolean | string {
 		const value = this.getAttribute("hidden");
 		if (value === null) {
@@ -8605,6 +8630,9 @@ function isFocusableArea(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
 	}
+	if (isInertTree(element)) {
+		return false;
+	}
 	if (element.hasAttribute("tabindex")) {
 		return true;
 	}
@@ -8618,6 +8646,34 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 	value: "HTMLElement",
 	configurable: true,
 });
+
+/**
+ * Whether the element sits in an inert subtree: itself or any ancestor up
+ * the host chain carries the `inert` attribute. Inert takes an element out
+ * of every focusable area, so focus() refuses it and the focus walk skips
+ * it, wherever in a shadow tree it stands.
+ */
+function isInertTree(element: Element): boolean {
+	for (
+		let node: Element | null = element;
+		node !== null;
+
+	) {
+		if (node.hasAttribute("inert")) {
+			return true;
+		}
+		const parent: Element | null = node.parentElement;
+		if (parent !== null) {
+			node = parent;
+			continue;
+		}
+		const root = getRoot(node);
+		node = isShadowRoot(root) ?
+				((root as ShadowRoot)[kHost] as Element) :
+			null;
+	}
+	return false;
+}
 
 /**
  * The tabindex an element has when it does not say: zero for the elements

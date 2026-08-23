@@ -2986,6 +2986,41 @@ function handlePendingMutations(
 	termdom[kStyleManager].handleMutations(relevant);
 	termdom[kLayoutEngine].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
+	dropUnfocusableFocus(termdom);
+}
+
+/**
+ * The focus fixup: a mutation that made the focused element unfocusable --
+ * an inert ancestor appearing above it, a move into an inert parent, a
+ * display:none anywhere on its flat chain -- unfocuses it, blur events
+ * and restyle included.
+ */
+function dropUnfocusableFocus(termdom: TermDOM): void {
+	let active = termdom.document.activeElement;
+	while (active !== null) {
+		const shadow = termdom[kUAToolkit].shadowRootOf<ShadowRoot>(active);
+		const inner = shadow?.activeElement ?? null;
+		if (inner === null) {
+			break;
+		}
+		active = inner;
+	}
+	if (active === null || active === termdom.document.body) {
+		return;
+	}
+	for (
+		let node: Element | null = active;
+		node !== null;
+		node = termdom[kUAToolkit].flatParentElement<Element>(node)
+	) {
+		if (
+			node.hasAttribute("inert") ||
+			computedStyleOf(node).computedValueOf("display") === "none"
+		) {
+			(active as HTMLElement).blur();
+			return;
+		}
+	}
 }
 
 function setupMutationObserver(

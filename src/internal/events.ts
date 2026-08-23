@@ -497,9 +497,22 @@ export function sequentialFocusEntries(
 			return false;
 		}
 	};
+	const isInert = (element: Element): boolean => {
+		for (
+			let ancestor: Element | null = element;
+			ancestor;
+			ancestor = toolkit.flatParentElement<Element>(ancestor)
+		) {
+			if (ancestor.hasAttribute("inert")) {
+				return true;
+			}
+		}
+		return false;
+	};
 	const isFocusable = (element: Element): boolean =>
 		element.matches(FOCUSABLE_SELECTOR) &&
 		tabindexOf(element) >= 0 &&
+		!isInert(element) &&
 		isRendered(element);
 
 	const buildScope = (

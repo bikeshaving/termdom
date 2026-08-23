@@ -136,6 +136,7 @@ export const UA_DOCUMENT_STYLES = `
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
 	input[type=hidden i] { display: none !important; }
+	[hidden]:not([hidden=until-found i]) { display: none; }
 	a[href] { text-decoration: underline; }
 	/*
 	 * The dir attribute, so it reaches layout as the direction property it
