@@ -266,3 +266,37 @@ test("Escape reaches no dialog while nothing is showing modally", async () => {
 	expect(dialog.open).toBe(true);
 	dom.dispose();
 });
+
+test("a modal over an anchored session reserves the backdrop's rows", async () => {
+	// The modal's ::backdrop paints the whole viewport, so the frame emits
+	// viewport-height rows. Reserving less let those rows push the
+	// terminal past its bottom -- a physical scroll no bookkeeping
+	// recorded, after which the anchor lied by that amount and later
+	// frames and the exit payout painted over the wrong rows.
+	const terminal = new MockProcess({cols: 50, rows: 12});
+	terminal.stdout.write("SHELL BANNER\r\n");
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	await dom.attach();
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<main><div>row a</div><div>row b</div></main>" +
+		"<dialog id=\"d\"><button>OK</button></dialog>";
+	await nextFrame(dom);
+	const anchored = window.screenTop;
+	expect(anchored).toBeGreaterThan(0);
+
+	const dialog = document.getElementById("d") as HTMLDialogElement;
+	dialog.showModal();
+	await nextFrame(dom);
+	// The whole viewport is reserved: the anchor moved up through the
+	// engine's own scroll, not the terminal's silent one.
+	expect(window.screenTop).toBe(0);
+
+	dialog.close();
+	dialog.remove();
+	await nextFrame(dom);
+	const text = terminal.getVisibleText();
+	expect(text.split("row a").length - 1).toBe(1);
+	expect(text.split("row b").length - 1).toBe(1);
+	dom.dispose();
+});

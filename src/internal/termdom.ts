@@ -3407,6 +3407,15 @@ function documentPaintHeight(
 		if (!termdom[kUAToolkit].flatIsConnected(element)) {
 			continue;
 		}
+		// A modal's ::backdrop paints the whole viewport, so the frame
+		// emits that many rows whatever the dialog's own box says. The
+		// reserve must match what the emitter writes: reserving less
+		// lets the frame's last rows push the terminal past its bottom,
+		// a physical scroll no bookkeeping records -- and from then on
+		// the anchor lies by that many rows.
+		if (termdom[kUAToolkit].isModalDialog(element)) {
+			return termdom[kHeight];
+		}
 		const rect = termdom[kLayoutEngine].getRect(element);
 		if (rect) {
 			height = Math.max(height, Math.ceil(rect.bottom));
