@@ -4602,23 +4602,12 @@ function dispatchGlobalKeyboardEvent(
 			active :
 			termdom[kFullscreenManager].fullscreenElement || termdom.document.body;
 
-	// Escape in fullscreen is the user agent's key, never dispatched to the
-	// DOM: an app can't trap the user past it with preventDefault. It spends
-	// itself on the innermost trap first -- a focused text field owns the
-	// keyboard, so the first Escape gives it back, and only a free
-	// keyboard's Escape exits the screen.
-	if (keyName === "Escape" && termdom[kFullscreenManager].isFullscreen) {
-		if (
-			active &&
-			active !== termdom.document.body &&
-			termdom[kUAToolkit].isTextField(active as Element)
-		) {
-			(active as HTMLElement).blur();
-			return;
-		}
-		termdom[kFullscreenManager].exitFullscreen().catch(() => {});
-		return;
-	}
+	// Escape does NOT exit fullscreen. The browser's guarantee exists
+	// because requestFullscreen takes the user's screen; the alt screen
+	// takes nothing -- the emulator, the multiplexer and the signals stay
+	// the user's -- and terminal convention gives Escape to the app, where
+	// a modal editor or a cancel affordance spends it. A fullscreen app
+	// exits by its own affordance or document.exitFullscreen().
 
 	// Create and dispatch keydown event
 	const keydownEvent = new termdom.window.KeyboardEvent("keydown", {
@@ -4643,10 +4632,7 @@ function dispatchGlobalKeyboardEvent(
 	// a popover, which is why a manual one -- answering no close request
 	// -- is the way to keep one up). Whichever entered the layer last is
 	// the one the key reaches, so a popover over a dialog closes first.
-	// Both get Escape only when nothing is fullscreen -- the branch above
-	// already returned -- which is the browser's own precedence: the
-	// fullscreen exit is the user agent's guarantee, and only after it is
-	// spent does the key reach the page's own modality. Unlike Tab below,
+	// Fullscreen does not intercept the key on the way. Unlike Tab below,
 	// a preventDefault on keydown does not suppress it.
 	if (keyName === "Escape") {
 		const target = topmostCloseRequestTarget(termdom);
