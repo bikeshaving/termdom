@@ -4,8 +4,12 @@
  * to that document.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, kUAToolkit} from "../src/internal/termdom.js";
-import {installUAEngine, createHTMLDocument} from "../src/internal/dom.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {
+	claimUAToolkit,
+	createHTMLDocument,
+	installUAEngine,
+} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("a document takes one user agent and refuses a second", async () => {
@@ -31,21 +35,24 @@ test("a toolkit taken on another document opens nothing here", async () => {
 	dom.dispose();
 });
 
-test("the toolkit reads past the type gate the author meets", async () => {
-	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML =
+test("the toolkit reads past the type gate the author meets", () => {
+	// The test is the user agent here: it claims the toolkit on a document
+	// no engine holds and upgrades the widgets itself -- the same path an
+	// engine takes, through the same two public doors.
+	const document = createHTMLDocument();
+	const toolkit = claimUAToolkit(document);
+	document.body!.innerHTML =
 		"<input id=\"n\" type=\"number\" value=\"12\">" +
 		"<input id=\"c\" type=\"checkbox\"><div id=\"d\">plain</div>";
-	await nextFrame(dom);
 
-	const number = dom.document.getElementById("n") as HTMLInputElement;
-	const checkbox = dom.document.getElementById("c") as HTMLInputElement;
-	const div = dom.document.getElementById("d")!;
+	const number = document.getElementById("n") as unknown as HTMLInputElement;
+	const checkbox = document.getElementById("c") as unknown as HTMLInputElement;
+	const div = document.getElementById("d")!;
+	toolkit.upgradeWidget(number);
+	toolkit.upgradeWidget(checkbox);
 	// The author-facing API hides a number input's selection per spec.
 	expect(number.selectionStart).toBe(null);
 
-	const toolkit = dom[kUAToolkit];
 	const record = toolkit.selectionOf(number);
 	expect(record).not.toBe(null);
 	expect(typeof record!.start).toBe("number");
@@ -55,7 +62,11 @@ test("the toolkit reads past the type gate the author meets", async () => {
 	expect(toggled).not.toBe(null);
 	expect(toggled!.start).toBe(toggled!.end);
 	expect(toolkit.selectionOf(div)).toBe(null);
-	expect(toolkit.shadowRootOf(number)).not.toBe(null);
 
-	dom.dispose();
+	// A closed root hides from the author and answers to the toolkit.
+	const host = document.createElement("div");
+	document.body!.appendChild(host);
+	const closed = host.attachShadow({mode: "closed"});
+	expect(host.shadowRoot).toBe(null);
+	expect(toolkit.shadowRootOf(host)).toBe(closed);
 });

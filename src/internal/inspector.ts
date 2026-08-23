@@ -3,17 +3,6 @@
  */
 
 // ANSI color codes for pretty printing
-const colors = {
-	attr: "\x1b[36m", // Cyan for attributes
-	bold: "\x1b[1m",
-	comment: "\x1b[90m", // Gray for comments
-	dim: "\x1b[2m",
-	reset: "\x1b[0m",
-	tag: "\x1b[35m", // Magenta for tags
-	text: "\x1b[37m", // White for text content
-	value: "\x1b[32m", // Green for values
-};
-
 import {
 	Comment,
 	DOMRect,
@@ -24,6 +13,16 @@ import {
 	Text,
 	type Node,
 } from "./dom.js";
+const colors = {
+	attr: "\x1b[36m", // Cyan for attributes
+	bold: "\x1b[1m",
+	comment: "\x1b[90m", // Gray for comments
+	dim: "\x1b[2m",
+	reset: "\x1b[0m",
+	tag: "\x1b[35m", // Magenta for tags
+	text: "\x1b[37m", // White for text content
+	value: "\x1b[32m", // Green for values
+};
 
 const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -92,15 +91,12 @@ export function installInspectors(): void {
 interface InspectorOptions {
 	maxDepth?: number;
 	colorize?: boolean;
-	compact?: boolean;
-	showStyles?: boolean;
-	showAll?: boolean; // Show all attributes, not just important ones
 }
 
 /**
  * Inspect a DOM element and return a string representation
  */
-export function inspectElement(
+function inspectElement(
 	element: Element,
 	options: InspectorOptions = {},
 ): string {
@@ -110,7 +106,7 @@ export function inspectElement(
 /**
  * Inspect a DOM document
  */
-export function inspectDocument(
+function inspectDocument(
 	doc: Document,
 	options: InspectorOptions = {},
 ): string {
@@ -145,7 +141,7 @@ export function inspectDocument(
 /**
  * Inspect any DOM node
  */
-export function inspectNode(
+function inspectNode(
 	node: Node,
 	options: InspectorOptions = {},
 ): string {
@@ -172,14 +168,7 @@ function formatElement(
 	element: Element,
 	options: InspectorOptions & {currentDepth?: number} = {},
 ): string {
-	const {
-		maxDepth = 2,
-		colorize = true,
-		compact = false,
-		showStyles = false,
-		showAll = false,
-		currentDepth = 0,
-	} = options;
+	const {maxDepth = 2, colorize = true, currentDepth = 0} = options;
 	const c = colorize ?
 		colors :
 			{
@@ -197,7 +186,7 @@ function formatElement(
 	let output = `${c.tag}<${tagName}${c.reset}`;
 
 	// Add attributes
-	const attrs = formatAttributes(element, {colorize, showAll, showStyles});
+	const attrs = formatAttributes(element, {colorize});
 	if (attrs) {
 		output += " " + attrs;
 	}
@@ -232,12 +221,7 @@ function formatElement(
 			currentDepth: currentDepth + 1,
 		});
 
-		if (compact && childrenStr.includes("\n")) {
-			// In compact mode, show ellipsis for multi-line content
-			output += `${c.dim}...${c.reset}`;
-		} else {
-			output += childrenStr;
-		}
+		output += childrenStr;
 	} else if (element.childNodes.length > 0) {
 		output += `${c.dim}...${c.reset}`;
 	}
@@ -251,9 +235,9 @@ function formatElement(
  */
 function formatAttributes(
 	element: Element,
-	options: {colorize?: boolean; showAll?: boolean; showStyles?: boolean} = {},
+	options: {colorize?: boolean} = {},
 ): string {
-	const {colorize = true, showAll = false, showStyles = false} = options;
+	const {colorize = true} = options;
 	const c = colorize ?
 		colors :
 			{
@@ -280,56 +264,29 @@ function formatAttributes(
 		);
 	}
 
-	if (showAll) {
-		// Show all attributes
-		for (const attr of Array.from(element.attributes)) {
-			if (
-				attr.name !== "id" &&
-				attr.name !== "class" &&
-				attr.name !== "style"
-			) {
+	// Show only important attributes
+	const importantAttrs = [
+		"href",
+		"src",
+		"type",
+		"name",
+		"value",
+		"disabled",
+		"checked",
+		"selected",
+		"readonly",
+		"placeholder",
+		"alt",
+		"title",
+	];
+	for (const attrName of importantAttrs) {
+		if (element.hasAttribute(attrName)) {
+			const value = element.getAttribute(attrName);
+			if (value !== null && value.length < 50) {
 				attrs.push(
-					`${c.attr}${attr.name}${c.reset}=${c.value}"${attr.value}"${c.reset}`,
+					`${c.attr}${attrName}${c.reset}=${c.value}"${value}"${c.reset}`,
 				);
 			}
-		}
-	} else {
-		// Show only important attributes
-		const importantAttrs = [
-			"href",
-			"src",
-			"type",
-			"name",
-			"value",
-			"disabled",
-			"checked",
-			"selected",
-			"readonly",
-			"placeholder",
-			"alt",
-			"title",
-		];
-		for (const attrName of importantAttrs) {
-			if (element.hasAttribute(attrName)) {
-				const value = element.getAttribute(attrName);
-				if (value !== null && value.length < 50) {
-					attrs.push(
-						`${c.attr}${attrName}${c.reset}=${c.value}"${value}"${c.reset}`,
-					);
-				}
-			}
-		}
-	}
-
-	// Handle style attribute
-	if (showStyles && element.hasAttribute("style")) {
-		const style = element.getAttribute("style");
-		if (style && style.length < 100) {
-			attrs.push(`${c.attr}style${c.reset}=${c.value}"${style}"${c.reset}`);
-		} else if (style) {
-			attrs.push(
-				`${c.attr}style${c.reset}=${c.value}"${style.substring(0, 97)}..."${c.reset}`,
-			);
 		}
 	}
 
@@ -343,7 +300,7 @@ function formatChildren(
 	element: Element,
 	options: InspectorOptions & {currentDepth?: number},
 ): string {
-	const {colorize = true, compact = false} = options;
+	const {colorize = true} = options;
 	const c = colorize ?
 		colors :
 			{
@@ -377,11 +334,7 @@ function formatChildren(
 	for (const child of children) {
 		const childStr = inspectNode(child, options);
 		if (childStr.trim()) {
-			if (compact) {
-				parts.push(childStr);
-			} else {
-				parts.push("\n" + indent + childStr);
-			}
+			parts.push("\n" + indent + childStr);
 		}
 	}
 
@@ -389,17 +342,13 @@ function formatChildren(
 		return "";
 	}
 
-	if (compact) {
-		return parts.join("");
-	} else {
-		return parts.join("") + "\n" + "  ".repeat((options.currentDepth || 1) - 1);
-	}
+	return parts.join("") + "\n" + "  ".repeat((options.currentDepth || 1) - 1);
 }
 
 /**
  * Inspect a text node
  */
-export function inspectText(
+function inspectText(
 	text: Text,
 	options: InspectorOptions = {},
 ): string {
@@ -432,7 +381,7 @@ export function inspectText(
 /**
  * Inspect a comment node
  */
-export function inspectComment(
+function inspectComment(
 	comment: Comment,
 	options: InspectorOptions = {},
 ): string {
@@ -457,7 +406,7 @@ export function inspectComment(
 /**
  * Inspect a document fragment
  */
-export function inspectFragment(
+function inspectFragment(
 	fragment: DocumentFragment,
 	options: InspectorOptions = {},
 ): string {
@@ -490,7 +439,7 @@ export function inspectFragment(
 /**
  * Inspect a DOMRect - much more concise than default
  */
-export function inspectDOMRect(
+function inspectDOMRect(
 	rect: any,
 	options: InspectorOptions = {},
 ): string {
@@ -514,11 +463,11 @@ export function inspectDOMRect(
 /**
  * Inspect a NodeList/HTMLCollection - more concise than default
  */
-export function inspectNodeList(
+function inspectNodeList(
 	nodeList: any,
 	options: InspectorOptions = {},
 ): string {
-	const {colorize = true, maxDepth = 0, compact = false} = options;
+	const {colorize = true, maxDepth = 0} = options;
 	const c = colorize ?
 		colors :
 			{
@@ -554,11 +503,9 @@ export function inspectNodeList(
 		return `${c.comment}${typeName}(${length})${c.reset} [${previewStr}${more}]`;
 	}
 
-	// Full inspection - only truncate if compact
-	const limit = compact ? 5 : length;
 	let result = `${c.comment}${typeName}(${length})${c.reset} [\n`;
 
-	for (let i = 0; i < Math.min(length, limit); i++) {
+	for (let i = 0; i < length; i++) {
 		const node = nodeList[i];
 		if (!node) {
 			result += `  ${c.value}${i}${c.reset}: null\n`;
@@ -566,10 +513,6 @@ export function inspectNodeList(
 			const nodeStr = inspectNode(node, {...options, maxDepth: maxDepth - 1});
 			result += `  ${c.value}${i}${c.reset}: ${nodeStr}\n`;
 		}
-	}
-
-	if (compact && length > limit) {
-		result += `  ${c.dim}... ${length - limit} more items${c.reset}\n`;
 	}
 
 	result += "]";

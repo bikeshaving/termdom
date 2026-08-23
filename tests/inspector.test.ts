@@ -1,14 +1,19 @@
 import {test, expect} from "@b9g/libuild/test";
-import {
-	inspectElement,
-	inspectDocument,
-	inspectNode,
-} from "../src/internal/inspector.js";
-import type {Document, Element, Node} from "../src/internal/dom.js";
+import {inspect} from "node:util";
+import type {Element} from "../src/internal/dom.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 
 function asElement(value: unknown): Element {
 	return value as Element;
+}
+
+/**
+ * The one public door to the inspectors: the util.inspect hooks the module
+ * installs on the DOM prototypes. depth carries maxDepth; colors stay off
+ * so the expectations read as text.
+ */
+function inspected(target: unknown, maxDepth = 2): string {
+	return inspect(target, {colors: false, depth: maxDepth});
 }
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
@@ -18,18 +23,18 @@ function documentWindow(html: string): {
 	return {window: createDocumentWindow(html)};
 }
 
-test("inspectElement formats basic elements", () => {
+test("inspect formats: formats basic elements", () => {
 	const dom = documentWindow(
 		"<div id=\"test\" class=\"container\">Hello</div>",
 	);
 	const div = dom.window.document.getElementById("test");
 
-	const output = inspectElement(asElement(div), {colorize: false});
+	const output = inspected(asElement(div));
 
 	expect(output).toBe('<div id="test" class="container">Hello</div>');
 });
 
-test("inspectElement handles nested elements", () => {
+test("inspect formats: handles nested elements", () => {
 	const dom = documentWindow(`
 		<nav>
 			<ul class="menu">
@@ -40,7 +45,7 @@ test("inspectElement handles nested elements", () => {
 	`);
 	const nav = dom.window.document.querySelector("nav");
 
-	const output = inspectElement(asElement(nav), {colorize: false, maxDepth: 3});
+	const output = inspected(asElement(nav), 3);
 
 	expect(output).toContain("<nav>");
 	expect(output).toContain('<ul class="menu">');
@@ -48,7 +53,7 @@ test("inspectElement handles nested elements", () => {
 	expect(output).toContain('<a href="#home">...</a>'); // Text gets truncated at depth 3
 });
 
-test("inspectElement respects maxDepth", () => {
+test("inspect formats: respects maxDepth", () => {
 	const dom = documentWindow(`
 		<div>
 			<div>
@@ -60,33 +65,20 @@ test("inspectElement respects maxDepth", () => {
 	`);
 	const div = dom.window.document.querySelector("div");
 
-	const output = inspectElement(asElement(div), {colorize: false, maxDepth: 2});
+	const output = inspected(asElement(div), 2);
 
 	expect(output).toContain("<div>");
 	expect(output).toContain("...");
 	expect(output).not.toContain("Deep content");
 });
 
-test("inspectElement compact mode", () => {
-	const dom = documentWindow(
-		"<div><span>A</span><span>B</span><span>C</span></div>",
-	);
-	const div = dom.window.document.querySelector("div");
-
-	const output = inspectElement(asElement(
-		div,
-	), {colorize: false, compact: true});
-
-	expect(output).toBe("<div><span>A</span><span>B</span><span>C</span></div>");
-});
-
-test("inspectElement shows important attributes", () => {
+test("inspect formats: shows important attributes", () => {
 	const dom = documentWindow(
 		"<input type=\"text\" name=\"username\" value=\"john\" placeholder=\"Enter name\">",
 	);
 	const input = dom.window.document.querySelector("input");
 
-	const output = inspectElement(asElement(input), {colorize: false});
+	const output = inspected(asElement(input));
 
 	expect(output).toContain('type="text"');
 	expect(output).toContain('name="username"');
@@ -94,41 +86,38 @@ test("inspectElement shows important attributes", () => {
 	expect(output).toContain('placeholder="Enter name"');
 });
 
-test("inspectElement handles self-closing tags", () => {
+test("inspect formats: handles self-closing tags", () => {
 	const dom = documentWindow(
 		"<div><img src=\"test.jpg\" alt=\"Test\"><br><hr></div>",
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const output = inspectElement(asElement(div), {colorize: false});
+	const output = inspected(asElement(div));
 
 	expect(output).toContain('<img src="test.jpg" alt="Test">');
 	expect(output).toContain("<br>");
 	expect(output).toContain("<hr>");
 });
 
-test("inspectElement truncates long text", () => {
+test("inspect formats: truncates long text", () => {
 	const longText =
 		"This is a very long text that should be truncated when displayed in the inspector output to avoid making it too verbose";
 	const dom = documentWindow(`<p>${longText}</p>`);
 	const p = dom.window.document.querySelector("p");
 
-	const output = inspectElement(asElement(p), {colorize: false});
+	const output = inspected(asElement(p));
 
 	expect(output).toContain(
 		"<p>This is a very long text that should be truncat...</p>",
 	);
 });
 
-test("inspectDocument includes doctype and root", () => {
+test("inspect formats: includes doctype and root", () => {
 	const dom = documentWindow(
 		"<!DOCTYPE html><html><head><title>Test</title></head><body>Hello</body></html>",
 	);
 
-	const output = inspectDocument(dom.window.document as unknown as Document, {
-		colorize: false,
-		maxDepth: 2,
-	});
+	const output = inspected(dom.window.document, 2);
 
 	expect(output).toContain("#document");
 	expect(output).toContain("<!DOCTYPE html>");
@@ -137,22 +126,18 @@ test("inspectDocument includes doctype and root", () => {
 	expect(output).toContain("<title>...</title>"); // Content truncated at depth 2
 });
 
-test("inspectNode handles different node types", () => {
+test("inspect formats: handles different node types", () => {
 	const dom = documentWindow("<div>Text<!-- comment --></div>");
 	const div = dom.window.document.querySelector("div");
 
 	// Text node
 	const textNode = div!.firstChild!;
-	const textOutput = inspectNode(textNode as unknown as Node, {
-		colorize: false,
-	});
+	const textOutput = inspected(textNode);
 	expect(textOutput).toBe("Text");
 
 	// Comment node
 	const commentNode = div!.childNodes[1];
-	const commentOutput = inspectNode(commentNode as unknown as Node, {
-		colorize: false,
-	});
+	const commentOutput = inspected(commentNode);
 	expect(commentOutput).toBe("<!-- comment -->");
 });
 
@@ -164,45 +149,4 @@ test("elements carry the node:util inspect method", () => {
 	expect(typeof (div as any)![inspect]).toBe("function");
 	const output = (div as any)![inspect](2, {colors: false});
 	expect(output).toBe('<div id="test">Hello</div>');
-});
-
-test("showStyles option includes style attribute", () => {
-	const dom = documentWindow(
-		"<div style=\"color: red; background: blue;\">Styled</div>",
-	);
-	const div = dom.window.document.querySelector("div");
-
-	const withStyles = inspectElement(asElement(div), {
-		colorize: false,
-		showStyles: true,
-	});
-	expect(withStyles).toContain('style="color: red; background: blue;"');
-
-	const withoutStyles = inspectElement(asElement(div), {
-		colorize: false,
-		showStyles: false,
-	});
-	expect(withoutStyles).not.toContain("style=");
-});
-
-test("showAll option includes all attributes", () => {
-	const dom = documentWindow(
-		"<div id=\"test\" data-foo=\"bar\" aria-label=\"Test\" custom=\"value\">Content</div>",
-	);
-	const div = dom.window.document.querySelector("div");
-
-	const withAll = inspectElement(asElement(div), {
-		colorize: false,
-		showAll: true,
-	});
-	expect(withAll).toContain('data-foo="bar"');
-	expect(withAll).toContain('aria-label="Test"');
-	expect(withAll).toContain('custom="value"');
-
-	const withoutAll = inspectElement(asElement(div), {
-		colorize: false,
-		showAll: false,
-	});
-	expect(withoutAll).toContain('id="test"'); // id is always shown
-	expect(withoutAll).not.toContain('data-foo="bar"');
 });

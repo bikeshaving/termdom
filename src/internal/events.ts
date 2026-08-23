@@ -447,28 +447,6 @@ function tabindexOf(element: Element): number {
 }
 
 /**
- * Get all focusable elements in tab order, within a root: the document, or
- * the modal dialog whose subtree is the only reachable part of it.
- *
- * Tab order is scoped, as HTML's sequential focus navigation defines it:
- * the document, each shadow root and each slot own a scope of their own,
- * sorted by tabindex among themselves -- the positive values ascending,
- * then the zeros in tree order -- and a scope owner's whole expansion sits
- * at the owner's own position in its parent scope. A host whose shadow
- * root delegates focus contributes only its expansion; a slot with
- * nothing assigned expands its fallback children.
- */
-export function getFocusableElements(
-	root: Document | Element,
-	layoutEngine: LayoutEngine,
-	toolkit: UAToolkit,
-): Element[] {
-	return sequentialFocusEntries(root, layoutEngine, toolkit)
-		.filter((entry) => entry.barrier === null)
-		.map((entry) => entry.element);
-}
-
-/**
  * Every sequential focus stop under a root, barred ones included, in
  * scoped tab order.
  */

@@ -1,21 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, createDocumentWindow} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {kUAToolkit} from "../src/internal/termdom.js";
-
-function pseudoElement<T>(
-	of: TermDOM,
-	host: object,
-	name: string,
-): T | null {
-	return of[kUAToolkit].pseudoElement<T>(host, name);
-}
-function pseudoHostOf<T>(of: TermDOM, node: object): T | null {
-	return of[kUAToolkit].pseudoHostOf<T>(node);
-}
-function pseudoNameOf(of: TermDOM, node: object): string | null {
-	return of[kUAToolkit].pseudoNameOf(node);
-}
+import {claimUAToolkit} from "../src/internal/dom.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -302,9 +288,12 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 });
 
 test("StyleManager createPseudoElementNode", async () => {
-	const terminal = new MockProcess();
-	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
+	// The test is UA-side code: it builds its own cascade over a document
+	// no engine holds and claims the toolkit through the public door, the
+	// way any user agent would.
+	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
+	const {document} = window;
+	const toolkit = claimUAToolkit(document);
 
 	const style = document.createElement("style");
 	style.textContent = `
@@ -316,32 +305,32 @@ test("StyleManager createPseudoElementNode", async () => {
 
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	const styleManager = styleManagerFor(termdom);
+	const styleManager = styleManagerFor({window});
 
 	// Test element with content
 	const testDiv = document.createElement("div");
 	testDiv.className = "test";
 
 	styleManager.attachPseudoElementsToElement(testDiv);
-	const pseudoNode = pseudoElement<Element>(termdom, testDiv, "::before");
+	const pseudoNode = toolkit.pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
-	expect(pseudoNameOf(termdom, pseudoNode!)).toBe("::before");
-	expect(pseudoHostOf(termdom, pseudoNode!)).toBe(testDiv);
+	expect(toolkit.pseudoNameOf(pseudoNode!)).toBe("::before");
+	expect(toolkit.pseudoHostOf(pseudoNode!)).toBe(testDiv);
 
 	// Test element with no content
 	const emptyDiv = document.createElement("div");
 	emptyDiv.className = "empty";
 
 	styleManager.attachPseudoElementsToElement(emptyDiv);
-	expect(pseudoElement(termdom, emptyDiv, "::before")).toBeNull();
+	expect(toolkit.pseudoElement(emptyDiv, "::before")).toBeNull();
 
 	// Test element with content: normal
 	const normalDiv = document.createElement("div");
 	normalDiv.className = "normal";
 
 	styleManager.attachPseudoElementsToElement(normalDiv);
-	expect(pseudoElement(termdom, normalDiv, "::before")).toBeNull();
+	expect(toolkit.pseudoElement(normalDiv, "::before")).toBeNull();
 
 	// Test shouldCreatePseudoElement
 	expect(styleManager.shouldCreatePseudoElement(testDiv, "::before")).toBe(

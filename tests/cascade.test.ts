@@ -5,7 +5,6 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
-import {expandShorthands} from "../src/internal/cascade.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {
@@ -1128,6 +1127,9 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 	// The property table is generated from mdn-data, so a shorthand the
 	// platform adds arrives here on its own. It is handled or it is named --
 	// and either way somebody looked at it.
+	const probe = createDocumentWindow(
+		"<div></div>",
+	).document.querySelector("div")!;
 	for (const shorthand of Object.keys(CSS_SHORTHANDS)) {
 		const expanded = shorthand in EXPANDED_SHORTHANDS;
 		const unexpanded = shorthand in UNEXPANDED_SHORTHANDS;
@@ -1138,8 +1140,11 @@ test("every CSS shorthand is expanded or listed as unexpanded", () => {
 			continue;
 		}
 		const value = EXPANDED_SHORTHANDS[shorthand];
-		const longhands = Object.keys(
-			expandShorthands({[shorthand]: value}),
+		// The public face of expansion: a shorthand set on a declaration
+		// enumerates as the longhands it declared.
+		probe.setAttribute("style", `${shorthand}: ${value}`);
+		const longhands = Array.from(
+			probe.style as unknown as Iterable<string>,
 		).filter((name) => name !== shorthand);
 		expect(`${shorthand} -> ${longhands.length > 0}`).toBe(
 			`${shorthand} -> true`,

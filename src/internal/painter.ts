@@ -7,7 +7,12 @@ import type {
 	UAToolkit,
 } from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
-import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
+import {
+	type LayoutEngine,
+	flowWalker,
+	isPositioned,
+	renderTextFragment,
+} from "./layout.js";
 import type {Viewport} from "./viewport.js";
 import {
 	type ComputedStyle,
@@ -18,7 +23,7 @@ import {
 	resolveBorderSides,
 } from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
-import {renderTextFragment} from "./text.js";
+
 import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
 
 /**

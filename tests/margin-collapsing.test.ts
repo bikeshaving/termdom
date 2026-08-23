@@ -8,12 +8,10 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
-import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
-function rectOf(dom: TermDOM, el: Element): DOMRect {
-	return (
-		dom as unknown as Record<symbol, {getRect(e: Element): DOMRect | null}>
-	)[kLayoutEngine].getRect(el)!;
+function rectOf(_dom: TermDOM, el: Element): DOMRect {
+	return (el as HTMLElement).getBoundingClientRect();
 }
 
 async function layout(html: string, head = ""): Promise<

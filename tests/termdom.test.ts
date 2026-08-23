@@ -3,7 +3,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, kObserver} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
@@ -199,17 +199,13 @@ test("lists render correctly without requiring double-rendering", async () => {
 	termDOM.dispose();
 });
 
-test("pseudo-elements work on programmatic render without MutationObserver", async () => {
-	// This test specifically prevents MutationObserver from triggering the "accidental fix"
-	// and tests if pseudo-elements work on the first programmatic render call
-
+test("pseudo-elements resolve on the very first render", async () => {
+	// Nothing paints before attach(), so a document built first meets the
+	// renderer exactly once -- no earlier observer-driven frame can mask a
+	// first-render pipeline bug by accident.
 	const terminal = new MockProcess();
 	const termDOM = new TermDOM({transport: terminal.transport});
 
-	// Disconnect MutationObserver to prevent accidental double-rendering
-	termDOM[kObserver].disconnect();
-
-	// Set up HTML with pseudo-element CSS programmatically (not via innerHTML)
 	const style = termDOM.document.createElement("style");
 	style.textContent = 'li::marker { content: "★ "; color: purple; }';
 	termDOM.document.head.appendChild(style);
@@ -220,7 +216,7 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	ul.appendChild(li);
 	termDOM.document.body.appendChild(ul);
 
-	// Call render once without MutationObserver interference
+	termDOM.attach();
 	await nextFrame(termDOM);
 
 	// Test that pseudo-element content is available immediately
