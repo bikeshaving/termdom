@@ -10,14 +10,8 @@ import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {
-	dataOffsetAt,
 	hasRTL,
 	inferParagraphDirection,
-	renderTextFragment,
-	renderWhiteSpaceOffsets,
-	shiftRenderedOffsets,
-	type RenderedOffsets,
-	preservesSpaces,
 	stringWidth as runtimeStringWidth,
 	toVisualOrder,
 	writeClusterWidths,
@@ -320,6 +314,157 @@ function containsBlockLevelBox(
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Whether a `white-space` value keeps every space and tab as written
+ * (css-text-3 §4.1.1). `pre-line` does not: it collapses spaces and tabs and
+ * preserves only newlines.
+ */
+function preservesSpaces(whiteSpace: string): boolean {
+	return (
+		whiteSpace === "pre" ||
+		whiteSpace === "pre-wrap" ||
+		whiteSpace === "break-spaces"
+	);
+}
+
+const COLLAPSIBLE_RUN = /\s+/g;
+const PRE_LINE_RUN = /[^\S\n]+/g;
+
+// Whether a rendering would change anything: two collapsible characters in a
+// row, or one that is not already the space it collapses to.
+const COLLAPSES = /\s\s|[^\S ]/;
+const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
+
+/**
+ * The runs a `white-space` value collapses to one space: every run the \s class
+ * matches, except that `pre-line` exempts the newline it preserves. Stateful
+ * (`g`), so a caller resets `lastIndex` before scanning with it.
+ */
+function collapsiblePattern(whiteSpace: string): RegExp {
+	return whiteSpace === "pre-line" ? PRE_LINE_RUN : COLLAPSIBLE_RUN;
+}
+
+/**
+ * A text node's data as it renders under a `white-space` value: each run of
+ * collapsible whitespace becomes one space, `pre` and `pre-wrap` render their
+ * data verbatim, and `pre-line` collapses spaces and tabs but keeps newlines.
+ *
+ * The single definition of that mapping. The line breaker renders whole text
+ * leaves through it and records, for each line fragment, the data range the
+ * fragment covers; the painter renders that range back through it to recover
+ * the characters to draw. The two agree because rendering a range equals the
+ * range of the rendering whenever the range begins and ends on a rendered
+ * character, which is how fragment offsets are defined.
+ */
+function renderWhiteSpace(data: string, whiteSpace: string): string {
+	if (preservesSpaces(whiteSpace)) {
+		return data;
+	}
+	// Text whose collapsible whitespace is already single spaces renders as
+	// itself, which is most text: the question is worth asking before building
+	// a second string that would equal the first.
+	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
+	if (!collapses.test(data)) {
+		return data;
+	}
+	return data.replace(collapsiblePattern(whiteSpace), " ");
+}
+
+/**
+ * The inverse of a whitespace rendering: which data offset each rendered code
+ * unit came from. Held as the collapsed runs alone -- everything between two
+ * runs maps across one-for-one -- so the mapping costs a few numbers per run
+ * rather than an entry per character, on text whose collapsible runs are a
+ * small fraction of its length.
+ *
+ * `base` is added to a rendered index before lookup, which is how a rendering
+ * that later loses a prefix (a run's leading whitespace, trimmed) keeps its
+ * mapping without rebuilding it.
+ */
+
+/**
+ * `renderWhiteSpace` plus the mapping back to data offsets: offsets[i] is
+ * the data offset rendered code unit i came from, and null means the
+ * rendering is verbatim and every offset maps to itself. Dense on purpose:
+ * a text node's data is short, and one array lookup beats a run-table
+ * search everywhere the breaker consults it.
+ */
+function renderWhiteSpaceOffsets(
+	data: string,
+	whiteSpace: string,
+): {text: string; offsets: Int32Array | null} {
+	if (preservesSpaces(whiteSpace)) {
+		return {text: data, offsets: null};
+	}
+	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
+	if (!collapses.test(data)) {
+		return {text: data, offsets: null};
+	}
+	const pattern = collapsiblePattern(whiteSpace);
+	pattern.lastIndex = 0;
+	let text = "";
+	const offsets: number[] = [];
+	let last = 0;
+	let match: RegExpExecArray | null;
+	while ((match = pattern.exec(data))) {
+		for (let i = last; i < match.index; i++) {
+			text += data[i];
+			offsets.push(i);
+		}
+		// Each run renders as one space that maps to the run's first
+		// character.
+		text += " ";
+		offsets.push(match.index);
+		last = match.index + match[0].length;
+	}
+	for (let i = last; i < data.length; i++) {
+		text += data[i];
+		offsets.push(i);
+	}
+	return {text, offsets: Int32Array.from(offsets)};
+}
+
+/** The data offset a rendered code unit came from. */
+function dataOffsetAt(offsets: Int32Array | null, index: number): number {
+	return offsets === null ? index : offsets[index];
+}
+
+/**
+ * The mapping over a rendering that lost its first `by` code units, whose
+ * remaining length is `length`. A verbatim rendering needs a real mapping
+ * once shifted: its offsets are no longer the identity.
+ */
+function shiftRenderedOffsets(
+	offsets: Int32Array | null,
+	by: number,
+	length: number,
+): Int32Array {
+	if (offsets !== null) {
+		return offsets.subarray(by);
+	}
+	const identity = new Int32Array(length);
+	for (let i = 0; i < length; i++) {
+		identity[i] = i + by;
+	}
+	return identity;
+}
+
+/**
+ * The characters one line fragment paints: its data range rendered under the
+ * node's `white-space`, reordered into the visual order the line was laid out
+ * in when the line carries bidirectional text.
+ */
+export function renderTextFragment(
+	data: string,
+	whiteSpace: string,
+	startOffset: number,
+	endOffset: number,
+	visualBase?: "ltr" | "rtl" | null,
+): string {
+	const text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
+	return visualBase ? toVisualOrder(text, visualBase) : text;
 }
 
 /**
@@ -3343,7 +3488,7 @@ interface ProcessedContent {
 		 * The mapping from `processedContent`'s code units back to offsets in
 		 * the leaf text node's raw `data`. Null where the two are the same.
 		 */
-		dataOffsets?: RenderedOffsets | null;
+		dataOffsets?: Int32Array | null;
 	}>;
 	text: string;
 	/**
@@ -4082,7 +4227,7 @@ function renderLeaf(
 	layout: LayoutEngine,
 	textNode: Text,
 	whiteSpace: string,
-): {text: string; offsets: RenderedOffsets | null} {
+): {text: string; offsets: Int32Array | null} {
 	const key = `${whiteSpace}\u0000${textNode.data}`;
 	const cached = layout[kRenderedLeaves].get(textNode);
 	if (cached?.key === key) {
@@ -4136,7 +4281,11 @@ function processWhitespace(
 
 					if (prevEndsWithSpace && thisStartsWithSpace) {
 						processed = processed.substring(1);
-						dataOffsets = shiftRenderedOffsets(dataOffsets, 1);
+						dataOffsets = shiftRenderedOffsets(
+							dataOffsets,
+							1,
+							processed.length,
+						);
 					}
 				}
 			}
@@ -4220,6 +4369,7 @@ function processWhitespace(
 						item.dataOffsets = shiftRenderedOffsets(
 							item.dataOffsets ?? null,
 							clampedStart - item.start,
+							item.processedContent.length,
 						);
 					}
 					item.start = clampedStart - trimStart;
@@ -5479,7 +5629,7 @@ export class LayoutEngine {
 			{
 				key: string;
 				text: string;
-				offsets: RenderedOffsets | null;
+				offsets: Int32Array | null;
 			}
 		>();
 		this.window = window;
@@ -6942,6 +7092,6 @@ export class LayoutEngine {
 	declare [kRenderedLeaves]: WeakMap<Text, {
 		key: string;
 		text: string;
-		offsets: RenderedOffsets | null;
+		offsets: Int32Array | null;
 	}>;
 }

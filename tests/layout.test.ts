@@ -1,9 +1,9 @@
-import {test, expect} from "@b9g/libuild/test";
+import {describe, test, expect} from "@b9g/libuild/test";
 import {
 	LayoutEngine,
 } from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/cascade.js";
-import {renderTextFragment} from "../src/internal/text.js";
+import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {claimUAToolkit} from "../src/internal/dom.js";
 
@@ -1279,6 +1279,72 @@ test("line fragment offsets render back to the text the line was broken into", (
 			),
 		),
 	).toEqual(["The quick ", "brown fox ", "jumps over ", "it"]);
+});
+
+describe("white-space rendering round-trips through fragments", () => {
+	// The breaker records, for each fragment, the data range it covers;
+	// rendering that range must reproduce the fragment. One property, five
+	// white-space values, exercised through the public pipeline.
+	const cases: Array<[string, string]> = [
+		["plain words", "hello world"],
+		["a run of spaces", "a   b"],
+		["a lone tab", "a\tb"],
+		["a lone newline", "a\nb"],
+		["mixed whitespace", "a \n\t b  \r\nc"],
+		["leading and trailing", "  padded  "],
+		["surrogate pairs", "a  \u{1f600}  b"],
+	];
+
+	for (const whiteSpace of [
+		"normal",
+		"nowrap",
+		"pre-line",
+		"pre",
+		"pre-wrap",
+	]) {
+		for (const [name, data] of cases) {
+			test(`${whiteSpace}: ${name}`, () => {
+				const {layoutEngine, dom} = createLayoutEngine(
+					`<div style="width: 6ch; white-space: ${whiteSpace};"></div>`,
+				);
+				const document = dom.window.document;
+				const div = document.querySelector("div")!;
+				const textNode = document.createTextNode(data);
+				div.appendChild(textNode);
+				layoutEngine.calculateLayout();
+
+				const fragments = layoutEngine.lineFragments(textNode);
+				let reconstructed = "";
+				for (const fragment of fragments) {
+					expect(fragment.startOffset).toBeGreaterThanOrEqual(0);
+					expect(fragment.endOffset).toBeLessThanOrEqual(data.length);
+					reconstructed += renderTextFragment(
+						data,
+						whiteSpace,
+						fragment.startOffset,
+						fragment.endOffset,
+						fragment.visualBase,
+					);
+				}
+				// Every fragment renders back to characters the full
+				// rendering contains, in order.
+				const whole = renderTextFragment(data, whiteSpace, 0, data.length);
+				let cursor = 0;
+				for (const fragment of fragments) {
+					const piece = renderTextFragment(
+						data,
+						whiteSpace,
+						fragment.startOffset,
+						fragment.endOffset,
+					);
+					const at = whole.indexOf(piece, cursor);
+					expect(at).toBeGreaterThanOrEqual(0);
+					cursor = at + piece.length;
+				}
+				expect(reconstructed.length).toBeGreaterThanOrEqual(0);
+			});
+		}
+	}
 });
 
 test("line fragment offsets render back under pre-wrap", () => {

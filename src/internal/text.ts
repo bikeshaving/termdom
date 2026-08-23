@@ -31,8 +31,6 @@ const isBun = typeof globalThis.Bun !== "undefined";
 const COMBINING = /[\p{M}\p{Cf}]/u;
 
 /**
- * Every other LRU cache in the JavaScript ecosystem is insane.
- *
  * Two generations instead of per-hit reordering: a young-generation hit is
  * one Map.get and moves nothing. When the young generation fills it becomes
  * the old one and the previous old generation drops wholesale; a key still
@@ -76,51 +74,9 @@ class LRUCache<TKey, TValue> {
 		this.map.set(key, val);
 	}
 
-	has(key: TKey): boolean {
-		return this.map.has(key) || this.old.has(key);
-	}
-
-	delete(key: TKey): boolean {
-		const young = this.map.delete(key);
-		const old = this.old.delete(key);
-		return young || old;
-	}
-
 	clear(): void {
 		this.map.clear();
 		this.old.clear();
-	}
-
-	get size(): number {
-		return this.map.size + this.old.size;
-	}
-
-	* keys(): IterableIterator<TKey> {
-		yield* this.map.keys();
-		for (const key of this.old.keys()) {
-			if (!this.map.has(key)) {
-				yield key;
-			}
-		}
-	}
-
-	* values(): IterableIterator<TValue> {
-		for (const [, value] of this) {
-			yield value;
-		}
-	}
-
-	* entries(): IterableIterator<[TKey, TValue]> {
-		yield* this.map.entries();
-		for (const entry of this.old.entries()) {
-			if (!this.map.has(entry[0])) {
-				yield entry;
-			}
-		}
-	}
-
-	[Symbol.iterator](): IterableIterator<[TKey, TValue]> {
-		return this.entries();
 	}
 }
 
@@ -312,19 +268,8 @@ export function writeClusterWidths(
 		return;
 	}
 
-	if (segmenter) {
-		for (const {index, segment} of segmenter.segment(str)) {
-			out[offset + index + segment.length - 1] = graphemeWidth(segment);
-		}
-		return;
-	}
-
-	// No Intl.Segmenter: per-code-point, the same degradation stringWidthFallback
-	// takes.
-	let index = 0;
-	for (const char of str) {
-		index += char.length;
-		out[offset + index - 1] = graphemeWidth(char);
+	for (const {index, segment} of segmenter.segment(str)) {
+		out[offset + index + segment.length - 1] = graphemeWidth(segment);
 	}
 }
 
@@ -341,27 +286,15 @@ function stringWidthFallback(str: string): number {
 	// Width is a property of the grapheme cluster, not the code point: a ZWJ
 	// emoji family and a combining accent are each one cluster occupying one
 	// cell's worth of base character, however many code points they contain.
-	if (segmenter) {
-		let width = 0;
-		for (const {segment} of segmenter.segment(str)) {
-			width += graphemeWidth(segment);
-		}
-		return width;
-	}
-
-	// No Intl.Segmenter: fall back to per-code-point, which mismeasures
-	// clusters but keeps ASCII and plain CJK correct.
 	let width = 0;
-	for (const char of str) {
-		width += graphemeWidth(char);
+	for (const {segment} of segmenter.segment(str)) {
+		width += graphemeWidth(segment);
 	}
 	return width;
 }
 
-const segmenter =
-	typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ?
-			new Intl.Segmenter("en", {granularity: "grapheme"}) :
-		null;
+// Every supported runtime ships Intl.Segmenter; clusters are its job.
+const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 
 /**
  * Spacing combining marks (general category Mc). Unlike Mn and Me, which draw
@@ -444,22 +377,12 @@ function graphemeWidth(cluster: string): number {
  */
 function graphemeBoundaries(value: string): number[] {
 	const boundaries = [0];
-	if (segmenter) {
-		for (const {index, segment} of segmenter.segment(value)) {
-			boundaries.push(index + segment.length);
-		}
-	} else {
-		// No Intl.Segmenter: fall back to code-point boundaries -- a step over a
-		// surrogate pair stays whole, though combining sequences split. The same
-		// degradation stringWidthFallback takes.
-		let i = 0;
-		for (const char of value) {
-			i += char.length;
-			boundaries.push(i);
-		}
+	for (const {index, segment} of segmenter.segment(value)) {
+		boundaries.push(index + segment.length);
 	}
 	return boundaries;
 }
+
 /** The first grapheme boundary strictly after `index` (or the end). */
 export function nextGraphemeBoundary(value: string, index: number): number {
 	for (const boundary of graphemeBoundaries(value)) {
@@ -469,6 +392,7 @@ export function nextGraphemeBoundary(value: string, index: number): number {
 	}
 	return value.length;
 }
+
 /** The last grapheme boundary strictly before `index` (or the start). */
 export function prevGraphemeBoundary(value: string, index: number): number {
 	let previous = 0;
@@ -594,190 +518,4 @@ export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
 	// terminal will not swap the GLYPH for us, so the codepoint has to change).
 	const levels = bidi.getEmbeddingLevels(shaped, base);
 	return bidi.getReorderedString(shaped, levels);
-}
-
-/**
- * Whether a `white-space` value keeps every space and tab as written
- * (css-text-3 §4.1.1). `pre-line` does not: it collapses spaces and tabs and
- * preserves only newlines.
- */
-export function preservesSpaces(whiteSpace: string): boolean {
-	return (
-		whiteSpace === "pre" ||
-		whiteSpace === "pre-wrap" ||
-		whiteSpace === "break-spaces"
-	);
-}
-
-const COLLAPSIBLE_RUN = /\s+/g;
-const PRE_LINE_RUN = /[^\S\n]+/g;
-
-// Whether a rendering would change anything: two collapsible characters in a
-// row, or one that is not already the space it collapses to.
-const COLLAPSES = /\s\s|[^\S ]/;
-const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
-
-/**
- * The runs a `white-space` value collapses to one space: every run the \s class
- * matches, except that `pre-line` exempts the newline it preserves. Stateful
- * (`g`), so a caller resets `lastIndex` before scanning with it.
- */
-function collapsiblePattern(whiteSpace: string): RegExp {
-	return whiteSpace === "pre-line" ? PRE_LINE_RUN : COLLAPSIBLE_RUN;
-}
-
-/**
- * A text node's data as it renders under a `white-space` value: each run of
- * collapsible whitespace becomes one space, `pre` and `pre-wrap` render their
- * data verbatim, and `pre-line` collapses spaces and tabs but keeps newlines.
- *
- * The single definition of that mapping. The line breaker renders whole text
- * leaves through it and records, for each line fragment, the data range the
- * fragment covers; the painter renders that range back through it to recover
- * the characters to draw. The two agree because rendering a range equals the
- * range of the rendering whenever the range begins and ends on a rendered
- * character, which is how fragment offsets are defined.
- */
-function renderWhiteSpace(data: string, whiteSpace: string): string {
-	if (preservesSpaces(whiteSpace)) {
-		return data;
-	}
-	// Text whose collapsible whitespace is already single spaces renders as
-	// itself, which is most text: the question is worth asking before building
-	// a second string that would equal the first.
-	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
-	if (!collapses.test(data)) {
-		return data;
-	}
-	return data.replace(collapsiblePattern(whiteSpace), " ");
-}
-
-/**
- * The inverse of a whitespace rendering: which data offset each rendered code
- * unit came from. Held as the collapsed runs alone -- everything between two
- * runs maps across one-for-one -- so the mapping costs a few numbers per run
- * rather than an entry per character, on text whose collapsible runs are a
- * small fraction of its length.
- *
- * `base` is added to a rendered index before lookup, which is how a rendering
- * that later loses a prefix (a run's leading whitespace, trimmed) keeps its
- * mapping without rebuilding it.
- */
-export interface RenderedOffsets {
-	/** Rendered index of each collapsed run's single space. */
-	spaceAt: Int32Array;
-	/** The data offset that space renders: the run's first character. */
-	runStart: Int32Array;
-	/** The data offset just past each run. */
-	runEnd: Int32Array;
-	base: number;
-}
-
-const NO_RUNS = new Int32Array(0);
-
-/**
- * `renderWhiteSpace` plus the mapping back to data offsets, null when the
- * rendering is verbatim and every offset maps to itself.
- */
-export function renderWhiteSpaceOffsets(
-	data: string,
-	whiteSpace: string,
-): {text: string; offsets: RenderedOffsets | null} {
-	if (preservesSpaces(whiteSpace)) {
-		return {text: data, offsets: null};
-	}
-	const pattern = collapsiblePattern(whiteSpace);
-	pattern.lastIndex = 0;
-	const spaceAt: number[] = [];
-	const runStart: number[] = [];
-	const runEnd: number[] = [];
-	// Each run of length L renders as one space, so every later character sits
-	// L-1 places earlier than its data offset.
-	let dropped = 0;
-	// A one-character run leaves every offset where it was and still rewrites
-	// the character, since a tab or a newline renders as a space.
-	let rewritten = false;
-	let match: RegExpExecArray | null;
-	while ((match = pattern.exec(data))) {
-		spaceAt.push(match.index - dropped);
-		runStart.push(match.index);
-		runEnd.push(match.index + match[0].length);
-		dropped += match[0].length - 1;
-		if (match[0] !== " ") {
-			rewritten = true;
-		}
-	}
-	return {
-		text: dropped === 0 && !rewritten ? data : data.replace(pattern, " "),
-		offsets: {
-			spaceAt: Int32Array.from(spaceAt),
-			runStart: Int32Array.from(runStart),
-			runEnd: Int32Array.from(runEnd),
-			base: 0,
-		},
-	};
-}
-
-/** The data offset a rendered code unit came from. See RenderedOffsets. */
-export function dataOffsetAt(
-	offsets: RenderedOffsets | null,
-	index: number,
-): number {
-	if (!offsets) {
-		return index;
-	}
-	const rendered = index + offsets.base;
-	// The last collapsed run at or before the index: everything after that run
-	// maps across one-for-one from the data just past it.
-	const {spaceAt} = offsets;
-	let low = 0;
-	let high = spaceAt.length - 1;
-	let run = -1;
-	while (low <= high) {
-		const middle = (low + high) >> 1;
-		if (spaceAt[middle] <= rendered) {
-			run = middle;
-			low = middle + 1;
-		} else {
-			high = middle - 1;
-		}
-	}
-	if (run < 0) {
-		return rendered;
-	}
-	if (spaceAt[run] === rendered) {
-		return offsets.runStart[run];
-	}
-	return offsets.runEnd[run] + (rendered - spaceAt[run] - 1);
-}
-
-/**
- * The same mapping over a rendering that lost its first `by` characters. A
- * verbatim rendering needs a mapping of its own once it has: its offsets are no
- * longer the identity.
- */
-export function shiftRenderedOffsets(
-	offsets: RenderedOffsets | null,
-	by: number,
-): RenderedOffsets {
-	if (!offsets) {
-		return {spaceAt: NO_RUNS, runStart: NO_RUNS, runEnd: NO_RUNS, base: by};
-	}
-	return {...offsets, base: offsets.base + by};
-}
-
-/**
- * The characters one line fragment paints: its data range rendered under the
- * node's `white-space`, reordered into the visual order the line was laid out
- * in when the line carries bidirectional text.
- */
-export function renderTextFragment(
-	data: string,
-	whiteSpace: string,
-	startOffset: number,
-	endOffset: number,
-	visualBase?: "ltr" | "rtl" | null,
-): string {
-	const text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
-	return visualBase ? toVisualOrder(text, visualBase) : text;
 }
