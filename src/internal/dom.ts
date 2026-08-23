@@ -4931,9 +4931,6 @@ function hasOtherDoctypeChild(parent: Node, exclude: Node): boolean {
 
 /** Replace all of a parent's children with a node, or with nothing. */
 function replaceAll(node: Node | null, parent: Node): void {
-	if (node !== null) {
-		adoptNode(node, parent[kDocument]);
-	}
 	const removedNodes = childNodeArray(parent);
 	const addedNodes =
 		node === null ?
@@ -10374,6 +10371,27 @@ const kTemplateContent = Symbol("template content");
  * the slot rather than a phase later. Its host is the template, which is what
  * stops a template from being appended into its own contents.
  */
+const kTemplateDocument = Symbol("templateDocument");
+
+/**
+ * The appropriate template contents owner: an inert document of its own,
+ * one per document, holding every template's content fragment -- which is
+ * why a template's content answers a different ownerDocument than its
+ * element. A contents owner owns its own templates' contents itself.
+ */
+function templateContentsOwnerOf(document: Document): Document {
+	if (document[kTemplateDocument] === document) {
+		return document;
+	}
+	let owner = document[kTemplateDocument];
+	if (owner === null) {
+		owner = constructInternal(() => new Document());
+		owner[kTemplateDocument] = owner;
+		document[kTemplateDocument] = owner;
+	}
+	return owner;
+}
+
 export class HTMLTemplateElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -10386,7 +10404,7 @@ export class HTMLTemplateElement extends HTMLElement {
 		let content = this[kTemplateContent];
 		if (content === null) {
 			content = new DocumentFragment();
-			content[kDocument] = this[kDocument];
+			content[kDocument] = templateContentsOwnerOf(this[kDocument]);
 			content[kHost] = this;
 			this[kTemplateContent] = content;
 		}
@@ -18631,6 +18649,7 @@ export class Document extends Node {
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
 		this[kNwsapi] = null;
+		this[kTemplateDocument] = null;
 		this[kActiveElement] = null;
 		this[kDefaultView] = null;
 		this[kStyleElements] = 0;
@@ -18651,6 +18670,7 @@ export class Document extends Node {
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
 	[kNwsapi]: ReturnType<typeof NWSAPI> | null;
+	[kTemplateDocument]: Document | null;
 	[kActiveElement]: Element | null;
 	[kDefaultView]: object | null;
 	[kStyleElements]: number;
