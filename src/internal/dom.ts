@@ -2745,6 +2745,90 @@ export interface EventListenerOptions {
 	capture?: boolean;
 }
 
+/** The event types whose listeners mean a document observes pointer hover. */
+const HOVER_EVENT_TYPES = new Set([
+	"mousemove",
+	"mouseover",
+	"mouseout",
+	"mouseenter",
+	"mouseleave",
+]);
+
+/**
+ * How many hover-observing listeners a document's targets hold, and who to
+ * tell when the count moves. The engine watches this to decide whether the
+ * terminal should report pointer motion at all: motion reporting floods
+ * stdin, so it stays off until something can actually see the events.
+ */
+interface HoverListenerTally {
+	count: number;
+	onChange: (() => void) | null;
+}
+
+const hoverListenerTallies = new WeakMap<Document, HoverListenerTally>();
+
+function hoverTallyOf(document: Document): HoverListenerTally {
+	let tally = hoverListenerTallies.get(document);
+	if (tally === undefined) {
+		tally = {count: 0, onChange: null};
+		hoverListenerTallies.set(document, tally);
+	}
+	return tally;
+}
+
+/**
+ * The tally a hover listener on this target counts into, or null when the
+ * type is not a hover type or the target belongs to no document.
+ */
+function hoverTallyFor(
+	target: EventTarget,
+	type: string,
+): HoverListenerTally | null {
+	if (!HOVER_EVENT_TYPES.has(type)) {
+		return null;
+	}
+	if (target instanceof Node) {
+		return hoverTallyOf(target[kDocument]);
+	}
+	// A window is an EventTarget with a document; anything else counts
+	// nowhere.
+	const document = (target as {document?: unknown}).document;
+	return document instanceof Document ? hoverTallyOf(document) : null;
+}
+
+/**
+ * True while the UA's own machinery registers listeners: nwsapi installs
+ * document mouseover/mouseout trackers for its builtin `:hover`, and those
+ * are nobody observing hover.
+ */
+let hoverTallySuspended = false;
+
+function tallyHoverListener(target: EventTarget, listener: Listener): void {
+	if (hoverTallySuspended) {
+		return;
+	}
+	const tally = hoverTallyFor(target, listener.type);
+	if (tally !== null) {
+		listener.hoverTally = tally;
+		tally.count++;
+		tally.onChange?.();
+	}
+}
+
+/**
+ * Watch a document's hover-listener count: `onChange` fires whenever it
+ * moves, and the returned reader answers the current count. One watcher per
+ * document -- the engine that displays it.
+ */
+export function watchHoverListeners(
+	document: Document,
+	onChange: () => void,
+): () => number {
+	const tally = hoverTallyOf(document);
+	tally.onChange = onChange;
+	return () => tally.count;
+}
+
 interface Listener {
 	type: string;
 	callback: EventListenerOrEventListenerObject;
@@ -2752,6 +2836,8 @@ interface Listener {
 	once: boolean;
 	passive: boolean;
 	removed: boolean;
+	/** The hover tally this listener counts into, where it counts at all. */
+	hoverTally?: HoverListenerTally;
 }
 
 /** The AbortSignal the platform supplies, which a listener's signal must be. */
@@ -2921,6 +3007,7 @@ export class EventTarget {
 			removed: false,
 		};
 		this[kListeners].push(listener);
+		tallyHoverListener(this, listener);
 		if (flat.signal !== null) {
 			flat.signal.addEventListener("abort", () => {
 				removeListener(this[kListeners], listener);
@@ -2993,6 +3080,10 @@ function removeListener(listeners: Listener[], listener: Listener): void {
 	const index = listeners.indexOf(listener);
 	if (index !== -1) {
 		listeners.splice(index, 1);
+		if (listener.hoverTally !== undefined) {
+			listener.hoverTally.count--;
+			listener.hoverTally.onChange?.();
+		}
 	}
 }
 
@@ -3100,6 +3191,7 @@ function registerHandlerListener(
 		removed: false,
 	};
 	target[kListeners].push(listener);
+	tallyHoverListener(target, listener);
 	return listener;
 }
 
@@ -22904,6 +22996,26 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 
 /* --------------------------------------------------------------- selectors */
 
+/**
+ * The element under the pointer, per document. Hover is not a mutation and
+ * no attribute records it: the engine writes it here as motion reports
+ * arrive, and the `:hover` resolver below reads it. Absent means nothing is
+ * hovered -- a document without motion reporting, or a pointer that left.
+ */
+const hoveredElements = new WeakMap<Document, Element>();
+
+/** Record the element the pointer is over, which `:hover` matches from. */
+export function setHoveredElement(
+	document: Document,
+	element: Element | null,
+): void {
+	if (element === null) {
+		hoveredElements.delete(document);
+	} else {
+		hoveredElements.set(document, element);
+	}
+}
+
 interface SelectorEngine {
 	match(selector: string, element: never): boolean;
 	first(selector: string, context: never): unknown;
@@ -22915,10 +23027,18 @@ interface SelectorEngine {
 function selectorEngine(document: Document): SelectorEngine {
 	let engine = document[kNwsapi];
 	if (engine === null) {
-		engine = NWSAPI({
-			document: document as never,
-			DOMException: PlatformDOMException as never,
-		});
+		// nwsapi's factory registers document mouseover/mouseout listeners
+		// for its own builtin :hover, which the rewrites below bypass; they
+		// must not read as the document observing hover.
+		hoverTallySuspended = true;
+		try {
+			engine = NWSAPI({
+				document: document as never,
+				DOMException: PlatformDOMException as never,
+			});
+		} finally {
+			hoverTallySuspended = false;
+		}
 		engine.configure({
 			LOGERRORS: false,
 			IDS_DUPES: true,
@@ -23021,23 +23141,51 @@ function selectorEngine(document: Document): SelectorEngine {
 				modvar: null,
 			}),
 		);
+		// `:hover` matches the element under the pointer and its flat-tree
+		// ancestors, per css-selectors-4's "an element that is designated" --
+		// which slot projection and shadow hosts reorder past what the light
+		// tree records, so the climb is the flat parent's.
+		engine.Snapshot.hasHoverState = (element: Element): boolean => {
+			for (
+				let node: Element | null = hoveredElements.get(document) ?? null;
+				node !== null;
+				node = flatParentElement<Element>(node)
+			) {
+				if (node === element) {
+					return true;
+				}
+			}
+			return false;
+		};
+		engine.registerSelector(
+			":-termdom-hover",
+			/^:-termdom-hover(?![\w-])(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.hasHoverState(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
 		// The engine's own compiled `:focus` family predates shadow trees:
 		// its focus test wants a focusable-looking shape at
 		// document.activeElement, and its `:focus-within` cannot reach an
-		// ancestor at all. The names above resolve through the raw focus
-		// state instead, and every selector is spelled onto them on the way
-		// in -- the four entry points below are the only doors.
-		const FOCUS_REWRITES: Array<[RegExp, string]> = [
+		// ancestor at all. Its `:hover` predates hover state existing here at
+		// all. The names above resolve through the raw states instead, and
+		// every selector is spelled onto them on the way in -- the four entry
+		// points below are the only doors.
+		const STATE_REWRITES: Array<[RegExp, string]> = [
 			[/:focus-within(?![\w-])/gi, ":-termdom-focus-within"],
 			[/:focus-visible(?![\w-])/gi, ":-termdom-focus"],
 			[/:focus(?![\w-])/gi, ":-termdom-focus"],
+			[/:hover(?![\w-])/gi, ":-termdom-hover"],
 		];
-		const rewriteFocus = (selector: string): string => {
-			if (!/:focus/i.test(selector)) {
+		const rewriteState = (selector: string): string => {
+			if (!/:focus|:hover/i.test(selector)) {
 				return selector;
 			}
 			let rewritten = selector;
-			for (const [pattern, name] of FOCUS_REWRITES) {
+			for (const [pattern, name] of STATE_REWRITES) {
 				rewritten = rewritten.replace(pattern, name);
 			}
 			return rewritten;
@@ -23050,13 +23198,13 @@ function selectorEngine(document: Document): SelectorEngine {
 		};
 		const rawClosest = withClosest.closest.bind(engine);
 		engine.match = (selector: string, element: unknown, ...rest: unknown[]) =>
-			rawMatch(rewriteFocus(selector), element, ...rest);
+			rawMatch(rewriteState(selector), element, ...rest);
 		engine.first = (selector: string, ...rest: unknown[]) =>
-			rawFirst(rewriteFocus(selector), ...rest);
+			rawFirst(rewriteState(selector), ...rest);
 		engine.select = (selector: string, ...rest: unknown[]) =>
-			rawSelect(rewriteFocus(selector), ...rest);
+			rawSelect(rewriteState(selector), ...rest);
 		withClosest.closest = (selector: string, ...rest: unknown[]) =>
-			rawClosest(rewriteFocus(selector), ...rest);
+			rawClosest(rewriteState(selector), ...rest);
 		if (document.documentElement !== null) {
 			document[kNwsapi] = engine;
 		}

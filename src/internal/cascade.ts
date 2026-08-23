@@ -9098,6 +9098,7 @@ const kCounterRulesExist = Symbol("counterRulesExist");
 const kListItemRulesExist = Symbol("listItemRulesExist");
 const kScopedRulesExist = Symbol("scopedRulesExist");
 const kHasRulesExist = Symbol("hasRulesExist");
+const kHoverRulesExist = Symbol("hoverRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
@@ -9169,6 +9170,13 @@ export class StyleManager {
 	/** Whether any rule is scoped, which is what puts proximity in the sort. */
 	declare [kScopedRulesExist]: boolean;
 	declare [kHasRulesExist]: boolean;
+	/**
+	 * Whether any parsed selector mentions `:hover`. The engine reads this to
+	 * decide whether the terminal must report pointer motion: a sheet that
+	 * never tests hover is a document that cannot show it, and motion
+	 * reporting has a per-cell cost the document should not pay for nothing.
+	 */
+	declare [kHoverRulesExist]: boolean;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
 	// (keyboard true, pointer false). kRuleMatches gates such rules on it.
 	declare [kFocusVisibleActive]: boolean;
@@ -9215,6 +9223,7 @@ export class StyleManager {
 		this[kListItemRulesExist] = false;
 		this[kScopedRulesExist] = false;
 		this[kHasRulesExist] = false;
+		this[kHoverRulesExist] = false;
 		this[kFocusVisibleActive] = true;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
@@ -9726,6 +9735,73 @@ export class StyleManager {
 		// and the rows the element claims are the damage to repaint.
 		this[kPendingStyleDamage]?.add(element);
 		this[kLayoutEngine]?.invalidateFrame();
+	}
+
+	/**
+	 * The pointer moved to a new element: the cached declarations of both
+	 * hover chains hold rule sets matched under the OLD hover state, the
+	 * same staleness a focus move leaves. Scoped to the symmetric
+	 * difference of the two flat-tree chains -- the part of the tree whose
+	 * `:hover` answer moved; the shared ancestors above the fork answered
+	 * hovered before and answer hovered still. Each invalidated stop also
+	 * lands in the style damage the frame drains, so the repaint stays a
+	 * banded one: hover is not a mutation and nothing else names its rows.
+	 */
+	handleHoverChange(
+		previous: Element | null,
+		next: Element | null,
+	): void {
+		const chainOf = (element: Element | null): Set<Element> => {
+			const chain = new Set<Element>();
+			for (
+				let node: Element | null = element;
+				node;
+				node = flatParentElement<Element>(node)
+			) {
+				chain.add(node);
+			}
+			return chain;
+		};
+		const previousChain = chainOf(previous);
+		const nextChain = chainOf(next);
+		const invalidate = (node: Element): void => {
+			invalidateElementCaches(this, node);
+			this[kPendingStyleDamage]?.add(node);
+			// A host's hover reaches into its shadow tree through
+			// :host(:hover) rules and inheritance, the same reach a focus
+			// move has.
+			const shadowRoot = shadowRootOf<ShadowRoot>(node);
+			if (shadowRoot) {
+				for (const descendant of shadowRoot.querySelectorAll("*")) {
+					invalidateElementCaches(this, descendant);
+				}
+			}
+		};
+		for (const node of previousChain) {
+			if (!nextChain.has(node)) {
+				invalidate(node);
+			}
+		}
+		for (const node of nextChain) {
+			if (!previousChain.has(node)) {
+				invalidate(node);
+			}
+		}
+	}
+
+	/**
+	 * Whether any active rule tests `:hover`, against the sheets as they
+	 * stand -- a dirty sheet list parses first, so an answer read between
+	 * frames still describes the current document.
+	 */
+	hoverRulesExist(): boolean {
+		if (
+			this[kStylesheetsDirty] ||
+			styleSheetCount(this) !== this[kParsedStyleSheetCount]
+		) {
+			parseStylesheets(this);
+		}
+		return this[kHoverRulesExist];
 	}
 
 	/** Set the `:focus-visible` state; returns whether it changed. */
@@ -10466,6 +10542,7 @@ function parseStylesheets(
 	manager[kListItemRulesExist] = false;
 	manager[kScopedRulesExist] = false;
 	manager[kHasRulesExist] = false;
+	manager[kHoverRulesExist] = false;
 	manager[kStylesheetsDirty] = false;
 	manager[kLayerPaths] = [];
 	manager[kAnonymousLayers] = 0;
@@ -10692,6 +10769,14 @@ function mediaFeatureMatches(
 	manager: StyleManager,
 	feature: string,
 ): boolean {
+	// mediaqueries-4's hover feature: `hover` when the primary pointer can
+	// hover. Motion reporting turns on whenever the document observes
+	// hover, so the answer is unconditional; a bare `(hover)` is the
+	// boolean context.
+	const hoverMatch = feature.match(/^(any-)?hover(\s*:\s*(hover|none))?$/i);
+	if (hoverMatch) {
+		return (hoverMatch[3]?.toLowerCase() ?? "hover") === "hover";
+	}
 	const match = feature.match(
 		/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
 	);
@@ -10814,6 +10899,9 @@ function parseSelector(
 	// documents that actually pay for it.
 	if (selector.includes(":has(")) {
 		manager[kHasRulesExist] = true;
+	}
+	if (selector.includes(":hover")) {
+		manager[kHoverRulesExist] = true;
 	}
 	let scopes: readonly ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {

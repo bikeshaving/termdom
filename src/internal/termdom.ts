@@ -723,6 +723,10 @@ const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
 const kDisposed = Symbol("disposed");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
+const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
+const kHoverListenerCount = Symbol("hoverListenerCount");
+const kPendingHover = Symbol("pendingHover");
+const kHoverElement = Symbol("hoverElement");
 const kScrollChainTimer = Symbol("scrollChainTimer");
 const kResizeInProgress = Symbol("resizeInProgress");
 const kIsRendering = Symbol("isRendering");
@@ -877,6 +881,28 @@ export class TermDOM {
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	declare [kMouseReportingEnabled]: boolean;
+	// Whether the terminal is currently reporting pointer MOTION (SGR 1003)
+	// on top of button/drag reporting. See updateHoverReporting.
+	declare [kHoverReportingEnabled]: boolean;
+	// Reads the document's live count of hover-family listeners, half of
+	// what "the document observes hover" means (the other half is a sheet
+	// with a :hover rule).
+	declare [kHoverListenerCount]: () => number;
+	// The last motion report's position, coalesced: however many reports a
+	// chunk delivers, the frame hit-tests once, here. `quiet` marks a drag's
+	// motion, whose mousemove the report itself already dispatched.
+	declare [kPendingHover]: {
+		x: number;
+		y: number;
+		shiftKey: boolean;
+		altKey: boolean;
+		ctrlKey: boolean;
+		quiet: boolean;
+	} | null;
+
+	// The element under the pointer, which :hover styling and the boundary
+	// events (mouseover/out/enter/leave) are both diffed against.
+	declare [kHoverElement]: Element | null;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
@@ -973,6 +999,9 @@ export class TermDOM {
 		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
+		this[kHoverReportingEnabled] = false;
+		this[kPendingHover] = null;
+		this[kHoverElement] = null;
 		this[kMouseCaptureYielded] = false;
 		this[kScrollChainTimer] = null;
 		this[kMouseDownTarget] = null;
@@ -1042,6 +1071,13 @@ export class TermDOM {
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this[kStyleManager] = new StyleManager(this.window);
+		// A hover listener appearing or vanishing moves the "does anything
+		// observe hover" answer between frames, so it pokes the mode update
+		// directly; the stylesheet half is re-read after each frame instead,
+		// where the sheets have already parsed.
+		this[kHoverListenerCount] = DOM.watchHoverListeners(document, () => {
+			updateHoverReporting(this);
+		});
 
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.window);
@@ -2164,6 +2200,10 @@ export class TermDOM {
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
 		// goes back to the terminal the same way, and the title we replaced
 		// pops back to what the terminal held before attach pushed it.
+		if (this[kHoverReportingEnabled]) {
+			void this[kSession].write("\x1b[?1003l");
+			this[kHoverReportingEnabled] = false;
+		}
 		if (this[kMouseReportingEnabled]) {
 			void this[kSession].write("\x1b[?1006l\x1b[?1002l");
 			this[kMouseReportingEnabled] = false;
@@ -3202,6 +3242,42 @@ function updateMouseReporting(
 	void termdom[kSession].write(
 		wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
 	);
+	// Motion reporting rides on top of capture: it follows capture off (a
+	// scroll-chaining yield hands the WHOLE mouse back) and back on.
+	updateHoverReporting(termdom);
+}
+
+/** Whether anything in the document can observe pointer hover right now. */
+function hoverObserved(
+	termdom: TermDOM,
+): boolean {
+	return (
+		termdom[kHoverListenerCount]() > 0 ||
+		termdom[kStyleManager].hoverRulesExist()
+	);
+}
+
+/**
+ * Motion (hover) reporting -- SGR 1003 -- is DEMAND-DRIVEN: a terminal
+ * reporting motion sends a report per cell the pointer crosses, a flood an
+ * app that never looks at hover should not receive. So it turns on only
+ * while base capture is on AND something observes hover, and turns back
+ * off when the last observer goes. There is no override: observation is
+ * the whole switch.
+ *
+ * Idempotent; called from every edge that can move the answer: capture
+ * toggles, listener registration, and the end of each frame (where a
+ * stylesheet's `:hover` rules have just parsed).
+ */
+function updateHoverReporting(
+	termdom: TermDOM,
+): void {
+	const wanted = termdom[kMouseReportingEnabled] && hoverObserved(termdom);
+	if (wanted === termdom[kHoverReportingEnabled]) {
+		return;
+	}
+	termdom[kHoverReportingEnabled] = wanted;
+	void termdom[kSession].write(wanted ? "\x1b[?1003h" : "\x1b[?1003l");
 }
 
 /**
@@ -3793,6 +3869,9 @@ function afterRender(
 		termdom[kHeight],
 	);
 	termdom[kObserverManager].flush(viewport, termdom[kRenderCount]);
+	// The frame's stylesheets have parsed, so "does any rule test :hover"
+	// is current: re-answer whether the terminal should report motion.
+	updateHoverReporting(termdom);
 }
 
 /**
@@ -4158,6 +4237,28 @@ function handleMouseReport(
 	);
 	const x = point?.x ?? col - 1;
 	const y = point?.y ?? 0;
+
+	// Motion arrives at cell granularity -- with 1003 on, a report per cell
+	// crossed -- so it is COALESCED: the frame hit-tests the last position
+	// once and updates the hover chain there (see processPendingHover),
+	// instead of paying a hit-test per report. A drag's motion (base <= 2)
+	// falls through besides: its per-report mousemove and selection updates
+	// predate hover and keep their timing.
+	if (isMotion) {
+		termdom[kPendingHover] = {
+			x,
+			y,
+			shiftKey,
+			altKey,
+			ctrlKey,
+			quiet: base <= 2,
+		};
+		if (base > 2) {
+			void render(termdom);
+			return;
+		}
+	}
+
 	// Already document-relative -- go straight to the shared hit-test rather
 	// than through the public elementFromPoint, which expects viewport-
 	// relative input and would convert it right back.
@@ -4477,6 +4578,127 @@ function handleMouseReport(
 		}
 	}
 	termdom[kMouseDownTarget] = null;
+}
+
+/**
+ * Resolve the frame's coalesced motion: one hit-test at the last reported
+ * position, then whatever moved -- the hover chain re-styled, the boundary
+ * events, a mousemove -- from that one answer.
+ *
+ * Runs at the top of the interactive frame, before it takes its mutation
+ * records: a listener's synchronous mutations land in this frame, and the
+ * `:hover` invalidation precedes the style resolution that repaints it.
+ */
+function processPendingHover(
+	termdom: TermDOM,
+): void {
+	const pending = termdom[kPendingHover];
+	if (pending === null) {
+		return;
+	}
+	termdom[kPendingHover] = null;
+	const {x, y, shiftKey, altKey, ctrlKey} = pending;
+	const target =
+		findElementAtDocumentPoint(termdom, x, y) || termdom.document.body;
+	const previous = termdom[kHoverElement];
+	if (target !== previous) {
+		termdom[kHoverElement] = target;
+		DOM.setHoveredElement(
+			termdom.document as unknown as DOM.Document,
+			target as unknown as DOM.Element,
+		);
+		termdom[kStyleManager].handleHoverChange(previous, target);
+		const chainOf = (element: Element | null): Element[] => {
+			const chain: Element[] = [];
+			for (
+				let node: Element | null = element;
+				node;
+				node = termdom[kUAToolkit].flatParentElement<Element>(node)
+			) {
+				chain.push(node);
+			}
+			return chain;
+		};
+		const previousChain = chainOf(previous);
+		const targetChain = chainOf(target);
+		const previousSet = new Set(previousChain);
+		const targetSet = new Set(targetChain);
+		const boundaryInit = {
+			button: 0,
+			buttons: 0,
+			clientX: x,
+			clientY: y,
+			shiftKey,
+			altKey,
+			ctrlKey,
+		};
+		// UI Events' boundary order: out, then leave from the exited element
+		// up, then over, then enter from the outermost entered ancestor
+		// down; the mousemove in the entered element follows them.
+		if (previous !== null) {
+			fireAsUserAgent(
+				previous,
+				new termdom.window.MouseEvent("mouseout", {
+					...boundaryInit,
+					bubbles: true,
+					cancelable: true,
+					relatedTarget: target,
+				}),
+			);
+			for (const node of previousChain) {
+				if (!targetSet.has(node)) {
+					fireAsUserAgent(
+						node,
+						new termdom.window.MouseEvent("mouseleave", {
+							...boundaryInit,
+							relatedTarget: target,
+						}),
+					);
+				}
+			}
+		}
+		fireAsUserAgent(
+			target,
+			new termdom.window.MouseEvent("mouseover", {
+				...boundaryInit,
+				bubbles: true,
+				cancelable: true,
+				relatedTarget: previous,
+			}),
+		);
+		const entering = targetChain.filter((node) => !previousSet.has(node));
+		for (let i = entering.length - 1; i >= 0; i--) {
+			fireAsUserAgent(
+				entering[i],
+				new termdom.window.MouseEvent("mouseenter", {
+					...boundaryInit,
+					relatedTarget: previous,
+				}),
+			);
+		}
+	}
+	// A drag's motion already dispatched its own mousemove, report by
+	// report; only buttonless motion owes one here.
+	if (!pending.quiet) {
+		const last = termdom[kLastMouse];
+		fireAsUserAgent(
+			target,
+			new termdom.window.MouseEvent("mousemove", {
+				button: 0,
+				buttons: 0,
+				clientX: x,
+				clientY: y,
+				movementX: last === null ? 0 : x - last.x,
+				movementY: last === null ? 0 : y - last.y,
+				shiftKey,
+				altKey,
+				ctrlKey,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		termdom[kLastMouse] = {x, y};
+	}
 }
 
 /**
@@ -4870,6 +5092,11 @@ async function renderInteractive(
 		await detectionPending;
 	}
 
+	// Coalesced pointer motion resolves first: a hover listener's
+	// synchronous mutations join the records taken below, and the hover
+	// chain's invalidation precedes this frame's style resolution.
+	processPendingHover(termdom);
+
 	const pending = termdom[kObserver].takeRecords();
 	if (pending.length > 0) {
 		handlePendingMutations(termdom, pending);
@@ -4952,10 +5179,9 @@ async function renderInteractive(
 	// event, a live selection, a drag, a geometry change (cascades) --
 	// takes the full diff. What a mouse report changes names its elements:
 	// a click moves focus, which the cascade damages, and a drag holds an
-	// anchor this gate already reads. A pointer that flipped state
-	// anywhere on the screen would not, but no such state exists here --
-	// :hover matches nothing -- and adding one means damaging the chains
-	// it entered and left, not giving up the transform.
+	// anchor this gate already reads. Pointer motion flipping `:hover`
+	// names its elements too -- handleHoverChange damages the chains the
+	// pointer entered and left -- so hover keeps the transform.
 	let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
 	const scrollTop = termdom[kViewport].scrollTop;
 	const styleDamage = termdom[kStyleManager].drainStyleDamage();

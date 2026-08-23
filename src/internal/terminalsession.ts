@@ -174,7 +174,9 @@ function installCursorRestoreOnExit(): void {
 		for (const proc of undisposedProcesses) {
 			try {
 				// Mouse capture off, cursor back on, bracketed paste off.
-				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h\x1b[?2004l");
+				proc.stdout.write(
+					"\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?25h\x1b[?2004l",
+				);
 			} catch (_err) {
 				// The stream may already be gone; the shell will survive.
 			}
@@ -216,7 +218,7 @@ export function transportFromProcess(
 		// queue, and `dispose(); process.exit()` exits before it flushes.
 		// These are the modes whose survival breaks the user's shell; each is
 		// idempotent, so the queued restores repeating them is harmless.
-		proc.stdout.write("[?1006l[?1002l[?25h[?2004l[23;0t");
+		proc.stdout.write("[?1006l[?1003l[?1002l[?25h[?2004l[23;0t");
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
 			dataListener = null;
