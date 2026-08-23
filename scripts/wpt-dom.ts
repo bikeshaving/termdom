@@ -226,6 +226,7 @@ const TESTDRIVER_VENDOR = String.raw`
 function domGlobals(dom: DOMModule): Record<string, unknown> {
 	const names = [
 		"AbstractRange",
+		"AnimationEvent",
 		"Attr",
 		"BeforeUnloadEvent",
 		"CDATASection",
@@ -349,6 +350,7 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"Text",
 		"TextEvent",
 		"ToggleEvent",
+		"TransitionEvent",
 		"TreeWalker",
 		"UIEvent",
 		"ValidityState",
@@ -581,9 +583,11 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-user-input: clicks on editable content, and the focus events HTML fires from them",
 
 	// requires-css-animations: the events under test are fired by the CSS
-	// animation and transition machinery, which belongs to the engine.
+	// animation machinery (@keyframes), which the engine does not run yet.
+	// Transitions run and fire their events; what keeps their two files out
+	// is stated on each.
 	"dom/events/EventListener-invoke-legacy.html":
-		"requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event",
+		"requires-css-animations: four of the six subtests await a running CSS animation's events",
 	"dom/events/webkit-animation-end-event.html":
 		"requires-css-animations: a running CSS animation",
 	"dom/events/webkit-animation-iteration-event.html":
@@ -591,7 +595,7 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/events/webkit-animation-start-event.html":
 		"requires-css-animations: a running CSS animation",
 	"dom/events/webkit-transition-end-event.html":
-		"requires-css-animations: a running CSS transition",
+		"requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document",
 
 	// revisited when that phase lands.
 	"dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html":

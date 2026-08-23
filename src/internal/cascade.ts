@@ -20,6 +20,7 @@ import {
 	type Document as DOMDocument,
 	type UAToolkit,
 	claimUAToolkit,
+	TransitionEvent,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
 import {serializeCSSColor} from "./color.js";
@@ -694,6 +695,84 @@ function expandGrid(value: string): Record<string, string> {
  * serialized from the four longhands, so keeping the shorthand would shadow
  * that.
  */
+/** Split a comma-separated value list, leaving function arguments whole. */
+function splitCommaList(value: string): string[] {
+	const items: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i <= value.length; i++) {
+		const char = value[i];
+		if (char === "(") {
+			depth++;
+		} else if (char === ")") {
+			depth--;
+		} else if ((i === value.length || char === ",") && depth === 0) {
+			const item = value.slice(start, i).trim();
+			if (item) {
+				items.push(item);
+			}
+			start = i + 1;
+		}
+	}
+	return items;
+}
+
+/** A `<time>` token, in the two units CSS spells time in. */
+const CSS_TIME_VALUE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:s|ms)$/i;
+
+/** A `<easing-function>`, keyword or functional. */
+const CSS_EASING_VALUE =
+	/^(?:linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|cubic-bezier\(.*\)|steps\(.*\)|linear\(.*\))$/i;
+
+/**
+ * `transition: <single-transition>#`, each item `<property> || <duration> ||
+ * <easing> || <delay> || <behavior>`. The first time is the duration and the
+ * second the delay; each longhand collects one slot per item.
+ */
+function expandTransition(value: string): Record<string, string> {
+	const properties: string[] = [];
+	const durations: string[] = [];
+	const delays: string[] = [];
+	const easings: string[] = [];
+	const behaviors: string[] = [];
+	for (const item of splitCommaList(value)) {
+		let property = "";
+		let easing = "";
+		let behavior = "";
+		const times: string[] = [];
+		for (const token of splitComponents(item)) {
+			const lower = token.toLowerCase();
+			if (times.length < 2 && CSS_TIME_VALUE.test(token)) {
+				times.push(lower);
+			} else if (!easing && CSS_EASING_VALUE.test(token)) {
+				easing = lower;
+			} else if (
+				!behavior &&
+				(lower === "normal" || lower === "allow-discrete")
+			) {
+				behavior = lower;
+			} else if (!property) {
+				property = lower;
+			}
+		}
+		properties.push(property || "all");
+		durations.push(times[0] ?? "0s");
+		delays.push(times[1] ?? "0s");
+		easings.push(easing || "ease");
+		behaviors.push(behavior || "normal");
+	}
+	if (properties.length === 0) {
+		return {};
+	}
+	return {
+		"transition-property": properties.join(", "),
+		"transition-duration": durations.join(", "),
+		"transition-timing-function": easings.join(", "),
+		"transition-delay": delays.join(", "),
+		"transition-behavior": behaviors.join(", "),
+	};
+}
+
 function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
@@ -904,6 +983,9 @@ function expandShorthands(
 				break;
 			case "background":
 				Object.assign(out, expandBackground(value));
+				break;
+			case "transition":
+				Object.assign(out, expandTransition(value));
 				break;
 			case "text-decoration": {
 				// `<line> || <style> || <color>`; only the line component has a
@@ -3200,6 +3282,22 @@ class CSSStyleDeclaration implements DeclarationSource {
 				undecomposed = true;
 			}
 		});
+
+		// An inline `transition` opens the sticky gate a rule opens; the
+		// block parse is the one door both the attribute and setProperty
+		// spellings come through.
+		if (
+			this[kElement] &&
+			(declarations["transition"] !== undefined ||
+				declarations["transition-duration"] !== undefined ||
+				declarations["transition-delay"] !== undefined)
+		) {
+			const document = this[kElement].ownerDocument;
+			const manager = document ? documentManagers.get(document) : undefined;
+			if (manager) {
+				manager[kTransitionsExist] = true;
+			}
+		}
 
 		// The block holds longhands, which is what the cascade consults --
 		// except for a shorthand whose grammar this engine does not decompose,
@@ -7150,6 +7248,8 @@ const kRefresh = Symbol("refresh");
 const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
 const kUsedValue = Symbol("usedValue");
+const kBaseValue = Symbol("baseValue");
+const kTransitionValue = Symbol("transitionValue");
 
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
@@ -7240,12 +7340,34 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (this[kStale] || this[kEpoch].value !== this[kSeenEpoch]) {
 			this[kRefresh]();
 		}
+		const value = this[kBaseValue](property);
+		const manager = this[kManager];
+		if (manager !== null && manager[kTransitionCount] > 0) {
+			const transitional = transitionValueOf(
+				manager,
+				this[kElement],
+				"",
+				property,
+			);
+			if (transitional !== null) {
+				return transitional;
+			}
+		}
+		return value;
+	}
+
+	/**
+	 * The cascade's own answer, before any running transition overrides it:
+	 * what the transition machinery calls the after-change style. Memoized --
+	 * an interpolated value moves per frame and must never enter the memo.
+	 */
+	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands ?
 					shorthand(this, property, longhands, (longhand) =>
-						this.computedValueOf(longhand),
+						this[kBaseValue](longhand),
 					) : // A flow-relative longhand shares its computed value with the
 					// physical longhand it maps to, so it is answered as that one.
 					computed(this, physicalOf(this, property));
@@ -7272,11 +7394,25 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kSeenEpoch] = this[kEpoch].value;
 		this[kCSSRules] = this[kManager].matchingRules(this[kElement]);
 		this[kCustom] = null;
-		this[kResolved].clear();
+		storeTransitionFallback(
+			this[kManager],
+			this[kElement],
+			"",
+			this[kResolved],
+		);
+		this[kResolved] = new Map();
 		this[kUsed]?.clear();
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
+		// The re-resolution is a style change event: whatever moved against
+		// the last snapshot starts, retargets or cancels transitions.
+		processTransitionStyle(
+			this[kManager],
+			this[kElement],
+			(property) => this[kBaseValue](property),
+			"",
+		);
 	}
 
 	// Resolution is fully lazy: construction populates nothing, and each
@@ -8269,10 +8405,26 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				this[kPseudoElement],
 			);
 		}
-		this[kResolved].clear();
+		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
+			storeTransitionFallback(
+				this[kManager],
+				this[kElement],
+				this[kPseudoElement],
+				this[kResolved],
+			);
+		}
+		this[kResolved] = new Map();
 		this[kNodeResolved].clear();
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
+		}
+		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
+			processTransitionStyle(
+				this[kManager],
+				this[kElement],
+				(property) => this[kBaseValue](property),
+				this[kPseudoElement],
+			);
 		}
 	}
 
@@ -8288,6 +8440,13 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if (this[kEpoch].value !== this[kSeenEpoch]) {
 			this[kRefresh]();
 		}
+		const value = this[kBaseValue](property);
+		const transitional = this[kTransitionValue](property);
+		return transitional ?? value;
+	}
+
+	/** The cascade's declarations alone, with no transition standing over them. */
+	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
@@ -8297,7 +8456,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 							property,
 							longhands,
 							(longhand) =>
-								this.computedValueOf(longhand) ||
+								this[kBaseValue](longhand) ||
 								CSS_INITIAL_VALUES[longhand] ||
 								"",
 						) :
@@ -8305,6 +8464,24 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			this[kResolved].set(property, value);
 		}
 		return value;
+	}
+
+	/** A running transition's value for this pseudo-element, or null. */
+	[kTransitionValue](property: string): string | null {
+		const manager = this[kManager];
+		if (
+			manager === null ||
+			this[kElement] === null ||
+			manager[kTransitionCount] === 0
+		) {
+			return null;
+		}
+		return transitionValueOf(
+			manager,
+			this[kElement],
+			this[kPseudoElement],
+			property,
+		);
 	}
 
 	/**
@@ -8329,11 +8506,12 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 					let value = this[kNodeResolved].get(property);
 					if (value === undefined) {
 						value =
-							this.computedValueOf(property) ||
+							this[kBaseValue](property) ||
 							computedValue(property, getInitialStyle(null, property));
 						this[kNodeResolved].set(property, value);
 					}
-					return value;
+					const transitional = this[kTransitionValue](property);
+					return transitional ?? value;
 				},
 			};
 			this[kNodeStyle] = style;
@@ -9102,6 +9280,15 @@ const kHoverRulesExist = Symbol("hoverRulesExist");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
+const kTransitionsExist = Symbol("transitionsExist");
+const kTransitionSnapshots = Symbol("transitionSnapshots");
+const kTransitionFallback = Symbol("transitionFallback");
+const kActiveTransitions = Symbol("activeTransitions");
+const kTransitionCount = Symbol("transitionCount");
+const kTransitionClock = Symbol("transitionClock");
+const kTransitionTimer = Symbol("transitionTimer");
+const kTransitionEvents = Symbol("transitionEvents");
+const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
@@ -9193,6 +9380,46 @@ export class StyleManager {
 	// CSS Counter support
 	declare [kCounterScopes]: WeakMap<Element, CounterScope>;
 
+	/**
+	 * The transition machinery's state. The gate is STICKY: it opens the
+	 * first time any rule or inline block declares a transition and never
+	 * closes, so a document with none pays two checks per style change
+	 * event and nothing else. Snapshots (the after-change values of the
+	 * last style change event, per element per pseudo) live in a WeakMap;
+	 * only elements with RUNNING transitions sit in the strong map the
+	 * per-frame tick iterates.
+	 */
+	declare [kTransitionsExist]: boolean;
+	declare [kTransitionSnapshots]: WeakMap<
+		Element,
+		Map<string, Map<string, string>>
+	>;
+
+	/**
+	 * The resolved values a dropped declaration had computed, kept as the
+	 * before-change style for an element whose transitions are declared in
+	 * one style change with the retarget of a property -- the case the
+	 * snapshot above cannot cover, since no transition was matched when it
+	 * was last written. Stolen maps, not copies: the declaration replacing
+	 * its memo is what makes the old map safe to hold.
+	 */
+	declare [kTransitionFallback]: WeakMap<
+		Element,
+		Map<string, Map<string, string>>
+	>;
+
+	declare [kActiveTransitions]: Map<
+		Element,
+		Map<string, Map<string, RunningTransition>>
+	>;
+
+	declare [kTransitionCount]: number;
+	/** The timeline instant a frame's reads interpolate against. */
+	declare [kTransitionClock]: number;
+	declare [kTransitionTimer]: ReturnType<typeof setTimeout> | null;
+	declare [kTransitionEvents]: QueuedTransitionEvent[];
+	declare [kTransitionFlushQueued]: boolean;
+
 	// The document is fixed for the window's lifetime, so hold it directly rather
 	// than reaching through window.document on every access.
 	declare [kDocument]: Document;
@@ -9237,6 +9464,15 @@ export class StyleManager {
 		this[kAnonymousLayers] = 0;
 		this[kUnlayeredRank] = 0;
 		this[kPendingStyleDamage] = new Set();
+		this[kTransitionsExist] = false;
+		this[kTransitionSnapshots] = new WeakMap();
+		this[kTransitionFallback] = new WeakMap();
+		this[kActiveTransitions] = new Map();
+		this[kTransitionCount] = 0;
+		this[kTransitionClock] = 0;
+		this[kTransitionTimer] = null;
+		this[kTransitionEvents] = [];
+		this[kTransitionFlushQueued] = false;
 		this[kWindow] = window;
 		this[kLayoutEngine] = layoutEngine;
 		this[kDocument] = window.document;
@@ -9887,6 +10123,16 @@ export class StyleManager {
 				this,
 			);
 			this[kComputedStyleCache].set(element, declaration);
+			// A fresh declaration is how a style change reaches an element
+			// whose old one was dropped by invalidation, so building one is
+			// the other face of the style change event kRefresh sees.
+			const fresh = declaration;
+			processTransitionStyle(
+				this,
+				element,
+				(property) => fresh[kBaseValue](property),
+				"",
+			);
 		}
 		return declaration;
 	}
@@ -9941,6 +10187,12 @@ export class StyleManager {
 			this[kPseudoElementStyleCache].set(element, elementCache);
 		}
 		elementCache.set(pseudoElement, declaration);
+		processTransitionStyle(
+			this,
+			element,
+			(property) => declaration[kBaseValue](property),
+			pseudoElement,
+		);
 		return declaration;
 	}
 
@@ -10277,7 +10529,11 @@ export class StyleManager {
 	invalidateElement(element: Element): void {
 		// A computed style an author still holds is the one this cache handed
 		// out, so it is told the cascade moved on rather than merely dropped.
-		this[kComputedStyleCache].get(element)?.invalidate();
+		const dropped = this[kComputedStyleCache].get(element);
+		if (dropped) {
+			dropped.invalidate();
+			storeTransitionFallback(this, element, "", dropped[kResolved]);
+		}
 		this[kComputedStyleCache].delete(element);
 		this[kPseudoElementStyleCache].delete(element);
 		// Kept until the rows it claims cover the screen, which the engine
@@ -10421,7 +10677,796 @@ export class StyleManager {
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kPseudoNodeStyles] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
+		if (this[kTransitionTimer] !== null) {
+			clearTimeout(this[kTransitionTimer]);
+			this[kTransitionTimer] = null;
+		}
+		this[kActiveTransitions].clear();
+		this[kTransitionCount] = 0;
+		this[kTransitionEvents] = [];
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CSS transitions (css-transitions-1): started at style change events,
+// advanced by a per-frame tick, read through the computed-value override.
+// ---------------------------------------------------------------------------
+
+/** The timing a transition-property item matched: milliseconds and an easing. */
+interface TransitionTiming {
+	duration: number;
+	delay: number;
+	easing: string;
+}
+
+interface RunningTransition {
+	property: string;
+	from: string;
+	to: string;
+	/** Timeline ms of the style change event that started it. */
+	start: number;
+	delay: number;
+	duration: number;
+	easing: (input: number) => number;
+	/** Whether transitionstart has fired -- the delay has elapsed. */
+	started: boolean;
+	reversingAdjustedStartValue: string;
+	reversingShorteningFactor: number;
+}
+
+interface QueuedTransitionEvent {
+	element: Element;
+	type: string;
+	propertyName: string;
+	elapsedTime: number;
+	pseudoElement: string;
+}
+
+/**
+ * The properties `transition-property: all` covers here: the longhands whose
+ * values this engine can interpolate, or flip, with a visible result. A
+ * bounded list -- `all` literally means anything animatable, and an
+ * unbounded snapshot per style change would put the whole property index in
+ * front of each restyle.
+ */
+const TRANSITIONABLE_ALL = [
+	"background-color",
+	"border-bottom-color",
+	"border-bottom-width",
+	"border-left-color",
+	"border-left-width",
+	"border-right-color",
+	"border-right-width",
+	"border-top-color",
+	"border-top-width",
+	"bottom",
+	"color",
+	"column-gap",
+	"flex-basis",
+	"flex-grow",
+	"flex-shrink",
+	"font-size",
+	"height",
+	"left",
+	"letter-spacing",
+	"margin-bottom",
+	"margin-left",
+	"margin-right",
+	"margin-top",
+	"max-height",
+	"max-width",
+	"min-height",
+	"min-width",
+	"opacity",
+	"outline-color",
+	"outline-width",
+	"padding-bottom",
+	"padding-left",
+	"padding-right",
+	"padding-top",
+	"right",
+	"row-gap",
+	"text-indent",
+	"top",
+	"visibility",
+	"width",
+	"word-spacing",
+	"z-index",
+];
+
+/**
+ * Keep a dropped declaration's resolved values as before-change style. Only
+ * properties something read are here -- which is what makes it affordable,
+ * and enough: a value nothing ever computed has nothing to transition from.
+ * The caller stops holding the map, so it is stored as-is. Unconditional on
+ * the sticky gate: the write that declares an element's first transition
+ * lands AFTER the invalidation that drops the values it transitions from.
+ */
+function storeTransitionFallback(
+	manager: StyleManager,
+	element: Element,
+	pseudo: string,
+	resolved: Map<string, string>,
+): void {
+	if (resolved.size === 0) {
+		return;
+	}
+	let byPseudo = manager[kTransitionFallback].get(element);
+	if (!byPseudo) {
+		byPseudo = new Map();
+		manager[kTransitionFallback].set(element, byPseudo);
+	}
+	byPseudo.set(pseudo, resolved);
+}
+
+/** A computed value, with the initial value standing in for an empty answer. */
+function transitionBase(
+	read: (property: string) => string,
+	property: string,
+): string {
+	return (
+		read(property) ||
+		computedValue(property, CSS_INITIAL_VALUES[property] ?? "")
+	);
+}
+
+function parseCSSTime(token: string): number {
+	const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(ms|s)$/i.exec(token.trim());
+	if (!match) {
+		return 0;
+	}
+	const value = parseFloat(match[1]);
+	return match[2].toLowerCase() === "ms" ? value : value * 1000;
+}
+
+/**
+ * The transitions the current style matches: each covered longhand mapped to
+ * its timing. The duration, delay and easing lists repeat to the property
+ * list's length (css-transitions-1 §2.1); a later item naming a property a
+ * prior one covered wins.
+ */
+function matchedTransitions(
+	read: (property: string) => string,
+): Map<string, TransitionTiming> | null {
+	const propertyList = transitionBase(read, "transition-property");
+	if (!propertyList || propertyList === "none") {
+		return null;
+	}
+	const durations = splitCommaList(
+		transitionBase(read, "transition-duration"),
+	).map(parseCSSTime);
+	const delays = splitCommaList(
+		transitionBase(read, "transition-delay"),
+	).map(parseCSSTime);
+	const easings = splitCommaList(
+		transitionBase(read, "transition-timing-function"),
+	);
+	const items = splitCommaList(propertyList);
+	const out = new Map<string, TransitionTiming>();
+	items.forEach((item, index) => {
+		const name = item.toLowerCase();
+		if (name === "none") {
+			return;
+		}
+		const timing: TransitionTiming = {
+			duration: durations.length > 0 ? durations[index % durations.length] : 0,
+			delay: delays.length > 0 ? delays[index % delays.length] : 0,
+			easing: easings.length > 0 ? easings[index % easings.length] : "ease",
+		};
+		// A shorthand in the list covers its longhands (css-transitions-1
+		// §2.1); `all` covers the bounded list above.
+		const targets =
+			name === "all" ?
+				TRANSITIONABLE_ALL :
+					(
+						SHORTHAND_LONGHANDS.get(name) ?? [name]
+					);
+		for (const target of targets) {
+			out.set(target, timing);
+		}
+	});
+	return out.size > 0 ? out : null;
+}
+
+/**
+ * One style change event for an element (or one of its pseudo-elements):
+ * compare the new base values against the last event's snapshot, start,
+ * retarget or cancel transitions accordingly, and store the new snapshot.
+ * The cheap early-outs are what each style change in a transition-free
+ * document pays.
+ */
+function processTransitionStyle(
+	manager: StyleManager,
+	element: Element,
+	read: (property: string) => string,
+	pseudo: string,
+): void {
+	const active = manager[kActiveTransitions].get(element)?.get(pseudo);
+	if (!manager[kTransitionsExist] && !active) {
+		// The sticky gate opens as stylesheets and inline blocks PARSE, and
+		// an inline transition written right before this event may not have
+		// parsed yet: the attribute text is the one place it already shows.
+		const attribute = element.getAttribute("style");
+		if (!attribute || !attribute.includes("transition")) {
+			return;
+		}
+		manager[kTransitionsExist] = true;
+	}
+	const candidates = matchedTransitions(read);
+	let snapshots = manager[kTransitionSnapshots].get(element);
+	const previous = snapshots?.get(pseudo);
+	const fallbacks = manager[kTransitionFallback].get(element);
+	const fallback = fallbacks?.get(pseudo);
+	if (fallback) {
+		fallbacks!.delete(pseudo);
+	}
+	if (!candidates && !active && !previous) {
+		return;
+	}
+	const now = performance.now();
+	const names = new Set<string>([
+		...(candidates?.keys() ?? []),
+		...(active?.keys() ?? []),
+	]);
+	for (const property of names) {
+		const after = transitionBase(read, property);
+		const timing = candidates?.get(property);
+		const runnable =
+			timing !== undefined && timing.duration + Math.max(timing.delay, 0) > 0;
+		const running = active?.get(property);
+		if (running) {
+			if (!runnable) {
+				cancelTransition(manager, element, pseudo, property, now);
+				continue;
+			}
+			if (after === running.to) {
+				continue;
+			}
+			const current = currentTransitionValue(running, now);
+			cancelTransition(manager, element, pseudo, property, now);
+			if (current === after) {
+				continue;
+			}
+			// A change back toward where an unfinished transition came from
+			// plays in the portion already covered, not the full duration
+			// (css-transitions-1 §3, the reversing-adjusted start value).
+			let duration = timing.duration;
+			let factor = 1;
+			if (after === running.reversingAdjustedStartValue) {
+				const progress = transitionProgress(running, now);
+				factor = Math.min(
+					Math.max(
+						progress * running.reversingShorteningFactor +
+						(1 - running.reversingShorteningFactor),
+						0,
+					),
+					1,
+				);
+				duration *= factor;
+			}
+			startTransition(manager, element, pseudo, property, {
+				from: current,
+				to: after,
+				timing: {...timing, duration},
+				now,
+				reversingAdjustedStartValue: running.to,
+				reversingShorteningFactor: factor,
+			});
+			continue;
+		}
+		// No before-change value means the element had no style before this
+		// event, and an element styled for the first time transitions
+		// nothing. The fallback covers a transition declared and retargeted
+		// in one event; its raw entries spell "no declaration" as the empty
+		// string, which is the initial value the snapshot spells out.
+		const raw = previous?.get(property) ?? fallback?.get(property);
+		const before =
+			raw === "" ?
+					computedValue(property, CSS_INITIAL_VALUES[property] ?? "") :
+				raw;
+		if (
+			before === undefined ||
+			before === after ||
+			!runnable
+		) {
+			continue;
+		}
+		startTransition(manager, element, pseudo, property, {
+			from: before,
+			to: after,
+			timing: timing!,
+			now,
+			reversingAdjustedStartValue: before,
+			reversingShorteningFactor: 1,
+		});
+	}
+	if (candidates) {
+		const snapshot = new Map<string, string>();
+		for (const property of candidates.keys()) {
+			snapshot.set(property, transitionBase(read, property));
+		}
+		if (!snapshots) {
+			snapshots = new Map();
+			manager[kTransitionSnapshots].set(element, snapshots);
+		}
+		snapshots.set(pseudo, snapshot);
+	} else if (previous) {
+		snapshots!.delete(pseudo);
+	}
+}
+
+function startTransition(
+	manager: StyleManager,
+	element: Element,
+	pseudo: string,
+	property: string,
+	options: {
+		from: string;
+		to: string;
+		timing: TransitionTiming;
+		now: number;
+		reversingAdjustedStartValue: string;
+		reversingShorteningFactor: number;
+	},
+): void {
+	let byPseudo = manager[kActiveTransitions].get(element);
+	if (!byPseudo) {
+		byPseudo = new Map();
+		manager[kActiveTransitions].set(element, byPseudo);
+	}
+	let transitions = byPseudo.get(pseudo);
+	if (!transitions) {
+		transitions = new Map();
+		byPseudo.set(pseudo, transitions);
+	}
+	const {timing, now} = options;
+	const transition: RunningTransition = {
+		property,
+		from: options.from,
+		to: options.to,
+		start: now,
+		delay: timing.delay,
+		duration: timing.duration,
+		easing: parseEasing(timing.easing),
+		started: timing.delay <= 0,
+		reversingAdjustedStartValue: options.reversingAdjustedStartValue,
+		reversingShorteningFactor: options.reversingShorteningFactor,
+	};
+	transitions.set(property, transition);
+	manager[kTransitionCount]++;
+	manager[kTransitionClock] = now;
+	// A negative delay starts partway in, which is what elapsedTime reports.
+	const elapsed =
+		Math.min(Math.max(-timing.delay, 0), timing.duration) / 1000;
+	queueTransitionEvent(
+		manager,
+		element,
+		"transitionrun",
+		property,
+		elapsed,
+		pseudo,
+	);
+	if (transition.started) {
+		queueTransitionEvent(
+			manager,
+			element,
+			"transitionstart",
+			property,
+			elapsed,
+			pseudo,
+		);
+	}
+	scheduleTransitionTick(manager);
+}
+
+function cancelTransition(
+	manager: StyleManager,
+	element: Element,
+	pseudo: string,
+	property: string,
+	now: number,
+): void {
+	const byPseudo = manager[kActiveTransitions].get(element);
+	const transitions = byPseudo?.get(pseudo);
+	const transition = transitions?.get(property);
+	if (!transition || !transitions || !byPseudo) {
+		return;
+	}
+	transitions.delete(property);
+	if (transitions.size === 0) {
+		byPseudo.delete(pseudo);
+	}
+	if (byPseudo.size === 0) {
+		manager[kActiveTransitions].delete(element);
+	}
+	manager[kTransitionCount]--;
+	const elapsed = Math.min(
+		Math.max((now - transition.start - transition.delay) / 1000, 0),
+		transition.duration / 1000,
+	);
+	queueTransitionEvent(
+		manager,
+		element,
+		"transitioncancel",
+		property,
+		elapsed,
+		pseudo,
+	);
+}
+
+/** The eased progress at `now`, for the reversing arithmetic. */
+function transitionProgress(
+	transition: RunningTransition,
+	now: number,
+): number {
+	if (transition.delay > 0 && now < transition.start + transition.delay) {
+		return 0;
+	}
+	const linear =
+		transition.duration <= 0 ?
+			1 :
+				(
+					Math.min(
+						Math.max(
+							(now - transition.start - transition.delay) / transition.duration,
+							0,
+						),
+						1,
+					)
+				);
+	return transition.easing(linear);
+}
+
+function currentTransitionValue(
+	transition: RunningTransition,
+	now: number,
+): string {
+	if (transition.delay > 0 && now < transition.start + transition.delay) {
+		return transition.from;
+	}
+	return interpolateValue(
+		transition.from,
+		transition.to,
+		transitionProgress(transition, now),
+	);
+}
+
+/**
+ * The value a computed-style read answers while a transition runs, or null
+ * where none does. Interpolates against the manager's clock rather than the
+ * wall: the clock moves once per tick, so a frame's reads agree with each
+ * other and with what the painter draws.
+ */
+function transitionValueOf(
+	manager: StyleManager,
+	element: Element,
+	pseudo: string,
+	property: string,
+): string | null {
+	const transitions = manager[kActiveTransitions].get(element)?.get(pseudo);
+	const transition = transitions ? transitions.get(property) : undefined;
+	if (!transition) {
+		return null;
+	}
+	return currentTransitionValue(transition, manager[kTransitionClock]);
+}
+
+/**
+ * Interpolate two computed values: numbers with a shared unit numerically,
+ * colors by channel, and anything else -- per the spec's discrete type --
+ * as a flip at the midpoint. The painter quantizes to cells and palette
+ * entries downstream, so precision here costs nothing.
+ */
+function interpolateValue(from: string, to: string, progress: number): string {
+	if (progress <= 0) {
+		return from;
+	}
+	if (progress >= 1) {
+		return to;
+	}
+	const a = CSS_SCALAR_VALUE.exec(from);
+	const b = CSS_SCALAR_VALUE.exec(to);
+	if (a && b && a[2].toLowerCase() === b[2].toLowerCase()) {
+		const start = parseFloat(a[1]);
+		const value = start + (parseFloat(b[1]) - start) * progress;
+		return `${Math.round(value * 1000) / 1000}${a[2]}`;
+	}
+	const fromColor = parseTransitionColor(from);
+	const toColor = parseTransitionColor(to);
+	if (fromColor && toColor) {
+		const channel = (index: number): number =>
+			Math.round(
+				fromColor[index] + (toColor[index] - fromColor[index]) * progress,
+			);
+		const alpha =
+			fromColor[3] + (toColor[3] - fromColor[3]) * progress;
+		if (alpha < 1) {
+			return `rgba(${channel(0)}, ${channel(1)}, ${channel(2)}, ${Math.round(alpha * 1000) / 1000})`;
+		}
+		return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+	}
+	return progress < 0.5 ? from : to;
+}
+
+const CSS_SCALAR_VALUE = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i;
+
+/** A color as [r, g, b, alpha], through the one color parser the engine has. */
+function parseTransitionColor(
+	value: string,
+): [number, number, number, number] | null {
+	const serialized = serializeCSSColor(value);
+	if (serialized === null) {
+		return null;
+	}
+	const match = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(
+		serialized,
+	);
+	if (!match) {
+		return null;
+	}
+	return [
+		parseInt(match[1], 10),
+		parseInt(match[2], 10),
+		parseInt(match[3], 10),
+		match[4] === undefined ? 1 : parseFloat(match[4]),
+	];
+}
+
+/** Easing functions, memoized by their computed spelling. */
+const easingFunctions = new Map<string, (input: number) => number>();
+
+function parseEasing(text: string): (input: number) => number {
+	const key = text.trim().toLowerCase();
+	let easing = easingFunctions.get(key);
+	if (!easing) {
+		easing = buildEasing(key);
+		if (easingFunctions.size > 256) {
+			easingFunctions.clear();
+		}
+		easingFunctions.set(key, easing);
+	}
+	return easing;
+}
+
+function buildEasing(key: string): (input: number) => number {
+	switch (key) {
+		case "linear":
+			return (input) => input;
+		case "ease":
+			return cubicBezierEasing(0.25, 0.1, 0.25, 1);
+		case "ease-in":
+			return cubicBezierEasing(0.42, 0, 1, 1);
+		case "ease-out":
+			return cubicBezierEasing(0, 0, 0.58, 1);
+		case "ease-in-out":
+			return cubicBezierEasing(0.42, 0, 0.58, 1);
+		case "step-start":
+			return stepsEasing(1, "jump-start");
+		case "step-end":
+			return stepsEasing(1, "jump-end");
+	}
+	const bezier = /^cubic-bezier\(([^)]*)\)$/.exec(key);
+	if (bezier) {
+		const args = bezier[1].split(",").map((arg) => parseFloat(arg));
+		if (args.length === 4 && args.every(Number.isFinite)) {
+			return cubicBezierEasing(args[0], args[1], args[2], args[3]);
+		}
+	}
+	const steps = /^steps\(([^)]*)\)$/.exec(key);
+	if (steps) {
+		const args = steps[1].split(",").map((arg) => arg.trim());
+		const count = parseInt(args[0], 10);
+		if (Number.isFinite(count) && count > 0) {
+			return stepsEasing(count, args[1] ?? "end");
+		}
+	}
+	// linear() stop lists, and anything unrecognized, play as linear.
+	return (input) => input;
+}
+
+/**
+ * A step easing (css-easing-1 §2.3). At the input boundaries the before-flag
+ * subtleties collapse: 1 answers 1, and 0 answers the first jump's landing --
+ * which for the jump-start family is already up a step.
+ */
+function stepsEasing(
+	count: number,
+	position: string,
+): (input: number) => number {
+	const rising =
+		position === "jump-start" ||
+		position === "start" ||
+		position === "jump-both";
+	const jumps =
+		position === "jump-both" ?
+			count + 1 :
+			position === "jump-none" ?
+					Math.max(count - 1, 1) :
+				count;
+	return (input) => {
+		if (input >= 1) {
+			return 1;
+		}
+		let step = Math.floor(Math.max(input, 0) * count);
+		if (rising) {
+			step++;
+		}
+		return Math.min(Math.max(step / jumps, 0), 1);
+	};
+}
+
+/** A cubic Bezier easing, solved by Newton's method with a bisection net. */
+function cubicBezierEasing(
+	x1: number,
+	y1: number,
+	x2: number,
+	y2: number,
+): (input: number) => number {
+	const sample = (a1: number, a2: number, t: number): number =>
+		(((1 - 3 * a2 + 3 * a1) * t + (3 * a2 - 6 * a1)) * t + 3 * a1) * t;
+	const derivative = (a1: number, a2: number, t: number): number =>
+		3 * (1 - 3 * a2 + 3 * a1) * t * t + 2 * (3 * a2 - 6 * a1) * t + 3 * a1;
+	const solve = (x: number): number => {
+		let t = x;
+		for (let i = 0; i < 8; i++) {
+			const error = sample(x1, x2, t) - x;
+			if (Math.abs(error) < 1e-6) {
+				return t;
+			}
+			const slope = derivative(x1, x2, t);
+			if (Math.abs(slope) < 1e-6) {
+				break;
+			}
+			t -= error / slope;
+		}
+		let low = 0;
+		let high = 1;
+		t = x;
+		while (high - low > 1e-6) {
+			if (sample(x1, x2, t) < x) {
+				low = t;
+			} else {
+				high = t;
+			}
+			t = (low + high) / 2;
+		}
+		return t;
+	};
+	return (input) => {
+		if (input <= 0) {
+			return 0;
+		}
+		if (input >= 1) {
+			return 1;
+		}
+		return sample(y1, y2, solve(input));
+	};
+}
+
+function queueTransitionEvent(
+	manager: StyleManager,
+	element: Element,
+	type: string,
+	propertyName: string,
+	elapsedTime: number,
+	pseudoElement: string,
+): void {
+	manager[kTransitionEvents].push({
+		element,
+		type,
+		propertyName,
+		elapsedTime,
+		pseudoElement,
+	});
+	if (manager[kTransitionFlushQueued]) {
+		return;
+	}
+	manager[kTransitionFlushQueued] = true;
+	// Style change events run under layout; a listener can mutate the DOM, so
+	// dispatch waits for the stack that queued it to unwind.
+	queueMicrotask(() => flushTransitionEvents(manager));
+}
+
+function flushTransitionEvents(manager: StyleManager): void {
+	manager[kTransitionFlushQueued] = false;
+	if (manager[kTransitionEvents].length === 0) {
+		return;
+	}
+	const queued = manager[kTransitionEvents];
+	manager[kTransitionEvents] = [];
+	for (const item of queued) {
+		const event = new TransitionEvent(item.type, {
+			bubbles: true,
+			cancelable: item.type === "transitionend",
+			propertyName: item.propertyName,
+			elapsedTime: item.elapsedTime,
+			pseudoElement: item.pseudoElement,
+		});
+		uaOf(item.element)?.dispatchAsUserAgent(item.element, event);
+	}
+}
+
+function scheduleTransitionTick(manager: StyleManager): void {
+	if (manager[kTransitionTimer] !== null || manager[kTransitionCount] === 0) {
+		return;
+	}
+	manager[kTransitionTimer] = setTimeout(() => {
+		manager[kTransitionTimer] = null;
+		tickTransitions(manager);
+	}, 16);
+}
+
+/**
+ * Advance the clock one frame: promote delayed transitions, finish elapsed
+ * ones, cancel those whose element left the document, then invalidate the
+ * transitioning elements so the next read -- and the frame the tick requests
+ * -- answers the new interpolated values.
+ */
+function tickTransitions(manager: StyleManager): void {
+	const now = performance.now();
+	manager[kTransitionClock] = now;
+	for (const [element, byPseudo] of [...manager[kActiveTransitions]]) {
+		const disconnected = !element.isConnected;
+		for (const [pseudo, transitions] of [...byPseudo]) {
+			for (const [property, transition] of [...transitions]) {
+				if (disconnected) {
+					cancelTransition(manager, element, pseudo, property, now);
+					continue;
+				}
+				if (
+					!transition.started &&
+					now >= transition.start + transition.delay
+				) {
+					transition.started = true;
+					queueTransitionEvent(
+						manager,
+						element,
+						"transitionstart",
+						property,
+						Math.min(Math.max(-transition.delay, 0), transition.duration) /
+						1000,
+						pseudo,
+					);
+				}
+				if (
+					now >=
+					transition.start + transition.delay + transition.duration
+				) {
+					transitions.delete(property);
+					manager[kTransitionCount]--;
+					queueTransitionEvent(
+						manager,
+						element,
+						"transitionend",
+						property,
+						transition.duration / 1000,
+						pseudo,
+					);
+				}
+			}
+			if (transitions.size === 0) {
+				byPseudo.delete(pseudo);
+			}
+		}
+		if (byPseudo.size === 0) {
+			manager[kActiveTransitions].delete(element);
+		}
+		invalidateElementCaches(manager, element);
+		manager[kPendingStyleDamage]?.add(element);
+	}
+	manager[kLayoutEngine]?.invalidateFrame();
+	flushTransitionEvents(manager);
+	// The engine's requestAnimationFrame schedules a render; a window no
+	// engine dressed has none, and its reads interpolate on their own.
+	const raf = (
+		manager[kWindow] as {
+			requestAnimationFrame?: (cb: () => void) => number;
+		}
+	).requestAnimationFrame;
+	if (typeof raf === "function") {
+		raf.call(manager[kWindow], () => {});
+	}
+	scheduleTransitionTick(manager);
 }
 
 function styleSheetCount(
@@ -10465,8 +11510,18 @@ function invalidateElementCaches(
 	manager[kLayoutEngine]?.styleInvalidated(element);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade moved on rather than merely dropped.
-	manager[kComputedStyleCache].get(element)?.invalidate();
+	const dropped = manager[kComputedStyleCache].get(element);
+	if (dropped) {
+		dropped.invalidate();
+		storeTransitionFallback(manager, element, "", dropped[kResolved]);
+	}
 	manager[kComputedStyleCache].delete(element);
+	const droppedPseudos = manager[kPseudoElementStyleCache].get(element);
+	if (droppedPseudos) {
+		for (const [name, declaration] of droppedPseudos) {
+			storeTransitionFallback(manager, element, name, declaration[kResolved]);
+		}
+	}
 	manager[kPseudoElementStyleCache].delete(element);
 	// The pseudo-element nodes read through the declarations just dropped.
 	if (pseudoElementCount(element) > 0) {
@@ -10889,6 +11944,14 @@ function parseSelector(
 	context: RuleContext = UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
+	// Opens the sticky transition gate: only a duration or delay can ever
+	// make a transition run, so the property list alone does not open it.
+	if (
+		declarations["transition-duration"] ||
+		declarations["transition-delay"]
+	) {
+		manager[kTransitionsExist] = true;
+	}
 	// A rule's layer decides where it sorts, and the whole layer order is
 	// only known once every sheet has been read: the rank is filled in
 	// then, and this is the value it is filled in from.

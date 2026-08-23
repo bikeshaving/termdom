@@ -1168,8 +1168,10 @@ export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
  * fires here -- a table with holes in it answers that probe wrongly, which is
  * the whole reason the attributes exist.
  *
- * A handler's event type is its name without the `on`; every name in these
- * tables has a lowercase type, so no mapping is needed.
+ * A handler's event type is its name without the `on`. The four prefixed
+ * animation handlers are the exception -- their event types are mixed-case
+ * (`onwebkittransitionend` listens for `webkitTransitionEnd`) -- and the
+ * installer carries that mapping.
  *
  * The partials of specifications this DOM has no notion of at all -- Touch
  * Events, DeviceOrientation, Media Capture, the scroll-snap events -- are not
@@ -1265,6 +1267,10 @@ export const GLOBAL_EVENT_HANDLERS: readonly string[] = [
 	"ontransitionstart",
 	"onvolumechange",
 	"onwaiting",
+	"onwebkitanimationend",
+	"onwebkitanimationiteration",
+	"onwebkitanimationstart",
+	"onwebkittransitionend",
 	"onwheel",
 ];
 

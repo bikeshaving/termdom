@@ -2401,6 +2401,104 @@ Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface TransitionEventInit extends EventInit {
+	propertyName?: string;
+	elapsedTime?: number;
+	pseudoElement?: string;
+}
+
+const kPropertyName = Symbol("propertyName");
+const kElapsedTime = Symbol("elapsedTime");
+const kEventPseudoElement = Symbol("pseudoElement");
+
+/** An event of a CSS transition changing phase (css-transitions-1 §6). */
+export class TransitionEvent extends Event {
+	declare [kPropertyName]: string;
+	declare [kElapsedTime]: number;
+	declare [kEventPseudoElement]: string;
+
+	constructor(type: string, eventInitDict: TransitionEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<TransitionEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kPropertyName] =
+			init.propertyName === undefined ? "" : String(init.propertyName);
+		this[kElapsedTime] =
+			init.elapsedTime === undefined ? 0 : Number(init.elapsedTime);
+		this[kEventPseudoElement] =
+			init.pseudoElement === undefined ? "" : String(init.pseudoElement);
+	}
+
+	get propertyName(): string {
+		return this[kPropertyName];
+	}
+
+	get elapsedTime(): number {
+		return this[kElapsedTime];
+	}
+
+	get pseudoElement(): string {
+		return this[kEventPseudoElement];
+	}
+}
+
+Object.defineProperty(TransitionEvent.prototype, Symbol.toStringTag, {
+	value: "TransitionEvent",
+	configurable: true,
+});
+
+interface AnimationEventInit extends EventInit {
+	animationName?: string;
+	elapsedTime?: number;
+	pseudoElement?: string;
+}
+
+const kAnimationName = Symbol("animationName");
+
+/**
+ * An event of a CSS animation changing phase (css-animations-1 §4). The
+ * engine runs no @keyframes animations yet; the interface exists because the
+ * platform names it, and script can construct and dispatch one.
+ */
+export class AnimationEvent extends Event {
+	declare [kAnimationName]: string;
+	declare [kElapsedTime]: number;
+	declare [kEventPseudoElement]: string;
+
+	constructor(type: string, eventInitDict: AnimationEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<AnimationEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		this[kAnimationName] =
+			init.animationName === undefined ? "" : String(init.animationName);
+		this[kElapsedTime] =
+			init.elapsedTime === undefined ? 0 : Number(init.elapsedTime);
+		this[kEventPseudoElement] =
+			init.pseudoElement === undefined ? "" : String(init.pseudoElement);
+	}
+
+	get animationName(): string {
+		return this[kAnimationName];
+	}
+
+	get elapsedTime(): number {
+		return this[kElapsedTime];
+	}
+
+	get pseudoElement(): string {
+		return this[kEventPseudoElement];
+	}
+}
+
+Object.defineProperty(AnimationEvent.prototype, Symbol.toStringTag, {
+	value: "AnimationEvent",
+	configurable: true,
+});
+
 const DOM_DELTA_PIXEL = 0x00;
 const DOM_DELTA_LINE = 0x01;
 const DOM_DELTA_PAGE = 0x02;
@@ -3258,6 +3356,18 @@ function invokeEventHandler(
 }
 
 /**
+ * The event handler names whose event type is not the name minus `on`: the
+ * prefixed animation handlers listen for the mixed-case legacy types
+ * (HTML's event handler table).
+ */
+const PREFIXED_HANDLER_TYPES = new Map([
+	["onwebkitanimationend", "webkitAnimationEnd"],
+	["onwebkitanimationiteration", "webkitAnimationIteration"],
+	["onwebkitanimationstart", "webkitAnimationStart"],
+	["onwebkittransitionend", "webkitTransitionEnd"],
+]);
+
+/**
  * Install one event handler IDL attribute on an interface's prototype.
  *
  * On the prototype, once per interface: the accessor pair is the interface's,
@@ -3265,7 +3375,7 @@ function invokeEventHandler(
  * actually sets a handler on it.
  */
 function installEventHandler(prototype: object, name: string): void {
-	const type = name.slice(2);
+	const type = PREFIXED_HANDLER_TYPES.get(name) ?? name.slice(2);
 	Object.defineProperty(prototype, name, {
 		get(this: EventTarget): EventHandlerValue | null {
 			return eventHandlerValue(this, type);

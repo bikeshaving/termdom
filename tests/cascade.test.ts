@@ -1068,6 +1068,7 @@ const EXPANDED_SHORTHANDS: Record<string, string> = {
 	"place-items": "center start",
 	"place-self": "center start",
 	"text-decoration": "underline",
+	"transition": "left 2s ease-in 0.5s, color 1s",
 };
 
 /**
@@ -1119,7 +1120,6 @@ const UNEXPANDED_SHORTHANDS: Record<string, string> = {
 	"timeline-trigger": "no animation clock",
 	"timeline-trigger-activation-range": "no animation clock",
 	"timeline-trigger-active-range": "no animation clock",
-	"transition": "no transitions",
 	"view-timeline": "scroll-driven animations",
 };
 
