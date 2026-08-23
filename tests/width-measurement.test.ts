@@ -16,7 +16,6 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {Screen, type WidthMeasurer} from "../src/internal/ansi.js";
 import {
-	clusterAdvance,
 	recordClusterAdvance,
 	stringWidth,
 } from "../src/internal/text.js";
@@ -359,18 +358,15 @@ test("the ledger keeps the first answer and only records a correction", () => {
 	expect(stringWidth(cluster)).toBe(2);
 
 	expect(recordClusterAdvance(cluster, 1)).toBe(true);
-	expect(clusterAdvance(cluster)).toBe(1);
 	expect(stringWidth(cluster)).toBe(1);
 	expect(stringWidth(`x${cluster}x`)).toBe(3);
 
 	// Append-only: a second answer never overwrites the first.
 	expect(recordClusterAdvance(cluster, 2)).toBe(false);
-	expect(clusterAdvance(cluster)).toBe(1);
 
-	// A terminal that agrees with the tables leaves nothing behind.
+	// A terminal that agrees with the tables records nothing new.
 	const agreeing = "\u{1F324}️"; // 🌤️
 	expect(recordClusterAdvance(agreeing, stringWidth(agreeing))).toBe(false);
-	expect(clusterAdvance(agreeing)).toBe(undefined);
 });
 
 test("a terminal that agrees is asked once and nothing repaints", async () => {
@@ -387,7 +383,7 @@ test("a terminal that agrees is asked once and nothing repaints", async () => {
 	await settle();
 
 	expect(script.probeCount()).toBe(1);
-	expect(clusterAdvance("\u{1F325}️")).toBe(undefined);
+	expect(stringWidth("\u{1F325}️")).toBe(2);
 	// Agreement is not news: no frame follows it.
 	expect(script.written.length).toBe(framesAfterReply);
 
@@ -405,7 +401,6 @@ test("a disagreement corrects the tables, repaints, and stands for the session",
 	await nextFrame(dom);
 	await settle();
 
-	expect(clusterAdvance(cluster)).toBe(1);
 	// The rows painted from the old measurement are painted again, and the
 	// repaint asks nothing: the cluster is measured now.
 	const painted = script.written.filter((chunk) => chunk.includes(cluster));
@@ -449,10 +444,9 @@ test("every unmeasured glyph in a run carries its own query", async () => {
 	stdin.simulateResponse("\x1b[1;2R\x1b[1;3R\x1b[1;5R");
 	await settle();
 
-	expect(clusterAdvance(repeated)).toBe(1);
+	expect(stringWidth(repeated)).toBe(1);
 	// Two cells, as the tables said: the drift of BOTH earlier glyphs was
 	// accounted for before this reading was taken.
-	expect(clusterAdvance(after)).toBe(undefined);
 	expect(stringWidth(after)).toBe(2);
 
 	dom.dispose();
@@ -476,8 +470,7 @@ test("a reading that cannot be believed takes the rest of its run with it", asyn
 	stdin.simulateResponse("\x1b[1;31R\x1b[1;4R");
 	await settle();
 
-	expect(clusterAdvance(first)).toBe(undefined);
-	expect(clusterAdvance(second)).toBe(undefined);
+	expect(stringWidth(first)).toBe(2);
 
 	dom.dispose();
 });
@@ -504,7 +497,6 @@ test("a reply split across chunks is still a reply", async () => {
 	stdin.simulateResponse("2R");
 	await settle();
 
-	expect(clusterAdvance(cluster)).toBe(1);
 	expect(keys.length).toBe(0);
 
 	dom.dispose();
@@ -530,7 +522,6 @@ test("replies interleaved with typing reach the right side of the demux", async 
 	stdin.simulateResponse("jj\x1b[1;2Rkk");
 	await settle();
 
-	expect(clusterAdvance(cluster)).toBe(1);
 	expect(keys.join("")).toBe("jjkk");
 
 	dom.dispose();
@@ -555,8 +546,7 @@ test("a burst of replies is matched to its probes in order", async () => {
 	stdin.simulateResponse("\x1b[1;2R\x1b[1;4R");
 	await settle();
 
-	expect(clusterAdvance(first)).toBe(1);
-	expect(clusterAdvance(second)).toBe(undefined);
+	expect(stringWidth(first)).toBe(1);
 	expect(stringWidth(second)).toBe(2);
 
 	dom.dispose();
@@ -583,7 +573,7 @@ test("right-aligned text against the margin is measured anyway", async () => {
 	// Past the wait a starved cluster gives the document to paint on its own.
 	await settle(800);
 
-	expect(clusterAdvance(cluster)).toBe(2);
+	expect(stringWidth(cluster)).toBe(2);
 	const span = dom.document.getElementById("e")!;
 	expect(span.getBoundingClientRect().width).toBe(2);
 
@@ -655,7 +645,7 @@ test("one unanswered probe does not end the measuring of a terminal that answers
 	dom.document.body.innerHTML = `<div>${answered}</div>`;
 	await nextFrame(dom);
 	await settle();
-	expect(clusterAdvance(answered)).toBe(1);
+	expect(stringWidth(answered)).toBe(1);
 
 	dom.document.body.innerHTML = `<div>${silent}</div>`;
 	await nextFrame(dom);
@@ -665,14 +655,14 @@ test("one unanswered probe does not end the measuring of a terminal that answers
 	// leaves the queue, and the session keeps asking, because this terminal has
 	// answered before and one unanswered question does not unsay that.
 	await settle(2200);
-	expect(clusterAdvance(silent)).toBe(undefined);
+	expect(stringWidth(silent)).toBe(2);
 
 	dom.document.body.innerHTML = `<div>${later}</div>`;
 	await nextFrame(dom);
 	await settle();
 
 	expect(script.probeCount()).toBe(3);
-	expect(clusterAdvance(later)).toBe(1);
+	expect(stringWidth(later)).toBe(1);
 
 	dom.dispose();
 });

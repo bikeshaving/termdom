@@ -1,146 +1,84 @@
 import {describe, expect, test} from "@b9g/libuild/test";
+import {readFileSync} from "node:fs";
 import {
 	dataOffsetAt,
-	renderWhiteSpace,
+	renderTextFragment,
 	renderWhiteSpaceOffsets,
 	stringWidth,
-	stringWidthFallback,
 	widthIsUncertain,
 } from "../src/internal/text.js";
+import {
+	ORACLE_CASES,
+	oracleSweepWidth,
+	randomMixedStrings,
+} from "./width-oracle-domain.js";
 
 /**
- * termdom uses Bun.stringWidth when it is available and stringWidthFallback
- * everywhere else. Width drives line breaking and cell alignment, so the two
- * have to agree exactly: if they diverge, the same document renders with
- * different wrapping and misaligned table borders on Node and Deno, and no
- * Bun-hosted test would notice, because under Bun the fallback never runs.
- *
- * These tests hold the fallback against Bun.stringWidth directly, so they only
- * run under Bun -- on Node/Deno there is nothing to compare against.
+ * Width drives line breaking and cell alignment, so the pure-JS width path
+ * and Bun.stringWidth have to agree exactly: if they diverge, the same
+ * document renders with different wrapping on Node and Bun. The oracle's
+ * answers live in a committed fixture a sufficiently new bun regenerates
+ * (scripts/generate-width-oracle.ts). Under node, stringWidth IS the
+ * pure-JS path, so holding it to the fixture is the parity check; under
+ * bun, stringWidth IS the oracle, so the same run holds the fixture fresh.
  */
-const bunStringWidth =
-	typeof Bun !== "undefined" ? Bun.stringWidth.bind(Bun) : null;
+const oracleFixture = JSON.parse(
+	readFileSync(
+		new URL("./fixtures/width-oracle.json", import.meta.url),
+		"utf8",
+	),
+) as {cases: Record<string, number>; planes?: string; mixed?: number[]};
 
-(bunStringWidth ? describe : describe.skip)(
-	"stringWidthFallback matches Bun.stringWidth",
-	() => {
-		const cases: Array<[string, string]> = [
-			["ASCII", "hello world"],
-			["empty", ""],
-			["CJK ideographs", "中文字"],
-			["hiragana", "こんにちは"],
-			["katakana", "カタカナ"],
-			["CJK punctuation", "、。「」"],
-			["fullwidth forms", "ＡＢＣ"],
-			["hangul", "한글"],
-			["mixed CJK and ASCII", "中a文b字c"],
-			["emoji", "🚀"],
-			["emoji ZWJ sequence", "👨‍👩‍👧"],
-			["emoji with variation selector", "⚡️"],
-			["heart with variation selector", "❤️"],
-			["default-presentation symbol", "✅"],
-			["regional indicator flag", "🇯🇵"],
-			["lone regional indicator", "🇯"],
-			["combining accent", "é"],
-			["box drawing", "─│┌┐└┘"],
-			["arrows", "→←↑↓"],
-			["zero width joiner", "‍"],
-			["lone variation selector", "️"],
-			["ASCII with variation selector", "b️"],
-			["digit with variation selector", "1️"],
-		];
+describe("stringWidth matches the recorded oracle", () => {
+	for (const [name, input] of ORACLE_CASES) {
+		test(name, () => {
+			expect(`${name}: ${stringWidth(input)}`).toBe(
+				`${name}: ${oracleFixture.cases[name]}`,
+			);
+		});
+	}
 
-		for (const [name, input] of cases) {
-			test(name, () => {
-				expect(stringWidthFallback(input)).toBe(bunStringWidth!(input));
-			});
-		}
-
-		test("every codepoint in the BMP and astral planes", () => {
-			// The oracle's width data moves with Bun's Unicode version; the
-			// sweep only means something against an oracle at least as new as
-			// the tables (the trigrams went wide in Unicode 15.1).
-			if (bunStringWidth!("\u2630") !== 2) {
-				return;
+	// An old oracle cannot vouch for the sweeps; the fixture says so by
+	// omission, and regenerating under a bun with Unicode 15.1 tables
+	// fills them in.
+	(oracleFixture.planes ? test : test.skip)(
+		"every codepoint in the BMP and astral planes",
+		() => {
+			const widths: number[] = [];
+			for (const run of oracleFixture.planes!.split(" ")) {
+				const [width, count] = run.split("*").map(Number);
+				for (let i = 0; i < count; i++) {
+					widths.push(width);
+				}
 			}
 			const mismatches: string[] = [];
 			for (let code = 0; code <= 0x3ffff; code++) {
-				// Lone surrogates are not characters.
-				if (code >= 0xd800 && code <= 0xdfff) {
+				const expected = widths[code];
+				if (expected === -1) {
 					continue;
 				}
-				const char = String.fromCodePoint(code);
-				// The models differ by design off this domain: this engine
-				// gives a lone mark, spacing mark, or format character the
-				// cell it renders into, wcwidth counts overstrike as zero,
-				// and ambiguous-width characters are probed at runtime.
-				if (/^[\p{M}\p{Cf}\p{Cn}\p{Co}]$/u.test(char)) {
-					continue;
-				}
-				if (
-					(code >= 0x1160 && code <= 0x11ff) ||
-					(code >= 0xd7b0 && code <= 0xd7fb)
-				) {
-					continue;
-				}
-				if (widthIsUncertain(char)) {
-					continue;
-				}
-				// Spacing signs Bun zero-rates although they occupy a cell.
-				if (code === 0x980 || code === 0xc80 || code === 0xd3a) {
-					continue;
-				}
-				if (stringWidthFallback(char) !== bunStringWidth!(char)) {
+				const actual = oracleSweepWidth(code, stringWidth, widthIsUncertain);
+				if (actual !== expected) {
 					mismatches.push(`U+${code.toString(16).toUpperCase()}`);
 				}
 			}
 			expect(mismatches).toEqual([]);
-		});
+		},
+	);
 
-		test("random strings of mixed scripts and emoji", () => {
-			if (bunStringWidth!("\u2630") !== 2) {
-				return;
-			}
-			const pool = [
-				..."abcXYZ 019",
-				..."中文字",
-				..."こんにちは",
-				..."カタカナ",
-				..."한글",
-				"🚀",
-				"👨‍👩‍👧",
-				"⚡️",
-				"✅",
-				"❤️",
-				"é",
-				"、",
-				"ＡＢ",
-				"─",
-				"→",
-				"🇯🇵",
-			];
-
-			// Deterministic PRNG: a flaky width test would be miserable to debug.
-			let seed = 12345;
-			const next = () =>
-				(seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-
+	(oracleFixture.mixed ? test : test.skip)(
+		"random strings of mixed scripts and emoji",
+		() => {
 			const mismatches: string[] = [];
-			for (let i = 0; i < 20000; i++) {
-				let input = "";
-				const length = 1 + Math.floor(next() * 8);
-				for (let j = 0; j < length; j++) {
-					input += pool[Math.floor(next() * pool.length)];
-				}
-
-				if (stringWidthFallback(input) !== bunStringWidth!(input)) {
+			for (const [i, input] of randomMixedStrings()) {
+				if (stringWidth(input) !== oracleFixture.mixed![i]) {
 					mismatches.push(JSON.stringify(input));
 				}
 			}
 			expect(mismatches).toEqual([]);
-		});
-	},
-);
+		},
+	);
+});
 
 /**
  * The invariant the painter rests on: a line fragment records the range of data
@@ -171,7 +109,9 @@ describe("whitespace rendering", () => {
 		for (const [name, data] of cases) {
 			test(`${whiteSpace}: ${name} maps every rendered character to its data`, () => {
 				const {text, offsets} = renderWhiteSpaceOffsets(data, whiteSpace);
-				expect(text).toBe(renderWhiteSpace(data, whiteSpace));
+				expect(text).toBe(
+					renderTextFragment(data, whiteSpace, 0, data.length),
+				);
 				for (let i = 0; i < text.length; i++) {
 					const offset = dataOffsetAt(offsets, i);
 					expect(offset).toBeGreaterThanOrEqual(0);
@@ -188,7 +128,7 @@ describe("whitespace rendering", () => {
 					for (let to = from + 1; to <= text.length; to++) {
 						const start = dataOffsetAt(offsets, from);
 						const end = dataOffsetAt(offsets, to - 1) + 1;
-						expect(renderWhiteSpace(data.slice(start, end), whiteSpace)).toBe(
+						expect(renderTextFragment(data, whiteSpace, start, end)).toBe(
 							text.slice(from, to),
 						);
 					}

@@ -694,7 +694,7 @@ function expandGrid(value: string): Record<string, string> {
  * serialized from the four longhands, so keeping the shorthand would shadow
  * that.
  */
-export function expandShorthands(
+function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
 	const out: Record<string, string> = {};

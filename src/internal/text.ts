@@ -174,10 +174,6 @@ export function recordClusterAdvance(
 	return true;
 }
 
-/** The measured advance of `cluster`, or undefined where the tables stand. */
-export function clusterAdvance(cluster: string): number | undefined {
-	return clusterAdvances.get(cluster);
-}
 
 /**
  * Emoji by default: a code point that renders as a colour glyph with no
@@ -342,7 +338,7 @@ export function writeClusterWidths(
  * wrapping and cell alignment, so a disagreement misrenders text on Node and
  * Deno only.
  */
-export function stringWidthFallback(str: string): number {
+function stringWidthFallback(str: string): number {
 	// Width is a property of the grapheme cluster, not the code point: a ZWJ
 	// emoji family and a combining accent are each one cluster occupying one
 	// cell's worth of base character, however many code points they contain.
@@ -643,7 +639,7 @@ function collapsiblePattern(whiteSpace: string): RegExp {
  * range of the rendering whenever the range begins and ends on a rendered
  * character, which is how fragment offsets are defined.
  */
-export function renderWhiteSpace(data: string, whiteSpace: string): string {
+function renderWhiteSpace(data: string, whiteSpace: string): string {
 	if (preservesSpaces(whiteSpace)) {
 		return data;
 	}
