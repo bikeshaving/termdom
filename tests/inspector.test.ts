@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {inspect} from "node:util";
-import type {Document, Element, Node} from "../src/internal/dom.js";
+import type {Element} from "../src/internal/dom.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
 
 function asElement(value: unknown): Element {

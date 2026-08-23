@@ -1573,6 +1573,7 @@ const kButton = Symbol("button");
 const kButtons = Symbol("buttons");
 const kModifiers = Symbol("modifiers");
 
+const kDefaultView = Symbol("the window this document is displayed in");
 /**
  * An event of a pointing device.
  *
@@ -3190,8 +3191,6 @@ export function installEventHandlers(
 /** The tables a window's own interface is installed from, which the engine owns. */
 export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./htmltables.js";
 
-const kDefaultView = Symbol("the window this document is displayed in");
-
 /**
  * Install an event handler attribute that belongs to the element's window
  * rather than to the element -- the set a `body` and a `frameset` forward.
@@ -4530,6 +4529,8 @@ const kSlotAssignment = Symbol("slot assignment");
 const kAssignedNodes = Symbol("assigned nodes");
 const kCustomState = Symbol("custom element state");
 
+const kAssignedSlot = Symbol("assigned slot");
+const kDefinition = Symbol("element definition");
 /**
  * Move node into newParent before child.
  *
@@ -4952,8 +4953,8 @@ function preRemove(child: Node, parent: Node): Node {
 }
 
 const kRoot = Symbol("root");
-const kAssignedSlot = Symbol("assigned slot");
 
+const kActiveElement = Symbol("focused area");
 /** Remove a node from its parent. */
 function removeNode(node: Node, suppressObservers = false): void {
 	const parent = node[kParent];
@@ -7544,7 +7545,6 @@ const kReactionQueue = Symbol("custom element reaction queue");
 const kPseudoElements = Symbol("user-agent pseudo-element slots");
 const kPseudoHost = Symbol("the element a pseudo-element originates from");
 const kPseudoName = Symbol("the pseudo-element a slot node fills");
-const kDefinition = Symbol("element definition");
 const kIsValue = Symbol("is value");
 const kARIAElements = Symbol("explicitly set attr-elements");
 const kDataset = Symbol("dataset");
@@ -8165,7 +8165,6 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 });
 
 const alreadyConstructed = Symbol("already constructed");
-const kActiveElement = Symbol("focused area");
 
 /**
  * The HTML element constructor.
@@ -10978,6 +10977,7 @@ const kStateAtQueue = Symbol("stateAtQueue");
 
 const kContent = Symbol("content");
 
+const kEngine = Symbol("engine");
 /**
  * A disclosure, whose open attribute is its whole state.
  *
@@ -13223,7 +13223,6 @@ const kPreviousRadio = Symbol("previousRadio");
 const kPreviouslyChecked = Symbol("previouslyChecked");
 const kPreviouslyIndeterminate = Symbol("previouslyIndeterminate");
 const kValueText = Symbol("valueText");
-const kEngine = Symbol("engine");
 const kOnKeydown = Symbol("onKeydown");
 const kOnBeforeInput = Symbol("onBeforeInput");
 const kKind = Symbol("kind");

@@ -1,15 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {kUAToolkit} from "../src/internal/termdom.js";
-
-function pseudoElement<T>(
-	of: TermDOM,
-	host: object,
-	name: string,
-): T | null {
-	return of[kUAToolkit].pseudoElement<T>(host, name);
-}
 import {flowWalker} from "../src/internal/layout.js";
 
 test("::before and ::after content rendering", async () => {
@@ -62,13 +53,6 @@ test("::before and ::after content rendering", async () => {
 	decorated.textContent = "Achievement Unlocked";
 	document.body.appendChild(decorated);
 
-	// Trigger stylesheet refresh to attach pseudo elements
-	styleManagerFor(termdom).refreshStylesheets();
-
-	// Check the actual attached pseudo elements using the composition API
-	const beforeQuoteNode = pseudoElement<Element>(termdom, quote, "::before");
-	const afterQuoteNode = pseudoElement<Element>(termdom, quote, "::after");
-
 	// Render to terminal
 	await nextFrame(termdom);
 	const output = terminal.getPlainText();
@@ -78,16 +62,17 @@ test("::before and ::after content rendering", async () => {
 	expect(output).toContain("Note: This is important information."); // Prefix
 	expect(output).toContain("🎯 Achievement Unlocked ✨"); // Emoji decoration
 
-	// Verify StyleManager is creating pseudo-element nodes
-	expect(beforeQuoteNode).not.toBeNull();
-	expect(beforeQuoteNode!.textContent).toBe('"');
-
-	expect(afterQuoteNode).not.toBeNull();
-	expect(afterQuoteNode!.textContent).toBe('"');
-
-	const beforePrefixNode = pseudoElement<Element>(termdom, note, "::before");
-	expect(beforePrefixNode).not.toBeNull();
-	expect(beforePrefixNode!.textContent).toBe("Note: ");
+	// The computed pseudo styles are the public record of what attached.
+	const {window} = termdom;
+	expect(
+		window.getComputedStyle(quote, "::before").getPropertyValue("content"),
+	).toBe('"\\""');
+	expect(
+		window.getComputedStyle(quote, "::after").getPropertyValue("content"),
+	).toBe('"\\""');
+	expect(
+		window.getComputedStyle(note, "::before").getPropertyValue("content"),
+	).toBe('"Note: "');
 });
 
 test("::marker pseudo-element with lists", async () => {

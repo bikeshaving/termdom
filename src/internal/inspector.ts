@@ -3,17 +3,6 @@
  */
 
 // ANSI color codes for pretty printing
-const colors = {
-	attr: "\x1b[36m", // Cyan for attributes
-	bold: "\x1b[1m",
-	comment: "\x1b[90m", // Gray for comments
-	dim: "\x1b[2m",
-	reset: "\x1b[0m",
-	tag: "\x1b[35m", // Magenta for tags
-	text: "\x1b[37m", // White for text content
-	value: "\x1b[32m", // Green for values
-};
-
 import {
 	Comment,
 	DOMRect,
@@ -24,6 +13,16 @@ import {
 	Text,
 	type Node,
 } from "./dom.js";
+const colors = {
+	attr: "\x1b[36m", // Cyan for attributes
+	bold: "\x1b[1m",
+	comment: "\x1b[90m", // Gray for comments
+	dim: "\x1b[2m",
+	reset: "\x1b[0m",
+	tag: "\x1b[35m", // Magenta for tags
+	text: "\x1b[37m", // White for text content
+	value: "\x1b[32m", // Green for values
+};
 
 const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
 

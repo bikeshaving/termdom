@@ -89,6 +89,7 @@ const UPGRADEABLE_CONTROLS = new Set([
 	"TEXTAREA",
 ]);
 
+const kUAToolkit = Symbol("uaToolkit");
 /**
  * Upgrade every control in a newly connected subtree, the element itself
  * included. A walk over the subtree's own child links rather than a selector
@@ -185,6 +186,8 @@ function isActivationTriggering(event: DOM.Event): boolean {
 	}
 }
 
+const kActivationDepth = Symbol("activationDepth");
+const kEverActivated = Symbol("everActivated");
 /**
  * Fire an event as the user agent.
  *
@@ -244,15 +247,12 @@ export interface TermDOMOptions {
 	url?: string;
 }
 
-// Exported handles for the internals the test suite must reach (the layout
-// engine, input injection, anchor state): a test imports the key and reads
-// them, but they are off the public API -- index.ts does not re-export these
-// symbols, so a consumer cannot name them.
+// The one remaining test handle: the geometry tests read layout through
+// it while their conversion to public surfaces finishes. Off the public
+// API -- index.ts does not re-export it -- and on its way out.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-// The static-render entry renderANSI() reaches through; off the public API
-// like the test handles above.
-export {kLayoutEngine, kObserver, kUAToolkit};
+export {kLayoutEngine};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");
@@ -657,7 +657,6 @@ const kInteractive = Symbol("interactive");
 const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
-const kUAToolkit = Symbol("uaToolkit");
 const kLastMouse = Symbol("lastMouse");
 
 // The members this module installs on dom.js's prototypes, declared into
@@ -723,8 +722,6 @@ const kPrototypesInstalled = Symbol("prototypesInstalled");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kInputGeneration = Symbol("inputGeneration");
-const kActivationDepth = Symbol("activationDepth");
-const kEverActivated = Symbol("everActivated");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");

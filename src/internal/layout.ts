@@ -10,6 +10,19 @@ import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {
+	dataOffsetAt,
+	hasRTL,
+	inferParagraphDirection,
+	renderTextFragment,
+	renderWhiteSpaceOffsets,
+	shiftRenderedOffsets,
+	type RenderedOffsets,
+	preservesSpaces,
+	stringWidth as runtimeStringWidth,
+	toVisualOrder,
+	writeClusterWidths,
+} from "./text.js";
+import {
 	getBoxModel,
 	parseBorderWidthValue,
 	parseGridAreas,
@@ -84,19 +97,6 @@ function createFlatTreeWalker<N>(
 	}
 	return ua.createFlatTreeWalker<N>(root as object, dissolved);
 }
-import {
-	dataOffsetAt,
-	hasRTL,
-	inferParagraphDirection,
-	renderTextFragment,
-	renderWhiteSpaceOffsets,
-	shiftRenderedOffsets,
-	type RenderedOffsets,
-	preservesSpaces,
-	stringWidth as runtimeStringWidth,
-	toVisualOrder,
-	writeClusterWidths,
-} from "./text.js";
 
 // ---------------------------------------------------------------------------
 // Flow classification

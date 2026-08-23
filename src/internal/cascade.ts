@@ -25,6 +25,17 @@ import * as CSSTree from "css-tree";
 import {serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
+import Flex from "./flex.js";
+import type * as FlexTypes from "./flex.js";
+import {
+	CSS_INITIAL_VALUES,
+	CSS_LONGHANDS,
+	CSS_PROPERTIES,
+	CSS_AT_RULE_DESCRIPTORS,
+	CSS_RESET_ONLY_LONGHANDS,
+	CSS_SHORTHANDS,
+} from "./cssproperties.js";
+import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 // ---------------------------------------------------------------------------
 // The UA toolkit, claimed per document
@@ -102,17 +113,6 @@ function isUAShadowRoot(node: object): boolean {
 function styleElementCount(document: DOMDocument): number {
 	return uaByDocument.get(document)?.styleElementCount() ?? 0;
 }
-import Flex from "./flex.js";
-import type * as FlexTypes from "./flex.js";
-import {
-	CSS_INITIAL_VALUES,
-	CSS_LONGHANDS,
-	CSS_PROPERTIES,
-	CSS_AT_RULE_DESCRIPTORS,
-	CSS_RESET_ONLY_LONGHANDS,
-	CSS_SHORTHANDS,
-} from "./cssproperties.js";
-import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 // ---------------------------------------------------------------------------
 // User-agent element defaults and shorthand expansion
@@ -1215,7 +1215,6 @@ export function parseBorderWidthValue(
 /**
  * Parse CSS box model properties from an element's computed style
  */
-
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
 	// the author path's resolved-value work between here and the values layout
@@ -7109,11 +7108,12 @@ export function computedStyleOf(element: Element): ComputedStyle {
 	if (manager) {
 		return manager.declarationFor(element);
 	}
-	// A document with no cascade of this engine's behind it -- a bare document,
-	// which the tree walker is exercised against -- still answers, through
-	// whatever getComputedStyle it has.
+	// A document with no cascade of this engine's behind it -- a bare
+	// document -- still answers, through whatever getComputedStyle its
+	// window has; a window an engine never dressed has none, and answers
+	// with initial values like a window-less document.
 	const window = document.defaultView;
-	return window ?
+	return window && typeof window.getComputedStyle === "function" ?
 			foreignComputedStyle(window.getComputedStyle(element)) :
 		EMPTY_COMPUTED_STYLE;
 }

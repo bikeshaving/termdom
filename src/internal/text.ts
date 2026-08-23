@@ -174,7 +174,6 @@ export function recordClusterAdvance(
 	return true;
 }
 
-
 /**
  * Emoji by default: a code point that renders as a colour glyph with no
  * selector asking it to. That is the property a terminal disagrees about --

@@ -1,8 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {claimUAToolkit, type UAToolkit} from "../src/internal/dom.js";
-import {kUAToolkit} from "../src/internal/termdom.js";
 
 // One claim per bare document: the door is open because nothing here ever
 // installs an engine.
@@ -533,10 +532,7 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 // TermDOM Integration Tests
 
 test("TermDOM - flat-tree walker basic functionality", () => {
-	const terminal = new MockProcess();
-	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello World";
@@ -557,13 +553,10 @@ test("TermDOM - flat-tree walker basic functionality", () => {
 });
 
 test("TermDOM - flat-tree walker with shadow DOM", () => {
-	const terminal = new MockProcess();
-	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
 
 	// Create a custom element with shadow DOM
-	class TestElement extends (termdom.window as any).HTMLElement {
+	class TestElement extends (document.defaultView as any).HTMLElement {
 		constructor() {
 			super();
 			const shadow = this.attachShadow({mode: "open"});
@@ -576,7 +569,10 @@ test("TermDOM - flat-tree walker with shadow DOM", () => {
 		}
 	}
 
-	termdom.window.customElements.define("test-element", TestElement as any);
+	(document.defaultView as any).customElements.define(
+		"test-element",
+		TestElement as any,
+	);
 
 	const testEl = document.createElement("test-element") as any;
 	testEl.textContent = "Light content";
@@ -606,10 +602,7 @@ test("TermDOM - flat-tree walker with shadow DOM", () => {
 });
 
 test("TermDOM - flat-tree walker basic traversal", () => {
-	const terminal = new MockProcess();
-	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document} = createDocumentWindow("<!DOCTYPE html><body></body>");
 
 	const div = document.createElement("div");
 	div.textContent = "Hello";
@@ -632,10 +625,11 @@ test("flat-tree walker flattens named slots into composed order", () => {
 	// `slot { display: contents }`) -- projected content appears at each
 	// slot's position, unassigned-slot fallback stays hidden, and no SLOT
 	// element ever surfaces as a box of its own.
+	// Slot dissolution is the UA sheet's `slot { display: contents }`, so
+	// this walk needs a document with the engine's cascade behind it.
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	const host = document.createElement("div");
 	host.innerHTML =
@@ -899,156 +893,97 @@ test("A bare document - flat-tree walker manual currentNode setting respects roo
 
 // CSS-specific tests for ::marker pseudo-elements
 
-test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
-	const terminal = new MockProcess();
+test("::marker exists exactly where display is list-item", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 60});
 	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document, window} = termdom;
 
-	// Add CSS with ::marker pseudo-element content
 	const style = document.createElement("style");
 	style.textContent = `
-		.marker-test::marker {
-			content: '★ ';
-		}
-		.list-item {
-			display: list-item;
-			list-style-position: inside;
-		}
-		li {
-			list-style-position: inside;
-		}
+		.marker-test::marker { content: '★ '; }
+		.list-item { display: list-item; list-style-position: inside; }
+		li { list-style-position: inside; }
 	`;
 	document.head.appendChild(style);
 
-	// Test 1: Regular LI element (should work with default display: list-item)
 	const li = document.createElement("li");
 	li.className = "marker-test";
 	li.textContent = "List item";
 	document.body.appendChild(li);
 
-	// Test 2: DIV with display: list-item (should work)
 	const divListItem = document.createElement("div");
 	divListItem.className = "marker-test list-item";
 	divListItem.textContent = "Div as list item";
 	document.body.appendChild(divListItem);
 
-	// Test 3: Regular DIV without display: list-item (should NOT work)
 	const regularDiv = document.createElement("div");
 	regularDiv.className = "marker-test";
 	regularDiv.textContent = "Regular div";
 	document.body.appendChild(regularDiv);
 
-	// Trigger stylesheet refresh to attach pseudo elements
-	styleManagerFor(termdom).refreshStylesheets();
+	await nextFrame(termdom);
 
-	// Check that pseudo elements were created correctly
-	expect(pseudoElement<Element>(li, "::marker")?.textContent).toBe("★ ");
-	expect(pseudoElement<Element>(divListItem, "::marker")?.textContent).toBe(
-		"★ ",
-	);
-	expect(pseudoElement<Element>(regularDiv, "::marker")).toBe(null);
-
-	// Verify computed display values
-	expect(termdom.window.getComputedStyle(li).getPropertyValue("display")).toBe(
+	expect(window.getComputedStyle(li, "::marker").getPropertyValue("content"))
+		.toBe("\"★ \"");
+	expect(
+		window
+			.getComputedStyle(divListItem, "::marker")
+			.getPropertyValue("content"),
+	).toBe("\"★ \"");
+	expect(window.getComputedStyle(li).getPropertyValue("display")).toBe(
 		"list-item",
 	);
-	expect(
-		termdom.window.getComputedStyle(divListItem).getPropertyValue("display"),
-	).toBe("list-item");
-	expect(
-		termdom.window.getComputedStyle(regularDiv).getPropertyValue("display"),
-	).toBe("block");
+	expect(window.getComputedStyle(regularDiv).getPropertyValue("display")).toBe(
+		"block",
+	);
+
+	// The screen is the arbiter of which hosts painted a marker.
+	const output = terminal.getPlainText();
+	expect(output).toContain("★ List item");
+	expect(output).toContain("★ Div as list item");
+	expect(output).toContain("Regular div");
+	expect(output).not.toContain("★ Regular div");
+	termdom.dispose();
 });
 
-test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
-	const terminal = new MockProcess();
+test("::marker paints before ::before, content, then ::after", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 60});
 	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document, window} = termdom;
 
-	// Add CSS with both ::marker and ::before pseudo-elements
 	const style = document.createElement("style");
 	style.textContent = `
-		.test::marker {
-			content: '★ ';
-		}
-		.test::before {
-			content: '[';
-		}
-		.test::after {
-			content: ']';
-		}
-		.list-item {
-			display: list-item;
-			list-style-position: inside;
-		}
+		.test::marker { content: '★ '; }
+		.test::before { content: '['; }
+		.test::after { content: ']'; }
+		.list-item { display: list-item; list-style-position: inside; }
 	`;
 	document.head.appendChild(style);
 
-	// Test with DIV that has display: list-item (inside positioning for inline markers)
 	const div = document.createElement("div");
 	div.className = "test list-item";
 	div.textContent = "Content";
 	document.body.appendChild(div);
 
-	// Trigger stylesheet refresh
-	styleManagerFor(termdom).refreshStylesheets();
+	await nextFrame(termdom);
 
-	// Verify all pseudo elements exist
-	expect(pseudoElement<Element>(div, "::marker")?.textContent).toBe("★ ");
-	expect(pseudoElement<Element>(div, "::before")?.textContent).toBe("[");
-	expect(pseudoElement<Element>(div, "::after")?.textContent).toBe("]");
+	expect(window.getComputedStyle(div, "::marker").getPropertyValue("content"))
+		.toBe("\"★ \"");
+	expect(window.getComputedStyle(div, "::before").getPropertyValue("content"))
+		.toBe("\"[\"");
+	expect(window.getComputedStyle(div, "::after").getPropertyValue("content"))
+		.toBe("\"]\"");
 
-	// Use flat-tree walker to verify order
-	const walker = flowWalker(div);
-
-	const foundNodes: Array<{
-		type: string;
-		content: string;
-		pseudoType?: string;
-	}> = [];
-
-	let childNode = walker.firstChild();
-	while (childNode && foundNodes.length < 10) {
-		const pseudoMeta = pseudoNameOf(childNode);
-		foundNodes.push({
-			type: childNode.nodeType === childNode.TEXT_NODE ? "TEXT" : "ELEMENT",
-			content: childNode.textContent || "",
-			pseudoType: pseudoMeta ?? undefined,
-		});
-		childNode = walker.nextSibling();
-	}
-
-	// Should find all pseudo elements and content in correct order
-	expect(foundNodes).toHaveLength(4);
-
-	const markerIndex = foundNodes.findIndex((n) => n.pseudoType === "::marker");
-	const beforeIndex = foundNodes.findIndex((n) => n.pseudoType === "::before");
-	const contentIndex = foundNodes.findIndex(
-		(n) => n.content === "Content" && !n.pseudoType,
-	);
-	const afterIndex = foundNodes.findIndex((n) => n.pseudoType === "::after");
-
-	// Verify CSS specification order: ::marker → ::before → content → ::after
-	expect(markerIndex).toBe(0);
-	expect(beforeIndex).toBe(1);
-	expect(contentIndex).toBe(2);
-	expect(afterIndex).toBe(3);
-
-	expect(foundNodes[0].content).toBe("★ ");
-	expect(foundNodes[1].content).toBe("[");
-	expect(foundNodes[2].content).toBe("Content");
-	expect(foundNodes[3].content).toBe("]");
+	// CSS order, ::marker -> ::before -> content -> ::after, as one line.
+	expect(terminal.getPlainText()).toContain("★ [Content]");
+	termdom.dispose();
 });
 
-test("TermDOM - ::marker only on elements with display: list-item in walker traversal", () => {
-	const terminal = new MockProcess();
+test("a container paints markers only for its list-items", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 60});
 	const termdom = new TermDOM({transport: terminal.transport});
-	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
+	const {document, window} = termdom;
 
-	// Add CSS
 	const style = document.createElement("style");
 	style.textContent = `
 		.test::marker { content: '• '; }
@@ -1058,76 +993,44 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	`;
 	document.head.appendChild(style);
 
-	// Create different elements
-	const li = document.createElement("li"); // Default display: list-item
+	const li = document.createElement("li");
 	li.className = "test";
 	li.textContent = "LI";
-
-	const divList = document.createElement("div"); // display: list-item via CSS
+	const divList = document.createElement("div");
 	divList.className = "test list-item";
 	divList.textContent = "DIV-LIST";
-
-	const divBlock = document.createElement("div"); // display: block via CSS
+	const divBlock = document.createElement("div");
 	divBlock.className = "test block";
 	divBlock.textContent = "DIV-BLOCK";
 
 	const container = document.createElement("div");
-	container.appendChild(li);
-	container.appendChild(divList);
-	container.appendChild(divBlock);
+	container.append(li, divList, divBlock);
 	document.body.appendChild(container);
 
-	// Trigger stylesheet refresh
-	styleManagerFor(termdom).refreshStylesheets();
+	await nextFrame(termdom);
 
-	// Use walker to traverse and find ::marker elements
-	const walker = flowWalker(container);
+	expect(window.getComputedStyle(li).getPropertyValue("display")).toBe(
+		"list-item",
+	);
+	expect(window.getComputedStyle(divList).getPropertyValue("display")).toBe(
+		"list-item",
+	);
+	expect(window.getComputedStyle(divBlock).getPropertyValue("display")).toBe(
+		"block",
+	);
 
-	const markerNodes: Array<{parentTag: string; content: string}> = [];
-	let node = walker.nextNode();
-	while (node) {
-		if (pseudoNameOf(node) === "::marker") {
-			markerNodes.push({
-				parentTag: pseudoHostOf<Element>(node)!.tagName,
-				content: node.textContent || "",
-			});
-		}
-		node = walker.nextNode();
-	}
-
-	// Should find ::marker for LI and DIV with display: list-item, but not regular DIV
-	expect(markerNodes).toHaveLength(2);
-	expect(markerNodes.find((m) => m.parentTag === "LI")).toBeDefined();
-	expect(
-		markerNodes.find((m) => m.parentTag === "DIV" && m.content === "• "),
-	).toBeDefined();
-
-	// All markers should have the expected content
-	markerNodes.forEach((marker) => {
-		expect(marker.content).toBe("• ");
-	});
-
-	// Verify display values of host elements
-	const liDisplay = termdom.window
-		.getComputedStyle(li)
-		.getPropertyValue("display");
-	const divListDisplay = termdom.window
-		.getComputedStyle(divList)
-		.getPropertyValue("display");
-	const divBlockDisplay = termdom.window
-		.getComputedStyle(divBlock)
-		.getPropertyValue("display");
-
-	expect(liDisplay).toBe("list-item");
-	expect(divListDisplay).toBe("list-item");
-	expect(divBlockDisplay).toBe("block");
+	const output = terminal.getPlainText();
+	expect(output).toContain("• LI");
+	expect(output).toContain("• DIV-LIST");
+	expect(output).toContain("DIV-BLOCK");
+	expect(output).not.toContain("• DIV-BLOCK");
+	termdom.dispose();
 });
 
 test("TermDOM - ::marker rendering test", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
-	toolkits.set(document as unknown as object, termdom[kUAToolkit]);
 
 	// Add CSS with ::marker and other pseudo-elements
 	const style = document.createElement("style");
@@ -1145,8 +1048,6 @@ test("TermDOM - ::marker rendering test", async () => {
 	div.textContent = "Content";
 	document.body.appendChild(div);
 
-	// Trigger stylesheet refresh and render
-	styleManagerFor(termdom).refreshStylesheets();
 	await nextFrame(termdom);
 
 	// Check terminal output contains all pseudo-element content in correct order
