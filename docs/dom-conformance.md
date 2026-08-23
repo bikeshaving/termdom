@@ -20,8 +20,8 @@ window's legacy named access to elements by id.
 - Optional-feature subtests reporting unsupported: 6
 - Files whose harness completed: 678
 - Files whose harness did not complete: 81
-- Subtests passed: 95716
-- Subtests failed: 1524
+- Subtests passed: 95718
+- Subtests failed: 1522
 
 ## Exclusions
 
@@ -210,16 +210,16 @@ window's legacy named access to elements by id.
 | dom/nodes/Document-contentType/contentType/createDocument.html | requires-fetch: the document's content type comes from the response that delivered it |
 | dom/nodes/Document-contentType/contentType/createHTMLDocument.html | requires-fetch: the document's content type comes from the response that delivered it |
 | dom/nodes/Document-contentType/contentType/xhr_responseType_document.html | requires-fetch: the document's content type comes from the response that delivered it |
-| dom/nodes/Document-createElement-namespace-tests/bare_mathml.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/bare_svg.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/bare_xhtml.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/empty.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/mathml.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/minimal_html.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/svg.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/xhtml.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
+| dom/nodes/Document-createElement-namespace-tests/bare_mathml.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/bare_svg.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/bare_xhtml.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/empty.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/mathml.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/minimal_html.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/svg.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/xhtml.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
+| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
 | dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html | requires-browsing-context: an element adopted between an HTML and an XML frame |
 | dom/nodes/Element-matches.html | requires-browsing-context: the selector corpus is loaded into a frame |
 | dom/nodes/Element-webkitMatchesSelector.html | requires-browsing-context: the selector corpus is loaded into a frame |
@@ -250,7 +250,7 @@ window's legacy named access to elements by id.
 | dom/nodes/moveBefore/css-transition-cross-document.html | requires-browsing-context: the transitioning node moves into a frame's document |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | requires-browsing-context: the move happens inside a frame's document |
 | dom/nodes/node-realm-adoption-after-frame-removal.html | requires-browsing-context: a node's realm after its frame is removed |
-| dom/nodes/processing-instruction-attributes.html | no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not |
+| dom/nodes/processing-instruction-attributes.html | not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not |
 | dom/nodes/query-target-in-load-event.html | requires-browsing-context: the query runs in a frame's load event |
 | dom/nodes/remove-and-adopt-thcrash.html | requires-browsing-context: adoption into a frame's document |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | requires-browsing-context: the node is adopted into a frame's document |
@@ -515,16 +515,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-createAttribute.html | OK | 36 | 0 |
 | dom/nodes/Document-createCDATASection.html | OK | 1 | 0 |
 | dom/nodes/Document-createComment.html | OK | 6 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/bare_mathml.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/bare_svg.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/bare_xhtml.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/empty.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/mathml.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/minimal_html.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/svg.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/xhtml.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/bare_mathml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/bare_svg.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/bare_xhtml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/empty.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/mathml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/minimal_html.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/svg.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/xhtml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace.html | OK | 21 | 30 |
 | dom/nodes/Document-createElement.html | OK | 49 | 98 |
 | dom/nodes/Document-createElementNS.html | OK | 206 | 390 |
@@ -574,7 +574,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-setAttribute-crbug-1138487.html | OK | 1 | 0 |
 | dom/nodes/Element-setAttribute.html | OK | 2 | 0 |
 | dom/nodes/Element-siblingElement-null.html | OK | 1 | 0 |
-| dom/nodes/Element-tagName.html | OK | 5 | 1 |
+| dom/nodes/Element-tagName.html | OK | 6 | 0 |
 | dom/nodes/Element-webkitMatchesSelector.html | EXCLUDED (requires-browsing-context: the selector corpus is loaded into a frame) | 0 | 0 |
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
 | dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
@@ -611,7 +611,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Node-mutation-adoptNode.html | OK | 2 | 0 |
 | dom/nodes/Node-nodeName.html | OK | 6 | 0 |
 | dom/nodes/Node-nodeValue.html | OK | 7 | 0 |
-| dom/nodes/Node-normalize.html | OK | 3 | 1 |
+| dom/nodes/Node-normalize.html | OK | 4 | 0 |
 | dom/nodes/Node-parentElement.html | OK | 12 | 0 |
 | dom/nodes/Node-parentNode-iframe.html | REFTEST | 0 | 0 |
 | dom/nodes/Node-parentNode.html | EXCLUDED (requires-browsing-context: a frame's document element parentage) | 0 | 0 |
@@ -735,7 +735,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/node-realm-preserved-across-adoption.html | OK | 1 | 4 |
 | dom/nodes/node-realm-preserved-across-frameless-adoption.html | OK | 1 | 3 |
 | dom/nodes/prepend-on-Document.html | OK | 5 | 0 |
-| dom/nodes/processing-instruction-attributes.html | EXCLUDED (no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
+| dom/nodes/processing-instruction-attributes.html | EXCLUDED (not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.html | EXCLUDED (requires-browsing-context: the query runs in a frame's load event) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.part.html | REFTEST | 0 | 0 |
 | dom/nodes/querySelector-empty-id.html | OK | 1 | 0 |
@@ -2216,10 +2216,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - has a namespace, *|, matches: '*,,h' is not a valid selector
 - has a namespace, *|, webkitMatchesSelector: '*,,h' is not a valid selector
 
-### dom/nodes/Element-tagName.html
-
-- tagName should be updated when changing ownerDocument: assert_equals: tagName should be lowercase in XML expected "div" but got "parsererror"
-
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
 - Custom element reactions follow script execution: A customized built-in element is not implemented here
@@ -2233,10 +2229,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js
 
 - cloneNode() and document's allow declarative shadow roots: doc.write is not a function
-
-### dom/nodes/Node-normalize.html
-
-- Non-text nodes with empty textContent values.: assert_array_equals: lengths differ, expected array [Text node "a", ProcessingInstruction node with target "pi" and data "", Text node "b", Node object of unknown type, Text node "c", Comment node <!---->, Text node "d", Element node <el></el>, Text node "e"] length 9, got object "[object NodeList]" length 10
 
 ### dom/nodes/Node-removeChild.html
 

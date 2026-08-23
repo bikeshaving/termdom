@@ -23434,6 +23434,701 @@ function parseHTMLUnsafe(html: string): Document {
 	return parseHTMLDocument(String(html), "about:blank", true, null);
 }
 
+/* ------------------------------------------------------------- XML parsing */
+
+/** A well-formedness violation, which becomes a parsererror document. */
+class XMLWellFormednessError extends Error {}
+
+/**
+ * The namespace Firefox coined for the error document, which the spec's
+ * DOMParser algorithm adopted for the parsererror root.
+ */
+const PARSERERROR_NAMESPACE =
+	"http://www.mozilla.org/newlayout/xml/parsererror.xml";
+
+// Characters the XML Char production excludes: most C0 controls, the two
+// permanent non-characters, and a surrogate half without its partner.
+const XML_FORBIDDEN_CHAR =
+	/[\0-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/* eslint-disable no-misleading-character-class -- the XML Name production
+   matches lone combining marks by definition */
+const XML_NAME_TOKEN = new RegExp(
+	`(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
+	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*`,
+	"y",
+);
+/* eslint-enable no-misleading-character-class */
+
+const PREDEFINED_ENTITIES = new Map([
+	["amp", "&"],
+	["lt", "<"],
+	["gt", ">"],
+	["apos", "'"],
+	["quot", '"'],
+]);
+
+/** A character reference must name a Char, not a control or a surrogate. */
+function isXMLChar(code: number): boolean {
+	return (
+		code === 0x9 ||
+		code === 0xa ||
+		code === 0xd ||
+		(code >= 0x20 && code <= 0xd7ff) ||
+		(code >= 0xe000 && code <= 0xfffd) ||
+		(code >= 0x10000 && code <= 0x10ffff)
+	);
+}
+
+/**
+ * The namespace bindings in scope at one element, chained to the bindings
+ * above it. The root scope binds the two prefixes XML reserves.
+ */
+interface XMLNamescope {
+	parent: XMLNamescope | null;
+	bindings: Map<string, string | null>;
+}
+
+function lookupXMLPrefix(
+	scope: XMLNamescope,
+	prefix: string,
+): string | null | undefined {
+	for (
+		let current: XMLNamescope | null = scope;
+		current !== null;
+		current = current.parent
+	) {
+		const bound = current.bindings.get(prefix);
+		if (bound !== undefined) {
+			return bound;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * A recursive-descent XML parser over the whole source string, building the
+ * tree with the internal constructors the HTML tree adapter uses.
+ *
+ * It enforces well-formedness -- one root, matching tags, bound prefixes,
+ * defined entities -- and throws XMLWellFormednessError where the XML or
+ * Namespaces recommendations call a document not well-formed. A DTD internal
+ * subset is skipped rather than processed, so an entity it declares is still
+ * reported as undefined, as a non-validating processor may.
+ */
+function parseXMLIntoDocument(source: string, document: Document): void {
+	const input = source.replace(/\r\n?/g, "\n");
+	let pos = 0;
+
+	function fail(message: string): never {
+		let line = 1;
+		let lineStart = 0;
+		for (let index = 0; index < pos && index < input.length; index++) {
+			if (input.charCodeAt(index) === 0xa) {
+				line++;
+				lineStart = index + 1;
+			}
+		}
+		const column = pos - lineStart + 1;
+		throw new XMLWellFormednessError(
+			`${message} (line ${line}, column ${column})`,
+		);
+	}
+
+	const forbidden = XML_FORBIDDEN_CHAR.exec(input);
+	if (forbidden !== null) {
+		pos = forbidden.index;
+		fail("The document contains a character XML forbids");
+	}
+
+	function eat(token: string): boolean {
+		if (input.startsWith(token, pos)) {
+			pos += token.length;
+			return true;
+		}
+		return false;
+	}
+
+	function skipWhitespace(): boolean {
+		const start = pos;
+		while (pos < input.length) {
+			const code = input.charCodeAt(pos);
+			if (code !== 0x20 && code !== 0x9 && code !== 0xa) {
+				break;
+			}
+			pos++;
+		}
+		return pos > start;
+	}
+
+	function scanName(): string {
+		XML_NAME_TOKEN.lastIndex = pos;
+		const match = XML_NAME_TOKEN.exec(input);
+		if (match === null) {
+			fail("Expected a name");
+		}
+		pos = XML_NAME_TOKEN.lastIndex;
+		return match[0];
+	}
+
+	/** Resolve the reference at pos, which points at the ampersand. */
+	function resolveReference(): string {
+		pos++;
+		if (eat("#x") || eat("#X")) {
+			const start = pos;
+			while (pos < input.length && /[0-9A-Fa-f]/.test(input[pos])) {
+				pos++;
+			}
+			if (pos === start || !eat(";")) {
+				fail("A malformed character reference");
+			}
+			const code = parseInt(input.slice(start, pos - 1), 16);
+			if (!isXMLChar(code)) {
+				fail("A character reference to a character XML forbids");
+			}
+			return String.fromCodePoint(code);
+		}
+		if (eat("#")) {
+			const start = pos;
+			while (pos < input.length && /[0-9]/.test(input[pos])) {
+				pos++;
+			}
+			if (pos === start || !eat(";")) {
+				fail("A malformed character reference");
+			}
+			const code = parseInt(input.slice(start, pos - 1), 10);
+			if (!isXMLChar(code)) {
+				fail("A character reference to a character XML forbids");
+			}
+			return String.fromCodePoint(code);
+		}
+		const name = scanName();
+		if (!eat(";")) {
+			fail("An entity reference is missing its semicolon");
+		}
+		const replacement = PREDEFINED_ENTITIES.get(name);
+		if (replacement === undefined) {
+			fail(`The entity "&${name};" is not defined`);
+		}
+		return replacement;
+	}
+
+	function parseAttributeValue(): string {
+		const quote = input[pos];
+		if (quote !== '"' && quote !== "'") {
+			fail("An attribute value must be quoted");
+		}
+		pos++;
+		let value = "";
+		while (pos < input.length) {
+			const char = input[pos];
+			if (char === quote) {
+				pos++;
+				return value;
+			}
+			if (char === "<") {
+				fail("An attribute value cannot contain <");
+			}
+			if (char === "&") {
+				value += resolveReference();
+				continue;
+			}
+			value += char === "\t" || char === "\n" ? " " : char;
+			pos++;
+		}
+		fail("An attribute value is missing its closing quote");
+	}
+
+	/**
+	 * Split a qualified name against the bindings in scope. An element takes
+	 * the default namespace; an unprefixed attribute takes none.
+	 */
+	function resolveQualifiedName(
+		qualifiedName: string,
+		scope: XMLNamescope,
+		forAttribute: boolean,
+	): {namespace: string | null; prefix: string | null; localName: string} {
+		const colon = qualifiedName.indexOf(":");
+		if (colon === -1) {
+			if (forAttribute) {
+				return {namespace: null, prefix: null, localName: qualifiedName};
+			}
+			return {
+				namespace: lookupXMLPrefix(scope, "") ?? null,
+				prefix: null,
+				localName: qualifiedName,
+			};
+		}
+		const prefix = qualifiedName.slice(0, colon);
+		const localName = qualifiedName.slice(colon + 1);
+		if (prefix === "" || localName === "" || localName.includes(":")) {
+			fail(`"${qualifiedName}" is not a valid qualified name`);
+		}
+		if (prefix === "xmlns") {
+			fail("The xmlns prefix is reserved for namespace declarations");
+		}
+		const namespace = lookupXMLPrefix(scope, prefix);
+		if (namespace === undefined || namespace === null) {
+			fail(`The prefix "${prefix}" is not bound to a namespace`);
+		}
+		return {namespace, prefix, localName};
+	}
+
+	function parseComment(parent: Node): void {
+		const end = input.indexOf("--", pos);
+		if (end === -1) {
+			pos = input.length;
+			fail("A comment is missing its closing -->");
+		}
+		const data = input.slice(pos, end);
+		pos = end;
+		if (!eat("-->")) {
+			fail("A comment cannot contain --");
+		}
+		const comment = new Comment(data);
+		comment[kDocument] = document;
+		insertNode(comment, parent, null, true);
+	}
+
+	function parseProcessingInstruction(parent: Node): void {
+		const target = scanName();
+		if (target.toLowerCase() === "xml") {
+			fail("An XML declaration is only allowed at the start of the document");
+		}
+		if (target.includes(":")) {
+			fail("A processing instruction target cannot contain a colon");
+		}
+		let data = "";
+		if (!eat("?>")) {
+			if (!skipWhitespace()) {
+				fail("A processing instruction needs space after its target");
+			}
+			const end = input.indexOf("?>", pos);
+			if (end === -1) {
+				pos = input.length;
+				fail("A processing instruction is missing its closing ?>");
+			}
+			data = input.slice(pos, end);
+			pos = end + 2;
+		}
+		const instruction = new ProcessingInstruction(target, data);
+		instruction[kDocument] = document;
+		insertNode(instruction, parent, null, true);
+	}
+
+	/** Skip a pseudo-attribute of the XML declaration, returning its value. */
+	function parseDeclarationValue(name: string): string {
+		skipWhitespace();
+		if (!eat("=")) {
+			fail(`The XML declaration's ${name} needs a value`);
+		}
+		skipWhitespace();
+		return parseAttributeValue();
+	}
+
+	function parseXMLDeclaration(): void {
+		if (!skipWhitespace()) {
+			fail("The XML declaration needs space before its version");
+		}
+		if (!eat("version")) {
+			fail("The XML declaration must open with a version");
+		}
+		const version = parseDeclarationValue("version");
+		if (!/^1\.[0-9]+$/.test(version)) {
+			fail(`"${version}" is not an XML version`);
+		}
+		let spaced = skipWhitespace();
+		if (spaced && input.startsWith("encoding", pos)) {
+			pos += "encoding".length;
+			const encoding = parseDeclarationValue("encoding");
+			if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(encoding)) {
+				fail(`"${encoding}" is not an encoding name`);
+			}
+			spaced = skipWhitespace();
+		}
+		if (spaced && input.startsWith("standalone", pos)) {
+			pos += "standalone".length;
+			const standalone = parseDeclarationValue("standalone");
+			if (standalone !== "yes" && standalone !== "no") {
+				fail("The standalone declaration must be \"yes\" or \"no\"");
+			}
+			skipWhitespace();
+		}
+		if (!eat("?>")) {
+			fail("The XML declaration is missing its closing ?>");
+		}
+	}
+
+	/** Skip the bracketed internal subset, honoring its quotes and comments. */
+	function skipInternalSubset(): void {
+		while (pos < input.length) {
+			const char = input[pos];
+			if (char === "]") {
+				pos++;
+				return;
+			}
+			if (eat("<!--")) {
+				const end = input.indexOf("-->", pos);
+				if (end === -1) {
+					break;
+				}
+				pos = end + 3;
+				continue;
+			}
+			if (eat("<?")) {
+				const end = input.indexOf("?>", pos);
+				if (end === -1) {
+					break;
+				}
+				pos = end + 2;
+				continue;
+			}
+			if (char === '"' || char === "'") {
+				const end = input.indexOf(char, pos + 1);
+				if (end === -1) {
+					break;
+				}
+				pos = end + 1;
+				continue;
+			}
+			pos++;
+		}
+		pos = input.length;
+		fail("The doctype's internal subset is missing its closing ]");
+	}
+
+	/** A doctype literal: quoted, and taken as-is with no references. */
+	function parseDoctypeLiteral(): string {
+		const quote = input[pos];
+		if (quote !== '"' && quote !== "'") {
+			fail("A doctype literal must be quoted");
+		}
+		const end = input.indexOf(quote, pos + 1);
+		if (end === -1) {
+			fail("A doctype literal is missing its closing quote");
+		}
+		const value = input.slice(pos + 1, end);
+		pos = end + 1;
+		return value;
+	}
+
+	function parseDoctype(): void {
+		if (!skipWhitespace()) {
+			fail("The doctype needs space before its name");
+		}
+		const name = scanName();
+		let publicId = "";
+		let systemId = "";
+		const spaced = skipWhitespace();
+		if (spaced && eat("SYSTEM")) {
+			if (!skipWhitespace()) {
+				fail("SYSTEM needs space before its literal");
+			}
+			systemId = parseDoctypeLiteral();
+			skipWhitespace();
+		} else if (spaced && eat("PUBLIC")) {
+			if (!skipWhitespace()) {
+				fail("PUBLIC needs space before its literals");
+			}
+			publicId = parseDoctypeLiteral();
+			if (!skipWhitespace()) {
+				fail("PUBLIC needs space between its literals");
+			}
+			systemId = parseDoctypeLiteral();
+			skipWhitespace();
+		}
+		if (eat("[")) {
+			skipInternalSubset();
+			skipWhitespace();
+		}
+		if (!eat(">")) {
+			fail("The doctype is missing its closing >");
+		}
+		const doctype = new DocumentType(name, publicId, systemId);
+		doctype[kDocument] = document;
+		insertNode(doctype, document, null, true);
+	}
+
+	function parseCDATASection(parent: Node): void {
+		const end = input.indexOf("]]>", pos);
+		if (end === -1) {
+			pos = input.length;
+			fail("A CDATA section is missing its closing ]]>");
+		}
+		const section = new CDATASection(input.slice(pos, end));
+		section[kDocument] = document;
+		insertNode(section, parent, null, true);
+		pos = end + 3;
+	}
+
+	function appendText(parent: Node, data: string): void {
+		const last = parent[kLastChild];
+		if (last !== null && last.nodeType === TEXT_NODE) {
+			(last as CharacterData)[kData] += data;
+			return;
+		}
+		const text = document.createTextNode(data);
+		insertNode(text, parent, null, true);
+	}
+
+	function parseElement(parent: Node, parentScope: XMLNamescope): void {
+		const qualifiedName = scanName();
+		interface ParsedAttribute {
+			qualifiedName: string;
+			value: string;
+		}
+		const attributes: ParsedAttribute[] = [];
+		let selfClosing = false;
+		for (;;) {
+			const spaced = skipWhitespace();
+			if (eat("/>")) {
+				selfClosing = true;
+				break;
+			}
+			if (eat(">")) {
+				break;
+			}
+			if (pos >= input.length) {
+				fail(`The <${qualifiedName}> tag is missing its closing >`);
+			}
+			if (!spaced) {
+				fail("Attributes must be separated by space");
+			}
+			const attributeName = scanName();
+			skipWhitespace();
+			if (!eat("=")) {
+				fail(`The attribute "${attributeName}" is missing its value`);
+			}
+			skipWhitespace();
+			const value = parseAttributeValue();
+			for (const attribute of attributes) {
+				if (attribute.qualifiedName === attributeName) {
+					fail(`The attribute "${attributeName}" is repeated`);
+				}
+			}
+			attributes.push({qualifiedName: attributeName, value});
+		}
+		let scope = parentScope;
+		const bindings = new Map<string, string | null>();
+		for (const attribute of attributes) {
+			let boundPrefix: string | null = null;
+			if (attribute.qualifiedName === "xmlns") {
+				boundPrefix = "";
+			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
+				boundPrefix = attribute.qualifiedName.slice("xmlns:".length);
+				if (boundPrefix === "" || boundPrefix.includes(":")) {
+					fail(`"${attribute.qualifiedName}" is not a namespace declaration`);
+				}
+			} else {
+				continue;
+			}
+			if (boundPrefix === "xmlns") {
+				fail("The xmlns prefix cannot be declared");
+			}
+			if (boundPrefix === "xml" && attribute.value !== XML_NAMESPACE) {
+				fail("The xml prefix is bound to the XML namespace and no other");
+			}
+			if (
+				attribute.value === XMLNS_NAMESPACE ||
+				(attribute.value === XML_NAMESPACE && boundPrefix !== "xml")
+			) {
+				fail("A reserved namespace cannot be bound to another name");
+			}
+			if (boundPrefix !== "" && attribute.value === "") {
+				fail(`The prefix "${boundPrefix}" cannot be unbound`);
+			}
+			bindings.set(
+				boundPrefix,
+				attribute.value === "" ? null : attribute.value,
+			);
+		}
+		if (bindings.size > 0) {
+			scope = {parent: parentScope, bindings};
+		}
+		const resolved = resolveQualifiedName(qualifiedName, scope, false);
+		const element = createElementInternal(
+			document,
+			resolved.localName,
+			resolved.namespace,
+			resolved.prefix,
+			null,
+			false,
+			null,
+		);
+		const seen = new Set<string>();
+		for (const attribute of attributes) {
+			let namespace: string | null = null;
+			let prefix: string | null = null;
+			let localName = attribute.qualifiedName;
+			if (attribute.qualifiedName === "xmlns") {
+				namespace = XMLNS_NAMESPACE;
+			} else if (attribute.qualifiedName.startsWith("xmlns:")) {
+				namespace = XMLNS_NAMESPACE;
+				prefix = "xmlns";
+				localName = attribute.qualifiedName.slice("xmlns:".length);
+			} else {
+				const extracted = resolveQualifiedName(
+					attribute.qualifiedName,
+					scope,
+					true,
+				);
+				namespace = extracted.namespace;
+				prefix = extracted.prefix;
+				localName = extracted.localName;
+			}
+			const key = `${namespace ?? ""}\0${localName}`;
+			if (seen.has(key)) {
+				fail(
+					`The attribute "${localName}" appears twice in one namespace`,
+				);
+			}
+			seen.add(key);
+			const created = new Attr(namespace, prefix, localName, attribute.value);
+			created[kDocument] = document;
+			appendAttribute(element, created);
+		}
+		insertNode(element, parent, null, true);
+		if (selfClosing) {
+			return;
+		}
+		parseContent(element, scope);
+		if (pos >= input.length) {
+			fail(`The <${qualifiedName}> element is never closed`);
+		}
+		const closing = scanName();
+		if (closing !== qualifiedName) {
+			fail(`</${closing}> does not match the open <${qualifiedName}>`);
+		}
+		skipWhitespace();
+		if (!eat(">")) {
+			fail(`The </${qualifiedName}> tag is missing its closing >`);
+		}
+	}
+
+	/** Parse element content until an end tag or the end of input. */
+	function parseContent(parent: Node, scope: XMLNamescope): void {
+		while (pos < input.length) {
+			if (eat("</")) {
+				return;
+			}
+			if (eat("<!--")) {
+				parseComment(parent);
+				continue;
+			}
+			if (eat("<![CDATA[")) {
+				parseCDATASection(parent);
+				continue;
+			}
+			if (eat("<?")) {
+				parseProcessingInstruction(parent);
+				continue;
+			}
+			if (input.startsWith("<!", pos)) {
+				fail("Markup declarations cannot appear in content");
+			}
+			if (eat("<")) {
+				parseElement(parent, scope);
+				continue;
+			}
+			let text = "";
+			while (pos < input.length) {
+				const char = input[pos];
+				if (char === "<") {
+					break;
+				}
+				if (char === "&") {
+					text += resolveReference();
+					continue;
+				}
+				if (char === "]" && input.startsWith("]]>", pos)) {
+					fail("Text content cannot contain ]]>");
+				}
+				text += char;
+				pos++;
+			}
+			appendText(parent, text);
+		}
+	}
+
+	const rootScope: XMLNamescope = {
+		parent: null,
+		bindings: new Map([["xml", XML_NAMESPACE]]),
+	};
+	if (input.startsWith("<?xml", pos) && /[ \t\n?]/.test(input[5] ?? "")) {
+		pos += "<?xml".length;
+		parseXMLDeclaration();
+	}
+	let sawRoot = false;
+	let sawDoctype = false;
+	while (pos < input.length) {
+		if (skipWhitespace()) {
+			continue;
+		}
+		if (eat("<!--")) {
+			parseComment(document);
+			continue;
+		}
+		if (eat("<?")) {
+			parseProcessingInstruction(document);
+			continue;
+		}
+		if (eat("<!DOCTYPE")) {
+			if (sawDoctype || sawRoot) {
+				fail("A doctype must come once, before the root element");
+			}
+			sawDoctype = true;
+			parseDoctype();
+			continue;
+		}
+		if (input.startsWith("<!", pos) || input.startsWith("</", pos)) {
+			fail("Unexpected markup outside the root element");
+		}
+		if (eat("<")) {
+			if (sawRoot) {
+				fail("A document holds one root element");
+			}
+			sawRoot = true;
+			parseElement(document, rootScope);
+			continue;
+		}
+		fail("Text is not allowed outside the root element");
+	}
+	if (!sawRoot) {
+		fail("The document has no root element");
+	}
+}
+
+/**
+ * The DOMParser XML path: a well-formed document becomes the tree it
+ * describes, and anything else becomes the spec's error document, whose root
+ * is a parsererror element holding the failure.
+ */
+function parseXMLDocument(source: string, contentType: string): Document {
+	const document = new XMLDocument();
+	document[kType] = "xml";
+	document[kContentType] = contentType;
+	document[kRegistry] = null;
+	try {
+		parseXMLIntoDocument(source, document);
+	} catch (error) {
+		if (!(error instanceof XMLWellFormednessError)) {
+			throw error;
+		}
+		for (const child of childNodeArray(document)) {
+			removeNode(child, true);
+		}
+		const parserError = createElementInternal(
+			document,
+			"parsererror",
+			PARSERERROR_NAMESPACE,
+		);
+		const text = document.createTextNode(error.message);
+		insertNode(text, parserError, null, true);
+		insertNode(parserError, document, null, true);
+	}
+	return document;
+}
+
 export class DOMParser {
 	parseFromString(string: string, type: string): Document {
 		const contentType = String(type);
@@ -23446,23 +24141,7 @@ export class DOMParser {
 			contentType === "application/xhtml+xml" ||
 			contentType === "image/svg+xml"
 		) {
-			// There is no XML parser here. The spec's own answer to a fatal XML
-			// parse error is a document holding a parsererror element, which is
-			// what every XML string gets.
-			const document = new XMLDocument();
-			document[kType] = "xml";
-			document[kContentType] = contentType;
-			const error = createElementInternal(
-				document,
-				"parsererror",
-				"http://www.mozilla.org/newlayout/xml/parsererror.xml",
-			);
-			appendNode(error, document);
-			const text = document.createTextNode(
-				"XML parsing is not implemented in this DOM.",
-			);
-			appendNode(text, error);
-			return document;
+			return parseXMLDocument(String(string), contentType);
 		}
 		throw new TypeError(`"${type}" is not a supported content type`);
 	}

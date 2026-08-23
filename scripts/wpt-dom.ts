@@ -468,9 +468,9 @@ async function suiteFiles(suite: string): Promise<string[]> {
  * The tests this DOM does not run, each with the one reason it does not.
  *
  * Every reason names something outside the tree: a browsing context, a script
- * the document's own parser must execute, a user action, a network fetch, an
- * XML parser, a testdriver call into the browser itself, or a proposal that is
- * not a standard. "Hard" is not a reason, and neither is "later" -- everything
+ * the document's own parser must execute, a user action, a network fetch, a
+ * testdriver call into the browser itself, or a proposal that is not a
+ * standard. "Hard" is not a reason, and neither is "later" -- everything
  * else either passes or is a failure this table does not hide.
  */
 const EXCLUSIONS: Record<string, string> = {
@@ -599,13 +599,11 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/MutationObserver-cross-realm-callback-report-exception.html":
 		"requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to",
 
+	"dom/nodes/processing-instruction-attributes.html":
+		"not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not",
+
 	// UI Events standard's, and the activation behavior they run belongs to
 	// HTML's elements. Dispatch has the hooks; nothing fills them in yet.
-
-	// no-xml-parser: there is no XML parser here, and none is planned; XML
-	// nodes are built through the DOM instead.
-	"dom/nodes/processing-instruction-attributes.html":
-		"no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not",
 
 	// requires-layout: the test measures a box. There is no layout in this DOM
 	// -- the engine owns it -- so offsetTop, getBoundingClientRect,
@@ -864,7 +862,7 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	],
 	[
 		"dom/nodes/Document-createElement-namespace-tests/",
-		"no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame",
+		"not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own",
 	],
 	[
 		"dom/nodes/insertion-removing-steps/",
