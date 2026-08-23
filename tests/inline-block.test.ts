@@ -6,12 +6,11 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
-import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
-function heightOf(dom: TermDOM, el: Element): number | undefined {
-	return (
-		dom as unknown as Record<symbol, {getRect(e: Element): DOMRect | null}>
-	)[kLayoutEngine].getRect(el)?.height;
+function heightOf(_dom: TermDOM, el: Element): number | undefined {
+	const rect = (el as HTMLElement).getBoundingClientRect();
+	return rect.width > 0 || rect.height > 0 ? rect.height : undefined;
 }
 
 test("a bordered inline-block in a flex ROW is not double-counted in height", async () => {

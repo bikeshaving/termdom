@@ -247,12 +247,8 @@ export interface TermDOMOptions {
 	url?: string;
 }
 
-// The one remaining test handle: the geometry tests read layout through
-// it while their conversion to public surfaces finishes. Off the public
-// API -- index.ts does not re-export it -- and on its way out.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-export {kLayoutEngine};
 
 const kWrite = Symbol("write");
 const kFullscreenStack = Symbol("fullscreenStack");

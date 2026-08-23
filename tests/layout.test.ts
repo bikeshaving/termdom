@@ -4,7 +4,7 @@ import {
 } from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/cascade.js";
 import {renderTextFragment} from "../src/internal/layout.js";
-import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {claimUAToolkit} from "../src/internal/dom.js";
 
 function ensurePseudoElement<T>(host: object, name: string): T {
@@ -1787,32 +1787,22 @@ test("Block element removal merging inline runs", async () => {
 	expect(updatedOutput).toContain("Before inline after");
 });
 
-test("Block element removal properly cleans up former run head Yoga nodes", async () => {
-	const terminal = new MockProcess({cols: 40, rows: 10});
-	const termdom = new TermDOM({
-		transport: terminal.transport,
-	});
-
-	const container = termdom.document.createElement("div");
-	container.innerHTML =
-		'Before <div id="block">BLOCK</div><span id="span">inline</span> after';
-	termdom.document.body.appendChild(container);
-
-	// Initial render - span should be a run head with Yoga node
-	await nextFrame(termdom);
-	const layoutEngine = termdom[kLayoutEngine];
-	const span = termdom.document.getElementById("span")!;
+test("Block element removal properly cleans up former run head Yoga nodes", () => {
+	const {document, layoutEngine, frame} = createTermDOM(
+		'Before <div id="block">BLOCK</div><span id="span">inline</span> after',
+	);
+	frame();
+	const span = document.getElementById("span")!;
 
 	// Remove the block element
-	const blockElement = termdom.document.getElementById("block")!;
-	blockElement.remove();
+	document.getElementById("block")!.remove();
+	frame();
 
-	// Re-render to trigger mutation processing and cleanup
-	await nextFrame(termdom);
-	const updatedOutput = terminal.getPlainText();
-	expect(updatedOutput).toContain("Before inline after");
+	// The runs merged: the span sits after "Before " on the first row.
+	expect(layoutEngine.getRect(span)!.x).toBe(7);
+	expect(layoutEngine.getRect(span)!.y).toBe(0);
 
-	// Verify the span no longer has a Yoga node (was cleaned up)
+	// And the span no longer has a Yoga node of its own (cleaned up).
 	expect(layoutEngine.nodeMap.has(span)).toBe(false);
 });
 
@@ -1920,9 +1910,9 @@ test("Dynamic pseudo element addition affects run heads", () => {
 	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
 });
 
-test.skip("layout invalidation preserves inline run behavior", async () => {
-	const termdom = new TermDOM();
-	const {document} = termdom;
+test("layout invalidation preserves inline run behavior", () => {
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
+	const document = dom.window.document;
 
 	// Create structure with both inline and block elements
 	const container = document.createElement("div");
@@ -1946,7 +1936,7 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 	li.style.display = "list-item";
 	container.appendChild(li);
 
-	const layoutEngine = termdom[kLayoutEngine];
+	processMutationsAndLayout();
 
 	// Invalidating an inline routes through its run: after the invalidate,
 	// a relayout still measures the inline's text where it was. The routing
@@ -1964,9 +1954,9 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 	const hasYogaNodeAfter = layoutEngine.nodeMap?.has(li);
 	expect(hasYogaNodeAfter).toBe(hadYogaNodeBefore); // Should preserve for connected elements
 
-	// Full render should work without errors
-	await expect(async () => {
-		await nextFrame(termdom);
+	// A full relayout still works after the invalidations.
+	expect(() => {
+		processMutationsAndLayout();
 	}).not.toThrow();
 });
 
@@ -2608,9 +2598,10 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 });
 
 test("a resolved value measures the layout the last style write asked for", async () => {
-	const {termdom, document} = createTermDOM("<div id=\"target\">content</div>");
+	const termdom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = termdom;
+	document.body.innerHTML = "<div id=\"target\">content</div>";
 	await nextFrame(termdom);
-	const {window} = termdom;
 	const target = document.getElementById("target")! as HTMLElement;
 
 	// A used value is measured, so the write before it has to reach layout:
@@ -2642,17 +2633,17 @@ test("auto values reset positioning properties", () => {
 // which automatically triggers layout invalidation when elements are added/removed.
 
 function createTermDOM(html = "<div></div>"): {
-	termdom: TermDOM;
 	document: Document;
 	layoutEngine: LayoutEngine;
+	frame: () => void;
 } {
-	const termdom = new TermDOM({transport: new MockProcess().transport});
-	const {document} = termdom;
-
-	// Clear default body content and add test HTML
-	document.body.innerHTML = html;
-
-	return {termdom, document, layoutEngine: termdom[kLayoutEngine]};
+	const {layoutEngine, dom, processMutationsAndLayout} =
+		createLayoutEngine(html);
+	return {
+		document: dom.window.document as unknown as Document,
+		layoutEngine,
+		frame: processMutationsAndLayout,
+	};
 }
 
 function getPosition(layoutEngine: any, element: Element): number {
@@ -2665,7 +2656,7 @@ function getPosition(layoutEngine: any, element: Element): number {
 }
 
 test("inline element removal preserves positioning", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run: A B C
 	const container = document.createElement("div");
@@ -2683,27 +2674,27 @@ test("inline element removal preserves positioning", async () => {
 	document.body.appendChild(container);
 
 	// Initial render
-	await nextFrame(termdom);
+	frame();
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
 	expect(getPosition(layoutEngine, span3)).toBe(2); // C at x=2
 
 	// Remove middle element
 	container.removeChild(span2);
-	await nextFrame(termdom);
+	frame();
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1 (moved left)
 
 	// Re-add at end
 	container.appendChild(span2);
-	await nextFrame(termdom);
+	frame();
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1
 	expect(getPosition(layoutEngine, span2)).toBe(2); // B at x=2 (at end)
 });
 
 test("inline element removal in same position preserves layout", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run: A B C
 	const container = document.createElement("div");
@@ -2721,7 +2712,7 @@ test("inline element removal in same position preserves layout", async () => {
 	document.body.appendChild(container);
 
 	// Initial render
-	await nextFrame(termdom);
+	frame();
 	const initialPositions = [
 		getPosition(layoutEngine, span1),
 		getPosition(layoutEngine, span2),
@@ -2731,10 +2722,10 @@ test("inline element removal in same position preserves layout", async () => {
 	// Remove middle element and re-add in exact same position
 	const nextSibling = span2.nextSibling;
 	container.removeChild(span2);
-	await nextFrame(termdom);
+	frame();
 
 	container.insertBefore(span2, nextSibling);
-	await nextFrame(termdom);
+	frame();
 
 	// Positions should be identical to initial state
 	expect(getPosition(layoutEngine, span1)).toBe(initialPositions[0]);
@@ -2743,7 +2734,7 @@ test("inline element removal in same position preserves layout", async () => {
 });
 
 test("run head removal transfers to next inline element", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run where first element is run head
 	const container = document.createElement("div");
@@ -2757,7 +2748,7 @@ test("run head removal transfers to next inline element", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await nextFrame(termdom);
+	frame();
 
 	// Verify span1 is the run head initially
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2765,7 +2756,7 @@ test("run head removal transfers to next inline element", async () => {
 
 	// Remove the run head
 	container.removeChild(span1);
-	await nextFrame(termdom);
+	frame();
 
 	// span2 should become the new run head and have correct position
 	expect(layoutEngine.findInlineRunHead(span2)).toBe(span2);
@@ -2776,7 +2767,7 @@ test("run head removal transfers to next inline element", async () => {
 
 	// Re-add original run head at beginning
 	container.insertBefore(span1, span2);
-	await nextFrame(termdom);
+	frame();
 
 	// span1 should become run head again with both elements correctly positioned
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2790,7 +2781,7 @@ test("run head removal transfers to next inline element", async () => {
 });
 
 test("block element removal merges adjacent inline runs", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create: span1 - div - span2 (separate inline runs)
 	const container = document.createElement("div");
@@ -2807,7 +2798,7 @@ test("block element removal merges adjacent inline runs", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await nextFrame(termdom);
+	frame();
 
 	// Initially span1 and span2 should have different run heads
 	const runHead1 = layoutEngine.findInlineRunHead(span1);
@@ -2817,7 +2808,7 @@ test("block element removal merges adjacent inline runs", async () => {
 
 	// Remove block element
 	container.removeChild(blockDiv);
-	await nextFrame(termdom);
+	frame();
 
 	// Now span1 and span2 should share the same run head (span1)
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2829,7 +2820,7 @@ test("block element removal merges adjacent inline runs", async () => {
 });
 
 test("text node removal invalidates inline runs", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run with text node
 	const container = document.createElement("div");
@@ -2842,7 +2833,7 @@ test("text node removal invalidates inline runs", async () => {
 	container.appendChild(textNode);
 	document.body.appendChild(container);
 
-	await nextFrame(termdom);
+	frame();
 
 	// Both should be positioned correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
@@ -2851,7 +2842,7 @@ test("text node removal invalidates inline runs", async () => {
 
 	// Remove text node
 	container.removeChild(textNode);
-	await nextFrame(termdom);
+	frame();
 
 	// Span should still work correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
@@ -2860,7 +2851,7 @@ test("text node removal invalidates inline runs", async () => {
 });
 
 test("multiple element removal handles invalidation correctly", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run: A B C D E
 	const container = document.createElement("div");
@@ -2873,7 +2864,7 @@ test("multiple element removal handles invalidation correctly", async () => {
 	}
 	document.body.appendChild(container);
 
-	await nextFrame(termdom);
+	frame();
 
 	// Verify initial positions
 	spans.forEach((span, i) => {
@@ -2883,7 +2874,7 @@ test("multiple element removal handles invalidation correctly", async () => {
 	// Remove multiple elements (B and D)
 	container.removeChild(spans[1]); // Remove B
 	container.removeChild(spans[3]); // Remove D
-	await nextFrame(termdom);
+	frame();
 
 	// Remaining elements should be positioned correctly: A C E
 	expect(getPosition(layoutEngine, spans[0])).toBe(0); // A at x=0
@@ -2892,7 +2883,7 @@ test("multiple element removal handles invalidation correctly", async () => {
 });
 
 test("break result cleanup prevents orphaned entries", async () => {
-	const {termdom, document, layoutEngine} = createTermDOM();
+	const {document, layoutEngine, frame} = createTermDOM();
 
 	// Create inline run
 	const container = document.createElement("div");
@@ -2906,13 +2897,13 @@ test("break result cleanup prevents orphaned entries", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await nextFrame(termdom);
+	frame();
 
 	const initialBreakResults = layoutEngine.breakResultMap.size;
 
 	// Remove element
 	container.removeChild(span2);
-	await nextFrame(termdom);
+	frame();
 
 	// Break result count should remain consistent (no orphaned entries)
 	expect(layoutEngine.breakResultMap.size).toBeLessThanOrEqual(
@@ -2921,7 +2912,7 @@ test("break result cleanup prevents orphaned entries", async () => {
 
 	// Re-add element
 	container.appendChild(span2);
-	await nextFrame(termdom);
+	frame();
 
 	// Should still be able to get correct positions
 	expect(getPosition(layoutEngine, span1)).toBe(0);
