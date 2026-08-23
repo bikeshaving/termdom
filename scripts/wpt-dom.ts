@@ -477,16 +477,8 @@ const EXCLUSIONS: Record<string, string> = {
 	// requires-browsing-context: the test reaches a second document through a
 	// frame, or a second realm through one. This DOM has no window, so
 	// `frames[0]`, `contentDocument` and `defaultView` have nothing to name.
-	"dom/nodes/Comment-constructor.html":
-		"requires-browsing-context: the shared constructor test builds a frame document",
-	"dom/nodes/Text-constructor.html":
-		"requires-browsing-context: the shared constructor test builds a frame document",
 	"dom/nodes/Document-URL.html":
 		"requires-browsing-context: a frame's document URL",
-	"dom/nodes/Document-createElement-namespace.html":
-		"requires-browsing-context: elements created in framed XML and XHTML documents",
-	"dom/nodes/Document-createElementNS.html":
-		"requires-browsing-context: two thirds of the cases run in framed XML and XHTML documents, and the rest reach DOMException through defaultView",
 	"dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html":
 		"requires-browsing-context: an element adopted between an HTML and an XML frame",
 	"dom/nodes/Element-matches.html":
@@ -497,30 +489,14 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the selector corpus is loaded into a frame",
 	"dom/nodes/Node-parentNode.html":
 		"requires-browsing-context: a frame's document element parentage",
-	"dom/nodes/Node-isConnected.html":
-		"requires-browsing-context: connectedness across a frame's document",
 	"dom/nodes/query-target-in-load-event.html":
 		"requires-browsing-context: the query runs in a frame's load event",
-	"dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html":
-		"requires-browsing-context: a DOMImplementation kept from a detached frame",
-	"dom/nodes/moveBefore/throws-exception.html":
-		"requires-browsing-context: the moved node comes from a frame's document",
 	"dom/nodes/moveBefore/iframe-document-preserve.window.js":
 		"requires-browsing-context: the move happens inside a frame's document",
 	"dom/nodes/moveBefore/css-transition-cross-document.html":
 		"requires-browsing-context: the transitioning node moves into a frame's document",
-	"dom/nodes/node-creation-realm.html":
-		"requires-browsing-context: which realm's constructor a node carries",
 	"dom/nodes/node-realm-adoption-after-frame-removal.html":
 		"requires-browsing-context: a node's realm after its frame is removed",
-	"dom/nodes/node-realm-mixed-across-adoption.html":
-		"requires-browsing-context: realms mixed by adoption between frames",
-	"dom/nodes/node-realm-preserved-across-adoption.html":
-		"requires-browsing-context: a node's realm across adoption between frames",
-	"dom/nodes/node-realm-preserved-across-frameless-adoption.html":
-		"requires-browsing-context: a node's realm across adoption out of a frame",
-	"dom/nodes/create-element-realm-after-adoption.html":
-		"requires-browsing-context: which realm createElement uses after adoption",
 	"dom/nodes/remove-and-adopt-thcrash.html":
 		"requires-browsing-context: adoption into a frame's document",
 	"dom/traversal/TreeWalker-realm.html":
@@ -529,8 +505,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: filters that are objects from another realm",
 	"dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html":
 		"requires-browsing-context: a filter from a detached frame's realm",
-	"dom/nodes/querySelector-empty-id.html":
-		"requires-browsing-context: the fixture is named through the window's named property access",
 	"dom/nodes/remove-next-sibling-during-replace-with.html":
 		"requires-browsing-context: the fixture is named through the window's named property access",
 	"dom/events/Event-dispatch-handlers-changed.html":
@@ -551,12 +525,8 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: a listener's exception is counted as an error event at the window",
 	"dom/events/Event-dispatch-throwing-multiple-globals.html":
 		"requires-browsing-context: which global an error event is fired at, across frames",
-	"dom/events/Event-dispatch-redispatch.html":
-		"requires-browsing-context: the redispatched events are the window's own load and the browser's mouseup",
 	"dom/events/Event-timestamp-cross-realm-getter.html":
 		"requires-browsing-context: a timeStamp getter taken from a frame's realm",
-	"dom/events/EventListener-addEventListener.sub.window.js":
-		"requires-browsing-context: a listener that is a cross-origin window",
 	"dom/events/EventListener-handleEvent-cross-realm.html":
 		"requires-browsing-context: listener objects built in a frame's realm",
 	"dom/events/EventListener-incumbent-global-1.sub.html":
@@ -624,8 +594,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-css-animations: a running CSS transition",
 
 	// revisited when that phase lands.
-	"dom/nodes/attach-shadow-realm-after-adoption.html":
-		"requires-browsing-context: the shadow host is adopted out of a frame's document",
 	"dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html":
 		"requires-browsing-context: the node is adopted into a frame's document",
 	"dom/nodes/MutationObserver-cross-realm-callback-report-exception.html":
@@ -652,38 +620,12 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: a Selection over a rendered frame",
 	"shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html":
 		"requires-browsing-context: the markup is written into a frame's document",
-	"shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-009.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-010.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/events/test-001.html":
 		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/events/event-dispatch/test-002.html":
 		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/events/event-dispatch/test-003.html":
 		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/events/event-retargeting/test-001.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/events/event-retargeting/test-003.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/events/retargeting-focus-events/test-001.html":
-		"requires-browsing-context: focus events in a rendered document in a frame",
 	"shadow-dom/untriaged/events/retargeting-focus-events/test-002.html":
 		"requires-browsing-context: focus events in a rendered document in a frame",
 	"shadow-dom/untriaged/events/retargeting-focus-events/test-003.html":
@@ -692,30 +634,14 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html":
 		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html":
 		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
-	"shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html":
-		"requires-browsing-context: the fixture is a rendered document in a frame",
 	"shadow-dom/untriaged/styles/test-001.html":
-		"requires-browsing-context: styles applied in a rendered document in a frame",
-	"shadow-dom/untriaged/styles/test-003.html":
 		"requires-browsing-context: styles applied in a rendered document in a frame",
 	"shadow-dom/untriaged/styles/test-005.html":
 		"requires-browsing-context: styles applied in a rendered document in a frame",
 	"shadow-dom/untriaged/styles/test-008.html":
 		"requires-browsing-context: styles applied in a rendered document in a frame",
-	"shadow-dom/untriaged/user-interaction/active-element/test-001.html":
-		"requires-browsing-context: the document's focused element, in a frame",
-	"shadow-dom/untriaged/user-interaction/active-element/test-002.html":
-		"requires-browsing-context: the document's focused element, in a frame",
-	"shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html":
-		"requires-browsing-context: contentEditable in a rendered document in a frame",
-	"shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html":
-		"requires-browsing-context: a Selection over a rendered document in a frame",
 	"shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html":
 		"requires-browsing-context: a Selection over a rendered document in a frame",
 
@@ -901,8 +827,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
 	"dom/events/Event-dispatch-single-activation-behavior.html":
 		"requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script",
-	"dom/events/event-disabled-dynamic.html":
-		"requires-browsing-context: the case runs inside the window's load event",
 };
 
 /**
