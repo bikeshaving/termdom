@@ -128,3 +128,31 @@ test("negative scrollTo values clamp to 0, matching scrollBy", async () => {
 	expect(dom.window.scrollY).toBe(0);
 	dom.dispose();
 });
+
+test("a scroll repaint keeps the legend on the fieldset's border row", async () => {
+	// A legend's negative margin sets it INTO the top border row. A camera
+	// scroll repaints only the newly exposed rows and carries the rest of
+	// the screen over; the fieldset intersects the exposed band, so its
+	// border strokes repaint -- and they must not blank the carried-over
+	// border row's legend, which nothing in the band redraws.
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div>l0</div><div>l1</div><div>l2</div><div>l3</div>" +
+		"<fieldset><legend>Legend</legend><div>field body</div></fieldset>" +
+		"<div>t0</div><div>t1</div><div>t2</div><div>t3</div>" +
+		"<div>t4</div><div>t5</div><div>t6</div><div>t7</div>";
+	await nextFrame(dom);
+
+	dom.window.scrollTo(0, 1);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("Legend");
+
+	// The border row scrolled off and back re-exposes it whole.
+	dom.window.scrollTo(0, 8);
+	await nextFrame(dom);
+	dom.window.scrollTo(0, 4);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("Legend");
+	dom.dispose();
+});
