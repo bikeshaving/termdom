@@ -11744,17 +11744,93 @@ export class HTMLHRElement extends HTMLElement {}
 
 export class HTMLHtmlElement extends HTMLElement {}
 
+const kContentDocument = Symbol("contentDocument");
+const kContentWindow = Symbol("contentWindow");
+const kFrameGeneration = Symbol("frameGeneration");
+const kEnsureFrameDocument = Symbol("ensureFrameDocument");
+
+/** What an iframe's window exposes: the document's side of the frame. */
+interface FrameWindowLike {
+	document: Document;
+	customElements: CustomElementRegistry;
+	frameElement: HTMLIFrameElement;
+	HTMLElement: typeof HTMLElement;
+}
+
 /**
- * A nested browsing context, which this DOM does not have: the document, the
- * window and the SVG document an iframe would name are all null.
+ * A nested document without a browsing context around it. On insertion the
+ * iframe gets a content document -- its srcdoc parsed, or about:blank --
+ * with a registry of its own, and fires load; removal discards it, as
+ * removal discards a browsing context. The src attribute stays inert: this
+ * engine performs no fetches, so a src iframe holds about:blank, the same
+ * document a browser shows before any navigation. There is no second
+ * realm: the frame's constructors are this realm's own.
  */
 export class HTMLIFrameElement extends HTMLElement {
-	get contentDocument(): null {
-		return null;
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kContentDocument] = null;
+		this[kContentWindow] = null;
+		this[kFrameGeneration] = 0;
 	}
 
-	get contentWindow(): null {
-		return null;
+	declare [kContentDocument]: Document | null;
+	declare [kContentWindow]: FrameWindowLike | null;
+	declare [kFrameGeneration]: number;
+
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		if (!this.isConnected) {
+			return;
+		}
+		// The document itself is built lazily on first access: building it
+		// here would re-enter the parser while a parse that contains this
+		// iframe is still running. The load fires from a task, after the
+		// insertion has finished and its listeners are attached.
+		const generation = (this[kFrameGeneration] += 1);
+		setTimeout(() => {
+			if (this.isConnected && this[kFrameGeneration] === generation) {
+				this.dispatchEvent(new Event("load"));
+			}
+		}, 0);
+	}
+
+	override [kRemovingSteps](parent: Node): void {
+		super[kRemovingSteps](parent);
+		this[kContentDocument] = null;
+		this[kContentWindow] = null;
+		this[kFrameGeneration] += 1;
+	}
+
+	[kEnsureFrameDocument](): void {
+		if (!this.isConnected || this[kContentDocument] !== null) {
+			return;
+		}
+		const srcdoc = this.getAttribute("srcdoc");
+		const contentDocument = parseHTMLDocument(
+			srcdoc ?? "",
+			srcdoc === null ? "about:blank" : "about:srcdoc",
+		);
+		contentDocument[kRegistry] = constructInternal(
+			() => new CustomElementRegistry(),
+		);
+		this[kContentDocument] = contentDocument;
+		this[kContentWindow] = {
+			document: contentDocument,
+			customElements: contentDocument[kRegistry],
+			frameElement: this,
+			HTMLElement,
+		};
+	}
+
+	get contentDocument(): Document | null {
+		this[kEnsureFrameDocument]();
+		return this[kContentDocument];
+	}
+
+	get contentWindow(): FrameWindowLike | null {
+		this[kEnsureFrameDocument]();
+		return this[kContentWindow];
 	}
 
 	getSVGDocument(): null {
