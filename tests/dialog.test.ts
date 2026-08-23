@@ -7,6 +7,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
+import {parseHTMLDocument} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function open(html: string, cols = 30, rows = 8): Promise<
@@ -211,6 +212,56 @@ test("a dialog with nothing focusable takes focus itself", async () => {
 	dialog.showModal();
 	expect(dom.document.activeElement).toBe(dialog);
 	dom.dispose();
+});
+
+test("closing a dialog opened with show() gives focus back to the opener", async () => {
+	const {dom, dialog} = await open(
+		"<button id=\"page\">page</button>" +
+		"<dialog><button id=\"ok\">OK</button></dialog>",
+	);
+	const {document} = dom;
+	(document.getElementById("page") as HTMLElement).focus();
+
+	dialog.show();
+	// show() runs the dialog focusing steps too, not only showModal().
+	expect(document.activeElement?.id).toBe("ok");
+
+	dialog.close();
+	expect(document.activeElement?.id).toBe("page");
+	dom.dispose();
+});
+
+test("close falls back to the body when the opener left the document", async () => {
+	const {dom, dialog} = await open(
+		"<button id=\"page\">page</button>" +
+		"<dialog><button id=\"ok\">OK</button></dialog>",
+	);
+	const {document} = dom;
+	(document.getElementById("page") as HTMLElement).focus();
+
+	dialog.showModal();
+	expect(document.activeElement?.id).toBe("ok");
+
+	document.getElementById("page")!.remove();
+	expect(() => dialog.close()).not.toThrow();
+	// Focus cannot stay inside the closed dialog or go to a gone opener.
+	expect(document.activeElement).toBe(document.body);
+	dom.dispose();
+});
+
+test("a headless document moves focus state through show and close", () => {
+	const document = parseHTMLDocument(
+		"<!doctype html><button id=\"page\">page</button>" +
+		"<dialog><button id=\"ok\">OK</button></dialog>",
+	);
+	const dialog = document.querySelector("dialog") as HTMLDialogElement;
+	(document.getElementById("page") as HTMLElement).focus();
+
+	dialog.showModal();
+	expect(document.activeElement?.id).toBe("ok");
+
+	dialog.close();
+	expect(document.activeElement?.id).toBe("page");
 });
 
 /* ----------------------------------------------------------------- keys */
