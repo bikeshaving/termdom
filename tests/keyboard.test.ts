@@ -1369,7 +1369,7 @@ test("fullscreen routes keydown through the general pipeline: tokenization, mous
 	dom.dispose();
 });
 
-test("Escape still exits fullscreen, now dispatched from the general pipeline", async () => {
+test("Escape is the app's key in fullscreen: dispatched, and the screen stays", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1386,39 +1386,12 @@ test("Escape still exits fullscreen, now dispatched from the general pipeline", 
 	);
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
-	await new Promise((r) => setTimeout(r, 0));
-
-	await new Promise((r) => setTimeout(r, 0));
-	await new Promise((resolve) => setTimeout(resolve, 10));
-
-	expect(document.fullscreenElement).toBe(null);
-	// Escape exits unconditionally, the same as a real browser -- it is never
-	// dispatched to the DOM, so the app can't preventDefault its way out.
-	expect(escapeSeenByContainer).toEqual([]);
-	dom.dispose();
-});
-
-test("Escape blurs a focused text field first; only the next Escape exits fullscreen", async () => {
-	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
-	dom.attach();
-	await new Promise((r) => setTimeout(r, 0));
-	const {document} = dom;
-	const container = document.createElement("div");
-	const input = document.createElement("input");
-	container.appendChild(input);
-	document.body.appendChild(container);
-	await container.requestFullscreen();
-	input.focus();
-	expect(document.activeElement).toBe(input);
-
-	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
 	await new Promise((r) => setTimeout(r, 10));
-	expect(document.activeElement).not.toBe(input);
+
+	expect(escapeSeenByContainer).toEqual(["Escape"]);
 	expect(document.fullscreenElement).toBe(container);
 
-	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
-	await new Promise((r) => setTimeout(r, 10));
+	await document.exitFullscreen();
 	expect(document.fullscreenElement).toBe(null);
 	dom.dispose();
 });
