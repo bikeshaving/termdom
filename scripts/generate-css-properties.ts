@@ -210,11 +210,6 @@ const source = `/**
  * CSSStyleDeclaration, and every longhand is enumerated by a computed style.
  */
 
-/** Every supported property, shorthands included, in lexicographic order. */
-export const CSS_PROPERTIES: readonly string[] = [
-${list(supported)}
-];
-
 /** Supported properties that are not shorthands, in lexicographic order. */
 export const CSS_LONGHANDS: readonly string[] = [
 ${list(longhands)}
@@ -224,6 +219,12 @@ ${list(longhands)}
 export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 ${record(shorthands)}
 };
+
+/** Every supported property: the longhands and the shorthand names. */
+export const CSS_PROPERTIES: readonly string[] = [
+	...CSS_LONGHANDS,
+	...Object.keys(CSS_SHORTHANDS),
+].sort();
 
 /** The longhands a shorthand resets but cannot state, per shorthand. */
 export const CSS_RESET_ONLY_LONGHANDS: Readonly<
@@ -249,19 +250,27 @@ ${record(initials)}
 const out = fileURLToPath(
 	new URL("../src/internal/cssproperties.ts", import.meta.url),
 );
-const prettier = require("prettier") as {
-	format(source: string, options: object): Promise<string>;
-	resolveConfig(path: string): Promise<object | null>;
-};
-writeFileSync(
-	out,
-	await prettier.format(source, {
+// The template already writes the file in house format; prettier, when
+// installed, only settles line-wrapping edge cases.
+let formatted = source;
+try {
+	const prettier = require("prettier") as {
+		format(source: string, options: object): Promise<string>;
+		resolveConfig(path: string): Promise<object | null>;
+	};
+	formatted = await prettier.format(source, {
 		...((await prettier.resolveConfig(out)) ?? {}),
 		parser: "typescript",
 		useTabs: true,
 		bracketSpacing: false,
-	}),
-);
+	});
+} catch (error) {
+	if ((error as {code?: string}).code !== "MODULE_NOT_FOUND") {
+		throw error;
+	}
+	// Not installed: the raw template stands.
+}
+writeFileSync(out, formatted);
 process.stdout.write(
 	`${supported.length} properties, ${longhands.length} longhands, ${
 		Object.keys(shorthands).length

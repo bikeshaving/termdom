@@ -4420,48 +4420,13 @@ function serializePageSelector(selector: string): string {
 
 const kName = Symbol("name");
 
-/** `@counter-style`: a counter's name and the descriptors that define it. */
-class CSSCounterStyleRule extends CSSDeclarationBlockRule {
+/**
+ * A named at-rule with a descriptor block: `@counter-style x { ... }` and
+ * its kin. The name is the prelude, the block is the declaration's.
+ */
+class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule = "@counter-style";
-
-	declare [kName]: string;
-
-	constructor(
-		name: string,
-		cssText: string,
-		parentStyleSheet: CSSStyleSheet | null,
-	) {
-		super(cssText, parentStyleSheet, null);
-		this[kName] = name.trim();
-	}
-
-	get type(): number {
-		return RULE_TYPES.COUNTER_STYLE_RULE;
-	}
-
-	get name(): string {
-		return this[kName];
-	}
-
-	set name(name: string) {
-		const text = String(name).trim();
-		if (!text) {
-			return;
-		}
-		this[kName] = text;
-		notifyRule(this);
-	}
-
-	get prelude(): string {
-		return `@counter-style ${this[kName]}`;
-	}
-}
-
-/** `@property`: a custom property's registration. */
-class CSSPropertyRule extends CSSDeclarationBlockRule {
-	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule = "@property";
+	static readonly atRule: string = "";
 
 	declare [kName]: string;
 
@@ -4481,6 +4446,39 @@ class CSSPropertyRule extends CSSDeclarationBlockRule {
 	get name(): string {
 		return this[kName];
 	}
+
+	get prelude(): string {
+		return `${(this.constructor as typeof CSSNamedDeclarationRule).atRule} ${
+			this[kName]
+		}`;
+	}
+}
+
+/** `@counter-style`: a counter's name and the descriptors that define it. */
+class CSSCounterStyleRule extends CSSNamedDeclarationRule {
+	static override readonly atRule = "@counter-style";
+
+	override get type(): number {
+		return RULE_TYPES.COUNTER_STYLE_RULE;
+	}
+
+	override get name(): string {
+		return this[kName];
+	}
+
+	override set name(name: string) {
+		const text = String(name).trim();
+		if (!text) {
+			return;
+		}
+		this[kName] = text;
+		notifyRule(this);
+	}
+}
+
+/** `@property`: a custom property's registration. */
+class CSSPropertyRule extends CSSNamedDeclarationRule {
+	static override readonly atRule = "@property";
 
 	get syntax(): string {
 		return this.style.getPropertyValue("syntax");
@@ -4493,35 +4491,11 @@ class CSSPropertyRule extends CSSDeclarationBlockRule {
 	get initialValue(): string | null {
 		return this.style.getPropertyValue("initial-value") || null;
 	}
-
-	get prelude(): string {
-		return `@property ${this[kName]}`;
-	}
 }
 
 /** `@font-palette-values`: a palette's name and its descriptors. */
-class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
-	/** The at-rule whose descriptors this rule's block holds. */
-	static readonly atRule = "@font-palette-values";
-
-	declare [kName]: string;
-
-	constructor(
-		name: string,
-		cssText: string,
-		parentStyleSheet: CSSStyleSheet | null,
-	) {
-		super(cssText, parentStyleSheet, null);
-		this[kName] = name.trim();
-	}
-
-	get type(): number {
-		return 0;
-	}
-
-	get name(): string {
-		return this[kName];
-	}
+class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
+	static override readonly atRule = "@font-palette-values";
 
 	get fontFamily(): string {
 		return this.style.getPropertyValue("font-family");
@@ -4533,10 +4507,6 @@ class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
 
 	get overrideColors(): string {
 		return this.style.getPropertyValue("override-colors");
-	}
-
-	get prelude(): string {
-		return `@font-palette-values ${this[kName]}`;
 	}
 }
 

@@ -1127,6 +1127,17 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** Build one of this file's own objects, whose constructor an author cannot. */
+function constructInternal<T>(build: () => T): T {
+	const previous = internalConstruction;
+	internalConstruction = true;
+	try {
+		return build();
+	} finally {
+		internalConstruction = previous;
+	}
+}
+
 /** A beforeunload event, which only a teardown about to happen fires. */
 function createBeforeUnloadEvent(): BeforeUnloadEvent {
 	return constructInternal(() => new BeforeUnloadEvent());
@@ -9967,14 +9978,7 @@ function attachShadowRoot(
 		existing[kDeclarative] = false;
 		return;
 	}
-	const previous = internalConstruction;
-	internalConstruction = true;
-	let shadow: ShadowRoot;
-	try {
-		shadow = new ShadowRoot();
-	} finally {
-		internalConstruction = previous;
-	}
+	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = element[kDocument];
 	shadow[kHost] = element;
 	shadow[kShadowMode] = mode;
@@ -10007,14 +10011,7 @@ function attachShadowRoot(
  */
 function attachUAShadowRoot<T>(target: object): T {
 	const host = target as Element;
-	const previous = internalConstruction;
-	internalConstruction = true;
-	let shadow: ShadowRoot;
-	try {
-		shadow = new ShadowRoot();
-	} finally {
-		internalConstruction = previous;
-	}
+	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = host[kDocument];
 	shadow[kHost] = host;
 	shadow[kShadowMode] = "closed";
@@ -17631,17 +17628,6 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 	});
 }
 
-/** Build one of this file's own objects, whose constructor an author cannot. */
-function constructInternal<T>(build: () => T): T {
-	const previous = internalConstruction;
-	internalConstruction = true;
-	try {
-		return build();
-	} finally {
-		internalConstruction = previous;
-	}
-}
-
 /** The internals of an element, which only a custom element's own class takes. */
 function attachElementInternals(element: HTMLElement): ElementInternals {
 	if (element[kIsValue] !== null) {
@@ -20584,13 +20570,8 @@ function setRangePoints(
 	rangeBoundaryPointsChanged(range, "both");
 }
 
-/** The spec's "set the start" and "set the end" of a range. */
-function setRangeBoundary(
-	range: Range,
-	node: Node,
-	offset: number,
-	isStart: boolean,
-): void {
+/** A boundary point's node: any node but a doctype. */
+function assertBoundaryNode(node: unknown): asserts node is Node {
 	if (!(node instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
@@ -20600,6 +20581,16 @@ function setRangeBoundary(
 			"A boundary point cannot be a doctype",
 		);
 	}
+}
+
+/** The spec's "set the start" and "set the end" of a range. */
+function setRangeBoundary(
+	range: Range,
+	node: Node,
+	offset: number,
+	isStart: boolean,
+): void {
+	assertBoundaryNode(node);
 	const at = toUnsignedLong(offset);
 	if (at > nodeLength(node)) {
 		throw indexSizeError("The offset is past the end of the node");
@@ -21001,15 +20992,7 @@ export class Range extends AbstractRange {
 		if (arguments.length < 1) {
 			throw new TypeError("selectNodeContents needs a node");
 		}
-		if (!(node instanceof Node)) {
-			throw new TypeError("That is not a node");
-		}
-		if (node.nodeType === DOCUMENT_TYPE_NODE) {
-			throw domError(
-				"InvalidNodeTypeError",
-				"A boundary point cannot be a doctype",
-			);
-		}
+		assertBoundaryNode(node);
 		setRangePoints(this, node, 0, node, nodeLength(node));
 	}
 
@@ -21670,15 +21653,7 @@ export class Selection {
 			this.removeAllRanges();
 			return;
 		}
-		if (!(node instanceof Node)) {
-			throw new TypeError("That is not a node");
-		}
-		if (node.nodeType === DOCUMENT_TYPE_NODE) {
-			throw domError(
-				"InvalidNodeTypeError",
-				"A boundary point cannot be a doctype",
-			);
-		}
+		assertBoundaryNode(node);
 		const at = toUnsignedLong(offset);
 		if (at > nodeLength(node)) {
 			throw indexSizeError("The offset is past the end of the node");
@@ -21805,15 +21780,7 @@ export class Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("selectAllChildren needs a node");
 		}
-		if (!(node instanceof Node)) {
-			throw new TypeError("That is not a node");
-		}
-		if (node.nodeType === DOCUMENT_TYPE_NODE) {
-			throw domError(
-				"InvalidNodeTypeError",
-				"A boundary point cannot be a doctype",
-			);
-		}
+		assertBoundaryNode(node);
 		if (getRoot(node) !== this[kDocument]) {
 			return;
 		}
