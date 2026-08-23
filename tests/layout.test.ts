@@ -3008,3 +3008,66 @@ test("an empty inline element measures zero, not its container's width", async (
 	// An inline whose text lives in a nested inline still measures that text.
 	expect(layoutEngine.getRect(nested)?.width).toBe(2);
 });
+
+describe("width sizing keywords", () => {
+	test("a block sized with the css-sizing-3 keywords next to known text", async () => {
+		const terminal = new MockProcess({rows: 12, cols: 40});
+		const dom = new TermDOM({transport: terminal.transport});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<div id=\"fit\" style=\"width: fit-content\">one two</div>" +
+			"<div id=\"max\" style=\"width: max-content\">one two</div>" +
+			"<div id=\"min\" style=\"width: min-content\">aa bbbb</div>" +
+			"<div id=\"auto\">one two</div>" +
+			"<div id=\"long\" style=\"width: fit-content\">a line that " +
+			"runs on well past the forty columns this screen has</div>";
+		await nextFrame(dom);
+
+		const width = (id: string): number =>
+			document.getElementById(id)!.getBoundingClientRect().width;
+		// fit-content wraps the text; auto keeps filling the container.
+		expect(width("fit")).toBe(7);
+		expect(width("max")).toBe(7);
+		// min-content is the widest word: "bbbb".
+		expect(width("min")).toBe(4);
+		expect(width("auto")).toBe(40);
+		// fit-content is capped by the available width, unlike max-content.
+		expect(width("long")).toBe(40);
+		dom.dispose();
+	});
+
+	test("an inline-block takes the keywords through its own measurement", async () => {
+		const terminal = new MockProcess({rows: 12, cols: 40});
+		const dom = new TermDOM({transport: terminal.transport});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<div><span id=\"fit\" style=\"display:inline-block; " +
+			"width: fit-content\">one two</span></div>" +
+			"<div><span id=\"min\" style=\"display:inline-block; " +
+			"width: min-content\">aa bbbb</span></div>";
+		await nextFrame(dom);
+
+		const width = (id: string): number =>
+			document.getElementById(id)!.getBoundingClientRect().width;
+		expect(width("fit")).toBe(7);
+		expect(width("min")).toBe(4);
+		dom.dispose();
+	});
+
+	test("a dialog with width: fit-content shrinks to its content", async () => {
+		const terminal = new MockProcess({rows: 12, cols: 40});
+		const dom = new TermDOM({transport: terminal.transport});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<style>dialog { width: fit-content }</style>" +
+			"<dialog>Save?</dialog>";
+		await nextFrame(dom);
+
+		const dialog = document.querySelector("dialog") as HTMLDialogElement;
+		dialog.show();
+		await nextFrame(dom);
+		// "Save?" is 5 columns; the UA border and padding add 2 apiece.
+		expect(dialog.getBoundingClientRect().width).toBe(9);
+		dom.dispose();
+	});
+});
