@@ -245,16 +245,6 @@ export interface TermDOMOptions {
 	html?: string;
 	/** The initial document's URL. */
 	url?: string;
-	/**
-	 * Pointer-motion (hover) reporting. Terminals deliver hover as a report
-	 * per cell crossed, which floods stdin, so "auto" (the default) enables
-	 * it only while the document observes hover -- a sheet with a `:hover`
-	 * rule, or a listener for the mousemove/mouseover/mouseout/mouseenter/
-	 * mouseleave family -- and disables it when the last observer goes.
-	 * `true` enables it for the whole attachment; `false` never enables it,
-	 * and `@media (hover: none)` matches.
-	 */
-	hover?: "auto" | boolean;
 }
 
 const kLayoutEngine = Symbol("layoutEngine");
@@ -733,7 +723,6 @@ const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
 const kDisposed = Symbol("disposed");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
-const kHoverOption = Symbol("hoverOption");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kHoverListenerCount = Symbol("hoverListenerCount");
 const kPendingHover = Symbol("pendingHover");
@@ -892,9 +881,6 @@ export class TermDOM {
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	declare [kMouseReportingEnabled]: boolean;
-	// The `hover` option as given: "auto" turns motion reporting on and off
-	// with observation, a boolean pins it.
-	declare [kHoverOption]: "auto" | boolean;
 	// Whether the terminal is currently reporting pointer MOTION (SGR 1003)
 	// on top of button/drag reporting. See updateHoverReporting.
 	declare [kHoverReportingEnabled]: boolean;
@@ -1013,7 +999,6 @@ export class TermDOM {
 		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
-		this[kHoverOption] = options.hover ?? "auto";
 		this[kHoverReportingEnabled] = false;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -1086,7 +1071,6 @@ export class TermDOM {
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this[kStyleManager] = new StyleManager(this.window);
-		this[kStyleManager].setHoverAvailable(this[kHoverOption] !== false);
 		// A hover listener appearing or vanishing moves the "does anything
 		// observe hover" answer between frames, so it pokes the mode update
 		// directly; the stylesheet half is re-read after each frame instead,
@@ -3267,9 +3251,6 @@ function updateMouseReporting(
 function hoverObserved(
 	termdom: TermDOM,
 ): boolean {
-	if (termdom[kHoverOption] !== "auto") {
-		return termdom[kHoverOption];
-	}
 	return (
 		termdom[kHoverListenerCount]() > 0 ||
 		termdom[kStyleManager].hoverRulesExist()
@@ -3280,8 +3261,9 @@ function hoverObserved(
  * Motion (hover) reporting -- SGR 1003 -- is DEMAND-DRIVEN: a terminal
  * reporting motion sends a report per cell the pointer crosses, a flood an
  * app that never looks at hover should not receive. So it turns on only
- * while base capture is on AND something observes hover (see the `hover`
- * option for the override), and turns back off when the last observer goes.
+ * while base capture is on AND something observes hover, and turns back
+ * off when the last observer goes. There is no override: observation is
+ * the whole switch.
  *
  * Idempotent; called from every edge that can move the answer: capture
  * toggles, listener registration, and the end of each frame (where a

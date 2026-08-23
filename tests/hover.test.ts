@@ -84,7 +84,7 @@ class MockHoverProcess extends EventEmitter {
 const MOTION_ON = "\x1b[?1003h";
 const MOTION_OFF = "\x1b[?1003l";
 
-function makeApp(options: {hover?: "auto" | boolean; html?: string} = {}): {
+function makeApp(options: {html?: string} = {}): {
 	proc: MockHoverProcess;
 	termdom: TermDOM;
 	document: Document;
@@ -92,7 +92,6 @@ function makeApp(options: {hover?: "auto" | boolean; html?: string} = {}): {
 	const proc = new MockHoverProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(proc as any),
-		hover: options.hover,
 		html: options.html,
 	});
 	return {proc, termdom, document: termdom.document};
@@ -168,28 +167,6 @@ test("a window mouseover listener counts as observing hover", async () => {
 	(termdom.window as any).removeEventListener("mouseover", listener);
 	await new Promise((r) => setTimeout(r, 0));
 	expect(proc.written).toContain(MOTION_OFF);
-	termdom.dispose();
-});
-
-test("hover: true forces motion reporting on at attach", async () => {
-	const {proc, termdom} = makeApp({hover: true});
-	await nextFrame(termdom);
-	await new Promise((r) => setTimeout(r, 0));
-	expect(proc.written).toContain(MOTION_ON);
-
-	termdom.dispose();
-	await new Promise((r) => setTimeout(r, 0));
-	expect(proc.written).toContain(MOTION_OFF);
-});
-
-test("hover: false never enables motion reporting", async () => {
-	const {proc, termdom, document} = makeApp({
-		hover: false,
-		html: "<style>div:hover { color: red; }</style><div>target</div>",
-	});
-	document.addEventListener("mousemove", () => {});
-	await nextFrame(termdom);
-	expect(proc.written).not.toContain(MOTION_ON);
 	termdom.dispose();
 });
 
@@ -333,50 +310,26 @@ test("motion reports coalesce into at most one hit-test per frame", async () => 
 	termdom.dispose();
 });
 
-test("@media (hover) answers hover by default and none under hover: false", async () => {
-	const capable = makeApp();
-	await nextFrame(capable.termdom);
-	expect(capable.termdom.window.matchMedia("(hover: hover)").matches)
-		.toBe(true);
-	expect(capable.termdom.window.matchMedia("(hover: none)").matches)
-		.toBe(false);
-	expect(capable.termdom.window.matchMedia("(hover)").matches).toBe(true);
-	capable.termdom.dispose();
-
-	const incapable = makeApp({hover: false});
-	await nextFrame(incapable.termdom);
-	expect(incapable.termdom.window.matchMedia("(hover: hover)").matches)
-		.toBe(false);
-	expect(incapable.termdom.window.matchMedia("(hover: none)").matches)
-		.toBe(true);
-	expect(incapable.termdom.window.matchMedia("(hover)").matches).toBe(false);
-	incapable.termdom.dispose();
+test("@media (hover) answers hover, unconditionally", async () => {
+	const {termdom} = makeApp();
+	await nextFrame(termdom);
+	expect(termdom.window.matchMedia("(hover: hover)").matches).toBe(true);
+	expect(termdom.window.matchMedia("(hover: none)").matches).toBe(false);
+	expect(termdom.window.matchMedia("(hover)").matches).toBe(true);
+	termdom.dispose();
 });
 
-test("@media (hover: none) rules apply only when hover is disabled", async () => {
+test("@media (hover: none) rules never apply", async () => {
 	const html =
 		"<style>@media (hover: none) { div { color: rgb(1, 2, 3); } }</style>" +
 		"<div>target</div>";
-
-	const capable = makeApp({html});
-	await nextFrame(capable.termdom);
-	const capableDiv = capable.document.querySelector("div")!;
+	const {termdom, document} = makeApp({html});
+	await nextFrame(termdom);
+	const div = document.querySelector("div")!;
 	expect(
-		capable.termdom.window
-			.getComputedStyle(capableDiv)
-			.getPropertyValue("color"),
+		termdom.window.getComputedStyle(div).getPropertyValue("color"),
 	).toBe("rgb(0, 0, 0)");
-	capable.termdom.dispose();
-
-	const incapable = makeApp({html, hover: false});
-	await nextFrame(incapable.termdom);
-	const incapableDiv = incapable.document.querySelector("div")!;
-	expect(
-		incapable.termdom.window
-			.getComputedStyle(incapableDiv)
-			.getPropertyValue("color"),
-	).toBe("rgb(1, 2, 3)");
-	incapable.termdom.dispose();
+	termdom.dispose();
 });
 
 test("dispose turns motion reporting off", async () => {

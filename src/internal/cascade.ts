@@ -9099,7 +9099,6 @@ const kListItemRulesExist = Symbol("listItemRulesExist");
 const kScopedRulesExist = Symbol("scopedRulesExist");
 const kHasRulesExist = Symbol("hasRulesExist");
 const kHoverRulesExist = Symbol("hoverRulesExist");
-const kHoverAvailable = Symbol("hoverAvailable");
 const kLayerPaths = Symbol("layerPaths");
 const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
@@ -9181,10 +9180,6 @@ export class StyleManager {
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
 	// (keyboard true, pointer false). kRuleMatches gates such rules on it.
 	declare [kFocusVisibleActive]: boolean;
-	// Whether this display has hover at all, which is what `@media (hover)`
-	// answers. TermDOM sets it false when its `hover` option forbids motion
-	// reporting; a headless document keeps the default.
-	declare [kHoverAvailable]: boolean;
 	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
@@ -9230,7 +9225,6 @@ export class StyleManager {
 		this[kHasRulesExist] = false;
 		this[kHoverRulesExist] = false;
 		this[kFocusVisibleActive] = true;
-		this[kHoverAvailable] = true;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
 		this[kLayoutFlush] = null;
@@ -9808,11 +9802,6 @@ export class StyleManager {
 			parseStylesheets(this);
 		}
 		return this[kHoverRulesExist];
-	}
-
-	/** Set whether this display has hover, which `@media (hover)` reports. */
-	setHoverAvailable(available: boolean): void {
-		this[kHoverAvailable] = available;
 	}
 
 	/** Set the `:focus-visible` state; returns whether it changed. */
@@ -10781,13 +10770,12 @@ function mediaFeatureMatches(
 	feature: string,
 ): boolean {
 	// mediaqueries-4's hover feature: `hover` when the primary pointer can
-	// hover, `none` when it cannot. Here that is whether the terminal
-	// reports motion -- or would, were anything observing hover; a bare
-	// `(hover)` is the boolean context, true only on `hover`.
+	// hover. Motion reporting turns on whenever the document observes
+	// hover, so the answer is unconditional; a bare `(hover)` is the
+	// boolean context.
 	const hoverMatch = feature.match(/^(any-)?hover(\s*:\s*(hover|none))?$/i);
 	if (hoverMatch) {
-		const wanted = hoverMatch[3]?.toLowerCase() ?? "hover";
-		return (wanted === "hover") === manager[kHoverAvailable];
+		return (hoverMatch[3]?.toLowerCase() ?? "hover") === "hover";
 	}
 	const match = feature.match(
 		/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
