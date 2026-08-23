@@ -103,13 +103,13 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether a box takes part in positioned layout -- the predicate both the
- * containing-block chain and stacking-context collection are built on. Also
- * consulted by the painter's in-flow walk, so it is exported.
+ * Whether a box takes part in positioned layout -- the predicate the
+ * containing-block chain, stacking-context collection and the painter's
+ * in-flow walk are built on.
  */
 export function isPositioned(element: Element): boolean {
 	const position = computedStyleOf(element).computedValueOf("position");
-	return Boolean(position) && position !== "static";
+	return position !== "" && position !== "static";
 }
 
 /**
@@ -1388,34 +1388,8 @@ Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// Symbol-keyed so the invalidation test can spy on it (a #private method's
-// internal calls are invisible to a spy). Not on the public LayoutEngine type;
-// index.ts does not re-export it.
-const kInvalidateInlineRun = Symbol("invalidateInlineRun");
-export {kInvalidateInlineRun};
-
-// The breaker's own fragments, processed text and all: an inline box's lines as
-// the line breaker produced them. Symbol-keyed because nothing outside layout
-// may reason about processed text -- geometry consumers read `getRects`,
-// `getRangeRects` or `lineFragments`, whose fragments carry data offsets a
-// consumer can render for itself. The layout tests reach it through the symbol.
-const kRectTexts = Symbol("rectTexts");
-export {kRectTexts};
-
-const kBoxes = Symbol("boxes");
-const kAnonymousBoxes = Symbol("anonymousBoxes");
-const kMeasureNodes = Symbol("measureNodes");
-const kTerminalReordersText = Symbol("terminalReordersText");
-const kDOMNodeByFlexNode = Symbol("domNodeByFlexNode");
-const kInvalidatedNodes = Symbol("invalidatedNodes");
-const kLayoutPass = Symbol("layoutPass");
-const kDirtyRunContainers = Symbol("dirtyRunContainers");
-const kRectTextIndices = Symbol("rectTextIndices");
 const kStructuralGeneration = Symbol("structuralGeneration");
 const kStaleContainers = Symbol("staleContainers");
-const kInvalidationEpoch = Symbol("invalidationEpoch");
-const kRestyled = Symbol("restyled");
-const kRenderedLeaves = Symbol("renderedLeaves");
 
 /**
  * Derive a block container's child boxes from the DOM, and link them into
@@ -1575,6 +1549,8 @@ function containerBox(
 	return box;
 }
 
+const kBoxes = Symbol("boxes");
+
 /** A DOM node's principal box, created on first mention. */
 function principalBox(
 	layout: LayoutEngine,
@@ -1604,6 +1580,8 @@ function containerFlexNode(
 		layout[kBoxes].get(container)?.contentRoot ?? layout.nodeMap.get(container)
 	);
 }
+
+const kMeasureNodes = Symbol("measureNodes");
 
 /**
  * Free a node's layout node and forget it. The children are severed
@@ -1648,6 +1626,9 @@ function boxKindMatches(
 		(flexNode.getDisplay() === Flex.DISPLAY_NONE)
 	);
 }
+
+const kAnonymousBoxes = Symbol("anonymousBoxes");
+const kDOMNodeByFlexNode = Symbol("domNodeByFlexNode");
 
 /** Free an anonymous box's layout node and forget the box. */
 function retireAnonymousBox(
@@ -1749,6 +1730,8 @@ function runBreakResult(
 	}
 	return layout[kBoxes].get(node)?.fragments ?? undefined;
 }
+
+const kDirtyRunContainers = Symbol("dirtyRunContainers");
 
 /**
  * Bring a container's layout children into line with its box list: every
@@ -2750,6 +2733,8 @@ function isNodeLive(
 	return flatIsConnected(node);
 }
 
+const kInvalidatedNodes = Symbol("invalidatedNodes");
+
 function pruneDisconnectedNodes(
 	layout: LayoutEngine,
 ): void {
@@ -2911,6 +2896,8 @@ function restageSubtree(
 		}
 	}
 }
+
+const kInvalidateInlineRun = Symbol("invalidateInlineRun");
 
 function invalidateNode(
 	layout: LayoutEngine,
@@ -3146,6 +3133,8 @@ function invalidateEnclosingMeasure(
 		current = boxParentElement(current);
 	}
 }
+
+const kRestyled = Symbol("restyled");
 
 /**
  * Dirty what measures each restyled element, and restage the enumerations
@@ -4087,6 +4076,8 @@ function breakNodes(
 	};
 }
 
+const kRenderedLeaves = Symbol("renderedLeaves");
+
 function renderLeaf(
 	layout: LayoutEngine,
 	textNode: Text,
@@ -4461,6 +4452,8 @@ function measureText(
 	return content.prefixWidths[end] - content.prefixWidths[start];
 }
 
+const kTerminalReordersText = Symbol("terminalReordersText");
+
 /**
  * Rewrite one built line from logical order into visual order, in place.
  *
@@ -4780,6 +4773,8 @@ function absolutePosition(
 	}
 	return {x, y};
 }
+
+const kRectTextIndices = Symbol("rectTextIndices");
 
 function breakResultTextIndex(
 	layout: LayoutEngine,
@@ -5355,6 +5350,15 @@ function isPointInRects(
 // ---------------------------------------------------------------------------
 // LayoutEngine
 // ---------------------------------------------------------------------------
+
+// The breaker's own fragments, processed text and all: an inline box's
+// lines as the line breaker produced them. Nothing outside layout may
+// reason about processed text -- geometry consumers read `getRects`,
+// `getRangeRects` or `lineFragments`, whose fragments carry data offsets
+// a consumer can render for itself.
+const kRectTexts = Symbol("rectTexts");
+const kLayoutPass = Symbol("layoutPass");
+const kInvalidationEpoch = Symbol("invalidationEpoch");
 
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;

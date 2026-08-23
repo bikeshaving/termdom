@@ -6,7 +6,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
-import {kRectTexts} from "../src/internal/layout.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
@@ -74,15 +73,22 @@ test("line fragments should work for text nodes in nested inline-blocks", async 
 	const spanTextNode = span.firstChild as Text;
 	const innerTextNode = inner.firstChild as Text;
 
-	const spanRects = layoutEngine[kRectTexts](spanTextNode);
-	const innerRects = layoutEngine[kRectTexts](innerTextNode);
+	const spanRects = layoutEngine.lineFragments(spanTextNode);
+	const innerRects = layoutEngine.lineFragments(innerTextNode);
 
 	// Both text nodes should return valid rects
 	expect(spanRects).toHaveLength(1);
-	expect(spanRects[0].text).toBe("First ");
+	expect(
+		spanTextNode.data.slice(spanRects[0].startOffset, spanRects[0].endOffset),
+	).toBe("First ");
 
 	expect(innerRects).toHaveLength(1);
-	expect(innerRects[0].text).toBe("Second");
+	expect(
+		innerTextNode.data.slice(
+			innerRects[0].startOffset,
+			innerRects[0].endOffset,
+		),
+	).toBe("Second");
 
 	// Positions should be different (side by side)
 	expect(innerRects[0].rect.x).toBeGreaterThan(spanRects[0].rect.x);
@@ -161,10 +167,15 @@ test("deeply nested inline-blocks should work", async () => {
 
 	// Test the fragment walk on the deepest text node
 	const innerTextNode = inner.firstChild as Text;
-	const innerRects = layoutEngine[kRectTexts](innerTextNode);
+	const innerRects = layoutEngine.lineFragments(innerTextNode);
 
 	expect(innerRects).toHaveLength(1);
-	expect(innerRects[0].text).toBe("Inner");
+	expect(
+		innerTextNode.data.slice(
+			innerRects[0].startOffset,
+			innerRects[0].endOffset,
+		),
+	).toBe("Inner");
 
 	dom.dispose();
 });
