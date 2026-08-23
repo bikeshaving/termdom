@@ -16,12 +16,12 @@ window's legacy named access to elements by id.
 
 - Test files in the suites: 1173
 - Reference tests (no testharness, scored by pixels): 55
-- Excluded, each with its reason below: 397
+- Excluded, each with its reason below: 359
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 611
-- Files whose harness did not complete: 110
-- Subtests passed: 95296
-- Subtests failed: 1157
+- Files whose harness completed: 678
+- Files whose harness did not complete: 81
+- Subtests passed: 95716
+- Subtests failed: 1524
 
 ## Exclusions
 
@@ -83,7 +83,6 @@ window's legacy named access to elements by id.
 | dom/events/Event-dispatch-multiple-cancelBubble.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-omitted-capture.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-redispatch.html | requires-browsing-context: the redispatched events are the window's own load and the browser's mouseup |
 | dom/events/Event-dispatch-reenter.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-single-activation-behavior.html | requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script |
 | dom/events/Event-dispatch-target-moved.html | requires-browsing-context: the expected propagation path begins at the window |
@@ -91,7 +90,6 @@ window's legacy named access to elements by id.
 | dom/events/Event-dispatch-throwing-multiple-globals.html | requires-browsing-context: which global an error event is fired at, across frames |
 | dom/events/Event-dispatch-throwing.html | requires-browsing-context: a listener's exception is counted as an error event at the window |
 | dom/events/Event-timestamp-cross-realm-getter.html | requires-browsing-context: a timeStamp getter taken from a frame's realm |
-| dom/events/EventListener-addEventListener.sub.window.js | requires-browsing-context: a listener that is a cross-origin window |
 | dom/events/EventListener-handleEvent-cross-realm.html | requires-browsing-context: listener objects built in a frame's realm |
 | dom/events/EventListener-incumbent-global-1.sub.html | requires-browsing-context: which global a listener is called with, across frames |
 | dom/events/EventListener-incumbent-global-2.sub.html | requires-browsing-context: which global a listener is called with, across frames |
@@ -100,7 +98,6 @@ window's legacy named access to elements by id.
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-invoke-legacy.html | requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event |
 | dom/events/click-on-absolute-pseudo.html | requires-user-input: a pointer action sequence over a pseudo-element |
-| dom/events/event-disabled-dynamic.html | requires-browsing-context: the case runs inside the window's load event |
 | dom/events/event-global-extra.window.js | requires-browsing-context: window.event across frames |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | requires-browsing-context: window.event during a beforeunload the window fires |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | requires-browsing-context: window.event inside window.onerror |
@@ -195,8 +192,6 @@ window's legacy named access to elements by id.
 | dom/events/webkit-animation-start-event.html | requires-css-animations: a running CSS animation |
 | dom/events/webkit-transition-end-event.html | requires-css-animations: a running CSS transition |
 | dom/events/window-event-restored-after-throwing-onerror.html | requires-browsing-context: window.event inside window.onerror |
-| dom/nodes/Comment-constructor.html | requires-browsing-context: the shared constructor test builds a frame document |
-| dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html | requires-browsing-context: a DOMImplementation kept from a detached frame |
 | dom/nodes/Document-URL.html | requires-browsing-context: a frame's document URL |
 | dom/nodes/Document-characterSet-normalization-1.html | requires-fetch: encoding labels normalized from fetched documents |
 | dom/nodes/Document-characterSet-normalization-2.html | requires-fetch: encoding labels normalized from fetched documents |
@@ -225,19 +220,13 @@ window's legacy named access to elements by id.
 | dom/nodes/Document-createElement-namespace-tests/xhtml.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame |
-| dom/nodes/Document-createElement-namespace.html | requires-browsing-context: elements created in framed XML and XHTML documents |
-| dom/nodes/Document-createElementNS.html | requires-browsing-context: two thirds of the cases run in framed XML and XHTML documents, and the rest reach DOMException through defaultView |
 | dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html | requires-browsing-context: an element adopted between an HTML and an XML frame |
 | dom/nodes/Element-matches.html | requires-browsing-context: the selector corpus is loaded into a frame |
 | dom/nodes/Element-webkitMatchesSelector.html | requires-browsing-context: the selector corpus is loaded into a frame |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to |
 | dom/nodes/MutationObserver-document.html | requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions |
-| dom/nodes/Node-isConnected.html | requires-browsing-context: connectedness across a frame's document |
 | dom/nodes/Node-parentNode.html | requires-browsing-context: a frame's document element parentage |
 | dom/nodes/ParentNode-querySelector-All.html | requires-browsing-context: the selector corpus is loaded into a frame |
-| dom/nodes/Text-constructor.html | requires-browsing-context: the shared constructor test builds a frame document |
-| dom/nodes/attach-shadow-realm-after-adoption.html | requires-browsing-context: the shadow host is adopted out of a frame's document |
-| dom/nodes/create-element-realm-after-adoption.html | requires-browsing-context: which realm createElement uses after adoption |
 | dom/nodes/insertion-removing-steps/Node-append-form-and-script-from-fragment.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/Node-appendChild-script-and-button-from-div.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
@@ -260,15 +249,9 @@ window's legacy named access to elements by id.
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/moveBefore/css-transition-cross-document.html | requires-browsing-context: the transitioning node moves into a frame's document |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | requires-browsing-context: the move happens inside a frame's document |
-| dom/nodes/moveBefore/throws-exception.html | requires-browsing-context: the moved node comes from a frame's document |
-| dom/nodes/node-creation-realm.html | requires-browsing-context: which realm's constructor a node carries |
 | dom/nodes/node-realm-adoption-after-frame-removal.html | requires-browsing-context: a node's realm after its frame is removed |
-| dom/nodes/node-realm-mixed-across-adoption.html | requires-browsing-context: realms mixed by adoption between frames |
-| dom/nodes/node-realm-preserved-across-adoption.html | requires-browsing-context: a node's realm across adoption between frames |
-| dom/nodes/node-realm-preserved-across-frameless-adoption.html | requires-browsing-context: a node's realm across adoption out of a frame |
 | dom/nodes/processing-instruction-attributes.html | no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not |
 | dom/nodes/query-target-in-load-event.html | requires-browsing-context: the query runs in a frame's load event |
-| dom/nodes/querySelector-empty-id.html | requires-browsing-context: the fixture is named through the window's named property access |
 | dom/nodes/remove-and-adopt-thcrash.html | requires-browsing-context: adoption into a frame's document |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | requires-browsing-context: the node is adopted into a frame's document |
 | dom/nodes/remove-next-sibling-during-replace-with.html | requires-browsing-context: the fixture is named through the window's named property access |
@@ -390,38 +373,17 @@ window's legacy named access to elements by id.
 | shadow-dom/reference-target/tentative/reference-target-basics.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/touch-event-retargeting-leak.html | requires-user-input: a touch action sequence driven through testdriver |
-| shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-009.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-010.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/events/event-retargeting/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/events/event-retargeting/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/events/retargeting-focus-events/test-001.html | requires-browsing-context: focus events in a rendered document in a frame |
 | shadow-dom/untriaged/events/retargeting-focus-events/test-002.html | requires-browsing-context: focus events in a rendered document in a frame |
 | shadow-dom/untriaged/events/retargeting-focus-events/test-003.html | requires-browsing-context: focus events in a rendered document in a frame |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/events/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-001.html | requires-browsing-context: styles applied in a rendered document in a frame |
-| shadow-dom/untriaged/styles/test-003.html | requires-browsing-context: styles applied in a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-005.html | requires-browsing-context: styles applied in a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-008.html | requires-browsing-context: styles applied in a rendered document in a frame |
-| shadow-dom/untriaged/user-interaction/active-element/test-001.html | requires-browsing-context: the document's focused element, in a frame |
-| shadow-dom/untriaged/user-interaction/active-element/test-002.html | requires-browsing-context: the document's focused element, in a frame |
-| shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html | requires-browsing-context: contentEditable in a rendered document in a frame |
-| shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | requires-browsing-context: a Selection over a rendered document in a frame |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | requires-browsing-context: a Selection over a rendered document in a frame |
 | shadow-dom/wheel-event-related-target.html | requires-user-input: a wheel action sequence driven through testdriver |
 
@@ -523,10 +485,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/ChildNode-after.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-before.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-replaceWith.html | OK | 33 | 0 |
-| dom/nodes/Comment-constructor.html | EXCLUDED (requires-browsing-context: the shared constructor test builds a frame document) | 0 | 0 |
+| dom/nodes/Comment-constructor.html | OK | 15 | 1 |
 | dom/nodes/DOMImplementation-createDocument.html | OK | 434 | 0 |
 | dom/nodes/DOMImplementation-createDocumentType.html | OK | 82 | 0 |
-| dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html | EXCLUDED (requires-browsing-context: a DOMImplementation kept from a detached frame) | 0 | 0 |
+| dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html | OK | 1 | 0 |
 | dom/nodes/DOMImplementation-createHTMLDocument.html | OK | 13 | 0 |
 | dom/nodes/DOMImplementation-hasFeature.html | OK | 137 | 0 |
 | dom/nodes/Document-URL.html | EXCLUDED (requires-browsing-context: a frame's document URL) | 0 | 0 |
@@ -563,9 +525,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-createElement-namespace-tests/xhtml.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (no-xml-parser: these are the XHTML, SVG and MathML fixtures the excluded Document-createElement-namespace.html loads into a frame) | 0 | 0 |
-| dom/nodes/Document-createElement-namespace.html | EXCLUDED (requires-browsing-context: elements created in framed XML and XHTML documents) | 0 | 0 |
+| dom/nodes/Document-createElement-namespace.html | OK | 21 | 30 |
 | dom/nodes/Document-createElement.html | OK | 49 | 98 |
-| dom/nodes/Document-createElementNS.html | EXCLUDED (requires-browsing-context: two thirds of the cases run in framed XML and XHTML documents, and the rest reach DOMException through defaultView) | 0 | 0 |
+| dom/nodes/Document-createElementNS.html | OK | 206 | 390 |
 | dom/nodes/Document-createEvent-touchevent.window.js | OK | 3 | 0 |
 | dom/nodes/Document-createEvent.https.html | OK | 261 | 12 |
 | dom/nodes/Document-createProcessingInstruction.html | OK | 12 | 0 |
@@ -617,7 +579,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
 | dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
 | dom/nodes/MutationObserver-characterData.html | OK | 23 | 0 |
-| dom/nodes/MutationObserver-childList.html | OK | 38 | 2 |
+| dom/nodes/MutationObserver-childList.html | OK | 40 | 0 |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | EXCLUDED (requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to) | 0 | 0 |
 | dom/nodes/MutationObserver-disconnect.html | OK | 2 | 0 |
 | dom/nodes/MutationObserver-document.html | EXCLUDED (requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions) | 0 | 0 |
@@ -642,7 +604,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Node-contains.html | OK | 1482 | 0 |
 | dom/nodes/Node-insertBefore.html | OK | 40 | 0 |
 | dom/nodes/Node-isConnected-shadow-dom.html | OK | 2 | 0 |
-| dom/nodes/Node-isConnected.html | EXCLUDED (requires-browsing-context: connectedness across a frame's document) | 0 | 0 |
+| dom/nodes/Node-isConnected.html | OK | 2 | 0 |
 | dom/nodes/Node-isEqualNode.html | OK | 9 | 0 |
 | dom/nodes/Node-isSameNode.html | OK | 9 | 0 |
 | dom/nodes/Node-lookupNamespaceURI.html | OK | 75 | 0 |
@@ -678,17 +640,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/ParentNode-querySelectors-namespaces.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectors-space-and-dash-attribute-value.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-replaceChildren.html | OK | 31 | 0 |
-| dom/nodes/Text-constructor.html | EXCLUDED (requires-browsing-context: the shared constructor test builds a frame document) | 0 | 0 |
+| dom/nodes/Text-constructor.html | OK | 15 | 1 |
 | dom/nodes/Text-splitText.html | OK | 6 | 0 |
 | dom/nodes/Text-wholeText.html | OK | 1 | 0 |
-| dom/nodes/adoption.window.js | OK | 4 | 2 |
+| dom/nodes/adoption.window.js | OK | 6 | 0 |
 | dom/nodes/append-on-Document.html | OK | 5 | 0 |
-| dom/nodes/attach-shadow-realm-after-adoption.html | EXCLUDED (requires-browsing-context: the shadow host is adopted out of a frame's document) | 0 | 0 |
+| dom/nodes/attach-shadow-realm-after-adoption.html | OK | 4 | 1 |
 | dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 2 | 0 |
 | dom/nodes/attributes-namednodemap.html | OK | 8 | 0 |
 | dom/nodes/attributes.html | OK | 67 | 0 |
 | dom/nodes/case.html | OK | 285 | 0 |
-| dom/nodes/create-element-realm-after-adoption.html | EXCLUDED (requires-browsing-context: which realm createElement uses after adoption) | 0 | 0 |
+| dom/nodes/create-element-realm-after-adoption.html | OK | 2 | 3 |
 | dom/nodes/getElementsByClassName-32.html | OK | 4 | 0 |
 | dom/nodes/getElementsByClassName-empty-set.html | OK | 3 | 0 |
 | dom/nodes/getElementsByClassName-whitespace-class-names.html | OK | 26 | 0 |
@@ -713,7 +675,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/insertion-removing-steps/insertion-removing-steps-script.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/later-script-removed-by-earlier-script.html | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
-| dom/nodes/moveBefore/Node-moveBefore.html | OK | 29 | 3 |
+| dom/nodes/moveBefore/Node-moveBefore.html | OK | 31 | 1 |
 | dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
@@ -765,18 +727,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/selection-preserve.html | OK | 1 | 5 |
 | dom/nodes/moveBefore/slotchange-events.html | OK | 4 | 0 |
 | dom/nodes/moveBefore/style-applies.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/throws-exception.html | EXCLUDED (requires-browsing-context: the moved node comes from a frame's document) | 0 | 0 |
+| dom/nodes/moveBefore/throws-exception.html | OK | 1 | 0 |
 | dom/nodes/name-validation.html | OK | 5 | 0 |
-| dom/nodes/node-creation-realm.html | EXCLUDED (requires-browsing-context: which realm's constructor a node carries) | 0 | 0 |
+| dom/nodes/node-creation-realm.html | OK | 1 | 12 |
 | dom/nodes/node-realm-adoption-after-frame-removal.html | EXCLUDED (requires-browsing-context: a node's realm after its frame is removed) | 0 | 0 |
-| dom/nodes/node-realm-mixed-across-adoption.html | EXCLUDED (requires-browsing-context: realms mixed by adoption between frames) | 0 | 0 |
-| dom/nodes/node-realm-preserved-across-adoption.html | EXCLUDED (requires-browsing-context: a node's realm across adoption between frames) | 0 | 0 |
-| dom/nodes/node-realm-preserved-across-frameless-adoption.html | EXCLUDED (requires-browsing-context: a node's realm across adoption out of a frame) | 0 | 0 |
+| dom/nodes/node-realm-mixed-across-adoption.html | OK | 1 | 3 |
+| dom/nodes/node-realm-preserved-across-adoption.html | OK | 1 | 4 |
+| dom/nodes/node-realm-preserved-across-frameless-adoption.html | OK | 1 | 3 |
 | dom/nodes/prepend-on-Document.html | OK | 5 | 0 |
 | dom/nodes/processing-instruction-attributes.html | EXCLUDED (no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.html | EXCLUDED (requires-browsing-context: the query runs in a frame's load event) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.part.html | REFTEST | 0 | 0 |
-| dom/nodes/querySelector-empty-id.html | EXCLUDED (requires-browsing-context: the fixture is named through the window's named property access) | 0 | 0 |
+| dom/nodes/querySelector-empty-id.html | OK | 1 | 0 |
 | dom/nodes/querySelector-id-nth-child.html | OK | 2 | 0 |
 | dom/nodes/querySelector-mixed-case.html | OK | 0 | 1 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
@@ -845,7 +807,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
-| dom/events/Event-dispatch-redispatch.html | EXCLUDED (requires-browsing-context: the redispatched events are the window's own load and the browser's mouseup) | 0 | 0 |
+| dom/events/Event-dispatch-redispatch.html | OK | 2 | 2 |
 | dom/events/Event-dispatch-reenter.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-single-activation-behavior.html | EXCLUDED (requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script) | 0 | 0 |
 | dom/events/Event-dispatch-target-moved.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
@@ -866,7 +828,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-timestamp-safe-resolution.html | OK | 0 | 1 |
 | dom/events/Event-type-empty.html | OK | 2 | 0 |
 | dom/events/Event-type.html | OK | 3 | 0 |
-| dom/events/EventListener-addEventListener.sub.window.js | EXCLUDED (requires-browsing-context: a listener that is a cross-origin window) | 0 | 0 |
+| dom/events/EventListener-addEventListener.sub.window.js | OK | 1 | 0 |
 | dom/events/EventListener-handleEvent-cross-realm.html | EXCLUDED (requires-browsing-context: listener objects built in a frame's realm) | 0 | 0 |
 | dom/events/EventListener-handleEvent.html | OK | 3 | 3 |
 | dom/events/EventListener-incumbent-global-1.sub.html | EXCLUDED (requires-browsing-context: which global a listener is called with, across frames) | 0 | 0 |
@@ -886,7 +848,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/EventTarget-this-of-listener.html | OK | 6 | 0 |
 | dom/events/KeyEvent-initKeyEvent.html | OK | 3 | 0 |
 | dom/events/click-on-absolute-pseudo.html | EXCLUDED (requires-user-input: a pointer action sequence over a pseudo-element) | 0 | 0 |
-| dom/events/event-disabled-dynamic.html | EXCLUDED (requires-browsing-context: the case runs inside the window's load event) | 0 | 0 |
+| dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | EXCLUDED (requires-browsing-context: window.event during a beforeunload the window fires) | 0 | 0 |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
@@ -1140,7 +1102,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/move-by-word-with-symbol.html | EXCLUDED (requires-user-input: the caret is moved by a key action sequence) | 0 | 0 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-paragraphboundary-cross-editing-boundary.tentative.html | OK | 0 | 2 |
-| selection/move-selection-range-into-different-root.tentative.html | OK | 8 | 8 |
+| selection/move-selection-range-into-different-root.tentative.html | OK | 16 | 0 |
 | selection/onselectionchange-on-distinct-text-controls.html | OK | 2 | 0 |
 | selection/onselectionchange-on-document.html | OK | 4 | 0 |
 | selection/onselectstart-on-key-in-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a key action sequence) | 0 | 0 |
@@ -1433,7 +1395,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slot-reconciliation-at-node-removal.html | OK | 1 | 0 |
 | shadow-dom/slotchange-customelements.html | OK | 0 | 1 |
 | shadow-dom/slotchange-event.html | OK | 32 | 0 |
-| shadow-dom/slotchange.html | TIMEOUT | 0 | 0 |
+| shadow-dom/slotchange.html | TIMEOUT | 16 | 1 |
 | shadow-dom/slots-fallback-in-document.html | OK | 2 | 0 |
 | shadow-dom/slots-fallback.html | OK | 13 | 0 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
@@ -1441,35 +1403,35 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/touch-event-retargeting-leak.html | EXCLUDED (requires-user-input: a touch action sequence driven through testdriver) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html | OK | 1 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-009.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-010.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | OK | 1 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html | OK | 3 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html | OK | 1 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-009.html | OK | 1 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-010.html | OK | 2 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html | OK | 2 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html | OK | 1 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | OK | 1 | 1 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | OK | 0 | 2 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | OK | 1 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/event-retargeting/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/event-retargeting/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/retargeting-focus-events/test-001.html | EXCLUDED (requires-browsing-context: focus events in a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/events/event-retargeting/test-001.html | OK | 2 | 0 |
+| shadow-dom/untriaged/events/event-retargeting/test-003.html | OK | 1 | 0 |
+| shadow-dom/untriaged/events/retargeting-focus-events/test-001.html | OK | 6 | 0 |
 | shadow-dom/untriaged/events/retargeting-focus-events/test-002.html | EXCLUDED (requires-browsing-context: focus events in a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-focus-events/test-003.html | EXCLUDED (requires-browsing-context: focus events in a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | OK | 1 | 0 |
+| shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | OK | 0 | 1 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
@@ -1484,26 +1446,26 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | OK | 2 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | OK | 2 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html | OK | 14 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-002.html | OK | 8 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-003.html | OK | 111 | 0 |
 | shadow-dom/untriaged/styles/not-apply-in-shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/styles/test-001.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/styles/test-003.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/styles/test-003.html | OK | 3 | 0 |
 | shadow-dom/untriaged/styles/test-005.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/styles/test-008.html | EXCLUDED (requires-browsing-context: styles applied in a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/user-interaction/active-element/test-001.html | EXCLUDED (requires-browsing-context: the document's focused element, in a frame) | 0 | 0 |
-| shadow-dom/untriaged/user-interaction/active-element/test-002.html | EXCLUDED (requires-browsing-context: the document's focused element, in a frame) | 0 | 0 |
-| shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html | EXCLUDED (requires-browsing-context: contentEditable in a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
+| shadow-dom/untriaged/user-interaction/active-element/test-001.html | OK | 1 | 0 |
+| shadow-dom/untriaged/user-interaction/active-element/test-002.html | OK | 1 | 0 |
+| shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html | OK | 3 | 0 |
+| shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html | EXCLUDED (requires-browsing-context: a Selection over a rendered document in a frame) | 0 | 0 |
 | shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
-| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 4 | 1 |
+| custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
-| custom-elements/CustomElementRegistry.html | TIMEOUT | 45 | 1 |
+| custom-elements/CustomElementRegistry.html | OK | 45 | 1 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
-| custom-elements/Document-createElement.html | TIMEOUT | 10 | 26 |
+| custom-elements/Document-createElement.html | OK | 11 | 25 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
 | custom-elements/Document-createElementNS.html | OK | 4 | 0 |
@@ -1513,22 +1475,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/HTMLElement-attachInternals.html | OK | 3 | 1 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
 | custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
-| custom-elements/adopted-callback.html | TIMEOUT | 42 | 29 |
-| custom-elements/append-children-to-new-parent-cycle.html | TIMEOUT | 0 | 1 |
+| custom-elements/adopted-callback.html | OK | 61 | 10 |
+| custom-elements/append-children-to-new-parent-cycle.html | OK | 1 | 0 |
 | custom-elements/attribute-changed-callback.html | OK | 13 | 0 |
 | custom-elements/builtin-coverage.html | EXCLUDED (customized built-ins: every case defines a customized built-in with an extends option) | 0 | 0 |
-| custom-elements/connected-callbacks-html-fragment-parsing.html | TIMEOUT | 6 | 2 |
+| custom-elements/connected-callbacks-html-fragment-parsing.html | OK | 7 | 1 |
 | custom-elements/connected-callbacks-template.html | EXCLUDED (requires-script-execution: the definition is registered by a script the parser runs inside the template) | 0 | 0 |
-| custom-elements/connected-callbacks.html | TIMEOUT | 30 | 10 |
+| custom-elements/connected-callbacks.html | OK | 35 | 5 |
 | custom-elements/createElement-reentrant-construction.window.js | OK | 2 | 0 |
 | custom-elements/cross-realm-callback-report-exception.html | ERROR (Cannot set properties of undefined (setting 'onerror')) | 0 | 0 |
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
 | custom-elements/customized-built-in-constructor-exceptions.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
-| custom-elements/disconnected-callbacks.html | TIMEOUT | 30 | 10 |
+| custom-elements/disconnected-callbacks.html | OK | 35 | 5 |
 | custom-elements/element-internals-aria-element-reflection.html | OK | 5 | 4 |
 | custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/element-internals-shadowroot.html | OK | 7 | 0 |
-| custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | TIMEOUT | 0 | 8 |
+| custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | OK | 7 | 1 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-form.html | OK | 1 | 1 |
@@ -1552,8 +1514,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
 | custom-elements/historical.html | OK | 3 | 0 |
-| custom-elements/htmlconstructor/newtarget-customized-builtins.html | TIMEOUT | 0 | 10 |
-| custom-elements/htmlconstructor/newtarget.html | TIMEOUT | 0 | 10 |
+| custom-elements/htmlconstructor/newtarget-customized-builtins.html | OK | 0 | 10 |
+| custom-elements/htmlconstructor/newtarget.html | OK | 2 | 8 |
 | custom-elements/microtasks-and-constructors.html | EXCLUDED (requires-script-execution: the case is which microtasks run while the parser is inside an element) | 0 | 0 |
 | custom-elements/overwritten-customElements-global.html | OK | 4 | 0 |
 | custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function) | 0 | 0 |
@@ -1566,10 +1528,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/parser/parser-uses-constructed-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
-| custom-elements/perform-microtask-checkpoint-before-construction.html | TIMEOUT | 0 | 2 |
-| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 0 |
+| custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
+| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 4 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 1 |
+| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 0 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
@@ -1581,25 +1543,25 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
 | custom-elements/reactions/DOMStringMap.html | OK | 4 | 4 |
 | custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
-| custom-elements/reactions/Document.html | TIMEOUT | 0 | 12 |
+| custom-elements/reactions/Document.html | OK | 1 | 11 |
 | custom-elements/reactions/Element.html | OK | 47 | 0 |
 | custom-elements/reactions/ElementContentEditable.html | OK | 2 | 0 |
-| custom-elements/reactions/HTMLAnchorElement.html | TIMEOUT | 0 | 1 |
+| custom-elements/reactions/HTMLAnchorElement.html | OK | 0 | 1 |
 | custom-elements/reactions/HTMLElement.html | OK | 20 | 2 |
-| custom-elements/reactions/HTMLOptionElement.html | TIMEOUT | 0 | 1 |
-| custom-elements/reactions/HTMLOptionsCollection.html | TIMEOUT | 0 | 5 |
-| custom-elements/reactions/HTMLOutputElement.html | TIMEOUT | 0 | 2 |
-| custom-elements/reactions/HTMLSelectElement.html | TIMEOUT | 0 | 5 |
-| custom-elements/reactions/HTMLTableElement.html | TIMEOUT | 0 | 10 |
-| custom-elements/reactions/HTMLTableRowElement.html | TIMEOUT | 0 | 1 |
-| custom-elements/reactions/HTMLTableSectionElement.html | TIMEOUT | 0 | 2 |
-| custom-elements/reactions/HTMLTitleElement.html | TIMEOUT | 0 | 0 |
+| custom-elements/reactions/HTMLOptionElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLOptionsCollection.html | OK | 0 | 5 |
+| custom-elements/reactions/HTMLOutputElement.html | OK | 0 | 2 |
+| custom-elements/reactions/HTMLSelectElement.html | OK | 0 | 5 |
+| custom-elements/reactions/HTMLTableElement.html | OK | 3 | 7 |
+| custom-elements/reactions/HTMLTableRowElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLTableSectionElement.html | OK | 0 | 2 |
+| custom-elements/reactions/HTMLTitleElement.html | OK | 0 | 1 |
 | custom-elements/reactions/NamedNodeMap.html | OK | 14 | 0 |
 | custom-elements/reactions/Node.html | OK | 14 | 0 |
 | custom-elements/reactions/ParentNode.html | OK | 4 | 0 |
 | custom-elements/reactions/Range.html | OK | 9 | 1 |
 | custom-elements/reactions/Selection.html | OK | 1 | 0 |
-| custom-elements/reactions/ShadowRoot.html | TIMEOUT | 0 | 3 |
+| custom-elements/reactions/ShadowRoot.html | OK | 3 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLAreaElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLBaseElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLButtonElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
@@ -1628,7 +1590,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/customized-builtins/HTMLTableCellElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTableColElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTimeElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
-| custom-elements/reactions/with-exceptions.html | TIMEOUT | 0 | 1 |
+| custom-elements/reactions/with-exceptions.html | OK | 0 | 1 |
 | custom-elements/registries/Construct.html | OK | 2 | 1 |
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
 | custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
@@ -1636,7 +1598,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 2 | 3 |
 | custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
 | custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
-| custom-elements/registries/Document-customElementRegistry.html | OK | 2 | 2 |
+| custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
 | custom-elements/registries/Document-importNode.html | OK | 11 | 9 |
 | custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
@@ -1649,19 +1611,19 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
 | custom-elements/registries/constructor-reentry-createElement.window.js | OK | 2 | 2 |
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
-| custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'defaultView')) | 0 | 0 |
-| custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'defaultView')) | 0 | 0 |
+| custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
+| custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
 | custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
 | custom-elements/registries/element-mutation.html | OK | 15 | 0 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
 | custom-elements/registries/initial-about-blank.window.js | OK | 0 | 1 |
-| custom-elements/registries/per-document.html | TIMEOUT | 0 | 3 |
+| custom-elements/registries/per-document.html | OK | 1 | 2 |
 | custom-elements/registries/pseudo-class-defined.window.js | OK | 0 | 3 |
-| custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | TIMEOUT | 2 | 21 |
-| custom-elements/registries/scoped-registry-append.html | OK | 2 | 14 |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 5 | 9 |
+| custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | OK | 6 | 17 |
+| custom-elements/registries/scoped-registry-append.html | OK | 7 | 9 |
+| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 6 | 8 |
 | custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
-| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 0 | 66 |
+| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 13 | 53 |
 | custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 10 | 2 |
 | custom-elements/registries/scoped-registry-initialize.html | OK | 27 | 0 |
 | custom-elements/registries/scoped-registry-registry-define-get-etc.html | OK | 7 | 0 |
@@ -1673,119 +1635,549 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/state/state-css-selector-shadow-dom.html | OK | 0 | 3 |
 | custom-elements/state/state-css-selector.html | OK | 5 | 5 |
 | custom-elements/state/state-pseudo-class.html | OK | 3 | 5 |
-| custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | TIMEOUT | 0 | 11 |
-| custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | TIMEOUT | 0 | 11 |
+| custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
+| custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
 | custom-elements/upgrading.html | EXCLUDED (requires-script-execution: the elements upgraded are ones the parser created around the script that defines them) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Document-importNode.html | TIMEOUT | 0 | 2 |
+| custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | TIMEOUT | 2 | 7 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 3 | 6 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | EXCLUDED (requires-browsing-context: the failure is counted as an error event at the window) | 0 | 0 |
-| custom-elements/upgrading/upgrading-enqueue-reactions.html | TIMEOUT | 0 | 0 |
+| custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
 
 ## Failing subtests
 
+### dom/nodes/Comment-constructor.html
+
+- new Comment() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
+
+### dom/nodes/Document-createElement-namespace.html
+
+- Created element's namespace in empty.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in empty.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in empty.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in minimal_html.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in minimal_html.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in minimal_html.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in xhtml.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in xhtml.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in xhtml.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in svg.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in svg.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in svg.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in mathml.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in mathml.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in mathml.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in bare_xhtml.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in bare_xhtml.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in bare_xhtml.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in bare_svg.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in bare_svg.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in bare_svg.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in bare_mathml.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in bare_mathml.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in bare_mathml.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in xhtml_ns_removed.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in xhtml_ns_removed.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in xhtml_ns_removed.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+- Created element's namespace in xhtml_ns_changed.xhtml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xhtml+xml" but got "text/html"
+- Created element's namespace in xhtml_ns_changed.xml: assert_equals: Wrong MIME type returned from doc.contentType expected "application/xml" but got "text/html"
+- Created element's namespace in xhtml_ns_changed.svg: assert_equals: Wrong MIME type returned from doc.contentType expected "image/svg+xml" but got "text/html"
+
 ### dom/nodes/Document-createElement.html
 
-- createElement(undefined) in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(undefined) in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(null) in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(null) in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f1oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f1oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo1") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo1") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:o:o") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:o:o") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo:") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo:") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:0") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:0") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:_") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:_") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:ெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:ெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:fooெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:fooெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo:bar") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo:bar") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("svg") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("svg") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("math") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("math") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("FOO") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("FOO") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("marK") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("marK") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("İnput") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("İnput") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("ınput") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("ınput") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f}oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f}oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo}") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo}") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("\ufffffoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("\ufffffoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f\uffffoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f\uffffoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo\uffff") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo\uffff") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f<oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f<oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fo o") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fo o") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("}foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("}foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo>") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo>") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo>") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo>") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("-foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("-foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(".foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(".foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
+- createElement(undefined) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(undefined) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(null) in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(null) in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f1oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f1oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo1") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo1") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(":") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(":") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(":foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(":foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f:oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f:oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f:o:o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f:o:o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f::oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f::oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f::oo:") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f::oo:") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:0") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:0") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:_") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:_") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:ெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:ெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo:fooெ") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo:fooெ") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fooெ:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fooெ:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xml") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xml") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlns") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlns") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlfoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlfoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xml:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xml:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlns:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlns:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("xmlfoo:bar") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("xmlfoo:bar") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("svg") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("svg") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("math") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("math") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("FOO") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("FOO") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("marK") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("marK") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("İnput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("İnput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("ınput") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("ınput") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("̀foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("̀foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f}oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f}oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo}") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo}") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("\ufffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("\ufffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f\uffffoo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f\uffffoo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo\uffff") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo\uffff") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("f<oo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("f<oo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("̀") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("̀") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("1foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("1foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("1:foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("1:foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("fo o") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("fo o") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("}foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("}foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("<foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("<foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("<foo>") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("<foo>") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement("-foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement("-foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+- createElement(".foo") in XML document: assert_equals: XML document didn't load expected "Dummy XML document" but got ""
+- createElement(".foo") in XHTML document: assert_equals: XHTML document didn't load expected "Dummy XHTML document" but got ""
+
+### dom/nodes/Document-createElementNS.html
+
+- createElementNS test in XML document: null,null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,undefined,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"ெfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"ெfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,";foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,";foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"}foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f}oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f}oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo}",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo}",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"\ufffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f\uffffoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo\uffff",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo\uffff",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"<foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f<oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f<oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"^^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"fo o","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"f:o:o","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,":","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"null:xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,undefined,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,undefined,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"f::oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","<foo>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","fo<o",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","-foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",".foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f:o:o",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","f::oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:0","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","0:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:ெ",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:;",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:̀",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","̀:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",";:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a:aெ",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","aெ:a",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns:test","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","test:xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:h0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","_:test",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","l_:_",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns:_0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns:a0",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","ns0:test",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a.b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","a-b:c",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XMLNS",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XML:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","XMLNS:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","prefix::local",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:{","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:}","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:~","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:'","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:!","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:@","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:#","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:$","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:%","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:^","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:&","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:*","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:(","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:)","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:+","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:=","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:[","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:]","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\\","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:/","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:;","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:`","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:<","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:>","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:,","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:a ","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","namespaceURI:\"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xml:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespaces","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/xml/1998/namespace","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f1oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo1","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","f:oo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlns:foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","xmlfoo:bar","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","foo:xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","1foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","f1oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","f1oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo1",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo1",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:",":foo","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","f:oo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","f:oo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","foo:","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xml",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xml",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlns","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlfoo",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xml:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlns:foo","NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","xmlfoo:bar",null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: null,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: undefined,"","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://example.com/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/XML/1998/namespace","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/",null,"NAMESPACE_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "http://www.w3.org/2000/xmlns/","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:",null,null: assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:",null,null: assert_equals: expected "Dummy XHTML document" but got ""
+- createElementNS test in XML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
+- createElementNS test in XHTML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
 
 ### dom/nodes/Document-createEvent.https.html
 
@@ -1828,11 +2220,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - tagName should be updated when changing ownerDocument: assert_equals: tagName should be lowercase in XML expected "div" but got "parsererror"
 
-### dom/nodes/MutationObserver-childList.html
-
-- childList ParentNode.replaceChildren: move an existing child: assert_equals: mutation records must match expected 1 but got 2
-- childList ParentNode.replaceChildren: self replacement of only child: assert_equals: mutation records must match expected 1 but got 2
-
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
 - Custom element reactions follow script execution: A customized built-in element is not implemented here
@@ -1863,16 +2250,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Passing a non-detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
 - Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
 
-### dom/nodes/adoption.window.js
+### dom/nodes/Text-constructor.html
 
-- appendChild() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
-- adoptNode() and DocumentFragment with host: assert_not_equals: got disallowed value Document node with 2 children
+- new Text() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
+
+### dom/nodes/attach-shadow-realm-after-adoption.html
+
+- attachShadow() invoked via another realm's method uses the node document realm: Cannot read properties of undefined (reading 'prototype')
+
+### dom/nodes/create-element-realm-after-adoption.html
+
+- Built-in element: the created element's realm is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
+- Custom element: innerHTML upgrades it using the node document's registry: assert_true: <x-baz> uses the node document's (top-level) registry expected true got false
+- Custom element: the registry used is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
 
 ### dom/nodes/moveBefore/Node-moveBefore.html
 
-- moveBefore() on a cross-document target node throws a HierarchyRequestError: Cannot read properties of null (reading 'createElement')
-- moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of null (reading 'querySelector')
-- moveBefore() CharacterData into a Document: Cannot read properties of null (reading 'createComment')
+- moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of undefined (reading 'name')
 
 ### dom/nodes/moveBefore/continue-css-animation-left.html
 
@@ -1962,6 +2356,40 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - moveBefore anchor node moved up to expand selection and absorb nodes: assert_equals: expected Text node "Child paragraph one" but got Element node <div id="parentDiv">
 - moveBefore move intersecting nodes out of a selection: assert_equals: expected Text node "Paragraph two" but got Text node "Grandparent paragraph"
 - moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Text node "Grandparent paragraph"
+
+### dom/nodes/node-creation-realm.html
+
+- Document.createTextNode() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Document.createComment() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Document.createProcessingInstruction() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Document.createDocumentFragment() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Document.createAttribute() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Document.createCDATASection() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- DOMImplementation.createDocumentType() creates a node in the associated document's realm: Cannot read properties of undefined (reading 'prototype')
+- DOMImplementation.createDocument() creates the document in the target realm: Cannot read properties of undefined (reading 'prototype')
+- DOMImplementation.createHTMLDocument() creates the document and its contents in the target realm: Cannot read properties of undefined (reading 'prototype')
+- cloneNode() clones into the node's node document realm: Cannot read properties of undefined (reading 'prototype')
+- importNode() imports into the target document's realm: Cannot read properties of undefined (reading 'prototype')
+- Range.cloneContents() builds the fragment in the range's node document realm: Cannot read properties of undefined (reading 'prototype')
+
+### dom/nodes/node-realm-mixed-across-adoption.html
+
+- Element parsed into an adopted container takes the node-document realm, not the container's creation realm: Right-hand side of 'instanceof' is not an object
+- Never-wrapped node keeps its creation realm across multiple adoptions: Right-hand side of 'instanceof' is not an object
+- Custom element parsed into an adopted container uses the node-document realm and registry: assert_true: uses the node-document (top-level) realm and registry expected true got false
+
+### dom/nodes/node-realm-preserved-across-adoption.html
+
+- Built-in element keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- Text node keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- Comment node keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- createElement()d element keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/node-realm-preserved-across-frameless-adoption.html
+
+- Built-in element from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- Text node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- Comment node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/querySelector-mixed-case.html
 
@@ -2063,6 +2491,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - CSS Animation animationstart, animationiteration, animationend fire on disabled form elements: 
 - CSS Animation's animationcancel event fires on disabled form elements: 
 - Real clicks on disabled elements must not dispatch events.: 
+
+### dom/events/Event-dispatch-redispatch.html
+
+- Redispatching DOMContentLoaded event after being dispatched: Cannot read properties of undefined (reading 'isTrusted')
+- Redispatching mouseup event whose default action dispatches a click event: assert_true: Failed to send mouse click due to Error: element click intercepted error expected true got false
 
 ### dom/events/Event-stopPropagation-cancel-bubbling.html
 
@@ -2345,17 +2778,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
-
-### selection/move-selection-range-into-different-root.tentative.html
-
-- Set selection range into a sub-document with selectNode: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with selectNodeContents: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEnd: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEndAfter: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEndBefore: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStart: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStartAfter: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStartBefore: Cannot read properties of null (reading 'getElementById')
 
 ### selection/selection-content-visibility-hidden.html
 
@@ -2680,6 +3102,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
+### shadow-dom/slotchange.html
+
+- slotchange event: Append a child to a host (onslotchange).: Test timed out
+
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
 
 - A_10_01_02_06_01_T02: s.elementFromPoint is not a function
@@ -2688,10 +3114,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - A_10_01_02_06_02_T01: s.elementFromPoint is not a function
 - A_10_01_02_06_02_T02: s.elementFromPoint is not a function
-
-### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
-
-- A_08_02_03_T01: Cannot read properties of null (reading 'document')
 
 ### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
 
@@ -2704,17 +3126,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: Cannot read properties of undefined (reading 'length')
 - Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
 
-### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
-
-- adoptedCallback: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'adoptNode')"
-
 ### custom-elements/CustomElementRegistry-getName.html
 
 - customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: A customized built-in element is not implemented here
 
 ### custom-elements/CustomElementRegistry.html
 
-- customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): 
+- customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): assert_true: expected true got false
 
 ### custom-elements/Document-createElement.html
 
@@ -2736,12 +3154,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: Test timed out
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: 
-- document.createElement must not report a NotSupportedError when the element is adopted back from a the document of an iframe during construction: 
-- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: 
-- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: 
-- document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: 
+- document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
 - document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
 
@@ -2756,70 +3173,36 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/adopted-callback.html
 
-- Inserting a custom element into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...], "connected"] length 4, got ["connected"] length 1
-- Moving a custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
-- Inserting an ancestor of custom element into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...], "connected"] length 4, got ["connected"] length 1
-- Moving an ancestor of custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
-- Inserting a custom element into a shadow tree in the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...], "connected"] length 4, got ["connected"] length 1
-- Inserting the shadow host of a custom element into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...], "connected"] length 4, got ["connected"] length 1
-- Moving the shadow host of a custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
-- Moving the shadow host's shadow of a custom element from the owner document into the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["disconnected", "adopted", Document node with 2 children, [...], "connected"] length 5, got ["disconnected", "connected"] length 2
-- Inserting a custom element into a detached shadow tree that belongs to the document of the template elements must enqueue and invoke adoptedCallback: assert_array_equals: lengths differ, expected array ["adopted", Document node with 2 children, [...]] length 3, got [] length 0
-- Inserting a custom element into the document of an iframe must enqueue and invoke adoptedCallback: Test timed out
-- Moving a custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Inserting an ancestor of custom element into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Moving an ancestor of custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Inserting a custom element into a shadow tree in the document of an iframe must enqueue and invoke adoptedCallback: 
-- Inserting the shadow host of a custom element into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Moving the shadow host of a custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Moving the shadow host's shadow of a custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Moving the <template>'s content of a custom element from the owner document into the document of an iframe must enqueue and invoke adoptedCallback: 
-- Inserting a custom element into a detached shadow tree that belongs to the document of an iframe must enqueue and invoke adoptedCallback: 
-- Inserting a custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Moving a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Inserting an ancestor of custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Moving an ancestor of custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Inserting a custom element into a shadow tree in an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Inserting the shadow host of a custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Moving the shadow host of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Moving the shadow host's shadow of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Moving the <template>'s content of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-- Inserting a custom element into a detached shadow tree that belongs to an HTML document fetched by XHR must enqueue and invoke adoptedCallback: 
-
-### custom-elements/append-children-to-new-parent-cycle.html
-
-- Adoption agency reparenting a customized built-in clone must not create a cyclic DOM: Test timed out
+- Inserting a custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Moving a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting an ancestor of custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Moving an ancestor of custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting a custom element into a shadow tree in an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting the shadow host of a custom element into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Moving the shadow host of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Moving the shadow host's shadow of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Moving the <template>'s content of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting a custom element into a detached shadow tree that belongs to an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 
 ### custom-elements/connected-callbacks-html-fragment-parsing.html
 
-- Inserting a custom element into the document of an iframe using HTML fragment parsing must enqueue a custom element upgrade reaction, not synchronously invoke its constructor: Test timed out
-- Inserting a custom element into an HTML document fetched by XHR using HTML fragment parsing must enqueue a custom element upgrade reaction, not synchronously invoke its constructor: 
+- Inserting a custom element into an HTML document fetched by XHR using HTML fragment parsing must enqueue a custom element upgrade reaction, not synchronously invoke its constructor: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 
 ### custom-elements/connected-callbacks.html
 
-- Inserting a custom element into the document of an iframe must enqueue and invoke connectedCallback: Test timed out
-- Inserting an ancestor of custom element into the document of an iframe must enqueue and invoke connectedCallback: 
-- Inserting a custom element into a shadow tree in the document of an iframe must enqueue and invoke connectedCallback: 
-- Inserting the shadow host of a custom element into the document of an iframe must enqueue and invoke connectedCallback: 
-- Inserting a custom element into a detached shadow tree that belongs to the document of an iframe must not enqueue and invoke connectedCallback: 
-- Inserting a custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: 
-- Inserting an ancestor of custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: 
-- Inserting a custom element into a shadow tree in an HTML document fetched by XHR must enqueue and invoke connectedCallback: 
-- Inserting the shadow host of a custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: 
-- Inserting a custom element into a detached shadow tree that belongs to an HTML document fetched by XHR must not enqueue and invoke connectedCallback: 
+- Inserting a custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting an ancestor of custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting a custom element into a shadow tree in an HTML document fetched by XHR must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting the shadow host of a custom element into an HTML document fetched by XHR must enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Inserting a custom element into a detached shadow tree that belongs to an HTML document fetched by XHR must not enqueue and invoke connectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 
 ### custom-elements/disconnected-callbacks.html
 
-- Removing a custom element from the document of an iframe must enqueue and invoke disconnectedCallback: Test timed out
-- Removing an ancestor of custom element from the document of an iframe must enqueue and invoke disconnectedCallback: 
-- Removing a custom element from a shadow tree in the document of an iframe must enqueue and invoke disconnectedCallback: 
-- Removing the shadow host of a custom element from athe document of an iframe must enqueue and invoke disconnectedCallback: 
-- Removing a custom element from a detached shadow tree that belongs to the document of an iframe must not enqueue and invoke disconnectedCallback: 
-- Removing a custom element from an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: 
-- Removing an ancestor of custom element from an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: 
-- Removing a custom element from a shadow tree in an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: 
-- Removing the shadow host of a custom element from aan HTML document fetched by XHR must enqueue and invoke disconnectedCallback: 
-- Removing a custom element from a detached shadow tree that belongs to an HTML document fetched by XHR must not enqueue and invoke disconnectedCallback: 
+- Removing a custom element from an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Removing an ancestor of custom element from an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Removing a custom element from a shadow tree in an HTML document fetched by XHR must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Removing the shadow host of a custom element from aan HTML document fetched by XHR must enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- Removing a custom element from a detached shadow tree that belongs to an HTML document fetched by XHR must not enqueue and invoke disconnectedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 
 ### custom-elements/element-internals-aria-element-reflection.html
 
@@ -2830,14 +3213,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
-- Disconnecting an element with disconnectedCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the removal completes: Test timed out
-- Disconnecting an element without disconnectedCallback while it has a connectedCallback in its custom element reaction queue must not result in connectedCallback getting invoked before the removal completes: 
-- Connecting a element with connectedCallback while it has a disconnectedCallback in its custom element reaction queue must result in disconnectedCallback getting invoked before the insertion completes: 
-- Connecting an element without connectedCallback while it has a disconnectedCallback in its custom element reaction queue must not result in disconnectedCallback getting invoked before the insertion completes: 
-- Adopting an element with adoptingCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the adoption completes: 
-- Adopting an element without adoptingCallback while it has a connectedCallback in its custom element reaction queue must not result in connectedCallback getting invoked before the adoption completes: 
-- Setting an observed attribute on an element with attributeChangedCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the attribute change completes: 
-- Setting an observed attribute on an element with attributeChangedCallback while it has a connectedCallback in its custom element reaction queue must not result in connectedCallback getting invoked before the attribute change completes: 
+- Adopting an element with adoptingCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the adoption completes: assert_array_equals: lengths differ, expected array ["begin", "connected", "adopted", "end"] length 4, got ["adopted", "connected", "begin", "adopted", "end"] length 5
 
 ### custom-elements/form-associated/ElementInternals-form.html
 
@@ -2953,38 +3329,39 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/htmlconstructor/newtarget-customized-builtins.html
 
-- If prototype is not object (null), derives the fallback from NewTarget's realm (customized built-in elements): Test timed out
-- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): 
-- If prototype is not object (undefined), derives the fallback from NewTarget's realm (customized built-in elements): 
-- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): 
-- If prototype is not object (5), derives the fallback from NewTarget's realm (customized built-in elements): 
-- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): 
-- If prototype is not object (string), derives the fallback from NewTarget's realm (customized built-in elements): 
-- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): 
-- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling proxy constructor directly: 
-- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling via Reflect: 
+- If prototype is not object (null), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
+- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (undefined), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
+- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (5), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
+- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (string), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
+- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling proxy constructor directly: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { new countingProxy() }" did not throw
+- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling via Reflect: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { Reflect.construct(HTMLParagraphElement, [], countingProxy) }" did not throw
 
 ### custom-elements/htmlconstructor/newtarget.html
 
-- Use NewTarget's prototype, not the one stored at definition time: Test timed out
-- Rethrow any exceptions thrown while getting the prototype: 
-- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): 
-- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): 
-- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): 
-- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): 
-- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): 
-- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): 
-- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): 
-- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): 
+- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
+- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
 
 ### custom-elements/perform-microtask-checkpoint-before-construction.html
 
-- HTML parser must perform a microtask checkpoint before constructing a custom element: Test timed out
-- HTML parser must perform a microtask checkpoint before constructing a custom element during the adoption agency algorithm: 
+- HTML parser must perform a microtask checkpoint before constructing a custom element: assert_true: expected true got false
+- HTML parser must perform a microtask checkpoint before constructing a custom element during the adoption agency algorithm: assert_true: expected true got false
 
-### custom-elements/pseudo-class-defined.html
+### custom-elements/pseudo-class-defined-customized-builtins.html
 
-- this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 1
+- <abbr is="my-abbr"> should not be :defined: Cannot read properties of null (reading 'customElements')
+- createElement("abbr", is:"my-abbr") should not be :defined: Cannot read properties of null (reading 'customElements')
+- createElementNS("http://www.w3.org/1999/xhtml", "abbr", is:"my-abbr") should not be :defined: Cannot read properties of null (reading 'customElements')
+- createElementNS("http://www.w3.org/2000/svg", "abbr", is:"my-abbr") should be :defined: Cannot read properties of null (reading 'customElements')
 
 ### custom-elements/reactions/Animation.html
 
@@ -3001,22 +3378,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/Document.html
 
-- importNode on Document must not construct a new custom element when importing a custom element into a window-less document: Test timed out
-- importNode on Document must construct a new custom element when importing a custom element from a template: 
-- adoptNode on Document must enqueue an adopted reaction when importing a custom element: 
-- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: 
-- title on Document must enqueue disconnectedCallback when removing a custom element: 
-- body on Document must enqueue disconnectedCallback when removing a custom element: 
-- body on Document must enqueue connectedCallback when inserting a custom element: 
-- open on Document must enqueue disconnectedCallback when removing a custom element: 
-- write on Document must enqueue disconnectedCallback when removing a custom element: 
-- write on Document must enqueue connectedCallback after constructing a custom element: 
-- writeln on Document must enqueue disconnectedCallback when removing a custom element: 
-- writeln on Document must enqueue connectedCallback after constructing a custom element: 
+- importNode on Document must construct a new custom element when importing a custom element from a template: assert_array_equals: lengths differ, expected array [] length 0, got ["constructed"] length 1
+- adoptNode on Document must enqueue an adopted reaction when importing a custom element: assert_array_equals: lengths differ, expected array ["adopted"] length 1, got [] length 0
+- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- title on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- body on Document must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
+- open on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- write on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- write on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: contentWindow.document.open is not a function"
+- writeln on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- writeln on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: contentWindow.document.open is not a function"
 
 ### custom-elements/reactions/HTMLAnchorElement.html
 
-- text on HTMLAnchorElement must enqueue disconnectedCallback when removing a custom element: Test timed out
+- text on HTMLAnchorElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLElement.html
 
@@ -3025,64 +3401,59 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/HTMLOptionElement.html
 
-- text on HTMLOptionElement must enqueue disconnectedCallback when removing a custom element: Test timed out
+- text on HTMLOptionElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLOptionsCollection.html
 
-- length on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: Test timed out
-- The indexed setter on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: 
-- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: 
-- add on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: 
-- remove on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: 
+- length on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- The indexed setter on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
+- The indexed setter on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- add on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
+- remove on HTMLOptionsCollection must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 
 ### custom-elements/reactions/HTMLOutputElement.html
 
-- value on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: Test timed out
-- defaultValue on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: 
+- value on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- defaultValue on HTMLOutputElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLSelectElement.html
 
-- length on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: Test timed out
-- The indexed setter on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: 
-- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: 
-- add on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: 
-- remove on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: 
+- length on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- The indexed setter on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
+- The indexed setter on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
+- add on HTMLSelectElement must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
+- remove on HTMLSelectElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got ["constructed"] length 1
 
 ### custom-elements/reactions/HTMLTableElement.html
 
-- caption on HTMLTableElement must enqueue connectedCallback when inserting a custom element: Test timed out
-- caption on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- deleteCaption() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- tHead on HTMLTableElement must enqueue connectedCallback when inserting a custom element: 
-- tHead on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- deleteTHead() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- tFoot on HTMLTableElement must enqueue connectedCallback when inserting a custom element: 
-- tFoot on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- deleteTFoot() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
-- deleteRow() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: 
+- caption on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- deleteCaption() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- tHead on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- deleteTHead() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- tFoot on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- deleteTFoot() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- deleteRow() on HTMLTableElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLTableRowElement.html
 
-- deleteCell() on HTMLTableRowElement must enqueue disconnectedCallback when removing a custom element: Test timed out
+- deleteCell() on HTMLTableRowElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 
 ### custom-elements/reactions/HTMLTableSectionElement.html
 
-- deleteRow() on HTMLTableSectionElement on thead must enqueue disconnectedCallback when removing a custom element: Test timed out
-- deleteRow() on HTMLTableSectionElement on tfoot must enqueue disconnectedCallback when removing a custom element: 
+- deleteRow() on HTMLTableSectionElement on thead must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+- deleteRow() on HTMLTableSectionElement on tfoot must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
+
+### custom-elements/reactions/HTMLTitleElement.html
+
+- text on HTMLTitleElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
 
 ### custom-elements/reactions/Range.html
 
 - createContextualFragment on Range must construct a custom element: Cannot read properties of undefined (reading 'length')
 
-### custom-elements/reactions/ShadowRoot.html
-
-- innerHTML on ShadowRoot must upgrade a custom element: Test timed out
-- innerHTML on ShadowRoot must enqueue connectedCallback on newly upgraded custom elements when the shadow root is connected: 
-- innerHTML on ShadowRoot must enqueue disconnectedCallback when removing a custom element: 
-
 ### custom-elements/reactions/with-exceptions.html
 
-- Reaction must run even after the exception is thrown: Test timed out
+- Reaction must run even after the exception is thrown: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'name')"
 
 ### custom-elements/registries/Construct.html
 
@@ -3094,14 +3465,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
 - upgrade should not upgrade a candidate element not associated with a registry: That is not a node
 
-### custom-elements/registries/Document-customElementRegistry.html
-
-- customElementRegistry on a document of a connected iframe should return contentWindow.customElements: Cannot read properties of null (reading 'customElementRegistry')
-- customElementRegistry on a document of a disconnected iframe should return contentWindow.customElements: Cannot read properties of null (reading 'customElements')
-
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
-- Cloning with global registry: Cannot read properties of null (reading 'importNode')
+- Cloning with global registry: Cannot read properties of null (reading 'customElements')
 - Cloning with explicit global registry: 
 - Cloning with scoped registry: 
 - Cloning including shadow tree with global registry: 
@@ -3131,7 +3497,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
 
-- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: Cannot read properties of null (reading 'open')
+- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: frame.contentDocument.open is not a function
 
 ### custom-elements/registries/Element-customElementRegistry.html
 
@@ -3158,7 +3524,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/adoption.window.js
 
-- Adoption with global registry: Cannot read properties of null (reading 'body')
+- Adoption with global registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Adoption with explicit global registry: 
 - Adoption with scoped registry: 
 - Adoption with global registry into a scoped registry: 
@@ -3222,13 +3588,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/initial-about-blank.window.js
 
-- Each navigable document has its own registry: Cannot read properties of null (reading 'eval')
+- Each navigable document has its own registry: frame.contentWindow.eval is not a function
 
 ### custom-elements/registries/per-document.html
 
-- Navigating from the initial about:blank must replace window.customElements: Cannot read properties of null (reading 'customElements')
-- Discarding the browsing context must not change window.customElements: Cannot read properties of null (reading 'customElements')
-- document.open() must not replace window.customElements: Test timed out
+- Navigating from the initial about:blank must replace window.customElements: assert_not_equals: got disallowed value object "[object CustomElementRegistry]"
+- document.open() must not replace window.customElements: frame.document.open is not a function
 
 ### custom-elements/registries/pseudo-class-defined.window.js
 
@@ -3238,21 +3603,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html
 
-- HTML parser should create a builtin element with null registry if customelementregistry is set: Cannot read properties of null (reading 'documentElement')
-- Setting customelementregistry content attribute after a builtin element had finishsed parsing should not set null registry: Cannot read properties of null (reading 'createElement')
-- Cloning a builtin element with null regsitry should create an element with null registry: Cannot read properties of null (reading 'createElement')
-- HTML parser should create a custom element candidate with null registry if customelementregistry is set: Cannot read properties of null (reading 'documentElement')
-- Setting customelementregistry content attribute after a custom element candidate had finishsed parsing should not set null registry: Cannot read properties of null (reading 'createElement')
-- Cloning a custom element candidate with null regsitry should create an element with null registry: Cannot read properties of null (reading 'createElement')
-- HTML parser should create a custom element with null registry if customelementregistry is set: Cannot read properties of null (reading 'customElements')
-- Setting customelementregistry content attribute after a custom element had finishsed parsing should not set null registry: Cannot read properties of null (reading 'customElements')
-- Cloning a custom element with null regsitry should create an element with null registry: Cannot read properties of null (reading 'customElements')
-- Descendants of an element with customelementregistry should use null registry: Cannot read properties of null (reading 'customElements')
-- Setting customelementregistry content attribute during constructor should not make it use null registry: Cannot read properties of null (reading 'createElement')
-- Body with customelementregistry attribute during initial parse should have null registry and propagate to children: Test timed out
-- Custom element candidate child of body with customelementregistry should have null registry during initial parse: 
-- Descendants of body with customelementregistry should all have null registry during initial parse: 
-- Body with customelementregistry in a complete document structure should have null registry: 
+- HTML parser should create a builtin element with null registry if customelementregistry is set: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning a builtin element with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- HTML parser should create a custom element candidate with null registry if customelementregistry is set: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning a custom element candidate with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- HTML parser should create a custom element with null registry if customelementregistry is set: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning a custom element with null regsitry should create an element with null registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Setting customelementregistry content attribute during constructor should not make it use null registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Body with customelementregistry attribute during initial parse should have null registry and propagate to children: assert_equals: body should have null registry expected null but got object "[object CustomElementRegistry]"
+- Custom element candidate child of body with customelementregistry should have null registry during initial parse: assert_equals: custom element candidate child of body with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
+- Descendants of body with customelementregistry should all have null registry during initial parse: assert_equals: div child should have null registry expected null but got object "[object CustomElementRegistry]"
+- Body with customelementregistry in a complete document structure should have null registry: assert_equals: body should have null registry expected null but got object "[object CustomElementRegistry]"
 - Initial parse: built-in element with customelementregistry has null registry: assert_equals: Built-in element with customelementregistry attribute should have null registry expected null but got object "[object CustomElementRegistry]"
 - Initial parse: custom element candidate with customelementregistry has null registry: assert_equals: Custom element candidate with customelementregistry attribute should have null registry expected null but got object "[object CustomElementRegistry]"
 - Initial parse: child of element with customelementregistry inherits null registry: assert_equals: Child of element with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
@@ -3262,20 +3623,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/scoped-registry-append.html
 
-- Connecting a custom element candiate in a shadow root with a scoped custom element registry has null registry by default: Cannot read properties of null (reading 'documentElement')
-- Connecting a custom element candiate with null registry does not set the registry: Cannot read properties of null (reading 'documentElement')
-- Connecting a custom element candiate with a scoped custom element registry does not change the registry: Cannot read properties of null (reading 'documentElement')
-- Inserting a custom element candiate with null registry does not change the registry: Cannot read properties of null (reading 'documentElement')
-- Inserting the shadow host of a shadow root with a scoped custom element registry does not change the registry: Cannot read properties of null (reading 'createElement')
-- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: Cannot read properties of null (reading 'HTMLElement')
-- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: Cannot read properties of null (reading 'documentElement')
-- adoptNode then inserting into a scoped shadow root should preserve global registry: Cannot read properties of null (reading 'documentElement')
-- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: Cannot read properties of null (reading 'body')
-- Declarative shadow DOM with shadowrootcustomelementregistry attribute without registry initialized should remain null registry after adoption.: Cannot read properties of null (reading 'body')
-- Null registry element should gain effective global registry of global registry from its parent upon adoption.: Cannot read properties of null (reading 'customElements')
-- Null registry element should gain effective global registry of null from its parent upon adoption.: Cannot read properties of null (reading 'customElements')
-- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: Cannot read properties of null (reading 'body')
-- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: Cannot read properties of null (reading 'body')
+- Connecting a custom element candiate with null registry does not set the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Inserting a custom element candiate with null registry does not change the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: win.CustomElementRegistry is not a constructor
+- adoptNode then inserting into a scoped shadow root should preserve global registry: win.CustomElementRegistry is not a constructor
+- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element should gain effective global registry of global registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/scoped-registry-define-upgrade-criteria.html
 
@@ -3284,9 +3640,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Adding definition to scoped registry should not affect document tree scope: assert_true: expected true got false
 - Adding definition to scoped registry should not affect shadow roots using other registries: assert_true: expected true got false
 - Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
-- Adding definition to scoped registry affects associated shadow roots in all iframes: Cannot read properties of null (reading 'body')
+- Adding definition to scoped registry affects associated shadow roots in all iframes: assert_true: expected true got false
 - Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function
-- Adding definition to scoped registry should not upgrade nodes in detached frames: Cannot read properties of null (reading 'body')
 - Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function"
 
 ### custom-elements/registries/scoped-registry-define-upgrade-order.html
@@ -3294,79 +3649,66 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Upgrade in tree order in the same tree scope: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
 - Upgrade in shadow-including tree order across tree scopes: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
 - Upgrade order does not depend on shadow root attach order: assert_array_equals: lengths differ, expected array ["a", "c", "b"] length 3, got [] length 0
-- Upgrade in association order across documents, then tree order in each document: Cannot read properties of null (reading 'body')
-- Upgrade order is not affected by DOM order between child frames: Cannot read properties of null (reading 'body')
-- Upgrade order is affected by shadow tree adoption across documents: Cannot read properties of null (reading 'body')
-- Elements in the "owner" window of a scoped registry are not always upgraded first: Cannot read properties of null (reading 'body')
+- Upgrade in association order across documents, then tree order in each document: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
+- Upgrade order is not affected by DOM order between child frames: assert_array_equals: lengths differ, expected array ["a", "b"] length 2, got [] length 0
+- Upgrade order is affected by shadow tree adoption across documents: assert_array_equals: lengths differ, expected array ["b", "a"] length 2, got [] length 0
+- Elements in the "owner" window of a scoped registry are not always upgraded first: assert_array_equals: lengths differ, expected array ["a", "b"] length 2, got [] length 0
 
 ### custom-elements/registries/scoped-registry-effective-global-registry.html
 
-- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
+- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Null registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Null registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Scoped registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Null registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Null registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with exclusive DocumentFragment parent appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Global registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/scoped-registry-initialize-upgrades.html
 
@@ -3411,44 +3753,46 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
-- document.open() must throw an InvalidStateError when synchronously constructing a custom element: Test timed out
-- document.open("text/html") must throw an InvalidStateError when synchronously constructing a custom element: 
-- document.open(URL) must NOT throw an InvalidStateError when synchronously constructing a custom element: 
-- document.close() must throw an InvalidStateError when synchronously constructing a custom element: 
-- document.write must throw an InvalidStateError when synchronously constructing a custom element: 
-- document.writeln must throw an InvalidStateError when synchronously constructing a custom element: 
-- document.open() of another document must not throw an InvalidStateError when synchronously constructing a custom element: 
-- document.open("text/html") of another document must not throw an InvalidStateError when synchronously constructing a custom element: 
-- document.close() of another document must not throw an InvalidStateError when synchronously constructing a custom element: 
-- document.write of another document must not throw an InvalidStateError when synchronously constructing a custom element: 
-- document.writeln of another document must not throw an InvalidStateError when synchronously constructing a custom element: 
+- document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open("text/html") must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open(URL) must NOT throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.close() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.write must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.writeln must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open("text/html") of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.close() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.write of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.writeln of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html
 
-- document.open() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: Test timed out
-- document.open("text/html") must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.open(URL) must NOT throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.close() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.write must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.writeln must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.open() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.open("text/html") of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.close() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.write of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-- document.writeln of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: 
-
-### custom-elements/upgrading/Document-importNode.html
-
-- autonomous: document.importNode() should import custom elements successfully: Test timed out
-- autonomous: document.importNode() should import "undefined" custom elements successfully: 
+- document.open() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open("text/html") must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open(URL) must NOT throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.close() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.write must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.writeln must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open("text/html") of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.close() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.write of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.writeln of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
-- Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: Test timed out
-- Node.prototype.cloneNode(true) must be able to clone a descendent custom element: 
-- Node.prototype.cloneNode(true) must set parentNode, previousSibling, and nextSibling before upgrading custom elements: 
+- Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: assert_true: expected true got false
+- Node.prototype.cloneNode(true) must be able to clone a descendent custom element: promise_test: Unhandled rejection with value: object "TypeError: Right-hand side of 'instanceof' is not an object"
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
 - HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
 - Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
 - Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
+
+### custom-elements/upgrading/upgrading-enqueue-reactions.html
+
+- Upgrading a custom element must enqueue attributeChangedCallback on each attribute: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
+- Upgrading a custom element not must enqueue attributeChangedCallback on unobserved attributes: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
+- Upgrading a custom element must enqueue connectedCallback if the element in the document: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
+- Upgrading a custom element must enqueue attributeChangedCallback before connectedCallback: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
+- Upgrading a custom element must not invoke attributeChangedCallback and connectedCallback when the element failed to upgrade: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
 
