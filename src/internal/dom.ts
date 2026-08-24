@@ -205,7 +205,7 @@ export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 }
 
 /**
- * The engineless door to the capabilities: the cascade and the layout claim
+ * The headless door to the capabilities: the cascade and the layout claim
  * here when they are built for a document no terminal will ever render --
  * tests, WPT runs, author-created documents. Claims close the moment an
  * engine installs: page code only ever runs after that, so on a rendered
@@ -20200,7 +20200,7 @@ Object.defineProperties(Element.prototype, {
 		writable: true,
 	},
 	// How far a box is scrolled from its content's origin. These accessors
-	// are the storage an engineless document answers with: writes land and
+	// are the storage a headless document answers with: writes land and
 	// read back, and nothing moves. An environment that can lay out and
 	// paint (the terminal engine) replaces them wholesale -- accessor and
 	// storage both -- with ones that clamp against the content's laid-out
@@ -24946,19 +24946,19 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-/* ------------------------------------------------------ engine delegation */
+/* -------------------------------------------------------------- mounting */
 
-const kEngineDelegate = Symbol("engineDelegate");
+const kMount = Symbol("mount");
 
 /**
  * The engine's answers for the APIs a document alone cannot give --
- * geometry so far; the rest of the installed surface migrates here. The
+ * geometry so far; the rest of the installed surface migrates here. A
  * mounting engine installs one per document, and a node reaches it
- * through its ownerDocument, one hop. A document without one is the
- * spec's no-browsing-context document, and the members consulting it
- * degrade to that: zero rects, empty lists, null parents.
+ * through its ownerDocument, one hop. A headless document has none: it is
+ * the spec's no-browsing-context document, and the members consulting a
+ * mount degrade to that -- zero rects, empty lists, null parents.
  */
-export interface EngineDelegate {
+export interface Mount {
 	boundingClientRect(element: object): globalThis.DOMRect;
 	clientRects(element: object): globalThis.DOMRectList;
 	rangeBoundingClientRect(range: object): globalThis.DOMRect;
@@ -24972,24 +24972,19 @@ export interface EngineDelegate {
 	scrollSize(element: object): {width: number; height: number};
 }
 
-/** Give a mounted document its engine's delegate. Once per document. */
-export function installEngineDelegate(
-	document: object,
-	delegate: EngineDelegate,
-): void {
-	const doc = document as Record<symbol, EngineDelegate | undefined>;
-	if (doc[kEngineDelegate] !== undefined) {
+/** Mount a document on its engine. Once per document. */
+export function mount(document: object, engine: Mount): void {
+	const doc = document as Record<symbol, Mount | undefined>;
+	if (doc[kMount] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	doc[kEngineDelegate] = delegate;
+	doc[kMount] = engine;
 }
 
-function delegateOf(node: Node): EngineDelegate | undefined {
+function mountOf(node: Node): Mount | undefined {
 	const document =
 		node.nodeType === DOCUMENT_NODE ? node : node.ownerDocument;
-	return (document as Record<symbol, EngineDelegate | undefined> | null)?.[
-		kEngineDelegate
-	];
+	return (document as Record<symbol, Mount | undefined> | null)?.[kMount];
 }
 
 // The geometry surface: the APIs are the DOM's, what they measure is the
@@ -24998,7 +24993,7 @@ Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
 			return (
-				delegateOf(this)?.boundingClientRect(this) ??
+				mountOf(this)?.boundingClientRect(this) ??
 				new DOMRect(0, 0, 0, 0)
 			);
 		},
@@ -25007,7 +25002,7 @@ Object.defineProperties(Element.prototype, {
 	},
 	getClientRects: {
 		value(this: Element): globalThis.DOMRectList {
-			return delegateOf(this)?.clientRects(this) ?? new DOMRectList();
+			return mountOf(this)?.clientRects(this) ?? new DOMRectList();
 		},
 		writable: true,
 		configurable: true,
@@ -25018,7 +25013,7 @@ Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
 			return (
-				delegateOf(this.startContainer)?.rangeBoundingClientRect(this) ??
+				mountOf(this.startContainer)?.rangeBoundingClientRect(this) ??
 				new DOMRect(0, 0, 0, 0)
 			);
 		},
@@ -25028,7 +25023,7 @@ Object.defineProperties(Range.prototype, {
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
 			return (
-				delegateOf(this.startContainer)?.rangeClientRects(this) ??
+				mountOf(this.startContainer)?.rangeClientRects(this) ??
 				new DOMRectList()
 			);
 		},
@@ -25040,35 +25035,35 @@ Object.defineProperties(Range.prototype, {
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.offsetSize(this).width ?? 0;
+			return mountOf(this)?.offsetSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetHeight: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.offsetSize(this).height ?? 0;
+			return mountOf(this)?.offsetSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetTop: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.offsetPosition(this).top ?? 0;
+			return mountOf(this)?.offsetPosition(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetLeft: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.offsetPosition(this).left ?? 0;
+			return mountOf(this)?.offsetPosition(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			return (delegateOf(this)?.offsetParent(this) ?? null) as
+			return (mountOf(this)?.offsetParent(this) ?? null) as
 				Element |
 				null;
 		},
@@ -25077,28 +25072,28 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientWidth: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.clientSize(this).width ?? 0;
+			return mountOf(this)?.clientSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientHeight: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.clientSize(this).height ?? 0;
+			return mountOf(this)?.clientSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollWidth: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.scrollSize(this).width ?? 0;
+			return mountOf(this)?.scrollSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollHeight: {
 		get(this: HTMLElement): number {
-			return delegateOf(this)?.scrollSize(this).height ?? 0;
+			return mountOf(this)?.scrollSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,

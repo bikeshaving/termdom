@@ -39,7 +39,7 @@ import {
 
 // The composed-tree capability, claimed per document when a LayoutEngine is
 // built for it: the claim door is open exactly while the document is
-// engineless, and on the terminal path this runs before the engine installs.
+// headless, and on the terminal path this runs before the engine installs.
 // Wrappers keep the capability per-document under the names the module has
 // always used.
 const uaByDocument = new WeakMap<object, UAToolkit>();
@@ -52,7 +52,7 @@ function uaOf(node: object): UAToolkit | undefined {
 	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
 	let toolkit = uaByDocument.get(document);
 	if (toolkit === undefined) {
-		// An engineless document claims on first need; an engined one was
+		// A headless document claims on first need; a mounted one was
 		// stored at construction, and the claim door is shut behind it.
 		try {
 			toolkit = claimUAToolkit(document);
@@ -5631,7 +5631,7 @@ export class LayoutEngine {
 
 	constructor(window: EngineWindow) {
 		// See the module's uaByDocument: the claim door is open exactly
-		// while the document is engineless.
+		// while the document is headless.
 		const document = window.document as unknown as object;
 		if (!uaByDocument.has(document)) {
 			uaByDocument.set(document, claimUAToolkit(document));

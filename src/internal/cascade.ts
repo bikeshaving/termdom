@@ -57,7 +57,7 @@ function uaOf(node: object): UAToolkit | undefined {
 	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
 	let toolkit = uaByDocument.get(document);
 	if (toolkit === undefined) {
-		// An engineless document claims on first need; an engined one was
+		// A headless document claims on first need; a mounted one was
 		// stored at construction, and the claim door is shut behind it.
 		try {
 			toolkit = claimUAToolkit(document);
@@ -9953,7 +9953,7 @@ export class StyleManager {
 		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
 		// The composed-tree capability: claimed here while the document is
-		// engineless (tests, WPT, headless windows). On the terminal path
+		// headless (tests, WPT, headless windows). On the terminal path
 		// this constructor runs before the engine installs, so the claim is
 		// the UA constructing itself; page code arrives after the install
 		// closes the door.

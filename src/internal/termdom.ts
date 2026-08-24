@@ -139,7 +139,7 @@ const kEverActivated = Symbol("everActivated");
  */
 function fireAsUserAgent(target: unknown, event: unknown): boolean {
 	const engine = engineOfTarget(target);
-	// A target no engine mounts is engineless by definition, so the claim
+	// A target no engine mounts is headless by definition, so the claim
 	// door is open for it; a mounted target dispatches through its engine's
 	// own toolkit.
 	const shaped = target as {ownerDocument?: object; document?: object};
@@ -972,7 +972,7 @@ export class TermDOM {
 		// nothing reads through it until a patched API is actually called.
 
 		engines.set(document, this);
-		DOM.installEngineDelegate(document, createEngineDelegate(this));
+		DOM.mount(document, createMount(this));
 		TermDOM[kInstallPrototypes](this.window);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
@@ -1910,11 +1910,11 @@ function sealToScrollback(
 }
 
 /**
- * The document's EngineDelegate: the geometry half of the public DOM
- * surface, answered from this engine's layout. Installed at mount, reached
- * through the document -- no prototype carries engine state for these.
+ * The document's Mount: the geometry half of the public DOM surface,
+ * answered from this engine's layout. Reached through the document -- no
+ * prototype carries engine state for these.
  */
-function createEngineDelegate(termDOM: TermDOM): DOM.EngineDelegate {
+function createMount(termDOM: TermDOM): DOM.Mount {
 	// The interface's object params are the realm boundary UAToolkit also
 	// crosses: the DOM's internal classes and the window's platform types
 	// meet here, and the engine reads them as the platform's.
