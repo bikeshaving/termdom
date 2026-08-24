@@ -1263,11 +1263,6 @@ function sealToScrollback(
  * prototype carries engine state for these.
  */
 function createMount(termDOM: TermDOM): EngineMount {
-	// The interface's object params are the realm boundary UAToolkit also
-	// crosses: the DOM's internal classes and the window's platform types
-	// meet here, and the engine reads them as the platform's.
-	const asElement = (target: object): Element => target as Element;
-	const asRange = (target: object): Range => target as Range;
 	// getBoundingClientRect/getClientRects are a *public* API, and CSSOM
 	// View defines them relative to the viewport: rect.top for a
 	// scrolled-past element should be negative, not the same ever-growing
@@ -1366,7 +1361,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 	return {
 		engine: termDOM,
 		boundingClientRect(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (!element.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
@@ -1378,7 +1373,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			);
 		},
 		clientRects(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (!element.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRectList();
 			}
@@ -1393,7 +1388,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// painters read the document-relative getRangeRects() directly, the
 		// way scrollIntoView reads getRect().
 		rangeBoundingClientRect(target) {
-			const range = asRange(target);
+			const range = target as Range;
 			processPendingMutationsAndRender(termDOM);
 			const container = range.startContainer;
 			const anchor =
@@ -1408,7 +1403,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			);
 		},
 		rangeClientRects(target) {
-			const range = asRange(target);
+			const range = target as Range;
 			processPendingMutationsAndRender(termDOM);
 			const container = range.startContainer;
 			const anchor =
@@ -1421,7 +1416,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		},
 		offsetSize(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			const rect = layoutRectOf(element);
 			return {
 				width: Math.round(rect?.width ?? 0),
@@ -1429,7 +1424,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			};
 		},
 		offsetPosition(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			const rect = layoutRectOf(element);
 			if (!rect) {
 				return {top: 0, left: 0};
@@ -1442,11 +1437,11 @@ function createMount(termDOM: TermDOM): EngineMount {
 			};
 		},
 		offsetParent(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			return element.isConnected ? offsetParentOf(element) : null;
 		},
 		clientSize(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			const box = contentBoxOf(element);
 			return {
 				width: Math.round(box?.width ?? 0),
@@ -1456,7 +1451,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			};
 		},
 		scrollSize(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			const extent = scrollExtentOf(element);
 			const box = contentBoxOf(element);
 			return {
@@ -1467,7 +1462,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			};
 		},
 		scrollOffset(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (isRoot(element)) {
 				return {left: 0, top: termDOM[kScrollTop]};
 			}
@@ -1484,7 +1479,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// measured run) stores the write unclamped -- the caret-reveal
 		// machinery owns those offsets and keeps them sane.
 		scrollOffsetTo(target, axis, value) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (isRoot(element)) {
 				if (axis === "top") {
 					scrollDocumentTo(termDOM, Number(value));
@@ -1563,7 +1558,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return stack;
 		},
 		checkVisibility(target, options) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (!element.isConnected) {
 				return false;
 			}
@@ -1588,7 +1583,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		},
 		focusMoved(previousTarget, target) {
 			const previous = previousTarget as Element | null;
-			const element = asElement(target);
+			const element = target as Element;
 			const {FocusEvent} = termDOM.window;
 			// :focus rules match live, but computed styles are cached and
 			// focus is not a mutation -- both moved elements must drop their
@@ -1627,7 +1622,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			void render(termDOM);
 		},
 		blurred(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			const {FocusEvent} = termDOM.window;
 			termDOM[kStyleManager].handleFocusChange(element);
 			termDOM[kFrameDirty] = true;
@@ -1646,7 +1641,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// element in every outer port's coordinates, so the rect is re-read
 		// per level -- and the camera reveals what remains.
 		scrollIntoView(target) {
-			const element = asElement(target);
+			const element = target as Element;
 			if (!element.isConnected) {
 				return;
 			}
@@ -1725,7 +1720,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// shadow mutations invalidate styles/layout and repaint like light
 		// ones.
 		shadowAttached(hostTarget, rootTarget) {
-			const host = asElement(hostTarget);
+			const host = hostTarget as Element;
 			const root = rootTarget as ShadowRoot;
 			termDOM[kObserver].observe(root, {
 				childList: true,
@@ -1752,7 +1747,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			}
 		},
 		requestFullscreen(target, options) {
-			const element = asElement(target);
+			const element = target as Element;
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
 			// and this is the terminal's equivalent precondition.
