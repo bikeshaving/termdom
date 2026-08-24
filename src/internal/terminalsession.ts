@@ -429,7 +429,7 @@ interface TerminalSessionHandlers {
 const kWidthSettled = Symbol("widthSettled");
 const kWidthProbes = Symbol("widthProbes");
 const kProbingEnded = Symbol("probingEnded");
-const kWriteEpoch = Symbol("writeEpoch");
+const kWriteBatch = Symbol("writeBatch");
 const kDsrSequence = Symbol("dsrSequence");
 const kWidthProbeTimer = Symbol("widthProbeTimer");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
@@ -443,7 +443,7 @@ const kWidthAsked = Symbol("widthAsked");
 const kWidthStarved = Symbol("widthStarved");
 const kStarvationTimer = Symbol("starvationTimer");
 const kWidthStarvationWait = Symbol("widthStarvationWait");
-const kWidthRunEpoch = Symbol("widthRunEpoch");
+const kDriftBatch = Symbol("driftBatch");
 const kWidthRun = Symbol("widthRun");
 const kWidthDrift = Symbol("widthDrift");
 const kWidthRunLost = Symbol("widthRunLost");
@@ -552,7 +552,7 @@ export class TerminalSession {
 	declare [kWidthProbes]: Array<{
 		cluster: string;
 		run: number;
-		epoch: number;
+		batch: object;
 		column: number;
 		width: number;
 		sequence: number;
@@ -596,18 +596,19 @@ export class TerminalSession {
 	/** Whether the terminal has ever answered a width probe. */
 	declare [kWidthAnswered]: boolean;
 	declare [kWidthProbeTimer]: ReturnType<typeof setTimeout> | null;
-	// The emission run the running divergence belongs to, and the divergence
-	// itself: within one run each cluster's cells are reached by advancing
-	// through the ones before it, so an earlier miscount displaces every column
-	// after it by exactly this much. A reading that cannot be believed leaves
-	// the drift unknown, and the rest of that run unreadable with it.
-	declare [kWidthRunEpoch]: number;
+	// The write batch and emission run the running divergence belongs to, and
+	// the divergence itself: within one run each cluster's cells are reached by
+	// advancing through the ones before it, so an earlier miscount displaces
+	// every column after it by exactly this much. A reading that cannot be
+	// believed leaves the drift unknown, and the rest of that run unreadable
+	// with it.
+	declare [kDriftBatch]: object | null;
 	declare [kWidthRun]: number;
 	declare [kWidthDrift]: number;
 	declare [kWidthRunLost]: boolean;
-	// Bumped by every write, so probes taken while building one frame are told
-	// apart from probes taken while building the next.
-	declare [kWriteEpoch]: number;
+	// Replaced by every write, so probes taken while building one frame are
+	// told apart from probes taken while building the next.
+	declare [kWriteBatch]: object;
 	/**
 	 * Generous: the reply crosses whatever the transport is, and a terminal
 	 * answering late is still answering. Only a session that gets NOTHING back
@@ -680,11 +681,11 @@ export class TerminalSession {
 		this[kWidthProbing] = deps.interactive;
 		this[kWidthAnswered] = false;
 		this[kWidthProbeTimer] = null;
-		this[kWidthRunEpoch] = -1;
+		this[kDriftBatch] = null;
 		this[kWidthRun] = -1;
 		this[kWidthDrift] = 0;
 		this[kWidthRunLost] = false;
-		this[kWriteEpoch] = 0;
+		this[kWriteBatch] = {};
 		this[kWidthAsked] = new Set();
 		this[kWidthStarved] = new Set();
 		this[kStarvationTimer] = null;
@@ -720,7 +721,7 @@ export class TerminalSession {
 				this[kWidthProbes].push({
 					cluster,
 					run,
-					epoch: this[kWriteEpoch],
+					batch: this[kWriteBatch],
 					column,
 					width,
 					sequence: this[kDsrSequence]++,
@@ -804,7 +805,7 @@ export class TerminalSession {
 	write(output: string): Promise<void> {
 		// Probes are taken while a frame is being built and go out with it, so
 		// each write ends the batch that can share a drift correction.
-		this[kWriteEpoch]++;
+		this[kWriteBatch] = {};
 		// A disposed session has released the wire; late writes are dropped.
 		if (this[kDisposed] && !this[kWriter]) {
 			return Promise.resolve();
@@ -1310,7 +1311,7 @@ function settleWidthProbe(
 	probe: {
 		cluster: string;
 		run: number;
-		epoch: number;
+		batch: object;
 		column: number;
 		width: number;
 	},
@@ -1326,9 +1327,9 @@ function settleWidthProbe(
 	armWidthProbeTimer(session);
 
 	if (
-		probe.epoch !== session[kWidthRunEpoch] || probe.run !== session[kWidthRun]
+		probe.batch !== session[kDriftBatch] || probe.run !== session[kWidthRun]
 	) {
-		session[kWidthRunEpoch] = probe.epoch;
+		session[kDriftBatch] = probe.batch;
 		session[kWidthRun] = probe.run;
 		session[kWidthDrift] = 0;
 		session[kWidthRunLost] = false;

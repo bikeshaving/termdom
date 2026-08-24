@@ -6912,13 +6912,13 @@ export class LayoutEngine {
 	declare [kFrameDirty]: boolean;
 
 	/**
-	 * Note that something a frame is derived from has moved. Every cache the
-	 * engine keys on {@link invalidationEpoch} -- the box enumerations, the
-	 * resolved geometry -- is stale from here on, and the next frame has
-	 * something to paint.
+	 * Note that something a frame is derived from has moved. The caches the
+	 * engine derives a frame from -- the box enumerations, the resolved
+	 * geometry -- are stale from here on, and the next frame has something to
+	 * paint.
 	 *
-	 * Mutation records come through the shell's observer drain, which bumps
-	 * this once per batch; the cascade bumps it for the style changes no
+	 * Mutation records come through the shell's observer drain, which calls
+	 * this once per batch; the cascade calls it for the style changes no
 	 * record describes.
 	 */
 	invalidateFrame(): void {
