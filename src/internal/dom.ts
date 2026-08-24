@@ -8465,6 +8465,9 @@ export class HTMLElement extends Element {
 	declare readonly clientHeight: number;
 	declare readonly scrollWidth: number;
 	declare readonly scrollHeight: number;
+	declare checkVisibility: (
+		options?: globalThis.CheckVisibilityOptions,
+	) => boolean;
 
 	constructor() {
 		if (internalConstruction) {
@@ -19015,6 +19018,10 @@ const kIdMap = Symbol("id map");
 const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
+	// Installed on the prototype, where the mount that answers them is.
+	declare elementFromPoint: (x: number, y: number) => Element | null;
+	declare elementsFromPoint: (x: number, y: number) => Element[];
+
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
 		this[kDocumentURL] = "about:blank";
@@ -25061,6 +25068,10 @@ export interface Mount {
 		axis: "left" | "top",
 		value: number,
 	): void;
+	elementFromPoint(document: object, x: number, y: number): object | null;
+	elementsFromPoint(document: object, x: number, y: number): object[];
+	/** Whether the element is rendered, on the options' definition. */
+	checkVisibility(element: object, options?: object): boolean;
 }
 
 /** Mount a document on its engine. Once per document. */
@@ -25186,6 +25197,44 @@ Object.defineProperties(HTMLElement.prototype, {
 		get(this: HTMLElement): number {
 			return mountOf(this)?.scrollSize(this).height ?? 0;
 		},
+		configurable: true,
+		enumerable: true,
+	},
+	// checkVisibility, on the definition the focus walk already uses: a
+	// rendered element -- nothing on its flat chain display:none, and it
+	// produced boxes -- with the visibility check the options ask for.
+	// Nothing a headless document holds is rendered.
+	checkVisibility: {
+		value(
+			this: HTMLElement,
+			options?: globalThis.CheckVisibilityOptions,
+		): boolean {
+			return mountOf(this)?.checkVisibility(this, options) ?? false;
+		},
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	},
+});
+
+// Hit testing: the point is the viewport's, the answer the engine's. A
+// headless document renders nothing, so nothing is under any point.
+Object.defineProperties(Document.prototype, {
+	elementFromPoint: {
+		value(this: Document, x: number, y: number): Element | null {
+			return (mountOf(this)?.elementFromPoint(this, x, y) ??
+				null) as Element | null;
+		},
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	},
+	elementsFromPoint: {
+		value(this: Document, x: number, y: number): Element[] {
+			return (mountOf(this)?.elementsFromPoint(this, x, y) ??
+				[]) as Element[];
+		},
+		writable: true,
 		configurable: true,
 		enumerable: true,
 	},
