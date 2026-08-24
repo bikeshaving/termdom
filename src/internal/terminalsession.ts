@@ -157,6 +157,39 @@ function detectColorDepth(proc: ProcessLike): ColorDepth {
 	return "ansi";
 }
 
+/**
+ * The private modes and stack controls this engine sets, spelled once. `set`
+ * engages, `reset` hands the terminal back. Orderly teardown resets what was
+ * engaged, in this declaration order; the transport's panic paths blanket-
+ * reset the union. A mode written anywhere else is a restore leak waiting --
+ * new modes are added here and set through TerminalSession.setMode.
+ */
+const MODE_SPELLINGS = {
+	motionReporting: {set: "\x1b[?1003h", reset: "\x1b[?1003l", panic: true},
+	mouseCapture: {
+		set: "\x1b[?1002h\x1b[?1006h",
+		reset: "\x1b[?1006l\x1b[?1002l",
+		panic: true,
+	},
+	cursorHidden: {set: "\x1b[?25l", reset: "\x1b[?25h", panic: true},
+	bracketedPaste: {set: "\x1b[?2004h", reset: "\x1b[?2004l", panic: true},
+	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
+	// Negotiated, not imposed: a terminal that ignored the offer must not
+	// see the reset, so only the engaged-tracking restore may write it.
+	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
+} as const;
+type ModeName = keyof typeof MODE_SPELLINGS;
+
+const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
+
+/**
+ * The blanket restore the panic paths write: the reset of each panic-marked
+ * mode, engaged or not -- a panic path cannot know, and each is idempotent.
+ */
+const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
+	(name) => MODE_SPELLINGS[name].panic,
+).map((name) => MODE_SPELLINGS[name].reset).join("");
+
 // Frames keep the terminal cursor hidden, and dispose() shows it again -- but
 // an app that calls process.exit() without disposing would strand the user's
 // shell with no cursor. One process-level exit hook restores it for any
@@ -173,10 +206,7 @@ function installCursorRestoreOnExit(): void {
 	process.on("exit", () => {
 		for (const proc of undisposedProcesses) {
 			try {
-				// Mouse capture off, cursor back on, bracketed paste off.
-				proc.stdout.write(
-					"\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?25h\x1b[?2004l",
-				);
+				proc.stdout.write(PANIC_RESTORE);
 			} catch (_err) {
 				// The stream may already be gone; the shell will survive.
 			}
@@ -218,7 +248,7 @@ export function transportFromProcess(
 		// queue, and `dispose(); process.exit()` exits before it flushes.
 		// These are the modes whose survival breaks the user's shell; each is
 		// idempotent, so the queued restores repeating them is harmless.
-		proc.stdout.write("[?1006l[?1003l[?1002l[?25h[?2004l[23;0t");
+		proc.stdout.write(PANIC_RESTORE);
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
 			dataListener = null;
@@ -407,6 +437,7 @@ const kWidthProbeTimeout = Symbol("widthProbeTimeout");
 const kWidthAnswered = Symbol("widthAnswered");
 const kWidthProbing = Symbol("widthProbing");
 const kInteractive = Symbol("interactive");
+const kEngagedModes = Symbol("engagedModes");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 const kWidthMeasurer = Symbol("widthMeasurer");
 const kWidthAsked = Symbol("widthAsked");
@@ -449,6 +480,8 @@ export class TerminalSession {
 	declare [kViewport]: Viewport;
 	declare [kLayout]: LayoutEngine;
 	declare [kInteractive]: boolean;
+	// The modes currently set on the terminal, the source restore derives from.
+	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kHandlers]: TerminalSessionHandlers;
 
@@ -701,8 +734,48 @@ export class TerminalSession {
 		this[kViewport] = deps.viewport;
 		this[kLayout] = deps.layout;
 		this[kInteractive] = deps.interactive;
+		this[kEngagedModes] = new Set<ModeName>();
 		this[kAnchorDetectionEnabled] = deps.anchorDetection && deps.interactive;
 		this[kHandlers] = deps.handlers;
+	}
+
+	/**
+	 * Write a mode's set or reset and track the engagement, so teardown can
+	 * restore what was engaged and nothing else. Writing on change only makes
+	 * re-deciding callers free.
+	 */
+	setMode(name: ModeName, on: boolean): void {
+		if (on === this[kEngagedModes].has(name)) {
+			return;
+		}
+		if (on) {
+			this[kEngagedModes].add(name);
+		} else {
+			this[kEngagedModes].delete(name);
+		}
+		void this.write(
+			on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset,
+		);
+	}
+
+	/**
+	 * Record an engagement whose set bytes ride another write -- frames hide
+	 * the cursor as part of painting -- so the restore still covers it.
+	 */
+	markModeEngaged(name: ModeName): void {
+		this[kEngagedModes].add(name);
+	}
+
+	/**
+	 * Reset the engaged modes, in the table's order. The orderly half of the
+	 * restore guarantee; the panic paths write the blanket union instead.
+	 */
+	restoreEngagedModes(): void {
+		for (const name of MODE_RESTORE_ORDER) {
+			if (this[kEngagedModes].delete(name)) {
+				void this.write(MODE_SPELLINGS[name].reset);
+			}
+		}
 	}
 
 	/** Whether command-start anchoring runs: the default process transport only. */
@@ -883,9 +956,16 @@ export class TerminalSession {
 			return;
 		}
 
-		const answer = await probeMode(this, "?2027", "\x1b[?2027h\x1b[?2027$p");
+		const answer = await probeMode(
+			this,
+			"?2027",
+			`${MODE_SPELLINGS.clusterWidths.set}\x1b[?2027$p`,
+		);
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
+		if (this[kGraphemeClustersNegotiated]) {
+			this[kEngagedModes].add("clusterWidths");
+		}
 	}
 
 	/**
@@ -1022,6 +1102,17 @@ export class TerminalSession {
 	 * One query at a time; a second while one is outstanding replaces it, and
 	 * the replaced one resolves null.
 	 */
+	/** OSC 52: replace the terminal's clipboard with `text`. */
+	writeClipboard(text: string): Promise<void> {
+		const payload = new TextEncoder().encode(text).toBase64();
+		return this.write(`\x1b]52;c;${payload}\x07`);
+	}
+
+	/** OSC 2: set the terminal's title (the stack holds the prior one). */
+	setTitle(text: string): Promise<void> {
+		return this.write(`\x1b]2;${text}\x07`);
+	}
+
 	queryClipboard(): Promise<string | null> {
 		if (!this[kInteractive] || this[kDisposed]) {
 			return Promise.resolve(null);
@@ -1090,12 +1181,11 @@ export class TerminalSession {
 			void this.write("\x1b[8h");
 			this[kPriorBidiMode] = null;
 		}
-		// Mode 2027 likewise: we turned it on, so turn it off. A terminal that
-		// never had it does not see this, having answered nothing.
-		if (this[kGraphemeClustersNegotiated]) {
-			void this.write("\x1b[?2027l");
-			this[kGraphemeClustersNegotiated] = false;
-		}
+		// The engaged modes go back too -- 2027 among them, for a terminal
+		// that agreed to it. A terminal that never had a mode does not see
+		// its reset, having never been set.
+		this.restoreEngagedModes();
+		this[kGraphemeClustersNegotiated] = false;
 		settleClipboardQuery(this, null);
 		for (const timer of this[kModeProbeTimers]) {
 			clearTimeout(timer);
@@ -1489,8 +1579,20 @@ function routeClipboardReply(
 		return before;
 	}
 	const rest = before + chunk.slice(start + reply[0].length);
-	settleClipboardQuery(session, reply[1]);
+	settleClipboardQuery(session, textOfClipboardPayload(reply[1]));
 	return rest;
+}
+
+/**
+ * The text an OSC 52 reply carries. Terminals differ on padding and may
+ * interleave junk; anything outside the base64 alphabet is dropped and an
+ * unpadded tail still decodes.
+ */
+function textOfClipboardPayload(payload: string): string {
+	const digits = payload.replace(/[^A-Za-z0-9+/]/g, "");
+	return new TextDecoder().decode(
+		Uint8Array.fromBase64(digits, {lastChunkHandling: "loose"}),
+	);
 }
 
 /** Route a DECRPM mode reply to whichever negotiation is waiting on it. */

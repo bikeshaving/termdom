@@ -41,44 +41,6 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
-const BASE64_ALPHABET =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/** UTF-8 base64 of a string, the payload OSC 52 carries to the clipboard. */
-function base64OfText(text: string): string {
-	const bytes = new TextEncoder().encode(text);
-	let out = "";
-	for (let i = 0; i < bytes.length; i += 3) {
-		const a = bytes[i];
-		const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
-		const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
-		out += BASE64_ALPHABET[a >> 2];
-		out += BASE64_ALPHABET[((a & 3) << 4) | (b >> 4)];
-		out +=
-			i + 1 < bytes.length ? BASE64_ALPHABET[((b & 15) << 2) | (c >> 6)] : "=";
-		out += i + 2 < bytes.length ? BASE64_ALPHABET[c & 63] : "=";
-	}
-	return out;
-}
-
-/** The inverse: what OSC 52 answers a clipboard query with, as text. */
-function textOfBase64(payload: string): string {
-	const digits = payload.replace(/[^A-Za-z0-9+/]/g, "");
-	const bytes = new Uint8Array((digits.length * 3) >> 2);
-	let at = 0;
-	let bits = 0;
-	let held = 0;
-	for (const digit of digits) {
-		held = (held << 6) | BASE64_ALPHABET.indexOf(digit);
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			bytes[at++] = (held >> bits) & 0xff;
-		}
-	}
-	return new TextDecoder().decode(bytes.subarray(0, at));
-}
-
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
@@ -2067,13 +2029,16 @@ export class TermDOM {
 			this[kSession].start();
 			if (this[kInteractive]) {
 				// Bracketed paste on: pasted text arrives fenced, one insertion.
-				void this[kSession].write("\x1b[?2004h");
+				this[kSession].setMode("bracketedPaste", true);
 				// Save the terminal's title, so dispose can hand it back; the
 				// document.title setter emits the replacement.
-				void this[kSession].write("\x1b[22;0t");
+				this[kSession].setMode("titleStack", true);
 				if (this.document.title) {
-					void this[kSession].write(`\x1b]2;${this.document.title}\x07`);
+					void this[kSession].setTitle(this.document.title);
 				}
+				// Frames park the cursor hidden as they paint; recorded here so
+				// the restore shows it again.
+				this[kSession].markModeEngaged("cursorHidden");
 			}
 			updateMouseReporting(this);
 			this[kSession].initializeCursorDetection();
@@ -2198,17 +2163,9 @@ export class TermDOM {
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
 		// goes back to the terminal the same way, and the title we replaced
 		// pops back to what the terminal held before attach pushed it.
-		if (this[kHoverReportingEnabled]) {
-			void this[kSession].write("\x1b[?1003l");
-			this[kHoverReportingEnabled] = false;
-		}
-		if (this[kMouseReportingEnabled]) {
-			void this[kSession].write("\x1b[?1006l\x1b[?1002l");
-			this[kMouseReportingEnabled] = false;
-		}
-		if (wasAttached && this[kInteractive]) {
-			void this[kSession].write("\x1b[?25h\x1b[?2004l\x1b[23;0t");
-		}
+		this[kSession].restoreEngagedModes();
+		this[kHoverReportingEnabled] = false;
+		this[kMouseReportingEnabled] = false;
 		// The fullscreen manager's own teardown writes the alt-screen restore,
 		// so it must run while the session still holds the wire. The restore
 		// puts the cursor back where the switch saved it -- parked on the
@@ -2439,9 +2396,7 @@ class Clipboard extends DOM.EventTarget {
 		if (refusal !== null) {
 			return refusal;
 		}
-		return engine[kSession].write(
-			`\x1b]52;c;${base64OfText(String(text))}\x07`,
-		);
+		return engine[kSession].writeClipboard(String(text));
 	}
 
 	async readText(): Promise<string> {
@@ -2450,13 +2405,13 @@ class Clipboard extends DOM.EventTarget {
 		if (refusal !== null) {
 			return refusal;
 		}
-		const payload = await engine[kSession].queryClipboard();
-		if (payload === null) {
+		const text = await engine[kSession].queryClipboard();
+		if (text === null) {
 			// Silence is a refusal: most terminals gate clipboard reads on
 			// their own configuration and answer nothing when they are off.
 			return clipboardDenied("the terminal did not answer the clipboard query");
 		}
-		return textOfBase64(payload);
+		return text;
 	}
 
 	async write(items: Iterable<ClipboardItem>): Promise<void> {
@@ -2478,7 +2433,7 @@ class Clipboard extends DOM.EventTarget {
 			);
 		}
 		const text = await (await carrier.getType(CLIPBOARD_TEXT_TYPE)).text();
-		return engine[kSession].write(`\x1b]52;c;${base64OfText(text)}\x07`);
+		return engine[kSession].writeClipboard(text);
 	}
 
 	async read(): Promise<ClipboardItem[]> {
@@ -2853,7 +2808,7 @@ function installWindowExtensions(
 			set: (value: string) => {
 				nativeTitle.set!.call(document, value);
 				if (termDOM[kAttached] && termDOM[kInteractive]) {
-					void termDOM[kSession].write(`\x1b]2;${String(value)}\x07`);
+					void termDOM[kSession].setTitle(String(value));
 				}
 			},
 			configurable: true,
@@ -3235,12 +3190,10 @@ function updateMouseReporting(
 		return;
 	}
 	termdom[kMouseReportingEnabled] = wanted;
-	// 1002: button presses, releases, wheel, and drag motion (no move flood
-	// while nothing is pressed). 1006: SGR encoding, the only one that is
-	// unambiguous past column 223.
-	void termdom[kSession].write(
-		wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
-	);
+	// 1002 with SGR encoding: button presses, releases, wheel, and drag
+	// motion, unambiguous past column 223 -- one mode as far as policy
+	// goes; the session spells the pair.
+	termdom[kSession].setMode("mouseCapture", wanted);
 	// Motion reporting rides on top of capture: it follows capture off (a
 	// scroll-chaining yield hands the WHOLE mouse back) and back on.
 	updateHoverReporting(termdom);
@@ -3276,7 +3229,7 @@ function updateHoverReporting(
 		return;
 	}
 	termdom[kHoverReportingEnabled] = wanted;
-	void termdom[kSession].write(wanted ? "\x1b[?1003h" : "\x1b[?1003l");
+	termdom[kSession].setMode("motionReporting", wanted);
 }
 
 /**

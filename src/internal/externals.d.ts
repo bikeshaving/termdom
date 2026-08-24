@@ -176,3 +176,16 @@ declare module "arabic-persian-reshaper" {
 	};
 	export default shapers;
 }
+
+// Uint8Array base64 (TC39 arraybuffer-base64, shipped in Node 24+/Bun): the
+// lib target predates it, so the two members the session uses are declared
+// here until the target catches up.
+interface Uint8Array {
+	toBase64(): string;
+}
+interface Uint8ArrayConstructor {
+	fromBase64(
+		text: string,
+		options?: {lastChunkHandling?: "loose" | "strict" | "stop-before-partial"},
+	): Uint8Array;
+}
