@@ -49,6 +49,11 @@ export class Viewport {
 		this[kScrollTop] = Math.max(0, this[kScrollTop] + rows);
 	}
 
+	/** Scroll the viewport to an absolute document row, clamped >= 0. */
+	scrollTo(row: number): void {
+		this[kScrollTop] = Math.max(0, row);
+	}
+
 	/**
 	 * The document point under a terminal cell (screen column, screen row), or
 	 * null for a row above the painted region -- a shell prompt above the

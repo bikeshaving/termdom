@@ -2693,7 +2693,7 @@ function installWindowExtensions(
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? termDOM[kViewport].scrollTop) :
 					(y ?? 0);
-		termDOM[kViewport].scrollTop = Math.max(0, targetY);
+		termDOM[kViewport].scrollTo(targetY);
 		void render(termDOM);
 	};
 	window.scrollTo = scrollToCamera as typeof window.scrollTo;
@@ -2703,7 +2703,7 @@ function installWindowExtensions(
 		Object.defineProperty(root, "scrollTop", {
 			get: () => termDOM[kViewport].scrollTop,
 			set: (value: number) => {
-				termDOM[kViewport].scrollTop = Math.max(0, value);
+				termDOM[kViewport].scrollTo(value);
 				void render(termDOM);
 			},
 			configurable: true,
@@ -5079,7 +5079,7 @@ async function renderInteractive(
 	// nothing composites over the frozen block.
 	if (termdom[kSealed]) {
 		termdom[kSealed] = false;
-		termdom[kViewport].scrollTop = 0;
+		termdom[kViewport].scrollTo(0);
 		termdom[kScreen].repaintAll();
 		// detectCommandStart waits for a reply on stdin, so the listener must
 		// be attached first (idempotent -- normally already done by now).
@@ -5174,9 +5174,8 @@ async function renderInteractive(
 	if (!isFullscreen) {
 		// The camera cannot run off the end of the document.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termdom[kViewport].scrollTop = Math.min(
-			termdom[kViewport].scrollTop,
-			maxScroll,
+		termdom[kViewport].scrollTo(
+			Math.min(termdom[kViewport].scrollTop, maxScroll),
 		);
 	}
 
