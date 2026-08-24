@@ -2,7 +2,7 @@
  * navigator.permissions: the Permissions API over a terminal, which has one
  * permission behind it -- the clipboard -- and nothing behind the rest.
  */
-import {EventTarget, installEventHandlers} from "./dom.js";
+import {EventTarget} from "./dom.js";
 
 /** What a permission query asks its host about the clipboard's standing. */
 export interface PermissionGate {
@@ -86,7 +86,30 @@ export class PermissionStatus extends EventTarget {
 	}
 }
 
-installEventHandlers(PermissionStatus.prototype, ["onchange"]);
+// The one event handler attribute a permission status carries. An event
+// handler attribute IS a listener, per spec: routing it through
+// add/removeEventListener keeps dispatch order and dedup like any other.
+const kOnChange = Symbol("onchange");
+Object.defineProperty(PermissionStatus.prototype, "onchange", {
+	get(this: PermissionStatus): unknown {
+		return (this as unknown as Record<symbol, unknown>)[kOnChange] ?? null;
+	},
+	set(this: PermissionStatus, value: unknown): void {
+		const held = this as unknown as Record<symbol, unknown>;
+		type Listener = Parameters<PermissionStatus["addEventListener"]>[1];
+		const previous = held[kOnChange] as Listener | undefined;
+		if (previous) {
+			this.removeEventListener("change", previous);
+		}
+		const next = typeof value === "function" ? (value as Listener) : null;
+		held[kOnChange] = next;
+		if (next) {
+			this.addEventListener("change", next);
+		}
+	},
+	enumerable: true,
+	configurable: true,
+});
 
 Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
 	value: "PermissionStatus",

@@ -3441,7 +3441,7 @@ function installEventHandler(prototype: object, name: string): void {
  * Install every event handler IDL attribute in a table on an interface's
  * prototype.
  */
-export function installEventHandlers(
+function installEventHandlers(
 	prototype: object,
 	names: readonly string[],
 ): void {
@@ -3449,9 +3449,6 @@ export function installEventHandlers(
 		installEventHandler(prototype, name);
 	}
 }
-
-/** The tables a window's own interface is installed from, which the engine owns. */
-export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./htmltables.js";
 
 /**
  * Install an event handler attribute that belongs to the element's window
