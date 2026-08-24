@@ -26,21 +26,21 @@ import {
 } from "./observers.js";
 import {
 	FOCUSABLE_SELECTOR,
-	decodeKey,
-	decodeMouseReport,
-	domCodeFor,
 	focusAutofocusedNodes,
 	sequentialFocusEntries,
 	keyboardActivation,
-	tokenizeInput,
 } from "./events.js";
 import {
 	cursorHome,
 	cursorTo,
+	decodeKey,
+	decodeMouseReport,
+	domCodeFor,
 	eraseBelow,
 	eraseScreen,
 	eraseToLineEnd,
 	index,
+	tokenizeInput,
 } from "./wire.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to

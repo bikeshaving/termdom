@@ -1,11 +1,15 @@
 import type {LayoutEngine} from "./layout.js";
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
-import {tokenizeInput} from "./events.js";
 import {
 	ansiMode,
 	ansiModeQuery,
 	clipboardQuery,
 	clipboardWrite,
+	decodeClipboardReply,
+	decodeCursorReport,
+	decodeModeReport,
+	decodeMouseEscape,
+	splitTrailingEscape,
 	cursorPositionQuery,
 	eraseToLineEnd,
 	popTitle,
@@ -13,6 +17,9 @@ import {
 	privateModeQuery,
 	pushTitle,
 	setWindowTitle,
+	tokenizeInput,
+	PASTE_END,
+	PASTE_START,
 	type ColorDepth,
 } from "./wire.js";
 
@@ -126,33 +133,6 @@ export interface ProcessLike {
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
 	exit(code?: number): never;
 	env: Record<string, string | undefined>;
-}
-
-/**
- * The length of an incomplete escape sequence at the end of `chunk`, or 0.
- * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
- * arrived, or an SS3 (ESC O) missing its one final character. A bare
- * trailing ESC reports 0: see kPartialEscape.
- */
-function splitTrailingEscape(chunk: string): number {
-	const esc = chunk.lastIndexOf("\x1b");
-	if (esc === -1 || esc === chunk.length - 1) {
-		return 0;
-	}
-	const kind = chunk[esc + 1];
-	if (kind === "[") {
-		for (let i = esc + 2; i < chunk.length; i++) {
-			const code = chunk.charCodeAt(i);
-			if (code >= 0x40 && code <= 0x7e) {
-				return 0;
-			} // finished
-		}
-		return chunk.length - esc;
-	}
-	if (kind === "O" && esc + 2 >= chunk.length) {
-		return chunk.length - esc;
-	}
-	return 0;
 }
 
 function detectColorDepth(proc: ProcessLike): ColorDepth {
@@ -1034,16 +1014,15 @@ export class TerminalSession {
 			this[kCursorDetectionHandler] = (dataStr: string) => {
 				responseBuffer += dataStr;
 
-				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
+				const match = decodeCursorReport(responseBuffer);
 				if (match) {
 					finish();
 
-					const row = parseInt(match[1], 10);
 					// Convert 1-based terminal row to the 0-based anchor.
-					this[kSetCommandStart](row - 1);
+					this[kSetCommandStart](match.row - 1);
 
 					this[kHasDetectedCommandStart] = true;
-					resolve(row);
+					resolve(match.row);
 				}
 			};
 
@@ -1090,7 +1069,7 @@ export class TerminalSession {
 
 			const handler = (dataStr: string) => {
 				responseBuffer += dataStr;
-				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
+				const match = decodeCursorReport(responseBuffer);
 				if (match) {
 					if (this[kCursorDetectionHandler] === handler) {
 						this[kCursorDetectionHandler] = null;
@@ -1102,7 +1081,7 @@ export class TerminalSession {
 						}
 						localTimer = null;
 					}
-					resolve(parseInt(match[1], 10) - 1);
+					resolve(match.row - 1);
 				}
 			};
 
@@ -1464,27 +1443,27 @@ function route(
 	// fire Enter), buffered across chunks until ESC[201~. Checked before the
 	// report routes so paste content isn't parsed as a reply.
 	if (session[kPasteBuffer] !== null) {
-		const end = dataStr.indexOf("\x1b[201~");
+		const end = dataStr.indexOf(PASTE_END);
 		if (end === -1) {
 			session[kPasteBuffer] += dataStr;
 			return;
 		}
 		session[kHandlers].onPaste(session[kPasteBuffer] + dataStr.slice(0, end));
 		session[kPasteBuffer] = null;
-		const after = dataStr.slice(end + 6);
+		const after = dataStr.slice(end + PASTE_END.length);
 		if (after.length) {
 			route(session, after);
 		}
 		return;
 	}
-	const pasteStart = dataStr.indexOf("\x1b[200~");
+	const pasteStart = dataStr.indexOf(PASTE_START);
 	if (pasteStart !== -1) {
 		const before = dataStr.slice(0, pasteStart);
 		if (before.length) {
 			route(session, before);
 		}
 		session[kPasteBuffer] = "";
-		route(session, dataStr.slice(pasteStart + 6));
+		route(session, dataStr.slice(pasteStart + PASTE_START.length));
 		return;
 	}
 
@@ -1505,25 +1484,25 @@ function route(
 	// (DECRPM) or the cursor position (DSR). Fast typing can land in the
 	// same chunk as a report -- "jjj\x1b[12;1Rjjj" -- so hand the report to
 	// the waiting query and let the rest continue through as keystrokes.
-	const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
-	if (modeReport) {
-		const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-		if (feedModeReport(session, mode, parseInt(modeReport[3], 10))) {
-			const rest =
-				dataStr.slice(0, modeReport.index) +
-				dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-			if (rest.length > 0) {
-				route(session, rest);
-			}
-			return;
+	const modeReport = decodeModeReport(dataStr);
+	if (
+		modeReport &&
+		feedModeReport(session, modeReport.mode, modeReport.value)
+	) {
+		const rest =
+			dataStr.slice(0, modeReport.index) +
+			dataStr.slice(modeReport.index + modeReport.length);
+		if (rest.length > 0) {
+			route(session, rest);
 		}
+		return;
 	}
 
-	const report = dataStr.match(/\x1b\[(\d+);(\d+)R/);
-	if (report && feedCursorReport(session, report[0], parseInt(report[2], 10))) {
+	const report = decodeCursorReport(dataStr);
+	if (report && feedCursorReport(session, report.text, report.col)) {
 		const rest =
 			dataStr.slice(0, report.index) +
-			dataStr.slice((report.index ?? 0) + report[0].length);
+			dataStr.slice(report.index + report.length);
 		if (rest.length > 0) {
 			route(session, rest);
 		}
@@ -1541,13 +1520,13 @@ function route(
 	// fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
 	let keyInput = "";
 	for (const token of tokenizeInput(dataStr)) {
-		const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+		const mouse = decodeMouseEscape(token);
 		if (mouse) {
 			session[kHandlers].onMouse(
-				parseInt(mouse[1]),
-				parseInt(mouse[2]),
-				parseInt(mouse[3]),
-				mouse[4] === "m",
+				mouse.button,
+				mouse.col,
+				mouse.row,
+				mouse.release,
 			);
 		} else {
 			keyInput += token;
@@ -1598,18 +1577,15 @@ function routeClipboardReply(
 		chunk = session[kClipboardBuffer] + chunk;
 		session[kClipboardBuffer] = null;
 	}
-	const start = chunk.indexOf("\x1b]52;");
-	if (start === -1) {
+	const reply = decodeClipboardReply(chunk);
+	if (reply === null) {
 		return null;
 	}
-	const before = chunk.slice(0, start);
-	const reply = chunk
-		.slice(start)
-		.match(/^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/);
-	if (!reply) {
+	const before = chunk.slice(0, reply.start);
+	if (reply.text === null) {
 		// The terminator has not arrived. Hold the fragment for the next chunk
 		// and let whatever preceded it through as input.
-		const held = chunk.slice(start);
+		const held = chunk.slice(reply.start);
 		if (held.length <= TerminalSession[kClipboardReplyLimit]) {
 			session[kClipboardBuffer] = held;
 			return before;
@@ -1617,21 +1593,8 @@ function routeClipboardReply(
 		settleClipboardQuery(session, null);
 		return before;
 	}
-	const rest = before + chunk.slice(start + reply[0].length);
-	settleClipboardQuery(session, textOfClipboardPayload(reply[1]));
-	return rest;
-}
-
-/**
- * The text an OSC 52 reply carries. Terminals differ on padding and may
- * interleave junk; anything outside the base64 alphabet is dropped and an
- * unpadded tail still decodes.
- */
-function textOfClipboardPayload(payload: string): string {
-	const digits = payload.replace(/[^A-Za-z0-9+/]/g, "");
-	return new TextDecoder().decode(
-		Uint8Array.fromBase64(digits, {lastChunkHandling: "loose"}),
-	);
+	settleClipboardQuery(session, reply.text);
+	return before + chunk.slice(reply.end);
 }
 
 /** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
