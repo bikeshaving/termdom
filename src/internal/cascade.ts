@@ -786,9 +786,34 @@ function cssTimeMs(token: string): number | null {
 	return unit === "ms" ? number : number * 1000;
 }
 
-/** A `<easing-function>`, keyword or functional. */
-const CSS_EASING_VALUE =
-	/^(?:linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|cubic-bezier\(.*\)|steps\(.*\)|linear\(.*\))$/i;
+/** The easing keywords css-easing-1 defines. */
+const EASING_KEYWORDS = new Set([
+	"linear",
+	"ease",
+	"ease-in",
+	"ease-out",
+	"ease-in-out",
+	"step-start",
+	"step-end",
+]);
+
+/** The easing function names; their arguments are judged at build time. */
+const EASING_FUNCTION_NAMES = new Set(["linear", "cubic-bezier", "steps"]);
+
+/** Whether a component spells an `<easing-function>`. */
+function isEasingValue(token: string): boolean {
+	const node = singleValueNode(token);
+	if (!node) {
+		return false;
+	}
+	if (node.type === "Identifier") {
+		return EASING_KEYWORDS.has((node.name ?? "").toLowerCase());
+	}
+	return (
+		node.type === "Function" &&
+		EASING_FUNCTION_NAMES.has((node.name ?? "").toLowerCase())
+	);
+}
 
 /**
  * `transition: <single-transition>#`, each item `<property> || <duration> ||
@@ -810,7 +835,7 @@ function expandTransition(value: string): Record<string, string> {
 			const lower = token.toLowerCase();
 			if (times.length < 2 && cssTimeMs(token) !== null) {
 				times.push(lower);
-			} else if (!easing && CSS_EASING_VALUE.test(token)) {
+			} else if (!easing && isEasingValue(token)) {
 				easing = lower;
 			} else if (
 				!behavior &&
@@ -11320,23 +11345,130 @@ function buildEasing(key: string): (input: number) => number {
 		case "step-end":
 			return stepsEasing(1, "jump-end");
 	}
-	const bezier = /^cubic-bezier\(([^)]*)\)$/.exec(key);
-	if (bezier) {
-		const args = bezier[1].split(",").map((arg) => parseFloat(arg));
-		if (args.length === 4 && args.every(Number.isFinite)) {
-			return cubicBezierEasing(args[0], args[1], args[2], args[3]);
+	const node = singleValueNode(key);
+	if (node && node.type === "Function") {
+		const name = (node.name ?? "").toLowerCase();
+		const args = functionArguments(node);
+		if (name === "cubic-bezier" && args.length === 4) {
+			const points = args.map((arg) =>
+				arg.type === "Number" ? parseFloat(arg.value ?? "") : NaN,
+			);
+			if (points.every(Number.isFinite)) {
+				return cubicBezierEasing(points[0], points[1], points[2], points[3]);
+			}
+		} else if (name === "steps" && args.length >= 1 && args.length <= 2) {
+			const count =
+				args[0].type === "Number" ? parseInt(args[0].value ?? "", 10) : NaN;
+			const position =
+				args.length < 2 ?
+					"end" :
+					args[1].type === "Identifier" ?
+							(args[1].name ?? "").toLowerCase() :
+						"";
+			if (Number.isFinite(count) && count > 0 && position) {
+				return stepsEasing(count, position);
+			}
+		} else if (name === "linear") {
+			const easing = linearEasing(node);
+			if (easing) {
+				return easing;
+			}
 		}
 	}
-	const steps = /^steps\(([^)]*)\)$/.exec(key);
-	if (steps) {
-		const args = steps[1].split(",").map((arg) => arg.trim());
-		const count = parseInt(args[0], 10);
-		if (Number.isFinite(count) && count > 0) {
-			return stepsEasing(count, args[1] ?? "end");
-		}
-	}
-	// linear() stop lists, and anything unrecognized, play as linear.
+	// Anything unrecognized plays as linear.
 	return (input) => input;
+}
+
+/**
+ * A `linear()` easing (css-easing-1 §2.6). Stops give outputs; a
+ * percentage on a stop gives its input, clamped so inputs never run
+ * backwards, and a second percentage writes the stop twice. Missing
+ * inputs spread evenly between their stated neighbors, and evaluation
+ * interpolates within the segment the input lands in, riding the end
+ * segments beyond the range. Null for an argument list off the grammar,
+ * which then plays as `linear`.
+ */
+function linearEasing(node: CSSNode): ((input: number) => number) | null {
+	const stops: CSSNode[][] = [[]];
+	for (const child of node.children?.toArray() ?? []) {
+		if (child.type === "Operator") {
+			if ((child.value ?? "").trim() !== ",") {
+				return null;
+			}
+			stops.push([]);
+		} else {
+			stops[stops.length - 1].push(child);
+		}
+	}
+	const points: Array<{input: number | null; output: number}> = [];
+	let largest = -Infinity;
+	for (const stop of stops) {
+		let output: number | null = null;
+		const given: number[] = [];
+		for (const item of stop) {
+			if (item.type === "Number" && output === null) {
+				output = parseFloat(item.value ?? "");
+			} else if (item.type === "Percentage" && given.length < 2) {
+				given.push(parseFloat(item.value ?? "") / 100);
+			} else {
+				return null;
+			}
+		}
+		if (
+			output === null ||
+			!Number.isFinite(output) ||
+			given.some((input) => !Number.isFinite(input))
+		) {
+			return null;
+		}
+		const first = given.length > 0 ? Math.max(given[0], largest) : null;
+		if (first !== null) {
+			largest = first;
+		}
+		points.push({input: first, output});
+		if (given.length === 2) {
+			largest = Math.max(given[1], largest);
+			points.push({input: largest, output});
+		}
+	}
+	if (points.length < 2) {
+		return null;
+	}
+	if (points[0].input === null) {
+		points[0].input = 0;
+	}
+	if (points[points.length - 1].input === null) {
+		points[points.length - 1].input = Math.max(largest, 1);
+	}
+	for (let start = 1; start < points.length; start++) {
+		if (points[start].input !== null) {
+			continue;
+		}
+		let end = start;
+		while (points[end].input === null) {
+			end++;
+		}
+		const from = points[start - 1].input as number;
+		const to = points[end].input as number;
+		const gap = end - start + 1;
+		for (let i = start; i < end; i++) {
+			points[i].input = from + ((to - from) * (i - start + 1)) / gap;
+		}
+	}
+	const inputs = points.map((point) => point.input as number);
+	const outputs = points.map((point) => point.output);
+	return (input) => {
+		let index = 0;
+		while (index < inputs.length - 2 && inputs[index + 1] <= input) {
+			index++;
+		}
+		const span = inputs[index + 1] - inputs[index];
+		if (span <= 0) {
+			return outputs[index + 1];
+		}
+		const ratio = (input - inputs[index]) / span;
+		return outputs[index] + (outputs[index + 1] - outputs[index]) * ratio;
+	};
 }
 
 /**

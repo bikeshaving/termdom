@@ -272,3 +272,19 @@ test("a transition declared and retargeted in one event still runs", async () =>
 	expect((await started).propertyName).toBe("color");
 	await dom.dispose();
 });
+
+test("a linear() stop list eases by its stops", async () => {
+	const {dom, document, window} = mounted(
+		"<style>#box { color: rgb(0, 0, 0); height: 1px; " +
+		"transition: color 100s linear(0.25 0% 50%, 1 100%); }" +
+		"</style><div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	box.style.color = "rgb(200, 200, 200)";
+	await nextFrame(dom);
+	// The flat opening segment holds the eased output at 0.25 through the
+	// first half, so a read at any early progress lands on channel 50.
+	expect(window.getComputedStyle(box).color).toBe("rgb(50, 50, 50)");
+	await dom.dispose();
+});
