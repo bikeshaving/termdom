@@ -1,10 +1,3 @@
-/**
- * The engine: it owns the document, the frame loop and the terminal, and is
- * where the three meet.
- *
- * A mutation becomes a frame here -- style, then layout, then paint -- and the
- * frame becomes bytes on the session.
- */
 import * as DOM from "./dom.js";
 import {installUAEngine} from "./dom.js";
 import {installInspectors} from "./inspector.js";
