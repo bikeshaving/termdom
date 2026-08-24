@@ -12005,40 +12005,69 @@ function mediaQueryPartMatches(
 	return negate ? !matches : matches;
 }
 
+/**
+ * A `<mf-plain>` feature against the terminal: the width and height
+ * features, in the cell lengths px and ch both spell here, judged against
+ * the window. A feature this engine does not track answers true -- the
+ * permissive default -- as does a value off the grammar.
+ */
 function mediaFeatureMatches(
 	manager: StyleManager,
 	feature: string,
 ): boolean {
+	const colon = feature.indexOf(":");
+	const name = (colon === -1 ? feature : feature.slice(0, colon))
+		.trim()
+		.toLowerCase();
 	// mediaqueries-4's hover feature: `hover` when the primary pointer can
 	// hover. Motion reporting turns on whenever the document observes
 	// hover, so the answer is unconditional; a bare `(hover)` is the
 	// boolean context.
-	const hoverMatch = feature.match(/^(any-)?hover(\s*:\s*(hover|none))?$/i);
-	if (hoverMatch) {
-		return (hoverMatch[3]?.toLowerCase() ?? "hover") === "hover";
+	if (name === "hover" || name === "any-hover") {
+		if (colon === -1) {
+			return true;
+		}
+		const node = singleValueNode(feature.slice(colon + 1).trim());
+		return node?.type === "Identifier" &&
+			(node.name ?? "").toLowerCase() === "hover";
 	}
-	const match = feature.match(
-		/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
-	);
-	if (!match) {
+	if (colon === -1) {
 		return true;
-	} // unrecognized feature: permissive default
-
-	const [, boundRaw, dimension, numRaw] = match;
-	const bound = boundRaw?.toLowerCase();
-	const num = parseFloat(numRaw);
+	}
+	const bound =
+		name.startsWith("min-") ?
+			"min" :
+			name.startsWith("max-") ?
+				"max" :
+				null;
+	const dimension = bound === null ? name : name.slice(4);
+	if (dimension !== "width" && dimension !== "height") {
+		return true;
+	}
+	const node = singleValueNode(feature.slice(colon + 1).trim());
+	let length: number | null = null;
+	if (node?.type === "Number") {
+		length = parseFloat(node.value ?? "");
+	} else if (node?.type === "Dimension") {
+		const unit = (node.unit ?? "").toLowerCase();
+		if (unit === "px" || unit === "ch") {
+			length = parseFloat(node.value ?? "");
+		}
+	}
+	if (length === null || !Number.isFinite(length) || length < 0) {
+		return true;
+	}
 	const actual =
-		dimension.toLowerCase() === "width" ?
+		dimension === "width" ?
 			manager[kWindow].innerWidth :
 			manager[kWindow].innerHeight;
-
-	if (bound === "min-") {
-		return actual >= num;
+	if (bound === "min") {
+		return actual >= length;
 	}
-	if (bound === "max-") {
-		return actual <= num;
+	if (bound === "max") {
+		return actual <= length;
 	}
-	return actual === num;
+	return actual === length;
 }
 
 /**
