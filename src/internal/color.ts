@@ -322,25 +322,43 @@ export function isTransparentColor(color: string): boolean {
  * as an rgb().
  */
 export function serializeCSSColor(value: string): string | null {
-	const text = value.trim();
-	if (!text || text.toLowerCase() === "currentcolor") {
+	const components = parseCSSColorComponents(value);
+	if (components === null) {
 		return null;
 	}
-	if (/^transparent$/i.test(text)) {
-		return "rgba(0, 0, 0, 0)";
+	const [red, green, blue] = components;
+	if (components[3] < 1) {
+		const alpha = Math.round(components[3] * 1000) / 1000;
+		return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+	}
+	return `rgb(${red}, ${green}, ${blue})`;
+}
+
+/**
+ * A color's channels: [red, green, blue, alpha]. Null for a value this
+ * process cannot state channels for -- `currentcolor` before it resolves,
+ * a system color, an unknown keyword.
+ */
+export function parseCSSColorComponents(
+	value: string,
+): [number, number, number, number] | null {
+	const text = value.trim().toLowerCase();
+	if (!text || text === "currentcolor") {
+		return null;
+	}
+	if (text === "transparent") {
+		return [0, 0, 0, 0];
 	}
 	const parsed = parseColor(text);
 	if (parsed === null) {
 		return null;
 	}
-	const red = (parsed.color >> 16) & 0xff;
-	const green = (parsed.color >> 8) & 0xff;
-	const blue = parsed.color & 0xff;
-	if (parsed.alpha < 1) {
-		const alpha = Math.round(parsed.alpha * 1000) / 1000;
-		return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-	}
-	return `rgb(${red}, ${green}, ${blue})`;
+	return [
+		(parsed.color >> 16) & 0xff,
+		(parsed.color >> 8) & 0xff,
+		parsed.color & 0xff,
+		parsed.alpha,
+	];
 }
 
 /**
