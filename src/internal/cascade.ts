@@ -4869,15 +4869,46 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 
 /** A keyframe's selector, as percentages: `from` is 0%, `to` is 100%. */
 function serializeKeyText(text: string): string {
+	const source = String(text).trim();
+	let list: {loc?: ParsedSpan | null; children: {toArray(): CSSNode[]}};
+	try {
+		list = CSSTree.parse(source, {
+			context: "selectorList",
+			positions: true,
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as never;
+	} catch (_err) {
+		return "";
+	}
+	// css-tree lets a selector list trail off after its last selector, and a
+	// keyframe selector list may not: the nodes have to span the text.
+	if (list.loc?.end.offset !== source.length) {
+		return "";
+	}
+	const selectors = list.children.toArray();
+	if (selectors.length === 0) {
+		return "";
+	}
 	const keys: string[] = [];
-	for (const part of String(text).split(",")) {
-		const key = part.trim().toLowerCase();
-		if (key === "from") {
+	for (const selector of selectors) {
+		const parts = selector.children?.toArray() ?? [];
+		if (parts.length !== 1) {
+			return "";
+		}
+		const [key] = parts;
+		if (key.type === "Percentage") {
+			keys.push(`${serializeCSSNumber(key.value ?? "")}%`);
+			continue;
+		}
+		const word = key.type === "TypeSelector" ?
+				(key.name ?? "").toLowerCase() :
+			"";
+		if (word === "from") {
 			keys.push("0%");
-		} else if (key === "to") {
+		} else if (word === "to") {
 			keys.push("100%");
-		} else if (/^[+-]?(\d+\.?\d*|\.\d+)%$/.test(key)) {
-			keys.push(`${serializeCSSNumber(key.slice(0, -1))}%`);
 		} else {
 			return "";
 		}
@@ -5004,6 +5035,44 @@ const kPrelude = Symbol("prelude");
 const kScopeStart = Symbol("scopeStart");
 const kScopeEnd = Symbol("scopeEnd");
 
+/** The node an `@scope` prelude parses into, and the selector lists it holds. */
+interface ScopePreludeNode {
+	type: string;
+	loc?: ParsedSpan | null;
+	root?: ScopePreludeNode | null;
+	limit?: ScopePreludeNode | null;
+}
+
+/**
+ * The selectors an `@scope` prelude bounds its rules with, sliced at the
+ * root and limit nodes css-tree parses it into. Both are null for a prelude
+ * off the grammar, and the limit alone for the implicit `@scope to (...)`.
+ */
+function scopeLimits(prelude: string): {
+	start: string | null;
+	end: string | null;
+} {
+	let scope: ScopePreludeNode | undefined;
+	try {
+		const ast = CSSTree.parse(prelude, {
+			context: "atrulePrelude",
+			atrule: "scope",
+			positions: true,
+		}) as unknown as {children?: {toArray(): ScopePreludeNode[]} | null};
+		const nodes = ast.children ? ast.children.toArray() : [];
+		if (nodes.length === 1 && nodes[0].type === "Scope") {
+			scope = nodes[0];
+		}
+	} catch (_err) {
+		scope = undefined;
+	}
+	const sliceOf = (node: ScopePreludeNode | null | undefined): string | null =>
+		node?.loc ?
+				prelude.slice(node.loc.start.offset, node.loc.end.offset) :
+			null;
+	return {start: sliceOf(scope?.root), end: sliceOf(scope?.limit)};
+}
+
 /** `@scope`: parsed, and its rules apply unscoped. */
 class CSSScopeRule extends CSSGroupingRule {
 	declare [kPrelude]: string;
@@ -5020,10 +5089,9 @@ class CSSScopeRule extends CSSGroupingRule {
 		this[kPrelude] = prelude.trim();
 		// The prelude does not change under this rule, so its parts are read
 		// once here.
-		const start = /^\(([^)]*)\)/.exec(this[kPrelude]);
-		this[kScopeStart] = start?.[1].trim() ?? null;
-		const end = /\bto\s*\(([^)]*)\)/.exec(this[kPrelude]);
-		this[kScopeEnd] = end?.[1].trim() ?? null;
+		const limits = scopeLimits(this[kPrelude]);
+		this[kScopeStart] = limits.start;
+		this[kScopeEnd] = limits.end;
 	}
 
 	get type(): number {

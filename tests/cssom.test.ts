@@ -506,13 +506,14 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	expect(styleRule.style.length).toBe(0);
 	expect(styleRule.cssText).toBe("a { }");
 
-	// A keyframe selector is a percentage LITERAL: an exponent spelling is
-	// not one, and serializes empty.
-	sheet.replaceSync("@keyframes k { from {} 50.0% {} 1e2% {} }");
+	// A keyframe selector is `from`, `to` or a percentage, and a percentage
+	// is a number token: an exponent spells one as anywhere else in CSS. A
+	// word standing where a selector belongs serializes empty.
+	sheet.replaceSync("@keyframes k { from {} 50.0% {} 1e2% {} halfway {} }");
 	const keyframes = sheet.cssRules[0] as CSSKeyframesRule;
 	expect(Array.from(keyframes.cssRules, (rule) =>
 		(rule as CSSKeyframeRule).keyText,
-	)).toEqual(["0%", "50%", ""]);
+	)).toEqual(["0%", "50%", "100%", ""]);
 
 	// `layer` names a layer only as a word of its own: `layered-thing` is a
 	// media query, and a media type this engine cannot judge is kept as
