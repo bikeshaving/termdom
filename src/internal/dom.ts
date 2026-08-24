@@ -3917,17 +3917,9 @@ function reportError(error: unknown): void {
 
 /* ------------------------------------------------------------- live tables */
 
-/**
- * The mutation counter every live collection reads.
- *
- * Any change to a tree -- a child inserted or removed, an attribute set --
- * bumps it. A collection whose cached list was computed at an older count
- * recomputes on its next access.
- */
-let treeVersion = 0;
-
 const kSync = Symbol("resynchronize own properties");
 const kShapeSync = Symbol("resynchronize after a change to a tree's shape");
+const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 interface Materializable {
 	[kSync](): void;
@@ -3936,43 +3928,43 @@ interface Materializable {
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void;
+	[kAttributeSync](element: Element, localName: string): void;
 }
 
 /**
- * The live collections that have materialized own properties and list
- * something no node contains.
+ * Where a live collection is registered to hear the changes that can move it.
  *
  * A collection's indexed and named properties are own properties rather than
  * proxy traps, and those are observable without reading the collection:
  * Object.getOwnPropertyNames answers with them, and an assignment to an index
  * is a no-op only where the index is defined. A collection that has ever been
- * read is therefore resynchronized when a tree it lists changes shape. One
- * that lists a node's descendants is held by that node, under kLiveLists; the
- * rootless few are held here.
+ * read is therefore told of a change, and answers it however cheaply it can.
+ * One that lists what a node contains registers on that node, under
+ * kLiveLists, and hears the changes under it; one whose members can be
+ * anywhere in a document -- a form's controls, which the form attribute
+ * associates across a tree -- registers on the document, under kWideLists,
+ * and hears the changes in it.
  */
-const rootlessMaterialized = new Set<Materializable>();
-
 const kLiveLists = Symbol("live collections this node is the root of");
 
-function registerMaterialized(
-	collection: Materializable,
-	owner: Node | null,
-): void {
-	if (owner !== null) {
-		const held = owner[kLiveLists];
-		if (held === null) {
-			owner[kLiveLists] = new Set([collection]);
-		} else {
-			held.add(collection);
-		}
-		return;
+const kWideLists = Symbol("live collections over a whole document");
+
+function registerMaterialized(collection: Materializable, owner: Node): void {
+	const held = owner[kLiveLists];
+	if (held === null) {
+		owner[kLiveLists] = new Set([collection]);
+	} else {
+		held.add(collection);
 	}
-	rootlessMaterialized.add(collection);
 }
 
-/** Record a change that every live collection must see on its next read. */
-function bumpVersion(): void {
-	treeVersion++;
+function registerWide(collection: Materializable, document: Document): void {
+	const held = document[kWideLists];
+	if (held === null) {
+		document[kWideLists] = new Set([collection]);
+	} else {
+		held.add(collection);
+	}
 }
 
 const kParent = Symbol("parent");
@@ -3997,13 +3989,16 @@ const kParent = Symbol("parent");
  * every collection reached recomputes. A collection that is given the nodes
  * asks what they hold rather than walking the tree again, so a change costs
  * what it moved rather than what it sits in.
+ *
+ * A collection over a whole document is reached through the document the
+ * change's point belongs to, since a tree being built outside the document
+ * can hold the members of one.
  */
-function bumpTreeVersion(
+function shapeChanged(
 	point: Node,
 	changed: readonly Node[] | null,
 	added: boolean,
 ): void {
-	treeVersion++;
 	for (let node: Node | null = point; node !== null; node = node[kParent]) {
 		const held = node[kLiveLists];
 		if (held === null) {
@@ -4013,13 +4008,15 @@ function bumpTreeVersion(
 			shapeSyncMethod.call(collection, point, changed, added);
 		}
 	}
-	for (const collection of rootlessMaterialized) {
-		shapeSyncMethod.call(collection, point, changed, added);
+	const wide = point[kDocument][kWideLists];
+	if (wide !== null) {
+		for (const collection of wide) {
+			shapeSyncMethod.call(collection, point, changed, added);
+		}
 	}
 }
 
 const kCollectionCaches = Symbol("collection caches");
-const kAttributeSync = Symbol("resynchronize after an attribute change");
 const kClassList = Symbol("classList");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
@@ -4029,9 +4026,10 @@ const kTokenLists = Symbol("reflected token lists");
  *
  * An attribute is an input to three kinds of collection: the element's own
  * attribute map, the token lists over its attributes, and the collections
- * cached on the trees it sits in, which are asked about the one element that
- * changed rather than walked. A collection of children, of rows, of cells --
- * anything an attribute is no input to -- is left alone.
+ * registered over the trees it sits in, which are asked about the one element
+ * that changed rather than walked. A collection of children, of rows, of
+ * cells -- anything an attribute is no input to -- answers that it holds what
+ * it held.
  */
 function syncAttributeCollections(element: Element, localName: string): void {
 	const map = element[kAttributesMap];
@@ -4049,13 +4047,17 @@ function syncAttributeCollections(element: Element, localName: string): void {
 		}
 	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]) {
-		const cache = (node as unknown as Record<symbol, unknown>)[
-			kCollectionCaches
-		] as Map<string, HTMLCollection> | undefined;
-		if (cache === undefined) {
+		const held = node[kLiveLists];
+		if (held === null) {
 			continue;
 		}
-		for (const collection of cache.values()) {
+		for (const collection of held) {
+			collection[kAttributeSync](element, localName);
+		}
+	}
+	const wide = element[kDocument][kWideLists];
+	if (wide !== null) {
+		for (const collection of wide) {
 			collection[kAttributeSync](element, localName);
 		}
 	}
@@ -4886,8 +4888,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			}
 		}
 	}
-	bumpTreeVersion(oldParent, [node], false);
-	bumpTreeVersion(newParent, [node], true);
+	shapeChanged(oldParent, [node], false);
+	shapeChanged(newParent, [node], true);
 	queueTreeMutationRecord(
 		oldParent,
 		[],
@@ -4993,7 +4995,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpTreeVersion(parent, nodes, true);
+	shapeChanged(parent, nodes, true);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -5273,7 +5275,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpTreeVersion(parent, [node], false);
+	shapeChanged(parent, [node], false);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -5917,68 +5919,67 @@ const kMembersMoved = Symbol("members moved");
 const kLive = Symbol("live");
 const kOwner = Symbol("owner");
 const kChildMember = Symbol("childMember");
-const kTold = Symbol("told");
 const kExact = Symbol("exact");
-const kVersion = Symbol("version");
 const kItems = Symbol("items");
-const kRegistered = Symbol("registered");
-const kStanding = Symbol("standing");
+const kRegistered = Symbol("registered at");
+const kWide = Symbol("over a whole document");
+const kWatched = Symbol("watched attribute");
 const kDefined = Symbol("defined");
 const kNames = Symbol("names");
+
+/** The watch of a list whose members any attribute can move. */
+const anyAttribute = Symbol("any attribute");
 
 /**
  * The list behind a live NodeList or HTMLCollection.
  *
- * The list is recomputed on read: a collection carries the tree version its
- * list was computed at, and any read whose version is older recomputes first.
- * Indexed access is an own accessor property rather than a proxy trap, and
- * those accessors run the same check before answering, so the collection is
- * as live as reading it can tell. The own properties themselves -- which
- * indices and names are defined -- are what a change to a tree's shape
- * resynchronizes, since those can be observed without a read.
+ * The list is computed once and stands until a change says otherwise: a
+ * collection registers where the changes that can move it are announced, and
+ * drops or mends what it holds when one arrives. Indexed access is an own
+ * accessor property rather than a proxy trap, and those accessors compute the
+ * list where it is not standing, so the collection is as live as reading it
+ * can tell. The own properties themselves -- which indices and names are
+ * defined -- are what a change resynchronizes, since those can be observed
+ * without a read.
  */
 abstract class LiveList implements Materializable {
-	declare [kVersion]: number;
 	declare [kItems]: Node[];
 	declare [kDefined]: number;
-	declare [kRegistered]: boolean;
+	declare [kRegistered]: Node | null;
 	declare [kExact]: boolean;
 	declare [kLive]: boolean;
 	declare [kOwner]: Node | null;
 	declare [kChildMember]: ((node: Node) => boolean) | null;
-	declare [kTold]: boolean;
+	declare [kWide]: boolean;
+	declare [kWatched]: string | symbol | null;
 
 	/**
 	 * @param childMember - which of the owner's children the list holds, where
 	 * it draws from the children and from nothing deeper. A list that says so
 	 * is untouched by a change anywhere else in the owner's tree, and the
 	 * children a change carries are the members it carries.
-	 * @param told - whether every change that can move the list reaches it,
-	 * shape and attribute alike, so that a list left standing stands until a
-	 * change says otherwise. A list that is not told carries the tree's
-	 * version instead and computes again whenever the tree has moved on.
+	 * @param watched - the attribute the list reads, `anyAttribute` where it
+	 * reads whatever an element carries, null where it reads none.
+	 * @param wide - whether the list holds members from anywhere in a
+	 * document, rather than from what its owner contains.
 	 */
 	constructor(
 		live: boolean,
 		owner: Node | null = null,
 		childMember: ((node: Node) => boolean) | null = null,
-		told = childMember !== null,
+		watched: string | symbol | null = null,
+		wide = false,
 	) {
-		this[kVersion] = -1;
 		this[kItems] = [];
 		this[kDefined] = 0;
-		this[kRegistered] = false;
+		this[kRegistered] = null;
 		this[kExact] = false;
 		this[kNames] = [];
 		this[kLive] = live;
 		this[kOwner] = owner;
 		this[kChildMember] = childMember;
-		this[kTold] = told;
-	}
-
-	/** Whether the list stands as the list the tree holds now. */
-	get [kStanding](): boolean {
-		return this[kExact] && (this[kTold] || this[kVersion] === treeVersion);
+		this[kWatched] = watched;
+		this[kWide] = wide;
 	}
 
 	/**
@@ -6024,18 +6025,41 @@ abstract class LiveList implements Materializable {
 			}
 			return this[kItems];
 		}
-		if (!this[kRegistered]) {
-			this[kRegistered] = true;
-			registerMaterialized(this, this[kOwner]);
+		const owner = this[kOwner];
+		if (owner === null) {
+			// A list with nowhere to register is told of nothing, so it holds
+			// what it computes for this read alone.
+			recompute(this);
+			return this[kItems];
 		}
-		if (!this[kStanding]) {
+		if (this[kWide]) {
+			// The document a list is over is the one its owner belongs to, and
+			// adopting the owner hands the list to another document.
+			const document = owner[kDocument];
+			const registered = this[kRegistered] as Document | null;
+			if (registered !== document) {
+				if (registered !== null) {
+					registered[kWideLists]?.delete(this);
+				}
+				this[kRegistered] = document;
+				registerWide(this, document);
+			}
+		} else if (this[kRegistered] === null) {
+			this[kRegistered] = owner;
+			registerMaterialized(this, owner);
+		}
+		if (!this[kExact]) {
 			recompute(this);
 		}
 		return this[kItems];
 	}
 
 	[kSync](): void {
-		if (!this[kRegistered]) {
+		if (this[kRegistered] === null) {
+			return;
+		}
+		if (this[kWide]) {
+			drop(this);
 			return;
 		}
 		recompute(this);
@@ -6051,24 +6075,30 @@ abstract class LiveList implements Materializable {
 	 *
 	 * Members the change carried are spliced in or out where the collection
 	 * can place them, which costs what moved rather than what the tree holds.
-	 * Everything else computes the list again.
+	 * Everything else computes the list again, except a list over a whole
+	 * document, which drops what it holds and computes on its next read: a
+	 * document has more changes it must hear than it has reads of one of
+	 * these.
 	 */
 	[kShapeSync](
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void {
-		if (!this[kRegistered]) {
+		if (this[kRegistered] === null) {
 			return;
 		}
-		if (this[kStanding]) {
+		if (this[kWide]) {
+			drop(this);
+			return;
+		}
+		if (this[kExact]) {
 			if (this[kChildMember] !== null && point !== this[kOwner]) {
 				return;
 			}
 			if (changed !== null) {
 				const members = this.shapeMembers(changed);
 				if (members !== null && splice(this, point, changed, members, added)) {
-					this[kVersion] = treeVersion;
 					return;
 				}
 			}
@@ -6079,19 +6109,35 @@ abstract class LiveList implements Materializable {
 	/**
 	 * Bring the collection back in step with an attribute that changed.
 	 *
-	 * An attribute is an input to what a collection holds -- a name it answers
-	 * to, a class it collects -- so the list is recomputed unless a collection
-	 * can say that this attribute on this element is none of its business.
+	 * An attribute is an input to what a collection holds where the collection
+	 * reads it -- a class it collects, a name it answers to -- and a list that
+	 * reads none of the element's attributes holds what it held.
 	 */
-	[kAttributeSync](_element: Element, _localName: string): void {
-		this[kSync]();
+	[kAttributeSync](_element: Element, localName: string): void {
+		const watched = this[kWatched];
+		if (watched === localName || watched === anyAttribute) {
+			this[kSync]();
+		}
 	}
+}
+
+/**
+ * Drop the list a collection holds, for one that computes on its next read.
+ *
+ * The own properties stand where they are: an index reads through to the list
+ * the read computes, and the count of them is settled by that read.
+ */
+function drop(list: LiveList): void {
+	if (!list[kExact]) {
+		return;
+	}
+	list[kExact] = false;
+	list[kMembersMoved]();
 }
 
 function recompute(
 	list: LiveList,
 ): void {
-	list[kVersion] = treeVersion;
 	list[kItems] = list.compute();
 	list[kExact] = true;
 	list[kMembersMoved]();
@@ -6169,7 +6215,7 @@ function splice(
 function computed(
 	list: LiveList,
 ): Node[] | null {
-	return list[kStanding] ? list[kItems] : null;
+	return list[kExact] ? list[kItems] : null;
 }
 
 /** Define an index for every member the collection has, and no more. */
@@ -6263,9 +6309,10 @@ export class NodeList extends LiveList {
 		live: boolean,
 		owner: Node | null = null,
 		childMember: ((node: Node) => boolean) | null = null,
-		told = childMember !== null,
+		watched: string | symbol | null = null,
+		wide = false,
 	) {
-		super(live, owner, childMember, told);
+		super(live, owner, childMember, watched, wide);
 		this[kCompute] = compute;
 	}
 
@@ -6298,9 +6345,10 @@ export class HTMLCollection extends LiveList {
 		compute: () => Element[],
 		owner: Node | null = null,
 		childMember: ((node: Node) => boolean) | null = null,
-		told = childMember !== null,
+		watched: string | symbol | null = null,
+		wide = false,
 	) {
-		super(true, owner, childMember, told);
+		super(true, owner, childMember, watched, wide);
 		this[kCompute] = compute;
 	}
 
@@ -6314,6 +6362,27 @@ export class HTMLCollection extends LiveList {
 			return members;
 		}
 		return null;
+	}
+
+	/**
+	 * A collection answers to the id and the name of what it holds, so a
+	 * change to either moves its named properties. No collection here draws a
+	 * member from an id or a name, so the members stand and the names are made
+	 * again from them; an element the collection cannot hold is left alone.
+	 */
+	override [kAttributeSync](element: Element, localName: string): void {
+		if (localName !== "id" && localName !== "name") {
+			super[kAttributeSync](element, localName);
+			return;
+		}
+		if (this[kChildMember] !== null && element[kParent] !== this[kOwner]) {
+			return;
+		}
+		if (this[kWide]) {
+			drop(this);
+		} else if (this[kExact]) {
+			materialize(this);
+		}
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -6448,7 +6517,6 @@ function areNameless(members: readonly Node[]): boolean {
 	return true;
 }
 
-const kWatched = Symbol("watched");
 const kMatches = Symbol("matches");
 const kMembers = Symbol("members");
 
@@ -6461,7 +6529,6 @@ const kMembers = Symbol("members");
  */
 class MatchingCollection extends HTMLCollection {
 	declare [kRoot]: Node;
-	declare [kWatched]: string | null;
 	declare [kMatches]: (element: Element) => boolean;
 	declare [kMembers]: Set<Node> | null;
 
@@ -6485,11 +6552,10 @@ class MatchingCollection extends HTMLCollection {
 			},
 			root,
 			null,
-			true,
+			watched,
 		);
 		this[kMembers] = null;
 		this[kRoot] = root;
-		this[kWatched] = watched;
 		this[kMatches] = matches;
 	}
 
@@ -6519,17 +6585,12 @@ class MatchingCollection extends HTMLCollection {
 	}
 
 	override [kAttributeSync](element: Element, localName: string): void {
-		// A collection answers to the id and the name of what it holds, so a
-		// change to either moves its named properties whatever the test says.
-		if (localName !== "id" && localName !== "name") {
-			if (localName !== this[kWatched]) {
-				return;
-			}
-			const items = computed(this);
-			if (items === null) {
-				this[kSync]();
-				return;
-			}
+		if (localName !== this[kWatched]) {
+			super[kAttributeSync](element, localName);
+			return;
+		}
+		const items = computed(this);
+		if (items !== null) {
 			let members = this[kMembers];
 			if (members === null) {
 				members = new Set(items);
@@ -6706,7 +6767,7 @@ export class DOMTokenList extends LiveList {
 	declare [kSupported]: Set<string> | null;
 
 	constructor(element: Element, attribute: string, supported?: string[]) {
-		super(true, element, null, true);
+		super(true, element);
 		this[kElement] = element;
 		this[kAttribute] = attribute;
 		this[kSupported] = supported === undefined ? null : new Set(supported);
@@ -7018,9 +7079,6 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	// A node's data is no part of the shape of a tree: the change carries no
-	// nodes, and a collection that lists nodes holds what it held.
-	bumpTreeVersion(node, [], false);
 }
 
 /** Queue a record for a change to a node's data. */
@@ -7498,7 +7556,6 @@ function changeAttribute(attribute: Attr, value: string): void {
 		value,
 		attribute[kNamespace],
 	);
-	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 	notifyAttributeChange(element, attribute[kLocalName]);
 }
@@ -7514,7 +7571,6 @@ function appendAttribute(element: Element, attribute: Attr): void {
 		attribute[kValue],
 		attribute[kNamespace],
 	);
-	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 	notifyAttributeChange(element, attribute[kLocalName]);
 }
@@ -7534,7 +7590,6 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 		null,
 		attribute[kNamespace],
 	);
-	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 	notifyAttributeChange(element, attribute[kLocalName]);
 }
@@ -7556,7 +7611,6 @@ function replaceAttribute(
 		newAttribute[kValue],
 		newAttribute[kNamespace],
 	);
-	bumpVersion();
 	syncAttributeCollections(element, newAttribute[kLocalName]);
 	notifyAttributeChange(element, newAttribute[kLocalName]);
 }
@@ -7645,7 +7699,7 @@ export class NamedNodeMap extends LiveList {
 	declare [kElement]: Element;
 
 	constructor(element: Element) {
-		super(true, element, null, true);
+		super(true, element);
 		this[kElement] = element;
 	}
 
@@ -11937,7 +11991,10 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 	declare [kOwner]: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
-		super(compute, owner);
+		// The form attribute associates a control with a form anywhere in the
+		// tree, and what a control is depends on what it carries, so the list
+		// is over the whole document and any attribute is an input to it.
+		super(compute, owner, null, anyAttribute, true);
 		this[kOwner] = owner;
 	}
 
@@ -12020,7 +12077,7 @@ Object.defineProperty(
 /** The radio buttons that share a name, and the value the checked one has. */
 export class RadioNodeList extends NodeList {
 	constructor(compute: () => Node[], owner: Node | null = null) {
-		super(compute, true, owner);
+		super(compute, true, owner, null, anyAttribute, true);
 	}
 
 	get value(): string {
@@ -14665,9 +14722,9 @@ export class HTMLOptionElement extends HTMLElement {
 	[kOptionDirty]: boolean;
 
 	/**
-	 * An option's selectedness. A select's `selectedOptions` is a live list
-	 * over it, and a live list revalidates against the tree's version, so
-	 * moving selectedness is moving the tree as far as that list can tell.
+	 * An option's selectedness, which is no attribute and no part of a tree:
+	 * the one live list drawing on it is the select's `selectedOptions`, and
+	 * it is told here.
 	 */
 	get [kSelectedness](): boolean {
 		return this[kSelectednessValue];
@@ -14678,7 +14735,11 @@ export class HTMLOptionElement extends HTMLElement {
 			return;
 		}
 		this[kSelectednessValue] = value;
-		bumpVersion();
+		const select = selectOf(this);
+		const selected = select === null ? null : select[kSelectedOptions];
+		if (selected !== null) {
+			syncMethod.call(selected);
+		}
 	}
 
 	get form(): HTMLFormElement | null {
@@ -19083,6 +19144,7 @@ export class Document extends Node {
 		this[kPopoverShowing] = false;
 		this[kPopoverHidingCount] = 0;
 		this[kImplementation] = null;
+		this[kWideLists] = null;
 	}
 
 	[kDocumentURL]: string;
@@ -19091,6 +19153,7 @@ export class Document extends Node {
 	[kContentType]: string;
 	[kEncoding]: string;
 	[kIdMap]: Map<string, Element[]>;
+	[kWideLists]: Set<Materializable> | null;
 
 	[kSelection]: Selection | null;
 	[kSelectionChangeScheduled]: boolean;
@@ -19417,6 +19480,8 @@ export class Document extends Node {
 			},
 			true,
 			this,
+			null,
+			"name",
 		);
 	}
 
