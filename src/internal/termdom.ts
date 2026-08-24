@@ -4194,7 +4194,7 @@ async function renderInteractive(
 		offset: -termdom[kViewport].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		scroll,
+		delta: scroll?.delta ?? 0,
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();

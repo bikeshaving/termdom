@@ -396,34 +396,12 @@ function renderElement(
 	// lies wholly outside that band would be walked -- styles computed, text
 	// shaped, borders drawn -- and then discarded cell by cell. Skip it here
 	// and the paint costs what is on screen, not what is in the document.
-	// The enclosing band, for the child-enumeration queries below; the
-	// per-band check culls precisely on recursion, and the context's cell
-	// mask makes any overshoot harmless.
 	// Extents are cached in unscrolled layout rows; a subtree inside scrolled
 	// boxes paints that many rows higher, so the band moves down instead.
 	const scrolledRows = painter[kScrolledRows];
 	let bandTop = -ctx.viewportOffset + scrolledRows;
 	let bandBottom = bandTop + ctx.rows;
-	if (ctx.paintBands) {
-		// Skip any subtree outside every band.
-		let inside = false;
-		bandTop = Infinity;
-		bandBottom = -Infinity;
-		for (const [start, end] of ctx.paintBands) {
-			const top = start - ctx.viewportOffset + scrolledRows;
-			const bottom = end - ctx.viewportOffset + scrolledRows;
-			bandTop = Math.min(bandTop, top);
-			bandBottom = Math.max(bandBottom, bottom);
-			if (!painter[kLayout].isSubtreeOutsideBand(element, top, bottom)) {
-				inside = true;
-			}
-		}
-		if (!inside) {
-			return;
-		}
-	} else if (
-		painter[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)
-	) {
+	if (painter[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)) {
 		return;
 	}
 

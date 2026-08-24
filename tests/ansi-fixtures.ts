@@ -340,35 +340,20 @@ export const scenarios: Scenario[] = [
 			out += "|";
 			out += renderFrame(
 				renderer,
-				{
-					offset: 0,
-					cursorRow: 0,
-					regionRows: 10,
-					scroll: {delta: 3, bands: [[7, 10]]},
-				},
+				{offset: 0, cursorRow: 0, regionRows: 10, delta: 3},
 				paint(3),
 			);
 			out += "|";
 			out += renderFrame(
 				renderer,
-				{
-					offset: 0,
-					cursorRow: 0,
-					regionRows: 10,
-					scroll: {delta: -2, bands: [[0, 2]]},
-				},
+				{offset: 0, cursorRow: 0, regionRows: 10, delta: -2},
 				paint(1),
 			);
 			out += "|";
-			// Delta zero: a banded repaint with no terminal scroll.
+			// Delta zero: a plain repaint with no terminal scroll.
 			out += renderFrame(
 				renderer,
-				{
-					offset: 0,
-					cursorRow: 0,
-					regionRows: 10,
-					scroll: {delta: 0, bands: [[4, 6]]},
-				},
+				{offset: 0, cursorRow: 0, regionRows: 10, delta: 0},
 				paint(1),
 			);
 			return out;

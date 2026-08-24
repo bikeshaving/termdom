@@ -1311,12 +1311,6 @@ export class CellContext {
 		bottom: number;
 	} | null;
 
-	// When set, only buffer rows inside these [start, end) bands accept
-	// writes; every other row is the seeded previous frame. Writes outside
-	// the bands are identical to the seeded content by construction, so
-	// dropping them loses nothing.
-	paintBands: Array<[number, number]> | null;
-
 	constructor(
 		grid: CellGrid,
 		rows: number,
@@ -1325,7 +1319,6 @@ export class CellContext {
 	) {
 		this.caret = null;
 		this.clipRect = null;
-		this.paintBands = null;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1602,29 +1595,10 @@ function inClip(
 }
 
 /**
- * Whether a terminal row is a scroll frame's to paint. Rows outside the
- * bands were seeded from the shifted previous grid and still hold their
- * content; a writer that lands on one would overwrite cells nothing is
- * going to repaint.
- */
-function inPaintBand(context: CellContext, terminalRow: number): boolean {
-	if (!context.paintBands) {
-		return true;
-	}
-	for (const [start, end] of context.paintBands) {
-		if (terminalRow >= start && terminalRow < end) {
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
  * The grid index a write at document (row, col) may land on, or -1 when it
- * must be dropped: off the terminal, on a row outside a scroll frame's
- * paint bands, or outside the active clip. The one gate for cell writers;
- * each calls it once at entry, so no writer can apply one of these checks
- * without the others.
+ * must be dropped: off the terminal, or outside the active clip. The one
+ * gate for cell writers; each calls it once at entry, so no writer can apply
+ * one of these checks without the other.
  */
 function guardedWriteIndex(
 	context: CellContext,
@@ -1638,9 +1612,6 @@ function guardedWriteIndex(
 		col < 0 ||
 		col >= context.cols
 	) {
-		return -1;
-	}
-	if (!inPaintBand(context, terminalRow)) {
 		return -1;
 	}
 	if (!inClip(context, row, col)) {
@@ -1989,7 +1960,7 @@ export class Screen {
 		offset,
 		cursorRow: cursorPosition,
 		regionRows,
-		scroll,
+		delta = 0,
 	}: {
 		/** Rows the camera has scrolled, negative downward. */
 		offset: number;
@@ -1997,7 +1968,8 @@ export class Screen {
 		cursorRow?: number;
 		/** Rows the frame spans, when it is taller than the screen. */
 		regionRows?: number;
-		scroll?: {delta: number; bands: Array<[number, number]>};
+		/** Rows the camera moved since the last frame, positive downward. */
+		delta?: number;
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
@@ -2007,15 +1979,15 @@ export class Screen {
 		// A camera move is a rigid transform the terminal performs itself:
 		// DECSTBM pins the margins to our region (a shell prompt above is
 		// outside them), and DL/IL within margins move rows without touching
-		// the scrollback, unlike SU. The previous buffer shifts to match; the
-		// caller's bands repaint; every other row is seeded from the shifted
-		// model so the diff leaves it alone. Delta 0 is a banded repaint with
-		// no terminal scroll. A pending reset, a growth frame, or no previous
-		// frame falls through to the full diff.
+		// the scrollback, unlike SU. The previous buffer shifts to match, so
+		// the diff below prices this frame against where the rows now sit and
+		// emits only what the shift could not carry. A pending reset, a growth
+		// frame, or no previous frame falls through to the plain diff, which
+		// repaints the region instead of shifting it.
 		let scrollPrefix = "";
 		const scrolling =
-			scroll !== undefined &&
-			Math.abs(scroll.delta) < this[kRows] &&
+			delta !== 0 &&
+			Math.abs(delta) < this[kRows] &&
 			this[kPrev] !== null &&
 			// A rigid transform only makes sense between grids of one width.
 			this[kPrev].cols === cols &&
@@ -2024,13 +1996,12 @@ export class Screen {
 			!this[kNeedsFullClear] &&
 			cursorPosition !== undefined;
 		if (scrolling && this[kPrev]) {
-			const delta = scroll!.delta;
 			const regionTop = cursorPosition;
 			const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
 
 			// Shift the model in place: screen row r now shows what was at
 			// r + delta, and the rows scrolled in from beyond the edge are
-			// blank until the bands paint them.
+			// blank until the paint fills them.
 			const prev = this[kPrev];
 			const prevCells = prev.rows * cols;
 			const shift = Math.abs(delta) * cols;
@@ -2039,7 +2010,7 @@ export class Screen {
 			} else if (delta > 0) {
 				prev.moveRange(0, shift, prevCells);
 				prev.clearRange(prevCells - shift, prevCells);
-			} else if (delta < 0) {
+			} else {
 				prev.moveRange(shift, 0, prevCells - shift);
 				prev.clearRange(0, shift);
 			}
@@ -2050,60 +2021,20 @@ export class Screen {
 					shiftedLines.add(moved);
 				}
 			}
-			// The repainted bands emit fresh \r\x1b[K lines regardless.
-			for (const [start, end] of scroll!.bands) {
-				for (let row = start; row < end; row++) {
-					shiftedLines.add(row);
-				}
-			}
 			this[kRenderedLines] = shiftedLines;
-
-			// Seed everything outside the bands from the shifted model; the
-			// paint callback owns the bands (enforced by the context mask).
-			// Contiguous non-band rows copy as one run per plane.
-			const seedEnd = Math.min(frameRows, prev.rows);
-			let runStart = -1;
-			for (let row = 0; row <= seedEnd; row++) {
-				let inBand = row === seedEnd;
-				if (!inBand) {
-					for (const [start, end] of scroll!.bands) {
-						if (row >= start && row < end) {
-							inBand = true;
-							break;
-						}
-					}
-				}
-				if (inBand) {
-					if (runStart >= 0) {
-						next.copyFrom(prev, {
-							to: runStart * cols,
-							start: runStart * cols,
-							end: row * cols,
-						});
-						runStart = -1;
-					}
-				} else if (runStart < 0) {
-					runStart = row;
-				}
-			}
 
 			// DECSTBM homes the cursor; the standard prefix always CUPs for
 			// this caller afterward.
-			if (delta !== 0) {
-				const count = Math.abs(delta);
-				scrollPrefix =
-					`\x1b[${regionTop + 1};${regionEnd}r` +
-					`\x1b[${regionTop + 1};1H` +
-					(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
-					"\x1b[r";
-			}
+			const count = Math.abs(delta);
+			scrollPrefix =
+				`\x1b[${regionTop + 1};${regionEnd}r` +
+				`\x1b[${regionTop + 1};1H` +
+				(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
+				"\x1b[r";
 		}
 
 		// Create drawing context and execute drawing operations
 		const context = new CellContext(next, frameRows, cols, offset);
-		if (scrolling) {
-			context.paintBands = scroll!.bands;
-		}
 		this[kEndFrame] = (): string => {
 			// Whether this frame probes is the width authority's call, taken
 			// as the frame is emitted so the session's facts are current.
