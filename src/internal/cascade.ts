@@ -4993,10 +4993,49 @@ class CSSSupportsRule extends CSSTextConditionRule {
 }
 
 const kContainerName = Symbol("containerName");
+const kContainerQuery = Symbol("containerQuery");
+
+/** A node a `@container` prelude parse yields at its top level. */
+interface ContainerPreludeNode {
+	type: string;
+	name?: string;
+	loc?: ParsedSpan | null;
+}
+
+/**
+ * The container a `@container` prelude names and the query it asks, split at
+ * the Identifier node css-tree parses the name into. The name keeps its
+ * authored spelling, escapes and all, and the query is the condition text
+ * standing after it. `none`, `and`, `or` and `not` name no container, so a
+ * prelude opening with one of those words is query alone, as is a prelude
+ * off the grammar.
+ */
+function containerParts(prelude: string): {name: string; query: string} {
+	let nodes: ContainerPreludeNode[] = [];
+	try {
+		const ast = CSSTree.parse(prelude, {
+			context: "atrulePrelude",
+			atrule: "container",
+			positions: true,
+		}) as unknown as {children?: {toArray(): ContainerPreludeNode[]} | null};
+		nodes = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return {name: "", query: prelude};
+	}
+	const head = nodes[0];
+	if (head?.type !== "Identifier" || !head.loc) {
+		return {name: "", query: prelude};
+	}
+	return {
+		name: head.name ?? "",
+		query: prelude.slice(head.loc.end.offset).trim(),
+	};
+}
 
 /** `@container`: parsed, with no container query engine behind it. */
 class CSSContainerRule extends CSSTextConditionRule {
 	declare [kContainerName]: string;
+	declare [kContainerQuery]: string;
 
 	constructor(
 		conditionText: string,
@@ -5007,8 +5046,9 @@ class CSSContainerRule extends CSSTextConditionRule {
 		super(conditionText, parentStyleSheet, parentRule, build);
 		// The prelude does not change under this rule, so its parts are read
 		// once here.
-		const match = /^([a-zA-Z_-][\w-]*)\s+/.exec(this.conditionText);
-		this[kContainerName] = match?.[1] ?? "";
+		const parts = containerParts(this.conditionText);
+		this[kContainerName] = parts.name;
+		this[kContainerQuery] = parts.query;
 	}
 
 	get type(): number {
@@ -5024,10 +5064,7 @@ class CSSContainerRule extends CSSTextConditionRule {
 	}
 
 	get containerQuery(): string {
-		const name = this[kContainerName];
-		return name ?
-				this.conditionText.slice(name.length).trim() :
-			this.conditionText;
+		return this[kContainerQuery];
 	}
 }
 
@@ -7084,14 +7121,8 @@ function convertRule(
 					namespaces,
 				),
 			);
-		case "namespace": {
-			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
-			return new CSSNamespaceRule(
-				match?.[1] ?? "",
-				unwrapURL(match?.[2] ?? ""),
-				sheet,
-			);
-		}
+		case "namespace":
+			return convertNamespaceRule(prelude, sheet);
 		case "page":
 			return new CSSPageRule(
 				prelude,
@@ -7147,12 +7178,52 @@ function nestedRules(node: ParsedNode): ParsedNode[] {
 	);
 }
 
-/** `url("x")` or `"x"` reduced to the URL it names. */
-function unwrapURL(text: string): string {
-	const trimmed = text.trim();
-	const url = /^url\(\s*(.*?)\s*\)$/i.exec(trimmed);
-	const body = url ? url[1] : trimmed;
-	return /^["']/.test(body) ? body.slice(1, -1) : body;
+/** A node a `@namespace` prelude parse yields at its top level. */
+interface NamespacePreludeNode {
+	type: string;
+	name?: string;
+	value?: string;
+}
+
+/**
+ * `@namespace [prefix] <url>`, read off css-tree's prelude nodes: an
+ * optional Identifier naming the prefix, then the Url or String carrying the
+ * namespace URI, unescaped. A prefix keeps its authored spelling, which is
+ * the spelling it serializes back as and the spelling a selector's prefix is
+ * decoded against.
+ *
+ * Null for a prelude off the grammar, which is an at-rule a sheet drops.
+ */
+function convertNamespaceRule(
+	prelude: string,
+	sheet: CSSStyleSheet | null,
+): CSSNamespaceRule | null {
+	let nodes: NamespacePreludeNode[];
+	try {
+		const ast = CSSTree.parse(prelude, {
+			context: "atrulePrelude",
+			atrule: "namespace",
+		}) as unknown as {
+			children?: {toArray(): NamespacePreludeNode[]} | null;
+		};
+		nodes = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+	let index = 0;
+	let prefix = "";
+	if (nodes[index]?.type === "Identifier") {
+		prefix = nodes[index].name ?? "";
+		index++;
+	}
+	const uri = nodes[index];
+	if (
+		nodes.length !== index + 1 ||
+		(uri.type !== "Url" && uri.type !== "String")
+	) {
+		return null;
+	}
+	return new CSSNamespaceRule(prefix, uri.value ?? "", sheet);
 }
 
 /** A node an `@layer` prelude parse yields. */
