@@ -756,6 +756,21 @@ function cssValueChildren(value: string): CSSNode[] | null {
 	return nodes;
 }
 
+/**
+ * Keep value nodes a sheet parse already built. Only a value whose canonical
+ * spelling is the authored spelling may seed the cache: for it, the sheet's
+ * parse is the parse cssValueChildren would run on the cached key.
+ */
+function seedValueNodes(value: string, nodes: CSSNode[]): void {
+	if (valueNodes.has(value)) {
+		return;
+	}
+	if (valueNodes.size > 1024) {
+		valueNodes.clear();
+	}
+	valueNodes.set(value, nodes);
+}
+
 /** The one node a value holds, or undefined for none or several. */
 function singleValueNode(value: string): CSSNode | undefined {
 	const nodes = cssValueChildren(value);
@@ -5113,6 +5128,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	constructor(
 		fontFamily: string,
 		node: ParsedNode,
+		source: string,
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(parentStyleSheet, null);
@@ -5127,7 +5143,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				onChange: () => notifyRule(this),
 				descriptors: "@font-feature-values",
 			});
-			assignDeclarations(block, blockDeclarations(child));
+			assignDeclarations(block, blockDeclarations(child, source));
 			this[kBlocks].set(child.name.toLowerCase(), block);
 		}
 	}
@@ -6552,6 +6568,12 @@ function validPseudoElementArguments(
 
 // ---- The text parser -------------------------------------------------------
 
+/** The span of source text a parsed node covers. */
+interface ParsedSpan {
+	start: {offset: number};
+	end: {offset: number};
+}
+
 /** A parsed rule, as the CSS parser hands it over. */
 interface ParsedNode {
 	type: string;
@@ -6559,7 +6581,12 @@ interface ParsedNode {
 	prelude?: {type: string; value?: string} | null;
 	block?: {children: {toArray(): ParsedNode[]}} | null;
 	property?: string;
-	value?: {type: string; value?: string} | null;
+	value?: {
+		type: string;
+		value?: string;
+		loc?: ParsedSpan | null;
+		children?: {toArray(): CSSNode[]} | null;
+	} | null;
 	important?: boolean | string;
 	children?: {toArray(): ParsedNode[]} | null;
 }
@@ -6570,23 +6597,38 @@ function nodesOf(container: {
 	return container.children ? container.children.toArray() : [];
 }
 
-/** The declarations of a rule's block, in source order. */
-function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
+/**
+ * The declarations of a rule's block, in source order. The value nodes the
+ * sheet parse built are kept where the canonical spelling is the authored
+ * one, so reading such a value later costs no second parse; the value TEXT
+ * is always serialized from the authored source, which the parsed spelling
+ * cannot stand in for.
+ */
+function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
 	if (!node.block) {
 		return declarations;
 	}
 	for (const child of nodesOf(node.block)) {
-		if (child.type !== "Declaration") {
+		if (child.type !== "Declaration" || !child.value) {
 			continue;
 		}
 		const name = parsePropertyName(child.property ?? "");
-		const value = serializeCSSValue(
-			CSSTree.generate(child.value as never),
-			name,
-		);
+		const raw =
+			child.value.type === "Raw" ?
+					(child.value.value ?? "") :
+				child.value.loc ?
+						source.slice(
+							child.value.loc.start.offset,
+							child.value.loc.end.offset,
+						) :
+						CSSTree.generate(child.value as never);
+		const value = serializeCSSValue(raw, name);
 		if (!value) {
 			continue;
+		}
+		if (child.value.type === "Value" && value === raw.trim()) {
+			seedValueNodes(value, nodesOf(child.value as never) as CSSNode[]);
 		}
 		declarations.push({
 			name,
@@ -6605,16 +6647,22 @@ function parseRules(
 ): CSSRule[] {
 	let ast: {children: {toArray(): ParsedNode[]}};
 	try {
+		// Values parse to nodes on this one pass; a value off its grammar
+		// falls back to a Raw node rather than an error, so what the sheet
+		// keeps for it is what a raw-text parse kept. Positions are on
+		// because the value TEXT serializes from the authored source, not
+		// from the parsed spelling.
 		ast = CSSTree.parse(text, {
-			parseValue: false,
+			parseValue: true,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,
 			parseCustomProperty: false,
+			positions: true,
 		}) as never;
 	} catch (_err) {
 		return [];
 	}
-	return convertRules(ast.children.toArray(), sheet, parentRule);
+	return convertRules(ast.children.toArray(), text, sheet, parentRule);
 }
 
 /** One rule's text, as insertRule takes it. */
@@ -6642,7 +6690,13 @@ function parseRuleText(
 	if (nodes.length !== 1) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
-	const rule = convertRule(nodes[0], sheet, parentRule, sheetNamespaces(sheet));
+	const rule = convertRule(
+		nodes[0],
+		source,
+		sheet,
+		parentRule,
+		sheetNamespaces(sheet),
+	);
 	if (!rule) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
@@ -6658,14 +6712,15 @@ function parseRuleText(
  * off a sheet that is still being built.
  */
 function convertRules(
-	source: readonly ParsedNode[],
+	nodes: readonly ParsedNode[],
+	source: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 	namespaces: SelectorNamespaces = {default: null, prefixes: new Map()},
 ): CSSRule[] {
 	const rules: CSSRule[] = [];
-	for (const node of source) {
-		const rule = convertRule(node, sheet, parentRule, namespaces);
+	for (const node of nodes) {
+		const rule = convertRule(node, source, sheet, parentRule, namespaces);
 		if (!rule) {
 			continue;
 		}
@@ -6691,6 +6746,7 @@ function preludeText(node: ParsedNode): string {
 
 function convertRule(
 	node: ParsedNode,
+	source: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
@@ -6711,10 +6767,11 @@ function convertRule(
 		}
 		return new CSSStyleRule(
 			selectors,
-			blockDeclarations(node),
+			blockDeclarations(node, source),
 			sheet,
 			parentRule,
-			(rule) => convertRules(nestedRules(node), sheet, rule, namespaces),
+			(rule) =>
+				convertRules(nestedRules(node), source, sheet, rule, namespaces),
 		);
 	}
 	if (node.type !== "Atrule") {
@@ -6727,18 +6784,32 @@ function convertRule(
 			return null;
 		case "container":
 			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+				convertRules(
+					nodesOf(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		case "counter-style":
-			return new CSSCounterStyleRule(prelude, blockDeclarations(node), sheet);
+			return new CSSCounterStyleRule(
+				prelude,
+				blockDeclarations(node, source),
+				sheet,
+			);
 		case "font-face":
-			return new CSSFontFaceRule(blockDeclarations(node), sheet, parentRule);
+			return new CSSFontFaceRule(
+				blockDeclarations(node, source),
+				sheet,
+				parentRule,
+			);
 		case "font-feature-values":
-			return new CSSFontFeatureValuesRule(prelude, node, sheet);
+			return new CSSFontFeatureValuesRule(prelude, node, source, sheet);
 		case "font-palette-values":
 			return new CSSFontPaletteValuesRule(
 				prelude,
-				blockDeclarations(node),
+				blockDeclarations(node, source),
 				sheet,
 			);
 		case "import":
@@ -6752,7 +6823,7 @@ function convertRule(
 						(frame) =>
 							new CSSKeyframeRule(
 								preludeText(frame),
-								blockDeclarations(frame),
+								blockDeclarations(frame, source),
 								sheet,
 								rule,
 							),
@@ -6761,12 +6832,24 @@ function convertRule(
 		case "layer":
 			return node.block ?
 					new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
-						convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+						convertRules(
+							nodesOf(node.block ?? {}),
+							source,
+							sheet,
+							group,
+							namespaces,
+						),
 					) :
 					new CSSLayerStatementRule(prelude, sheet, parentRule);
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+				convertRules(
+					nodesOf(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		case "namespace": {
 			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
@@ -6779,23 +6862,45 @@ function convertRule(
 		case "page":
 			return new CSSPageRule(
 				prelude,
-				blockDeclarations(node),
+				blockDeclarations(node, source),
 				sheet,
 				parentRule,
 			);
 		case "property":
-			return new CSSPropertyRule(prelude, blockDeclarations(node), sheet);
+			return new CSSPropertyRule(
+				prelude,
+				blockDeclarations(node, source),
+				sheet,
+			);
 		case "scope":
 			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+				convertRules(
+					nodesOf(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		case "starting-style":
 			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+				convertRules(
+					nodesOf(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		case "supports":
 			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+				convertRules(
+					nodesOf(node.block ?? {}),
+					source,
+					sheet,
+					group,
+					namespaces,
+				),
 			);
 		default:
 			return null;
