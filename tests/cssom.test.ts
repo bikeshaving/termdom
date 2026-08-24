@@ -514,21 +514,20 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 		(rule as CSSKeyframeRule).keyText,
 	)).toEqual(["0%", "50%", ""]);
 
-	// An @import prelude off the grammar splits as text: a bare `layer`
-	// prefix comes off any word, and unjudged media text is kept. A
-	// constructed sheet drops @import, so these parse through a style
-	// element's sheet.
+	// `layer` names a layer only as a word of its own: `layered-thing` is a
+	// media query, and a media type this engine cannot judge is kept as
+	// authored. A constructed sheet drops @import, so these parse through a
+	// style element's sheet.
 	const style = dom.document.createElement("style");
 	dom.document.head.appendChild(style);
 	const parsedSheet = style.sheet!;
 	parsedSheet.insertRule("@import url(a.css) layered-thing;", 0);
 	const imported = parsedSheet.cssRules[0] as CSSImportRule;
-	expect(imported.layerName).toBe("");
-	expect(imported.media.mediaText).toBe("ed-thing");
-	parsedSheet.insertRule("@import url(a.css) garbage!!;", 0);
-	expect((parsedSheet.cssRules[0] as CSSImportRule).media.mediaText).toBe(
-		"garbage!!",
-	);
+	expect(imported.layerName).toBe(null);
+	expect(imported.media.mediaText).toBe("layered-thing");
+	// An @import prelude off the grammar is a rule nothing can hold.
+	expect(() => parsedSheet.insertRule("@import url(a.css) garbage!!;", 0))
+		.toThrow();
 
 	dom.dispose();
 });

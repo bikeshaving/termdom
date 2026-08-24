@@ -6968,21 +6968,25 @@ function unwrapURL(text: string): string {
 interface ImportPreludeNode {
 	type: string;
 	name?: string;
+	value?: string;
 	loc?: ParsedSpan | null;
+	children?: {toArray(): ImportPreludeNode[]} | null;
 }
 
 /**
- * An @import prelude read off css-tree's nodes: the url or string, a bare
- * `layer` or `layer()`, `supports()`, and the media list, each part's text
- * serialized from its authored slice. Null for text css-tree refuses, or
- * for a shape whose nodes the splitter below divides differently -- the
- * splitter reads a bare `layer` prefix off any word, for one -- which
- * keeps the splitter's answer.
+ * `@import <url> [layer] [supports()] [media]`, read off css-tree's prelude
+ * nodes: the url or string node carries the href it spells, unescaped; a
+ * `layer()` carries the layer it names; and the supports condition and the
+ * media list keep their authored text, sliced at their nodes' positions.
+ *
+ * Null for a prelude off the grammar, which is an at-rule a sheet drops and
+ * insertRule refuses.
  */
-function convertImportPrelude(
-	text: string,
+function convertImportRule(
+	prelude: string,
 	sheet: CSSStyleSheet | null,
 ): CSSImportRule | null {
+	const text = prelude.trim();
 	let nodes: ImportPreludeNode[];
 	try {
 		const ast = CSSTree.parse(text, {
@@ -6997,29 +7001,24 @@ function convertImportPrelude(
 	const sliceOf = (node: ImportPreludeNode): string =>
 		node.loc ? text.slice(node.loc.start.offset, node.loc.end.offset) : "";
 	const head = nodes[0];
-	if (!head?.loc || (head.type !== "Url" && head.type !== "String")) {
+	if (!head || (head.type !== "Url" && head.type !== "String")) {
 		return null;
 	}
-	const href = unwrapURL(sliceOf(head));
-	let cursor = head.loc.end.offset;
+	const href = head.value ?? "";
 	let index = 1;
 
 	let layerName: string | null = null;
 	let node: ImportPreludeNode | undefined = nodes[index];
 	if (
-		node?.loc &&
+		node &&
 		(node.type === "Identifier" || node.type === "Function") &&
 		(node.name ?? "").toLowerCase() === "layer"
 	) {
-		const match = /^layer(?:\(\s*([^)]*)\s*\))?$/i.exec(sliceOf(node));
-		if (!match) {
-			return null;
-		}
-		layerName = match[1]?.trim() ?? "";
-		cursor = node.loc.end.offset;
+		const layer = (node.children?.toArray() ?? []).find(
+			(child) => child.type === "Layer",
+		);
+		layerName = layer?.name ?? "";
 		index++;
-	} else if (/^layer/i.test(text.slice(cursor).trimStart())) {
-		return null;
 	}
 
 	let supportsText: string | null = null;
@@ -7029,18 +7028,18 @@ function convertImportPrelude(
 		node.type === "Function" &&
 		(node.name ?? "").toLowerCase() === "supports"
 	) {
-		supportsText = sliceOf(node).slice("supports(".length, -1).trim();
-		cursor = node.loc.end.offset;
+		// The slice spans the function: its name, its parentheses and the
+		// condition between them.
+		supportsText = sliceOf(node)
+			.slice((node.name ?? "").length + 1, -1)
+			.trim();
 		index++;
-	}
-	if (/^supports\(/i.test(text.slice(cursor).trimStart())) {
-		return null;
 	}
 
 	let mediaText = "";
 	node = nodes[index];
 	if (node) {
-		if (!node.loc || node.type !== "MediaQueryList") {
+		if (node.type !== "MediaQueryList") {
 			return null;
 		}
 		mediaText = sliceOf(node);
@@ -7050,52 +7049,6 @@ function convertImportPrelude(
 		return null;
 	}
 	return new CSSImportRule(href, mediaText, layerName, supportsText, sheet);
-}
-
-/** `@import <url> [layer] [supports()] [media]`, split into its parts. */
-function convertImportRule(
-	prelude: string,
-	sheet: CSSStyleSheet | null,
-): CSSImportRule {
-	let rest = prelude.trim();
-	if (!rest.includes("/*") && !rest.includes("\\")) {
-		const parsed = convertImportPrelude(rest, sheet);
-		if (parsed) {
-			return parsed;
-		}
-	}
-	const head = /^(url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|"[^"]*"|'[^']*')/.exec(
-		rest,
-	);
-	const href = unwrapURL(head?.[1] ?? "");
-	rest = rest.slice(head?.[1].length ?? 0).trim();
-
-	let layerName: string | null = null;
-	const layer = /^layer(?:\(\s*([^)]*)\s*\))?/i.exec(rest);
-	if (layer) {
-		layerName = layer[1]?.trim() ?? "";
-		rest = rest.slice(layer[0].length).trim();
-	}
-
-	let supportsText: string | null = null;
-	if (/^supports\(/i.test(rest)) {
-		// The condition nests parentheses -- `supports((a: b) or (c: d))` --
-		// so its end is the parenthesis that closes the one it opened.
-		let depth = 0;
-		let end = rest.length;
-		for (let i = "supports(".length - 1; i < rest.length; i++) {
-			if (rest[i] === "(") {
-				depth++;
-			} else if (rest[i] === ")" && --depth === 0) {
-				end = i;
-				break;
-			}
-		}
-		supportsText = rest.slice("supports(".length, end).trim();
-		rest = rest.slice(end + 1).trim();
-	}
-
-	return new CSSImportRule(href, rest, layerName, supportsText, sheet);
 }
 
 // Assigning a rule's text does nothing, as in every engine -- but the
