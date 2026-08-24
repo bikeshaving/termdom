@@ -1,7 +1,11 @@
 import type {LayoutEngine} from "./layout.js";
 import type {Viewport} from "./viewport.js";
-import type {ColorDepth, WidthMeasurer} from "./ansi.js";
-import {recordClusterAdvance} from "./text.js";
+import type {ColorDepth} from "./ansi.js";
+import {
+	probingTeaches,
+	recordClusterAdvance,
+	type WidthMeasurer,
+} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
 /** The terminal's dimensions, in cells. */
@@ -554,7 +558,11 @@ export class TerminalSession {
 	declare [kWidthStarved]: Set<string>;
 	/** The wait for a frame the starved clusters could have ridden. */
 	declare [kStarvationTimer]: ReturnType<typeof setTimeout> | null;
-	/** Whether frames may still probe. */
+	/**
+	 * Whether frames may still probe: false from the start when nothing
+	 * interactive is behind the transport, and false for good once the
+	 * terminal proves it does not answer.
+	 */
 	declare [kWidthProbing]: boolean;
 	/** Whether the terminal has ever answered a width probe. */
 	declare [kWidthAnswered]: boolean;
@@ -601,19 +609,13 @@ export class TerminalSession {
 
 	/**
 	 * The frame's channel for measuring cluster advances, or undefined where
-	 * there is nothing to learn: a transport with no terminal behind it, a
-	 * terminal that agreed to grapheme-cluster widths (mode 2027 makes it
-	 * measure the way we do, so the tables and the screen already agree), or
-	 * one that has proven it does not answer.
+	 * there is nothing to learn. The channel reports this session's facts;
+	 * whether asking is worth anything is the width authority's judgement.
 	 */
 	get widthMeasurer(): WidthMeasurer | undefined {
-		if (!this[kInteractive] || !this[kWidthProbing]) {
-			return undefined;
-		}
-		if (this[kGraphemeClustersNegotiated]) {
-			return undefined;
-		}
-		return this[kWidthMeasurer];
+		return probingTeaches(this[kWidthMeasurer]) ?
+			this[kWidthMeasurer] :
+			undefined;
 	}
 
 	constructor(deps: {
@@ -648,7 +650,7 @@ export class TerminalSession {
 		this[kWidthProbes] = [];
 		this[kProbingEnded] = false;
 		this[kWidthSettled] = new Set<string>();
-		this[kWidthProbing] = true;
+		this[kWidthProbing] = deps.interactive;
 		this[kWidthAnswered] = false;
 		this[kWidthProbeTimer] = null;
 		this[kWidthRunEpoch] = -1;
@@ -660,6 +662,8 @@ export class TerminalSession {
 		this[kWidthStarved] = new Set();
 		this[kStarvationTimer] = null;
 		this[kWidthMeasurer] = {
+			probing: () => this[kWidthProbing],
+			clusterWidthsNegotiated: () => this[kGraphemeClustersNegotiated],
 			wants: (cluster: string) => !this[kWidthSettled].has(cluster),
 			starved: () => this[kWidthStarved],
 			defer: (cluster: string) => {

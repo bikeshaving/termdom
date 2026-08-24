@@ -212,6 +212,63 @@ export function widthIsUncertain(cluster: string): boolean {
 }
 
 /**
+ * How a frame asks the terminal what a cluster's advance really is.
+ *
+ * The width tables predict; only the terminal knows. A frame is already
+ * painting each cluster at a column it computed, so the question costs one
+ * query appended to the glyph it is about -- no scratch area, no extra
+ * write. The session implements this: it owns the wire, so it emits the
+ * query bytes, holds the queries in flight, matches the replies into
+ * recordClusterAdvance, and reports the capability facts probingTeaches
+ * weighs.
+ */
+export interface WidthMeasurer {
+	/**
+	 * Whether the wire can still carry an answered probe: a terminal is
+	 * behind the transport and has not proven that it never answers.
+	 */
+	probing(): boolean;
+	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
+	clusterWidthsNegotiated(): boolean;
+	/** Whether this cluster's advance is still unmeasured. */
+	wants(cluster: string): boolean;
+	/**
+	 * Take a probe for `cluster`, whose first cell is painted at 0-based
+	 * `column` and which the tables call `width` cells wide. `run` names the
+	 * contiguous emission the cluster belongs to: probes sharing a run reached
+	 * their columns by advancing through glyphs, so each one's divergence
+	 * carries into the next; a cursor move starts a new run and re-syncs the
+	 * column. Returns the bytes the frame appends after the glyph.
+	 */
+	probe(cluster: string, run: number, column: number, width: number): string;
+	/**
+	 * The margin guard turned this cluster away: it was painted too near the
+	 * last column for its answer to be readable.
+	 */
+	defer(cluster: string): void;
+	/**
+	 * Clusters the margin has starved: deferred, and never asked about
+	 * anywhere else either. Right-aligned text lands its glyphs against the
+	 * last column whenever it paints them, so in place they would wait
+	 * forever. The frame measures these somewhere with room instead; a
+	 * cluster leaves the set when it is probed.
+	 */
+	starved(): ReadonlySet<string>;
+}
+
+/**
+ * Whether asking `measurer`'s terminal can teach the ledger anything. The
+ * session reports the facts; the judgement sits here, with the tables an
+ * answer would correct. A wire that stopped answering teaches nothing, and
+ * neither does a terminal that negotiated mode 2027: that mode makes it
+ * advance by grapheme cluster, measuring the way the tables do, so its
+ * answers cannot disagree with them.
+ */
+export function probingTeaches(measurer: WidthMeasurer): boolean {
+	return measurer.probing() && !measurer.clusterWidthsNegotiated();
+}
+
+/**
  * Get the display width of a string in terminal columns.
  *
  * Bun.stringWidth is faster and is used wherever it is right, which is

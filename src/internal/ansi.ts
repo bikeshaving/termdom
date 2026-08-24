@@ -1,4 +1,8 @@
-import {stringWidth, widthIsUncertain} from "./text.js";
+import {
+	stringWidth,
+	widthIsUncertain,
+	type WidthMeasurer,
+} from "./text.js";
 
 const BorderEdgeStyle = {
 	// Style values (bits 3-0)
@@ -1022,42 +1026,6 @@ function moveCursor(
 	}
 
 	return [moveOutput, targetRow, targetCol];
-}
-
-/**
- * How the frame asks the terminal what a cluster's advance really is.
- *
- * The width tables predict; only the terminal knows. A frame is already
- * painting each cluster at a column it computed, so the question costs one
- * query appended to the glyph it is about -- no scratch area, no extra write.
- * The session implements this: it holds the queries in flight and matches the
- * replies.
- */
-export interface WidthMeasurer {
-	/** Whether this cluster's advance is still unmeasured. */
-	wants(cluster: string): boolean;
-	/**
-	 * Take a probe for `cluster`, whose first cell is painted at 0-based
-	 * `column` and which the tables call `width` cells wide. `run` names the
-	 * contiguous emission the cluster belongs to: probes sharing a run reached
-	 * their columns by advancing through glyphs, so each one's divergence
-	 * carries into the next; a cursor move starts a new run and re-syncs the
-	 * column. Returns the bytes the frame appends after the glyph.
-	 */
-	probe(cluster: string, run: number, column: number, width: number): string;
-	/**
-	 * The margin guard turned this cluster away: it was painted too near the
-	 * last column for its answer to be readable.
-	 */
-	defer(cluster: string): void;
-	/**
-	 * Clusters the margin has starved: deferred, and never asked about anywhere
-	 * else either. Right-aligned text puts the same glyphs against the last
-	 * column every time it paints them, so in place they would wait forever.
-	 * The frame measures these somewhere with room instead; a cluster leaves
-	 * the set when it is probed.
-	 */
-	starved(): ReadonlySet<string>;
 }
 
 /**

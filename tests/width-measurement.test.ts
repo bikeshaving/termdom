@@ -14,10 +14,11 @@
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {Screen, type WidthMeasurer} from "../src/internal/ansi.js";
+import {Screen} from "../src/internal/ansi.js";
 import {
 	recordClusterAdvance,
 	stringWidth,
+	type WidthMeasurer,
 } from "../src/internal/text.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
@@ -45,6 +46,8 @@ function recordingMeasurer(starved = new Set<string>()): {
 		deferred,
 		starved,
 		measurer: {
+			probing: () => true,
+			clusterWidthsNegotiated: () => false,
 			wants: (cluster) => !asked.has(cluster),
 			starved: () => starved,
 			defer: (cluster) => {
