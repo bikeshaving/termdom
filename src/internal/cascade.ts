@@ -717,8 +717,74 @@ function splitCommaList(value: string): string[] {
 	return items;
 }
 
-/** A `<time>` token, in the two units CSS spells time in. */
-const CSS_TIME_VALUE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:s|ms)$/i;
+/**
+ * The node shapes css-tree parses a declaration value into: the form raw
+ * value text takes before the engine interprets it.
+ */
+type CSSNode = {
+	type: string;
+	name?: string;
+	value?: string;
+	unit?: string;
+	children?: {toArray(): CSSNode[]};
+};
+
+/**
+ * Parsed value ASTs by their source text. Value parsing runs inside style
+ * computation, and a document re-reads its handful of spellings, so the
+ * bounded cache holds one parse per spelling.
+ */
+const valueNodes = new Map<string, CSSNode[] | null>();
+
+/** A value's top-level nodes, or null for text css-tree refuses. */
+function cssValueChildren(value: string): CSSNode[] | null {
+	let nodes = valueNodes.get(value);
+	if (nodes === undefined) {
+		try {
+			const ast = CSSTree.parse(value, {
+				context: "value",
+			}) as unknown as CSSNode;
+			nodes = ast.children ? ast.children.toArray() : [];
+		} catch (_err) {
+			nodes = null;
+		}
+		if (valueNodes.size > 1024) {
+			valueNodes.clear();
+		}
+		valueNodes.set(value, nodes);
+	}
+	return nodes;
+}
+
+/** The one node a value holds, or undefined for none or several. */
+function singleValueNode(value: string): CSSNode | undefined {
+	const nodes = cssValueChildren(value);
+	return nodes && nodes.length === 1 ? nodes[0] : undefined;
+}
+
+/** The arguments of a function node, with the comma operators dropped. */
+function functionArguments(node: CSSNode): CSSNode[] {
+	return (node.children?.toArray() ?? []).filter(
+		(child) => child.type !== "Operator",
+	);
+}
+
+/** The milliseconds a `<time>` token spells, or null for anything else. */
+function cssTimeMs(token: string): number | null {
+	const node = singleValueNode(token.trim());
+	if (!node || node.type !== "Dimension") {
+		return null;
+	}
+	const unit = (node.unit ?? "").toLowerCase();
+	if (unit !== "s" && unit !== "ms") {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	if (!Number.isFinite(number)) {
+		return null;
+	}
+	return unit === "ms" ? number : number * 1000;
+}
 
 /** A `<easing-function>`, keyword or functional. */
 const CSS_EASING_VALUE =
@@ -742,7 +808,7 @@ function expandTransition(value: string): Record<string, string> {
 		const times: string[] = [];
 		for (const token of splitComponents(item)) {
 			const lower = token.toLowerCase();
-			if (times.length < 2 && CSS_TIME_VALUE.test(token)) {
+			if (times.length < 2 && cssTimeMs(token) !== null) {
 				times.push(lower);
 			} else if (!easing && CSS_EASING_VALUE.test(token)) {
 				easing = lower;
@@ -1203,37 +1269,50 @@ export function getPropertyValue(element: Element, property: string): string {
 	return computedStyleOf(element).computedValueOf(property);
 }
 
+/**
+ * The number a value leads with, read off its Dimension, Number or
+ * Percentage node. The unit collapses to the count -- px and ch both
+ * measure one cell here -- and a percentage keeps its mark for the caller
+ * to resolve against a basis.
+ */
+function leadingUnitValue(
+	value: string,
+): number | {percentage: number} | null {
+	const nodes = value ? cssValueChildren(value.trim()) : null;
+	const node = nodes?.[0];
+	if (!node) {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	if (!Number.isFinite(number)) {
+		return null;
+	}
+	if (node.type === "Percentage") {
+		return {percentage: number};
+	}
+	if (node.type === "Dimension" || node.type === "Number") {
+		return number;
+	}
+	return null;
+}
+
+/**
+ * A nonnegative length or percentage, or null. Negative lengths are
+ * refused here -- a negative width, padding or border is invalid CSS and
+ * must not reach layout -- and parseSignedUnitValue carries the sign for
+ * the paths that take one.
+ */
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
-	if (!value) {
-		return null;
-	}
-
-	// Handle values that start with a digit or are "0" variants
-	if (!/^[\d.]/.test(value)) {
-		return null;
-	}
-
-	if (value.endsWith("%")) {
-		const num = parseFloat(value.slice(0, -1));
-		if (isNaN(num)) {
-			return null;
-		}
-		return {percentage: num};
-	}
-
-	// Handle "ch" units (character width) - treat as character units
-	if (value.endsWith("ch")) {
-		const num = parseFloat(value.slice(0, -2));
-		if (isNaN(num)) {
-			return null;
-		}
-		return num; // In TermDOM, 1ch = 1 character
-	}
-
-	const num = parseFloat(value);
-	return isNaN(num) ? null : num;
+	const parsed = leadingUnitValue(value);
+	const number =
+		typeof parsed === "number" ?
+			parsed :
+			parsed !== null ?
+				parsed.percentage :
+				null;
+	return number !== null && number < 0 ? null : parsed;
 }
 
 /**
@@ -1256,27 +1335,11 @@ export interface BoxModel {
 	borderLeftWidth: number;
 }
 
-/**
- * Lengths that may be negative: margins (and offsets). parseUnitValue's
- * digit gate is the right default -- negative widths, paddings and borders
- * are invalid CSS and must stay rejected -- so the sign lives in a separate
- * parser the margin paths opt into.
- */
+/** Lengths that may be negative: margins (and offsets) opt into the sign. */
 export function parseSignedUnitValue(
 	value: string,
 ): ReturnType<typeof parseUnitValue> {
-	const trimmed = value?.trim();
-	if (trimmed?.startsWith("-")) {
-		const inner = parseUnitValue(trimmed.slice(1));
-		if (typeof inner === "number") {
-			return -inner;
-		}
-		if (inner && "percentage" in inner) {
-			return {percentage: -inner.percentage};
-		}
-		return null;
-	}
-	return parseUnitValue(value);
+	return leadingUnitValue(value ?? "");
 }
 
 /**
@@ -1444,18 +1507,16 @@ function isValidDeclaration(
 	if (!LENGTH_PROPERTIES.has(property)) {
 		return true;
 	}
-	// A shorthand is invalid as a WHOLE if any of its components is, so
-	// every component is checked and one failure rejects the declaration.
-	return value
-		.trim()
-		.split(/\s+/)
-		.filter(Boolean)
-		.every((token) => {
-			if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(token)) {
-				return true; // carries a unit, or is a keyword like auto
-			}
-			return parseFloat(token) === 0; // bare 0 is the one legal bare number
-		});
+	// A shorthand is invalid as a WHOLE if one component is, so one bare
+	// nonzero Number node rejects the declaration. Only top-level nodes
+	// count: a number nested in a calc() is the grammar's business.
+	const nodes = cssValueChildren(value.trim());
+	if (!nodes) {
+		return true;
+	}
+	return !nodes.some(
+		(node) => node.type === "Number" && parseFloat(node.value ?? "") !== 0,
+	);
 }
 
 /**
@@ -1729,16 +1790,23 @@ const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
  * length always computes to.
  */
 function computedNumber(token: string): string {
-	const match = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-zA-Z%]*)$/.exec(token);
-	if (!match) {
+	const node = singleValueNode(token);
+	if (!node) {
 		return token;
 	}
-	const number = parseFloat(match[1]);
+	const number = parseFloat(node.value ?? "");
 	if (!Number.isFinite(number)) {
 		return token;
 	}
-	const unit = match[2].toLowerCase() || (number === 0 ? "px" : "");
-	return `${number}${unit}`;
+	switch (node.type) {
+		case "Number":
+			return number === 0 ? "0px" : `${number}`;
+		case "Percentage":
+			return `${number}%`;
+		case "Dimension":
+			return `${number}${(node.unit ?? "").toLowerCase()}`;
+	}
+	return token;
 }
 
 /** The corner radii, whose value is a horizontal radius and a vertical one. */
@@ -1766,17 +1834,9 @@ function collapseRadius(value: string): string {
  * -- is left as it is written.
  */
 function normalizeGridAreas(value: string): string {
-	type ValueNode = {type: string; value?: string};
-	let children: ValueNode[];
-	try {
-		const ast = CSSTree.parse(value, {context: "value"}) as unknown as {
-			children?: {toArray(): ValueNode[]};
-		};
-		children = ast.children ? ast.children.toArray() : [];
-	} catch (_err) {
-		return value;
-	}
+	const children = cssValueChildren(value);
 	if (
+		!children ||
 		children.length === 0 ||
 		children.some((node) => node.type !== "String")
 	) {
@@ -10811,12 +10871,7 @@ function transitionBase(
 }
 
 function parseCSSTime(token: string): number {
-	const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(ms|s)$/i.exec(token.trim());
-	if (!match) {
-		return 0;
-	}
-	const value = parseFloat(match[1]);
-	return match[2].toLowerCase() === "ms" ? value : value * 1000;
+	return cssTimeMs(token) ?? 0;
 }
 
 /**
@@ -11164,12 +11219,11 @@ function interpolateValue(from: string, to: string, progress: number): string {
 	if (progress >= 1) {
 		return to;
 	}
-	const a = CSS_SCALAR_VALUE.exec(from);
-	const b = CSS_SCALAR_VALUE.exec(to);
-	if (a && b && a[2].toLowerCase() === b[2].toLowerCase()) {
-		const start = parseFloat(a[1]);
-		const value = start + (parseFloat(b[1]) - start) * progress;
-		return `${Math.round(value * 1000) / 1000}${a[2]}`;
+	const a = scalarComponents(from);
+	const b = scalarComponents(to);
+	if (a && b && a.unit === b.unit) {
+		const value = a.number + (b.number - a.number) * progress;
+		return `${Math.round(value * 1000) / 1000}${a.unit}`;
 	}
 	const fromColor = parseTransitionColor(from);
 	const toColor = parseTransitionColor(to);
@@ -11188,7 +11242,28 @@ function interpolateValue(from: string, to: string, progress: number): string {
 	return progress < 0.5 ? from : to;
 }
 
-const CSS_SCALAR_VALUE = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i;
+/** A value that is one number, dimension or percentage, taken apart. */
+function scalarComponents(
+	value: string,
+): {number: number; unit: string} | null {
+	const node = singleValueNode(value);
+	if (!node) {
+		return null;
+	}
+	const number = parseFloat(node.value ?? "");
+	if (!Number.isFinite(number)) {
+		return null;
+	}
+	switch (node.type) {
+		case "Number":
+			return {number, unit: ""};
+		case "Percentage":
+			return {number, unit: "%"};
+		case "Dimension":
+			return {number, unit: (node.unit ?? "").toLowerCase()};
+	}
+	return null;
+}
 
 /** A color as [r, g, b, alpha], through the one color parser the engine has. */
 function parseTransitionColor(
@@ -12713,6 +12788,33 @@ const CSSOM_WINDOW_GLOBALS = {
 };
 
 /**
+ * `[ <custom-ident> <integer>? ]+`: each identifier opens a pair, a number
+ * that follows it sets the count, and a counter written without one takes
+ * `fallback` -- 0 for a reset, 1 for an increment.
+ */
+function counterPairs(
+	value: string,
+	fallback: number,
+): Array<[string, number]> {
+	const pairs: Array<[string, number]> = [];
+	const nodes = cssValueChildren(value);
+	if (!nodes) {
+		return pairs;
+	}
+	for (const node of nodes) {
+		if (node.type === "Identifier" && node.name) {
+			pairs.push([node.name, fallback]);
+		} else if (node.type === "Number" && pairs.length > 0) {
+			const count = parseInt(node.value ?? "", 10);
+			if (!isNaN(count)) {
+				pairs[pairs.length - 1][1] = count;
+			}
+		}
+	}
+	return pairs;
+}
+
+/**
  * Parse counter-reset CSS property
  */
 function parseCounterReset(
@@ -12720,14 +12822,8 @@ function parseCounterReset(
 	scope: CounterScope,
 	counterReset: string,
 ): void {
-	// Parse "counter1 value1 counter2 value2" format
-	const tokens = counterReset.trim().split(/\s+/);
-	for (let i = 0; i < tokens.length; i += 2) {
-		const counterName = tokens[i];
-		const value = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 0;
-		if (counterName && !isNaN(value)) {
-			scope.counters[counterName] = value;
-		}
+	for (const [name, value] of counterPairs(counterReset, 0)) {
+		scope.counters[name] = value;
 	}
 }
 
@@ -12739,14 +12835,8 @@ function parseCounterIncrement(
 	scope: CounterScope,
 	counterIncrement: string,
 ): void {
-	// Parse "counter1 increment1 counter2 increment2" format
-	const tokens = counterIncrement.trim().split(/\s+/);
-	for (let i = 0; i < tokens.length; i += 2) {
-		const counterName = tokens[i];
-		const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
-		if (counterName && !isNaN(increment)) {
-			incrementCounter(manager, scope, counterName, increment);
-		}
+	for (const [name, increment] of counterPairs(counterIncrement, 1)) {
+		incrementCounter(manager, scope, name, increment);
 	}
 }
 
@@ -12942,25 +13032,8 @@ onShadowAttached((root) => {
 // implement them gives.
 // ---------------------------------------------------------------------------
 
-type CSSNode = {
-	type: string;
-	name?: string;
-	value?: string;
-	unit?: string;
-	children?: {toArray(): CSSNode[]};
-};
-
 /** The refused grid values, kept together so the refusal is one list. */
 const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
-
-function cssValueChildren(value: string): CSSNode[] | null {
-	try {
-		const ast = CSSTree.parse(value, {context: "value"}) as unknown as CSSNode;
-		return ast.children ? ast.children.toArray() : [];
-	} catch (_err) {
-		return null;
-	}
-}
 
 /** A length token in cells: px and ch both measure one cell, and nothing else does. */
 function trackCells(node: CSSNode): number | null {
@@ -13013,13 +13086,6 @@ function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
 		}
 	}
 	return null;
-}
-
-/** The arguments of a function node, with the comma operators dropped. */
-function functionArguments(node: CSSNode): CSSNode[] {
-	return (node.children?.toArray() ?? []).filter(
-		(child) => child.type !== "Operator",
-	);
 }
 
 /** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
