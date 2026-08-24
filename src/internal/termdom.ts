@@ -742,7 +742,6 @@ const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
-const kLastFrameScrollTop = Symbol("lastFrameScrollTop");
 const kLastFrameEpoch = Symbol("lastFrameEpoch");
 const kLastFrameInputGeneration = Symbol("lastFrameInputGeneration");
 const kLastFrameActiveElement = Symbol("lastFrameActiveElement");
@@ -843,7 +842,6 @@ export class TermDOM {
 	// process -- attach() does, lazily on the first render or explicitly.
 	declare [kAttached]: boolean;
 	// Frame-over-frame state the transform gate compares against.
-	declare [kLastFrameScrollTop]: number | null;
 	declare [kLastFrameEpoch]: number;
 	// Reactive pseudo-state (:focus, :hover, :active) and document selection
 	// change without mutations; repaint-and-diff is what detects them, so
@@ -986,7 +984,6 @@ export class TermDOM {
 		this[kResizeTimer] = null;
 		this[kResizeInProgress] = false;
 		this[kAttached] = false;
-		this[kLastFrameScrollTop] = null;
 		this[kLastFrameEpoch] = -1;
 		this[kInputGeneration] = 0;
 		this[kActivationDepth] = 0;
@@ -5134,8 +5131,7 @@ async function renderInteractive(
 	if (
 		pending.length === 0 &&
 		!revealed &&
-		termdom[kLastFrameScrollTop] !== null &&
-		termdom[kViewport].scrollTop === termdom[kLastFrameScrollTop] &&
+		termdom[kViewport].atLastPlannedScrollTop &&
 		termdom[kLayoutEngine].invalidationEpoch === termdom[kLastFrameEpoch] &&
 		termdom[kInputGeneration] === termdom[kLastFrameInputGeneration] &&
 		termdom.document.activeElement === termdom[kLastFrameActiveElement] &&
@@ -5192,6 +5188,10 @@ async function renderInteractive(
 	// pointer entered and left -- so hover keeps the transform.
 	let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
 	const scrollTop = termdom[kViewport].scrollTop;
+	// Taken whether or not this frame can transform: the plan's baseline is
+	// "scrollTop as of the last painted frame", which a full-diff frame
+	// advances too.
+	const plan = termdom[kViewport].takeFramePlan(regionHeight);
 	const styleDamage = termdom[kStyleManager].drainStyleDamage();
 	const frameDamage = termdom[kFrameDamage];
 	termdom[kFrameDamage] = new Map();
@@ -5202,10 +5202,10 @@ async function renderInteractive(
 		!documentSelection.isCollapsed,
 	);
 	transform: if (
+		plan !== null &&
 		!isFullscreen &&
 		top === 0 &&
 		regionHeight === termdom[kHeight] &&
-		termdom[kLastFrameScrollTop] !== null &&
 		termdom[kLayoutEngine].structuralGeneration ===
 		termdom[kLastFrameStructuralGeneration] &&
 		!liveSelection &&
@@ -5216,10 +5216,7 @@ async function renderInteractive(
 		frameDamage !== null &&
 		styleDamage !== null
 	) {
-		const delta = scrollTop - termdom[kLastFrameScrollTop];
-		if (Math.abs(delta) >= regionHeight) {
-			break transform;
-		}
+		const delta = plan.shift;
 		if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
 			break transform;
 		}
@@ -5241,10 +5238,8 @@ async function renderInteractive(
 			}
 		};
 
-		if (delta > 0) {
-			addBand(regionHeight - delta, regionHeight);
-		} else if (delta < 0) {
-			addBand(0, -delta);
+		for (const [start, end] of plan.exposedBands) {
+			addBand(start, end);
 		}
 		for (const band of termdom[kLayoutEngine].fixedRowBands(termdom[kHeight])) {
 			addBand(band[0], band[1]);
@@ -5323,7 +5318,7 @@ async function renderInteractive(
 			if (before) {
 				const beforeTop = fixedSpace ?
 					before.top :
-					before.top - termdom[kLastFrameScrollTop];
+					before.top - plan.previousScrollTop;
 				addBand(beforeTop - delta, beforeTop + before.height - delta);
 			}
 		}
@@ -5347,7 +5342,6 @@ async function renderInteractive(
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
-	termdom[kLastFrameScrollTop] = scrollTop;
 	termdom[kLastFrameEpoch] = termdom[kLayoutEngine].invalidationEpoch;
 	termdom[kLastFrameInputGeneration] = termdom[kInputGeneration];
 	termdom[kLastFrameStructuralGeneration] =

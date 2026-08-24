@@ -1,6 +1,22 @@
 const kScrollTop = Symbol("scrollTop");
 const kScreenTop = Symbol("screenTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
+const kLastPlannedScrollTop = Symbol("lastPlannedScrollTop");
+
+/**
+ * One frame's composition plan: the net camera movement since the previous
+ * plan, and the region rows that movement exposed. A frame with a plan is a
+ * transform -- the terminal shifts the carried rows and only the exposed
+ * bands (plus whatever damage the renderer adds) repaint.
+ */
+export interface FramePlan {
+	/** Net rows scrolled since the last plan, positive downward. */
+	shift: number;
+	/** The scroll offset the previous plan was taken at. */
+	previousScrollTop: number;
+	/** The [start, end) region rows the shift exposed at an edge. */
+	exposedBands: Array<[number, number]>;
+}
 
 /**
  * Where the visible window is looking in the document, and the mapping between
@@ -11,11 +27,13 @@ export class Viewport {
 		this[kScrollTop] = 0;
 		this[kScreenTop] = 0;
 		this[kAnchorScrollTop] = 0;
+		this[kLastPlannedScrollTop] = null;
 	}
 
 	declare [kScrollTop]: number;
 	declare [kScreenTop]: number;
 	declare [kAnchorScrollTop]: number;
+	declare [kLastPlannedScrollTop]: number | null;
 
 	/** Viewport scroll offset into the document (window.scrollY), clamped >= 0. */
 	get scrollTop(): number {
@@ -52,6 +70,41 @@ export class Viewport {
 	/** Scroll the viewport to an absolute document row, clamped >= 0. */
 	scrollTo(row: number): void {
 		this[kScrollTop] = Math.max(0, row);
+	}
+
+	/** Whether the camera still sits where the last frame plan painted it. */
+	get atLastPlannedScrollTop(): boolean {
+		return (
+			this[kLastPlannedScrollTop] !== null &&
+			this[kScrollTop] === this[kLastPlannedScrollTop]
+		);
+	}
+
+	/**
+	 * Plan the frame about to paint a `regionHeight`-row window: the net
+	 * scroll shift since the previous plan, and the rows that shift exposed.
+	 * Null means the frame must repaint in full -- the first frame has no
+	 * baseline, and a shift of a region height or more carries nothing over.
+	 * Taking the plan records the current offset as the next plan's baseline
+	 * either way, whether or not the caller can honor a transform.
+	 */
+	takeFramePlan(regionHeight: number): FramePlan | null {
+		const previous = this[kLastPlannedScrollTop];
+		this[kLastPlannedScrollTop] = this[kScrollTop];
+		if (previous === null) {
+			return null;
+		}
+		const shift = this[kScrollTop] - previous;
+		if (Math.abs(shift) >= regionHeight) {
+			return null;
+		}
+		const exposedBands: Array<[number, number]> = [];
+		if (shift > 0) {
+			exposedBands.push([regionHeight - shift, regionHeight]);
+		} else if (shift < 0) {
+			exposedBands.push([0, -shift]);
+		}
+		return {shift, previousScrollTop: previous, exposedBands};
 	}
 
 	/**
