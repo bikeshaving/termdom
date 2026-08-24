@@ -5066,7 +5066,7 @@ class CSSLayerBlockRule extends CSSGroupingRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		this[kName] = name.trim();
+		this[kName] = name;
 	}
 
 	get type(): number {
@@ -5090,15 +5090,12 @@ class CSSLayerStatementRule extends CSSRule {
 	declare [kNames]: string[];
 
 	constructor(
-		prelude: string,
+		names: readonly string[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		this[kNames] = prelude
-			.split(",")
-			.map((name) => name.trim())
-			.filter(Boolean);
+		this[kNames] = [...names];
 	}
 
 	get type(): number {
@@ -6979,18 +6976,36 @@ function convertRule(
 							),
 					),
 			);
-		case "layer":
-			return node.block ?
-					new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
-						convertRules(
-							nodesOf(node.block ?? {}),
-							source,
-							sheet,
-							group,
-							namespaces,
-						),
-					) :
-					new CSSLayerStatementRule(prelude, sheet, parentRule);
+		case "layer": {
+			const names = layerNames(prelude);
+			if (!names) {
+				return null;
+			}
+			if (!node.block) {
+				// `@layer;` orders nothing, and names nothing to order.
+				return names.length === 0 ?
+					null :
+						new CSSLayerStatementRule(names, sheet, parentRule);
+			}
+			// A block opens one layer: a list of names belongs to the
+			// statement form alone.
+			if (names.length > 1) {
+				return null;
+			}
+			return new CSSLayerBlockRule(
+				names[0] ?? "",
+				sheet,
+				parentRule,
+				(group) =>
+					convertRules(
+						nodesOf(node.block ?? {}),
+						source,
+						sheet,
+						group,
+						namespaces,
+					),
+			);
+		}
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
@@ -7070,6 +7085,39 @@ function unwrapURL(text: string): string {
 	const url = /^url\(\s*(.*?)\s*\)$/i.exec(trimmed);
 	const body = url ? url[1] : trimmed;
 	return /^["']/.test(body) ? body.slice(1, -1) : body;
+}
+
+/** A node an `@layer` prelude parse yields. */
+interface LayerPreludeNode {
+	type: string;
+	name?: string;
+	children?: {toArray(): LayerPreludeNode[]} | null;
+}
+
+/**
+ * The layer names an `@layer` prelude lists, read off its Layer nodes: the
+ * empty list for the anonymous block, and null for a prelude off the
+ * grammar, which is an at-rule a sheet drops. A name keeps its authored
+ * spelling, escapes and all, which is the spelling it serializes back as.
+ */
+function layerNames(prelude: string): string[] | null {
+	let nodes: LayerPreludeNode[];
+	try {
+		const ast = CSSTree.parse(prelude, {
+			context: "atrulePrelude",
+			atrule: "layer",
+		}) as unknown as {children?: {toArray(): LayerPreludeNode[]} | null};
+		nodes = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+	if (nodes.length === 0) {
+		return [];
+	}
+	if (nodes.length !== 1 || nodes[0].type !== "LayerList") {
+		return null;
+	}
+	return (nodes[0].children?.toArray() ?? []).map((node) => node.name ?? "");
 }
 
 /** A node an @import prelude parse yields at its top level. */
