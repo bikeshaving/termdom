@@ -3964,16 +3964,11 @@ function serializeMediaFeature(feature: string): string {
 }
 
 /**
- * One media query, in the spelling CSSOM writes: the type and the feature
- * names case-folded, one space after each colon, and the media type dropped
- * where it says nothing -- `all and (color)` is the query `(color)` is, while
- * `not all and (color)` negates the pair and keeps it.
+ * A query serialized by splitting its text, for the text css-tree refuses:
+ * an unrecognized query passes through as authored, case-folded, which is
+ * how a list keeps carrying queries this engine cannot judge.
  */
-function serializeMediaQuery(query: string): string {
-	const text = String(query ?? "").trim();
-	if (!text) {
-		return "";
-	}
+function serializeMediaQueryText(text: string): string {
 	const parts = splitMediaConditions(text);
 	if (parts.length === 0) {
 		return "";
@@ -3996,6 +3991,147 @@ function serializeMediaQuery(query: string): string {
 		);
 	}
 	const type = head.toLowerCase();
+	if (type === "all" && !modifier && conditions.length > 0) {
+		return conditions.join(" and ");
+	}
+	return modifier + [type, ...conditions].join(" and ");
+}
+
+/** The nodes css-tree parses one media query into. */
+interface MediaQueryNode {
+	modifier?: string | null;
+	mediaType?: string | null;
+	condition?: {children: {toArray(): MediaConditionNode[]}} | null;
+}
+
+/** One part of a parsed media condition. */
+interface MediaConditionNode {
+	type: string;
+	name?: string;
+	loc?: ParsedSpan | null;
+}
+
+/**
+ * One media query, in the spelling CSSOM writes: the type and the feature
+ * names case-folded, one space after each colon, and the media type dropped
+ * where it says nothing -- `all and (color)` is the query `(color)` is, while
+ * `not all and (color)` negates the pair and keeps it.
+ *
+ * The query's structure -- modifier, type, the conditions `and` joins -- is
+ * read off css-tree's media query nodes, parsed once here; each condition's
+ * TEXT still serializes from the authored source, sliced at the node's
+ * position. Text css-tree refuses, or spells with comments or escapes the
+ * slices would drop, keeps the splitter above.
+ */
+function serializeMediaQuery(query: string): string {
+	const text = String(query ?? "").trim();
+	if (!text) {
+		return "";
+	}
+	if (text.includes("/*") || text.includes("\\")) {
+		return serializeMediaQueryText(text);
+	}
+	let queries: MediaQueryNode[];
+	try {
+		const ast = CSSTree.parse(text, {
+			context: "mediaQueryList",
+			positions: true,
+		}) as unknown as {children: {toArray(): MediaQueryNode[]}};
+		queries = ast.children.toArray();
+	} catch (_err) {
+		return serializeMediaQueryText(text);
+	}
+	if (queries.length !== 1) {
+		return serializeMediaQueryText(text);
+	}
+	const parsed = queries[0];
+	let modifier = parsed.modifier ? `${parsed.modifier.toLowerCase()} ` : "";
+	const type = parsed.mediaType ? parsed.mediaType.toLowerCase() : null;
+	// css-tree tolerates shapes the splitter treats as opaque text -- a
+	// missing `and`, a dangling word -- so the source is re-walked beside the
+	// nodes, and a query whose parts do not stand ` and ` apart keeps the
+	// splitter's answer.
+	let cursor = 0;
+	if (parsed.modifier) {
+		const head = /^(?:not|only)\s+/i.exec(text);
+		if (!head) {
+			return serializeMediaQueryText(text);
+		}
+		cursor = head[0].length;
+	}
+	if (parsed.mediaType) {
+		if (!text.startsWith(parsed.mediaType, cursor)) {
+			return serializeMediaQueryText(text);
+		}
+		cursor += parsed.mediaType.length;
+	}
+	const conditions: string[] = [];
+	// What may stand at the cursor: the first part, the joiner a feature
+	// awaits, or the feature a joiner or bare `not` demands.
+	let expected: "first" | "feature" | "joiner" = "first";
+	for (const part of
+		parsed.condition ? parsed.condition.children.toArray() : []) {
+		if (!part.loc) {
+			return serializeMediaQueryText(text);
+		}
+		const gap = text.slice(cursor, part.loc.start.offset);
+		cursor = part.loc.end.offset;
+		if (part.type === "Identifier") {
+			const word = (part.name ?? "").toLowerCase();
+			// A leading `not` reads as the query's modifier, as the splitter
+			// took it; `and` joins; any other bare word is a shape the
+			// splitter divides differently.
+			if (word === "not" && expected === "first" && !modifier && !type) {
+				if (gap !== "") {
+					return serializeMediaQueryText(text);
+				}
+				modifier = "not ";
+			} else if (word === "and" && expected === "joiner") {
+				if (!/^\s+$/.test(gap)) {
+					return serializeMediaQueryText(text);
+				}
+			} else {
+				return serializeMediaQueryText(text);
+			}
+			expected = "feature";
+			continue;
+		}
+		const wellGapped =
+			expected === "joiner" ?
+				false :
+				expected === "feature" ?
+						/^\s+$/.test(gap) :
+					type !== null ?
+							/^\s+and\s+$/i.test(gap) :
+						gap === "";
+		if (!wellGapped) {
+			return serializeMediaQueryText(text);
+		}
+		if (
+			part.type !== "Feature" &&
+			part.type !== "FeatureRange" &&
+			part.type !== "GeneralEnclosed" &&
+			part.type !== "Condition"
+		) {
+			return serializeMediaQueryText(text);
+		}
+		const slice = text.slice(part.loc.start.offset, part.loc.end.offset);
+		// A part that opens with anything but a parenthesis -- `not(color)`
+		// reads as an enclosed function -- is one the splitter took as text.
+		if (part.type !== "Condition" && !slice.startsWith("(")) {
+			return serializeMediaQueryText(text);
+		}
+		conditions.push(
+			serializeMediaFeature(part.type === "Condition" ? `(${slice})` : slice),
+		);
+		expected = "joiner";
+	}
+	if (expected === "feature" || cursor < text.length) {
+		return serializeMediaQueryText(text);
+	}
+	if (type === null) {
+		return modifier + conditions.join(" and ");
+	}
 	if (type === "all" && !modifier && conditions.length > 0) {
 		return conditions.join(" and ");
 	}
