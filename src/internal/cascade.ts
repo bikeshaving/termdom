@@ -35,7 +35,7 @@ import {
 	CSS_AT_RULE_DESCRIPTORS,
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
-} from "./cssproperties.js";
+} from "../generated/cssproperties.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 // ---------------------------------------------------------------------------

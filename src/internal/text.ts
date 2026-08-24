@@ -11,7 +11,7 @@ import {
 	UNCERTAIN_RANGES,
 	WIDE_RANGES,
 	ZERO_WIDTH_RANGES,
-} from "./widthtables.js";
+} from "../generated/widthtables.js";
 import arabicPersianReshaper from "arabic-persian-reshaper";
 
 // Bun is the only runtime with a native fast path worth branching on; Node

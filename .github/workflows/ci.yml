@@ -32,6 +32,31 @@ jobs:
       - name: Test
         run: bun run test
 
+  # src/generated/ has one author per file: its generator. This job reruns
+  # the hermetic generators and fails on any drift -- a hand edit to a
+  # generated file, or a generator change without its regenerated output.
+  # widthtables.ts is excluded: its input is the UCD, fetched, not vendored.
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - run: bun install --frozen-lockfile
+
+      - name: Regenerate
+        run: npx tsx scripts/generate-css-properties.ts
+
+      - name: Diff
+        run: git diff --exit-code src/generated/cssproperties.ts
+
   # termdom is developed under Bun, so nothing in `bun test` ever executes the
   # pure-JS fallbacks in src/runtime.ts. A regression there is invisible to the
   # whole suite and misrenders text on every runtime except the one we develop
