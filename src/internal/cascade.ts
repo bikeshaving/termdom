@@ -5014,8 +5014,25 @@ class CSSSupportsRule extends CSSTextConditionRule {
 	}
 }
 
+const kContainerName = Symbol("containerName");
+
 /** `@container`: parsed, with no container query engine behind it. */
 class CSSContainerRule extends CSSTextConditionRule {
+	declare [kContainerName]: string;
+
+	constructor(
+		conditionText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(conditionText, parentStyleSheet, parentRule, build);
+		// The prelude does not change under this rule, so its parts are read
+		// once here.
+		const match = /^([a-zA-Z_-][\w-]*)\s+/.exec(this.conditionText);
+		this[kContainerName] = match?.[1] ?? "";
+	}
+
 	get type(): number {
 		return 0;
 	}
@@ -5025,12 +5042,11 @@ class CSSContainerRule extends CSSTextConditionRule {
 	}
 
 	get containerName(): string {
-		const match = /^([a-zA-Z_-][\w-]*)\s+/.exec(this.conditionText);
-		return match?.[1] ?? "";
+		return this[kContainerName];
 	}
 
 	get containerQuery(): string {
-		const name = this.containerName;
+		const name = this[kContainerName];
 		return name ?
 				this.conditionText.slice(name.length).trim() :
 			this.conditionText;
@@ -5038,10 +5054,14 @@ class CSSContainerRule extends CSSTextConditionRule {
 }
 
 const kPrelude = Symbol("prelude");
+const kScopeStart = Symbol("scopeStart");
+const kScopeEnd = Symbol("scopeEnd");
 
 /** `@scope`: parsed, and its rules apply unscoped. */
 class CSSScopeRule extends CSSGroupingRule {
 	declare [kPrelude]: string;
+	declare [kScopeStart]: string | null;
+	declare [kScopeEnd]: string | null;
 
 	constructor(
 		prelude: string,
@@ -5051,6 +5071,12 @@ class CSSScopeRule extends CSSGroupingRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		this[kPrelude] = prelude.trim();
+		// The prelude does not change under this rule, so its parts are read
+		// once here.
+		const start = /^\(([^)]*)\)/.exec(this[kPrelude]);
+		this[kScopeStart] = start?.[1].trim() ?? null;
+		const end = /\bto\s*\(([^)]*)\)/.exec(this[kPrelude]);
+		this[kScopeEnd] = end?.[1].trim() ?? null;
 	}
 
 	get type(): number {
@@ -5058,13 +5084,11 @@ class CSSScopeRule extends CSSGroupingRule {
 	}
 
 	get start(): string | null {
-		const match = /^\(([^)]*)\)/.exec(this[kPrelude]);
-		return match?.[1].trim() ?? null;
+		return this[kScopeStart];
 	}
 
 	get end(): string | null {
-		const match = /\bto\s*\(([^)]*)\)/.exec(this[kPrelude]);
-		return match?.[1].trim() ?? null;
+		return this[kScopeEnd];
 	}
 
 	get cssText(): string {

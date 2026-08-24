@@ -474,3 +474,61 @@ test("a shadow root's stylesheets and adopted sheets are the same CSSOM", async 
 
 	dom.dispose();
 });
+
+test("text the CSS parsers cannot judge passes through as authored", () => {
+	const {dom} = makeDOM();
+	const sheet = new dom.window.CSSStyleSheet();
+
+	// A media list keeps queries this engine cannot judge, case-folded.
+	const mediaText = (query: string): string => {
+		sheet.replaceSync(`@media ${query} { a { color: red } }`);
+		return (sheet.cssRules[0] as CSSMediaRule).media.mediaText;
+	};
+	expect(mediaText("GARBAGE!!")).toBe("garbage!!");
+	expect(mediaText("screen and foo")).toBe("screen and foo");
+	expect(mediaText("not(color)")).toBe("not(color)");
+	expect(mediaText("not (a) and (b)")).toBe("not (a) and (b)");
+	expect(mediaText("SCREEN and (Min-Width: 5PX)")).toBe(
+		"screen and (min-width: 5px)",
+	);
+	// An or-group serializes as one condition, its first value canonicalized.
+	expect(mediaText("((min-width: 05px) or (color))")).toBe(
+		"((min-width: 5px) or (color))",
+	);
+	// Features that stand apart without `and` are opaque text, not a join.
+	expect(mediaText("(min-width: 05px) (color)")).toBe(
+		"(min-width: 5px) (color)",
+	);
+
+	// A value whose parentheses never close swallows the rest of the block.
+	sheet.replaceSync("a { color: red(; width: 10px }");
+	const styleRule = sheet.cssRules[0] as CSSStyleRule;
+	expect(styleRule.style.length).toBe(0);
+	expect(styleRule.cssText).toBe("a { }");
+
+	// A keyframe selector is a percentage LITERAL: an exponent spelling is
+	// not one, and serializes empty.
+	sheet.replaceSync("@keyframes k { from {} 50.0% {} 1e2% {} }");
+	const keyframes = sheet.cssRules[0] as CSSKeyframesRule;
+	expect(Array.from(keyframes.cssRules, (rule) =>
+		(rule as CSSKeyframeRule).keyText,
+	)).toEqual(["0%", "50%", ""]);
+
+	// An @import prelude off the grammar splits as text: a bare `layer`
+	// prefix comes off any word, and unjudged media text is kept. A
+	// constructed sheet drops @import, so these parse through a style
+	// element's sheet.
+	const style = dom.document.createElement("style");
+	dom.document.head.appendChild(style);
+	const parsedSheet = style.sheet!;
+	parsedSheet.insertRule("@import url(a.css) layered-thing;", 0);
+	const imported = parsedSheet.cssRules[0] as CSSImportRule;
+	expect(imported.layerName).toBe("");
+	expect(imported.media.mediaText).toBe("ed-thing");
+	parsedSheet.insertRule("@import url(a.css) garbage!!;", 0);
+	expect((parsedSheet.cssRules[0] as CSSImportRule).media.mediaText).toBe(
+		"garbage!!",
+	);
+
+	dom.dispose();
+});
