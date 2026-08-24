@@ -591,7 +591,6 @@ const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
 const kLastMouse = Symbol("lastMouse");
-const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
 const kFullscreenManager = Symbol("fullscreenManager");
@@ -609,7 +608,6 @@ const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
 const kAttached = Symbol("attached");
 const kAttachReady = Symbol("attachReady");
 const kRenderCount = Symbol("renderCount");
-const kPrototypesInstalled = Symbol("prototypesInstalled");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kInputGeneration = Symbol("inputGeneration");
@@ -944,7 +942,6 @@ export class TermDOM {
 
 		engines.set(document, this);
 		DOM.mount(document, createMount(this));
-		TermDOM[kInstallPrototypes](this.window);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this[kStyleManager] = new StyleManager(this.window);
@@ -1076,169 +1073,6 @@ export class TermDOM {
 	 * camera to it.
 	 */
 	declare [kOnFieldEditEvent]: (event: Event) => void;
-
-	/**
-	 * Put the engine behind the DOM's measurement, focus and fullscreen
-	 * surfaces.
-	 *
-	 * The prototypes are the realm's, shared by every document in it, so this
-	 * runs once and each call finds the engine its node belongs to rather than
-	 * closing over one. Installing per instance would stack a wrapper on a
-	 * wrapper and leave every earlier engine on the chain.
-	 */
-	static [kPrototypesInstalled] = false;
-
-	static [kInstallPrototypes](window: EngineWindow): void {
-		if (TermDOM[kPrototypesInstalled]) {
-			return;
-		}
-		TermDOM[kPrototypesInstalled] = true;
-		const {Element, Document} = window;
-
-		/**
-		 * The engine that mounted a node's document, or null for a node in a
-		 * document nothing mounted -- createHTMLDocument's, DOMParser's. The
-		 * spec's answer for such a document is the no-browsing-context one,
-		 * and every caller below degrades to it: zero geometry, a focus that
-		 * only moves state, a fullscreen that rejects.
-		 */
-		const engineOf = (node: Node): TermDOM | null => {
-			const document = (
-				node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument
-			) as Document;
-			return engines.get(document) ?? null;
-		};
-
-		// The document-rooted MutationObserver never sees inside a shadow
-		// root -- per spec, shadow trees are separate observation scopes. Each
-		// author-attached root gets enrolled in the same observer, so shadow
-		// mutations invalidate styles/layout and repaint like light ones.
-		const originalAttachShadow = Element.prototype.attachShadow;
-		Element.prototype.attachShadow = function (
-			this: Element,
-			init: ShadowRootInit,
-		): ShadowRoot {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return originalAttachShadow.call(this, init);
-			}
-			const root = originalAttachShadow.call(this, init);
-			termDOM[kObserver].observe(root, {
-				childList: true,
-				subtree: true,
-				attributes: true,
-				attributeOldValue: true,
-				characterData: true,
-			});
-			// The root's <style> elements join the cascade, scoped to this
-			// tree; the refresh rides on the STYLE mutation records the
-			// observer enrollment above will deliver.
-			// A shadow attachment recomposes the host's subtree with no
-			// mutation record: unbounded for any banded repaint.
-			termDOM[kLayoutEngine].invalidateStructure();
-			termDOM[kStyleManager].registerShadowRoot(root);
-			// attachShadow is not a DOM mutation -- no observer record will
-			// ever fire for it -- but on a CONNECTED host the composed tree
-			// just changed wholesale: light children stop rendering the moment
-			// the root exists, even while it is still empty. Rebuild the
-			// host's composed subtree and repaint.
-			if (this.isConnected) {
-				termDOM[kLayoutEngine].invalidate(this);
-				void render(termDOM);
-			}
-			return root;
-		};
-
-		Element.prototype.requestFullscreen = function (
-			this: Element,
-			options?: FullscreenOptions,
-		): Promise<void> {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return Promise.reject(
-					new TypeError("The element's document is not displayed"),
-				);
-			}
-			// Fullscreen writes the alternate-screen switch; attach() is the
-			// only consent for that. A browser rejects without a user gesture,
-			// and this is the terminal's equivalent precondition.
-			if (!termDOM[kAttached]) {
-				return Promise.reject(
-					new Error("requestFullscreen(): attach() the terminal first"),
-				);
-			}
-			return (async () => {
-				// No frame may straddle the screen switch: an in-flight render
-				// finishing its stdout write AFTER the switch paints one
-				// screen's geometry onto the other (the demo's animation made
-				// this a near-certainty on exit). Hold new frames, drain the
-				// running one, then switch.
-				termDOM[kScreenSwitching] = true;
-				try {
-					await termDOM[kRenderInFlight];
-					await termDOM[kFullscreenManager].requestFullscreen(this, options);
-					// The element's UA styles changed (it now fills the
-					// viewport) and neither a mutation nor a focus move fired.
-					termDOM[kStyleManager].handleFocusChange(this);
-					termDOM[kLayoutEngine].invalidate(this);
-					// The screen under the renderer changed wholesale (the
-					// alternate screen starts cleared): drop the diff model or
-					// the first fullscreen frame patches against the main
-					// screen's content.
-					termDOM[kScreen].repaintAll();
-					updateMouseReporting(termDOM);
-				} finally {
-					termDOM[kScreenSwitching] = false;
-				}
-				void render(termDOM);
-			})();
-		};
-
-		Document.prototype.exitFullscreen = function (
-			this: Document,
-		): Promise<void> {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return Promise.reject(
-					new TypeError("The document is not displayed"),
-				);
-			}
-			return (async () => {
-				const element = termDOM[kFullscreenManager].fullscreenElement;
-				termDOM[kScreenSwitching] = true;
-				try {
-					await termDOM[kRenderInFlight];
-					await termDOM[kFullscreenManager].exitFullscreen();
-					if (element) {
-						termDOM[kStyleManager].handleFocusChange(element);
-						termDOM[kLayoutEngine].invalidate(element);
-					}
-					// Same wholesale swap in reverse: the terminal restored the
-					// main screen, but the diff model still describes the last
-					// ALTERNATE-screen frame -- patching against it garbles the
-					// restored document.
-					termDOM[kScreen].repaintAll();
-					updateMouseReporting(termDOM);
-				} finally {
-					termDOM[kScreenSwitching] = false;
-				}
-				void render(termDOM);
-			})();
-		};
-
-		Object.defineProperty(Document.prototype, "fullscreenElement", {
-			get(this: Document) {
-				// Style computation consults this during construction, before
-				// the manager field is assigned.
-				const termDOM = engines.get(this);
-				if (termDOM === undefined) {
-					return null;
-				}
-				return termDOM[kFullscreenManager]?.fullscreenElement ?? null;
-			},
-			configurable: true,
-		});
-	}
 
 	/**
 	 * Take hold of the terminal: begin the session (input, resizes, closure),
@@ -1933,6 +1767,105 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 			} else if (rect.bottom > top + regionHeight) {
 				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
 			}
+		},
+		// The document-rooted MutationObserver never sees inside a shadow
+		// root -- per spec, shadow trees are separate observation scopes.
+		// Each author-attached root gets enrolled in the same observer, so
+		// shadow mutations invalidate styles/layout and repaint like light
+		// ones.
+		shadowAttached(hostTarget, rootTarget) {
+			const host = asElement(hostTarget);
+			const root = rootTarget as ShadowRoot;
+			termDOM[kObserver].observe(root, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeOldValue: true,
+				characterData: true,
+			});
+			// The root's <style> elements join the cascade, scoped to this
+			// tree; the refresh rides on the STYLE mutation records the
+			// observer enrollment above will deliver.
+			// A shadow attachment recomposes the host's subtree with no
+			// mutation record: unbounded for any banded repaint.
+			termDOM[kLayoutEngine].invalidateStructure();
+			termDOM[kStyleManager].registerShadowRoot(root);
+			// attachShadow is not a DOM mutation -- no observer record will
+			// ever fire for it -- but on a CONNECTED host the composed tree
+			// just changed wholesale: light children stop rendering the moment
+			// the root exists, even while it is still empty. Rebuild the
+			// host's composed subtree and repaint.
+			if (host.isConnected) {
+				termDOM[kLayoutEngine].invalidate(host);
+				void render(termDOM);
+			}
+		},
+		requestFullscreen(target, options) {
+			const element = asElement(target);
+			// Fullscreen writes the alternate-screen switch; attach() is the
+			// only consent for that. A browser rejects without a user gesture,
+			// and this is the terminal's equivalent precondition.
+			if (!termDOM[kAttached]) {
+				return Promise.reject(
+					new Error("requestFullscreen(): attach() the terminal first"),
+				);
+			}
+			return (async () => {
+				// No frame may straddle the screen switch: an in-flight render
+				// finishing its stdout write AFTER the switch paints one
+				// screen's geometry onto the other (the demo's animation made
+				// this a near-certainty on exit). Hold new frames, drain the
+				// running one, then switch.
+				termDOM[kScreenSwitching] = true;
+				try {
+					await termDOM[kRenderInFlight];
+					await termDOM[kFullscreenManager].requestFullscreen(
+						element,
+						options as FullscreenOptions | undefined,
+					);
+					// The element's UA styles changed (it now fills the
+					// viewport) and neither a mutation nor a focus move fired.
+					termDOM[kStyleManager].handleFocusChange(element);
+					termDOM[kLayoutEngine].invalidate(element);
+					// The screen under the renderer changed wholesale (the
+					// alternate screen starts cleared): drop the diff model or
+					// the first fullscreen frame patches against the main
+					// screen's content.
+					termDOM[kScreen].repaintAll();
+					updateMouseReporting(termDOM);
+				} finally {
+					termDOM[kScreenSwitching] = false;
+				}
+				void render(termDOM);
+			})();
+		},
+		exitFullscreen() {
+			return (async () => {
+				const element = termDOM[kFullscreenManager].fullscreenElement;
+				termDOM[kScreenSwitching] = true;
+				try {
+					await termDOM[kRenderInFlight];
+					await termDOM[kFullscreenManager].exitFullscreen();
+					if (element) {
+						termDOM[kStyleManager].handleFocusChange(element);
+						termDOM[kLayoutEngine].invalidate(element);
+					}
+					// Same wholesale swap in reverse: the terminal restored the
+					// main screen, but the diff model still describes the last
+					// ALTERNATE-screen frame -- patching against it garbles the
+					// restored document.
+					termDOM[kScreen].repaintAll();
+					updateMouseReporting(termDOM);
+				} finally {
+					termDOM[kScreenSwitching] = false;
+				}
+				void render(termDOM);
+			})();
+		},
+		fullscreenElement() {
+			// Style computation consults this during construction, before the
+			// manager field is assigned.
+			return termDOM[kFullscreenManager]?.fullscreenElement ?? null;
 		},
 	};
 }

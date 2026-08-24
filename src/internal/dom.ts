@@ -7987,7 +7987,24 @@ export class Element extends Node {
 			slotAssignment,
 			registry === undefined ? globalCustomElements : registry,
 		);
-		return this[kShadowRoot] as ShadowRoot;
+		const root = this[kShadowRoot] as ShadowRoot;
+		mountOf(this)?.shadowAttached(this, root);
+		return root;
+	}
+
+	/**
+	 * Show the element by itself, over the whole viewport. A headless
+	 * document has no viewport to fill: the spec's no-browsing-context
+	 * document rejects.
+	 */
+	requestFullscreen(options?: globalThis.FullscreenOptions): Promise<void> {
+		const engine = mountOf(this);
+		if (engine === undefined) {
+			return Promise.reject(
+				new TypeError("The element's document is not displayed"),
+			);
+		}
+		return engine.requestFullscreen(this, options);
 	}
 
 	get shadowRoot(): ShadowRoot | null {
@@ -19202,6 +19219,22 @@ export class Document extends Node {
 		return true;
 	}
 
+	/** The element filling the viewport, or null when none is. */
+	get fullscreenElement(): Element | null {
+		return (mountOf(this)?.fullscreenElement(this) ?? null) as Element | null;
+	}
+
+	/** Return the fullscreen element to the flow it came from. */
+	exitFullscreen(): Promise<void> {
+		const engine = mountOf(this);
+		if (engine === undefined) {
+			return Promise.reject(
+				new TypeError("The document is not displayed"),
+			);
+		}
+		return engine.exitFullscreen(this);
+	}
+
 	/**
 	 * Close the document, which flushes an open parse.
 	 *
@@ -25115,6 +25148,11 @@ export interface Mount {
 	blurred(element: object): void;
 	/** Reveal the element in every scroll port between it and the screen. */
 	scrollIntoView(element: object): void;
+	/** An author attached a shadow root to the host. */
+	shadowAttached(host: object, root: object): void;
+	requestFullscreen(element: object, options?: object): Promise<void>;
+	exitFullscreen(document: object): Promise<void>;
+	fullscreenElement(document: object): object | null;
 }
 
 /** Mount a document on its engine. Once per document. */
@@ -25369,11 +25407,8 @@ type PointerSurface =
 	"requestPointerLock" |
 	"setPointerCapture";
 
-/** RUNTIME: fullscreen, installed by the engine. */
-type FullscreenSurface =
-	| "requestFullscreen" |
-	"onfullscreenchange" |
-	"onfullscreenerror";
+/** RUNTIME: the fullscreen event handlers, installed from the tables. */
+type FullscreenSurface = "onfullscreenchange" | "onfullscreenerror";
 
 /** GAP or NEVER, per member -- the un-binned remainder of Element. */
 type ElementRemainder =
