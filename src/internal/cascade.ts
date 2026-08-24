@@ -2052,7 +2052,7 @@ const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
  * Computed strings interned by property and declared text. A document draws
  * its declared values from a small vocabulary -- a handful of colors, a
  * handful of lengths, the same keywords on every element -- so the same pair
- * recurs across thousands of elements and every generation after the first.
+ * recurs across thousands of elements, and again after each re-resolution.
  */
 const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
@@ -7764,16 +7764,10 @@ const EMPTY_COMPUTED_STYLE: ComputedStyle = {
 	},
 };
 
-/** The epoch a declaration with no manager behind it watches: one that never moves. */
-const NO_STYLE_EPOCH = {value: 0};
-
 const kCSSRules = Symbol("cssRules");
 const kManager = Symbol("manager");
-const kEpoch = Symbol("epoch");
-const kSeenEpoch = Symbol("seenEpoch");
 const kUsedValuesOf = Symbol("usedValuesOf");
 const kDropUsedValues = Symbol("dropUsedValues");
-const kStale = Symbol("stale");
 const kRefresh = Symbol("refresh");
 const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
@@ -7785,19 +7779,16 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
 	/**
-	 * The manager to re-ask for matching rules, and the epoch it bumps when
-	 * every declaration goes stale at once. A computed style is LIVE: the
-	 * object an author holds keeps answering the element's current values
-	 * across class flips, rule insertions and sheet replacements, so it
-	 * re-resolves rather than being replaced.
+	 * The manager to re-ask for matching rules, and the one that says whether
+	 * this declaration still stands for the cascade (see resolvedDeclarations).
+	 * A computed style is LIVE: the object an author holds keeps answering the
+	 * element's current values across class flips, rule insertions and sheet
+	 * replacements, so it re-resolves rather than being replaced.
 	 */
 	declare [kManager]: StyleManager | null;
-	declare [kEpoch]: typeof NO_STYLE_EPOCH;
-	declare [kSeenEpoch]: number;
-	declare [kStale]: boolean;
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
 	// Values here are COMPUTED strings, materialized once per property per
-	// generation; an initial-valued property (word-break, visibility, ...)
+	// resolution; an initial-valued property (word-break, visibility, ...)
 	// that re-resolved on every read would re-walk the whole ancestor chain
 	// for an inherited property, and each ancestor's own read does the same
 	// -- thousands of full cascade resolutions per keystroke. The
@@ -7812,17 +7803,13 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		this[kManager] = null;
-		this[kEpoch] = NO_STYLE_EPOCH;
-		this[kSeenEpoch] = 0;
-		this[kStale] = false;
 		this[kResolved] = new Map<string, string>();
 		this[kCustom] = null;
 		this[kElement] = element;
 		this[kCSSRules] = cssRules;
 		if (manager) {
 			this[kManager] = manager;
-			this[kEpoch] = manager.styleEpoch;
-			this[kSeenEpoch] = this[kEpoch].value;
+			manager[kCurrentDeclarations].add(this);
 		}
 	}
 
@@ -7852,7 +7839,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	 * would feed layout its own output.
 	 */
 	computedValueOf(property: string): string {
-		if (this[kStale] || this[kEpoch].value !== this[kSeenEpoch]) {
+		const current = this[kManager]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
 		const value = this[kBaseValue](property);
@@ -7891,22 +7879,18 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
-	/** Mark this declaration's values as belonging to a cascade that has moved on. */
-	invalidate(): void {
-		this[kStale] = true;
-	}
-
 	/**
-	 * Re-resolve against the current cascade. Reads take the two-field guard
-	 * inline and call this only when it has actually moved -- this sits on the
-	 * hottest path in the engine, under every property read of every element.
+	 * Re-resolve against the current cascade. Reads ask the manager whether
+	 * this declaration is one it still resolves for and call this only when it
+	 * is not -- this sits on the hottest path in the engine, under every
+	 * property read of every element.
 	 */
 	[kRefresh](): void {
 		if (!this[kManager]) {
 			return;
 		}
-		this[kStale] = false;
-		this[kSeenEpoch] = this[kEpoch].value;
+		// Before the work: resolving below reads back through this declaration.
+		this[kManager][kCurrentDeclarations].add(this);
 		this[kCSSRules] = this[kManager].matchingRules(this[kElement]);
 		this[kCustom] = null;
 		storeTransitionFallback(
@@ -7940,7 +7924,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// engine reads through computedValueOf, which takes no flush -- style
 		// is resolved from inside layout, which this would re-enter.
 		this[kManager]?.flushStyle();
-		if (this[kStale] || this[kEpoch].value !== this[kSeenEpoch]) {
+		const current = this[kManager]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
@@ -8046,7 +8031,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
  * One property's computed value: the cascade's declaration, interned, and
  * absolutized against this element when the interned entry says only an
  * element can answer it. The memo both callers write into is the
- * per-element, per-generation cache that absolutization is paid into once.
+ * per-element cache one re-resolution's absolutization is paid into once.
  */
 function computed(
 	declaration: ComputedStyleDeclaration,
@@ -8790,7 +8775,8 @@ function resolvePropertyValueRaw(
 function customNames(
 	computed: ComputedStyleDeclaration,
 ): string[] {
-	if (computed[kStale] || computed[kEpoch].value !== computed[kSeenEpoch]) {
+	const current = computed[kManager]?.[kCurrentDeclarations];
+	if (current !== undefined && !current.has(computed)) {
 		computed[kRefresh]();
 	}
 	if (computed[kCustom]) {
@@ -8867,7 +8853,7 @@ const kBoxViewOf = Symbol("boxViewOf");
 class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoDeclarations]: Record<string, string>;
 	// Lazily resolved properties, cleared by kRefresh -- the same one-per
-	// -generation memo an element's declaration keeps, for the same reason.
+	// -resolution memo an element's declaration keeps, for the same reason.
 	declare [kResolved]: Map<string, string>;
 	/**
 	 * The element the pseudo-element originates from, which pseudo-element it
@@ -8880,13 +8866,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoElement]: string;
 	declare [kManager]: StyleManager | null;
 	/**
-	 * The epoch every declaration goes stale at once on. A pseudo-element's
-	 * computed style is LIVE for the same reason an element's is: the object an
-	 * author holds keeps answering the pseudo-element's current values across
-	 * class flips and sheet replacements.
+	 * A pseudo-element's computed style is LIVE for the same reason an
+	 * element's is: the object an author holds keeps answering the
+	 * pseudo-element's current values across class flips and sheet
+	 * replacements. The manager says when what it holds no longer stands.
 	 */
-	declare [kEpoch]: typeof NO_STYLE_EPOCH;
-	declare [kSeenEpoch]: number;
 
 	constructor(
 		declarations: Record<string, string>,
@@ -8896,8 +8880,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		this[kResolved] = new Map<string, string>();
-		this[kEpoch] = NO_STYLE_EPOCH;
-		this[kSeenEpoch] = 0;
 		this[kNodeStyle] = null;
 		this[kNodeResolved] = new Map<string, string>();
 		this[kBoxView] = null;
@@ -8906,14 +8888,14 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kPseudoElement] = pseudoElement;
 		this[kManager] = manager ?? null;
 		if (manager) {
-			this[kEpoch] = manager.styleEpoch;
-			this[kSeenEpoch] = this[kEpoch].value;
+			manager[kCurrentDeclarations].add(this);
 		}
 	}
 
 	/** Re-resolve against the current cascade, declarations and all. */
 	[kRefresh](): void {
-		this[kSeenEpoch] = this[kEpoch].value;
+		// Before the work: resolving below reads back through this declaration.
+		this[kManager]?.[kCurrentDeclarations].add(this);
 		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
 			this[kPseudoDeclarations] = this[kManager].pseudoDeclarations(
 				this[kElement],
@@ -8952,7 +8934,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * with the initial values a computed style carries.
 	 */
 	computedValueOf(property: string): string {
-		if (this[kEpoch].value !== this[kSeenEpoch]) {
+		const current = this[kManager]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
 		}
 		const value = this[kBaseValue](property);
@@ -9015,7 +8998,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			// cascade rather than the one it was first read under.
 			style = {
 				computedValueOf: (property: string): string => {
-					if (this[kEpoch].value !== this[kSeenEpoch]) {
+					const current = this[kManager]?.[kCurrentDeclarations];
+					if (current !== undefined && !current.has(this)) {
 						this[kRefresh]();
 					}
 					let value = this[kNodeResolved].get(property);
@@ -9763,7 +9747,7 @@ const kWindow = Symbol("window");
 const kLayoutEngine = Symbol("layoutEngine");
 const kDocument = Symbol("document");
 const kGetComputedStyle = Symbol("getComputedStyle");
-const kStyleEpoch = Symbol("styleEpoch");
+const kCurrentDeclarations = Symbol("currentDeclarations");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kLayoutFlush = Symbol("layoutFlush");
@@ -9806,11 +9790,13 @@ const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 	/**
-	 * The counter every computed style watches. A bump means the whole cascade
-	 * changed -- new rules, a new sheet -- and every declaration handed out
-	 * must resolve again.
+	 * Every declaration this manager has resolved against the cascade as it
+	 * stands. A declaration reads this to know whether its values are still
+	 * the cascade's answer: dropping one, or replacing the set, is what sends
+	 * it back through kRefresh on its next read. Membership is weak, so a
+	 * declaration nobody holds costs nothing to have handed out.
 	 */
-	declare [kStyleEpoch]: {value: number};
+	declare [kCurrentDeclarations]: WeakSet<object>;
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
 	 * Nothing else parses a shadow tree's stylesheets, so parsing walks these
@@ -9944,7 +9930,7 @@ export class StyleManager {
 			Element,
 			ComputedStyleDeclaration
 		>();
-		this[kStyleEpoch] = {value: 0};
+		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kShadowRoots] = new Set<ShadowRoot>();
 		this[kPseudoElementStyleCache] = new WeakMap<
 			Element,
@@ -10006,11 +9992,6 @@ export class StyleManager {
 
 		// Hook into methods that should invalidate cached styles
 		setupInvalidationHooks(this);
-	}
-
-	/** The epoch a computed style watches to know its values have gone stale. */
-	get styleEpoch(): {value: number} {
-		return this[kStyleEpoch];
 	}
 
 	/** The rules matching an element, in cascade order. */
@@ -10700,7 +10681,7 @@ export class StyleManager {
 	/**
 	 * What the cascade declares for a pseudo-element: its matched rules,
 	 * completed by what it inherits from its originating element. A live
-	 * declaration re-asks this when the style epoch moves.
+	 * declaration re-asks this when the cascade moves under it.
 	 */
 	pseudoDeclarations(
 		element: Element,
@@ -11024,7 +11005,7 @@ export class StyleManager {
 		// out, so it is told the cascade moved on rather than merely dropped.
 		const dropped = this[kComputedStyleCache].get(element);
 		if (dropped) {
-			dropped.invalidate();
+			this[kCurrentDeclarations].delete(dropped);
 			storeTransitionFallback(this, element, "", dropped[kResolved]);
 		}
 		this[kComputedStyleCache].delete(element);
@@ -11039,8 +11020,8 @@ export class StyleManager {
 	 */
 	clearCache(): void {
 		// Every computed style ever handed out re-resolves on its next read:
-		// there is no enumerating a WeakMap, so the epoch they all watch moves.
-		this[kStyleEpoch].value++;
+		// this manager vouches for none of them any more.
+		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
@@ -12099,13 +12080,14 @@ function invalidateElementCaches(
 	// out, so it is told the cascade moved on rather than merely dropped.
 	const dropped = manager[kComputedStyleCache].get(element);
 	if (dropped) {
-		dropped.invalidate();
+		manager[kCurrentDeclarations].delete(dropped);
 		storeTransitionFallback(manager, element, "", dropped[kResolved]);
 	}
 	manager[kComputedStyleCache].delete(element);
 	const droppedPseudos = manager[kPseudoElementStyleCache].get(element);
 	if (droppedPseudos) {
 		for (const [name, declaration] of droppedPseudos) {
+			manager[kCurrentDeclarations].delete(declaration);
 			storeTransitionFallback(manager, element, name, declaration[kResolved]);
 		}
 	}
