@@ -23,7 +23,7 @@ import {
 	TransitionEvent,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
-import {serializeCSSColor} from "./color.js";
+import {parseCSSColorComponents, serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
 import Flex from "./flex.js";
@@ -11250,8 +11250,8 @@ function interpolateValue(from: string, to: string, progress: number): string {
 		const value = a.number + (b.number - a.number) * progress;
 		return `${Math.round(value * 1000) / 1000}${a.unit}`;
 	}
-	const fromColor = parseTransitionColor(from);
-	const toColor = parseTransitionColor(to);
+	const fromColor = parseCSSColorComponents(from);
+	const toColor = parseCSSColorComponents(to);
 	if (fromColor && toColor) {
 		const channel = (index: number): number =>
 			Math.round(
@@ -11288,28 +11288,6 @@ function scalarComponents(
 			return {number, unit: (node.unit ?? "").toLowerCase()};
 	}
 	return null;
-}
-
-/** A color as [r, g, b, alpha], through the one color parser the engine has. */
-function parseTransitionColor(
-	value: string,
-): [number, number, number, number] | null {
-	const serialized = serializeCSSColor(value);
-	if (serialized === null) {
-		return null;
-	}
-	const match = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(
-		serialized,
-	);
-	if (!match) {
-		return null;
-	}
-	return [
-		parseInt(match[1], 10),
-		parseInt(match[2], 10),
-		parseInt(match[3], 10),
-		match[4] === undefined ? 1 : parseFloat(match[4]),
-	];
 }
 
 /** Easing functions, memoized by their computed spelling. */
