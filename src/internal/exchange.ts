@@ -102,7 +102,7 @@ export interface TerminalTransport {
  * engages, `reset` hands the terminal back; wire spells both. Orderly teardown resets what was
  * engaged, in this declaration order; the transport's panic paths blanket-
  * reset the union. A mode written anywhere else is a restore leak waiting --
- * new modes are added here and set through TerminalSession.setMode.
+ * new modes are added here and set through TerminalExchange.setMode.
  */
 const MODE_SPELLINGS = {
 	motionReporting: {
@@ -417,8 +417,7 @@ export function transportFromProcess(
  * keystrokes. The engine sees typed callbacks and dispatches DOM events; no
  * other layer parses input.
  *
- * The query half is the old TerminalProbe: round-trips the engine cannot have
- * synchronously. A DSR cursor query locates the command-start row so the
+ * The query half is round-trips the engine cannot have synchronously. A DSR cursor query locates the command-start row so the
  * painted region anchors correctly; DECRQM queries settle capabilities the
  * renderer's contract depends on (explicit bidi, grapheme-cluster widths).
  * Answers may never come -- most terminals implement no such modes -- so every
@@ -426,7 +425,7 @@ export function transportFromProcess(
  * opinion, ours stands". Every timer is tracked so dispose() can clear it; a
  * live one keeps the event loop open, which across a test suite is fatal.
  */
-interface TerminalSessionHandlers {
+interface ExchangeHandlers {
 	/** Decoded non-mouse input: batched keystrokes after the demux. */
 	onKeys(keyInput: string): void;
 	onMouse(button: number, x: number, y: number, release: boolean): void;
@@ -503,13 +502,13 @@ const kClipboardBuffer = Symbol("clipboardBuffer");
 const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
 
-export class TerminalSession {
+export class TerminalExchange {
 	declare [kTransport]: TerminalTransport;
 	declare [kInteractive]: boolean;
 	// The modes currently set on the terminal, the source restore derives from.
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kHandlers]: TerminalSessionHandlers;
+	declare [kHandlers]: ExchangeHandlers;
 
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
 	declare [kReader]: ReadableStreamDefaultReader<string> | null;
@@ -676,7 +675,7 @@ export class TerminalSession {
 		transport: TerminalTransport;
 		interactive: boolean;
 		anchorDetection: boolean;
-		handlers: TerminalSessionHandlers;
+		handlers: ExchangeHandlers;
 	}) {
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -1144,7 +1143,7 @@ export class TerminalSession {
 			settleClipboardQuery(this, null);
 			const timer = setTimeout(() => {
 				settleClipboardQuery(this, null);
-			}, TerminalSession[kClipboardQueryTimeout]);
+			}, TerminalExchange[kClipboardQueryTimeout]);
 			this[kClipboardTimer] = timer;
 			this[kClipboardHandler] = resolve;
 			void this.write(clipboardQuery());
@@ -1263,7 +1262,7 @@ export class TerminalSession {
  * that has gone quiet needs to be made to paint, and the wait is what tells
  * the two apart.
  */
-function requestStarvationFrame(session: TerminalSession): void {
+function requestStarvationFrame(session: TerminalExchange): void {
 	if (session[kStarvationTimer] !== null) {
 		return;
 	}
@@ -1273,7 +1272,7 @@ function requestStarvationFrame(session: TerminalSession): void {
 			return;
 		}
 		session[kHandlers].onWidthStarvation();
-	}, TerminalSession[kWidthStarvationWait]);
+	}, TerminalExchange[kWidthStarvationWait]);
 }
 
 /**
@@ -1281,7 +1280,7 @@ function requestStarvationFrame(session: TerminalSession): void {
  * from the oldest of them.
  */
 function armWidthProbeTimer(
-	session: TerminalSession,
+	session: TerminalExchange,
 ): void {
 	if (session[kWidthProbeTimer] !== null) {
 		return;
@@ -1292,7 +1291,7 @@ function armWidthProbeTimer(
 	}
 	const remaining = Math.max(
 		0,
-		oldest.sentAt + TerminalSession[kWidthProbeTimeout] - Date.now(),
+		oldest.sentAt + TerminalExchange[kWidthProbeTimeout] - Date.now(),
 	);
 	session[kWidthProbeTimer] = setTimeout(() => {
 		session[kWidthProbeTimer] = null;
@@ -1302,7 +1301,7 @@ function armWidthProbeTimer(
 		// written since the deadline was set are not late yet and keep
 		// their place -- the deadline is per probe, and re-arms for the
 		// oldest one still waiting.
-		const deadline = Date.now() - TerminalSession[kWidthProbeTimeout];
+		const deadline = Date.now() - TerminalExchange[kWidthProbeTimeout];
 		let expired = 0;
 		while (
 			expired < session[kWidthProbes].length &&
@@ -1334,7 +1333,7 @@ function armWidthProbeTimer(
  * which their own replies have just established.
  */
 function settleWidthProbe(
-	session: TerminalSession,
+	session: TerminalExchange,
 	probe: {
 		cluster: string;
 		run: number;
@@ -1390,7 +1389,7 @@ function settleWidthProbe(
 /* ---------------------------------------------------- input demultiplexing */
 
 async function readLoop(
-	session: TerminalSession,
+	session: TerminalExchange,
 	reader: ReadableStreamDefaultReader<string>,
 ): Promise<void> {
 	try {
@@ -1420,7 +1419,7 @@ async function readLoop(
 }
 
 async function resizeLoop(
-	session: TerminalSession,
+	session: TerminalExchange,
 	reader: ReadableStreamDefaultReader<TerminalSize>,
 ): Promise<void> {
 	try {
@@ -1444,7 +1443,7 @@ async function resizeLoop(
  * fence is spliced out of a chunk that also holds real typing.
  */
 function route(
-	session: TerminalSession,
+	session: TerminalExchange,
 	dataStr: string,
 ): void {
 	// Bracketed paste: its body is literal text (a pasted newline must not
@@ -1555,7 +1554,7 @@ function route(
  * the timeout, a replacement query, dispose.
  */
 function settleClipboardQuery(
-	session: TerminalSession,
+	session: TerminalExchange,
 	payload: string | null,
 ): void {
 	const waiting = session[kClipboardHandler];
@@ -1579,7 +1578,7 @@ function settleClipboardQuery(
  * outstanding, so nothing a user types is ever held.
  */
 function routeClipboardReply(
-	session: TerminalSession,
+	session: TerminalExchange,
 	dataStr: string,
 ): string | null {
 	let chunk = dataStr;
@@ -1596,7 +1595,7 @@ function routeClipboardReply(
 		// The terminator has not arrived. Hold the fragment for the next chunk
 		// and let whatever preceded it through as input.
 		const held = chunk.slice(reply.start);
-		if (held.length <= TerminalSession[kClipboardReplyLimit]) {
+		if (held.length <= TerminalExchange[kClipboardReplyLimit]) {
 			session[kClipboardBuffer] = held;
 			return before;
 		}
@@ -1609,7 +1608,7 @@ function routeClipboardReply(
 
 /** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
 function feedModeReport(
-	session: TerminalSession,
+	session: TerminalExchange,
 	mode: string,
 	value: number,
 ): boolean {
@@ -1632,7 +1631,7 @@ function feedModeReport(
  * other's.
  */
 function feedCursorReport(
-	session: TerminalSession,
+	session: TerminalExchange,
 	report: string,
 	column: number,
 ): boolean {
@@ -1663,7 +1662,7 @@ function feedCursorReport(
  * to every caller here -- the terminal has no opinion, so ours stands.
  */
 function probeMode(
-	session: TerminalSession,
+	session: TerminalExchange,
 	mode: string,
 	request: string,
 ): Promise<number | null> {

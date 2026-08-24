@@ -9,7 +9,7 @@ import {
 	type TTYReadStream,
 	type TerminalTransport,
 	transportFromProcess,
-} from "../src/internal/terminalsession.js";
+} from "../src/internal/exchange.js";
 import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;

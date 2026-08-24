@@ -26,7 +26,7 @@ import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
 import type * as TERMDOM from "../src/internal/termdom.ts";
-import type {TerminalTransport} from "../src/internal/terminalsession.ts";
+import type {TerminalTransport} from "../src/internal/exchange.ts";
 
 /**
  * A test file's realm: the engine module and the DOM module of one

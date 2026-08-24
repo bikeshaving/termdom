@@ -10,12 +10,12 @@ import {
 import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
-	TerminalSession,
+	TerminalExchange,
 	transportFromProcess,
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
-} from "./terminalsession.js";
+} from "./exchange.js";
 import {Screen} from "./ansi.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
@@ -217,11 +217,11 @@ async function requestFullscreenElement(
 	try {
 		termdom[kFullscreenStack].push(element);
 		if (termdom[kFullscreenStack].length === 1) {
-			termdom[kSession].setMode("altScreen", true);
+			termdom[kExchange].setMode("altScreen", true);
 			// The alternate screen comes up holding whatever the terminal left
 			// in it, so the entry clears it and homes the cursor.
-			void termdom[kSession].write(eraseScreen() + cursorHome());
-			termdom[kSession].setMode("cursorHidden", true);
+			void termdom[kExchange].write(eraseScreen() + cursorHome());
+			termdom[kExchange].setMode("cursorHidden", true);
 		}
 
 		fireFullscreenChangeEvent(termdom, element);
@@ -239,7 +239,7 @@ async function exitFullscreenElement(termdom: TermDOM): Promise<void> {
 
 	const exitingElement = termdom[kFullscreenStack].pop()!;
 	if (termdom[kFullscreenStack].length === 0) {
-		termdom[kSession].setMode("altScreen", false);
+		termdom[kExchange].setMode("altScreen", false);
 	}
 
 	fireFullscreenChangeEvent(termdom, exitingElement);
@@ -491,7 +491,7 @@ const kLastMouse = Symbol("lastMouse");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
 const kFullscreenStack = Symbol("fullscreenStack");
-const kSession = Symbol("session");
+const kExchange = Symbol("exchange");
 const kObserverManager = Symbol("observerManager");
 const kInstallObservers = Symbol("installObservers");
 const kPainter = Symbol("painter");
@@ -750,7 +750,7 @@ export class TermDOM {
 	// The conversation over the transport: the input demultiplexer plus the
 	// cursor-position (command start, resize re-anchor) and mode-support (bidi,
 	// grapheme clusters) queries whose replies arrive interleaved with typing.
-	declare [kSession]: TerminalSession;
+	declare [kExchange]: TerminalExchange;
 
 	// A defaulted transport over a piped stdout -- a pipe, a file, a CI log --
 	// has no viewport, no cursor, no scrollback and no resize. It cannot
@@ -894,12 +894,12 @@ export class TermDOM {
 
 		// The session first: the screen measures widths over the session's
 		// probe channel, and takes it for its lifetime.
-		this[kSession] = buildSession(this);
+		this[kExchange] = buildExchange(this);
 		this[kScreen] = new Screen(
 			this[kHeight],
 			this[kWidth],
 			this[kTransport].colorDepth,
-			this[kSession].widthMeasurer,
+			this[kExchange].widthMeasurer,
 		);
 
 		// A field edit -- text (input), a caret or selection move
@@ -996,25 +996,25 @@ export class TermDOM {
 				return;
 			}
 
-			this[kSession].start();
+			this[kExchange].start();
 			if (this[kInteractive]) {
 				// Bracketed paste on: pasted text arrives fenced, one insertion.
-				this[kSession].setMode("bracketedPaste", true);
+				this[kExchange].setMode("bracketedPaste", true);
 				// Save the terminal's title, so dispose can hand it back; the
 				// document.title setter emits the replacement.
-				this[kSession].setMode("titleStack", true);
+				this[kExchange].setMode("titleStack", true);
 				if (this.document.title) {
-					void this[kSession].setTitle(this.document.title);
+					void this[kExchange].setTitle(this.document.title);
 				}
 				// Frames park the cursor hidden as they paint; recorded here so
 				// the restore shows it again.
-				this[kSession].markModeEngaged("cursorHidden");
+				this[kExchange].markModeEngaged("cursorHidden");
 			}
 			updateMouseReporting(this);
-			this[kSession].initializeCursorDetection();
-			void this[kSession].negotiateBidi();
-			void this[kSession].negotiateGraphemeClusters();
-			this[kSession].scrubProbeEcho();
+			this[kExchange].initializeCursorDetection();
+			void this[kExchange].negotiateBidi();
+			void this[kExchange].negotiateGraphemeClusters();
+			this[kExchange].scrubProbeEcho();
 			this[kAttachBeginning] = false;
 			begun();
 
@@ -1055,7 +1055,7 @@ export class TermDOM {
 
 	/** Write to the transport and wait for it to be flushed. */
 	[kWrite](output: string): Promise<void> {
-		return this[kSession].write(output);
+		return this[kExchange].write(output);
 	}
 
 	// The scratch engine behind renderANSI/print: created on first use,
@@ -1086,7 +1086,7 @@ export class TermDOM {
 		if (!output) {
 			return Promise.resolve();
 		}
-		return this[kSession].write(output);
+		return this[kExchange].write(output);
 	}
 
 	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
@@ -1136,19 +1136,19 @@ export class TermDOM {
 		// cursor where the switch saved it -- parked on the flow content's
 		// bottom row -- so step below the content, or the shell's next line
 		// lands on top of ours.
-		this[kSession].restoreEngagedModes();
+		this[kExchange].restoreEngagedModes();
 		this[kFullscreenStack] = [];
 		this[kHoverReportingEnabled] = false;
 		this[kMouseReportingEnabled] = false;
 		if (closingFullscreen && this[kInteractive]) {
-			void this[kSession].write("\r\n");
+			void this[kExchange].write("\r\n");
 		}
 
 		// Restore the terminal modes we negotiated, clear the session's timers
 		// and handlers (a live query timer keeps the event loop open), and
 		// release the transport -- which is what hands a process transport its
 		// tty back.
-		this[kSession].dispose();
+		this[kExchange].dispose();
 
 		// Tear down the rest of what holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive via the resize timers, and
@@ -1172,7 +1172,7 @@ export class TermDOM {
 		this[kStyleManager].dispose();
 		this[kLayoutEngine].dispose();
 		this[kObserverManager].dispose();
-		return this[kSession].flush();
+		return this[kExchange].flush();
 	}
 }
 
@@ -1800,7 +1800,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 					// -- have replies on the wire. Consume them while the
 					// session still reads, or they are typed into the shell
 					// that inherits the tty.
-					await termDOM[kSession].drainQueries(200);
+					await termDOM[kExchange].drainQueries(200);
 				}
 				await termDOM.dispose();
 				if (wasAttached) {
@@ -1812,7 +1812,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// attach() pushes the previous title; dispose() pops it.
 		titleChanged(title) {
 			if (termDOM[kAttached] && termDOM[kInteractive]) {
-				void termDOM[kSession].setTitle(title);
+				void termDOM[kExchange].setTitle(title);
 			}
 		},
 		// Closing the document flushes the live region into the terminal's
@@ -1842,7 +1842,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				clipboard: createClipboard({
 					terminal: () =>
 						termDOM[kAttached] && termDOM[kInteractive] ?
-							termDOM[kSession] :
+							termDOM[kExchange] :
 							null,
 					userActive: () => isUserActive(termDOM),
 				}),
@@ -1976,14 +1976,14 @@ function setupMutationObserver(
 }
 
 /**
- * The session over the transport: input demultiplexing and the query
+ * The exchange over the transport: input demultiplexing and the query
  * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
  * started only by attach() -- construction holds no lock and reads nothing.
  */
-function buildSession(
+function buildExchange(
 	termdom: TermDOM,
-): TerminalSession {
-	return new TerminalSession({
+): TerminalExchange {
+	return new TerminalExchange({
 		transport: termdom[kTransport],
 		interactive: termdom[kInteractive],
 		anchorDetection: termdom[kTransport].sharesScreen,
@@ -2068,12 +2068,12 @@ function rebindTransport(
 	termdom[kTransport] = transport;
 	termdom[kInteractive] = transport.interactive;
 	applyTerminalSize(termdom, transport.cols, transport.rows);
-	termdom[kSession] = buildSession(termdom);
+	termdom[kExchange] = buildExchange(termdom);
 	termdom[kScreen] = new Screen(
 		termdom[kHeight],
 		termdom[kWidth],
 		transport.colorDepth,
-		termdom[kSession].widthMeasurer,
+		termdom[kExchange].widthMeasurer,
 	);
 }
 
@@ -2152,7 +2152,7 @@ function updateMouseReporting(
 	// 1002 with SGR encoding: button presses, releases, wheel, and drag
 	// motion, unambiguous past column 223 -- one mode as far as policy
 	// goes; the session spells the pair.
-	termdom[kSession].setMode("mouseCapture", wanted);
+	termdom[kExchange].setMode("mouseCapture", wanted);
 	// Motion reporting rides on top of capture: it follows capture off (a
 	// scroll-chaining yield hands the WHOLE mouse back) and back on.
 	updateHoverReporting(termdom);
@@ -2188,7 +2188,7 @@ function updateHoverReporting(
 		return;
 	}
 	termdom[kHoverReportingEnabled] = wanted;
-	termdom[kSession].setMode("motionReporting", wanted);
+	termdom[kExchange].setMode("motionReporting", wanted);
 }
 
 /**
@@ -2720,10 +2720,10 @@ function handleResize(
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection.
 		termdom[kSettlingResize] = null;
-		const wasDetected = termdom[kSession].hasDetectedCommandStart;
-		termdom[kSession].hasDetectedCommandStart = false;
+		const wasDetected = termdom[kExchange].hasDetectedCommandStart;
+		termdom[kExchange].hasDetectedCommandStart = false;
 		render(termdom).then(() => {
-			termdom[kSession].hasDetectedCommandStart = wasDetected;
+			termdom[kExchange].hasDetectedCommandStart = wasDetected;
 		});
 	};
 
@@ -2750,8 +2750,8 @@ function handleResize(
 		}
 	};
 
-	if (termdom[kSession].anchorDetectionEnabled && wrappedRowsAbove !== null) {
-		termdom[kSession]
+	if (termdom[kExchange].anchorDetectionEnabled && wrappedRowsAbove !== null) {
+		termdom[kExchange]
 			.queryCursorRow()
 			.then((cursorRow) => {
 				// A newer resize superseded this one; its handler will redraw.
@@ -3946,12 +3946,12 @@ function flushDocument(
 	// preserves a fully-erased screen by pushing it into scrollback (the
 	// courtesy it extends to `clear`), which archived a copy of the final
 	// frame above the payout -- the document twice, interleaved.
-	void termdom[kSession].write(cursorTo(top + 1, 1));
+	void termdom[kExchange].write(cursorTo(top + 1, 1));
 	const erase = eraseToLineEnd();
-	void termdom[kSession].write(
+	void termdom[kExchange].write(
 		erase + output.replace(/\r\n(?!$)/g, "\r\n" + erase),
 	);
-	void termdom[kSession].write(eraseBelow());
+	void termdom[kExchange].write(eraseBelow());
 }
 
 /**
@@ -4004,7 +4004,7 @@ async function renderInteractive(
 		// be attached first (idempotent -- normally already done by now).
 		if (termdom[kInteractive]) {
 			termdom.attach();
-			await termdom[kSession].detectCommandStart();
+			await termdom[kExchange].detectCommandStart();
 		}
 	}
 
@@ -4015,7 +4015,7 @@ async function renderInteractive(
 	// as the flow path does. Await only when one is pending: an unconditional
 	// await would defer the rest of this frame a microtask even with nothing
 	// to wait for, and a downstream synchronous scroll clamp depends on it.
-	const detectionPending = termdom[kSession].cursorDetectionPending;
+	const detectionPending = termdom[kExchange].cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
 	}
@@ -4195,7 +4195,7 @@ function reserveRows(
 ): number {
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
-		void termdom[kSession].write(
+		void termdom[kExchange].write(
 			cursorTo(termdom[kHeight], 1) + index().repeat(push),
 		);
 		// Do NOT shift the renderer's previous buffer. Its rows are relative to

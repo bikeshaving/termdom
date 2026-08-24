@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {transportFromProcess} from "../src/internal/terminalsession.js";
+import {transportFromProcess} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
