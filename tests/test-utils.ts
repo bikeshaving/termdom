@@ -14,7 +14,7 @@ import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
-import {Screen, type ColorDepth} from "../src/internal/ansi.js";
+import {Screen, type ColorDepth} from "../src/internal/screen.js";
 import {stringWidth} from "../src/internal/text.js";
 import {StyleManager} from "../src/internal/cascade.js";
 import {LayoutEngine} from "../src/internal/layout.js";

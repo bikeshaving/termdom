@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
-import {Screen} from "../src/internal/ansi.js";
+import {Screen} from "../src/internal/screen.js";
 import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {

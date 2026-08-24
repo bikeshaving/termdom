@@ -1,3 +1,12 @@
+/**
+ * The screen: the cell grid the paint walk writes into, and the frame diff
+ * that turns two of them into the bytes a terminal needs to catch up.
+ *
+ * A cell holds a grapheme cluster and its style, packed. A frame is the whole
+ * grid; committing one compares it against the grid on the terminal and emits
+ * only what differs -- cursor moves, style runs, scroll-region shifts for a
+ * scrolled band. Nothing above this knows the terminal has a cursor.
+ */
 import {
 	probingTeaches,
 	stringWidth,

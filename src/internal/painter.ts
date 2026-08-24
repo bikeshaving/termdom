@@ -23,7 +23,7 @@ import {
 } from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 
-import type {CellStyle, CellContext, LineStyle} from "./ansi.js";
+import type {CellStyle, CellContext, LineStyle} from "./screen.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:

@@ -7,8 +7,12 @@
  * that alters a single byte fails the fixture test.
  */
 
-import {Screen, type ColorDepth, type CellStyle} from "../src/internal/ansi.js";
-import type {CellContext} from "../src/internal/ansi.js";
+import {
+	Screen,
+	type ColorDepth,
+	type CellStyle,
+} from "../src/internal/screen.js";
+import type {CellContext} from "../src/internal/screen.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
 export interface Scenario {

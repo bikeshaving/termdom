@@ -14,7 +14,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {Screen} from "../src/internal/ansi.js";
+import {Screen} from "../src/internal/screen.js";
 import {
 	recordClusterAdvance,
 	stringWidth,

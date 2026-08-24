@@ -3,7 +3,7 @@ import {
 	Screen,
 	type CellContext,
 	type LineStyle,
-} from "../src/internal/ansi.js";
+} from "../src/internal/screen.js";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 
 describe("cells through the pen", () => {

@@ -7,7 +7,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
-import {LINE_STYLES, type LineStyle} from "./ansi.js";
+import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {
 	Document as DOMDocumentClass,
 	HTMLElement as DOMHTMLElement,
