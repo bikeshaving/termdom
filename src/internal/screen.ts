@@ -30,7 +30,7 @@ import {
 	sgrColor,
 	sgrReset,
 } from "./wire.js";
-import {type ColorDepth} from "./color.js";
+import type {ColorDepth} from "./color.js";
 
 /* ------------------------------------------------------------------- cells */
 

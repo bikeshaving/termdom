@@ -1,5 +1,5 @@
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
-import {type ColorDepth} from "./color.js";
+import type {ColorDepth} from "./color.js";
 import {
 	ansiMode,
 	ansiModeQuery,
