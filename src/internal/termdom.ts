@@ -11,11 +11,11 @@ import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
 	TerminalExchange,
-	transportFromProcess,
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
 } from "./exchange.js";
+import {transportFromProcess} from "./pty.js";
 import {Screen} from "./screen.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
