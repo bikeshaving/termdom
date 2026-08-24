@@ -600,14 +600,6 @@ const kLastMouse = Symbol("lastMouse");
 // platform-conformance.ts; the ledger shrinks as installers declare.
 declare module "./dom.js" {
 	interface Element {
-		scrollLeft: number;
-		scrollTop: number;
-		scroll(options?: globalThis.ScrollToOptions): void;
-		scroll(x: number, y: number): void;
-		scrollBy(options?: globalThis.ScrollToOptions): void;
-		scrollBy(x: number, y: number): void;
-		scrollTo(options?: globalThis.ScrollToOptions): void;
-		scrollTo(x: number, y: number): void;
 		scrollIntoView(
 			options?: boolean | globalThis.ScrollIntoViewOptions,
 		): void;
@@ -1137,127 +1129,6 @@ export class TermDOM {
 			) as Document;
 			return engines.get(document) ?? null;
 		};
-
-		// scrollTop/scrollLeft writes take effect here, where layout and the
-		// frame loop live: a write rounds to whole cells (everything paints
-		// on the cell grid, like the document camera), clamps into the
-		// scrollable range, and schedules the repaint that shows it. The
-		// value lands in the engine's store, which the getter installed
-		// below and the layout's geometry funnel (element.scrollTop) both
-		// read. An axis whose overflow is visible is not scrollable and
-		// pins to 0; hidden scrolls programmatically, as in a browser. A box
-		// whose extent the layout cannot name (a field's value span, whose
-		// content is an opaque measured run) stores the write unclamped --
-		// the caret-reveal machinery owns those offsets and keeps them sane.
-		const scrollAxisTo = (
-			element: Element,
-			axis: "left" | "top",
-			value: number,
-		): void => {
-			const numeric = Number(value);
-			let next =
-				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
-			const termDOM = engines.get(element.ownerDocument);
-			if (termDOM && element.isConnected) {
-				processPendingMutationsAndRender(termDOM);
-				const engine = termDOM[kLayoutEngine];
-				const extent = engine.scrollExtentOf(element);
-				const port = engine.contentRect(element);
-				const size =
-					extent === null ?
-						null :
-						axis === "top" ?
-							extent.height :
-							extent.width;
-				if (size !== null && port) {
-					const style = computedStyleOf(element);
-					const overflow =
-						style.computedValueOf(`overflow-${axis === "top" ? "y" : "x"}`) ||
-						style.computedValueOf("overflow");
-					const scrollable =
-						overflow === "auto" ||
-						overflow === "scroll" ||
-						overflow === "hidden";
-					const room =
-						size -
-						Math.round(axis === "top" ? port.height : port.width);
-					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
-				}
-			}
-			if ((elementScrollOffsets.get(element)?.[axis] ?? 0) === next) {
-				return;
-			}
-			writeElementScroll(element, axis, next);
-			if (termDOM) {
-				if (next !== 0) {
-					termDOM[kScrolledElements].add(element);
-				}
-				// A scroll offset is frame state no MutationObserver sees --
-				// the same footing as input: the generation bump keeps the
-				// "nothing observable moved" gate from skipping the paint,
-				// and the damage keeps that paint banded to the box's rows.
-				termDOM[kInputGeneration]++;
-				termDOM[kCompositor].damage(element);
-				void render(termDOM);
-			}
-		};
-
-		for (const axis of ["left", "top"] as const) {
-			const property = axis === "left" ? "scrollLeft" : "scrollTop";
-			Object.defineProperty(Element.prototype, property, {
-				get(this: Element): number {
-					return elementScrollOffsets.get(this)?.[axis] ?? 0;
-				},
-				set(this: Element, value: number) {
-					scrollAxisTo(this, axis, value);
-				},
-				configurable: true,
-				enumerable: true,
-			});
-		}
-
-		// scrollTo/scroll/scrollBy, in both their forms; assignment through
-		// the accessors above is what rounds, clamps and repaints. html and
-		// body's own scrollTop accessors map to the camera, so scrolling
-		// them scrolls the document, as everywhere else.
-		const scrollTargetOf = (
-			xOrOptions?: number | ScrollToOptions,
-			y?: number,
-		): {left?: number; top?: number} => {
-			if (typeof xOrOptions === "object" && xOrOptions !== null) {
-				return {left: xOrOptions.left, top: xOrOptions.top};
-			}
-			return {left: xOrOptions, top: y};
-		};
-
-		const scrollElementTo = function (
-			this: Element,
-			xOrOptions?: number | ScrollToOptions,
-			y?: number,
-		): void {
-			const target = scrollTargetOf(xOrOptions, y);
-			if (target.left !== undefined) {
-				this.scrollLeft = target.left;
-			}
-			if (target.top !== undefined) {
-				this.scrollTop = target.top;
-			}
-		};
-		Element.prototype.scrollTo = scrollElementTo as Element["scrollTo"];
-		Element.prototype.scroll = scrollElementTo as Element["scroll"];
-		Element.prototype.scrollBy = function (
-			this: Element,
-			xOrOptions?: number | ScrollToOptions,
-			y?: number,
-		): void {
-			const target = scrollTargetOf(xOrOptions, y);
-			if (target.left) {
-				this.scrollLeft = this.scrollLeft + target.left;
-			}
-			if (target.top) {
-				this.scrollTop = this.scrollTop + target.top;
-			}
-		} as Element["scrollBy"];
 
 		// The document-rooted MutationObserver never sees inside a shadow
 		// root -- per spec, shadow trees are separate observation scopes. Each
@@ -2105,6 +1976,67 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 				width: extent?.width ?? Math.round(box?.width ?? 0),
 				height: extent?.height ?? Math.round(box?.height ?? 0),
 			};
+		},
+		scrollOffset(target) {
+			return (
+				elementScrollOffsets.get(asElement(target)) ?? {left: 0, top: 0}
+			);
+		},
+		// A write rounds to whole cells (everything paints on the cell grid,
+		// like the document camera), clamps into the scrollable range, and
+		// schedules the repaint that shows it. The value lands in the
+		// engine's store, which scrollOffset above and the layout's geometry
+		// funnel (element.scrollTop) both read. An axis whose overflow is
+		// visible is not scrollable and pins to 0; hidden scrolls
+		// programmatically, as in a browser. A box whose extent the layout
+		// cannot name (a field's value span, whose content is an opaque
+		// measured run) stores the write unclamped -- the caret-reveal
+		// machinery owns those offsets and keeps them sane.
+		scrollOffsetTo(target, axis, value) {
+			const element = asElement(target);
+			const numeric = Number(value);
+			let next =
+				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+			if (element.isConnected) {
+				processPendingMutationsAndRender(termDOM);
+				const engine = termDOM[kLayoutEngine];
+				const extent = engine.scrollExtentOf(element);
+				const port = engine.contentRect(element);
+				const size =
+					extent === null ?
+						null :
+						axis === "top" ?
+							extent.height :
+							extent.width;
+				if (size !== null && port) {
+					const style = computedStyleOf(element);
+					const overflow =
+						style.computedValueOf(
+							`overflow-${axis === "top" ? "y" : "x"}`,
+						) || style.computedValueOf("overflow");
+					const scrollable =
+						overflow === "auto" ||
+						overflow === "scroll" ||
+						overflow === "hidden";
+					const room =
+						size - Math.round(axis === "top" ? port.height : port.width);
+					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
+				}
+			}
+			if ((elementScrollOffsets.get(element)?.[axis] ?? 0) === next) {
+				return;
+			}
+			writeElementScroll(element, axis, next);
+			if (next !== 0) {
+				termDOM[kScrolledElements].add(element);
+			}
+			// A scroll offset is frame state no MutationObserver sees -- the
+			// same footing as input: the generation bump keeps the "nothing
+			// observable moved" gate from skipping the paint, and the damage
+			// keeps that paint banded to the box's rows.
+			termDOM[kInputGeneration]++;
+			termDOM[kCompositor].damage(element);
+			void render(termDOM);
 		},
 	};
 }
@@ -3170,10 +3102,9 @@ function processPendingMutationsAndRender(
 }
 
 /**
- * The engine's element scroll offsets, in cells. Replacing the DOM's
- * accessors replaces the storage under them too, so the DOM module keeps no
- * seam for the engine to reach through; a box nothing scrolled is absent
- * and reads zero.
+ * The engine's element scroll offsets, in cells: what the mount's
+ * scrollOffset answers with and what its scrollOffsetTo clamps and writes.
+ * A box nothing scrolled is absent and reads zero.
  */
 const elementScrollOffsets = new WeakMap<
 	Element,

@@ -7809,6 +7809,12 @@ const kDataset = Symbol("dataset");
 const kClickInProgress = Symbol("click in progress");
 const kInternals = Symbol("element internals");
 
+/** The two argument forms CSSOM View gives each scroll method. */
+type ScrollMethod = (
+	xOrOptions?: number | globalThis.ScrollToOptions,
+	y?: number,
+) => void;
+
 export class Element extends Node {
 	[kNamespace]: string | null;
 	[kPrefix]: string | null;
@@ -7835,10 +7841,14 @@ export class Element extends Node {
 	[kPseudoHost]: Element | null;
 	[kPseudoName]: string | null;
 
-	// Installed on the prototype beside the engine delegate, which is what
-	// measures them.
+	// Installed on the prototype, where the mount that answers them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
+	declare scrollLeft: number;
+	declare scrollTop: number;
+	declare scroll: ScrollMethod;
+	declare scrollTo: ScrollMethod;
+	declare scrollBy: ScrollMethod;
 
 	constructor() {
 		super();
@@ -8445,8 +8455,7 @@ const alreadyConstructed = Symbol("already constructed");
  * new.target it cannot find a definition for.
  */
 export class HTMLElement extends Element {
-	// Installed on the prototype beside the engine delegate, which is what
-	// measures them.
+	// Installed on the prototype, where the mount that measures them is.
 	declare readonly offsetWidth: number;
 	declare readonly offsetHeight: number;
 	declare readonly offsetTop: number;
@@ -20199,33 +20208,105 @@ Object.defineProperties(Element.prototype, {
 		enumerable: true,
 		writable: true,
 	},
-	// How far a box is scrolled from its content's origin. These accessors
-	// are the storage a headless document answers with: writes land and
-	// read back, and nothing moves. An environment that can lay out and
-	// paint (the terminal engine) replaces them wholesale -- accessor and
-	// storage both -- with ones that clamp against the content's laid-out
-	// extent and schedule the repaint.
+	// How far a box is scrolled from its content's origin. A mounted
+	// document answers from the engine, which holds the offsets it clamped
+	// against laid-out content. The storage below is what a headless
+	// document answers with: writes land and read back, and nothing moves.
 	scrollLeft: {
 		get(this: Element): number {
-			return scrollOffsets.get(this)?.left ?? 0;
+			const engine = mountOf(this);
+			return engine ?
+				engine.scrollOffset(this).left :
+					(scrollOffsets.get(this)?.left ?? 0);
 		},
 		set(this: Element, value: number) {
-			writeScrollOffset(this, "left", toDouble(value));
+			const engine = mountOf(this);
+			if (engine === undefined) {
+				writeScrollOffset(this, "left", toDouble(value));
+				return;
+			}
+			engine.scrollOffsetTo(this, "left", value);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollTop: {
 		get(this: Element): number {
-			return scrollOffsets.get(this)?.top ?? 0;
+			const engine = mountOf(this);
+			return engine ?
+				engine.scrollOffset(this).top :
+					(scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
-			writeScrollOffset(this, "top", toDouble(value));
+			const engine = mountOf(this);
+			if (engine === undefined) {
+				writeScrollOffset(this, "top", toDouble(value));
+				return;
+			}
+			engine.scrollOffsetTo(this, "top", value);
 		},
 		configurable: true,
 		enumerable: true,
 	},
+	// scrollTo/scroll/scrollBy, in both their forms; assignment through the
+	// accessors above is what rounds, clamps and repaints. html and body's
+	// own scrollTop accessors map to the terminal's camera, so scrolling
+	// them scrolls the document, as everywhere else.
+	scrollTo: {
+		value: scrollElementTo,
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	scroll: {
+		value: scrollElementTo,
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	scrollBy: {
+		value(
+			this: Element,
+			xOrOptions?: number | globalThis.ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left) {
+				this.scrollLeft = this.scrollLeft + target.left;
+			}
+			if (target.top) {
+				this.scrollTop = this.scrollTop + target.top;
+			}
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
 });
+
+function scrollTargetOf(
+	xOrOptions?: number | globalThis.ScrollToOptions,
+	y?: number,
+): {left?: number; top?: number} {
+	if (typeof xOrOptions === "object" && xOrOptions !== null) {
+		return {left: xOrOptions.left, top: xOrOptions.top};
+	}
+	return {left: xOrOptions, top: y};
+}
+
+function scrollElementTo(
+	this: Element,
+	xOrOptions?: number | globalThis.ScrollToOptions,
+	y?: number,
+): void {
+	const target = scrollTargetOf(xOrOptions, y);
+	if (target.left !== undefined) {
+		this.scrollLeft = target.left;
+	}
+	if (target.top !== undefined) {
+		this.scrollTop = target.top;
+	}
+}
 
 /** The scroll offsets of the boxes that have been scrolled at all. */
 const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
@@ -21287,8 +21368,7 @@ const kRangeSelection = Symbol("the selection whose range this is");
 export class Range extends AbstractRange {
 	[kRangeSelection]: Selection | null;
 
-	// Installed on the prototype beside the engine delegate, which is what
-	// measures them.
+	// Installed on the prototype, where the mount that measures them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
 
@@ -24970,6 +25050,17 @@ export interface Mount {
 	offsetParent(element: object): object | null;
 	clientSize(element: object): {width: number; height: number};
 	scrollSize(element: object): {width: number; height: number};
+	/** How far a box is scrolled from its content's origin, in cells. */
+	scrollOffset(element: object): {left: number; top: number};
+	/**
+	 * Round the write to whole cells, clamp it into the scrollable range,
+	 * store it and schedule the repaint that shows it.
+	 */
+	scrollOffsetTo(
+		element: object,
+		axis: "left" | "top",
+		value: number,
+	): void;
 }
 
 /** Mount a document on its engine. Once per document. */
