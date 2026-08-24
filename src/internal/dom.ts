@@ -5912,7 +5912,7 @@ function queueTreeMutationRecord(
 /* ------------------------------------------------------- live collections */
 
 const kEnsure = Symbol("recompute if stale");
-const kGeneration = Symbol("how many lists the collection has been");
+const kMembersMoved = Symbol("members moved");
 
 const kLive = Symbol("live");
 const kOwner = Symbol("owner");
@@ -5943,7 +5943,6 @@ abstract class LiveList implements Materializable {
 	declare [kDefined]: number;
 	declare [kRegistered]: boolean;
 	declare [kExact]: boolean;
-	declare [kGeneration]: number;
 	declare [kLive]: boolean;
 	declare [kOwner]: Node | null;
 	declare [kChildMember]: ((node: Node) => boolean) | null;
@@ -5970,7 +5969,6 @@ abstract class LiveList implements Materializable {
 		this[kDefined] = 0;
 		this[kRegistered] = false;
 		this[kExact] = false;
-		this[kGeneration] = 0;
 		this[kNames] = [];
 		this[kLive] = live;
 		this[kOwner] = owner;
@@ -5984,10 +5982,12 @@ abstract class LiveList implements Materializable {
 	}
 
 	/**
-	 * How many lists the collection has been, which is what tells a cache over
-	 * the list that the list under it is another one. The array itself is not:
-	 * a splice moves members within the one array the collection holds.
+	 * Told when the members moved, for a collection keeping a cache over them.
+	 * The list itself cannot say: a splice moves members within the one array
+	 * the collection holds.
 	 */
+	[kMembersMoved](): void {}
+
 	abstract compute(): Node[];
 
 	/** Extra own properties this collection exposes, by name. */
@@ -6094,7 +6094,7 @@ function recompute(
 	list[kVersion] = treeVersion;
 	list[kItems] = list.compute();
 	list[kExact] = true;
-	list[kGeneration]++;
+	list[kMembersMoved]();
 	materialize(list);
 }
 
@@ -6157,7 +6157,7 @@ function splice(
 		}
 		items.splice(at, members.length);
 	}
-	list[kGeneration]++;
+	list[kMembersMoved]();
 	defineIndices(list, items.length);
 	return true;
 }
@@ -6450,7 +6450,6 @@ function areNameless(members: readonly Node[]): boolean {
 
 const kWatched = Symbol("watched");
 const kMatches = Symbol("matches");
-const kMembersOf = Symbol("membersOf");
 const kMembers = Symbol("members");
 
 /**
@@ -6464,8 +6463,7 @@ class MatchingCollection extends HTMLCollection {
 	declare [kRoot]: Node;
 	declare [kWatched]: string | null;
 	declare [kMatches]: (element: Element) => boolean;
-	declare [kMembers]: Set<Node>;
-	declare [kMembersOf]: number;
+	declare [kMembers]: Set<Node> | null;
 
 	/**
 	 * @param watched - the attribute the test reads, if it reads one.
@@ -6489,11 +6487,15 @@ class MatchingCollection extends HTMLCollection {
 			null,
 			true,
 		);
-		this[kMembers] = new Set<Node>();
-		this[kMembersOf] = -1;
+		this[kMembers] = null;
 		this[kRoot] = root;
 		this[kWatched] = watched;
 		this[kMatches] = matches;
+	}
+
+	/** The members moved, so what was cached over them describes none of them. */
+	override [kMembersMoved](): void {
+		this[kMembers] = null;
 	}
 
 	/**
@@ -6528,12 +6530,13 @@ class MatchingCollection extends HTMLCollection {
 				this[kSync]();
 				return;
 			}
-			if (this[kMembersOf] !== this[kGeneration]) {
-				this[kMembers] = new Set(items);
-				this[kMembersOf] = this[kGeneration];
+			let members = this[kMembers];
+			if (members === null) {
+				members = new Set(items);
+				this[kMembers] = members;
 			}
 			if (
-				this[kMatches](element) === this[kMembers].has(element) ||
+				this[kMatches](element) === members.has(element) ||
 				!isInclusiveAncestor(this[kRoot], element)
 			) {
 				return;
@@ -12078,7 +12081,7 @@ export class HTMLHtmlElement extends HTMLElement {}
 
 const kContentDocument = Symbol("contentDocument");
 const kContentWindow = Symbol("contentWindow");
-const kFrameGeneration = Symbol("frameGeneration");
+const kFrameDocumentRun = Symbol("frameDocumentRun");
 const kEnsureFrameDocument = Symbol("ensureFrameDocument");
 
 /** What an iframe's window exposes: the document's side of the frame. */
@@ -12103,12 +12106,15 @@ export class HTMLIFrameElement extends HTMLElement {
 		super(...args);
 		this[kContentDocument] = null;
 		this[kContentWindow] = null;
-		this[kFrameGeneration] = 0;
+		this[kFrameDocumentRun] = {};
 	}
 
 	declare [kContentDocument]: Document | null;
 	declare [kContentWindow]: FrameWindowLike | null;
-	declare [kFrameGeneration]: number;
+	// The stretch of connectedness the current content document belongs to. A
+	// removal, and each insertion, starts another one, so the load task fires
+	// only for the insertion that scheduled it.
+	declare [kFrameDocumentRun]: object;
 
 	override [kInsertionSteps](): void {
 		super[kInsertionSteps]();
@@ -12119,9 +12125,9 @@ export class HTMLIFrameElement extends HTMLElement {
 		// here would re-enter the parser while a parse that contains this
 		// iframe is still running. The load fires from a task, after the
 		// insertion has finished and its listeners are attached.
-		const generation = (this[kFrameGeneration] += 1);
+		const run = (this[kFrameDocumentRun] = {});
 		setTimeout(() => {
-			if (this.isConnected && this[kFrameGeneration] === generation) {
+			if (this.isConnected && this[kFrameDocumentRun] === run) {
 				this.dispatchEvent(new Event("load"));
 			}
 		}, 0);
@@ -12131,7 +12137,7 @@ export class HTMLIFrameElement extends HTMLElement {
 		super[kRemovingSteps](parent);
 		this[kContentDocument] = null;
 		this[kContentWindow] = null;
-		this[kFrameGeneration] += 1;
+		this[kFrameDocumentRun] = {};
 	}
 
 	[kEnsureFrameDocument](): void {
