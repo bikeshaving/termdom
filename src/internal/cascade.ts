@@ -9827,10 +9827,10 @@ export class StyleManager {
 	/**
 	 * Whether any parsed selector can reach OUTSIDE the mutated element's
 	 * subtree: sibling combinators reach following siblings, :has() reaches
-	 * ancestors. Set during parsing, read by invalidationScopeFor() to decide
-	 * how much layout a class/id flip must rebuild. String tests are
-	 * deliberately loose (`~=` in an attribute selector counts as a sibling
-	 * combinator): a false positive only widens the rebuild.
+	 * ancestors. Set during parsing, read when an attribute flips to decide
+	 * how far its invalidation must reach. String tests are deliberately
+	 * loose (`~=` in an attribute selector counts as a sibling combinator): a
+	 * false positive only widens the rebuild.
 	 */
 	declare [kSelectorsReachSiblings]: boolean;
 	declare [kSelectorsReachAncestors]: boolean;
@@ -10124,7 +10124,6 @@ export class StyleManager {
 		return this[kLayoutEngine]!.gridTracks(element, rows);
 	}
 
-	/** The layout epoch the last resolved-value flush left behind. */
 	/**
 	 * The used values measured behind the last flush, per declaration. Held
 	 * here rather than on the declarations so that a cascade rebuild, or a
@@ -10360,8 +10359,8 @@ export class StyleManager {
 				// Sibling combinators reach right: `.on ~ .light` matches (or
 				// stops matching) a FOLLOWING sibling when this element's
 				// attributes change, and that sibling's cached styles know
-				// nothing of it. Same flags the layout scope decision uses;
-				// :has() reaches ancestors, for which only the nuclear cache
+				// nothing of it. :has() reaches ancestors, for which only the
+				// nuclear cache
 				// clear is honest.
 				if (this[kSelectorsReachAncestors]) {
 					this.clearCache();
@@ -10407,22 +10406,6 @@ export class StyleManager {
 	 * through refreshStylesheets instead.
 	 */
 	declare [kStyleSheetList]: {length: number} | null;
-
-	invalidationScopeFor(element: Element): Element {
-		if (
-			this[kStylesheetsDirty] ||
-			styleSheetCount(this) !== this[kParsedStyleSheetCount]
-		) {
-			parseStylesheets(this);
-		}
-		if (this[kSelectorsReachAncestors]) {
-			return this[kDocument].body ?? element;
-		}
-		if (this[kSelectorsReachSiblings]) {
-			return element.parentElement ?? element;
-		}
-		return element;
-	}
 
 	/**
 	 * Whether an element's text can enter a selection: the used value of
@@ -10499,9 +10482,8 @@ export class StyleManager {
 	 * same staleness a focus move leaves. Scoped to the symmetric
 	 * difference of the two flat-tree chains -- the part of the tree whose
 	 * `:hover` answer moved; the shared ancestors above the fork answered
-	 * hovered before and answer hovered still. Each invalidated stop also
-	 * lands in the style damage the frame drains, so the repaint stays a
-	 * banded one: hover is not a mutation and nothing else names its rows.
+	 * hovered before and answer hovered still. Hover is not a mutation, so
+	 * the frame the pointer report schedules is what shows it.
 	 */
 	handleHoverChange(
 		previous: Element | null,
@@ -11048,8 +11030,7 @@ export class StyleManager {
 		this[kComputedStyleCache].delete(element);
 		this[kPseudoElementStyleCache].delete(element);
 		// A style change can flip display: contents, which moves the node's
-		// flat-tree BOX parent, so every box enumeration keyed on the epoch is
-		// stale from here.
+		// flat-tree BOX parent, so no box enumeration still stands.
 		this[kLayoutEngine]?.invalidateFrame();
 	}
 

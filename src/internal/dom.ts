@@ -81,7 +81,7 @@ interface UAEngine {
 	 */
 	stateChanged(element: object): void;
 	observer: {observe(target: object, options: object): void};
-	/** Note the unbounded damage attaching a shadow tree is. */
+	/** Note the unbounded change attaching a shadow tree is. */
 	invalidateStructure(): void;
 }
 
@@ -149,8 +149,6 @@ export interface UAToolkit {
 	upgradeWidget(element: object): void;
 	/** Build the UA widgets in a subtree, the root element included. */
 	upgradeWidgetsIn(root: object): void;
-	/** Whether a tag is one of the built-ins that carry a UA widget. */
-	isWidgetControl(element: object): boolean;
 	/** The granted document's top layer, by reference. */
 	topLayer: Set<Element>;
 	isModalDialog(node: object): boolean;
@@ -279,9 +277,6 @@ function makeUAToolkit(document: object): UAToolkit {
 				upgradeUAWidgetsIn(root as Element);
 			}
 		},
-		isWidgetControl(element: object): boolean {
-			return owns(element) && isUAWidgetControl(element as Element);
-		},
 		topLayer: topLayerOf(document),
 		isModalDialog(node: object): boolean {
 			return owns(node) && isModalDialog(node);
@@ -388,11 +383,6 @@ const UPGRADEABLE_CONTROLS = new Set([
 	"SELECT",
 	"TEXTAREA",
 ]);
-
-/** Whether a tag is one of the built-ins that carry a UA widget. */
-function isUAWidgetControl(element: Element): boolean {
-	return UPGRADEABLE_CONTROLS.has(element.tagName);
-}
 
 /**
  * Upgrade every control in a newly connected subtree, the element itself
@@ -18163,7 +18153,7 @@ function checkValidity(element: Element): boolean {
  * The pseudo-element slots an element carries.
  *
  * A ::before, ::after or ::marker box needs a node to hang style and children
- * off, and the engine's compositor needs to walk to it; the DOM Standard has
+ * off, and the engine's paint walk needs to reach it; the DOM Standard has
  * no such node, and an author must never find one. These live in a map keyed
  * by the pseudo-element's name, reachable only through the functions
  * below, which the engine's composition pass is the sole caller of. Nothing

@@ -5803,29 +5803,6 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * The viewport rows occupied by fixed-position content: the hoisted
-	 * children of the viewport root, excluding the document's own subtree.
-	 */
-	fixedRowBands(rows: number): Array<[number, number]> {
-		const bands: Array<[number, number]> = [];
-		const documentNode = this.nodeMap.get(this.rootElement);
-		for (const child of this.viewportRootNode.children) {
-			if (child === documentNode) {
-				continue;
-			}
-			const top = Math.max(0, Math.floor(child.getComputedTop()));
-			const bottom = Math.min(
-				rows,
-				Math.ceil(child.getComputedTop() + child.getComputedHeight()),
-			);
-			if (bottom > top) {
-				bands.push([top, bottom]);
-			}
-		}
-		return bands;
-	}
-
-	/**
 	 * True when nothing in the element's subtree can paint inside the document
 	 * rows [top, bottom) -- its cached paint extent (own box unioned with every
 	 * descendant's, absolutes included) lies entirely outside the band.

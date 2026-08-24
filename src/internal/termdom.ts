@@ -1741,7 +1741,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// tree; the refresh rides on the STYLE mutation records the
 			// observer enrollment above will deliver.
 			// A shadow attachment recomposes the host's subtree with no
-			// mutation record: unbounded for any banded repaint.
+			// mutation record, so no box enumeration still stands.
 			termDOM[kLayoutEngine].invalidateStructure();
 			termDOM[kStyleManager].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
