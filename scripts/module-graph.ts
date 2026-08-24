@@ -1,7 +1,7 @@
 /**
  * The module graph of src/, from the import headers: each module's local
- * dependencies, its dependents, and its export count. `--dot` emits
- * Graphviz instead.
+ * dependencies, its dependents, and its exports by name and line. `--dot`
+ * emits Graphviz instead.
  */
 
 import {readFileSync, readdirSync} from "node:fs";
@@ -23,15 +23,24 @@ function* walk(dir: string): Generator<string> {
 
 const IMPORT =
 	/(?:^(?:import|export)\s+(type\s+)?[^"']*|^\}?\s*from\s+)["'](\.[^"']+)["']/;
-const EXPORT = /^export\s+(?!\{)/;
+const DECLARATION =
+	/^export\s+(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+const NAME_LIST = /^export\s+(?:type\s+)?\{([^}]*)\}/;
+
+interface ExportSite {
+	name: string;
+	line: number;
+}
 
 const imports = new Map<string, Set<string>>();
-const exportCounts = new Map<string, number>();
+const exportSites = new Map<string, ExportSite[]>();
 for (const file of walk(ROOT)) {
 	const name = relative(ROOT, file).replace(/\.d\.ts$|\.ts$|\.js$/, "");
 	const deps = new Set<string>();
-	let exports = 0;
-	for (const line of readFileSync(file, "utf8").split("\n")) {
+	const sites: ExportSite[] = [];
+	const lines = readFileSync(file, "utf8").split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
 		const imported = IMPORT.exec(line);
 		if (imported) {
 			const target = relative(
@@ -40,12 +49,23 @@ for (const file of walk(ROOT)) {
 			).replace(/\.js$|\.ts$/, "");
 			deps.add(imported[1] ? `${target} (type)` : target);
 		}
-		if (EXPORT.test(line)) {
-			exports++;
+		const declared = DECLARATION.exec(line);
+		if (declared) {
+			sites.push({name: declared[1], line: i + 1});
+			continue;
+		}
+		const list = NAME_LIST.exec(line);
+		if (list) {
+			for (const entry of list[1].split(",")) {
+				const exported = entry.trim().split(/\s+as\s+/).pop()!.trim();
+				if (exported) {
+					sites.push({name: exported, line: i + 1});
+				}
+			}
 		}
 	}
 	imports.set(name, deps);
-	exportCounts.set(name, exports);
+	exportSites.set(name, sites);
 }
 
 const dependents = new Map<string, Set<string>>();
@@ -73,12 +93,16 @@ if (process.argv.includes("--dot")) {
 	);
 	for (const name of names) {
 		const deps = [...imports.get(name)!].sort();
+		const sites = exportSites.get(name)!;
 		const fanIn = dependents.get(name)?.size ?? 0;
 		process.stdout.write(
-			`${name}  [exports ${exportCounts.get(name)}, dependents ${fanIn}]\n`,
+			`${name}  [exports ${sites.length}, dependents ${fanIn}]\n`,
 		);
 		for (const dep of deps) {
 			process.stdout.write(`\t-> ${dep}\n`);
+		}
+		for (const site of sites) {
+			process.stdout.write(`\t${site.name} @${site.line}\n`);
 		}
 	}
 }
