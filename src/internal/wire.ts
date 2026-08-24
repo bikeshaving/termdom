@@ -90,7 +90,12 @@ export function insertLines(count: number): string {
 
 /* --------------------------------------------------------------- the style */
 
-/** SGR with the given parameters. */
+/**
+ * SGR: a semicolon-joined parameter list -- "1;4;38;5;196" -- in one
+ * escape. Callers compose the run; nothing is validated here, and an
+ * empty list is the terminal's reset, so a caller with nothing to say
+ * must not call.
+ */
 export function sgr(parameters: string): string {
 	return `\x1b[${parameters}m`;
 }
