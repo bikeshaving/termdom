@@ -15,7 +15,7 @@ import {
 	PermissionStatus,
 	createPermissions,
 } from "./permissions.js";
-import {DOMRectList as LayoutDOMRectList, LayoutEngine} from "./layout.js";
+import {LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {
@@ -1183,7 +1183,7 @@ export class TermDOM {
 			DOMRect: new (x: number, y: number, w: number, h: number) => DOMRect;
 		}).DOMRect;
 		const emptyRectList = (): DOMRectList =>
-			new LayoutDOMRectList() as unknown as DOMRectList;
+			new DOM.DOMRectList() as unknown as DOMRectList;
 
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,

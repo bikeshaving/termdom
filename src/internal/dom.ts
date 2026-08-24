@@ -18932,6 +18932,22 @@ Object.defineProperty(DOMRect.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+export class DOMRectList extends Array<
+	globalThis.DOMRect
+> implements globalThis.DOMRectList {
+	item(index: number): globalThis.DOMRect | null {
+		if (index < 0 || index >= this.length) {
+			return null;
+		}
+		return this[index];
+	}
+}
+
+Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
+	value: "DOMRectList",
+	configurable: true,
+});
+
 /* --------------------------------------------------------------- document */
 
 let currentDocumentForConstruction: Document | null = null;

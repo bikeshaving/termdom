@@ -34,6 +34,7 @@ import {
 	type FlatTreeWalker,
 	type UAToolkit,
 	claimUAToolkit,
+	DOMRectList,
 } from "./dom.js";
 
 // The composed-tree capability, claimed per document when a LayoutEngine is
@@ -1534,22 +1535,6 @@ class Box {
 		return this.parent!.node as Element;
 	}
 }
-
-export class DOMRectList extends Array<
-	DOMRect
-> implements globalThis.DOMRectList {
-	item(index: number): globalThis.DOMRect | null {
-		if (index < 0 || index >= this.length) {
-			return null;
-		}
-		return this[index];
-	}
-}
-
-Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
-	value: "DOMRectList",
-	configurable: true,
-});
 
 const kStructuralGeneration = Symbol("structuralGeneration");
 const kStaleContainers = Symbol("staleContainers");
