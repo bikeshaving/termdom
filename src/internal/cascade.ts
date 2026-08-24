@@ -4265,6 +4265,26 @@ const kSelectors = Symbol("selectors");
 const kStyle = Symbol("style");
 const kSelectorText = Symbol("selectorText");
 
+/**
+ * Load a block from declarations the sheet parser already holds, sparing the
+ * serialize-and-reparse a cssText assignment would run. The filters are the
+ * cssText setter's: a name the block may not hold is skipped, and each entry
+ * cascades against the ones before it.
+ */
+function assignDeclarations(
+	block: CSSStyleDeclaration,
+	declarations: readonly CSSDeclaration[],
+): void {
+	for (const declaration of declarations) {
+		if (!supports(block, declaration.name)) {
+			continue;
+		}
+		const {name, value, important} = declaration;
+		apply(block, name, value, important, true);
+	}
+	flush(block);
+}
+
 /** A style rule: a selector and the declaration block it applies. */
 class CSSStyleRule extends CSSGroupingRule {
 	declare [kSelectors]: SelectorNode;
@@ -4273,7 +4293,7 @@ class CSSStyleRule extends CSSGroupingRule {
 
 	constructor(
 		selectors: SelectorNode,
-		cssText: string,
+		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 		build?: (group: CSSGroupingRule) => CSSRule[],
@@ -4285,7 +4305,11 @@ class CSSStyleRule extends CSSGroupingRule {
 			parentRule: this,
 			onChange: () => notifyRule(this),
 		});
-		this[kStyle].cssText = cssText;
+		if (typeof block === "string") {
+			this[kStyle].cssText = block;
+		} else {
+			assignDeclarations(this[kStyle], block);
+		}
 	}
 
 	get type(): number {
@@ -4486,7 +4510,7 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 	declare [kStyle]: CSSStyleDeclaration;
 
 	constructor(
-		cssText: string,
+		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
@@ -4503,7 +4527,11 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 			descriptors: atRule ?? "",
 			keyframe: this instanceof CSSKeyframeRule,
 		});
-		this[kStyle].cssText = cssText;
+		if (typeof block === "string") {
+			this[kStyle].cssText = block;
+		} else {
+			assignDeclarations(this[kStyle], block);
+		}
 	}
 
 	get style(): CSSStyleDeclaration {
@@ -4549,11 +4577,11 @@ class CSSPageRule extends CSSDeclarationBlockRule {
 
 	constructor(
 		selectorText: string,
-		cssText: string,
+		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
-		super(cssText, parentStyleSheet, parentRule);
+		super(block, parentStyleSheet, parentRule);
 		this[kSelectorText] = serializePageSelector(selectorText);
 	}
 
@@ -4615,10 +4643,10 @@ class CSSNamedDeclarationRule extends CSSDeclarationBlockRule {
 
 	constructor(
 		name: string,
-		cssText: string,
+		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
-		super(cssText, parentStyleSheet, null);
+		super(block, parentStyleSheet, null);
 		this[kName] = name.trim();
 	}
 
@@ -4707,11 +4735,11 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 
 	constructor(
 		keyText: string,
-		cssText: string,
+		block: string | readonly CSSDeclaration[],
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
-		super(cssText, parentStyleSheet, parentRule);
+		super(block, parentStyleSheet, parentRule);
 		this[kKeyText] = serializeKeyText(keyText);
 	}
 
@@ -5099,7 +5127,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				onChange: () => notifyRule(this),
 				descriptors: "@font-feature-values",
 			});
-			block.cssText = blockText(child);
+			assignDeclarations(block, blockDeclarations(child));
 			this[kBlocks].set(child.name.toLowerCase(), block);
 		}
 	}
@@ -6569,16 +6597,6 @@ function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
 	return declarations;
 }
 
-/** A rule block's text, as a declaration block takes it. */
-function blockText(node: ParsedNode): string {
-	return blockDeclarations(node)
-		.map(
-			({name, value, important}) =>
-				`${name}: ${value}${important ? " !important" : ""};`,
-		)
-		.join(" ");
-}
-
 /** Parse a rule list, as a sheet's text or a grouping rule's body. */
 function parseRules(
 	text: string,
@@ -6693,7 +6711,7 @@ function convertRule(
 		}
 		return new CSSStyleRule(
 			selectors,
-			blockText(node),
+			blockDeclarations(node),
 			sheet,
 			parentRule,
 			(rule) => convertRules(nestedRules(node), sheet, rule, namespaces),
@@ -6712,13 +6730,17 @@ function convertRule(
 				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "counter-style":
-			return new CSSCounterStyleRule(prelude, blockText(node), sheet);
+			return new CSSCounterStyleRule(prelude, blockDeclarations(node), sheet);
 		case "font-face":
-			return new CSSFontFaceRule(blockText(node), sheet, parentRule);
+			return new CSSFontFaceRule(blockDeclarations(node), sheet, parentRule);
 		case "font-feature-values":
 			return new CSSFontFeatureValuesRule(prelude, node, sheet);
 		case "font-palette-values":
-			return new CSSFontPaletteValuesRule(prelude, blockText(node), sheet);
+			return new CSSFontPaletteValuesRule(
+				prelude,
+				blockDeclarations(node),
+				sheet,
+			);
 		case "import":
 			return convertImportRule(prelude, sheet);
 		case "keyframes":
@@ -6730,7 +6752,7 @@ function convertRule(
 						(frame) =>
 							new CSSKeyframeRule(
 								preludeText(frame),
-								blockText(frame),
+								blockDeclarations(frame),
 								sheet,
 								rule,
 							),
@@ -6755,9 +6777,14 @@ function convertRule(
 			);
 		}
 		case "page":
-			return new CSSPageRule(prelude, blockText(node), sheet, parentRule);
+			return new CSSPageRule(
+				prelude,
+				blockDeclarations(node),
+				sheet,
+				parentRule,
+			);
 		case "property":
-			return new CSSPropertyRule(prelude, blockText(node), sheet);
+			return new CSSPropertyRule(prelude, blockDeclarations(node), sheet);
 		case "scope":
 			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
 				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
