@@ -411,6 +411,55 @@ test("a class flip reaches the descendants its selectors reach", async () => {
 	dom.dispose();
 });
 
+test("a flip reaches descendants through names only the parser reads", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+
+	// Names a token scan reads wrong: an escaped colon, a name outside ASCII,
+	// an id spelled with two dashes, and a state pseudo-class carrying no
+	// attribute name at all. Each names the row, so each reaches the label.
+	document.body.innerHTML =
+		"<style>" +
+		".foo\\:bar .view { display: none; }" +
+		".α .view { color: red; }" +
+		"#--x .view { color: blue; }" +
+		"details[open] .view { color: lime; }" +
+		"</style>" +
+		"<div id=\"row\"><span class=\"view\">label</span></div>" +
+		"<details><span class=\"view\">inner</span></details>";
+	await nextFrame(dom);
+	const row = document.getElementById("row")!;
+	const label = document.querySelector("#row .view") as HTMLElement;
+	const inner = document.querySelector("details .view") as HTMLElement;
+	const details = document.querySelector("details") as HTMLElement;
+	const plain = () => terminal.getPlainText().replace(/\s+/g, " ").trim();
+
+	expect(plain()).toContain("label");
+
+	row.classList.add("α");
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(label).color).toBe("rgb(255, 0, 0)");
+	row.classList.remove("α");
+	await nextFrame(dom);
+
+	row.id = "--x";
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(label).color).toBe("rgb(0, 0, 255)");
+	row.id = "row";
+	await nextFrame(dom);
+
+	details.setAttribute("open", "");
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(inner).color).toBe("rgb(0, 255, 0)");
+
+	row.classList.add("foo:bar");
+	await nextFrame(dom);
+	expect(plain()).not.toContain("label");
+
+	dom.dispose();
+});
+
 test("a style that changes what descendants inherit re-measures them", async () => {
 	// A run remembers the size it answered with, and re-answers only when its
 	// constraints move. What it INHERITS moves neither: the same run at the

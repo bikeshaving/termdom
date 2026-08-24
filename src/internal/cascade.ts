@@ -5644,15 +5644,6 @@ const NO_NAMESPACES: SelectorNamespaces = {
 	prefixes: new Map(),
 };
 
-/** The attribute name an attribute selector opens with, whatever follows it. */
-const ATTRIBUTE_SELECTOR_NAME = /\[\s*([A-Za-z_][\w:.-]*)/g;
-
-/** The class names a compound selector tests, including inside :not()/:is(). */
-const SELECTOR_CLASS_NAME = /\.(-?[A-Za-z_][\w-]*)/g;
-
-/** The ids a compound selector tests. */
-const SELECTOR_ID_NAME = /#(-?[A-Za-z_][\w-]*)/g;
-
 /**
  * A selector's weight, as the three counts selectors-4 §17 keeps: ids,
  * then classes/attributes/pseudo-classes, then types/pseudo-elements.
@@ -5773,37 +5764,34 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 }
 
 /**
- * A selector's specificity, zero-padded to "ids-classes-elements" so the
- * cascade can compare two of them as strings.
- *
- * A selector the parser cannot read weighs nothing: the matcher may still
- * accept it -- it reads a wider selector grammar than this parser does -- and
- * a rule whose weight cannot be counted is the one that should lose a tie.
- */
-function selectorSpecificity(selector: string): string {
-	let list: SelectorNode | null = null;
-	try {
-		list = CSSTree.parse(selector, {
-			context: "selectorList",
-			onParseError(error: Error) {
-				throw error;
-			},
-		}) as unknown as SelectorNode;
-	} catch (_err) {
-		list = null;
-	}
-	const weight =
-		list && list.type === "SelectorList" ? listSpecificity(list) : [0, 0, 0];
-	return weight.map((count) => String(count).padStart(3, "0")).join("-");
-}
-
-/**
  * The pseudo-classes an attribute can start or stop matching. A selector that
  * tests one of these on an ancestor reaches the ancestor's descendants when the
  * attribute behind it changes, and no attribute NAME in the selector says so.
  */
-const STATE_PSEUDO_CLASSES =
-	/:(checked|disabled|enabled|required|optional|read-only|read-write|indeterminate|default|placeholder-shown|open|closed|link|any-link|visited|target|valid|invalid|in-range|out-of-range|defined|popover-open)\b/;
+const STATE_PSEUDO_CLASSES = new Set([
+	"any-link",
+	"checked",
+	"closed",
+	"default",
+	"defined",
+	"disabled",
+	"enabled",
+	"in-range",
+	"indeterminate",
+	"invalid",
+	"link",
+	"open",
+	"optional",
+	"out-of-range",
+	"placeholder-shown",
+	"popover-open",
+	"read-only",
+	"read-write",
+	"required",
+	"target",
+	"valid",
+	"visited",
+]);
 
 /** The attributes those state pseudo-classes are driven by. */
 const STATE_ATTRIBUTES = new Set([
@@ -5826,94 +5814,149 @@ const STATE_ATTRIBUTES = new Set([
 ]);
 
 /**
- * A selector's compounds, in source order, split on top-level combinators.
- * Descendant, child, and both sibling combinators all separate compounds;
- * combinators inside parentheses or brackets do not, so `:is(a > b) c` reads as
- * two compounds and `[title~="a b"]` as one.
+ * The invalidation keys one compound tests: a change to a key a compound
+ * names can flip what the compound matches.
  */
-function selectorCompounds(selector: string): string[] {
-	const compounds: string[] = [];
-	let depth = 0;
-	let start = 0;
-	let inBracket = false;
-	let quote = "";
-	for (let i = 0; i < selector.length; i++) {
-		const char = selector[i];
-		if (quote) {
-			if (char === quote && selector[i - 1] !== "\\") {
-				quote = "";
+interface CompoundKeys {
+	classes: string[];
+	ids: string[];
+	attributes: string[];
+	states: boolean;
+}
+
+/**
+ * One reading of a selector: the weight the cascade sorts rules by, the
+ * element type its subject is anchored to, and the keys each of its compounds
+ * tests, in source order. The subject is the last compound.
+ */
+interface SelectorReading {
+	specificity: string;
+	subjectTag: string | undefined;
+	compounds: CompoundKeys[];
+}
+
+/**
+ * The keys a compound names, the arguments of its pseudo-classes included: a
+ * class inside `:not()` or `:is()` is tested on the compound around it, so a
+ * change to it reaches whatever that compound reaches.
+ */
+function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
+	for (const node of nodes) {
+		switch (node.type) {
+			case "ClassSelector":
+				keys.classes.push(CSSTree.ident.decode(String(node.name ?? "")));
+				break;
+			case "IdSelector":
+				keys.ids.push(CSSTree.ident.decode(String(node.name ?? "")));
+				break;
+			case "AttributeSelector": {
+				const qualified = (node.name as {name: string} | undefined)?.name;
+				const name = String(qualified ?? "");
+				// An unprefixed attribute is in no namespace, and a prefixed one
+				// is keyed by the local name a mutation reports.
+				keys.attributes.push(
+					CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)).toLowerCase(),
+				);
+				break;
 			}
-			continue;
-		}
-		if (char === '"' || char === "'") {
-			quote = char;
-		} else if (char === "(") {
-			depth++;
-		} else if (char === ")") {
-			depth--;
-		} else if (char === "[") {
-			inBracket = true;
-		} else if (char === "]") {
-			inBracket = false;
-		} else if (
-			depth === 0 &&
-			!inBracket &&
-			(char === " " ||
-				char === "\t" ||
-				char === "\n" ||
-				char === ">" ||
-				char === "+" ||
-				char === "~")
-		) {
-			if (i > start) {
-				compounds.push(selector.slice(start, i));
-			}
-			start = i + 1;
+			case "PseudoClassSelector":
+				if (STATE_PSEUDO_CLASSES.has(pseudoName(String(node.name ?? "")))) {
+					keys.states = true;
+				}
+				harvestKeys(childrenOf(node), keys);
+				break;
+			case "PseudoElementSelector":
+			case "SelectorList":
+			case "Selector":
+				harvestKeys(childrenOf(node), keys);
+				break;
+			case "Nth":
+				if (node.selector) {
+					harvestKeys([node.selector], keys);
+				}
+				break;
 		}
 	}
-	if (selector.length > start) {
-		compounds.push(selector.slice(start));
+}
+
+/**
+ * Read a selector once, for everything the cascade asks of its structure.
+ *
+ * A selector the parser cannot read weighs nothing: the matcher may still
+ * accept it -- it reads a wider selector grammar than this parser does -- and
+ * a rule whose weight cannot be counted is the one that should lose a tie.
+ * Its subject is anchored to no type and it names no keys, so it is indexed
+ * where anything can find it.
+ */
+
+function readSelector(selector: string): SelectorReading {
+	let failed = false;
+	let list: SelectorNode | null = null;
+	try {
+		list = CSSTree.parse(selector, {
+			context: "selectorList",
+			onParseError() {
+				failed = true;
+			},
+		}) as unknown as SelectorNode;
+	} catch (_err) {
+		failed = true;
 	}
-	return compounds;
+	if (failed || !list || list.type !== "SelectorList") {
+		return {specificity: "000-000-000", subjectTag: undefined, compounds: []};
+	}
+	const weight = listSpecificity(list);
+	const specificity = weight
+		.map((count) => String(count).padStart(3, "0"))
+		.join("-");
+	const complex = childrenOf(list).find((child) => child.type === "Selector");
+	const compounds: CompoundKeys[] = [];
+	let parts: SelectorNode[] = [];
+	const closeCompound = (): void => {
+		const keys: CompoundKeys = {
+			classes: [],
+			ids: [],
+			attributes: [],
+			states: false,
+		};
+		harvestKeys(parts, keys);
+		compounds.push(keys);
+		parts = [];
+	};
+	for (const part of complex ? childrenOf(complex) : []) {
+		if (part.type === "Combinator") {
+			closeCompound();
+		} else {
+			parts.push(part);
+		}
+	}
+	closeCompound();
+	return {specificity, subjectTag: subjectTagOf(complex), compounds};
 }
 
 /**
  * The element type a selector's subject is anchored to, lowercased, or
  * undefined when the subject names none -- a universal, a class, an id, an
- * attribute or a bare pseudo-class can be any element, and so can anything this
- * reading is not sure of.
- *
- * The subject is the last compound: everything after the final top-level
- * combinator, counted outside brackets and parentheses so that the commas and
- * spaces inside `:not(...)` or `[a=" "]` are not mistaken for one.
+ * attribute or a bare pseudo-class can be any element, and so can a type in a
+ * namespace, which the matcher reads against the namespaces the sheet bound.
  */
-function selectorSubjectTag(selector: string): string | undefined {
-	let depth = 0;
-	let start = 0;
-	for (let i = 0; i < selector.length; i++) {
-		const c = selector[i];
-		if (c === "(" || c === "[") {
-			depth++;
-		} else if (c === ")" || c === "]") {
-			depth--;
-		} else if (
-			depth === 0 &&
-			(c === " " || c === ">" || c === "+" || c === "~")
-		) {
-			start = i + 1;
+function subjectTagOf(complex: SelectorNode | undefined): string | undefined {
+	if (!complex) {
+		return undefined;
+	}
+	let type: SelectorNode | undefined;
+	for (const part of childrenOf(complex)) {
+		if (part.type === "Combinator") {
+			type = undefined;
+		} else if (part.type === "TypeSelector" && type === undefined) {
+			type = part;
 		}
 	}
-	const subject = selector.slice(start);
-	const name = /^[A-Za-z][\w-]*/.exec(subject);
-	if (!name) {
+	const name = type ? String(type.name ?? "") : "";
+	if (!name || name.includes("|") || name.endsWith("*")) {
 		return undefined;
 	}
-	// A namespace prefix leaves the type after the bar, which the caller has
-	// already resolved away; anything still carrying one is not read here.
-	if (subject.includes("|")) {
-		return undefined;
-	}
-	return name[0].toLowerCase();
+	return CSSTree.ident.decode(name).toLowerCase();
 }
 
 /**
@@ -12090,7 +12133,7 @@ function parseStyleRule(
  */
 function indexReachingKeys(
 	manager: StyleManager,
-	selector: string,
+	reading: SelectorReading,
 	declarations: Record<string, string>,
 ): void {
 	let inherits = false;
@@ -12110,20 +12153,20 @@ function indexReachingKeys(
 			break;
 		}
 	}
-	const compounds = selectorCompounds(selector);
+	const compounds = reading.compounds;
 	const last = inherits ? compounds.length : compounds.length - 1;
 	for (let i = 0; i < last; i++) {
-		const compound = compounds[i];
-		for (const match of compound.matchAll(SELECTOR_CLASS_NAME)) {
-			manager[kReachingClasses].add(match[1]);
+		const keys = compounds[i];
+		for (const name of keys.classes) {
+			manager[kReachingClasses].add(name);
 		}
-		for (const match of compound.matchAll(SELECTOR_ID_NAME)) {
-			manager[kReachingIds].add(match[1]);
+		for (const name of keys.ids) {
+			manager[kReachingIds].add(name);
 		}
-		for (const match of compound.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
-			manager[kReachingAttributes].add(match[1].toLowerCase());
+		for (const name of keys.attributes) {
+			manager[kReachingAttributes].add(name);
 		}
-		if (STATE_PSEUDO_CLASSES.test(compound)) {
+		if (keys.states) {
 			manager[kReachingStates] = true;
 		}
 	}
@@ -12181,7 +12224,8 @@ function parseSelector(
 	if (selector.includes(":has")) {
 		manager[kSelectorsReachAncestors] = true;
 	}
-	indexReachingKeys(manager, selector, declarations);
+	const reading = readSelector(selector);
+	indexReachingKeys(manager, reading, declarations);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
@@ -12192,7 +12236,7 @@ function parseSelector(
 	if (declarations["display"] === "list-item") {
 		manager[kListItemRulesExist] = true;
 	}
-	const specificity = selectorSpecificity(selector);
+	const specificity = reading.specificity;
 	const uaOrigin = Boolean(
 		uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
 	);
@@ -12200,7 +12244,7 @@ function parseSelector(
 	// :host selectors only mean anything inside a shadow tree's own
 	// stylesheet; the selector engine rejects them outright, so they parse
 	// into a structured predicate matched by kRuleMatches instead.
-	const subjectTag = selectorSubjectTag(selector);
+	const subjectTag = reading.subjectTag;
 
 	// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
 	// those followed by a descendant (or `>` child) selector.
@@ -12248,7 +12292,7 @@ function parseSelector(
 			// A pseudo-element written with no originating selector
 			// originates on every element, which is what `*` names.
 			selector: baseSelector.trim() || "*",
-			subjectTag: selectorSubjectTag(baseSelector.trim()),
+			subjectTag: reading.subjectTag,
 			declarations,
 			important,
 			order,
