@@ -443,6 +443,520 @@ function widgetChanged(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAReconcile]?.();
 }
 
+/* ------------------------------------------- the text controls' UA editing */
+
+/**
+ * Whether an element edits text: a textarea, or an input of a type that
+ * renders a value the caret can sit in. checkbox and radio render a toggle
+ * instead, and hidden renders nothing at all -- a press on one is a press on
+ * no field.
+ *
+ * The one spelling of the question: the paint, the caret scroll and the
+ * press-to-park default action all have to agree on which elements are fields.
+ */
+function isTextField(element: {
+	tagName: string;
+	type?: string;
+}): boolean {
+	if (element.tagName === "TEXTAREA") {
+		return true;
+	}
+	if (element.tagName !== "INPUT") {
+		return false;
+	}
+	const type = element.type;
+	return type !== "checkbox" && type !== "radio" && type !== "hidden";
+}
+
+const kUAValueText = Symbol(
+	"the text node a control's editable value lives in",
+);
+
+/**
+ * The value part's text node inside a form control's user-agent shadow tree,
+ * or null before the tree is built. The control's editable text lives at its
+ * `[part="value"]`, reached through the closed tree the way a browser's own
+ * editing internals reach it: the renderer reads it to place the caret, the
+ * editing path to hit-test a point.
+ */
+function fieldValueText(field: object): UAText | null {
+	return (
+		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
+	);
+}
+
+const kUASelectionRange = Symbol("what an element's own selection covers");
+
+/**
+ * What an element's own selection covers, as a Range the caller can measure --
+ * or null for an element with no selection of its own, or none to show. The
+ * element answers; only it knows what it renders through.
+ *
+ * A form control's selection is invisible to getSelection() per spec, so this
+ * is the only way to measure it. It is the same shape a document selection
+ * hands out, so both reach geometry down one path.
+ *
+ * The range is the document's own, valid until the next selection read.
+ */
+function selectionRangeOf(element: object): UARange | null {
+	return (
+		(element as Record<symbol, (() => UARange | null) | undefined>)[
+			kUASelectionRange
+		]?.() ?? null
+	);
+}
+
+/**
+ * The Range a text control's selection covers within the value text of the
+ * tree it renders, or null when the selection is collapsed -- there is nothing
+ * to highlight. Offsets are clamped into the text, so a selection recorded
+ * against a longer value still measures.
+ */
+function textSelectionRange(
+	control: HTMLInputElement | HTMLTextAreaElement,
+	valueText: UAText | null,
+): UARange | null {
+	if (!valueText) {
+		return null;
+	}
+	const {start, end} = uaSelectionOf(control);
+	const length = valueText.data.length;
+	const from = Math.max(0, Math.min(start, length));
+	const to = Math.max(0, Math.min(end, length));
+	if (to <= from) {
+		return null;
+	}
+	const document = uaDocumentOf(control);
+	let range = selectionRanges.get(document);
+	if (range === undefined) {
+		range = document.createRange();
+		selectionRanges.set(document, range);
+	}
+	range.setStart(valueText, from);
+	range.setEnd(valueText, to);
+	return range;
+}
+
+/** The range a document answers control-selection queries with. @see caretRanges */
+const selectionRanges = new WeakMap<UADocument, UARange>();
+
+/** A node's own document, as the tree-building code below reads it. */
+function uaDocumentOf(node: object): UADocument {
+	return (node as Node).ownerDocument as unknown as UADocument;
+}
+
+/** A field's value and selection after an editing key -- what to apply. */
+interface FieldEditResult {
+	value: string;
+	start: number;
+	end: number;
+	direction: "forward" | "backward" | "none";
+}
+
+/**
+ * The selection after a caret move to `target`: Shift extends from the fixed
+ * anchor (the browser's anchor/focus model), a plain move collapses there.
+ * Value is carried through unchanged -- a move never edits text.
+ */
+function fieldSelectionMove(
+	value: string,
+	anchor: number,
+	target: number,
+	shiftKey: boolean,
+): FieldEditResult {
+	const clamped = Math.max(0, Math.min(target, value.length));
+	if (shiftKey) {
+		return {
+			value,
+			start: Math.min(anchor, clamped),
+			end: Math.max(anchor, clamped),
+			direction: clamped < anchor ? "backward" : "forward",
+		};
+	}
+	return {value, start: clamped, end: clamped, direction: "none"};
+}
+
+const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
+
+/**
+ * The field-editing keys shared by <input> and <textarea>: Backspace/Delete
+ * and the horizontal arrows (Shift extending the selection), grapheme-aware,
+ * following the browser's anchor/focus model. `key` is the DOM key value
+ * (`event.key`). Returns the new value+selection, or null if the key is not one
+ * of these -- the field-specific keys (Enter, vertical motion, Home/End) belong
+ * to the caller, and printable insertion is a keypress action.
+ */
+function applySharedFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	key: string,
+	shiftKey: boolean,
+	ctrlKey: boolean,
+): FieldEditResult | null {
+	const value = field[kUAValue];
+	const {start, end, direction} = uaSelectionOf(field);
+	const backward = direction === "backward";
+	const caret = backward ? start : end;
+	const anchor = backward ? end : start;
+	const hasSelection = start !== end;
+
+	// The chords a terminal user's hands expect, from readline: a caret motion
+	// or a deletion, never a browser shortcut. The ones a line bounds --
+	// Ctrl+A, Ctrl+E, Ctrl+K, Ctrl+U -- belong to the control, which knows where
+	// its lines end; these are the rest.
+	if (ctrlKey && key === "b") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? start : prevGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "f") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? end : nextGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "d") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret < value.length) {
+			const to = nextGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (ctrlKey && key === "w") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		const from = wordStartBefore(value, caret);
+		return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
+	}
+	if (key === "Backspace") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret > 0) {
+			const from = prevGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (key === "Delete") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret < value.length) {
+			const to = nextGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (key === "ArrowLeft") {
+		if (shiftKey) {
+			return fieldSelectionMove(
+				value,
+				anchor,
+				prevGraphemeBoundary(value, caret),
+				true,
+			);
+		}
+		// A plain arrow with a selection collapses to its matching edge, not one
+		// past it -- the browser behavior.
+		const target = hasSelection ? start : prevGraphemeBoundary(value, caret);
+		return fieldSelectionMove(value, anchor, target, false);
+	}
+	if (key === "ArrowRight") {
+		if (shiftKey) {
+			return fieldSelectionMove(
+				value,
+				anchor,
+				nextGraphemeBoundary(value, caret),
+				true,
+			);
+		}
+		const target = hasSelection ? end : nextGraphemeBoundary(value, caret);
+		return fieldSelectionMove(value, anchor, target, false);
+	}
+	return null;
+}
+
+/**
+ * Insert typed or pasted text at an input's selection.
+ *
+ * A number input's text can be any prefix of a valid floating-point number
+ * and nothing else: an insertion that would take it outside the grammar is
+ * refused whole, the way a browser's number field refuses a second decimal
+ * point. Deletions are never gated, so text a deletion strands outside the
+ * grammar can always be cleared.
+ */
+function insertFieldText(field: HTMLInputElement, text: string): void {
+	if (!text) {
+		return;
+	}
+	const value = field[kUAValue];
+	const {start, end} = uaSelectionOf(field);
+	const next = value.slice(0, start) + text + value.slice(end);
+	if (field.type === "number" && !isFloatPrefix(next)) {
+		return;
+	}
+	applyFieldEdit(field, collapsedEdit(next, start + text.length));
+}
+
+/**
+ * A typed character replacing the field's selection.
+ *
+ * Reached from `beforeinput`, which is where a browser reaches it: the
+ * insertion is the keypress default action, so it runs after keypress has been
+ * delivered rather than during keydown, and the field's `input` follows both.
+ */
+function printableFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): FieldEditResult {
+	const value = field[kUAValue];
+	const {start, end} = uaSelectionOf(field);
+	return collapsedEdit(
+		value.slice(0, start) + text + value.slice(end),
+		start + text.length,
+	);
+}
+
+/**
+ * The offset a word-wise backward deletion stops at: the whitespace before the
+ * caret is consumed with the word, so a chord at the end of "one two " lands
+ * where "two" began.
+ */
+function wordStartBefore(value: string, caret: number): number {
+	let at = caret;
+	while (at > 0 && /\s/.test(value[at - 1])) {
+		at--;
+	}
+	while (at > 0 && !/\s/.test(value[at - 1])) {
+		at--;
+	}
+	return at;
+}
+
+/** The mirror of wordStartBefore: where a word-wise forward move lands. */
+function wordEndAfter(value: string, caret: number): number {
+	let at = caret;
+	while (at < value.length && /\s/.test(value[at])) {
+		at++;
+	}
+	while (at < value.length && !/\s/.test(value[at])) {
+		at++;
+	}
+	return at;
+}
+
+/** An edit result whose selection is a caret collapsed at `pos`. */
+function collapsedEdit(value: string, pos: number): FieldEditResult {
+	const clamped = Math.max(0, Math.min(pos, value.length));
+	return {value, start: clamped, end: clamped, direction: "none"};
+}
+
+const kSetUAValue = Symbol("write a text control's value, as a user edit does");
+
+/**
+ * Apply an edit result to a field's own value and selection, firing `input` on
+ * a real value change (the value write reconciles the control's tree) and
+ * `select` on a selection the user moved -- both events the render loop hears.
+ *
+ * The write lands on the control's value itself, never on the `value` IDL
+ * attribute over it -- a user edit in a browser changes the value without the
+ * setter running, which is how a page can tell what the user typed from what
+ * it assigned. (A framework that tracks user input replaces the accessor on
+ * the element and compares what it reads back; going through the setter would
+ * make every keystroke look like the page's own write.)
+ */
+function applyFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	result: FieldEditResult,
+): void {
+	const value = field[kUAValue];
+	const {start, end, direction} = uaSelectionOf(field);
+	if (result.value !== value) {
+		field[kSetUAValue](result.value);
+		field[kSetUASelection](result.start, result.end, result.direction);
+		dispatch(field, new Event("input", {bubbles: true, cancelable: false}));
+	} else if (
+		result.start !== start ||
+		result.end !== end ||
+		(result.start !== result.end && result.direction !== direction)
+	) {
+		field[kSetUASelection](result.start, result.end, result.direction);
+		dispatch(field, new Event("select", {bubbles: true, cancelable: false}));
+	}
+}
+
+/** Insert pasted `text` at the field's selection (one atomic edit). */
+function insertPaste(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): void {
+	if (!text) {
+		return;
+	}
+	const value = field[kUAValue];
+	const {start, end} = uaSelectionOf(field);
+	applyFieldEdit(
+		field,
+		collapsedEdit(
+			value.slice(0, start) + text + value.slice(end),
+			start + text.length,
+		),
+	);
+}
+
+/** Add a `part`-attributed span (holding one empty text node) to a UA root. */
+function addPart(root: UARoot, part: string): UAElement {
+	const document = uaDocumentOf(root);
+	const span = document.createElement("span");
+	span.setAttribute("part", part);
+	span.appendChild(document.createTextNode(""));
+	root.appendChild(span);
+	return span;
+}
+
+/**
+ * Give a control the closed shadow tree it renders through, enrolled in the
+ * document's mutation observer and its cascade.
+ *
+ * The root is enrolled BEFORE it is populated, so the population itself is the
+ * invalidation that swaps the composed tree in -- the parts lay out through the
+ * normal pipeline, and layout must hear about every change to them.
+ */
+function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
+	const root = attachUAShadowRoot<UARoot>(host);
+	engine.invalidateStructure();
+	engine.observer.observe(root, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
+	// The sheet is in the root BEFORE the cascade hears about it, so the
+	// registration's incremental parse sees it: registered-then-populated
+	// left the cascade to notice the sheet by count drift, which ordered a
+	// full rebuild of every sheet per widget.
+	root.appendChild(uaStyleElement(host, styles));
+	engine.styles.registerShadowRoot(root);
+	return root;
+}
+
+/** The `<style>` element carrying a widget's UA stylesheet. */
+function uaStyleElement(host: Element, styles: string): UAElement {
+	const style = uaDocumentOf(host).createElement("style");
+	style.textContent = styles;
+	return style;
+}
+
+/**
+ * The engine a document's controls render through, if it has been installed.
+ * A document has no ownerDocument, so it stands for itself: the selection
+ * asks about a whole document where a control asks about a node.
+ */
+function uaEngineOf(node: object): UAEngine | undefined {
+	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
+		symbol,
+		UAEngine
+	> | null;
+	return document?.[kUAEngine];
+}
+
+/**
+ * Apply the text selection API's clamping and direction rules, and tell the
+ * control that its selection moved.
+ *
+ * The event is queued rather than fired: a run of writes inside one turn
+ * reports once, at the selection they settled on.
+ */
+function setTextSelection(
+	control: Element,
+	start: number,
+	end: number,
+	direction: string | undefined,
+	length: number,
+	store: (selection: [number, number, string]) => void,
+): void {
+	const clampedEnd = Math.min(end, length);
+	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
+	const named = direction === undefined ? "none" : direction;
+	const kept =
+		named === "forward" || named === "backward" || named === "none" ?
+			named :
+			"none";
+	store([clampedStart, clampedEnd, kept]);
+	scheduleTextSelectionChange(control);
+}
+
+const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
+
+/** Queue the selectionchange event a text control fires at itself. */
+function scheduleTextSelectionChange(control: Element): void {
+	const scheduled = control as unknown as Record<symbol, boolean>;
+	if (scheduled[kTextSelectionChangeScheduled]) {
+		return;
+	}
+	scheduled[kTextSelectionChangeScheduled] = true;
+	queueMicrotask(() => {
+		scheduled[kTextSelectionChangeScheduled] = false;
+		dispatch(control, new Event("selectionchange", {bubbles: true}));
+	});
+}
+
+/** The setRangeText algorithm over a raw value. */
+function replaceTextRange(
+	value: string,
+	replacement: string,
+	start: number,
+	end: number,
+	selectMode: string,
+	selectionStart: number,
+	selectionEnd: number,
+): {value: string; start: number; end: number} {
+	if (start > end) {
+		throw indexSizeError("A range cannot end before it starts");
+	}
+	const length = value.length;
+	const from = Math.min(start, length);
+	const to = Math.min(end, length);
+	let selectionFrom = selectionStart;
+	let selectionTo = selectionEnd;
+	const next = value.slice(0, from) + replacement + value.slice(to);
+	const newLength = replacement.length;
+	const oldLength = to - from;
+	const delta = newLength - oldLength;
+	if (selectionFrom > to) {
+		selectionFrom += delta;
+	} else if (selectionFrom > from) {
+		selectionFrom = from;
+	}
+	if (selectionTo > to) {
+		selectionTo += delta;
+	} else if (selectionTo > from) {
+		selectionTo = from + newLength;
+	}
+	switch (selectMode) {
+		case "select":
+			return {value: next, start: from, end: from + newLength};
+		case "start":
+			return {value: next, start: from, end: from};
+		case "end":
+			return {value: next, start: from + newLength, end: from + newLength};
+		case "preserve":
+			return {value: next, start: selectionFrom, end: selectionTo};
+		default:
+			throw new TypeError(`${selectMode} is not a selection mode`);
+	}
+}
+
 /* ------------------------------------------------------------------ errors */
 
 /**
@@ -11319,6 +11833,47 @@ export class HTMLBodyElement extends HTMLElement {}
 
 export class HTMLBRElement extends HTMLElement {}
 
+/** A button, whose activation submits or resets the form it belongs to. */
+export class HTMLButtonElement extends HTMLElement {
+	/** Installed from the element table, and read by the algorithms below. */
+	declare type: string;
+
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+
+	get labels(): NodeList {
+		return labelsOf(this);
+	}
+
+	/**
+	 * The popover this button invokes, which the attribute names by id or an
+	 * author hands over as an element.
+	 */
+	get popoverTargetElement(): Element | null {
+		return popoverTargetAttributeElement(this);
+	}
+
+	set popoverTargetElement(value: Element | null) {
+		setPopoverTargetAttributeElement(this, value);
+	}
+
+	[kActivationBehavior](event: Event): void {
+		if (isActuallyDisabled(this)) {
+			return;
+		}
+		const form = formOwner(this);
+		if (form !== null) {
+			if (this.type === "submit") {
+				submitForm(form, this, false);
+			} else if (this.type === "reset") {
+				form.reset();
+			}
+		}
+		popoverTargetActivationBehavior(this, event.target);
+	}
+}
+
 /**
  * A canvas.
  *
@@ -12262,1435 +12817,6 @@ export class HTMLImageElement extends HTMLElement {
 		return Promise.reject(
 			domError("EncodingError", "There is no image data to decode"),
 		);
-	}
-}
-
-/** A label, and the control its click reaches. */
-export class HTMLLabelElement extends HTMLElement {
-	get form(): HTMLFormElement | null {
-		const control = this.control;
-		return control === null ? null : formOwner(control);
-	}
-
-	/**
-	 * The control this label labels: the one its `for` attribute names, or the
-	 * first labelable element among its descendants.
-	 */
-	get control(): HTMLElement | null {
-		const id = this.getAttribute("for");
-		if (id !== null) {
-			if (id === "") {
-				return null;
-			}
-			const root = getRoot(this);
-			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) {
-					continue;
-				}
-				const element = node as Element;
-				if (element.getAttribute("id") !== id) {
-					continue;
-				}
-				return isLabelable(element) ? (element as HTMLElement) : null;
-			}
-			return null;
-		}
-		for (const node of descendants(this)) {
-			if (node.nodeType !== ELEMENT_NODE) {
-				continue;
-			}
-			if (isLabelable(node as Element)) {
-				return node as HTMLElement;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * A click on a label is a click on its control, unless the click already
-	 * came from inside that control.
-	 */
-	[kActivationBehavior](event: Event): void {
-		const control = this.control;
-		if (control === null) {
-			return;
-		}
-		for (const target of event.composedPath()) {
-			if (target === control) {
-				return;
-			}
-		}
-		if (control[kClickInProgress]) {
-			return;
-		}
-		control.click();
-	}
-}
-
-/** The caption of a fieldset, which names the form the fieldset belongs to. */
-export class HTMLLegendElement extends HTMLElement {
-	get form(): HTMLFormElement | null {
-		const parent = this[kParent];
-		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
-			return null;
-		}
-		return formOwner(parent);
-	}
-}
-
-export class HTMLLIElement extends HTMLElement {}
-
-/** A link to a resource, which is never fetched, so it never has a sheet. */
-export class HTMLLinkElement extends HTMLElement {
-	get sheet(): null {
-		return null;
-	}
-}
-
-const kAreas = Symbol("areas");
-
-/** An image map, and the areas inside it. */
-export class HTMLMapElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kAreas] = null;
-	}
-
-	declare [kAreas]: HTMLCollection | null;
-
-	get areas(): HTMLCollection {
-		let areas = this[kAreas];
-		if (areas === null) {
-			areas = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLAreaElement) {
-						found.push(node);
-					}
-				}
-				return found;
-			}, this);
-			this[kAreas] = areas;
-		}
-		return areas;
-	}
-}
-
-/** A marquee, whose scrolling is a rendering the tree does not do. */
-export class HTMLMarqueeElement extends HTMLElement {
-	start(): void {}
-
-	stop(): void {}
-}
-
-const NETWORK_EMPTY = 0;
-const NETWORK_IDLE = 1;
-const NETWORK_LOADING = 2;
-const NETWORK_NO_SOURCE = 3;
-const HAVE_NOTHING = 0;
-const HAVE_METADATA = 1;
-const HAVE_CURRENT_DATA = 2;
-const HAVE_FUTURE_DATA = 3;
-const HAVE_ENOUGH_DATA = 4;
-
-const kCurrentTime = Symbol("currentTime");
-const kVolume = Symbol("volume");
-const kMuted = Symbol("muted");
-const kPlaybackRate = Symbol("playbackRate");
-const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
-const kPreservesPitch = Symbol("preservesPitch");
-/**
- * A media element.
- *
- * No resource is ever fetched, so the element stays in the state a media
- * element is in before one is: no network activity, nothing loaded, paused,
- * and a duration that is not a number. The members that answer with a
- * resource's own objects -- its buffered ranges, its tracks, its error --
- * are absent rather than answering with an empty stand-in.
- */
-export class HTMLMediaElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kVolume] = 1;
-		this[kMuted] = false;
-		this[kPlaybackRate] = 1;
-		this[kDefaultPlaybackRate] = 1;
-		this[kPreservesPitch] = true;
-		this[kCurrentTime] = 0;
-	}
-
-	declare [kVolume]: number;
-	declare [kMuted]: boolean;
-	declare [kPlaybackRate]: number;
-	declare [kDefaultPlaybackRate]: number;
-	declare [kPreservesPitch]: boolean;
-	declare [kCurrentTime]: number;
-
-	static readonly NETWORK_EMPTY = NETWORK_EMPTY;
-	static readonly NETWORK_IDLE = NETWORK_IDLE;
-	static readonly NETWORK_LOADING = NETWORK_LOADING;
-	static readonly NETWORK_NO_SOURCE = NETWORK_NO_SOURCE;
-	static readonly HAVE_NOTHING = HAVE_NOTHING;
-	static readonly HAVE_METADATA = HAVE_METADATA;
-	static readonly HAVE_CURRENT_DATA = HAVE_CURRENT_DATA;
-	static readonly HAVE_FUTURE_DATA = HAVE_FUTURE_DATA;
-	static readonly HAVE_ENOUGH_DATA = HAVE_ENOUGH_DATA;
-
-	get currentSrc(): string {
-		return "";
-	}
-
-	get networkState(): number {
-		return NETWORK_EMPTY;
-	}
-
-	get readyState(): number {
-		return HAVE_NOTHING;
-	}
-
-	get seeking(): boolean {
-		return false;
-	}
-
-	get duration(): number {
-		return Number.NaN;
-	}
-
-	get paused(): boolean {
-		return true;
-	}
-
-	get ended(): boolean {
-		return false;
-	}
-
-	get currentTime(): number {
-		return this[kCurrentTime];
-	}
-
-	set currentTime(value: number) {
-		this[kCurrentTime] = toDouble(value);
-	}
-
-	get volume(): number {
-		return this[kVolume];
-	}
-
-	set volume(value: number) {
-		const volume = toDouble(value);
-		if (volume < 0 || volume > 1) {
-			throw indexSizeError("A volume is between zero and one");
-		}
-		this[kVolume] = volume;
-	}
-
-	get muted(): boolean {
-		return this[kMuted];
-	}
-
-	set muted(value: boolean) {
-		this[kMuted] = Boolean(value);
-	}
-
-	get playbackRate(): number {
-		return this[kPlaybackRate];
-	}
-
-	set playbackRate(value: number) {
-		this[kPlaybackRate] = toDouble(value);
-	}
-
-	get defaultPlaybackRate(): number {
-		return this[kDefaultPlaybackRate];
-	}
-
-	set defaultPlaybackRate(value: number) {
-		this[kDefaultPlaybackRate] = toDouble(value);
-	}
-
-	get preservesPitch(): boolean {
-		return this[kPreservesPitch];
-	}
-
-	set preservesPitch(value: boolean) {
-		this[kPreservesPitch] = Boolean(value);
-	}
-
-	load(): void {
-		this[kCurrentTime] = 0;
-	}
-
-	canPlayType(type: string): string {
-		if (arguments.length < 1) {
-			throw new TypeError("canPlayType needs a type");
-		}
-		void type;
-		return "";
-	}
-
-	pause(): void {}
-
-	play(): Promise<void> {
-		return Promise.reject(
-			domError("NotSupportedError", "There is no media resource to play"),
-		);
-	}
-}
-Object.defineProperties(HTMLMediaElement.prototype, {
-	NETWORK_EMPTY: {value: NETWORK_EMPTY, enumerable: true},
-	NETWORK_IDLE: {value: NETWORK_IDLE, enumerable: true},
-	NETWORK_LOADING: {value: NETWORK_LOADING, enumerable: true},
-	NETWORK_NO_SOURCE: {value: NETWORK_NO_SOURCE, enumerable: true},
-	HAVE_NOTHING: {value: HAVE_NOTHING, enumerable: true},
-	HAVE_METADATA: {value: HAVE_METADATA, enumerable: true},
-	HAVE_CURRENT_DATA: {value: HAVE_CURRENT_DATA, enumerable: true},
-	HAVE_FUTURE_DATA: {value: HAVE_FUTURE_DATA, enumerable: true},
-	HAVE_ENOUGH_DATA: {value: HAVE_ENOUGH_DATA, enumerable: true},
-});
-export class HTMLAudioElement extends HTMLMediaElement {}
-/** A video, whose intrinsic dimensions are zero until one is decoded. */
-export class HTMLVideoElement extends HTMLMediaElement {
-	get videoWidth(): number {
-		return 0;
-	}
-
-	get videoHeight(): number {
-		return 0;
-	}
-}
-
-export class HTMLMenuElement extends HTMLElement {}
-
-export class HTMLMetaElement extends HTMLElement {}
-
-export class HTMLModElement extends HTMLElement {}
-
-/**
- * An embedded resource.
- *
- * Nothing is ever fetched here, so the object never gets a nested browsing
- * context: its document, its window and its SVG document are all null, which
- * is what they are for an object that loaded nothing.
- */
-export class HTMLObjectElement extends HTMLElement {
-	get form(): HTMLFormElement | null {
-		return formOwner(this);
-	}
-
-	get contentDocument(): null {
-		return null;
-	}
-
-	get contentWindow(): null {
-		return null;
-	}
-
-	getSVGDocument(): null {
-		return null;
-	}
-}
-
-export class HTMLOListElement extends HTMLElement {}
-
-export class HTMLOptGroupElement extends HTMLElement {
-	/** Installed from the element table, and read by the select's own tree. */
-	declare disabled: boolean;
-	declare label: string;
-}
-
-export class HTMLParagraphElement extends HTMLElement {}
-
-export class HTMLParamElement extends HTMLElement {}
-
-export class HTMLPictureElement extends HTMLElement {}
-
-export class HTMLPreElement extends HTMLElement {}
-
-export class HTMLQuoteElement extends HTMLElement {}
-
-/**
- * A script, which never runs.
- *
- * The element is the one the specification defines and its text is the text
- * it holds; executing it is the step this DOM does not have.
- */
-export class HTMLScriptElement extends HTMLElement {
-	static supports(type: string): boolean {
-		const named = String(type);
-		return named === "classic" || named === "module" || named === "importmap";
-	}
-
-	get text(): string {
-		return childText(this);
-	}
-
-	set text(value: string) {
-		setDescendantText(this, String(value));
-	}
-
-	/** Async is the one boolean whose IDL attribute a parser can force. */
-	get async(): boolean {
-		return this.hasAttribute("async");
-	}
-
-	set async(value: boolean) {
-		this.toggleAttribute("async", Boolean(value));
-	}
-}
-
-export class HTMLSourceElement extends HTMLElement {}
-
-export class HTMLSpanElement extends HTMLElement {}
-
-const kStyleElements = Symbol("how many style elements the tree holds");
-
-/**
- * A style sheet written into the document.
- *
- * The sheet itself belongs to the engine's cascade, not to the tree: there is
- * none here, which is what makes `sheet` null and `disabled` false.
- */
-export class HTMLStyleElement extends HTMLElement {
-	/**
-	 * A document with no cascade behind it parses no CSS, and so holds no
-	 * sheet. A window's cascade replaces this accessor with one that answers
-	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
-	 * which is what an author reaches through `styleEl.sheet`.
-	 */
-	get sheet(): CSSStyleSheet | null {
-		return null;
-	}
-
-	get disabled(): boolean {
-		return false;
-	}
-
-	set disabled(_value: boolean) {
-		void _value;
-	}
-
-	override [kInsertionSteps](): void {
-		super[kInsertionSteps]();
-		this[kDocument][kStyleElements]++;
-	}
-
-	override [kRemovingSteps](oldParent: Node): void {
-		super[kRemovingSteps](oldParent);
-		this[kDocument][kStyleElements]--;
-	}
-}
-/**
- * How many style elements a document's trees hold, as a number that changes
- * whenever one joins or leaves. A cascade polls this to notice a sheet that
- * appeared since it last parsed, which is cheaper than walking for one.
- */
-function styleElementCount(document: Document): number {
-	return document[kStyleElements];
-}
-export class HTMLTableCaptionElement extends HTMLElement {}
-
-/** One cell of a row, which knows where in the row it sits. */
-export class HTMLTableCellElement extends HTMLElement {
-	get cellIndex(): number {
-		const parent = this[kParent];
-		if (!(parent instanceof HTMLTableRowElement)) {
-			return -1;
-		}
-		return rowCells(parent).indexOf(this);
-	}
-}
-
-export class HTMLTableColElement extends HTMLElement {}
-
-const kTBodies = Symbol("tBodies");
-const kRows = Symbol("rows");
-
-/** A table, and the rows and sections a caller reaches and builds. */
-export class HTMLTableElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kTBodies] = null;
-		this[kRows] = null;
-	}
-
-	declare [kTBodies]: HTMLCollection | null;
-	declare [kRows]: HTMLCollection | null;
-
-	get caption(): Element | null {
-		return firstChildElement(this, "caption");
-	}
-
-	set caption(value: Element | null) {
-		if (value !== null && !(value instanceof HTMLTableCaptionElement)) {
-			throw new TypeError("That is not a caption");
-		}
-		this.deleteCaption();
-		if (value !== null) {
-			preInsert(value, this, this[kFirstChild]);
-		}
-	}
-
-	createCaption(): Element {
-		const existing = this.caption;
-		if (existing !== null) {
-			return existing;
-		}
-		const caption = createElementInternal(
-			this[kDocument],
-			"caption",
-			HTML_NAMESPACE,
-		);
-		preInsert(caption, this, this[kFirstChild]);
-		return caption;
-	}
-
-	deleteCaption(): void {
-		const existing = this.caption;
-		if (existing !== null) {
-			removeNode(existing);
-		}
-	}
-
-	get tHead(): Element | null {
-		return firstChildElement(this, "thead");
-	}
-
-	set tHead(value: Element | null) {
-		if (
-			value !== null &&
-			!(value instanceof HTMLTableSectionElement && value.localName === "thead")
-		) {
-			throw new TypeError("That is not a table head");
-		}
-		this.deleteTHead();
-		if (value === null) {
-			return;
-		}
-		let before: Node | null = null;
-		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
-			if (node.nodeType !== ELEMENT_NODE) {
-				continue;
-			}
-			const name = (node as Element)[kLocalName];
-			if (name !== "caption" && name !== "colgroup") {
-				before = node;
-				break;
-			}
-		}
-		preInsert(value, this, before);
-	}
-
-	createTHead(): Element {
-		const existing = this.tHead;
-		if (existing !== null) {
-			return existing;
-		}
-		const head = createElementInternal(
-			this[kDocument],
-			"thead",
-			HTML_NAMESPACE,
-		);
-		this.tHead = head;
-		return head;
-	}
-
-	deleteTHead(): void {
-		const existing = this.tHead;
-		if (existing !== null) {
-			removeNode(existing);
-		}
-	}
-
-	get tFoot(): Element | null {
-		return firstChildElement(this, "tfoot");
-	}
-
-	set tFoot(value: Element | null) {
-		if (
-			value !== null &&
-			!(value instanceof HTMLTableSectionElement && value.localName === "tfoot")
-		) {
-			throw new TypeError("That is not a table foot");
-		}
-		this.deleteTFoot();
-		if (value !== null) {
-			preInsert(value, this, null);
-		}
-	}
-
-	createTFoot(): Element {
-		const existing = this.tFoot;
-		if (existing !== null) {
-			return existing;
-		}
-		const foot = createElementInternal(
-			this[kDocument],
-			"tfoot",
-			HTML_NAMESPACE,
-		);
-		preInsert(foot, this, null);
-		return foot;
-	}
-
-	deleteTFoot(): void {
-		const existing = this.tFoot;
-		if (existing !== null) {
-			removeNode(existing);
-		}
-	}
-
-	get tBodies(): HTMLCollection {
-		let bodies = this[kTBodies];
-		if (bodies === null) {
-			bodies = new HTMLCollection(
-				() => childElementsNamed(this, "tbody"),
-				this,
-				(node) => isHTMLElementNamed(node, "tbody"),
-			);
-			this[kTBodies] = bodies;
-		}
-		return bodies;
-	}
-
-	createTBody(): Element {
-		const body = createElementInternal(
-			this[kDocument],
-			"tbody",
-			HTML_NAMESPACE,
-		);
-		const bodies = childElementsNamed(this, "tbody");
-		const last = bodies[bodies.length - 1];
-		preInsert(body, this, last === undefined ? null : last[kNext]);
-		return body;
-	}
-
-	get rows(): HTMLCollection {
-		let rows = this[kRows];
-		if (rows === null) {
-			rows = new HTMLCollection(() => tableRows(this), this);
-			this[kRows] = rows;
-		}
-		return rows;
-	}
-
-	insertRow(index = -1): Element {
-		const rows = tableRows(this);
-		const at = toLong(index);
-		if (at < -1 || at > rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
-		if (rows.length === 0 && childElementsNamed(this, "tbody").length === 0) {
-			const body = createElementInternal(
-				this[kDocument],
-				"tbody",
-				HTML_NAMESPACE,
-			);
-			appendNode(row, body);
-			preInsert(body, this, null);
-			return row;
-		}
-		if (rows.length === 0) {
-			const bodies = childElementsNamed(this, "tbody");
-			appendNode(row, bodies[bodies.length - 1]);
-			return row;
-		}
-		if (at === -1 || at === rows.length) {
-			const last = rows[rows.length - 1];
-			preInsert(row, last[kParent] as Node, null);
-			return row;
-		}
-		const reference = rows[at];
-		preInsert(row, reference[kParent] as Node, reference);
-		return row;
-	}
-
-	deleteRow(index: number): void {
-		const rows = tableRows(this);
-		let at = toLong(index);
-		if (at === -1) {
-			at = rows.length - 1;
-		}
-		if (at < 0 || at >= rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		removeNode(rows[at]);
-	}
-}
-/** Whether a node is an HTML element with a given local name. */
-function isHTMLElementNamed(node: Node, localName: string): boolean {
-	return (
-		node.nodeType === ELEMENT_NODE &&
-		(node as Element)[kNamespace] === HTML_NAMESPACE &&
-		(node as Element)[kLocalName] === localName
-	);
-}
-/** The child elements of a parent with a given HTML local name, in order. */
-function childElementsNamed(parent: Node, localName: string): Element[] {
-	const found: Element[] = [];
-	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType !== ELEMENT_NODE) {
-			continue;
-		}
-		const element = node as Element;
-		if (
-			element[kNamespace] === HTML_NAMESPACE &&
-			element[kLocalName] === localName
-		) {
-			found.push(element);
-		}
-	}
-	return found;
-}
-/**
- * A table's rows: the head's, then the ones the table holds itself and its
- * bodies hold, then the foot's.
- */
-function tableRows(table: Element): Element[] {
-	const head: Element[] = [];
-	const middle: Element[] = [];
-	const foot: Element[] = [];
-	for (let node = table[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType !== ELEMENT_NODE) {
-			continue;
-		}
-		const element = node as Element;
-		if (element[kNamespace] !== HTML_NAMESPACE) {
-			continue;
-		}
-		switch (element[kLocalName]) {
-			case "thead":
-				head.push(...childElementsNamed(element, "tr"));
-				break;
-			case "tfoot":
-				foot.push(...childElementsNamed(element, "tr"));
-				break;
-			case "tbody":
-				middle.push(...childElementsNamed(element, "tr"));
-				break;
-			case "tr":
-				middle.push(element);
-				break;
-		}
-	}
-	return [...head, ...middle, ...foot];
-}
-
-const kCells = Symbol("cells");
-
-/** One row of a table, and the cells it holds. */
-export class HTMLTableRowElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kCells] = null;
-	}
-
-	declare [kCells]: HTMLCollection | null;
-
-	get rowIndex(): number {
-		const owner = table(this);
-		return owner === null ? -1 : tableRows(owner).indexOf(this);
-	}
-
-	get sectionRowIndex(): number {
-		const parent = this[kParent];
-		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
-			return -1;
-		}
-		return childElementsNamed(parent, "tr").indexOf(this);
-	}
-
-	get cells(): HTMLCollection {
-		let cells = this[kCells];
-		if (cells === null) {
-			cells = new HTMLCollection(
-				() => rowCells(this),
-				this,
-				(node) => node instanceof HTMLTableCellElement,
-			);
-			this[kCells] = cells;
-		}
-		return cells;
-	}
-
-	insertCell(index = -1): Element {
-		const cells = rowCells(this);
-		const at = toLong(index);
-		if (at < -1 || at > cells.length) {
-			throw indexSizeError("There is no cell at that index");
-		}
-		const cell = createElementInternal(this[kDocument], "td", HTML_NAMESPACE);
-		preInsert(cell, this, at === -1 || at === cells.length ? null : cells[at]);
-		return cell;
-	}
-
-	deleteCell(index: number): void {
-		const cells = rowCells(this);
-		let at = toLong(index);
-		if (at === -1) {
-			at = cells.length - 1;
-		}
-		if (at < 0 || at >= cells.length) {
-			throw indexSizeError("There is no cell at that index");
-		}
-		removeNode(cells[at]);
-	}
-}
-
-function table(
-	row: HTMLTableRowElement,
-): Element | null {
-	const parent = row[kParent];
-	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
-		return null;
-	}
-	if ((parent as Element)[kLocalName] === "table") {
-		return parent as Element;
-	}
-	const grandparent = parent[kParent];
-	if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
-		return null;
-	}
-	return (grandparent as Element)[kLocalName] === "table" ?
-			(grandparent as Element) :
-		null;
-}
-/** The cells of a row: its td and th children, in order. */
-function rowCells(row: Element): Element[] {
-	const cells: Element[] = [];
-	for (let node = row[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node instanceof HTMLTableCellElement) {
-			cells.push(node);
-		}
-	}
-	return cells;
-}
-
-/** A head, body or foot of a table, and the rows it holds. */
-export class HTMLTableSectionElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kRows] = null;
-	}
-
-	declare [kRows]: HTMLCollection | null;
-
-	get rows(): HTMLCollection {
-		let rows = this[kRows];
-		if (rows === null) {
-			rows = new HTMLCollection(
-				() => childElementsNamed(this, "tr"),
-				this,
-				(node) => isHTMLElementNamed(node, "tr"),
-			);
-			this[kRows] = rows;
-		}
-		return rows;
-	}
-
-	insertRow(index = -1): Element {
-		const rows = childElementsNamed(this, "tr");
-		const at = toLong(index);
-		if (at < -1 || at > rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
-		preInsert(row, this, at === -1 || at === rows.length ? null : rows[at]);
-		return row;
-	}
-
-	deleteRow(index: number): void {
-		const rows = childElementsNamed(this, "tr");
-		let at = toLong(index);
-		if (at === -1) {
-			at = rows.length - 1;
-		}
-		if (at < 0 || at >= rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		removeNode(rows[at]);
-	}
-}
-
-export class HTMLTimeElement extends HTMLElement {}
-
-/** The document's title, which is the text this element holds. */
-export class HTMLTitleElement extends HTMLElement {
-	get text(): string {
-		return childText(this);
-	}
-
-	set text(value: string) {
-		setDescendantText(this, String(value));
-	}
-}
-/** The text of an element's Text children, which is not its descendants'. */
-function childText(element: Element): string {
-	let text = "";
-	for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType === TEXT_NODE) {
-			text += (node as Text).data;
-		}
-	}
-	return text;
-}
-
-export class HTMLTrackElement extends HTMLElement {}
-
-export class HTMLUListElement extends HTMLElement {}
-
-/* ------------------------------------------- the text controls' UA editing */
-
-/**
- * Whether an element edits text: a textarea, or an input of a type that
- * renders a value the caret can sit in. checkbox and radio render a toggle
- * instead, and hidden renders nothing at all -- a press on one is a press on
- * no field.
- *
- * The one spelling of the question: the paint, the caret scroll and the
- * press-to-park default action all have to agree on which elements are fields.
- */
-function isTextField(element: {
-	tagName: string;
-	type?: string;
-}): boolean {
-	if (element.tagName === "TEXTAREA") {
-		return true;
-	}
-	if (element.tagName !== "INPUT") {
-		return false;
-	}
-	const type = element.type;
-	return type !== "checkbox" && type !== "radio" && type !== "hidden";
-}
-
-const kUAValueText = Symbol(
-	"the text node a control's editable value lives in",
-);
-
-/**
- * The value part's text node inside a form control's user-agent shadow tree,
- * or null before the tree is built. The control's editable text lives at its
- * `[part="value"]`, reached through the closed tree the way a browser's own
- * editing internals reach it: the renderer reads it to place the caret, the
- * editing path to hit-test a point.
- */
-function fieldValueText(field: object): UAText | null {
-	return (
-		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
-	);
-}
-
-const kUASelectionRange = Symbol("what an element's own selection covers");
-
-/**
- * What an element's own selection covers, as a Range the caller can measure --
- * or null for an element with no selection of its own, or none to show. The
- * element answers; only it knows what it renders through.
- *
- * A form control's selection is invisible to getSelection() per spec, so this
- * is the only way to measure it. It is the same shape a document selection
- * hands out, so both reach geometry down one path.
- *
- * The range is the document's own, valid until the next selection read.
- */
-function selectionRangeOf(element: object): UARange | null {
-	return (
-		(element as Record<symbol, (() => UARange | null) | undefined>)[
-			kUASelectionRange
-		]?.() ?? null
-	);
-}
-
-/**
- * The Range a text control's selection covers within the value text of the
- * tree it renders, or null when the selection is collapsed -- there is nothing
- * to highlight. Offsets are clamped into the text, so a selection recorded
- * against a longer value still measures.
- */
-function textSelectionRange(
-	control: HTMLInputElement | HTMLTextAreaElement,
-	valueText: UAText | null,
-): UARange | null {
-	if (!valueText) {
-		return null;
-	}
-	const {start, end} = uaSelectionOf(control);
-	const length = valueText.data.length;
-	const from = Math.max(0, Math.min(start, length));
-	const to = Math.max(0, Math.min(end, length));
-	if (to <= from) {
-		return null;
-	}
-	const document = uaDocumentOf(control);
-	let range = selectionRanges.get(document);
-	if (range === undefined) {
-		range = document.createRange();
-		selectionRanges.set(document, range);
-	}
-	range.setStart(valueText, from);
-	range.setEnd(valueText, to);
-	return range;
-}
-
-/** The range a document answers control-selection queries with. @see caretRanges */
-const selectionRanges = new WeakMap<UADocument, UARange>();
-
-/** A node's own document, as the tree-building code below reads it. */
-function uaDocumentOf(node: object): UADocument {
-	return (node as Node).ownerDocument as unknown as UADocument;
-}
-
-/** A field's value and selection after an editing key -- what to apply. */
-interface FieldEditResult {
-	value: string;
-	start: number;
-	end: number;
-	direction: "forward" | "backward" | "none";
-}
-
-/**
- * The selection after a caret move to `target`: Shift extends from the fixed
- * anchor (the browser's anchor/focus model), a plain move collapses there.
- * Value is carried through unchanged -- a move never edits text.
- */
-function fieldSelectionMove(
-	value: string,
-	anchor: number,
-	target: number,
-	shiftKey: boolean,
-): FieldEditResult {
-	const clamped = Math.max(0, Math.min(target, value.length));
-	if (shiftKey) {
-		return {
-			value,
-			start: Math.min(anchor, clamped),
-			end: Math.max(anchor, clamped),
-			direction: clamped < anchor ? "backward" : "forward",
-		};
-	}
-	return {value, start: clamped, end: clamped, direction: "none"};
-}
-
-const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
-
-/**
- * The field-editing keys shared by <input> and <textarea>: Backspace/Delete
- * and the horizontal arrows (Shift extending the selection), grapheme-aware,
- * following the browser's anchor/focus model. `key` is the DOM key value
- * (`event.key`). Returns the new value+selection, or null if the key is not one
- * of these -- the field-specific keys (Enter, vertical motion, Home/End) belong
- * to the caller, and printable insertion is a keypress action.
- */
-function applySharedFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	key: string,
-	shiftKey: boolean,
-	ctrlKey: boolean,
-): FieldEditResult | null {
-	const value = field[kUAValue];
-	const {start, end, direction} = uaSelectionOf(field);
-	const backward = direction === "backward";
-	const caret = backward ? start : end;
-	const anchor = backward ? end : start;
-	const hasSelection = start !== end;
-
-	// The chords a terminal user's hands expect, from readline: a caret motion
-	// or a deletion, never a browser shortcut. The ones a line bounds --
-	// Ctrl+A, Ctrl+E, Ctrl+K, Ctrl+U -- belong to the control, which knows where
-	// its lines end; these are the rest.
-	if (ctrlKey && key === "b") {
-		return fieldSelectionMove(
-			value,
-			anchor,
-			hasSelection ? start : prevGraphemeBoundary(value, caret),
-			false,
-		);
-	}
-	if (ctrlKey && key === "f") {
-		return fieldSelectionMove(
-			value,
-			anchor,
-			hasSelection ? end : nextGraphemeBoundary(value, caret),
-			false,
-		);
-	}
-	if (ctrlKey && key === "d") {
-		if (hasSelection) {
-			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
-		}
-		if (caret < value.length) {
-			const to = nextGraphemeBoundary(value, caret);
-			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
-		}
-		return {value, start, end, direction: "none"};
-	}
-	if (ctrlKey && key === "w") {
-		if (hasSelection) {
-			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
-		}
-		const from = wordStartBefore(value, caret);
-		return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
-	}
-	if (key === "Backspace") {
-		if (hasSelection) {
-			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
-		}
-		if (caret > 0) {
-			const from = prevGraphemeBoundary(value, caret);
-			return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
-		}
-		return {value, start, end, direction: "none"};
-	}
-	if (key === "Delete") {
-		if (hasSelection) {
-			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
-		}
-		if (caret < value.length) {
-			const to = nextGraphemeBoundary(value, caret);
-			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
-		}
-		return {value, start, end, direction: "none"};
-	}
-	if (key === "ArrowLeft") {
-		if (shiftKey) {
-			return fieldSelectionMove(
-				value,
-				anchor,
-				prevGraphemeBoundary(value, caret),
-				true,
-			);
-		}
-		// A plain arrow with a selection collapses to its matching edge, not one
-		// past it -- the browser behavior.
-		const target = hasSelection ? start : prevGraphemeBoundary(value, caret);
-		return fieldSelectionMove(value, anchor, target, false);
-	}
-	if (key === "ArrowRight") {
-		if (shiftKey) {
-			return fieldSelectionMove(
-				value,
-				anchor,
-				nextGraphemeBoundary(value, caret),
-				true,
-			);
-		}
-		const target = hasSelection ? end : nextGraphemeBoundary(value, caret);
-		return fieldSelectionMove(value, anchor, target, false);
-	}
-	return null;
-}
-
-/**
- * Insert typed or pasted text at an input's selection.
- *
- * A number input's text can be any prefix of a valid floating-point number
- * and nothing else: an insertion that would take it outside the grammar is
- * refused whole, the way a browser's number field refuses a second decimal
- * point. Deletions are never gated, so text a deletion strands outside the
- * grammar can always be cleared.
- */
-function insertFieldText(field: HTMLInputElement, text: string): void {
-	if (!text) {
-		return;
-	}
-	const value = field[kUAValue];
-	const {start, end} = uaSelectionOf(field);
-	const next = value.slice(0, start) + text + value.slice(end);
-	if (field.type === "number" && !isFloatPrefix(next)) {
-		return;
-	}
-	applyFieldEdit(field, collapsedEdit(next, start + text.length));
-}
-
-/**
- * A typed character replacing the field's selection.
- *
- * Reached from `beforeinput`, which is where a browser reaches it: the
- * insertion is the keypress default action, so it runs after keypress has been
- * delivered rather than during keydown, and the field's `input` follows both.
- */
-function printableFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	text: string,
-): FieldEditResult {
-	const value = field[kUAValue];
-	const {start, end} = uaSelectionOf(field);
-	return collapsedEdit(
-		value.slice(0, start) + text + value.slice(end),
-		start + text.length,
-	);
-}
-
-/**
- * The offset a word-wise backward deletion stops at: the whitespace before the
- * caret is consumed with the word, so a chord at the end of "one two " lands
- * where "two" began.
- */
-function wordStartBefore(value: string, caret: number): number {
-	let at = caret;
-	while (at > 0 && /\s/.test(value[at - 1])) {
-		at--;
-	}
-	while (at > 0 && !/\s/.test(value[at - 1])) {
-		at--;
-	}
-	return at;
-}
-
-/** The mirror of wordStartBefore: where a word-wise forward move lands. */
-function wordEndAfter(value: string, caret: number): number {
-	let at = caret;
-	while (at < value.length && /\s/.test(value[at])) {
-		at++;
-	}
-	while (at < value.length && !/\s/.test(value[at])) {
-		at++;
-	}
-	return at;
-}
-
-/** An edit result whose selection is a caret collapsed at `pos`. */
-function collapsedEdit(value: string, pos: number): FieldEditResult {
-	const clamped = Math.max(0, Math.min(pos, value.length));
-	return {value, start: clamped, end: clamped, direction: "none"};
-}
-
-const kSetUAValue = Symbol("write a text control's value, as a user edit does");
-
-/**
- * Apply an edit result to a field's own value and selection, firing `input` on
- * a real value change (the value write reconciles the control's tree) and
- * `select` on a selection the user moved -- both events the render loop hears.
- *
- * The write lands on the control's value itself, never on the `value` IDL
- * attribute over it -- a user edit in a browser changes the value without the
- * setter running, which is how a page can tell what the user typed from what
- * it assigned. (A framework that tracks user input replaces the accessor on
- * the element and compares what it reads back; going through the setter would
- * make every keystroke look like the page's own write.)
- */
-function applyFieldEdit(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	result: FieldEditResult,
-): void {
-	const value = field[kUAValue];
-	const {start, end, direction} = uaSelectionOf(field);
-	if (result.value !== value) {
-		field[kSetUAValue](result.value);
-		field[kSetUASelection](result.start, result.end, result.direction);
-		dispatch(field, new Event("input", {bubbles: true, cancelable: false}));
-	} else if (
-		result.start !== start ||
-		result.end !== end ||
-		(result.start !== result.end && result.direction !== direction)
-	) {
-		field[kSetUASelection](result.start, result.end, result.direction);
-		dispatch(field, new Event("select", {bubbles: true, cancelable: false}));
-	}
-}
-
-/** Insert pasted `text` at the field's selection (one atomic edit). */
-function insertPaste(
-	field: HTMLInputElement | HTMLTextAreaElement,
-	text: string,
-): void {
-	if (!text) {
-		return;
-	}
-	const value = field[kUAValue];
-	const {start, end} = uaSelectionOf(field);
-	applyFieldEdit(
-		field,
-		collapsedEdit(
-			value.slice(0, start) + text + value.slice(end),
-			start + text.length,
-		),
-	);
-}
-
-/** Add a `part`-attributed span (holding one empty text node) to a UA root. */
-function addPart(root: UARoot, part: string): UAElement {
-	const document = uaDocumentOf(root);
-	const span = document.createElement("span");
-	span.setAttribute("part", part);
-	span.appendChild(document.createTextNode(""));
-	root.appendChild(span);
-	return span;
-}
-
-/**
- * Give a control the closed shadow tree it renders through, enrolled in the
- * document's mutation observer and its cascade.
- *
- * The root is enrolled BEFORE it is populated, so the population itself is the
- * invalidation that swaps the composed tree in -- the parts lay out through the
- * normal pipeline, and layout must hear about every change to them.
- */
-function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
-	const root = attachUAShadowRoot<UARoot>(host);
-	engine.invalidateStructure();
-	engine.observer.observe(root, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
-	// The sheet is in the root BEFORE the cascade hears about it, so the
-	// registration's incremental parse sees it: registered-then-populated
-	// left the cascade to notice the sheet by count drift, which ordered a
-	// full rebuild of every sheet per widget.
-	root.appendChild(uaStyleElement(host, styles));
-	engine.styles.registerShadowRoot(root);
-	return root;
-}
-
-/** The `<style>` element carrying a widget's UA stylesheet. */
-function uaStyleElement(host: Element, styles: string): UAElement {
-	const style = uaDocumentOf(host).createElement("style");
-	style.textContent = styles;
-	return style;
-}
-
-/**
- * The engine a document's controls render through, if it has been installed.
- * A document has no ownerDocument, so it stands for itself: the selection
- * asks about a whole document where a control asks about a node.
- */
-function uaEngineOf(node: object): UAEngine | undefined {
-	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
-		symbol,
-		UAEngine
-	> | null;
-	return document?.[kUAEngine];
-}
-
-/**
- * Apply the text selection API's clamping and direction rules, and tell the
- * control that its selection moved.
- *
- * The event is queued rather than fired: a run of writes inside one turn
- * reports once, at the selection they settled on.
- */
-function setTextSelection(
-	control: Element,
-	start: number,
-	end: number,
-	direction: string | undefined,
-	length: number,
-	store: (selection: [number, number, string]) => void,
-): void {
-	const clampedEnd = Math.min(end, length);
-	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
-	const named = direction === undefined ? "none" : direction;
-	const kept =
-		named === "forward" || named === "backward" || named === "none" ?
-			named :
-			"none";
-	store([clampedStart, clampedEnd, kept]);
-	scheduleTextSelectionChange(control);
-}
-
-const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
-
-/** Queue the selectionchange event a text control fires at itself. */
-function scheduleTextSelectionChange(control: Element): void {
-	const scheduled = control as unknown as Record<symbol, boolean>;
-	if (scheduled[kTextSelectionChangeScheduled]) {
-		return;
-	}
-	scheduled[kTextSelectionChangeScheduled] = true;
-	queueMicrotask(() => {
-		scheduled[kTextSelectionChangeScheduled] = false;
-		dispatch(control, new Event("selectionchange", {bubbles: true}));
-	});
-}
-
-/** The setRangeText algorithm over a raw value. */
-function replaceTextRange(
-	value: string,
-	replacement: string,
-	start: number,
-	end: number,
-	selectMode: string,
-	selectionStart: number,
-	selectionEnd: number,
-): {value: string; start: number; end: number} {
-	if (start > end) {
-		throw indexSizeError("A range cannot end before it starts");
-	}
-	const length = value.length;
-	const from = Math.min(start, length);
-	const to = Math.min(end, length);
-	let selectionFrom = selectionStart;
-	let selectionTo = selectionEnd;
-	const next = value.slice(0, from) + replacement + value.slice(to);
-	const newLength = replacement.length;
-	const oldLength = to - from;
-	const delta = newLength - oldLength;
-	if (selectionFrom > to) {
-		selectionFrom += delta;
-	} else if (selectionFrom > from) {
-		selectionFrom = from;
-	}
-	if (selectionTo > to) {
-		selectionTo += delta;
-	} else if (selectionTo > from) {
-		selectionTo = from + newLength;
-	}
-	switch (selectMode) {
-		case "select":
-			return {value: next, start: from, end: from + newLength};
-		case "start":
-			return {value: next, start: from, end: from};
-		case "end":
-			return {value: next, start: from + newLength, end: from + newLength};
-		case "preserve":
-			return {value: next, start: selectionFrom, end: selectionTo};
-		default:
-			throw new TypeError(`${selectMode} is not a selection mode`);
-	}
-}
-
-/** A button, whose activation submits or resets the form it belongs to. */
-export class HTMLButtonElement extends HTMLElement {
-	/** Installed from the element table, and read by the algorithms below. */
-	declare type: string;
-
-	get form(): HTMLFormElement | null {
-		return formOwner(this);
-	}
-
-	get labels(): NodeList {
-		return labelsOf(this);
-	}
-
-	/**
-	 * The popover this button invokes, which the attribute names by id or an
-	 * author hands over as an element.
-	 */
-	get popoverTargetElement(): Element | null {
-		return popoverTargetAttributeElement(this);
-	}
-
-	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
-	}
-
-	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) {
-			return;
-		}
-		const form = formOwner(this);
-		if (form !== null) {
-			if (this.type === "submit") {
-				submitForm(form, this, false);
-			} else if (this.type === "reset") {
-				form.reset();
-			}
-		}
-		popoverTargetActivationBehavior(this, event.target);
 	}
 }
 
@@ -14704,6 +13830,560 @@ function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
 	return radioGroupOf(input).find((radio) => radio.checked);
 }
 
+/** A label, and the control its click reaches. */
+export class HTMLLabelElement extends HTMLElement {
+	get form(): HTMLFormElement | null {
+		const control = this.control;
+		return control === null ? null : formOwner(control);
+	}
+
+	/**
+	 * The control this label labels: the one its `for` attribute names, or the
+	 * first labelable element among its descendants.
+	 */
+	get control(): HTMLElement | null {
+		const id = this.getAttribute("for");
+		if (id !== null) {
+			if (id === "") {
+				return null;
+			}
+			const root = getRoot(this);
+			for (const node of descendants(root)) {
+				if (node.nodeType !== ELEMENT_NODE) {
+					continue;
+				}
+				const element = node as Element;
+				if (element.getAttribute("id") !== id) {
+					continue;
+				}
+				return isLabelable(element) ? (element as HTMLElement) : null;
+			}
+			return null;
+		}
+		for (const node of descendants(this)) {
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
+			if (isLabelable(node as Element)) {
+				return node as HTMLElement;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * A click on a label is a click on its control, unless the click already
+	 * came from inside that control.
+	 */
+	[kActivationBehavior](event: Event): void {
+		const control = this.control;
+		if (control === null) {
+			return;
+		}
+		for (const target of event.composedPath()) {
+			if (target === control) {
+				return;
+			}
+		}
+		if (control[kClickInProgress]) {
+			return;
+		}
+		control.click();
+	}
+}
+
+/** The caption of a fieldset, which names the form the fieldset belongs to. */
+export class HTMLLegendElement extends HTMLElement {
+	get form(): HTMLFormElement | null {
+		const parent = this[kParent];
+		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
+			return null;
+		}
+		return formOwner(parent);
+	}
+}
+
+export class HTMLLIElement extends HTMLElement {}
+
+/** A link to a resource, which is never fetched, so it never has a sheet. */
+export class HTMLLinkElement extends HTMLElement {
+	get sheet(): null {
+		return null;
+	}
+}
+
+const kAreas = Symbol("areas");
+
+/** An image map, and the areas inside it. */
+export class HTMLMapElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kAreas] = null;
+	}
+
+	declare [kAreas]: HTMLCollection | null;
+
+	get areas(): HTMLCollection {
+		let areas = this[kAreas];
+		if (areas === null) {
+			areas = new HTMLCollection(() => {
+				const found: Element[] = [];
+				for (const node of descendants(this)) {
+					if (node instanceof HTMLAreaElement) {
+						found.push(node);
+					}
+				}
+				return found;
+			}, this);
+			this[kAreas] = areas;
+		}
+		return areas;
+	}
+}
+
+/** A marquee, whose scrolling is a rendering the tree does not do. */
+export class HTMLMarqueeElement extends HTMLElement {
+	start(): void {}
+
+	stop(): void {}
+}
+
+const NETWORK_EMPTY = 0;
+const NETWORK_IDLE = 1;
+const NETWORK_LOADING = 2;
+const NETWORK_NO_SOURCE = 3;
+const HAVE_NOTHING = 0;
+const HAVE_METADATA = 1;
+const HAVE_CURRENT_DATA = 2;
+const HAVE_FUTURE_DATA = 3;
+const HAVE_ENOUGH_DATA = 4;
+
+const kCurrentTime = Symbol("currentTime");
+const kVolume = Symbol("volume");
+const kMuted = Symbol("muted");
+const kPlaybackRate = Symbol("playbackRate");
+const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
+const kPreservesPitch = Symbol("preservesPitch");
+/**
+ * A media element.
+ *
+ * No resource is ever fetched, so the element stays in the state a media
+ * element is in before one is: no network activity, nothing loaded, paused,
+ * and a duration that is not a number. The members that answer with a
+ * resource's own objects -- its buffered ranges, its tracks, its error --
+ * are absent rather than answering with an empty stand-in.
+ */
+export class HTMLMediaElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kVolume] = 1;
+		this[kMuted] = false;
+		this[kPlaybackRate] = 1;
+		this[kDefaultPlaybackRate] = 1;
+		this[kPreservesPitch] = true;
+		this[kCurrentTime] = 0;
+	}
+
+	declare [kVolume]: number;
+	declare [kMuted]: boolean;
+	declare [kPlaybackRate]: number;
+	declare [kDefaultPlaybackRate]: number;
+	declare [kPreservesPitch]: boolean;
+	declare [kCurrentTime]: number;
+
+	static readonly NETWORK_EMPTY = NETWORK_EMPTY;
+	static readonly NETWORK_IDLE = NETWORK_IDLE;
+	static readonly NETWORK_LOADING = NETWORK_LOADING;
+	static readonly NETWORK_NO_SOURCE = NETWORK_NO_SOURCE;
+	static readonly HAVE_NOTHING = HAVE_NOTHING;
+	static readonly HAVE_METADATA = HAVE_METADATA;
+	static readonly HAVE_CURRENT_DATA = HAVE_CURRENT_DATA;
+	static readonly HAVE_FUTURE_DATA = HAVE_FUTURE_DATA;
+	static readonly HAVE_ENOUGH_DATA = HAVE_ENOUGH_DATA;
+
+	get currentSrc(): string {
+		return "";
+	}
+
+	get networkState(): number {
+		return NETWORK_EMPTY;
+	}
+
+	get readyState(): number {
+		return HAVE_NOTHING;
+	}
+
+	get seeking(): boolean {
+		return false;
+	}
+
+	get duration(): number {
+		return Number.NaN;
+	}
+
+	get paused(): boolean {
+		return true;
+	}
+
+	get ended(): boolean {
+		return false;
+	}
+
+	get currentTime(): number {
+		return this[kCurrentTime];
+	}
+
+	set currentTime(value: number) {
+		this[kCurrentTime] = toDouble(value);
+	}
+
+	get volume(): number {
+		return this[kVolume];
+	}
+
+	set volume(value: number) {
+		const volume = toDouble(value);
+		if (volume < 0 || volume > 1) {
+			throw indexSizeError("A volume is between zero and one");
+		}
+		this[kVolume] = volume;
+	}
+
+	get muted(): boolean {
+		return this[kMuted];
+	}
+
+	set muted(value: boolean) {
+		this[kMuted] = Boolean(value);
+	}
+
+	get playbackRate(): number {
+		return this[kPlaybackRate];
+	}
+
+	set playbackRate(value: number) {
+		this[kPlaybackRate] = toDouble(value);
+	}
+
+	get defaultPlaybackRate(): number {
+		return this[kDefaultPlaybackRate];
+	}
+
+	set defaultPlaybackRate(value: number) {
+		this[kDefaultPlaybackRate] = toDouble(value);
+	}
+
+	get preservesPitch(): boolean {
+		return this[kPreservesPitch];
+	}
+
+	set preservesPitch(value: boolean) {
+		this[kPreservesPitch] = Boolean(value);
+	}
+
+	load(): void {
+		this[kCurrentTime] = 0;
+	}
+
+	canPlayType(type: string): string {
+		if (arguments.length < 1) {
+			throw new TypeError("canPlayType needs a type");
+		}
+		void type;
+		return "";
+	}
+
+	pause(): void {}
+
+	play(): Promise<void> {
+		return Promise.reject(
+			domError("NotSupportedError", "There is no media resource to play"),
+		);
+	}
+}
+Object.defineProperties(HTMLMediaElement.prototype, {
+	NETWORK_EMPTY: {value: NETWORK_EMPTY, enumerable: true},
+	NETWORK_IDLE: {value: NETWORK_IDLE, enumerable: true},
+	NETWORK_LOADING: {value: NETWORK_LOADING, enumerable: true},
+	NETWORK_NO_SOURCE: {value: NETWORK_NO_SOURCE, enumerable: true},
+	HAVE_NOTHING: {value: HAVE_NOTHING, enumerable: true},
+	HAVE_METADATA: {value: HAVE_METADATA, enumerable: true},
+	HAVE_CURRENT_DATA: {value: HAVE_CURRENT_DATA, enumerable: true},
+	HAVE_FUTURE_DATA: {value: HAVE_FUTURE_DATA, enumerable: true},
+	HAVE_ENOUGH_DATA: {value: HAVE_ENOUGH_DATA, enumerable: true},
+});
+export class HTMLAudioElement extends HTMLMediaElement {}
+/** A video, whose intrinsic dimensions are zero until one is decoded. */
+export class HTMLVideoElement extends HTMLMediaElement {
+	get videoWidth(): number {
+		return 0;
+	}
+
+	get videoHeight(): number {
+		return 0;
+	}
+}
+
+export class HTMLMenuElement extends HTMLElement {}
+
+export class HTMLMetaElement extends HTMLElement {}
+
+/* ------------------------------------------------------------ the gauges */
+
+/**
+ * The glyphs a gauge is drawn in: a run of full blocks for the filled bar, a
+ * run of light shade for the groove behind it. Both are ordinary text in the
+ * shadow tree, clipped to the fraction CSS gives the bar.
+ */
+const GAUGE_BAR_GLYPH = "█";
+
+const GAUGE_GROOVE_GLYPH = "░";
+
+/**
+ * The glyph run a gauge's parts are drawn from, long enough that no bar on
+ * this screen can outrun it.
+ */
+function gaugeRun(host: Element, glyph: string): string {
+	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
+		?.defaultView;
+	const width = view?.innerWidth;
+	return glyph.repeat(
+		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
+	);
+}
+
+/**
+ * Build a gauge's closed shadow tree: a full-width track that clips, holding a
+ * bar whose width is the fraction filled and the groove that shows past it.
+ */
+function buildGaugeRoot(
+	host: Element,
+	engine: UAEngine,
+	styles: string,
+): {bar: UAElement; groove: UAText} {
+	const document = uaDocumentOf(host);
+	const root = buildUARoot(host, engine, styles);
+	const track = addPart(root, "track");
+	track.removeChild(track.firstChild!);
+	const bar = document.createElement("span");
+	bar.setAttribute("part", "bar");
+	bar.appendChild(document.createTextNode(gaugeRun(host, GAUGE_BAR_GLYPH)));
+	track.appendChild(bar);
+	const groove = document.createElement("span");
+	groove.setAttribute("part", "groove");
+	const grooveText = document.createTextNode(
+		gaugeRun(host, GAUGE_GROOVE_GLYPH),
+	);
+	groove.appendChild(grooveText);
+	track.appendChild(groove);
+	return {bar, groove: grooveText};
+}
+
+/** Set a gauge bar's filled fraction, writing the width only on a change. */
+function setGaugeFill(bar: UAElement, fraction: number | null): void {
+	const width =
+		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+	if (bar.style.width !== width) {
+		bar.style.width = width;
+	}
+}
+
+const kBar = Symbol("bar");
+
+/**
+ * A gauge, whose six numbers are each read inside the ones around them.
+ *
+ * It renders a closed shadow tree it owns: a run of block glyphs filled to
+ * where `value` sits between `min` and `max`, carrying the level that reading
+ * against the low/high/optimum ranges produces -- which is what the UA sheet
+ * colors the bar from.
+ */
+export class HTMLMeterElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kEngine] = null;
+		this[kBar] = null;
+	}
+
+	declare [kEngine]: UAEngine | null;
+	declare [kBar]: UAElement | null;
+
+	[kUAUpgrade](): void {
+		if (this[kEngine] !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) {
+			return;
+		}
+		this[kEngine] = engine;
+		this[kBar] = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
+		this[kUAReconcile]();
+	}
+
+	[kUAReconcile](): void {
+		if (this[kEngine] === null) {
+			return;
+		}
+		const bar = this[kBar]!;
+		const min = this.min;
+		const span = this.max - min;
+		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
+		const barLevel = level(this);
+		if (bar.getAttribute("data-level") !== barLevel) {
+			bar.setAttribute("data-level", barLevel);
+		}
+	}
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
+			this[kUAReconcile]();
+		}
+	}
+
+	get min(): number {
+		return parseFloatingPoint(this.getAttribute("min") ?? "") ?? 0;
+	}
+
+	set min(value: number) {
+		this.setAttribute("min", String(toDouble(value)));
+	}
+
+	get max(): number {
+		const max = parseFloatingPoint(this.getAttribute("max") ?? "") ?? 1;
+		return Math.max(max, this.min);
+	}
+
+	set max(value: number) {
+		this.setAttribute("max", String(toDouble(value)));
+	}
+
+	get value(): number {
+		const value = parseFloatingPoint(this.getAttribute("value") ?? "") ?? 0;
+		return Math.min(Math.max(value, this.min), this.max);
+	}
+
+	set value(value: number) {
+		this.setAttribute("value", String(toDouble(value)));
+	}
+
+	get low(): number {
+		const low = parseFloatingPoint(this.getAttribute("low") ?? "");
+		if (low === null) {
+			return this.min;
+		}
+		return Math.min(Math.max(low, this.min), this.max);
+	}
+
+	set low(value: number) {
+		this.setAttribute("low", String(toDouble(value)));
+	}
+
+	get high(): number {
+		const high = parseFloatingPoint(this.getAttribute("high") ?? "");
+		if (high === null) {
+			return this.max;
+		}
+		return Math.min(Math.max(high, this.low), this.max);
+	}
+
+	set high(value: number) {
+		this.setAttribute("high", String(toDouble(value)));
+	}
+
+	get optimum(): number {
+		const optimum = parseFloatingPoint(this.getAttribute("optimum") ?? "");
+		if (optimum === null) {
+			return (this.min + this.max) / 2;
+		}
+		return Math.min(Math.max(optimum, this.min), this.max);
+	}
+
+	set optimum(value: number) {
+		this.setAttribute("optimum", String(toDouble(value)));
+	}
+
+	get labels(): NodeList {
+		return labelsOf(this);
+	}
+}
+
+/**
+ * Which of the three readings the value falls in, by the rendering rules
+ * HTML gives: the optimum region is measured from where `optimum` sits
+ * relative to `low` and `high`, and a value in it is optimum, one region
+ * away suboptimum, two away even less good.
+ */
+function level(
+	meter: HTMLMeterElement,
+): string {
+	const {low, high, optimum, value} = meter;
+	if (optimum < low) {
+		if (value < low) {
+			return "optimum";
+		}
+		return value <= high ? "suboptimum" : "even-less-good";
+	}
+	if (optimum > high) {
+		if (value > high) {
+			return "optimum";
+		}
+		return value >= low ? "suboptimum" : "even-less-good";
+	}
+	return value >= low && value <= high ? "optimum" : "suboptimum";
+}
+/** The attributes a meter's own rendering is read from. */
+const METER_ATTRIBUTES = new Set([
+	"value",
+	"min",
+	"max",
+	"low",
+	"high",
+	"optimum",
+]);
+
+export class HTMLModElement extends HTMLElement {}
+
+/**
+ * An embedded resource.
+ *
+ * Nothing is ever fetched here, so the object never gets a nested browsing
+ * context: its document, its window and its SVG document are all null, which
+ * is what they are for an object that loaded nothing.
+ */
+export class HTMLObjectElement extends HTMLElement {
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+
+	get contentDocument(): null {
+		return null;
+	}
+
+	get contentWindow(): null {
+		return null;
+	}
+
+	getSVGDocument(): null {
+		return null;
+	}
+}
+
+export class HTMLOListElement extends HTMLElement {}
+
+export class HTMLOptGroupElement extends HTMLElement {
+	/** Installed from the element table, and read by the select's own tree. */
+	declare disabled: boolean;
+	declare label: string;
+}
+
 const kSelectedness = Symbol("an option's selectedness");
 const kSelectednessValue = Symbol("selectedness value");
 const kOptionDirty = Symbol("an option's dirtiness");
@@ -14997,6 +14677,128 @@ export class HTMLOutputElement extends HTMLElement {
 			setDescendantText(this, this[kStored]);
 		}
 		this[kDirty] = false;
+	}
+}
+
+export class HTMLParagraphElement extends HTMLElement {}
+
+export class HTMLParamElement extends HTMLElement {}
+
+export class HTMLPictureElement extends HTMLElement {}
+
+export class HTMLPreElement extends HTMLElement {}
+
+/**
+ * A progress bar, whose value is read against the maximum it names.
+ *
+ * It renders a closed shadow tree it owns: a run of block glyphs filled to
+ * `value`/`max`. A progress with no value attribute is indeterminate, which
+ * here is an empty bar over the full groove -- there is no animation to make
+ * the difference the way a browser does.
+ */
+export class HTMLProgressElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kEngine] = null;
+		this[kBar] = null;
+	}
+
+	declare [kEngine]: UAEngine | null;
+	declare [kBar]: UAElement | null;
+
+	[kUAUpgrade](): void {
+		if (this[kEngine] !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) {
+			return;
+		}
+		this[kEngine] = engine;
+		this[kBar] = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
+		this[kUAReconcile]();
+	}
+
+	[kUAReconcile](): void {
+		if (this[kEngine] === null) {
+			return;
+		}
+		const position = this.position;
+		setGaugeFill(this[kBar]!, position < 0 ? null : position);
+	}
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace === null && (localName === "value" || localName === "max")) {
+			this[kUAReconcile]();
+		}
+	}
+
+	get value(): number {
+		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
+		if (value === null || value < 0) {
+			return 0;
+		}
+		return Math.min(value, this.max);
+	}
+
+	set value(value: number) {
+		this.setAttribute("value", String(toDouble(value)));
+	}
+
+	get max(): number {
+		const max = parseFloatingPoint(this.getAttribute("max") ?? "");
+		return max === null || max <= 0 ? 1 : max;
+	}
+
+	set max(value: number) {
+		this.setAttribute("max", String(toDouble(value)));
+	}
+
+	get position(): number {
+		return this.hasAttribute("value") ? this.value / this.max : -1;
+	}
+
+	get labels(): NodeList {
+		return labelsOf(this);
+	}
+}
+
+export class HTMLQuoteElement extends HTMLElement {}
+
+/**
+ * A script, which never runs.
+ *
+ * The element is the one the specification defines and its text is the text
+ * it holds; executing it is the step this DOM does not have.
+ */
+export class HTMLScriptElement extends HTMLElement {
+	static supports(type: string): boolean {
+		const named = String(type);
+		return named === "classic" || named === "module" || named === "importmap";
+	}
+
+	get text(): string {
+		return childText(this);
+	}
+
+	set text(value: string) {
+		setDescendantText(this, String(value));
+	}
+
+	/** Async is the one boolean whose IDL attribute a parser can force. */
+	get async(): boolean {
+		return this.hasAttribute("async");
+	}
+
+	set async(value: boolean) {
+		this.toggleAttribute("async", Boolean(value));
 	}
 }
 
@@ -15630,6 +15432,480 @@ function askForAReset(select: HTMLSelectElement): void {
 	}
 }
 
+export class HTMLSourceElement extends HTMLElement {}
+
+export class HTMLSpanElement extends HTMLElement {}
+
+const kStyleElements = Symbol("how many style elements the tree holds");
+
+/**
+ * A style sheet written into the document.
+ *
+ * The sheet itself belongs to the engine's cascade, not to the tree: there is
+ * none here, which is what makes `sheet` null and `disabled` false.
+ */
+export class HTMLStyleElement extends HTMLElement {
+	/**
+	 * A document with no cascade behind it parses no CSS, and so holds no
+	 * sheet. A window's cascade replaces this accessor with one that answers
+	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
+	 * which is what an author reaches through `styleEl.sheet`.
+	 */
+	get sheet(): CSSStyleSheet | null {
+		return null;
+	}
+
+	get disabled(): boolean {
+		return false;
+	}
+
+	set disabled(_value: boolean) {
+		void _value;
+	}
+
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		this[kDocument][kStyleElements]++;
+	}
+
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		this[kDocument][kStyleElements]--;
+	}
+}
+/**
+ * How many style elements a document's trees hold, as a number that changes
+ * whenever one joins or leaves. A cascade polls this to notice a sheet that
+ * appeared since it last parsed, which is cheaper than walking for one.
+ */
+function styleElementCount(document: Document): number {
+	return document[kStyleElements];
+}
+export class HTMLTableCaptionElement extends HTMLElement {}
+
+/** One cell of a row, which knows where in the row it sits. */
+export class HTMLTableCellElement extends HTMLElement {
+	get cellIndex(): number {
+		const parent = this[kParent];
+		if (!(parent instanceof HTMLTableRowElement)) {
+			return -1;
+		}
+		return rowCells(parent).indexOf(this);
+	}
+}
+
+export class HTMLTableColElement extends HTMLElement {}
+
+const kTBodies = Symbol("tBodies");
+const kRows = Symbol("rows");
+
+/** A table, and the rows and sections a caller reaches and builds. */
+export class HTMLTableElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kTBodies] = null;
+		this[kRows] = null;
+	}
+
+	declare [kTBodies]: HTMLCollection | null;
+	declare [kRows]: HTMLCollection | null;
+
+	get caption(): Element | null {
+		return firstChildElement(this, "caption");
+	}
+
+	set caption(value: Element | null) {
+		if (value !== null && !(value instanceof HTMLTableCaptionElement)) {
+			throw new TypeError("That is not a caption");
+		}
+		this.deleteCaption();
+		if (value !== null) {
+			preInsert(value, this, this[kFirstChild]);
+		}
+	}
+
+	createCaption(): Element {
+		const existing = this.caption;
+		if (existing !== null) {
+			return existing;
+		}
+		const caption = createElementInternal(
+			this[kDocument],
+			"caption",
+			HTML_NAMESPACE,
+		);
+		preInsert(caption, this, this[kFirstChild]);
+		return caption;
+	}
+
+	deleteCaption(): void {
+		const existing = this.caption;
+		if (existing !== null) {
+			removeNode(existing);
+		}
+	}
+
+	get tHead(): Element | null {
+		return firstChildElement(this, "thead");
+	}
+
+	set tHead(value: Element | null) {
+		if (
+			value !== null &&
+			!(value instanceof HTMLTableSectionElement && value.localName === "thead")
+		) {
+			throw new TypeError("That is not a table head");
+		}
+		this.deleteTHead();
+		if (value === null) {
+			return;
+		}
+		let before: Node | null = null;
+		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
+			if (node.nodeType !== ELEMENT_NODE) {
+				continue;
+			}
+			const name = (node as Element)[kLocalName];
+			if (name !== "caption" && name !== "colgroup") {
+				before = node;
+				break;
+			}
+		}
+		preInsert(value, this, before);
+	}
+
+	createTHead(): Element {
+		const existing = this.tHead;
+		if (existing !== null) {
+			return existing;
+		}
+		const head = createElementInternal(
+			this[kDocument],
+			"thead",
+			HTML_NAMESPACE,
+		);
+		this.tHead = head;
+		return head;
+	}
+
+	deleteTHead(): void {
+		const existing = this.tHead;
+		if (existing !== null) {
+			removeNode(existing);
+		}
+	}
+
+	get tFoot(): Element | null {
+		return firstChildElement(this, "tfoot");
+	}
+
+	set tFoot(value: Element | null) {
+		if (
+			value !== null &&
+			!(value instanceof HTMLTableSectionElement && value.localName === "tfoot")
+		) {
+			throw new TypeError("That is not a table foot");
+		}
+		this.deleteTFoot();
+		if (value !== null) {
+			preInsert(value, this, null);
+		}
+	}
+
+	createTFoot(): Element {
+		const existing = this.tFoot;
+		if (existing !== null) {
+			return existing;
+		}
+		const foot = createElementInternal(
+			this[kDocument],
+			"tfoot",
+			HTML_NAMESPACE,
+		);
+		preInsert(foot, this, null);
+		return foot;
+	}
+
+	deleteTFoot(): void {
+		const existing = this.tFoot;
+		if (existing !== null) {
+			removeNode(existing);
+		}
+	}
+
+	get tBodies(): HTMLCollection {
+		let bodies = this[kTBodies];
+		if (bodies === null) {
+			bodies = new HTMLCollection(
+				() => childElementsNamed(this, "tbody"),
+				this,
+				(node) => isHTMLElementNamed(node, "tbody"),
+			);
+			this[kTBodies] = bodies;
+		}
+		return bodies;
+	}
+
+	createTBody(): Element {
+		const body = createElementInternal(
+			this[kDocument],
+			"tbody",
+			HTML_NAMESPACE,
+		);
+		const bodies = childElementsNamed(this, "tbody");
+		const last = bodies[bodies.length - 1];
+		preInsert(body, this, last === undefined ? null : last[kNext]);
+		return body;
+	}
+
+	get rows(): HTMLCollection {
+		let rows = this[kRows];
+		if (rows === null) {
+			rows = new HTMLCollection(() => tableRows(this), this);
+			this[kRows] = rows;
+		}
+		return rows;
+	}
+
+	insertRow(index = -1): Element {
+		const rows = tableRows(this);
+		const at = toLong(index);
+		if (at < -1 || at > rows.length) {
+			throw indexSizeError("There is no row at that index");
+		}
+		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
+		if (rows.length === 0 && childElementsNamed(this, "tbody").length === 0) {
+			const body = createElementInternal(
+				this[kDocument],
+				"tbody",
+				HTML_NAMESPACE,
+			);
+			appendNode(row, body);
+			preInsert(body, this, null);
+			return row;
+		}
+		if (rows.length === 0) {
+			const bodies = childElementsNamed(this, "tbody");
+			appendNode(row, bodies[bodies.length - 1]);
+			return row;
+		}
+		if (at === -1 || at === rows.length) {
+			const last = rows[rows.length - 1];
+			preInsert(row, last[kParent] as Node, null);
+			return row;
+		}
+		const reference = rows[at];
+		preInsert(row, reference[kParent] as Node, reference);
+		return row;
+	}
+
+	deleteRow(index: number): void {
+		const rows = tableRows(this);
+		let at = toLong(index);
+		if (at === -1) {
+			at = rows.length - 1;
+		}
+		if (at < 0 || at >= rows.length) {
+			throw indexSizeError("There is no row at that index");
+		}
+		removeNode(rows[at]);
+	}
+}
+/** Whether a node is an HTML element with a given local name. */
+function isHTMLElementNamed(node: Node, localName: string): boolean {
+	return (
+		node.nodeType === ELEMENT_NODE &&
+		(node as Element)[kNamespace] === HTML_NAMESPACE &&
+		(node as Element)[kLocalName] === localName
+	);
+}
+/** The child elements of a parent with a given HTML local name, in order. */
+function childElementsNamed(parent: Node, localName: string): Element[] {
+	const found: Element[] = [];
+	for (let node = parent[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
+		const element = node as Element;
+		if (
+			element[kNamespace] === HTML_NAMESPACE &&
+			element[kLocalName] === localName
+		) {
+			found.push(element);
+		}
+	}
+	return found;
+}
+/**
+ * A table's rows: the head's, then the ones the table holds itself and its
+ * bodies hold, then the foot's.
+ */
+function tableRows(table: Element): Element[] {
+	const head: Element[] = [];
+	const middle: Element[] = [];
+	const foot: Element[] = [];
+	for (let node = table[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node.nodeType !== ELEMENT_NODE) {
+			continue;
+		}
+		const element = node as Element;
+		if (element[kNamespace] !== HTML_NAMESPACE) {
+			continue;
+		}
+		switch (element[kLocalName]) {
+			case "thead":
+				head.push(...childElementsNamed(element, "tr"));
+				break;
+			case "tfoot":
+				foot.push(...childElementsNamed(element, "tr"));
+				break;
+			case "tbody":
+				middle.push(...childElementsNamed(element, "tr"));
+				break;
+			case "tr":
+				middle.push(element);
+				break;
+		}
+	}
+	return [...head, ...middle, ...foot];
+}
+
+const kCells = Symbol("cells");
+
+/** One row of a table, and the cells it holds. */
+export class HTMLTableRowElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kCells] = null;
+	}
+
+	declare [kCells]: HTMLCollection | null;
+
+	get rowIndex(): number {
+		const owner = table(this);
+		return owner === null ? -1 : tableRows(owner).indexOf(this);
+	}
+
+	get sectionRowIndex(): number {
+		const parent = this[kParent];
+		if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+			return -1;
+		}
+		return childElementsNamed(parent, "tr").indexOf(this);
+	}
+
+	get cells(): HTMLCollection {
+		let cells = this[kCells];
+		if (cells === null) {
+			cells = new HTMLCollection(
+				() => rowCells(this),
+				this,
+				(node) => node instanceof HTMLTableCellElement,
+			);
+			this[kCells] = cells;
+		}
+		return cells;
+	}
+
+	insertCell(index = -1): Element {
+		const cells = rowCells(this);
+		const at = toLong(index);
+		if (at < -1 || at > cells.length) {
+			throw indexSizeError("There is no cell at that index");
+		}
+		const cell = createElementInternal(this[kDocument], "td", HTML_NAMESPACE);
+		preInsert(cell, this, at === -1 || at === cells.length ? null : cells[at]);
+		return cell;
+	}
+
+	deleteCell(index: number): void {
+		const cells = rowCells(this);
+		let at = toLong(index);
+		if (at === -1) {
+			at = cells.length - 1;
+		}
+		if (at < 0 || at >= cells.length) {
+			throw indexSizeError("There is no cell at that index");
+		}
+		removeNode(cells[at]);
+	}
+}
+
+function table(
+	row: HTMLTableRowElement,
+): Element | null {
+	const parent = row[kParent];
+	if (parent === null || parent.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
+	if ((parent as Element)[kLocalName] === "table") {
+		return parent as Element;
+	}
+	const grandparent = parent[kParent];
+	if (grandparent === null || grandparent.nodeType !== ELEMENT_NODE) {
+		return null;
+	}
+	return (grandparent as Element)[kLocalName] === "table" ?
+			(grandparent as Element) :
+		null;
+}
+/** The cells of a row: its td and th children, in order. */
+function rowCells(row: Element): Element[] {
+	const cells: Element[] = [];
+	for (let node = row[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node instanceof HTMLTableCellElement) {
+			cells.push(node);
+		}
+	}
+	return cells;
+}
+
+/** A head, body or foot of a table, and the rows it holds. */
+export class HTMLTableSectionElement extends HTMLElement {
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		this[kRows] = null;
+	}
+
+	declare [kRows]: HTMLCollection | null;
+
+	get rows(): HTMLCollection {
+		let rows = this[kRows];
+		if (rows === null) {
+			rows = new HTMLCollection(
+				() => childElementsNamed(this, "tr"),
+				this,
+				(node) => isHTMLElementNamed(node, "tr"),
+			);
+			this[kRows] = rows;
+		}
+		return rows;
+	}
+
+	insertRow(index = -1): Element {
+		const rows = childElementsNamed(this, "tr");
+		const at = toLong(index);
+		if (at < -1 || at > rows.length) {
+			throw indexSizeError("There is no row at that index");
+		}
+		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
+		preInsert(row, this, at === -1 || at === rows.length ? null : rows[at]);
+		return row;
+	}
+
+	deleteRow(index: number): void {
+		const rows = childElementsNamed(this, "tr");
+		let at = toLong(index);
+		if (at === -1) {
+			at = rows.length - 1;
+		}
+		if (at < 0 || at >= rows.length) {
+			throw indexSizeError("There is no row at that index");
+		}
+		removeNode(rows[at]);
+	}
+}
+
 const kPlaceholderSpan = Symbol("placeholderSpan");
 const kGoalColumn = Symbol("goalColumn");
 
@@ -16126,308 +16402,32 @@ function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
 }
 
-/* ------------------------------------------------------------ the gauges */
+export class HTMLTimeElement extends HTMLElement {}
 
-/**
- * The glyphs a gauge is drawn in: a run of full blocks for the filled bar, a
- * run of light shade for the groove behind it. Both are ordinary text in the
- * shadow tree, clipped to the fraction CSS gives the bar.
- */
-const GAUGE_BAR_GLYPH = "█";
+/** The document's title, which is the text this element holds. */
+export class HTMLTitleElement extends HTMLElement {
+	get text(): string {
+		return childText(this);
+	}
 
-const GAUGE_GROOVE_GLYPH = "░";
-
-/**
- * The glyph run a gauge's parts are drawn from, long enough that no bar on
- * this screen can outrun it.
- */
-function gaugeRun(host: Element, glyph: string): string {
-	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
-		?.defaultView;
-	const width = view?.innerWidth;
-	return glyph.repeat(
-		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
-	);
-}
-
-/**
- * Build a gauge's closed shadow tree: a full-width track that clips, holding a
- * bar whose width is the fraction filled and the groove that shows past it.
- */
-function buildGaugeRoot(
-	host: Element,
-	engine: UAEngine,
-	styles: string,
-): {bar: UAElement; groove: UAText} {
-	const document = uaDocumentOf(host);
-	const root = buildUARoot(host, engine, styles);
-	const track = addPart(root, "track");
-	track.removeChild(track.firstChild!);
-	const bar = document.createElement("span");
-	bar.setAttribute("part", "bar");
-	bar.appendChild(document.createTextNode(gaugeRun(host, GAUGE_BAR_GLYPH)));
-	track.appendChild(bar);
-	const groove = document.createElement("span");
-	groove.setAttribute("part", "groove");
-	const grooveText = document.createTextNode(
-		gaugeRun(host, GAUGE_GROOVE_GLYPH),
-	);
-	groove.appendChild(grooveText);
-	track.appendChild(groove);
-	return {bar, groove: grooveText};
-}
-
-/** Set a gauge bar's filled fraction, writing the width only on a change. */
-function setGaugeFill(bar: UAElement, fraction: number | null): void {
-	const width =
-		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
-	if (bar.style.width !== width) {
-		bar.style.width = width;
+	set text(value: string) {
+		setDescendantText(this, String(value));
 	}
 }
-
-const kBar = Symbol("bar");
-
-/**
- * A gauge, whose six numbers are each read inside the ones around them.
- *
- * It renders a closed shadow tree it owns: a run of block glyphs filled to
- * where `value` sits between `min` and `max`, carrying the level that reading
- * against the low/high/optimum ranges produces -- which is what the UA sheet
- * colors the bar from.
- */
-export class HTMLMeterElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kEngine] = null;
-		this[kBar] = null;
-	}
-
-	declare [kEngine]: UAEngine | null;
-	declare [kBar]: UAElement | null;
-
-	[kUAUpgrade](): void {
-		if (this[kEngine] !== null) {
-			this[kUAReconcile]();
-			return;
-		}
-		const engine = uaEngineOf(this);
-		if (engine === undefined) {
-			return;
-		}
-		this[kEngine] = engine;
-		this[kBar] = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
-		this[kUAReconcile]();
-	}
-
-	[kUAReconcile](): void {
-		if (this[kEngine] === null) {
-			return;
-		}
-		const bar = this[kBar]!;
-		const min = this.min;
-		const span = this.max - min;
-		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
-		const barLevel = level(this);
-		if (bar.getAttribute("data-level") !== barLevel) {
-			bar.setAttribute("data-level", barLevel);
+/** The text of an element's Text children, which is not its descendants'. */
+function childText(element: Element): string {
+	let text = "";
+	for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node.nodeType === TEXT_NODE) {
+			text += (node as Text).data;
 		}
 	}
-
-	override [kAttributeChanged](
-		localName: string,
-		oldValue: string | null,
-		value: string | null,
-		namespace: string | null,
-	): void {
-		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
-			this[kUAReconcile]();
-		}
-	}
-
-	get min(): number {
-		return parseFloatingPoint(this.getAttribute("min") ?? "") ?? 0;
-	}
-
-	set min(value: number) {
-		this.setAttribute("min", String(toDouble(value)));
-	}
-
-	get max(): number {
-		const max = parseFloatingPoint(this.getAttribute("max") ?? "") ?? 1;
-		return Math.max(max, this.min);
-	}
-
-	set max(value: number) {
-		this.setAttribute("max", String(toDouble(value)));
-	}
-
-	get value(): number {
-		const value = parseFloatingPoint(this.getAttribute("value") ?? "") ?? 0;
-		return Math.min(Math.max(value, this.min), this.max);
-	}
-
-	set value(value: number) {
-		this.setAttribute("value", String(toDouble(value)));
-	}
-
-	get low(): number {
-		const low = parseFloatingPoint(this.getAttribute("low") ?? "");
-		if (low === null) {
-			return this.min;
-		}
-		return Math.min(Math.max(low, this.min), this.max);
-	}
-
-	set low(value: number) {
-		this.setAttribute("low", String(toDouble(value)));
-	}
-
-	get high(): number {
-		const high = parseFloatingPoint(this.getAttribute("high") ?? "");
-		if (high === null) {
-			return this.max;
-		}
-		return Math.min(Math.max(high, this.low), this.max);
-	}
-
-	set high(value: number) {
-		this.setAttribute("high", String(toDouble(value)));
-	}
-
-	get optimum(): number {
-		const optimum = parseFloatingPoint(this.getAttribute("optimum") ?? "");
-		if (optimum === null) {
-			return (this.min + this.max) / 2;
-		}
-		return Math.min(Math.max(optimum, this.min), this.max);
-	}
-
-	set optimum(value: number) {
-		this.setAttribute("optimum", String(toDouble(value)));
-	}
-
-	get labels(): NodeList {
-		return labelsOf(this);
-	}
+	return text;
 }
 
-/**
- * Which of the three readings the value falls in, by the rendering rules
- * HTML gives: the optimum region is measured from where `optimum` sits
- * relative to `low` and `high`, and a value in it is optimum, one region
- * away suboptimum, two away even less good.
- */
-function level(
-	meter: HTMLMeterElement,
-): string {
-	const {low, high, optimum, value} = meter;
-	if (optimum < low) {
-		if (value < low) {
-			return "optimum";
-		}
-		return value <= high ? "suboptimum" : "even-less-good";
-	}
-	if (optimum > high) {
-		if (value > high) {
-			return "optimum";
-		}
-		return value >= low ? "suboptimum" : "even-less-good";
-	}
-	return value >= low && value <= high ? "optimum" : "suboptimum";
-}
-/** The attributes a meter's own rendering is read from. */
-const METER_ATTRIBUTES = new Set([
-	"value",
-	"min",
-	"max",
-	"low",
-	"high",
-	"optimum",
-]);
+export class HTMLTrackElement extends HTMLElement {}
 
-/**
- * A progress bar, whose value is read against the maximum it names.
- *
- * It renders a closed shadow tree it owns: a run of block glyphs filled to
- * `value`/`max`. A progress with no value attribute is indeterminate, which
- * here is an empty bar over the full groove -- there is no animation to make
- * the difference the way a browser does.
- */
-export class HTMLProgressElement extends HTMLElement {
-	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
-		super(...args);
-		this[kEngine] = null;
-		this[kBar] = null;
-	}
-
-	declare [kEngine]: UAEngine | null;
-	declare [kBar]: UAElement | null;
-
-	[kUAUpgrade](): void {
-		if (this[kEngine] !== null) {
-			this[kUAReconcile]();
-			return;
-		}
-		const engine = uaEngineOf(this);
-		if (engine === undefined) {
-			return;
-		}
-		this[kEngine] = engine;
-		this[kBar] = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
-		this[kUAReconcile]();
-	}
-
-	[kUAReconcile](): void {
-		if (this[kEngine] === null) {
-			return;
-		}
-		const position = this.position;
-		setGaugeFill(this[kBar]!, position < 0 ? null : position);
-	}
-
-	override [kAttributeChanged](
-		localName: string,
-		oldValue: string | null,
-		value: string | null,
-		namespace: string | null,
-	): void {
-		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace === null && (localName === "value" || localName === "max")) {
-			this[kUAReconcile]();
-		}
-	}
-
-	get value(): number {
-		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
-		if (value === null || value < 0) {
-			return 0;
-		}
-		return Math.min(value, this.max);
-	}
-
-	set value(value: number) {
-		this.setAttribute("value", String(toDouble(value)));
-	}
-
-	get max(): number {
-		const max = parseFloatingPoint(this.getAttribute("max") ?? "");
-		return max === null || max <= 0 ? 1 : max;
-	}
-
-	set max(value: number) {
-		this.setAttribute("max", String(toDouble(value)));
-	}
-
-	get position(): number {
-		return this.hasAttribute("value") ? this.value / this.max : -1;
-	}
-
-	get labels(): NodeList {
-		return labelsOf(this);
-	}
-}
+export class HTMLUListElement extends HTMLElement {}
 
 /* ------------------------------------------------------------- popovers */
 
