@@ -41,39 +41,7 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
-// The built-in tags that upgrade to a UA widget on connect.
-const UPGRADEABLE_CONTROLS = new Set([
-	"DETAILS",
-	"INPUT",
-	"METER",
-	"PROGRESS",
-	"SELECT",
-	"TEXTAREA",
-]);
-
 const kUAToolkit = Symbol("uaToolkit");
-/**
- * Upgrade every control in a newly connected subtree, the element itself
- * included. A walk over the subtree's own child links rather than a selector
- * query: every insertion pays this, and a document of ordinary markup must pay
- * as little as a tag comparison per element.
- */
-function upgradeControlsIn(termdom: TermDOM, root: Element): void {
-	const stack: Element[] = [root];
-	while (stack.length > 0) {
-		const element = stack.pop()!;
-		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-			termdom[kUAToolkit].upgradeWidget(element);
-		}
-		for (
-			let child = element.firstElementChild;
-			child !== null;
-			child = child.nextElementSibling
-		) {
-			stack.push(child);
-		}
-	}
-}
 
 // The engine each document is mounted in. The DOM prototypes are the realm's,
 // shared by every document; a patched member finds its engine here rather than
@@ -2966,7 +2934,7 @@ function handlePendingMutations(
 			if (added.nodeType !== added.ELEMENT_NODE) {
 				continue;
 			}
-			upgradeControlsIn(termdom, added as Element);
+			termdom[kUAToolkit].upgradeWidgetsIn(added as Element);
 		}
 	}
 	termdom[kStyleManager].handleMutations(relevant);
@@ -5208,7 +5176,7 @@ async function renderInteractive(
 		// The focused field's rows repaint: its caret cell and the real
 		// cursor park come from the painter visiting it.
 		const active = termdom.document.activeElement;
-		if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
+		if (active && termdom[kUAToolkit].isWidgetControl(active)) {
 			const rect = termdom[kLayoutEngine].getRect(active);
 			if (rect) {
 				addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);

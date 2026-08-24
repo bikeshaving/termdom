@@ -146,6 +146,10 @@ export interface UAToolkit {
 	): void;
 	/** Build a control's UA widget if it has one and does not have it yet. */
 	upgradeWidget(element: object): void;
+	/** Build the UA widgets in a subtree, the root element included. */
+	upgradeWidgetsIn(root: object): void;
+	/** Whether a tag is one of the built-ins that carry a UA widget. */
+	isWidgetControl(element: object): boolean;
 	/** The granted document's top layer, by reference. */
 	topLayer: Set<Element>;
 	isModalDialog(node: object): boolean;
@@ -269,6 +273,14 @@ function makeUAToolkit(document: object): UAToolkit {
 				upgradeUAWidget(element);
 			}
 		},
+		upgradeWidgetsIn(root: object): void {
+			if (owns(root)) {
+				upgradeUAWidgetsIn(root as Element);
+			}
+		},
+		isWidgetControl(element: object): boolean {
+			return owns(element) && isUAWidgetControl(element as Element);
+		},
 		topLayer: topLayerOf(document),
 		isModalDialog(node: object): boolean {
 			return owns(node) && isModalDialog(node);
@@ -364,6 +376,42 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  */
 function upgradeUAWidget(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
+}
+
+// The built-in tags that upgrade to a UA widget on connect.
+const UPGRADEABLE_CONTROLS = new Set([
+	"DETAILS",
+	"INPUT",
+	"METER",
+	"PROGRESS",
+	"SELECT",
+	"TEXTAREA",
+]);
+
+/** Whether a tag is one of the built-ins that carry a UA widget. */
+function isUAWidgetControl(element: Element): boolean {
+	return UPGRADEABLE_CONTROLS.has(element.tagName);
+}
+
+/**
+ * Upgrade every control in a newly connected subtree, the element itself
+ * included. A walk over the subtree's own child links rather than a selector
+ * query: every insertion pays this, and a document of ordinary markup must pay
+ * as little as a tag comparison per element.
+ */
+function upgradeUAWidgetsIn(root: Element): void {
+	const stack: Element[] = [root];
+	while (stack.length > 0) {
+		const element = stack.pop()!;
+		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
+			upgradeUAWidget(element);
+		}
+		for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
+			if (node.nodeType === ELEMENT_NODE) {
+				stack.push(node as Element);
+			}
+		}
+	}
 }
 
 /** A listener as this file's own dispatch takes one. */
