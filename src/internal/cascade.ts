@@ -7058,12 +7058,106 @@ function unwrapURL(text: string): string {
 	return /^["']/.test(body) ? body.slice(1, -1) : body;
 }
 
+/** A node an @import prelude parse yields at its top level. */
+interface ImportPreludeNode {
+	type: string;
+	name?: string;
+	loc?: ParsedSpan | null;
+}
+
+/**
+ * An @import prelude read off css-tree's nodes: the url or string, a bare
+ * `layer` or `layer()`, `supports()`, and the media list, each part's text
+ * serialized from its authored slice. Null for text css-tree refuses, or
+ * for a shape whose nodes the splitter below divides differently -- the
+ * splitter reads a bare `layer` prefix off any word, for one -- which
+ * keeps the splitter's answer.
+ */
+function convertImportPrelude(
+	text: string,
+	sheet: CSSStyleSheet | null,
+): CSSImportRule | null {
+	let nodes: ImportPreludeNode[];
+	try {
+		const ast = CSSTree.parse(text, {
+			context: "atrulePrelude",
+			atrule: "import",
+			positions: true,
+		}) as unknown as {children?: {toArray(): ImportPreludeNode[]} | null};
+		nodes = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return null;
+	}
+	const sliceOf = (node: ImportPreludeNode): string =>
+		node.loc ? text.slice(node.loc.start.offset, node.loc.end.offset) : "";
+	const head = nodes[0];
+	if (!head?.loc || (head.type !== "Url" && head.type !== "String")) {
+		return null;
+	}
+	const href = unwrapURL(sliceOf(head));
+	let cursor = head.loc.end.offset;
+	let index = 1;
+
+	let layerName: string | null = null;
+	let node: ImportPreludeNode | undefined = nodes[index];
+	if (
+		node?.loc &&
+		(node.type === "Identifier" || node.type === "Function") &&
+		(node.name ?? "").toLowerCase() === "layer"
+	) {
+		const match = /^layer(?:\(\s*([^)]*)\s*\))?$/i.exec(sliceOf(node));
+		if (!match) {
+			return null;
+		}
+		layerName = match[1]?.trim() ?? "";
+		cursor = node.loc.end.offset;
+		index++;
+	} else if (/^layer/i.test(text.slice(cursor).trimStart())) {
+		return null;
+	}
+
+	let supportsText: string | null = null;
+	node = nodes[index];
+	if (
+		node?.loc &&
+		node.type === "Function" &&
+		(node.name ?? "").toLowerCase() === "supports"
+	) {
+		supportsText = sliceOf(node).slice("supports(".length, -1).trim();
+		cursor = node.loc.end.offset;
+		index++;
+	}
+	if (/^supports\(/i.test(text.slice(cursor).trimStart())) {
+		return null;
+	}
+
+	let mediaText = "";
+	node = nodes[index];
+	if (node) {
+		if (!node.loc || node.type !== "MediaQueryList") {
+			return null;
+		}
+		mediaText = sliceOf(node);
+		index++;
+	}
+	if (index !== nodes.length) {
+		return null;
+	}
+	return new CSSImportRule(href, mediaText, layerName, supportsText, sheet);
+}
+
 /** `@import <url> [layer] [supports()] [media]`, split into its parts. */
 function convertImportRule(
 	prelude: string,
 	sheet: CSSStyleSheet | null,
 ): CSSImportRule {
 	let rest = prelude.trim();
+	if (!rest.includes("/*") && !rest.includes("\\")) {
+		const parsed = convertImportPrelude(rest, sheet);
+		if (parsed) {
+			return parsed;
+		}
+	}
 	const head = /^(url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|"[^"]*"|'[^']*')/.exec(
 		rest,
 	);

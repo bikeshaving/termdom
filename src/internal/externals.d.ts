@@ -26,6 +26,7 @@ declare module "css-tree" {
 
 	export interface ParseOptions {
 		context?: string;
+		atrule?: string;
 		positions?: boolean;
 		parseAtrulePrelude?: boolean;
 		parseRulePrelude?: boolean;
