@@ -1,7 +1,20 @@
 import type {LayoutEngine} from "./layout.js";
-import type {ColorDepth} from "./ansi.js";
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import {tokenizeInput} from "./events.js";
+import {
+	ansiMode,
+	ansiModeQuery,
+	clipboardQuery,
+	clipboardWrite,
+	cursorPositionQuery,
+	eraseToLineEnd,
+	popTitle,
+	privateMode,
+	privateModeQuery,
+	pushTitle,
+	setWindowTitle,
+	type ColorDepth,
+} from "./wire.js";
 
 /** The terminal's dimensions, in cells. */
 export interface TerminalSize {
@@ -157,29 +170,49 @@ function detectColorDepth(proc: ProcessLike): ColorDepth {
 }
 
 /**
- * The private modes and stack controls this engine sets, spelled once. `set`
- * engages, `reset` hands the terminal back. Orderly teardown resets what was
+ * The private modes and stack controls this engine sets, named once. `set`
+ * engages, `reset` hands the terminal back; wire spells both. Orderly teardown resets what was
  * engaged, in this declaration order; the transport's panic paths blanket-
  * reset the union. A mode written anywhere else is a restore leak waiting --
  * new modes are added here and set through TerminalSession.setMode.
  */
 const MODE_SPELLINGS = {
-	motionReporting: {set: "\x1b[?1003h", reset: "\x1b[?1003l", panic: true},
-	mouseCapture: {
-		set: "\x1b[?1002h\x1b[?1006h",
-		reset: "\x1b[?1006l\x1b[?1002l",
+	motionReporting: {
+		set: privateMode(1003, true),
+		reset: privateMode(1003, false),
 		panic: true,
 	},
-	cursorHidden: {set: "\x1b[?25l", reset: "\x1b[?25h", panic: true},
-	bracketedPaste: {set: "\x1b[?2004h", reset: "\x1b[?2004l", panic: true},
-	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
+	mouseCapture: {
+		set: privateMode(1002, true) + privateMode(1006, true),
+		reset: privateMode(1006, false) + privateMode(1002, false),
+		panic: true,
+	},
+	cursorHidden: {
+		set: privateMode(25, false),
+		reset: privateMode(25, true),
+		panic: true,
+	},
+	bracketedPaste: {
+		set: privateMode(2004, true),
+		reset: privateMode(2004, false),
+		panic: true,
+	},
+	titleStack: {set: pushTitle(), reset: popTitle(), panic: true},
 	// The Fullscreen API's screen switch. Panic-marked: a crash mid-fullscreen
 	// hands the main screen back instead of stranding the user in the
 	// alternate one.
-	altScreen: {set: "\x1b[?1049h", reset: "\x1b[?1049l", panic: true},
+	altScreen: {
+		set: privateMode(1049, true),
+		reset: privateMode(1049, false),
+		panic: true,
+	},
 	// Negotiated, not imposed: a terminal that ignored the offer must not
 	// see the reset, so only the engaged-tracking restore may write it.
-	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
+	clusterWidths: {
+		set: privateMode(2027, true),
+		reset: privateMode(2027, false),
+		panic: false,
+	},
 } as const;
 type ModeName = keyof typeof MODE_SPELLINGS;
 
@@ -732,7 +765,7 @@ export class TerminalSession {
 					sentAt: Date.now(),
 				});
 				armWidthProbeTimer(this);
-				return "\x1b[6n";
+				return cursorPositionQuery();
 			},
 		};
 		this[kTransport] = deps.transport;
@@ -912,7 +945,11 @@ export class TerminalSession {
 		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await probeMode(this, "8", "\x1b[8l\x1b[8$p");
+		const answer = await probeMode(
+			this,
+			"8",
+			ansiMode(8, false) + ansiModeQuery(8),
+		);
 
 		if (answer === null || answer === 0) {
 			return;
@@ -935,7 +972,7 @@ export class TerminalSession {
 		if (!this[kInteractive]) {
 			return;
 		}
-		void this.write("\r\x1b[K");
+		void this.write("\r" + eraseToLineEnd());
 	}
 
 	/**
@@ -964,7 +1001,7 @@ export class TerminalSession {
 		const answer = await probeMode(
 			this,
 			"?2027",
-			`${MODE_SPELLINGS.clusterWidths.set}\x1b[?2027$p`,
+			MODE_SPELLINGS.clusterWidths.set + privateModeQuery(2027),
 		);
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
@@ -1011,7 +1048,7 @@ export class TerminalSession {
 			};
 
 			this[kCursorDetectionSequence] = this[kDsrSequence]++;
-			void this.write("\x1b[6n");
+			void this.write(cursorPositionQuery());
 
 			// Timeout after 1000ms. The timer is held so it can be cleared the
 			// moment a response arrives --
@@ -1075,7 +1112,7 @@ export class TerminalSession {
 			this[kCursorDetectionHandler] = handler;
 
 			this[kCursorDetectionSequence] = this[kDsrSequence]++;
-			void this.write("\x1b[6n");
+			void this.write(cursorPositionQuery());
 
 			// Short timeout: the redraw should feel immediate, and a terminal
 			// that does not answer promptly falls back to the computed re-anchor.
@@ -1107,12 +1144,12 @@ export class TerminalSession {
 	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
 		const payload = new TextEncoder().encode(text).toBase64();
-		return this.write(`\x1b]52;c;${payload}\x07`);
+		return this.write(clipboardWrite(payload));
 	}
 
 	/** OSC 2: set the terminal's title (the stack holds the prior one). */
 	setTitle(text: string): Promise<void> {
-		return this.write(`\x1b]2;${text}\x07`);
+		return this.write(setWindowTitle(text));
 	}
 
 	queryClipboard(): Promise<string | null> {
@@ -1126,7 +1163,7 @@ export class TerminalSession {
 			}, TerminalSession[kClipboardQueryTimeout]);
 			this[kClipboardTimer] = timer;
 			this[kClipboardHandler] = resolve;
-			void this.write("\x1b]52;c;?\x07");
+			void this.write(clipboardQuery());
 		});
 	}
 
@@ -1180,7 +1217,7 @@ export class TerminalSession {
 		// mode it reported, so the next command inherits its own settings rather
 		// than ours. Only when it was SET -- reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
-			void this.write("\x1b[8h");
+			void this.write(ansiMode(8, true));
 			this[kPriorBidiMode] = null;
 		}
 		// The engaged modes go back too -- 2027 among them, for a terminal

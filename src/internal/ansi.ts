@@ -4,10 +4,28 @@ import {
 	widthIsUncertain,
 	type WidthMeasurer,
 } from "./text.js";
+import {
+	cursorDown,
+	cursorForward,
+	cursorTo,
+	deleteLines,
+	eraseBelow,
+	eraseToLineEnd,
+	insertLines,
+	privateMode,
+	resetScrollRegion,
+	restoreCursor,
+	saveCursor,
+	setScrollRegion,
+	sgr,
+	sgrColor,
+	sgrReset,
+	type ColorDepth,
+} from "./wire.js";
 
 /* ------------------------------------------------------------------- cells */
 
-export type ColorDepth = "ansi" | "rgb" | "256";
+export type {ColorDepth};
 
 export interface CellStyle {
 	fg?: number | null;
@@ -1223,64 +1241,6 @@ function setBorderCell(
 
 /* ---------------------------------------------------------------- the wire */
 
-function rgbTo256(color: number): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-
-	if (r === g && g === b) {
-		if (r < 8) {
-			return 0;
-		}
-		if (r > 248) {
-			return 15;
-		}
-		return Math.round(((r - 8) / 247) * 23) + 232;
-	}
-
-	const r6 = Math.round((r / 255) * 5);
-	const g6 = Math.round((g / 255) * 5);
-	const b6 = Math.round((b / 255) * 5);
-	return 16 + 36 * r6 + 6 * g6 + b6;
-}
-
-function rgbToBasic8(color: number): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-
-	let ansiColor = 0;
-	if (r > 127) {
-		ansiColor |= 1;
-	}
-	if (g > 127) {
-		ansiColor |= 2;
-	}
-	if (b > 127) {
-		ansiColor |= 4;
-	}
-	return ansiColor;
-}
-
-function emitColor(
-	color: number,
-	isFg: boolean,
-	colorDepth: ColorDepth,
-): string {
-	switch (colorDepth) {
-		case "rgb": {
-			const r = (color >> 16) & 0xff;
-			const g = (color >> 8) & 0xff;
-			const b = color & 0xff;
-			return `${isFg ? 38 : 48};2;${r};${g};${b}`;
-		}
-		case "256":
-			return `${isFg ? 38 : 48};5;${rgbTo256(color)}`;
-		case "ansi":
-			return String((isFg ? 30 : 40) + rgbToBasic8(color));
-	}
-}
-
 /**
  * The SGR parameters that take the terminal from the cell at `prev` to the
  * cell at `index`, or "" when nothing needs to change. A `prev` of -1 means no
@@ -1304,10 +1264,10 @@ function styleDiff(
 	if (prev < 0) {
 		let seq = "";
 		if (fg !== 0) {
-			seq = emitColor(fg, true, colorDepth);
+			seq = sgrColor(fg, true, colorDepth);
 		}
 		if (bg !== 0) {
-			const code = emitColor(bg, false, colorDepth);
+			const code = sgrColor(bg, false, colorDepth);
 			seq = seq === "" ? code : `${seq};${code}`;
 		}
 		if (attrs & Attr.Bold) {
@@ -1374,10 +1334,10 @@ function styleDiff(
 	};
 
 	if (fgChanged) {
-		push(fg === 0 ? "39" : emitColor(fg, true, colorDepth));
+		push(fg === 0 ? "39" : sgrColor(fg, true, colorDepth));
 	}
 	if (bgChanged) {
-		push(bg === 0 ? "49" : emitColor(bg, false, colorDepth));
+		push(bg === 0 ? "49" : sgrColor(bg, false, colorDepth));
 	}
 
 	if (fgChanged || bgChanged) {
@@ -1446,13 +1406,13 @@ function moveCursor(
 			moveOutput += "\r\n".repeat(rowDiff);
 		} else {
 			moveOutput += "\r\n".repeat(rowDiff);
-			moveOutput += `\x1b[${targetCol}C`; // CUF - Cursor Forward n columns
+			moveOutput += cursorForward(targetCol);
 		}
 	} else if (targetCol !== currentCol) {
 		if (targetCol === 0) {
 			moveOutput += "\r";
 		} else {
-			moveOutput += `\x1b[${targetCol - currentCol}C`; // CUF - Cursor Forward n columns
+			moveOutput += cursorForward(targetCol - currentCol);
 		}
 	}
 
@@ -1567,7 +1527,7 @@ function generateANSI(
 				for (const cluster of [...starving]) {
 					output += "\r";
 					if (cell.col > 0) {
-						output += `\x1b[${cell.col}C`; // CUF
+						output += cursorForward(cell.col);
 					}
 					// Each probe is reached by naming its column outright, so
 					// no train glyph's advance carries into the next.
@@ -1638,9 +1598,9 @@ function generateANSI(
 			}
 
 			if (isFirstRenderOfLine) {
-				output += "\r\x1b[K"; // CR + EL - Carriage Return + Erase Line
+				output += "\r" + eraseToLineEnd();
 				if (col > 0) {
-					output += `\x1b[${col}C`; // CUF - Cursor Forward n columns
+					output += cursorForward(col);
 				}
 				cursorCol = col;
 				isFirstRenderOfLine = false;
@@ -1651,7 +1611,7 @@ function generateANSI(
 
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
 			if (styleSeq !== "") {
-				output += `\x1b[${styleSeq}m`; // SGR - Select Graphic Rendition
+				output += sgr(styleSeq);
 				rowHasANSI = true;
 			}
 
@@ -1707,7 +1667,7 @@ function generateANSI(
 		if (rowHasContent) {
 			prevIndex = -1;
 			if (rowHasANSI) {
-				output += "\x1b[0m"; // SGR - Reset all attributes
+				output += sgrReset();
 			}
 		}
 	}
@@ -1956,7 +1916,7 @@ export class Screen {
 
 					const style = styleDiff(grid, index, previous, this[kColorDepth]);
 					if (style !== "") {
-						line += `\x1b[${style}m`;
+						line += sgr(style);
 					}
 
 					const encoding = grid.border[index];
@@ -1975,7 +1935,7 @@ export class Screen {
 				}
 
 				if (previous !== -1) {
-					line += "\x1b[0m";
+					line += sgrReset();
 				}
 				lines.push(line);
 			}
@@ -2073,10 +2033,10 @@ export class Screen {
 			// this caller afterward.
 			const count = Math.abs(delta);
 			scrollPrefix =
-				`\x1b[${regionTop + 1};${regionEnd}r` +
-				`\x1b[${regionTop + 1};1H` +
-				(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
-				"\x1b[r";
+				setScrollRegion(regionTop + 1, regionEnd) +
+				cursorTo(regionTop + 1, 1) +
+				(delta > 0 ? deleteLines(count) : insertLines(count)) +
+				resetScrollRegion();
 		}
 
 		// Create drawing context and execute drawing operations
@@ -2269,8 +2229,8 @@ export class Screen {
 			// absolutely. Used to park the cursor at the content bottom after painting.
 			let frameStartRow: number | undefined;
 			if (hasContent) {
-				prefix += "\x1b[?25l"; // DECTCEM - Hide cursor
-				prefix += "\x1b[?2026h"; // Synchronized output mode (start)
+				prefix += privateMode(25, false); // DECTCEM - hide the cursor
+				prefix += privateMode(2026, true); // synchronized output, start
 
 				// Add cursor positioning
 				if (this[kNeedsScreenReset]) {
@@ -2286,29 +2246,29 @@ export class Screen {
 					// and the rows below the content get one PARTIAL erase after the
 					// paint -- a full-screen ED from the home row is exactly what tmux
 					// archives into the scrollback.
-					prefix += `\x1b[${this[kResetAtRow] + 1};1H`; // CUP - content start
-					prefix += "\x1b7"; // DECSC - save the new content start
+					prefix += cursorTo(this[kResetAtRow] + 1, 1); // content start
+					prefix += saveCursor(); // the new content start
 					this[kHasSavedCursor] = true;
 					this[kNeedsScreenReset] = false;
 					this[kNeedsFullClear] = false;
 					frameStartRow = this[kResetAtRow];
 				} else if (cursorPosition !== undefined) {
 					// Explicit cursor position provided (e.g., from cursor detection)
-					prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
+					prefix += cursorTo(cursorPosition + 1, 1);
 					// Save cursor at content start so DECRC-based cleanup works correctly
-					prefix += "\x1b7"; // DECSC
+					prefix += saveCursor();
 					this[kHasSavedCursor] = true;
 					frameStartRow = cursorPosition;
 				} else if (offset > 0) {
 					// Position based on viewport offset
-					prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
+					prefix += cursorTo(offset + 1, 1);
 					frameStartRow = offset;
 				} else if (this[kHasSavedCursor]) {
 					// Restore cursor to content start (DECRC), then save again (DECSC)
-					prefix += "\x1b8\x1b7"; // Restore + Save
+					prefix += restoreCursor() + saveCursor();
 				} else {
 					// First render: save cursor at content start (DECSC)
-					prefix += "\x1b7"; // Save
+					prefix += saveCursor();
 					this[kHasSavedCursor] = true;
 				}
 
@@ -2316,7 +2276,7 @@ export class Screen {
 				// Terminal reflow makes it impossible to know where old content ended up,
 				// so we erase the entire area before redrawing.
 				if (this[kNeedsFullClear]) {
-					prefix += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+					prefix += eraseBelow();
 					this[kNeedsFullClear] = false;
 				}
 
@@ -2324,7 +2284,7 @@ export class Screen {
 				// bottom-left for resize bookkeeping, and a blinking cursor squatting
 				// there is not UI. Focused inputs paint their own caret as an inverse
 				// cell. dispose() shows the real cursor again on the way out.
-				suffix += "\x1b[?2026l"; // Synchronized output mode (end)
+				suffix += privateMode(2026, false); // synchronized output, end
 			}
 
 			// Generate ANSI and finalize
@@ -2357,12 +2317,12 @@ export class Screen {
 				// Content shrank — clear the lines that are no longer used.
 				// Position to content start, then move past current content,
 				// then erase to end of screen.
-				staleOutput += "\x1b8"; // DECRC - restore to content start
+				staleOutput += restoreCursor(); // back to content start
 				if (contentHeight > 0) {
-					staleOutput += `\x1b[${contentHeight}B`; // CUD - Cursor Down
+					staleOutput += cursorDown(contentHeight);
 				}
 				staleOutput += "\r"; // CR - column 0
-				staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+				staleOutput += eraseBelow();
 			} else if (
 				resetFrame &&
 				frameStartRow !== undefined &&
@@ -2372,7 +2332,8 @@ export class Screen {
 				// old frame may have been taller. Erase from the first row past the
 				// content: a PARTIAL erase, which no terminal treats as a screen
 				// clear worth archiving.
-				staleOutput += `\x1b[${frameStartRow + contentHeight + 1};1H\x1b[J`;
+				staleOutput +=
+					cursorTo(frameStartRow + contentHeight + 1, 1) + eraseBelow();
 			}
 
 			// Update state for next frame. Anything above the last terminalHeight rows
@@ -2410,19 +2371,23 @@ export class Screen {
 					this[kParkRow] = caretBufferRow;
 					this[kParkCol] = caret.col;
 					if (frameStartRow !== undefined) {
-						parkOutput = `\x1b[${frameStartRow + caretBufferRow + 1};${caret.col + 1}H`; // CUP - caret
+						parkOutput = cursorTo(
+							frameStartRow + caretBufferRow + 1,
+							caret.col + 1,
+						);
 					} else if (this[kHasSavedCursor]) {
-						parkOutput = "\x1b8\x1b7";
+						parkOutput = restoreCursor() + saveCursor();
 						if (caretBufferRow > 0) {
-							parkOutput += `\x1b[${caretBufferRow}B`;
-						} // CUD
+							parkOutput += cursorDown(caretBufferRow);
+						}
 						if (caret.col > 0) {
-							parkOutput += `\r\x1b[${caret.col}C`;
+							parkOutput += "\r" + cursorForward(caret.col);
 						} else {
 							parkOutput += "\r";
 						}
 					}
-					parkOutput += "\x1b[?25h"; // DECTCEM - the caret is the real cursor
+					// The caret is the real cursor, so it is shown.
+					parkOutput += privateMode(25, true);
 				} else {
 					this[kParkRow] = Math.min(contentHeight, this[kRows]) - 1;
 					this[kParkCol] = 0;
@@ -2433,15 +2398,15 @@ export class Screen {
 							frameStartRow + contentHeight,
 							this[kRows],
 						);
-						parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
+						parkOutput = cursorTo(lastRow, 1); // content bottom
 					} else if (this[kHasSavedCursor]) {
 						// No absolute row to name: restore the saved content start, re-save
 						// it, and step down. CUD stops at the bottom margin, which is the
 						// content's visible bottom when it overflows.
-						parkOutput = "\x1b8\x1b7";
+						parkOutput = restoreCursor() + saveCursor();
 						if (contentHeight > 1) {
-							parkOutput += `\x1b[${contentHeight - 1}B`;
-						} // CUD
+							parkOutput += cursorDown(contentHeight - 1);
+						}
 						parkOutput += "\r";
 					}
 				}

@@ -118,7 +118,10 @@ if (process.argv.includes("--check")) {
 		}
 	}
 	for (const [name, deps] of imports) {
-		const isLeaf = name.startsWith("generated/") || name === "internal/text";
+		const isLeaf =
+			name.startsWith("generated/") ||
+			name === "internal/text" ||
+			name === "internal/wire";
 		if (!isLeaf) {
 			continue;
 		}

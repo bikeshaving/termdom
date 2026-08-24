@@ -34,6 +34,14 @@ import {
 	keyboardActivation,
 	tokenizeInput,
 } from "./events.js";
+import {
+	cursorHome,
+	cursorTo,
+	eraseBelow,
+	eraseScreen,
+	eraseToLineEnd,
+	index,
+} from "./wire.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
@@ -212,7 +220,7 @@ async function requestFullscreenElement(
 			termdom[kSession].setMode("altScreen", true);
 			// The alternate screen comes up holding whatever the terminal left
 			// in it, so the entry clears it and homes the cursor.
-			void termdom[kSession].write("\x1b[2J\x1b[H");
+			void termdom[kSession].write(eraseScreen() + cursorHome());
 			termdom[kSession].setMode("cursorHidden", true);
 		}
 
@@ -3930,16 +3938,17 @@ function flushDocument(
 	}
 
 	// Back to the top of our region; every payout line then clears ITSELF
-	// (\x1b[K before its text) and one partial erase covers whatever the
+	// (an EL before its text) and one partial erase covers whatever the
 	// old frame held below. Never a full ED from the top row: tmux
 	// preserves a fully-erased screen by pushing it into scrollback (the
 	// courtesy it extends to `clear`), which archived a copy of the final
 	// frame above the payout -- the document twice, interleaved.
-	void termdom[kSession].write(`\x1b[${top + 1};1H`);
+	void termdom[kSession].write(cursorTo(top + 1, 1));
+	const erase = eraseToLineEnd();
 	void termdom[kSession].write(
-		"\x1b[K" + output.replace(/\r\n(?!$)/g, "\r\n\x1b[K"),
+		erase + output.replace(/\r\n(?!$)/g, "\r\n" + erase),
 	);
-	void termdom[kSession].write("\x1b[J");
+	void termdom[kSession].write(eraseBelow());
 }
 
 /**
@@ -4184,7 +4193,7 @@ function reserveRows(
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
 		void termdom[kSession].write(
-			`\x1b[${termdom[kHeight]};1H` + "\x1bD".repeat(push),
+			cursorTo(termdom[kHeight], 1) + index().repeat(push),
 		);
 		// Do NOT shift the renderer's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
