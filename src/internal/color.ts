@@ -377,3 +377,47 @@ export function cssColorToNumber(cssColor: string): number {
 	}
 	return parseColor(cssColor)?.color ?? 0;
 }
+
+/** How many colors the terminal is believed to speak. */
+export type ColorDepth = "ansi" | "rgb" | "256";
+
+/** Quantize 24-bit RGB onto the 256-color cube and grayscale ramp. */
+export function rgbTo256(color: number): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+
+	if (r === g && g === b) {
+		if (r < 8) {
+			return 0;
+		}
+		if (r > 248) {
+			return 15;
+		}
+		return Math.round(((r - 8) / 247) * 23) + 232;
+	}
+
+	const r6 = Math.round((r / 255) * 5);
+	const g6 = Math.round((g / 255) * 5);
+	const b6 = Math.round((b / 255) * 5);
+	return 16 + 36 * r6 + 6 * g6 + b6;
+}
+
+/** Round 24-bit RGB to the nearest of the basic eight. */
+export function rgbToBasic8(color: number): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+
+	let ansiColor = 0;
+	if (r > 127) {
+		ansiColor |= 1;
+	}
+	if (g > 127) {
+		ansiColor |= 2;
+	}
+	if (b > 127) {
+		ansiColor |= 4;
+	}
+	return ansiColor;
+}

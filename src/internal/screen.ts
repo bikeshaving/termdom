@@ -29,8 +29,8 @@ import {
 	sgr,
 	sgrColor,
 	sgrReset,
-	type ColorDepth,
 } from "./wire.js";
+import {type ColorDepth} from "./color.js";
 
 /* ------------------------------------------------------------------- cells */
 

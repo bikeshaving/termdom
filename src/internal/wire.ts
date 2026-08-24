@@ -10,8 +10,7 @@
  * callers' business.
  */
 
-/** How many colors the terminal is believed to speak. */
-export type ColorDepth = "ansi" | "rgb" | "256";
+import {type ColorDepth, rgbTo256, rgbToBasic8} from "./color.js";
 
 /* -------------------------------------------------------------- the cursor */
 
@@ -99,45 +98,6 @@ export function sgr(parameters: string): string {
 /** SGR 0: back to the terminal's own defaults. */
 export function sgrReset(): string {
 	return "\x1b[0m";
-}
-
-function rgbTo256(color: number): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-
-	if (r === g && g === b) {
-		if (r < 8) {
-			return 0;
-		}
-		if (r > 248) {
-			return 15;
-		}
-		return Math.round(((r - 8) / 247) * 23) + 232;
-	}
-
-	const r6 = Math.round((r / 255) * 5);
-	const g6 = Math.round((g / 255) * 5);
-	const b6 = Math.round((b / 255) * 5);
-	return 16 + 36 * r6 + 6 * g6 + b6;
-}
-
-function rgbToBasic8(color: number): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-
-	let ansiColor = 0;
-	if (r > 127) {
-		ansiColor |= 1;
-	}
-	if (g > 127) {
-		ansiColor |= 2;
-	}
-	if (b > 127) {
-		ansiColor |= 4;
-	}
-	return ansiColor;
 }
 
 /**

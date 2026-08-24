@@ -117,19 +117,18 @@ if (process.argv.includes("--check")) {
 			);
 		}
 	}
+	const LEAVES = ["internal/text", "internal/wire", "internal/color"];
+	const isLeaf = (name: string): boolean =>
+		name.startsWith("generated/") || LEAVES.includes(name);
 	for (const [name, deps] of imports) {
-		const isLeaf =
-			name.startsWith("generated/") ||
-			name === "internal/text" ||
-			name === "internal/wire";
-		if (!isLeaf) {
+		if (!isLeaf(name)) {
 			continue;
 		}
 		for (const dep of deps) {
-			if (dep.startsWith("generated/") && !name.startsWith("generated/")) {
+			if (isLeaf(dep.replace(/ \(type\)$/, ""))) {
 				continue;
 			}
-			failures.push(`${name} is a leaf and must not import ${dep}`);
+			failures.push(`${name} is a leaf and may only import leaves, not ${dep}`);
 		}
 	}
 	if (failures.length > 0) {

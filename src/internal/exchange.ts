@@ -1,4 +1,5 @@
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
+import {type ColorDepth} from "./color.js";
 import {
 	ansiMode,
 	ansiModeQuery,
@@ -19,7 +20,6 @@ import {
 	tokenizeInput,
 	PASTE_END,
 	PASTE_START,
-	type ColorDepth,
 } from "./wire.js";
 
 /* -------------------------------------------------- the transport contract */
