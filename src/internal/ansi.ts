@@ -5,6 +5,209 @@ import {
 	type WidthMeasurer,
 } from "./text.js";
 
+/* ------------------------------------------------------------------- cells */
+
+export type ColorDepth = "ansi" | "rgb" | "256";
+
+export interface CellStyle {
+	fg?: number | null;
+	bg?: number | null;
+	bold?: boolean;
+	italic?: boolean;
+	underline?: boolean;
+	/** CSS text-decoration-style, insofar as SGR can draw it. */
+	underlineStyle?: "solid" | "double";
+	strikethrough?: boolean;
+	inverse?: boolean;
+	dim?: boolean;
+	blink?: boolean;
+	overline?: boolean;
+}
+
+/**
+ * What `measureText` answers: the columns the text occupies, which is the
+ * one metric a cell grid has -- nothing in a cell has a baseline. The name
+ * and the field are canvas's own original TextMetrics; further fields join
+ * if a consumer ever appears, the way canvas itself grew.
+ */
+interface TextMetrics {
+	width: number;
+}
+
+/** A box's sides, and "round" on each corner whose radius rounds it. */
+interface BoxSides {
+	top?: LineStyle;
+	right?: LineStyle;
+	bottom?: LineStyle;
+	left?: LineStyle;
+	topLeft?: "round";
+	topRight?: "round";
+	bottomRight?: "round";
+	bottomLeft?: "round";
+}
+
+const Color = {
+	Mask: 0xffffff,
+} as const;
+type Color = number;
+
+/**
+ * Per-cell attribute bits.
+ *
+ * Bold through Overline are the bits the foreground word carries alongside its
+ * color; Inverse through Dim are the background word's. The SGR delta treats
+ * each group as one unit with its color -- a foreground change re-states every
+ * foreground attribute -- so the groups are named here as masks.
+ *
+ * Width is the grapheme's column count, recorded at write time so the emitter
+ * never re-measures. WidthWide is the escape for a cluster wider than the
+ * field (a base carrying many spacing marks); the emitter measures those.
+ */
+const AttrFlags = {
+	Bold: 1 << 0,
+	Italic: 1 << 1,
+	Underline: 1 << 2,
+	// Styled underline (SGR 4:2, the kitty extension most modern terminals
+	// adopted). Only meaningful alongside Underline: emission sends plain 4
+	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
+	// underline. That ordering cannot survive a re-encoding intermediary:
+	// tmux collapses the pair into one styled-underline attribute at parse
+	// time and forwards it to a client without the usstyle feature in a form
+	// Apple Terminal drops entirely. Author-land CSS for terminals known to
+	// support it -- the UA defaults deliberately never use it.
+	DoubleUnderline: 1 << 3,
+	Strikethrough: 1 << 4,
+	Overline: 1 << 5,
+	Inverse: 1 << 6,
+	Blink: 1 << 7,
+	Dim: 1 << 8,
+} as const;
+
+const kFGGroup =
+	AttrFlags.Bold |
+	AttrFlags.Italic |
+	AttrFlags.Underline |
+	AttrFlags.DoubleUnderline |
+	AttrFlags.Strikethrough |
+	AttrFlags.Overline;
+const kBGGroup = AttrFlags.Inverse | AttrFlags.Blink | AttrFlags.Dim;
+
+const Attr = {
+	...AttrFlags,
+	FGGroup: kFGGroup,
+	BGGroup: kBGGroup,
+	StyleMask: kFGGroup | kBGGroup,
+	WidthShift: 9,
+	WidthMask: 0x1f << 9,
+	WidthWide: 0x1f,
+} as const;
+type Attr = number;
+
+/** The style bits of a CellStyle, packed. Width is added by the caller. */
+function packAttrs(style: CellStyle | undefined): number {
+	if (!style) {
+		return 0;
+	}
+	let attrs = 0;
+	if (style.bold) {
+		attrs |= Attr.Bold;
+	}
+	if (style.italic) {
+		attrs |= Attr.Italic;
+	}
+	if (style.underline) {
+		attrs |= Attr.Underline;
+		if (style.underlineStyle === "double") {
+			attrs |= Attr.DoubleUnderline;
+		}
+	}
+	if (style.strikethrough) {
+		attrs |= Attr.Strikethrough;
+	}
+	if (style.overline) {
+		attrs |= Attr.Overline;
+	}
+	if (style.inverse) {
+		attrs |= Attr.Inverse;
+	}
+	if (style.blink) {
+		attrs |= Attr.Blink;
+	}
+	if (style.dim) {
+		attrs |= Attr.Dim;
+	}
+	return attrs;
+}
+
+/* --------------------------------------------------------------- graphemes */
+
+/** One shared grapheme segmenter -- construction is expensive. */
+const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
+/** Text that needs no segmentation: one char, one cell, no combining. */
+const asciiPrintable = /^[\x20-\x7e]*$/;
+
+/**
+ * A char-plane value at or above this is an index into `internedGraphemes`
+ * rather than a code point; below it, the value IS the code point. Zero is the
+ * empty cell -- nothing has ever been written there, or a wide glyph to the
+ * left covers it.
+ */
+const CHAR_INTERNED = 0x8000_0000;
+
+/**
+ * Grapheme clusters of more than one code point -- ZWJ emoji, combining
+ * sequences, regional-indicator flags -- named by index so a cell stays one
+ * uint32.
+ *
+ * Append-only: an id, once handed out, names the same cluster for the life of
+ * the process, so a plane value copied between buffers by scroll or seed stays
+ * valid. The table's size is bounded by the number of DISTINCT multi-code-point
+ * clusters the document uses, which is a property of its script, not of how
+ * much text passes through.
+ */
+const internedGraphemes: string[] = [""];
+const internedIds = new Map<string, number>();
+
+function internGrapheme(grapheme: string): number {
+	let id = internedIds.get(grapheme);
+	if (id === undefined) {
+		id = internedGraphemes.length;
+		internedGraphemes.push(grapheme);
+		internedIds.set(grapheme, id);
+	}
+	return id;
+}
+
+/** The char-plane value for a grapheme cluster. */
+function encodeGrapheme(grapheme: string): number {
+	const code = grapheme.codePointAt(0)!;
+	if (grapheme.length === (code > 0xffff ? 2 : 1)) {
+		return code;
+	}
+	return CHAR_INTERNED | internGrapheme(grapheme);
+}
+
+/** The grapheme cluster a char-plane value names. */
+function decodeGrapheme(char: number): string {
+	return char >= CHAR_INTERNED ?
+		internedGraphemes[char - CHAR_INTERNED] :
+			String.fromCodePoint(char);
+}
+
+/**
+ * Column count of a grapheme, skipping the width cache for printable ASCII --
+ * the overwhelmingly common case, and one whose answer is always 1.
+ */
+function graphemeColumns(grapheme: string): number {
+	const code = grapheme.charCodeAt(0);
+	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
+		return 1;
+	}
+	return stringWidth(grapheme);
+}
+
+/* ----------------------------------------------------------------- borders */
+
 const BorderEdgeStyle = {
 	// Style values (bits 3-0)
 	None: 0b0000,
@@ -24,6 +227,124 @@ const BorderEdgeStyle = {
 	Rounded: 0b00010000,
 } as const;
 type BorderEdgeStyle = number;
+
+const BorderMask = {
+	Top: 0x000000ff,
+	Right: 0x0000ff00,
+	Bottom: 0x00ff0000,
+	Left: 0xff000000,
+	Edge: 0xff,
+	Style: 0b00001111,
+} as const;
+type BorderMask = number;
+
+const BorderShift = {
+	Top: 0,
+	Right: 8,
+	Bottom: 16,
+	Left: 24,
+} as const;
+type BorderShift = number;
+
+const BORDER_EDGE_MASKS = [
+	{shift: BorderShift.Top, mask: BorderMask.Top},
+	{shift: BorderShift.Right, mask: BorderMask.Right},
+	{shift: BorderShift.Bottom, mask: BorderMask.Bottom},
+	{shift: BorderShift.Left, mask: BorderMask.Left},
+];
+
+// Edge extraction utilities
+function getBorderEdge(border: number, mask: number): number {
+	const shift = Math.log2(mask & -mask);
+	return (border & mask) >> shift;
+}
+
+function setBorderEdge(
+	border: number,
+	mask: number,
+	edgeValue: number,
+): number {
+	const shift = Math.log2(mask & -mask);
+	return (border & ~mask) | ((edgeValue << shift) & mask);
+}
+
+function getEdgeStyle(edgeValue: number): number {
+	return edgeValue & BorderMask.Style;
+}
+
+function getEdgePresence(edgeValue: number): boolean {
+	const style = edgeValue & BorderMask.Style;
+	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
+}
+
+function getEdgeRounded(edgeValue: number): boolean {
+	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
+}
+
+/**
+ * Merge two border encodings, choosing the higher precedence style for each edge
+ */
+function meetEdges(existing: number, incoming: number): number {
+	let met = 0;
+	for (const {mask} of BORDER_EDGE_MASKS) {
+		const here = getBorderEdge(existing, mask);
+		const there = getBorderEdge(incoming, mask);
+		if (!getEdgePresence(here)) {
+			met = setBorderEdge(met, mask, there);
+		} else if (!getEdgePresence(there)) {
+			met = setBorderEdge(met, mask, here);
+		} else {
+			met = setBorderEdge(
+				met,
+				mask,
+				getEdgeStyle(there) > getEdgeStyle(here) ? there : here,
+			);
+		}
+	}
+
+	return met;
+}
+
+/**
+ * How a border line is drawn: the CSS keyword, in the CSS's own word, and
+ * the line's color -- the terminal's default foreground when absent.
+ *
+ * An end's cap says how its stroke finishes. By default it stops at the end
+ * cell's center, which is what lets another line's half-stroke union with it
+ * into a corner or a tee; "square" projects through the cell, for a free end
+ * nothing meets; "round" curves the glyph where two capped ends union -- a
+ * box's four line ends are its four corners.
+ */
+export const LINE_STYLES = [
+	"solid",
+	"double",
+	"dashed",
+	"dotted",
+	"groove",
+	"ridge",
+	"inset",
+	"outset",
+	"hidden",
+] as const;
+
+export interface LineStyle {
+	style: (typeof LINE_STYLES)[number];
+	color?: number | null;
+	startCap?: "round" | "square";
+	endCap?: "round" | "square";
+}
+
+const LINE_BITS: Record<LineStyle["style"], number> = {
+	solid: BorderEdgeStyle.Solid,
+	double: BorderEdgeStyle.Double,
+	dashed: BorderEdgeStyle.Dashed,
+	dotted: BorderEdgeStyle.Dotted,
+	groove: BorderEdgeStyle.Groove,
+	ridge: BorderEdgeStyle.Ridge,
+	inset: BorderEdgeStyle.Inset,
+	outset: BorderEdgeStyle.Outset,
+	hidden: BorderEdgeStyle.Hidden,
+};
 
 interface BoxCharSet {
 	horizontal: string;
@@ -124,93 +445,124 @@ const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 	"┘": "╯",
 };
 
-/** One shared grapheme segmenter -- construction is expensive. */
-const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
-/** Text that needs no segmentation: one char, one cell, no combining. */
-const asciiPrintable = /^[\x20-\x7e]*$/;
-
-export type ColorDepth = "ansi" | "rgb" | "256";
-
-const Color = {
-	Mask: 0xffffff,
-} as const;
-type Color = number;
-
-const BorderMask = {
-	Top: 0x000000ff,
-	Right: 0x0000ff00,
-	Bottom: 0x00ff0000,
-	Left: 0xff000000,
-	Edge: 0xff,
-	Style: 0b00001111,
-} as const;
-type BorderMask = number;
-
-const BorderShift = {
-	Top: 0,
-	Right: 8,
-	Bottom: 16,
-	Left: 24,
-} as const;
-type BorderShift = number;
-
-const BORDER_EDGE_MASKS = [
-	{shift: BorderShift.Top, mask: BorderMask.Top},
-	{shift: BorderShift.Right, mask: BorderMask.Right},
-	{shift: BorderShift.Bottom, mask: BorderMask.Bottom},
-	{shift: BorderShift.Left, mask: BorderMask.Left},
-];
-
-// Edge extraction utilities
-function getBorderEdge(border: number, mask: number): number {
-	const shift = Math.log2(mask & -mask);
-	return (border & mask) >> shift;
-}
-
-function setBorderEdge(
-	border: number,
-	mask: number,
-	edgeValue: number,
-): number {
-	const shift = Math.log2(mask & -mask);
-	return (border & ~mask) | ((edgeValue << shift) & mask);
-}
-
-function getEdgeStyle(edgeValue: number): number {
-	return edgeValue & BorderMask.Style;
-}
-
-function getEdgePresence(edgeValue: number): boolean {
-	const style = edgeValue & BorderMask.Style;
-	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
-}
-
-function getEdgeRounded(edgeValue: number): boolean {
-	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
-}
-
 /**
- * Merge two border encodings, choosing the higher precedence style for each edge
+ * Generate the appropriate box-drawing character for a cell based on its
+ * border encoding
  */
-function meetEdges(existing: number, incoming: number): number {
-	let met = 0;
-	for (const {mask} of BORDER_EDGE_MASKS) {
-		const here = getBorderEdge(existing, mask);
-		const there = getBorderEdge(incoming, mask);
-		if (!getEdgePresence(here)) {
-			met = setBorderEdge(met, mask, there);
-		} else if (!getEdgePresence(there)) {
-			met = setBorderEdge(met, mask, here);
-		} else {
-			met = setBorderEdge(
-				met,
-				mask,
-				getEdgeStyle(there) > getEdgeStyle(here) ? there : here,
-			);
-		}
+function getBorderChar(borderEncoding: number): string {
+	const topEdge = getBorderEdge(borderEncoding, BorderMask.Top);
+	const rightEdge = getBorderEdge(borderEncoding, BorderMask.Right);
+	const bottomEdge = getBorderEdge(borderEncoding, BorderMask.Bottom);
+	const leftEdge = getBorderEdge(borderEncoding, BorderMask.Left);
+
+	const hasTop = getEdgePresence(topEdge);
+	const hasRight = getEdgePresence(rightEdge);
+	const hasBottom = getEdgePresence(bottomEdge);
+	const hasLeft = getEdgePresence(leftEdge);
+
+	if (!hasTop && !hasRight && !hasBottom && !hasLeft) {
+		return " ";
 	}
 
-	return met;
+	const styles = [
+		hasTop ? getEdgeStyle(topEdge) : 0,
+		hasRight ? getEdgeStyle(rightEdge) : 0,
+		hasBottom ? getEdgeStyle(bottomEdge) : 0,
+		hasLeft ? getEdgeStyle(leftEdge) : 0,
+	].filter((s) => s > 0);
+
+	const dominantStyle = Math.max(...styles);
+	// The radius rides the edges meeting in this cell, so a cell is a rounded
+	// corner exactly when the edges that made it one carry the flag.
+	const hasRounded =
+		(hasTop && getEdgeRounded(topEdge)) ||
+		(hasRight && getEdgeRounded(rightEdge)) ||
+		(hasBottom && getEdgeRounded(bottomEdge)) ||
+		(hasLeft && getEdgeRounded(leftEdge));
+
+	let charSet;
+	switch (dominantStyle) {
+		case BorderEdgeStyle.Solid:
+			charSet = BOX_DRAWING.light;
+			break;
+		case BorderEdgeStyle.Double:
+			charSet = BOX_DRAWING.double;
+			break;
+		case BorderEdgeStyle.Dashed:
+			charSet = BOX_DRAWING.dashed;
+			break;
+		case BorderEdgeStyle.Dotted:
+			charSet = BOX_DRAWING.dotted;
+			break;
+		case BorderEdgeStyle.Groove:
+			charSet = BOX_DRAWING.heavy;
+			break;
+		case BorderEdgeStyle.Ridge:
+			charSet = BOX_DRAWING.light;
+			break;
+		case BorderEdgeStyle.Inset:
+		case BorderEdgeStyle.Outset:
+			charSet = BOX_DRAWING.light;
+			break;
+		case BorderEdgeStyle.Hidden:
+		case BorderEdgeStyle.None:
+			return " ";
+		default:
+			charSet = BOX_DRAWING.light;
+			break;
+	}
+
+	// The bits say which way a line leaves this cell, so the glyph follows
+	// directly from how many ways it goes and which.
+	const count =
+		(hasTop ? 1 : 0) +
+		(hasRight ? 1 : 0) +
+		(hasBottom ? 1 : 0) +
+		(hasLeft ? 1 : 0);
+
+	if (count === 4) {
+		return charSet.cross;
+	} // ┼
+
+	if (count === 3) {
+		if (!hasTop) {
+			return charSet.topTee;
+		} // ┬
+		if (!hasBottom) {
+			return charSet.bottomTee;
+		} // ┴
+		if (!hasLeft) {
+			return charSet.rightTee;
+		} // ├
+		return charSet.leftTee; // ┤
+	}
+
+	// A corner takes its rounded form where one exists. The character set is
+	// still the border style's -- a rounded dashed box keeps its dashes and
+	// bends only the four cells where the strokes turn -- and a style whose
+	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
+	const corner =
+		hasRight && hasBottom ?
+			charSet.topLeft : // ┌
+			hasLeft && hasBottom ?
+				charSet.topRight : // ┐
+				hasRight && hasTop ?
+					charSet.bottomLeft : // └
+					hasLeft && hasTop ?
+						charSet.bottomRight : // ┘
+						null;
+	if (corner !== null) {
+		return hasRounded ? (ROUNDED_CORNERS[corner] ?? corner) : corner;
+	}
+
+	if (hasLeft || hasRight) {
+		return charSet.horizontal;
+	} // ─
+	if (hasTop || hasBottom) {
+		return charSet.vertical;
+	} // │
+
+	return " ";
 }
 
 /**
@@ -272,231 +624,7 @@ function joinTouchingBorders(grid: CellGrid): void {
 	}
 }
 
-/**
- * How a border line is drawn: the CSS keyword, in the CSS's own word, and
- * the line's color -- the terminal's default foreground when absent.
- *
- * An end's cap says how its stroke finishes. By default it stops at the end
- * cell's center, which is what lets another line's half-stroke union with it
- * into a corner or a tee; "square" projects through the cell, for a free end
- * nothing meets; "round" curves the glyph where two capped ends union -- a
- * box's four line ends are its four corners.
- */
-export const LINE_STYLES = [
-	"solid",
-	"double",
-	"dashed",
-	"dotted",
-	"groove",
-	"ridge",
-	"inset",
-	"outset",
-	"hidden",
-] as const;
-
-export interface LineStyle {
-	style: (typeof LINE_STYLES)[number];
-	color?: number | null;
-	startCap?: "round" | "square";
-	endCap?: "round" | "square";
-}
-
-const LINE_BITS: Record<LineStyle["style"], number> = {
-	solid: BorderEdgeStyle.Solid,
-	double: BorderEdgeStyle.Double,
-	dashed: BorderEdgeStyle.Dashed,
-	dotted: BorderEdgeStyle.Dotted,
-	groove: BorderEdgeStyle.Groove,
-	ridge: BorderEdgeStyle.Ridge,
-	inset: BorderEdgeStyle.Inset,
-	outset: BorderEdgeStyle.Outset,
-	hidden: BorderEdgeStyle.Hidden,
-};
-
-/** A box's sides, and "round" on each corner whose radius rounds it. */
-interface BoxSides {
-	top?: LineStyle;
-	right?: LineStyle;
-	bottom?: LineStyle;
-	left?: LineStyle;
-	topLeft?: "round";
-	topRight?: "round";
-	bottomRight?: "round";
-	bottomLeft?: "round";
-}
-
-/**
- * What `measureText` answers: the columns the text occupies, which is the
- * one metric a cell grid has -- nothing in a cell has a baseline. The name
- * and the field are canvas's own original TextMetrics; further fields join
- * if a consumer ever appears, the way canvas itself grew.
- */
-interface TextMetrics {
-	width: number;
-}
-
-export interface CellStyle {
-	fg?: number | null;
-	bg?: number | null;
-	bold?: boolean;
-	italic?: boolean;
-	underline?: boolean;
-	/** CSS text-decoration-style, insofar as SGR can draw it. */
-	underlineStyle?: "solid" | "double";
-	strikethrough?: boolean;
-	inverse?: boolean;
-	dim?: boolean;
-	blink?: boolean;
-	overline?: boolean;
-}
-
-/**
- * Per-cell attribute bits.
- *
- * Bold through Overline are the bits the foreground word carries alongside its
- * color; Inverse through Dim are the background word's. The SGR delta treats
- * each group as one unit with its color -- a foreground change re-states every
- * foreground attribute -- so the groups are named here as masks.
- *
- * Width is the grapheme's column count, recorded at write time so the emitter
- * never re-measures. WidthWide is the escape for a cluster wider than the
- * field (a base carrying many spacing marks); the emitter measures those.
- */
-const AttrFlags = {
-	Bold: 1 << 0,
-	Italic: 1 << 1,
-	Underline: 1 << 2,
-	// Styled underline (SGR 4:2, the kitty extension most modern terminals
-	// adopted). Only meaningful alongside Underline: emission sends plain 4
-	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
-	// underline. That ordering cannot survive a re-encoding intermediary:
-	// tmux collapses the pair into one styled-underline attribute at parse
-	// time and forwards it to a client without the usstyle feature in a form
-	// Apple Terminal drops entirely. Author-land CSS for terminals known to
-	// support it -- the UA defaults deliberately never use it.
-	DoubleUnderline: 1 << 3,
-	Strikethrough: 1 << 4,
-	Overline: 1 << 5,
-	Inverse: 1 << 6,
-	Blink: 1 << 7,
-	Dim: 1 << 8,
-} as const;
-
-const kFGGroup =
-	AttrFlags.Bold |
-	AttrFlags.Italic |
-	AttrFlags.Underline |
-	AttrFlags.DoubleUnderline |
-	AttrFlags.Strikethrough |
-	AttrFlags.Overline;
-const kBGGroup = AttrFlags.Inverse | AttrFlags.Blink | AttrFlags.Dim;
-
-const Attr = {
-	...AttrFlags,
-	FGGroup: kFGGroup,
-	BGGroup: kBGGroup,
-	StyleMask: kFGGroup | kBGGroup,
-	WidthShift: 9,
-	WidthMask: 0x1f << 9,
-	WidthWide: 0x1f,
-} as const;
-type Attr = number;
-
-/**
- * A char-plane value at or above this is an index into `internedGraphemes`
- * rather than a code point; below it, the value IS the code point. Zero is the
- * empty cell -- nothing has ever been written there, or a wide glyph to the
- * left covers it.
- */
-const CHAR_INTERNED = 0x8000_0000;
-
-/**
- * Grapheme clusters of more than one code point -- ZWJ emoji, combining
- * sequences, regional-indicator flags -- named by index so a cell stays one
- * uint32.
- *
- * Append-only: an id, once handed out, names the same cluster for the life of
- * the process, so a plane value copied between buffers by scroll or seed stays
- * valid. The table's size is bounded by the number of DISTINCT multi-code-point
- * clusters the document uses, which is a property of its script, not of how
- * much text passes through.
- */
-const internedGraphemes: string[] = [""];
-const internedIds = new Map<string, number>();
-
-function internGrapheme(grapheme: string): number {
-	let id = internedIds.get(grapheme);
-	if (id === undefined) {
-		id = internedGraphemes.length;
-		internedGraphemes.push(grapheme);
-		internedIds.set(grapheme, id);
-	}
-	return id;
-}
-
-/** The char-plane value for a grapheme cluster. */
-function encodeGrapheme(grapheme: string): number {
-	const code = grapheme.codePointAt(0)!;
-	if (grapheme.length === (code > 0xffff ? 2 : 1)) {
-		return code;
-	}
-	return CHAR_INTERNED | internGrapheme(grapheme);
-}
-
-/** The grapheme cluster a char-plane value names. */
-function decodeGrapheme(char: number): string {
-	return char >= CHAR_INTERNED ?
-		internedGraphemes[char - CHAR_INTERNED] :
-			String.fromCodePoint(char);
-}
-
-/**
- * Column count of a grapheme, skipping the width cache for printable ASCII --
- * the overwhelmingly common case, and one whose answer is always 1.
- */
-function graphemeColumns(grapheme: string): number {
-	const code = grapheme.charCodeAt(0);
-	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
-		return 1;
-	}
-	return stringWidth(grapheme);
-}
-
-/** The style bits of a CellStyle, packed. Width is added by the caller. */
-function packAttrs(style: CellStyle | undefined): number {
-	if (!style) {
-		return 0;
-	}
-	let attrs = 0;
-	if (style.bold) {
-		attrs |= Attr.Bold;
-	}
-	if (style.italic) {
-		attrs |= Attr.Italic;
-	}
-	if (style.underline) {
-		attrs |= Attr.Underline;
-		if (style.underlineStyle === "double") {
-			attrs |= Attr.DoubleUnderline;
-		}
-	}
-	if (style.strikethrough) {
-		attrs |= Attr.Strikethrough;
-	}
-	if (style.overline) {
-		attrs |= Attr.Overline;
-	}
-	if (style.inverse) {
-		attrs |= Attr.Inverse;
-	}
-	if (style.blink) {
-		attrs |= Attr.Blink;
-	}
-	if (style.dim) {
-		attrs |= Attr.Dim;
-	}
-	return attrs;
-}
+/* ---------------------------------------------------------------- the grid */
 
 /**
  * The terminal grid, as parallel typed-array planes indexed by `row * cols +
@@ -674,124 +802,426 @@ class CellGrid {
 }
 
 /**
- * Generate the appropriate box-drawing character for a cell based on its
- * border encoding
+ * A cleared grid of the given size, reusing a retired one when it fits.
  */
-function getBorderChar(borderEncoding: number): string {
-	const topEdge = getBorderEdge(borderEncoding, BorderMask.Top);
-	const rightEdge = getBorderEdge(borderEncoding, BorderMask.Right);
-	const bottomEdge = getBorderEdge(borderEncoding, BorderMask.Bottom);
-	const leftEdge = getBorderEdge(borderEncoding, BorderMask.Left);
-
-	const hasTop = getEdgePresence(topEdge);
-	const hasRight = getEdgePresence(rightEdge);
-	const hasBottom = getEdgePresence(bottomEdge);
-	const hasLeft = getEdgePresence(leftEdge);
-
-	if (!hasTop && !hasRight && !hasBottom && !hasLeft) {
-		return " ";
+function takeGrid(
+	screen: Screen,
+	rows: number,
+	cols: number,
+): CellGrid {
+	const spare = screen[kSpare];
+	if (spare !== null && spare.rows === rows && spare.cols === cols) {
+		screen[kSpare] = null;
+		spare.clear();
+		return spare;
 	}
-
-	const styles = [
-		hasTop ? getEdgeStyle(topEdge) : 0,
-		hasRight ? getEdgeStyle(rightEdge) : 0,
-		hasBottom ? getEdgeStyle(bottomEdge) : 0,
-		hasLeft ? getEdgeStyle(leftEdge) : 0,
-	].filter((s) => s > 0);
-
-	const dominantStyle = Math.max(...styles);
-	// The radius rides the edges meeting in this cell, so a cell is a rounded
-	// corner exactly when the edges that made it one carry the flag.
-	const hasRounded =
-		(hasTop && getEdgeRounded(topEdge)) ||
-		(hasRight && getEdgeRounded(rightEdge)) ||
-		(hasBottom && getEdgeRounded(bottomEdge)) ||
-		(hasLeft && getEdgeRounded(leftEdge));
-
-	let charSet;
-	switch (dominantStyle) {
-		case BorderEdgeStyle.Solid:
-			charSet = BOX_DRAWING.light;
-			break;
-		case BorderEdgeStyle.Double:
-			charSet = BOX_DRAWING.double;
-			break;
-		case BorderEdgeStyle.Dashed:
-			charSet = BOX_DRAWING.dashed;
-			break;
-		case BorderEdgeStyle.Dotted:
-			charSet = BOX_DRAWING.dotted;
-			break;
-		case BorderEdgeStyle.Groove:
-			charSet = BOX_DRAWING.heavy;
-			break;
-		case BorderEdgeStyle.Ridge:
-			charSet = BOX_DRAWING.light;
-			break;
-		case BorderEdgeStyle.Inset:
-		case BorderEdgeStyle.Outset:
-			charSet = BOX_DRAWING.light;
-			break;
-		case BorderEdgeStyle.Hidden:
-		case BorderEdgeStyle.None:
-			return " ";
-		default:
-			charSet = BOX_DRAWING.light;
-			break;
-	}
-
-	// The bits say which way a line leaves this cell, so the glyph follows
-	// directly from how many ways it goes and which.
-	const count =
-		(hasTop ? 1 : 0) +
-		(hasRight ? 1 : 0) +
-		(hasBottom ? 1 : 0) +
-		(hasLeft ? 1 : 0);
-
-	if (count === 4) {
-		return charSet.cross;
-	} // ┼
-
-	if (count === 3) {
-		if (!hasTop) {
-			return charSet.topTee;
-		} // ┬
-		if (!hasBottom) {
-			return charSet.bottomTee;
-		} // ┴
-		if (!hasLeft) {
-			return charSet.rightTee;
-		} // ├
-		return charSet.leftTee; // ┤
-	}
-
-	// A corner takes its rounded form where one exists. The character set is
-	// still the border style's -- a rounded dashed box keeps its dashes and
-	// bends only the four cells where the strokes turn -- and a style whose
-	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
-	const corner =
-		hasRight && hasBottom ?
-			charSet.topLeft : // ┌
-			hasLeft && hasBottom ?
-				charSet.topRight : // ┐
-				hasRight && hasTop ?
-					charSet.bottomLeft : // └
-					hasLeft && hasTop ?
-						charSet.bottomRight : // ┘
-						null;
-	if (corner !== null) {
-		return hasRounded ? (ROUNDED_CORNERS[corner] ?? corner) : corner;
-	}
-
-	if (hasLeft || hasRight) {
-		return charSet.horizontal;
-	} // ─
-	if (hasTop || hasBottom) {
-		return charSet.vertical;
-	} // │
-
-	return " ";
+	return new CellGrid(rows, cols);
 }
+
+function lineLength(
+	screen: Screen,
+	row: number,
+): number {
+	const grid = screen[kPrev]!;
+	const rowStart = row * grid.cols;
+	for (let col = grid.cols - 1; col >= 0; col--) {
+		const index = rowStart + col;
+		if (grid.char[index] !== 0) {
+			return col + grid.widthAt(index);
+		}
+	}
+	return 0;
+}
+
+/* ---------------------------------------------------------------- painting */
+
+export class CellContext {
+	grid: CellGrid;
+	rows: number;
+	cols: number;
+	viewportOffset: number;
+	// Where the focused text element wants the real terminal cursor, in the
+	// same coordinates setText uses. When set, the frame parks the cursor there
+	// and shows it -- IME composition anchors at the real cursor, so a fake
+	// inverse-cell caret is not enough for text entry.
+	caret: {col: number; row: number} | null;
+	// The active overflow:hidden clip, in the same document-space (row, col)
+	// coordinates as every draw call below -- set/restored by the renderer
+	// around a clipping element's children. An edge is +-Infinity when that
+	// axis isn't clipped (e.g. overflow-x:hidden;overflow-y:visible only
+	// bounds left/right). null means no clip is active at all.
+	clipRect: {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+	} | null;
+
+	constructor(
+		grid: CellGrid,
+		rows: number,
+		cols: number,
+		viewportOffset: number,
+	) {
+		this.caret = null;
+		this.clipRect = null;
+		this.grid = grid;
+		this.rows = rows;
+		this.cols = cols;
+		this.viewportOffset = viewportOffset;
+	}
+
+	setCaret(x: number, y: number): void {
+		this.caret = {col: x, row: y};
+	}
+
+	drawRect(
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		background: number | null | undefined | "default" | "inverse",
+	): void {
+		if (background == null) {
+			return;
+		}
+
+		// "default" clears the cells to the terminal's own background --
+		// CSS's Canvas system color -- which still OVERWRITES whatever was
+		// painted underneath: an opaque box in the theme's color, whatever
+		// that theme is. "inverse" fills with SGR inverse instead: the
+		// Highlight/HighlightText system-color pair, swapping each cell's
+		// colors with no assumption about what they are.
+		const style: CellStyle =
+			background === "inverse" ?
+					{inverse: true} :
+					{bg: background === "default" ? undefined : background};
+
+		for (let row = y; row < y + height; row++) {
+			for (let col = x; col < x + width; col++) {
+				setCell(this, row, col, " ", style);
+			}
+		}
+	}
+
+	/** Measure `text` the way `drawText` will lay it down. */
+	measureText(text: string): TextMetrics {
+		if (asciiPrintable.test(text)) {
+			return {width: text.length};
+		}
+		let width = 0;
+		for (const segment of graphemeSegmenter.segment(text)) {
+			width += stringWidth(segment.segment);
+		}
+		return {width};
+	}
+
+	drawText(text: string, x: number, y: number, style?: CellStyle): void {
+		let currentX = x;
+
+		// Printable ASCII needs no grapheme segmentation: every char is its
+		// own one-cell grapheme.
+		if (asciiPrintable.test(text)) {
+			for (let i = 0; i < text.length; i++) {
+				if (currentX + 1 > this.cols) {
+					break;
+				}
+				setCell(this, y, currentX, text[i], style);
+				currentX++;
+			}
+			return;
+		}
+
+		for (const segment of graphemeSegmenter.segment(text)) {
+			const char = segment.segment;
+
+			// Never write a control char to a cell: a trailing one would survive to
+			// the output as a raw escape byte (injection from untrusted text).
+			const code = char.codePointAt(0)!;
+			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+				continue;
+			}
+
+			const width = stringWidth(char);
+
+			if (currentX + width > this.cols) {
+				break;
+			}
+
+			setCell(this, y, currentX, char, style);
+			currentX += width;
+		}
+
+		return;
+	}
+
+	/**
+	 * Merge an underline/overline across a row, preserving existing glyphs (an
+	 * empty cell becomes a spaced edge). Used to render `outline` as a full-width
+	 * edge; setText can't, since it overwrites. The style's fg is the row's
+	 * DEFAULT color: a cell that already carries an explicit foreground
+	 * (::selection, ::placeholder, authored color) keeps it.
+	 */
+	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
+		const grid = this.grid;
+		const edgeBit =
+			(style.underline ? Attr.Underline : 0) |
+			(style.overline ? Attr.Overline : 0);
+		if (edgeBit === 0) {
+			return;
+		}
+		for (let col = x; col < x + width; col++) {
+			const index = guardedWriteIndex(this, y, col);
+			if (index < 0) {
+				continue;
+			}
+			if (grid.char[index] !== 0) {
+				let attrs = grid.attrs[index] | edgeBit;
+				if (style.dim !== undefined) {
+					attrs = style.dim ? attrs | Attr.Dim : attrs & ~Attr.Dim;
+				}
+				grid.attrs[index] = attrs;
+			} else {
+				grid.char[index] = 0x20;
+				grid.fg[index] = (style.fg ?? 0) & Color.Mask;
+				grid.bg[index] = 0;
+				grid.attrs[index] =
+					edgeBit | (style.dim ? Attr.Dim : 0) | (1 << Attr.WidthShift);
+			}
+			// The edge replaces a box-drawing glyph with the space that cell
+			// measures as: an outline is a line of its own, not a junction.
+			grid.border[index] = 0;
+		}
+	}
+
+	drawLine(
+		x1: number,
+		y1: number,
+		x2: number,
+		y2: number,
+		line: LineStyle,
+	): void {
+		// Axis-aligned, half-open: the stroke runs from the start cell toward
+		// the end coordinate and stops short of it, so a one-cell vertical is
+		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
+		// what disambiguates the axis of a one-cell line.
+		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
+			return;
+		}
+		const bits = LINE_BITS[line.style];
+		if (bits === 0) {
+			return;
+		}
+		const style: CellStyle | undefined =
+			line.color != null ? {fg: line.color} : undefined;
+		const rounded = BorderEdgeStyle.Rounded;
+
+		// Each cell records which way the stroke LEAVES it, and an end cell
+		// keeps only its inward half -- the stroke enters and stops at
+		// center. Two lines meeting in a cell then union into the corner,
+		// the tee or the cross without either knowing the other exists. A
+		// "square" cap projects through its cell instead, for a free end; a
+		// "round" cap rides the half-stroke, which is how a corner cell
+		// learns it curves.
+		if (y1 === y2) {
+			const a = Math.min(x1, x2);
+			const b = Math.max(x1, x2) - 1;
+			const capA = x1 <= x2 ? line.startCap : line.endCap;
+			const capB = x1 <= x2 ? line.endCap : line.startCap;
+			for (let col = a; col <= b; col++) {
+				let toRight = col < b || capB === "square" ? bits : 0;
+				let toLeft = col > a || capA === "square" ? bits : 0;
+				if (col === a && capA === "round") {
+					toRight |= rounded;
+				}
+				if (col === b && capB === "round") {
+					toLeft |= rounded;
+				}
+				setBorderCell(
+					this,
+					col,
+					y1,
+					(toRight << BorderShift.Right) | (toLeft << BorderShift.Left),
+					style,
+				);
+			}
+		} else {
+			const a = Math.min(y1, y2);
+			const b = Math.max(y1, y2) - 1;
+			const capA = y1 <= y2 ? line.startCap : line.endCap;
+			const capB = y1 <= y2 ? line.endCap : line.startCap;
+			for (let row = a; row <= b; row++) {
+				let down = row < b || capB === "square" ? bits : 0;
+				let up = row > a || capA === "square" ? bits : 0;
+				if (row === a && capA === "round") {
+					down |= rounded;
+				}
+				if (row === b && capB === "round") {
+					up |= rounded;
+				}
+				setBorderCell(
+					this,
+					x1,
+					row,
+					(down << BorderShift.Bottom) | (up << BorderShift.Top),
+					style,
+				);
+			}
+		}
+	}
+
+	/**
+	 * Four lines and their caps: the box composition drawLine callers would
+	 * otherwise write. An end that meets an adjacent side stops at center
+	 * (and curves when the corner rounds); a free end projects through its
+	 * cell.
+	 */
+	drawBox(
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		sides: BoxSides,
+	): void {
+		if (width < 1 || height < 1) {
+			return;
+		}
+		const r = x + width - 1;
+		const b = y + height - 1;
+		const cap = (
+			adjacent: LineStyle | undefined,
+			corner: "round" | undefined,
+		): "round" | "square" | undefined => (adjacent ? corner : "square");
+
+		// Verticals first: a corner cell's glyph spans two sides but holds one
+		// color, and the horizontal side's wins -- the closest a cell gets to
+		// the browser's diagonal miter.
+		if (sides.left) {
+			this.drawLine(x, y, x, b + 1, {
+				...sides.left,
+				startCap: cap(sides.top, sides.topLeft),
+				endCap: cap(sides.bottom, sides.bottomLeft),
+			});
+		}
+		if (sides.right) {
+			this.drawLine(r, y, r, b + 1, {
+				...sides.right,
+				startCap: cap(sides.top, sides.topRight),
+				endCap: cap(sides.bottom, sides.bottomRight),
+			});
+		}
+		if (sides.top) {
+			this.drawLine(x, y, r + 1, y, {
+				...sides.top,
+				startCap: cap(sides.left, sides.topLeft),
+				endCap: cap(sides.right, sides.topRight),
+			});
+		}
+		// A 1-row box's bottom shares the top's row; the top already drew it.
+		if (sides.bottom && !(b === y && sides.top)) {
+			this.drawLine(x, b, r + 1, b, {
+				...sides.bottom,
+				startCap: cap(sides.left, sides.bottomLeft),
+				endCap: cap(sides.right, sides.bottomRight),
+			});
+		}
+	}
+}
+
+function inClip(
+	context: CellContext,
+	row: number,
+	col: number,
+): boolean {
+	if (!context.clipRect) {
+		return true;
+	}
+	const {left, top, right, bottom} = context.clipRect;
+	return col >= left && col < right && row >= top && row < bottom;
+}
+
+/**
+ * The grid index a write at document (row, col) may land on, or -1 when it
+ * must be dropped: off the terminal, or outside the active clip. The one
+ * gate for cell writers; each calls it once at entry, so no writer can apply
+ * one of these checks without the other.
+ */
+function guardedWriteIndex(
+	context: CellContext,
+	row: number,
+	col: number,
+): number {
+	const terminalRow = row + context.viewportOffset;
+	if (
+		terminalRow < 0 ||
+		terminalRow >= context.rows ||
+		col < 0 ||
+		col >= context.cols
+	) {
+		return -1;
+	}
+	if (!inClip(context, row, col)) {
+		return -1;
+	}
+	return terminalRow * context.cols + col;
+}
+
+function setCell(
+	context: CellContext,
+	row: number,
+	col: number,
+	char: string,
+	style?: CellStyle,
+): void {
+	const index = guardedWriteIndex(context, row, col);
+	if (index < 0) {
+		return;
+	}
+
+	const grid = context.grid;
+
+	// A style that names no background of its own takes the one already in
+	// the cell: text painted over a filled box sits ON the fill rather than
+	// punching a default-colored hole through it.
+	let bgColor: number | undefined;
+	if (style && style.bg == null && grid.char[index] !== 0) {
+		bgColor = grid.bg[index];
+	}
+
+	grid.setCell(index, char, {style, background: bgColor});
+}
+
+function setBorderCell(
+	context: CellContext,
+	x: number,
+	y: number,
+	borderEncoding: number,
+	style?: CellStyle,
+): void {
+	// A box whose extent touches an exposed band still stamps its whole
+	// outline; the gate drops the strokes on carried-over rows -- a top
+	// border row wearing a legend, say -- which keep what the seeded grid
+	// holds.
+	const index = guardedWriteIndex(context, y, x);
+	if (index < 0) {
+		return;
+	}
+
+	const grid = context.grid;
+
+	// Two boxes sharing a cell union their edges, so a shared wall lands on
+	// a tee or a cross rather than the later box's corner.
+	const existing = grid.border[index];
+	grid.setBorderCell(
+		index,
+		grid.char[index] !== 0 && existing > 0 ?
+				meetEdges(existing, borderEncoding) :
+			borderEncoding,
+		style,
+	);
+}
+
+/* ---------------------------------------------------------------- the wire */
 
 function rgbTo256(color: number): number {
 	const r = (color >> 16) & 0xff;
@@ -1289,391 +1719,7 @@ function generateANSI(
 	return output;
 }
 
-export class CellContext {
-	grid: CellGrid;
-	rows: number;
-	cols: number;
-	viewportOffset: number;
-	// Where the focused text element wants the real terminal cursor, in the
-	// same coordinates setText uses. When set, the frame parks the cursor there
-	// and shows it -- IME composition anchors at the real cursor, so a fake
-	// inverse-cell caret is not enough for text entry.
-	caret: {col: number; row: number} | null;
-	// The active overflow:hidden clip, in the same document-space (row, col)
-	// coordinates as every draw call below -- set/restored by the renderer
-	// around a clipping element's children. An edge is +-Infinity when that
-	// axis isn't clipped (e.g. overflow-x:hidden;overflow-y:visible only
-	// bounds left/right). null means no clip is active at all.
-	clipRect: {
-		left: number;
-		top: number;
-		right: number;
-		bottom: number;
-	} | null;
-
-	constructor(
-		grid: CellGrid,
-		rows: number,
-		cols: number,
-		viewportOffset: number,
-	) {
-		this.caret = null;
-		this.clipRect = null;
-		this.grid = grid;
-		this.rows = rows;
-		this.cols = cols;
-		this.viewportOffset = viewportOffset;
-	}
-
-	setCaret(x: number, y: number): void {
-		this.caret = {col: x, row: y};
-	}
-
-	drawRect(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		background: number | null | undefined | "default" | "inverse",
-	): void {
-		if (background == null) {
-			return;
-		}
-
-		// "default" clears the cells to the terminal's own background --
-		// CSS's Canvas system color -- which still OVERWRITES whatever was
-		// painted underneath: an opaque box in the theme's color, whatever
-		// that theme is. "inverse" fills with SGR inverse instead: the
-		// Highlight/HighlightText system-color pair, swapping each cell's
-		// colors with no assumption about what they are.
-		const style: CellStyle =
-			background === "inverse" ?
-					{inverse: true} :
-					{bg: background === "default" ? undefined : background};
-
-		for (let row = y; row < y + height; row++) {
-			for (let col = x; col < x + width; col++) {
-				setCell(this, row, col, " ", style);
-			}
-		}
-	}
-
-	/** Measure `text` the way `drawText` will lay it down. */
-	measureText(text: string): TextMetrics {
-		if (asciiPrintable.test(text)) {
-			return {width: text.length};
-		}
-		let width = 0;
-		for (const segment of graphemeSegmenter.segment(text)) {
-			width += stringWidth(segment.segment);
-		}
-		return {width};
-	}
-
-	drawText(text: string, x: number, y: number, style?: CellStyle): void {
-		let currentX = x;
-
-		// Printable ASCII needs no grapheme segmentation: every char is its
-		// own one-cell grapheme.
-		if (asciiPrintable.test(text)) {
-			for (let i = 0; i < text.length; i++) {
-				if (currentX + 1 > this.cols) {
-					break;
-				}
-				setCell(this, y, currentX, text[i], style);
-				currentX++;
-			}
-			return;
-		}
-
-		for (const segment of graphemeSegmenter.segment(text)) {
-			const char = segment.segment;
-
-			// Never write a control char to a cell: a trailing one would survive to
-			// the output as a raw escape byte (injection from untrusted text).
-			const code = char.codePointAt(0)!;
-			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
-				continue;
-			}
-
-			const width = stringWidth(char);
-
-			if (currentX + width > this.cols) {
-				break;
-			}
-
-			setCell(this, y, currentX, char, style);
-			currentX += width;
-		}
-
-		return;
-	}
-
-	/**
-	 * Merge an underline/overline across a row, preserving existing glyphs (an
-	 * empty cell becomes a spaced edge). Used to render `outline` as a full-width
-	 * edge; setText can't, since it overwrites. The style's fg is the row's
-	 * DEFAULT color: a cell that already carries an explicit foreground
-	 * (::selection, ::placeholder, authored color) keeps it.
-	 */
-	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
-		const grid = this.grid;
-		const edgeBit =
-			(style.underline ? Attr.Underline : 0) |
-			(style.overline ? Attr.Overline : 0);
-		if (edgeBit === 0) {
-			return;
-		}
-		for (let col = x; col < x + width; col++) {
-			const index = guardedWriteIndex(this, y, col);
-			if (index < 0) {
-				continue;
-			}
-			if (grid.char[index] !== 0) {
-				let attrs = grid.attrs[index] | edgeBit;
-				if (style.dim !== undefined) {
-					attrs = style.dim ? attrs | Attr.Dim : attrs & ~Attr.Dim;
-				}
-				grid.attrs[index] = attrs;
-			} else {
-				grid.char[index] = 0x20;
-				grid.fg[index] = (style.fg ?? 0) & Color.Mask;
-				grid.bg[index] = 0;
-				grid.attrs[index] =
-					edgeBit | (style.dim ? Attr.Dim : 0) | (1 << Attr.WidthShift);
-			}
-			// The edge replaces a box-drawing glyph with the space that cell
-			// measures as: an outline is a line of its own, not a junction.
-			grid.border[index] = 0;
-		}
-	}
-
-	drawLine(
-		x1: number,
-		y1: number,
-		x2: number,
-		y2: number,
-		line: LineStyle,
-	): void {
-		// Axis-aligned, half-open: the stroke runs from the start cell toward
-		// the end coordinate and stops short of it, so a one-cell vertical is
-		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
-		// what disambiguates the axis of a one-cell line.
-		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
-			return;
-		}
-		const bits = LINE_BITS[line.style];
-		if (bits === 0) {
-			return;
-		}
-		const style: CellStyle | undefined =
-			line.color != null ? {fg: line.color} : undefined;
-		const rounded = BorderEdgeStyle.Rounded;
-
-		// Each cell records which way the stroke LEAVES it, and an end cell
-		// keeps only its inward half -- the stroke enters and stops at
-		// center. Two lines meeting in a cell then union into the corner,
-		// the tee or the cross without either knowing the other exists. A
-		// "square" cap projects through its cell instead, for a free end; a
-		// "round" cap rides the half-stroke, which is how a corner cell
-		// learns it curves.
-		if (y1 === y2) {
-			const a = Math.min(x1, x2);
-			const b = Math.max(x1, x2) - 1;
-			const capA = x1 <= x2 ? line.startCap : line.endCap;
-			const capB = x1 <= x2 ? line.endCap : line.startCap;
-			for (let col = a; col <= b; col++) {
-				let toRight = col < b || capB === "square" ? bits : 0;
-				let toLeft = col > a || capA === "square" ? bits : 0;
-				if (col === a && capA === "round") {
-					toRight |= rounded;
-				}
-				if (col === b && capB === "round") {
-					toLeft |= rounded;
-				}
-				setBorderCell(
-					this,
-					col,
-					y1,
-					(toRight << BorderShift.Right) | (toLeft << BorderShift.Left),
-					style,
-				);
-			}
-		} else {
-			const a = Math.min(y1, y2);
-			const b = Math.max(y1, y2) - 1;
-			const capA = y1 <= y2 ? line.startCap : line.endCap;
-			const capB = y1 <= y2 ? line.endCap : line.startCap;
-			for (let row = a; row <= b; row++) {
-				let down = row < b || capB === "square" ? bits : 0;
-				let up = row > a || capA === "square" ? bits : 0;
-				if (row === a && capA === "round") {
-					down |= rounded;
-				}
-				if (row === b && capB === "round") {
-					up |= rounded;
-				}
-				setBorderCell(
-					this,
-					x1,
-					row,
-					(down << BorderShift.Bottom) | (up << BorderShift.Top),
-					style,
-				);
-			}
-		}
-	}
-
-	/**
-	 * Four lines and their caps: the box composition drawLine callers would
-	 * otherwise write. An end that meets an adjacent side stops at center
-	 * (and curves when the corner rounds); a free end projects through its
-	 * cell.
-	 */
-	drawBox(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		sides: BoxSides,
-	): void {
-		if (width < 1 || height < 1) {
-			return;
-		}
-		const r = x + width - 1;
-		const b = y + height - 1;
-		const cap = (
-			adjacent: LineStyle | undefined,
-			corner: "round" | undefined,
-		): "round" | "square" | undefined => (adjacent ? corner : "square");
-
-		// Verticals first: a corner cell's glyph spans two sides but holds one
-		// color, and the horizontal side's wins -- the closest a cell gets to
-		// the browser's diagonal miter.
-		if (sides.left) {
-			this.drawLine(x, y, x, b + 1, {
-				...sides.left,
-				startCap: cap(sides.top, sides.topLeft),
-				endCap: cap(sides.bottom, sides.bottomLeft),
-			});
-		}
-		if (sides.right) {
-			this.drawLine(r, y, r, b + 1, {
-				...sides.right,
-				startCap: cap(sides.top, sides.topRight),
-				endCap: cap(sides.bottom, sides.bottomRight),
-			});
-		}
-		if (sides.top) {
-			this.drawLine(x, y, r + 1, y, {
-				...sides.top,
-				startCap: cap(sides.left, sides.topLeft),
-				endCap: cap(sides.right, sides.topRight),
-			});
-		}
-		// A 1-row box's bottom shares the top's row; the top already drew it.
-		if (sides.bottom && !(b === y && sides.top)) {
-			this.drawLine(x, b, r + 1, b, {
-				...sides.bottom,
-				startCap: cap(sides.left, sides.bottomLeft),
-				endCap: cap(sides.right, sides.bottomRight),
-			});
-		}
-	}
-}
-
-function inClip(
-	context: CellContext,
-	row: number,
-	col: number,
-): boolean {
-	if (!context.clipRect) {
-		return true;
-	}
-	const {left, top, right, bottom} = context.clipRect;
-	return col >= left && col < right && row >= top && row < bottom;
-}
-
-/**
- * The grid index a write at document (row, col) may land on, or -1 when it
- * must be dropped: off the terminal, or outside the active clip. The one
- * gate for cell writers; each calls it once at entry, so no writer can apply
- * one of these checks without the other.
- */
-function guardedWriteIndex(
-	context: CellContext,
-	row: number,
-	col: number,
-): number {
-	const terminalRow = row + context.viewportOffset;
-	if (
-		terminalRow < 0 ||
-		terminalRow >= context.rows ||
-		col < 0 ||
-		col >= context.cols
-	) {
-		return -1;
-	}
-	if (!inClip(context, row, col)) {
-		return -1;
-	}
-	return terminalRow * context.cols + col;
-}
-
-function setCell(
-	context: CellContext,
-	row: number,
-	col: number,
-	char: string,
-	style?: CellStyle,
-): void {
-	const index = guardedWriteIndex(context, row, col);
-	if (index < 0) {
-		return;
-	}
-
-	const grid = context.grid;
-
-	// A style that names no background of its own takes the one already in
-	// the cell: text painted over a filled box sits ON the fill rather than
-	// punching a default-colored hole through it.
-	let bgColor: number | undefined;
-	if (style && style.bg == null && grid.char[index] !== 0) {
-		bgColor = grid.bg[index];
-	}
-
-	grid.setCell(index, char, {style, background: bgColor});
-}
-
-function setBorderCell(
-	context: CellContext,
-	x: number,
-	y: number,
-	borderEncoding: number,
-	style?: CellStyle,
-): void {
-	// A box whose extent touches an exposed band still stamps its whole
-	// outline; the gate drops the strokes on carried-over rows -- a top
-	// border row wearing a legend, say -- which keep what the seeded grid
-	// holds.
-	const index = guardedWriteIndex(context, y, x);
-	if (index < 0) {
-		return;
-	}
-
-	const grid = context.grid;
-
-	// Two boxes sharing a cell union their edges, so a shared wall lands on
-	// a tee or a cross rather than the later box's corner.
-	const existing = grid.border[index];
-	grid.setBorderCell(
-		index,
-		grid.char[index] !== 0 && existing > 0 ?
-				meetEdges(existing, borderEncoding) :
-			borderEncoding,
-		style,
-	);
-}
+/* -------------------------------------------------------------- the screen */
 
 const kRows = Symbol("rows");
 const kCols = Symbol("cols");
@@ -2418,36 +2464,4 @@ export class Screen {
 		this[kEndFrame] = null;
 		return end();
 	}
-}
-
-function lineLength(
-	screen: Screen,
-	row: number,
-): number {
-	const grid = screen[kPrev]!;
-	const rowStart = row * grid.cols;
-	for (let col = grid.cols - 1; col >= 0; col--) {
-		const index = rowStart + col;
-		if (grid.char[index] !== 0) {
-			return col + grid.widthAt(index);
-		}
-	}
-	return 0;
-}
-
-/**
- * A cleared grid of the given size, reusing a retired one when it fits.
- */
-function takeGrid(
-	screen: Screen,
-	rows: number,
-	cols: number,
-): CellGrid {
-	const spare = screen[kSpare];
-	if (spare !== null && spare.rows === rows && spare.cols === cols) {
-		screen[kSpare] = null;
-		spare.clear();
-		return spare;
-	}
-	return new CellGrid(rows, cols);
 }
