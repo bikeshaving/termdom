@@ -9789,7 +9789,6 @@ const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
 const kStyleSheetList = Symbol("styleSheetList");
-const kPendingStyleDamage = Symbol("pendingStyleDamage");
 const kFocusVisibleActive = Symbol("focusVisibleActive");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
@@ -9993,7 +9992,6 @@ export class StyleManager {
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
 		this[kUnlayeredRank] = 0;
-		this[kPendingStyleDamage] = new Set();
 		this[kTransitionsExist] = false;
 		this[kTransitionSnapshots] = new WeakMap();
 		this[kTransitionFallback] = new WeakMap();
@@ -10497,9 +10495,7 @@ export class StyleManager {
 	handleStateChange(element: Element): void {
 		invalidateSubtree(this, element);
 		// No mutation record describes the move, so the frame that decides
-		// whether anything is worth painting is told here: the cascade moved,
-		// and the rows the element claims are the damage to repaint.
-		this[kPendingStyleDamage]?.add(element);
+		// whether anything is worth painting is told here.
 		this[kLayoutEngine]?.invalidateFrame();
 	}
 
@@ -10532,7 +10528,6 @@ export class StyleManager {
 		const nextChain = chainOf(next);
 		const invalidate = (node: Element): void => {
 			invalidateElementCaches(this, node);
-			this[kPendingStyleDamage]?.add(node);
 			// A host's hover reaches into its shadow tree through
 			// :host(:hover) rules and inheritance, the same reach a focus
 			// move has.
@@ -11048,20 +11043,6 @@ export class StyleManager {
 		}
 	}
 
-	// Elements style-invalidated since the last drain; null once the set
-	// overflowed. The engine drains this per frame to bound a banded repaint.
-	declare [kPendingStyleDamage]: Set<Element> | null;
-
-	/**
-	 * The style-invalidated elements since the last call, or null when the
-	 * set overflowed (treat as unbounded). Resets the accumulator.
-	 */
-	drainStyleDamage(): Set<Element> | null {
-		const damage = this[kPendingStyleDamage];
-		this[kPendingStyleDamage] = new Set();
-		return damage;
-	}
-
 	invalidateElement(element: Element): void {
 		// A computed style an author still holds is the one this cache handed
 		// out, so it is told the cascade moved on rather than merely dropped.
@@ -11072,10 +11053,6 @@ export class StyleManager {
 		}
 		this[kComputedStyleCache].delete(element);
 		this[kPseudoElementStyleCache].delete(element);
-		// Kept until the rows it claims cover the screen, which the engine
-		// decides as it turns elements into bands: a count cannot tell a
-		// hundred one-row changes apart from one that reaches everything.
-		this[kPendingStyleDamage]?.add(element);
 		// A style change can flip display: contents, which moves the node's
 		// flat-tree BOX parent, so every box enumeration keyed on the epoch is
 		// stale from here.
@@ -12088,7 +12065,6 @@ function tickTransitions(manager: StyleManager): void {
 			manager[kActiveTransitions].delete(element);
 		}
 		invalidateElementCaches(manager, element);
-		manager[kPendingStyleDamage]?.add(element);
 	}
 	manager[kLayoutEngine]?.invalidateFrame();
 	flushTransitionEvents(manager);

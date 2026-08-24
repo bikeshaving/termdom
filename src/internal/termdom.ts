@@ -9,14 +9,12 @@ import * as DOM from "./dom.js";
 import {installUAEngine} from "./dom.js";
 import {installInspectors} from "./inspector.js";
 import {Clipboard, ClipboardItem, createClipboard} from "./clipboard.js";
-import {Compositor} from "./compositor.js";
 import {
 	Permissions,
 	PermissionStatus,
 	createPermissions,
 } from "./permissions.js";
 import {LayoutEngine} from "./layout.js";
-import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {
 	TerminalSession,
@@ -544,7 +542,6 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 	return window as unknown as EngineWindow;
 }
 
-const kCompositor = Symbol("compositor");
 const kScrolledElements = Symbol("scrolledElements");
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
@@ -559,7 +556,11 @@ const kSession = Symbol("session");
 const kObserverManager = Symbol("observerManager");
 const kInstallObservers = Symbol("installObservers");
 const kPainter = Symbol("painter");
-const kViewport = Symbol("viewport");
+const kScrollTop = Symbol("scrollTop");
+const kScreenTop = Symbol("screenTop");
+const kAnchorScrollTop = Symbol("anchorScrollTop");
+const kFrameScroll = Symbol("frameScroll");
+const kFrameDirty = Symbol("frameDirty");
 const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
 const kNextRafId = Symbol("nextRafId");
@@ -571,7 +572,6 @@ const kAttachReady = Symbol("attachReady");
 const kRenderCount = Symbol("renderCount");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
-const kInputGeneration = Symbol("inputGeneration");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
@@ -596,8 +596,6 @@ const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
-const kLastFrameEpoch = Symbol("lastFrameEpoch");
-const kLastFrameInputGeneration = Symbol("lastFrameInputGeneration");
 const kStaticSibling = Symbol("staticSibling");
 
 /**
@@ -630,7 +628,6 @@ export class TermDOM {
 	declare [kPainter]: Painter;
 	// Where the viewport looks in the document: scrollTop (window.scrollY),
 	// screenTop (the command-start row), and the fullscreen anchor. See Viewport.
-	declare [kViewport]: Viewport;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
@@ -692,12 +689,6 @@ export class TermDOM {
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
 	declare [kAttached]: boolean;
-	// Frame-over-frame state the transform gate compares against.
-	declare [kLastFrameEpoch]: number;
-	// Reactive pseudo-state (:focus, :hover, :active) and document selection
-	// change without mutations; repaint-and-diff is what detects them, so
-	// every input path bumps this and the clean-frame skip compares it.
-	declare [kInputGeneration]: number;
 	/**
 	 * How many activation-triggering events are being dispatched right now,
 	 * and whether one ever has been. What only a user may ask for is asked of
@@ -705,10 +696,23 @@ export class TermDOM {
 	 */
 	declare [kActivationDepth]: number;
 	declare [kEverActivated]: boolean;
-	declare [kLastFrameInputGeneration]: number;
-	// The frame before this one, and whether this one can be a bounded edit
-	// of it.
-	declare [kCompositor]: Compositor;
+
+	/**
+	 * The frame journal: how far the camera moved since the last painted
+	 * frame, and whether anything else did. Two fields are the whole frame
+	 * decision -- a frame with neither paints nothing a diff would keep, so
+	 * it is skipped; a frame with either repaints the region, hands the
+	 * screen the delta to shift by, and resets both.
+	 */
+	declare [kFrameScroll]: number;
+	declare [kFrameDirty]: boolean;
+
+	/** How far into the document the painted region looks (window.scrollY). */
+	declare [kScrollTop]: number;
+	/** The terminal row the painted region starts at (the command start). */
+	declare [kScreenTop]: number;
+	/** The fullscreen anchor: the alternate screen's row-zero scroll origin. */
+	declare [kAnchorScrollTop]: number;
 
 	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
 	// box's content out from under its offset; each layout flush pulls
@@ -818,7 +822,11 @@ export class TermDOM {
 	declare [kInteractive]: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
-		this[kViewport] = new Viewport();
+		this[kScrollTop] = 0;
+		this[kScreenTop] = 0;
+		this[kAnchorScrollTop] = 0;
+		this[kFrameScroll] = 0;
+		this[kFrameDirty] = true;
 		this[kIsRendering] = false;
 		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
 		this[kNextRafId] = 1;
@@ -831,11 +839,8 @@ export class TermDOM {
 		this[kResizeTimer] = null;
 		this[kResizeInProgress] = false;
 		this[kAttached] = false;
-		this[kLastFrameEpoch] = -1;
-		this[kInputGeneration] = 0;
 		this[kActivationDepth] = 0;
 		this[kEverActivated] = false;
-		this[kLastFrameInputGeneration] = -1;
 		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
@@ -947,34 +952,9 @@ export class TermDOM {
 			document: this.document,
 			layout: this[kLayoutEngine],
 			styleManager: this[kStyleManager],
-			viewport: this[kViewport],
+			scrollTop: () => this[kScrollTop],
 			topLayer: this[kTopLayer],
 			toolkit: this[kUAToolkit],
-		});
-		this[kCompositor] = new Compositor({
-			structuralGeneration: () => this[kLayoutEngine].structuralGeneration,
-			fixedRowBands: (height) => this[kLayoutEngine].fixedRowBands(height),
-			getRect: (element) =>
-				this[kLayoutEngine].getRect(element) as DOMRect | null,
-			isInFixedSpace: (element) =>
-				this[kLayoutEngine].isInFixedSpace(element),
-			drainStyleDamage: () => this[kStyleManager].drainStyleDamage(),
-			invalidationScopeFor: (element) =>
-				this[kStyleManager].invalidationScopeFor(element),
-			isDocumentScope: (element) =>
-				element === this.document.body ||
-				element === this.document.documentElement,
-			activeElement: () => this.document.activeElement,
-			selectionLive: () => {
-				const selection = this.window.getSelection?.();
-				return Boolean(
-					selection &&
-					selection.rangeCount > 0 &&
-					!selection.isCollapsed,
-				);
-			},
-			isWidgetControl: (element) =>
-				this[kUAToolkit].isWidgetControl(element),
 		});
 
 		// The session first: the screen measures widths over the session's
@@ -1308,7 +1288,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			rect :
 				termDOM[kLayoutEngine].createDOMRect(
 					rect.x,
-					rect.y - termDOM[kViewport].scrollTop,
+					rect.y - termDOM[kScrollTop],
 					rect.width,
 					rect.height,
 				);
@@ -1492,7 +1472,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		scrollOffset(target) {
 			const element = asElement(target);
 			if (isRoot(element)) {
-				return {left: 0, top: termDOM[kViewport].scrollTop};
+				return {left: 0, top: termDOM[kScrollTop]};
 			}
 			return elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		},
@@ -1510,7 +1490,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const element = asElement(target);
 			if (isRoot(element)) {
 				if (axis === "top") {
-					termDOM[kViewport].scrollTo(Number(value));
+					scrollDocumentTo(termDOM, Number(value));
 					void render(termDOM);
 				}
 				return;
@@ -1551,12 +1531,10 @@ function createMount(termDOM: TermDOM): EngineMount {
 			if (next !== 0) {
 				termDOM[kScrolledElements].add(element);
 			}
-			// A scroll offset is frame state no MutationObserver sees -- the
-			// same footing as input: the generation bump keeps the "nothing
-			// observable moved" gate from skipping the paint, and the damage
-			// keeps that paint banded to the box's rows.
-			termDOM[kInputGeneration]++;
-			termDOM[kCompositor].damage(element);
+			// A scroll offset is frame state no MutationObserver sees, so
+			// the frame journal is told here: without it the "nothing moved"
+			// gate would skip the paint.
+			termDOM[kFrameDirty] = true;
 			void render(termDOM);
 		},
 		elementFromPoint(_target, x, y) {
@@ -1567,7 +1545,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return findElementAtDocumentPoint(
 				termDOM,
 				x,
-				y + termDOM[kViewport].scrollTop,
+				y + termDOM[kScrollTop],
 			);
 		},
 		// The stack CSSOM View asks for, approximated as the hit element and
@@ -1579,7 +1557,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			let current = findElementAtDocumentPoint(
 				termDOM,
 				x,
-				y + termDOM[kViewport].scrollTop,
+				y + termDOM[kScrollTop],
 			);
 			while (current !== null) {
 				stack.push(current);
@@ -1620,6 +1598,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// caches, and the repaint must happen even when no listener
 			// mutates anything.
 			termDOM[kStyleManager].handleFocusChange(previous, element);
+			termDOM[kFrameDirty] = true;
 			void render(termDOM);
 			if (previous && previous !== termDOM.document.body) {
 				fireAsUserAgent(
@@ -1646,10 +1625,15 @@ function createMount(termDOM: TermDOM): EngineMount {
 				new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
 			);
 		},
+		selectionMoved() {
+			termDOM[kFrameDirty] = true;
+			void render(termDOM);
+		},
 		blurred(target) {
 			const element = asElement(target);
 			const {FocusEvent} = termDOM.window;
 			termDOM[kStyleManager].handleFocusChange(element);
+			termDOM[kFrameDirty] = true;
 			void render(termDOM);
 			fireAsUserAgent(
 				element,
@@ -1731,7 +1715,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// Move it the minimal amount that brings the element into it --
 			// the standard block: "nearest" behavior.
 			const regionHeight = cameraRegionHeight(termDOM);
-			const top = termDOM[kViewport].scrollTop;
+			const top = termDOM[kScrollTop];
 			if (rect.top < top) {
 				scrollCamera(termDOM, rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
@@ -1844,14 +1828,14 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return {width: termDOM[kWidth], height: termDOM[kHeight]};
 		},
 		screenTop() {
-			return termDOM[kViewport].screenTop;
+			return termDOM[kScreenTop];
 		},
 		// A terminal document never scrolls sideways, so the camera's X is 0.
 		documentScrollOffset() {
-			return {left: 0, top: termDOM[kViewport].scrollTop};
+			return {left: 0, top: termDOM[kScrollTop]};
 		},
 		scrollDocumentTo(top) {
-			termDOM[kViewport].scrollTo(top);
+			scrollDocumentTo(termDOM, top);
 			void render(termDOM);
 		},
 		scrollDocumentBy(top) {
@@ -1970,18 +1954,6 @@ function handlePendingMutations(
 	// Any observed mutation can move a node in the flat tree; drop the
 	// memoized composition links before anything reads through them.
 	termdom[kLayoutEngine].invalidateFrame();
-	// Record damage while the old layout still answers: a banded repaint
-	// must cover the target's pre-mutation rows too.
-	for (const mutation of mutations) {
-		termdom[kCompositor].damage(mutation.target);
-		if (mutation.type === "childList") {
-			for (const node of mutation.addedNodes) {
-				termdom[kCompositor].damage(node);
-			}
-			// Removed nodes have no rows of their own; their damage is the
-			// parent's, already added.
-		}
-	}
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) re-assign className/style with identical values on every
@@ -2086,13 +2058,22 @@ function buildSession(
 ): TerminalSession {
 	return new TerminalSession({
 		transport: termdom[kTransport],
-		viewport: termdom[kViewport],
+		setCommandStart: (screenTop) => {
+			termdom[kScreenTop] = screenTop;
+			// Content shifts up to the terminal top from the command start.
+			termdom[kAnchorScrollTop] = -screenTop;
+		},
 		layout: termdom[kLayoutEngine],
 		interactive: termdom[kInteractive],
 		anchorDetection: termdom[kTransport].sharesScreen,
 		handlers: {
+			// Input dirties the journal wholesale. Reactive pseudo-state
+			// (:focus, :hover, :active) and the document selection move
+			// without a mutation record, and no cheaper answer than the paint
+			// exists. A keystroke that changes nothing costs one culled paint
+			// and an empty diff, which is what it is worth.
 			onKeys: (keyInput) => {
-				termdom[kInputGeneration]++;
+				termdom[kFrameDirty] = true;
 				// A keystroke means the user is back at the live screen
 				// (terminals snap to the bottom on input): reclaim the mouse
 				// if scroll chaining yielded it.
@@ -2102,11 +2083,11 @@ function buildSession(
 				dispatchGlobalKeyboardEvent(termdom, keyInput);
 			},
 			onMouse: (button, x, y, release) => {
-				termdom[kInputGeneration]++;
+				termdom[kFrameDirty] = true;
 				handleMouseReport(termdom, button, x, y, release);
 			},
 			onPaste: (text) => {
-				termdom[kInputGeneration]++;
+				termdom[kFrameDirty] = true;
 				dispatchPaste(termdom, text);
 			},
 			onResize: () => {
@@ -2482,6 +2463,9 @@ function queueCaretReveal(
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
 	termdom[kPendingCaretReveal] = element;
+	// The reveal is a camera decision and a caret move, neither of which a
+	// mutation record describes.
+	termdom[kFrameDirty] = true;
 }
 
 /**
@@ -2562,11 +2546,13 @@ function scrollCaretIntoView(
 		revealBottom = Math.round(rect.bottom);
 	}
 	const regionHeight = cameraRegionHeight(termdom);
-	const delta = termdom[kViewport].scrollDeltaToReveal(
-		revealTop,
-		revealBottom,
-		regionHeight,
-	);
+	const top = termdom[kScrollTop];
+	const delta =
+		revealTop < top ?
+			revealTop - top :
+			revealBottom > top + regionHeight ?
+				revealBottom - (top + regionHeight) :
+				0;
 	if (delta) {
 		scrollCamera(termdom, delta);
 	}
@@ -2721,12 +2707,11 @@ function clampScrolledOffsets(
 		}
 		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
 		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
-		termdom[kCompositor].damage(element);
 		changed = true;
 	}
 	if (changed) {
 		// See scrollAxisTo: offsets are frame state no observer sees.
-		termdom[kInputGeneration]++;
+		termdom[kFrameDirty] = true;
 		void render(termdom);
 	}
 }
@@ -2799,8 +2784,8 @@ function handleResize(
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		termdom[kViewport].screenTop = startRow;
-		termdom[kViewport].anchorScrollTop = -termdom[kViewport].screenTop;
+		termdom[kScreenTop] = startRow;
+		termdom[kAnchorScrollTop] = -startRow;
 		termdom[kScreen].replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
@@ -2814,7 +2799,7 @@ function handleResize(
 	};
 
 	const computedReanchor = () => {
-		const previousStart = termdom[kViewport].screenTop;
+		const previousStart = termdom[kScreenTop];
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};
@@ -2872,7 +2857,7 @@ function afterRender(
 	// high. IntersectionObserver measures targets against it.
 	const viewport = termdom[kLayoutEngine].createDOMRect(
 		0,
-		termdom[kViewport].scrollTop,
+		termdom[kScrollTop],
 		termdom[kWidth],
 		termdom[kHeight],
 	);
@@ -3096,7 +3081,7 @@ function findElementAtDocumentPoint(
 		x,
 		y,
 		termdom[kTopLayer],
-		termdom[kViewport].scrollTop,
+		termdom[kScrollTop],
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -3238,13 +3223,17 @@ function handleMouseReport(
 		buttons,
 	} = decodeMouseReport(code, isRelease);
 
-	const point = termdom[kViewport].screenToDocumentPoint(
-		col - 1,
-		row - 1,
-		termdom[kFullscreenManager].isFullscreen,
-	);
-	const x = point?.x ?? col - 1;
-	const y = point?.y ?? 0;
+	// The document point under the reported cell. A row above the painted
+	// region is not part of the document -- a shell prompt above the command
+	// start -- and reports 0. In fullscreen the alternate screen owns row
+	// zero, so the anchor supplies the origin directly.
+	const x = col - 1;
+	const documentRow =
+		termdom[kFullscreenManager].isFullscreen ?
+			row - 1 + termdom[kAnchorScrollTop] :
+			row - 1 - termdom[kScreenTop] + termdom[kScrollTop];
+	const inDocument = documentRow >= 0;
+	const y = inDocument ? documentRow : 0;
 
 	// Motion arrives at cell granularity -- with 1003 on, a report per cell
 	// crossed -- so it is COALESCED: the frame hit-tests the last position
@@ -3271,7 +3260,7 @@ function handleMouseReport(
 	// than through the public elementFromPoint, which expects viewport-
 	// relative input and would convert it right back.
 	const target =
-		(point && findElementAtDocumentPoint(termdom, x, y)) ||
+		(inDocument && findElementAtDocumentPoint(termdom, x, y)) ||
 		termdom.document.body;
 
 	if (wheelDeltaY !== null) {
@@ -3305,7 +3294,7 @@ function handleMouseReport(
 			}
 			if (
 				wheelDeltaY < 0 &&
-				termdom[kViewport].scrollTop === 0 &&
+				termdom[kScrollTop] === 0 &&
 				!termdom[kFullscreenManager].isFullscreen
 			) {
 				// Scroll chaining, the browser default: the camera is at the
@@ -3365,7 +3354,7 @@ function handleMouseReport(
 		// A field drag extends the field's own selection to the offset
 		// under the pointer -- clamped into the field, whichever element
 		// the pointer is over now (the field holds the capture).
-		if (termdom[kFieldDragAnchor] && point) {
+		if (termdom[kFieldDragAnchor] && inDocument) {
 			const {element: fieldElement, offset: anchor} = termdom[kFieldDragAnchor];
 			const focus = fieldOffsetAtPoint(termdom, fieldElement, x, y);
 			if (focus !== null) {
@@ -3383,7 +3372,9 @@ function handleMouseReport(
 		// the caret position under the pointer. setBaseAndExtent handles a
 		// backward drag itself; over a textless stretch -- or user-select:
 		// none content -- the focus simply stays where it last was.
-		if (termdom[kSelectionDragAnchor] && termdom[kMouseDownTarget] && point) {
+		if (
+			termdom[kSelectionDragAnchor] && termdom[kMouseDownTarget] && inDocument
+		) {
 			const focus = documentPointToTextPosition(termdom, x, y);
 			if (focus && selectableTextPosition(termdom, focus)) {
 				const anchor = termdom[kSelectionDragAnchor];
@@ -3444,7 +3435,7 @@ function handleMouseReport(
 			// document selection: the same split a browser makes.
 			const field =
 				base === 0 &&
-				point &&
+				inDocument &&
 				termdom[kUAToolkit].isTextField(target as Element) ?
 						(target as HTMLInputElement | HTMLTextAreaElement) :
 					null;
@@ -3472,7 +3463,9 @@ function handleMouseReport(
 			// the drag events for themselves opt out.
 			const selection = termdom.window.getSelection();
 			if (base === 0 && selection && !termdom[kFieldDragAnchor]) {
-				let anchor = point ? documentPointToTextPosition(termdom, x, y) : null;
+				let anchor = inDocument ?
+						documentPointToTextPosition(termdom, x, y) :
+					null;
 				// user-select: none refuses the anchor: a press on it clears
 				// the selection and starts no drag.
 				if (anchor && !selectableTextPosition(termdom, anchor)) {
@@ -4012,7 +4005,7 @@ function flushDocument(
 		return;
 	}
 
-	const top = termdom[kViewport].screenTop;
+	const top = termdom[kScreenTop];
 	const output = renderStatic(termdom, "\r\n");
 	if (!output) {
 		return;
@@ -4075,7 +4068,7 @@ async function renderInteractive(
 	// nothing composites over the frozen block.
 	if (termdom[kSealed]) {
 		termdom[kSealed] = false;
-		termdom[kViewport].scrollTo(0);
+		scrollDocumentTo(termdom, 0);
 		termdom[kScreen].repaintAll();
 		// detectCommandStart waits for a reply on stdin, so the listener must
 		// be attached first (idempotent -- normally already done by now).
@@ -4114,7 +4107,6 @@ async function renderInteractive(
 	// frame just flushed -- one camera decision per frame, however many
 	// keystrokes coalesced into it. Skipped if focus has already moved
 	// on: revealing a field the user left would yank the camera back.
-	const revealed = termdom[kPendingCaretReveal] !== null;
 	if (termdom[kPendingCaretReveal]) {
 		const reveal = termdom[kPendingCaretReveal];
 		termdom[kPendingCaretReveal] = null;
@@ -4123,18 +4115,13 @@ async function renderInteractive(
 		}
 	}
 
-	// Nothing observable moved: no mutations, no invalidation, no input,
-	// same focus, no live selection, camera unmoved, no reveal, no pending
-	// reset. Painting would emit nothing; don't pay to discover that.
-	const selection = termdom.window.getSelection?.();
+	// The journal is empty and the camera stands where it painted: nothing
+	// this frame could paint differs from what the screen already shows.
+	// Don't pay to discover that.
 	if (
-		pending.length === 0 &&
-		!revealed &&
-		termdom[kViewport].atLastPlannedScrollTop &&
-		termdom[kLayoutEngine].invalidationEpoch === termdom[kLastFrameEpoch] &&
-		termdom[kInputGeneration] === termdom[kLastFrameInputGeneration] &&
-		termdom[kCompositor].focusUnmoved &&
-		(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
+		!termdom[kFrameDirty] &&
+		!termdom[kLayoutEngine].frameDirty &&
+		termdom[kFrameScroll] === 0 &&
 		!termdom[kScreen].needsRepaint
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
@@ -4167,40 +4154,27 @@ async function renderInteractive(
 	const top = isFullscreen ? 0 : reserveRows(termdom, regionHeight);
 
 	if (!isFullscreen) {
-		// The camera cannot run off the end of the document.
+		// The camera cannot run off the end of the document. The clamp goes
+		// through the setter, so the journal's delta is what the screen is
+		// about to be shifted by -- there is no memory of where the last
+		// frame painted for it to disagree with.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		termdom[kViewport].scrollTo(
-			Math.min(termdom[kViewport].scrollTop, maxScroll),
-		);
+		scrollDocumentTo(termdom, Math.min(termdom[kScrollTop], maxScroll));
 	}
 
-	// Taken whether or not this frame can transform: the plan's baseline is
-	// "scrollTop as of the last painted frame", which a full-diff frame
-	// advances too.
-	const plan = termdom[kViewport].takeFramePlan(regionHeight);
-	const scroll =
-		termdom[kCompositor].compose({
-			fullscreen: isFullscreen,
-			regionTop: top,
-			regionHeight,
-			terminalHeight: termdom[kHeight],
-			plan,
-			dragging:
-				termdom[kSelectionDragAnchor] !== null ||
-				termdom[kFieldDragAnchor] !== null,
-			resizing: termdom[kResizeInProgress],
-		}) ?? undefined;
+	// The alternate screen never scroll-shifts: fullscreen owns row zero and
+	// paints the whole of it.
 	const context = termdom[kScreen].beginFrame({
-		offset: -termdom[kViewport].scrollTop,
+		offset: -termdom[kScrollTop],
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		delta: scroll?.delta ?? 0,
+		delta: isFullscreen ? 0 : termdom[kFrameScroll],
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
-	termdom[kLastFrameEpoch] = termdom[kLayoutEngine].invalidationEpoch;
-	termdom[kLastFrameInputGeneration] = termdom[kInputGeneration];
-	termdom[kCompositor].frameRendered();
+	termdom[kFrameScroll] = 0;
+	termdom[kFrameDirty] = false;
+	termdom[kLayoutEngine].frameDirty = false;
 
 	if (ansi) {
 		await termdom[kWrite](ansi);
@@ -4208,12 +4182,49 @@ async function renderInteractive(
 	afterRender(termdom);
 }
 
+/**
+ * Move the camera to a document row, clamped at the top.
+ *
+ * The one writer: the journal's scroll delta is the sum of what comes
+ * through here since the last painted frame, so the camera and the rows the
+ * terminal is about to be shifted by can never disagree. The frame-time
+ * clamp comes through here too, which is why nothing remembers where the
+ * last frame painted.
+ */
+function scrollDocumentTo(
+	termdom: TermDOM,
+	row: number,
+): void {
+	const next = Math.max(0, row);
+	termdom[kFrameScroll] += next - termdom[kScrollTop];
+	termdom[kScrollTop] = next;
+}
+
+/**
+ * Reserve `rows` rows below the command start, returning how many rows the
+ * screen must scroll so they fit (0 if they already do). When there isn't
+ * room the command start rides up into the shell's scrollback, and the
+ * region's start moves up by that much.
+ */
+function pushRowsUp(
+	termdom: TermDOM,
+	rows: number,
+): number {
+	const overflow = termdom[kScreenTop] + rows - termdom[kHeight];
+	if (overflow <= 0) {
+		return 0;
+	}
+	const push = Math.min(overflow, termdom[kScreenTop]);
+	termdom[kScreenTop] -= push;
+	return push;
+}
+
 /** Move the camera over the document. */
 function scrollCamera(
 	termdom: TermDOM,
 	rows: number,
 ): void {
-	termdom[kViewport].scrollBy(rows);
+	scrollDocumentTo(termdom, termdom[kScrollTop] + rows);
 	// A camera move is invisible to the MutationObserver; schedule the frame
 	// it needs, the same way a DOM mutation would.
 	void render(termdom);
@@ -4252,7 +4263,7 @@ function reserveRows(
 	termdom: TermDOM,
 	rows: number,
 ): number {
-	const push = termdom[kViewport].reserveRows(rows, termdom[kHeight]);
+	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
 		void termdom[kSession].write(
 			`\x1b[${termdom[kHeight]};1H` + "\x1bD".repeat(push),
@@ -4270,7 +4281,7 @@ function reserveRows(
 		termdom[kScreen].scrolled(push);
 	}
 
-	return termdom[kViewport].screenTop;
+	return termdom[kScreenTop];
 }
 
 function staticRenderer(

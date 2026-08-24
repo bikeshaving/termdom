@@ -21875,6 +21875,10 @@ function rangeBoundaryPointsChanged(
 
 /** Schedule a selectionchange event at a document, at most one per task. */
 function scheduleSelectionChange(document: Document): void {
+	// A selection move is not a mutation and no record names the rows it
+	// covers, so the engine hears it here -- before the coalescing guard
+	// below, which drops the second move of a task but not its repaint.
+	mountOf(document)?.selectionMoved();
 	if (document[kSelectionChangeScheduled]) {
 		return;
 	}
@@ -25148,6 +25152,8 @@ export interface Mount {
 	focusMoved(previous: object | null, element: object): void;
 	/** The element has given up the focus state. */
 	blurred(element: object): void;
+	/** The document's selection has moved, so the highlight has too. */
+	selectionMoved(): void;
 	/** Reveal the element in every scroll port between it and the screen. */
 	scrollIntoView(element: object): void;
 	/** An author attached a shadow root to the host. */

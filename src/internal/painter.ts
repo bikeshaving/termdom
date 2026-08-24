@@ -13,7 +13,6 @@ import {
 	isPositioned,
 	renderTextFragment,
 } from "./layout.js";
-import type {Viewport} from "./viewport.js";
 import {
 	type ComputedStyle,
 	type StyleManager,
@@ -269,7 +268,7 @@ const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kLayout = Symbol("layout");
 const kStyleManager = Symbol("styleManager");
-const kViewport = Symbol("viewport");
+const kScrollTop = Symbol("scrollTop");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
@@ -298,7 +297,9 @@ export class Painter {
 	declare [kDocument]: Document;
 	declare [kLayout]: LayoutEngine;
 	declare [kStyleManager]: StyleManager;
-	declare [kViewport]: Viewport;
+	// The document camera, read at paint time: a fixed subtree is laid out in
+	// viewport space and paints where the camera is looking.
+	declare [kScrollTop]: () => number;
 	// Shared with TermDOM by reference -- see the class doc.
 	declare [kTopLayer]: Set<Element>;
 	// List markers already painted this frame; each renders at most once.
@@ -317,7 +318,7 @@ export class Painter {
 		document: Document;
 		layout: LayoutEngine;
 		styleManager: StyleManager;
-		viewport: Viewport;
+		scrollTop: () => number;
 		topLayer: Set<Element>;
 		toolkit: UAToolkit;
 	}) {
@@ -327,7 +328,7 @@ export class Painter {
 		this[kDocument] = deps.document;
 		this[kLayout] = deps.layout;
 		this[kStyleManager] = deps.styleManager;
-		this[kViewport] = deps.viewport;
+		this[kScrollTop] = deps.scrollTop;
 		this[kTopLayer] = deps.topLayer;
 		this[kToolkit] = deps.toolkit;
 	}
@@ -850,7 +851,7 @@ function renderStackingContext(
 		// a fixed bar is laid out against the bar's viewport coordinates
 		// and must ride with it, so the walk includes ancestors.
 		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kViewport].scrollTop;
+			ctx.viewportOffset = previousOffset + painter[kScrollTop]();
 		}
 		try {
 			if (painter[kLayout].formsStackingContext(element)) {

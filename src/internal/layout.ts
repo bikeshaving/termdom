@@ -5535,6 +5535,7 @@ function isPointInRects(
 const kRectTexts = Symbol("rectTexts");
 const kLayoutPass = Symbol("layoutPass");
 const kInvalidationEpoch = Symbol("invalidationEpoch");
+const kFrameDirty = Symbol("frameDirty");
 
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
@@ -5647,6 +5648,7 @@ export class LayoutEngine {
 		this[kLayoutPass] = 0;
 		this[kInvalidationEpoch] = 0;
 		this[kStructuralGeneration] = 0;
+		this[kFrameDirty] = false;
 		this[kAnonymousBoxes] = new Map<FlexTypes.Node, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
@@ -6946,11 +6948,13 @@ export class LayoutEngine {
 
 	declare [kInvalidationEpoch]: number;
 	declare [kStructuralGeneration]: number;
+	declare [kFrameDirty]: boolean;
 
 	/**
 	 * Note that something a frame is derived from has moved. Every cache the
 	 * engine keys on {@link invalidationEpoch} -- the box enumerations, the
-	 * resolved geometry, the frame-skip check -- is stale from here on.
+	 * resolved geometry -- is stale from here on, and the next frame has
+	 * something to paint.
 	 *
 	 * Mutation records come through the shell's observer drain, which bumps
 	 * this once per batch; the cascade bumps it for the style changes no
@@ -6958,23 +6962,31 @@ export class LayoutEngine {
 	 */
 	invalidateFrame(): void {
 		this[kInvalidationEpoch]++;
+		this[kFrameDirty] = true;
 	}
 
 	/**
 	 * Note an UNBOUNDED change: a stylesheet reparse, a shadow attachment, a
-	 * pseudo-element change, the bidi reorder flip -- damage no per-element
-	 * tracking can bound, so a banded repaint has to cover the whole screen.
-	 * Bounded damage (mutation records, per-element style invalidation) is
-	 * tracked per element and does not come through here.
+	 * pseudo-element change, the bidi reorder flip. Every box enumeration
+	 * re-derives, which is what the structural generation the boxes carry
+	 * says.
 	 */
 	invalidateStructure(): void {
 		this[kStructuralGeneration]++;
-		this[kInvalidationEpoch]++;
+		this.invalidateFrame();
 	}
 
-	/** The generation of the last unbounded change. */
-	get structuralGeneration(): number {
-		return this[kStructuralGeneration];
+	/**
+	 * Whether anything a frame reads has moved since the paint that cleared
+	 * this. The frame loop reads it to decide whether to paint at all, and
+	 * writes false once it has.
+	 */
+	get frameDirty(): boolean {
+		return this[kFrameDirty];
+	}
+
+	set frameDirty(value: boolean) {
+		this[kFrameDirty] = value;
 	}
 
 	/** The current invalidation epoch: bumped by everything a frame reads. */

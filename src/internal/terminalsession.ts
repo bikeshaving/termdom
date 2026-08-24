@@ -1,5 +1,4 @@
 import type {LayoutEngine} from "./layout.js";
-import type {Viewport} from "./viewport.js";
 import type {ColorDepth} from "./ansi.js";
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import {tokenizeInput} from "./events.js";
@@ -451,7 +450,7 @@ const kWidthRunLost = Symbol("widthRunLost");
 const kLayout = Symbol("layout");
 const kHandlers = Symbol("handlers");
 const kTransport = Symbol("transport");
-const kViewport = Symbol("viewport");
+const kSetCommandStart = Symbol("setCommandStart");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kDisposed = Symbol("disposed");
@@ -477,7 +476,8 @@ const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
 
 export class TerminalSession {
 	declare [kTransport]: TerminalTransport;
-	declare [kViewport]: Viewport;
+	// Where the region's start row is recorded once cursor detection lands.
+	declare [kSetCommandStart]: (screenTop: number) => void;
 	declare [kLayout]: LayoutEngine;
 	declare [kInteractive]: boolean;
 	// The modes currently set on the terminal, the source restore derives from.
@@ -647,7 +647,7 @@ export class TerminalSession {
 
 	constructor(deps: {
 		transport: TerminalTransport;
-		viewport: Viewport;
+		setCommandStart: (screenTop: number) => void;
 		layout: LayoutEngine;
 		interactive: boolean;
 		anchorDetection: boolean;
@@ -731,7 +731,7 @@ export class TerminalSession {
 			},
 		};
 		this[kTransport] = deps.transport;
-		this[kViewport] = deps.viewport;
+		this[kSetCommandStart] = deps.setCommandStart;
 		this[kLayout] = deps.layout;
 		this[kInteractive] = deps.interactive;
 		this[kEngagedModes] = new Set<ModeName>();
@@ -998,11 +998,7 @@ export class TerminalSession {
 
 					const row = parseInt(match[1], 10);
 					// Convert 1-based terminal row to the 0-based anchor.
-					const screenTop = row - 1;
-					this[kViewport].screenTop = screenTop;
-
-					// Content shifts up to the terminal top from the command start.
-					this[kViewport].anchorScrollTop = -this[kViewport].screenTop;
+					this[kSetCommandStart](row - 1);
 
 					this[kHasDetectedCommandStart] = true;
 					resolve(row);
