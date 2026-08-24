@@ -582,11 +582,10 @@ const kMountHandle = Symbol("mountHandle");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
 const kScrollChainTimer = Symbol("scrollChainTimer");
-const kResizeInProgress = Symbol("resizeInProgress");
+const kSettlingResize = Symbol("settlingResize");
 const kIsRendering = Symbol("isRendering");
 const kRenderQueued = Symbol("renderQueued");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
-const kResizeEpoch = Symbol("resizeEpoch");
 const kResizeTimer = Symbol("resizeTimer");
 const kSCROLL_CHAIN_TIMEOUT_MS = Symbol("SCROLL_CHAIN_TIMEOUT_MS");
 const kFieldDragAnchor = Symbol("fieldDragAnchor");
@@ -679,12 +678,16 @@ export class TermDOM {
 	// alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
-	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
-	// set, render() bails: the terminal has rewrapped the screen and our anchor is
-	// momentarily stale, so an auto-render (an animation tick) painting now lands
-	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
-	// final redraw that handleResize issues is allowed through.
-	declare [kResizeInProgress]: boolean;
+	// The resize being settled: a fresh object from the first SIGWINCH of a
+	// resize until the re-anchored redraw, and null between resizes. While one
+	// is set, render() bails: the terminal has rewrapped the screen and our
+	// anchor is momentarily stale, so an auto-render (an animation tick)
+	// painting now lands at the wrong rows and scrolls a stray copy into the
+	// scrollback. Only the final redraw that handleResize issues is allowed
+	// through. The redraw waits on an async cursor query, so it holds the
+	// object it was scheduled for and drops its answer if another SIGWINCH has
+	// replaced it -- the newer resize's own redraw is the one that lands.
+	declare [kSettlingResize]: object | null;
 	// Whether we have taken hold of the terminal: raw mode, signal handlers,
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
@@ -718,11 +721,6 @@ export class TermDOM {
 	// box's content out from under its offset; each layout flush pulls
 	// these back into range (see clampScrolledOffsets).
 	declare [kScrolledElements]: Set<Element>;
-
-	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
-	// if another resize lands while it is in flight, the stale response must not
-	// trigger a redraw at coordinates that no longer mean anything.
-	declare [kResizeEpoch]: number;
 
 	declare [kWidth]: number;
 	declare [kHeight]: number;
@@ -837,12 +835,11 @@ export class TermDOM {
 		this[kRenderInFlight] = null;
 		this[kRenderCount] = 0;
 		this[kResizeTimer] = null;
-		this[kResizeInProgress] = false;
+		this[kSettlingResize] = null;
 		this[kAttached] = false;
 		this[kActivationDepth] = 0;
 		this[kEverActivated] = false;
 		this[kScrolledElements] = new Set();
-		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
 		this[kPendingHover] = null;
@@ -2183,9 +2180,9 @@ function applyTerminalSize(
 	// The viewport changed, so every @media answer may have: re-parse the
 	// stylesheets against the new size (they were parsed against the old one
 	// and would stay stale), then let each live MediaQueryList re-evaluate
-	// and fire "change" if it flipped. The re-parse also moves the style
-	// epoch, which is what retires the viewport-relative values every
-	// computed style resolved under the old size.
+	// and fire "change" if it flipped. The re-parse also drops what the style
+	// manager still resolves for, which retires the viewport-relative values
+	// every computed style resolved under the old size.
 	termdom[kStyleManager].refreshStylesheets();
 
 	// Per the rendering steps, resize fires before media query "change"
@@ -2292,8 +2289,8 @@ async function render(
 	}
 
 	// A resize is settling: suppress every render until handleResize issues the
-	// single re-anchored redraw. See resizeInProgress.
-	if (termdom[kResizeInProgress]) {
+	// single re-anchored redraw. See settlingResize.
+	if (termdom[kSettlingResize] !== null) {
 		return;
 	}
 
@@ -2731,8 +2728,7 @@ function scheduleResize(
 	// Suppress renders from the very first SIGWINCH, before the debounce
 	// settles, so a drag's worth of animation ticks cannot paint at the stale
 	// anchor while the terminal is rewrapping under us.
-	termdom[kResizeInProgress] = true;
-	termdom[kResizeEpoch]++;
+	termdom[kSettlingResize] = {};
 	if (termdom[kResizeTimer] !== null) {
 		clearTimeout(termdom[kResizeTimer]);
 	}
@@ -2768,14 +2764,14 @@ function handleResize(
 	// covers everything from the recovered top down, so the visible screen
 	// carries exactly one copy.
 	//
-	// resizeInProgress has suppressed every animation tick since the first
+	// The settling resize has suppressed every animation tick since the first
 	// SIGWINCH, so nothing paints at a stale anchor while the query is in
 	// flight. If the terminal does not answer, fall back to the computed
 	// vertical re-anchor (exact for height changes, approximate for width).
 	termdom[kLayoutEngine].calculateLayout();
 	const contentHeight = termdom.document.body.scrollHeight;
 	const wrappedRowsAbove = termdom[kScreen].wrappedRowsAbovePark(newWidth);
-	const epoch = termdom[kResizeEpoch];
+	const settling = termdom[kSettlingResize];
 
 	const redraw = (startRow: number) => {
 		// The recovered row is where the frame stands; whether it still
@@ -2790,7 +2786,7 @@ function handleResize(
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection.
-		termdom[kResizeInProgress] = false;
+		termdom[kSettlingResize] = null;
 		const wasDetected = termdom[kSession].hasDetectedCommandStart;
 		termdom[kSession].hasDetectedCommandStart = false;
 		render(termdom).then(() => {
@@ -2826,13 +2822,13 @@ function handleResize(
 			.queryCursorRow()
 			.then((cursorRow) => {
 				// A newer resize superseded this one; its handler will redraw.
-				if (epoch !== termdom[kResizeEpoch]) {
+				if (settling !== termdom[kSettlingResize]) {
 					return;
 				}
 				place(Math.max(0, cursorRow - wrappedRowsAbove));
 			})
 			.catch(() => {
-				if (epoch !== termdom[kResizeEpoch]) {
+				if (settling !== termdom[kSettlingResize]) {
 					return;
 				}
 				place(computedReanchor());

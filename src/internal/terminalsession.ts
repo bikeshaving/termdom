@@ -1065,7 +1065,8 @@ export class TerminalSession {
 			};
 
 			// Replacing a stale handler is fine: its own timeout still fires and
-			// rejects it, and the caller's epoch check discards the stale result.
+			// rejects it, and the caller drops an answer to a question it has
+			// stopped asking.
 			this[kCursorDetectionHandler] = handler;
 
 			this[kCursorDetectionSequence] = this[kDsrSequence]++;
