@@ -1,4 +1,5 @@
 import {
+	probingTeaches,
 	stringWidth,
 	widthIsUncertain,
 	type WidthMeasurer,
@@ -1718,6 +1719,7 @@ const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
 const kEndFrame = Symbol("endFrame");
 const kRideProbeTrain = Symbol("rideProbeTrain");
+const kMeasurer = Symbol("measurer");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
 
@@ -1745,6 +1747,9 @@ export class Screen {
 	// A probe train is waiting for a frame to ride: the next flush re-emits
 	// the first contentful row as its cover, though the document has not moved.
 	declare [kRideProbeTrain]: boolean;
+	// The width-probe channel, or null before one is wired (headless renders
+	// never wire one).
+	declare [kMeasurer]: WidthMeasurer | null;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
@@ -1752,6 +1757,7 @@ export class Screen {
 
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this[kRideProbeTrain] = false;
+		this[kMeasurer] = null;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1834,6 +1840,16 @@ export class Screen {
 	 */
 	rideProbeTrain(): void {
 		this[kRideProbeTrain] = true;
+	}
+
+	/**
+	 * Wire the width-probe channel, once, when the session that owns the
+	 * wire exists. Whether a given frame probes is decided as the frame is
+	 * emitted (probingTeaches reads the channel's facts as they stand), so
+	 * probing ending or mode 2027 settling later needs no re-wiring here.
+	 */
+	measureWidthsWith(measurer: WidthMeasurer): void {
+		this[kMeasurer] = measurer;
 	}
 
 	/**
@@ -1973,7 +1989,6 @@ export class Screen {
 		cursorRow: cursorPosition,
 		regionRows,
 		scroll,
-		measurer,
 	}: {
 		/** Rows the camera has scrolled, negative downward. */
 		offset: number;
@@ -1982,7 +1997,6 @@ export class Screen {
 		/** Rows the frame spans, when it is taller than the screen. */
 		regionRows?: number;
 		scroll?: {delta: number; bands: Array<[number, number]>};
-		measurer?: WidthMeasurer;
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
@@ -2090,6 +2104,12 @@ export class Screen {
 			context.paintBands = scroll!.bands;
 		}
 		this[kEndFrame] = (): string => {
+			// Whether this frame probes is the width authority's call, taken
+			// as the frame is emitted so the session's facts are current.
+			const measurer =
+				this[kMeasurer] !== null && probingTeaches(this[kMeasurer]) ?
+					this[kMeasurer] :
+					undefined;
 			// The frame is complete: join the borders whose strokes touch,
 			// so the diff below sees a junction appear even when only its
 			// neighbour changed.

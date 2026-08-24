@@ -118,7 +118,7 @@ function scriptTerminal(
 
 /**
  * One frame through the public surface: clusters drawn at their columns,
- * the measurer riding the frame options, the emitted bytes returned. The
+ * the measurer wired to the screen, the emitted bytes returned. The
  * emitter is what is under test; the pen is just how cells get there.
  */
 function emit(
@@ -128,7 +128,8 @@ function emit(
 	measurer: WidthMeasurer,
 ): string {
 	const screen = new Screen(rows, cols, "rgb");
-	const context = screen.beginFrame({offset: 0, measurer});
+	screen.measureWidthsWith(measurer);
+	const context = screen.beginFrame({offset: 0});
 	for (const [index, cluster] of cells) {
 		context.drawText(cluster, index % cols, Math.floor(index / cols));
 	}

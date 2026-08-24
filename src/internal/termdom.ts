@@ -1126,6 +1126,7 @@ export class TermDOM {
 			toolkit: this[kUAToolkit],
 		});
 		this[kSession] = buildSession(this);
+		this[kScreen].measureWidthsWith(this[kSession].widthMeasurer);
 
 		// A field edit -- text (input), a caret or selection move
 		// (select/selectionchange), or a checkbox/radio toggle (change) --
@@ -3159,6 +3160,7 @@ function rebindTransport(
 		transport.colorDepth,
 	);
 	termdom[kSession] = buildSession(termdom);
+	termdom[kScreen].measureWidthsWith(termdom[kSession].widthMeasurer);
 }
 
 /**
@@ -5338,7 +5340,6 @@ async function renderInteractive(
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		scroll,
-		measurer: termdom[kSession].widthMeasurer,
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();

@@ -1,11 +1,7 @@
 import type {LayoutEngine} from "./layout.js";
 import type {Viewport} from "./viewport.js";
 import type {ColorDepth} from "./ansi.js";
-import {
-	probingTeaches,
-	recordClusterAdvance,
-	type WidthMeasurer,
-} from "./text.js";
+import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
 /** The terminal's dimensions, in cells. */
@@ -608,14 +604,12 @@ export class TerminalSession {
 	declare [kWidthMeasurer]: WidthMeasurer;
 
 	/**
-	 * The frame's channel for measuring cluster advances, or undefined where
-	 * there is nothing to learn. The channel reports this session's facts;
-	 * whether asking is worth anything is the width authority's judgement.
+	 * The frame's channel for measuring cluster advances. Whether asking is
+	 * worth anything is not decided here: the channel reports this session's
+	 * facts and the width authority judges them (see probingTeaches).
 	 */
-	get widthMeasurer(): WidthMeasurer | undefined {
-		return probingTeaches(this[kWidthMeasurer]) ?
-			this[kWidthMeasurer] :
-			undefined;
+	get widthMeasurer(): WidthMeasurer {
+		return this[kWidthMeasurer];
 	}
 
 	constructor(deps: {
