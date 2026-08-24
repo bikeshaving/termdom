@@ -173,6 +173,10 @@ const MODE_SPELLINGS = {
 	cursorHidden: {set: "\x1b[?25l", reset: "\x1b[?25h", panic: true},
 	bracketedPaste: {set: "\x1b[?2004h", reset: "\x1b[?2004l", panic: true},
 	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
+	// The Fullscreen API's screen switch. Panic-marked: a crash mid-fullscreen
+	// hands the main screen back instead of stranding the user in the
+	// alternate one.
+	altScreen: {set: "\x1b[?1049h", reset: "\x1b[?1049l", panic: true},
 	// Negotiated, not imposed: a terminal that ignored the offer must not
 	// see the reset, so only the engaged-tracking restore may write it.
 	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
