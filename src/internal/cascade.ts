@@ -185,28 +185,126 @@ function perEnd(values: string[]): [string, string] {
 }
 
 /**
- * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
- * the per-side border shorthands and `outline`. Components may appear in any
- * order and any may be omitted.
+ * The grammars a value is matched against: the property index's, with the
+ * entries it states from an older level of the specs brought up to date.
+ * `generic()` family names, the SVG baseline keywords and `outline-color:
+ * invert` are all in the current specs and missing from the index. The
+ * deprecated system colors still parse per CSS Color 4 -- each is an alias of
+ * a modern one -- but the index's `<color>` leaves them out.
  */
-function splitLineValue(value: string): {
+const grammarLexer = CSSTree.fork({
+	properties: {
+		"alignment-baseline": "| text-bottom | text-top",
+		"baseline-shift": "| top | center | bottom",
+		"outline-color": "| invert",
+	},
+	types: {
+		"color": "| <deprecated-system-color>",
+		"family-name":
+			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
+	},
+}).lexer;
+
+/** The `<line-width> || <line-style> || <color>` grammar's three terms. */
+interface LineValue {
 	width: string | null;
 	lineStyle: string | null;
 	color: string | null;
-} {
-	let width: string | null = null;
-	let lineStyle: string | null = null;
-	let color: string | null = null;
+}
+
+/**
+ * The grammar term each component of a line value satisfied, keyed by the
+ * term's name in the property index.
+ */
+const LINE_VALUE_TERMS = new Map<string, keyof LineValue>([
+	["line-width", "width"],
+	["line-style", "lineStyle"],
+	["outline-line-style", "lineStyle"],
+	["color", "color"],
+]);
+
+/**
+ * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
+ * the per-side border shorthands and `outline`. Components may appear in any
+ * order and any may be omitted, so which term a component fills is read off
+ * the grammar it matched rather than guessed from its spelling.
+ *
+ * A value the grammar refuses -- one carrying a substitution, or a spelling
+ * the index does not describe -- is read by shape instead: the cascade takes
+ * such a value as declared, and what it means is decided downstream.
+ */
+function splitLineValue(property: string, value: string): LineValue {
+	const out: LineValue = {width: null, lineStyle: null, color: null};
+	const traced = traceLineValue(property, value, out);
+	if (traced) {
+		return out;
+	}
 	for (const token of splitComponents(value)) {
+		const type = singleValueNode(token)?.type;
 		if (BORDER_STYLE_KEYWORDS.has(token)) {
-			lineStyle = token;
-		} else if (/^[\d.]/.test(token) || LINE_WIDTH_KEYWORDS.has(token)) {
-			width = token;
+			out.lineStyle = token;
+		} else if (
+			LINE_WIDTH_KEYWORDS.has(token) || NUMERIC_NODES.has(type ?? "")
+		) {
+			out.width = token;
 		} else if (token) {
-			color = token;
+			out.color = token;
 		}
 	}
-	return {width, lineStyle, color};
+	return out;
+}
+
+/** The node types a number is parsed into, whatever unit it carries. */
+const NUMERIC_NODES = new Set(["Number", "Dimension", "Percentage"]);
+
+/** Fill a line value from the property's grammar; false when it refuses. */
+function traceLineValue(
+	property: string,
+	value: string,
+	out: LineValue,
+): boolean {
+	let ast: {children?: {toArray(): CSSNode[]} | null};
+	let match: {matched: unknown; getTrace(node: unknown): TraceTerm[] | null};
+	try {
+		ast = CSSTree.parse(value, {
+			context: "value",
+			positions: true,
+		}) as never;
+		match = grammarLexer.matchProperty(property, ast as never) as never;
+	} catch (_err) {
+		return false;
+	}
+	if (!match.matched) {
+		return false;
+	}
+	for (const node of ast.children?.toArray() ?? []) {
+		const trace = match.getTrace(node) ?? [];
+		const term = trace.find(
+			(step) => step.type === "Type" && LINE_VALUE_TERMS.has(step.name),
+		);
+		if (!term) {
+			return false;
+		}
+		const source = node as unknown as {
+			loc?: {start: {offset: number}; end: {offset: number}};
+		};
+		if (!source.loc) {
+			return false;
+		}
+		// The component as the declaration spells it: the grammar says which
+		// term it fills, not how it is written.
+		out[LINE_VALUE_TERMS.get(term.name)!] = value.slice(
+			source.loc.start.offset,
+			source.loc.end.offset,
+		);
+	}
+	return true;
+}
+
+/** One step of a grammar match: the term a node was matched against. */
+interface TraceTerm {
+	type: string;
+	name: string;
 }
 
 /** The values `flex-direction` takes, which is how `flex-flow` knows one. */
@@ -778,7 +876,7 @@ function expandShorthands(
 		const values = splitComponents(value);
 		switch (property) {
 			case "border": {
-				const {width, lineStyle, color} = splitLineValue(value);
+				const {width, lineStyle, color} = splitLineValue(property, value);
 				setEdges("width", [width ?? "medium"]);
 				setEdges("style", [lineStyle ?? "none"]);
 				if (color) {
@@ -812,7 +910,7 @@ function expandShorthands(
 			case "border-bottom":
 			case "border-left": {
 				const edge = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(value);
+				const {width, lineStyle, color} = splitLineValue(property, value);
 				out[`border-${edge}-width`] = width ?? "medium";
 				out[`border-${edge}-style`] = lineStyle ?? "none";
 				if (color) {
@@ -821,7 +919,7 @@ function expandShorthands(
 				break;
 			}
 			case "outline": {
-				const {width, lineStyle, color} = splitLineValue(value);
+				const {width, lineStyle, color} = splitLineValue(property, value);
 				out["outline-width"] = width ?? "medium";
 				out["outline-style"] = lineStyle ?? "none";
 				if (color) {
@@ -851,7 +949,7 @@ function expandShorthands(
 			case "border-block":
 			case "border-inline": {
 				const axis = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(value);
+				const {width, lineStyle, color} = splitLineValue(property, value);
 				for (const end of AXIS_ENDS) {
 					out[`border-${axis}-${end}-width`] = width ?? "medium";
 					out[`border-${axis}-${end}-style`] = lineStyle ?? "none";
@@ -867,7 +965,7 @@ function expandShorthands(
 			case "border-inline-start":
 			case "border-inline-end": {
 				const edge = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(value);
+				const {width, lineStyle, color} = splitLineValue(property, value);
 				out[`border-${edge}-width`] = width ?? "medium";
 				out[`border-${edge}-style`] = lineStyle ?? "none";
 				if (color) {
@@ -1442,27 +1540,6 @@ function isValidDeclaration(
 		(node) => node.type === "Number" && parseFloat(node.value ?? "") !== 0,
 	);
 }
-
-/**
- * The grammars a value is matched against: the property index's, with the
- * entries it states from an older level of the specs brought up to date.
- * `generic()` family names, the SVG baseline keywords and `outline-color:
- * invert` are all in the current specs and missing from the index. The
- * deprecated system colors still parse per CSS Color 4 -- each is an alias of
- * a modern one -- but the index's `<color>` leaves them out.
- */
-const grammarLexer = CSSTree.fork({
-	properties: {
-		"alignment-baseline": "| text-bottom | text-top",
-		"baseline-shift": "| top | center | bottom",
-		"outline-color": "| invert",
-	},
-	types: {
-		"color": "| <deprecated-system-color>",
-		"family-name":
-			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
-	},
-}).lexer;
 
 /**
  * Whether a value fits its property's grammar, memoized: a declaration is
