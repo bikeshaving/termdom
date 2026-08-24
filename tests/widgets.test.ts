@@ -8,6 +8,26 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
+/**
+ * The terminal text, once a repaint no test asked for has drawn a mark into
+ * it. The wait is the mark's arrival, not a clock a loaded machine can
+ * outrun; a mark that never arrives times out and the caller asserts on the
+ * text as it stands. Nothing here requests a frame, which is the contract
+ * the callers are testing.
+ */
+async function paintedText(
+	terminal: MockProcess,
+	mark: string,
+): Promise<string> {
+	const deadline = Date.now() + 5000;
+	let text = terminal.getPlainText();
+	while (!text.includes(mark) && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		text = terminal.getPlainText();
+	}
+	return text;
+}
+
 function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
 	// Input rides the transport's readable: delivery is a microtask away.
@@ -417,17 +437,15 @@ test("a checkedness that changes on its own repaints, and unchecks its group", a
 	const box = dom.document.getElementById("c") as HTMLInputElement;
 	box.checked = true;
 	// No frame is requested here: the repaint has to be the mutation's own.
-	await new Promise((r) => setTimeout(r, 30));
-	expect(terminal.getPlainText()).toContain("[x]");
+	expect(await paintedText(terminal, "[x]")).toContain("[x]");
 
 	const first = dom.document.getElementById("r1") as HTMLInputElement;
 	const second = dom.document.getElementById("r2") as HTMLInputElement;
 	second.checked = true;
-	await new Promise((r) => setTimeout(r, 30));
+	// The sibling the group unchecked shows it, with no event to have hooked.
+	expect(await paintedText(terminal, "( )(x)")).toContain("( )(x)");
 	expect(second.checked).toBe(true);
 	expect(first.checked).toBe(false);
-	// The sibling the group unchecked shows it, with no event to have hooked.
-	expect(terminal.getPlainText()).toContain("( )(x)");
 
 	dom.dispose();
 });
