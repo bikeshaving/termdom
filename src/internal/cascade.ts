@@ -406,19 +406,32 @@ function expandFlex(value: string): Record<string, string> | null {
 	let grow: string | undefined;
 	let shrink: string | undefined;
 	let basis: string | undefined;
-	for (const token of v.split(/\s+/)) {
-		if (/^[\d.]+$/.test(token)) {
-			if (grow === undefined) {
-				grow = token;
-			} else if (shrink === undefined) {
-				shrink = token;
+	const traced = grammarTerms("flex", v);
+	if (traced) {
+		for (const component of traced) {
+			if (component.terms.includes("flex-grow")) {
+				grow = component.text;
+			} else if (component.terms.includes("flex-shrink")) {
+				shrink = component.text;
+			} else if (component.terms.includes("flex-basis")) {
+				basis = component.text;
+			}
+		}
+	} else {
+		for (const token of splitComponents(v)) {
+			if (singleValueNode(token)?.type === "Number") {
+				if (grow === undefined) {
+					grow = token;
+				} else if (shrink === undefined) {
+					shrink = token;
+				} else {
+					return null;
+				}
+			} else if (basis === undefined) {
+				basis = token;
 			} else {
 				return null;
 			}
-		} else if (basis === undefined) {
-			basis = token;
-		} else {
-			return null;
 		}
 	}
 	if (grow === undefined && basis === undefined) {
@@ -431,6 +444,13 @@ function expandFlex(value: string): Record<string, string> | null {
 	};
 }
 
+/** The longhands `list-style` states, and the terms its grammar names. */
+const LIST_STYLE_LONGHANDS = [
+	"list-style-position",
+	"list-style-image",
+	"list-style-type",
+];
+
 /**
  * Expand the `list-style` shorthand, whose components may appear in any order.
  *
@@ -439,10 +459,19 @@ function expandFlex(value: string): Record<string, string> | null {
  */
 function expandListStyle(value: string): Record<string, string> {
 	const parts: Record<string, string> = {};
-	for (const token of value.trim().split(/\s+/)) {
-		if (!token) {
-			continue;
+	const traced = grammarTerms("list-style", value);
+	if (traced) {
+		for (const component of traced) {
+			for (const longhand of LIST_STYLE_LONGHANDS) {
+				if (component.terms.includes(longhand)) {
+					parts[longhand] = component.text;
+					break;
+				}
+			}
 		}
+		return parts;
+	}
+	for (const token of splitComponents(value)) {
 		if (LIST_STYLE_POSITIONS.has(token)) {
 			parts["list-style-position"] = token;
 		} else if (token.startsWith("url(")) {
@@ -461,6 +490,21 @@ function expandListStyle(value: string): Record<string, string> {
  * bare `background: none` declares is its initial, transparent.
  */
 function expandBackground(value: string): Record<string, string> {
+	const traced = grammarTerms("background", value);
+	if (traced) {
+		const image = traced
+			.filter((component) => component.terms.includes("bg-image"))
+			.map((component) => component.text)
+			.join(" ");
+		const color = traced
+			.filter((component) => component.terms.includes("background-color"))
+			.map((component) => component.text)
+			.join(" ");
+		return {
+			"background-image": image || "none",
+			"background-color": color || "transparent",
+		};
+	}
 	const tokens = splitComponents(value);
 	if (value.includes("url(")) {
 		return {"background-image": value.trim()};
@@ -477,9 +521,43 @@ function expandBackground(value: string): Record<string, string> {
 /** The four ways a border image tiles, which name the repeat component. */
 const BORDER_IMAGE_REPEATS = new Set(["stretch", "repeat", "round", "space"]);
 
-/** An image value: a function that produces one, or the keyword for none. */
-const IMAGE_VALUE =
-	/^(?:none$|(?:url|(?:repeating-)?(?:linear|radial|conic)-gradient|image|image-set|element|cross-fade|paint)\()/i;
+/** The functions that produce an image, beside the gradients. */
+const IMAGE_FUNCTIONS = new Set([
+	"url",
+	"image",
+	"image-set",
+	"element",
+	"cross-fade",
+	"paint",
+]);
+
+/** Whether a component names an image: a function producing one, or `none`. */
+function isImageValue(token: string): boolean {
+	const node = singleValueNode(token);
+	if (!node) {
+		return false;
+	}
+	if (node.type === "Url") {
+		return true;
+	}
+	if (node.type === "Identifier") {
+		return (node.name ?? "").toLowerCase() === "none";
+	}
+	const name = (node.name ?? "").toLowerCase();
+	return (
+		node.type === "Function" &&
+		(IMAGE_FUNCTIONS.has(name) || name.endsWith("-gradient"))
+	);
+}
+
+/** The longhands `border-image` states, and the terms its grammar names. */
+const BORDER_IMAGE_LONGHANDS = [
+	"border-image-source",
+	"border-image-slice",
+	"border-image-width",
+	"border-image-outset",
+	"border-image-repeat",
+];
 
 /**
  * Expand the `border-image` shorthand, whose slash-separated groups are the
@@ -492,6 +570,22 @@ const IMAGE_VALUE =
  * they hold.
  */
 function expandBorderImage(value: string): Record<string, string> {
+	const traced = grammarTerms("border-image", value);
+	if (traced) {
+		const out: Record<string, string> = {};
+		for (const component of traced) {
+			for (const longhand of BORDER_IMAGE_LONGHANDS) {
+				if (component.terms.includes(longhand)) {
+					out[longhand] =
+						out[longhand] === undefined ?
+							component.text :
+							`${out[longhand]} ${component.text}`;
+					break;
+				}
+			}
+		}
+		return out;
+	}
 	const out: Record<string, string> = {};
 	const groups = value.split("/").map((group) => group.trim());
 	const slice: string[] = [];
@@ -499,7 +593,7 @@ function expandBorderImage(value: string): Record<string, string> {
 	for (const token of splitComponents(groups[0] ?? "")) {
 		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) {
 			repeat.push(token);
-		} else if (IMAGE_VALUE.test(token)) {
+		} else if (isImageValue(token)) {
 			out["border-image-source"] = token;
 		} else {
 			slice.push(token);
