@@ -9,20 +9,30 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {
-	createHTMLDocument,
-	customElements,
 	CustomEvent as DOMCustomEvent,
 	DOMParser,
 	Event as DOMEvent,
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
+	type Document,
 	parseHTMLDocument,
-	setAmbientDocument,
-	setDefaultView,
 	Text,
+	Window,
 	installUAEngine,
 } from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
+
+const customElements = new Window(createHTMLDocument()).customElements;
 
 function make(): any {
 	const document = createHTMLDocument("") as any;
@@ -1133,7 +1143,7 @@ test("a shadow root is cloned with its host only when it is clonable", () => {
 
 test("a reaction runs after the mutation that enqueued it, in tree order", () => {
 	const document = make();
-	setAmbientDocument(document);
+	new Window(document);
 	const order: string[] = [];
 	customElements.define(
 		"order-one",
@@ -1157,7 +1167,7 @@ test("a reaction runs after the mutation that enqueued it, in tree order", () =>
 
 test("an attribute reaction is enqueued only for an observed name", () => {
 	const document = make();
-	setAmbientDocument(document);
+	new Window(document);
 	const seen: unknown[][] = [];
 	customElements.define(
 		"order-two",
@@ -1182,7 +1192,7 @@ test("an attribute reaction is enqueued only for an observed name", () => {
 
 test("an upgrade replays the attributes and the connection it missed", () => {
 	const document = make();
-	setAmbientDocument(document);
+	new Window(document);
 	const seen: string[] = [];
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
@@ -1222,7 +1232,7 @@ test("a definition is rejected by name and by a constructor already used", () =>
 
 test("a constructor called on its own builds an element of its own name", () => {
 	const document = make();
-	setAmbientDocument(document);
+	new Window(document);
 	class OrderSix extends HTMLElement {}
 	customElements.define("order-six", OrderSix);
 	const element: any = new OrderSix();
@@ -1236,7 +1246,7 @@ test("a constructor called on its own builds an element of its own name", () => 
 /** A document with a paragraph of two text nodes, and a range over it. */
 function withRange(): any {
 	const document = make();
-	setAmbientDocument(document);
+	new Window(document);
 	const paragraph = document.createElement("p");
 	paragraph.appendChild(document.createTextNode("abcdef"));
 	paragraph.appendChild(document.createElement("b"));
@@ -1838,8 +1848,7 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	expect(body.onload).toBe(null);
 
 	const handler = () => {};
-	const view: any = {};
-	setDefaultView(document, view);
+	const view: any = new Window(document);
 	body.onload = handler;
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);

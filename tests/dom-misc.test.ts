@@ -5,10 +5,23 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {
-	createHTMLDocument,
-	customElements,
 	HTMLElement,
+	type Document,
+	parseHTMLDocument,
+	Window,
 } from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
+
+const customElements = new Window(createHTMLDocument()).customElements;
 
 test("an attribute joins the document of the element it lands on", () => {
 	const document = createHTMLDocument("") as any;

@@ -6,13 +6,23 @@
  * granularities are tested against text wrapped by a real terminal width.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {createHTMLDocument, setAmbientDocument} from "../src/internal/dom.js";
+import {type Document, parseHTMLDocument, Window} from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function withText(html: string): any {
 	const document = createHTMLDocument("") as any;
-	setAmbientDocument(document);
+	new Window(document);
 	document.body.innerHTML = html;
 	return document;
 }

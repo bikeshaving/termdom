@@ -7,9 +7,20 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
 	claimUAToolkit,
-	createHTMLDocument,
 	installUAEngine,
+	type Document,
+	parseHTMLDocument,
 } from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("a document takes one user agent and refuses a second", async () => {

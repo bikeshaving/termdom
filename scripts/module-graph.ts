@@ -78,7 +78,65 @@ for (const [name, deps] of imports) {
 	}
 }
 
-if (process.argv.includes("--dot")) {
+/**
+ * The doors of `internal/dom`: the function surface script and engine reach
+ * through. Classes and types stay exported for the platform object and the
+ * sibling modules; a new function export is a new door, and a door is a
+ * decision, so adding one means editing this list in the open.
+ */
+const DOM_DOORS = [
+	"claimUAToolkit",
+	"installUAEngine",
+	"mount",
+	"mountOf",
+	"observeTree",
+	"parseHTMLDocument",
+	"platform",
+];
+
+if (process.argv.includes("--check")) {
+	const failures: string[] = [];
+	const domExports = exportSites.get("internal/dom") ?? [];
+	const doors = domExports
+		.map((site) => site.name)
+		.filter((name) => /^[a-z]/.test(name));
+	for (const name of doors) {
+		if (!DOM_DOORS.includes(name)) {
+			failures.push(`internal/dom exports an unlisted door: ${name}`);
+		}
+	}
+	for (const name of DOM_DOORS) {
+		if (!doors.includes(name)) {
+			failures.push(`internal/dom lost a listed door: ${name}`);
+		}
+	}
+	for (const dependent of dependents.get("internal/termdom") ?? []) {
+		if (dependent !== "index") {
+			failures.push(
+				`internal/termdom is glue and only index may import it, not ${dependent}`,
+			);
+		}
+	}
+	for (const [name, deps] of imports) {
+		const isLeaf = name.startsWith("generated/") || name === "internal/text";
+		if (!isLeaf) {
+			continue;
+		}
+		for (const dep of deps) {
+			if (dep.startsWith("generated/") && !name.startsWith("generated/")) {
+				continue;
+			}
+			failures.push(`${name} is a leaf and must not import ${dep}`);
+		}
+	}
+	if (failures.length > 0) {
+		for (const failure of failures) {
+			process.stderr.write(`${failure}\n`);
+		}
+		process.exit(1);
+	}
+	process.stdout.write("module graph ok\n");
+} else if (process.argv.includes("--dot")) {
 	process.stdout.write("digraph modules {\n\trankdir=LR;\n");
 	for (const [name, deps] of imports) {
 		for (const dep of deps) {

@@ -1138,7 +1138,6 @@ function installGlobals(
 		value: "complete",
 		configurable: true,
 	});
-	dom.setAmbientDocument(document);
 	return {
 		restore(): void {
 			for (const [name, entry] of saved) {

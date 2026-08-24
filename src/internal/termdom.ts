@@ -499,30 +499,6 @@ export interface EngineWindow
 	IntersectionObserver: typeof globalThis.IntersectionObserver;
 }
 
-/**
- * The DOM interfaces a window names, which are the classes of `./dom.js`
- * under the names WebIDL gives them.
- */
-function domInterfaces(): Record<string, unknown> {
-	const named: Record<string, unknown> = {};
-	for (const [name, value] of Object.entries(DOM)) {
-		if (typeof value !== "function") {
-			continue;
-		}
-		// A module export is an interface when it is a class: an interface
-		// has a prototype object of its own, and a plain function does not.
-		const prototype = (value as {prototype?: unknown}).prototype;
-		if (prototype === undefined || prototype === null) {
-			continue;
-		}
-		if (!/^[A-Z]/.test(name)) {
-			continue;
-		}
-		named[name] = value;
-	}
-	return named;
-}
-
 installInspectors();
 
 /** A document parsed from markup, displayed in a window of its own. */
@@ -542,9 +518,7 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 		string,
 		unknown
 	>;
-	Object.assign(window, domInterfaces(), {
-		customElements: DOM.customElements,
-		NodeFilter: DOM.NodeFilter,
+	Object.assign(window, DOM.platform, {
 		// The platform's, which is the one the DOM and the CSSOM throw: a
 		// caller's `instanceof DOMException` has to name the same class the
 		// engine builds its errors out of.
@@ -567,8 +541,6 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 	});
 	window.window = window;
 	window.self = window;
-	DOM.setDefaultView(document, window);
-	DOM.setAmbientDocument(document);
 	return window as unknown as EngineWindow;
 }
 
@@ -606,7 +578,7 @@ const kAttachBegun = Symbol("attachBegun");
 const kDisposed = Symbol("disposed");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
-const kHoverListenerCount = Symbol("hoverListenerCount");
+const kMountHandle = Symbol("mountHandle");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
 const kScrollChainTimer = Symbol("scrollChainTimer");
@@ -760,7 +732,7 @@ export class TermDOM {
 	// Reads the document's live count of hover-family listeners, half of
 	// what "the document observes hover" means (the other half is a sheet
 	// with a :hover rule).
-	declare [kHoverListenerCount]: () => number;
+	declare [kMountHandle]: DOM.MountHandle;
 	// The last motion report's position, coalesced: however many reports a
 	// chunk delivers, the frame hit-tests once, here. `quiet` marks a drag's
 	// motion, whose mousemove the report itself already dispatched.
@@ -927,18 +899,10 @@ export class TermDOM {
 
 		// The mount is built here, before the fields it reads exist: nothing
 		// reaches through it until a DOM member is actually called.
-		DOM.mount(document, createMount(this));
+		this[kMountHandle] = DOM.mount(document, createMount(this));
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this[kStyleManager] = new StyleManager(this.window);
-		// A hover listener appearing or vanishing moves the "does anything
-		// observe hover" answer between frames, so it pokes the mode update
-		// directly; the stylesheet half is re-read after each frame instead,
-		// where the sheets have already parsed.
-		this[kHoverListenerCount] = DOM.watchHoverListeners(document, () => {
-			updateHoverReporting(this);
-		});
-
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.window);
 		this[kStyleManager].setLayoutEngine(this[kLayoutEngine]);
@@ -1955,6 +1919,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// The clipboard and the permission it stands behind, over OSC 52,
 		// and the two questions the activation gate asks as the page can ask
 		// them.
+		// A hover listener appearing or vanishing moves the "does anything
+		// observe hover" answer between frames, so it pokes the mode update
+		// directly; the stylesheet half is re-read after each frame instead,
+		// where the sheets have already parsed.
+		hoverListenersChanged() {
+			updateHoverReporting(termDOM);
+		},
 		navigatorExtras() {
 			return {
 				clipboard: createClipboard({
@@ -2281,7 +2252,7 @@ function hoverObserved(
 	termdom: TermDOM,
 ): boolean {
 	return (
-		termdom[kHoverListenerCount]() > 0 ||
+		termdom[kMountHandle].hoverListenerCount() > 0 ||
 		termdom[kStyleManager].hoverRulesExist()
 	);
 }
@@ -3640,10 +3611,7 @@ function processPendingHover(
 	const previous = termdom[kHoverElement];
 	if (target !== previous) {
 		termdom[kHoverElement] = target;
-		DOM.setHoveredElement(
-			termdom.document as unknown as DOM.Document,
-			target as unknown as DOM.Element,
-		);
+		termdom[kMountHandle].hoveredElement(target);
 		termdom[kStyleManager].handleHoverChange(previous, target);
 		const chainOf = (element: Element | null): Element[] => {
 			const chain: Element[] = [];

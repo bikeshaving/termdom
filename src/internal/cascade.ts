@@ -15,8 +15,7 @@ import {
 	HTMLStyleElement as DOMHTMLStyleElement,
 	SVGElement as DOMSVGElement,
 	ShadowRoot as DOMShadowRoot,
-	onAttributeChange,
-	onShadowAttached,
+	observeTree,
 	type Document as DOMDocument,
 	type UAToolkit,
 	claimUAToolkit,
@@ -13370,21 +13369,27 @@ Object.defineProperty(DOMHTMLLinkElement.prototype, "sheet", {
 	enumerable: true,
 });
 
-// The cascade hears the DOM's own change algorithms: every attribute writer
-// funnels through them, so classList, className and the parser invalidate
-// exactly as setAttribute does, and a declarative shadow root registers the
-// moment the parser attaches it.
-onAttributeChange((element, localName) => {
-	if (localName === "style" || localName === "class" || localName === "id") {
+// The cascade is the realm's style engine: it hears the DOM's own change
+// algorithms, so classList, className and the parser invalidate as
+// setAttribute does, and a declarative shadow root registers the moment the
+// parser attaches it.
+observeTree({
+	attributeChanged(element, localName) {
+		if (
+			localName === "style" ||
+			localName === "class" ||
+			localName === "id"
+		) {
+			documentManagers
+				.get(element.ownerDocument as object)
+				?.invalidateElement(element as unknown as Element);
+		}
+	},
+	shadowAttached(root) {
 		documentManagers
-			.get(element.ownerDocument as object)
-			?.invalidateElement(element as unknown as Element);
-	}
-});
-onShadowAttached((root) => {
-	documentManagers
-		.get((root.host as unknown as Element).ownerDocument as object)
-		?.registerShadowRoot(root as unknown as ShadowRoot);
+			.get((root.host as unknown as Element).ownerDocument as object)
+			?.registerShadowRoot(root as unknown as ShadowRoot);
+	},
 });
 
 // ---------------------------------------------------------------------------

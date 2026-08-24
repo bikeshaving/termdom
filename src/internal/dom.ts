@@ -2967,7 +2967,7 @@ function tallyHoverListener(target: EventTarget, listener: Listener): void {
  * moves, and the returned reader answers the current count. One watcher per
  * document -- the engine that displays it.
  */
-export function watchHoverListeners(
+function watchHoverListeners(
 	document: Document,
 	onChange: () => void,
 ): () => number {
@@ -7465,16 +7465,6 @@ const kAttributeChanged = Symbol("attribute change steps");
 type AttributeChangeListener = (element: Element, localName: string) => void;
 const attributeChangeListeners: AttributeChangeListener[] = [];
 
-/**
- * Hear every attribute change, whoever writes it: setAttribute, classList,
- * className, toggleAttribute, the parser. Fires synchronously at the change
- * algorithms, so a read that follows a write sees a world the listener has
- * already seen.
- */
-export function onAttributeChange(listener: AttributeChangeListener): void {
-	attributeChangeListeners.push(listener);
-}
-
 function notifyAttributeChange(element: Element, localName: string): void {
 	for (const listener of attributeChangeListeners) {
 		listener(element, localName);
@@ -7483,9 +7473,25 @@ function notifyAttributeChange(element: Element, localName: string): void {
 
 const shadowAttachedListeners: Array<(root: ShadowRoot) => void> = [];
 
-/** Hear every shadow root the moment it attaches, declarative ones included. */
-export function onShadowAttached(listener: (root: ShadowRoot) => void): void {
-	shadowAttachedListeners.push(listener);
+/**
+ * What a style engine must hear from the tree, realm-wide and synchronous:
+ * the callbacks fire at the change algorithms themselves, so a read that
+ * follows a write sees a world the observer has already seen. Attribute
+ * changes arrive from any writer -- setAttribute, classList, className,
+ * toggleAttribute, the parser -- and shadow roots the moment they attach,
+ * declarative ones included.
+ */
+export interface TreeObserver {
+	attributeChanged(element: Element, localName: string): void;
+	shadowAttached(root: ShadowRoot): void;
+}
+
+/** Register the realm's style engine on the tree's change algorithms. */
+export function observeTree(observer: TreeObserver): void {
+	attributeChangeListeners.push((element, localName) =>
+		observer.attributeChanged(element, localName),
+	);
+	shadowAttachedListeners.push((root) => observer.shadowAttached(root));
 }
 
 function changeAttribute(attribute: Attr, value: string): void {
@@ -9885,7 +9891,7 @@ function definitionForConstructor(
  * reaches this one through the algorithms below rather than through a global,
  * so the tree stays standalone.
  */
-export const customElements = constructInternal(
+const customElements = constructInternal(
 	() => new CustomElementRegistry(),
 );
 
@@ -12627,10 +12633,6 @@ export class HTMLStyleElement extends HTMLElement {
  */
 function styleElementCount(document: Document): number {
 	return document[kStyleElements];
-}
-/** Mount a document in a window, which is what gives it a `defaultView`. */
-export function setDefaultView(document: Document, view: object | null): void {
-	document[kDefaultView] = view;
 }
 export class HTMLTableCaptionElement extends HTMLElement {}
 
@@ -19048,11 +19050,6 @@ function currentDocument(): Document {
 	return ambientDocument;
 }
 
-/** Make a document the one bare node constructors belong to. */
-export function setAmbientDocument(document: Document): void {
-	ambientDocument = document;
-}
-
 function isHTMLDocument(document: Document): boolean {
 	return document[kType] === "html";
 }
@@ -19891,7 +19888,7 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
  * an author builds through the DOM has no browsing context, and no registry
  * until one claims it.
  */
-export function createHTMLDocument(
+function createHTMLDocument(
 	title?: string,
 	url = "about:blank",
 	registry: CustomElementRegistry | null = globalCustomElements,
@@ -23368,7 +23365,7 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 const hoveredElements = new WeakMap<Document, Element>();
 
 /** Record the element the pointer is over, which `:hover` matches from. */
-export function setHoveredElement(
+function setHoveredElement(
 	document: Document,
 	element: Element | null,
 ): void {
@@ -25188,15 +25185,42 @@ export interface Mount {
 	requestFullscreen(element: object, options?: object): Promise<void>;
 	exitFullscreen(document: object): Promise<void>;
 	fullscreenElement(document: object): object | null;
+	/**
+	 * The document's hover-listener count moved. The handle's reader
+	 * answers the new count; the engine decides whether motion reporting
+	 * is worth its cost on the wire.
+	 */
+	hoverListenersChanged(): void;
+}
+
+/**
+ * The state feeds a mounted document accepts only from its engine: what the
+ * handle writes, no one else can.
+ */
+export interface MountHandle {
+	/** The element the pointer is over, which `:hover` matches from. */
+	hoveredElement(element: object | null): void;
+	/** How many hover-sensitive listeners the document holds now. */
+	hoverListenerCount(): number;
 }
 
 /** Mount a document on its engine. Once per document. */
-export function mount(document: object, engine: Mount): void {
+export function mount(document: object, engine: Mount): MountHandle {
 	const doc = document as Record<symbol, Mount | undefined>;
 	if (doc[kMount] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
 	doc[kMount] = engine;
+	const mounted = document as Document;
+	const readCount = watchHoverListeners(mounted, () =>
+		engine.hoverListenersChanged(),
+	);
+	return {
+		hoveredElement(element: object | null): void {
+			setHoveredElement(mounted, element as Element | null);
+		},
+		hoverListenerCount: readCount,
+	};
 }
 
 /** The mount of a node's document, or undefined when it is headless. */
@@ -25377,6 +25401,16 @@ export class Window extends EventTarget {
 	constructor(document: Document) {
 		super();
 		this.document = document;
+		// Displaying a document is what gives it a defaultView, and the
+		// displayed document is the one bare node constructors belong to.
+		document[kDefaultView] = this;
+		ambientDocument = document;
+	}
+
+	// The realm has one registry: definitions are per-realm because the
+	// classes are, and a window names the registry the realm holds.
+	get customElements(): CustomElementRegistry {
+		return customElements;
 	}
 
 	// The terminal is the window and the screen both, so the inner and outer
@@ -25687,6 +25721,153 @@ type PointerSurface =
 
 /** RUNTIME: the fullscreen event handlers, installed from the tables. */
 type FullscreenSurface = "onfullscreenchange" | "onfullscreenerror";
+
+/**
+ * The interfaces a window names, under the names WebIDL gives them. This
+ * enumeration is the one place an interface joins the window: a class that
+ * is not listed here is not visible to script, whatever this module exports.
+ */
+export const platform = {
+	AbstractRange,
+	AnimationEvent,
+	Attr,
+	BeforeUnloadEvent,
+	CDATASection,
+	CharacterData,
+	ClipboardEvent,
+	Comment,
+	CompositionEvent,
+	CustomElementRegistry,
+	CustomEvent,
+	CustomStateSet,
+	DOMImplementation,
+	DOMParser,
+	DOMRect,
+	DOMRectList,
+	DOMRectReadOnly,
+	DOMStringMap,
+	DOMTokenList,
+	DataTransfer,
+	DataTransferItem,
+	DataTransferItemList,
+	Document,
+	DocumentFragment,
+	DocumentType,
+	DragEvent,
+	Element,
+	ElementInternals,
+	Event,
+	EventTarget,
+	FileList,
+	FocusEvent,
+	HTMLAnchorElement,
+	HTMLAreaElement,
+	HTMLAudioElement,
+	HTMLBRElement,
+	HTMLBaseElement,
+	HTMLBodyElement,
+	HTMLButtonElement,
+	HTMLCanvasElement,
+	HTMLCollection,
+	HTMLDListElement,
+	HTMLDataElement,
+	HTMLDataListElement,
+	HTMLDetailsElement,
+	HTMLDialogElement,
+	HTMLDirectoryElement,
+	HTMLDivElement,
+	HTMLElement,
+	HTMLEmbedElement,
+	HTMLFieldSetElement,
+	HTMLFontElement,
+	HTMLFormControlsCollection,
+	HTMLFormElement,
+	HTMLFrameElement,
+	HTMLFrameSetElement,
+	HTMLHRElement,
+	HTMLHeadElement,
+	HTMLHeadingElement,
+	HTMLHtmlElement,
+	HTMLIFrameElement,
+	HTMLImageElement,
+	HTMLInputElement,
+	HTMLLIElement,
+	HTMLLabelElement,
+	HTMLLegendElement,
+	HTMLLinkElement,
+	HTMLMapElement,
+	HTMLMarqueeElement,
+	HTMLMediaElement,
+	HTMLMenuElement,
+	HTMLMetaElement,
+	HTMLMeterElement,
+	HTMLModElement,
+	HTMLOListElement,
+	HTMLObjectElement,
+	HTMLOptGroupElement,
+	HTMLOptionElement,
+	HTMLOptionsCollection,
+	HTMLOutputElement,
+	HTMLParagraphElement,
+	HTMLParamElement,
+	HTMLPictureElement,
+	HTMLPreElement,
+	HTMLProgressElement,
+	HTMLQuoteElement,
+	HTMLScriptElement,
+	HTMLSelectElement,
+	HTMLSlotElement,
+	HTMLSourceElement,
+	HTMLSpanElement,
+	HTMLStyleElement,
+	HTMLTableCaptionElement,
+	HTMLTableCellElement,
+	HTMLTableColElement,
+	HTMLTableElement,
+	HTMLTableRowElement,
+	HTMLTableSectionElement,
+	HTMLTemplateElement,
+	HTMLTextAreaElement,
+	HTMLTimeElement,
+	HTMLTitleElement,
+	HTMLTrackElement,
+	HTMLUListElement,
+	HTMLUnknownElement,
+	HTMLVideoElement,
+	HashChangeEvent,
+	InputEvent,
+	KeyboardEvent,
+	MathMLElement,
+	MessageEvent,
+	MouseEvent,
+	MutationObserver,
+	MutationRecord,
+	NamedNodeMap,
+	Node,
+	NodeFilter,
+	NodeIterator,
+	NodeList,
+	PointerEvent,
+	ProcessingInstruction,
+	RadioNodeList,
+	Range,
+	SVGElement,
+	Selection,
+	ShadowRoot,
+	StaticRange,
+	StorageEvent,
+	SubmitEvent,
+	Text,
+	TextEvent,
+	ToggleEvent,
+	TransitionEvent,
+	TreeWalker,
+	UIEvent,
+	ValidityState,
+	WheelEvent,
+	Window,
+	XMLDocument,
+} as const;
 
 /** GAP or NEVER, per member -- the un-binned remainder of Element. */
 type ElementRemainder =

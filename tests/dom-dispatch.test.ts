@@ -9,7 +9,21 @@
  * host of one's own is a tree one is inside.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {createHTMLDocument, FocusEvent} from "../src/internal/dom.js";
+import {
+	FocusEvent,
+	type Document,
+	parseHTMLDocument,
+} from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
 
 /**
  * A host in a document, a shadow tree on it holding a sibling and a second

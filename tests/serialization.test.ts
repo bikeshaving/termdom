@@ -9,7 +9,17 @@
  * shows up here as a corpus entry that drifts on the second pass.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {createHTMLDocument, parseHTMLDocument} from "../src/internal/dom.js";
+import {type Document, parseHTMLDocument} from "../src/internal/dom.js";
+
+// The door a test document comes through. The parser is the one that hands
+// a document the realm's custom element registry, as it does the engine's.
+function createHTMLDocument(title?: string): Document {
+	return parseHTMLDocument(
+		title === undefined ?
+			"<!doctype html>" :
+			`<!doctype html><title>${title}</title>`,
+	);
+}
 
 /**
  * Markup covering each branch the serialization algorithm has: the elements
