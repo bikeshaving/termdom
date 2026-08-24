@@ -996,11 +996,6 @@ export class TermDOM {
 
 		engines.set(document, this);
 		TermDOM[kInstallPrototypes](this.window);
-		this[kScreen] = new Screen(
-			this[kHeight],
-			this[kWidth],
-			this[kTransport].colorDepth,
-		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this[kStyleManager] = new StyleManager(this.window);
@@ -1061,8 +1056,15 @@ export class TermDOM {
 			topLayer: this[kTopLayer],
 			toolkit: this[kUAToolkit],
 		});
+		// The session first: the screen measures widths over the session's
+		// probe channel, and takes it for its lifetime.
 		this[kSession] = buildSession(this);
-		this[kScreen].measureWidthsWith(this[kSession].widthMeasurer);
+		this[kScreen] = new Screen(
+			this[kHeight],
+			this[kWidth],
+			this[kTransport].colorDepth,
+			this[kSession].widthMeasurer,
+		);
 
 		// A field edit -- text (input), a caret or selection move
 		// (select/selectionchange), or a checkbox/radio toggle (change) --
@@ -2785,13 +2787,13 @@ function rebindTransport(
 	termdom[kTransport] = transport;
 	termdom[kInteractive] = transport.interactive;
 	applyTerminalSize(termdom, transport.cols, transport.rows);
+	termdom[kSession] = buildSession(termdom);
 	termdom[kScreen] = new Screen(
 		termdom[kHeight],
 		termdom[kWidth],
 		transport.colorDepth,
+		termdom[kSession].widthMeasurer,
 	);
-	termdom[kSession] = buildSession(termdom);
-	termdom[kScreen].measureWidthsWith(termdom[kSession].widthMeasurer);
 }
 
 /**

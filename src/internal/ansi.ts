@@ -1747,17 +1747,28 @@ export class Screen {
 	// A probe train is waiting for a frame to ride: the next flush re-emits
 	// the first contentful row as its cover, though the document has not moved.
 	declare [kRideProbeTrain]: boolean;
-	// The width-probe channel, or null before one is wired (headless renders
-	// never wire one).
+	// The width-probe channel, or null when the screen has none (headless
+	// renders never have one).
 	declare [kMeasurer]: WidthMeasurer | null;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
 	declare [kColorDepth]: ColorDepth;
 
-	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
+	/**
+	 * A screen measures widths through the channel it is built with, for as
+	 * long as it lives. Whether a given frame probes is decided as the frame
+	 * is emitted (probingTeaches reads the channel's facts as they stand),
+	 * so probing ending or mode 2027 settling later changes nothing here.
+	 */
+	constructor(
+		rows: number,
+		cols: number,
+		colorDepth: ColorDepth = "rgb",
+		measurer: WidthMeasurer | null = null,
+	) {
 		this[kRideProbeTrain] = false;
-		this[kMeasurer] = null;
+		this[kMeasurer] = measurer;
 		this[kPrev] = null;
 		this[kSpare] = null;
 		this[kDiff] = null;
@@ -1840,16 +1851,6 @@ export class Screen {
 	 */
 	rideProbeTrain(): void {
 		this[kRideProbeTrain] = true;
-	}
-
-	/**
-	 * Wire the width-probe channel, once, when the session that owns the
-	 * wire exists. Whether a given frame probes is decided as the frame is
-	 * emitted (probingTeaches reads the channel's facts as they stand), so
-	 * probing ending or mode 2027 settling later needs no re-wiring here.
-	 */
-	measureWidthsWith(measurer: WidthMeasurer): void {
-		this[kMeasurer] = measurer;
 	}
 
 	/**
