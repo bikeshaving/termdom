@@ -25,22 +25,17 @@ import {
 	IntersectionObserver as TermIntersectionObserver,
 } from "./observers.js";
 import {
-	FOCUSABLE_SELECTOR,
+	EventHandler,
 	focusAutofocusedNodes,
-	sequentialFocusEntries,
-	keyboardActivation,
-} from "./events.js";
+	type DocumentPoint,
+} from "./input.js";
 import {
 	cursorHome,
 	cursorTo,
-	decodeKey,
-	decodeMouseReport,
-	domCodeFor,
 	eraseBelow,
 	eraseScreen,
 	eraseToLineEnd,
 	index,
-	tokenizeInput,
 } from "./wire.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
@@ -487,9 +482,9 @@ const kInteractive = Symbol("interactive");
 const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
-const kLastMouse = Symbol("lastMouse");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
+const kEventHandler = Symbol("eventHandler");
 const kFullscreenStack = Symbol("fullscreenStack");
 const kExchange = Symbol("exchange");
 const kObserverManager = Symbol("observerManager");
@@ -511,29 +506,17 @@ const kAttachReady = Symbol("attachReady");
 const kRenderCount = Symbol("renderCount");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
-const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
 const kDisposed = Symbol("disposed");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kMountHandle = Symbol("mountHandle");
-const kPendingHover = Symbol("pendingHover");
-const kHoverElement = Symbol("hoverElement");
-const kScrollChainTimer = Symbol("scrollChainTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kIsRendering = Symbol("isRendering");
 const kRenderQueued = Symbol("renderQueued");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kResizeTimer = Symbol("resizeTimer");
-const kSCROLL_CHAIN_TIMEOUT_MS = Symbol("SCROLL_CHAIN_TIMEOUT_MS");
-const kFieldDragAnchor = Symbol("fieldDragAnchor");
-const kSelectionDragAnchor = Symbol("selectionDragAnchor");
-const kMouseDownTarget = Symbol("mouseDownTarget");
-const kPopoverPressTarget = Symbol("popoverPressTarget");
-const kLastClickTarget = Symbol("lastClickTarget");
-const kLastClickTime = Symbol("lastClickTime");
-const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
 const kStaticSibling = Symbol("staticSibling");
 
 /**
@@ -611,8 +594,9 @@ export class TermDOM {
 	 */
 	declare [kUAToolkit]: DOM.UAToolkit;
 
-	// Where the last mouse report landed, for MouseEvent.movementX/Y.
-	declare [kLastMouse]: {x: number; y: number} | null;
+	// The input interpreter: decoded wire items in, DOM events out, and the
+	// transient gesture state interpretation needs.
+	declare [kEventHandler]: EventHandler;
 
 	// Timers that must be torn down in dispose(), or they keep the process
 	// alive after the app is done -- which, across a test suite, piles up
@@ -675,52 +659,6 @@ export class TermDOM {
 	// what "the document observes hover" means (the other half is a sheet
 	// with a :hover rule).
 	declare [kMountHandle]: DOM.MountHandle;
-	// The last motion report's position, coalesced: however many reports a
-	// chunk delivers, the frame hit-tests once, here. `quiet` marks a drag's
-	// motion, whose mousemove the report itself already dispatched.
-	declare [kPendingHover]: {
-		x: number;
-		y: number;
-		shiftKey: boolean;
-		altKey: boolean;
-		ctrlKey: boolean;
-		quiet: boolean;
-	} | null;
-
-	// The element under the pointer, which :hover styling and the boundary
-	// events (mouseover/out/enter/leave) are both diffed against.
-	declare [kHoverElement]: Element | null;
-	// Scroll chaining yielded the mouse back to the terminal: the camera hit
-	// the document top and the user kept scrolling up, so the wheel now
-	// belongs to the terminal's own scrollback. Cleared by the next keystroke
-	// -- terminals snap to the live screen on input, which is exactly the
-	// moment the wheel should become ours again -- or, failing that, by
-	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see kScrollChainTimer).
-	declare [kMouseCaptureYielded]: boolean;
-	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
-	// activity produces literally no signal (that's the entire mechanism --
-	// the terminal is handling it, not us), so there's no way to reset this on
-	// continued scrolling the way a real debounce would. It's a flat window
-	// from the moment of yielding, not "N ms since the last wheel tick" --
-	// which is exactly why this can't be too short: a real wheel/trackpad
-	// doesn't tick perfectly continuously, and any gap between ticks longer
-	// than this window re-enables capture mid-scroll, which the very next
-	// tick immediately re-yields -- a disable/enable toggle on every gap for
-	// as long as the user keeps scrolling, not just a one-time early
-	// re-enable.
-	static readonly [kSCROLL_CHAIN_TIMEOUT_MS] = 3000;
-	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
-	// Where the last mousedown landed, so a mouseup on the same element
-	// becomes a click. (Browsers dispatch click at the nearest common
-	// ancestor; the same-element case is the one that matters on a cell grid.)
-	declare [kMouseDownTarget]: Element | null;
-	// The popover the last mousedown belonged to, which light dismiss compares
-	// the release against.
-	declare [kPopoverPressTarget]: object | null;
-	// Where a left-button drag started selecting text, as a caret position --
-	// the selection's anchor. The focus end follows the drag; both feed
-	// Selection.setBaseAndExtent, which handles backward drags itself.
-	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
 	// The field whose caret the NEXT frame must reveal -- set by edits,
 	// consumed inside kRenderInteractive after its layout flush. Last
 	// edit before the frame wins.
@@ -729,22 +667,6 @@ export class TermDOM {
 		HTMLSelectElement |
 		null;
 
-	// A drag that started inside a text field extends the FIELD's own
-	// selection (selectionStart/End, bounded to the field) rather than the
-	// document selection -- the browser's exact split. The anchor is a
-	// value offset; the focus end follows the pointer, clamped into the
-	// field.
-	declare [kFieldDragAnchor]: {
-		element: HTMLInputElement | HTMLTextAreaElement;
-		offset: number;
-	} | null;
-
-	// The target and time of the last completed click, to detect a second one
-	// close enough behind it to be a dblclick -- browsers' own double-click
-	// interval varies by OS/user setting; 500ms is the common default.
-	static readonly [kDBLCLICK_INTERVAL_MS] = 500;
-	declare [kLastClickTarget]: Element | null;
-	declare [kLastClickTime]: number;
 	declare [kTransport]: TerminalTransport;
 
 	// The conversation over the transport: the input demultiplexer plus the
@@ -783,17 +705,7 @@ export class TermDOM {
 		this[kScrolledElements] = new Set();
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
-		this[kPendingHover] = null;
-		this[kHoverElement] = null;
-		this[kMouseCaptureYielded] = false;
-		this[kScrollChainTimer] = null;
-		this[kMouseDownTarget] = null;
-		this[kPopoverPressTarget] = null;
-		this[kSelectionDragAnchor] = null;
 		this[kPendingCaretReveal] = null;
-		this[kFieldDragAnchor] = null;
-		this[kLastClickTarget] = null;
-		this[kLastClickTime] = 0;
 		this[kOnDisclosureToggle] = (event: Event): void => {
 			const details = event.target as HTMLElement | null;
 			if (details === null || !("open" in details)) {
@@ -866,7 +778,6 @@ export class TermDOM {
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
 		// when a newly connected one should be upgraded.
-		this[kLastMouse] = null;
 		this[kUAToolkit] = installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
@@ -882,6 +793,7 @@ export class TermDOM {
 			},
 		});
 		this[kTopLayer] = this[kUAToolkit].topLayer as unknown as Set<Element>;
+		this[kEventHandler] = buildEventHandler(this);
 		this[kPainter] = new Painter({
 			window: this.window,
 			document: this.document,
@@ -1157,10 +1069,7 @@ export class TermDOM {
 			clearTimeout(this[kResizeTimer]);
 			this[kResizeTimer] = null;
 		}
-		if (this[kScrollChainTimer] !== null) {
-			clearTimeout(this[kScrollChainTimer]);
-			this[kScrollChainTimer] = null;
-		}
+		this[kEventHandler].dispose();
 
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
@@ -1976,6 +1885,76 @@ function setupMutationObserver(
 }
 
 /**
+ * The input interpreter, wired to this instance. Its collaborators are split
+ * by owner: what it dispatches into, what it asks about a point, and the
+ * user-agent defaults that move the camera or the wire and so stay here.
+ */
+function buildEventHandler(termdom: TermDOM): EventHandler {
+	return new EventHandler({
+		view: {
+			get document(): Document {
+				return termdom.document;
+			},
+			get window(): EngineWindow {
+				return termdom.window;
+			},
+			fireAsUserAgent: (target, event) => fireAsUserAgent(target, event),
+			requestRender: () => {
+				void render(termdom);
+			},
+		},
+		hitTest: {
+			// A row above the painted region is not part of the document -- a
+			// shell prompt above the command start. In fullscreen the alternate
+			// screen owns row zero, so the anchor supplies the origin directly.
+			documentPointAt: (col, row): DocumentPoint => {
+				const documentRow =
+					isFullscreen(termdom) ?
+						row - 1 + termdom[kAnchorScrollTop] :
+						row - 1 - termdom[kScreenTop] + termdom[kScrollTop];
+				const inDocument = documentRow >= 0;
+				return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
+			},
+			elementAt: (x, y) => findElementAtDocumentPoint(termdom, x, y),
+		},
+		defaults: {
+			scrollByWheel: (target, deltaY) => {
+				// The innermost scroll box under the pointer that can still move
+				// in the wheel's direction consumes the tick; an exhausted one
+				// chains outward -- ultimately to the camera and the terminal's
+				// own scrollback below, the browser's scroll chaining.
+				const scroller = wheelScrollerFor(termdom, target, deltaY);
+				if (scroller) {
+					scroller.scrollTop += deltaY;
+					return false;
+				}
+				if (
+					deltaY < 0 &&
+					termdom[kScrollTop] === 0 &&
+					!isFullscreen(termdom)
+				) {
+					return true;
+				}
+				scrollCamera(termdom, deltaY);
+				return false;
+			},
+			mouseCaptureChanged: () => {
+				updateMouseReporting(termdom);
+			},
+			hoverMoved: (target) => {
+				termdom[kMountHandle].hoveredElement(target);
+			},
+			modalScope: () => topmostModalDialog(termdom),
+			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
+			fullscreenTarget: () => fullscreenElementOf(termdom),
+		},
+		toolkit: termdom[kUAToolkit],
+		styleManager: termdom[kStyleManager],
+		layout: termdom[kLayoutEngine],
+	});
+}
+
+/**
  * The exchange over the transport: input demultiplexing and the query
  * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
  * started only by attach() -- construction holds no lock and reads nothing.
@@ -1995,21 +1974,15 @@ function buildExchange(
 			// and an empty diff, which is what it is worth.
 			onKeys: (keyInput) => {
 				termdom[kFrameDirty] = true;
-				// A keystroke means the user is back at the live screen
-				// (terminals snap to the bottom on input): reclaim the mouse
-				// if scroll chaining yielded it.
-				if (termdom[kMouseCaptureYielded]) {
-					reclaimMouseCapture(termdom);
-				}
-				dispatchGlobalKeyboardEvent(termdom, keyInput);
+				termdom[kEventHandler].handleKeys(keyInput);
 			},
 			onMouse: (button, x, y, release) => {
 				termdom[kFrameDirty] = true;
-				handleMouseReport(termdom, button, x, y, release);
+				termdom[kEventHandler].handleMouseReport(button, x, y, release);
 			},
 			onPaste: (text) => {
 				termdom[kFrameDirty] = true;
-				dispatchPaste(termdom, text);
+				termdom[kEventHandler].handlePaste(text);
 			},
 			onResize: () => {
 				scheduleResize(termdom);
@@ -2144,7 +2117,7 @@ function updateMouseReporting(
 	const wanted =
 		termdom[kAttached] &&
 		termdom[kInteractive] &&
-		!termdom[kMouseCaptureYielded];
+		!termdom[kEventHandler].mouseCaptureYielded;
 	if (wanted === termdom[kMouseReportingEnabled]) {
 		return;
 	}
@@ -2189,25 +2162,6 @@ function updateHoverReporting(
 	}
 	termdom[kHoverReportingEnabled] = wanted;
 	termdom[kExchange].setMode("motionReporting", wanted);
-}
-
-/**
- * End a scroll-chaining yield, from whichever of the two triggers reaches
- * it first -- a keystroke (the common case) or the fallback timer (see
- * kScrollChainTimer). Both need the same cleanup, so this is the one place
- * that does it: clear the pending timer (the other trigger firing later
- * would be a harmless no-op via kUpdateMouseReporting's own idempotence,
- * but there is no reason to let it) and restore mouse capture.
- */
-function reclaimMouseCapture(
-	termdom: TermDOM,
-): void {
-	if (termdom[kScrollChainTimer] !== null) {
-		clearTimeout(termdom[kScrollChainTimer]);
-		termdom[kScrollChainTimer] = null;
-	}
-	termdom[kMouseCaptureYielded] = false;
-	updateMouseReporting(termdom);
 }
 
 async function render(
@@ -2348,37 +2302,6 @@ function cameraRegionHeight(
 	return isFullscreen(termdom) ?
 		termdom[kHeight] :
 			Math.min(termdom[kHeight], termdom.document.body.scrollHeight);
-}
-
-/**
- * The value offset under a document-space point in a text field --
- * cell-width aware, clamped to the nearest offset so a drag that
- * leaves the field still resolves (the browser's capture model:
- * a selection begun in a field is the field's until release).
- */
-function fieldOffsetAtPoint(
-	termdom: TermDOM,
-	element: HTMLInputElement | HTMLTextAreaElement,
-	x: number,
-	y: number,
-): number | null {
-	// The value's own text: a field's selection is measured in ITS offsets,
-	// and for a password that text is the bullets, which is what was
-	// painted and so what the point lands on.
-	const valueText = termdom[kUAToolkit].valueTextOf(element);
-	if (!valueText) {
-		return null;
-	}
-	const found = termdom[kLayoutEngine].caretPositionFromPoint(
-		x,
-		y,
-		valueText,
-		true,
-	);
-	if (!found) {
-		return null;
-	}
-	return Math.min(found.offset, valueText.data.length);
 }
 
 /**
@@ -2833,165 +2756,6 @@ function topmostCloseRequestTarget(
 }
 
 /**
- * Focus the next or previous focusable element
- */
-function moveFocus(
-	termdom: TermDOM,
-	reverse: boolean,
-): void {
-	// A modal dialog makes the rest of the document inert, and the visible
-	// half of inertness is that Tab cannot leave the dialog: the sequential
-	// order is the dialog's own, and it wraps within it.
-	const scope = topmostModalDialog(termdom) ?? termdom.document;
-	const entries = sequentialFocusEntries(
-		scope,
-		termdom[kLayoutEngine],
-		termdom[kUAToolkit],
-	);
-
-	// activeElement retargets to the shadow host at document scope; the
-	// walk needs the innermost focused element, so follow each root's own
-	// activeElement down.
-	let current = termdom.document.activeElement;
-	while (current !== null) {
-		const shadow = termdom[kUAToolkit].shadowRootOf<ShadowRoot>(current);
-		const inner = shadow?.activeElement ?? null;
-		if (inner === null) {
-			break;
-		}
-		current = inner;
-	}
-	const currentIndex = entries.findIndex(
-		(entry) => entry.element === current,
-	);
-	// A stop behind a barrier is only reachable while focus already sits
-	// behind the same barrier -- script put it there; Tab may continue
-	// within and out, but never in.
-	const currentBarrier =
-		currentIndex === -1 ? null : entries[currentIndex].barrier;
-	// From open ground only open stops are reachable; from behind a
-	// barrier, only stops behind the same one -- crossing out is the tree
-	// exit below, and crossing in never happens.
-	const reachable = (index: number): boolean =>
-		entries[index].barrier === currentBarrier;
-	const step = reverse ? -1 : 1;
-	let nextIndex = -1;
-	if (currentIndex === -1) {
-		// From the blurred stop, Tab enters at the first element and
-		// Shift+Tab at the last, as from a browser's chrome.
-		for (
-			let i = reverse ? entries.length - 1 : 0;
-			i >= 0 && i < entries.length;
-			i += step
-		) {
-			if (reachable(i)) {
-				nextIndex = i;
-				break;
-			}
-		}
-	} else {
-		for (
-			let i = currentIndex + step;
-			i >= 0 && i < entries.length;
-			i += step
-		) {
-			if (reachable(i)) {
-				nextIndex = i;
-				break;
-			}
-		}
-	}
-
-	// Tab past the last focusable (or Shift+Tab before the first) rests on
-	// nothing. That is the leg of a browser's cycle where focus walks the
-	// chrome and the page sees activeElement fall back to body; a terminal
-	// has no chrome, so the blurred stop stands in for it. It is also what
-	// keeps a scope with a single focusable element escapable -- a pure
-	// wrap would cycle Tab onto it forever.
-	// Leaving a barred subtree continues at the barrier owner's tree
-	// successor, whatever its tabindex: the owner opted its subtree out of
-	// the tab order, so the exit rejoins plain tree order beside it.
-	if (nextIndex === -1 && currentBarrier !== null) {
-		const FOLLOWING = 4;
-		const PRECEDING = 2;
-		const wanted = reverse ? PRECEDING : FOLLOWING;
-		for (let i = 0; i < entries.length; i++) {
-			if (
-				entries[i].barrier !== null ||
-				(currentBarrier.compareDocumentPosition(entries[i].element) &
-					wanted) ===
-					0
-			) {
-				continue;
-			}
-			if (nextIndex === -1) {
-				nextIndex = i;
-				continue;
-			}
-			// Of everything on the wanted side, the tree-nearest stop wins:
-			// forward takes the earliest follower, backward the latest
-			// preceder.
-			const beats =
-				(entries[i].element.compareDocumentPosition(
-					entries[nextIndex].element,
-				) &
-				wanted) !==
-				0;
-			if (beats) {
-				nextIndex = i;
-			}
-		}
-		// Backward entry into a scope owner's expansion lands on its last
-		// stop, not the owner: blocks are contiguous in the flat order, so
-		// extend through the run of the owner's shadow-including
-		// descendants.
-		if (reverse && nextIndex !== -1) {
-			const owner = entries[nextIndex].element;
-			const within = (element: Element): boolean => {
-				for (
-					let ancestor: Element | null = element;
-					ancestor !== null;
-					ancestor =
-						termdom[kUAToolkit].flatParentElement<Element>(ancestor)
-				) {
-					if (ancestor === owner) {
-						return true;
-					}
-				}
-				return false;
-			};
-			while (
-				nextIndex + 1 < entries.length &&
-				entries[nextIndex + 1].barrier === null &&
-				within(entries[nextIndex + 1].element)
-			) {
-				nextIndex++;
-			}
-		}
-	}
-
-	if (nextIndex === -1) {
-		if (current !== null) {
-			(current as HTMLElement).blur();
-		}
-		return;
-	}
-
-	const next = entries[nextIndex].element as HTMLElement;
-	next.focus();
-	// A control the camera is not looking at cannot be typed into, so the
-	// move brings it into view -- what a browser does when focus leaves the
-	// scrollport, and what makes tabbing through a form longer than the
-	// screen work at all.
-	next.scrollIntoView({block: "nearest"});
-
-	// Focus is not a DOM mutation, so no observer will schedule a frame -- but
-	// :focus styling and the caret (the real terminal cursor, parked in the
-	// focused field) both need one to move.
-	void render(termdom);
-}
-
-/**
  * Hit-test a document-relative point (flushing pending layout first). The
  * one place both document.elementFromPoint (which converts its public,
  * viewport-relative x/y into this space) and mouse hit-testing (whose
@@ -3047,40 +2811,6 @@ function findElementAtDocumentPoint(
 }
 
 /**
- * The caret position under a document point: the element it hit-tests to,
- * asked of the engine.
- *
- * Null over a form control, whose value is not document text -- its
- * selection is the control's own bounded world, which kFieldOffsetAtPoint
- * asks about instead. The two never merge: getSelection() cannot see inside
- * a control, per spec.
- */
-function documentPointToTextPosition(
-	termdom: TermDOM,
-	x: number,
-	y: number,
-): {node: Text; offset: number} | null {
-	const element = findElementAtDocumentPoint(termdom, x, y);
-	if (
-		!element ||
-		element instanceof (termdom.window as any).HTMLInputElement ||
-		element instanceof (termdom.window as any).HTMLTextAreaElement
-	) {
-		return null;
-	}
-	return termdom[kLayoutEngine].caretPositionFromPoint(x, y, element);
-}
-
-/** Whether the text at a caret position may enter the document selection. */
-function selectableTextPosition(
-	termdom: TermDOM,
-	position: {node: Text; offset: number},
-): boolean {
-	const parent = termdom[kUAToolkit].flatParentElement<Element>(position.node);
-	return parent === null || termdom[kStyleManager].isSelectable(parent);
-}
-
-/**
  * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
  * ancestor (the target included) whose overflow-y makes it a scroll
  * container -- auto or scroll; hidden and visible don't take the wheel, as
@@ -3123,759 +2853,6 @@ function wheelScrollerFor(
 		}
 	}
 	return null;
-}
-
-/**
- * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
- * These only arrive while capture is on -- see updateMouseReporting.
- *
- * Reports become the DOM's own mouse events, dispatched at the element
- * under the cell (document.elementFromPoint is layout-true), with the
- * browser's default actions: wheel scrolls the camera, mousedown moves
- * focus, mouseup on the mousedown target is a click.
- */
-function handleMouseReport(
-	termdom: TermDOM,
-	code: number,
-	col: number,
-	row: number,
-	isRelease: boolean,
-): void {
-	const {
-		shiftKey,
-		altKey,
-		ctrlKey,
-		isMotion,
-		base,
-		wheelDeltaY,
-		button,
-		buttons,
-	} = decodeMouseReport(code, isRelease);
-
-	// The document point under the reported cell. A row above the painted
-	// region is not part of the document -- a shell prompt above the command
-	// start -- and reports 0. In fullscreen the alternate screen owns row
-	// zero, so the anchor supplies the origin directly.
-	const x = col - 1;
-	const documentRow =
-		isFullscreen(termdom) ?
-			row - 1 + termdom[kAnchorScrollTop] :
-			row - 1 - termdom[kScreenTop] + termdom[kScrollTop];
-	const inDocument = documentRow >= 0;
-	const y = inDocument ? documentRow : 0;
-
-	// Motion arrives at cell granularity -- with 1003 on, a report per cell
-	// crossed -- so it is COALESCED: the frame hit-tests the last position
-	// once and updates the hover chain there (see processPendingHover),
-	// instead of paying a hit-test per report. A drag's motion (base <= 2)
-	// falls through besides: its per-report mousemove and selection updates
-	// predate hover and keep their timing.
-	if (isMotion) {
-		termdom[kPendingHover] = {
-			x,
-			y,
-			shiftKey,
-			altKey,
-			ctrlKey,
-			quiet: base <= 2,
-		};
-		if (base > 2) {
-			void render(termdom);
-			return;
-		}
-	}
-
-	// Already document-relative -- go straight to the shared hit-test rather
-	// than through the public elementFromPoint, which expects viewport-
-	// relative input and would convert it right back.
-	const target =
-		(inDocument && findElementAtDocumentPoint(termdom, x, y)) ||
-		termdom.document.body;
-
-	if (wheelDeltaY !== null) {
-		const notCanceled = fireAsUserAgent(
-			target,
-			new termdom.window.WheelEvent("wheel", {
-				deltaY: wheelDeltaY,
-				deltaMode: 1, // DOM_DELTA_LINE
-				clientX: x,
-				clientY: y,
-				shiftKey,
-				altKey,
-				ctrlKey,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
-		if (notCanceled) {
-			// The innermost scroll box under the pointer that can still move
-			// in the wheel's direction consumes the tick; an exhausted one
-			// chains outward -- ultimately to the camera and the terminal's
-			// own scrollback below, the browser's scroll chaining.
-			const scroller = wheelScrollerFor(
-				termdom,
-				target as Element,
-				wheelDeltaY,
-			);
-			if (scroller) {
-				scroller.scrollTop += wheelDeltaY;
-				return;
-			}
-			if (
-				wheelDeltaY < 0 &&
-				termdom[kScrollTop] === 0 &&
-				!isFullscreen(termdom)
-			) {
-				// Scroll chaining, the browser default: the camera is at the
-				// document top, so the scroll escapes to the parent scroller --
-				// here, the terminal's own scrollback. Yield the mouse so the
-				// next wheel tick scrolls the shell history natively; the next
-				// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
-				// reclaims it too, in case the user scrolls back down without
-				// ever pressing a key -- wheel activity while yielded produces no
-				// signal we could otherwise catch that on. An app opts out the
-				// same way it would in a browser: preventDefault on the wheel
-				// event.
-				termdom[kMouseCaptureYielded] = true;
-				updateMouseReporting(termdom);
-				if (termdom[kScrollChainTimer] !== null) {
-					clearTimeout(termdom[kScrollChainTimer]);
-				}
-				termdom[kScrollChainTimer] = setTimeout(() => {
-					termdom[kScrollChainTimer] = null;
-					reclaimMouseCapture(termdom);
-				}, TermDOM[kSCROLL_CHAIN_TIMEOUT_MS]);
-			} else {
-				scrollCamera(termdom, wheelDeltaY);
-			}
-		}
-		return;
-	}
-
-	// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
-	// encoding; SGR names the button even on release, so 3 carries nothing.
-	if (base > 2) {
-		return;
-	}
-	const last = termdom[kLastMouse];
-	const eventInit = {
-		button,
-		buttons,
-		clientX: x,
-		clientY: y,
-		// The spec's delta from the previous mousemove; the first report
-		// has nothing to move from.
-		movementX: last === null ? 0 : x - last.x,
-		movementY: last === null ? 0 : y - last.y,
-		shiftKey,
-		altKey,
-		ctrlKey,
-		bubbles: true,
-		cancelable: true,
-	};
-	termdom[kLastMouse] = {x, y};
-
-	if (isMotion) {
-		fireAsUserAgent(
-			target,
-			new termdom.window.MouseEvent("mousemove", eventInit),
-		);
-		// A field drag extends the field's own selection to the offset
-		// under the pointer -- clamped into the field, whichever element
-		// the pointer is over now (the field holds the capture).
-		if (termdom[kFieldDragAnchor] && inDocument) {
-			const {element: fieldElement, offset: anchor} = termdom[kFieldDragAnchor];
-			const focus = fieldOffsetAtPoint(termdom, fieldElement, x, y);
-			if (focus !== null) {
-				termdom[kUAToolkit].setSelection(
-					fieldElement,
-					Math.min(anchor, focus),
-					Math.max(anchor, focus),
-					focus < anchor ? "backward" : "forward",
-				);
-				render(termdom);
-			}
-			return;
-		}
-		// Dragging with the anchor set extends the document selection to
-		// the caret position under the pointer. setBaseAndExtent handles a
-		// backward drag itself; over a textless stretch -- or user-select:
-		// none content -- the focus simply stays where it last was.
-		if (
-			termdom[kSelectionDragAnchor] && termdom[kMouseDownTarget] && inDocument
-		) {
-			const focus = documentPointToTextPosition(termdom, x, y);
-			if (focus && selectableTextPosition(termdom, focus)) {
-				const anchor = termdom[kSelectionDragAnchor];
-				termdom.window
-					.getSelection()
-					?.setBaseAndExtent(
-						anchor.node,
-						anchor.offset,
-						focus.node,
-						focus.offset,
-					);
-				render(termdom);
-			}
-		}
-		return;
-	}
-
-	if (!isRelease) {
-		termdom[kMouseDownTarget] = target;
-		// The popover a press belongs to, which the release compares
-		// against: light dismiss is a press and a release in the same
-		// place, so a drag out of a popover does not close it.
-		termdom[kPopoverPressTarget] = termdom[kUAToolkit].topmostClickedPopover(
-			target,
-		);
-		termdom[kFieldDragAnchor] = null;
-		// A pointer press suppresses the :focus-visible ring.
-		if (termdom[kStyleManager].setFocusVisible(false)) {
-			termdom[kStyleManager].handleFocusChange(termdom.document.activeElement);
-			void render(termdom);
-		}
-		const notCanceled = fireAsUserAgent(
-			target,
-			new termdom.window.MouseEvent("mousedown", eventInit),
-		);
-		// Default action: mousedown moves focus, exactly as in a browser --
-		// to the nearest focusable ancestor, or away from the active element
-		// when the click lands on nothing focusable.
-		if (notCanceled) {
-			const focusable = (target as Element).closest?.(FOCUSABLE_SELECTOR);
-			const active = termdom.document.activeElement;
-			if (focusable && focusable !== active) {
-				(focusable as HTMLElement).focus();
-				void render(termdom);
-			} else if (!focusable && active && active !== termdom.document.body) {
-				(active as HTMLElement).blur();
-				void render(termdom);
-			}
-
-			// A select's press-to-open and option-row commit are the select
-			// widget's own mousedown listener, run during dispatch above --
-			// the un-retargeted option row it needs comes from the rows' own
-			// document rects, not a renderer hit-test here.
-
-			// Default action: a press in a text field parks the caret at
-			// the pressed character and anchors a FIELD drag there -- the
-			// field's own bounded selectionStart/End world, never the
-			// document selection: the same split a browser makes.
-			const field =
-				base === 0 &&
-				inDocument &&
-				termdom[kUAToolkit].isTextField(target as Element) ?
-						(target as HTMLInputElement | HTMLTextAreaElement) :
-					null;
-			if (field) {
-				const offset = fieldOffsetAtPoint(termdom, field, x, y);
-				if (offset !== null) {
-					termdom[kUAToolkit].setSelection(field, offset, offset);
-					termdom[kFieldDragAnchor] = {element: field, offset};
-					// The DOCUMENT selection still clears on entry -- a page
-					// selection doesn't stay highlighted behind a field click
-					// in a browser either. The two worlds just never merge:
-					// getSelection() cannot see inside the field, per spec.
-					const docSelection = termdom.window.getSelection();
-					if (docSelection && !docSelection.isCollapsed) {
-						docSelection.removeAllRanges();
-					}
-					render(termdom);
-				}
-			}
-
-			// Default action: mousedown collapses the document selection at
-			// the pressed caret position and anchors a possible drag there,
-			// as in a browser. Left button only -- and preventDefault on
-			// mousedown suppresses it, which is exactly how apps that want
-			// the drag events for themselves opt out.
-			const selection = termdom.window.getSelection();
-			if (base === 0 && selection && !termdom[kFieldDragAnchor]) {
-				let anchor = inDocument ?
-						documentPointToTextPosition(termdom, x, y) :
-					null;
-				// user-select: none refuses the anchor: a press on it clears
-				// the selection and starts no drag.
-				if (anchor && !selectableTextPosition(termdom, anchor)) {
-					anchor = null;
-				}
-				const hadSelection = !selection.isCollapsed;
-				termdom[kSelectionDragAnchor] = anchor;
-				if (anchor) {
-					selection.setBaseAndExtent(
-						anchor.node,
-						anchor.offset,
-						anchor.node,
-						anchor.offset,
-					);
-				} else if (selection.rangeCount > 0) {
-					selection.removeAllRanges();
-				}
-				if (hadSelection) {
-					render(termdom);
-				}
-			}
-		}
-		return;
-	}
-
-	fireAsUserAgent(target, new termdom.window.MouseEvent("mouseup", eventInit));
-	// LIGHT DISMISS: a release closes every auto popover the released
-	// point is not inside of and did not open -- the invoker of a popover
-	// counts as part of it, so the click that follows toggles rather than
-	// reopens what this closed. It runs before the click, where a browser
-	// runs it, and no listener can prevent it.
-	const dismissAncestor = termdom[kUAToolkit].topmostClickedPopover(target);
-	const samePopoverPress = dismissAncestor === termdom[kPopoverPressTarget];
-	termdom[kPopoverPressTarget] = null;
-	if (samePopoverPress && termdom[kUAToolkit].topmostAutoPopover() !== null) {
-		termdom[kUAToolkit].hidePopoversUntil(dismissAncestor, false, true);
-	}
-	// A selection is only a selection: writing the clipboard is a
-	// deliberate act, through navigator.clipboard. The terminal's own
-	// select-to-copy remains available as Shift+drag, which bypasses
-	// mouse reporting.
-	let selectedByDrag = false;
-	if (termdom[kFieldDragAnchor]) {
-		termdom[kFieldDragAnchor] = null;
-	}
-	if (termdom[kSelectionDragAnchor]) {
-		termdom[kSelectionDragAnchor] = null;
-		const text = termdom.window.getSelection()?.toString() ?? "";
-		if (text.length > 0) {
-			selectedByDrag = true;
-		}
-	}
-	// A drag that selected text is not a click: browsers suppress
-	// activation after a selecting gesture, and without this a drag
-	// released over a <label> would activate it -- toggling its checkbox,
-	// which in a framework app re-renders the very nodes the fresh
-	// selection points into, destroying it on the spot.
-	if (selectedByDrag) {
-		termdom[kMouseDownTarget] = null;
-		return;
-	}
-	if (termdom[kMouseDownTarget] === target) {
-		fireAsUserAgent(
-			target,
-			new termdom.window.MouseEvent("click", {...eventInit, buttons: 0}),
-		);
-		// A checkbox/radio's .checked already flipped -- the activation behavior's
-		// activation behavior handles that directly, and forwards it from a
-		// <label for> or wrapping label the same way (honoring
-		// preventDefault in both cases) -- but that's a property change,
-		// invisible to the MutationObserver that would otherwise repaint it,
-		// same as .value on a text input. Focus also needs an explicit push
-		// here for the label case: a real browser's "focusing steps" move
-		// focus to the label's associated control, which the activation behavior's
-		// alone does not simulate (the direct-click case is already
-		// focused via mousedown's own default action above, so this is a
-		// harmless no-op there).
-		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			el instanceof (termdom.window as any).HTMLInputElement &&
-			((el as HTMLInputElement).type === "checkbox" ||
-				(el as HTMLInputElement).type === "radio");
-		const control = isCheckable(target) ?
-			target :
-			target instanceof (termdom.window as any).HTMLLabelElement &&
-			isCheckable((target as any).control) ?
-					((target as any).control as HTMLInputElement) :
-				null;
-		if (control) {
-			control.focus();
-			render(termdom);
-		}
-
-		// A second click on the same target within the double-click interval
-		// is also a dblclick -- in addition to, not instead of, its own click
-		// (a browser fires both). Reset after firing so a third quick click
-		// starts a fresh pair rather than double-firing again immediately.
-		const now = performance.now();
-		if (
-			termdom[kLastClickTarget] === target &&
-			now - termdom[kLastClickTime] <= TermDOM[kDBLCLICK_INTERVAL_MS]
-		) {
-			fireAsUserAgent(
-				target,
-				new termdom.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
-			);
-			termdom[kLastClickTarget] = null;
-			termdom[kLastClickTime] = 0;
-		} else {
-			termdom[kLastClickTarget] = target as Element;
-			termdom[kLastClickTime] = now;
-		}
-	}
-	termdom[kMouseDownTarget] = null;
-}
-
-/**
- * Resolve the frame's coalesced motion: one hit-test at the last reported
- * position, then whatever moved -- the hover chain re-styled, the boundary
- * events, a mousemove -- from that one answer.
- *
- * Runs at the top of the interactive frame, before it takes its mutation
- * records: a listener's synchronous mutations land in this frame, and the
- * `:hover` invalidation precedes the style resolution that repaints it.
- */
-function processPendingHover(
-	termdom: TermDOM,
-): void {
-	const pending = termdom[kPendingHover];
-	if (pending === null) {
-		return;
-	}
-	termdom[kPendingHover] = null;
-	const {x, y, shiftKey, altKey, ctrlKey} = pending;
-	const target =
-		findElementAtDocumentPoint(termdom, x, y) || termdom.document.body;
-	const previous = termdom[kHoverElement];
-	if (target !== previous) {
-		termdom[kHoverElement] = target;
-		termdom[kMountHandle].hoveredElement(target);
-		termdom[kStyleManager].handleHoverChange(previous, target);
-		const chainOf = (element: Element | null): Element[] => {
-			const chain: Element[] = [];
-			for (
-				let node: Element | null = element;
-				node;
-				node = termdom[kUAToolkit].flatParentElement<Element>(node)
-			) {
-				chain.push(node);
-			}
-			return chain;
-		};
-		const previousChain = chainOf(previous);
-		const targetChain = chainOf(target);
-		const previousSet = new Set(previousChain);
-		const targetSet = new Set(targetChain);
-		const boundaryInit = {
-			button: 0,
-			buttons: 0,
-			clientX: x,
-			clientY: y,
-			shiftKey,
-			altKey,
-			ctrlKey,
-		};
-		// UI Events' boundary order: out, then leave from the exited element
-		// up, then over, then enter from the outermost entered ancestor
-		// down; the mousemove in the entered element follows them.
-		if (previous !== null) {
-			fireAsUserAgent(
-				previous,
-				new termdom.window.MouseEvent("mouseout", {
-					...boundaryInit,
-					bubbles: true,
-					cancelable: true,
-					relatedTarget: target,
-				}),
-			);
-			for (const node of previousChain) {
-				if (!targetSet.has(node)) {
-					fireAsUserAgent(
-						node,
-						new termdom.window.MouseEvent("mouseleave", {
-							...boundaryInit,
-							relatedTarget: target,
-						}),
-					);
-				}
-			}
-		}
-		fireAsUserAgent(
-			target,
-			new termdom.window.MouseEvent("mouseover", {
-				...boundaryInit,
-				bubbles: true,
-				cancelable: true,
-				relatedTarget: previous,
-			}),
-		);
-		const entering = targetChain.filter((node) => !previousSet.has(node));
-		for (let i = entering.length - 1; i >= 0; i--) {
-			fireAsUserAgent(
-				entering[i],
-				new termdom.window.MouseEvent("mouseenter", {
-					...boundaryInit,
-					relatedTarget: previous,
-				}),
-			);
-		}
-	}
-	// A drag's motion already dispatched its own mousemove, report by
-	// report; only buttonless motion owes one here.
-	if (!pending.quiet) {
-		const last = termdom[kLastMouse];
-		fireAsUserAgent(
-			target,
-			new termdom.window.MouseEvent("mousemove", {
-				button: 0,
-				buttons: 0,
-				clientX: x,
-				clientY: y,
-				movementX: last === null ? 0 : x - last.x,
-				movementY: last === null ? 0 : y - last.y,
-				shiftKey,
-				altKey,
-				ctrlKey,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
-		termdom[kLastMouse] = {x, y};
-	}
-}
-
-/**
- * Deliver a paste as a `paste` event carrying the text, at the focused
- * element or at the body when nothing is focused. A paste nobody cancels
- * runs its default action: into a text field, an `insertFromPaste`
- * beforeinput whose listener does the edit. Anywhere else the event is the
- * whole of it, and an application that wants the text reads it off
- * `clipboardData`.
- */
-function dispatchPaste(
-	termdom: TermDOM,
-	text: string,
-): void {
-	// A terminal transmits a pasted line break as CR -- the byte Enter
-	// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
-	// while the DOM's paste carries newlines as LF. Converted here, at the
-	// boundary, so a multi-line paste into a textarea is multi-line and
-	// a field's own handlers never see a bare CR.
-	text = text.replace(/\r\n?/g, "\n");
-	const focused = termdom.document.activeElement;
-	const target =
-		focused && focused !== termdom.document.body ?
-			focused :
-			termdom.document.body;
-	const clipboardData = new DOM.DataTransfer();
-	clipboardData.setData("text/plain", text);
-	termdom[kUAToolkit].lockDataTransfer(clipboardData);
-	const proceed = fireAsUserAgent(
-		target,
-		new termdom.window.ClipboardEvent("paste", {
-			clipboardData,
-			bubbles: true,
-			cancelable: true,
-		}),
-	);
-	const tag = target.tagName;
-	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
-		fireAsUserAgent(
-			target,
-			new termdom.window.InputEvent("beforeinput", {
-				inputType: "insertFromPaste",
-				data: text,
-				bubbles: true,
-				cancelable: true,
-			}),
-		);
-	}
-	void render(termdom);
-}
-
-/**
- * Deliver a typed character to a field as an `insertText` beforeinput; its
- * own listener does the edit.
- *
- * This is the keypress default action, and it runs where a default action
- * runs: after the dispatch it belongs to. That is what puts a field's
- * `input` after its `keypress` rather than between keydown and it. Only a
- * field takes text -- nothing else in this engine is an editing host.
- */
-function dispatchInsertText(
-	termdom: TermDOM,
-	target: Element,
-	text: string,
-): void {
-	const tag = target.tagName;
-	if (tag !== "INPUT" && tag !== "TEXTAREA") {
-		return;
-	}
-	fireAsUserAgent(
-		target,
-		new termdom.window.InputEvent("beforeinput", {
-			inputType: "insertText",
-			data: text,
-			bubbles: true,
-			cancelable: true,
-		}),
-	);
-}
-
-function dispatchGlobalKeyboardEvent(
-	termdom: TermDOM,
-	key: string,
-): void {
-	// Tokenize multi-key chunks and dispatch each token on its own.
-	const tokens = Array.from(tokenizeInput(key));
-	if (tokens.length > 1) {
-		for (const token of tokens) {
-			dispatchGlobalKeyboardEvent(termdom, token);
-		}
-		return;
-	}
-
-	// A cursor position report with no query outstanding is a late or
-	// duplicate terminal reply, not a keystroke: decodeKey returns null and
-	// nothing is dispatched.
-	const stroke = decodeKey(key);
-	if (!stroke) {
-		return;
-	}
-	const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
-		stroke;
-
-	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-	if (termdom[kStyleManager].setFocusVisible(true)) {
-		termdom[kStyleManager].handleFocusChange(termdom.document.activeElement);
-		void render(termdom);
-	}
-
-	// Find the focused element. document.activeElement defaults to body when
-	// nothing is focused, so it can't be used with `||` to detect "nothing
-	// focused". In fullscreen, a browser moves focus to the fullscreen
-	// element as part of entering it -- but focus() only takes
-	// elements that are already focusable (tabindex, form controls, etc.),
-	// so an arbitrary fullscreen container is otherwise unreachable here.
-	// Fall back to it (before document.body) so keydown still lands on it,
-	// the same as the dedicated fullscreen dispatch this replaced -- but
-	// still prefer an explicitly focused descendant (e.g. an input inside
-	// the fullscreen element), which the old dispatch ignored.
-	const active = termdom.document.activeElement;
-	const targetElement =
-		active && active !== termdom.document.body ?
-			active :
-			fullscreenElementOf(termdom) || termdom.document.body;
-
-	// Escape does NOT exit fullscreen. The browser's guarantee exists
-	// because requestFullscreen takes the user's screen; the alt screen
-	// takes nothing -- the emulator, the multiplexer and the signals stay
-	// the user's -- and terminal convention gives Escape to the app, where
-	// a modal editor or a cancel affordance spends it. A fullscreen app
-	// exits by its own affordance or document.exitFullscreen().
-
-	// Create and dispatch keydown event
-	const keydownEvent = new termdom.window.KeyboardEvent("keydown", {
-		key: keyName,
-		code: domCodeFor(keyName),
-		keyCode,
-		charCode: 0,
-		which: keyCode,
-		ctrlKey,
-		shiftKey,
-		altKey,
-		metaKey,
-		bubbles: true,
-		cancelable: true,
-	});
-
-	const notCanceled = fireAsUserAgent(targetElement, keydownEvent);
-
-	// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
-	// answers one: a modal dialog fires cancel and closes unless a
-	// listener takes it, an auto popover closes outright (nothing cancels
-	// a popover, which is why a manual one -- answering no close request
-	// -- is the way to keep one up). Whichever entered the layer last is
-	// the one the key reaches, so a popover over a dialog closes first.
-	// Fullscreen does not intercept the key on the way. Unlike Tab below,
-	// a preventDefault on keydown does not suppress it.
-	if (keyName === "Escape") {
-		const target = topmostCloseRequestTarget(termdom);
-		if (target !== null) {
-			if (termdom[kUAToolkit].isShowingPopover(target)) {
-				termdom[kUAToolkit].closePopover(target);
-			} else {
-				(target as HTMLDialogElement).requestClose();
-			}
-			void render(termdom);
-			return;
-		}
-	}
-
-	// Handle default actions if keydown wasn't canceled
-	if (notCanceled) {
-		// Tab navigation
-		if (keyName === "Tab") {
-			moveFocus(termdom, shiftKey);
-		}
-
-		// Field editing (input and textarea) is each widget's own keydown
-		// listener, run during dispatch above -- not a default action here.
-		if (keyboardActivation(targetElement as Element)) {
-			// A focused button activates on Enter and on Space, and a link on
-			// Enter, per HTML's activation behavior. Without this, both took
-			// focus and painted :focus while doing nothing -- advertising an
-			// affordance they did not have. `input[type=submit|button]`
-			// activate here; text inputs never match keyboardActivation.
-			const activation = keyboardActivation(targetElement as Element)!;
-			if (
-				(keyName === "Enter" && activation.enter) ||
-				(key === " " && activation.space)
-			) {
-				// The user agent's own click, not click()'s synthetic one: it
-				// is trusted, as the click a browser generates for keyboard
-				// activation is, and dispatching it runs the element's full
-				// activation behavior, so a submit button submits its form and
-				// a link follows its href, exactly as a mouse click would.
-				fireAsUserAgent(
-					targetElement,
-					new termdom.window.PointerEvent("click", {
-						bubbles: true,
-						cancelable: true,
-						composed: true,
-					}),
-				);
-				render(termdom);
-			}
-		}
-		// A select's editing (open/navigate/commit) is the select widget's
-		// own keydown listener, run during dispatch above -- not here.
-	}
-
-	// A character-producing key fires keypress between keydown and keyup,
-	// and inserting the character is that event's default action -- so a
-	// field's `input` arrives after keypress, as it does in a browser, and a
-	// keypress a listener cancels inserts nothing. Every printable
-	// character, not only the ASCII ones: charCode is the character's own
-	// code, and DEL and the control codes are the keys named elsewhere.
-	if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
-		const keypressEvent = new termdom.window.KeyboardEvent("keypress", {
-			key,
-			code: domCodeFor(key),
-			keyCode: charCode,
-			charCode,
-			which: charCode,
-			ctrlKey,
-			shiftKey,
-			altKey,
-			metaKey,
-			bubbles: true,
-			cancelable: true,
-		});
-		if (fireAsUserAgent(targetElement, keypressEvent)) {
-			dispatchInsertText(termdom, targetElement, key);
-		}
-	}
-
-	// Always dispatch keyup
-	const keyupEvent = new termdom.window.KeyboardEvent("keyup", {
-		key: keyName,
-		code: domCodeFor(keyName),
-		keyCode,
-		charCode: 0,
-		which: keyCode,
-		ctrlKey,
-		shiftKey,
-		altKey,
-		metaKey,
-		bubbles: true,
-		cancelable: true,
-	});
-	fireAsUserAgent(targetElement, keyupEvent);
 }
 
 /**
@@ -4023,7 +3000,7 @@ async function renderInteractive(
 	// Coalesced pointer motion resolves first: a hover listener's
 	// synchronous mutations join the records taken below, and the hover
 	// chain's invalidation precedes this frame's style resolution.
-	processPendingHover(termdom);
+	termdom[kEventHandler].resolvePendingHover();
 
 	const pending = termdom[kObserver].takeRecords();
 	if (pending.length > 0) {
