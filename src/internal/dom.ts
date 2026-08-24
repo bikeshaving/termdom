@@ -19,6 +19,7 @@ import {
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
 	HTML_UNKNOWN_TAGS,
+	WINDOW_EVENT_HANDLERS,
 	type ReflectSpec,
 } from "./htmltables.js";
 import {
@@ -19239,8 +19240,13 @@ export class Document extends Node {
 	 * Close the document, which flushes an open parse.
 	 *
 	 * There is no document.open() here, so there is never a parse to flush.
+	 * A displayed document finalizes as it closes: what it painted is sealed
+	 * into the terminal's scrollback, and a later mutation starts a fresh
+	 * document below the sealed block.
 	 */
-	close(): void {}
+	close(): void {
+		mountOf(this)?.documentClosed();
+	}
 
 	get customElementRegistry(): CustomElementRegistry | null {
 		return this[kRegistry];
@@ -19376,6 +19382,8 @@ export class Document extends Node {
 			appendNode(element, head);
 		}
 		setDescendantText(element, String(value));
+		// A terminal's window title is the document's, set in-band.
+		mountOf(this)?.titleChanged(String(value));
 	}
 
 	get documentElement(): Element | null {
@@ -25150,6 +25158,36 @@ export interface Mount {
 	scrollIntoView(element: object): void;
 	/** An author attached a shadow root to the host. */
 	shadowAttached(host: object, root: object): void;
+	/**
+	 * The terminal's size in cells, which is the window's size and the
+	 * screen's both, and the height the root elements report as their
+	 * client height.
+	 */
+	viewportSize(): {width: number; height: number};
+	/** The screen row the document's first row is anchored to. */
+	screenTop(): number;
+	/** How far the document camera has moved, in cells. */
+	documentScrollOffset(): {left: number; top: number};
+	/** Move the document camera to an offset and repaint. */
+	scrollDocumentTo(top: number): void;
+	/** Move the document camera by a delta and repaint. */
+	scrollDocumentBy(top: number): void;
+	/** Schedule a frame, and fire the callback once it has been painted. */
+	requestFrame(callback: (time: number) => void): number;
+	/** Drop a frame callback that has not fired. */
+	cancelFrame(handle: number): void;
+	/** Whether a media query matches, on the evaluator @media rules use. */
+	mediaMatches(query: string): boolean;
+	/** Re-ask a live media query list whenever the viewport moves. */
+	watchMedia(update: () => void): void;
+	/** The window was closed, and the beforeunload gate let it through. */
+	closeRequested(): void;
+	/** The document's title changed, which is the terminal's title. */
+	titleChanged(title: string): void;
+	/** The document was closed: seal what it painted into the scrollback. */
+	documentClosed(): void;
+	/** What `navigator` holds once an engine stands behind it. */
+	navigatorExtras(): Record<string, unknown>;
 	requestFullscreen(element: object, options?: object): Promise<void>;
 	exitFullscreen(document: object): Promise<void>;
 	fullscreenElement(document: object): object | null;
@@ -25322,6 +25360,247 @@ Object.defineProperties(Document.prototype, {
 		enumerable: true,
 	},
 });
+
+/* ---------------------------------------------------------------- window */
+
+const kNavigator = Symbol("navigator");
+
+/**
+ * The window a document is displayed in: an EventTarget whose members are
+ * the browsing context's, answered by the engine the document is mounted on.
+ *
+ * A window exists mounted -- a headless document has none -- so the members
+ * below may expect a mount, and degrade the way the document's own do when
+ * one is absent: a viewport of no size, a camera at the origin, a query that
+ * matches nothing.
+ */
+export class Window extends EventTarget {
+	readonly document: Document;
+	declare [kNavigator]: Navigator | undefined;
+	constructor(document: Document) {
+		super();
+		this.document = document;
+	}
+
+	// The terminal is the window and the screen both, so the inner and outer
+	// pairs are one size. Readonly like a browser's, and LIVE: a SIGWINCH
+	// moves them, and a value frozen at construction would have reported the
+	// size the terminal had when the engine was built.
+	get innerWidth(): number {
+		return mountOf(this.document)?.viewportSize().width ?? 0;
+	}
+
+	get outerWidth(): number {
+		return this.innerWidth;
+	}
+
+	get innerHeight(): number {
+		return mountOf(this.document)?.viewportSize().height ?? 0;
+	}
+
+	get outerHeight(): number {
+		return this.innerHeight;
+	}
+
+	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
+	// the anchor after the window is built.
+	get screenTop(): number {
+		return mountOf(this.document)?.screenTop() ?? 0;
+	}
+
+	// Standard window scrolling, mapped onto the camera: scrollY is how far
+	// the camera has moved down the document, scrollBy moves it. A terminal
+	// document never scrolls sideways, so the X pair reads 0.
+	get scrollY(): number {
+		return mountOf(this.document)?.documentScrollOffset().top ?? 0;
+	}
+
+	get pageYOffset(): number {
+		return this.scrollY;
+	}
+
+	get scrollX(): number {
+		return mountOf(this.document)?.documentScrollOffset().left ?? 0;
+	}
+
+	get pageXOffset(): number {
+		return this.scrollX;
+	}
+
+	// scrollTo/scroll set the camera to an absolute position -- the state
+	// scrollY reads and scrollBy moves relatively. documentElement/body's
+	// scrollTop is that value again, standard DOM (window.scrollY ===
+	// document.documentElement.scrollTop always): one camera, four ways to
+	// read or move it.
+	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
+		const mount = mountOf(this.document);
+		const top =
+			typeof xOrOptions === "object" && xOrOptions !== null ?
+					(xOrOptions.top ?? mount?.documentScrollOffset().top ?? 0) :
+					(y ?? 0);
+		mount?.scrollDocumentTo(top);
+	}
+
+	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
+		this.scrollTo(xOrOptions, y);
+	}
+
+	scrollBy(xOrOptions?: number | ScrollToOptions, y?: number): void {
+		const top =
+			typeof xOrOptions === "object" && xOrOptions !== null ?
+					(xOrOptions.top ?? 0) :
+					(y ?? 0);
+		mountOf(this.document)?.scrollDocumentBy(top);
+	}
+
+	// requestAnimationFrame is the only way to await a painted frame: it
+	// schedules a render and fires the callback once that render completes,
+	// so "await a frame" always means the frame carrying the pending
+	// mutations has landed.
+	requestAnimationFrame(callback: FrameRequestCallback): number {
+		return mountOf(this.document)?.requestFrame(callback) ?? 0;
+	}
+
+	cancelAnimationFrame(handle: number): void {
+		mountOf(this.document)?.cancelFrame(handle);
+	}
+
+	/**
+	 * The user agent, as a page asks about it: what it calls itself, what
+	 * languages it reads, and -- once an engine stands behind the document --
+	 * the clipboard, the permissions over it, and whether the user is active.
+	 *
+	 * Built on first read and kept, so the clipboard a page holds on to is
+	 * the clipboard it keeps holding.
+	 */
+	get navigator(): Navigator {
+		let navigator = this[kNavigator];
+		if (navigator === undefined) {
+			navigator = {
+				userAgent: "TermDOM",
+				language: "en-US",
+				languages: Object.freeze(["en-US"]),
+				platform: "",
+				...mountOf(this.document)?.navigatorExtras(),
+			} as unknown as Navigator;
+			this[kNavigator] = navigator;
+		}
+		return navigator;
+	}
+
+	/**
+	 * The Selection API defines the window's getSelection as a call to the
+	 * document's, and this is that call.
+	 */
+	getSelection(): Selection | null {
+		return this.document.getSelection();
+	}
+
+	/**
+	 * matchMedia: the terminal is the one screen, and queries answer through
+	 * the SAME evaluator @media stylesheet rules use, so a script and a
+	 * stylesheet can never disagree about the viewport.
+	 *
+	 * The list is live: a resize (SIGWINCH is this screen's window resize)
+	 * re-asks and fires "change" when the answer flips -- the browser
+	 * contract, which is what makes responsive terminal layouts a matchMedia
+	 * listener instead of a bespoke resize hook.
+	 */
+	matchMedia(query: string): MediaQueryList {
+		const media = String(query);
+		const mount = mountOf(this.document);
+		const matches = (): boolean => mount?.mediaMatches(media) ?? false;
+		const list = new EventTarget();
+		// `matches` reads live; this holds the value the last "change" event
+		// reported.
+		let notified = matches();
+		let onchange: ((event: Event) => void) | null = null;
+		Object.defineProperties(list, {
+			media: {get: () => media, enumerable: true, configurable: true},
+			matches: {get: matches, enumerable: true, configurable: true},
+			onchange: {
+				get: () => onchange,
+				set: (value: ((event: Event) => void) | null) => {
+					// An event-handler attribute IS a listener, per spec:
+					// route it through add/removeEventListener so dispatch
+					// order and dedup behave like any other handler.
+					if (onchange) {
+						list.removeEventListener("change", onchange);
+					}
+					onchange = typeof value === "function" ? value : null;
+					if (onchange) {
+						list.addEventListener("change", onchange);
+					}
+				},
+				enumerable: true,
+				configurable: true,
+			},
+			// The pre-2020 MediaQueryList API, still what much deployed code
+			// calls: plain aliases for the EventTarget pair.
+			addListener: {
+				value: (callback: ((event: Event) => void) | null) => {
+					if (callback) {
+						list.addEventListener("change", callback);
+					}
+				},
+				configurable: true,
+			},
+			removeListener: {
+				value: (callback: ((event: Event) => void) | null) => {
+					if (callback) {
+						list.removeEventListener("change", callback);
+					}
+				},
+				configurable: true,
+			},
+		});
+		mount?.watchMedia(() => {
+			const now = matches();
+			if (now === notified) {
+				return;
+			}
+			notified = now;
+			const event = new Event("change");
+			Object.defineProperties(event, {
+				matches: {value: now, enumerable: true},
+				media: {value: media, enumerable: true},
+			});
+			dispatchAsUserAgent(list, event);
+		});
+		return list as unknown as MediaQueryList;
+	}
+
+	/**
+	 * Close the window, which closes the terminal session as it would close
+	 * a browser tab.
+	 *
+	 * beforeunload is the door out, and a listener that cancels keeps the
+	 * session. A browser answers a canceled beforeunload with a prompt of its
+	 * own; a terminal has no UA chrome to prompt with, so cancellation stops
+	 * the teardown, leaving the app to ask "are you sure?" however it likes
+	 * and to close again once the user says yes. Every close asks: the event
+	 * carries nothing from the last one.
+	 */
+	close(): void {
+		const mount = mountOf(this.document);
+		if (mount === undefined) {
+			return;
+		}
+		const event = createBeforeUnloadEvent();
+		dispatchAsUserAgent(this, event);
+		if (event.defaultPrevented || event.returnValue !== "") {
+			return;
+		}
+		mount.closeRequested();
+	}
+}
+
+// A window carries both event handler mixins the HTML Standard gives it:
+// GlobalEventHandlers, which it shares with elements and documents, and
+// WindowEventHandlers, whose members exist as attributes whether or not this
+// engine has anything that fires them.
+installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
+installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 
 /**
  * ---- The platform's shape, held by the compiler --------------------------

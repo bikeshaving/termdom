@@ -523,16 +523,7 @@ function domInterfaces(): Record<string, unknown> {
 	return named;
 }
 
-/** The window class, whose instances are windows: an EventTarget, and DOM-aware. */
-class Window extends DOM.EventTarget {}
-
-// A window carries both event handler mixins the HTML Standard gives it:
-// GlobalEventHandlers, which it shares with elements and documents, and
-// WindowEventHandlers, whose members exist as attributes whether or not this
-// engine has anything that fires them.
 installInspectors();
-DOM.installEventHandlers(Window.prototype, DOM.GLOBAL_EVENT_HANDLERS);
-DOM.installEventHandlers(Window.prototype, DOM.WINDOW_EVENT_HANDLERS);
 
 /** A document parsed from markup, displayed in a window of its own. */
 export function createDocumentWindow(html: string, url?: string): EngineWindow {
@@ -547,31 +538,32 @@ export function createDocumentWindow(html: string, url?: string): EngineWindow {
  * with is its DOM and the timers any script expects to find.
  */
 function createEngineWindow(document: DOM.Document): EngineWindow {
-	const window = new Window() as unknown as Record<string, unknown>;
+	const window = new DOM.Window(document) as unknown as Record<
+		string,
+		unknown
+	>;
 	Object.assign(window, domInterfaces(), {
-		document,
 		customElements: DOM.customElements,
 		NodeFilter: DOM.NodeFilter,
 		// The platform's, which is the one the DOM and the CSSOM throw: a
 		// caller's `instanceof DOMException` has to name the same class the
 		// engine builds its errors out of.
 		DOMException: globalThis.DOMException,
-		navigator: {
-			userAgent: "TermDOM",
-			language: "en-US",
-			languages: Object.freeze(["en-US"]),
-			platform: "",
-		},
 		setTimeout: globalThis.setTimeout.bind(globalThis),
 		clearTimeout: globalThis.clearTimeout.bind(globalThis),
 		setInterval: globalThis.setInterval.bind(globalThis),
 		clearInterval: globalThis.clearInterval.bind(globalThis),
 		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
-		// The Selection API defines the window's getSelection as a call to the
-		// document's, and this is that call.
-		getSelection: () => document.getSelection(),
-		// Replaced by the engine, which closes the terminal session with it.
-		close: () => {},
+		// The clipboard interfaces and event types, which a listener attaches
+		// to and an application builds and dispatches. The user agent fires
+		// neither: the terminal keeps the copy gesture for itself -- Cmd+C,
+		// Shift+drag -- and does not report it, and Ctrl+C is the interrupt.
+		// A document learns of a copy the terminal made only by writing the
+		// clipboard itself.
+		Clipboard,
+		ClipboardItem,
+		Permissions,
+		PermissionStatus,
 	});
 	window.window = window;
 	window.self = window;
@@ -961,7 +953,6 @@ export class TermDOM {
 		});
 		this[kObserverManager] = new ObserverManager(this[kLayoutEngine]);
 
-		installWindowExtensions(this);
 		this[kInstallObservers]();
 
 		// Initialize scrolling management after window setup
@@ -1424,6 +1415,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 		return termDOM[kLayoutEngine].scrollExtentOf(element);
 	};
 
+	// html and body scroll the document itself: their scroll offset is the
+	// camera's, their scroll height the document's, and their client height
+	// the terminal's. One camera, however it is reached.
+	const isRoot = (element: Element): boolean =>
+		element === termDOM.document.documentElement ||
+		element === termDOM.document.body;
+
 	return {
 		engine: termDOM,
 		boundingClientRect(target) {
@@ -1511,7 +1509,9 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const box = contentBoxOf(element);
 			return {
 				width: Math.round(box?.width ?? 0),
-				height: Math.round(box?.height ?? 0),
+				height: isRoot(element) ?
+					termDOM[kHeight] :
+						Math.round(box?.height ?? 0),
 			};
 		},
 		scrollSize(target) {
@@ -1520,13 +1520,17 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const box = contentBoxOf(element);
 			return {
 				width: extent?.width ?? Math.round(box?.width ?? 0),
-				height: extent?.height ?? Math.round(box?.height ?? 0),
+				height: isRoot(element) ?
+						termDOM[kLayoutEngine].getContentHeight() :
+						(extent?.height ?? Math.round(box?.height ?? 0)),
 			};
 		},
 		scrollOffset(target) {
-			return (
-				elementScrollOffsets.get(asElement(target)) ?? {left: 0, top: 0}
-			);
+			const element = asElement(target);
+			if (isRoot(element)) {
+				return {left: 0, top: termDOM[kViewport].scrollTop};
+			}
+			return elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		},
 		// A write rounds to whole cells (everything paints on the cell grid,
 		// like the document camera), clamps into the scrollable range, and
@@ -1540,6 +1544,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// machinery owns those offsets and keeps them sane.
 		scrollOffsetTo(target, axis, value) {
 			const element = asElement(target);
+			if (isRoot(element)) {
+				if (axis === "top") {
+					termDOM[kViewport].scrollTo(Number(value));
+					void render(termDOM);
+				}
+				return;
+			}
 			const numeric = Number(value);
 			let next =
 				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
@@ -1862,356 +1873,112 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// manager field is assigned.
 			return termDOM[kFullscreenManager]?.fullscreenElement ?? null;
 		},
-	};
-}
-
-function installWindowExtensions(
-	termdom: TermDOM,
-): void {
-	const termDOM = termdom;
-	const window = termDOM.window;
-	const document = window.document;
-	// The terminal is the window and the screen both, so the inner and outer
-	// pairs are one size. Readonly like a browser's, and LIVE: a SIGWINCH
-	// moves them, and a value frozen at construction would have reported the
-	// size the terminal had when the engine was built.
-	for (const name of ["innerWidth", "outerWidth"] as const) {
-		Object.defineProperty(window, name, {
-			get: () => termDOM[kWidth],
-			configurable: true,
-			enumerable: true,
-		});
-	}
-	for (const name of ["innerHeight", "outerHeight"] as const) {
-		Object.defineProperty(window, name, {
-			get: () => termDOM[kHeight],
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
-	// the anchor after this runs. A frozen value here silently shadowed the
-	// real one, with only constructor line order deciding which won.
-	Object.defineProperty(window, "screenTop", {
-		get: () => termDOM[kViewport].screenTop,
-		configurable: true,
-		enumerable: true,
-	});
-
-	// Standard window scrolling, mapped onto the camera: scrollY is how far the
-	// camera has moved down the document, scrollBy moves it.
-	Object.defineProperty(window, "scrollY", {
-		get: () => termDOM[kViewport].scrollTop,
-		configurable: true,
-		enumerable: true,
-	});
-	Object.defineProperty(window, "pageYOffset", {
-		get: () => termDOM[kViewport].scrollTop,
-		configurable: true,
-		enumerable: true,
-	});
-	// A terminal document never scrolls sideways, so the X pair reads 0.
-	Object.defineProperty(window, "scrollX", {
-		get: () => 0,
-		configurable: true,
-		enumerable: true,
-	});
-	Object.defineProperty(window, "pageXOffset", {
-		get: () => 0,
-		configurable: true,
-		enumerable: true,
-	});
-	window.scrollBy = ((
-		xOrOptions?: number | ScrollToOptions,
-		y?: number,
-	): void => {
-		const dy =
-			typeof xOrOptions === "object" && xOrOptions !== null ?
-					(xOrOptions.top ?? 0) :
-					(y ?? 0);
-		scrollCamera(termDOM, dy);
-	}) as typeof window.scrollBy;
-
-	// scrollTo/scroll set the camera to an absolute position -- the same
-	// state scrollY reads and scrollBy moves relatively. document.
-	// documentElement/body.scrollTop are the same value again, standard DOM
-	// (window.scrollY === document.documentElement.scrollTop always): one
-	// camera, four ways to read or move it, matching the "unified scrolling
-	// model" the viewport tests already name it after.
-	const scrollToCamera = (
-		xOrOptions?: number | ScrollToOptions,
-		y?: number,
-	): void => {
-		const targetY =
-			typeof xOrOptions === "object" && xOrOptions !== null ?
-					(xOrOptions.top ?? termDOM[kViewport].scrollTop) :
-					(y ?? 0);
-		termDOM[kViewport].scrollTo(targetY);
-		void render(termDOM);
-	};
-	window.scrollTo = scrollToCamera as typeof window.scrollTo;
-	window.scroll = scrollToCamera as typeof window.scroll;
-
-	for (const root of [document.documentElement, document.body]) {
-		Object.defineProperty(root, "scrollTop", {
-			get: () => termDOM[kViewport].scrollTop,
-			set: (value: number) => {
-				termDOM[kViewport].scrollTo(value);
-				void render(termDOM);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// requestAnimationFrame is the only way to await a painted frame -- render()
-	// is private. A bare timer would be decoupled from our (async) paint, so a
-	// callback could fire before the frame is written.
-	// Route it through the render loop: schedule a render and fire the callback
-	// once it completes, so "await a frame" always means the frame that includes
-	// your pending mutations has landed.
-	window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
-		const id = allocateFrameHandle(termDOM);
-		termDOM[kFrameCallbacks].set(id, cb);
-		void render(termDOM);
-		return id;
-	}) as typeof window.requestAnimationFrame;
-	window.cancelAnimationFrame = ((handle: number): void => {
-		termDOM[kFrameCallbacks].delete(handle);
-	}) as typeof window.cancelAnimationFrame;
-
-	// matchMedia: the terminal is the one screen, and queries answer
-	// through the SAME evaluator @media stylesheet rules use, so a
-	// script and a stylesheet can never disagree about the viewport.
-	// The list is live: a resize (SIGWINCH is this screen's window
-	// resize) re-evaluates and fires "change" when the answer flips --
-	// the browser contract, which is what makes responsive terminal
-	// layouts a matchMedia listener instead of a bespoke resize hook.
-	window.matchMedia = ((query: string): MediaQueryList => {
-		const media = String(query);
-		const mql = new (window as any).EventTarget();
-		// `matches` reads live; this holds the value the last "change"
-		// event reported.
-		let notified = termDOM[kStyleManager].mediaQueryMatches(media);
-		let onchange: ((ev: Event) => void) | null = null;
-		Object.defineProperties(mql, {
-			media: {get: () => media, enumerable: true, configurable: true},
-			matches: {
-				get: () => termDOM[kStyleManager].mediaQueryMatches(media),
-				enumerable: true,
-				configurable: true,
-			},
-			onchange: {
-				get: () => onchange,
-				set: (value: ((ev: Event) => void) | null) => {
-					// An event-handler attribute IS a listener, per spec:
-					// route it through add/removeEventListener so dispatch
-					// order and dedup behave like any other handler.
-					if (onchange) {
-						mql.removeEventListener("change", onchange);
-					}
-					onchange = typeof value === "function" ? value : null;
-					if (onchange) {
-						mql.addEventListener("change", onchange);
-					}
-				},
-				enumerable: true,
-				configurable: true,
-			},
-			// The pre-2020 MediaQueryList API, still what much deployed
-			// code calls: plain aliases for the EventTarget pair.
-			addListener: {
-				value: (cb: ((ev: Event) => void) | null) => {
-					if (cb) {
-						mql.addEventListener("change", cb);
-					}
-				},
-				configurable: true,
-			},
-			removeListener: {
-				value: (cb: ((ev: Event) => void) | null) => {
-					if (cb) {
-						mql.removeEventListener("change", cb);
-					}
-				},
-				configurable: true,
-			},
-		});
-		termDOM[kMediaQueryUpdaters].add(() => {
-			const now = termDOM[kStyleManager].mediaQueryMatches(media);
-			if (now === notified) {
-				return;
-			}
-			notified = now;
-			const event = new window.Event("change");
-			Object.defineProperties(event, {
-				matches: {value: now, enumerable: true},
-				media: {value: media, enumerable: true},
-			});
-			fireAsUserAgent(mql, event);
-		});
-		return mql as MediaQueryList;
-	}) as typeof window.matchMedia;
-
-	// window.close() closes the terminal session as it would close a
-	// browser tab: dispose, then close the transport. Ctrl-C's default
-	// action is this call.
-	window.close = () => {
-		// beforeunload is the door out, and a listener that cancels keeps
-		// the session. A browser answers a canceled beforeunload with a
-		// prompt of its own; a terminal has no UA chrome to prompt with,
-		// so cancellation just stops the teardown, leaving the app to ask
-		// "are you sure?" however it likes and to close again once the
-		// user says yes. Every close asks: the event carries nothing from
-		// the last one.
-		const unloadEvent = termdom[kUAToolkit].createBeforeUnloadEvent();
-		fireAsUserAgent(window, unloadEvent);
-		if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
-			return;
-		}
-
-		const wasAttached = termDOM[kAttached];
-		// An immediate close must not tear down mid-establishment: wait
-		// for attach to finish (anchor found, first frame painted) so the
-		// payout lands where the frame was, not at a stale row 0. Then
-		// everything dispose queued must reach the wire before the
-		// transport acts on the close (a process transport exits).
-		void (async () => {
-			if (wasAttached) {
-				await termDOM[kAttachReady];
-				// The last frames' DSR queries -- width probes above all --
-				// have replies on the wire. Consume them while the session
-				// still reads, or they are typed into the shell that
-				// inherits the tty.
-				await termDOM[kSession].drainQueries(200);
-			}
-			await termDOM.dispose();
-			if (wasAttached) {
-				termDOM[kTransport].close({status: 0});
-			}
-		})();
-	};
-
-	// document.title sets the terminal's window title in-band (OSC 2).
-	// attach() pushes the previous title; dispose() pops it.
-	let nativeTitle: PropertyDescriptor | undefined;
-	for (
-		let proto = Object.getPrototypeOf(document);
-		proto && !nativeTitle;
-		proto = Object.getPrototypeOf(proto)
-	) {
-		nativeTitle = Object.getOwnPropertyDescriptor(proto, "title");
-	}
-	if (nativeTitle?.get && nativeTitle.set) {
-		Object.defineProperty(document, "title", {
-			get: () => nativeTitle.get!.call(document),
-			set: (value: string) => {
-				nativeTitle.set!.call(document, value);
-				if (termDOM[kAttached] && termDOM[kInteractive]) {
-					void termDOM[kSession].setTitle(String(value));
+		// The terminal is the window and the screen both, so the inner and
+		// outer pairs are one size, and the root elements report the height
+		// as the height of what they scroll in.
+		viewportSize() {
+			return {width: termDOM[kWidth], height: termDOM[kHeight]};
+		},
+		screenTop() {
+			return termDOM[kViewport].screenTop;
+		},
+		// A terminal document never scrolls sideways, so the camera's X is 0.
+		documentScrollOffset() {
+			return {left: 0, top: termDOM[kViewport].scrollTop};
+		},
+		scrollDocumentTo(top) {
+			termDOM[kViewport].scrollTo(top);
+			void render(termDOM);
+		},
+		scrollDocumentBy(top) {
+			scrollCamera(termDOM, top);
+		},
+		// A frame callback fires after the render it scheduled has been
+		// painted: a bare timer would be decoupled from the (async) paint,
+		// so a callback could fire before the frame is written.
+		requestFrame(callback) {
+			const id = allocateFrameHandle(termDOM);
+			termDOM[kFrameCallbacks].set(id, callback as FrameRequestCallback);
+			void render(termDOM);
+			return id;
+		},
+		cancelFrame(handle) {
+			termDOM[kFrameCallbacks].delete(handle);
+		},
+		mediaMatches(query) {
+			return termDOM[kStyleManager].mediaQueryMatches(query);
+		},
+		watchMedia(update) {
+			termDOM[kMediaQueryUpdaters].add(update);
+		},
+		closeRequested() {
+			const wasAttached = termDOM[kAttached];
+			// An immediate close must not tear down mid-establishment: wait
+			// for attach to finish (anchor found, first frame painted) so the
+			// payout lands where the frame was, not at a stale row 0. Then
+			// everything dispose queued must reach the wire before the
+			// transport acts on the close (a process transport exits).
+			void (async () => {
+				if (wasAttached) {
+					await termDOM[kAttachReady];
+					// The last frames' DSR queries -- width probes above all
+					// -- have replies on the wire. Consume them while the
+					// session still reads, or they are typed into the shell
+					// that inherits the tty.
+					await termDOM[kSession].drainQueries(200);
 				}
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// The clipboard and the permission it stands behind, which the classes
-	// above implement over OSC 52.
-	//
-	// `copy` and `cut` are here as interfaces and event types, so a listener
-	// attaches and an application can build one and dispatch it, and the user
-	// agent fires neither. The terminal keeps the copy gesture for itself --
-	// Cmd+C, Shift+drag -- and does not report it, and Ctrl+C is the
-	// interrupt. A document learns of a copy the terminal made only by
-	// writing the clipboard itself.
-	Object.assign(window as unknown as Record<string, unknown>, {
-		Clipboard,
-		ClipboardItem,
-		Permissions,
-		PermissionStatus,
-	});
-	Object.defineProperty(window.navigator, "clipboard", {
-		value: createClipboard({
-			terminal: () =>
-				termDOM[kAttached] && termDOM[kInteractive] ?
-					termDOM[kSession] :
-					null,
-			userActive: () => isUserActive(termDOM),
-		}),
-		configurable: true,
-	});
-	Object.defineProperty(window.navigator, "permissions", {
-		value: createPermissions({
-			interactive: () => termDOM[kAttached] && termDOM[kInteractive],
-			userActive: () => isUserActive(termDOM),
-		}),
-		configurable: true,
-	});
-
-	// navigator.userActivation: the same two questions the gate above asks,
-	// as the page can ask them.
-	Object.defineProperty(window.navigator, "userActivation", {
-		value: {
-			get hasBeenActive(): boolean {
-				return termDOM[kEverActivated];
-			},
-			get isActive(): boolean {
-				return isUserActive(termDOM);
-			},
+				await termDOM.dispose();
+				if (wasAttached) {
+					termDOM[kTransport].close({status: 0});
+				}
+			})();
 		},
-		configurable: true,
-	});
-
-	// document.close() finalizes the document: flush the live region into the
-	// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
-	// A later DOM mutation starts a fresh document below the sealed block. This
-	// is the "print rich output and stop" seam: write(), then close().
-	const nativeDocumentClose = document.close.bind(document);
-	document.close = () => {
-		nativeDocumentClose();
-		// dispose() has already set attached=false by the time it reaches here,
-		// so we skip the seal. A real seal is a close() from a live, painted
-		// session.
-		if (termDOM[kAttached] && termDOM[kRenderCount] > 0) {
-			sealToScrollback(termDOM);
-		}
+		// document.title sets the terminal's window title in-band (OSC 2).
+		// attach() pushes the previous title; dispose() pops it.
+		titleChanged(title) {
+			if (termDOM[kAttached] && termDOM[kInteractive]) {
+				void termDOM[kSession].setTitle(title);
+			}
+		},
+		// Closing the document flushes the live region into the terminal's
+		// scrollback and seals it -- the SSR res.end() of the terminal. This
+		// is the "print rich output and stop" seam: write(), then close().
+		//
+		// dispose() has already set attached=false by the time it reaches
+		// here, so the seal is skipped. A real seal is a close() from a live,
+		// painted session.
+		documentClosed() {
+			if (termDOM[kAttached] && termDOM[kRenderCount] > 0) {
+				sealToScrollback(termDOM);
+			}
+		},
+		// The clipboard and the permission it stands behind, over OSC 52,
+		// and the two questions the activation gate asks as the page can ask
+		// them.
+		navigatorExtras() {
+			return {
+				clipboard: createClipboard({
+					terminal: () =>
+						termDOM[kAttached] && termDOM[kInteractive] ?
+							termDOM[kSession] :
+							null,
+					userActive: () => isUserActive(termDOM),
+				}),
+				permissions: createPermissions({
+					interactive: () => termDOM[kAttached] && termDOM[kInteractive],
+					userActive: () => isUserActive(termDOM),
+				}),
+				userActivation: {
+					get hasBeenActive(): boolean {
+						return termDOM[kEverActivated];
+					},
+					get isActive(): boolean {
+						return isUserActive(termDOM);
+					},
+				},
+			};
+		},
 	};
-
-	// Implement standard DOM scrollHeight properties
-	Object.defineProperty(document.body, "scrollHeight", {
-		get() {
-			return termDOM[kLayoutEngine].getContentHeight();
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(document.documentElement, "scrollHeight", {
-		get() {
-			return termDOM[kLayoutEngine].getContentHeight();
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	// clientHeight is the viewport height (terminal height)
-	Object.defineProperty(document.body, "clientHeight", {
-		get() {
-			return termDOM[kHeight];
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(document.documentElement, "clientHeight", {
-		get() {
-			return termDOM[kHeight];
-		},
-		configurable: true,
-		enumerable: true,
-	});
 }
 
 /**
