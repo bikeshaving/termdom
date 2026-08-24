@@ -7771,8 +7771,8 @@ const kCSSRules = Symbol("cssRules");
 const kManager = Symbol("manager");
 const kEpoch = Symbol("epoch");
 const kSeenEpoch = Symbol("seenEpoch");
-const kUsed = Symbol("used");
-const kUsedEpoch = Symbol("usedEpoch");
+const kUsedValuesOf = Symbol("usedValuesOf");
+const kDropUsedValues = Symbol("dropUsedValues");
 const kStale = Symbol("stale");
 const kRefresh = Symbol("refresh");
 const kResolved = Symbol("resolved");
@@ -7816,8 +7816,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kSeenEpoch] = 0;
 		this[kStale] = false;
 		this[kResolved] = new Map<string, string>();
-		this[kUsed] = null;
-		this[kUsedEpoch] = -1;
 		this[kCustom] = null;
 		this[kElement] = element;
 		this[kCSSRules] = cssRules;
@@ -7829,35 +7827,22 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	/**
-	 * Used values, memoized against the layout epoch they were measured in.
-	 * Made on the first resolved read: most elements are never asked for one,
-	 * and a map per element is a map per element.
-	 */
-	declare [kUsed]: Map<string, string> | null;
-	declare [kUsedEpoch]: number;
-
-	/**
 	 * A resolved value that is the used value: measured through the same flush
-	 * a geometry read takes, and memoized against the layout epoch so a
+	 * a geometry read takes, and memoized behind that flush so a
 	 * property-heavy caller measures once per layout rather than once per read.
+	 * The memo is the manager's, which is what lets a flush drop every one.
 	 */
 	[kUsedValue](property: string): string {
 		const manager = this[kManager]!;
-		const epoch = manager.layoutEpoch;
-		if (!this[kUsed]) {
-			this[kUsed] = new Map();
-		} else if (epoch !== this[kUsedEpoch]) {
-			this[kUsed].clear();
-		}
-		this[kUsedEpoch] = epoch;
-		const memoized = this[kUsed].get(property);
+		const used = manager[kUsedValuesOf](this);
+		const memoized = used.get(property);
 		if (memoized !== undefined) {
 			return memoized;
 		}
 
 		const computed = this.computedValueOf(property);
 		const value = measure(this, property, computed);
-		this[kUsed].set(property, value);
+		used.set(property, value);
 		return value;
 	}
 
@@ -7931,7 +7916,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			this[kResolved],
 		);
 		this[kResolved] = new Map();
-		this[kUsed]?.clear();
+		this[kManager]?.[kDropUsedValues](this);
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
@@ -9783,8 +9768,7 @@ const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kLayoutFlush = Symbol("layoutFlush");
 const kFlushing = Symbol("flushing");
-const kUsedGeneration = Symbol("usedGeneration");
-const kFlushedEpoch = Symbol("flushedEpoch");
+const kUsedValues = Symbol("usedValues");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
@@ -9985,8 +9969,7 @@ export class StyleManager {
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
 		this[kLayoutFlush] = null;
 		this[kFlushing] = false;
-		this[kFlushedEpoch] = -1;
-		this[kUsedGeneration] = 0;
+		this[kUsedValues] = new WeakMap();
 		this[kStyleSheetList] = null;
 		this[kPseudoNodeStyles] = new WeakMap<Element, ComputedStyle>();
 		this[kLayerPaths] = [];
@@ -10069,7 +10052,7 @@ export class StyleManager {
 		this[kFlushing] = true;
 		try {
 			if (this[kLayoutFlush]()) {
-				this[kUsedGeneration]++;
+				this[kUsedValues] = new WeakMap();
 			}
 		} finally {
 			this[kFlushing] = false;
@@ -10100,17 +10083,17 @@ export class StyleManager {
 		if (!this[kLayoutEngine] || !this[kLayoutFlush]) {
 			return null;
 		}
-		// The flush is taken once per layout generation, not once per read: an
-		// invalidation moves the engine's epoch, and until it does the layout
-		// standing behind the last flush is still the answer. A caller reading
-		// four properties off two hundred elements pays one flush, not eight
-		// hundred. Nothing under the flush can reach back here -- layout reads
-		// the cascade through computedValueOf, which has no used value to ask
-		// for.
-		if (this[kLayoutEngine].layoutEpoch !== this[kFlushedEpoch]) {
+		// The flush is taken once per layout, not once per read: an
+		// invalidation and a layout pass both stale the engine, and until one
+		// does the layout standing behind the last flush is still the answer.
+		// A caller reading four properties off two hundred elements pays one
+		// flush, not eight hundred. Nothing under the flush can reach back
+		// here -- layout reads the cascade through computedValueOf, which has
+		// no used value to ask for.
+		if (this[kLayoutEngine].layoutStale) {
 			this[kLayoutFlush]();
-			this[kFlushedEpoch] = this[kLayoutEngine].layoutEpoch;
-			this[kUsedGeneration]++;
+			this[kLayoutEngine].layoutStale = false;
+			this[kUsedValues] = new WeakMap();
 		}
 		return this[kLayoutEngine].getRect(element);
 	}
@@ -10142,16 +10125,27 @@ export class StyleManager {
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */
-	declare [kFlushedEpoch]: number;
-
 	/**
-	 * The generation a resolved value memoizes against: it moves when the
-	 * cascade is rebuilt or a flush finds work, and stands still otherwise.
+	 * The used values measured behind the last flush, per declaration. Held
+	 * here rather than on the declarations so that a cascade rebuild, or a
+	 * flush that found work, drops every one of them at once -- a fresh map
+	 * says nothing has been measured, which costs nothing to say.
 	 */
-	declare [kUsedGeneration]: number;
+	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
 
-	get layoutEpoch(): number {
-		return this[kUsedGeneration];
+	/** The used values a declaration has measured behind the last flush. */
+	[kUsedValuesOf](declaration: object): Map<string, string> {
+		let values = this[kUsedValues].get(declaration);
+		if (!values) {
+			values = new Map();
+			this[kUsedValues].set(declaration, values);
+		}
+		return values;
+	}
+
+	/** Drop one declaration's used values: its cascade moved under them. */
+	[kDropUsedValues](declaration: object): void {
+		this[kUsedValues].delete(declaration);
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
@@ -11066,7 +11060,7 @@ export class StyleManager {
 		// Every computed style ever handed out re-resolves on its next read:
 		// there is no enumerating a WeakMap, so the epoch they all watch moves.
 		this[kStyleEpoch].value++;
-		this[kUsedGeneration]++;
+		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
 		this[kPseudoNodeStyles] = new WeakMap();

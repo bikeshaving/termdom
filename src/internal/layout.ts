@@ -1463,9 +1463,6 @@ class Box {
 	children: Box[] | null;
 	heads: Map<Node, Box> | null;
 
-	/** The structural generation the children were derived at. */
-	structure: number;
-
 	/**
 	 * Whether an inline box was broken around a block-level box, so that it lays
 	 * out none of its own content: the fragments on either side and the block
@@ -1513,7 +1510,6 @@ class Box {
 		this.members = [];
 		this.children = null;
 		this.heads = null;
-		this.structure = -1;
 		this.broken = false;
 		this.holdsFragments = false;
 		this.flexNode = null;
@@ -1536,8 +1532,7 @@ class Box {
 	}
 }
 
-const kStructuralGeneration = Symbol("structuralGeneration");
-const kStaleContainers = Symbol("staleContainers");
+const kDerivedContainers = Symbol("derivedContainers");
 
 /**
  * Derive a block container's child boxes from the DOM, and link them into
@@ -1574,27 +1569,20 @@ const kStaleContainers = Symbol("staleContainers");
  * box is open around them so that content nested inside them still resolves.
  *
  * A derivation describes children that may since have moved, so it is redone
- * when they might have: the containers named in {@link kStaleContainers}
- * rebuild on their next read, and an unbounded change -- a stylesheet
- * reparse, a pseudo-element appearing, a shadow root attaching -- names every
- * one of them by moving the structural generation the box carries. The
- * boxes themselves outlive it: a rebuild reconciles against the children it
- * replaces.
+ * when they might have: a container drops out of {@link kDerivedContainers}
+ * as a mutation names it, and an unbounded change -- a stylesheet reparse, a
+ * pseudo-element appearing, a shadow root attaching -- drops the set itself,
+ * so each container rebuilds on its next read. The boxes themselves outlive
+ * it: a rebuild reconciles against the children it replaces.
  */
 function containerBox(
 	layout: LayoutEngine,
 	container: Element,
 ): Box {
 	const box = principalBox(layout, container);
-	const structure = layout[kStructuralGeneration];
-	if (
-		box.children &&
-		box.structure === structure &&
-		!layout[kStaleContainers].has(container)
-	) {
+	if (box.children && layout[kDerivedContainers].has(container)) {
 		return box;
 	}
-	layout[kStaleContainers].delete(container);
 
 	const heads = new Map<Node, Box>();
 	const children: Box[] = [];
@@ -1693,7 +1681,7 @@ function containerBox(
 
 	box.children = children;
 	box.heads = heads;
-	box.structure = structure;
+	layout[kDerivedContainers].add(container);
 	return box;
 }
 
@@ -2166,7 +2154,7 @@ function addNode(
 		// that generates no box announces nothing else on its way in.
 		const container = runContainerOf(layout, node);
 		if (container) {
-			layout[kStaleContainers].add(container);
+			layout[kDerivedContainers].delete(container);
 			layout[kDirtyRunContainers].add(container);
 		}
 		return;
@@ -2616,7 +2604,6 @@ function retireContainerBoxes(
 		}
 		box.children = null;
 		box.heads = null;
-		box.structure = -1;
 	}
 	layout[kDirtyRunContainers].delete(element);
 }
@@ -2975,7 +2962,7 @@ function restageContainer(
 	layout: LayoutEngine,
 	container: Element,
 ): void {
-	layout[kStaleContainers].add(container);
+	layout[kDerivedContainers].delete(container);
 	layout[kDirtyRunContainers].add(container);
 }
 
@@ -5533,8 +5520,7 @@ function isPointInRects(
 // `getRangeRects` or `lineFragments`, whose fragments carry data offsets
 // a consumer can render for itself.
 const kRectTexts = Symbol("rectTexts");
-const kLayoutPass = Symbol("layoutPass");
-const kInvalidationEpoch = Symbol("invalidationEpoch");
+const kLayoutStale = Symbol("layoutStale");
 const kFrameDirty = Symbol("frameDirty");
 
 export class LayoutEngine {
@@ -5644,10 +5630,8 @@ export class LayoutEngine {
 			Map<Text, TextFragmentEntry[]>
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
-		this[kStaleContainers] = new WeakSet<Element>();
-		this[kLayoutPass] = 0;
-		this[kInvalidationEpoch] = 0;
-		this[kStructuralGeneration] = 0;
+		this[kDerivedContainers] = new WeakSet<Element>();
+		this[kLayoutStale] = true;
 		this[kFrameDirty] = false;
 		this[kAnonymousBoxes] = new Map<FlexTypes.Node, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
@@ -5697,9 +5681,9 @@ export class LayoutEngine {
 	}
 
 	calculateLayout(): void {
-		// Geometry moves with the pass, so anything memoized against the layout
-		// epoch -- a resolved value, a rect -- re-measures after it.
-		this[kLayoutPass]++;
+		// Geometry moves with the pass, so anything memoized behind a flush --
+		// a resolved value, a rect -- re-measures after it.
+		this[kLayoutStale] = true;
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be named against the styles that stand rather than the ones that
 		// were on their way out.
@@ -6933,21 +6917,21 @@ export class LayoutEngine {
 	declare [kBoxes]: WeakMap<Node, Box>;
 
 	/**
-	 * The containers whose enumeration no longer describes their children. A
-	 * mutation names them as it arrives -- the container a node's box sits in,
-	 * and the one an element's own children's boxes sit in -- so that flipping
-	 * a class on one row of a long list re-enumerates that row, and not the
-	 * nine hundred and ninety-five boxes around it.
+	 * The containers whose enumeration still describes their children. A
+	 * mutation drops the ones it disturbs as it arrives -- the container a
+	 * node's box sits in, and the one an element's own children's boxes sit
+	 * in -- so that flipping a class on one row of a long list re-enumerates
+	 * that row, and not the nine hundred and ninety-five boxes around it. An
+	 * unbounded change drops the set: a fresh one says nothing is derived,
+	 * which costs nothing to say and re-derives each container lazily, on the
+	 * read that needs it.
 	 *
 	 * Weak, because a container named here may be the last thing a removed
 	 * subtree is held by, and a container never read again is never cleared.
 	 */
-	declare [kStaleContainers]: WeakSet<Element>;
+	declare [kDerivedContainers]: WeakSet<Element>;
 
-	declare [kLayoutPass]: number;
-
-	declare [kInvalidationEpoch]: number;
-	declare [kStructuralGeneration]: number;
+	declare [kLayoutStale]: boolean;
 	declare [kFrameDirty]: boolean;
 
 	/**
@@ -6961,18 +6945,18 @@ export class LayoutEngine {
 	 * record describes.
 	 */
 	invalidateFrame(): void {
-		this[kInvalidationEpoch]++;
+		this[kLayoutStale] = true;
 		this[kFrameDirty] = true;
 	}
 
 	/**
 	 * Note an UNBOUNDED change: a stylesheet reparse, a shadow attachment, a
-	 * pseudo-element change, the bidi reorder flip. Every box enumeration
-	 * re-derives, which is what the structural generation the boxes carry
-	 * says.
+	 * pseudo-element change, the bidi reorder flip. Which boxes a container
+	 * has can have moved anywhere, so no derivation still stands: the record
+	 * of which ones do is dropped whole.
 	 */
 	invalidateStructure(): void {
-		this[kStructuralGeneration]++;
+		this[kDerivedContainers] = new WeakSet<Element>();
 		this.invalidateFrame();
 	}
 
@@ -6989,21 +6973,20 @@ export class LayoutEngine {
 		this[kFrameDirty] = value;
 	}
 
-	/** The current invalidation epoch: bumped by everything a frame reads. */
-	get invalidationEpoch(): number {
-		return this[kInvalidationEpoch];
+	/**
+	 * Whether geometry could have moved since the flush that cleared this:
+	 * every layout pass sets it, and so does every cascade invalidation -- a
+	 * style written and then measured has moved geometry the engine has not
+	 * been told about yet, and a flag that stood still there would hand the
+	 * reader the layout standing behind the write. The used-value reader
+	 * flushes on it and writes false.
+	 */
+	get layoutStale(): boolean {
+		return this[kLayoutStale];
 	}
 
-	/**
-	 * A counter that moves whenever geometry could have: every layout pass
-	 * bumps it, and so does every cascade invalidation -- a style written and
-	 * then measured has moved geometry the engine has not
-	 * been told about yet, and a counter that stood still there would hand the
-	 * reader the layout standing behind the write. A resolved value memoizes
-	 * against it, the way a rect read does.
-	 */
-	get layoutEpoch(): number {
-		return this[kInvalidationEpoch] + this[kLayoutPass];
+	set layoutStale(value: boolean) {
+		this[kLayoutStale] = value;
 	}
 
 	/**
