@@ -7835,6 +7835,11 @@ export class Element extends Node {
 	[kPseudoHost]: Element | null;
 	[kPseudoName]: string | null;
 
+	// Installed on the prototype beside the engine delegate, which is what
+	// measures them.
+	declare getBoundingClientRect: () => globalThis.DOMRect;
+	declare getClientRects: () => globalThis.DOMRectList;
+
 	constructor() {
 		super();
 		this[kNamespace] = null;
@@ -8440,6 +8445,18 @@ const alreadyConstructed = Symbol("already constructed");
  * new.target it cannot find a definition for.
  */
 export class HTMLElement extends Element {
+	// Installed on the prototype beside the engine delegate, which is what
+	// measures them.
+	declare readonly offsetWidth: number;
+	declare readonly offsetHeight: number;
+	declare readonly offsetTop: number;
+	declare readonly offsetLeft: number;
+	declare readonly offsetParent: globalThis.Element | null;
+	declare readonly clientWidth: number;
+	declare readonly clientHeight: number;
+	declare readonly scrollWidth: number;
+	declare readonly scrollHeight: number;
+
 	constructor() {
 		if (internalConstruction) {
 			super();
@@ -21270,6 +21287,11 @@ const kRangeSelection = Symbol("the selection whose range this is");
 export class Range extends AbstractRange {
 	[kRangeSelection]: Selection | null;
 
+	// Installed on the prototype beside the engine delegate, which is what
+	// measures them.
+	declare getBoundingClientRect: () => globalThis.DOMRect;
+	declare getClientRects: () => globalThis.DOMRectList;
+
 	static readonly START_TO_START = START_TO_START;
 	static readonly START_TO_END = START_TO_END;
 	static readonly END_TO_END = END_TO_END;
@@ -24924,28 +24946,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-/**
- * ---- The platform's shape, held by the compiler --------------------------
- *
- * For each class above, the members lib.dom declares that the class type
- * does not, asserted EQUAL to a ledger. A member appearing on neither side is conformance; a member
- * missing from the ledger is drift the build refuses; a ledger entry the
- * type grew into is staleness the build refuses just the same.
- *
- * The bins the ledger's comments sort by:
- * - RUNTIME: real on instances -- the tables in htmltables.ts and the
- *   engine install them -- but invisible to the class type. Type debt,
- *   not missing behavior.
- * - GAP: not implemented at all. Work candidates.
- * - NEVER: deliberately absent on a terminal.
- *
- * Key coverage only, by design: whole-interface assignability is
- * transitively global (one interface drags the entire co-recursive type
- * graph, including lib.dom's own inaccuracies), so signatures graduate
- * member by member instead. Nothing here executes; the module erases.
- */
-
-/** The platform keys an internal type has not declared. */
 /* ------------------------------------------------------ engine delegation */
 
 const kEngineDelegate = Symbol("engineDelegate");
@@ -25105,6 +25105,29 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 });
 
+/**
+ * ---- The platform's shape, held by the compiler --------------------------
+ *
+ * For each class above, the members lib.dom declares that the class type
+ * does not, asserted EQUAL to a ledger. A member appearing on neither
+ * side is conformance; a member missing from the ledger is drift the
+ * build refuses; a ledger entry the type grew into is staleness the
+ * build refuses just the same.
+ *
+ * The bins the ledger's comments sort by:
+ * - RUNTIME: real on instances -- the tables in htmltables.ts and the
+ *   engine install them -- but invisible to the class type. Type debt,
+ *   not missing behavior.
+ * - GAP: not implemented at all. Work candidates.
+ * - NEVER: deliberately absent on a terminal.
+ *
+ * Key coverage only, by design: whole-interface assignability is
+ * transitively global (one interface drags the entire co-recursive type
+ * graph, including lib.dom's own inaccuracies), so signatures graduate
+ * member by member instead.
+ */
+
+/** The platform keys an internal type has not declared. */
 type MissingFrom<Platform, Internal> = Exclude<keyof Platform, keyof Internal>;
 
 /** Exact equality of two key unions, either direction's drift refused. */
@@ -25148,7 +25171,6 @@ type ParentNodeMixin =
 	"firstElementChild" |
 	"lastElementChild" |
 	"append" |
-	"moveBefore" |
 	"prepend" |
 	"querySelector" |
 	"querySelectorAll" |
@@ -25180,20 +25202,28 @@ type ElementRemainder =
 	| "currentCSSZoom" | // NEVER: zoom is a browser's
 	"part" | // RUNTIME: reflected from the tables
 	"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
+	"clientWidth" | // RUNTIME on HTMLElement; lib.dom asks Element
+	"clientHeight" |
+	"scrollWidth" |
+	"scrollHeight" |
+	"clientLeft" | // GAP: no border box to measure a border of
+	"clientTop" | // GAP
 	"computedStyleMap" | // GAP: Typed OM
 	"animate" | // GAP: no animation timeline
 	"getAnimations"; // GAP
 
-// -- key-complete today, held that way --------------------------------------
-declare const _checked: [
+// -- key-complete today, held that way. The value assignment is the
+// enforcement: an entry whose Equal resolves never refuses a true.
+const _checked: [
 	Equal<MissingFrom<globalThis.EventTarget, EventTarget>, never>,
 	Equal<MissingFrom<globalThis.Event, Event>, never>,
 	Equal<MissingFrom<globalThis.CustomEvent, CustomEvent>, never>,
 	Equal<MissingFrom<globalThis.StaticRange, StaticRange>, never>,
 	Equal<MissingFrom<globalThis.Selection, Selection>, never>,
 	Equal<MissingFrom<globalThis.MutationObserver, MutationObserver>, never>,
-	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, never>,
-	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
+	// GAP: the numeric index signature lib.dom gives both live lists.
+	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, number>,
+	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, number>,
 
 	// -- constants only -----------------------------------------------------
 	Equal<MissingFrom<globalThis.Node, Node>, NodeConstants>,
@@ -25207,14 +25237,13 @@ declare const _checked: [
 	>,
 
 	// -- small curated ledgers ----------------------------------------------
-	// RUNTIME: constants. GAP: createContextualFragment.
+	// RUNTIME: constants.
 	Equal<
 		MissingFrom<globalThis.Range, Range>,
 		| "START_TO_START" |
 		"START_TO_END" |
 		"END_TO_END" |
-		"END_TO_START" |
-		"createContextualFragment"
+		"END_TO_START"
 	>,
 	// NEVER: layerX/layerY are the pre-standard offsets no spec defines.
 	Equal<
@@ -25240,6 +25269,7 @@ declare const _checked: [
 		ParentNodeMixin |
 		// RUNTIME on the document; GAP on the root:
 		"onslotchange" |
+		"adoptedStyleSheets" |
 		"fullscreenElement" |
 		"pictureInPictureElement" |
 		"pointerLockElement" |
@@ -25248,17 +25278,39 @@ declare const _checked: [
 		"elementsFromPoint" |
 		"getAnimations"
 	>,
+	// The ARIA surface comes out first: it is a template literal pattern,
+	// which no finite union of key names can contain, so the ledger sets it
+	// aside and holds the residue.
 	Equal<
-		MissingFrom<globalThis.Element, Element>,
+		Exclude<MissingFrom<globalThis.Element, Element>, ARIAReflection>,
 		| NodeConstants |
 		ChildNodeMixin |
 		ParentNodeMixin |
-		ARIAReflection |
 		SelectorSurface |
 		PointerSurface |
 		FullscreenSurface |
 		ElementRemainder
 	>,
+] = [
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
+	true,
 ];
 
 export type PlatformShapeChecked = typeof _checked;

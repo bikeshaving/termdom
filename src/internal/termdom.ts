@@ -600,16 +600,8 @@ const kLastMouse = Symbol("lastMouse");
 // platform-conformance.ts; the ledger shrinks as installers declare.
 declare module "./dom.js" {
 	interface Element {
-		readonly clientHeight: number;
-		readonly clientLeft: number;
-		readonly clientTop: number;
-		readonly clientWidth: number;
 		scrollLeft: number;
 		scrollTop: number;
-		readonly scrollHeight: number;
-		readonly scrollWidth: number;
-		getBoundingClientRect(): globalThis.DOMRect;
-		getClientRects(): globalThis.DOMRectList;
 		scroll(options?: globalThis.ScrollToOptions): void;
 		scroll(x: number, y: number): void;
 		scrollBy(options?: globalThis.ScrollToOptions): void;
@@ -621,11 +613,6 @@ declare module "./dom.js" {
 		): void;
 	}
 	interface HTMLElement {
-		readonly offsetParent: globalThis.Element | null;
-		readonly offsetTop: number;
-		readonly offsetLeft: number;
-		readonly offsetWidth: number;
-		readonly offsetHeight: number;
 		checkVisibility(options?: globalThis.CheckVisibilityOptions): boolean;
 	}
 	interface Document {
