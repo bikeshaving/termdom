@@ -25164,9 +25164,11 @@ export function mount(document: object, engine: Mount): void {
 	doc[kMount] = engine;
 }
 
-function mountOf(node: Node): Mount | undefined {
+/** The mount of a node's document, or undefined when it is headless. */
+export function mountOf(node: object): Mount | undefined {
+	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
 	const document =
-		node.nodeType === DOCUMENT_NODE ? node : node.ownerDocument;
+		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument;
 	return (document as Record<symbol, Mount | undefined> | null)?.[kMount];
 }
 

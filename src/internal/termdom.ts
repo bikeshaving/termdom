@@ -50,10 +50,10 @@ const RESIZE_DEBOUNCE_MS = 40;
 
 const kUAToolkit = Symbol("uaToolkit");
 
-// The engine each document is mounted in. The DOM prototypes are the realm's,
-// shared by every document; a patched member finds its engine here rather than
-// closing over one.
-const engines = new WeakMap<object, TermDOM>();
+/** The mount this engine installs, which is how a node finds it back. */
+interface EngineMount extends DOM.Mount {
+	readonly engine: TermDOM;
+}
 
 /** The engine an event target belongs to, if it is mounted in one. */
 function engineOfTarget(target: unknown): TermDOM | undefined {
@@ -62,14 +62,11 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
 		return undefined;
 	}
 	// A window carries the document it shows; a node carries its owner.
-	if (typeof node.nodeType !== "number") {
-		return node.document === undefined ?
-			undefined :
-				engines.get(node.document);
+	const from = typeof node.nodeType === "number" ? node : node.document;
+	if (from === undefined) {
+		return undefined;
 	}
-	const document =
-		node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument;
-	return document === null ? undefined : engines.get(document);
+	return (DOM.mountOf(from) as EngineMount | undefined)?.engine;
 }
 
 /**
@@ -940,7 +937,6 @@ export class TermDOM {
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
 
-		engines.set(document, this);
 		DOM.mount(document, createMount(this));
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
@@ -1336,7 +1332,7 @@ function sealToScrollback(
  * answered from this engine's layout. Reached through the document -- no
  * prototype carries engine state for these.
  */
-function createMount(termDOM: TermDOM): DOM.Mount {
+function createMount(termDOM: TermDOM): EngineMount {
 	// The interface's object params are the realm boundary UAToolkit also
 	// crosses: the DOM's internal classes and the window's platform types
 	// meet here, and the engine reads them as the platform's.
@@ -1431,6 +1427,7 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 	};
 
 	return {
+		engine: termDOM,
 		boundingClientRect(target) {
 			const element = asElement(target);
 			if (!element.isConnected) {
@@ -1876,26 +1873,24 @@ function installWindowExtensions(
 	const termDOM = termdom;
 	const window = termDOM.window;
 	const document = window.document;
-	Object.defineProperty(window, "innerWidth", {
-		value: termDOM[kWidth],
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "innerHeight", {
-		value: termDOM[kHeight],
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "outerWidth", {
-		value: termDOM[kWidth],
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "outerHeight", {
-		value: termDOM[kHeight],
-		writable: false,
-		configurable: true,
-	});
+	// The terminal is the window and the screen both, so the inner and outer
+	// pairs are one size. Readonly like a browser's, and LIVE: a SIGWINCH
+	// moves them, and a value frozen at construction would have reported the
+	// size the terminal had when the engine was built.
+	for (const name of ["innerWidth", "outerWidth"] as const) {
+		Object.defineProperty(window, name, {
+			get: () => termDOM[kWidth],
+			configurable: true,
+			enumerable: true,
+		});
+	}
+	for (const name of ["innerHeight", "outerHeight"] as const) {
+		Object.defineProperty(window, name, {
+			get: () => termDOM[kHeight],
+			configurable: true,
+			enumerable: true,
+		});
+	}
 
 	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
 	// the anchor after this runs. A frozen value here silently shadowed the
