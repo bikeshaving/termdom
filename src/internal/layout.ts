@@ -856,6 +856,20 @@ function applyGridContainer(
 	);
 }
 
+/** The css-sizing-3 §5 keyword a width computed to, as the engine's constant. */
+function widthSizingConstant(value: string): number {
+	switch (value) {
+		case "min-content":
+			return Flex.SIZING_MIN_CONTENT;
+		case "max-content":
+			return Flex.SIZING_MAX_CONTENT;
+		case "fit-content":
+			return Flex.SIZING_FIT_CONTENT;
+		default:
+			return Flex.SIZING_NONE;
+	}
+}
+
 function styleFlexNode(
 	element: Element,
 	flexNode: FlexTypes.Node,
@@ -879,6 +893,7 @@ function styleFlexNode(
 	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
+		flexNode.setWidthSizing(Flex.SIZING_NONE);
 		flexNode.setHeightAuto();
 		// Also unset min/max constraints for pure inline elements
 		flexNode.setMinWidth(undefined);
@@ -889,12 +904,14 @@ function styleFlexNode(
 		// For atomic inline elements, unset width/height but preserve min/max constraints
 		// This allows the measure function to work while still respecting CSS constraints
 		flexNode.setWidthAuto();
+		flexNode.setWidthSizing(Flex.SIZING_NONE);
 		flexNode.setHeightAuto();
 
 		applyMinMax(flexNode, computedStyle);
 	} else {
 		// For block elements, apply explicit dimensions normally
-		const width = parseUnitValue(computedStyle.computedValueOf("width"));
+		const widthValue = computedStyle.computedValueOf("width");
+		const width = parseUnitValue(widthValue);
 		if (typeof width === "number") {
 			flexNode.setWidth(width);
 		} else if (width && "percentage" in width) {
@@ -902,6 +919,7 @@ function styleFlexNode(
 		} else {
 			flexNode.setWidthAuto();
 		}
+		flexNode.setWidthSizing(widthSizingConstant(widthValue));
 
 		const height = parseUnitValue(computedStyle.computedValueOf("height"));
 		if (typeof height === "number") {
@@ -3860,9 +3878,27 @@ function collectLeavesUnder(
 				let contentWidthMode = Flex.MEASURE_MODE_UNDEFINED;
 				let contentHeightMode = Flex.MEASURE_MODE_UNDEFINED;
 
+				// A sizing keyword never reaches getBoxModel's numbers; it
+				// picks the probe the content is measured under instead.
+				const widthSizing =
+					boxModel.width === undefined ?
+							widthSizingConstant(getPropertyValue(element, "width")) :
+						Flex.SIZING_NONE;
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
 					contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
+				} else if (widthSizing === Flex.SIZING_MIN_CONTENT) {
+					contentWidth = 0;
+					contentWidthMode = Flex.MEASURE_MODE_AT_MOST;
+				} else if (
+					widthSizing === Flex.SIZING_FIT_CONTENT &&
+					Number.isFinite(availableWidth) &&
+					availableWidth < Number.MAX_SAFE_INTEGER
+				) {
+					// fit-content: break at the run's available width, which
+					// caps max-content without flooring below min-content.
+					contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
+					contentWidthMode = Flex.MEASURE_MODE_AT_MOST;
 				} else if (element.tagName === "TEXTAREA") {
 					// cols sizes the CONTENT box (spec default 20), exactly as the
 					// attribute does in a browser; the box then adds whatever
@@ -3963,8 +3999,13 @@ function collectLeavesUnder(
 					// out here, since nothing above it will. An indefinite
 					// width shrinks to fit, which is what an inline-block does.
 					// NaN is the engine's "undefined": the axis shrinks to fit.
+					// A sizing keyword rides on the root, which turns a passed
+					// width into the matching probe instead of a used width.
+					contentRoot.setWidthSizing(widthSizing);
 					contentRoot.calculateLayout(
-						contentWidthMode === Flex.MEASURE_MODE_EXACTLY ?
+						contentWidthMode === Flex.MEASURE_MODE_EXACTLY ||
+						(widthSizing !== Flex.SIZING_NONE &&
+							contentWidthMode === Flex.MEASURE_MODE_AT_MOST) ?
 							contentWidth :
 							Number.NaN,
 						contentHeightMode === Flex.MEASURE_MODE_EXACTLY ?

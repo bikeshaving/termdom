@@ -1640,6 +1640,24 @@ function inClip(
 	return col >= left && col < right && row >= top && row < bottom;
 }
 
+/**
+ * Whether a terminal row is a scroll frame's to paint. Rows outside the
+ * bands were seeded from the shifted previous grid and still hold their
+ * content; a writer that lands on one would overwrite cells nothing is
+ * going to repaint.
+ */
+function inPaintBand(context: CellContext, terminalRow: number): boolean {
+	if (!context.paintBands) {
+		return true;
+	}
+	for (const [start, end] of context.paintBands) {
+		if (terminalRow >= start && terminalRow < end) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function setCell(
 	context: CellContext,
 	row: number,
@@ -1658,17 +1676,8 @@ function setCell(
 		return;
 	}
 
-	if (context.paintBands) {
-		let inBand = false;
-		for (const [start, end] of context.paintBands) {
-			if (terminalRow >= start && terminalRow < end) {
-				inBand = true;
-				break;
-			}
-		}
-		if (!inBand) {
-			return;
-		}
+	if (!inPaintBand(context, terminalRow)) {
+		return;
 	}
 
 	if (context.clipRect && !inClip(context, row, col)) {
@@ -1705,6 +1714,13 @@ function setBorderCell(
 	if (
 		terminalY < 0 || terminalY >= context.rows || x < 0 || x >= context.cols
 	) {
+		return;
+	}
+	// The band mask binds border strokes as it binds text: a box whose extent
+	// touches an exposed band still stamps its whole outline, and the rows
+	// outside the bands -- a top border row wearing a legend, say -- keep
+	// what the seeded grid holds.
+	if (!inPaintBand(context, terminalY)) {
 		return;
 	}
 	if (!inClip(context, y, x)) {

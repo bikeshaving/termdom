@@ -98,6 +98,17 @@ const UNIT_POINT = 1;
 const UNIT_PERCENT = 2;
 const UNIT_AUTO = 3;
 
+/**
+ * The intrinsic sizing keywords of css-sizing-3 §5, carried beside a width of
+ * auto rather than as units of it: min/max resolution, percentages and flex
+ * arithmetic go on reading auto, and only the places that decide how wide an
+ * auto box comes out consult the keyword.
+ */
+const SIZING_NONE = 0;
+const SIZING_MIN_CONTENT = 1;
+const SIZING_MAX_CONTENT = 2;
+const SIZING_FIT_CONTENT = 3;
+
 export type Align = number;
 export type Justify = number;
 export type Wrap = number;
@@ -411,6 +422,8 @@ interface Style {
 	border: number[];
 
 	width: Value;
+	/** SIZING_*: how an auto width resolves; none means fill or measure. */
+	widthSizing: number;
 	height: Value;
 	minWidth: Value;
 	minHeight: Value;
@@ -534,6 +547,7 @@ function createStyle(): Style {
 		border: [0, 0, 0, 0],
 
 		width: AUTO_VALUE,
+		widthSizing: SIZING_NONE,
 		height: AUTO_VALUE,
 		minWidth: UNDEFINED_VALUE,
 		minHeight: UNDEFINED_VALUE,
@@ -1077,6 +1091,13 @@ export class Node {
 		this.markDirty();
 	}
 
+	setWidthSizing(v: number): void {
+		if (this.style.widthSizing !== v) {
+			this.style.widthSizing = v;
+			this.markDirty();
+		}
+	}
+
 	setHeight(v: number | string | undefined): void {
 		this.style.height = toValue(v);
 		this.markDirty();
@@ -1251,14 +1272,31 @@ export class Node {
 		const width = resolveValue(this.style.width, ownerWidth);
 		const height = resolveValue(this.style.height, ownerHeight);
 
-		const availableWidth = isDefined(width) ? width : ownerWidth;
+		let availableWidth = isDefined(width) ? width : ownerWidth;
+		let widthMode = isDefined(availableWidth) ?
+			MEASURE_MODE_EXACTLY :
+			MEASURE_MODE_UNDEFINED;
+		// A sizing keyword on a root turns the owner's width from the used
+		// width into a probe: zero for min-content, a ceiling for fit-content,
+		// and no offer at all for max-content.
+		if (!isDefined(width) && this.style.widthSizing !== SIZING_NONE) {
+			if (this.style.widthSizing === SIZING_MIN_CONTENT) {
+				availableWidth = 0;
+				widthMode = MEASURE_MODE_AT_MOST;
+			} else if (this.style.widthSizing === SIZING_MAX_CONTENT) {
+				availableWidth = NaN;
+				widthMode = MEASURE_MODE_UNDEFINED;
+			} else if (isDefined(availableWidth)) {
+				widthMode = MEASURE_MODE_AT_MOST;
+			}
+		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
 
 		layoutNode(
 			this,
 			availableWidth,
 			availableHeight,
-			isDefined(availableWidth) ? MEASURE_MODE_EXACTLY : MEASURE_MODE_UNDEFINED,
+			widthMode,
 			isDefined(availableHeight) ?
 				MEASURE_MODE_EXACTLY :
 				MEASURE_MODE_UNDEFINED,
@@ -5887,7 +5925,10 @@ function readCollapseBottom(child: Node, into: MarginSet): void {
 
 /** A box that wraps its own content rather than filling its container. */
 function shrinkWrapsWidth(node: Node): boolean {
-	return node.style.display === DISPLAY_TABLE;
+	return (
+		node.style.display === DISPLAY_TABLE ||
+		node.style.widthSizing !== SIZING_NONE
+	);
 }
 
 /**
@@ -5938,7 +5979,17 @@ function layoutBlockChild(
 				contentWidth,
 			) + marginRow;
 		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (child.style.widthSizing === SIZING_MIN_CONTENT) {
+		// The min-content probe: an AT_MOST offer of zero breaks the content
+		// at its narrowest, and the wrapped width is the box's.
+		childWidth.value = 0;
+		childWidth.mode = MEASURE_MODE_AT_MOST;
+	} else if (child.style.widthSizing === SIZING_MAX_CONTENT) {
+		// An undefined offer measures the content unbroken, so the box takes
+		// its max-content width whatever the container offers.
 	} else if (isDefined(contentWidth)) {
+		// A non-filling child's AT_MOST offer is fit-content already:
+		// min(max-content, max(min-content, available)).
 		childWidth.value = contentWidth;
 		childWidth.mode = fill ? MEASURE_MODE_EXACTLY : MEASURE_MODE_AT_MOST;
 	}
@@ -6697,6 +6748,11 @@ const Flex = {
 	UNIT_POINT,
 	UNIT_PERCENT,
 	UNIT_AUTO,
+
+	SIZING_NONE,
+	SIZING_MIN_CONTENT,
+	SIZING_MAX_CONTENT,
+	SIZING_FIT_CONTENT,
 };
 
 export default Flex;

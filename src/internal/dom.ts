@@ -11425,6 +11425,7 @@ export class HTMLDialogElement extends HTMLElement {
 			return;
 		}
 		this.setAttribute("open", "");
+		focusDialog(this);
 	}
 
 	showModal(): void {
@@ -11513,7 +11514,9 @@ function focusDialog(
 		(fallback as HTMLElement).focus();
 		return;
 	}
-	dialog[kDocument][kActiveElement] = dialog;
+	if (isModalDialog(dialog)) {
+		dialog[kDocument][kActiveElement] = dialog;
+	}
 }
 
 function close(
@@ -11524,19 +11527,25 @@ function close(
 	if (!dialog.hasAttribute("open")) {
 		return;
 	}
+	const document = dialog[kDocument];
+	const wasModal = isModalDialog(dialog);
 	dialog.removeAttribute("open");
-	topLayerOf(dialog[kDocument]).delete(dialog);
-	// The page gets its focus back where the dialog took it from, so the
-	// keyboard returns to what the user was doing before it opened.
-	if (dialog[kPreviouslyFocused] !== null) {
-		const previous = dialog[kPreviouslyFocused];
-		dialog[kPreviouslyFocused] = null;
-		if (
-			dialog[kDocument][kActiveElement] === dialog ||
-			dialog.contains(dialog[kDocument][kActiveElement])
-		) {
-			(previous as HTMLElement).focus();
-		}
+	topLayerOf(document).delete(dialog);
+	// The page gets its focus back where the dialog took it from -- when the
+	// dialog holds focus, or held the whole page inert as the modal one.
+	const previous = dialog[kPreviouslyFocused];
+	dialog[kPreviouslyFocused] = null;
+	const active = document[kActiveElement];
+	const heldFocus =
+		active !== null && isShadowIncludingInclusiveAncestor(dialog, active);
+	if (previous !== null && (wasModal || heldFocus)) {
+		(previous as HTMLElement).focus();
+	}
+	// focus() refuses a target that left the tree or stopped being
+	// focusable; focus still in the closed dialog falls back to the body.
+	const after = document[kActiveElement];
+	if (after !== null && isShadowIncludingInclusiveAncestor(dialog, after)) {
+		(after as HTMLElement).blur();
 	}
 	if (returnValue !== undefined) {
 		dialog[kReturnValue] = String(returnValue);
