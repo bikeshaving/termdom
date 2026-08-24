@@ -24946,6 +24946,165 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
  */
 
 /** The platform keys an internal type has not declared. */
+/* ------------------------------------------------------ engine delegation */
+
+const kEngineDelegate = Symbol("engineDelegate");
+
+/**
+ * The engine's answers for the APIs a document alone cannot give --
+ * geometry so far; the rest of the installed surface migrates here. The
+ * mounting engine installs one per document, and a node reaches it
+ * through its ownerDocument, one hop. A document without one is the
+ * spec's no-browsing-context document, and the members consulting it
+ * degrade to that: zero rects, empty lists, null parents.
+ */
+export interface EngineDelegate {
+	boundingClientRect(element: object): globalThis.DOMRect;
+	clientRects(element: object): globalThis.DOMRectList;
+	rangeBoundingClientRect(range: object): globalThis.DOMRect;
+	rangeClientRects(range: object): globalThis.DOMRectList;
+	/** The border-box size offsetWidth/offsetHeight report, rounded. */
+	offsetSize(element: object): {width: number; height: number};
+	/** The offsetParent-relative position offsetTop/offsetLeft report. */
+	offsetPosition(element: object): {top: number; left: number};
+	offsetParent(element: object): object | null;
+	clientSize(element: object): {width: number; height: number};
+	scrollSize(element: object): {width: number; height: number};
+}
+
+/** Give a mounted document its engine's delegate. Once per document. */
+export function installEngineDelegate(
+	document: object,
+	delegate: EngineDelegate,
+): void {
+	const doc = document as Record<symbol, EngineDelegate | undefined>;
+	if (doc[kEngineDelegate] !== undefined) {
+		throw new Error("This document already has its engine.");
+	}
+	doc[kEngineDelegate] = delegate;
+}
+
+function delegateOf(node: Node): EngineDelegate | undefined {
+	const document =
+		node.nodeType === DOCUMENT_NODE ? node : node.ownerDocument;
+	return (document as Record<symbol, EngineDelegate | undefined> | null)?.[
+		kEngineDelegate
+	];
+}
+
+// The geometry surface: the APIs are the DOM's, what they measure is the
+// engine's. Writable so a test can stub a measurement, as on the platform.
+Object.defineProperties(Element.prototype, {
+	getBoundingClientRect: {
+		value(this: Element): globalThis.DOMRect {
+			return (
+				delegateOf(this)?.boundingClientRect(this) ??
+				new DOMRect(0, 0, 0, 0)
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
+	getClientRects: {
+		value(this: Element): globalThis.DOMRectList {
+			return delegateOf(this)?.clientRects(this) ?? new DOMRectList();
+		},
+		writable: true,
+		configurable: true,
+	},
+});
+
+Object.defineProperties(Range.prototype, {
+	getBoundingClientRect: {
+		value(this: Range): globalThis.DOMRect {
+			return (
+				delegateOf(this.startContainer)?.rangeBoundingClientRect(this) ??
+				new DOMRect(0, 0, 0, 0)
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
+	getClientRects: {
+		value(this: Range): globalThis.DOMRectList {
+			return (
+				delegateOf(this.startContainer)?.rangeClientRects(this) ??
+				new DOMRectList()
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
+});
+
+Object.defineProperties(HTMLElement.prototype, {
+	offsetWidth: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.offsetSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetHeight: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.offsetSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetTop: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.offsetPosition(this).top ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetLeft: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.offsetPosition(this).left ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetParent: {
+		get(this: HTMLElement): Element | null {
+			return (delegateOf(this)?.offsetParent(this) ?? null) as
+				Element |
+				null;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientWidth: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.clientSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientHeight: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.clientSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollWidth: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.scrollSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollHeight: {
+		get(this: HTMLElement): number {
+			return delegateOf(this)?.scrollSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+});
+
 type MissingFrom<Platform, Internal> = Exclude<keyof Platform, keyof Internal>;
 
 /** Exact equality of two key unions, either direction's drift refused. */
@@ -25048,15 +25207,13 @@ declare const _checked: [
 	>,
 
 	// -- small curated ledgers ----------------------------------------------
-	// RUNTIME: constants, engine geometry. GAP: createContextualFragment.
+	// RUNTIME: constants. GAP: createContextualFragment.
 	Equal<
 		MissingFrom<globalThis.Range, Range>,
 		| "START_TO_START" |
 		"START_TO_END" |
 		"END_TO_END" |
 		"END_TO_START" |
-		"getBoundingClientRect" |
-		"getClientRects" |
 		"createContextualFragment"
 	>,
 	// NEVER: layerX/layerY are the pre-standard offsets no spec defines.

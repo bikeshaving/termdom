@@ -985,6 +985,7 @@ export class TermDOM {
 		// nothing reads through it until a patched API is actually called.
 
 		engines.set(document, this);
+		DOM.installEngineDelegate(document, createEngineDelegate(this));
 		TermDOM[kInstallPrototypes](this.window);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
@@ -1134,7 +1135,7 @@ export class TermDOM {
 			return;
 		}
 		TermDOM[kPrototypesInstalled] = true;
-		const {Element, Document, Range} = window;
+		const {Element, Document} = window;
 
 		/**
 		 * The engine that mounted a node's document, or null for a node in a
@@ -1149,302 +1150,6 @@ export class TermDOM {
 			) as Document;
 			return engines.get(document) ?? null;
 		};
-
-		// getRect()/getRects() (the layout engine's own primitives) are
-		// document-relative -- the coordinate space rendering already works in,
-		// since the renderer applies the camera offset once at paint time, not
-		// per element. But getBoundingClientRect/getClientRects are a *public*
-		// API, and CSSOM View defines them relative to the viewport: rect.top
-		// for a scrolled-past element should be negative, not the same
-		// ever-growing document row regardless of scroll. toViewportRect is the
-		// one place that conversion happens, so both wrappers apply it
-		// identically. Internal callers that need the pre-conversion,
-		// document-relative rect (scrollIntoView, hit-testing) read
-		// getRect()/getRects() directly instead of going through these -- see
-		// their definitions.
-		// A box inside a position:fixed subtree is laid out in viewport space
-		// already -- subtracting the camera would double-convert it. Per spec
-		// its client rect is scroll-invariant.
-		const toViewportRect = (
-			termDOM: TermDOM,
-			rect: DOMRect,
-			element?: Element,
-		): DOMRect =>
-			element && termDOM[kLayoutEngine].isInFixedSpace(element) ?
-				rect :
-					termDOM[kLayoutEngine].createDOMRect(
-						rect.x,
-						rect.y - termDOM[kViewport].scrollTop,
-						rect.width,
-						rect.height,
-					);
-
-		const ZeroRect = (window as unknown as {
-			DOMRect: new (x: number, y: number, w: number, h: number) => DOMRect;
-		}).DOMRect;
-		const emptyRectList = (): DOMRectList =>
-			new DOM.DOMRectList() as unknown as DOMRectList;
-
-		Element.prototype.getBoundingClientRect = function (
-			this: Element,
-		): DOMRect {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return new ZeroRect(0, 0, 0, 0);
-			}
-			if (!this.isConnected) {
-				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
-			}
-
-			processPendingMutationsAndRender(termDOM);
-
-			const rect = termDOM[kLayoutEngine].getRect(this);
-			return toViewportRect(
-				termDOM,
-				rect || termDOM[kLayoutEngine].createDOMRect(),
-				this,
-			);
-		};
-
-		Element.prototype.getClientRects = function (this: Element): DOMRectList {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return emptyRectList();
-			}
-			if (!this.isConnected) {
-				return termDOM[kLayoutEngine].createDOMRectList();
-			}
-
-			processPendingMutationsAndRender(termDOM);
-
-			const rects = termDOM[kLayoutEngine]
-				.getRects(this)
-				.map((rect) => toViewportRect(termDOM, rect, this));
-			return termDOM[kLayoutEngine].createDOMRectList(rects);
-		};
-
-		// Range geometry. The DOM does no layout, so Range.getClientRects/
-		// getBoundingClientRect are the engine's to answer -- from the same
-		// layout the element wrappers use, viewport-converted identically. The
-		// caret and selection painters read the document-relative
-		// getRangeRects() directly, the way scrollIntoView reads getRect().
-		Range.prototype.getClientRects = function (this: Range): DOMRectList {
-			const termDOM = engineOf(this.startContainer);
-			if (termDOM === null) {
-				return emptyRectList();
-			}
-			processPendingMutationsAndRender(termDOM);
-			const container = this.startContainer;
-			const anchor =
-				container.nodeType === container.ELEMENT_NODE ?
-						(container as Element) :
-						(container.parentElement ?? undefined);
-			const rects = termDOM[kLayoutEngine]
-				.getRangeRects(this)
-				.map((rect) => toViewportRect(termDOM, rect, anchor));
-			return termDOM[kLayoutEngine].createDOMRectList(rects);
-		};
-
-		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
-			const termDOM = engineOf(this.startContainer);
-			if (termDOM === null) {
-				return new ZeroRect(0, 0, 0, 0);
-			}
-			processPendingMutationsAndRender(termDOM);
-			const container = this.startContainer;
-			const anchor =
-				container.nodeType === container.ELEMENT_NODE ?
-						(container as Element) :
-						(container.parentElement ?? undefined);
-			return toViewportRect(
-				termDOM,
-				termDOM[kLayoutEngine].unionRect(
-					termDOM[kLayoutEngine].getRangeRects(this),
-				),
-				anchor,
-			);
-		};
-
-		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
-		// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
-		// measurement APIs, and previously entirely unimplemented (always
-		// 0/null, the value a DOM with no layout behind it has). Every one of
-		// them is derived from
-		// layoutRectOf, the single place that decides "is this element
-		// connected, has layout settled, what is its border-box rect" -- so
-		// offsetWidth and clientWidth can never quietly disagree about which
-		// rect they mean, and a future change to that decision (e.g. how
-		// isConnected or render-flushing is handled) only has one place to make.
-		//
-		// layoutRectOf returns the same rect getBoundingClientRect uses,
-		// unrounded (each getter below rounds for its own purpose -- offsetTop
-		// rounds the *difference* of two rects, not each rect independently, so
-		// rounding here first would double-round and drift by a cell).
-		const layoutRectOf = (element: Element): DOMRect | null => {
-			if (!element.isConnected) {
-				return null;
-			}
-			const termDOM = engineOf(element);
-			if (termDOM === null) {
-				return null;
-			}
-			processPendingMutationsAndRender(termDOM);
-			return termDOM[kLayoutEngine].getRect(element);
-		};
-
-		// offsetParent walks the live DOM tree, not layout -- a separate concern
-		// from layoutRectOf, reused by offsetParent itself and by offsetTop/Left
-		// to find what they're relative to.
-		const offsetParentOf = (element: Element): HTMLElement | null => {
-			for (
-				let ancestor = element.parentElement;
-				ancestor;
-				ancestor = ancestor.parentElement
-			) {
-				const position = computedStyleOf(ancestor).computedValueOf("position");
-				if (position && position !== "static") {
-					return ancestor as HTMLElement;
-				}
-			}
-			const body = engineOf(element)?.document.body ?? null;
-			return body === element ? null : body;
-		};
-
-		// The content+padding box (border-box rect minus border widths), which
-		// both clientWidth/Height and scrollWidth/Height report -- see
-		// their definition below for why scroll* is an alias of client* rather
-		// than the element's true unclamped content size.
-		const contentBoxOf = (
-			element: Element,
-		): {width: number; height: number} | null => {
-			const rect = layoutRectOf(element);
-			if (!rect) {
-				return null;
-			}
-			const box = getBoxModel(element);
-			return {
-				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-			};
-		};
-
-		Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
-			get(this: Element) {
-				return Math.round(layoutRectOf(this)?.width ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
-			get(this: Element) {
-				return Math.round(layoutRectOf(this)?.height ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(window.HTMLElement.prototype, "offsetParent", {
-			get(this: Element) {
-				return this.isConnected ? offsetParentOf(this) : null;
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		// offsetTop/Left are relative to offsetParent's own border-box origin
-		// (not its padding edge, which the spec technically uses): a
-		// simplification that only differs when offsetParent itself has a
-		// border, and is off by exactly that border's width when it does.
-		Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
-			get(this: Element) {
-				const rect = layoutRectOf(this);
-				if (!rect) {
-					return 0;
-				}
-				const parent = offsetParentOf(this);
-				const parentRect = parent ? layoutRectOf(parent) : null;
-				return Math.round(rect.top - (parentRect?.top ?? 0));
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(window.HTMLElement.prototype, "offsetLeft", {
-			get(this: Element) {
-				const rect = layoutRectOf(this);
-				if (!rect) {
-					return 0;
-				}
-				const parent = offsetParentOf(this);
-				const parentRect = parent ? layoutRectOf(parent) : null;
-				return Math.round(rect.left - (parentRect?.left ?? 0));
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
-		// html/body-only instance properties defined above (which still win: an
-		// own-property shadows a prototype getter, so document.body's viewport-
-		// height special case is untouched).
-		Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
-			get(this: Element) {
-				return Math.round(contentBoxOf(this)?.width ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
-			get(this: Element) {
-				return Math.round(contentBoxOf(this)?.height ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		// scroll* is the content's laid-out extent -- how far the box could
-		// scroll, and what its offsets clamp against -- read off the layout
-		// tree, whose children keep their natural sizes when they overflow a
-		// fixed box. A box whose content the tree does not decompose into
-		// child boxes (an inline, a run member) has no readable extent and
-		// falls back to its client size, exact for the no-overflow case.
-		const scrollExtentOf = (
-			element: Element,
-		): {width: number | null; height: number} | null => {
-			if (!element.isConnected) {
-				return null;
-			}
-			const termDOM = engineOf(element);
-			if (termDOM === null) {
-				return null;
-			}
-			processPendingMutationsAndRender(termDOM);
-			return termDOM[kLayoutEngine].scrollExtentOf(element);
-		};
-
-		Object.defineProperty(window.HTMLElement.prototype, "scrollWidth", {
-			get(this: Element) {
-				return (
-					scrollExtentOf(this)?.width ??
-					Math.round(contentBoxOf(this)?.width ?? 0)
-				);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-
-		Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
-			get(this: Element) {
-				return (
-					scrollExtentOf(this)?.height ??
-					Math.round(contentBoxOf(this)?.height ?? 0)
-				);
-			},
-			configurable: true,
-			enumerable: true,
-		});
 
 		// scrollTop/scrollLeft writes take effect here, where layout and the
 		// frame loop live: a write rounds to whole cells (everything paints
@@ -2215,6 +1920,206 @@ function sealToScrollback(
 ): void {
 	flushDocument(termdom);
 	termdom[kSealed] = true;
+}
+
+/**
+ * The document's EngineDelegate: the geometry half of the public DOM
+ * surface, answered from this engine's layout. Installed at mount, reached
+ * through the document -- no prototype carries engine state for these.
+ */
+function createEngineDelegate(termDOM: TermDOM): DOM.EngineDelegate {
+	// The interface's object params are the realm boundary UAToolkit also
+	// crosses: the DOM's internal classes and the window's platform types
+	// meet here, and the engine reads them as the platform's.
+	const asElement = (target: object): Element => target as Element;
+	const asRange = (target: object): Range => target as Range;
+	// getBoundingClientRect/getClientRects are a *public* API, and CSSOM
+	// View defines them relative to the viewport: rect.top for a
+	// scrolled-past element should be negative, not the same ever-growing
+	// document row regardless of scroll. getRect()/getRects() (the layout
+	// engine's own primitives) are document-relative -- the renderer
+	// applies the camera offset once at paint time -- so toViewportRect is
+	// the one place the conversion happens, applied identically by both.
+	// Internal callers that need the document-relative rect
+	// (scrollIntoView, hit-testing) read getRect()/getRects() directly.
+	// A box inside a position:fixed subtree is laid out in viewport space
+	// already -- subtracting the camera would double-convert it. Per spec
+	// its client rect is scroll-invariant.
+	const toViewportRect = (rect: DOMRect, element?: Element): DOMRect =>
+		element && termDOM[kLayoutEngine].isInFixedSpace(element) ?
+			rect :
+				termDOM[kLayoutEngine].createDOMRect(
+					rect.x,
+					rect.y - termDOM[kViewport].scrollTop,
+					rect.width,
+					rect.height,
+				);
+
+	// The single place that decides "is this element connected, has layout
+	// settled, what is its border-box rect" -- so offsetWidth and
+	// clientWidth can never quietly disagree about which rect they mean.
+	// Unrounded: each reader rounds for its own purpose (offsetTop rounds
+	// the *difference* of two rects; rounding here first would double-round
+	// and drift by a cell).
+	const layoutRectOf = (element: Element): DOMRect | null => {
+		if (!element.isConnected) {
+			return null;
+		}
+		processPendingMutationsAndRender(termDOM);
+		return termDOM[kLayoutEngine].getRect(element);
+	};
+
+	// offsetParent walks the live DOM tree, not layout -- a separate concern
+	// from layoutRectOf, reused by offsetParent itself and by offsetTop/Left
+	// to find what they're relative to.
+	const offsetParentOf = (element: Element): HTMLElement | null => {
+		for (
+			let ancestor = element.parentElement;
+			ancestor;
+			ancestor = ancestor.parentElement
+		) {
+			const position = computedStyleOf(ancestor).computedValueOf("position");
+			if (position && position !== "static") {
+				return ancestor as HTMLElement;
+			}
+		}
+		const body = termDOM.document.body ?? null;
+		return body === element ? null : body;
+	};
+
+	// The content+padding box (border-box rect minus border widths), which
+	// both clientWidth/Height and scrollWidth/Height report -- see
+	// scrollSize for why scroll* falls back to client* rather than the
+	// element's true unclamped content size.
+	const contentBoxOf = (
+		element: Element,
+	): {width: number; height: number} | null => {
+		const rect = layoutRectOf(element);
+		if (!rect) {
+			return null;
+		}
+		const box = getBoxModel(element);
+		return {
+			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+		};
+	};
+
+	// scroll* is the content's laid-out extent -- how far the box could
+	// scroll, and what its offsets clamp against -- read off the layout
+	// tree, whose children keep their natural sizes when they overflow a
+	// fixed box. A box whose content the tree does not decompose into
+	// child boxes (an inline, a run member) has no readable extent and
+	// falls back to its client size, exact for the no-overflow case.
+	const scrollExtentOf = (
+		element: Element,
+	): {width: number | null; height: number} | null => {
+		if (!element.isConnected) {
+			return null;
+		}
+		processPendingMutationsAndRender(termDOM);
+		return termDOM[kLayoutEngine].scrollExtentOf(element);
+	};
+
+	return {
+		boundingClientRect(target) {
+			const element = asElement(target);
+			if (!element.isConnected) {
+				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
+			}
+			processPendingMutationsAndRender(termDOM);
+			const rect = termDOM[kLayoutEngine].getRect(element);
+			return toViewportRect(
+				rect || termDOM[kLayoutEngine].createDOMRect(),
+				element,
+			);
+		},
+		clientRects(target) {
+			const element = asElement(target);
+			if (!element.isConnected) {
+				return termDOM[kLayoutEngine].createDOMRectList();
+			}
+			processPendingMutationsAndRender(termDOM);
+			const rects = termDOM[kLayoutEngine]
+				.getRects(element)
+				.map((rect) => toViewportRect(rect, element));
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
+		},
+		// Range geometry answers from the same layout the element members
+		// use, viewport-converted identically. The caret and selection
+		// painters read the document-relative getRangeRects() directly, the
+		// way scrollIntoView reads getRect().
+		rangeBoundingClientRect(target) {
+			const range = asRange(target);
+			processPendingMutationsAndRender(termDOM);
+			const container = range.startContainer;
+			const anchor =
+				container.nodeType === container.ELEMENT_NODE ?
+						(container as Element) :
+						(container.parentElement ?? undefined);
+			return toViewportRect(
+				termDOM[kLayoutEngine].unionRect(
+					termDOM[kLayoutEngine].getRangeRects(range),
+				),
+				anchor,
+			);
+		},
+		rangeClientRects(target) {
+			const range = asRange(target);
+			processPendingMutationsAndRender(termDOM);
+			const container = range.startContainer;
+			const anchor =
+				container.nodeType === container.ELEMENT_NODE ?
+						(container as Element) :
+						(container.parentElement ?? undefined);
+			const rects = termDOM[kLayoutEngine]
+				.getRangeRects(range)
+				.map((rect) => toViewportRect(rect, anchor));
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
+		},
+		offsetSize(target) {
+			const element = asElement(target);
+			const rect = layoutRectOf(element);
+			return {
+				width: Math.round(rect?.width ?? 0),
+				height: Math.round(rect?.height ?? 0),
+			};
+		},
+		offsetPosition(target) {
+			const element = asElement(target);
+			const rect = layoutRectOf(element);
+			if (!rect) {
+				return {top: 0, left: 0};
+			}
+			const parent = offsetParentOf(element);
+			const parentRect = parent ? layoutRectOf(parent) : null;
+			return {
+				top: Math.round(rect.top - (parentRect?.top ?? 0)),
+				left: Math.round(rect.left - (parentRect?.left ?? 0)),
+			};
+		},
+		offsetParent(target) {
+			const element = asElement(target);
+			return element.isConnected ? offsetParentOf(element) : null;
+		},
+		clientSize(target) {
+			const element = asElement(target);
+			const box = contentBoxOf(element);
+			return {
+				width: Math.round(box?.width ?? 0),
+				height: Math.round(box?.height ?? 0),
+			};
+		},
+		scrollSize(target) {
+			const element = asElement(target);
+			const extent = scrollExtentOf(element);
+			const box = contentBoxOf(element);
+			return {
+				width: extent?.width ?? Math.round(box?.width ?? 0),
+				height: extent?.height ?? Math.round(box?.height ?? 0),
+			};
+		},
+	};
 }
 
 function installWindowExtensions(
