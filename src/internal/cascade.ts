@@ -2656,28 +2656,136 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 	}
 }
 
+/** A node a `<supports-condition>` parses into. */
+interface SupportsNode {
+	type: string;
+	name?: string;
+	feature?: string;
+	property?: string;
+	loc?: ParsedSpan | null;
+	children?: {toArray(): SupportsNode[]} | null;
+	declaration?: SupportsNode | null;
+	value?: SupportsNode | null;
+}
+
+/**
+ * A `<supports-condition>` against this engine, on the nodes css-tree parses
+ * it into. Text css-tree refuses, and a word standing where an operand
+ * belongs, are conditions nothing supports.
+ */
+function supportsCondition(text: string): boolean {
+	let nodes: SupportsNode[];
+	try {
+		const ast = CSSTree.parse(text, {
+			context: "atrulePrelude",
+			atrule: "supports",
+			positions: true,
+		}) as unknown as {children?: {toArray(): SupportsNode[]} | null};
+		nodes = ast.children ? ast.children.toArray() : [];
+	} catch (_err) {
+		return false;
+	}
+	if (nodes.length !== 1 || nodes[0].type !== "Condition") {
+		return false;
+	}
+	return supportsConditionMatches(nodes[0], text);
+}
+
+/**
+ * The operands one joiner stands between, in source order. The grammar
+ * css-conditional-3 writes is narrow: a `not` opens a condition of its own,
+ * a joined condition holds `and` throughout or `or` throughout, and an
+ * operand and a joiner take turns. A condition off that grammar supports
+ * nothing.
+ */
+function supportsConditionMatches(
+	condition: SupportsNode,
+	source: string,
+): boolean {
+	let matches: boolean | null = null;
+	let joiner: string | null = null;
+	let negate = false;
+	let awaited = true;
+	for (const part of condition.children?.toArray() ?? []) {
+		if (part.type === "Identifier") {
+			const word = (part.name ?? "").toLowerCase();
+			if (word === "not") {
+				if (matches !== null || negate || !awaited) {
+					return false;
+				}
+				negate = true;
+				continue;
+			}
+			if ((word !== "and" && word !== "or") || awaited) {
+				return false;
+			}
+			if (joiner !== null && joiner !== word) {
+				return false;
+			}
+			joiner = word;
+			awaited = true;
+			continue;
+		}
+		if (!awaited || (joiner !== null && matches === null)) {
+			return false;
+		}
+		let operand = supportsOperandMatches(part, source);
+		if (negate) {
+			operand = !operand;
+		}
+		matches =
+			matches === null ?
+				operand :
+				joiner === "or" ?
+					matches || operand :
+					matches && operand;
+		awaited = false;
+	}
+	// A negated operand is a whole condition, so nothing may be joined to it.
+	if (awaited || matches === null || (negate && joiner !== null)) {
+		return false;
+	}
+	return matches;
+}
+
+/**
+ * One `<supports-in-parens>`: a nested condition, a declaration this engine
+ * would honour, or a `selector()` this engine's own selector parser reads.
+ * A condition of any other shape -- `font-format()`, `font-tech()` -- is one
+ * nothing here supports.
+ */
+function supportsOperandMatches(part: SupportsNode, source: string): boolean {
+	const sliceOf = (node: SupportsNode | null | undefined): string | null =>
+		node?.loc ? source.slice(node.loc.start.offset, node.loc.end.offset) : null;
+	if (part.type === "Condition") {
+		return supportsConditionMatches(part, source);
+	}
+	if (part.type === "SupportsDeclaration") {
+		const value = sliceOf(part.declaration?.value);
+		return (
+			value !== null && cssSupports(part.declaration?.property ?? "", value)
+		);
+	}
+	// `selector(...)` asks whether a selector parses, which is exactly what
+	// the cascade's own selector parser answers.
+	if (part.type === "FeatureFunction" && part.feature === "selector") {
+		const selector = sliceOf(part.value);
+		return selector !== null && parseSelectorList(selector) !== null;
+	}
+	return false;
+}
+
 /**
  * Whether a declaration would be honoured: `CSS.supports(property, value)`, and
- * the one-argument form that takes a `@supports` condition.
+ * the one-argument form that takes a `@supports` condition. The one-argument
+ * form reads its text as a condition, and failing that as a condition the
+ * parentheses were left off of, which is the pair of steps css-conditional-3
+ * gives it.
  */
 function cssSupports(conditionOrProperty: string, value?: string): boolean {
 	if (value === undefined) {
 		const condition = String(conditionOrProperty).trim();
-		// `selector(...)` asks whether a selector parses, which is exactly
-		// what the cascade's own selector parser answers.
-		const selector = /^selector\(([\s\S]*)\)$/.exec(condition);
-		if (selector) {
-			return parseSelectorList(selector[1]) !== null;
-		}
-		if (!condition.startsWith("(") || !condition.endsWith(")")) {
-			return false;
-		}
-		const inner = condition.slice(1, -1);
-		const colon = inner.indexOf(":");
-		if (colon === -1) {
-			return false;
-		}
-		return cssSupports(inner.slice(0, colon), inner.slice(colon + 1));
+		return supportsCondition(condition) || supportsCondition(`(${condition})`);
 	}
 	const property = normalizePropertyName(conditionOrProperty);
 	if (property.startsWith("--")) {
