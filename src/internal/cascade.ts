@@ -205,6 +205,60 @@ const grammarLexer = CSSTree.fork({
 	},
 }).lexer;
 
+/** One top-level component of a value, and the grammar terms it satisfied. */
+interface ValueTerm {
+	text: string;
+	terms: string[];
+}
+
+/** One step of a grammar match: the term a node was matched against. */
+interface TraceTerm {
+	type: string;
+	name: string;
+}
+
+/**
+ * Each top-level component of a value paired with the grammar terms it
+ * satisfied, outermost first: the longhands and types the property index
+ * names on the way to the component. Null when the grammar refuses the value
+ * -- one carrying a substitution, or a spelling the index does not describe
+ * -- which is where a caller falls back to reading the value by shape.
+ *
+ * The text is the component as the declaration spells it: the grammar says
+ * which term a component fills, not how it is written.
+ */
+function grammarTerms(property: string, value: string): ValueTerm[] | null {
+	let ast: {children?: {toArray(): CSSNode[]} | null};
+	let match: {matched: unknown; getTrace(node: unknown): TraceTerm[] | null};
+	try {
+		ast = CSSTree.parse(value, {
+			context: "value",
+			positions: true,
+		}) as never;
+		match = grammarLexer.matchProperty(property, ast as never) as never;
+	} catch (_err) {
+		return null;
+	}
+	if (!match.matched) {
+		return null;
+	}
+	const out: ValueTerm[] = [];
+	for (const node of ast.children?.toArray() ?? []) {
+		const source = node as unknown as {
+			loc?: {start: {offset: number}; end: {offset: number}};
+		};
+		const trace = match.getTrace(node);
+		if (!trace || !source.loc) {
+			return null;
+		}
+		out.push({
+			text: value.slice(source.loc.start.offset, source.loc.end.offset),
+			terms: trace.map((step) => step.name),
+		});
+	}
+	return out;
+}
+
 /** The `<line-width> || <line-style> || <color>` grammar's three terms. */
 interface LineValue {
 	width: string | null;
@@ -223,6 +277,9 @@ const LINE_VALUE_TERMS = new Map<string, keyof LineValue>([
 	["color", "color"],
 ]);
 
+/** The node types a number is parsed into, whatever unit it carries. */
+const NUMERIC_NODES = new Set(["Number", "Dimension", "Percentage"]);
+
 /**
  * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
  * the per-side border shorthands and `outline`. Components may appear in any
@@ -235,8 +292,17 @@ const LINE_VALUE_TERMS = new Map<string, keyof LineValue>([
  */
 function splitLineValue(property: string, value: string): LineValue {
 	const out: LineValue = {width: null, lineStyle: null, color: null};
-	const traced = traceLineValue(property, value, out);
+	const traced = grammarTerms(property, value);
 	if (traced) {
+		for (const component of traced) {
+			for (const term of component.terms) {
+				const slot = LINE_VALUE_TERMS.get(term);
+				if (slot) {
+					out[slot] = component.text;
+					break;
+				}
+			}
+		}
 		return out;
 	}
 	for (const token of splitComponents(value)) {
@@ -252,59 +318,6 @@ function splitLineValue(property: string, value: string): LineValue {
 		}
 	}
 	return out;
-}
-
-/** The node types a number is parsed into, whatever unit it carries. */
-const NUMERIC_NODES = new Set(["Number", "Dimension", "Percentage"]);
-
-/** Fill a line value from the property's grammar; false when it refuses. */
-function traceLineValue(
-	property: string,
-	value: string,
-	out: LineValue,
-): boolean {
-	let ast: {children?: {toArray(): CSSNode[]} | null};
-	let match: {matched: unknown; getTrace(node: unknown): TraceTerm[] | null};
-	try {
-		ast = CSSTree.parse(value, {
-			context: "value",
-			positions: true,
-		}) as never;
-		match = grammarLexer.matchProperty(property, ast as never) as never;
-	} catch (_err) {
-		return false;
-	}
-	if (!match.matched) {
-		return false;
-	}
-	for (const node of ast.children?.toArray() ?? []) {
-		const trace = match.getTrace(node) ?? [];
-		const term = trace.find(
-			(step) => step.type === "Type" && LINE_VALUE_TERMS.has(step.name),
-		);
-		if (!term) {
-			return false;
-		}
-		const source = node as unknown as {
-			loc?: {start: {offset: number}; end: {offset: number}};
-		};
-		if (!source.loc) {
-			return false;
-		}
-		// The component as the declaration spells it: the grammar says which
-		// term it fills, not how it is written.
-		out[LINE_VALUE_TERMS.get(term.name)!] = value.slice(
-			source.loc.start.offset,
-			source.loc.end.offset,
-		);
-	}
-	return true;
-}
-
-/** One step of a grammar match: the term a node was matched against. */
-interface TraceTerm {
-	type: string;
-	name: string;
 }
 
 /** The values `flex-direction` takes, which is how `flex-flow` knows one. */
@@ -849,6 +862,21 @@ function expandTransition(value: string): Record<string, string> {
 }
 
 /**
+ * The lines `text-decoration-line` names, for a value whose grammar the index
+ * refuses -- one carrying a substitution, which still declares the lines it
+ * spells outright.
+ */
+const DECORATION_LINE_KEYWORDS = new Set([
+	"none",
+	"underline",
+	"overline",
+	"line-through",
+	"blink",
+	"spelling-error",
+	"grammar-error",
+]);
+
+/**
  * Expand CSS SHORTHANDS into the longhands everything downstream reads.
  * Declarations are consulted per-property, so a `border: 1px solid` that
  * never becomes border-top-width etc. simply doesn't exist to the box model
@@ -1076,13 +1104,21 @@ function expandShorthands(
 				Object.assign(out, expandTransition(value));
 				break;
 			case "text-decoration": {
-				// `<line> || <style> || <color>`; only the line component has a
-				// terminal rendering, and it is the one the painter reads.
-				const line = values
-					.filter((token) =>
-						/^(none|underline|overline|line-through|blink)$/.test(token),
-					)
-					.join(" ");
+				// `<line> || <style> || <color> || <thickness>`; only the line
+				// component has a terminal rendering, and it is the one the
+				// painter reads.
+				const traced = grammarTerms(property, value);
+				const line = (
+					traced ?
+							traced
+								.filter((component) =>
+									component.terms.includes("text-decoration-line"),
+								)
+								.map((component) => component.text) :
+							values.filter((token) =>
+								DECORATION_LINE_KEYWORDS.has(token.toLowerCase()),
+							)
+				).join(" ");
 				if (line) {
 					out["text-decoration-line"] = line;
 				}
