@@ -1985,12 +1985,6 @@ function buildSession(
 ): TerminalSession {
 	return new TerminalSession({
 		transport: termdom[kTransport],
-		setCommandStart: (screenTop) => {
-			termdom[kScreenTop] = screenTop;
-			// Content shifts up to the terminal top from the command start.
-			termdom[kAnchorScrollTop] = -screenTop;
-		},
-		layout: termdom[kLayoutEngine],
 		interactive: termdom[kInteractive],
 		anchorDetection: termdom[kTransport].sharesScreen,
 		handlers: {
@@ -2026,12 +2020,21 @@ function buildSession(
 			onCloseRequest: () => {
 				termdom.window.close();
 			},
+			onCommandStart: (screenTop) => {
+				termdom[kScreenTop] = screenTop;
+				// Content shifts up to the terminal top from the command start.
+				termdom[kAnchorScrollTop] = -screenTop;
+			},
+			onTerminalReordersText: () => {
+				termdom[kLayoutEngine].setTerminalReordersText(true);
+			},
 			// A cluster is wider or narrower on this terminal than the
 			// tables said, so every column after one on a painted row is
 			// off by the difference. The previous frame described a screen
 			// that was never drawn: drop it and paint the region again from
 			// the corrected measurements.
 			onWidthCorrection: () => {
+				termdom[kLayoutEngine].invalidateTextMeasurement();
 				termdom[kScreen].repaintAll();
 				void render(termdom);
 			},

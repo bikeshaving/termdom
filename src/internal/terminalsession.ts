@@ -1,4 +1,3 @@
-import type {LayoutEngine} from "./layout.js";
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import {
 	ansiMode,
@@ -22,6 +21,8 @@ import {
 	PASTE_START,
 	type ColorDepth,
 } from "./wire.js";
+
+/* -------------------------------------------------- the transport contract */
 
 /** The terminal's dimensions, in cells. */
 export interface TerminalSize {
@@ -94,60 +95,7 @@ export interface TerminalTransport {
 	close(info?: TerminalCloseInfo): void;
 }
 
-// The Node process shape the default wrapper consumes. The engine itself
-// never touches these: they exist so `transportFromProcess` can be typed
-// against exactly the members it reads, and so tests can hand it mocks.
-export interface TTYWriteStream {
-	write(
-		chunk: any,
-		encoding?: string | ((error?: Error) => void),
-		callback?: (error?: Error) => void,
-	): boolean;
-	columns: number;
-	rows: number;
-	isTTY: boolean;
-}
-
-export interface TTYReadStream {
-	isTTY: boolean;
-	on(
-		event: "data",
-		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
-	): unknown;
-	removeListener?(
-		event: "data",
-		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
-	): unknown;
-	setRawMode?(mode: boolean): this;
-	resume(): this;
-	pause(): this;
-	setEncoding?(encoding?: string): this;
-}
-
-type ProcessSignal = "SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "exit";
-
-export interface ProcessLike {
-	stdin?: TTYReadStream;
-	stdout: TTYWriteStream;
-	on(event: ProcessSignal, listener: () => void): unknown;
-	removeListener?(event: ProcessSignal, listener: () => void): unknown;
-	exit(code?: number): never;
-	env: Record<string, string | undefined>;
-}
-
-function detectColorDepth(proc: ProcessLike): ColorDepth {
-	const colorterm = proc.env.COLORTERM;
-	if (colorterm === "truecolor" || colorterm === "24bit") {
-		return "rgb";
-	}
-
-	const term = proc.env.TERM || "";
-	if (term.includes("256color") || term.includes("256")) {
-		return "256";
-	}
-
-	return "ansi";
-}
+/* --------------------------------------------------------- the mode ledger */
 
 /**
  * The private modes and stack controls this engine sets, named once. `set`
@@ -205,6 +153,63 @@ const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
 const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	(name) => MODE_SPELLINGS[name].panic,
 ).map((name) => MODE_SPELLINGS[name].reset).join("");
+
+/* --------------------------------------------------- the process transport */
+
+// The Node process shape the default wrapper consumes. The engine itself
+// never touches these: they exist so `transportFromProcess` can be typed
+// against exactly the members it reads, and so tests can hand it mocks.
+export interface TTYWriteStream {
+	write(
+		chunk: any,
+		encoding?: string | ((error?: Error) => void),
+		callback?: (error?: Error) => void,
+	): boolean;
+	columns: number;
+	rows: number;
+	isTTY: boolean;
+}
+
+export interface TTYReadStream {
+	isTTY: boolean;
+	on(
+		event: "data",
+		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
+	): unknown;
+	removeListener?(
+		event: "data",
+		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
+	): unknown;
+	setRawMode?(mode: boolean): this;
+	resume(): this;
+	pause(): this;
+	setEncoding?(encoding?: string): this;
+}
+
+type ProcessSignal = "SIGWINCH" | "SIGINT" | "SIGTERM" | "SIGHUP" | "exit";
+
+export interface ProcessLike {
+	stdin?: TTYReadStream;
+	stdout: TTYWriteStream;
+	on(event: ProcessSignal, listener: () => void): unknown;
+	removeListener?(event: ProcessSignal, listener: () => void): unknown;
+	exit(code?: number): never;
+	env: Record<string, string | undefined>;
+}
+
+function detectColorDepth(proc: ProcessLike): ColorDepth {
+	const colorterm = proc.env.COLORTERM;
+	if (colorterm === "truecolor" || colorterm === "24bit") {
+		return "rgb";
+	}
+
+	const term = proc.env.TERM || "";
+	if (term.includes("256color") || term.includes("256")) {
+		return "256";
+	}
+
+	return "ansi";
+}
 
 // Frames keep the terminal cursor hidden, and dispose() shows it again -- but
 // an app that calls process.exit() without disposing would strand the user's
@@ -399,6 +404,8 @@ export function transportFromProcess(
 	};
 }
 
+/* ------------------------------------------------------------ the exchange */
+
 /**
  * The conversation held over a transport: one reader, one writer, and the
  * demultiplexer between them.
@@ -427,6 +434,13 @@ interface TerminalSessionHandlers {
 	onResize(size: TerminalSize): void;
 	/** Ctrl-C with no listener claiming it: the default action is window.close(). */
 	onCloseRequest(): void;
+	/** Where the region's start row is, once cursor detection lands. */
+	onCommandStart(screenTop: number): void;
+	/**
+	 * The terminal answered that it reorders bidirectional text itself, so the
+	 * renderer must hand it logical order.
+	 */
+	onTerminalReordersText(): void;
 	/**
 	 * The terminal reported an advance the width tables did not predict. Every
 	 * width answered so far may have been answered wrongly, so the rows holding
@@ -464,10 +478,8 @@ const kDriftBatch = Symbol("driftBatch");
 const kWidthRun = Symbol("widthRun");
 const kWidthDrift = Symbol("widthDrift");
 const kWidthRunLost = Symbol("widthRunLost");
-const kLayout = Symbol("layout");
 const kHandlers = Symbol("handlers");
 const kTransport = Symbol("transport");
-const kSetCommandStart = Symbol("setCommandStart");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kDisposed = Symbol("disposed");
@@ -493,9 +505,6 @@ const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
 
 export class TerminalSession {
 	declare [kTransport]: TerminalTransport;
-	// Where the region's start row is recorded once cursor detection lands.
-	declare [kSetCommandStart]: (screenTop: number) => void;
-	declare [kLayout]: LayoutEngine;
 	declare [kInteractive]: boolean;
 	// The modes currently set on the terminal, the source restore derives from.
 	declare [kEngagedModes]: Set<ModeName>;
@@ -665,8 +674,6 @@ export class TerminalSession {
 
 	constructor(deps: {
 		transport: TerminalTransport;
-		setCommandStart: (screenTop: number) => void;
-		layout: LayoutEngine;
 		interactive: boolean;
 		anchorDetection: boolean;
 		handlers: TerminalSessionHandlers;
@@ -749,8 +756,6 @@ export class TerminalSession {
 			},
 		};
 		this[kTransport] = deps.transport;
-		this[kSetCommandStart] = deps.setCommandStart;
-		this[kLayout] = deps.layout;
 		this[kInteractive] = deps.interactive;
 		this[kEngagedModes] = new Set<ModeName>();
 		this[kAnchorDetectionEnabled] = deps.anchorDetection && deps.interactive;
@@ -939,7 +944,7 @@ export class TerminalSession {
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			this[kLayout].setTerminalReordersText(true);
+			this[kHandlers].onTerminalReordersText();
 		}
 	}
 
@@ -1019,7 +1024,7 @@ export class TerminalSession {
 					finish();
 
 					// Convert 1-based terminal row to the 0-based anchor.
-					this[kSetCommandStart](match.row - 1);
+					this[kHandlers].onCommandStart(match.row - 1);
 
 					this[kHasDetectedCommandStart] = true;
 					resolve(match.row);
@@ -1245,6 +1250,8 @@ export class TerminalSession {
 	}
 }
 
+/* ------------------------------------------------------------ width probes */
+
 /**
  * Wait for a frame the starved clusters can ride, and ask for one if none
  * comes.
@@ -1376,10 +1383,11 @@ function settleWidthProbe(
 	session[kWidthSettled].add(probe.cluster);
 	session[kWidthDrift] += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		session[kLayout].invalidateTextMeasurement();
 		session[kHandlers].onWidthCorrection();
 	}
 }
+
+/* ---------------------------------------------------- input demultiplexing */
 
 async function readLoop(
 	session: TerminalSession,
@@ -1538,6 +1546,8 @@ function route(
 
 	session[kHandlers].onKeys(keyInput);
 }
+
+/* ------------------------------------------------------- query correlation */
 
 /**
  * Answer the outstanding clipboard query and forget it. Called with the
