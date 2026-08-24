@@ -8454,6 +8454,24 @@ const alreadyConstructed = Symbol("already constructed");
  * HTMLElement for every name HTML knows, and this constructor throws for a
  * new.target it cannot find a definition for.
  */
+/**
+ * The element the focus state names. document.activeElement retargets to
+ * the host chain, so a focus move inside a shadow tree is invisible
+ * through it; the raw state is at the bottom of each root's own
+ * activeElement chain.
+ */
+function innermostActive(document: Document): Element | null {
+	let current = document.activeElement;
+	while (current !== null) {
+		const inner = current[kShadowRoot]?.activeElement ?? null;
+		if (inner === null) {
+			break;
+		}
+		current = inner;
+	}
+	return current;
+}
+
 export class HTMLElement extends Element {
 	// Installed on the prototype, where the mount that measures them is.
 	declare readonly offsetWidth: number;
@@ -8779,31 +8797,46 @@ export class HTMLElement extends Element {
 	/**
 	 * Make the element the document's focused area.
 	 *
-	 * Only the focus STATE moves here. The focus/blur/focusin/focusout events
-	 * are the environment's to fire, because their order interleaves with
-	 * whatever else a move of focus does -- a repaint, a caret reveal -- and
-	 * this DOM has no window to fire them at.
+	 * The focus STATE moves here. The focus/blur/focusin/focusout events
+	 * are the mount's to fire, because their order interleaves with
+	 * whatever else a move of focus does -- a repaint, a caret reveal --
+	 * and this DOM has no window to fire them at. A headless document moves
+	 * the state and stops.
 	 */
 	focus(): void {
-		if (!isFocusableArea(this)) {
-			return;
-		}
 		const document = this[kDocument];
+		const previous = innermostActive(document);
 		// Shadow-including connectedness: a node whose tree root is a shadow
 		// root is focusable when its host chain reaches the document -- the
 		// node-tree root test refused every element in a shadow tree.
-		if (!this.isConnected) {
-			return;
+		if (isFocusableArea(this) && this.isConnected) {
+			document[kActiveElement] = this;
 		}
-		document[kActiveElement] = this;
+		if (previous !== this && innermostActive(document) === this) {
+			mountOf(this)?.focusMoved(previous, this);
+		}
 	}
 
 	/** Give up focus, which returns it to the document's body. */
 	blur(): void {
 		const document = this[kDocument];
+		const wasFocused = innermostActive(document) === this;
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
+		if (wasFocused) {
+			mountOf(this)?.blurred(this);
+		}
+	}
+
+	/**
+	 * Reveal the element: every scroll box between it and the document
+	 * scrolls it into view, and so does the screen. A headless document
+	 * shows nothing, so there is nothing to reveal into. The options are
+	 * not read: all moves are the minimal ones, block "nearest".
+	 */
+	scrollIntoView(_options?: boolean | globalThis.ScrollIntoViewOptions): void {
+		mountOf(this)?.scrollIntoView(this);
 	}
 
 	/**
@@ -25072,6 +25105,16 @@ export interface Mount {
 	elementsFromPoint(document: object, x: number, y: number): object[];
 	/** Whether the element is rendered, on the options' definition. */
 	checkVisibility(element: object, options?: object): boolean;
+	/**
+	 * The focus state has moved to the element from the previous focus.
+	 * Fire the events the move fires and repaint for the :focus rules it
+	 * brings in.
+	 */
+	focusMoved(previous: object | null, element: object): void;
+	/** The element has given up the focus state. */
+	blurred(element: object): void;
+	/** Reveal the element in every scroll port between it and the screen. */
+	scrollIntoView(element: object): void;
 }
 
 /** Mount a document on its engine. Once per document. */
@@ -25337,6 +25380,7 @@ type ElementRemainder =
 	| "currentCSSZoom" | // NEVER: zoom is a browser's
 	"part" | // RUNTIME: reflected from the tables
 	"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
+	"scrollIntoView" | // RUNTIME on HTMLElement; lib.dom asks Element
 	"clientWidth" | // RUNTIME on HTMLElement; lib.dom asks Element
 	"clientHeight" |
 	"scrollWidth" |

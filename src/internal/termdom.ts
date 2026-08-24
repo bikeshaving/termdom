@@ -591,20 +591,6 @@ const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kTopLayer = Symbol("topLayer");
 const kLastMouse = Symbol("lastMouse");
-
-// The members this module installs on dom.js's prototypes, declared into
-// its types AT the installer: the type is true because this file makes it
-// true. (A bare document no engine ever serves carries the types without
-// the members -- the same promise lib.dom makes for any environment.)
-// Each member declared here comes off the RUNTIME ledger in
-// platform-conformance.ts; the ledger shrinks as installers declare.
-declare module "./dom.js" {
-	interface Element {
-		scrollIntoView(
-			options?: boolean | globalThis.ScrollIntoViewOptions,
-		): void;
-	}
-}
 const kInstallPrototypes = Symbol("installPrototypes");
 const kScreen = Symbol("screen");
 const kStyleManager = Symbol("styleManager");
@@ -1252,190 +1238,6 @@ export class TermDOM {
 			},
 			configurable: true,
 		});
-
-		// Moving focus is the DOM's; firing the events a move fires, and
-		// repainting for the :focus rules it brings in, are the engine's.
-		const HTMLElement = window.HTMLElement;
-		const originalFocus = HTMLElement.prototype.focus;
-		const originalBlur = HTMLElement.prototype.blur;
-
-		// document.activeElement retargets to the host chain, so a focus
-		// move inside a shadow tree is invisible through it; the raw state
-		// is at the bottom of each root's own activeElement chain.
-		const innermostActive = (termDOM: TermDOM): Element | null => {
-			let current = termDOM.document.activeElement;
-			while (current !== null) {
-				const shadow =
-					termDOM[kUAToolkit].shadowRootOf<ShadowRoot>(current);
-				const inner = shadow?.activeElement ?? null;
-				if (inner === null) {
-					break;
-				}
-				current = inner;
-			}
-			return current;
-		};
-
-		HTMLElement.prototype.focus = function (this: HTMLElement) {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				originalFocus.call(this);
-				return;
-			}
-			const prev = innermostActive(termDOM);
-			originalFocus.call(this);
-			if (prev !== this && innermostActive(termDOM) === this) {
-				// :focus rules match live, but computed styles are cached and
-				// focus is not a mutation -- both moved elements must drop
-				// their caches, and the repaint must happen even when no
-				// listener mutates anything.
-				termDOM[kStyleManager].handleFocusChange(prev, this);
-				void render(termDOM);
-				if (prev && prev !== termDOM.document.body) {
-					fireAsUserAgent(
-						prev,
-						new window.FocusEvent("blur", {
-							relatedTarget: this,
-							bubbles: false,
-						}),
-					);
-					fireAsUserAgent(
-						prev,
-						new window.FocusEvent("focusout", {
-							relatedTarget: this,
-							bubbles: true,
-						}),
-					);
-				}
-				fireAsUserAgent(
-					this,
-					new window.FocusEvent("focus", {
-						relatedTarget: prev,
-						bubbles: false,
-					}),
-				);
-				fireAsUserAgent(
-					this,
-					new window.FocusEvent("focusin", {
-						relatedTarget: prev,
-						bubbles: true,
-					}),
-				);
-			}
-		};
-
-		HTMLElement.prototype.blur = function (this: HTMLElement) {
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				originalBlur.call(this);
-				return;
-			}
-			const wasFocused = innermostActive(termDOM) === this;
-			originalBlur.call(this);
-			if (wasFocused) {
-				termDOM[kStyleManager].handleFocusChange(this);
-				void render(termDOM);
-				fireAsUserAgent(
-					this,
-					new window.FocusEvent("blur", {
-						relatedTarget: null,
-						bubbles: false,
-					}),
-				);
-				fireAsUserAgent(
-					this,
-					new window.FocusEvent("focusout", {
-						relatedTarget: null,
-						bubbles: true,
-					}),
-				);
-			}
-		};
-
-		// scrollIntoView: every scroll box between the element and the
-		// document reveals it within its own port, innermost first -- each
-		// scroll moves the element in every outer port's coordinates, so the
-		// rect is re-read per level -- and the camera reveals what remains.
-		// All moves are the minimal ones: block "nearest".
-		HTMLElement.prototype.scrollIntoView = function (
-			this: HTMLElement,
-			_arg?: boolean | ScrollIntoViewOptions,
-		) {
-			if (!this.isConnected) {
-				return;
-			}
-			const termDOM = engineOf(this);
-			if (termDOM === null) {
-				return;
-			}
-			processPendingMutationsAndRender(termDOM);
-			const engine = termDOM[kLayoutEngine];
-
-			const revealIn = (scroller: Element): void => {
-				// Document-relative rects on both sides: the element wherever
-				// its current offsets put it, against the scroller's padding
-				// box -- what the scroller actually shows.
-				const rect = engine.getRect(this);
-				const scrollerRect = engine.getRect(scroller);
-				if (!rect || !scrollerRect) {
-					return;
-				}
-				const box = getBoxModel(scroller);
-				const portTop = scrollerRect.top + (box.borderTopWidth || 0);
-				const portBottom =
-					scrollerRect.bottom - (box.borderBottomWidth || 0);
-				const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
-				const portRight = scrollerRect.right - (box.borderRightWidth || 0);
-				if (rect.top < portTop) {
-					scroller.scrollTop -= Math.round(portTop - rect.top);
-				} else if (rect.bottom > portBottom) {
-					scroller.scrollTop += Math.round(rect.bottom - portBottom);
-				}
-				if (rect.left < portLeft) {
-					scroller.scrollLeft -= Math.round(portLeft - rect.left);
-				} else if (rect.right > portRight) {
-					scroller.scrollLeft += Math.round(rect.right - portRight);
-				}
-			};
-
-			for (
-				let ancestor = termDOM[kUAToolkit].flatParentElement<Element>(this);
-				ancestor &&
-				ancestor !== termDOM.document.body &&
-				ancestor !== termDOM.document.documentElement;
-				ancestor = termDOM[kUAToolkit].flatParentElement<Element>(ancestor)
-			) {
-				const style = computedStyleOf(ancestor);
-				const overflow = style.computedValueOf("overflow");
-				const scrollable = (value: string) =>
-					value === "auto" || value === "scroll" || value === "hidden";
-				if (
-					scrollable(style.computedValueOf("overflow-y") || overflow) ||
-					scrollable(style.computedValueOf("overflow-x") || overflow)
-				) {
-					revealIn(ancestor);
-				}
-			}
-
-			// Document-relative, not getBoundingClientRect's viewport-relative --
-			// this compares directly against the camera's scrollTop below, so it needs
-			// the same coordinate space getRect() already provides.
-			const rect = engine.getRect(this);
-			if (!rect) {
-				return;
-			}
-
-			// The camera shows [scrollTop, scrollTop + region).
-			// Move it the minimal amount that brings the element into it -- the
-			// standard block: "nearest" behavior.
-			const regionHeight = cameraRegionHeight(termDOM);
-			const top = termDOM[kViewport].scrollTop;
-			if (rect.top < top) {
-				scrollCamera(termDOM, rect.top - top);
-			} else if (rect.bottom > top + regionHeight) {
-				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
-			}
-		};
 	}
 
 	/**
@@ -2004,6 +1806,133 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 				return false;
 			}
 			return termDOM[kLayoutEngine].getRects(element).length > 0;
+		},
+		focusMoved(previousTarget, target) {
+			const previous = previousTarget as Element | null;
+			const element = asElement(target);
+			const {FocusEvent} = termDOM.window;
+			// :focus rules match live, but computed styles are cached and
+			// focus is not a mutation -- both moved elements must drop their
+			// caches, and the repaint must happen even when no listener
+			// mutates anything.
+			termDOM[kStyleManager].handleFocusChange(previous, element);
+			void render(termDOM);
+			if (previous && previous !== termDOM.document.body) {
+				fireAsUserAgent(
+					previous,
+					new FocusEvent("blur", {
+						relatedTarget: element,
+						bubbles: false,
+					}),
+				);
+				fireAsUserAgent(
+					previous,
+					new FocusEvent("focusout", {
+						relatedTarget: element,
+						bubbles: true,
+					}),
+				);
+			}
+			fireAsUserAgent(
+				element,
+				new FocusEvent("focus", {relatedTarget: previous, bubbles: false}),
+			);
+			fireAsUserAgent(
+				element,
+				new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
+			);
+		},
+		blurred(target) {
+			const element = asElement(target);
+			const {FocusEvent} = termDOM.window;
+			termDOM[kStyleManager].handleFocusChange(element);
+			void render(termDOM);
+			fireAsUserAgent(
+				element,
+				new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
+			);
+			fireAsUserAgent(
+				element,
+				new FocusEvent("focusout", {relatedTarget: null, bubbles: true}),
+			);
+		},
+		// Every scroll box between the element and the document reveals it
+		// within its own port, innermost first -- each scroll moves the
+		// element in every outer port's coordinates, so the rect is re-read
+		// per level -- and the camera reveals what remains.
+		scrollIntoView(target) {
+			const element = asElement(target);
+			if (!element.isConnected) {
+				return;
+			}
+			processPendingMutationsAndRender(termDOM);
+			const engine = termDOM[kLayoutEngine];
+
+			const revealIn = (scroller: Element): void => {
+				// Document-relative rects on both sides: the element wherever
+				// its current offsets put it, against the scroller's padding
+				// box -- what the scroller actually shows.
+				const rect = engine.getRect(element);
+				const scrollerRect = engine.getRect(scroller);
+				if (!rect || !scrollerRect) {
+					return;
+				}
+				const box = getBoxModel(scroller);
+				const portTop = scrollerRect.top + (box.borderTopWidth || 0);
+				const portBottom =
+					scrollerRect.bottom - (box.borderBottomWidth || 0);
+				const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
+				const portRight = scrollerRect.right - (box.borderRightWidth || 0);
+				if (rect.top < portTop) {
+					scroller.scrollTop -= Math.round(portTop - rect.top);
+				} else if (rect.bottom > portBottom) {
+					scroller.scrollTop += Math.round(rect.bottom - portBottom);
+				}
+				if (rect.left < portLeft) {
+					scroller.scrollLeft -= Math.round(portLeft - rect.left);
+				} else if (rect.right > portRight) {
+					scroller.scrollLeft += Math.round(rect.right - portRight);
+				}
+			};
+
+			const toolkit = termDOM[kUAToolkit];
+			for (
+				let ancestor = toolkit.flatParentElement<Element>(element);
+				ancestor &&
+				ancestor !== termDOM.document.body &&
+				ancestor !== termDOM.document.documentElement;
+				ancestor = toolkit.flatParentElement<Element>(ancestor)
+			) {
+				const style = computedStyleOf(ancestor);
+				const overflow = style.computedValueOf("overflow");
+				const scrollable = (value: string) =>
+					value === "auto" || value === "scroll" || value === "hidden";
+				if (
+					scrollable(style.computedValueOf("overflow-y") || overflow) ||
+					scrollable(style.computedValueOf("overflow-x") || overflow)
+				) {
+					revealIn(ancestor);
+				}
+			}
+
+			// Document-relative, not getBoundingClientRect's viewport-relative
+			// -- this compares directly against the camera's scrollTop below,
+			// so it needs the space getRect() already provides.
+			const rect = engine.getRect(element);
+			if (!rect) {
+				return;
+			}
+
+			// The camera shows [scrollTop, scrollTop + region).
+			// Move it the minimal amount that brings the element into it --
+			// the standard block: "nearest" behavior.
+			const regionHeight = cameraRegionHeight(termDOM);
+			const top = termDOM[kViewport].scrollTop;
+			if (rect.top < top) {
+				scrollCamera(termDOM, rect.top - top);
+			} else if (rect.bottom > top + regionHeight) {
+				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
+			}
 		},
 	};
 }
