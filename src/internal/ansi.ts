@@ -1455,12 +1455,7 @@ export class CellContext {
 	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
 	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
-		const terminalRow = y + this.viewportOffset;
-		if (terminalRow < 0 || terminalRow >= this.rows) {
-			return;
-		}
 		const grid = this.grid;
-		const rowStart = terminalRow * this.cols;
 		const edgeBit =
 			(style.underline ? Attr.Underline : 0) |
 			(style.overline ? Attr.Overline : 0);
@@ -1468,13 +1463,10 @@ export class CellContext {
 			return;
 		}
 		for (let col = x; col < x + width; col++) {
-			if (col < 0 || col >= this.cols) {
+			const index = guardedWriteIndex(this, y, col);
+			if (index < 0) {
 				continue;
 			}
-			if (this.clipRect && !inClip(this, y, col)) {
-				continue;
-			}
-			const index = rowStart + col;
 			if (grid.char[index] !== 0) {
 				let attrs = grid.attrs[index] | edgeBit;
 				if (style.dim !== undefined) {
@@ -1658,6 +1650,36 @@ function inPaintBand(context: CellContext, terminalRow: number): boolean {
 	return false;
 }
 
+/**
+ * The grid index a write at document (row, col) may land on, or -1 when it
+ * must be dropped: off the terminal, on a row outside a scroll frame's
+ * paint bands, or outside the active clip. The one gate for cell writers;
+ * each calls it once at entry, so no writer can apply one of these checks
+ * without the others.
+ */
+function guardedWriteIndex(
+	context: CellContext,
+	row: number,
+	col: number,
+): number {
+	const terminalRow = row + context.viewportOffset;
+	if (
+		terminalRow < 0 ||
+		terminalRow >= context.rows ||
+		col < 0 ||
+		col >= context.cols
+	) {
+		return -1;
+	}
+	if (!inPaintBand(context, terminalRow)) {
+		return -1;
+	}
+	if (!inClip(context, row, col)) {
+		return -1;
+	}
+	return terminalRow * context.cols + col;
+}
+
 function setCell(
 	context: CellContext,
 	row: number,
@@ -1665,27 +1687,12 @@ function setCell(
 	char: string,
 	style?: CellStyle,
 ): void {
-	const terminalRow = row + context.viewportOffset;
-
-	if (
-		terminalRow < 0 ||
-		terminalRow >= context.rows ||
-		col < 0 ||
-		col >= context.cols
-	) {
-		return;
-	}
-
-	if (!inPaintBand(context, terminalRow)) {
-		return;
-	}
-
-	if (context.clipRect && !inClip(context, row, col)) {
+	const index = guardedWriteIndex(context, row, col);
+	if (index < 0) {
 		return;
 	}
 
 	const grid = context.grid;
-	const index = terminalRow * context.cols + col;
 
 	// A style that names no background of its own takes the one already in
 	// the cell: text painted over a filled box sits ON the fill rather than
@@ -1705,30 +1712,16 @@ function setBorderCell(
 	borderEncoding: number,
 	style?: CellStyle,
 ): void {
-	// Document row -> terminal row, exactly as kSetCell translates text.
-	// Without the offset, borders were only ever correct at scroll 0: a
-	// scrolled camera stamped off-screen top edges into the band's first
-	// row and lost bottom edges it had scrolled to.
-	const terminalY = y + context.viewportOffset;
-
-	if (
-		terminalY < 0 || terminalY >= context.rows || x < 0 || x >= context.cols
-	) {
-		return;
-	}
-	// The band mask binds border strokes as it binds text: a box whose extent
-	// touches an exposed band still stamps its whole outline, and the rows
-	// outside the bands -- a top border row wearing a legend, say -- keep
-	// what the seeded grid holds.
-	if (!inPaintBand(context, terminalY)) {
-		return;
-	}
-	if (!inClip(context, y, x)) {
+	// A box whose extent touches an exposed band still stamps its whole
+	// outline; the gate drops the strokes on carried-over rows -- a top
+	// border row wearing a legend, say -- which keep what the seeded grid
+	// holds.
+	const index = guardedWriteIndex(context, y, x);
+	if (index < 0) {
 		return;
 	}
 
 	const grid = context.grid;
-	const index = terminalY * context.cols + x;
 
 	// Two boxes sharing a cell union their edges, so a shared wall lands on
 	// a tee or a cross rather than the later box's corner.
