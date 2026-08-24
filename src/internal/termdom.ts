@@ -9,6 +9,7 @@ import * as DOM from "./dom.js";
 import {installUAEngine} from "./dom.js";
 import {installInspectors} from "./inspector.js";
 import {Clipboard, ClipboardItem, createClipboard} from "./clipboard.js";
+import {Compositor} from "./compositor.js";
 import {
 	Permissions,
 	PermissionStatus,
@@ -582,7 +583,7 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 	return window as unknown as EngineWindow;
 }
 
-const kFrameDamage = Symbol("frameDamage");
+const kCompositor = Symbol("compositor");
 const kScrolledElements = Symbol("scrolledElements");
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
@@ -680,9 +681,6 @@ const kLastClickTime = Symbol("lastClickTime");
 const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
 const kLastFrameEpoch = Symbol("lastFrameEpoch");
 const kLastFrameInputGeneration = Symbol("lastFrameInputGeneration");
-const kLastFrameActiveElement = Symbol("lastFrameActiveElement");
-const kLastFrameStructuralGeneration = Symbol("lastFrameStructuralGeneration");
-const kLastFrameSelectionLive = Symbol("lastFrameSelectionLive");
 const kStaticSibling = Symbol("staticSibling");
 
 /**
@@ -791,13 +789,9 @@ export class TermDOM {
 	declare [kActivationDepth]: number;
 	declare [kEverActivated]: boolean;
 	declare [kLastFrameInputGeneration]: number;
-	declare [kLastFrameActiveElement]: Element | null;
-	declare [kLastFrameStructuralGeneration]: number;
-	declare [kLastFrameSelectionLive]: boolean;
-
-	// Elements this frame's mutations touched, with the layout rect each held
-	// BEFORE relayout. Null once the set overflowed; cleared per frame.
-	declare [kFrameDamage]: Map<Element, DOMRect | null> | null;
+	// The frame before this one, and whether this one can be a bounded edit
+	// of it.
+	declare [kCompositor]: Compositor;
 
 	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
 	// box's content out from under its offset; each layout flush pulls
@@ -925,10 +919,6 @@ export class TermDOM {
 		this[kActivationDepth] = 0;
 		this[kEverActivated] = false;
 		this[kLastFrameInputGeneration] = -1;
-		this[kLastFrameActiveElement] = null;
-		this[kLastFrameStructuralGeneration] = -1;
-		this[kLastFrameSelectionLive] = false;
-		this[kFrameDamage] = new Map();
 		this[kScrolledElements] = new Set();
 		this[kResizeEpoch] = 0;
 		this[kMouseReportingEnabled] = false;
@@ -1056,6 +1046,32 @@ export class TermDOM {
 			topLayer: this[kTopLayer],
 			toolkit: this[kUAToolkit],
 		});
+		this[kCompositor] = new Compositor({
+			structuralGeneration: () => this[kLayoutEngine].structuralGeneration,
+			fixedRowBands: (height) => this[kLayoutEngine].fixedRowBands(height),
+			getRect: (element) =>
+				this[kLayoutEngine].getRect(element) as DOMRect | null,
+			isInFixedSpace: (element) =>
+				this[kLayoutEngine].isInFixedSpace(element),
+			drainStyleDamage: () => this[kStyleManager].drainStyleDamage(),
+			invalidationScopeFor: (element) =>
+				this[kStyleManager].invalidationScopeFor(element),
+			isDocumentScope: (element) =>
+				element === this.document.body ||
+				element === this.document.documentElement,
+			activeElement: () => this.document.activeElement,
+			selectionLive: () => {
+				const selection = this.window.getSelection?.();
+				return Boolean(
+					selection &&
+					selection.rangeCount > 0 &&
+					!selection.isCollapsed,
+				);
+			},
+			isWidgetControl: (element) =>
+				this[kUAToolkit].isWidgetControl(element),
+		});
+
 		// The session first: the screen measures widths over the session's
 		// probe channel, and takes it for its lifetime.
 		this[kSession] = buildSession(this);
@@ -1489,7 +1505,7 @@ export class TermDOM {
 				// "nothing observable moved" gate from skipping the paint,
 				// and the damage keeps that paint banded to the box's rows.
 				termDOM[kInputGeneration]++;
-				addFrameDamage(termDOM, element);
+				termDOM[kCompositor].damage(element);
 				void render(termDOM);
 			}
 		};
@@ -2184,36 +2200,6 @@ export class TermDOM {
 	}
 }
 
-function addFrameDamage(
-	termdom: TermDOM,
-	node: Node,
-): void {
-	if (!termdom[kFrameDamage]) {
-		return;
-	}
-	const element =
-		node.nodeType === node.ELEMENT_NODE ?
-				(node as Element) :
-				(node.parentElement ?? null);
-	if (!element) {
-		termdom[kFrameDamage] = null;
-		return;
-	}
-	if (termdom[kFrameDamage].has(element)) {
-		return;
-	}
-	if (termdom[kFrameDamage].size >= 24) {
-		termdom[kFrameDamage] = null;
-		return;
-	}
-	// The rect BEFORE this frame's relayout: getRect answers from the
-	// last computed layout until calculateLayout runs.
-	termdom[kFrameDamage].set(
-		element,
-		(termdom[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
-	);
-}
-
 /**
  * The frame handle a requestAnimationFrame callback is keyed by, so a
  * cancelAnimationFrame can name the callback it cancels.
@@ -2603,10 +2589,10 @@ function handlePendingMutations(
 	// Record damage while the old layout still answers: a banded repaint
 	// must cover the target's pre-mutation rows too.
 	for (const mutation of mutations) {
-		addFrameDamage(termdom, mutation.target);
+		termdom[kCompositor].damage(mutation.target);
 		if (mutation.type === "childList") {
 			for (const node of mutation.addedNodes) {
-				addFrameDamage(termdom, node);
+				termdom[kCompositor].damage(node);
 			}
 			// Removed nodes have no rows of their own; their damage is the
 			// parent's, already added.
@@ -3352,7 +3338,7 @@ function clampScrolledOffsets(
 		}
 		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
 		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
-		addFrameDamage(termdom, element);
+		termdom[kCompositor].damage(element);
 		changed = true;
 	}
 	if (changed) {
@@ -4767,7 +4753,7 @@ async function renderInteractive(
 		termdom[kViewport].atLastPlannedScrollTop &&
 		termdom[kLayoutEngine].invalidationEpoch === termdom[kLastFrameEpoch] &&
 		termdom[kInputGeneration] === termdom[kLastFrameInputGeneration] &&
-		termdom.document.activeElement === termdom[kLastFrameActiveElement] &&
+		termdom[kCompositor].focusUnmoved &&
 		(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
 		!termdom[kScreen].needsRepaint
 	) {
@@ -4808,164 +4794,22 @@ async function renderInteractive(
 		);
 	}
 
-	// A frame is a TRANSFORM when everything that changed since the last
-	// one is bounded: a camera delta (the terminal scrolls the region via
-	// DECSTBM + DL/IL) plus damage that names its elements. Only the
-	// exposed band, fixed rows (real and shifted positions), the focused
-	// field, and damaged rows repaint. Anything unbounded -- a structural
-	// event, a live selection, a drag, a geometry change (cascades) --
-	// takes the full diff. What a mouse report changes names its elements:
-	// a click moves focus, which the cascade damages, and a drag holds an
-	// anchor this gate already reads. Pointer motion flipping `:hover`
-	// names its elements too -- handleHoverChange damages the chains the
-	// pointer entered and left -- so hover keeps the transform.
-	let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
-	const scrollTop = termdom[kViewport].scrollTop;
 	// Taken whether or not this frame can transform: the plan's baseline is
 	// "scrollTop as of the last painted frame", which a full-diff frame
 	// advances too.
 	const plan = termdom[kViewport].takeFramePlan(regionHeight);
-	const styleDamage = termdom[kStyleManager].drainStyleDamage();
-	const frameDamage = termdom[kFrameDamage];
-	termdom[kFrameDamage] = new Map();
-	const documentSelection = termdom.window.getSelection?.();
-	const liveSelection = Boolean(
-		documentSelection &&
-		documentSelection.rangeCount > 0 &&
-		!documentSelection.isCollapsed,
-	);
-	transform: if (
-		plan !== null &&
-		!isFullscreen &&
-		top === 0 &&
-		regionHeight === termdom[kHeight] &&
-		termdom[kLayoutEngine].structuralGeneration ===
-		termdom[kLastFrameStructuralGeneration] &&
-		!liveSelection &&
-		!termdom[kLastFrameSelectionLive] &&
-		termdom[kSelectionDragAnchor] === null &&
-		termdom[kFieldDragAnchor] === null &&
-		!termdom[kResizeInProgress] &&
-		frameDamage !== null &&
-		styleDamage !== null
-	) {
-		const delta = plan.shift;
-		if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
-			break transform;
-		}
-
-		const bands: Array<[number, number]> = [];
-		// Past most of the region the transform stops paying, so the rows
-		// the bands claim are counted as they are added: damage that
-		// already covers the screen stops the walk instead of pricing
-		// every element that follows it. Overlap counts twice, which only
-		// makes the bail come sooner.
-		const bandBudget = regionHeight * 0.75;
-		let coverage = 0;
-		const addBand = (start: number, end: number): void => {
-			const clampedStart = Math.max(0, Math.floor(start));
-			const clampedEnd = Math.min(regionHeight, Math.ceil(end));
-			if (clampedEnd > clampedStart) {
-				bands.push([clampedStart, clampedEnd]);
-				coverage += clampedEnd - clampedStart;
-			}
-		};
-
-		for (const [start, end] of plan.exposedBands) {
-			addBand(start, end);
-		}
-		for (const band of termdom[kLayoutEngine].fixedRowBands(termdom[kHeight])) {
-			addBand(band[0], band[1]);
-			// The scroll moved fixed content too, leaving a stale copy at
-			// the shifted position; model and screen agree on it, so only
-			// a repaint of that row corrects it.
-			if (delta !== 0) {
-				addBand(band[0] - delta, band[1] - delta);
-			}
-		}
-		// The focused field's rows repaint: its caret cell and the real
-		// cursor park come from the painter visiting it.
-		const active = termdom.document.activeElement;
-		if (active && termdom[kUAToolkit].isWidgetControl(active)) {
-			const rect = termdom[kLayoutEngine].getRect(active);
-			if (rect) {
-				addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);
-			}
-		}
-
-		// A focus move flips :focus/:focus-visible on both elements.
-		const damaged = new Set<Element>(frameDamage.keys());
-		for (const element of styleDamage) {
-			damaged.add(element);
-		}
-		if (active !== termdom[kLastFrameActiveElement]) {
-			if (active) {
-				damaged.add(active);
-			}
-			if (termdom[kLastFrameActiveElement]) {
-				damaged.add(termdom[kLastFrameActiveElement]);
-			}
-		}
-
-		for (const element of damaged) {
-			if (coverage > bandBudget) {
-				break transform;
-			}
-			// Damage reaches as far as the selector invalidation scope; the
-			// whole document is unbounded.
-			const scope = termdom[kStyleManager].invalidationScopeFor(element);
-			if (
-				scope === termdom.document.body ||
-				scope === termdom.document.documentElement
-			) {
-				break transform;
-			}
-			const before = frameDamage.get(element) ?? frameDamage.get(scope);
-			const after = termdom[kLayoutEngine].getRect(scope);
-			if (!after && !before) {
-				// An inline element has no box of its own, so its rows are
-				// not recoverable here: unbounded. A removed element's
-				// damage is its parent's, already recorded.
-				if (scope.isConnected) {
-					break transform;
-				}
-				continue;
-			}
-			// A geometry change cascades to everything after the element.
-			if (
-				before &&
-				after &&
-				(before.top !== after.top || before.height !== after.height)
-			) {
-				break transform;
-			}
-			const fixedSpace = termdom[kLayoutEngine].isInFixedSpace(scope);
-			if (after) {
-				const afterTop = fixedSpace ? after.top : after.top - scrollTop;
-				addBand(afterTop, afterTop + after.height);
-				// The shifted stale copy of the damaged rows, as for fixed.
-				if (delta !== 0) {
-					addBand(afterTop - delta, afterTop + after.height - delta);
-				}
-			}
-			if (before) {
-				const beforeTop = fixedSpace ?
-					before.top :
-					before.top - plan.previousScrollTop;
-				addBand(beforeTop - delta, beforeTop + before.height - delta);
-			}
-		}
-
-		if (delta === 0 && bands.length === 0) {
-			break transform;
-		}
-		if (coverage > bandBudget) {
-			break transform;
-		}
-
-		scroll = {delta, bands};
-	}
-
+	const scroll =
+		termdom[kCompositor].compose({
+			fullscreen: isFullscreen,
+			regionTop: top,
+			regionHeight,
+			terminalHeight: termdom[kHeight],
+			plan,
+			dragging:
+				termdom[kSelectionDragAnchor] !== null ||
+				termdom[kFieldDragAnchor] !== null,
+			resizing: termdom[kResizeInProgress],
+		}) ?? undefined;
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kViewport].scrollTop,
 		cursorRow: top,
@@ -4976,10 +4820,7 @@ async function renderInteractive(
 	const ansi = termdom[kScreen].endFrame();
 	termdom[kLastFrameEpoch] = termdom[kLayoutEngine].invalidationEpoch;
 	termdom[kLastFrameInputGeneration] = termdom[kInputGeneration];
-	termdom[kLastFrameStructuralGeneration] =
-		termdom[kLayoutEngine].structuralGeneration;
-	termdom[kLastFrameSelectionLive] = liveSelection;
-	termdom[kLastFrameActiveElement] = termdom.document.activeElement;
+	termdom[kCompositor].frameRendered();
 
 	if (ansi) {
 		await termdom[kWrite](ansi);

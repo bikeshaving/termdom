@@ -12,10 +12,12 @@ const kLastPlannedScrollTop = Symbol("lastPlannedScrollTop");
 export interface FramePlan {
 	/** Net rows scrolled since the last plan, positive downward. */
 	shift: number;
-	/** The scroll offset the previous plan was taken at. */
-	previousScrollTop: number;
 	/** The [start, end) region rows the shift exposed at an edge. */
 	exposedBands: Array<[number, number]>;
+	/** The region row a document row sits at in this frame. */
+	regionRowNow(documentRow: number): number;
+	/** The region row a document row sat at in the frame before. */
+	regionRowLastFrame(documentRow: number): number;
 }
 
 /**
@@ -90,11 +92,12 @@ export class Viewport {
 	 */
 	takeFramePlan(regionHeight: number): FramePlan | null {
 		const previous = this[kLastPlannedScrollTop];
-		this[kLastPlannedScrollTop] = this[kScrollTop];
+		const scrollTop = this[kScrollTop];
+		this[kLastPlannedScrollTop] = scrollTop;
 		if (previous === null) {
 			return null;
 		}
-		const shift = this[kScrollTop] - previous;
+		const shift = scrollTop - previous;
 		if (Math.abs(shift) >= regionHeight) {
 			return null;
 		}
@@ -104,7 +107,12 @@ export class Viewport {
 		} else if (shift < 0) {
 			exposedBands.push([0, -shift]);
 		}
-		return {shift, previousScrollTop: previous, exposedBands};
+		return {
+			shift,
+			exposedBands,
+			regionRowNow: (documentRow) => documentRow - scrollTop,
+			regionRowLastFrame: (documentRow) => documentRow - previous,
+		};
 	}
 
 	/**
