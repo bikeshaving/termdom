@@ -3802,14 +3802,62 @@ function serializeMediaQueryText(text: string): string {
 interface MediaQueryNode {
 	modifier?: string | null;
 	mediaType?: string | null;
-	condition?: {children: {toArray(): MediaConditionNode[]}} | null;
+	condition?: MediaConditionNode | null;
 }
 
-/** One part of a parsed media condition. */
+/**
+ * One part of a parsed media condition: a nested condition, a `<mf-plain>`
+ * feature and its value, a `<mf-range>` comparison, or the identifier
+ * `and`, `or` or `not` standing between them.
+ */
 interface MediaConditionNode {
 	type: string;
 	name?: string;
 	loc?: ParsedSpan | null;
+	value?: CSSNode | null;
+	children?: {toArray(): MediaConditionNode[]} | null;
+	left?: CSSNode | null;
+	leftComparison?: string | null;
+	middle?: CSSNode | null;
+	rightComparison?: string | null;
+	right?: CSSNode | null;
+}
+
+/**
+ * Parsed media query lists by their source text. A media list is asked
+ * whether it matches on every sheet parse, and a document re-asks its
+ * handful of spellings, so the bounded cache holds one parse per spelling.
+ * The parse carries positions: serialization slices the authored text at
+ * them.
+ */
+const mediaQueryNodes = new Map<string, MediaQueryNode[] | null>();
+
+/** The operands and joiners a media condition holds, in source order. */
+function mediaConditionParts(
+	condition: MediaConditionNode | null | undefined,
+): MediaConditionNode[] {
+	return condition?.children ? condition.children.toArray() : [];
+}
+
+/** A media query list's queries as nodes, or null for text css-tree refuses. */
+function parseMediaQueryList(text: string): MediaQueryNode[] | null {
+	let queries = mediaQueryNodes.get(text);
+	if (queries === undefined) {
+		try {
+			const ast = CSSTree.parse(text, {
+				context: "mediaQueryList",
+				positions: true,
+			}) as unknown as {children: {toArray(): MediaQueryNode[]}};
+			queries = ast.children.toArray();
+		} catch (_err) {
+			queries = null;
+		}
+		if (mediaQueryNodes.size > 1024) {
+			mediaQueryNodes.clear();
+		}
+		mediaQueryNodes.set(text, queries);
+	}
+	return queries;
 }
 
 /**
@@ -3832,17 +3880,8 @@ function serializeMediaQuery(query: string): string {
 	if (text.includes("/*") || text.includes("\\")) {
 		return serializeMediaQueryText(text);
 	}
-	let queries: MediaQueryNode[];
-	try {
-		const ast = CSSTree.parse(text, {
-			context: "mediaQueryList",
-			positions: true,
-		}) as unknown as {children: {toArray(): MediaQueryNode[]}};
-		queries = ast.children.toArray();
-	} catch (_err) {
-		return serializeMediaQueryText(text);
-	}
-	if (queries.length !== 1) {
+	const queries = parseMediaQueryList(text);
+	if (!queries || queries.length !== 1) {
 		return serializeMediaQueryText(text);
 	}
 	const parsed = queries[0];
@@ -3870,8 +3909,7 @@ function serializeMediaQuery(query: string): string {
 	// What may stand at the cursor: the first part, the joiner a feature
 	// awaits, or the feature a joiner or bare `not` demands.
 	let expected: "first" | "feature" | "joiner" = "first";
-	for (const part of
-		parsed.condition ? parsed.condition.children.toArray() : []) {
+	for (const part of mediaConditionParts(parsed.condition)) {
 		if (!part.loc) {
 			return serializeMediaQueryText(text);
 		}
@@ -10560,19 +10598,25 @@ export class StyleManager {
 	declare [kUnlayeredRank]: number;
 
 	/**
-	 * Whether a media query currently matches. There is exactly one "screen" --
-	 * the terminal viewport -- so only width/height features are meaningful;
-	 * everything else (scripting, color-gamut, pointer, ...) defaults to
-	 * matching rather than silently dropping an author's rules. Public: it
-	 * answers window.matchMedia through the SAME evaluator @media uses, so
-	 * a stylesheet and a script can never disagree about the viewport.
+	 * Whether a media query currently matches, judged on the nodes css-tree
+	 * parses the query list into. There is exactly one "screen" -- the
+	 * terminal viewport -- so only width/height features are meaningful;
+	 * every other feature (scripting, color-gamut, pointer, ...) matches
+	 * rather than silently dropping an author's rules, as does text css-tree
+	 * refuses. Public: it answers window.matchMedia through the SAME
+	 * evaluator @media uses, so a stylesheet and a script can never disagree
+	 * about the viewport.
 	 */
 	mediaQueryMatches(mediaText: string): boolean {
 		const text = mediaText.trim();
 		if (!text) {
 			return true;
 		}
-		return text.split(",").some((query) => mediaQueryPartMatches(this, query));
+		const queries = parseMediaQueryList(text);
+		if (!queries) {
+			return true;
+		}
+		return queries.some((query) => mediaQueryNodeMatches(this, query));
 	}
 
 	/**
@@ -12207,74 +12251,100 @@ function parseStyleSheet(
 	}
 }
 
-function mediaQueryPartMatches(
+/**
+ * One media query: the type it names, `and`-ed with its condition and
+ * negated by a `not` modifier. Only `all` and `screen` name this screen --
+ * the terminal viewport -- so `print`, `speech` and the media types
+ * mediaqueries-4 deprecated match nothing.
+ */
+function mediaQueryNodeMatches(
 	manager: StyleManager,
-	query: string,
+	query: MediaQueryNode,
 ): boolean {
-	let q = query.trim();
-	let negate = false;
-	if (/^not\s+/i.test(q)) {
-		negate = true;
-		q = q.replace(/^not\s+/i, "");
+	const type = (query.mediaType ?? "").toLowerCase();
+	let matches = type === "" || type === "all" || type === "screen";
+	if (matches && query.condition) {
+		matches = mediaConditionMatches(manager, query.condition);
 	}
-
-	const typeMatch = q.match(/^(all|screen|print|speech)\b\s*(and\s+)?/i);
-	let matches = true;
-	if (typeMatch) {
-		matches = typeMatch[1].toLowerCase() !== "print";
-		q = q.slice(typeMatch[0].length);
-	}
-
-	const features = q.match(/\([^)]*\)/g) || [];
-	for (const feature of features) {
-		if (!mediaFeatureMatches(manager, feature.slice(1, -1).trim())) {
-			matches = false;
-		}
-	}
-
-	return negate ? !matches : matches;
+	return (query.modifier ?? "").toLowerCase() === "not" ? !matches : matches;
 }
 
 /**
- * A `<mf-plain>` feature against the terminal: the width and height
- * features, in the cell lengths px and ch both spell here, judged against
- * the window. A feature this engine does not track answers true -- the
- * permissive default -- as does a value off the grammar.
+ * A media condition: the operands `and` or `or` joins, each of which a `not`
+ * may negate. A word standing where neither a joiner nor a negation belongs
+ * leaves the condition unjudged, and so matching.
  */
-function mediaFeatureMatches(
+function mediaConditionMatches(
 	manager: StyleManager,
-	feature: string,
+	condition: MediaConditionNode,
 ): boolean {
-	const colon = feature.indexOf(":");
-	const name = (colon === -1 ? feature : feature.slice(0, colon))
-		.trim()
-		.toLowerCase();
-	// mediaqueries-4's hover feature: `hover` when the primary pointer can
-	// hover. Motion reporting turns on whenever the document observes
-	// hover, so the answer is unconditional; a bare `(hover)` is the
-	// boolean context.
-	if (name === "hover" || name === "any-hover") {
-		if (colon === -1) {
-			return true;
+	let matches: boolean | null = null;
+	let disjunction = false;
+	let negate = false;
+	for (const part of mediaConditionParts(condition)) {
+		if (part.type === "Identifier") {
+			const word = (part.name ?? "").toLowerCase();
+			if (word === "not") {
+				negate = true;
+			} else if (word === "and" || word === "or") {
+				disjunction = word === "or";
+			} else {
+				return true;
+			}
+			continue;
 		}
-		const node = singleValueNode(feature.slice(colon + 1).trim());
-		return node?.type === "Identifier" &&
-			(node.name ?? "").toLowerCase() === "hover";
+		let operand = mediaOperandMatches(manager, part);
+		if (negate) {
+			operand = !operand;
+			negate = false;
+		}
+		matches =
+			matches === null ?
+				operand :
+				disjunction ?
+					matches || operand :
+					matches && operand;
 	}
-	if (colon === -1) {
-		return true;
+	return matches ?? true;
+}
+
+/** One `<media-in-parens>`: a nested condition, a feature, or a range. */
+function mediaOperandMatches(
+	manager: StyleManager,
+	part: MediaConditionNode,
+): boolean {
+	if (part.type === "Condition") {
+		return mediaConditionMatches(manager, part);
 	}
-	const bound =
-		name.startsWith("min-") ?
-			"min" :
-			name.startsWith("max-") ?
-				"max" :
-				null;
-	const dimension = bound === null ? name : name.slice(4);
-	if (dimension !== "width" && dimension !== "height") {
-		return true;
+	if (part.type === "Feature") {
+		return mediaFeatureMatches(manager, part);
 	}
-	const node = singleValueNode(feature.slice(colon + 1).trim());
+	if (part.type === "FeatureRange") {
+		return mediaFeatureRangeMatches(manager, part);
+	}
+	return true;
+}
+
+/** The window length a media feature name asks about, or null for the rest. */
+function viewportLength(
+	manager: StyleManager,
+	dimension: string,
+): number | null {
+	if (dimension === "width") {
+		return manager[kWindow].innerWidth;
+	}
+	if (dimension === "height") {
+		return manager[kWindow].innerHeight;
+	}
+	return null;
+}
+
+/**
+ * A length a media feature compares against, in the cell lengths px and ch
+ * both spell here. Null for a value off the grammar, which leaves the
+ * feature unjudged.
+ */
+function mediaLength(node: CSSNode | null | undefined): number | null {
 	let length: number | null = null;
 	if (node?.type === "Number") {
 		length = parseFloat(node.value ?? "");
@@ -12285,12 +12355,73 @@ function mediaFeatureMatches(
 		}
 	}
 	if (length === null || !Number.isFinite(length) || length < 0) {
+		return null;
+	}
+	return length;
+}
+
+/** The comparison a `<mf-range>` writes between two lengths. */
+function mediaComparison(
+	left: number,
+	comparison: string | null | undefined,
+	right: number,
+): boolean {
+	switch (comparison) {
+		case "<":
+			return left < right;
+		case "<=":
+			return left <= right;
+		case ">":
+			return left > right;
+		case ">=":
+			return left >= right;
+		case "=":
+			return left === right;
+		default:
+			return true;
+	}
+}
+
+/**
+ * A `<mf-plain>` or `<mf-boolean>` feature against the terminal: the width
+ * and height features, judged against the window. A feature this engine does
+ * not track answers true -- the permissive default -- as does a value off
+ * the grammar.
+ */
+function mediaFeatureMatches(
+	manager: StyleManager,
+	feature: MediaConditionNode,
+): boolean {
+	const name = (feature.name ?? "").toLowerCase();
+	const value = feature.value ?? null;
+	// mediaqueries-4's hover feature: `hover` when the primary pointer can
+	// hover. Motion reporting turns on whenever the document observes
+	// hover, so the answer is unconditional; a bare `(hover)` is the
+	// boolean context.
+	if (name === "hover" || name === "any-hover") {
+		return (
+			value === null ||
+			(value.type === "Identifier" &&
+				(value.name ?? "").toLowerCase() === "hover")
+		);
+	}
+	if (value === null) {
 		return true;
 	}
-	const actual =
-		dimension === "width" ?
-			manager[kWindow].innerWidth :
-			manager[kWindow].innerHeight;
+	const bound =
+		name.startsWith("min-") ?
+			"min" :
+			name.startsWith("max-") ?
+				"max" :
+				null;
+	const actual = viewportLength(
+		manager,
+		bound === null ? name : name.slice(4),
+	);
+	const length = mediaLength(value);
+	if (actual === null || length === null) {
+		return true;
+	}
 	if (bound === "min") {
 		return actual >= length;
 	}
@@ -12298,6 +12429,41 @@ function mediaFeatureMatches(
 		return actual <= length;
 	}
 	return actual === length;
+}
+
+/**
+ * A `<mf-range>` feature: the one-sided `(width >= 40px)` and `(40px <=
+ * width)`, and the two-sided `(20px <= width < 80px)`. The feature name
+ * stands in the middle of a two-sided range, and opposite the value in a
+ * one-sided one.
+ */
+function mediaFeatureRangeMatches(
+	manager: StyleManager,
+	range: MediaConditionNode,
+): boolean {
+	const named = (node: CSSNode | null | undefined): string =>
+		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
+	if (range.right) {
+		const actual = viewportLength(manager, named(range.middle));
+		const low = mediaLength(range.left);
+		const high = mediaLength(range.right);
+		if (actual === null || low === null || high === null) {
+			return true;
+		}
+		return (
+			mediaComparison(low, range.leftComparison, actual) &&
+			mediaComparison(actual, range.rightComparison, high)
+		);
+	}
+	const leftName = named(range.left);
+	const actual = viewportLength(manager, leftName || named(range.middle));
+	const length = mediaLength(leftName ? range.middle : range.left);
+	if (actual === null || length === null) {
+		return true;
+	}
+	return leftName ?
+			mediaComparison(actual, range.leftComparison, length) :
+			mediaComparison(length, range.leftComparison, actual);
 }
 
 /**
