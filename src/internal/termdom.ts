@@ -933,10 +933,8 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
-		// One bag of getters and callbacks, shared by everything that patches
-		// the window below. Built here, before the fields it exposes exist:
-		// nothing reads through it until a patched API is actually called.
-
+		// The mount is built here, before the fields it reads exist: nothing
+		// reaches through it until a DOM member is actually called.
 		DOM.mount(document, createMount(this));
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
