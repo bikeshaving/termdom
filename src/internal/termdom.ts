@@ -17,6 +17,12 @@ import {
 } from "./exchange.js";
 import {transportFromProcess} from "./pty.js";
 import {Screen} from "./screen.js";
+import {
+	byteLength,
+	guardTrace,
+	type Trace,
+	type TraceEvent,
+} from "./trace.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
 import {
@@ -173,6 +179,47 @@ export interface TermDOMOptions {
 	html?: string;
 	/** The initial document's URL. */
 	url?: string;
+	/**
+	 * Where the engine reports what it did: frames and why they painted or
+	 * did not, decoded input, the mode ledger, resizes, the lifecycle, and
+	 * the writes themselves. The hook decides what an event is worth -- the
+	 * library does no I/O with it -- and a throw from it costs the event and
+	 * nothing else.
+	 *
+	 * Absent, the pipeline builds no events at all.
+	 */
+	trace?: (event: TraceEvent) => void;
+	/**
+	 * Whether a traced write carries the bytes it wrote, and a traced paste
+	 * its text. Off by default: a frame is kilobytes, and a consumer
+	 * counting them wants the shape rather than the payload.
+	 */
+	traceBytes?: boolean;
+}
+
+/**
+ * The engine's state as plain data: what the terminal shows, where the
+ * camera is looking, and what the instance holds over the terminal.
+ * `snapshot()` is the one way to get one.
+ */
+export interface TermDOMSnapshot {
+	lifecycle: Lifecycle;
+	/** The terminal's size, in cells. */
+	cols: number;
+	rows: number;
+	/** How far into the document the painted region looks. */
+	scrollTop: number;
+	/** The terminal row the painted region starts at. */
+	screenTop: number;
+	/** The fullscreen element as `TAG#id`, or null while none is showing. */
+	fullscreenElement: string | null;
+	/** The modes engaged on the terminal, in the ledger's restore order. */
+	modes: string[];
+	/**
+	 * What the last frame left on screen, from the screen's retained grid --
+	 * the engine's own account, with no emulator between.
+	 */
+	screen: string;
 }
 
 const kLayoutEngine = Symbol("layoutEngine");
@@ -521,6 +568,8 @@ const kRenderQueued = Symbol("renderQueued");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kResizeTimer = Symbol("resizeTimer");
 const kStaticSibling = Symbol("staticSibling");
+const kTrace = Symbol("trace");
+const kTraceBytes = Symbol("traceBytes");
 
 /**
  * Where an instance stands with the terminal, in order: constructed and
@@ -538,6 +587,17 @@ type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
+}
+
+/**
+ * Move the lifecycle and report the move. The one writer after the
+ * constructor's, so a trace sees the whole progression rather than the
+ * transitions somebody remembered to report.
+ */
+function moveLifecycle(termdom: TermDOM, to: Lifecycle): void {
+	const from = termdom[kLifecycle];
+	termdom[kLifecycle] = to;
+	termdom[kTrace]?.({type: "lifecycle", from, to});
 }
 
 /**
@@ -694,6 +754,15 @@ export class TermDOM {
 		HTMLSelectElement |
 		null;
 
+	/**
+	 * Where this instance reports what it did, guarded once at construction,
+	 * or null when the caller asked for nothing. Every emit site is an
+	 * optional call on it: an optional call skips its arguments when there is
+	 * nothing to call, so an untraced engine allocates no events.
+	 */
+	declare [kTrace]: Trace | null;
+	declare [kTraceBytes]: boolean;
+
 	declare [kTransport]: TerminalTransport;
 
 	// The conversation over the transport: the input demultiplexer plus the
@@ -709,6 +778,8 @@ export class TermDOM {
 	declare [kInteractive]: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
+		this[kTrace] = options.trace ? guardTrace(options.trace) : null;
+		this[kTraceBytes] = options.traceBytes ?? false;
 		this[kScrollTop] = 0;
 		this[kScreenTop] = 0;
 		this[kAnchorScrollTop] = 0;
@@ -923,7 +994,7 @@ export class TermDOM {
 		// the document holds. The returned promise resolves when that first
 		// frame has been written; negotiations are excluded deliberately --
 		// their silence timeouts must never hold a first paint hostage.
-		this[kLifecycle] = "attaching";
+		moveLifecycle(this, "attaching");
 		let begun!: () => void;
 		this[kAttachBegun] = new Promise<void>((resolve) => {
 			begun = resolve;
@@ -955,7 +1026,7 @@ export class TermDOM {
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
 			this[kExchange].scrubProbeEcho();
-			this[kLifecycle] = "attached";
+			moveLifecycle(this, "attached");
 			begun();
 
 			// Deferred a microtask so the render does not occupy the
@@ -1029,6 +1100,33 @@ export class TermDOM {
 		return this[kExchange].write(output);
 	}
 
+	/**
+	 * The engine's state right now, as plain data: what the terminal shows,
+	 * where the camera is looking, and what this instance holds over the
+	 * terminal.
+	 *
+	 * The screen comes from the screen's own retained grid -- the model the
+	 * diff patches against -- so a caller reads what the engine believes the
+	 * terminal shows without an emulator to ask. Nothing here is live: the
+	 * object is built on the call and never updated.
+	 */
+	snapshot(): TermDOMSnapshot {
+		const element = fullscreenElementOf(this);
+		return {
+			lifecycle: this[kLifecycle],
+			cols: this[kWidth],
+			rows: this[kHeight],
+			scrollTop: this[kScrollTop],
+			screenTop: this[kScreenTop],
+			fullscreenElement:
+				element === null ?
+					null :
+					element.tagName + (element.id ? `#${element.id}` : ""),
+			modes: this[kExchange].engagedModes,
+			screen: this[kScreen].retainedText(),
+		};
+	}
+
 	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
 	[Symbol.dispose](): void {
 		this.dispose();
@@ -1049,7 +1147,7 @@ export class TermDOM {
 		// A TermDOM that never attached owes the terminal nothing: no final
 		// flush, no mode restores -- there is no session to close.
 		const wasAttached = isAttached(this);
-		this[kLifecycle] = "disposed";
+		moveLifecycle(this, "disposed");
 
 		// Document mode has been painting a window in place, so nothing it
 		// showed has reached the terminal's scrollback. Pay it all out now --
@@ -1125,6 +1223,7 @@ function sealToScrollback(
 ): void {
 	flushDocument(termdom);
 	termdom[kSealed] = true;
+	termdom[kTrace]?.({type: "document.sealed"});
 }
 
 /**
@@ -1998,6 +2097,8 @@ function buildExchange(
 		transport: termdom[kTransport],
 		interactive: termdom[kInteractive],
 		anchorDetection: termdom[kTransport].sharesScreen,
+		trace: termdom[kTrace],
+		traceBytes: termdom[kTraceBytes],
 		handlers: {
 			// Input dirties the journal wholesale. Reactive pseudo-state
 			// (:focus, :hover, :active) and the document selection move
@@ -2099,6 +2200,13 @@ function applyTerminalSize(
 		newHeight !== termdom[kHeight];
 	termdom[kWidth] = newWidth;
 	termdom[kHeight] = newHeight;
+	// Reported whether or not it changed: a SIGWINCH that reports the size
+	// it already had still redraws, and a log of the burst should say so.
+	termdom[kTrace]?.({
+		type: "terminal.resized",
+		cols: newWidth,
+		rows: newHeight,
+	});
 
 	Object.defineProperty(termdom.window, "innerWidth", {
 		value: newWidth,
@@ -2204,12 +2312,14 @@ async function render(
 	// resumes -- starting with whatever the document holds by then -- the
 	// moment attach() runs, which ends by scheduling this render.
 	if (!isAttached(termdom)) {
+		termdom[kTrace]?.({type: "frame.skipped", reason: "detached"});
 		return;
 	}
 
 	// A resize is settling: suppress every render until handleResize issues the
 	// single re-anchored redraw. See settlingResize.
 	if (termdom[kSettlingResize] !== null) {
+		termdom[kTrace]?.({type: "frame.skipped", reason: "resizing"});
 		return;
 	}
 
@@ -2217,6 +2327,7 @@ async function render(
 	// may straddle it -- a frame computed for one screen landing on the
 	// other paints the wrong geometry onto the wrong buffer.
 	if (termdom[kScreenSwitching]) {
+		termdom[kTrace]?.({type: "frame.skipped", reason: "screen-switching"});
 		return;
 	}
 
@@ -2228,6 +2339,7 @@ async function render(
 	// so awaiting render() always means "the caller's changes are painted".
 	if (termdom[kIsRendering]) {
 		termdom[kRenderQueued] = true;
+		termdom[kTrace]?.({type: "frame.skipped", reason: "coalesced"});
 		return termdom[kRenderInFlight] ?? Promise.resolve();
 	}
 
@@ -2278,6 +2390,7 @@ async function renderOnce(
 		await termdom[kAttachBegun];
 	}
 	if (termdom[kLifecycle] === "disposed") {
+		termdom[kTrace]?.({type: "frame.skipped", reason: "disposed"});
 		return;
 	}
 	if (!termdom[kInteractive]) {
@@ -2997,14 +3110,22 @@ async function printStatic(
 
 	termdom[kLayoutEngine].calculateLayout();
 
-	const context = termdom[kScreen].beginStatic({
-		rows: termdom.document.body.scrollHeight,
-	});
+	const rows = termdom.document.body.scrollHeight;
+	const context = termdom[kScreen].beginStatic({rows});
 	termdom[kPainter].paint(context);
 	const output = termdom[kScreen].endFrame();
 
 	if (output) {
 		await termdom[kWrite](output);
+	}
+	// A pipe has no viewport to shift, so a printed frame is only ever the
+	// whole of what it prints.
+	if (termdom[kTrace] !== null) {
+		termdom[kTrace]({
+			type: "frame.repainted",
+			rows,
+			bytes: byteLength(output),
+		});
 	}
 	afterRender(termdom);
 }
@@ -3159,6 +3280,7 @@ async function renderInteractive(
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
 		// observe() gets its initial entry on the next tick.
+		termdom[kTrace]?.({type: "frame.skipped", reason: "unchanged"});
 		afterRender(termdom);
 		return;
 	}
@@ -3209,6 +3331,7 @@ async function renderInteractive(
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
+	const shifted = band ? band.delta : fullscreen ? 0 : termdom[kFrameScroll];
 	termdom[kFrameScroll] = 0;
 	termdom[kFrameBand] = null;
 	termdom[kFrameDirty] = false;
@@ -3216,6 +3339,21 @@ async function renderInteractive(
 
 	if (ansi) {
 		await termdom[kWrite](ansi);
+	}
+	// The frame's own bytes, which the wire report above counted as one
+	// write among the frame's others (the room-making index, a mode).
+	if (termdom[kTrace] !== null) {
+		const bytes = byteLength(ansi);
+		termdom[kTrace](
+			shifted === 0 ?
+					{type: "frame.repainted", rows: regionHeight, bytes} :
+					{
+						type: "frame.transformed",
+						delta: shifted,
+						band: band ? {top: band.top, end: band.end} : null,
+						bytes,
+					},
+		);
 	}
 	afterRender(termdom);
 }

@@ -1,4 +1,5 @@
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
+import {byteLength, type Trace} from "./trace.js";
 import type {ColorDepth} from "./color.js";
 import {
 	encode64,
@@ -229,6 +230,8 @@ const kWidthRun = Symbol("widthRun");
 const kWidthDrift = Symbol("widthDrift");
 const kWidthRunLost = Symbol("widthRunLost");
 const kHandlers = Symbol("handlers");
+const kTrace = Symbol("trace");
+const kTraceBytes = Symbol("traceBytes");
 const kTransport = Symbol("transport");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
@@ -260,6 +263,12 @@ export class TerminalExchange {
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kHandlers]: ExchangeHandlers;
+	// The debugging hook, already guarded by whoever built it, or null when
+	// nobody is listening. Reported to with an optional call, so a disabled
+	// trace builds no event.
+	declare [kTrace]: Trace | null;
+	// Whether a write reports the bytes themselves and not only the count.
+	declare [kTraceBytes]: boolean;
 
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
 	declare [kReader]: ReadableStreamDefaultReader<string> | null;
@@ -427,6 +436,8 @@ export class TerminalExchange {
 		interactive: boolean;
 		anchorDetection: boolean;
 		handlers: ExchangeHandlers;
+		trace?: Trace | null;
+		traceBytes?: boolean;
 	}) {
 		this[kWriter] = null;
 		this[kReader] = null;
@@ -510,6 +521,8 @@ export class TerminalExchange {
 		this[kEngagedModes] = new Set<ModeName>();
 		this[kAnchorDetectionEnabled] = deps.anchorDetection && deps.interactive;
 		this[kHandlers] = deps.handlers;
+		this[kTrace] = deps.trace ?? null;
+		this[kTraceBytes] = deps.traceBytes ?? false;
 	}
 
 	/**
@@ -526,6 +539,10 @@ export class TerminalExchange {
 		} else {
 			this[kEngagedModes].delete(name);
 		}
+		this[kTrace]?.({
+			type: on ? "mode.engaged" : "mode.reset",
+			mode: name,
+		});
 		void this.write(
 			on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset,
 		);
@@ -537,6 +554,7 @@ export class TerminalExchange {
 	 */
 	markModeEngaged(name: ModeName): void {
 		this[kEngagedModes].add(name);
+		this[kTrace]?.({type: "mode.engaged", mode: name});
 	}
 
 	/**
@@ -547,6 +565,7 @@ export class TerminalExchange {
 	 */
 	engageMode(name: ModeName): void {
 		this[kEngagedModes].add(name);
+		this[kTrace]?.({type: "mode.engaged", mode: name});
 		void this.write(MODE_SPELLINGS[name].set);
 	}
 
@@ -557,9 +576,15 @@ export class TerminalExchange {
 	restoreEngagedModes(): void {
 		for (const name of MODE_RESTORE_ORDER) {
 			if (this[kEngagedModes].delete(name)) {
+				this[kTrace]?.({type: "mode.reset", mode: name});
 				void this.write(MODE_SPELLINGS[name].reset);
 			}
 		}
+	}
+
+	/** The modes engaged on the terminal, in the restore order. */
+	get engagedModes(): string[] {
+		return MODE_RESTORE_ORDER.filter((name) => this[kEngagedModes].has(name));
 	}
 
 	/** Whether command-start anchoring runs: the default process transport only. */
@@ -596,6 +621,13 @@ export class TerminalExchange {
 		if (!this[kWriter]) {
 			this[kWriter] = this[kTransport].writable.getWriter();
 		}
+		// Reported after the drop above, so a traced count is what the
+		// transport was actually handed.
+		this[kTrace]?.({
+			type: "wire.write",
+			bytes: byteLength(output),
+			...(this[kTraceBytes] ? {text: output} : null),
+		});
 		this[kLastWrite] = this[kWriter].write(output).catch(() => {
 			// A transport torn down mid-write (disconnect) is a close, not a
 			// crash; the closed promise carries the real signal.
@@ -752,7 +784,8 @@ export class TerminalExchange {
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
 		if (this[kGraphemeClustersNegotiated]) {
-			this[kEngagedModes].add("clusterWidths");
+			// The set bytes rode the probe's own write.
+			this.markModeEngaged("clusterWidths");
 		}
 	}
 
@@ -785,6 +818,10 @@ export class TerminalExchange {
 					finish();
 
 					// Convert 1-based terminal row to the 0-based anchor.
+					this[kTrace]?.({
+						type: "input.commandStart",
+						row: match.row - 1,
+					});
 					this[kHandlers].onCommandStart(match.row - 1);
 
 					this[kHasDetectedCommandStart] = true;
@@ -1235,7 +1272,13 @@ function route(
 			session[kPasteBuffer] += dataStr;
 			return;
 		}
-		session[kHandlers].onPaste(session[kPasteBuffer] + dataStr.slice(0, end));
+		const pasted = session[kPasteBuffer] + dataStr.slice(0, end);
+		session[kTrace]?.({
+			type: "input.paste",
+			length: pasted.length,
+			...(session[kTraceBytes] ? {text: pasted} : null),
+		});
+		session[kHandlers].onPaste(pasted);
 		session[kPasteBuffer] = null;
 		const after = dataStr.slice(end + PASTE_END.length);
 		if (after.length) {
@@ -1299,6 +1342,7 @@ function route(
 	// Ctrl-C: raw mode delivers it as data, and its default action is the
 	// engine's to decide (window.close()), not this layer's.
 	if (dataStr.charCodeAt(0) === 0x03) {
+		session[kTrace]?.({type: "input.closeRequest"});
 		session[kHandlers].onCloseRequest();
 		return;
 	}
@@ -1309,6 +1353,13 @@ function route(
 	for (const token of tokenizeInput(dataStr)) {
 		const mouse = decodeMouseEscape(token);
 		if (mouse) {
+			session[kTrace]?.({
+				type: "input.mouse",
+				button: mouse.button,
+				x: mouse.col,
+				y: mouse.row,
+				release: mouse.release,
+			});
 			session[kHandlers].onMouse(
 				mouse.button,
 				mouse.col,
@@ -1323,6 +1374,7 @@ function route(
 		return;
 	}
 
+	session[kTrace]?.({type: "input.keys", keys: keyInput});
 	session[kHandlers].onKeys(keyInput);
 }
 
