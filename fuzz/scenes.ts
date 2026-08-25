@@ -320,8 +320,11 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 		cols: fc.integer({min: 40, max: 60}),
 		rows: fc.integer({min: 40, max: 60}),
 	}),
-	// The screen switch, entered and left by the same action.
-	fc.record({kind: fc.constant("screen" as const), id: elementIdArbitrary}),
+	// The screen switch, toggled.
+	fc.record({
+		kind: fc.constant("screen" as const),
+		id: fc.oneof(elementIdArbitrary, fc.constant("pane")),
+	}),
 	fc.record({kind: fc.constant("view" as const), id: idArbitrary}),
 	...(SHAPES ?
 			[
@@ -553,18 +556,19 @@ export async function apply(scene: Scene, action: Action): Promise<void> {
 			element.scrollTop = action.top;
 			return;
 		case "screen":
+			// A toggle, so a run can stand inside the alternate screen while
+			// the next actions run and an observer can watch it there. play()
+			// leaves it before the run ends.
 			try {
-				await element.requestFullscreen();
+				if (document.fullscreenElement) {
+					await document.exitFullscreen();
+				} else {
+					await element.requestFullscreen();
+				}
 			} catch (_err) {
 				return;
 			}
 			await nextFrame(dom);
-			await nextFrame(dom);
-			try {
-				await document.exitFullscreen();
-			} catch (_err) {
-				/* the element may have left the tree under the switch */
-			}
 			await nextFrame(dom);
 			return;
 		case "dir":
