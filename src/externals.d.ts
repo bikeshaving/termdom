@@ -177,9 +177,9 @@ declare module "arabic-persian-reshaper" {
 	export default shapers;
 }
 
-// Uint8Array base64 (TC39 arraybuffer-base64, shipped in Node 24+/Bun): the
+// Uint8Array base64 (TC39 arraybuffer-base64, shipped in Node 26+/Bun): the
 // lib target predates it, so the two members the session uses are declared
-// here until the target catches up.
+// here until the target catches up. The floor package.json states is this.
 interface Uint8Array {
 	toBase64(): string;
 }

@@ -34,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26
 
       # Trusted publishing needs npm 11.5.1+, and staged publishing 11.15.0+
       # (libuild stage checks and says so). libuild spawns `npm`, so the
