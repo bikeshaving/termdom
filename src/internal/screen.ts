@@ -1941,6 +1941,7 @@ export class Screen {
 		cursorRow: cursorPosition,
 		regionRows,
 		delta = 0,
+		band,
 	}: {
 		/** Rows the camera has scrolled, negative downward. */
 		offset: number;
@@ -1948,26 +1949,42 @@ export class Screen {
 		cursorRow?: number;
 		/** Rows the frame spans, when it is taller than the screen. */
 		regionRows?: number;
-		/** Rows the camera moved since the last frame, positive downward. */
+		/** Rows the scroll moved since the last frame, positive downward. */
 		delta?: number;
+		/**
+		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
+		 * port names its own rows here; the camera names none and takes the
+		 * whole region, which is the band a camera move happens to span.
+		 */
+		band?: {top: number; end: number};
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
 		const cols = this[kCols];
 		const next = takeGrid(this, frameRows, cols);
 
-		// A camera move is a rigid transform the terminal performs itself:
-		// DECSTBM pins the margins to our region (a shell prompt above is
-		// outside them), and DL/IL within margins move rows without touching
-		// the scrollback, unlike SU. The previous buffer shifts to match, so
-		// the diff below prices this frame against where the rows now sit and
-		// emits only what the shift could not carry. A pending reset, a growth
-		// frame, or no previous frame falls through to the plain diff, which
-		// repaints the region instead of shifting it.
+		// A scroll is a rigid transform the terminal performs itself: DECSTBM
+		// pins the margins to the band that moved (a shell prompt above is
+		// outside them, and so is chrome an element's scroll port does not
+		// cover), and DL/IL within margins move rows without touching the
+		// scrollback, unlike SU. The previous buffer shifts to match, so the
+		// diff below prices this frame against where the rows now sit and
+		// emits only what the shift could not carry -- content overlapping
+		// the band the terminal dragged along included. A pending reset, a
+		// growth frame, or no previous frame falls through to the plain diff,
+		// which repaints the region instead of shifting it.
 		let scrollPrefix = "";
+		const regionTop = cursorPosition ?? 0;
+		const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
+		const bandTop = Math.max(0, band ? band.top : 0);
+		const bandEnd = Math.min(
+			this[kPrev]?.rows ?? 0,
+			band ? band.end : regionEnd - regionTop,
+		);
 		const scrolling =
 			delta !== 0 &&
 			Math.abs(delta) < this[kRows] &&
+			bandEnd > bandTop &&
 			this[kPrev] !== null &&
 			// A rigid transform only makes sense between grids of one width.
 			this[kPrev].cols === cols &&
@@ -1976,28 +1993,30 @@ export class Screen {
 			!this[kNeedsFullClear] &&
 			cursorPosition !== undefined;
 		if (scrolling && this[kPrev]) {
-			const regionTop = cursorPosition;
-			const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
-
-			// Shift the model in place: screen row r now shows what was at
-			// r + delta, and the rows scrolled in from beyond the edge are
-			// blank until the paint fills them.
+			// Shift the model in place: band row r now shows what was at
+			// r + delta, and the rows scrolled in from beyond the band's
+			// edge are blank until the paint fills them.
 			const prev = this[kPrev];
-			const prevCells = prev.rows * cols;
+			const start = bandTop * cols;
+			const stop = bandEnd * cols;
 			const shift = Math.abs(delta) * cols;
-			if (shift >= prevCells) {
-				prev.clear();
+			if (shift >= stop - start) {
+				prev.clearRange(start, stop);
 			} else if (delta > 0) {
-				prev.moveRange(0, shift, prevCells);
-				prev.clearRange(prevCells - shift, prevCells);
+				prev.moveRange(start, start + shift, stop);
+				prev.clearRange(stop - shift, stop);
 			} else {
-				prev.moveRange(shift, 0, prevCells - shift);
-				prev.clearRange(0, shift);
+				prev.moveRange(start + shift, start, stop - shift);
+				prev.clearRange(start, start + shift);
 			}
 			const shiftedLines = new Set<number>();
 			for (const row of this[kRenderedLines]) {
+				if (row < bandTop || row >= bandEnd) {
+					shiftedLines.add(row);
+					continue;
+				}
 				const moved = row - delta;
-				if (moved >= 0 && moved < frameRows) {
+				if (moved >= bandTop && moved < bandEnd) {
 					shiftedLines.add(moved);
 				}
 			}
@@ -2007,8 +2026,8 @@ export class Screen {
 			// this caller afterward.
 			const count = Math.abs(delta);
 			scrollPrefix =
-				setScrollRegion(regionTop + 1, regionEnd) +
-				cursorTo(regionTop + 1, 1) +
+				setScrollRegion(regionTop + bandTop + 1, regionTop + bandEnd) +
+				cursorTo(regionTop + bandTop + 1, 1) +
 				(delta > 0 ? deleteLines(count) : insertLines(count)) +
 				resetScrollRegion();
 		}
