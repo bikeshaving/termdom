@@ -850,6 +850,68 @@ function takeGrid(
 	return new CellGrid(rows, cols);
 }
 
+/**
+ * One row of a grid as a string: the cells up to the last one holding
+ * anything, with a wide glyph counted once and an unwritten cell spelled as
+ * a space. `colorDepth` null asks for the text alone -- what a reader sees,
+ * with the styling left off.
+ *
+ * The static frame and the retained screen are both a grid read straight
+ * out, so they read it here.
+ */
+function gridLine(
+	grid: CellGrid,
+	row: number,
+	colorDepth: ColorDepth | null,
+): string {
+	const rowStart = row * grid.cols;
+	// A file should not be padded out to the terminal width, so stop at the
+	// last cell that actually holds something.
+	let lastCol = -1;
+	for (let col = grid.cols - 1; col >= 0; col--) {
+		if (grid.char[rowStart + col] !== 0) {
+			lastCol = col;
+			break;
+		}
+	}
+
+	let line = "";
+	let previous = -1;
+	for (let col = 0; col <= lastCol; col++) {
+		const index = rowStart + col;
+		if (grid.char[index] === 0) {
+			line += " ";
+			continue;
+		}
+
+		if (colorDepth !== null) {
+			const style = styleDiff(grid, index, previous, colorDepth);
+			if (style !== "") {
+				line += sgr(style);
+			}
+		}
+
+		const encoding = grid.border[index];
+		line +=
+			encoding > 0 ?
+					getBorderChar(encoding) :
+					decodeGrapheme(grid.char[index]);
+		previous = index;
+
+		// A wide grapheme's continuation column is empty in the buffer but
+		// already covered by the glyph -- skip it, or the line grows a
+		// phantom space per wide character and shifts what follows.
+		if (encoding === 0) {
+			col += grid.widthAt(index) - 1;
+		}
+	}
+
+	if (colorDepth !== null && previous !== -1) {
+		line += sgrReset();
+	}
+	return line;
+}
+
 function lineLength(
 	screen: Screen,
 	row: number,
@@ -1823,6 +1885,31 @@ export class Screen {
 		this[kRenderedLines].clear();
 	}
 
+	/**
+	 * What the last frame left on the terminal, as text.
+	 *
+	 * The retained grid is the model the diff patches against, so this is the
+	 * screen's own account of what the terminal shows -- no emulator, no
+	 * capture. Rows are trimmed of the blank right edge and the blank rows
+	 * below the content go with them, the way a terminal's own reader trims
+	 * them, so what comes back is the content and nothing else. A screen that
+	 * has painted nothing has nothing to say and returns "".
+	 */
+	retainedText(): string {
+		const grid = this[kPrev];
+		if (grid === null) {
+			return "";
+		}
+		const lines: string[] = [];
+		for (let row = 0; row < grid.rows; row++) {
+			lines.push(gridLine(grid, row, null).replace(/\s+$/, ""));
+		}
+		while (lines.length > 0 && lines[lines.length - 1] === "") {
+			lines.pop();
+		}
+		return lines.length === 0 ? "" : lines.join("\n") + "\n";
+	}
+
 	/** A reset or clear is pending: the next frame must actually paint. */
 	get needsRepaint(): boolean {
 		return (
@@ -1867,51 +1954,7 @@ export class Screen {
 		this[kEndFrame] = (): string => {
 			const lines: string[] = [];
 			for (let row = 0; row < rows; row++) {
-				const rowStart = row * cols;
-				// A file should not be padded out to the terminal width, so stop at the
-				// last cell that actually holds something.
-				let lastCol = -1;
-				for (let col = cols - 1; col >= 0; col--) {
-					if (grid.char[rowStart + col] !== 0) {
-						lastCol = col;
-						break;
-					}
-				}
-
-				let line = "";
-				let previous = -1;
-
-				for (let col = 0; col <= lastCol; col++) {
-					const index = rowStart + col;
-					if (grid.char[index] === 0) {
-						line += " ";
-						continue;
-					}
-
-					const style = styleDiff(grid, index, previous, this[kColorDepth]);
-					if (style !== "") {
-						line += sgr(style);
-					}
-
-					const encoding = grid.border[index];
-					line +=
-						encoding > 0 ?
-								getBorderChar(encoding) :
-								decodeGrapheme(grid.char[index]);
-					previous = index;
-
-					// A wide grapheme's continuation column is empty in the buffer but
-					// already covered by the glyph -- skip it, or the line grows a
-					// phantom space per wide character and shifts what follows.
-					if (encoding === 0) {
-						col += grid.widthAt(index) - 1;
-					}
-				}
-
-				if (previous !== -1) {
-					line += sgrReset();
-				}
-				lines.push(line);
+				lines.push(gridLine(grid, row, this[kColorDepth]));
 			}
 
 			// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
