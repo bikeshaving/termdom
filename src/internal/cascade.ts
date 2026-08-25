@@ -7367,10 +7367,15 @@ function convertImportRule(
 		(node.name ?? "").toLowerCase() === "supports"
 	) {
 		// The slice spans the function: its name, its parentheses and the
-		// condition between them.
-		supportsText = sliceOf(node)
-			.slice((node.name ?? "").length + 1, -1)
-			.trim();
+		// condition between them. A function whose parenthesis never closes
+		// is recovered ending at the text, with no `)` to leave off.
+		const spelled = sliceOf(node);
+		const opened = (node.name ?? "").length + 1;
+		supportsText = (
+			spelled.endsWith(")") ?
+					spelled.slice(opened, -1) :
+					spelled.slice(opened)
+		).trim();
 		index++;
 	}
 

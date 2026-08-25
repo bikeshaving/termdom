@@ -530,5 +530,11 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	expect(() => parsedSheet.insertRule("@import url(a.css) garbage!!;", 0))
 		.toThrow();
 
+	// A supports() whose parenthesis never closes is recovered ending at the
+	// text: the condition reaches its last character.
+	parsedSheet.insertRule("@import url(a.css) supports(display:flex", 0);
+	expect((parsedSheet.cssRules[0] as CSSImportRule).supportsText)
+		.toBe("display:flex");
+
 	dom.dispose();
 });
