@@ -1,11 +1,5 @@
 export {TermDOM} from "./internal/termdom.js";
-export type {TermDOMOptions, TermDOMSnapshot} from "./internal/termdom.js";
-export type {
-	Trace,
-	TraceEvent,
-	TraceLifecycle,
-	TraceSkipReason,
-} from "./internal/trace.js";
+export type {TermDOMOptions} from "./internal/termdom.js";
 export {transportFromProcess} from "./internal/pty.js";
 export type {
 	ProcessLike,
