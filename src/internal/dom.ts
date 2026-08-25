@@ -113,8 +113,6 @@ interface UALineFragment {
 	endOffset: number;
 }
 
-const kUAEngine = Symbol("the engine a document's UA widgets render through");
-
 /**
  * What the user agent may do that a page may not. The capability is the
  * return value of the one handshake that makes an engine a document's user
@@ -189,6 +187,8 @@ export interface UAToolkit {
 	lockDataTransfer(transfer: object): void;
 	createBeforeUnloadEvent(): BeforeUnloadEvent;
 }
+
+const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
 /**
  * Give a document the collaborators its controls' shadow trees render
@@ -2655,13 +2655,6 @@ Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const kTransferEntries = Symbol("entries");
-const kTransferItems = Symbol("items");
-const kTransferFiles = Symbol("files");
-const kTransferMode = Symbol("mode");
-const kDropEffect = Symbol("dropEffect");
-const kEffectAllowed = Symbol("effectAllowed");
-
 const kItemType = Symbol("type");
 const kItemData = Symbol("data");
 
@@ -2803,6 +2796,13 @@ function syncTransferItems(transfer: DataTransfer): void {
 	}
 	transfer[kTransferItems][kListIndices] = formats.length;
 }
+
+const kTransferEntries = Symbol("entries");
+const kTransferItems = Symbol("items");
+const kTransferFiles = Symbol("files");
+const kTransferMode = Symbol("mode");
+const kDropEffect = Symbol("dropEffect");
+const kEffectAllowed = Symbol("effectAllowed");
 
 /** The payload a clipboard event carries: text under format names. */
 export class DataTransfer {
@@ -4530,7 +4530,6 @@ function shapeChanged(
 	}
 }
 
-const kCollectionCaches = Symbol("collection caches");
 const kClassList = Symbol("classList");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
@@ -6984,6 +6983,8 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 	return list;
 }
 
+const kCollectionCaches = Symbol("collection caches");
+
 /** A collection cache keyed by kind and name, so identity is stable. */
 function collectionCache(node: Node): Map<string, HTMLCollection> {
 	const owner = node as unknown as Record<symbol, unknown>;
@@ -8020,8 +8021,6 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
 	changeAttribute(attribute, value);
 }
 
-const kAttributeChanged = Symbol("attribute change steps");
-
 /**
  * The attribute change steps run AFTER the change lands, as the DOM Standard
  * orders them: an element's own steps read the element, and what they must read
@@ -8058,6 +8057,8 @@ export function observeTree(observer: TreeObserver): void {
 	);
 	shadowAttachedListeners.push((root) => observer.shadowAttached(root));
 }
+
+const kAttributeChanged = Symbol("attribute change steps");
 
 function changeAttribute(attribute: Attr, value: string): void {
 	const element = attribute[kOwnerElement] as Element;
@@ -9019,8 +9020,6 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const alreadyConstructed = Symbol("already constructed");
-
 /**
  * The HTML element constructor.
  *
@@ -9053,6 +9052,8 @@ function innermostActive(document: Document): Element | null {
 	}
 	return current;
 }
+
+const alreadyConstructed = Symbol("already constructed");
 
 export class HTMLElement extends Element {
 	// Installed on the prototype, where the mount that measures them is.
@@ -12694,7 +12695,6 @@ export class HTMLHtmlElement extends HTMLElement {}
 const kContentDocument = Symbol("contentDocument");
 const kContentWindow = Symbol("contentWindow");
 const kFrameDocumentRun = Symbol("frameDocumentRun");
-const kEnsureFrameDocument = Symbol("ensureFrameDocument");
 
 /** What an iframe's window exposes: the document's side of the frame. */
 interface FrameWindowLike {
@@ -12703,6 +12703,8 @@ interface FrameWindowLike {
 	frameElement: HTMLIFrameElement;
 	HTMLElement: typeof HTMLElement;
 }
+
+const kEnsureFrameDocument = Symbol("ensureFrameDocument");
 
 /**
  * A nested document without a browsing context around it. On insertion the
@@ -25168,8 +25170,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 
 /* -------------------------------------------------------------- mounting */
 
-const kMount = Symbol("mount");
-
 /**
  * The engine's answers for the APIs a document alone cannot give --
  * geometry so far; the rest of the installed surface migrates here. A
@@ -25270,6 +25270,8 @@ export interface MountHandle {
 	/** How many hover-sensitive listeners the document holds now. */
 	hoverListenerCount(): number;
 }
+
+const kMount = Symbol("mount");
 
 /** Mount a document on its engine. Once per document. */
 export function mount(document: object, engine: Mount): MountHandle {

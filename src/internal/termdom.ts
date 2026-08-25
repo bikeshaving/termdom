@@ -42,8 +42,6 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
-const kUAToolkit = Symbol("uaToolkit");
-
 /** The mount this engine installs, which is how a node finds it back. */
 interface EngineMount extends DOM.Mount {
 	readonly engine: TermDOM;
@@ -114,8 +112,6 @@ function isActivationTriggering(event: DOM.Event): boolean {
 	}
 }
 
-const kActivationDepth = Symbol("activationDepth");
-const kEverActivated = Symbol("everActivated");
 /**
  * Fire an event as the user agent.
  *
@@ -174,11 +170,6 @@ export interface TermDOMOptions {
 	/** The initial document's URL. */
 	url?: string;
 }
-
-const kLayoutEngine = Symbol("layoutEngine");
-const kObserver = Symbol("observer");
-
-const kWrite = Symbol("write");
 
 /**
  * The Fullscreen API over the terminal's alternate screen. The element stack
@@ -480,48 +471,6 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 	return window as unknown as EngineWindow;
 }
 
-const kScrolledElements = Symbol("scrolledElements");
-const kTransport = Symbol("transport");
-const kInteractive = Symbol("interactive");
-const kWidth = Symbol("width");
-const kHeight = Symbol("height");
-const kTopLayer = Symbol("topLayer");
-const kScreen = Symbol("screen");
-const kStyleManager = Symbol("styleManager");
-const kEventHandler = Symbol("eventHandler");
-const kFullscreenStack = Symbol("fullscreenStack");
-const kExchange = Symbol("exchange");
-const kObserverManager = Symbol("observerManager");
-const kInstallObservers = Symbol("installObservers");
-const kPainter = Symbol("painter");
-const kScrollTop = Symbol("scrollTop");
-const kScreenTop = Symbol("screenTop");
-const kAnchorScrollTop = Symbol("anchorScrollTop");
-const kFrameScroll = Symbol("frameScroll");
-const kFrameBand = Symbol("frameBand");
-const kFrameDirty = Symbol("frameDirty");
-const kOnFieldEditEvent = Symbol("onFieldEditEvent");
-const kOnDisclosureToggle = Symbol("onDisclosureToggle");
-const kNextRafId = Symbol("nextRafId");
-const kSealed = Symbol("sealed");
-const kFrameCallbacks = Symbol("frameCallbacks");
-const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
-const kLifecycle = Symbol("lifecycle");
-const kAttachReady = Symbol("attachReady");
-const kRenderCount = Symbol("renderCount");
-const kScreenSwitching = Symbol("screenSwitching");
-const kRenderInFlight = Symbol("renderInFlight");
-const kAttachBegun = Symbol("attachBegun");
-const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
-const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
-const kMountHandle = Symbol("mountHandle");
-const kSettlingResize = Symbol("settlingResize");
-const kIsRendering = Symbol("isRendering");
-const kRenderQueued = Symbol("renderQueued");
-const kPendingCaretReveal = Symbol("pendingCaretReveal");
-const kResizeTimer = Symbol("resizeTimer");
-const kStaticSibling = Symbol("staticSibling");
-
 /**
  * Where an instance stands with the terminal, in order: constructed and
  * writing nothing, attach() establishing the session, the session live, torn
@@ -539,6 +488,64 @@ function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
+
+const kScreen = Symbol("screen");
+const kLayoutEngine = Symbol("layoutEngine");
+const kObserver = Symbol("observer");
+const kFullscreenStack = Symbol("fullscreenStack");
+const kObserverManager = Symbol("observerManager");
+const kStyleManager = Symbol("styleManager");
+const kPainter = Symbol("painter");
+
+const kIsRendering = Symbol("isRendering");
+const kFrameCallbacks = Symbol("frameCallbacks");
+const kNextRafId = Symbol("nextRafId");
+const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
+const kSealed = Symbol("sealed");
+const kRenderQueued = Symbol("renderQueued");
+const kScreenSwitching = Symbol("screenSwitching");
+const kRenderInFlight = Symbol("renderInFlight");
+const kRenderCount = Symbol("renderCount");
+
+const kTopLayer = Symbol("topLayer");
+const kUAToolkit = Symbol("uaToolkit");
+const kEventHandler = Symbol("eventHandler");
+
+const kResizeTimer = Symbol("resizeTimer");
+const kSettlingResize = Symbol("settlingResize");
+
+const kLifecycle = Symbol("lifecycle");
+const kAttachBegun = Symbol("attachBegun");
+const kAttachReady = Symbol("attachReady");
+const kActivationDepth = Symbol("activationDepth");
+const kEverActivated = Symbol("everActivated");
+
+const kFrameScroll = Symbol("frameScroll");
+const kFrameBand = Symbol("frameBand");
+const kFrameDirty = Symbol("frameDirty");
+
+const kScrollTop = Symbol("scrollTop");
+const kScreenTop = Symbol("screenTop");
+const kAnchorScrollTop = Symbol("anchorScrollTop");
+const kScrolledElements = Symbol("scrolledElements");
+
+const kWidth = Symbol("width");
+const kHeight = Symbol("height");
+
+const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
+const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
+const kMountHandle = Symbol("mountHandle");
+const kPendingCaretReveal = Symbol("pendingCaretReveal");
+
+const kTransport = Symbol("transport");
+const kExchange = Symbol("exchange");
+const kInteractive = Symbol("interactive");
+const kWrite = Symbol("write");
+const kStaticSibling = Symbol("staticSibling");
+
+const kInstallObservers = Symbol("installObservers");
+const kOnDisclosureToggle = Symbol("onDisclosureToggle");
+const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 
 /**
  * Everything the window installers below need from the TermDOM that installed

@@ -33,9 +33,6 @@ export interface ClipboardAccess {
 	userActive(): boolean;
 }
 
-/** The brand an interface with no constructor is built through internally. */
-const kInternalConstruction = Symbol("internal construction");
-const kClipboardAccess = Symbol("access");
 const kItemEntries = Symbol("entries");
 
 /** Refuse a clipboard request the user has not asked for. */
@@ -113,6 +110,10 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
 	value: "ClipboardItem",
 	configurable: true,
 });
+
+/** The brand an interface with no constructor is built through internally. */
+const kInternalConstruction = Symbol("internal construction");
+const kClipboardAccess = Symbol("access");
 
 /**
  * The clipboard, as navigator.clipboard.

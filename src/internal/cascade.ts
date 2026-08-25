@@ -5035,9 +5035,6 @@ class CSSSupportsRule extends CSSTextConditionRule {
 	}
 }
 
-const kContainerName = Symbol("containerName");
-const kContainerQuery = Symbol("containerQuery");
-
 /** A node a `@container` prelude parse yields at its top level. */
 interface ContainerPreludeNode {
 	type: string;
@@ -5075,6 +5072,9 @@ function containerParts(prelude: string): {name: string; query: string} {
 	};
 }
 
+const kContainerName = Symbol("containerName");
+const kContainerQuery = Symbol("containerQuery");
+
 /** `@container`: parsed, with no container query engine behind it. */
 class CSSContainerRule extends CSSTextConditionRule {
 	declare [kContainerName]: string;
@@ -5110,10 +5110,6 @@ class CSSContainerRule extends CSSTextConditionRule {
 		return this[kContainerQuery];
 	}
 }
-
-const kPrelude = Symbol("prelude");
-const kScopeStart = Symbol("scopeStart");
-const kScopeEnd = Symbol("scopeEnd");
 
 /** The node an `@scope` prelude parses into, and the selector lists it holds. */
 interface ScopePreludeNode {
@@ -5152,6 +5148,10 @@ function scopeLimits(prelude: string): {
 			null;
 	return {start: sliceOf(scope?.root), end: sliceOf(scope?.limit)};
 }
+
+const kPrelude = Symbol("prelude");
+const kScopeStart = Symbol("scopeStart");
+const kScopeEnd = Symbol("scopeEnd");
 
 /** `@scope`: parsed, and its rules apply unscoped. */
 class CSSScopeRule extends CSSGroupingRule {
@@ -7898,7 +7898,6 @@ const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
 const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
-const kTransitionValue = Symbol("transitionValue");
 
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
@@ -8969,6 +8968,8 @@ const kNodeResolved = Symbol("nodeResolved");
 const kNodeStyle = Symbol("nodeStyle");
 const kBoxView = Symbol("boxView");
 const kBoxViewOf = Symbol("boxViewOf");
+
+const kTransitionValue = Symbol("transitionValue");
 
 /**
  * A pseudo-element's computed style: a flat declaration set -- the matched

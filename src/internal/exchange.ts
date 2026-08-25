@@ -207,51 +207,59 @@ interface ExchangeHandlers {
 	onClosed(info: TerminalCloseInfo): void;
 }
 
-const kWidthSettled = Symbol("widthSettled");
-const kWidthProbes = Symbol("widthProbes");
-const kProbingEnded = Symbol("probingEnded");
-const kWriteBatch = Symbol("writeBatch");
-const kDsrSequence = Symbol("dsrSequence");
-const kWidthProbeTimer = Symbol("widthProbeTimer");
-const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-const kWidthAnswered = Symbol("widthAnswered");
-const kWidthProbing = Symbol("widthProbing");
+const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
-const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
-const kWidthMeasurer = Symbol("widthMeasurer");
-const kWidthAsked = Symbol("widthAsked");
-const kWidthStarved = Symbol("widthStarved");
-const kStarvationTimer = Symbol("starvationTimer");
-const kWidthStarvationWait = Symbol("widthStarvationWait");
-const kDriftBatch = Symbol("driftBatch");
-const kWidthRun = Symbol("widthRun");
-const kWidthDrift = Symbol("widthDrift");
-const kWidthRunLost = Symbol("widthRunLost");
-const kHandlers = Symbol("handlers");
-const kTransport = Symbol("transport");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
-const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
-const kDisposed = Symbol("disposed");
+const kHandlers = Symbol("handlers");
+
 const kWriter = Symbol("writer");
-const kLastWrite = Symbol("lastWrite");
-const kStarted = Symbol("started");
 const kReader = Symbol("reader");
 const kResizeReader = Symbol("resizeReader");
-const kPartialEscape = Symbol("partialEscape");
+const kStarted = Symbol("started");
+const kDisposed = Symbol("disposed");
+const kLastWrite = Symbol("lastWrite");
+const kWriteBatch = Symbol("writeBatch");
+
 const kPasteBuffer = Symbol("pasteBuffer");
-const kModeProbeHandlers = Symbol("modeProbeHandlers");
+const kPartialEscape = Symbol("partialEscape");
+
+const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
-const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
+const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
+const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
+const kDsrSequence = Symbol("dsrSequence");
+
+const kModeProbeHandlers = Symbol("modeProbeHandlers");
 const kModeProbeTimers = Symbol("modeProbeTimers");
 const kPriorBidiMode = Symbol("priorBidiMode");
-const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
+const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
+
 const kClipboardHandler = Symbol("clipboardHandler");
 const kClipboardTimer = Symbol("clipboardTimer");
 const kClipboardBuffer = Symbol("clipboardBuffer");
 const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
+
+const kProbingEnded = Symbol("probingEnded");
+const kWidthProbes = Symbol("widthProbes");
+const kWidthSettled = Symbol("widthSettled");
+const kWidthAsked = Symbol("widthAsked");
+const kWidthAnswered = Symbol("widthAnswered");
+const kWidthProbing = Symbol("widthProbing");
+const kWidthProbeTimer = Symbol("widthProbeTimer");
+const kWidthProbeTimeout = Symbol("widthProbeTimeout");
+const kWidthMeasurer = Symbol("widthMeasurer");
+
+const kWidthStarved = Symbol("widthStarved");
+const kStarvationTimer = Symbol("starvationTimer");
+const kWidthStarvationWait = Symbol("widthStarvationWait");
+
+const kDriftBatch = Symbol("driftBatch");
+const kWidthRun = Symbol("widthRun");
+const kWidthDrift = Symbol("widthDrift");
+const kWidthRunLost = Symbol("widthRunLost");
 
 export class TerminalExchange {
 	declare [kTransport]: TerminalTransport;
