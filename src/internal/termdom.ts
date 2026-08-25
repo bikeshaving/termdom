@@ -1,11 +1,5 @@
 import * as DOM from "./dom.js";
 import {installInspectors} from "./inspector.js";
-import {Clipboard, ClipboardItem, createClipboard} from "./clipboard.js";
-import {
-	Permissions,
-	PermissionStatus,
-	createPermissions,
-} from "./permissions.js";
 import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
@@ -313,10 +307,10 @@ export interface EngineWindow
 	DataTransferItem: typeof DOM.DataTransferItem;
 	DataTransferItemList: typeof DOM.DataTransferItemList;
 	FileList: typeof DOM.FileList;
-	Clipboard: typeof Clipboard;
-	ClipboardItem: typeof ClipboardItem;
-	Permissions: typeof Permissions;
-	PermissionStatus: typeof PermissionStatus;
+	Clipboard: typeof DOM.Clipboard;
+	ClipboardItem: typeof DOM.ClipboardItem;
+	Permissions: typeof DOM.Permissions;
+	PermissionStatus: typeof DOM.PermissionStatus;
 	CompositionEvent: typeof globalThis.CompositionEvent;
 	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
 	DOMException: typeof globalThis.DOMException;
@@ -405,16 +399,6 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 		setInterval: globalThis.setInterval.bind(globalThis),
 		clearInterval: globalThis.clearInterval.bind(globalThis),
 		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
-		// The clipboard interfaces and event types, which a listener attaches
-		// to and an application builds and dispatches. The user agent fires
-		// neither: the terminal keeps the copy gesture for itself -- Cmd+C,
-		// Shift+drag -- and does not report it, and Ctrl+C is the interrupt.
-		// A document learns of a copy the terminal made only by writing the
-		// clipboard itself.
-		Clipboard,
-		ClipboardItem,
-		Permissions,
-		PermissionStatus,
 	});
 	window.window = window;
 	window.self = window;
@@ -1725,9 +1709,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				sealToScrollback(termDOM);
 			}
 		},
-		// The clipboard and the permission it stands behind, over OSC 52,
-		// and the two questions the activation gate asks as the page can ask
-		// them.
 		// A hover listener appearing or vanishing moves the "does anything
 		// observe hover" answer between frames, so it pokes the mode update
 		// directly; the stylesheet half is re-read after each frame instead,
@@ -1735,28 +1716,18 @@ function createMount(termDOM: TermDOM): EngineMount {
 		hoverListenersChanged() {
 			updateHoverReporting(termDOM);
 		},
-		navigatorExtras() {
-			return {
-				clipboard: createClipboard({
-					terminal: () =>
-						isAttached(termDOM) && termDOM[kInteractive] ?
-							termDOM[kExchange] :
-							null,
-					userActive: () => isUserActive(termDOM),
-				}),
-				permissions: createPermissions({
-					interactive: () => isAttached(termDOM) && termDOM[kInteractive],
-					userActive: () => isUserActive(termDOM),
-				}),
-				userActivation: {
-					get hasBeenActive(): boolean {
-						return termDOM[kEverActivated];
-					},
-					get isActive(): boolean {
-						return isUserActive(termDOM);
-					},
-				},
-			};
+		// The clipboard travels over OSC 52, so it is reachable while a
+		// terminal is attached and taking input, and not otherwise.
+		clipboardTerminal() {
+			return isAttached(termDOM) && termDOM[kInteractive] ?
+				termDOM[kExchange] :
+				null;
+		},
+		userActive() {
+			return isUserActive(termDOM);
+		},
+		everActivated() {
+			return termDOM[kEverActivated];
 		},
 	};
 }

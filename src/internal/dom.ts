@@ -25247,8 +25247,12 @@ export interface Mount {
 	titleChanged(title: string): void;
 	/** The document was closed: seal what it painted into the scrollback. */
 	documentClosed(): void;
-	/** What `navigator` holds once an engine stands behind it. */
-	navigatorExtras(): Record<string, unknown>;
+	/** The terminal the clipboard moves text over, when one is attached. */
+	clipboardTerminal(): ClipboardTerminal | null;
+	/** Whether an activation-triggering event is being dispatched right now. */
+	userActive(): boolean;
+	/** Whether the user has ever acted on this document. */
+	everActivated(): boolean;
 	requestFullscreen(element: object, options?: object): Promise<void>;
 	exitFullscreen(document: object): Promise<void>;
 	fullscreenElement(document: object): object | null;
@@ -25451,6 +25455,353 @@ Object.defineProperties(Document.prototype, {
 	},
 });
 
+/* ------------------------------------------------- clipboard and permissions */
+
+/** The two clipboard round trips a terminal session answers. */
+export interface ClipboardTerminal {
+	writeClipboard(text: string): Promise<void>;
+	queryClipboard(): Promise<string | null>;
+}
+
+/** The payload OSC 52 carries, which is text and only text. */
+const CLIPBOARD_TEXT_TYPE = "text/plain";
+
+/** Refuse a clipboard request the user has not asked for. */
+function clipboardDenied(why: string): Promise<never> {
+	return Promise.reject(domError("NotAllowedError", why));
+}
+
+/** A media type, lowercased with the surrounding whitespace dropped. */
+function normalizeMediaType(type: unknown): string {
+	return String(type).trim().toLowerCase();
+}
+
+const kItemEntries = Symbol("entries");
+
+/**
+ * A payload the clipboard moves, held under the media types it reads as.
+ *
+ * Blob is the platform's, which Node and Bun both have as a global. OSC 52
+ * carries one payload a terminal treats as text, so text/plain is the only
+ * type a write sends and the only type a read answers with; an item may hold
+ * others, and the clipboard passes over them.
+ */
+export class ClipboardItem {
+	declare [kItemEntries]: Map<string, Promise<Blob>>;
+
+	constructor(
+		items: Record<string, string | Blob | Promise<string | Blob>>,
+		_options?: unknown,
+	) {
+		if (items === null || typeof items !== "object") {
+			throw new TypeError("A clipboard item takes a record of types");
+		}
+		const entries = new Map<string, Promise<Blob>>();
+		for (const [type, value] of Object.entries(items)) {
+			const mediaType = normalizeMediaType(type);
+			entries.set(
+				mediaType,
+				Promise.resolve(value).then((held) =>
+					held instanceof Blob ?
+						held :
+							new Blob([String(held)], {type: mediaType}),
+				),
+			);
+		}
+		if (entries.size === 0) {
+			throw new TypeError("A clipboard item carries at least one type");
+		}
+		this[kItemEntries] = entries;
+	}
+
+	get types(): readonly string[] {
+		return Object.freeze(Array.from(this[kItemEntries].keys()));
+	}
+
+	getType(type: string): Promise<Blob> {
+		const held = this[kItemEntries].get(normalizeMediaType(type));
+		if (held === undefined) {
+			return Promise.reject(
+				notFoundError(`That item carries no ${normalizeMediaType(type)}`),
+			);
+		}
+		return held;
+	}
+
+	static supports(type: string): boolean {
+		return normalizeMediaType(type) === CLIPBOARD_TEXT_TYPE;
+	}
+}
+
+Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
+	value: "ClipboardItem",
+	configurable: true,
+});
+
+/** The terminal to move bytes over, or the refusal standing in its way. */
+type Reached =
+	{terminal: ClipboardTerminal; refusal: null} |
+	{terminal: null; refusal: Promise<never>};
+
+/**
+ * The terminal a document's clipboard reaches, or why it may not.
+ *
+ * The clipboard is the user's to grant, so it is reachable only from a
+ * trusted activation-triggering event while it is being dispatched -- a
+ * keystroke, a mouse press or release, a click, a paste. This is stricter
+ * than a browser on purpose: a browser's transient activation outlives the
+ * dispatch that granted it, because its window is a span of time, so a
+ * handler there may await and still write the clipboard. Here the gate is the
+ * dispatch itself, and the clipboard is reachable only synchronously within
+ * it. A timer, a microtask, a resolved fetch and an event an application
+ * dispatched itself are all outside.
+ */
+function reachClipboard(document: Document, what: string): Reached {
+	const mount = mountOf(document);
+	const terminal = mount?.clipboardTerminal() ?? null;
+	if (terminal === null) {
+		return {
+			terminal: null,
+			refusal: clipboardDenied(
+				"clipboard requires an attached interactive terminal",
+			),
+		};
+	}
+	if (!mount!.userActive()) {
+		return {
+			terminal: null,
+			refusal: clipboardDenied(`clipboard ${what} need a user gesture`),
+		};
+	}
+	return {terminal, refusal: null};
+}
+
+const kClipboardDocument = Symbol("the document whose clipboard this is");
+
+/**
+ * The clipboard, as navigator.clipboard.
+ *
+ * writeText() carries the text to the system clipboard over OSC 52, which
+ * travels in-band -- across SSH too. Terminals without OSC 52 ignore it;
+ * there is no way to know, so the promise resolves when the transport has the
+ * bytes. readText() asks for the clipboard the same way (OSC 52 with `?` for
+ * the payload) and resolves with what comes back. write() and read() are the
+ * same two round trips over a ClipboardItem.
+ *
+ * It is an EventTarget because the interface says so; the user agent fires
+ * nothing at it.
+ */
+export class Clipboard extends EventTarget {
+	declare [kClipboardDocument]: Document;
+
+	constructor(document?: Document) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kClipboardDocument] = document as Document;
+	}
+
+	writeText(text: string): Promise<void> {
+		const reached = reachClipboard(this[kClipboardDocument], "writes");
+		if (reached.refusal !== null) {
+			return reached.refusal;
+		}
+		return reached.terminal.writeClipboard(String(text));
+	}
+
+	async readText(): Promise<string> {
+		const reached = reachClipboard(this[kClipboardDocument], "reads");
+		if (reached.refusal !== null) {
+			return reached.refusal;
+		}
+		const text = await reached.terminal.queryClipboard();
+		if (text === null) {
+			// Silence is a refusal: most terminals gate clipboard reads on
+			// their own configuration and answer nothing when they are off.
+			return clipboardDenied("the terminal did not answer the clipboard query");
+		}
+		return text;
+	}
+
+	async write(items: Iterable<ClipboardItem>): Promise<void> {
+		const reached = reachClipboard(this[kClipboardDocument], "writes");
+		if (reached.refusal !== null) {
+			return reached.refusal;
+		}
+		let carrier: ClipboardItem | null = null;
+		for (const item of items) {
+			if (item.types.includes(CLIPBOARD_TEXT_TYPE)) {
+				carrier = item;
+				break;
+			}
+		}
+		if (carrier === null) {
+			return clipboardDenied(
+				`a clipboard write needs a ${CLIPBOARD_TEXT_TYPE} entry`,
+			);
+		}
+		const text = await (await carrier.getType(CLIPBOARD_TEXT_TYPE)).text();
+		return reached.terminal.writeClipboard(text);
+	}
+
+	async read(): Promise<ClipboardItem[]> {
+		const text = await this.readText();
+		return [
+			constructInternal(
+				() => new ClipboardItem({[CLIPBOARD_TEXT_TYPE]: text}),
+			),
+		];
+	}
+}
+
+Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
+	value: "Clipboard",
+	configurable: true,
+});
+
+// The permission names the clipboard here answers for, and the ones the
+// Permissions API defines that a terminal has nothing behind: no camera, no
+// microphone, no location, no notification surface, so the answer is denied
+// rather than a prompt nobody could ever answer.
+const CLIPBOARD_PERMISSIONS = new Set(["clipboard-read", "clipboard-write"]);
+const UNBACKED_PERMISSIONS = new Set([
+	"accelerometer",
+	"ambient-light-sensor",
+	"background-sync",
+	"bluetooth",
+	"camera",
+	"display-capture",
+	"geolocation",
+	"gyroscope",
+	"idle-detection",
+	"local-fonts",
+	"magnetometer",
+	"microphone",
+	"midi",
+	"notifications",
+	"payment-handler",
+	"periodic-background-sync",
+	"persistent-storage",
+	"push",
+	"screen-wake-lock",
+	"speaker-selection",
+	"storage-access",
+	"window-management",
+	"xr-spatial-tracking",
+]);
+
+const kPermissionName = Symbol("name");
+const kPermissionDocument = Symbol("the document this permission stands over");
+
+/**
+ * The standing of one permission.
+ *
+ * `state` is read at the moment it is asked, and for the clipboard that
+ * answer is granted while a gesture is being dispatched and prompt outside
+ * one. Nothing fires `change`: the gesture opens and closes inside a single
+ * dispatch, and a listener would be told about a state that had already
+ * passed.
+ */
+export class PermissionStatus extends EventTarget {
+	declare [kPermissionName]: string;
+	declare [kPermissionDocument]: Document | null;
+
+	constructor(name?: string, document?: Document) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionName] = String(name);
+		this[kPermissionDocument] = document ?? null;
+	}
+
+	get name(): string {
+		return this[kPermissionName];
+	}
+
+	get state(): string {
+		const document = this[kPermissionDocument];
+		if (
+			document === null || !CLIPBOARD_PERMISSIONS.has(this[kPermissionName])
+		) {
+			return "denied";
+		}
+		const mount = mountOf(document);
+		if (!mount || mount.clipboardTerminal() === null) {
+			return "denied";
+		}
+		return mount.userActive() ? "granted" : "prompt";
+	}
+}
+
+// The one event handler attribute a permission status carries. An event
+// handler attribute IS a listener, per spec: routing it through
+// add/removeEventListener keeps dispatch order and dedup like any other.
+const kOnChange = Symbol("onchange");
+Object.defineProperty(PermissionStatus.prototype, "onchange", {
+	get(this: PermissionStatus): unknown {
+		return (this as unknown as Record<symbol, unknown>)[kOnChange] ?? null;
+	},
+	set(this: PermissionStatus, value: unknown): void {
+		const held = this as unknown as Record<symbol, unknown>;
+		type Listener = Parameters<PermissionStatus["addEventListener"]>[1];
+		const previous = held[kOnChange] as Listener | undefined;
+		if (previous) {
+			this.removeEventListener("change", previous);
+		}
+		const next = typeof value === "function" ? (value as Listener) : null;
+		held[kOnChange] = next;
+		if (next) {
+			this.addEventListener("change", next);
+		}
+	},
+	enumerable: true,
+	configurable: true,
+});
+
+Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
+	value: "PermissionStatus",
+	configurable: true,
+});
+
+/** navigator.permissions: what the gate above answers, asked by name. */
+export class Permissions extends EventTarget {
+	declare [kPermissionDocument]: Document;
+
+	constructor(document?: Document) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kPermissionDocument] = document as Document;
+	}
+
+	query(descriptor: {name?: string}): Promise<PermissionStatus> {
+		if (descriptor === null || typeof descriptor !== "object") {
+			return Promise.reject(
+				new TypeError("A permission query takes a descriptor"),
+			);
+		}
+		const name = String(descriptor.name);
+		if (!CLIPBOARD_PERMISSIONS.has(name) && !UNBACKED_PERMISSIONS.has(name)) {
+			return Promise.reject(
+				new TypeError(`"${name}" is not a permission name`),
+			);
+		}
+		return Promise.resolve(
+			constructInternal(
+				() => new PermissionStatus(name, this[kPermissionDocument]),
+			),
+		);
+	}
+}
+
+Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
+	value: "Permissions",
+	configurable: true,
+});
+
 /* ---------------------------------------------------------------- window */
 
 const kNavigator = Symbol("navigator");
@@ -25576,12 +25927,22 @@ export class Window extends EventTarget {
 	get navigator(): Navigator {
 		let navigator = this[kNavigator];
 		if (navigator === undefined) {
+			const document = this.document;
 			navigator = {
 				userAgent: "TermDOM",
 				language: "en-US",
 				languages: Object.freeze(["en-US"]),
 				platform: "",
-				...mountOf(this.document)?.navigatorExtras(),
+				clipboard: constructInternal(() => new Clipboard(document)),
+				permissions: constructInternal(() => new Permissions(document)),
+				userActivation: {
+					get hasBeenActive(): boolean {
+						return mountOf(document)?.everActivated() ?? false;
+					},
+					get isActive(): boolean {
+						return mountOf(document)?.userActive() ?? false;
+					},
+				},
 			} as unknown as Navigator;
 			this[kNavigator] = navigator;
 		}
@@ -25803,7 +26164,9 @@ export const platform = {
 	BeforeUnloadEvent,
 	CDATASection,
 	CharacterData,
+	Clipboard,
 	ClipboardEvent,
+	ClipboardItem,
 	Comment,
 	CompositionEvent,
 	CustomElementRegistry,
@@ -25916,6 +26279,8 @@ export const platform = {
 	NodeFilter,
 	NodeIterator,
 	NodeList,
+	Permissions,
+	PermissionStatus,
 	PointerEvent,
 	ProcessingInstruction,
 	RadioNodeList,
