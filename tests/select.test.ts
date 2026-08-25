@@ -433,10 +433,10 @@ test("selectedOptions is live over the selection, not just over the tree", async
 	dom.dispose();
 });
 
-test("picker: a select taken out and put back keeps its open picker", async () => {
-	// A picker lives in a fragment, so a detached select leaves it in the
-	// top layer with nothing on the flat tree: it paints nothing while the
-	// select is gone and paints again when the select returns.
+test("picker: a select taken out of the document closes its picker", async () => {
+	// Removal ends the interaction, as losing focus does -- and removal
+	// takes the focus too, so a picker that outlived it would be an open
+	// dropdown on an unfocused control.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
@@ -455,7 +455,9 @@ test("picker: a select taken out and put back keeps its open picker", async () =
 
 	document.body.appendChild(select);
 	await nextFrame(dom);
-	expect(terminal.getPlainText()).toContain("Gamma ray");
+	expect(document.activeElement).not.toBe(select);
+	expect(terminal.getPlainText()).not.toContain("Gamma ray");
+	expect(terminal.getPlainText()).toContain("Alpha");
 
 	dom.dispose();
 });

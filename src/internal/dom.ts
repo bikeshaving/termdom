@@ -15135,6 +15135,20 @@ export class HTMLSelectElement extends HTMLElement {
 		this[kUAReconcile]();
 	}
 
+	/**
+	 * A select taken out of the document takes its picker with it. The
+	 * dropdown is transient interaction state, and leaving the tree ends
+	 * the interaction as surely as losing focus does -- which removal also
+	 * causes, since focus cannot rest on an element off the tree.
+	 */
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		if (this[kHighlight] !== null) {
+			this[kHighlight] = null;
+			this[kUAReconcile]();
+		}
+	}
+
 	/** Bring the UA tree back into step with the selection and open state. */
 	[kUAReconcile](): void {
 		const engine = this[kEngine];
@@ -26578,7 +26592,8 @@ const _checked: [
 		"clientTop" | // GAP
 		"computedStyleMap" | // GAP: Typed OM
 		"animate" | // GAP: no animation timeline
-		"getAnimations" // GAP
+		// GAP
+		"getAnimations"
 	>,
 ] = [
 	true,
