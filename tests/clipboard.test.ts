@@ -8,6 +8,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
+import {decode64, encode64} from "../src/internal/wire.js";
 import {transportFromProcess} from "../src/internal/pty.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
@@ -655,4 +656,22 @@ test("permissions.query refuses a name that is not one", async () => {
 		"denied",
 	);
 	dom.dispose();
+});
+
+test("the wire's base64 tolerates what terminals send", () => {
+	const bytes = (text: string) => new TextEncoder().encode(text);
+	const read = (payload: string) => {
+		const decoded = decode64(payload);
+		return decoded === null ? null : new TextDecoder().decode(decoded);
+	};
+	expect(encode64(bytes("hi"))).toBe("aGk=");
+	expect(read("aGk=")).toBe("hi");
+	expect(read("aGk")).toBe("hi");
+	expect(read("aG\r\nk=")).toBe("hi");
+	expect(read("=aGk=")).toBe("hi");
+	expect(read("")).toBe("");
+	expect(read("A")).toBe(null);
+	expect(read("aGkAB")).toBe(null);
+	const long = "x".repeat(300);
+	expect(read(encode64(bytes(long)))).toBe(long);
 });

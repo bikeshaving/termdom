@@ -258,6 +258,72 @@ export function cursorPositionQuery(): string {
 	return "\x1b[6n";
 }
 
+/* -------------------------------------------------------------- the base64 */
+
+const BASE64_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_CODES = new Int8Array(128).fill(-1);
+for (let i = 0; i < BASE64_ALPHABET.length; i++) {
+	BASE64_CODES[BASE64_ALPHABET.charCodeAt(i)] = i;
+}
+
+/** Padded base64, as OSC 52 carries a clipboard payload. */
+export function encode64(bytes: Uint8Array): string {
+	let out = "";
+	let i = 0;
+	for (; i + 2 < bytes.length; i += 3) {
+		const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+		out +=
+			BASE64_ALPHABET[n >> 18] +
+			BASE64_ALPHABET[(n >> 12) & 63] +
+			BASE64_ALPHABET[(n >> 6) & 63] +
+			BASE64_ALPHABET[n & 63];
+	}
+	const rest = bytes.length - i;
+	if (rest === 1) {
+		const n = bytes[i] << 16;
+		out += BASE64_ALPHABET[n >> 18] + BASE64_ALPHABET[(n >> 12) & 63] + "==";
+	} else if (rest === 2) {
+		const n = (bytes[i] << 16) | (bytes[i + 1] << 8);
+		out +=
+			BASE64_ALPHABET[n >> 18] +
+			BASE64_ALPHABET[(n >> 12) & 63] +
+			BASE64_ALPHABET[(n >> 6) & 63] +
+			"=";
+	}
+	return out;
+}
+
+/**
+ * Tolerant base64, as terminals answer OSC 52: bytes outside the alphabet
+ * are skipped and an unpadded tail still decodes, since terminals differ on
+ * both. Null for a payload no reading rescues -- a digit count of one past
+ * a four-digit boundary carries no byte.
+ */
+export function decode64(text: string): Uint8Array | null {
+	const bytes = new Uint8Array((text.length * 3) >> 2);
+	let held = 0;
+	let bits = 0;
+	let length = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const value = code < 128 ? BASE64_CODES[code] : -1;
+		if (value < 0) {
+			continue;
+		}
+		held = (held << 6) | value;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[length++] = (held >> bits) & 0xff;
+		}
+	}
+	if (bits >= 6) {
+		return null;
+	}
+	return bytes.subarray(0, length);
+}
+
 /* ----------------------------------------------------------------- the OSC */
 
 /** OSC 2: the window title. */
@@ -767,20 +833,10 @@ export function decodeClipboardReply(chunk: string): ClipboardReply | null {
 	if (!reply) {
 		return {start, end: chunk.length, text: null};
 	}
-	// Terminals differ on padding and may interleave junk; anything outside
-	// the base64 alphabet is dropped and an unpadded tail still decodes.
-	// A tail of one digit carries no byte and is no base64 at all, so a
-	// payload that will not decode answers as an empty clipboard: OSC 52
+	// A payload no reading rescues answers as an empty clipboard: OSC 52
 	// has no channel for saying more.
-	const digits = reply[1].replace(/[^A-Za-z0-9+/]/g, "");
-	let text = "";
-	try {
-		text = new TextDecoder().decode(
-			Uint8Array.fromBase64(digits, {lastChunkHandling: "loose"}),
-		);
-	} catch (_err) {
-		text = "";
-	}
+	const decoded = decode64(reply[1]);
+	const text = decoded === null ? "" : new TextDecoder().decode(decoded);
 	return {start, end: start + reply[0].length, text};
 }
 

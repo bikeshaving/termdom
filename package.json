@@ -49,9 +49,6 @@
     "README.md",
     "LICENSE"
   ],
-  "engines": {
-    "node": ">=26"
-  },
   "scripts": {
     "build": "libuild build",
     "lint": "eslint .",

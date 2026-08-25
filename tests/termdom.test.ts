@@ -3,7 +3,6 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {readFileSync} from "node:fs";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils";
 
@@ -415,12 +414,3 @@ test("attach() is idempotent for its process but rejects a different one", async
 	dom.dispose();
 });
 
-test("the package declares the Node floor its base64 needs", () => {
-	// Uint8Array.fromBase64 lands in Node 26; a clipboard reply decodes
-	// through it, so an older runtime is not one this package runs on.
-	const manifest = JSON.parse(
-		readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-	);
-	expect(manifest.engines.node).toBe(">=26");
-	expect(typeof Uint8Array.fromBase64).toBe("function");
-});

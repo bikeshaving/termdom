@@ -1,6 +1,7 @@
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import type {ColorDepth} from "./color.js";
 import {
+	encode64,
 	ansiMode,
 	ansiModeQuery,
 	clipboardQuery,
@@ -887,7 +888,7 @@ export class TerminalExchange {
 	 */
 	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
-		const payload = new TextEncoder().encode(text).toBase64();
+		const payload = encode64(new TextEncoder().encode(text));
 		return this.write(clipboardWrite(payload));
 	}
 
