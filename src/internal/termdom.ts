@@ -1,5 +1,4 @@
 import * as DOM from "./dom.js";
-import {installUAEngine} from "./dom.js";
 import {installInspectors} from "./inspector.js";
 import {Clipboard, ClipboardItem, createClipboard} from "./clipboard.js";
 import {
@@ -811,7 +810,7 @@ export class TermDOM {
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
 		// when a newly connected one should be upgraded.
-		this[kUAToolkit] = installUAEngine(this.document, {
+		this[kUAToolkit] = DOM.installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
 			observer: this[kObserver],
@@ -2399,7 +2398,7 @@ function caretRectFor(
  * caret of a focused control visible on every EDIT (typing, Enter,
  * caret travel) -- and only on edits: wheel-scrolling away from a
  * focused field stays allowed, so the render loop runs this only when
- * an edit queued it (see kQueueCaretReveal). The caret row comes from
+ * an edit queued it (see queueCaretReveal). The caret row comes from
  * fresh layout; single-row widgets reduce to their own row.
  */
 function scrollCaretIntoView(
