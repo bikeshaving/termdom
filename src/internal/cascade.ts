@@ -6,7 +6,7 @@
  * painter read what it resolved.
  */
 
-import type {EngineWindow} from "./termdom.js";
+import type {EngineWindow} from "./dom.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {
 	Document as DOMDocumentClass,

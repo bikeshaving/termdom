@@ -6,7 +6,7 @@
 import type {
 	UAToolkit,
 } from "./dom.js";
-import type {EngineWindow} from "./termdom.js";
+import type {EngineWindow} from "./dom.js";
 import {
 	type LayoutEngine,
 	flowWalker,

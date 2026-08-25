@@ -19,8 +19,7 @@
  * reaches into rendering.
  */
 
-import type {UAToolkit} from "./dom.js";
-import type {EngineWindow} from "./termdom.js";
+import type {EngineWindow, UAToolkit} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {type StyleManager, computedStyleOf} from "./cascade.js";
 import {decodeKey, decodeMouseReport, domCodeFor, tokenizeInput} from

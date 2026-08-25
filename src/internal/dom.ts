@@ -26303,6 +26303,174 @@ export const platform = {
 	XMLDocument,
 } as const;
 
+/**
+ * The on* attributes a window carries. addEventListener/removeEventListener
+ * come from EventTarget, so the mixins' redeclarations are dropped.
+ */
+type WindowEventHandlerAttributes = Omit<
+	globalThis.GlobalEventHandlers & globalThis.WindowEventHandlers,
+	"addEventListener" | "removeEventListener"
+>;
+
+/**
+ * The window a TermDOM document is displayed in.
+ *
+ * A terminal has one screen and no browsing context, so this is a plain
+ * object rather than a global: this file's interfaces, the scrolling and
+ * sizing a display answers, and the handful of APIs an author reaches for
+ * through `window`. The member types are the host's, which is what a caller
+ * outside this file holds them as.
+ */
+export interface EngineWindow
+	extends globalThis.EventTarget,
+	WindowEventHandlerAttributes {
+	readonly document: globalThis.Document;
+	readonly window: EngineWindow;
+	readonly self: EngineWindow;
+	readonly navigator: globalThis.Navigator;
+
+	readonly innerWidth: number;
+	readonly innerHeight: number;
+	readonly outerWidth: number;
+	readonly outerHeight: number;
+	readonly screenTop: number;
+	readonly scrollX: number;
+	readonly scrollY: number;
+	readonly pageXOffset: number;
+	readonly pageYOffset: number;
+	scroll(options?: globalThis.ScrollToOptions): void;
+	scroll(x: number, y: number): void;
+	scrollTo(options?: globalThis.ScrollToOptions): void;
+	scrollTo(x: number, y: number): void;
+	scrollBy(options?: globalThis.ScrollToOptions): void;
+	scrollBy(x: number, y: number): void;
+
+	getComputedStyle(
+		element: globalThis.Element,
+		pseudoElement?: string | null,
+	): globalThis.CSSStyleDeclaration;
+	getSelection(): globalThis.Selection | null;
+	matchMedia(query: string): globalThis.MediaQueryList;
+	requestAnimationFrame(callback: globalThis.FrameRequestCallback): number;
+	cancelAnimationFrame(handle: number): void;
+	setTimeout: typeof globalThis.setTimeout;
+	clearTimeout: typeof globalThis.clearTimeout;
+	setInterval: typeof globalThis.setInterval;
+	clearInterval: typeof globalThis.clearInterval;
+	queueMicrotask: typeof globalThis.queueMicrotask;
+	close(): void;
+
+	readonly customElements: globalThis.CustomElementRegistry;
+	readonly NodeFilter: typeof globalThis.NodeFilter;
+
+	EventTarget: typeof globalThis.EventTarget;
+	Event: typeof globalThis.Event;
+	CustomEvent: typeof globalThis.CustomEvent;
+	UIEvent: typeof globalThis.UIEvent;
+	MouseEvent: typeof globalThis.MouseEvent;
+	PointerEvent: typeof globalThis.PointerEvent;
+	WheelEvent: typeof globalThis.WheelEvent;
+	KeyboardEvent: typeof globalThis.KeyboardEvent;
+	FocusEvent: typeof globalThis.FocusEvent;
+	InputEvent: typeof globalThis.InputEvent;
+	ClipboardEvent: typeof ClipboardEvent;
+	DataTransfer: typeof DataTransfer;
+	DataTransferItem: typeof DataTransferItem;
+	DataTransferItemList: typeof DataTransferItemList;
+	FileList: typeof FileList;
+	Clipboard: typeof Clipboard;
+	ClipboardItem: typeof ClipboardItem;
+	Permissions: typeof Permissions;
+	PermissionStatus: typeof PermissionStatus;
+	CompositionEvent: typeof globalThis.CompositionEvent;
+	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
+	DOMException: typeof globalThis.DOMException;
+	Node: typeof globalThis.Node;
+	Element: typeof globalThis.Element;
+	Attr: typeof globalThis.Attr;
+	CharacterData: typeof globalThis.CharacterData;
+	Text: typeof globalThis.Text;
+	Comment: typeof globalThis.Comment;
+	CDATASection: typeof globalThis.CDATASection;
+	ProcessingInstruction: typeof globalThis.ProcessingInstruction;
+	DocumentType: typeof globalThis.DocumentType;
+	Document: typeof globalThis.Document;
+	XMLDocument: typeof globalThis.XMLDocument;
+	DocumentFragment: typeof globalThis.DocumentFragment;
+	ShadowRoot: typeof globalThis.ShadowRoot;
+	DOMImplementation: typeof globalThis.DOMImplementation;
+	DOMParser: typeof globalThis.DOMParser;
+	NodeList: typeof globalThis.NodeList;
+	HTMLCollection: typeof globalThis.HTMLCollection;
+	NamedNodeMap: typeof globalThis.NamedNodeMap;
+	DOMTokenList: typeof globalThis.DOMTokenList;
+	DOMStringMap: typeof globalThis.DOMStringMap;
+	MutationObserver: typeof globalThis.MutationObserver;
+	MutationRecord: typeof globalThis.MutationRecord;
+	NodeIterator: typeof globalThis.NodeIterator;
+	TreeWalker: typeof globalThis.TreeWalker;
+	AbstractRange: typeof globalThis.AbstractRange;
+	StaticRange: typeof globalThis.StaticRange;
+	Range: typeof globalThis.Range;
+	Selection: typeof globalThis.Selection;
+	DOMRect: typeof globalThis.DOMRect;
+	DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
+	CustomElementRegistry: typeof globalThis.CustomElementRegistry;
+	ElementInternals: typeof globalThis.ElementInternals;
+	ValidityState: typeof globalThis.ValidityState;
+	SVGElement: typeof globalThis.SVGElement;
+	MathMLElement: typeof globalThis.MathMLElement;
+	HTMLElement: typeof globalThis.HTMLElement;
+	HTMLInputElement: typeof globalThis.HTMLInputElement;
+	HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
+	HTMLSelectElement: typeof globalThis.HTMLSelectElement;
+	HTMLOptionElement: typeof globalThis.HTMLOptionElement;
+	HTMLButtonElement: typeof globalThis.HTMLButtonElement;
+	HTMLLabelElement: typeof globalThis.HTMLLabelElement;
+	HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
+	HTMLStyleElement: typeof globalThis.HTMLStyleElement;
+	HTMLLinkElement: typeof globalThis.HTMLLinkElement;
+	HTMLFormElement: typeof globalThis.HTMLFormElement;
+	HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
+	HTMLDialogElement: typeof globalThis.HTMLDialogElement;
+	HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
+	HTMLSlotElement: typeof globalThis.HTMLSlotElement;
+	CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
+	CSSStyleSheet: typeof globalThis.CSSStyleSheet;
+	ResizeObserver: typeof globalThis.ResizeObserver;
+	IntersectionObserver: typeof globalThis.IntersectionObserver;
+}
+
+/**
+ * Build the window a document is displayed in.
+ *
+ * What a window is born with is its interfaces and the timers any script
+ * expects to find; a display fills in the rest -- sizing, scrolling,
+ * animation frames, the clipboard -- as it mounts the document.
+ */
+function buildWindow(document: Document): EngineWindow {
+	const window = new Window(document) as unknown as Record<string, unknown>;
+	Object.assign(window, platform, {
+		// The platform's, which is the one the DOM and the CSSOM throw: a
+		// caller's `instanceof DOMException` has to name the same class the
+		// engine builds its errors out of.
+		DOMException: PlatformDOMException,
+		setTimeout: globalThis.setTimeout.bind(globalThis),
+		clearTimeout: globalThis.clearTimeout.bind(globalThis),
+		setInterval: globalThis.setInterval.bind(globalThis),
+		clearInterval: globalThis.clearInterval.bind(globalThis),
+		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+	});
+	window.window = window;
+	window.self = window;
+	return window as unknown as EngineWindow;
+}
+
+/** A document parsed from markup, displayed in a window of its own. */
+export function createDocumentWindow(html: string, url?: string): EngineWindow {
+	return buildWindow(parseHTMLDocument(html, url));
+}
+
 /** GAP or NEVER, per member -- the un-binned remainder of Element. */
 type ElementRemainder =
 	| "currentCSSZoom" | // NEVER: zoom is a browser's

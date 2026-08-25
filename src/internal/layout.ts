@@ -5,7 +5,7 @@
  * It reads computed styles and produces geometry. Every rect the DOM answers
  * with, and every cell the painter places, comes from what it computed.
  */
-import type {EngineWindow} from "./termdom.js";
+import type {EngineWindow} from "./dom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";

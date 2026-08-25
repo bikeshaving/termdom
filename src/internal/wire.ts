@@ -137,7 +137,7 @@ export function sgrDefaults(): string {
 
 /** The attributes an SGR run states by name, apart from the underline. */
 export type StyleAttribute =
-	| "bold" |
+	"bold" |
 	"dim" |
 	"italic" |
 	"blink" |

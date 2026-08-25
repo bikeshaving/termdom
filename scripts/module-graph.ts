@@ -86,6 +86,7 @@ for (const [name, deps] of imports) {
  */
 const DOM_DOORS = [
 	"claimUAToolkit",
+	"createDocumentWindow",
 	"installUAEngine",
 	"mount",
 	"mountOf",
