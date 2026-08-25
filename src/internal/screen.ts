@@ -27,8 +27,13 @@ import {
 	saveCursor,
 	setScrollRegion,
 	sgr,
-	sgrColor,
+	sgrDefaults,
 	sgrReset,
+	sgrStyle,
+	type StyleAttribute,
+	type StyleAttributes,
+	type StyleRun,
+	type UnderlineStyle,
 } from "./wire.js";
 import type {ColorDepth} from "./color.js";
 
@@ -1271,44 +1276,15 @@ function styleDiff(
 	const attrs = grid.attrs[index] & Attr.StyleMask;
 
 	if (prev < 0) {
-		let seq = "";
-		if (fg !== 0) {
-			seq = sgrColor(fg, true, colorDepth);
-		}
-		if (bg !== 0) {
-			const code = sgrColor(bg, false, colorDepth);
-			seq = seq === "" ? code : `${seq};${code}`;
-		}
-		if (attrs & Attr.Bold) {
-			seq += seq === "" ? "1" : ";1";
-		}
-		if (attrs & Attr.Dim) {
-			seq += seq === "" ? "2" : ";2";
-		}
-		if (attrs & Attr.Italic) {
-			seq += seq === "" ? "3" : ";3";
-		}
-		if (attrs & Attr.Underline) {
-			seq += seq === "" ? "4" : ";4";
-		}
-		// After plain 4, so terminals without styled-underline support keep
-		// the single underline.
-		if (attrs & Attr.DoubleUnderline) {
-			seq += seq === "" ? "4:2" : ";4:2";
-		}
-		if (attrs & Attr.Blink) {
-			seq += seq === "" ? "5" : ";5";
-		}
-		if (attrs & Attr.Inverse) {
-			seq += seq === "" ? "7" : ";7";
-		}
-		if (attrs & Attr.Strikethrough) {
-			seq += seq === "" ? "9" : ";9";
-		}
-		if (attrs & Attr.Overline) {
-			seq += seq === "" ? "53" : ";53";
-		}
-		return seq;
+		return sgrStyle(
+			{
+				fg: fg === 0 ? undefined : fg,
+				bg: bg === 0 ? undefined : bg,
+				attributes: attrsChanged(attrs, 0),
+				underline: {from: "none", to: underlineOf(attrs)},
+			},
+			colorDepth,
+		);
 	}
 
 	const prevFg = grid.fg[prev];
@@ -1329,7 +1305,7 @@ function styleDiff(
 	// encoding, which the glyph carries rather than the SGR.
 	const wasDefault = prevFg === 0 && prevBg === 0 && prevAttrs === 0;
 	if (fg === 0 && bg === 0 && attrs === 0) {
-		return wasDefault ? "" : "0";
+		return wasDefault ? "" : sgrDefaults();
 	}
 
 	const fgChanged =
@@ -1337,57 +1313,46 @@ function styleDiff(
 	const bgChanged =
 		bg !== prevBg || (attrs & Attr.BGGroup) !== (prevAttrs & Attr.BGGroup);
 
-	let seq = "";
-	const push = (code: string) => {
-		seq += seq === "" ? code : `;${code}`;
-	};
-
+	const run: StyleRun = {};
 	if (fgChanged) {
-		push(fg === 0 ? "39" : sgrColor(fg, true, colorDepth));
+		run.fg = fg === 0 ? null : fg;
 	}
 	if (bgChanged) {
-		push(bg === 0 ? "49" : sgrColor(bg, false, colorDepth));
+		run.bg = bg === 0 ? null : bg;
 	}
-
 	if (fgChanged || bgChanged) {
-		const diffFlag = (bit: number, on: string, off: string) => {
-			if ((attrs & bit) !== (prevAttrs & bit)) {
-				push(attrs & bit ? on : off);
-			}
-		};
-
-		diffFlag(Attr.Bold, "1", "22");
-		diffFlag(Attr.Dim, "2", "22");
-		diffFlag(Attr.Italic, "3", "23");
-		// Underline and its style diff as one attribute: 24 clears both, a
-		// bare 4 sets single (which also downgrades a previous double, per
-		// ECMA-48 and tmux's own tracking), and 4:2 upgrades to double --
-		// always after a plain 4 so unsupporting terminals degrade to single.
-		if (
-			(attrs & (Attr.Underline | Attr.DoubleUnderline)) !==
-			(prevAttrs & (Attr.Underline | Attr.DoubleUnderline))
-		) {
-			if (!(attrs & Attr.Underline)) {
-				push("24");
-			} else {
-				if (
-					!(prevAttrs & Attr.Underline) ||
-					(prevAttrs & Attr.DoubleUnderline && !(attrs & Attr.DoubleUnderline))
-				) {
-					push("4");
-				}
-				if (attrs & Attr.DoubleUnderline) {
-					push("4:2");
-				}
-			}
-		}
-		diffFlag(Attr.Blink, "5", "25");
-		diffFlag(Attr.Inverse, "7", "27");
-		diffFlag(Attr.Strikethrough, "9", "29");
-		diffFlag(Attr.Overline, "53", "55");
+		run.attributes = attrsChanged(attrs, prevAttrs);
+		run.underline = {from: underlineOf(prevAttrs), to: underlineOf(attrs)};
 	}
 
-	return seq;
+	return sgrStyle(run, colorDepth);
+}
+
+/** The underline the bits ask for. DoubleUnderline needs Underline with it. */
+function underlineOf(attrs: number): UnderlineStyle {
+	if (!(attrs & Attr.Underline)) {
+		return "none";
+	}
+	return attrs & Attr.DoubleUnderline ? "double" : "single";
+}
+
+/** The attributes whose bit differs, named and in their wanted state. */
+function attrsChanged(attrs: number, prevAttrs: number): StyleAttributes {
+	const changed: StyleAttributes = {};
+	const flag = (bit: number, name: StyleAttribute) => {
+		if ((attrs & bit) !== (prevAttrs & bit)) {
+			changed[name] = (attrs & bit) !== 0;
+		}
+	};
+
+	flag(Attr.Bold, "bold");
+	flag(Attr.Dim, "dim");
+	flag(Attr.Italic, "italic");
+	flag(Attr.Blink, "blink");
+	flag(Attr.Inverse, "inverse");
+	flag(Attr.Strikethrough, "strikethrough");
+	flag(Attr.Overline, "overline");
+	return changed;
 }
 
 function moveCursor(

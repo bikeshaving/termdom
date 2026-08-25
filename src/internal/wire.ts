@@ -130,6 +130,95 @@ export function sgrColor(
 	}
 }
 
+/** SGR 0 as a parameter, for a run that shares one escape with nothing. */
+export function sgrDefaults(): string {
+	return "0";
+}
+
+/** The attributes an SGR run states by name, apart from the underline. */
+export type StyleAttribute =
+	| "bold" |
+	"dim" |
+	"italic" |
+	"blink" |
+	"inverse" |
+	"strikethrough" |
+	"overline";
+
+/** Wanted states by name; an absent name is left as the terminal has it. */
+export type StyleAttributes = {[K in StyleAttribute]?: boolean};
+
+/** No underline, one line, or the styled double line of SGR 4:2. */
+export type UnderlineStyle = "none" | "single" | "double";
+
+/**
+ * What a run of SGR parameters says. A color is a 24-bit value, `null` for
+ * the terminal's own default, absent to leave standing. The underline is a
+ * move from one style to another, because which codes spell the move depends
+ * on where it starts.
+ */
+export interface StyleRun {
+	fg?: number | null;
+	bg?: number | null;
+	attributes?: StyleAttributes;
+	underline?: {from: UnderlineStyle; to: UnderlineStyle};
+}
+
+/**
+ * The codes taking the underline from one style to another. A plain 4 comes
+ * before 4:2 so a terminal that ignores the styled underline still draws a
+ * line, and a plain 4 on its own downgrades a double to a single (ECMA-48,
+ * and what tmux tracks).
+ */
+function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
+	if (from === to) {
+		return [];
+	}
+	if (to === "none") {
+		return ["24"];
+	}
+	if (to === "double") {
+		return from === "none" ? ["4", "4:2"] : ["4:2"];
+	}
+	return ["4"];
+}
+
+/**
+ * The SGR parameters spelling a run, in the order a terminal wants to hear
+ * them: colors, then attributes. Parameters, not a whole SGR; "" when the run
+ * says nothing, and a caller with nothing to say must not emit an escape.
+ */
+export function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
+	const codes: string[] = [];
+	if (run.fg !== undefined) {
+		codes.push(run.fg === null ? "39" : sgrColor(run.fg, true, colorDepth));
+	}
+	if (run.bg !== undefined) {
+		codes.push(run.bg === null ? "49" : sgrColor(run.bg, false, colorDepth));
+	}
+
+	const wanted = run.attributes;
+	const state = (name: StyleAttribute, on: string, off: string) => {
+		const want = wanted?.[name];
+		if (want !== undefined) {
+			codes.push(want ? on : off);
+		}
+	};
+
+	state("bold", "1", "22");
+	state("dim", "2", "22");
+	state("italic", "3", "23");
+	if (run.underline) {
+		codes.push(...underlineCodes(run.underline.from, run.underline.to));
+	}
+	state("blink", "5", "25");
+	state("inverse", "7", "27");
+	state("strikethrough", "9", "29");
+	state("overline", "53", "55");
+
+	return codes.join(";");
+}
+
 /* --------------------------------------------------------------- the modes */
 
 /** DECSET/DECRST: engage or release a private mode by number. */
