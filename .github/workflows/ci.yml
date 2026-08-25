@@ -8,6 +8,11 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The node floor in package.json engines and the newest release. The
+    # floor leg is what holds engines honest.
+    strategy:
+      matrix:
+        node: [20, 26]
     steps:
       - uses: actions/checkout@v5
 
@@ -17,7 +22,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
 
       - run: bun install --frozen-lockfile
 
@@ -27,10 +32,15 @@ jobs:
       - name: Lint
         run: bun lint
 
-      # Runs the suite on bun and node. Node exercises the pure-JS fallbacks
-      # (stringWidth, color) that bun's native paths would otherwise hide.
-      - name: Test
-        run: bun run test
+      # Node exercises the pure-JS fallbacks (stringWidth, color) that bun's
+      # native paths would otherwise hide.
+      - name: Test on Node
+        run: npx libuild test -p node
+
+      # Bun ships one version, so its half of the suite runs once.
+      - name: Test on Bun
+        if: matrix.node == 26
+        run: npx libuild test -p bun
 
   # src/generated/ has one author per file: its generator. This job reruns
   # the hermetic generators and fails on any drift -- a hand edit to a
@@ -77,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Smoke test on Node
         run: node scripts/smoke.js

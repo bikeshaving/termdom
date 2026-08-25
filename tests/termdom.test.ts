@@ -413,4 +413,3 @@ test("attach() is idempotent for its process but rejects a different one", async
 
 	dom.dispose();
 });
-
