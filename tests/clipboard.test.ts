@@ -256,6 +256,27 @@ test("a clipboard reply survives arriving in pieces, and glued to typing", async
 	dom.dispose();
 });
 
+test("a reply whose base64 will not decode reads as an empty clipboard", async () => {
+	const {proc, dom} = await mount();
+	const {document} = dom;
+	const keys: string[] = [];
+	let reading: Promise<string> | null = null;
+	document.addEventListener("keydown", (event: any) => {
+		keys.push(event.key);
+		if (event.key === "v") {
+			reading = dom.window.navigator.clipboard.readText();
+		}
+	});
+	await proc.stdin.send("v");
+	// One base64 digit carries no byte: a payload that cannot decode is
+	// answered as empty, and the input after it still arrives.
+	await proc.stdin.send("\x1b]52;c;A\x07");
+	expect(await reading).toBe("");
+	await proc.stdin.send("j");
+	expect(keys.join("")).toBe("vj");
+	dom.dispose();
+});
+
 test("readText rejects when the terminal does not answer", async () => {
 	const {proc, dom} = await mount();
 	const pending: Array<Promise<any>> = [];

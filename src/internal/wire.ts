@@ -769,10 +769,18 @@ export function decodeClipboardReply(chunk: string): ClipboardReply | null {
 	}
 	// Terminals differ on padding and may interleave junk; anything outside
 	// the base64 alphabet is dropped and an unpadded tail still decodes.
+	// A tail of one digit carries no byte and is no base64 at all, so a
+	// payload that will not decode answers as an empty clipboard: OSC 52
+	// has no channel for saying more.
 	const digits = reply[1].replace(/[^A-Za-z0-9+/]/g, "");
-	const text = new TextDecoder().decode(
-		Uint8Array.fromBase64(digits, {lastChunkHandling: "loose"}),
-	);
+	let text = "";
+	try {
+		text = new TextDecoder().decode(
+			Uint8Array.fromBase64(digits, {lastChunkHandling: "loose"}),
+		);
+	} catch (_err) {
+		text = "";
+	}
 	return {start, end: start + reply[0].length, text};
 }
 

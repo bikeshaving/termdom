@@ -1138,6 +1138,17 @@ function settleWidthProbe(
 
 /* ---------------------------------------------------- input demultiplexing */
 
+/**
+ * A throw from routing one chunk, raised again out of band. Nothing here
+ * reports an error to the document, and swallowing one would hide it, so it
+ * leaves as an uncaught exception while the read goes on.
+ */
+function reportInputFailure(err: unknown): void {
+	queueMicrotask(() => {
+		throw err;
+	});
+}
+
 async function readLoop(
 	session: TerminalExchange,
 	reader: ReadableStreamDefaultReader<string>,
@@ -1159,7 +1170,14 @@ async function readLoop(
 				chunk = chunk.slice(0, -held);
 			}
 			if (chunk) {
-				route(session, chunk);
+				try {
+					route(session, chunk);
+				} catch (err) {
+					// Only the read can tell the conversation is over, so a
+					// throw from routing -- a decode, a listener -- costs its
+					// chunk and no more.
+					reportInputFailure(err);
+				}
 			}
 		}
 	} catch (_err) {
