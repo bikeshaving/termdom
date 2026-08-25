@@ -19,12 +19,7 @@
  * reaches into rendering.
  */
 
-import type {
-	Event,
-	InputEvent,
-	KeyboardEvent,
-	UAToolkit,
-} from "./dom.js";
+import type {UAToolkit} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import type {LayoutEngine} from "./layout.js";
 import {type StyleManager, computedStyleOf} from "./cascade.js";
@@ -271,12 +266,14 @@ const BARE_MODIFIER_KEYS = new Set([
  * A resize, a focus move, pointer motion and a wheel tick are the user
  * agent's events too, and none of them is a request.
  */
-export function isActivationTriggering(event: Event): boolean {
+export function isActivationTriggering(event: {
+	type: string;
+	key?: string;
+	inputType?: string;
+}): boolean {
 	switch (event.type) {
-		case "keydown": {
-			const key = (event as KeyboardEvent).key;
-			return key !== "Escape" && !BARE_MODIFIER_KEYS.has(key);
-		}
+		case "keydown":
+			return event.key !== "Escape" && !BARE_MODIFIER_KEYS.has(event.key!);
 		case "mousedown":
 		case "mouseup":
 		case "click":
@@ -284,7 +281,7 @@ export function isActivationTriggering(event: Event): boolean {
 		case "paste":
 			return true;
 		case "beforeinput":
-			return (event as InputEvent).inputType === "insertFromPaste";
+			return event.inputType === "insertFromPaste";
 		default:
 			return false;
 	}
@@ -341,7 +338,10 @@ export interface EventView {
 	 * Dispatch as the user agent: trusted, and counted as a user activation
 	 * where the event is one of the gestures that grants it.
 	 */
-	fireAsUserAgent(target: unknown, event: unknown): boolean;
+	fireAsUserAgent(
+		target: object,
+		event: {type: string; key?: string; inputType?: string},
+	): boolean;
 	/**
 	 * Ask for a frame. Reactive pseudo-state, the document selection and the
 	 * caret all move without a mutation record, so interpretation says when

@@ -73,7 +73,10 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
  * An activation-triggering event also holds user activation open for as long
  * as its dispatch runs, which is what the clipboard asks about.
  */
-function fireAsUserAgent(target: unknown, event: unknown): boolean {
+function fireAsUserAgent(
+	target: object,
+	event: {type: string; key?: string; inputType?: string},
+): boolean {
 	const engine = engineOfTarget(target);
 	// A target no engine mounts is headless by definition, so the claim
 	// door is open for it; a mounted target dispatches through its engine's
@@ -82,16 +85,14 @@ function fireAsUserAgent(target: unknown, event: unknown): boolean {
 	const toolkit =
 		engine !== undefined ?
 			engine[kUAToolkit] :
-				DOM.claimUAToolkit(
-					shaped.ownerDocument ?? shaped.document ?? (target as object),
-				);
-	if (engine === undefined || !isActivationTriggering(event as DOM.Event)) {
-		return toolkit.dispatchAsUserAgent(target as object, event as object);
+				DOM.claimUAToolkit(shaped.ownerDocument ?? shaped.document ?? target);
+	if (engine === undefined || !isActivationTriggering(event)) {
+		return toolkit.dispatchAsUserAgent(target, event);
 	}
 	engine[kActivationDepth]++;
 	engine[kEverActivated] = true;
 	try {
-		return toolkit.dispatchAsUserAgent(target as object, event as object);
+		return toolkit.dispatchAsUserAgent(target, event);
 	} finally {
 		engine[kActivationDepth]--;
 	}
