@@ -1,6 +1,6 @@
 import * as DOM from "./dom.js";
+import "./inspector.js";
 import {createDocumentWindow, type EngineWindow} from "./dom.js";
-import {installInspectors} from "./inspector.js";
 import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
@@ -32,10 +32,6 @@ import {
 	eraseToLineEnd,
 	index,
 } from "./wire.js";
-
-// How long to wait for a resize drag to settle before redrawing. Long enough to
-// coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
-const RESIZE_DEBOUNCE_MS = 40;
 
 /** The mount this engine installs, which is how a node finds it back. */
 interface EngineMount extends DOM.Mount {
@@ -101,16 +97,10 @@ function isUserActive(termdom: TermDOM): boolean {
 export interface TermDOMOptions {
 	/**
 	 * The terminal this instance renders to. Defaults to a wrapper around the
-	 * global process, so `attach()` takes the real terminal; inject an xterm.js
-	 * or SSH transport to render elsewhere. Everything about the terminal --
-	 * size, color depth, input, resizes, lifecycle -- comes from here.
+	 * global process.
 	 */
 	transport?: TerminalTransport;
-	/**
-	 * The initial document's markup. Defaults to a blank page. A harness
-	 * that mounts a prewritten document -- the WPT runner mounting a test
-	 * file -- passes it here so the engine's own parser builds it.
-	 */
+	/** The initial document's markup. */
 	html?: string;
 	/** The initial document's URL. */
 	url?: string;
@@ -233,10 +223,6 @@ function getFullscreenWindow(
 	return document ? document.defaultView : undefined;
 }
 
-installInspectors();
-
-export {createDocumentWindow, type EngineWindow};
-
 /**
  * Where an instance stands with the terminal, in order: constructed and
  * writing nothing, attach() establishing the session, the session live, torn
@@ -266,6 +252,7 @@ const kPainter = Symbol("painter");
 const kIsRendering = Symbol("isRendering");
 const kFrameCallbacks = Symbol("frameCallbacks");
 const kNextRafId = Symbol("nextRafId");
+
 const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
@@ -485,12 +472,14 @@ export class TermDOM {
 		this[kAnchorScrollTop] = 0;
 		this[kFrameScroll] = 0;
 		this[kFrameBand] = null;
+
 		this[kFrameDirty] = true;
 		this[kIsRendering] = false;
 		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
 		this[kNextRafId] = 1;
 		this[kMediaQueryUpdaters] = new Set<() => void>();
 		this[kSealed] = false;
+
 		this[kRenderQueued] = false;
 		this[kScreenSwitching] = false;
 		this[kFullscreenStack] = [];
@@ -502,6 +491,7 @@ export class TermDOM {
 		this[kActivationDepth] = 0;
 		this[kEverActivated] = false;
 		this[kScrolledElements] = new Set();
+
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
 		this[kPendingCaretReveal] = null;
@@ -546,6 +536,7 @@ export class TermDOM {
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			options.url,
 		);
+
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
@@ -2474,6 +2465,8 @@ function clampScrolledOffsets(
 		void render(termdom);
 	}
 }
+
+const RESIZE_DEBOUNCE_MS = 40;
 
 /**
  * Coalesce a burst of resize events into a single redraw.

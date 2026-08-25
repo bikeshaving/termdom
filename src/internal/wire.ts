@@ -1,15 +1,3 @@
-/**
- * The terminal protocol, both directions: how an utterance is spelled in bytes
- * and what the bytes coming back say. Callers say WHAT they want said -- move
- * the cursor, erase below, engage a mode, set the title -- and never assemble
- * an escape themselves; readers get a keystroke or a report and never a regex.
- * A spelling written anywhere else is a dialect.
- *
- * A leaf: it knows the grammar and nothing about the engine. Which element a
- * decoded stroke belongs to, and which query a report answers, are its
- * callers' business.
- */
-
 import {type ColorDepth, rgbTo256, rgbToBasic8} from "./color.js";
 
 /* -------------------------------------------------------------- the cursor */

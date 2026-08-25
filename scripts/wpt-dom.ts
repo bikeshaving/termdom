@@ -25,7 +25,7 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Document} from "../src/internal/dom.ts";
 import type * as DOM from "../src/internal/dom.ts";
-import type * as TERMDOM from "../src/internal/termdom.ts";
+import type * as TermDOM from "../src/internal/termdom.ts";
 import type {TerminalTransport} from "../src/internal/exchange.ts";
 
 /**
@@ -41,7 +41,7 @@ import type {TerminalTransport} from "../src/internal/exchange.ts";
  * copy of the graph.
  */
 type DOMModule = typeof DOM;
-type EngineModule = typeof TERMDOM;
+type EngineModule = typeof TermDOM;
 
 interface Realm {
 	dom: DOMModule;
@@ -1028,7 +1028,7 @@ interface HarnessGlobals {
 /** Install this realm's DOM as the harness realm's DOM, and hand back the undo. */
 function installGlobals(
 	dom: DOMModule,
-	engineWindow: TERMDOM.EngineWindow,
+	engineWindow: DOM.EngineWindow,
 	document: Document,
 	url: string,
 ): HarnessGlobals {

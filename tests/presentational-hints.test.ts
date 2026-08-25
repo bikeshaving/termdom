@@ -14,7 +14,7 @@
  * handled or somebody looked at it and wrote down why not.
  */
 import {test, expect} from "@b9g/libuild/test";
-import {createDocumentWindow} from "../src/internal/termdom.js";
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {StyleManager} from "../src/internal/cascade.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.js";

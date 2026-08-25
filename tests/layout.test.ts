@@ -5,14 +5,13 @@ import {
 import {StyleManager} from "../src/internal/cascade.js";
 import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {claimUAToolkit} from "../src/internal/dom.js";
+import {claimUAToolkit, createDocumentWindow} from "../src/internal/dom.js";
 
 function ensurePseudoElement<T>(host: object, name: string): T {
 	const document = (host as {ownerDocument: object}).ownerDocument;
 	return claimUAToolkit(document).ensurePseudoElement<T>(host, name);
 }
 import {MockProcess, nextFrame} from "./test-utils.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
 
 /**
  * A target's laid-out lines with their text, read through the public

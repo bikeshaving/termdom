@@ -1,7 +1,11 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
-import {claimUAToolkit, type UAToolkit} from "../src/internal/dom.js";
+import {
+	claimUAToolkit,
+	createDocumentWindow,
+	type UAToolkit,
+} from "../src/internal/dom.js";
 
 // One claim per bare document: the door is open because nothing here ever
 // installs an engine.
@@ -30,7 +34,6 @@ function pseudoNameOf(node: object): string | null {
 	return ua(node).pseudoNameOf(node);
 }
 import {flowWalker} from "../src/internal/layout.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
 
 /**
  * A document of this DOM, from markup, displayed in a window of its own.

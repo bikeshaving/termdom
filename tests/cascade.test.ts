@@ -3,7 +3,7 @@ import {StyleManager} from "../src/internal/cascade.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {CSS_SHORTHANDS} from "../src/generated/cssproperties.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
@@ -311,8 +311,8 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 			<html>
 				<head>
 					<style>
-						div { 
-							color: red; 
+						div {
+							color: red;
 							margin: 20px;
 							font-size: 14px;
 						}
@@ -472,7 +472,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 			<html>
 				<head>
 					<style>
-						div { 
+						div {
 							margin: 10px 20px;
 							padding: 5px 15px 25px;
 						}
@@ -512,7 +512,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 			<html>
 				<head>
 					<style>
-						div { 
+						div {
 							border: 2px solid red;
 							background: #fff url(bg.png) no-repeat center;
 						}

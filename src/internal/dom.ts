@@ -1,11 +1,3 @@
-/**
- * The DOM: the node tree, event dispatch, and the observers over them.
- *
- * Everything above this file -- the cascade, layout, the painter -- reads a
- * document through these interfaces and nothing else. The spec's per-node
- * steps exist here as internal hooks, which is where invalidation attaches.
- */
-
 import {parseFragment, parse as parse5Parse} from "parse5";
 import NWSAPI from "nwsapi";
 import {

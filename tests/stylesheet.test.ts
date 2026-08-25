@@ -1,7 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, createDocumentWindow} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {claimUAToolkit} from "../src/internal/dom.js";
+import {claimUAToolkit, createDocumentWindow} from "../src/internal/dom.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -12,7 +12,7 @@ test("CSS specificity calculation", async () => {
 	const style = document.createElement("style");
 	style.textContent = `
     div { color: red; }                    /* 000-000-001 */
-    .class { color: green; }               /* 000-001-000 */  
+    .class { color: green; }               /* 000-001-000 */
     .class.other { color: blue; }          /* 000-002-000 */
     #id { color: purple; }                 /* 001-000-000 */
     #id.class { color: orange; }           /* 001-001-000 */
@@ -156,7 +156,7 @@ test("CSS cascade resolution", async () => {
 	const style = document.createElement("style");
 	style.textContent = `
     div { color: red; }
-    .high-specificity { color: green; }  
+    .high-specificity { color: green; }
     #very-high { color: blue; }
   `;
 	document.head.appendChild(style);
@@ -186,16 +186,16 @@ test("Pseudo-element CSS support", async () => {
 
 	const style = document.createElement("style");
 	style.textContent = `
-    .test::before { 
-      content: "Before: "; 
-      color: blue; 
+    .test::before {
+      content: "Before: ";
+      color: blue;
     }
-    .test::after { 
-      content: " :After"; 
-      color: green; 
+    .test::after {
+      content: " :After";
+      color: green;
     }
-    li::marker { 
-      color: purple; 
+    li::marker {
+      color: purple;
     }
   `;
 	document.head.appendChild(style);

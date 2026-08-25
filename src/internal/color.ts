@@ -6,6 +6,7 @@
  * with no dependencies, consumed by the cascade (styles) and termdom.
  */
 
+// TODO: Can this be generated???
 // Named CSS colors, 24-bit RGB (0xRRGGBB), matching Bun.color(name, "number").
 // Generated from Bun.color so the two agree exactly.
 const NAMED_COLORS: Record<string, number> = {

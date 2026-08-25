@@ -1,7 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {inspect} from "node:util";
-import type {Element} from "../src/internal/dom.js";
-import {createDocumentWindow} from "../src/internal/termdom.js";
+import {type Element, createDocumentWindow} from "../src/internal/dom.js";
+import "../src/internal/inspector.js";
 
 function asElement(value: unknown): Element {
 	return value as Element;
@@ -16,7 +16,6 @@ function inspected(target: unknown, maxDepth = 2): string {
 	return inspect(target, {colors: false, depth: maxDepth});
 }
 
-/** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string): {
 	window: ReturnType<typeof createDocumentWindow>;
 } {

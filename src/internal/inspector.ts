@@ -13,6 +13,7 @@ import {
 	Text,
 	type Node,
 } from "./dom.js";
+
 const colors = {
 	attr: "\x1b[36m", // Cyan for attributes
 	bold: "\x1b[1m",
@@ -24,68 +25,8 @@ const colors = {
 	value: "\x1b[32m", // Green for values
 };
 
-const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
-
 interface NodeInspectOptions {
 	colors?: boolean;
-}
-
-/**
- * Put the pretty-printers on the DOM prototypes. Installed from the engine
- * at load, not imported by the DOM: debug formatting is the most peripheral
- * concern in the codebase, and the core must not depend on it -- a build
- * that never inspects can drop this module whole.
- */
-export function installInspectors(): void {
-	const hook = (
-		prototype: object,
-		render: (
-			target: never,
-			depth: number,
-			options: NodeInspectOptions,
-		) => string,
-	): void => {
-		Object.defineProperty(prototype, kNodeInspect, {
-			value(this: never, depth: number, options: NodeInspectOptions) {
-				return render(this, depth, options);
-			},
-			writable: true,
-			configurable: true,
-		});
-	};
-	hook(Element.prototype, (element: Element, depth, options) =>
-		inspectElement(element, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		}),
-	);
-	hook(Text.prototype, (text: Text, _depth, options) =>
-		inspectText(text, {colorize: options.colors !== false}),
-	);
-	hook(Comment.prototype, (comment: Comment, _depth, options) =>
-		inspectComment(comment, {colorize: options.colors !== false}),
-	);
-	hook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
-		inspectFragment(fragment, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		}),
-	);
-	hook(Document.prototype, (document: Document, depth, options) =>
-		inspectDocument(document, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		}),
-	);
-	hook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
-		inspectDOMRect(rect, {colorize: options.colors !== false}),
-	);
-	hook(NodeList.prototype, (list: NodeList, depth, options) =>
-		inspectNodeList(list, {
-			maxDepth: depth,
-			colorize: options.colors !== false,
-		}),
-	);
 }
 
 interface InspectorOptions {
@@ -93,9 +34,6 @@ interface InspectorOptions {
 	colorize?: boolean;
 }
 
-/**
- * Inspect a DOM element and return a string representation
- */
 function inspectElement(
 	element: Element,
 	options: InspectorOptions = {},
@@ -103,9 +41,6 @@ function inspectElement(
 	return formatElement(element, options);
 }
 
-/**
- * Inspect a DOM document
- */
 function inspectDocument(
 	doc: Document,
 	options: InspectorOptions = {},
@@ -138,9 +73,6 @@ function inspectDocument(
 	return output;
 }
 
-/**
- * Inspect any DOM node
- */
 function inspectNode(
 	node: Node,
 	options: InspectorOptions = {},
@@ -161,9 +93,6 @@ function inspectNode(
 	}
 }
 
-/**
- * Format an element as HTML-like string
- */
 function formatElement(
 	element: Element,
 	options: InspectorOptions & {currentDepth?: number} = {},
@@ -230,9 +159,6 @@ function formatElement(
 	return output;
 }
 
-/**
- * Format element attributes
- */
 function formatAttributes(
 	element: Element,
 	options: {colorize?: boolean} = {},
@@ -293,9 +219,6 @@ function formatAttributes(
 	return attrs.join(" ");
 }
 
-/**
- * Format children nodes
- */
 function formatChildren(
 	element: Element,
 	options: InspectorOptions & {currentDepth?: number},
@@ -345,9 +268,6 @@ function formatChildren(
 	return parts.join("") + "\n" + "  ".repeat((options.currentDepth || 1) - 1);
 }
 
-/**
- * Inspect a text node
- */
 function inspectText(
 	text: Text,
 	options: InspectorOptions = {},
@@ -378,9 +298,6 @@ function inspectText(
 	return `${c.text}${content.trim()}${c.reset}`;
 }
 
-/**
- * Inspect a comment node
- */
 function inspectComment(
 	comment: Comment,
 	options: InspectorOptions = {},
@@ -403,9 +320,6 @@ function inspectComment(
 	return `${c.comment}<!--${content}-->${c.reset}`;
 }
 
-/**
- * Inspect a document fragment
- */
 function inspectFragment(
 	fragment: DocumentFragment,
 	options: InspectorOptions = {},
@@ -436,9 +350,6 @@ function inspectFragment(
 	return output;
 }
 
-/**
- * Inspect a DOMRect - much more concise than default
- */
 function inspectDOMRect(
 	rect: any,
 	options: InspectorOptions = {},
@@ -460,9 +371,6 @@ function inspectDOMRect(
 	return `${c.comment}DOMRect${c.reset} { ${c.attr}x${c.reset}: ${c.value}${rect.x}${c.reset}, ${c.attr}y${c.reset}: ${c.value}${rect.y}${c.reset}, ${c.attr}width${c.reset}: ${c.value}${rect.width}${c.reset}, ${c.attr}height${c.reset}: ${c.value}${rect.height}${c.reset} }`;
 }
 
-/**
- * Inspect a NodeList/HTMLCollection - more concise than default
- */
 function inspectNodeList(
 	nodeList: any,
 	options: InspectorOptions = {},
@@ -518,3 +426,61 @@ function inspectNodeList(
 	result += "]";
 	return result;
 }
+
+const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
+function hook(
+	prototype: object,
+	render: (
+		target: never,
+		depth: number,
+		options: NodeInspectOptions,
+	) => string,
+): void {
+	Object.defineProperty(prototype, kNodeInspect, {
+		value(this: never, depth: number, options: NodeInspectOptions) {
+			return render(this, depth, options);
+		},
+		writable: true,
+		configurable: true,
+	});
+}
+
+hook(Element.prototype, (element: Element, depth, options) =>
+	inspectElement(element, {
+		maxDepth: depth,
+		colorize: options.colors !== false,
+	}),
+);
+
+hook(Text.prototype, (text: Text, _depth, options) =>
+	inspectText(text, {colorize: options.colors !== false}),
+);
+
+hook(Comment.prototype, (comment: Comment, _depth, options) =>
+	inspectComment(comment, {colorize: options.colors !== false}),
+);
+
+hook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
+	inspectFragment(fragment, {
+		maxDepth: depth,
+		colorize: options.colors !== false,
+	}),
+);
+
+hook(Document.prototype, (document: Document, depth, options) =>
+	inspectDocument(document, {
+		maxDepth: depth,
+		colorize: options.colors !== false,
+	}),
+);
+
+hook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
+	inspectDOMRect(rect, {colorize: options.colors !== false}),
+);
+
+hook(NodeList.prototype, (list: NodeList, depth, options) =>
+	inspectNodeList(list, {
+		maxDepth: depth,
+		colorize: options.colors !== false,
+	}),
+);
