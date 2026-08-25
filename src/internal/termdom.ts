@@ -2225,6 +2225,15 @@ function drainFrameCallbacks(termdom: TermDOM): void {
 	}
 }
 
+/**
+ * The guards a frame passes before it may paint, and the fork between the
+ * two renderers.
+ *
+ * Awaiting the interactive renderer through this call is load-bearing: the
+ * probe-echo scrub attach queues must reach the terminal before the first
+ * frame paints, and folding the two together writes the frame a turn
+ * earlier -- soon enough for the erase to land on a row already painted.
+ */
 async function renderOnce(
 	termdom: TermDOM,
 ): Promise<void> {
