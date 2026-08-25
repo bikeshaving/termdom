@@ -752,7 +752,7 @@ export class TerminalExchange {
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
 		if (this[kGraphemeClustersNegotiated]) {
-			this[kEngagedModes].add("clusterWidths");
+			this.markModeEngaged("clusterWidths");
 		}
 	}
 
