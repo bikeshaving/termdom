@@ -498,6 +498,7 @@ const kScrollTop = Symbol("scrollTop");
 const kScreenTop = Symbol("screenTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 const kFrameScroll = Symbol("frameScroll");
+const kFrameBand = Symbol("frameBand");
 const kFrameDirty = Symbol("frameDirty");
 const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
@@ -647,12 +648,17 @@ export class TermDOM {
 
 	/**
 	 * The frame journal: how far the camera moved since the last painted
-	 * frame, and whether anything else did. Two fields are the whole frame
-	 * decision -- a frame with neither paints nothing a diff would keep, so
-	 * it is skipped; a frame with either repaints the region, hands the
-	 * screen the delta to shift by, and resets both.
+	 * frame, which box scrolled under it, and whether anything else did. A
+	 * frame with none of the three paints nothing a diff would keep, so it is
+	 * skipped; a frame with any of them repaints the region, hands the screen
+	 * the rows to shift and the band to shift them in, and resets the lot.
+	 *
+	 * One box's scroll is a band the terminal can move for us. A second box
+	 * scrolling before the frame lands has no single band to name, so the
+	 * record degrades to the dirty bit and the frame repaints.
 	 */
 	declare [kFrameScroll]: number;
+	declare [kFrameBand]: {element: Element; delta: number} | null;
 	declare [kFrameDirty]: boolean;
 
 	/** How far into the document the painted region looks (window.scrollY). */
@@ -707,6 +713,7 @@ export class TermDOM {
 		this[kScreenTop] = 0;
 		this[kAnchorScrollTop] = 0;
 		this[kFrameScroll] = 0;
+		this[kFrameBand] = null;
 		this[kFrameDirty] = true;
 		this[kIsRendering] = false;
 		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
@@ -1379,7 +1386,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
 				}
 			}
-			if ((elementScrollOffsets.get(element)?.[axis] ?? 0) === next) {
+			const previous = elementScrollOffsets.get(element)?.[axis] ?? 0;
+			if (previous === next) {
 				return;
 			}
 			writeElementScroll(element, axis, next);
@@ -1388,8 +1396,14 @@ function createMount(termDOM: TermDOM): EngineMount {
 			}
 			// A scroll offset is frame state no MutationObserver sees, so
 			// the frame journal is told here: without it the "nothing moved"
-			// gate would skip the paint.
-			termDOM[kFrameDirty] = true;
+			// gate would skip the paint. A vertical move is a band the
+			// terminal may be able to shift for us; a horizontal one is not,
+			// and dirties the frame like anything else.
+			if (axis === "top") {
+				recordElementScroll(termDOM, element, next - previous);
+			} else {
+				termDOM[kFrameDirty] = true;
+			}
 			void render(termDOM);
 		},
 		elementFromPoint(_target, x, y) {
@@ -2540,6 +2554,97 @@ function writeElementScroll(
 }
 
 /**
+ * Journal a box's vertical scroll: the rows it moved, against the box that
+ * moved them. Repeats on one box add up, since the frame shifts once by
+ * whatever the burst came to. A second box arriving means no single band
+ * describes the frame, so the record gives way to the dirty bit and the
+ * frame repaints its region as it did before.
+ */
+function recordElementScroll(
+	termdom: TermDOM,
+	element: Element,
+	delta: number,
+): void {
+	const band = termdom[kFrameBand];
+	if (band === null) {
+		termdom[kFrameBand] = {element, delta};
+	} else if (band.element === element) {
+		band.delta += delta;
+	} else {
+		termdom[kFrameBand] = null;
+		termdom[kFrameDirty] = true;
+	}
+}
+
+/**
+ * Resolve the journalled element scroll against this frame's layout: the
+ * buffer rows its scroll port covers, or null when the terminal cannot be
+ * asked to shift them.
+ *
+ * A band has to be the FULL WIDTH of the region, because DECSTBM margins are
+ * horizontal: the terminal shifts whole rows or nothing. Everything else the
+ * gate asks is about naming rows at all -- the box is still in the document,
+ * layout gives it a box, and the rows it covers are inside the region. A
+ * `delta` at least as tall as the band would scroll the band's whole content
+ * out, which the plain repaint does for the same bytes.
+ *
+ * Content overlapping the band is not asked about. The terminal drags it
+ * along, the shifted model says so, and the diff repairs it -- the same
+ * backstop that repairs the fixed rows of a camera move.
+ */
+function resolveScrollBand(
+	termdom: TermDOM,
+	regionHeight: number,
+): {delta: number; top: number; end: number} | null {
+	const record = termdom[kFrameBand];
+	if (
+		record === null ||
+		record.delta === 0 ||
+		// The camera owns the frame it moved in: one band per frame, and the
+		// region it shifts already contains this box.
+		termdom[kFrameScroll] !== 0 ||
+		// Anything the layout derives a frame from has moved, so the rows the
+		// terminal would shift are not the rows the last frame painted.
+		termdom[kLayoutEngine].frameDirty ||
+		!record.element.isConnected
+	) {
+		return null;
+	}
+	const engine = termdom[kLayoutEngine];
+	const rect = engine.getRect(record.element);
+	if (rect === null) {
+		return null;
+	}
+
+	// The scroll port is the PADDING box: what the port clips its content to,
+	// and so the rows whose content rides the scroll.
+	const box = getBoxModel(record.element);
+	const left = rect.left + (box.borderLeftWidth || 0);
+	const right = rect.left + rect.width - (box.borderRightWidth || 0);
+	if (left > 0 || right < termdom[kWidth]) {
+		return null;
+	}
+
+	// Layout rows are document rows -- the geometry funnel has already taken
+	// off what a scrolled ancestor lifts the box by -- and the buffer's are
+	// the camera's. A box in fixed space is laid out in viewport rows
+	// instead, and the paint cancels the camera for it.
+	const lift = engine.isInFixedSpace(record.element) ? 0 : termdom[kScrollTop];
+	const top = Math.max(
+		0,
+		Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
+	);
+	const end = Math.min(
+		regionHeight,
+		Math.round(rect.top + rect.height - (box.borderBottomWidth || 0)) - lift,
+	);
+	if (end - top <= Math.abs(record.delta)) {
+		return null;
+	}
+	return {delta: record.delta, top, end};
+}
+
+/**
  * Pull every held scroll offset back into its box's scrollable range
  * against fresh layout: a mutation that shrinks a box's content must not
  * leave the box scrolled past what remains. Offsets are written to the
@@ -2579,7 +2684,11 @@ function clampScrolledOffsets(
 		changed = true;
 	}
 	if (changed) {
-		// See scrollAxisTo: offsets are frame state no observer sees.
+		// See scrollOffsetTo: offsets are frame state no observer sees. A
+		// clamp is not a band -- it moves offsets the journal already priced,
+		// and can move several boxes at once -- so it takes the dirty bit and
+		// drops whatever band was standing.
+		termdom[kFrameBand] = null;
 		termdom[kFrameDirty] = true;
 		void render(termdom);
 	}
@@ -3045,6 +3154,7 @@ async function renderInteractive(
 		!termdom[kFrameDirty] &&
 		!termdom[kLayoutEngine].frameDirty &&
 		termdom[kFrameScroll] === 0 &&
+		termdom[kFrameBand] === null &&
 		!termdom[kScreen].needsRepaint
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
@@ -3085,17 +3195,22 @@ async function renderInteractive(
 		scrollDocumentTo(termdom, Math.min(termdom[kScrollTop], maxScroll));
 	}
 
-	// The alternate screen never scroll-shifts: fullscreen owns row zero and
-	// paints the whole of it.
+	// The camera has no alternate screen to move: fullscreen owns row zero
+	// and paints the whole of it. A scroll box inside it does move, though,
+	// and DECSTBM margins hold there like anywhere else -- a full-width pane
+	// scrolls under fixed chrome the terminal never touches.
+	const band = resolveScrollBand(termdom, regionHeight);
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kScrollTop],
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		delta: fullscreen ? 0 : termdom[kFrameScroll],
+		delta: band ? band.delta : fullscreen ? 0 : termdom[kFrameScroll],
+		band: band ?? undefined,
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
 	termdom[kFrameScroll] = 0;
+	termdom[kFrameBand] = null;
 	termdom[kFrameDirty] = false;
 	termdom[kLayoutEngine].frameDirty = false;
 
