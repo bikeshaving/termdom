@@ -118,12 +118,10 @@ export function recordClusterAdvance(
 	cluster: string,
 	advance: number,
 ): boolean {
-	if (clusterAdvances.has(cluster)) {
+	if (clusterAdvances.has(cluster) || advance === graphemeWidth(cluster)) {
 		return false;
 	}
-	if (advance === graphemeWidth(cluster)) {
-		return false;
-	}
+
 	clusterAdvances.set(cluster, advance);
 	// Widths answered before this one were answered by the tables alone.
 	widthCache.clear();

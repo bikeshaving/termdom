@@ -457,3 +457,37 @@ test("a pseudo-element's used box answers the read that asked for the layout", a
 	expect(cs.getPropertyValue("width")).toBe("40px");
 	expect(cs.getPropertyValue("height")).toBe("1px");
 });
+
+test("a slot's ::before and ::after wrap the content assigned to it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	// A slot's own pseudo-elements sit around whatever it renders, which is
+	// its assigned nodes when it has any and its fallback content otherwise.
+	shadow.innerHTML =
+		"<style>slot::before { content: \"PRE\" } " +
+		"slot::after { content: \"END\" }</style><slot>FB</slot>";
+	host.appendChild(document.createTextNode("ASSIGNED"));
+	document.body.appendChild(host);
+	await nextFrame(termdom);
+
+	expect(terminal.getPlainText()).toContain("PREASSIGNEDEND");
+});
+
+test("a slot's ::after follows its fallback content when nothing is assigned", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 24});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML =
+		"<style>slot::after { content: \"END\" }</style><slot>FB</slot>";
+	document.body.appendChild(host);
+	await nextFrame(termdom);
+
+	expect(terminal.getPlainText()).toContain("FBEND");
+});

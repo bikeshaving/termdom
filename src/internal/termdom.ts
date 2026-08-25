@@ -1,6 +1,11 @@
 import * as DOM from "./dom.js";
 import "./inspector.js";
-import {createDocumentWindow, type EngineWindow} from "./dom.js";
+import {
+	createDocumentWindow,
+	disconnectObservers,
+	flushObservers,
+	type EngineWindow,
+} from "./dom.js";
 import {LayoutEngine} from "./layout.js";
 import {Painter} from "./painter.js";
 import {
@@ -13,11 +18,6 @@ import {transportFromProcess} from "./pty.js";
 import {Screen} from "./screen.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
-import {
-	ObserverManager,
-	ResizeObserver as TermResizeObserver,
-	IntersectionObserver as TermIntersectionObserver,
-} from "./observers.js";
 import {
 	EventHandler,
 	focusAutofocusedNodes,
@@ -245,7 +245,6 @@ const kScreen = Symbol("screen");
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
 const kFullscreenStack = Symbol("fullscreenStack");
-const kObserverManager = Symbol("observerManager");
 const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
@@ -292,10 +291,8 @@ const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
 const kInteractive = Symbol("interactive");
-const kWrite = Symbol("write");
 const kStaticSibling = Symbol("staticSibling");
 
-const kInstallObservers = Symbol("installObservers");
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
 const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 
@@ -323,7 +320,6 @@ export class TermDOM {
 	declare [kObserver]: MutationObserver;
 	// The elements that asked for the alternate screen, innermost last.
 	declare [kFullscreenStack]: Element[];
-	declare [kObserverManager]: ObserverManager;
 	declare [kStyleManager]: StyleManager;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling.
@@ -555,13 +551,23 @@ export class TermDOM {
 			processPendingMutationsAndRender(this),
 		);
 		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
-		this[kObserverManager] = new ObserverManager(this[kLayoutEngine]);
-
-		this[kInstallObservers]();
 
 		// Initialize scrolling management after window setup
 
-		this[kObserver] = setupMutationObserver(this);
+		const observer = new this.window.MutationObserver((mutations) => {
+			handlePendingMutations(this, mutations);
+			render(this);
+		});
+
+		observer.observe(this.document.documentElement, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
+
+		this[kObserver] = observer;
 
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
@@ -580,6 +586,7 @@ export class TermDOM {
 				void render(this);
 			},
 		});
+
 		this[kEventHandler] = buildEventHandler(this);
 		this[kPainter] = new Painter({
 			window: this.window,
@@ -728,37 +735,6 @@ export class TermDOM {
 		return this[kAttachReady];
 	}
 
-	/** Install the observer constructors on the window, bound to this instance. */
-	[kInstallObservers](): void {
-		const manager = this[kObserverManager];
-		const window = this.window as unknown as {
-			ResizeObserver: unknown;
-			IntersectionObserver: unknown;
-		};
-
-		window.ResizeObserver = class extends TermResizeObserver {
-			constructor(
-				callback: ConstructorParameters<typeof TermResizeObserver>[0],
-			) {
-				super(callback, manager);
-			}
-		};
-
-		window.IntersectionObserver = class extends TermIntersectionObserver {
-			constructor(
-				callback: ConstructorParameters<typeof TermIntersectionObserver>[0],
-				init?: ConstructorParameters<typeof TermIntersectionObserver>[2],
-			) {
-				super(callback, manager, init);
-			}
-		};
-	}
-
-	/** Write to the transport and wait for it to be flushed. */
-	[kWrite](output: string): Promise<void> {
-		return this[kExchange].write(output);
-	}
-
 	// The scratch engine behind renderANSI/print: created on first use,
 	// sized from the transport, recreated if the width changes, reused
 	// across calls.
@@ -866,7 +842,7 @@ export class TermDOM {
 		this[kObserver].disconnect();
 		this[kStyleManager].dispose();
 		this[kLayoutEngine].dispose();
-		this[kObserverManager].dispose();
+		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
 }
@@ -1643,25 +1619,6 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 			return;
 		}
 	}
-}
-
-function setupMutationObserver(
-	termdom: TermDOM,
-): MutationObserver {
-	const observer = new termdom.window.MutationObserver((mutations) => {
-		handlePendingMutations(termdom, mutations);
-		render(termdom);
-	});
-
-	observer.observe(termdom.document.documentElement, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
-
-	return observer;
 }
 
 /**
@@ -2612,7 +2569,12 @@ function afterRender(
 		termdom[kWidth],
 		termdom[kHeight],
 	);
-	termdom[kObserverManager].flush(viewport, termdom[kRenderCount]);
+	flushObservers(
+		termdom.document,
+		termdom[kLayoutEngine],
+		viewport,
+		termdom[kRenderCount],
+	);
 	// The frame's stylesheets have parsed, so "does any rule test :hover"
 	// is current: re-answer whether the terminal should report motion.
 	updateHoverReporting(termdom);
@@ -2782,7 +2744,7 @@ async function printStatic(
 	const output = termdom[kScreen].endFrame();
 
 	if (output) {
-		await termdom[kWrite](output);
+		await termdom[kExchange].write(output);
 	}
 	afterRender(termdom);
 }
@@ -2993,7 +2955,7 @@ async function renderInteractive(
 	termdom[kLayoutEngine].frameDirty = false;
 
 	if (ansi) {
-		await termdom[kWrite](ansi);
+		await termdom[kExchange].write(ansi);
 	}
 	afterRender(termdom);
 }

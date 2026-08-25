@@ -3032,7 +3032,28 @@ function restageSubtree(
 	}
 }
 
-const kInvalidateInlineRun = Symbol("invalidateInlineRun");
+function invalidateInlineRun(layout: LayoutEngine, node: Node): void {
+	const entry = boxEntryOf(layout, node);
+	if (!entry) {
+		return;
+	}
+	if (entry.kind === "anonymous") {
+		invalidateContainerBoxes(layout, entry.container);
+		layout[kDirtyRunContainers].add(entry.container);
+		// Content an anonymous box lays out owns no layout node of its own.
+		// One left over from an earlier shape of the container measures the
+		// same content a second time, in a box the container no longer has.
+		retireFlexNode(layout, node);
+		return;
+	}
+	// A box of the element's own (a flex container blockifies its inline
+	// children) measures only itself.
+	const container = runContainerOf(layout, entry.node!);
+	if (container) {
+		invalidateContainerBoxes(layout, container);
+	}
+	layout.nodeMap.get(entry.node!)?.markDirty();
+}
 
 function invalidateNode(
 	layout: LayoutEngine,
@@ -3043,7 +3064,7 @@ function invalidateNode(
 
 	// If it's an inline-level node, invalidate the entire run
 	if (isInlineLevel(node)) {
-		layout[kInvalidateInlineRun](node);
+		invalidateInlineRun(layout, node);
 	} else if (node.nodeType === node.ELEMENT_NODE) {
 		// For block-level elements, remove from nodeMap to force recreation
 		// We can't call markDirty() on container nodes as the engine only allows
@@ -5510,16 +5531,378 @@ function isPointInRects(
 	});
 }
 
-// ---------------------------------------------------------------------------
-// LayoutEngine
-// ---------------------------------------------------------------------------
-
 // The breaker's own fragments, processed text and all: an inline box's
 // lines as the line breaker produced them. Nothing outside layout may
 // reason about processed text -- geometry consumers read `getRects`,
 // `getRangeRects` or `lineFragments`, whose fragments carry data offsets
 // a consumer can render for itself.
-const kRectTexts = Symbol("rectTexts");
+function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
+	// This method handles two main scenarios:
+	// 1. Direct calls on inline-block elements (special case below)
+	// 2. Calls on elements/text inside inline-blocks (general walk-up logic)
+
+	// Handle element nodes
+	if (node.nodeType === node.ELEMENT_NODE) {
+		const element = node as Element;
+		const display = getPropertyValue(element, "display");
+
+		// For block elements, return empty array (no inline text layout)
+		if (!isInlineDisplay(display)) {
+			return [];
+		}
+
+		// An inline broken around a block-level box is a member of no run:
+		// its container lays out the fragments on either side as boxes of
+		// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
+		// content occupies, which each know the run they sit on; the block
+		// between them belongs to the container, not to the inline.
+		if (splitsAroundBlock(layout, element)) {
+			const fragments: RectText[] = [];
+			const walk = (parent: Element): void => {
+				for (const child of Array.from(parent.childNodes) as Node[]) {
+					if (child.nodeType === child.TEXT_NODE) {
+						fragments.push(...rectTextsOf(layout, child));
+					} else if (
+						child.nodeType === child.ELEMENT_NODE &&
+						isInlineDisplay(getPropertyValue(child as Element, "display"))
+					) {
+						walk(child as Element);
+					}
+				}
+			};
+			walk(element);
+			return fragments;
+		}
+
+		// Special case: an inline-block element asked for directly.
+		// The element's breakResult contains itself as an inline-block segment with nested content
+		if (isAtomicInline(display) && layout.isInlineRunHead(element)) {
+			const breakResult = runBreakResult(layout, element);
+			if (breakResult) {
+				// The breakResult contains this inline-block as a segment with nested content
+				const rectTexts: RectText[] = [];
+				const flexNode = runFlexNode(layout, element);
+				if (!flexNode) {
+					return [];
+				}
+
+				const position = documentPosition(layout, element, flexNode);
+				const containerX = position.x;
+				const containerY = position.y;
+
+				for (const line of breakResult.lines) {
+					for (const segment of line.segments) {
+						if (
+							segment.leaf.type === "inline-block" &&
+							segment.leaf.node === element &&
+							segment.leaf.breakResult
+						) {
+							// Extract text from the nested breakResult. Content
+							// starts after border AND padding -- the border
+							// occupies real cells.
+							const nestedBreakResult = segment.leaf.breakResult;
+							const paddingLeft =
+								segment.leaf.boxModel.paddingLeft +
+								segment.leaf.boxModel.borderLeftWidth;
+							const paddingTop =
+								segment.leaf.boxModel.paddingTop +
+								segment.leaf.boxModel.borderTopWidth;
+							for (const nestedLine of nestedBreakResult.lines) {
+								for (const nestedSegment of nestedLine.segments) {
+									if (nestedSegment.leaf.type === "text") {
+										rectTexts.push({
+											text: nestedSegment.processedText,
+											startOffset: nestedSegment.dataStart,
+											endOffset: nestedSegment.dataEnd,
+											visualBase: nestedSegment.visualBase,
+											rect: new layout.DOMRect(
+												containerX +
+												segment.x +
+												paddingLeft +
+												nestedSegment.x,
+												containerY + line.y + paddingTop + nestedLine.y,
+												nestedSegment.width,
+												nestedLine.height,
+											),
+										});
+									} else if (
+										nestedSegment.leaf.type === "inline-block" &&
+										nestedSegment.leaf.breakResult
+									) {
+										// Recursively extract text from nested inline-block
+										const nestedInlineBlock = nestedSegment.leaf;
+										const nestedPaddingLeft =
+											nestedInlineBlock.boxModel.paddingLeft +
+											nestedInlineBlock.boxModel.borderLeftWidth;
+										const nestedPaddingTop =
+											nestedInlineBlock.boxModel.paddingTop +
+											nestedInlineBlock.boxModel.borderTopWidth;
+
+										for (const innerLine of nestedInlineBlock.breakResult!
+											.lines) {
+											for (const innerSegment of innerLine.segments) {
+												if (innerSegment.leaf.type === "text") {
+													rectTexts.push({
+														text: innerSegment.processedText,
+														startOffset: innerSegment.dataStart,
+														endOffset: innerSegment.dataEnd,
+														visualBase: innerSegment.visualBase,
+														rect: new layout.DOMRect(
+															containerX +
+															segment.x +
+															paddingLeft +
+															nestedSegment.x +
+															nestedPaddingLeft +
+															innerSegment.x,
+															containerY +
+															line.y +
+															paddingTop +
+															nestedLine.y +
+															nestedPaddingTop +
+															innerLine.y,
+															innerSegment.width,
+															innerLine.height,
+														),
+													});
+												}
+												// Could add more nesting levels here if needed
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				return rectTexts;
+			}
+		}
+	}
+
+	// Find the inline run head for this node
+	const runHead = layout.findInlineRunHead(node);
+	if (!runHead) {
+		return [];
+	}
+
+	// Get stored BreakResult for the run head
+	let breakResult = runBreakResult(layout, runHead);
+	if (!breakResult) {
+		return [];
+	}
+
+	// Get run head's absolute position by accumulating parent positions
+	const flexNode = runFlexNode(layout, runHead);
+	if (!flexNode) {
+		return [];
+	}
+
+	let {x: containerX, y: containerY} = documentPosition(
+		layout,
+		runHead,
+		flexNode,
+	);
+
+	// kDocumentPosition gives the run head's BORDER box. A blockified
+	// inline flex item reserved its own padding and border in that box (see
+	// styleFlexNode's parentIsFlex exception) but its text ignored them,
+	// painting at the border edge instead of below the padding. Push the run
+	// in by that box. Scoped to exactly the blockified case: a normal inline
+	// has its flex-node box model cleared even when the author declared
+	// padding (so getBoxModel would over-report), an inline-block's content
+	// offset is already handled by kDocumentPosition, and a block's
+	// run head is a text node with no box.
+	if (runHead.nodeType === runHead.ELEMENT_NODE) {
+		const runHeadElement = runHead as Element;
+		if (
+			getPropertyValue(runHeadElement, "display") === "inline" &&
+			hasItemParent(runHeadElement)
+		) {
+			const runHeadBox = getBoxModel(runHeadElement);
+			containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
+			containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
+		}
+	}
+
+	// Walk from target node up to runHead, handling nested inline-blocks
+	// This handles elements and text inside inline-blocks
+	let currentBreakResult = breakResult;
+	let accumulatedOffsetX = 0;
+	let accumulatedOffsetY = 0;
+	let currentNode = node;
+	// The element whose text-align governs this breakResult's lines -- the
+	// block container normally, but an inline-block's own style once the walk
+	// below descends into its nested breakResult, since that's a fresh inline
+	// formatting context with its own alignment.
+	let alignContainer: Element | null = flatParentElement<Element>(runHead);
+
+	// COMPOSITION parents: a widget's UA shadow text has no parentElement
+	// chain to its host at all, so a parentElement walk dies at the shadow
+	// boundary and the value resolves to zero fragments.
+	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
+		const parent = flatParentElement<Element>(currentNode)!;
+
+		if (isAtomicInline(getPropertyValue(parent, "display"))) {
+			// An overflow-scrolled inline-block (a field's windowed value,
+			// scrollLeft set by the caret-follow) shifts its content by its
+			// own scroll, so the caret stays in view. A property of the box,
+			// independent of whether its segment is found below.
+			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
+			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
+			// Find this inline-block in current breakResult
+			let found = false;
+			for (const line of currentBreakResult.lines) {
+				for (const segment of line.segments) {
+					if (
+						segment.leaf.type === "inline-block" &&
+						segment.leaf.node === parent
+					) {
+						// Accumulate offset to the CONTENT edge -- border and
+						// padding both occupy cells -- and switch to the
+						// internal breakResult.
+						accumulatedOffsetX +=
+							segment.x +
+							segment.leaf.boxModel.paddingLeft +
+							segment.leaf.boxModel.borderLeftWidth;
+						accumulatedOffsetY +=
+							line.y +
+							segment.leaf.boxModel.paddingTop +
+							segment.leaf.boxModel.borderTopWidth;
+						if (segment.leaf.breakResult) {
+							currentBreakResult = segment.leaf.breakResult;
+							alignContainer = parent;
+						}
+						found = true;
+						break;
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+		}
+		currentNode = parent;
+	}
+
+	// Apply accumulated offsets
+	containerX += accumulatedOffsetX;
+	containerY += accumulatedOffsetY;
+	breakResult = currentBreakResult;
+
+	// position:relative on an inline RUN MEMBER (no flex node of its own)
+	// shifts its painted fragments; walk the box-less ancestors up to the
+	// run head accumulating offsets.
+	for (
+		let ancestor =
+			node.nodeType === node.ELEMENT_NODE ?
+					(node as Element) :
+					flatParentElement<Element>(node);
+		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
+		ancestor = flatParentElement<Element>(ancestor)
+	) {
+		if (getPropertyValue(ancestor, "position") === "relative") {
+			const left = parseUnitValue(getPropertyValue(ancestor, "left"));
+			const top = parseUnitValue(getPropertyValue(ancestor, "top"));
+			if (typeof left === "number") {
+				containerX += left;
+			}
+			if (typeof top === "number") {
+				containerY += top;
+			}
+		}
+	}
+
+	// Collect target text nodes based on node type
+	let targetTextNodes: Set<Text>;
+
+	if (node.nodeType === node.TEXT_NODE) {
+		targetTextNodes = new Set([node as Text]);
+	} else {
+		// For element nodes, collect all descendant text nodes
+		targetTextNodes = new Set<Text>();
+
+		const walker = flowWalker(node);
+
+		let textNode;
+		while ((textNode = walker.nextNode())) {
+			targetTextNodes.add(textNode as Text);
+		}
+	}
+
+	const rectTexts: RectText[] = [];
+
+	// The break result's text index: which line each text node's fragments
+	// landed on, at what x, in what order. Built once per break result and
+	// keyed on the result object itself, so a re-break (always a fresh
+	// object) invalidates it for free. Without it every text node's lookup
+	// scanned every segment of its run -- painting a run of N boxes cost
+	// O(N^2) segment visits per frame.
+	const index = breakResultTextIndex(layout, breakResult);
+
+	// Merge fragments per line that belong to this node, in segment order.
+	const byLine = new Map<number, TextFragmentEntry[]>();
+	for (const textNode of targetTextNodes) {
+		const entries = index.get(textNode);
+		if (!entries) {
+			continue;
+		}
+		for (const entry of entries) {
+			let bucket = byLine.get(entry.line);
+			if (!bucket) {
+				byLine.set(entry.line, (bucket = []));
+			}
+			bucket.push(entry);
+		}
+	}
+
+	for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
+		const line = breakResult.lines[lineIndex];
+		bucket.sort((a, b) => a.ord - b.ord);
+
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let concatenatedText = "";
+		for (const targetText of bucket) {
+			minX = Math.min(minX, targetText.x);
+			maxX = Math.max(maxX, targetText.x + targetText.width);
+			concatenatedText += targetText.text;
+		}
+		const first = bucket[0];
+		const last = bucket[bucket.length - 1];
+
+		const alignOffset = lineAlignOffset(
+			alignContainer,
+			currentBreakResult.containerWidth,
+			line.width,
+		);
+		const indent = lineIndent(
+			line === currentBreakResult.lines[0],
+			alignContainer,
+			currentBreakResult.containerWidth,
+		);
+
+		const rect = new layout.DOMRect(
+			containerX + minX + alignOffset + indent,
+			containerY + line.y,
+			maxX - minX,
+			line.height,
+		);
+		rectTexts.push({
+			rect,
+			text: concatenatedText,
+			startOffset: first.startOffset,
+			endOffset: last.endOffset,
+			visualBase: first.visualBase,
+		});
+	}
+
+	return rectTexts;
+}
+
+// ---------------------------------------------------------------------------
+// LayoutEngine
+// ---------------------------------------------------------------------------
+
 const kLayoutStale = Symbol("layoutStale");
 const kFrameDirty = Symbol("frameDirty");
 
@@ -6088,7 +6471,7 @@ export class LayoutEngine {
 			}
 
 			// For inline elements, the fragments of its run
-			const rectTexts = this[kRectTexts](element);
+			const rectTexts = rectTextsOf(this, element);
 			if (rectTexts.length > 0) {
 				return this.unionRect(rectTexts.map((rectText) => rectText.rect));
 			}
@@ -6131,369 +6514,6 @@ export class LayoutEngine {
 		);
 	}
 
-	[kRectTexts](node: Node): RectText[] {
-		// This method handles two main scenarios:
-		// 1. Direct calls on inline-block elements (special case below)
-		// 2. Calls on elements/text inside inline-blocks (general walk-up logic)
-
-		// Handle element nodes
-		if (node.nodeType === node.ELEMENT_NODE) {
-			const element = node as Element;
-			const display = getPropertyValue(element, "display");
-
-			// For block elements, return empty array (no inline text layout)
-			if (!isInlineDisplay(display)) {
-				return [];
-			}
-
-			// An inline broken around a block-level box is a member of no run:
-			// its container lays out the fragments on either side as boxes of
-			// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
-			// content occupies, which each know the run they sit on; the block
-			// between them belongs to the container, not to the inline.
-			if (splitsAroundBlock(this, element)) {
-				const fragments: RectText[] = [];
-				const walk = (parent: Element): void => {
-					for (const child of Array.from(parent.childNodes) as Node[]) {
-						if (child.nodeType === child.TEXT_NODE) {
-							fragments.push(...this[kRectTexts](child));
-						} else if (
-							child.nodeType === child.ELEMENT_NODE &&
-							isInlineDisplay(getPropertyValue(child as Element, "display"))
-						) {
-							walk(child as Element);
-						}
-					}
-				};
-				walk(element);
-				return fragments;
-			}
-
-			// Special case: an inline-block element asked for directly.
-			// The element's breakResult contains itself as an inline-block segment with nested content
-			if (isAtomicInline(display) && this.isInlineRunHead(element)) {
-				const breakResult = runBreakResult(this, element);
-				if (breakResult) {
-					// The breakResult contains this inline-block as a segment with nested content
-					const rectTexts: RectText[] = [];
-					const flexNode = runFlexNode(this, element);
-					if (!flexNode) {
-						return [];
-					}
-
-					const position = documentPosition(this, element, flexNode);
-					const containerX = position.x;
-					const containerY = position.y;
-
-					for (const line of breakResult.lines) {
-						for (const segment of line.segments) {
-							if (
-								segment.leaf.type === "inline-block" &&
-								segment.leaf.node === element &&
-								segment.leaf.breakResult
-							) {
-								// Extract text from the nested breakResult. Content
-								// starts after border AND padding -- the border
-								// occupies real cells.
-								const nestedBreakResult = segment.leaf.breakResult;
-								const paddingLeft =
-									segment.leaf.boxModel.paddingLeft +
-									segment.leaf.boxModel.borderLeftWidth;
-								const paddingTop =
-									segment.leaf.boxModel.paddingTop +
-									segment.leaf.boxModel.borderTopWidth;
-								for (const nestedLine of nestedBreakResult.lines) {
-									for (const nestedSegment of nestedLine.segments) {
-										if (nestedSegment.leaf.type === "text") {
-											rectTexts.push({
-												text: nestedSegment.processedText,
-												startOffset: nestedSegment.dataStart,
-												endOffset: nestedSegment.dataEnd,
-												visualBase: nestedSegment.visualBase,
-												rect: new this.DOMRect(
-													containerX +
-													segment.x +
-													paddingLeft +
-													nestedSegment.x,
-													containerY + line.y + paddingTop + nestedLine.y,
-													nestedSegment.width,
-													nestedLine.height,
-												),
-											});
-										} else if (
-											nestedSegment.leaf.type === "inline-block" &&
-											nestedSegment.leaf.breakResult
-										) {
-											// Recursively extract text from nested inline-block
-											const nestedInlineBlock = nestedSegment.leaf;
-											const nestedPaddingLeft =
-												nestedInlineBlock.boxModel.paddingLeft +
-												nestedInlineBlock.boxModel.borderLeftWidth;
-											const nestedPaddingTop =
-												nestedInlineBlock.boxModel.paddingTop +
-												nestedInlineBlock.boxModel.borderTopWidth;
-
-											for (const innerLine of nestedInlineBlock.breakResult!
-												.lines) {
-												for (const innerSegment of innerLine.segments) {
-													if (innerSegment.leaf.type === "text") {
-														rectTexts.push({
-															text: innerSegment.processedText,
-															startOffset: innerSegment.dataStart,
-															endOffset: innerSegment.dataEnd,
-															visualBase: innerSegment.visualBase,
-															rect: new this.DOMRect(
-																containerX +
-																segment.x +
-																paddingLeft +
-																nestedSegment.x +
-																nestedPaddingLeft +
-																innerSegment.x,
-																containerY +
-																line.y +
-																paddingTop +
-																nestedLine.y +
-																nestedPaddingTop +
-																innerLine.y,
-																innerSegment.width,
-																innerLine.height,
-															),
-														});
-													}
-													// Could add more nesting levels here if needed
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-					return rectTexts;
-				}
-			}
-		}
-
-		// Find the inline run head for this node
-		const runHead = this.findInlineRunHead(node);
-		if (!runHead) {
-			return [];
-		}
-
-		// Get stored BreakResult for the run head
-		let breakResult = runBreakResult(this, runHead);
-		if (!breakResult) {
-			return [];
-		}
-
-		// Get run head's absolute position by accumulating parent positions
-		const flexNode = runFlexNode(this, runHead);
-		if (!flexNode) {
-			return [];
-		}
-
-		let {x: containerX, y: containerY} = documentPosition(
-			this,
-			runHead,
-			flexNode,
-		);
-
-		// kDocumentPosition gives the run head's BORDER box. A blockified
-		// inline flex item reserved its own padding and border in that box (see
-		// styleFlexNode's parentIsFlex exception) but its text ignored them,
-		// painting at the border edge instead of below the padding. Push the run
-		// in by that box. Scoped to exactly the blockified case: a normal inline
-		// has its flex-node box model cleared even when the author declared
-		// padding (so getBoxModel would over-report), an inline-block's content
-		// offset is already handled by kDocumentPosition, and a block's
-		// run head is a text node with no box.
-		if (runHead.nodeType === runHead.ELEMENT_NODE) {
-			const runHeadElement = runHead as Element;
-			if (
-				getPropertyValue(runHeadElement, "display") === "inline" &&
-				hasItemParent(runHeadElement)
-			) {
-				const runHeadBox = getBoxModel(runHeadElement);
-				containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
-				containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
-			}
-		}
-
-		// Walk from target node up to runHead, handling nested inline-blocks
-		// This handles elements and text inside inline-blocks
-		let currentBreakResult = breakResult;
-		let accumulatedOffsetX = 0;
-		let accumulatedOffsetY = 0;
-		let currentNode = node;
-		// The element whose text-align governs this breakResult's lines -- the
-		// block container normally, but an inline-block's own style once the walk
-		// below descends into its nested breakResult, since that's a fresh inline
-		// formatting context with its own alignment.
-		let alignContainer: Element | null = flatParentElement<Element>(runHead);
-
-		// COMPOSITION parents: a widget's UA shadow text has no parentElement
-		// chain to its host at all, so a parentElement walk dies at the shadow
-		// boundary and the value resolves to zero fragments.
-		while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
-			const parent = flatParentElement<Element>(currentNode)!;
-
-			if (isAtomicInline(getPropertyValue(parent, "display"))) {
-				// An overflow-scrolled inline-block (a field's windowed value,
-				// scrollLeft set by the caret-follow) shifts its content by its
-				// own scroll, so the caret stays in view. A property of the box,
-				// independent of whether its segment is found below.
-				accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
-				accumulatedOffsetY -= (parent as Element).scrollTop || 0;
-				// Find this inline-block in current breakResult
-				let found = false;
-				for (const line of currentBreakResult.lines) {
-					for (const segment of line.segments) {
-						if (
-							segment.leaf.type === "inline-block" &&
-							segment.leaf.node === parent
-						) {
-							// Accumulate offset to the CONTENT edge -- border and
-							// padding both occupy cells -- and switch to the
-							// internal breakResult.
-							accumulatedOffsetX +=
-								segment.x +
-								segment.leaf.boxModel.paddingLeft +
-								segment.leaf.boxModel.borderLeftWidth;
-							accumulatedOffsetY +=
-								line.y +
-								segment.leaf.boxModel.paddingTop +
-								segment.leaf.boxModel.borderTopWidth;
-							if (segment.leaf.breakResult) {
-								currentBreakResult = segment.leaf.breakResult;
-								alignContainer = parent;
-							}
-							found = true;
-							break;
-						}
-					}
-					if (found) {
-						break;
-					}
-				}
-			}
-			currentNode = parent;
-		}
-
-		// Apply accumulated offsets
-		containerX += accumulatedOffsetX;
-		containerY += accumulatedOffsetY;
-		breakResult = currentBreakResult;
-
-		// position:relative on an inline RUN MEMBER (no flex node of its own)
-		// shifts its painted fragments; walk the box-less ancestors up to the
-		// run head accumulating offsets.
-		for (
-			let ancestor =
-				node.nodeType === node.ELEMENT_NODE ?
-						(node as Element) :
-						flatParentElement<Element>(node);
-			ancestor && ancestor !== runHead && !this.nodeMap.has(ancestor);
-			ancestor = flatParentElement<Element>(ancestor)
-		) {
-			if (getPropertyValue(ancestor, "position") === "relative") {
-				const left = parseUnitValue(getPropertyValue(ancestor, "left"));
-				const top = parseUnitValue(getPropertyValue(ancestor, "top"));
-				if (typeof left === "number") {
-					containerX += left;
-				}
-				if (typeof top === "number") {
-					containerY += top;
-				}
-			}
-		}
-
-		// Collect target text nodes based on node type
-		let targetTextNodes: Set<Text>;
-
-		if (node.nodeType === node.TEXT_NODE) {
-			targetTextNodes = new Set([node as Text]);
-		} else {
-			// For element nodes, collect all descendant text nodes
-			targetTextNodes = new Set<Text>();
-
-			const walker = flowWalker(node);
-
-			let textNode;
-			while ((textNode = walker.nextNode())) {
-				targetTextNodes.add(textNode as Text);
-			}
-		}
-
-		const rectTexts: RectText[] = [];
-
-		// The break result's text index: which line each text node's fragments
-		// landed on, at what x, in what order. Built once per break result and
-		// keyed on the result object itself, so a re-break (always a fresh
-		// object) invalidates it for free. Without it every text node's lookup
-		// scanned every segment of its run -- painting a run of N boxes cost
-		// O(N^2) segment visits per frame.
-		const index = breakResultTextIndex(this, breakResult);
-
-		// Merge fragments per line that belong to this node, in segment order.
-		const byLine = new Map<number, TextFragmentEntry[]>();
-		for (const textNode of targetTextNodes) {
-			const entries = index.get(textNode);
-			if (!entries) {
-				continue;
-			}
-			for (const entry of entries) {
-				let bucket = byLine.get(entry.line);
-				if (!bucket) {
-					byLine.set(entry.line, (bucket = []));
-				}
-				bucket.push(entry);
-			}
-		}
-
-		for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
-			const line = breakResult.lines[lineIndex];
-			bucket.sort((a, b) => a.ord - b.ord);
-
-			let minX = Infinity;
-			let maxX = -Infinity;
-			let concatenatedText = "";
-			for (const targetText of bucket) {
-				minX = Math.min(minX, targetText.x);
-				maxX = Math.max(maxX, targetText.x + targetText.width);
-				concatenatedText += targetText.text;
-			}
-			const first = bucket[0];
-			const last = bucket[bucket.length - 1];
-
-			const alignOffset = lineAlignOffset(
-				alignContainer,
-				currentBreakResult.containerWidth,
-				line.width,
-			);
-			const indent = lineIndent(
-				line === currentBreakResult.lines[0],
-				alignContainer,
-				currentBreakResult.containerWidth,
-			);
-
-			const rect = new this.DOMRect(
-				containerX + minX + alignOffset + indent,
-				containerY + line.y,
-				maxX - minX,
-				line.height,
-			);
-			rectTexts.push({
-				rect,
-				text: concatenatedText,
-				startOffset: first.startOffset,
-				endOffset: last.endOffset,
-				visualBase: first.visualBase,
-			});
-		}
-
-		return rectTexts;
-	}
-
 	// Text-fragment index per break result: text node -> the fragments the
 	// breaker placed for it, each with its OUTER line index, x offset (nested
 	// inline-block content already shifted by its box's position and padding,
@@ -6517,7 +6537,7 @@ export class LayoutEngine {
 		}
 
 		// Inline content is one rect per text run, one per line it spans.
-		return this[kRectTexts](node).map((rectText) => rectText.rect);
+		return rectTextsOf(this, node).map((rectText) => rectText.rect);
 	}
 
 	/**
@@ -6594,7 +6614,7 @@ export class LayoutEngine {
 	lineFragments(textNode: Text): LineFragment[] {
 		const data = textNode.data;
 		const lines: LineFragment[] = [];
-		for (const rectText of this[kRectTexts](textNode)) {
+		for (const rectText of rectTextsOf(this, textNode)) {
 			lines.push({
 				rect: rectText.rect,
 				startOffset: rectText.startOffset,
@@ -7004,29 +7024,6 @@ export class LayoutEngine {
 		// itself is about to rebuild anyway.
 		restageSubtree(this, node);
 		invalidateNode(this, node);
-	}
-
-	[kInvalidateInlineRun](node: Node): void {
-		const entry = boxEntryOf(this, node);
-		if (!entry) {
-			return;
-		}
-		if (entry.kind === "anonymous") {
-			invalidateContainerBoxes(this, entry.container);
-			this[kDirtyRunContainers].add(entry.container);
-			// Content an anonymous box lays out owns no layout node of its own.
-			// One left over from an earlier shape of the container measures the
-			// same content a second time, in a box the container no longer has.
-			retireFlexNode(this, node);
-			return;
-		}
-		// A box of the element's own (a flex container blockifies its inline
-		// children) measures only itself.
-		const container = runContainerOf(this, entry.node!);
-		if (container) {
-			invalidateContainerBoxes(this, container);
-		}
-		this.nodeMap.get(entry.node!)?.markDirty();
 	}
 
 	handleMutations(mutations: MutationRecord[]): void {

@@ -27,6 +27,7 @@ import {
 	SELECT_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
+import type {LayoutEngine} from "./layout.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -1226,28 +1227,6 @@ const LEGACY_EVENT_TYPES = new Map([
 	["animationstart", "webkitAnimationStart"],
 	["transitionend", "webkitTransitionEnd"],
 ]);
-
-const kActivationBehavior = Symbol("activation behavior");
-const kLegacyPreActivationBehavior = Symbol("legacy-pre-activation behavior");
-const kLegacyCanceledActivationBehavior = Symbol(
-	"legacy-canceled activation behavior",
-);
-
-/**
- * The activation behavior an event target runs when a click dispatch reaches
- * it uncanceled, and the two legacy hooks around it that a checkbox and a
- * radio button need.
- *
- * They are the spec's hooks: an element that has one is an activation target,
- * and dispatch runs it after the path is walked. The elements that have them
- * are HTML's -- links, buttons, checkboxes, radio buttons, a summary -- and
- * each installs its own on its prototype.
- */
-interface ActivationTarget {
-	[kActivationBehavior]?: (event: Event) => void;
-	[kLegacyPreActivationBehavior]?: () => void;
-	[kLegacyCanceledActivationBehavior]?: () => void;
-}
 
 /** A dictionary argument, per Web IDL: absent, null, or an object. */
 function toDictionary<T extends object>(value: unknown, what: string): T {
@@ -4306,9 +4285,8 @@ function dispatch(
 		state.relatedTarget = null;
 	}
 	if (activationTarget !== null) {
-		const behaviors = activationTarget as ActivationTarget;
 		if (!state.canceled) {
-			behaviors[kActivationBehavior]?.(event);
+			runActivationBehavior(activationTarget, event);
 		} else if (activationTarget instanceof HTMLInputElement) {
 			legacyCanceledActivationBehavior(activationTarget);
 		}
@@ -4322,8 +4300,127 @@ function isShadowRootTarget(target: EventTarget | null): boolean {
 	return target instanceof Node && isShadowRoot(getRoot(target));
 }
 
+/**
+ * Whether a click on this target runs an activation behavior. A target that
+ * has one is what dispatch walks the path to find, and what it runs the
+ * behavior on once the path is walked.
+ */
 function hasActivationBehavior(target: EventTarget): boolean {
-	return (target as ActivationTarget)[kActivationBehavior] !== undefined;
+	return (
+		target instanceof HTMLAnchorElement ||
+		target instanceof HTMLAreaElement ||
+		target instanceof HTMLButtonElement ||
+		target instanceof HTMLInputElement ||
+		target instanceof HTMLLabelElement ||
+		isDetailsSummary(target)
+	);
+}
+
+/**
+ * What an uncanceled click does to its target.
+ *
+ * A hyperlink's activation behavior is following it, which this engine never
+ * does: an anchor and an area are activation targets that do nothing.
+ */
+function runActivationBehavior(target: EventTarget, event: Event): void {
+	if (target instanceof HTMLButtonElement) {
+		activateButton(target, event);
+	} else if (target instanceof HTMLInputElement) {
+		activateInput(target, event);
+	} else if (target instanceof HTMLLabelElement) {
+		activateLabel(target, event);
+	} else if (isDetailsSummary(target)) {
+		toggleTheDetails(target);
+	}
+}
+
+/**
+ * A summary is the one element whose activation behavior depends on where it
+ * sits: HTML gives it no interface of its own, and only the first summary of
+ * a details opens and closes that details.
+ */
+function isDetailsSummary(target: EventTarget): target is HTMLElement {
+	if (!(target instanceof HTMLElement)) {
+		return false;
+	}
+	if (
+		target[kNamespace] !== HTML_NAMESPACE ||
+		target[kLocalName] !== "summary"
+	) {
+		return false;
+	}
+	const parent = target[kParent];
+	return (
+		parent instanceof HTMLDetailsElement &&
+		firstChildElement(parent, "summary") === target
+	);
+}
+
+function toggleTheDetails(summary: HTMLElement): void {
+	const details = summary[kParent] as HTMLDetailsElement;
+	details.toggleAttribute("open", !details.hasAttribute("open"));
+}
+
+function activateButton(button: HTMLButtonElement, event: Event): void {
+	if (isActuallyDisabled(button)) {
+		return;
+	}
+	const form = formOwner(button);
+	if (form !== null) {
+		if (button.type === "submit") {
+			submitForm(form, button, false);
+		} else if (button.type === "reset") {
+			form.reset();
+		}
+	}
+	popoverTargetActivationBehavior(button, event.target);
+}
+
+function activateInput(input: HTMLInputElement, event: Event): void {
+	if (isActuallyDisabled(input)) {
+		return;
+	}
+	const type = input.type;
+	if (type === "checkbox" || type === "radio") {
+		// A control outside a document reports nothing: the checkedness the
+		// legacy-pre-activation behavior already flipped stands, and the
+		// events that would announce it are not fired.
+		if (!input.isConnected) {
+			return;
+		}
+		dispatch(input, new Event("input", {bubbles: true, composed: true}));
+		dispatch(input, new Event("change", {bubbles: true}));
+		return;
+	}
+	const form = formOwner(input);
+	if (form !== null) {
+		if (type === "submit" || type === "image") {
+			submitForm(form, input, false);
+		} else if (type === "reset") {
+			form.reset();
+		}
+	}
+	popoverTargetActivationBehavior(input, event.target);
+}
+
+/**
+ * A click on a label is a click on its control, unless the click already
+ * came from inside that control.
+ */
+function activateLabel(label: HTMLLabelElement, event: Event): void {
+	const control = label.control;
+	if (control === null) {
+		return;
+	}
+	for (const target of event.composedPath()) {
+		if (target === control) {
+			return;
+		}
+	}
+	if (control[kClickInProgress]) {
+		return;
+	}
+	control.click();
 }
 
 /**
@@ -6436,7 +6533,6 @@ function queueTreeMutationRecord(
 
 /* ------------------------------------------------------- live collections */
 
-const kEnsure = Symbol("recompute if stale");
 const kMembersMoved = Symbol("members moved");
 
 const kLive = Symbol("live");
@@ -6540,42 +6636,6 @@ abstract class LiveList implements Materializable {
 	}
 
 	declare [kNames]: string[];
-
-	[kEnsure](): Node[] {
-		if (!this[kLive]) {
-			if (!this[kExact]) {
-				recompute(this);
-			}
-			return this[kItems];
-		}
-		const owner = this[kOwner];
-		if (owner === null) {
-			// A list with nowhere to register is told of nothing, so it holds
-			// what it computes for this read alone.
-			recompute(this);
-			return this[kItems];
-		}
-		if (this[kWide]) {
-			// The document a list is over is the one its owner belongs to, and
-			// adopting the owner hands the list to another document.
-			const document = owner[kDocument];
-			const registered = this[kRegistered] as Document | null;
-			if (registered !== document) {
-				if (registered !== null) {
-					registered[kWideLists]?.delete(this);
-				}
-				this[kRegistered] = document;
-				registerWide(this, document);
-			}
-		} else if (this[kRegistered] === null) {
-			this[kRegistered] = owner;
-			registerMaterialized(this, owner);
-		}
-		if (!this[kExact]) {
-			recompute(this);
-		}
-		return this[kItems];
-	}
 
 	[kSync](): void {
 		if (this[kRegistered] === null) {
@@ -6754,7 +6814,7 @@ function defineIndices(
 			// through the prototype: a caller may replace the prototype,
 			// and an indexed property is meant to survive that.
 			get(): unknown {
-				return ensureMethod.call(list)[at] ?? undefined;
+				return ensure(list)[at] ?? undefined;
 			},
 			enumerable: true,
 			configurable: true,
@@ -6799,9 +6859,43 @@ function materialize(
 	}
 }
 
-const ensureMethod = (
-	LiveList.prototype as unknown as Record<symbol, () => Node[]>
-)[kEnsure];
+/** The list's members, recomputed if what it is over has moved on. */
+function ensure(list: LiveList): Node[] {
+	if (!list[kLive]) {
+		if (!list[kExact]) {
+			recompute(list);
+		}
+		return list[kItems];
+	}
+	const owner = list[kOwner];
+	if (owner === null) {
+		// A list with nowhere to register is told of nothing, so it holds
+		// what it computes for this read alone.
+		recompute(list);
+		return list[kItems];
+	}
+	if (list[kWide]) {
+		// The document a list is over is the one its owner belongs to, and
+		// adopting the owner hands the list to another document.
+		const document = owner[kDocument];
+		const registered = list[kRegistered] as Document | null;
+		if (registered !== document) {
+			if (registered !== null) {
+				registered[kWideLists]?.delete(list);
+			}
+			list[kRegistered] = document;
+			registerWide(list, document);
+		}
+	} else if (list[kRegistered] === null) {
+		list[kRegistered] = owner;
+		registerMaterialized(list, owner);
+	}
+	if (!list[kExact]) {
+		recompute(list);
+	}
+	return list[kItems];
+}
+
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync];
@@ -6844,11 +6938,11 @@ export class NodeList extends LiveList {
 	}
 
 	get length(): number {
-		return this[kEnsure]().length;
+		return ensure(this).length;
 	}
 
 	item(index: number): Node | null {
-		const items = this[kEnsure]();
+		const items = ensure(this);
 		const at = toUnsignedLong(index);
 		return at < items.length ? items[at] : null;
 	}
@@ -6927,11 +7021,11 @@ export class HTMLCollection extends LiveList {
 	}
 
 	get length(): number {
-		return this[kEnsure]().length;
+		return ensure(this).length;
 	}
 
 	item(index: number): Element | null {
-		const items = this[kEnsure]();
+		const items = ensure(this);
 		const at = toUnsignedLong(index);
 		return at < items.length ? (items[at] as Element) : null;
 	}
@@ -6941,7 +7035,7 @@ export class HTMLCollection extends LiveList {
 			return null;
 		}
 		const key = String(name);
-		for (const item of this[kEnsure]()) {
+		for (const item of ensure(this)) {
 			const element = item as Element;
 			if (element.getAttribute("id") === key) {
 				return element;
@@ -6983,13 +7077,13 @@ function createChildNodeList(node: Node): NodeList {
 		node,
 		() => true,
 	);
-	list[kEnsure]();
+	ensure(list);
 	return list;
 }
 
 function createStaticNodeList(nodes: Node[]): NodeList {
 	const list = new NodeList(() => nodes, false);
-	list[kEnsure]();
+	ensure(list);
 	return list;
 }
 
@@ -7155,7 +7249,7 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 		});
 		// The indices a collection defines are observable without reading it,
 		// so a collection materializes them as it is made.
-		collection[kEnsure]();
+		ensure(collection);
 		cache.set(key, collection);
 	}
 	return collection;
@@ -7180,7 +7274,7 @@ function elementsByTagNameNS(
 		);
 		// The indices a collection defines are observable without reading it,
 		// so a collection materializes them as it is made.
-		collection[kEnsure]();
+		ensure(collection);
 		cache.set(key, collection);
 	}
 	return collection;
@@ -7241,7 +7335,7 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 		});
 		// The indices a collection defines are observable without reading it,
 		// so a collection materializes them as it is made.
-		collection[kEnsure]();
+		ensure(collection);
 		cache.set(key, collection);
 	}
 	return collection;
@@ -7316,7 +7410,7 @@ export class DOMTokenList extends LiveList {
 	}
 
 	get [kTokens](): string[] {
-		return this[kEnsure]() as unknown as string[];
+		return ensure(this) as unknown as string[];
 	}
 
 	get length(): number {
@@ -8256,11 +8350,11 @@ export class NamedNodeMap extends LiveList {
 	}
 
 	get length(): number {
-		return this[kEnsure]().length;
+		return ensure(this).length;
 	}
 
 	item(index: number): Attr | null {
-		const items = this[kEnsure]();
+		const items = ensure(this);
 		const at = toUnsignedLong(index);
 		return at < items.length ? (items[at] as Attr) : null;
 	}
@@ -8514,7 +8608,7 @@ export class Element extends Node {
 		let list = this[kClassList];
 		if (list === null) {
 			list = new DOMTokenList(this, "class");
-			list[kEnsure]();
+			ensure(list);
 			this[kClassList] = list;
 		}
 		return list;
@@ -8595,7 +8689,7 @@ export class Element extends Node {
 		let map = this[kAttributesMap];
 		if (map === null) {
 			map = new NamedNodeMap(this);
-			map[kEnsure]();
+			ensure(map);
 			this[kAttributesMap] = map;
 		}
 		return map;
@@ -11466,7 +11560,7 @@ function reflectedTokenList(
 			attribute,
 			supported.length === 0 ? undefined : [...supported],
 		);
-		list[kEnsure]();
+		ensure(list);
 		lists.set(property, list);
 	}
 	return list;
@@ -11782,11 +11876,6 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 		enumerable: true,
 		configurable: true,
 	},
-	[kActivationBehavior]: {
-		value: function followTheHyperlink(): void {},
-		writable: true,
-		configurable: true,
-	},
 };
 /** The URL a hyperlink's href names, or null where it names none. */
 function hyperlinkURL(element: Element): URL | null {
@@ -11867,21 +11956,6 @@ export class HTMLButtonElement extends HTMLElement {
 
 	set popoverTargetElement(value: Element | null) {
 		setPopoverTargetAttributeElement(this, value);
-	}
-
-	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) {
-			return;
-		}
-		const form = formOwner(this);
-		if (form !== null) {
-			if (this.type === "submit") {
-				submitForm(form, this, false);
-			} else if (this.type === "reset") {
-				form.reset();
-			}
-		}
-		popoverTargetActivationBehavior(this, event.target);
 	}
 }
 
@@ -12060,35 +12134,6 @@ function detailsSlottables(
 	return result;
 }
 
-/**
- * A summary opens and closes the details it is the summary of.
- *
- * Only a summary has this behavior, and HTML gives a summary no interface of
- * its own, so the hook answers for the elements that are one and for nothing
- * else.
- */
-Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
-	get(this: HTMLElement): (() => void) | undefined {
-		const parent = this[kParent];
-		if (this[kNamespace] !== HTML_NAMESPACE) {
-			return undefined;
-		}
-		if (this[kLocalName] !== "summary") {
-			return undefined;
-		}
-		if (parent === null || !(parent instanceof HTMLDetailsElement)) {
-			return undefined;
-		}
-		if (firstChildElement(parent, "summary") !== this) {
-			return undefined;
-		}
-		return function toggleTheDetails(this: HTMLElement): void {
-			const details = this[kParent] as HTMLDetailsElement;
-			details.toggleAttribute("open", !details.hasAttribute("open"));
-		};
-	},
-	configurable: true,
-});
 interface ToggleEventInit extends EventInit {
 	oldState?: string;
 	newState?: string;
@@ -12624,7 +12669,7 @@ function matching(
 	key: string,
 ): Node[] {
 	const matches: Node[] = [];
-	for (const item of collection[kEnsure]()) {
+	for (const item of ensure(collection)) {
 		const element = item as Element;
 		if (
 			element.getAttribute("id") === key ||
@@ -12647,7 +12692,7 @@ export class RadioNodeList extends NodeList {
 	}
 
 	get value(): string {
-		for (const node of this[kEnsure]()) {
+		for (const node of ensure(this)) {
 			if (!(node instanceof HTMLInputElement)) {
 				continue;
 			}
@@ -12661,7 +12706,7 @@ export class RadioNodeList extends NodeList {
 
 	set value(value: string) {
 		const wanted = String(value);
-		for (const node of this[kEnsure]()) {
+		for (const node of ensure(this)) {
 			if (!(node instanceof HTMLInputElement)) {
 				continue;
 			}
@@ -12714,8 +12759,6 @@ interface FrameWindowLike {
 	HTMLElement: typeof HTMLElement;
 }
 
-const kEnsureFrameDocument = Symbol("ensureFrameDocument");
-
 /**
  * A nested document without a browsing context around it. On insertion the
  * iframe gets a content document -- its srcdoc parsed, or about:blank --
@@ -12764,40 +12807,40 @@ export class HTMLIFrameElement extends HTMLElement {
 		this[kFrameDocumentRun] = {};
 	}
 
-	[kEnsureFrameDocument](): void {
-		if (!this.isConnected || this[kContentDocument] !== null) {
-			return;
-		}
-		const srcdoc = this.getAttribute("srcdoc");
-		const contentDocument = parseHTMLDocument(
-			srcdoc ?? "",
-			srcdoc === null ? "about:blank" : "about:srcdoc",
-		);
-		contentDocument[kRegistry] = constructInternal(
-			() => new CustomElementRegistry(),
-		);
-		this[kContentDocument] = contentDocument;
-		this[kContentWindow] = {
-			document: contentDocument,
-			customElements: contentDocument[kRegistry],
-			frameElement: this,
-			HTMLElement,
-		};
-	}
-
 	get contentDocument(): Document | null {
-		this[kEnsureFrameDocument]();
+		ensureFrameDocument(this);
 		return this[kContentDocument];
 	}
 
 	get contentWindow(): FrameWindowLike | null {
-		this[kEnsureFrameDocument]();
+		ensureFrameDocument(this);
 		return this[kContentWindow];
 	}
 
 	getSVGDocument(): null {
 		return null;
 	}
+}
+
+function ensureFrameDocument(frame: HTMLIFrameElement): void {
+	if (!frame.isConnected || frame[kContentDocument] !== null) {
+		return;
+	}
+	const srcdoc = frame.getAttribute("srcdoc");
+	const contentDocument = parseHTMLDocument(
+		srcdoc ?? "",
+		srcdoc === null ? "about:blank" : "about:srcdoc",
+	);
+	contentDocument[kRegistry] = constructInternal(
+		() => new CustomElementRegistry(),
+	);
+	frame[kContentDocument] = contentDocument;
+	frame[kContentWindow] = {
+		document: contentDocument,
+		customElements: contentDocument[kRegistry],
+		frameElement: frame,
+		HTMLElement,
+	};
 }
 
 /**
@@ -13332,33 +13375,6 @@ export class HTMLInputElement extends HTMLElement {
 		setPopoverTargetAttributeElement(this, value);
 	}
 
-	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) {
-			return;
-		}
-		const type = this.type;
-		if (type === "checkbox" || type === "radio") {
-			// A control outside a document reports nothing: the checkedness the
-			// legacy-pre-activation behavior already flipped stands, and the
-			// events that would announce it are not fired.
-			if (!this.isConnected) {
-				return;
-			}
-			dispatch(this, new Event("input", {bubbles: true, composed: true}));
-			dispatch(this, new Event("change", {bubbles: true}));
-			return;
-		}
-		const form = formOwner(this);
-		if (form !== null) {
-			if (type === "submit" || type === "image") {
-				submitForm(form, this, false);
-			} else if (type === "reset") {
-				form.reset();
-			}
-		}
-		popoverTargetActivationBehavior(this, event.target);
-	}
-
 	/* --------------------------------------------------- the rendered tree */
 
 	get [kUAValueText](): UAText | null {
@@ -13881,26 +13897,6 @@ export class HTMLLabelElement extends HTMLElement {
 			}
 		}
 		return null;
-	}
-
-	/**
-	 * A click on a label is a click on its control, unless the click already
-	 * came from inside that control.
-	 */
-	[kActivationBehavior](event: Event): void {
-		const control = this.control;
-		if (control === null) {
-			return;
-		}
-		for (const target of event.composedPath()) {
-			if (target === control) {
-				return;
-			}
-		}
-		if (control[kClickInProgress]) {
-			return;
-		}
-		control.click();
 	}
 }
 
@@ -14553,7 +14549,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	}
 
 	override get length(): number {
-		return this[kEnsure]().length;
+		return ensure(this).length;
 	}
 
 	override set length(value: number) {
@@ -18428,7 +18424,7 @@ class FlatWalker {
 	nextNode(): Node | null {
 		let node = this.currentNode;
 		for (;;) {
-			const firstChild = this[kFirstChild](node);
+			const firstChild = flatFirstChild(this, node);
 			if (firstChild !== null) {
 				if (accepts(firstChild)) {
 					this.currentNode = firstChild;
@@ -18446,7 +18442,7 @@ class FlatWalker {
 				return null;
 			}
 
-			const nextSibling = this[kNextSibling](node);
+			const nextSibling = flatNextSibling(this, node);
 			if (nextSibling !== null) {
 				if (accepts(nextSibling)) {
 					this.currentNode = nextSibling;
@@ -18456,7 +18452,7 @@ class FlatWalker {
 				continue;
 			}
 
-			let parent = this[kParent](node);
+			let parent = flatParent(this, node);
 			while (parent !== null && parent !== this.root) {
 				// An element's ::after follows the last of its content.
 				if (parent.nodeType === ELEMENT_NODE) {
@@ -18470,7 +18466,7 @@ class FlatWalker {
 						continue;
 					}
 				}
-				const parentNextSibling = this[kNextSibling](parent);
+				const parentNextSibling = flatNextSibling(this, parent);
 				if (parentNextSibling !== null) {
 					if (accepts(parentNextSibling)) {
 						this.currentNode = parentNextSibling;
@@ -18479,7 +18475,7 @@ class FlatWalker {
 					node = parentNextSibling;
 					break;
 				}
-				parent = this[kParent](parent);
+				parent = flatParent(this, parent);
 			}
 
 			if (parent === null || parent === this.root) {
@@ -18494,7 +18490,7 @@ class FlatWalker {
 			return null;
 		}
 		for (;;) {
-			const previousSibling = this[kPreviousSibling](node);
+			const previousSibling = flatPreviousSibling(this, node);
 			if (previousSibling !== null) {
 				const descendant = lastDescendant(this, previousSibling);
 				if (accepts(descendant)) {
@@ -18504,7 +18500,7 @@ class FlatWalker {
 				node = descendant;
 				continue;
 			}
-			const parent = this[kParent](node);
+			const parent = flatParent(this, node);
 			if (parent === null) {
 				return null;
 			}
@@ -18522,7 +18518,7 @@ class FlatWalker {
 	parentNode(): Node | null {
 		let node: Node | null = this.currentNode;
 		while (node !== null && node !== this.root) {
-			const parent = this[kParent](node);
+			const parent = flatParent(this, node);
 			if (parent !== null && accepts(parent)) {
 				this.currentNode = parent;
 				return parent;
@@ -18533,9 +18529,9 @@ class FlatWalker {
 	}
 
 	firstChild(): Node | null {
-		let child = this[kFirstChild](this.currentNode);
+		let child = flatFirstChild(this, this.currentNode);
 		while (child !== null && !accepts(child)) {
-			child = this[kNextSibling](child);
+			child = flatNextSibling(this, child);
 		}
 		if (child === null) {
 			return null;
@@ -18545,9 +18541,9 @@ class FlatWalker {
 	}
 
 	lastChild(): Node | null {
-		let child = this[kLastChild](this.currentNode);
+		let child = flatLastChild(this, this.currentNode);
 		while (child !== null && !accepts(child)) {
-			child = this[kPreviousSibling](child);
+			child = flatPreviousSibling(this, child);
 		}
 		if (child === null) {
 			return null;
@@ -18568,9 +18564,9 @@ class FlatWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		let sibling = this[kNextSibling](this.currentNode);
+		let sibling = flatNextSibling(this, this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
-			sibling = this[kNextSibling](sibling);
+			sibling = flatNextSibling(this, sibling);
 		}
 		if (sibling === null) {
 			return null;
@@ -18584,9 +18580,9 @@ class FlatWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		let sibling = this[kPreviousSibling](this.currentNode);
+		let sibling = flatPreviousSibling(this, this.currentNode);
 		while (sibling !== null && !accepts(sibling)) {
-			sibling = this[kPreviousSibling](sibling);
+			sibling = flatPreviousSibling(this, sibling);
 		}
 		if (sibling === null) {
 			return null;
@@ -18594,80 +18590,80 @@ class FlatWalker {
 		this.currentNode = sibling;
 		return sibling;
 	}
+}
 
-	[kFirstChild](node: Node): Node | null {
-		for (let child = composedFirstChild(node); child !== null;) {
-			const found = head(this, child);
+function flatFirstChild(walker: FlatWalker, node: Node): Node | null {
+	for (let child = composedFirstChild(node); child !== null;) {
+		const found = head(walker, child);
+		if (found !== null) {
+			return found;
+		}
+		child = composedNextSibling(child);
+	}
+	return null;
+}
+
+function flatLastChild(walker: FlatWalker, node: Node): Node | null {
+	for (let child = composedLastChild(node); child !== null;) {
+		const found = tail(walker, child);
+		if (found !== null) {
+			return found;
+		}
+		child = composedPreviousSibling(child);
+	}
+	return null;
+}
+
+function flatNextSibling(walker: FlatWalker, node: Node): Node | null {
+	let current = node;
+	for (;;) {
+		for (
+			let sibling = composedNextSibling(current);
+			sibling !== null;
+			sibling = composedNextSibling(sibling)
+		) {
+			const found = head(walker, sibling);
 			if (found !== null) {
 				return found;
 			}
-			child = composedNextSibling(child);
 		}
-		return null;
+		// Out of composed siblings: a dissolved parent's siblings continue
+		// the sequence.
+		const parent = composedParentNode(current);
+		if (parent === null || !isDissolved(walker, parent)) {
+			return null;
+		}
+		current = parent;
 	}
+}
 
-	[kLastChild](node: Node): Node | null {
-		for (let child = composedLastChild(node); child !== null;) {
-			const found = tail(this, child);
+function flatPreviousSibling(walker: FlatWalker, node: Node): Node | null {
+	let current = node;
+	for (;;) {
+		for (
+			let sibling = composedPreviousSibling(current);
+			sibling !== null;
+			sibling = composedPreviousSibling(sibling)
+		) {
+			const found = tail(walker, sibling);
 			if (found !== null) {
 				return found;
 			}
-			child = composedPreviousSibling(child);
 		}
-		return null;
+		const parent = composedParentNode(current);
+		if (parent === null || !isDissolved(walker, parent)) {
+			return null;
+		}
+		current = parent;
 	}
+}
 
-	[kNextSibling](node: Node): Node | null {
-		let current = node;
-		for (;;) {
-			for (
-				let sibling = composedNextSibling(current);
-				sibling !== null;
-				sibling = composedNextSibling(sibling)
-			) {
-				const found = head(this, sibling);
-				if (found !== null) {
-					return found;
-				}
-			}
-			// Out of composed siblings: a dissolved parent's siblings continue
-			// the sequence.
-			const parent = composedParentNode(current);
-			if (parent === null || !isDissolved(this, parent)) {
-				return null;
-			}
-			current = parent;
-		}
+function flatParent(walker: FlatWalker, node: Node): Node | null {
+	let parent = composedParentNode(node);
+	while (parent !== null && isDissolved(walker, parent)) {
+		parent = composedParentNode(parent);
 	}
-
-	[kPreviousSibling](node: Node): Node | null {
-		let current = node;
-		for (;;) {
-			for (
-				let sibling = composedPreviousSibling(current);
-				sibling !== null;
-				sibling = composedPreviousSibling(sibling)
-			) {
-				const found = tail(this, sibling);
-				if (found !== null) {
-					return found;
-				}
-			}
-			const parent = composedParentNode(current);
-			if (parent === null || !isDissolved(this, parent)) {
-				return null;
-			}
-			current = parent;
-		}
-	}
-
-	[kParent](node: Node): Node | null {
-		let parent = composedParentNode(node);
-		while (parent !== null && isDissolved(this, parent)) {
-			parent = composedParentNode(parent);
-		}
-		return parent;
-	}
+	return parent;
 }
 
 /* The dissolving layer: composed hops with the caller's dissolved elements
@@ -18727,9 +18723,9 @@ function lastDescendant(
 ): Node {
 	let current = node;
 	for (
-		let child = walker[kLastChild](current);
+		let child = flatLastChild(walker, current);
 		child !== null;
-		child = walker[kLastChild](current)
+		child = flatLastChild(walker, current)
 	) {
 		current = child;
 	}
@@ -18742,8 +18738,7 @@ function isLastContent(
 	node: Node,
 	element: Element,
 ): boolean {
-	const shadow = element[kShadowRoot];
-	const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
+	const last = lastFlatContent(walker, element);
 	if (last === null) {
 		return false;
 	}
@@ -18751,15 +18746,31 @@ function isLastContent(
 		return true;
 	}
 	for (
-		let ancestor = composedParentNode(node);
+		let ancestor = flatParent(walker, node);
 		ancestor !== null;
-		ancestor = composedParentNode(ancestor)
+		ancestor = flatParent(walker, ancestor)
 	) {
 		if (ancestor === last) {
 			return true;
 		}
 	}
 	return false;
+}
+
+/**
+ * The last of an element's content as the walker sees it, ::after aside: the
+ * dissolving layer applied, and a wholly dissolved last child stepped back
+ * over the way flatLastChild steps back.
+ */
+function lastFlatContent(walker: FlatWalker, element: Element): Node | null {
+	for (let child = composedLastContent(element); child !== null;) {
+		const found = tail(walker, child);
+		if (found !== null) {
+			return found;
+		}
+		child = composedPreviousSibling(child);
+	}
+	return null;
 }
 
 /** Only elements and text generate boxes; every other node type is skipped. */
@@ -18828,27 +18839,25 @@ function composedLastChild(node: Node): Node | null {
 		return node[kLastChild];
 	}
 	const element = node as Element;
-	const slots = element[kPseudoElements];
-	if (slots !== null) {
-		const after = slots.get("::after");
-		if (after !== undefined) {
-			return after;
-		}
-	}
-	const shadow = element[kShadowRoot];
-	if (shadow !== null) {
-		return shadow[kLastChild];
-	}
-	if (element instanceof HTMLSlotElement) {
-		const assigned = element[kAssignedNodes];
-		if (assigned.length > 0) {
-			return assigned[assigned.length - 1];
-		}
-	}
-	const child = element[kLastChild];
+	const after = pseudoSlot(element, "::after");
+	return after !== null ? after : composedLastContent(element);
+}
+
+/**
+ * Mirror of composedContentFirstChild: an element's composed content from the
+ * end, pseudo-elements aside -- its shadow tree's last child when it hosts
+ * one, a slot's last assigned node when it has any, and its own last child
+ * otherwise. This is what a ::after follows, which is why it is separate from
+ * composedLastChild, whose answer IS the ::after when there is one.
+ */
+function composedLastContent(element: Element): Node | null {
+	const child = lastRenderedChild(element);
 	if (child !== null) {
 		return child;
 	}
+	// An element with no content of its own still renders its ::before and its
+	// ::marker, so the last of its content is whichever of those it has.
+	const slots = element[kPseudoElements];
 	if (slots !== null) {
 		const before = slots.get("::before");
 		if (before !== undefined) {
@@ -18860,6 +18869,25 @@ function composedLastChild(node: Node): Node | null {
 		}
 	}
 	return null;
+}
+
+/**
+ * Mirror of composedContentFirstChild: the last child an element renders --
+ * its shadow tree's, a slot's last assigned node, or its own. A host with an
+ * empty shadow tree renders nothing of its own, light children included.
+ */
+function lastRenderedChild(element: Element): Node | null {
+	const shadow = element[kShadowRoot];
+	if (shadow !== null) {
+		return shadow[kLastChild];
+	}
+	if (element instanceof HTMLSlotElement) {
+		const assigned = element[kAssignedNodes];
+		if (assigned.length > 0) {
+			return assigned[assigned.length - 1];
+		}
+	}
+	return element[kLastChild];
 }
 
 function composedNextSibling(node: Node): Node | null {
@@ -18886,9 +18914,14 @@ function composedNextSibling(node: Node): Node | null {
 	if (slot !== null) {
 		const assigned = slot[kAssignedNodes];
 		const index = assigned.indexOf(node as Slottable);
-		return index >= 0 && index < assigned.length - 1 ?
+		if (index < 0) {
+			return null;
+		}
+		// The last projected node is followed by the slot's ::after, exactly as
+		// the last of any other element's content is.
+		return index < assigned.length - 1 ?
 			assigned[index + 1] :
-			null;
+				pseudoSlot(slot, "::after");
 	}
 
 	const next = node[kNext];
@@ -18909,16 +18942,7 @@ function composedPreviousSibling(node: Node): Node | null {
 	if (host !== null && host !== undefined) {
 		const name = (node as Element)[kPseudoName];
 		if (name === "::after") {
-			const shadow = host[kShadowRoot];
-			const last = shadow !== null ? shadow[kLastChild] : host[kLastChild];
-			if (last !== null) {
-				return last;
-			}
-			const before = pseudoSlot(host, "::before");
-			if (before !== null) {
-				return before;
-			}
-			return pseudoSlot(host, "::marker");
+			return composedLastContent(host);
 		}
 		if (name === "::before") {
 			return pseudoSlot(host, "::marker");
@@ -18930,7 +18954,16 @@ function composedPreviousSibling(node: Node): Node | null {
 	if (slot !== null) {
 		const assigned = slot[kAssignedNodes];
 		const index = assigned.indexOf(node as Slottable);
-		return index > 0 ? assigned[index - 1] : null;
+		if (index > 0) {
+			return assigned[index - 1];
+		}
+		if (index < 0) {
+			return null;
+		}
+		// The first projected node is preceded by the slot's own ::before, as
+		// the first of any other element's content is.
+		const before = pseudoSlot(slot, "::before");
+		return before !== null ? before : pseudoSlot(slot, "::marker");
 	}
 
 	const previous = node[kPrevious];
@@ -19109,6 +19142,535 @@ Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
 	value: "DOMRectList",
 	configurable: true,
 });
+
+/**
+ * An element's content box: its size, plus the offset of its top-left corner
+ * INSIDE the border box -- the padding and border that precede it.
+ *
+ * Deliberately not a rect. `top`/`left` are a distance from the border edge,
+ * not a position in the document, and calling it a DOMRect would invite
+ * exactly the arithmetic (comparing it against a border box, intersecting it
+ * with the viewport) that its coordinates cannot support. ResizeObserver
+ * reports these four numbers as contentRect, which is where the confusion
+ * comes from in the first place.
+ */
+interface ContentBox {
+	width: number;
+	height: number;
+	top: number;
+	left: number;
+}
+
+/**
+ * ResizeObserver's contentRect: an element's content box, or null when it
+ * generates no box at all (display:none or detached) -- reported as "nothing",
+ * which the observer turns into an all-zero rect.
+ */
+function contentBoxOf(
+	element: globalThis.Element,
+	layoutEngine: LayoutEngine,
+): ContentBox | null {
+	const border = layoutEngine.getRect(element);
+	const content = layoutEngine.contentRect(element);
+	if (!border || !content) {
+		return null;
+	}
+	// Origin relative to the border box: what precedes the content on each axis.
+	return {
+		width: content.width,
+		height: content.height,
+		top: content.y - border.y,
+		left: content.x - border.x,
+	};
+}
+
+// Symbol-keyed rather than named: these are subclass hooks and shared state,
+// and author code must never see any of them on an observer it holds.
+const kTargets = Symbol("targets");
+const kHomes = Symbol("homes");
+const kMeasure = Symbol("measure");
+const kDeliver = Symbol("deliver");
+const kObserverCallback = Symbol("observer callback");
+
+/**
+ * The observers a document has to run: the ones holding at least one of its
+ * elements. A document, not a registry object, is what an observer can reach
+ * from the target it was handed, which is why `new ResizeObserver(callback)`
+ * needs nothing but its callback.
+ */
+const documentObservers = new WeakMap<object, Set<AnyObserver>>();
+
+function observersOf(document: object): Set<AnyObserver> {
+	let observers = documentObservers.get(document);
+	if (observers === undefined) {
+		observers = new Set<AnyObserver>();
+		documentObservers.set(document, observers);
+	}
+	return observers;
+}
+
+/**
+ * Run a document's observers against the layout just computed for it. The
+ * frame the renderer is finishing is what an IntersectionObserver measures
+ * against and what a ResizeObserver reports the time of.
+ */
+export function flushObservers(
+	document: object,
+	layoutEngine: LayoutEngine,
+	viewport: globalThis.DOMRect,
+	frame: number,
+): void {
+	const observers = documentObservers.get(document);
+	if (observers === undefined || observers.size === 0) {
+		return;
+	}
+	// A copy: a callback may observe or disconnect, and mutating the set
+	// mid-iteration would visit the new observer against a layout it has not
+	// been measured for, or skip one that is still live.
+	for (const observer of [...observers]) {
+		checkObserver(observer, layoutEngine, viewport, frame);
+	}
+}
+
+/** Drop a document's observers, so a torn-down document delivers nothing. */
+export function disconnectObservers(document: object): void {
+	documentObservers.get(document)?.clear();
+}
+
+/**
+ * The half of an observer that is identical between the two: which elements are
+ * watched, what was last reported for each, and registration with the manager.
+ *
+ * Subclasses supply only how to measure one target (kMeasure) and how to build
+ * an entry from that measurement, which is the whole of what differs.
+ */
+abstract class LayoutObserver<TState, TEntry, TOptions = void> {
+	/**
+	 * Observed targets, each mapped to how it was asked to be observed and to
+	 * what was last reported for it. One entry per target, as the DOM says: a
+	 * second observe() of the same target replaces the first's options.
+	 */
+	[kTargets]: Map<
+		globalThis.Element,
+		{options: TOptions | undefined; last: TState | null}
+	>;
+
+	/** The documents running this observer, one per document it has a target in. */
+	[kHomes]: Set<Set<AnyObserver>>;
+
+	constructor() {
+		this[kTargets] = new Map<
+			globalThis.Element,
+			{options: TOptions | undefined; last: TState | null}
+		>();
+		this[kHomes] = new Set<Set<AnyObserver>>();
+	}
+
+	observe(target: globalThis.Element, options?: TOptions): void {
+		// A fresh target has no last state, so its first measurement always counts
+		// as a change -- which is what fires the initial callback the DOM promises.
+		this[kTargets].set(target, {
+			options,
+			last: this[kTargets].get(target)?.last ?? null,
+		});
+		const document = target.ownerDocument;
+		if (document === null) {
+			return;
+		}
+		const observers = observersOf(document);
+		observers.add(this as unknown as AnyObserver);
+		this[kHomes].add(observers);
+	}
+
+	unobserve(target: globalThis.Element): void {
+		this[kTargets].delete(target);
+		if (this[kTargets].size === 0) {
+			this.disconnect();
+		}
+	}
+
+	disconnect(): void {
+		this[kTargets].clear();
+		for (const observers of this[kHomes]) {
+			observers.delete(this as unknown as AnyObserver);
+		}
+		this[kHomes].clear();
+	}
+
+	/**
+	 * Records are computed and delivered in the same pass (see the manager's
+	 * flush), so nothing is ever queued undelivered and this is always empty.
+	 * Present because the DOM has it and code checks for it.
+	 */
+	takeRecords(): TEntry[] {
+		return [];
+	}
+
+	/** Measure one target: its new state, and the entry to report, or null. */
+	abstract [kMeasure](
+		target: globalThis.Element,
+		last: TState | null,
+		layoutEngine: LayoutEngine,
+		viewport: globalThis.DOMRect,
+		frame: number,
+		options: TOptions | undefined,
+	): {state: TState; entry: TEntry} | null;
+
+	abstract [kDeliver](entries: TEntry[]): void;
+}
+
+function checkObserver<TState, TEntry, TOptions = void>(
+	observer: LayoutObserver<TState, TEntry, TOptions>,
+	layoutEngine: LayoutEngine,
+	viewport: globalThis.DOMRect,
+	frame: number,
+): void {
+	const entries: TEntry[] = [];
+	for (const [target, observation] of observer[kTargets]) {
+		const result = observer[kMeasure](
+			target,
+			observation.last,
+			layoutEngine,
+			viewport,
+			frame,
+			observation.options,
+		);
+		if (!result) {
+			continue;
+		}
+		observation.last = result.state;
+		entries.push(result.entry);
+	}
+	if (entries.length > 0) {
+		observer[kDeliver](entries);
+	}
+}
+
+type AnyObserver = LayoutObserver<unknown, unknown, unknown>;
+
+interface ResizeObserverSize {
+	inlineSize: number;
+	blockSize: number;
+}
+
+interface ResizeObserverEntry {
+	target: globalThis.Element;
+	contentRect: globalThis.DOMRect;
+	borderBoxSize: readonly ResizeObserverSize[];
+	contentBoxSize: readonly ResizeObserverSize[];
+	devicePixelContentBoxSize: readonly ResizeObserverSize[];
+}
+
+type ResizeObserverCallback = (
+	entries: ResizeObserverEntry[],
+	observer: ResizeObserver,
+) => void;
+
+interface ResizeSize {
+	width: number;
+	height: number;
+}
+
+/** The boxes an observation can watch, as the DOM enumerates them. */
+const RESIZE_BOXES = new Set([
+	"border-box",
+	"content-box",
+	"device-pixel-content-box",
+]);
+
+interface ResizeObserverOptions {
+	box?: string;
+}
+
+export class ResizeObserver extends LayoutObserver<
+	ResizeSize,
+	ResizeObserverEntry,
+	ResizeObserverOptions
+> {
+	declare [kObserverCallback]: ResizeObserverCallback;
+
+	constructor(callback: ResizeObserverCallback) {
+		super();
+		this[kObserverCallback] = callback;
+	}
+
+	/**
+	 * `box` names which box's size change is worth reporting; every entry still
+	 * carries all of them, as the DOM says. An unrecognized value is not a box
+	 * this DOM quietly ignores -- the enumeration rejects it, as WebIDL does.
+	 */
+	override observe(
+		target: globalThis.Element,
+		options?: ResizeObserverOptions,
+	): void {
+		const box = options?.box;
+		if (box !== undefined && !RESIZE_BOXES.has(box)) {
+			throw new TypeError(
+				`Failed to execute 'observe' on 'ResizeObserver': The provided value '${box}' is not a valid enum value of type ResizeObserverBoxOptions.`,
+			);
+		}
+		super.observe(target, options);
+	}
+
+	[kMeasure](
+		target: globalThis.Element,
+		last: ResizeSize | null,
+		layoutEngine: LayoutEngine,
+		_viewport: globalThis.DOMRect,
+		_frame: number,
+		options: ResizeObserverOptions | undefined,
+	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
+		// An element with no box -- display:none, or detached -- has a size, and
+		// that size is zero. Reporting it is how the DOM lets a component notice
+		// it has been hidden; skipping it stranded the last size it ever had.
+		const content = contentBoxOf(target, layoutEngine) ?? {
+			width: 0,
+			height: 0,
+			top: 0,
+			left: 0,
+		};
+
+		const border = layoutEngine.getRect(target);
+		// device-pixel-content-box is the content box: a cell is the device
+		// pixel here, so the two can never diverge.
+		const watched =
+			options?.box === "border-box" ?
+					{
+						width: border?.width ?? content.width,
+						height: border?.height ?? content.height,
+					} :
+					{width: content.width, height: content.height};
+
+		if (
+			last && last.width === watched.width && last.height === watched.height
+		) {
+			return null;
+		}
+
+		const box: ResizeObserverSize = {
+			inlineSize: content.width,
+			blockSize: content.height,
+		};
+		return {
+			state: watched,
+			entry: {
+				target,
+				// Origin is the content box's offset inside the border box -- the
+				// padding and border that precede it -- not zero.
+				contentRect: layoutEngine.createDOMRect(
+					content.left,
+					content.top,
+					content.width,
+					content.height,
+				),
+				contentBoxSize: [box],
+				borderBoxSize: [
+					{
+						inlineSize: border?.width ?? content.width,
+						blockSize: border?.height ?? content.height,
+					},
+				],
+				// A cell is the device pixel here, so these coincide.
+				devicePixelContentBoxSize: [box],
+			},
+		};
+	}
+
+	[kDeliver](entries: ResizeObserverEntry[]): void {
+		this[kObserverCallback](entries, this);
+	}
+}
+
+interface IntersectionObserverInit {
+	root?: globalThis.Element | null;
+	rootMargin?: string;
+	threshold?: number | number[];
+}
+
+interface IntersectionObserverEntry {
+	target: globalThis.Element;
+	isIntersecting: boolean;
+	intersectionRatio: number;
+	boundingClientRect: globalThis.DOMRect;
+	intersectionRect: globalThis.DOMRect;
+	rootBounds: globalThis.DOMRect | null;
+	time: number;
+}
+
+type IntersectionObserverCallback = (
+	entries: IntersectionObserverEntry[],
+	observer: IntersectionObserver,
+) => void;
+
+/** Fraction of `box` that lies within `clip`, from 0 (disjoint) to 1 (contained). */
+function intersectionRatio(
+	box: globalThis.DOMRect,
+	clip: globalThis.DOMRect,
+	layoutEngine: LayoutEngine,
+): {ratio: number; rect: globalThis.DOMRect} {
+	const left = Math.max(box.left, clip.left);
+	const top = Math.max(box.top, clip.top);
+	const right = Math.min(box.left + box.width, clip.left + clip.width);
+	const bottom = Math.min(box.top + box.height, clip.top + clip.height);
+
+	const width = Math.max(0, right - left);
+	const height = Math.max(0, bottom - top);
+	const area = box.width * box.height;
+
+	return {
+		ratio: area > 0 ? (width * height) / area : width > 0 && height > 0 ? 1 : 0,
+		rect: layoutEngine.createDOMRect(left, top, width, height),
+	};
+}
+
+/**
+ * Grow (or shrink) a rect by a CSS margin shorthand, per the root-margin rules:
+ * one to four lengths, in the order top, right, bottom, left.
+ *
+ * Lengths are cells, whichever unit is written: a row vertically, a column
+ * horizontally. `px` and `ch` therefore mean the same thing here, which is the
+ * same equivalence the rest of termdom's box model makes. Percentages are
+ * resolved against the root's own size, as the spec requires.
+ */
+function applyRootMargin(
+	rect: globalThis.DOMRect,
+	margin: string,
+	layoutEngine: LayoutEngine,
+): globalThis.DOMRect {
+	const parts = margin.trim().split(/\s+/).filter(Boolean);
+	if (parts.length === 0) {
+		return rect;
+	}
+
+	const resolve = (value: string, basis: number): number => {
+		const match = /^(-?[\d.]+)(px|ch|%)?$/.exec(value);
+		if (!match) {
+			return 0;
+		}
+		const n = parseFloat(match[1]);
+		if (!Number.isFinite(n)) {
+			return 0;
+		}
+		return match[2] === "%" ? (n / 100) * basis : n;
+	};
+
+	const [t, r = t, b = t, l = r] = parts;
+	const top = resolve(t, rect.height);
+	const right = resolve(r, rect.width);
+	const bottom = resolve(b, rect.height);
+	const left = resolve(l, rect.width);
+
+	return layoutEngine.createDOMRect(
+		rect.left - left,
+		rect.top - top,
+		Math.max(0, rect.width + left + right),
+		Math.max(0, rect.height + top + bottom),
+	);
+}
+
+const kIntersectionRoot = Symbol("intersection root");
+
+export class IntersectionObserver extends LayoutObserver<
+	number,
+	IntersectionObserverEntry
+> {
+	declare [kObserverCallback]: IntersectionObserverCallback;
+	declare [kIntersectionRoot]: globalThis.Element | null;
+
+	readonly rootMargin: string;
+	readonly thresholds: readonly number[];
+
+	constructor(
+		callback: IntersectionObserverCallback,
+		init: IntersectionObserverInit = {},
+	) {
+		super();
+		this[kObserverCallback] = callback;
+		this[kIntersectionRoot] = init.root ?? null;
+		this.rootMargin = init.rootMargin ?? "0px";
+
+		// A single number, an array, or the default of "any intersection at all".
+		const t = init.threshold ?? 0;
+		this.thresholds = Object.freeze(
+			(Array.isArray(t) ? [...t] : [t]).sort((a, b) => a - b),
+		);
+	}
+
+	get root(): globalThis.Element | null {
+		return this[kIntersectionRoot];
+	}
+
+	[kMeasure](
+		target: globalThis.Element,
+		last: number | null,
+		layoutEngine: LayoutEngine,
+		viewport: globalThis.DOMRect,
+		frame: number,
+	): {state: number; entry: IntersectionObserverEntry} | null {
+		const box = layoutEngine.getRect(target);
+		if (!box) {
+			return null;
+		}
+
+		// The root: an explicit element's border box, or the viewport. Either way
+		// grown by rootMargin, which is the whole point of that option -- it is
+		// what lets a list start loading a row before it scrolls into view.
+		const rootBox =
+			this[kIntersectionRoot] ?
+					layoutEngine.getRect(this[kIntersectionRoot]) :
+				viewport;
+		if (!rootBox) {
+			return null;
+		}
+		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
+
+		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
+		const index = thresholdIndex(this, ratio);
+		if (last === index) {
+			return null;
+		}
+
+		return {
+			state: index,
+			entry: {
+				target,
+				isIntersecting: index > 0,
+				intersectionRatio: ratio,
+				boundingClientRect: box,
+				intersectionRect:
+					index > 0 ? rect : layoutEngine.createDOMRect(0, 0, 0, 0),
+				rootBounds,
+				time: frame,
+			},
+		};
+	}
+
+	[kDeliver](entries: IntersectionObserverEntry[]): void {
+		this[kObserverCallback](entries, this);
+	}
+}
+
+/**
+ * How many thresholds the ratio has reached, which is what the spec actually
+ * watches: an observation fires when this CHANGES, so a target scrolling
+ * through `[0, 0.5, 1]` reports at each step. Tracking only the boolean
+ * "is it intersecting" collapsed all of those into one callback and made
+ * threshold arrays decorative.
+ */
+function thresholdIndex(observer: IntersectionObserver, ratio: number): number {
+	let index = 0;
+	while (
+		index < observer.thresholds.length && ratio >= observer.thresholds[index]
+	) {
+		// A zero threshold means "any overlap at all", so a ratio of exactly
+		// zero has not reached it.
+		if (observer.thresholds[index] === 0 && ratio === 0) {
+			break;
+		}
+		index++;
+	}
+	return index;
+}
 
 /* --------------------------------------------------------------- document */
 
@@ -20059,7 +20621,7 @@ const parentNodeMembers = {
 					this,
 					(node) => node.nodeType === ELEMENT_NODE,
 				);
-				collection[kEnsure]();
+				ensure(collection);
 				owner[kChildren] = collection;
 			}
 			return collection;
@@ -23074,8 +23636,6 @@ function precedingWithin(node: Node, root: Node): Node | null {
 	return previous;
 }
 
-const kPreRemove = Symbol("node iterator pre-removing steps");
-
 const kReference = Symbol("reference");
 const kWhatToShow = Symbol("whatToShow");
 const kFilter = Symbol("filter");
@@ -23130,37 +23690,6 @@ export class NodeIterator {
 	detach(): void {
 		// The spec keeps this as a no-op.
 	}
-
-	/** The spec's NodeIterator pre-removing steps. */
-	[kPreRemove](toBeRemoved: Node): void {
-		if (
-			!isInclusiveAncestor(toBeRemoved, this[kReference]) ||
-			isInclusiveAncestor(toBeRemoved, this[kRoot])
-		) {
-			return;
-		}
-		if (this[kPointerBefore]) {
-			let next = followingWithin(toBeRemoved, this[kRoot]);
-			while (next !== null && isInclusiveAncestor(toBeRemoved, next)) {
-				next = followingWithin(next, this[kRoot]);
-			}
-			if (next !== null) {
-				this[kReference] = next;
-				return;
-			}
-			this[kPointerBefore] = false;
-		}
-		const previous = toBeRemoved[kPrevious];
-		if (previous === null) {
-			this[kReference] = toBeRemoved[kParent] as Node;
-			return;
-		}
-		let last: Node = previous;
-		while (last[kLastChild] !== null) {
-			last = last[kLastChild] as Node;
-		}
-		this[kReference] = last;
-	}
 }
 
 function traverse(
@@ -23209,8 +23738,38 @@ function traverse(
 	return node;
 }
 
-function preRemoveFromIterator(iterator: NodeIterator, node: Node): void {
-	iterator[kPreRemove](node);
+/** The spec's NodeIterator pre-removing steps. */
+function preRemoveFromIterator(
+	iterator: NodeIterator,
+	toBeRemoved: Node,
+): void {
+	if (
+		!isInclusiveAncestor(toBeRemoved, iterator[kReference]) ||
+		isInclusiveAncestor(toBeRemoved, iterator[kRoot])
+	) {
+		return;
+	}
+	if (iterator[kPointerBefore]) {
+		let next = followingWithin(toBeRemoved, iterator[kRoot]);
+		while (next !== null && isInclusiveAncestor(toBeRemoved, next)) {
+			next = followingWithin(next, iterator[kRoot]);
+		}
+		if (next !== null) {
+			iterator[kReference] = next;
+			return;
+		}
+		iterator[kPointerBefore] = false;
+	}
+	const previous = toBeRemoved[kPrevious];
+	if (previous === null) {
+		iterator[kReference] = toBeRemoved[kParent] as Node;
+		return;
+	}
+	let last: Node = previous;
+	while (last[kLastChild] !== null) {
+		last = last[kLastChild] as Node;
+	}
+	iterator[kReference] = last;
 }
 
 Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
@@ -26292,6 +26851,7 @@ export const platform = {
 	HTMLVideoElement,
 	HashChangeEvent,
 	InputEvent,
+	IntersectionObserver,
 	KeyboardEvent,
 	MathMLElement,
 	MessageEvent,
@@ -26309,6 +26869,7 @@ export const platform = {
 	ProcessingInstruction,
 	RadioNodeList,
 	Range,
+	ResizeObserver,
 	SVGElement,
 	Selection,
 	ShadowRoot,
@@ -26584,9 +27145,7 @@ const _checked: [
 		"clientTop" | // GAP
 		"computedStyleMap" | // GAP: Typed OM
 		"animate" | // GAP: no animation timeline
-		// GAP
-		"getAnimations"
-	>,
+		"getAnimations">,
 ] = [
 	true,
 	true,

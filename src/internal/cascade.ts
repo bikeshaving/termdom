@@ -5413,42 +5413,28 @@ class CSSFontFeatureValuesRule extends CSSRule {
 		notifyRule(this);
 	}
 
-	/** One feature block's values, or an empty block when it was not written. */
-	[kBlock](name: string): CSSStyleDeclaration {
-		let block = this[kBlocks].get(name);
-		if (!block) {
-			block = new CSSStyleDeclaration({
-				parentRule: this,
-				onChange: () => notifyRule(this),
-				descriptors: "@font-feature-values",
-			});
-			this[kBlocks].set(name, block);
-		}
-		return block;
-	}
-
 	get annotation(): CSSStyleDeclaration {
-		return this[kBlock]("annotation");
+		return featureBlock(this, "annotation");
 	}
 
 	get ornaments(): CSSStyleDeclaration {
-		return this[kBlock]("ornaments");
+		return featureBlock(this, "ornaments");
 	}
 
 	get stylistic(): CSSStyleDeclaration {
-		return this[kBlock]("stylistic");
+		return featureBlock(this, "stylistic");
 	}
 
 	get swash(): CSSStyleDeclaration {
-		return this[kBlock]("swash");
+		return featureBlock(this, "swash");
 	}
 
 	get characterVariant(): CSSStyleDeclaration {
-		return this[kBlock]("character-variant");
+		return featureBlock(this, "character-variant");
 	}
 
 	get styleset(): CSSStyleDeclaration {
-		return this[kBlock]("styleset");
+		return featureBlock(this, "styleset");
 	}
 
 	get cssText(): string {
@@ -5461,6 +5447,23 @@ class CSSFontFeatureValuesRule extends CSSRule {
 		}
 		return `@font-feature-values ${this[kFontFamily]} {${blocks.join("")}\n}`;
 	}
+}
+
+/** One feature block's values, or an empty block when it was not written. */
+function featureBlock(
+	rule: CSSFontFeatureValuesRule,
+	name: string,
+): CSSStyleDeclaration {
+	let block = rule[kBlocks].get(name);
+	if (!block) {
+		block = new CSSStyleDeclaration({
+			parentRule: rule,
+			onChange: () => notifyRule(rule),
+			descriptors: "@font-feature-values",
+		});
+		rule[kBlocks].set(name, block);
+	}
+	return block;
 }
 
 /** `@keyframes`: its name and the keyframes it holds. */
@@ -7891,8 +7894,6 @@ const EMPTY_COMPUTED_STYLE: ComputedStyle = {
 
 const kCSSRules = Symbol("cssRules");
 const kManager = Symbol("manager");
-const kUsedValuesOf = Symbol("usedValuesOf");
-const kDropUsedValues = Symbol("dropUsedValues");
 const kRefresh = Symbol("refresh");
 const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
@@ -7945,7 +7946,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	 */
 	[kUsedValue](property: string): string {
 		const manager = this[kManager]!;
-		const used = manager[kUsedValuesOf](this);
+		const used = usedValuesOf(manager, this);
 		const memoized = used.get(property);
 		if (memoized !== undefined) {
 			return memoized;
@@ -8024,7 +8025,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			this[kResolved],
 		);
 		this[kResolved] = new Map();
-		this[kManager]?.[kDropUsedValues](this);
+		const manager = this[kManager];
+		if (manager) {
+			dropUsedValues(manager, this);
+		}
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
@@ -8967,9 +8971,6 @@ const kPseudoElement = Symbol("pseudoElement");
 const kNodeResolved = Symbol("nodeResolved");
 const kNodeStyle = Symbol("nodeStyle");
 const kBoxView = Symbol("boxView");
-const kBoxViewOf = Symbol("boxViewOf");
-
-const kTransitionValue = Symbol("transitionValue");
 
 /**
  * A pseudo-element's computed style: a flat declaration set -- the matched
@@ -9065,7 +9066,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			this[kRefresh]();
 		}
 		const value = this[kBaseValue](property);
-		const transitional = this[kTransitionValue](property);
+		const transitional = pseudoTransitionValue(this, property);
 		return transitional ?? value;
 	}
 
@@ -9088,24 +9089,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			this[kResolved].set(property, value);
 		}
 		return value;
-	}
-
-	/** A running transition's value for this pseudo-element, or null. */
-	[kTransitionValue](property: string): string | null {
-		const manager = this[kManager];
-		if (
-			manager === null ||
-			this[kElement] === null ||
-			manager[kTransitionCount] === 0
-		) {
-			return null;
-		}
-		return transitionValueOf(
-			manager,
-			this[kElement],
-			this[kPseudoElement],
-			property,
-		);
 	}
 
 	/**
@@ -9135,7 +9118,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 							computedValue(property, getInitialStyle(null, property));
 						this[kNodeResolved].set(property, value);
 					}
-					const transitional = this[kTransitionValue](property);
+					const transitional = pseudoTransitionValue(this, property);
 					return transitional ?? value;
 				},
 			};
@@ -9184,7 +9167,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				this[kPseudoElement],
 			);
 			if (node) {
-				return measure(this[kBoxViewOf](node), property, computed);
+				return measure(boxViewOf(this, node), property, computed);
 			}
 		}
 		if (!computed.endsWith("%")) {
@@ -9214,30 +9197,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
 		return usedLength((parseFloat(computed) / 100) * basis);
-	}
-
-	/**
-	 * This declaration as the measurement arithmetic reads it: the same
-	 * cascade answers, with the pseudo-element's own node standing where the
-	 * element stands -- its rect is the box being measured, and its flat-tree
-	 * parent is the originating element percentages resolve against. One view
-	 * per node: composition may retire a node and make another, and a view
-	 * naming the old one would measure a rect no layout holds.
-	 */
-	[kBoxViewOf](node: Element): MeasuredDeclaration {
-		let view = this[kBoxView];
-		if (!view || view[kElement] !== node) {
-			view = {
-				[kElement]: node,
-				[kManager]: this[kManager],
-				computedValueOf: (property: string): string =>
-					this.nodeStyle.computedValueOf(property),
-				getPropertyValue: (property: string): string =>
-					this.getPropertyValue(property),
-			};
-			this[kBoxView] = view;
-		}
-		return view;
 	}
 
 	override setProperty(): void {
@@ -9271,6 +9230,54 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	override set cssText(_text: string) {
 		throw readOnlyDeclaration(this[kElement] ?? undefined);
 	}
+}
+
+/** A running transition's value for this pseudo-element, or null. */
+function pseudoTransitionValue(
+	declaration: PseudoStyleDeclaration,
+	property: string,
+): string | null {
+	const manager = declaration[kManager];
+	if (
+		manager === null ||
+		declaration[kElement] === null ||
+		manager[kTransitionCount] === 0
+	) {
+		return null;
+	}
+	return transitionValueOf(
+		manager,
+		declaration[kElement],
+		declaration[kPseudoElement],
+		property,
+	);
+}
+
+/**
+ * A declaration as the measurement arithmetic reads it: the same cascade
+ * answers, with the pseudo-element's own node standing where the element
+ * stands -- its rect is the box being measured, and its flat-tree parent is
+ * the originating element percentages resolve against. One view per node:
+ * composition may retire a node and make another, and a view naming the old
+ * one would measure a rect no layout holds.
+ */
+function boxViewOf(
+	declaration: PseudoStyleDeclaration,
+	node: Element,
+): MeasuredDeclaration {
+	let view = declaration[kBoxView];
+	if (!view || view[kElement] !== node) {
+		view = {
+			[kElement]: node,
+			[kManager]: declaration[kManager],
+			computedValueOf: (property: string): string =>
+				declaration.nodeStyle.computedValueOf(property),
+			getPropertyValue: (property: string): string =>
+				declaration.getPropertyValue(property),
+		};
+		declaration[kBoxView] = view;
+	}
+	return view;
 }
 
 /**
@@ -9872,7 +9879,6 @@ interface CounterScope {
 const kWindow = Symbol("window");
 const kLayoutEngine = Symbol("layoutEngine");
 const kDocument = Symbol("document");
-const kGetComputedStyle = Symbol("getComputedStyle");
 const kCurrentDeclarations = Symbol("currentDeclarations");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -10114,7 +10120,11 @@ export class StyleManager {
 		}
 
 		// Override window.getComputedStyle with our cached version
-		window.getComputedStyle = this[kGetComputedStyle].bind(this);
+		window.getComputedStyle = (
+			element: Element,
+			pseudoElt?: string | null,
+		): globalThis.CSSStyleDeclaration =>
+			authorComputedStyle(this, element, pseudoElt);
 
 		// Hook into methods that should invalidate cached styles
 		setupInvalidationHooks(this);
@@ -10238,21 +10248,6 @@ export class StyleManager {
 	 * says nothing has been measured, which costs nothing to say.
 	 */
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
-
-	/** The used values a declaration has measured behind the last flush. */
-	[kUsedValuesOf](declaration: object): Map<string, string> {
-		let values = this[kUsedValues].get(declaration);
-		if (!values) {
-			values = new Map();
-			this[kUsedValues].set(declaration, values);
-		}
-		return values;
-	}
-
-	/** Drop one declaration's used values: its cascade moved under them. */
-	[kDropUsedValues](declaration: object): void {
-		this[kUsedValues].delete(declaration);
-	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
 		this[kLayoutEngine] = layoutEngine;
@@ -10655,57 +10650,6 @@ export class StyleManager {
 		}
 		this[kFocusVisibleActive] = active;
 		return true;
-	}
-
-	[kGetComputedStyle](
-		element: Element,
-		pseudoElt?: string | null,
-	): globalThis.CSSStyleDeclaration {
-		// A computed style describes the DOM as it stands, so an author read
-		// goes through the flush a geometry read does.
-		this.flushStyle();
-		// Ensure stylesheets are parsed if the document's sheet list changed
-		// since the last parse, or a newly registered shadow root's sheet
-		// awaits
-		if (
-			this[kStylesheetsDirty] ||
-			styleSheetCount(this) !== this[kParsedStyleSheetCount]
-		) {
-			parseStylesheets(this);
-		}
-		// An element that is not being rendered has no style to report: it is
-		// out of the document, or out of the flat tree its document composes.
-		// Only an author read comes through here -- the engine reads through
-		// declarationFor, which asks nothing of the flat tree.
-		if (!isBeingRendered(element)) {
-			return new EmptyStyleDeclaration(
-				element,
-			) as unknown as globalThis.CSSStyleDeclaration;
-		}
-
-		// The pseudo-element argument names a pseudo-element, names nothing
-		// (and is ignored), or names something that is not one -- for which an
-		// empty declaration is the answer.
-		let pseudoElement = "";
-		if (pseudoElt) {
-			const parsed = parsePseudoElementArgument(String(pseudoElt));
-			if (parsed === null) {
-				return new EmptyStyleDeclaration(
-					element,
-				) as unknown as globalThis.CSSStyleDeclaration;
-			}
-			pseudoElement = parsed;
-		}
-
-		if (pseudoElement) {
-			return indexedDeclaration(
-				this.pseudoDeclarationFor(element, pseudoElement),
-			) as unknown as globalThis.CSSStyleDeclaration;
-		}
-
-		return indexedDeclaration(
-			this.declarationFor(element),
-		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	/**
@@ -11280,6 +11224,77 @@ export class StyleManager {
 		this[kTransitionCount] = 0;
 		this[kTransitionEvents] = [];
 	}
+}
+
+/** The used values a declaration has measured behind the last flush. */
+function usedValuesOf(
+	manager: StyleManager,
+	declaration: object,
+): Map<string, string> {
+	let values = manager[kUsedValues].get(declaration);
+	if (!values) {
+		values = new Map();
+		manager[kUsedValues].set(declaration, values);
+	}
+	return values;
+}
+
+/** Drop one declaration's used values: its cascade moved under them. */
+function dropUsedValues(manager: StyleManager, declaration: object): void {
+	manager[kUsedValues].delete(declaration);
+}
+
+/** window.getComputedStyle: an author's read of an element's style. */
+function authorComputedStyle(
+	manager: StyleManager,
+	element: Element,
+	pseudoElt?: string | null,
+): globalThis.CSSStyleDeclaration {
+	// A computed style describes the DOM as it stands, so an author read
+	// goes through the flush a geometry read does.
+	manager.flushStyle();
+	// Ensure stylesheets are parsed if the document's sheet list changed
+	// since the last parse, or a newly registered shadow root's sheet
+	// awaits
+	if (
+		manager[kStylesheetsDirty] ||
+		styleSheetCount(manager) !== manager[kParsedStyleSheetCount]
+	) {
+		parseStylesheets(manager);
+	}
+	// An element that is not being rendered has no style to report: it is
+	// out of the document, or out of the flat tree its document composes.
+	// Only an author read comes through here -- the engine reads through
+	// declarationFor, which asks nothing of the flat tree.
+	if (!isBeingRendered(element)) {
+		return new EmptyStyleDeclaration(
+			element,
+		) as unknown as globalThis.CSSStyleDeclaration;
+	}
+
+	// The pseudo-element argument names a pseudo-element, names nothing
+	// (and is ignored), or names something that is not one -- for which an
+	// empty declaration is the answer.
+	let pseudoElement = "";
+	if (pseudoElt) {
+		const parsed = parsePseudoElementArgument(String(pseudoElt));
+		if (parsed === null) {
+			return new EmptyStyleDeclaration(
+				element,
+			) as unknown as globalThis.CSSStyleDeclaration;
+		}
+		pseudoElement = parsed;
+	}
+
+	if (pseudoElement) {
+		return indexedDeclaration(
+			manager.pseudoDeclarationFor(element, pseudoElement),
+		) as unknown as globalThis.CSSStyleDeclaration;
+	}
+
+	return indexedDeclaration(
+		manager.declarationFor(element),
+	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
 // ---------------------------------------------------------------------------
