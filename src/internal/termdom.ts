@@ -332,8 +332,8 @@ export class TermDOM {
 	readonly window: EngineWindow;
 
 	declare [kScreen]: Screen;
-	[kLayoutEngine]: LayoutEngine;
-	[kObserver]: MutationObserver;
+	declare [kLayoutEngine]: LayoutEngine;
+	declare [kObserver]: MutationObserver;
 	// The elements that asked for the alternate screen, innermost last.
 	declare [kFullscreenStack]: Element[];
 	declare [kObserverManager]: ObserverManager;
