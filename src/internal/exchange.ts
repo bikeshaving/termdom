@@ -539,6 +539,17 @@ export class TerminalExchange {
 	}
 
 	/**
+	 * Write a mode's set bytes and record the engagement, whether or not it
+	 * was recorded already. A mode marked engaged because its bytes ride
+	 * another write has none on the wire until that write happens, and a
+	 * caller that needs the mode NOW cannot wait for it.
+	 */
+	engageMode(name: ModeName): void {
+		this[kEngagedModes].add(name);
+		void this.write(MODE_SPELLINGS[name].set);
+	}
+
+	/**
 	 * Reset the engaged modes, in the table's order. The orderly half of the
 	 * restore guarantee; the panic paths write the blanket union instead.
 	 */

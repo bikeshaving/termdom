@@ -213,10 +213,14 @@ async function requestFullscreenElement(
 		termdom[kFullscreenStack].push(element);
 		if (termdom[kFullscreenStack].length === 1) {
 			termdom[kExchange].setMode("altScreen", true);
+			// The cursor goes before the screen is touched, so it never sits
+			// blinking on the clear. Frames hide it as they paint and an
+			// interactive session records that before its first frame, so the
+			// hide is written whatever the record says.
+			termdom[kExchange].engageMode("cursorHidden");
 			// The alternate screen comes up holding whatever the terminal left
 			// in it, so the entry clears it and homes the cursor.
 			void termdom[kExchange].write(eraseScreen() + cursorHome());
-			termdom[kExchange].setMode("cursorHidden", true);
 		}
 
 		fireFullscreenChangeEvent(termdom, element);
