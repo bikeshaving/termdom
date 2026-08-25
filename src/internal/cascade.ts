@@ -7355,6 +7355,12 @@ function convertImportRule(
 		const layer = (node.children?.toArray() ?? []).find(
 			(child) => child.type === "Layer",
 		);
+		if (node.type === "Function" && !layer) {
+			// `layer()` takes a layer name and nothing else, so a name off
+			// the grammar takes the prelude with it. The anonymous layer is
+			// what the bare word `layer` asks for.
+			return null;
+		}
 		layerName = layer?.name ?? "";
 		index++;
 	}

@@ -530,6 +530,13 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	expect(() => parsedSheet.insertRule("@import url(a.css) garbage!!;", 0))
 		.toThrow();
 
+	// `layer()` takes a layer name: one off the grammar drops the rule,
+	// while the bare word asks for the anonymous layer.
+	expect(() => parsedSheet.insertRule("@import url(a.css) layer(1a);", 0))
+		.toThrow();
+	parsedSheet.insertRule("@import url(a.css) layer;", 0);
+	expect((parsedSheet.cssRules[0] as CSSImportRule).layerName).toBe("");
+
 	// A supports() whose parenthesis never closes is recovered ending at the
 	// text: the condition reaches its last character.
 	parsedSheet.insertRule("@import url(a.css) supports(display:flex", 0);
