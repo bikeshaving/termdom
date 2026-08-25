@@ -501,14 +501,12 @@ const kNextRafId = Symbol("nextRafId");
 const kSealed = Symbol("sealed");
 const kFrameCallbacks = Symbol("frameCallbacks");
 const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
-const kAttached = Symbol("attached");
+const kLifecycle = Symbol("lifecycle");
 const kAttachReady = Symbol("attachReady");
 const kRenderCount = Symbol("renderCount");
 const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
-const kAttachBeginning = Symbol("attachBeginning");
 const kAttachBegun = Symbol("attachBegun");
-const kDisposed = Symbol("disposed");
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kMountHandle = Symbol("mountHandle");
@@ -518,6 +516,24 @@ const kRenderQueued = Symbol("renderQueued");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 const kResizeTimer = Symbol("resizeTimer");
 const kStaticSibling = Symbol("staticSibling");
+
+/**
+ * Where an instance stands with the terminal, in order: constructed and
+ * writing nothing, attach() establishing the session, the session live, torn
+ * down for good. Disposal is final -- there is no way back to detached.
+ */
+type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
+
+/**
+ * Whether the terminal is ours to write to. True from the moment attach() is
+ * called, not from the moment its begin phase finishes: renders raised in
+ * between belong to the session and wait on kAttachBegun rather than being
+ * dropped.
+ */
+function isAttached(termdom: TermDOM): boolean {
+	const lifecycle = termdom[kLifecycle];
+	return lifecycle === "attaching" || lifecycle === "attached";
+}
 
 /**
  * Everything the window installers below need from the TermDOM that installed
@@ -612,10 +628,11 @@ export class TermDOM {
 	// object it was scheduled for and drops its answer if another SIGWINCH has
 	// replaced it -- the newer resize's own redraw is the one that lands.
 	declare [kSettlingResize]: object | null;
-	// Whether we have taken hold of the terminal: raw mode, signal handlers,
-	// the stdin listener and the cursor query. Construction never touches the
-	// process -- attach() does, lazily on the first render or explicitly.
-	declare [kAttached]: boolean;
+	// How far we have gone in taking hold of the terminal: raw mode, signal
+	// handlers, the stdin listener and the cursor query. Construction never
+	// touches the process -- attach() does, lazily on the first render or
+	// explicitly -- and dispose() ends the instance for good.
+	declare [kLifecycle]: Lifecycle;
 	/**
 	 * How many activation-triggering events are being dispatched right now,
 	 * and whether one ever has been. What only a user may ask for is asked of
@@ -699,7 +716,7 @@ export class TermDOM {
 		this[kRenderCount] = 0;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
-		this[kAttached] = false;
+		this[kLifecycle] = "detached";
 		this[kActivationDepth] = 0;
 		this[kEverActivated] = false;
 		this[kScrolledElements] = new Set();
@@ -736,9 +753,7 @@ export class TermDOM {
 		};
 		this[kAttachReady] = Promise.resolve();
 		this[kAttachBegun] = Promise.resolve();
-		this[kAttachBeginning] = false;
 		this[kStaticSibling] = null;
-		this[kDisposed] = false;
 		this[kTransport] = options.transport ?? transportFromProcess();
 		this[kInteractive] = this[kTransport].interactive;
 
@@ -868,15 +883,19 @@ export class TermDOM {
 	// Resolves once attach()'s begin phase has run (session started, cursor
 	// detection initialized): a render triggered between attach() and that
 	// phase -- a requestAnimationFrame, a mutation -- must not paint an
-	// unanchored first frame. The flag keeps steady-state renders fully
-	// synchronous: an unconditional await would defer every frame a
-	// microtask, and the scrollTop clamp is synchronous by contract.
+	// unanchored first frame. Awaited only while attaching, so steady-state
+	// renders stay fully synchronous: an unconditional await would defer
+	// each frame a microtask, and the scrollTop clamp is synchronous by
+	// contract.
 	declare [kAttachBegun]: Promise<void>;
-	declare [kAttachBeginning]: boolean;
 
 	attach(transport: TerminalTransport = this[kTransport]): Promise<void> {
 		const rebinding = transport !== this[kTransport];
-		if (this[kAttached]) {
+		// A disposed instance owes the terminal nothing and takes nothing back.
+		if (this[kLifecycle] === "disposed") {
+			return this[kAttachReady];
+		}
+		if (isAttached(this)) {
 			if (rebinding) {
 				throw new Error(
 					"attach(): cannot re-attach a live TermDOM to a different " +
@@ -888,22 +907,20 @@ export class TermDOM {
 		if (rebinding) {
 			rebindTransport(this, transport);
 		}
-		this[kAttached] = true;
-
 		// Begin once the transport is established (a process tty already is;
 		// an SSH wrapper's channel may still be opening), then paint whatever
 		// the document holds. The returned promise resolves when that first
 		// frame has been written; negotiations are excluded deliberately --
 		// their silence timeouts must never hold a first paint hostage.
-		this[kAttachBeginning] = true;
+		this[kLifecycle] = "attaching";
 		let begun!: () => void;
 		this[kAttachBegun] = new Promise<void>((resolve) => {
 			begun = resolve;
 		});
 		this[kAttachReady] = (async () => {
 			await this[kTransport].ready;
-			if (this[kDisposed] || !this[kAttached]) {
-				this[kAttachBeginning] = false;
+			// dispose() during the wait ends it: the session never starts.
+			if (this[kLifecycle] !== "attaching") {
 				begun();
 				return;
 			}
@@ -927,7 +944,7 @@ export class TermDOM {
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
 			this[kExchange].scrubProbeEcho();
-			this[kAttachBeginning] = false;
+			this[kLifecycle] = "attached";
 			begun();
 
 			// Deferred a microtask so the render does not occupy the
@@ -993,7 +1010,7 @@ export class TermDOM {
 		const output = renderStaticHTML(
 			this,
 			html,
-			this[kAttached] && this[kInteractive] ? "\r\n" : "\n",
+			isAttached(this) && this[kInteractive] ? "\r\n" : "\n",
 		);
 		if (!output) {
 			return Promise.resolve();
@@ -1006,8 +1023,6 @@ export class TermDOM {
 		this.dispose();
 	}
 
-	declare [kDisposed]: boolean;
-
 	/**
 	 * Tear down and hand the terminal back. Resolves when every queued
 	 * restore has reached the transport; await it before writing further
@@ -1016,15 +1031,14 @@ export class TermDOM {
 	 * awaiting still leaves the shell usable.
 	 */
 	dispose(): Promise<void> {
-		if (this[kDisposed]) {
+		if (this[kLifecycle] === "disposed") {
 			return Promise.resolve();
 		}
-		this[kDisposed] = true;
 
 		// A TermDOM that never attached owes the terminal nothing: no final
 		// flush, no mode restores -- there is no session to close.
-		const wasAttached = this[kAttached];
-		this[kAttached] = false;
+		const wasAttached = isAttached(this);
+		this[kLifecycle] = "disposed";
 
 		// Document mode has been painting a window in place, so nothing it
 		// showed has reached the terminal's scrollback. Pay it all out now --
@@ -1596,7 +1610,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
 			// and this is the terminal's equivalent precondition.
-			if (!termDOM[kAttached]) {
+			if (!isAttached(termDOM)) {
 				return Promise.reject(
 					new Error("requestFullscreen(): attach() the terminal first"),
 				);
@@ -1696,7 +1710,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			termDOM[kMediaQueryUpdaters].add(update);
 		},
 		closeRequested() {
-			const wasAttached = termDOM[kAttached];
+			const wasAttached = isAttached(termDOM);
 			// An immediate close must not tear down mid-establishment: wait
 			// for attach to finish (anchor found, first frame painted) so the
 			// payout lands where the frame was, not at a stale row 0. Then
@@ -1720,7 +1734,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// document.title sets the terminal's window title in-band (OSC 2).
 		// attach() pushes the previous title; dispose() pops it.
 		titleChanged(title) {
-			if (termDOM[kAttached] && termDOM[kInteractive]) {
+			if (isAttached(termDOM) && termDOM[kInteractive]) {
 				void termDOM[kExchange].setTitle(title);
 			}
 		},
@@ -1732,7 +1746,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// here, so the seal is skipped. A real seal is a close() from a live,
 		// painted session.
 		documentClosed() {
-			if (termDOM[kAttached] && termDOM[kRenderCount] > 0) {
+			if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
 				sealToScrollback(termDOM);
 			}
 		},
@@ -1750,13 +1764,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return {
 				clipboard: createClipboard({
 					terminal: () =>
-						termDOM[kAttached] && termDOM[kInteractive] ?
+						isAttached(termDOM) && termDOM[kInteractive] ?
 							termDOM[kExchange] :
 							null,
 					userActive: () => isUserActive(termDOM),
 				}),
 				permissions: createPermissions({
-					interactive: () => termDOM[kAttached] && termDOM[kInteractive],
+					interactive: () => isAttached(termDOM) && termDOM[kInteractive],
 					userActive: () => isUserActive(termDOM),
 				}),
 				userActivation: {
@@ -2115,7 +2129,7 @@ function updateMouseReporting(
 	termdom: TermDOM,
 ): void {
 	const wanted =
-		termdom[kAttached] &&
+		isAttached(termdom) &&
 		termdom[kInteractive] &&
 		!termdom[kEventHandler].mouseCaptureYielded;
 	if (wanted === termdom[kMouseReportingEnabled]) {
@@ -2171,7 +2185,7 @@ async function render(
 	// mutations keep the DOM and layout live but write nothing. Rendering
 	// resumes -- starting with whatever the document holds by then -- the
 	// moment attach() runs, which ends by scheduling this render.
-	if (!termdom[kAttached]) {
+	if (!isAttached(termdom)) {
 		return;
 	}
 
@@ -2239,16 +2253,14 @@ function drainFrameCallbacks(termdom: TermDOM): void {
 async function renderOnce(
 	termdom: TermDOM,
 ): Promise<void> {
-	// An in-flight render loop can outlive dispose() by one queued frame;
+	// The begin phase has to land before a frame can be anchored, and an
+	// in-flight render loop can outlive dispose() by one queued frame;
 	// everything below assumes a live document.
-	if (termdom[kDisposed]) {
-		return;
-	}
-	if (termdom[kAttachBeginning]) {
+	if (termdom[kLifecycle] === "attaching") {
 		await termdom[kAttachBegun];
-		if (termdom[kDisposed]) {
-			return;
-		}
+	}
+	if (termdom[kLifecycle] === "disposed") {
+		return;
 	}
 	if (!termdom[kInteractive]) {
 		await printStatic(termdom);
