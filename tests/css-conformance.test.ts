@@ -444,6 +444,17 @@ test("css: @media rules do not apply when the query fails", async () => {
 	).not.toBe("rgb(255, 165, 0)");
 });
 
+test("css: a comment in an @media prelude leaves the query standing", async () => {
+	// The comment used to be sliced into the feature's parentheses, leaving a
+	// condition css-tree refuses -- which was read as matching.
+	expect(
+		await colorOf(
+			"<style>@media (min-width: 1000px) /* c */ {p{color:orange}}</style><p>x</p>",
+			"p",
+		),
+	).not.toBe("rgb(255, 165, 0)");
+});
+
 test("css: color:inherit resolves the parent's value", async () => {
 	expect(
 		await colorOf(

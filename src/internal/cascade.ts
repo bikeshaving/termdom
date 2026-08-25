@@ -3834,6 +3834,46 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 }
 
 /**
+ * `text` with its comments replaced by a space. A comment stands where
+ * whitespace may, so it separates the tokens around it, and one that never
+ * closes runs to the end of the text as the tokenizer says. Media text is
+ * split and sliced by hand here, and a comment left in would be carried into
+ * a feature's parentheses and unbalance them.
+ */
+function stripCSSComments(text: string): string {
+	if (!text.includes("/*")) {
+		return text;
+	}
+	let out = "";
+	let quote = "";
+	let start = 0;
+	for (let index = 0; index < text.length; index++) {
+		const character = text[index];
+		if (quote) {
+			if (character === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character !== "/" || text[index + 1] !== "*") {
+			continue;
+		}
+		out += `${text.slice(start, index)} `;
+		const close = text.indexOf("*/", index + 2);
+		if (close === -1) {
+			return out;
+		}
+		index = close + 1;
+		start = index + 1;
+	}
+	return out + text.slice(start);
+}
+
+/**
  * The top-level `and`-separated conditions of one media query. Whitespace
  * inside a feature's parentheses belongs to the feature.
  */
@@ -3977,15 +4017,16 @@ function parseMediaQueryList(text: string): MediaQueryNode[] | null {
  * The query's structure -- modifier, type, the conditions `and` joins -- is
  * read off css-tree's media query nodes, parsed once here; each condition's
  * TEXT still serializes from the authored source, sliced at the node's
- * position. Text css-tree refuses, or spells with comments or escapes the
- * slices would drop, keeps the splitter above.
+ * position. Comments come out first -- a slice would carry one inside a
+ * feature's parentheses -- and text css-tree refuses, or spells with escapes
+ * the slices would drop, keeps the splitter above.
  */
 function serializeMediaQuery(query: string): string {
-	const text = String(query ?? "").trim();
+	const text = stripCSSComments(String(query ?? "")).trim();
 	if (!text) {
 		return "";
 	}
-	if (text.includes("/*") || text.includes("\\")) {
+	if (text.includes("\\")) {
 		return serializeMediaQueryText(text);
 	}
 	const queries = parseMediaQueryList(text);
@@ -4148,7 +4189,7 @@ export class MediaList {
 		if (arguments.length === 0) {
 			throw typeError("appendMedium requires a medium");
 		}
-		const text = String(medium);
+		const text = stripCSSComments(String(medium));
 		if (splitMediaQueryList(text).length !== 1) {
 			return;
 		}
@@ -4166,7 +4207,7 @@ export class MediaList {
 		if (arguments.length === 0) {
 			throw typeError("deleteMedium requires a medium");
 		}
-		const text = String(medium);
+		const text = stripCSSComments(String(medium));
 		const query =
 			splitMediaQueryList(text).length === 1 ? serializeMediaQuery(text) : "";
 		const kept = this[kMedia].filter((entry) => entry !== query);
@@ -4193,7 +4234,9 @@ function parse(
 	text: string,
 ): void {
 	list[kMedia].length = 0;
-	for (const query of splitMediaQueryList(String(text ?? ""))) {
+	for (const query of splitMediaQueryList(
+		stripCSSComments(String(text ?? "")),
+	)) {
 		const serialized = serializeMediaQuery(query);
 		if (serialized) {
 			list[kMedia].push(serialized);
