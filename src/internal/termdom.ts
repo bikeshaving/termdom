@@ -273,7 +273,6 @@ const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 
-const kTopLayer = Symbol("topLayer");
 const kUAToolkit = Symbol("uaToolkit");
 const kEventHandler = Symbol("eventHandler");
 
@@ -340,7 +339,7 @@ export class TermDOM {
 	declare [kObserverManager]: ObserverManager;
 	declare [kStyleManager]: StyleManager;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
-	// owns no scheduling. Shares kTopLayer by reference.
+	// owns no scheduling.
 	declare [kPainter]: Painter;
 	// Where the viewport looks in the document: scrollTop (window.scrollY),
 	// screenTop (the command-start row), and the fullscreen anchor. See Viewport.
@@ -378,7 +377,6 @@ export class TermDOM {
 	 * the DOCUMENT's, by reference: `showModal` puts a dialog in it with no
 	 * route through the renderer, and the renderer paints whatever is there.
 	 */
-	declare [kTopLayer]: Set<Element>;
 
 	/**
 	 * The UA's capabilities, returned by the one installUAEngine handshake:
@@ -591,7 +589,6 @@ export class TermDOM {
 				void render(this);
 			},
 		});
-		this[kTopLayer] = this[kUAToolkit].topLayer as unknown as Set<Element>;
 		this[kEventHandler] = buildEventHandler(this);
 		this[kPainter] = new Painter({
 			window: this.window,
@@ -599,7 +596,7 @@ export class TermDOM {
 			layout: this[kLayoutEngine],
 			styleManager: this[kStyleManager],
 			scrollTop: () => this[kScrollTop],
-			topLayer: this[kTopLayer],
+			topLayer: this[kUAToolkit].topLayer as unknown as Set<Element>,
 			toolkit: this[kUAToolkit],
 		});
 
@@ -2072,10 +2069,9 @@ function documentPaintHeight(
 	termdom: TermDOM,
 ): number {
 	let height = documentFlowHeight(termdom);
-	for (const element of termdom[kTopLayer]) {
-		if (!termdom[kUAToolkit].flatIsConnected(element)) {
-			continue;
-		}
+	const rendered =
+		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+	for (const element of rendered) {
 		// A modal's ::backdrop paints the whole viewport, so the frame
 		// emits that many rows whatever the dialog's own box says. The
 		// reserve must match what the emitter writes: reserving less
@@ -2638,7 +2634,9 @@ function topmostModalDialog(
 	termdom: TermDOM,
 ): HTMLDialogElement | null {
 	let modal: HTMLDialogElement | null = null;
-	for (const element of termdom[kTopLayer]) {
+	const rendered =
+		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+	for (const element of rendered) {
 		if (termdom[kUAToolkit].isModalDialog(element)) {
 			modal = element as HTMLDialogElement;
 		}
@@ -2657,7 +2655,9 @@ function topmostCloseRequestTarget(
 ): Element | null {
 	const popover = termdom[kUAToolkit].topmostAutoPopover() as Element | null;
 	let target: Element | null = null;
-	for (const element of termdom[kTopLayer]) {
+	const rendered =
+		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+	for (const element of rendered) {
 		if (termdom[kUAToolkit].isModalDialog(element) || element === popover) {
 			target = element;
 		}
@@ -2683,7 +2683,7 @@ function findElementAtDocumentPoint(
 		termdom.document.documentElement,
 		x,
 		y,
-		termdom[kTopLayer],
+		termdom[kUAToolkit].topLayer as unknown as Set<Element>,
 		termdom[kScrollTop],
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on

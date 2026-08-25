@@ -339,13 +339,8 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
-		for (const element of this[kTopLayer]) {
-			// COMPOSITION-connected: a UA part (the select's picker) lives in
-			// a fragment and is never DOM-connected while very much on screen.
-			if (!this[kToolkit].flatIsConnected(element)) {
-				this[kTopLayer].delete(element);
-				continue;
-			}
+		const rendered = this[kToolkit].renderedTopLayer() as unknown as Element[];
+		for (const element of rendered) {
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
 			// A top-layer element enters the walk from outside its ancestor

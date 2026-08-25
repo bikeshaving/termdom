@@ -149,6 +149,12 @@ export interface UAToolkit {
 	upgradeWidgetsIn(root: object): void;
 	/** The granted document's top layer, by reference. */
 	topLayer: Set<Element>;
+	/**
+	 * The top layer's members that are on screen, in the order they joined.
+	 * A member off the flat tree is passed over rather than dropped: it is
+	 * the tree's business whether it comes back, not the reader's.
+	 */
+	renderedTopLayer(): Element[];
 	isModalDialog(node: object): boolean;
 	isShowingPopover(node: object): boolean;
 	topmostAutoPopover(): Element | null;
@@ -278,6 +284,18 @@ function makeUAToolkit(document: object): UAToolkit {
 			}
 		},
 		topLayer: topLayerOf(document),
+		renderedTopLayer(): Element[] {
+			const rendered: Element[] = [];
+			for (const element of topLayerOf(document)) {
+				// COMPOSITION-connected: a UA part (the select's picker) lives
+				// in a fragment and is never DOM-connected while very much on
+				// screen.
+				if (flatIsConnected(element)) {
+					rendered.push(element);
+				}
+			}
+			return rendered;
+		},
 		isModalDialog(node: object): boolean {
 			return owns(node) && isModalDialog(node);
 		},
