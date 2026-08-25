@@ -26,6 +26,7 @@ import {
 import {
 	EventHandler,
 	focusAutofocusedNodes,
+	isActivationTriggering,
 	type DocumentPoint,
 } from "./input.js";
 import {
@@ -58,57 +59,6 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
 		return undefined;
 	}
 	return (DOM.mountOf(from) as EngineMount | undefined)?.engine;
-}
-
-/**
- * The keys that are a modifier and nothing else, which a user pressing them
- * has not yet asked for anything with.
- */
-const BARE_MODIFIER_KEYS = new Set([
-	"Alt",
-	"AltGraph",
-	"CapsLock",
-	"Control",
-	"Fn",
-	"FnLock",
-	"Hyper",
-	"Meta",
-	"NumLock",
-	"ScrollLock",
-	"Shift",
-	"Super",
-	"Symbol",
-	"SymbolLock",
-]);
-
-/**
- * Whether an event is activation-triggering: the user asking for something,
- * rather than something happening to them.
- *
- * These are the spec's -- a key that is neither Escape nor a bare modifier, a
- * mouse press, release or click, a paste. A paste's default action carries
- * the text on to a field as a beforeinput, which is activation-triggering
- * too: a listener that sees the gesture only there still has the gate open.
- * A resize, a focus move, pointer motion and a wheel tick are the user
- * agent's events too, and none of them is a request.
- */
-function isActivationTriggering(event: DOM.Event): boolean {
-	switch (event.type) {
-		case "keydown": {
-			const key = (event as DOM.KeyboardEvent).key;
-			return key !== "Escape" && !BARE_MODIFIER_KEYS.has(key);
-		}
-		case "mousedown":
-		case "mouseup":
-		case "click":
-		case "pointerup":
-		case "paste":
-			return true;
-		case "beforeinput":
-			return (event as DOM.InputEvent).inputType === "insertFromPaste";
-		default:
-			return false;
-	}
 }
 
 /**

@@ -19,7 +19,12 @@
  * reaches into rendering.
  */
 
-import type {UAToolkit} from "./dom.js";
+import type {
+	Event,
+	InputEvent,
+	KeyboardEvent,
+	UAToolkit,
+} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import type {LayoutEngine} from "./layout.js";
 import {type StyleManager, computedStyleOf} from "./cascade.js";
@@ -233,6 +238,57 @@ export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 
 /** Input types that are buttons rather than fields. */
 const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
+
+/**
+ * The keys that are a modifier and nothing else, which a user pressing them
+ * has not yet asked for anything with.
+ */
+const BARE_MODIFIER_KEYS = new Set([
+	"Alt",
+	"AltGraph",
+	"CapsLock",
+	"Control",
+	"Fn",
+	"FnLock",
+	"Hyper",
+	"Meta",
+	"NumLock",
+	"ScrollLock",
+	"Shift",
+	"Super",
+	"Symbol",
+	"SymbolLock",
+]);
+
+/**
+ * Whether an event is activation-triggering: the user asking for something,
+ * rather than something happening to them.
+ *
+ * These are the spec's -- a key that is neither Escape nor a bare modifier, a
+ * mouse press, release or click, a paste. A paste's default action carries
+ * the text on to a field as a beforeinput, which is activation-triggering
+ * too: a listener that sees the gesture only there still has the gate open.
+ * A resize, a focus move, pointer motion and a wheel tick are the user
+ * agent's events too, and none of them is a request.
+ */
+export function isActivationTriggering(event: Event): boolean {
+	switch (event.type) {
+		case "keydown": {
+			const key = (event as KeyboardEvent).key;
+			return key !== "Escape" && !BARE_MODIFIER_KEYS.has(key);
+		}
+		case "mousedown":
+		case "mouseup":
+		case "click":
+		case "pointerup":
+		case "paste":
+			return true;
+		case "beforeinput":
+			return (event as InputEvent).inputType === "insertFromPaste";
+		default:
+			return false;
+	}
+}
 
 /**
  * Does a keypress on this element activate it, the way a click would?
