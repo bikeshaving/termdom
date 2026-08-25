@@ -313,6 +313,53 @@ test("close() seals the document into scrollback; a later mutation starts a fres
 	dom.dispose();
 });
 
+test("the seal pays out the rows the region painted, not body's own box", async () => {
+	// An inline body is a run member: its block children are hoisted out and
+	// laid out beside it, so its own box measures one line however many rows
+	// they paint. Sizing the payout from it wrote a different document than
+	// the screen had shown.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	terminal.stdout.write("PRE-0\r\nPRE-1\r\nPRE-2\r\nPRE-3\r\nPRE-4\r\n");
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	const style = dom.document.createElement("style");
+	style.textContent = ".pane { height: 4em; overflow-y: scroll; }";
+	dom.document.head.appendChild(style);
+	dom.document.body.innerHTML =
+		"<div>HEAD</div>" +
+		"<div id=\"pane\" class=\"pane\">" +
+		Array.from({length: 20}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div>" +
+		"<div>FOOT</div>";
+	await nextFrame(dom);
+	dom.document.body.setAttribute("style", "display: inline");
+	await nextFrame(dom);
+	(dom.document.getElementById("pane") as any).scrollTop = 1;
+	await nextFrame(dom);
+
+	const ours = (rows: string[]): string[] =>
+		rows.filter((row) => row !== "" && !row.startsWith("PRE-"));
+	const before = read(terminal, 10);
+	expect(ours([...before.scrollback, ...before.viewport])).toEqual([
+		"HEAD",
+		"row 1",
+		"row 2",
+		"row 3",
+		"row 4",
+		"FOOT",
+	]);
+
+	dom.document.close();
+	await nextFrame(dom);
+
+	// What the screen showed survives the one write that commits.
+	const after = read(terminal, 10);
+	expect(ours([...after.scrollback, ...after.viewport]).slice(0, 6)).toEqual(
+		ours([...before.scrollback, ...before.viewport]),
+	);
+
+	dom.dispose();
+});
+
 test("[Symbol.dispose] tears down, so `using` works", () => {
 	const terminal = new MockProcess({rows: 10, cols: 30});
 	const dom = new TermDOM({transport: terminal.sharedTransport});

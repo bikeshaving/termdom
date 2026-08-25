@@ -2289,15 +2289,20 @@ async function renderOnce(
 }
 
 /**
- * The paint height of the document: body's scroll height, extended to
- * cover top-layer boxes -- hoisted under the root, they contribute
- * nothing to body's own height, and a picker opening at the bottom
- * edge must still get rows to paint into.
+ * The paint height of the document: the root box's laid-out height,
+ * extended to cover top-layer boxes -- hoisted under the root, they
+ * contribute nothing to the flow's height, and a picker opening at the
+ * bottom edge must still get rows to paint into.
+ *
+ * The root, not body's scroll height: an inline body is a run member
+ * whose block children are hoisted out and laid out beside it, so its own
+ * box measures one line however many rows they paint. The root box holds
+ * those hoisted boxes and reports the rows the flow occupies.
  */
 function documentPaintHeight(
 	termdom: TermDOM,
 ): number {
-	let height = termdom.document.body.scrollHeight;
+	let height = documentFlowHeight(termdom);
 	for (const element of termdom[kTopLayer]) {
 		if (!termdom[kUAToolkit].flatIsConnected(element)) {
 			continue;
@@ -2320,18 +2325,29 @@ function documentPaintHeight(
 }
 
 /**
+ * The rows the document's flow occupies, from the root box that holds it.
+ */
+function documentFlowHeight(
+	termdom: TermDOM,
+): number {
+	const rect =
+		termdom[kLayoutEngine].getRect(termdom.document.documentElement);
+	return rect ? Math.ceil(rect.height) : 0;
+}
+
+/**
  * The height of the window the camera shows, for the scroll-to-reveal
  * math. Fullscreen owns the whole screen from row zero, and the
- * fullscreen element has left the flow -- body.scrollHeight measures
- * next to nothing there, and a reveal sized by it would scroll the
- * camera by the target's whole row.
+ * fullscreen element has left the flow -- the flow measures next to
+ * nothing there, and a reveal sized by it would scroll the camera by the
+ * target's whole row.
  */
 function cameraRegionHeight(
 	termdom: TermDOM,
 ): number {
 	return isFullscreen(termdom) ?
 		termdom[kHeight] :
-			Math.min(termdom[kHeight], termdom.document.body.scrollHeight);
+			Math.min(termdom[kHeight], documentFlowHeight(termdom));
 }
 
 /**
@@ -2750,7 +2766,7 @@ function handleResize(
 	// flight. If the terminal does not answer, fall back to the computed
 	// vertical re-anchor (exact for height changes, approximate for width).
 	termdom[kLayoutEngine].calculateLayout();
-	const contentHeight = termdom.document.body.scrollHeight;
+	const contentHeight = documentPaintHeight(termdom);
 	const wrappedRowsAbove = termdom[kScreen].wrappedRowsAbovePark(newWidth);
 	const settling = termdom[kSettlingResize];
 
@@ -2998,7 +3014,7 @@ async function printStatic(
 	termdom[kLayoutEngine].calculateLayout();
 
 	const context = termdom[kScreen].beginStatic({
-		rows: termdom.document.body.scrollHeight,
+		rows: documentPaintHeight(termdom),
 	});
 	termdom[kPainter].paint(context);
 	const output = termdom[kScreen].endFrame();
@@ -3067,7 +3083,7 @@ function renderStatic(
 	lineEnding: "\n" | "\r\n",
 ): string {
 	processPendingMutationsAndRender(termdom);
-	const contentHeight = termdom.document.body.scrollHeight;
+	const contentHeight = documentPaintHeight(termdom);
 	if (contentHeight === 0) {
 		return "";
 	}

@@ -226,28 +226,11 @@ test(
 					.split("\n")
 					.map((line) => line.trimEnd())
 					.filter((line) => line !== "");
-				// KNOWN BUG, not asserted: the payout sizes itself from
-				// body.scrollHeight, and an inline body reports 1 however many
-				// rows the region actually painted, so the seal writes a
-				// different document than the screen showed.
-				//
-				//   html:   "   <div data-f=\"e0\"></div>"
-				//   script: [{"kind":"style","id":"body","value":"display: inline"},
-				//            {"kind":"box","id":"pane","top":1}]
-				//   40x10, the five rows of prior output, the chrome above.
-				//
-				// The frame paints HEAD, the pane's four rows and FOOT; the
-				// seal pays out HEAD three times, drops the pane's first row
-				// and shifts the rest down. block, flex and inline-block all
-				// report a height that covers what they painted; inline
-				// reports 1. Remove this guard when that is fixed.
-				const ours = painted.filter((line) => !line.startsWith("PRE-"));
-				const payable = scene.dom.document.body.scrollHeight >= ours.length;
 				scene.dom.document.close();
 				await nextFrame(scene.dom);
 				await settle(scene, 10);
 				const sealed = new Set(allRowsOf(scene).map((line) => line.trimEnd()));
-				for (const line of payable ? painted : []) {
+				for (const line of painted) {
 					if (!sealed.has(line)) {
 						problems.push(
 							`the seal lost the painted row ${JSON.stringify(line)}`,
