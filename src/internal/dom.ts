@@ -26489,22 +26489,6 @@ export function createDocumentWindow(html: string, url?: string): EngineWindow {
 	return buildWindow(parseHTMLDocument(html, url));
 }
 
-/** GAP or NEVER, per member -- the un-binned remainder of Element. */
-type ElementRemainder =
-	| "currentCSSZoom" | // NEVER: zoom is a browser's
-	"part" | // RUNTIME: reflected from the tables
-	"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
-	"scrollIntoView" | // RUNTIME on HTMLElement; lib.dom asks Element
-	"clientWidth" | // RUNTIME on HTMLElement; lib.dom asks Element
-	"clientHeight" |
-	"scrollWidth" |
-	"scrollHeight" |
-	"clientLeft" | // GAP: no border box to measure a border of
-	"clientTop" | // GAP
-	"computedStyleMap" | // GAP: Typed OM
-	"animate" | // GAP: no animation timeline
-	"getAnimations"; // GAP
-
 // -- key-complete today, held that way. The value assignment is the
 // enforcement: an entry whose Equal resolves never refuses a true.
 const _checked: [
@@ -26523,7 +26507,7 @@ const _checked: [
 	Equal<MissingFrom<globalThis.Attr, Attr>, NodeConstants>,
 	Equal<
 		MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>,
-		| "DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_STANDARD" |
 		"DOM_KEY_LOCATION_LEFT" |
 		"DOM_KEY_LOCATION_RIGHT" |
 		"DOM_KEY_LOCATION_NUMPAD"
@@ -26533,7 +26517,7 @@ const _checked: [
 	// RUNTIME: constants.
 	Equal<
 		MissingFrom<globalThis.Range, Range>,
-		| "START_TO_START" |
+		"START_TO_START" |
 		"START_TO_END" |
 		"END_TO_END" |
 		"END_TO_START"
@@ -26582,7 +26566,19 @@ const _checked: [
 		SelectorSurface |
 		PointerSurface |
 		FullscreenSurface |
-		ElementRemainder
+		"currentCSSZoom" | // NEVER: zoom is a browser's
+		"part" | // RUNTIME: reflected from the tables
+		"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
+		"scrollIntoView" | // RUNTIME on HTMLElement; lib.dom asks Element
+		"clientWidth" | // RUNTIME on HTMLElement; lib.dom asks Element
+		"clientHeight" |
+		"scrollWidth" |
+		"scrollHeight" |
+		"clientLeft" | // GAP: no border box to measure a border of
+		"clientTop" | // GAP
+		"computedStyleMap" | // GAP: Typed OM
+		"animate" | // GAP: no animation timeline
+		"getAnimations" // GAP
 	>,
 ] = [
 	true,
