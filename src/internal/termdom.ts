@@ -2194,7 +2194,7 @@ async function render(
 			do {
 				do {
 					termdom[kRenderQueued] = false;
-					await renderFrame(termdom);
+					await renderOnce(termdom);
 				} while (termdom[kRenderQueued]);
 				// The frames are written; wake everything that awaited them.
 				// A callback that schedules another frame re-queues the
@@ -2223,6 +2223,26 @@ function drainFrameCallbacks(termdom: TermDOM): void {
 	for (const cb of callbacks) {
 		cb(now);
 	}
+}
+
+async function renderOnce(
+	termdom: TermDOM,
+): Promise<void> {
+	// The begin phase has to land before a frame can be anchored, and an
+	// in-flight render loop can outlive dispose() by one queued frame;
+	// everything below assumes a live document.
+	if (termdom[kLifecycle] === "attaching") {
+		await termdom[kAttachBegun];
+	}
+	if (termdom[kLifecycle] === "disposed") {
+		return;
+	}
+	if (!termdom[kInteractive]) {
+		await printStatic(termdom);
+		return;
+	}
+
+	await renderInteractive(termdom);
 }
 
 /**
@@ -3045,23 +3065,9 @@ function renderStatic(
  * that we repaint a window of: content that scrolls out of view is never
  * frozen output, and reflow anywhere is free.
  */
-async function renderFrame(
+async function renderInteractive(
 	termdom: TermDOM,
 ): Promise<void> {
-	// The begin phase has to land before a frame can be anchored, and an
-	// in-flight render loop can outlive dispose() by one queued frame;
-	// everything below assumes a live document.
-	if (termdom[kLifecycle] === "attaching") {
-		await termdom[kAttachBegun];
-	}
-	if (termdom[kLifecycle] === "disposed") {
-		return;
-	}
-	if (!termdom[kInteractive]) {
-		await printStatic(termdom);
-		return;
-	}
-
 	// The previous document was sealed to scrollback by close(). Start a fresh
 	// one below it: re-anchor to where the cursor now sits and reset the diff so
 	// nothing composites over the frozen block.
