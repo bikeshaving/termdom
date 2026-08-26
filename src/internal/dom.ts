@@ -3354,7 +3354,7 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["uievents", () => new UIEvent("")],
 ]);
 
-export type EventListenerOrEventListenerObject =
+type EventListenerOrEventListenerObject =
 	((event: Event) => void) |
 	{handleEvent(event: Event): void};
 
@@ -3364,14 +3364,14 @@ interface ListenerSignal {
 	addEventListener(type: string, callback: () => void): void;
 }
 
-export interface AddEventListenerOptions {
+interface AddEventListenerOptions {
 	capture?: boolean;
 	once?: boolean;
 	passive?: boolean;
 	signal?: ListenerSignal;
 }
 
-export interface EventListenerOptions {
+interface EventListenerOptions {
 	capture?: boolean;
 }
 
@@ -5939,7 +5939,7 @@ interface MutationObserverInit {
 	attributeFilter?: Iterable<string>;
 }
 
-export type MutationCallback = (
+type MutationCallback = (
 	records: MutationRecord[],
 	observer: MutationObserver,
 ) => void;
@@ -8154,7 +8154,7 @@ const shadowAttachedListeners: Array<(root: ShadowRoot) => void> = [];
  * toggleAttribute, the parser -- and shadow roots the moment they attach,
  * declarative ones included.
  */
-export interface TreeObserver {
+interface TreeObserver {
 	attributeChanged(element: Element, localName: string): void;
 	shadowAttached(root: ShadowRoot): void;
 }
@@ -25906,7 +25906,7 @@ export function mountOf(node: object): Mount | undefined {
 /* ------------------------------------------------- clipboard and permissions */
 
 /** The two clipboard round trips a terminal session answers. */
-export interface ClipboardTerminal {
+interface ClipboardTerminal {
 	writeClipboard(text: string): Promise<void>;
 	queryClipboard(): Promise<string | null>;
 }
