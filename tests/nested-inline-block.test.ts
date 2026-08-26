@@ -1,6 +1,6 @@
 /**
  * Tests for nested inline-block element handling
- * Specifically testing findInlineRunHead and fragment-walk logic
+ * Specifically testing fragment-walk logic
  */
 
 import {test, expect} from "@b9g/libuild/test";
@@ -23,40 +23,6 @@ function layOut(window: ReturnType<typeof createDocumentWindow>): LayoutEngine {
 	layoutEngine.calculateLayout();
 	return layoutEngine;
 }
-
-test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
-	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
-	const {document} = window;
-
-	// Create nested structure: outer inline-block > span + inner inline-block
-	const outer = document.createElement("div");
-	outer.style.display = "inline-block";
-	outer.style.backgroundColor = "navy";
-	document.body.appendChild(outer);
-
-	const span = document.createElement("span");
-	span.textContent = "Nested ";
-	outer.appendChild(span);
-
-	const inner = document.createElement("div");
-	inner.style.display = "inline-block";
-	inner.style.backgroundColor = "red";
-	inner.textContent = "block";
-	outer.appendChild(inner);
-
-	const layoutEngine = layOut(window);
-
-	// Test findInlineRunHead for different nodes
-	const spanTextNode = span.firstChild as Text;
-	const innerTextNode = inner.firstChild as Text;
-
-	const spanRunHead = layoutEngine.findInlineRunHead(spanTextNode);
-	const innerRunHead = layoutEngine.findInlineRunHead(innerTextNode);
-
-	// Both text nodes should have the outer inline-block as their run head
-	expect(spanRunHead).toBe(outer);
-	expect(innerRunHead).toBe(outer);
-});
 
 test("line fragments should work for text nodes in nested inline-blocks", async () => {
 	const window = createDocumentWindow("<!DOCTYPE html><body></body>");

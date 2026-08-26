@@ -5,12 +5,7 @@ import {
 import {StyleManager} from "../src/internal/cascade.js";
 import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {claimUAToolkit, createDocumentWindow} from "../src/internal/dom.js";
-
-function ensurePseudoElement<T>(host: object, name: string): T {
-	const document = (host as {ownerDocument: object}).ownerDocument;
-	return claimUAToolkit(document).ensurePseudoElement<T>(host, name);
-}
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /**
@@ -47,25 +42,6 @@ function lineTexts(
 		...fragment,
 		text: text.data.slice(fragment.startOffset, fragment.endOffset),
 	}));
-}
-
-/**
- * Give an element the pseudo-element node the cascade would give it, holding
- * the text a `content` declaration would put there. The slots are the
- * engine's internal door to pseudo-elements; no author API reaches them, and
- * no mutation record describes them -- so this signals the structural change
- * the cascade signals when a rule attaches one for real.
- */
-function attachPseudo(
-	engine: LayoutEngine,
-	host: Element,
-	name: string,
-	content: string,
-): Element {
-	const node = ensurePseudoElement<Element>(host, name);
-	node.textContent = content;
-	engine.invalidateStructure();
-	return node;
 }
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
@@ -326,305 +302,7 @@ test("resize updates layout", () => {
 
 // === INLINE RUN LOGIC TESTS ===
 
-// Static inline run tests
-test("isInlineRunHead - single inline element", () => {
-	const {dom, layoutEngine} = createLayoutEngine("<span>text</span>");
-	const span = dom.window.document.querySelector("span")!;
-
-	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
-});
-
-test("isInlineRunHead - first of multiple inline elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>first</span><span>second</span>",
-	);
-	const firstSpan = dom.window.document.querySelector("span")!;
-
-	expect(layoutEngine.isInlineRunHead(firstSpan)).toBe(true);
-});
-
-test("isInlineRunHead - second of multiple inline elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>first</span><span>second</span>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false);
-});
-
-test("isInlineRunHead - text node as head", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"Text content <span>element</span>",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Text content")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-
-	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(true);
-});
-
-test("isInlineRunHead - text node not head", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>element</span> text content",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("text content")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-
-	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(false);
-});
-
-test("isInlineRunHead - inline in flex container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"display: flex\"><span>item</span></div>",
-	);
-	const span = dom.window.document.querySelector("span")!;
-
-	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
-});
-
-test("isInlineRunHead - multiple inlines in flex container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"display: flex\"><span>first</span><span>second</span></div>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true); // Each flex item is its own head
-});
-
-test("isInlineRunHead - block element breaks run", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>first</span><div>block</div><span>after</span>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // First run head
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true); // New run head after block
-});
-
-test("findInlineRunHead - simple case", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>first</span><span>second</span>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]); // Head finds itself
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]); // Second finds first
-});
-
-test("findInlineRunHead - text node head", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"Text content <span>element</span>",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Text content")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-	const span = dom.window.document.querySelector("span")!;
-
-	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode); // Text head finds itself
-	expect(layoutEngine.findInlineRunHead(span)).toBe(textNode); // Element finds text head
-});
-
-test("findInlineRunHead - mixed content", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"Text <span>element</span> more text <em>emphasis</em>",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let moreText: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Text")) {
-			textNode = node as Text;
-		}
-		if (node.textContent?.includes("more text")) {
-			moreText = node as Text;
-		}
-	}
-	const span = dom.window.document.querySelector("span")!;
-	const em = dom.window.document.querySelector("em")!;
-
-	expect(layoutEngine.findInlineRunHead(em)).toBe(textNode); // All should find the first text node as head
-	expect(layoutEngine.findInlineRunHead(span)).toBe(textNode);
-	expect(layoutEngine.findInlineRunHead(moreText!)).toBe(textNode);
-});
-
-test("findInlineRunHead - block element", () => {
-	const {dom, layoutEngine} = createLayoutEngine("<div>block</div>");
-	const div = dom.window.document.querySelector("div")!;
-
-	expect(layoutEngine.findInlineRunHead(div)).toBe(null); // Block elements don't have inline heads
-});
-
-// Edge cases from CSS spec research
-test("anonymous inline boxes - direct text in block", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div>Direct text content</div>",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Direct text")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-
-	// Direct text in block container creates anonymous inline box
-	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(true);
-	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode);
-});
-
-test("white space only text nodes", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span>first</span>   <span>second</span></div>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const whitespaceNode = spans[0].nextSibling as Text; // The "   " between spans
-
-	// White space nodes still participate in inline formatting
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // First span is head
-	expect(layoutEngine.isInlineRunHead(whitespaceNode)).toBe(false); // Whitespace joins run
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false); // Second span joins run
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]); // All find first span as head
-});
-
-test("nested inline elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span>outer <em>nested</em> text</span></div>",
-	);
-	const span = dom.window.document.querySelector("span")!;
-	const em = dom.window.document.querySelector("em")!;
-
-	// Nested inline elements - span is the head
-	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
-	expect(layoutEngine.isInlineRunHead(em)).toBe(false); // em is nested inside span
-	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
-});
-
-test("inline-block vs inline behavior", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span style=\"display: inline\">inline</span><span style=\"display: inline-block\">inline-block</span></div>",
-	);
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	// Both inline and inline-block elements form runs
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // First is head
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false); // Second joins run
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]);
-});
-
-test("mixed content with line breaks", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div>Text<br><span>after break</span></div>",
-	);
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Text")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-	const span = dom.window.document.querySelector("span")!;
-
-	// <br> does NOT break inline runs - it's just inline content with newline
-	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(true); // Text starts the run
-	expect(layoutEngine.isInlineRunHead(span)).toBe(false); // Span joins the same run
-	expect(layoutEngine.findInlineRunHead(span)).toBe(textNode); // All find text as head
-});
-
-test("text node with inline precedent in flex container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"display: flex\"><span>element</span> text content</div>",
-	);
-	const span = dom.window.document.querySelector("span")!;
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-	let textNode: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("text content")) {
-			textNode = node as Text;
-			break;
-		}
-	}
-
-	// In flex containers, inline elements are separate flex items
-	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-
-	// Text nodes only form runs with other text nodes in flex containers
-	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(true); // Should be its own head
-	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode); // Should find itself
-});
-
 // === MUTATION TESTS ===
-
-test("block insertion splits inline run", () => {
-	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
-		"<div><span>first</span><span>second</span></div>",
-	);
-	const container = dom.window.document.querySelector("div")!;
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	// Initially: first span is head, second joins run
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false);
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]);
-
-	// Insert block element between spans
-	const blockDiv = dom.window.document.createElement("div");
-	blockDiv.textContent = "block";
-	container.insertBefore(blockDiv, spans[1]);
-	processMutationsAndLayout();
-
-	// After insertion: both spans should be heads of separate runs
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // Still head of first run
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true); // Now head of new run after block
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]); // Finds itself as head
-});
 
 test("a run whose first node is removed re-measures from the next", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
@@ -634,12 +312,6 @@ test("a run whose first node is removed re-measures from the next", () => {
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	processMutationsAndLayout();
 
-	// Initially: first is head, others join
-	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false);
-	expect(layoutEngine.isInlineRunHead(spans[2])).toBe(false);
-	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[0]);
-
 	// Remove head element
 	spans[0].remove();
 	processMutationsAndLayout();
@@ -647,9 +319,6 @@ test("a run whose first node is removed re-measures from the next", () => {
 	// The box the run laid out in is the same one, measured from the node
 	// that opens it now: the text that remains starts at the container's
 	// content edge rather than where "head" left off.
-	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true);
-	expect(layoutEngine.isInlineRunHead(spans[2])).toBe(false);
-	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
 
 	const containerRect = layoutEngine.getRect(container)!;
 	const fragments = lineTexts(layoutEngine, container.firstChild!);
@@ -657,238 +326,6 @@ test("a run whose first node is removed re-measures from the next", () => {
 	expect(fragments[0].text).toBe("second");
 	expect(fragments[0].rect.x).toBe(containerRect.x);
 	expect(fragments[0].rect.y).toBe(containerRect.y);
-});
-
-test("findInlineRunHead - text node inside inline element should find element", () => {
-	const {dom, layoutEngine} = createLayoutEngine("<span>🚀</span>");
-
-	const span = dom.window.document.querySelector("span")!;
-	const textNode = span.firstChild as Text;
-
-	// The text node should find the SPAN as its run head, not itself
-	expect(layoutEngine.findInlineRunHead(textNode)).toBe(span);
-
-	// The SPAN should find itself as the run head
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-});
-
-// === COMPREHENSIVE EDGE CASE TESTS FOR findInlineRunHead ===
-
-test("findInlineRunHead - nested inline elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<span>outer <em>nested <strong>deep</strong></em> text</span>",
-	);
-
-	const span = dom.window.document.querySelector("span")!;
-	const em = dom.window.document.querySelector("em")!;
-	const strong = dom.window.document.querySelector("strong")!;
-
-	// All nested inline elements should find the outermost span as run head
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(strong)).toBe(span);
-
-	// Text nodes inside nested elements should also find the outermost span
-	const deepText = strong.firstChild as Text;
-	expect(layoutEngine.findInlineRunHead(deepText)).toBe(span);
-});
-
-test("findInlineRunHead - text nodes after br elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div>Start<br>After break</div>",
-	);
-
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-
-	let startText: Text | null = null;
-	let afterText: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Start")) {
-			startText = node as Text;
-		}
-		if (node.textContent?.includes("After break")) {
-			afterText = node as Text;
-		}
-	}
-
-	// br doesn't break inline runs - both text nodes should be in same run
-	expect(layoutEngine.findInlineRunHead(startText!)).toBe(startText);
-	expect(layoutEngine.findInlineRunHead(afterText!)).toBe(startText);
-});
-
-test("findInlineRunHead - inline elements in flex container", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"display: flex\"><span>first</span><span>second</span><em>third</em></div>",
-	);
-
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const em = dom.window.document.querySelector("em")!;
-
-	// In flex containers, each inline element is its own run head
-	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]);
-	expect(layoutEngine.findInlineRunHead(em)).toBe(em);
-
-	// Text nodes inside should find their parent element as run head
-	const firstText = spans[0].firstChild as Text;
-	const thirdText = em.firstChild as Text;
-	expect(layoutEngine.findInlineRunHead(firstText)).toBe(spans[0]);
-	expect(layoutEngine.findInlineRunHead(thirdText)).toBe(em);
-});
-
-test("findInlineRunHead - mixed text and inline elements in flex", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div style=\"display: flex\">Text node<span>element</span>More text</div>",
-	);
-
-	const span = dom.window.document.querySelector("span")!;
-	const walker = dom.window.document.createTreeWalker(
-		dom.window.document.body,
-		dom.window.NodeFilter.SHOW_TEXT,
-	);
-
-	let textNode: Text | null = null;
-	let moreText: Text | null = null;
-	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent?.includes("Text node")) {
-			textNode = node as Text;
-		}
-		if (node.textContent?.includes("More text")) {
-			moreText = node as Text;
-		}
-	}
-
-	// In flex: text nodes group with adjacent text nodes only, elements are separate
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode);
-	expect(layoutEngine.findInlineRunHead(moreText!)).toBe(moreText); // Separated by span, so it's its own head
-});
-
-test("findInlineRunHead - inline-block elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span style=\"display: inline-block\">block1</span><span style=\"display: inline-block\">block2</span></div>",
-	);
-
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-
-	// First inline-block is run head, second joins the run
-	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]);
-
-	// Text nodes inside should find the run head (first span)
-	const text1 = spans[0].firstChild as Text;
-	const text2 = spans[1].firstChild as Text;
-	expect(layoutEngine.findInlineRunHead(text1)).toBe(spans[0]);
-	expect(layoutEngine.findInlineRunHead(text2)).toBe(spans[0]);
-});
-
-test("findInlineRunHead - empty text nodes and whitespace", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span>content</span>   <em>more</em></div>",
-	);
-
-	const span = dom.window.document.querySelector("span")!;
-	const em = dom.window.document.querySelector("em")!;
-	const whitespaceNode = span.nextSibling as Text; // The "   " between spans
-
-	// Whitespace text nodes should find the run head
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(whitespaceNode)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
-});
-
-test("findInlineRunHead - block elements return null", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><p>paragraph</p><h1>heading</h1></div>",
-	);
-
-	const p = dom.window.document.querySelector("p")!;
-	const h1 = dom.window.document.querySelector("h1")!;
-	const div = dom.window.document.querySelector("div")!;
-
-	// Block elements should return null
-	expect(layoutEngine.findInlineRunHead(p)).toBe(null);
-	expect(layoutEngine.findInlineRunHead(h1)).toBe(null);
-	expect(layoutEngine.findInlineRunHead(div)).toBe(null);
-});
-
-test("findInlineRunHead - inline elements after block elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span>first run</span><p>block breaks run</p><span>second run</span><em>continues second</em></div>",
-	);
-
-	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const em = dom.window.document.querySelector("em")!;
-
-	// First span is its own run head
-	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
-
-	// After block element, second span starts new run
-	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]);
-	expect(layoutEngine.findInlineRunHead(em)).toBe(spans[1]);
-});
-
-test("findInlineRunHead - deeply nested inline elements", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
-		"<div><span><em><strong><code>deeply nested</code></strong></em></span></div>",
-	);
-
-	const span = dom.window.document.querySelector("span")!;
-	const em = dom.window.document.querySelector("em")!;
-	const strong = dom.window.document.querySelector("strong")!;
-	const code = dom.window.document.querySelector("code")!;
-
-	// All should find the outermost span as run head
-	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(strong)).toBe(span);
-	expect(layoutEngine.findInlineRunHead(code)).toBe(span);
-
-	// Text node in deepest element should also find span
-	const deepText = code.firstChild as Text;
-	expect(layoutEngine.findInlineRunHead(deepText)).toBe(span);
-});
-
-test("findInlineRunHead - text node orphan (no parent)", () => {
-	const {dom, layoutEngine} = createLayoutEngine("<div></div>");
-
-	// Create orphaned text node
-	const textNode = dom.window.document.createTextNode("orphan");
-
-	// Orphaned text node should return null (not connected to document)
-	expect(layoutEngine.findInlineRunHead(textNode)).toBe(null);
-});
-
-test("findInlineRunHead - comment nodes and other node types", () => {
-	const {dom, layoutEngine} = createLayoutEngine("<div><!-- comment --></div>");
-
-	const comment = dom.window.document.querySelector("div")!.firstChild!;
-
-	// Comment nodes should return null (not text or element)
-	expect(layoutEngine.findInlineRunHead(comment)).toBe(null);
-});
-
-test("findInlineRunHead - whitespace behavior (expected: finds whitespace text node)", () => {
-	// This demonstrates that whitespace text nodes are correctly found as run heads
-	const {dom, layoutEngine} = createLayoutEngine(`
-		<div>
-			<span style="display: inline-block">block1</span>
-		</div>
-	`);
-
-	const span = dom.window.document.querySelector("span")!;
-	const result = layoutEngine.findInlineRunHead(span);
-
-	// Should find the whitespace text node before the span
-	expect(result?.nodeType).toBe(3); // TEXT_NODE
-	expect(result?.textContent).toBe("\n\t\t\t");
-
-	// The whitespace text node is the correct run head for this layout
 });
 
 test("emoji text RectLengths preserve character boundaries", () => {
@@ -1816,99 +1253,6 @@ test.todo("Complex inline run with mixed content types", async () => {
 	// mutations within elements that are part of inline runs but don't have Yoga nodes
 });
 
-// === PSEUDO ELEMENT INLINE RUN HEAD TESTS ===
-// These tests verify how pseudo elements interact with inline run head detection
-
-function createLayoutEngineWithPseudos(html = "<div></div>"): {
-	dom: ReturnType<typeof documentWindow>;
-	layoutEngine: LayoutEngine;
-	styleManager: StyleManager;
-} {
-	const dom = documentWindow(
-		`<!DOCTYPE html><html><body>${html}</body></html>`,
-	);
-
-	// The cascade first: the layout engine measures through getComputedStyle,
-	// which is the cascade's to answer.
-	const styleManager = new StyleManager(dom.window);
-	const layoutEngine = new LayoutEngine(dom.window);
-	styleManager.setLayoutEngine(layoutEngine);
-
-	layoutEngine.resize(300, 200);
-	layoutEngine.calculateLayout();
-
-	return {dom, layoutEngine, styleManager};
-}
-
-test("::before pseudo element becomes run head", () => {
-	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		"<div class=\"quote\">Hello World</div>",
-	);
-
-	const quote = dom.window.document.querySelector(".quote")!;
-
-	// Add ::before pseudo element
-	const beforeNode = attachPseudo(layoutEngine, quote, "::before", '"');
-
-	// ::before should be treated as the first child and become run head
-	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
-
-	// The original text node should no longer be a run head
-	const textNode = quote.firstChild as Text;
-	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
-	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
-});
-
-test("::marker appears before ::before in run head order", () => {
-	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		"<ul><li class=\"decorated\">Item text</li></ul>",
-	);
-
-	const listItem = dom.window.document.querySelector(".decorated")!;
-	const textNode = listItem.firstChild as Text;
-
-	// Add all pseudo element types (CSS order: ::marker, ::before, content, ::after)
-	const markerNode = attachPseudo(layoutEngine, listItem, "::marker", "• ");
-	const beforeNode = attachPseudo(layoutEngine, listItem, "::before", "[");
-	const afterNode = attachPseudo(layoutEngine, listItem, "::after", "]");
-
-	// ::marker should be the run head (first in document order)
-	expect(layoutEngine.isInlineRunHead(markerNode)).toBe(true);
-
-	// All others should join the run with ::marker as head
-	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(false);
-	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
-	expect(layoutEngine.isInlineRunHead(afterNode)).toBe(false);
-
-	expect(layoutEngine.findInlineRunHead(beforeNode)).toBe(markerNode);
-	expect(layoutEngine.findInlineRunHead(textNode)).toBe(markerNode);
-	expect(layoutEngine.findInlineRunHead(afterNode)).toBe(markerNode);
-});
-
-test("Dynamic pseudo element addition affects run heads", () => {
-	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
-		"<div class=\"dynamic\">Text</div>",
-	);
-
-	const div = dom.window.document.querySelector(".dynamic")!;
-	const textNode = div.firstChild as Text;
-
-	// Initially, text node should be run head (div is block, not inline)
-	expect(layoutEngine.isInlineRunHead(div)).toBe(false);
-	expect(layoutEngine.isInlineRunHead(textNode)).toBe(true);
-
-	// Add ::before pseudo element
-	const beforeNode = attachPseudo(layoutEngine, div, "::before", "→ ");
-
-	// Force recalculation
-	layoutEngine.calculateLayout();
-
-	// Now ::before should be run head (first inline content)
-	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
-	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
-	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
-});
-
 test("layout invalidation preserves inline run behavior", () => {
 	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
 	const document = dom.window.document;
@@ -2148,7 +1492,6 @@ test("whitespace between block elements should be collapsed", async () => {
 		<div>Block 1</div>
 
 		<div>Block 2</div>
-
 
 		<div>Block 3</div>
 	`;
@@ -2750,15 +2093,12 @@ test("run head removal transfers to next inline element", async () => {
 	frame();
 
 	// Verify span1 is the run head initially
-	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
-	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
 
 	// Remove the run head
 	container.removeChild(span1);
 	frame();
 
 	// span2 should become the new run head and have correct position
-	expect(layoutEngine.findInlineRunHead(span2)).toBe(span2);
 	const rects = lineTexts(layoutEngine, span2);
 	expect(rects.length).toBeGreaterThan(0);
 	expect(rects[0].text).toBe("SECOND");
@@ -2769,8 +2109,6 @@ test("run head removal transfers to next inline element", async () => {
 	frame();
 
 	// span1 should become run head again with both elements correctly positioned
-	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
-	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
 
 	const rects1 = lineTexts(layoutEngine, span1);
 	const rects2 = lineTexts(layoutEngine, span2);
@@ -2799,19 +2137,11 @@ test("block element removal merges adjacent inline runs", async () => {
 
 	frame();
 
-	// Initially span1 and span2 should have different run heads
-	const runHead1 = layoutEngine.findInlineRunHead(span1);
-	const runHead2 = layoutEngine.findInlineRunHead(span2);
-	expect(runHead1).toBe(span1);
-	expect(runHead2).toBe(span2);
-
 	// Remove block element
 	container.removeChild(blockDiv);
 	frame();
 
 	// Now span1 and span2 should share the same run head (span1)
-	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
-	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
 
 	// Both should be positioned correctly in the merged run
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
@@ -2879,43 +2209,6 @@ test("multiple element removal handles invalidation correctly", async () => {
 	expect(getPosition(layoutEngine, spans[0])).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, spans[2])).toBe(1); // C at x=1
 	expect(getPosition(layoutEngine, spans[4])).toBe(2); // E at x=2
-});
-
-test("break result cleanup prevents orphaned entries", async () => {
-	const {document, layoutEngine, frame} = createTermDOM();
-
-	// Create inline run
-	const container = document.createElement("div");
-	const span1 = document.createElement("span");
-	const span2 = document.createElement("span");
-
-	span1.textContent = "A";
-	span2.textContent = "B";
-
-	container.appendChild(span1);
-	container.appendChild(span2);
-	document.body.appendChild(container);
-
-	frame();
-
-	const initialBreakResults = layoutEngine.breakResultMap.size;
-
-	// Remove element
-	container.removeChild(span2);
-	frame();
-
-	// Break result count should remain consistent (no orphaned entries)
-	expect(layoutEngine.breakResultMap.size).toBeLessThanOrEqual(
-		initialBreakResults,
-	);
-
-	// Re-add element
-	container.appendChild(span2);
-	frame();
-
-	// Should still be able to get correct positions
-	expect(getPosition(layoutEngine, span1)).toBe(0);
-	expect(getPosition(layoutEngine, span2)).toBe(1);
 });
 
 // These tests verify that the layout invalidation logic works correctly. A DOM

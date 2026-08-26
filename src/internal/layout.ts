@@ -12,7 +12,7 @@ import LineBreaker from "linebreak";
 import {
 	hasRTL,
 	inferParagraphDirection,
-	stringWidth as runtimeStringWidth,
+	stringWidth,
 	toVisualOrder,
 	writeClusterWidths,
 } from "./text.js";
@@ -4681,7 +4681,7 @@ function toVisualLine(
 			// an RTL reader expects ragged. Offsets stay logical; only the
 			// painted box moves.
 			if (segment.leaf.type === "text") {
-				const shaped = runtimeStringWidth(segment.processedText);
+				const shaped = stringWidth(segment.processedText);
 				const delta = segment.width - shaped;
 				if (delta > 0) {
 					segment.x += delta;
@@ -4830,7 +4830,7 @@ function inlineBlockRect(
 		return true;
 	};
 	const headOutside = (node: Node): Node | null => {
-		const head = layout.findInlineRunHead(node);
+		const head = boxEntryOf(layout, node)?.head ?? null;
 		return head && outward(head) ? head : null;
 	};
 	let runHead: Node | null = headOutside(element) ?? element;
@@ -5071,7 +5071,7 @@ function caretRect(
 		line.startOffset,
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 	);
-	const x = Math.round(line.rect.x) + runtimeStringWidth(before);
+	const x = Math.round(line.rect.x) + stringWidth(before);
 	return layout.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
 }
 
@@ -5095,7 +5095,7 @@ function offsetInFragment(
 	let cellX = fragment.rect.x;
 	let index = 0;
 	while (index < text.length && cellX < x) {
-		const width = runtimeStringWidth(text[index]);
+		const width = stringWidth(text[index]);
 		if (cellX + width > x) {
 			break;
 		}
@@ -5150,8 +5150,8 @@ function selectionRuns(
 			} else if (!selected && runStart !== -1) {
 				const x =
 					Math.round(fragment.rect.x) +
-					runtimeStringWidth(text.slice(0, runStart));
-				const width = runtimeStringWidth(text.slice(runStart, i));
+					stringWidth(text.slice(0, runStart));
+				const width = stringWidth(text.slice(runStart, i));
 				runs.push({
 					rect: layout.createDOMRect(
 						x,
@@ -5439,7 +5439,7 @@ function getNodesInRange(
 				const portion = item.processedContent
 					.slice(relativeStart, relativeEnd)
 					.replace(/\n+$/, "");
-				width = runtimeStringWidth(portion);
+				width = stringWidth(portion);
 
 				// The data range that renders back to `portion`: from the
 				// offset its first character came from, through the end of
@@ -5576,7 +5576,10 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 
 		// Special case: an inline-block element asked for directly.
 		// The element's breakResult contains itself as an inline-block segment with nested content
-		if (isAtomicInline(display) && layout.isInlineRunHead(element)) {
+		if (
+			isAtomicInline(display) &&
+			boxEntryOf(layout, element)?.head === element
+		) {
 			const breakResult = runBreakResult(layout, element);
 			if (breakResult) {
 				// The breakResult contains this inline-block as a segment with nested content
@@ -5680,7 +5683,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	}
 
 	// Find the inline run head for this node
-	const runHead = layout.findInlineRunHead(node);
+	const runHead = boxEntryOf(layout, node)?.head ?? null;
 	if (!runHead) {
 		return [];
 	}
@@ -5920,28 +5923,6 @@ export class LayoutEngine {
 	// Public Map for debugging
 	nodeMap: Map<Node, FlexTypes.Node>;
 
-	/**
-	 * Every box currently holding lines, by the node that opens it. Derived on
-	 * demand from the boxes themselves: a principal box holds lines only while
-	 * its node has a layout node, and an anonymous box that leaves the tree is
-	 * retired, so neither can appear here after it is gone.
-	 */
-	get breakResultMap(): Map<Node, BreakResult> {
-		const results = new Map<Node, BreakResult>();
-		for (const node of this.nodeMap.keys()) {
-			const lines = this[kBoxes].get(node)?.fragments;
-			if (lines) {
-				results.set(node, lines);
-			}
-		}
-		for (const box of this[kAnonymousBoxes].values()) {
-			if (box.fragments) {
-				results.set(box.head, box.fragments);
-			}
-		}
-		return results;
-	}
-
 	// The reverse of nodeMap -- always kept in sync with it via kTrackNode/
 	// kUntrackNode, never written directly elsewhere. Lets paint-time culling
 	// go from a flex child (found by binary search over its parent's already-
@@ -5972,19 +5953,13 @@ export class LayoutEngine {
 	 * (see the session's negotiateBidi). Then lines stay in logical order: one reordering is
 	 * correct, two is a sentence backwards again.
 	 */
-	declare [kTerminalReordersText]: boolean;
 
 	/**
 	 * A cluster's advance is now known from the terminal rather than predicted
 	 * from the width tables. Nothing in the DOM moved, but every line measured
 	 * before the correction was measured against the other answer.
 	 */
-	invalidateTextMeasurement(): void {
-		this.invalidateStructure();
-		for (const flexNode of this[kMeasureNodes]) {
-			flexNode.markDirty();
-		}
-	}
+	declare [kTerminalReordersText]: boolean;
 
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
@@ -5994,6 +5969,13 @@ export class LayoutEngine {
 		}
 		this[kTerminalReordersText] = value;
 		// Every measured line was built for the other contract.
+		for (const flexNode of this[kMeasureNodes]) {
+			flexNode.markDirty();
+		}
+	}
+
+	invalidateTextMeasurement(): void {
+		this.invalidateStructure();
 		for (const flexNode of this[kMeasureNodes]) {
 			flexNode.markDirty();
 		}
@@ -7001,15 +6983,6 @@ export class LayoutEngine {
 	 * dirtied them.
 	 */
 	declare [kDirtyRunContainers]: Set<Element>;
-
-	/** The node an inline-level node's box is measured from. */
-	findInlineRunHead(node: Node): Node | null {
-		return boxEntryOf(this, node)?.head ?? null;
-	}
-
-	isInlineRunHead(node: Node): boolean {
-		return this.findInlineRunHead(node) === node;
-	}
 
 	/**
 	 * Invalidate a node, handling both block and inline elements appropriately
