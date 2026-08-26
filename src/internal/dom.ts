@@ -1143,27 +1143,6 @@ function validateAndExtract(
 	return {namespace: ns, prefix, localName};
 }
 
-/* ------------------------------------------------------------------- hooks */
-
-/**
- * The spec's per-node algorithm steps, as symbol keys a subclass overrides.
- *
- * They are module-scoped, so the only code that reaches them is the code in
- * this file: the mutation algorithms that call them and the classes that
- * implement them. Engine invalidation hangs off these.
- */
-
-/**
- * A node's tree state, keyed by module-scoped symbols: the mutation
- * algorithms are module functions operating on whole subtrees of mixed node
- * types, so the state has to be reachable outside any one class body.
- */
-
-/**
- * A range's boundary points, the selection a range belongs to, and a
- * document's selection and its pending selectionchange event.
- */
-
 /* ------------------------------------------------------------------ events */
 
 interface EventInit {
@@ -3504,12 +3483,6 @@ interface FlatOptions {
 	signal: ListenerSignal | null;
 }
 
-/**
- * An options argument, which is either a dictionary or a capture boolean.
- *
- * The union resolves the way Web IDL resolves it: null, undefined and objects
- * are the dictionary, and anything else is the boolean.
- */
 function flattenMore(
 	options: boolean | AddEventListenerOptions | undefined,
 ): FlatOptions {
@@ -9135,21 +9108,6 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/**
- * The HTML element constructor.
- *
- * `new.target` is the whole mechanism: an author's class reaches this through
- * `super()`, and what it gets back depends on why it is running. Called while
- * an upgrade is in flight, it hands back the element already in the tree --
- * the construction stack's last entry -- so the author's constructor decorates
- * the node the parser built. Called on its own, it builds a fresh element with
- * the author's prototype. Either way the element is this class's, so an author
- * never sees a second object.
- *
- * The tree's own creation path does not come through here at all: it needs an
- * HTMLElement for every name HTML knows, and this constructor throws for a
- * new.target it cannot find a definition for.
- */
 /**
  * The element the focus state names. document.activeElement retargets to
  * the host chain, so a focus move inside a shadow tree is invisible

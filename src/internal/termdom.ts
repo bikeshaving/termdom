@@ -367,14 +367,6 @@ export class TermDOM {
 	// scrollLeft (set by kScrollFieldCaretIntoView), not a side table.
 
 	/**
-	 * The TOP LAYER: elements painted above every stacking context, in
-	 * insertion order, unclipped -- the foundation dialog/popover/::picker
-	 * share. Members are excluded from normal stacking collection. The set is
-	 * the DOCUMENT's, by reference: `showModal` puts a dialog in it with no
-	 * route through the renderer, and the renderer paints whatever is there.
-	 */
-
-	/**
 	 * The UA's capabilities, returned by the one installUAEngine handshake:
 	 * open a closed shadow root, read a control's selection past the type
 	 * gate. Holding this object is what makes this engine the document's

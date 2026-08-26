@@ -883,17 +883,6 @@ export class TerminalExchange {
 		});
 	}
 
-	/**
-	 * Ask the terminal for the system clipboard (OSC 52 with `?` where the
-	 * payload goes) and resolve with the base64 the reply carries -- the
-	 * bytes verbatim, since decoding them is the caller's business.
-	 *
-	 * Resolves null when the terminal says nothing before the timeout, which
-	 * is what most of them say: a clipboard read is a capability terminals
-	 * gate on their own configuration, and refusing it looks like silence.
-	 * One query at a time; a second while one is outstanding replaces it, and
-	 * the replaced one resolves null.
-	 */
 	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
 		const payload = encode64(new TextEncoder().encode(text));
@@ -920,12 +909,6 @@ export class TerminalExchange {
 		});
 	}
 
-	/**
-	 * Hand the terminal back the modes we changed, release the transport, and
-	 * tear down every timer and handler that would otherwise keep the event
-	 * loop open. Only modes we actually set are restored -- reset is where the
-	 * terminal already was.
-	 */
 	/**
 	 * Wait for the reply of every outstanding cursor-position query --
 	 * width probes, an anchor query -- or give up when the deadline

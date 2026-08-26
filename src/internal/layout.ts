@@ -7344,18 +7344,6 @@ function renderWhiteSpace(data: string, whiteSpace: string): string {
 }
 
 /**
- * The inverse of a whitespace rendering: which data offset each rendered code
- * unit came from. Held as the collapsed runs alone -- everything between two
- * runs maps across one-for-one -- so the mapping costs a few numbers per run
- * rather than an entry per character, on text whose collapsible runs are a
- * small fraction of its length.
- *
- * `base` is added to a rendered index before lookup, which is how a rendering
- * that later loses a prefix (a run's leading whitespace, trimmed) keeps its
- * mapping without rebuilding it.
- */
-
-/**
  * `renderWhiteSpace` plus the mapping back to data offsets: offsets[i] is
  * the data offset rendered code unit i came from, and null means the
  * rendering is verbatim and every offset maps to itself. Dense on purpose:
@@ -8834,24 +8822,6 @@ function boxEntryOf(
 	return principalBox(layout, node);
 }
 
-/**
- * The layout node that measures the run a node heads: an anonymous box's,
- * or the node's own when its box belongs to it (a flex container's
- * blockified inline children).
- */
-/**
- * The layout node that lays a box out, or null when nothing does.
- *
- * Every box is one of two kinds, and never both. A box that is LAID OUT --
- * a block, an anonymous run, an atomic inline holding block content -- has a
- * node the solver sized and placed. A box that is a RUN MEMBER -- an inline,
- * a text node -- has none: the run around it was measured as one unit, and
- * its geometry lives in that run's break result rather than in a layout of
- * its own.
- *
- * Which store the node sits in follows from the box's provenance rather than
- * from that distinction, so this is the one place that knows both.
- */
 /** The smallest rect enclosing a set: the box a broken inline reports. */
 function unionOf(
 	layout: LayoutEngine,
@@ -13023,12 +12993,6 @@ export class LayoutEngine {
 	 * Set when the terminal answered that it reorders bidirectional text itself
 	 * (see the session's negotiateBidi). Then lines stay in logical order: one reordering is
 	 * correct, two is a sentence backwards again.
-	 */
-
-	/**
-	 * A cluster's advance is now known from the terminal rather than predicted
-	 * from the width tables. Nothing in the DOM moved, but every line measured
-	 * before the correction was measured against the other answer.
 	 */
 	declare [kTerminalReordersText]: boolean;
 
