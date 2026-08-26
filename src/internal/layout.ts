@@ -6958,7 +6958,7 @@ function isOutOfFlow(node: Node): boolean {
  * content flows through.
  */
 function dissolvesIntoChildren(node: Node): boolean {
-	return displayOf(node as Element) === DISPLAY_CONTENTS;
+	return computedDisplay(node as Element) === DISPLAY_CONTENTS;
 }
 
 /**
@@ -7035,8 +7035,41 @@ const TABLE_DISPLAY =
 	DISPLAY_TABLE_CELL |
 	DISPLAY_TABLE_CAPTION;
 
-/** An element's computed display, as a code. */
-function displayOf(element: Element): number {
+/**
+ * CSS gives `display` two axes (css-display-3 §2). The OUTER type says how a
+ * box sits among its siblings: block-level, on rows of its own, or inline-level,
+ * on a line with them. The INNER type says how it lays its own children out: as
+ * a flow, as flex items, as a grid, as a table. `inline-grid` is the pair
+ * spelled out -- inline outside, grid inside -- and most of the other keywords
+ * are a shorthand for some such pair.
+ *
+ * Which axis a question is on decides which display answers it, because
+ * blockification reaches only one of them. A box out of flow, and every child
+ * of a flex or grid container, takes a block's OUTER type (§2.7). Its inner
+ * type is untouched: an absolutely positioned `inline-grid` sits on rows of its
+ * own and is still a grid inside.
+ *
+ * So this module answers the two with different values, and the door you go
+ * through says which:
+ *
+ *   OUTER -- `isInlineLevel`, which takes the node and reads its USED display,
+ *            so blockification is already in the answer.
+ *   INNER -- `laysOutItems`, `isGridDisplay`, `isFlexContainer`,
+ *            `establishesContentRoot`. They read the COMPUTED display, which is
+ *            the whole truth on this axis.
+ *
+ * Asking the outer question of the computed display is a bug with a shape: it
+ * puts a box on a line that had left the line. It is how an out-of-flow box
+ * came to hold open the space after it, and how a broken inline came to be
+ * sized by a descendant that was no longer in it. `wasBlockified` is the one
+ * place that legitimately holds both values at once, because it exists to ask
+ * whether they disagree.
+ *
+ * `none` and `contents` sit on neither axis. They are <display-box> values,
+ * which say a box is not generated at all rather than how one behaves, so
+ * blockification has nothing to change and they stand as they compute.
+ */
+function computedDisplay(element: Element): number {
 	return (
 		DISPLAY_CODES[getPropertyValue(element, "display")] ?? DISPLAY_BLOCK
 	);
@@ -7044,32 +7077,37 @@ function displayOf(element: Element): number {
 
 /**
  * Whether a display makes an ATOMIC inline: a box that sits on a line whole,
- * measured as one opaque unit, whatever it lays out inside itself.
+ * measured as one opaque unit, whatever it lays out inside itself. The mask
+ * form, for the doors below and the used-display arithmetic; a caller asking
+ * whether an element lays its own content out wants `establishesContentRoot`.
  */
 function isAtomicInline(display: number): boolean {
 	return (display & ATOMIC_INLINE) !== 0;
 }
 
-/** Whether a display value puts a box on a line rather than on rows of its own. */
+/**
+ * Whether a display value puts a box on a line rather than on rows of its own.
+ * The mask form; a caller asking about a node wants `isInlineLevel`.
+ */
 function isInlineDisplay(display: number): boolean {
 	return (display & INLINE_LEVEL) !== 0;
 }
 
-/** Whether an element lays its children out as flex items. */
+/** Whether an element lays its children out as flex items. INNER axis. */
 function isFlexContainer(element: Element): boolean {
-	return (displayOf(element) & FLEX_CONTAINER) !== 0;
+	return (computedDisplay(element) & FLEX_CONTAINER) !== 0;
 }
 
 /**
  * Whether a display puts each child in a box of its own: a flex or grid
  * container gathers no inline run across its children, and blockifies every
- * one of them (css-display-3 §2.7).
+ * one of them (css-display-3 §2.7). INNER axis.
  */
 function laysOutItems(display: number): boolean {
 	return (display & LAYS_OUT_ITEMS) !== 0;
 }
 
-/** Whether a display makes a grid container. */
+/** Whether a display makes a grid container. INNER axis. */
 function isGridDisplay(display: number): boolean {
 	return (display & GRID_CONTAINER) !== 0;
 }
@@ -7077,41 +7115,51 @@ function isGridDisplay(display: number): boolean {
 /** Whether an element's box is a flex item of its parent's. */
 function hasFlexParent(element: Element): boolean {
 	const parent = element.parentElement;
-	return parent !== null && displayOf(parent) === DISPLAY_FLEX;
+	return parent !== null && computedDisplay(parent) === DISPLAY_FLEX;
 }
 
 /** Whether an element's box is an item of a flex or grid container's. */
 function hasItemParent(element: Element): boolean {
 	const parent = element.parentElement;
-	return parent !== null && laysOutItems(displayOf(parent));
+	return parent !== null && laysOutItems(computedDisplay(parent));
 }
 
 /**
- * Whether an element's box is blockified (css-display-3 §2.7): an out-of-flow
- * box takes a block's box model, and so does every child of a flex or grid
- * container, which has no lines for an inline-level box to sit on.
+ * The two ways a box comes to be blockified (css-display-3 §2.7): it is out of
+ * flow, so there is no line left for it to sit on, or its parent lays its
+ * children out as items, which gathers no line for it to sit on either.
  */
-function isBlockifiedBox(element: Element): boolean {
+function blockifies(element: Element): boolean {
 	return isOutOfFlow(element) || hasItemParent(element);
 }
 
 /**
  * The display an element's box is generated with: its computed value, with
- * blockification applied. `none` and `contents` generate no box of their own
- * and stand as they compute.
+ * blockification applied to the outer axis. `none` and `contents` generate no
+ * box at all and stand as they compute.
  */
 function usedDisplay(element: Element): number {
-	const display = displayOf(element);
+	const display = computedDisplay(element);
 	if (!isInlineDisplay(display)) {
 		return display;
 	}
-	return isBlockifiedBox(element) ? DISPLAY_BLOCK : display;
+	return blockifies(element) ? DISPLAY_BLOCK : display;
+}
+
+/**
+ * Whether blockification actually moved this element: it asked to be
+ * inline-level and was made block-level anyway. The two displays disagree here
+ * and nowhere else, so this is the one place a caller has to care which it
+ * holds -- everywhere else, go through the doors below.
+ */
+function wasBlockified(element: Element): boolean {
+	return isInlineDisplay(computedDisplay(element)) && blockifies(element);
 }
 
 /**
  * Whether a node's box sits on a line of its container's rather than on rows of
- * its own. Text is always inline-level; an element is whatever its used display
- * makes it.
+ * its own. OUTER axis: text is always inline-level, and an element is whatever
+ * its used display makes it.
  */
 function isInlineLevel(node: Node): boolean {
 	if (node.nodeType === node.TEXT_NODE) {
@@ -7121,6 +7169,22 @@ function isInlineLevel(node: Node): boolean {
 		return false;
 	}
 	return isInlineDisplay(usedDisplay(node as Element));
+}
+
+/**
+ * Whether an element lays its own content out under a root of its own, rather
+ * than handing it to the lines of the container around it.
+ *
+ * INNER axis, and a good illustration of why the axes are worth separating.
+ * Blockification takes an atomic inline off the line it sat on, so the OUTER
+ * answer for a flex item's `inline-block` is no, it is not on a line. The inner
+ * answer does not move with it: the box still measures its content as one
+ * opaque unit under a formatting context of its own, which is the whole reason
+ * an `inline-block` can hold a block-level box at all. Asking the used display
+ * here would take that root away from every flex item that had one.
+ */
+function establishesContentRoot(element: Element): boolean {
+	return isAtomicInline(computedDisplay(element));
 }
 
 /**
@@ -7146,7 +7210,7 @@ function measuresAsRun(
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	const display = displayOf(element);
+	const display = computedDisplay(element);
 	if (!isInlineDisplay(display)) {
 		return false;
 	}
@@ -7167,7 +7231,7 @@ function splitsAroundBlock(
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	if (displayOf(element) !== DISPLAY_INLINE) {
+	if (computedDisplay(element) !== DISPLAY_INLINE) {
 		return false;
 	}
 	// A grid item is blockified (css-display-3 §2.7) and is a block
@@ -7175,7 +7239,7 @@ function splitsAroundBlock(
 	// its content to the grid would put the item's own children in cells
 	// of their own.
 	const parent = element.parentElement;
-	if (parent && isGridDisplay(displayOf(parent))) {
+	if (parent && isGridDisplay(computedDisplay(parent))) {
 		return false;
 	}
 	return containsBlockLevelBox(layout, element);
@@ -7194,7 +7258,7 @@ function containsBlockLevelBox(
 		if (isOutOfFlow(childElement)) {
 			continue;
 		}
-		const display = displayOf(childElement);
+		const display = computedDisplay(childElement);
 		// An atomic inline contains its own blocks without splitting anything.
 		if (display === DISPLAY_NONE || isAtomicInline(display)) {
 			continue;
@@ -7395,7 +7459,7 @@ function shouldCollapseWhitespaceTextNode(
 	}
 
 	// Check parent's display type - only collapse in block formatting contexts
-	const parentDisplay = displayOf(parent);
+	const parentDisplay = computedDisplay(parent);
 	if (isInlineDisplay(parentDisplay)) {
 		// In inline contexts, preserve whitespace as spaces
 		return false;
@@ -7471,7 +7535,7 @@ function isSuppressedFlexWhitespace(
 	if (!parent) {
 		return false;
 	}
-	if (!laysOutItems(displayOf(parent))) {
+	if (!laysOutItems(computedDisplay(parent))) {
 		return false;
 	}
 	if (preservesSpaces(getPropertyValue(parent, "white-space"))) {
@@ -8527,9 +8591,6 @@ function containerBox(
 	let runCount = 0;
 	// The membership each reused box had before this rebuild.
 	const opened = new Map<Box, Node[]>();
-	// A flex or grid container puts every element child in a box of its own
-	// and gathers only its contiguous text into anonymous ones.
-	const inFlex = laysOutItems(displayOf(container));
 	let run: Box | null = null;
 	// The enumeration below decides it again; a container that no longer
 	// reaches through a broken inline stops holding its fragments.
@@ -8537,28 +8598,21 @@ function containerBox(
 	for (const child of flowChildren(layout, container)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			const element = child as Element;
-			const display = displayOf(element);
-			const inlineLevel = isInlineDisplay(display);
-			if (display === DISPLAY_NONE || isOutOfFlow(element)) {
+			if (computedDisplay(element) === DISPLAY_NONE || isOutOfFlow(element)) {
+				// A hidden box holds a slot among its container's children; an
+				// out-of-flow one hangs from its containing block instead. Both
+				// are named here so the one path that builds a box reaches
+				// them, and neither joins the run around it.
 				const own = principalBox(layout, child, box);
 				heads.set(child, run ?? own);
-				// A hidden block still holds a box slot. An out-of-flow box
-				// holds none -- it hangs from its containing block, whatever
-				// display it computes -- and is named here so that the one path
-				// that builds a box reaches it there.
-				if (!inlineLevel || isOutOfFlow(element)) {
-					children.push(own);
-				}
+				children.push(own);
 				continue;
 			}
-			if (!inlineLevel) {
-				run = null; // block-level box: the run ends here
-				children.push(principalBox(layout, child, box));
-				continue;
-			}
-			if (inFlex) {
-				// Blockified (css-display-3 §2.7): the element's box is its
-				// own, not an anonymous one gathered around it.
+			// Blockification is already in this answer, so a flex or grid
+			// item arrives here with its computed `inline` spent: its box is
+			// its own, never an anonymous one gathered around it, and the run
+			// it would have joined ends at it like any other block-level box.
+			if (!isInlineLevel(element)) {
 				const own = principalBox(layout, child, box);
 				heads.set(child, own);
 				children.push(own);
@@ -8689,7 +8743,7 @@ function boxKindMatches(
 		return false;
 	}
 	return (
-		(displayOf(element) === DISPLAY_NONE) ===
+		(computedDisplay(element) === DISPLAY_NONE) ===
 		(flexNode.getMode() === MODE_NONE)
 	);
 }
@@ -8734,14 +8788,12 @@ function boxEntryOf(
 
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
-		// An out-of-flow element is never a run head or run member -- it
-		// left the flow entirely. Letting run invalidation "ensure" it a
-		// bare layout node makes later rebuilds skip its full build, so its
-		// pseudo-only content vanishes on a runtime class flip.
-		if (isOutOfFlow(element)) {
-			return null;
-		}
-		if (!isInlineDisplay(displayOf(element))) {
+		// The USED display, so that an out-of-flow element answers no here
+		// whatever it computes: it left the flow entirely and heads no run
+		// and joins none. Letting run invalidation "ensure" it a bare layout
+		// node makes later rebuilds skip its full build, so its pseudo-only
+		// content vanishes on a runtime class flip.
+		if (!isInlineLevel(element)) {
 			return null;
 		}
 	} else if (node.nodeType !== node.TEXT_NODE) {
@@ -8865,7 +8917,7 @@ function syncContainerRuns(
 ): void {
 	layout[kDirtyRunContainers].delete(container);
 	if (
-		displayOf(container) === DISPLAY_NONE ||
+		computedDisplay(container) === DISPLAY_NONE ||
 		hiddenByAncestor(layout, container)
 	) {
 		// Content that arrives under the boundary generates no box, and
@@ -9058,7 +9110,7 @@ function runContainerOf(
 	}
 	const startsOwnRun =
 		node.nodeType === node.ELEMENT_NODE &&
-		displayOf(node as Element) !== DISPLAY_INLINE;
+		computedDisplay(node as Element) !== DISPLAY_INLINE;
 	return runContainerFrom(layout, parent, startsOwnRun);
 }
 
@@ -9083,7 +9135,7 @@ function runContainerFrom(
 		if (isOutOfFlow(current)) {
 			return current;
 		}
-		const display = displayOf(current);
+		const display = computedDisplay(current);
 		// An inline box is transparent: its content belongs to the run
 		// around it.
 		if (display === DISPLAY_INLINE) {
@@ -9264,7 +9316,7 @@ function addElementNode(
 	element: Element,
 	parentFlexNode: LayoutNode | null = null,
 ): void {
-	const display = displayOf(element);
+	const display = computedDisplay(element);
 	const asRun = measuresAsRun(layout, element);
 
 	// Inline-level content lays out in its container's anonymous boxes,
@@ -9470,7 +9522,7 @@ function syncContentRoot(
 	element: Element,
 ): void {
 	const box = principalBox(layout, element);
-	const display = displayOf(element);
+	const display = computedDisplay(element);
 	// An inline-grid ALWAYS lays its own content out: every one of its
 	// children is a grid item, and a grid is not something a line can
 	// contain piecemeal. An inline-block only needs a root of its own once
@@ -9481,7 +9533,7 @@ function syncContentRoot(
 	// belong to its container.
 	const grid = display === DISPLAY_INLINE_GRID;
 	if (
-		!isAtomicInline(display) ||
+		!establishesContentRoot(element) ||
 		(!grid && !containsBlockLevelBox(layout, element))
 	) {
 		retireContentRoot(layout, box);
@@ -9712,7 +9764,7 @@ function hiddenByAncestor(
 		ancestor;
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if (displayOf(ancestor) === DISPLAY_NONE) {
+		if (computedDisplay(ancestor) === DISPLAY_NONE) {
 			return true;
 		}
 	}
@@ -9899,7 +9951,7 @@ function firstComposedRenderableChild(
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (
 			child.nodeType === child.ELEMENT_NODE &&
-			(displayOf(child as Element) === DISPLAY_NONE ||
+			(computedDisplay(child as Element) === DISPLAY_NONE ||
 				isOutOfFlow(child))
 		) {
 			continue;
@@ -10695,7 +10747,7 @@ function collectLeafNodes(
 	// line, so the walk cannot stop at </span>. An out-of-flow inline is
 	// where the climb stops: it is blockified (css-display-3 §2.7) and lays
 	// its own content out.
-	const parentDisplay = displayOf(parentElement);
+	const parentDisplay = computedDisplay(parentElement);
 	let traversalRoot: Node;
 	if (laysOutItems(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
 		traversalRoot = node;
@@ -10704,7 +10756,7 @@ function collectLeafNodes(
 		for (
 			let ancestor = boxParentElement(root);
 			ancestor &&
-			displayOf(root) === DISPLAY_INLINE &&
+			computedDisplay(root) === DISPLAY_INLINE &&
 			!isOutOfFlow(root);
 			ancestor = boxParentElement(root)
 		) {
@@ -10780,10 +10832,10 @@ function collectLeavesUnder(
 			}
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = displayOf(element);
+			const display = computedDisplay(element);
 
 			if (
-				displayOf(element) === DISPLAY_NONE ||
+				computedDisplay(element) === DISPLAY_NONE ||
 				isOutOfFlow(element)
 			) {
 				// No box here (none) or a box ELSEWHERE (out of flow):
@@ -11859,7 +11911,7 @@ function inlineBlockRect(
 	}
 	let descended = false;
 	for (const ancestor of enclosing) {
-		if (!isAtomicInline(displayOf(ancestor))) {
+		if (!establishesContentRoot(ancestor)) {
 			continue;
 		}
 		const hop = findInlineBlockSegment(breakResult, ancestor);
@@ -12293,7 +12345,7 @@ function staticPosition(
 		return null;
 	}
 	if (
-		(displayOf(container) & NO_STATIC_POSITION_DISPLAYS) !== 0
+		(computedDisplay(container) & NO_STATIC_POSITION_DISPLAYS) !== 0
 	) {
 		return null;
 	}
@@ -12537,7 +12589,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	// Handle element nodes
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
-		const display = displayOf(element);
+		const display = computedDisplay(element);
 
 		// For block elements, return empty array (no inline text layout)
 		if (!isInlineDisplay(display)) {
@@ -12714,7 +12766,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	if (runHead.nodeType === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
-			displayOf(runHeadElement) === DISPLAY_INLINE &&
+			computedDisplay(runHeadElement) === DISPLAY_INLINE &&
 			hasItemParent(runHeadElement)
 		) {
 			const runHeadBox = getBoxModel(runHeadElement);
@@ -12741,7 +12793,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
 		const parent = flatParentElement<Element>(currentNode)!;
 
-		if (isAtomicInline(displayOf(parent))) {
+		if (establishesContentRoot(parent)) {
 			// An overflow-scrolled inline-block (a field's windowed value,
 			// scrollLeft set by the caret-follow) shifts its content by its
 			// own scroll, so the caret stays in view. A property of the box,
@@ -13418,7 +13470,7 @@ export class LayoutEngine {
 	}
 
 	getRect(element: Element): DOMRect | null {
-		const display = displayOf(element);
+		const display = computedDisplay(element);
 
 		// A display:none element generates no box, so there is no geometry to
 		// report -- the layout node it keeps is a placeholder holding its slot
@@ -13430,15 +13482,12 @@ export class LayoutEngine {
 
 		// A blockified box's box is the one the layout tree sized, not the
 		// extent of the text it happens to hold: its layout node is the truth,
-		// and the run machinery below would report the text union instead. Two
-		// kinds blockify (css-display-3 §2.7): a flex container's children, and
-		// an out-of-flow box, which no run holds any record of at all.
-		const isBlockified =
-			isInlineDisplay(display) &&
-			this[kNodeMap].has(element) &&
-			isBlockifiedBox(element);
+		// and the run machinery below would report the text union instead. It
+		// has a layout node to be the truth only once one has been built, so
+		// the two conditions are separate.
+		const blockified = wasBlockified(element) && this[kNodeMap].has(element);
 
-		if (!isBlockified && isInlineDisplay(display)) {
+		if (!blockified && isInlineDisplay(display)) {
 			if (isAtomicInline(display)) {
 				const rect = inlineBlockRect(this, element);
 				if (rect) {
