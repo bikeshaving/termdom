@@ -280,9 +280,6 @@ const kScreenTop = Symbol("screenTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 const kScrolledElements = Symbol("scrolledElements");
 
-const kWidth = Symbol("width");
-const kHeight = Symbol("height");
-
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kMountHandle = Symbol("mountHandle");
@@ -290,7 +287,6 @@ const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
-const kInteractive = Symbol("interactive");
 const kStaticSibling = Symbol("staticSibling");
 
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
@@ -427,9 +423,6 @@ export class TermDOM {
 	// these back into range (see clampScrolledOffsets).
 	declare [kScrolledElements]: Set<Element>;
 
-	declare [kWidth]: number;
-	declare [kHeight]: number;
-
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	declare [kMouseReportingEnabled]: boolean;
@@ -460,7 +453,6 @@ export class TermDOM {
 	// interpret cursor movement either, so the interactive frame would write
 	// CUP and DECSC sequences straight into the file. An injected transport
 	// asserts a terminal exists on the other end.
-	declare [kInteractive]: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
 		this[kScrollTop] = 0;
@@ -523,10 +515,6 @@ export class TermDOM {
 		this[kAttachBegun] = Promise.resolve();
 		this[kStaticSibling] = null;
 		this[kTransport] = options.transport ?? transportFromProcess();
-		this[kInteractive] = this[kTransport].interactive;
-
-		this[kWidth] = this[kTransport].cols;
-		this[kHeight] = this[kTransport].rows;
 
 		this.window = createDocumentWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
@@ -550,7 +538,7 @@ export class TermDOM {
 		this[kStyleManager].setLayoutFlush(() =>
 			processPendingMutationsAndRender(this),
 		);
-		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
+		this[kLayoutEngine].resize(this[kTransport].cols, this[kTransport].rows);
 
 		// Initialize scrolling management after window setup
 
@@ -602,8 +590,8 @@ export class TermDOM {
 		// probe channel, and takes it for its lifetime.
 		this[kExchange] = buildExchange(this);
 		this[kScreen] = new Screen(
-			this[kHeight],
-			this[kWidth],
+			this[kLayoutEngine].terminalHeight,
+			this[kLayoutEngine].terminalWidth,
 			this[kTransport].colorDepth,
 			this[kExchange].widthMeasurer,
 		);
@@ -705,7 +693,7 @@ export class TermDOM {
 			}
 
 			this[kExchange].start();
-			if (this[kInteractive]) {
+			if (this[kTransport].interactive) {
 				// Bracketed paste on: pasted text arrives fenced, one insertion.
 				this[kExchange].setMode("bracketedPaste", true);
 				// Save the terminal's title, so dispose can hand it back; the
@@ -758,7 +746,7 @@ export class TermDOM {
 		const output = renderStaticHTML(
 			this,
 			html,
-			isAttached(this) && this[kInteractive] ? "\r\n" : "\n",
+			isAttached(this) && this[kTransport].interactive ? "\r\n" : "\n",
 		);
 		if (!output) {
 			return Promise.resolve();
@@ -814,7 +802,7 @@ export class TermDOM {
 		this[kFullscreenStack] = [];
 		this[kHoverReportingEnabled] = false;
 		this[kMouseReportingEnabled] = false;
-		if (closingFullscreen && this[kInteractive]) {
+		if (closingFullscreen && this[kTransport].interactive) {
 			void this[kExchange].write("\r\n");
 		}
 
@@ -1053,7 +1041,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return {
 				width: Math.round(box?.width ?? 0),
 				height: isRoot(element) ?
-					termDOM[kHeight] :
+					termDOM[kLayoutEngine].terminalHeight :
 						Math.round(box?.height ?? 0),
 			};
 		},
@@ -1430,7 +1418,10 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// outer pairs are one size, and the root elements report the height
 		// as the height of what they scroll in.
 		viewportSize() {
-			return {width: termDOM[kWidth], height: termDOM[kHeight]};
+			return {
+				width: termDOM[kLayoutEngine].terminalWidth,
+				height: termDOM[kLayoutEngine].terminalHeight,
+			};
 		},
 		screenTop() {
 			return termDOM[kScreenTop];
@@ -1489,7 +1480,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// document.title sets the terminal's window title in-band (OSC 2).
 		// attach() pushes the previous title; dispose() pops it.
 		titleChanged(title) {
-			if (isAttached(termDOM) && termDOM[kInteractive]) {
+			if (isAttached(termDOM) && termDOM[kTransport].interactive) {
 				void termDOM[kExchange].setTitle(title);
 			}
 		},
@@ -1515,7 +1506,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// The clipboard travels over OSC 52, so it is reachable while a
 		// terminal is attached and taking input, and not otherwise.
 		clipboardTerminal() {
-			return isAttached(termDOM) && termDOM[kInteractive] ?
+			return isAttached(termDOM) && termDOM[kTransport].interactive ?
 				termDOM[kExchange] :
 				null;
 		},
@@ -1701,7 +1692,7 @@ function buildExchange(
 ): TerminalExchange {
 	return new TerminalExchange({
 		transport: termdom[kTransport],
-		interactive: termdom[kInteractive],
+		interactive: termdom[kTransport].interactive,
 		anchorDetection: termdom[kTransport].sharesScreen,
 		handlers: {
 			// Input dirties the journal wholesale. Reactive pseudo-state
@@ -1776,12 +1767,11 @@ function rebindTransport(
 	transport: TerminalTransport,
 ): void {
 	termdom[kTransport] = transport;
-	termdom[kInteractive] = transport.interactive;
 	applyTerminalSize(termdom, transport.cols, transport.rows);
 	termdom[kExchange] = buildExchange(termdom);
 	termdom[kScreen] = new Screen(
-		termdom[kHeight],
-		termdom[kWidth],
+		termdom[kLayoutEngine].terminalHeight,
+		termdom[kLayoutEngine].terminalWidth,
 		transport.colorDepth,
 		termdom[kExchange].widthMeasurer,
 	);
@@ -1799,25 +1789,14 @@ function applyTerminalSize(
 	newHeight: number,
 ): void {
 	// A SIGWINCH reporting an unchanged size still redraws but fires no
-	// resize event.
-	const sizeChanged = newWidth !== termdom[kWidth] ||
-		newHeight !== termdom[kHeight];
-	termdom[kWidth] = newWidth;
-	termdom[kHeight] = newHeight;
-
-	Object.defineProperty(termdom.window, "innerWidth", {
-		value: newWidth,
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(termdom.window, "innerHeight", {
-		value: newHeight,
-		writable: false,
-		configurable: true,
-	});
+	// resize event. The engine holds the size the last frame was built
+	// against until the resize below moves it.
+	const sizeChanged = newWidth !== termdom[kLayoutEngine].terminalWidth ||
+		newHeight !== termdom[kLayoutEngine].terminalHeight;
 
 	// The layout engine holds the viewport a `vw` is a hundredth of, so it
-	// learns the new size BEFORE any style is resolved against it.
+	// learns the new size BEFORE any style is resolved against it. The
+	// window's innerWidth/innerHeight read it back through the mount.
 	termdom[kLayoutEngine].resize(newWidth, newHeight);
 
 	// The viewport changed, so every @media answer may have: re-parse the
@@ -1853,7 +1832,7 @@ function updateMouseReporting(
 ): void {
 	const wanted =
 		isAttached(termdom) &&
-		termdom[kInteractive] &&
+		termdom[kTransport].interactive &&
 		!termdom[kEventHandler].mouseCaptureYielded;
 	if (wanted === termdom[kMouseReportingEnabled]) {
 		return;
@@ -1994,7 +1973,7 @@ async function renderOnce(
 	if (termdom[kLifecycle] === "disposed") {
 		return;
 	}
-	if (!termdom[kInteractive]) {
+	if (!termdom[kTransport].interactive) {
 		await printStatic(termdom);
 		return;
 	}
@@ -2027,7 +2006,7 @@ function documentPaintHeight(
 		// a physical scroll no bookkeeping records -- and from then on
 		// the anchor lies by that many rows.
 		if (termdom[kUAToolkit].isModalDialog(element)) {
-			return termdom[kHeight];
+			return termdom[kLayoutEngine].terminalHeight;
 		}
 		const rect = termdom[kLayoutEngine].getRect(element);
 		if (rect) {
@@ -2059,8 +2038,11 @@ function cameraRegionHeight(
 	termdom: TermDOM,
 ): number {
 	return isFullscreen(termdom) ?
-		termdom[kHeight] :
-			Math.min(termdom[kHeight], documentFlowHeight(termdom));
+		termdom[kLayoutEngine].terminalHeight :
+			Math.min(
+				termdom[kLayoutEngine].terminalHeight,
+				documentFlowHeight(termdom),
+			);
 }
 
 /**
@@ -2350,7 +2332,7 @@ function resolveScrollBand(
 	const box = getBoxModel(record.element);
 	const left = rect.left + (box.borderLeftWidth || 0);
 	const right = rect.left + rect.width - (box.borderRightWidth || 0);
-	if (left > 0 || right < termdom[kWidth]) {
+	if (left > 0 || right < termdom[kLayoutEngine].terminalWidth) {
 		return null;
 	}
 
@@ -2566,8 +2548,8 @@ function afterRender(
 	const viewport = termdom[kLayoutEngine].createDOMRect(
 		0,
 		termdom[kScrollTop],
-		termdom[kWidth],
-		termdom[kHeight],
+		termdom[kLayoutEngine].terminalWidth,
+		termdom[kLayoutEngine].terminalHeight,
 	);
 	flushObservers(
 		termdom.document,
@@ -2772,7 +2754,7 @@ async function printStatic(
 function flushDocument(
 	termdom: TermDOM,
 ): void {
-	if (!termdom[kInteractive]) {
+	if (!termdom[kTransport].interactive) {
 		return;
 	}
 
@@ -2844,7 +2826,7 @@ async function renderInteractive(
 		termdom[kScreen].repaintAll();
 		// detectCommandStart waits for a reply on stdin, so the listener must
 		// be attached first (idempotent -- normally already done by now).
-		if (termdom[kInteractive]) {
+		if (termdom[kTransport].interactive) {
 			termdom.attach();
 			await termdom[kExchange].detectCommandStart();
 		}
@@ -2919,9 +2901,12 @@ async function renderInteractive(
 	// fixed, Canvas-backed fullscreen element covers it regardless.
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen ?
-		termdom[kHeight] :
+		termdom[kLayoutEngine].terminalHeight :
 			documentPaintHeight(termdom);
-	const regionHeight = Math.min(contentHeight, termdom[kHeight]);
+	const regionHeight = Math.min(
+		contentHeight,
+		termdom[kLayoutEngine].terminalHeight,
+	);
 
 	// Take the room we need by pushing earlier output up, never over it.
 	const top = fullscreen ? 0 : reserveRows(termdom, regionHeight);
@@ -2988,7 +2973,9 @@ function pushRowsUp(
 	termdom: TermDOM,
 	rows: number,
 ): number {
-	const overflow = termdom[kScreenTop] + rows - termdom[kHeight];
+	const overflow = termdom[kScreenTop] +
+		rows -
+		termdom[kLayoutEngine].terminalHeight;
 	if (overflow <= 0) {
 		return 0;
 	}
@@ -3044,7 +3031,7 @@ function reserveRows(
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
 		void termdom[kExchange].write(
-			cursorTo(termdom[kHeight], 1) + index().repeat(push),
+			cursorTo(termdom[kLayoutEngine].terminalHeight, 1) + index().repeat(push),
 		);
 		// Do NOT shift the renderer's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
@@ -3066,7 +3053,10 @@ function staticRenderer(
 	termdom: TermDOM,
 ): TermDOM {
 	const cols = termdom[kTransport].cols;
-	if (termdom[kStaticSibling] && termdom[kStaticSibling][kWidth] !== cols) {
+	if (
+		termdom[kStaticSibling] &&
+		termdom[kStaticSibling][kLayoutEngine].terminalWidth !== cols
+	) {
 		void termdom[kStaticSibling].dispose();
 		termdom[kStaticSibling] = null;
 	}
