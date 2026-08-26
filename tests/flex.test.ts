@@ -1,6 +1,5 @@
 import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
-import {SOLVER} from "../src/internal/layout.js";
-import type {Config, LayoutNode} from "../src/internal/layout.js";
+import {Config, LayoutNode} from "../src/internal/layout.js";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -22,12 +21,12 @@ import type {Config, LayoutNode} from "../src/internal/layout.js";
 let config: Config;
 
 beforeEach(() => {
-	config = SOLVER.Config.create();
+	config = Config.create();
 	config.setPointScaleFactor(1);
 });
 
 function node(): LayoutNode {
-	return SOLVER.LayoutNode.createWithConfig(config);
+	return LayoutNode.createWithConfig(config);
 }
 
 function box(parent: LayoutNode, index = parent.getChildCount()): LayoutNode {
