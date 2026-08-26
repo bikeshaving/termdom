@@ -13088,6 +13088,14 @@ export class HTMLFormElement extends HTMLElement {
 	reportValidity(): boolean {
 		return this.checkValidity();
 	}
+
+	/**
+	 * A form iterates the controls it owns, which is what its elements
+	 * collection holds.
+	 */
+	[Symbol.iterator](): ArrayIterator<Element> {
+		return this.elements[Symbol.iterator]();
+	}
 }
 
 export interface HTMLFormElement
@@ -13274,6 +13282,16 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		}
 		return named;
 	}
+}
+
+/**
+ * A shared name answers with the list of everything that shares it, which
+ * the implementation below already does. lib.dom bases this collection on
+ * HTMLCollectionBase, which has no namedItem to widen; this one extends
+ * HTMLCollection, so the wider return is declared here instead.
+ */
+export interface HTMLFormControlsCollection {
+	namedItem(name: string): RadioNodeList | Element | null;
 }
 
 function matching(
