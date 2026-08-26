@@ -73,13 +73,18 @@ test("a box out of flow lays the others out as if it were not there", async () =
 					return;
 				}
 				const target = present[pick % present.length];
-				// `display: contents` is left out on purpose. Whether it
-				// blockifies when the element is taken out of flow decides
-				// whether its children stay in the flow or leave with it, and
-				// this engine dissolves such an element on its computed
-				// display alone. Until that is settled against css-display-3
-				// the two documents are not the same question, and asserting
-				// either answer here would pin behaviour nobody has chosen.
+				// `display: contents` is left out because the two documents
+				// are not the same question for it, and permanently so.
+				// Blockification changes an element's OUTER display type, and
+				// contents has none -- it is a <display-box> value like none,
+				// so the element generates no principal box and there is
+				// nothing for `position: absolute` to position. Taking such an
+				// element out of flow therefore changes nothing: it is still
+				// replaced by its children, which stay in the flow. Removing
+				// it takes those children with it. The engine already gets
+				// this right, which is why it dissolves on the computed
+				// display -- the one place in this file where that is not the
+				// bug it was twice above.
 				const skip = await build(markup, (scene) => {
 					const element = scene.dom.document.querySelector(
 						`[data-f="${target}"]`,
