@@ -176,3 +176,19 @@ declare module "arabic-persian-reshaper" {
 	};
 	export default shapers;
 }
+
+/**
+ * Bun's global, of which termdom uses one function: a width measurement that
+ * knows the Unicode tables. Declared here rather than taken from @types/bun,
+ * whose global `Event` merges with lib.dom's and leaves `composedPath` with an
+ * overload no DOM can satisfy (oven-sh/bun#40574).
+ */
+declare namespace globalThis {
+	// eslint-disable-next-line no-var
+	var Bun:
+		| {
+			/** The rendered column width of a string. */
+			stringWidth(input: string): number;
+		} |
+		undefined;
+}

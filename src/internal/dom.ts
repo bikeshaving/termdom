@@ -4847,20 +4847,20 @@ export class Node extends EventTarget {
 		return list as NodeListOf<ChildNode>;
 	}
 
-	get firstChild(): Node | null {
-		return this[kFirstChild]!;
+	get firstChild(): ChildNode | null {
+		return this[kFirstChild]! as ChildNode | null;
 	}
 
-	get lastChild(): Node | null {
-		return this[kLastChild]!;
+	get lastChild(): ChildNode | null {
+		return this[kLastChild]! as ChildNode | null;
 	}
 
-	get previousSibling(): Node | null {
-		return this[kPrevious]!;
+	get previousSibling(): ChildNode | null {
+		return this[kPrevious]! as ChildNode | null;
 	}
 
-	get nextSibling(): Node | null {
-		return this[kNext]!;
+	get nextSibling(): ChildNode | null {
+		return this[kNext]! as ChildNode | null;
 	}
 
 	get nodeValue(): string | null {
@@ -7091,6 +7091,14 @@ Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 	value: "HTMLCollection",
 	configurable: true,
 });
+
+/** lib.dom's HTMLCollectionOf: a collection whose members are known. */
+export interface HTMLCollectionOf<T extends Element> extends HTMLCollection {
+	item(index: number): T | null;
+	namedItem(name: string): T | null;
+	[index: number]: T;
+	[Symbol.iterator](): ArrayIterator<T>;
+}
 
 function toUnsignedLong(value: unknown): number {
 	const number = Number(value);
@@ -20619,40 +20627,60 @@ export class Document extends Node {
 	 * are defined to do.
 	 */
 
-	get anchors(): HTMLCollection {
+	get anchors(): HTMLCollectionOf<HTMLAnchorElement> {
 		return documentCollection(this,
 			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
-		);
+		) as HTMLCollectionOf<HTMLAnchorElement>;
 	}
 
-	get forms(): HTMLCollection {
-		return documentCollection(this, (e) => e instanceof HTMLFormElement);
+	get forms(): HTMLCollectionOf<HTMLFormElement> {
+		return documentCollection(
+			this,
+			(e) => e instanceof HTMLFormElement,
+		) as HTMLCollectionOf<
+			HTMLFormElement
+		>;
 	}
 
-	get images(): HTMLCollection {
-		return documentCollection(this, (e) => e instanceof HTMLImageElement);
+	get images(): HTMLCollectionOf<HTMLImageElement> {
+		return documentCollection(
+			this,
+			(e) => e instanceof HTMLImageElement,
+		) as HTMLCollectionOf<
+			HTMLImageElement
+		>;
 	}
 
-	get scripts(): HTMLCollection {
-		return documentCollection(this, (e) => e instanceof HTMLScriptElement);
+	get scripts(): HTMLCollectionOf<HTMLScriptElement> {
+		return documentCollection(
+			this,
+			(e) => e instanceof HTMLScriptElement,
+		) as HTMLCollectionOf<
+			HTMLScriptElement
+		>;
 	}
 
-	get embeds(): HTMLCollection {
-		return documentCollection(this, (e) => e instanceof HTMLEmbedElement);
+	get embeds(): HTMLCollectionOf<HTMLEmbedElement> {
+		return documentCollection(
+			this,
+			(e) => e instanceof HTMLEmbedElement,
+		) as HTMLCollectionOf<
+			HTMLEmbedElement
+		>;
 	}
 
 	/** An alias of embeds, per the spec. */
-	get plugins(): HTMLCollection {
+	get plugins(): HTMLCollectionOf<HTMLEmbedElement> {
 		return this.embeds;
 	}
 
 	/** `a` and `area` elements that have an href. */
-	get links(): HTMLCollection {
+	get links(): HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement> {
 		return documentCollection(this,
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		);
+		) as HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement>;
 	}
 
 	/** Always empty: the applet element was removed from HTML. */
@@ -21041,7 +21069,15 @@ Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 export interface Document
 	extends Pick<
 		globalThis.Document,
-		Extract<keyof globalThis.Document, `on${string}`> | ParentNodeMixin
+		| Extract<keyof globalThis.Document, `on${string}`> |
+		ParentNodeMixin |
+		// DECLARED, never installed, and the difference matters. document.all
+		// is specified to be a FALSY object, which JavaScript cannot make --
+		// browsers give it an internal slot no script can reach. The selector
+		// engine tests `"all" in context` and then reads `context.all[id]`, so
+		// a property holding undefined throws where an absent one sends it
+		// down the path that works.
+		"all"
 	> {}
 
 // Hit testing: the point is the viewport's, the answer the engine's. A
@@ -27434,10 +27470,7 @@ const _checked: [
 	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
 
 	// -- constants only -----------------------------------------------------
-	// NEVER: document.all is a falsy object, which no JavaScript value can
-	// be. The selector engine reads it to detect quirks, so answering with a
-	// truthy collection would be worse than not answering.
-	Equal<MissingFrom<globalThis.Document, Document>, "all">,
+	Equal<MissingFrom<globalThis.Document, Document>, never>,
 	Equal<MissingFrom<globalThis.Node, Node>, never>,
 	Equal<MissingFrom<globalThis.Attr, Attr>, never>,
 	Equal<MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>, never>,

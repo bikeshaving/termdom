@@ -14,8 +14,9 @@ import {
 } from "../generated/widthtables.js";
 
 // Bun is the only runtime with a native fast path worth branching on; Node
-// and Deno both take the pure-JS fallback, so neither needs detecting.
-const isBun = typeof globalThis.Bun !== "undefined";
+// and Deno both take the pure-JS fallback, so neither needs detecting. The
+// global itself rather than a flag, so its absence narrows the call away.
+const bun = globalThis.Bun;
 
 /**
  * Combining marks and format characters -- the two Unicode categories whose
@@ -289,8 +290,8 @@ export function stringWidth(str: string): number {
 	// learned anything takes the cluster-by-cluster path -- which is where the
 	// ledger is consulted. An empty ledger costs one size read.
 	const width =
-		isBun && clusterAdvances.size === 0 && !COMBINING.test(str) ?
-				Bun.stringWidth(str) :
+		bun !== undefined && clusterAdvances.size === 0 && !COMBINING.test(str) ?
+				bun.stringWidth(str) :
 				stringWidthFallback(str);
 	widthCache.set(str, width);
 	return width;
