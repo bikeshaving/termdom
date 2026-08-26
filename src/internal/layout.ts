@@ -12959,9 +12959,6 @@ export class LayoutEngine {
 	declare [kRootElement]: Element;
 	declare [kEngineWindow]: EngineWindow;
 
-	declare terminalWidth: number;
-	declare terminalHeight: number;
-
 	/** The terminal-sized root every box hangs from; it has no DOM node. */
 	declare [kViewportRoot]: LayoutNode;
 
@@ -13073,11 +13070,12 @@ export class LayoutEngine {
 		addNode(this, this[kRootElement], this[kViewportRoot]);
 	}
 
+	/**
+	 * Lay the viewport root out at a new terminal size. The engine keeps no
+	 * copy of the size: the root it sizes here is the copy, and the document
+	 * that adopted the size holds the one everything else reads.
+	 */
 	resize(width: number, height: number): void {
-		this.terminalWidth = width;
-		this.terminalHeight = height;
-
-		// Set dimensions on the viewport root node (terminal dimensions)
 		this[kViewportRoot].setWidth(width);
 		this[kViewportRoot].setHeight(height);
 
@@ -13178,12 +13176,13 @@ export class LayoutEngine {
 			return;
 		}
 
-		// Calculate layout using viewport root node (terminal dimensions)
-		// The HTML element can now have auto height and reference viewport via percentages
-		this[kViewportRoot].calculateLayout(
-			this.terminalWidth,
-			this.terminalHeight,
-		);
+		// The space offered to the root is the root's own size, which `resize`
+		// set: the terminal is the viewport, so the two are the same number
+		// read from the one place that holds it. Below the root the html
+		// element can size to its content and still resolve percentages and
+		// viewport units against the terminal.
+		const root = this[kViewportRoot];
+		root.calculateLayout(root.style.width.value, root.style.height.value);
 	}
 
 	/**

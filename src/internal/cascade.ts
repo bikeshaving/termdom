@@ -15,6 +15,7 @@ import {
 	HTMLStyleElement as DOMHTMLStyleElement,
 	SVGElement as DOMSVGElement,
 	ShadowRoot as DOMShadowRoot,
+	mountOf,
 	observeTree,
 	type Document as DOMDocument,
 	type UAToolkit,
@@ -10182,17 +10183,13 @@ export class StyleManager {
 	declare [kFlushing]: boolean;
 
 	/**
-	 * The grid a viewport unit measures against, in cells. Null before a
-	 * layout engine is wired up, where `1vw` has nothing to be a hundredth of.
+	 * The grid a viewport unit measures against, in cells: the size the
+	 * document has adopted, which is the same one `@media` is answered against
+	 * a few hundred lines below. Null when the window is mounted on no
+	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
 	viewportSize(): {width: number; height: number} | null {
-		if (!this[kLayoutEngine]) {
-			return null;
-		}
-		return {
-			width: this[kLayoutEngine].terminalWidth,
-			height: this[kLayoutEngine].terminalHeight,
-		};
+		return mountOf(this[kWindow].document)?.viewportSize() ?? null;
 	}
 
 	/** The element's border-box rect, measured after that flush. */

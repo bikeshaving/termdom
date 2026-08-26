@@ -278,6 +278,20 @@ const kFrameDirty = Symbol("frameDirty");
 /** The engine invalidation count the last painted frame was built from. */
 const kPaintedGeneration = Symbol("paintedGeneration");
 
+/**
+ * The terminal size the document has adopted, which is what `window.innerWidth`
+ * reports, what a `vw` is a hundredth of, and what an `@media` query is
+ * answered against.
+ *
+ * Distinct from `transport.cols`/`rows`, which is the size the terminal is
+ * RIGHT NOW. The two part company between a SIGWINCH and the frame that
+ * answers it: the transport moves immediately, this moves when the document
+ * takes the new size on, so the whole of a frame resolves against one size and
+ * a signal reporting a size the document already has is recognised as the
+ * no-op it is.
+ */
+const kViewport = Symbol("viewport");
+
 const kScrollTop = Symbol("scrollTop");
 const kScreenTop = Symbol("screenTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
@@ -415,6 +429,8 @@ export class TermDOM {
 	declare [kFrameDirty]: boolean;
 	declare [kPaintedGeneration]: number;
 
+	declare [kViewport]: {width: number; height: number};
+
 	/** How far into the document the painted region looks (window.scrollY). */
 	declare [kScrollTop]: number;
 	/** The terminal row the painted region starts at (the command start). */
@@ -543,7 +559,7 @@ export class TermDOM {
 		this[kStyleManager].setLayoutFlush(() =>
 			processPendingMutationsAndRender(this),
 		);
-		this[kLayoutEngine].resize(this[kTransport].cols, this[kTransport].rows);
+		adoptTerminalSize(this, this[kTransport].cols, this[kTransport].rows);
 
 		// Initialize scrolling management after window setup
 
@@ -595,8 +611,8 @@ export class TermDOM {
 		// probe channel, and takes it for its lifetime.
 		this[kExchange] = buildExchange(this);
 		this[kScreen] = new Screen(
-			this[kLayoutEngine].terminalHeight,
-			this[kLayoutEngine].terminalWidth,
+			this[kViewport].height,
+			this[kViewport].width,
 			this[kTransport].colorDepth,
 			this[kExchange].widthMeasurer,
 		);
@@ -1044,7 +1060,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return {
 				width: Math.round(box?.width ?? 0),
 				height: isRoot(element) ?
-					termDOM[kLayoutEngine].terminalHeight :
+					termDOM[kViewport].height :
 						Math.round(box?.height ?? 0),
 			};
 		},
@@ -1421,10 +1437,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// outer pairs are one size, and the root elements report the height
 		// as the height of what they scroll in.
 		viewportSize() {
-			return {
-				width: termDOM[kLayoutEngine].terminalWidth,
-				height: termDOM[kLayoutEngine].terminalHeight,
-			};
+			return {...termDOM[kViewport]};
 		},
 		screenTop() {
 			return termDOM[kScreenTop];
@@ -1809,11 +1822,26 @@ function rebindTransport(
 	applyTerminalSize(termdom, transport.cols, transport.rows);
 	termdom[kExchange] = buildExchange(termdom);
 	termdom[kScreen] = new Screen(
-		termdom[kLayoutEngine].terminalHeight,
-		termdom[kLayoutEngine].terminalWidth,
+		termdom[kViewport].height,
+		termdom[kViewport].width,
 		transport.colorDepth,
 		termdom[kExchange].widthMeasurer,
 	);
+}
+
+/**
+ * Take a terminal size on as the document's own, and hand it to the layout
+ * engine, which lays the viewport root out at it. The one writer: everything
+ * else reads the size back through `window.innerWidth`/`innerHeight`, or
+ * through the mount those go to.
+ */
+function adoptTerminalSize(
+	termdom: TermDOM,
+	width: number,
+	height: number,
+): void {
+	termdom[kViewport] = {width, height};
+	termdom[kLayoutEngine].resize(width, height);
 }
 
 /**
@@ -1828,15 +1856,16 @@ function applyTerminalSize(
 	newHeight: number,
 ): void {
 	// A SIGWINCH reporting an unchanged size still redraws but fires no
-	// resize event. The engine holds the size the last frame was built
-	// against until the resize below moves it.
-	const sizeChanged = newWidth !== termdom[kLayoutEngine].terminalWidth ||
-		newHeight !== termdom[kLayoutEngine].terminalHeight;
+	// resize event, so the comparison is against the size the document holds,
+	// not the one the transport is reporting.
+	const viewport = termdom[kViewport];
+	const sizeChanged =
+		newWidth !== viewport.width || newHeight !== viewport.height;
 
-	// The layout engine holds the viewport a `vw` is a hundredth of, so it
-	// learns the new size BEFORE any style is resolved against it. The
-	// window's innerWidth/innerHeight read it back through the mount.
-	termdom[kLayoutEngine].resize(newWidth, newHeight);
+	// Before any style is resolved: `vw` and `@media` are answered from here
+	// through the window, and the layout engine is handed the same size to
+	// lay the viewport root out at.
+	adoptTerminalSize(termdom, newWidth, newHeight);
 
 	// The viewport changed, so every @media answer may have: re-parse the
 	// stylesheets against the new size (they were parsed against the old one
@@ -2045,7 +2074,7 @@ function documentPaintHeight(
 		// a physical scroll no bookkeeping records -- and from then on
 		// the anchor lies by that many rows.
 		if (termdom[kUAToolkit].isModalDialog(element)) {
-			return termdom[kLayoutEngine].terminalHeight;
+			return termdom[kViewport].height;
 		}
 		const rect = termdom[kLayoutEngine].getRect(element);
 		if (rect) {
@@ -2077,9 +2106,9 @@ function cameraRegionHeight(
 	termdom: TermDOM,
 ): number {
 	return isFullscreen(termdom) ?
-		termdom[kLayoutEngine].terminalHeight :
+		termdom[kViewport].height :
 			Math.min(
-				termdom[kLayoutEngine].terminalHeight,
+				termdom[kViewport].height,
 				documentFlowHeight(termdom),
 			);
 }
@@ -2371,7 +2400,7 @@ function resolveScrollBand(
 	const box = getBoxModel(record.element);
 	const left = rect.left + (box.borderLeftWidth || 0);
 	const right = rect.left + rect.width - (box.borderRightWidth || 0);
-	if (left > 0 || right < termdom[kLayoutEngine].terminalWidth) {
+	if (left > 0 || right < termdom[kViewport].width) {
 		return null;
 	}
 
@@ -2587,8 +2616,8 @@ function afterRender(
 	const viewport = new termdom.window.DOMRect(
 		0,
 		termdom[kScrollTop],
-		termdom[kLayoutEngine].terminalWidth,
-		termdom[kLayoutEngine].terminalHeight,
+		termdom[kViewport].width,
+		termdom[kViewport].height,
 	);
 	flushObservers(
 		termdom.document,
@@ -2940,11 +2969,11 @@ async function renderInteractive(
 	// fixed, Canvas-backed fullscreen element covers it regardless.
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen ?
-		termdom[kLayoutEngine].terminalHeight :
+		termdom[kViewport].height :
 			documentPaintHeight(termdom);
 	const regionHeight = Math.min(
 		contentHeight,
-		termdom[kLayoutEngine].terminalHeight,
+		termdom[kViewport].height,
 	);
 
 	// Take the room we need by pushing earlier output up, never over it.
@@ -3014,7 +3043,7 @@ function pushRowsUp(
 ): number {
 	const overflow = termdom[kScreenTop] +
 		rows -
-		termdom[kLayoutEngine].terminalHeight;
+		termdom[kViewport].height;
 	if (overflow <= 0) {
 		return 0;
 	}
@@ -3070,7 +3099,7 @@ function reserveRows(
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
 		void termdom[kExchange].write(
-			cursorTo(termdom[kLayoutEngine].terminalHeight, 1) + index().repeat(push),
+			cursorTo(termdom[kViewport].height, 1) + index().repeat(push),
 		);
 		// Do NOT shift the renderer's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
@@ -3094,7 +3123,7 @@ function staticRenderer(
 	const cols = termdom[kTransport].cols;
 	if (
 		termdom[kStaticSibling] &&
-		termdom[kStaticSibling][kLayoutEngine].terminalWidth !== cols
+		termdom[kStaticSibling][kViewport].width !== cols
 	) {
 		void termdom[kStaticSibling].dispose();
 		termdom[kStaticSibling] = null;
