@@ -162,16 +162,6 @@ export interface UAToolkit {
 	flatParentElement<T>(node: object): T | null;
 	/** Connected through the composed tree, closed roots included. */
 	flatIsConnected(node: object): boolean;
-	/**
-	 * A TreeWalker, in the caller's node type. `whatToShow` and `filter` are
-	 * the DOM's own, with the engine's SHOW_FLAT available on top to ask for
-	 * the flat tree rather than the node tree.
-	 */
-	createTreeWalker<N>(
-		root: object,
-		whatToShow: number,
-		filter: NodeFilterInput,
-	): Walker<N>;
 	/** A control's selection as a Range, measured like any document range. */
 	selectionRangeOf(control: object): UARange | null;
 	pseudoElement<T>(host: object, name: string): T | null;
@@ -324,20 +314,6 @@ function makeUAToolkit(document: object): UAToolkit {
 		},
 		flatIsConnected(node: object): boolean {
 			return owns(node) && flatIsConnected(node);
-		},
-		createTreeWalker<N>(
-			root: object,
-			whatToShow: number,
-			filter: NodeFilterInput,
-		): Walker<N> {
-			if (!owns(root)) {
-				throw new Error("Not this toolkit's document.");
-			}
-			return new TreeWalker(
-				root as Node,
-				whatToShow,
-				filter,
-			) as unknown as Walker<N>;
 		},
 		selectionRangeOf(control: object): UARange | null {
 			return owns(control) ? selectionRangeOf(control) : null;

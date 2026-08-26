@@ -35,6 +35,7 @@ import {
 	DOMRectList,
 	NodeFilter,
 	SHOW_FLAT,
+	TreeWalker,
 } from "./dom.js";
 
 import {
@@ -6876,15 +6877,11 @@ function createTreeWalker<N>(
 	root: N,
 	filter: ((node: N) => number) | null = null,
 ): Walker<N> {
-	const ua = uaOf(root as object);
-	if (ua === undefined) {
-		throw new Error("No toolkit claimed for this document.");
-	}
-	return ua.createTreeWalker<N>(
-		root as object,
+	return new TreeWalker(
+		root as never,
 		FLOW_NODES,
-		filter as ((node: object) => number) | null,
-	);
+		filter as never,
+	) as unknown as Walker<N>;
 }
 
 // ---------------------------------------------------------------------------
