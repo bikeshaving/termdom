@@ -9970,13 +9970,6 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 });
 
 /**
- * What an element interface adds over HTMLElement's: its own reflected
- * attributes and methods, which the tables install on its prototype. The
- * inherited half is already declared on HTMLElement.
- */
-type ElementOwn<T> = Pick<T, Exclude<keyof T, keyof globalThis.HTMLElement>>;
-
-/**
  * What the tables and the cascade give an HTML element: the event handler
  * attributes, the attributes it reflects, and `style`, which the cascade
  * installs when it loads.
@@ -12252,9 +12245,36 @@ export class HTMLAnchorElement extends HTMLElement {
 	}
 }
 
-export interface HTMLAnchorElement extends ElementOwn<
-	globalThis.HTMLAnchorElement
-> {}
+export interface HTMLAnchorElement
+	extends Pick<
+		globalThis.HTMLAnchorElement,
+		"charset" |
+		"coords" |
+		"download" |
+		"hash" |
+		"host" |
+		"hostname" |
+		"href" |
+		"hreflang" |
+		"name" |
+		"origin" |
+		"password" |
+		"pathname" |
+		"ping" |
+		"port" |
+		"protocol" |
+		"referrerPolicy" |
+		"rel" |
+		"relList" |
+		"rev" |
+		"search" |
+		"shape" |
+		"target" |
+		"text" |
+		"toString" |
+		"type" |
+		"username"
+	> {}
 /** One part of a hyperlink's URL, read from it and written back through it. */
 function hyperlinkPart(
 	read: (url: URL) => string,
@@ -12411,9 +12431,32 @@ Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
 
 export class HTMLAreaElement extends HTMLElement {}
 
-export interface HTMLAreaElement extends ElementOwn<
-	globalThis.HTMLAreaElement
-> {}
+export interface HTMLAreaElement
+	extends Pick<
+		globalThis.HTMLAreaElement,
+		"alt" |
+		"coords" |
+		"download" |
+		"hash" |
+		"host" |
+		"hostname" |
+		"href" |
+		"noHref" |
+		"origin" |
+		"password" |
+		"pathname" |
+		"ping" |
+		"port" |
+		"protocol" |
+		"referrerPolicy" |
+		"rel" |
+		"relList" |
+		"search" |
+		"shape" |
+		"target" |
+		"toString" |
+		"username"
+	> {}
 Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 
 /**
@@ -12889,9 +12932,17 @@ export class HTMLEmbedElement extends HTMLElement {
 	}
 }
 
-export interface HTMLEmbedElement extends ElementOwn<
-	globalThis.HTMLEmbedElement
-> {}
+export interface HTMLEmbedElement
+	extends Pick<
+		globalThis.HTMLEmbedElement,
+		"align" |
+		"getSVGDocument" |
+		"height" |
+		"name" |
+		"src" |
+		"type" |
+		"width"
+	> {}
 
 const kElements = Symbol("elements");
 
@@ -12975,7 +13026,7 @@ export class HTMLFormElement extends HTMLElement {
 		submitForm(this, null, true);
 	}
 
-	requestSubmit(submitter: Element | null = null): void {
+	requestSubmit(submitter: HTMLElement | null = null): void {
 		if (submitter !== null && submitter !== undefined) {
 			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
 				throw new TypeError("That element is not a submit button");
@@ -13039,9 +13090,26 @@ export class HTMLFormElement extends HTMLElement {
 	}
 }
 
-export interface HTMLFormElement extends ElementOwn<
-	globalThis.HTMLFormElement
-> {}
+export interface HTMLFormElement
+	extends Pick<
+		globalThis.HTMLFormElement,
+		"acceptCharset" |
+		"action" |
+		"autocomplete" |
+		"checkValidity" |
+		"encoding" |
+		"enctype" |
+		"length" |
+		"method" |
+		"name" |
+		"noValidate" |
+		"rel" |
+		"relList" |
+		"reportValidity" |
+		"reset" |
+		"submit" |
+		"target"
+	> {}
 /** The listed controls a form owns, in tree order. */
 function listedControls(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
@@ -13165,7 +13233,8 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 			return matches[0] as Element;
 		}
 		// The list is what the interface answers with for a shared name; the
-		// declared type is the collection's, which has no way to say so.
+		// declared type is the collection's, whose base has no way to say so
+		// -- lib.dom gives this collection a base without namedItem at all.
 		return new RadioNodeList(
 			() => matching(this, key),
 			this[kOwner]!,
@@ -13430,9 +13499,37 @@ export class HTMLImageElement extends HTMLElement {
 	}
 }
 
-export interface HTMLImageElement extends ElementOwn<
-	globalThis.HTMLImageElement
-> {}
+export interface HTMLImageElement
+	extends Pick<
+		globalThis.HTMLImageElement,
+		"align" |
+		"alt" |
+		"border" |
+		"complete" |
+		"crossOrigin" |
+		"currentSrc" |
+		"decode" |
+		"decoding" |
+		"fetchPriority" |
+		"height" |
+		"hspace" |
+		"isMap" |
+		"loading" |
+		"longDesc" |
+		"lowsrc" |
+		"name" |
+		"naturalHeight" |
+		"naturalWidth" |
+		"referrerPolicy" |
+		"sizes" |
+		"src" |
+		"srcset" |
+		"useMap" |
+		"vspace" |
+		"width" |
+		"x" |
+		"y"
+	> {}
 
 const kDirtyValue = Symbol("dirtyValue");
 const kSelectionStart = Symbol("selectionStart");
@@ -15370,9 +15467,24 @@ export class HTMLScriptElement extends HTMLElement {
 	}
 }
 
-export interface HTMLScriptElement extends ElementOwn<
-	globalThis.HTMLScriptElement
-> {}
+export interface HTMLScriptElement
+	extends Pick<
+		globalThis.HTMLScriptElement,
+		"async" |
+		"blocking" |
+		"charset" |
+		"crossOrigin" |
+		"defer" |
+		"event" |
+		"fetchPriority" |
+		"htmlFor" |
+		"integrity" |
+		"noModule" |
+		"referrerPolicy" |
+		"src" |
+		"text" |
+		"type"
+	> {}
 
 const kSelectedOptions = Symbol("selectedOptions");
 const kPicker = Symbol("picker");
