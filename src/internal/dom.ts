@@ -9895,6 +9895,42 @@ export class HTMLElement extends Element {
 		state.previouslyFocused = null;
 		popoverStateChanged(this);
 	}
+
+	/**
+	 * The label a platform shows for the access key, which a terminal has no
+	 * modifier convention to name. Empty is what a browser reports when it has
+	 * nothing to say either.
+	 */
+	get accessKeyLabel(): string {
+		return "";
+	}
+
+	/**
+	 * The RENDERED text, which is a different question from textContent: it
+	 * respects display, collapses white space and inserts the breaks layout
+	 * decided on. This engine has all of that, but reading it back through
+	 * this property is not wired up, and textContent is not the same answer.
+	 */
+	get innerText(): string {
+		throw domError("NotSupportedError", "innerText is not implemented");
+	}
+
+	set innerText(_value: string) {
+		throw domError("NotSupportedError", "innerText is not implemented");
+	}
+
+	get outerText(): string {
+		throw domError("NotSupportedError", "outerText is not implemented");
+	}
+
+	set outerText(_value: string) {
+		throw domError("NotSupportedError", "outerText is not implemented");
+	}
+
+	/** The Typed OM, which this engine does not implement. */
+	get attributeStyleMap(): globalThis.StylePropertyMap {
+		throw domError("NotSupportedError", "Typed OM is not implemented");
+	}
 }
 
 /**
@@ -9925,6 +9961,35 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 	value: "HTMLElement",
 	configurable: true,
 });
+
+/**
+ * What an element interface adds over HTMLElement's: its own reflected
+ * attributes and methods, which the tables install on its prototype. The
+ * inherited half is already declared on HTMLElement.
+ */
+type ElementOwn<T> = Pick<T, Exclude<keyof T, keyof globalThis.HTMLElement>>;
+
+/**
+ * What the tables and the cascade give an HTML element: the event handler
+ * attributes, the attributes it reflects, and `style`, which the cascade
+ * installs when it loads.
+ */
+export interface HTMLElement
+	extends Pick<
+		globalThis.HTMLElement,
+		| Extract<keyof globalThis.HTMLElement, `on${string}`> |
+		"accessKey" |
+		"autofocus" |
+		"dir" |
+		"enterKeyHint" |
+		"inputMode" |
+		"lang" |
+		"nonce" |
+		"popover" |
+		"title" |
+		"writingSuggestions" |
+		"style"
+	> {}
 
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
@@ -12179,6 +12244,10 @@ export class HTMLAnchorElement extends HTMLElement {
 		setDescendantText(this, String(value));
 	}
 }
+
+export interface HTMLAnchorElement extends ElementOwn<
+	globalThis.HTMLAnchorElement
+> {}
 /** One part of a hyperlink's URL, read from it and written back through it. */
 function hyperlinkPart(
 	read: (url: URL) => string,
@@ -12334,6 +12403,10 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
 
 export class HTMLAreaElement extends HTMLElement {}
+
+export interface HTMLAreaElement extends ElementOwn<
+	globalThis.HTMLAreaElement
+> {}
 Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 
 /**
@@ -12809,6 +12882,10 @@ export class HTMLEmbedElement extends HTMLElement {
 	}
 }
 
+export interface HTMLEmbedElement extends ElementOwn<
+	globalThis.HTMLEmbedElement
+> {}
+
 const kElements = Symbol("elements");
 
 /** A group of controls, and the group's own disabling. */
@@ -12926,7 +13003,38 @@ export class HTMLFormElement extends HTMLElement {
 			resetControl(control);
 		}
 	}
+
+	/** An alias of enctype, which is what the spec makes it. */
+	get encoding(): string {
+		return this.enctype;
+	}
+
+	set encoding(value: string) {
+		this.enctype = value;
+	}
+
+	/** Statically validate the constraints of every control this form owns. */
+	checkValidity(): boolean {
+		for (const control of this.elements) {
+			if (!checkValidity(control as Element)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The same answer, and the same reporting: a terminal has no validation
+	 * bubble to raise, so there is nothing to do beyond the check.
+	 */
+	reportValidity(): boolean {
+		return this.checkValidity();
+	}
 }
+
+export interface HTMLFormElement extends ElementOwn<
+	globalThis.HTMLFormElement
+> {}
 /** The listed controls a form owns, in tree order. */
 function listedControls(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
@@ -13301,7 +13409,23 @@ export class HTMLImageElement extends HTMLElement {
 			domError("EncodingError", "There is no image data to decode"),
 		);
 	}
+
+	/**
+	 * The rendered position, which these deprecated members report and this
+	 * engine answers through the geometry surface instead.
+	 */
+	get x(): number {
+		return 0;
+	}
+
+	get y(): number {
+		return 0;
+	}
 }
+
+export interface HTMLImageElement extends ElementOwn<
+	globalThis.HTMLImageElement
+> {}
 
 const kDirtyValue = Symbol("dirtyValue");
 const kSelectionStart = Symbol("selectionStart");
@@ -15238,6 +15362,10 @@ export class HTMLScriptElement extends HTMLElement {
 		this.toggleAttribute("async", Boolean(value));
 	}
 }
+
+export interface HTMLScriptElement extends ElementOwn<
+	globalThis.HTMLScriptElement
+> {}
 
 const kSelectedOptions = Symbol("selectedOptions");
 const kPicker = Symbol("picker");
