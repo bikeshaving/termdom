@@ -7518,6 +7518,11 @@ Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** The tokens by position, materialised as own properties by the live list. */
+export interface DOMTokenList {
+	[index: number]: string;
+}
+
 /**
  * The Array iteration functions, on the collections WebIDL says get them.
  *
@@ -8401,6 +8406,11 @@ Object.defineProperty(NamedNodeMap.prototype, Symbol.toStringTag, {
 	value: "NamedNodeMap",
 	configurable: true,
 });
+
+/** The attributes by position, materialised as own properties. */
+export interface NamedNodeMap {
+	[index: number]: Attr;
+}
 
 installArrayIteration(NodeList.prototype, true);
 installArrayIteration(DOMTokenList.prototype, true);
@@ -26907,9 +26917,8 @@ const _checked: [
 	Equal<MissingFrom<globalThis.StaticRange, StaticRange>, never>,
 	Equal<MissingFrom<globalThis.Selection, Selection>, never>,
 	Equal<MissingFrom<globalThis.MutationObserver, MutationObserver>, never>,
-	// GAP: the numeric index signature lib.dom gives both live lists.
-	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, number>,
-	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, number>,
+	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, never>,
+	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
 
 	// -- constants only -----------------------------------------------------
 	Equal<MissingFrom<globalThis.Node, Node>, never>,
