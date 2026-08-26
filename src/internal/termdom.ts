@@ -997,7 +997,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const rects = termDOM[kLayoutEngine]
 				.getRects(element)
 				.map((rect) => toViewportRect(rect, element));
-			return rectList(termDOM, rects);
+			return rectList(rects);
 		},
 		// Range geometry answers from the same layout the element members
 		// use, viewport-converted identically. The caret and selection
@@ -1027,7 +1027,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const rects = termDOM[kLayoutEngine]
 				.getRangeRects(range)
 				.map((rect) => toViewportRect(rect, anchor));
-			return rectList(termDOM, rects);
+			return rectList(rects);
 		},
 		offsetSize(target) {
 			const element = target as Element;
@@ -1630,7 +1630,6 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 
 /** A DOMRectList of this window's, holding the rects given. */
 function rectList(
-	termdom: TermDOM,
 	rects: readonly globalThis.DOMRect[],
 ): globalThis.DOMRectList {
 	const list = new DOMRectList();
