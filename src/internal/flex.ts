@@ -151,7 +151,7 @@ type MeasureFunction = (
  * containing block's own alignment places the box instead.
  */
 type StaticPositionFunction = (
-	containingBlock: Node,
+	containingBlock: LayoutNode,
 ) => {left: number; top: number} | null;
 
 // ---------------------------------------------------------------------------
@@ -609,7 +609,7 @@ export class Config {
 const defaultConfig = new Config();
 
 // ---------------------------------------------------------------------------
-// Node
+// LayoutNode
 // ---------------------------------------------------------------------------
 
 interface CachedLayout {
@@ -734,18 +734,18 @@ function cacheSlot(
 }
 
 /** See FlexNode's unstackedChildCount. */
-function breaksStacking(node: Node): boolean {
+function breaksStacking(node: LayoutNode): boolean {
 	return (
 		node.style.positionType !== POSITION_TYPE_STATIC ||
 		node.style.display === DISPLAY_NONE
 	);
 }
 
-export class Node {
+export class LayoutNode {
 	style: Style;
 	layout: LayoutResult;
-	children: Node[];
-	parent: Node | null;
+	children: LayoutNode[];
+	parent: LayoutNode | null;
 	measureFunc: MeasureFunction | null;
 	staticPositionFunc: StaticPositionFunction | null;
 	config: Config;
@@ -806,23 +806,23 @@ export class Node {
 		this.layout = createLayout();
 	}
 
-	static create(): Node {
-		return new Node(defaultConfig);
+	static create(): LayoutNode {
+		return new LayoutNode(defaultConfig);
 	}
 
-	static createWithConfig(config: Config): Node {
-		return new Node(config);
+	static createWithConfig(config: Config): LayoutNode {
+		return new LayoutNode(config);
 	}
 
 	// -- tree ---------------------------------------------------------------
 
-	insertChild(child: Node, index: number): void {
+	insertChild(child: LayoutNode, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
 		markDirtyUpward(this);
 	}
 
-	removeChild(child: Node): void {
+	removeChild(child: LayoutNode): void {
 		const index = this.children.indexOf(child);
 		if (index !== -1) {
 			this.children.splice(index, 1);
@@ -831,7 +831,7 @@ export class Node {
 		}
 	}
 
-	getParent(): Node | null {
+	getParent(): LayoutNode | null {
 		return this.parent;
 	}
 
@@ -845,7 +845,7 @@ export class Node {
 	 * children (the common case -- appending in document order) ask about the
 	 * most recently added one first, which sits at or near the end.
 	 */
-	getChildIndex(child: Node): number {
+	getChildIndex(child: LayoutNode): number {
 		return this.children.lastIndexOf(child);
 	}
 
@@ -1345,15 +1345,15 @@ export class Node {
 }
 
 function markDirtyUpward(
-	start: Node,
+	start: LayoutNode,
 ): void {
-	for (let node: Node | null = start; node; node = node.parent) {
+	for (let node: LayoutNode | null = start; node; node = node.parent) {
 		node.dirty = true;
 	}
 }
 
 function setEdges(
-	node: Node,
+	node: LayoutNode,
 	target: Value[],
 	edge: Edge,
 	value: Value,
@@ -1390,14 +1390,14 @@ function expandEdge(edge: Edge): number[] {
 // Resolved style accessors
 // ---------------------------------------------------------------------------
 
-function resolveFlexGrow(node: Node): number {
+function resolveFlexGrow(node: LayoutNode): number {
 	if (!node.parent) {
 		return 0;
 	}
 	return isDefined(node.style.flexGrow) ? node.style.flexGrow : 0;
 }
 
-function resolveFlexShrink(node: Node): number {
+function resolveFlexShrink(node: LayoutNode): number {
 	if (!node.parent) {
 		return 0;
 	}
@@ -1408,7 +1408,7 @@ function resolveFlexShrink(node: Node): number {
 }
 
 /** flex-basis: auto falls back to the main-axis size property. */
-function resolveFlexBasis(node: Node, mainAxis: FlexDirection): Value {
+function resolveFlexBasis(node: LayoutNode, mainAxis: FlexDirection): Value {
 	const basis = node.style.flexBasis;
 	if (basis.unit !== UNIT_AUTO && basis.unit !== UNIT_UNDEFINED) {
 		return basis;
@@ -1416,7 +1416,7 @@ function resolveFlexBasis(node: Node, mainAxis: FlexDirection): Value {
 	return isRow(mainAxis) ? node.style.width : node.style.height;
 }
 
-function alignSelfOf(parent: Node, child: Node): Align {
+function alignSelfOf(parent: LayoutNode, child: LayoutNode): Align {
 	const align =
 		child.style.alignSelf === ALIGN_AUTO ?
 			parent.style.alignItems :
@@ -1438,7 +1438,7 @@ function alignSelfOf(parent: Node, child: Node): Align {
  * leading border or padding: those offsets push the first row down inside the
  * box, and baseline alignment is precisely what compensates for them.
  */
-function baselineWithinBorderBox(node: Node, ownerWidth: number): number {
+function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
 	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
 
 	for (const child of node.children) {
@@ -1461,14 +1461,14 @@ function baselineWithinBorderBox(node: Node, ownerWidth: number): number {
  * versa -- naming them after what they separate rather than the axis they run
  * along is a reliable way to get this backwards.
  */
-function gapForAxis(node: Node, axis: FlexDirection): number {
+function gapForAxis(node: LayoutNode, axis: FlexDirection): number {
 	return isRow(axis) ?
 		node.style.gap[GUTTER_COLUMN] :
 		node.style.gap[GUTTER_ROW];
 }
 
 function marginForAxis(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	ownerWidth: number,
 ): number {
@@ -1479,7 +1479,7 @@ function marginForAxis(
 }
 
 function paddingAndBorderForEdge(
-	node: Node,
+	node: LayoutNode,
 	edge: Edge,
 	ownerWidth: number,
 ): number {
@@ -1490,7 +1490,7 @@ function paddingAndBorderForEdge(
 }
 
 function paddingAndBorderForAxis(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	ownerWidth: number,
 ): number {
@@ -1501,7 +1501,7 @@ function paddingAndBorderForAxis(
 }
 
 function styleDimIsDefined(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	ownerSize: number,
 ): boolean {
@@ -1523,7 +1523,7 @@ function styleDimIsDefined(
 
 /** Clamp a value to the node's min/max on the given axis. */
 function boundAxisWithinMinMax(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	value: number,
 	axisSize: number,
@@ -1549,7 +1549,7 @@ function boundAxisWithinMinMax(
 
 /** Clamp, then floor at the padding+border so a box never goes below its own chrome. */
 function boundAxis(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	value: number,
 	axisSize: number,
@@ -1566,7 +1566,7 @@ function boundAxis(
  * never gets measured against more space than it could ever occupy.
  */
 function constrainMaxSizeForMode(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	ownerAxisSize: number,
 	mode: {value: number; mode: MeasureMode},
@@ -1601,7 +1601,7 @@ function constrainMaxSizeForMode(
 // ---------------------------------------------------------------------------
 
 /** Resolve a node's four margins against the width percentages are taken from. */
-function resolveNodeMargins(node: Node, ownerWidth: number): void {
+function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
 	node.layout.margin[EDGE_LEFT] = resolveMargin(
 		node.style.margin[EDGE_LEFT],
 		ownerWidth,
@@ -1621,7 +1621,7 @@ function resolveNodeMargins(node: Node, ownerWidth: number): void {
 }
 
 function setMeasuredDimensions(
-	node: Node,
+	node: LayoutNode,
 	width: number,
 	height: number,
 	ownerWidth: number,
@@ -1645,7 +1645,7 @@ function setMeasuredDimensions(
 
 /** A leaf with a measure function: ask it, within the given constraints. */
 function layoutMeasureNode(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -1724,7 +1724,7 @@ function layoutMeasureNode(
 
 /** A container with no in-flow children collapses to its padding + border. */
 function layoutEmptyContainer(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -1763,8 +1763,8 @@ function layoutEmptyContainer(
  * an indefinite main axis when the basis is `content`.
  */
 function computeFlexBasisForChild(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	width: number,
 	widthMode: MeasureMode,
 	height: number,
@@ -1890,7 +1890,7 @@ function computeFlexBasisForChild(
 }
 
 interface FlexLine {
-	items: Node[];
+	items: LayoutNode[];
 	sizeConsumed: number;
 	totalGrow: number;
 	totalShrinkScaled: number;
@@ -1903,7 +1903,7 @@ interface FlexLine {
  * items, collect into lines, resolve flexible lengths, then align on both axes.
  */
 function layoutFlexbox(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -1961,7 +1961,7 @@ function layoutFlexbox(
 
 	// -- 9.2 generate flex items -------------------------------------------
 
-	const inFlow: Node[] = [];
+	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
 		if (child.style.display === DISPLAY_NONE) {
 			zeroLayout(child);
@@ -2257,7 +2257,7 @@ function layoutFlexbox(
 
 /** A relative box is offset by its leading inset, or pulled back by its trailing one. */
 function relativeOffset(
-	node: Node,
+	node: LayoutNode,
 	axis: FlexDirection,
 	axisSize: number,
 ): number {
@@ -2287,7 +2287,7 @@ function relativeOffset(
  */
 function resolveFlexibleLengths(
 	line: FlexLine,
-	node: Node,
+	node: LayoutNode,
 	innerMain: number,
 	mainMode: MeasureMode,
 	ownerWidth: number,
@@ -2301,14 +2301,14 @@ function resolveFlexibleLengths(
 	// below: free space is always measured against an unfrozen item's *base*
 	// size, never against the size it was last handed, or each pass would count
 	// the space it already took a second time.
-	const base = new Map<Node, number>();
-	const target = new Map<Node, number>();
-	const frozen = new Set<Node>();
+	const base = new Map<LayoutNode, number>();
+	const target = new Map<LayoutNode, number>();
+	const frozen = new Set<LayoutNode>();
 
 	// An item never shrinks below its automatic minimum size, so that floor has to
 	// be applied everywhere the item is clamped -- not just to its hypothetical
 	// size, but to every target the redistribution loop lands on.
-	const clampMain = (child: Node, value: number): number => {
+	const clampMain = (child: LayoutNode, value: number): number => {
 		const bounded = boundAxisWithinMinMax(
 			child,
 			mainAxis,
@@ -2337,7 +2337,7 @@ function resolveFlexibleLengths(
 		return;
 	}
 
-	const outerMargin = (child: Node) =>
+	const outerMargin = (child: LayoutNode) =>
 		marginForAxis(child, mainAxis, ownerWidth);
 
 	// css-flexbox-1 §9.7.3: grow or shrink is decided once, by comparing the sum
@@ -2357,7 +2357,7 @@ function resolveFlexibleLengths(
 		return;
 	}
 
-	const factorOf = (child: Node) =>
+	const factorOf = (child: LayoutNode) =>
 		growing ?
 				resolveFlexGrow(child) :
 			resolveFlexShrink(child) * base.get(child)!;
@@ -2408,8 +2408,8 @@ function resolveFlexibleLengths(
 		// §9.7.4.c-d: each unfrozen item's target is its flex base size plus its
 		// share of the free space, then clamped.
 		let violation = 0;
-		const minViolations: Node[] = [];
-		const maxViolations: Node[] = [];
+		const minViolations: LayoutNode[] = [];
+		const maxViolations: LayoutNode[] = [];
 
 		for (const child of unfrozen) {
 			const unclamped =
@@ -2461,8 +2461,8 @@ function resolveFlexibleLengths(
  * shrink anyway.
  */
 function autoMinimumMainSize(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	innerCross: number,
 	crossMode: MeasureMode,
 	ownerWidth: number,
@@ -2525,8 +2525,8 @@ function autoMinimumMainSize(
 
 /** Lay out one flex item at its resolved main size, stretching the cross axis if asked. */
 function layoutFlexItem(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	innerWidth: number,
 	innerHeight: number,
 	innerCross: number,
@@ -2647,8 +2647,8 @@ function layoutFlexItem(
  * stretched item was only measured to its content.
  */
 function stretchFlexItem(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	targetCross: number,
 	ownerWidth: number,
 	ownerHeight: number,
@@ -2678,7 +2678,7 @@ function stretchFlexItem(
 
 /** justify-content, plus auto margins which absorb free space before it does. */
 function positionMainAxis(
-	node: Node,
+	node: LayoutNode,
 	line: FlexLine,
 	innerMain: number,
 	leadingPaddingBorderMain: number,
@@ -2792,7 +2792,7 @@ function positionMainAxis(
 
 /** align-items / align-self within each line, and align-content across lines. */
 function positionCrossAxis(
-	node: Node,
+	node: LayoutNode,
 	lines: FlexLine[],
 	containerInnerCross: number,
 	totalCrossDim: number,
@@ -3002,8 +3002,8 @@ function mirrorWithinContentBox(
  * flow the box left reports for it (CSS 2 §10.3.7).
  */
 function layoutAbsoluteChild(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	ownerWidth: number,
 	ownerHeight: number,
 	area: {
@@ -3192,7 +3192,7 @@ function layoutAbsoluteChild(
 	}
 }
 
-function zeroLayout(node: Node): void {
+function zeroLayout(node: LayoutNode): void {
 	node.layout.left = 0;
 	node.layout.top = 0;
 	node.layout.width = 0;
@@ -3218,7 +3218,7 @@ function zeroLayout(node: Node): void {
 // ---------------------------------------------------------------------------
 
 interface TableCell {
-	node: Node;
+	node: LayoutNode;
 	row: number;
 	column: number;
 	colSpan: number;
@@ -3228,8 +3228,8 @@ interface TableCell {
 }
 
 interface TableRow {
-	node: Node;
-	group: Node | null;
+	node: LayoutNode;
+	group: LayoutNode | null;
 }
 
 /**
@@ -3238,18 +3238,18 @@ interface TableRow {
  * Header groups come first and footer groups last, however they were written --
  * a <tfoot> before <tbody> in the source still renders at the bottom.
  */
-function collectTableRows(table: Node): {
+function collectTableRows(table: LayoutNode): {
 	rows: TableRow[];
-	captions: Node[];
-	groups: Node[];
+	captions: LayoutNode[];
+	groups: LayoutNode[];
 } {
-	const captions: Node[] = [];
-	const groups: Node[] = [];
+	const captions: LayoutNode[] = [];
+	const groups: LayoutNode[] = [];
 	const header: TableRow[] = [];
 	const body: TableRow[] = [];
 	const footer: TableRow[] = [];
 
-	const collectGroup = (group: Node, into: TableRow[]) => {
+	const collectGroup = (group: LayoutNode, into: TableRow[]) => {
 		groups.push(group);
 		for (const child of group.children) {
 			if (child.style.display === DISPLAY_TABLE_ROW) {
@@ -3357,7 +3357,7 @@ function buildTableGrid(rows: TableRow[]): {
  * max-content is what it would take if never wrapped.
  */
 function intrinsicCellWidth(
-	cell: Node,
+	cell: LayoutNode,
 	minContent: boolean,
 	ownerWidth: number,
 	ownerHeight: number,
@@ -3546,7 +3546,7 @@ function resolveColumnWidths(
 }
 
 function layoutTable(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -3809,7 +3809,7 @@ interface GridTrack {
 
 /** A grid item, with the lines its area sits between once placement is done. */
 interface GridItem {
-	node: Node;
+	node: LayoutNode;
 	/** Placement as authored: a start line (null when auto) and a span. */
 	column: {start: number | null; span: number};
 	row: {start: number | null; span: number};
@@ -4366,7 +4366,7 @@ function autoPlaceItems(
 
 /** What one axis of the track sizing algorithm works from. */
 interface TrackSizing {
-	node: Node;
+	node: LayoutNode;
 	tracks: GridTrack[];
 	items: GridItem[];
 	/** Whether this pass is sizing the inline axis. */
@@ -4389,7 +4389,7 @@ interface TrackSizing {
 	 * the row's furthest baseline. Sizing a row without it leaves the row a
 	 * cell short of what the alignment then needs. Null on the column pass.
 	 */
-	baselineShims: Map<Node, number> | null;
+	baselineShims: Map<LayoutNode, number> | null;
 }
 
 function itemTrackRange(sizing: TrackSizing, item: GridItem): [number, number] {
@@ -4472,14 +4472,14 @@ function gridItemContribution(
  * baselineWithinBorderBox).
  */
 function measureBaselineShims(
-	node: Node,
+	node: LayoutNode,
 	items: GridItem[],
 	columnSizes: number[],
 	columnGap: number,
 	ownerWidth: number,
 	ownerHeight: number,
-): Map<Node, number> {
-	const shims = new Map<Node, number>();
+): Map<LayoutNode, number> {
+	const shims = new Map<LayoutNode, number>();
 	const rows = new Map<number, GridItem[]>();
 	for (const item of items) {
 		if (gridSelfAlign(node, item.node, false) !== ALIGN_BASELINE) {
@@ -5016,7 +5016,7 @@ const CONTENT_SPACE_EVENLY = 5;
 /** `normal` and `stretch`: the tracks themselves take the free space (§12.8). */
 const CONTENT_STRETCH = 6;
 
-function inlineContentAlign(node: Node): number {
+function inlineContentAlign(node: LayoutNode): number {
 	switch (node.style.justifyContent) {
 		case JUSTIFY_CENTER:
 			return CONTENT_CENTER;
@@ -5036,7 +5036,7 @@ function inlineContentAlign(node: Node): number {
 	}
 }
 
-function blockContentAlign(node: Node): number {
+function blockContentAlign(node: LayoutNode): number {
 	switch (node.style.alignContent) {
 		case ALIGN_CENTER:
 			return CONTENT_CENTER;
@@ -5061,7 +5061,11 @@ function blockContentAlign(node: Node): number {
  * `*-items` where that is `auto`. `normal` on a grid item means `stretch`
  * (css-align-3 §4.2), which is why an item with no width fills its area.
  */
-function gridSelfAlign(container: Node, item: Node, inline: boolean): Align {
+function gridSelfAlign(
+	container: LayoutNode,
+	item: LayoutNode,
+	inline: boolean,
+): Align {
 	const own = inline ? item.style.justifySelf : item.style.alignSelf;
 	const fallback = inline ?
 		container.style.justifyItems :
@@ -5120,7 +5124,7 @@ function positionTracks(
 
 /** Lay one item out in its grid area, sized and placed by its own alignment. */
 function layoutGridItem(
-	node: Node,
+	node: LayoutNode,
 	item: GridItem,
 	areaLeft: number,
 	areaTop: number,
@@ -5257,7 +5261,7 @@ function alignmentOffset(
  * first rows (see baselineWithinBorderBox).
  */
 function alignGridBaselines(
-	node: Node,
+	node: LayoutNode,
 	items: GridItem[],
 	ownerWidth: number,
 ): void {
@@ -5313,7 +5317,7 @@ function snapTrackSizes(tracks: GridTrack[], gap: number): number[] {
  * text wraps.
  */
 function layoutGrid(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -5353,7 +5357,7 @@ function layoutGrid(
 		heightMode === MEASURE_MODE_EXACTLY && isDefined(innerHeight);
 
 	// -- grid items ---------------------------------------------------------
-	const children: Node[] = [];
+	const children: LayoutNode[] = [];
 	for (const child of node.children) {
 		if (child.style.display === DISPLAY_NONE) {
 			zeroLayout(child);
@@ -5787,8 +5791,8 @@ function layoutGrid(
  * out-of-flow path already uses.
  */
 function absoluteGridArea(
-	node: Node,
-	child: Node,
+	node: LayoutNode,
+	child: LayoutNode,
 	columnTracks: GridTrack[],
 	rowTracks: GridTrack[],
 	columnNames: Map<string, number[]>,
@@ -5941,7 +5945,7 @@ function collapsedMargin(set: MarginSet): number {
 }
 
 /** The margins that adjoin a child's top edge: its own, plus what escapes it. */
-function readCollapseTop(child: Node, into: MarginSet): void {
+function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 	clearMarginSet(into);
 	addMargin(into, child.layout.margin[EDGE_TOP]);
 	into.positive = Math.max(into.positive, child.layout.collapseTopPositive);
@@ -5949,7 +5953,7 @@ function readCollapseTop(child: Node, into: MarginSet): void {
 }
 
 /** The margins that adjoin a child's bottom edge: its own, plus what escapes it. */
-function readCollapseBottom(child: Node, into: MarginSet): void {
+function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 	clearMarginSet(into);
 	addMargin(into, child.layout.margin[EDGE_BOTTOM]);
 	into.positive = Math.max(into.positive, child.layout.collapseBottomPositive);
@@ -5957,7 +5961,7 @@ function readCollapseBottom(child: Node, into: MarginSet): void {
 }
 
 /** A box that wraps its own content rather than filling its container. */
-function shrinkWrapsWidth(node: Node): boolean {
+function shrinkWrapsWidth(node: LayoutNode): boolean {
 	return (
 		node.style.display === DISPLAY_TABLE ||
 		node.style.widthSizing !== SIZING_NONE
@@ -5971,7 +5975,7 @@ function shrinkWrapsWidth(node: Node): boolean {
  * for space to absorb -- takes no more than it.
  */
 function layoutBlockChild(
-	child: Node,
+	child: LayoutNode,
 	contentWidth: number,
 	fill: boolean,
 	ownerWidth: number,
@@ -6058,12 +6062,12 @@ function layoutBlockChild(
  * between two block boxes -- occupies nothing and separates nothing, so the
  * margins on either side of it go on adjoining (css2 §9.4.2, §8.3.1).
  */
-function generatesNoLine(child: Node): boolean {
+function generatesNoLine(child: LayoutNode): boolean {
 	return child.measureFunc !== null && child.layout.height === 0;
 }
 
 /** Whether a child fills the container's content width rather than wrapping. */
-function blockChildFills(child: Node): boolean {
+function blockChildFills(child: LayoutNode): boolean {
 	return (
 		!shrinkWrapsWidth(child) &&
 		child.style.margin[EDGE_LEFT].unit !== UNIT_AUTO &&
@@ -6084,7 +6088,7 @@ function blockChildFills(child: Node): boolean {
  * it and the next box's margin adjoins them all.
  */
 function layoutBlock(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -6114,7 +6118,7 @@ function layoutBlock(
 
 	// -- in-flow children ---------------------------------------------------
 
-	const inFlow: Node[] = [];
+	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
 		if (child.style.display === DISPLAY_NONE) {
 			zeroLayout(child);
@@ -6319,7 +6323,7 @@ function layoutBlock(
 
 /** Dispatch: measure leaf, empty container, or full flexbox. */
 function layoutNode(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -6463,7 +6467,7 @@ function layoutNode(
 }
 
 function layoutNodeImpl(
-	node: Node,
+	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
 	widthMode: MeasureMode,
@@ -6612,7 +6616,7 @@ function layoutNodeImpl(
 	);
 }
 
-function paddingOf(node: Node, edge: Edge, ownerWidth: number): number {
+function paddingOf(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 	const padding = resolveValue(node.style.padding[edge], ownerWidth);
 	return isDefined(padding) ? Math.max(padding, 0) : 0;
 }
@@ -6634,7 +6638,7 @@ function paddingOf(node: Node, edge: Edge, ownerWidth: number): number {
  * given less room than it measured, or it would re-wrap.
  */
 function roundToGrid(
-	node: Node,
+	node: LayoutNode,
 	absoluteLeft: number,
 	absoluteTop: number,
 ): void {
@@ -6699,7 +6703,7 @@ function approximatelyEqual(a: number, b: number): boolean {
 // ---------------------------------------------------------------------------
 
 const Flex = {
-	Node,
+	LayoutNode,
 	Config,
 
 	ALIGN_AUTO,

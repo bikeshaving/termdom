@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
-import Flex, {Config, Node} from "../src/internal/flex.js";
+import Flex, {Config, LayoutNode} from "../src/internal/flex.js";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -25,17 +25,17 @@ beforeEach(() => {
 	config.setPointScaleFactor(1);
 });
 
-function node(): Node {
-	return Node.createWithConfig(config);
+function node(): LayoutNode {
+	return LayoutNode.createWithConfig(config);
 }
 
-function box(parent: Node, index = parent.getChildCount()): Node {
+function box(parent: LayoutNode, index = parent.getChildCount()): LayoutNode {
 	const child = node();
 	parent.insertChild(child, index);
 	return child;
 }
 
-function rect(n: Node): {
+function rect(n: LayoutNode): {
 	left: number;
 	top: number;
 	width: number;
@@ -217,7 +217,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 	//
 	// Each line's cross size is 10, so the lines total 20 in a 40-tall
 	// container: 20 of free cross space to distribute.
-	function wrapped(alignContent: number): Node[] {
+	function wrapped(alignContent: number): LayoutNode[] {
 		const root = node();
 		root.setWidth(100);
 		root.setHeight(40);
@@ -456,10 +456,10 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 	// flex-start both boxes would sit at 0 and the text rows would be on
 	// different lines.
 	function baselineRow(alignItems: number): {
-		a: Node;
-		b: Node;
-		aText: Node;
-		bText: Node;
+		a: LayoutNode;
+		b: LayoutNode;
+		aText: LayoutNode;
+		bText: LayoutNode;
 	} {
 		const root = node();
 		root.setWidth(100);
@@ -606,7 +606,11 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 	// These use a measure function so the engine can be driven directly: it
 	// reports the longest word when offered no room, and the full string when
 	// offered enough -- which is what a real text run does.
-	function textItem(parent: Node, longest: number, full: number): Node {
+	function textItem(
+		parent: LayoutNode,
+		longest: number,
+		full: number,
+	): LayoutNode {
 		const item = box(parent);
 		item.setMeasureFunc((width, widthMode) => {
 			if (widthMode === Flex.MEASURE_MODE_UNDEFINED) {
@@ -710,7 +714,10 @@ describe("what a measurement produced, not only how big it was", () => {
 	}
 
 	/** An item whose placing measurements leave their lines in `placed`. */
-	function textItem(parent: Node, placed: {lines: string[] | null}): Node {
+	function textItem(
+		parent: LayoutNode,
+		placed: {lines: string[] | null},
+	): LayoutNode {
 		const item = box(parent);
 		item.setMeasureFunc((width, widthMode, _height, _heightMode, placing) => {
 			const limit =

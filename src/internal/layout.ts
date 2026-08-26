@@ -771,7 +771,7 @@ function parseSpanAttribute(element: Element, name: string): number {
  * as its longest word, and paint straight over whatever is next to it.
  */
 function applyMinMax(
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 	computedStyle: ComputedStyle,
 ): void {
 	const constraints = [
@@ -808,7 +808,7 @@ const INSET_EDGES = [
  * told; a relative or fixed box simply takes no offset on that edge.
  */
 function applyInsets(
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 	computedStyle: ComputedStyle,
 	edges: ReadonlyArray<readonly [string, number]>,
 	autoWhenUnset: boolean,
@@ -930,7 +930,7 @@ function justifyContentConstant(value: string): number {
 
 /** The grid container properties, from the cascade to the layout node. */
 function applyGridContainer(
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 	computedStyle: ComputedStyle,
 ): void {
 	flexNode.setGridTemplateColumns(
@@ -1000,7 +1000,7 @@ function widthSizingConstant(value: string): number {
  */
 function styleFlexNode(
 	element: Element,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 	positionedElements?: Set<Element>,
 ): void {
 	flexNode.styleAll(() => {
@@ -1010,7 +1010,7 @@ function styleFlexNode(
 
 function styleFlexNodeProperties(
 	element: Element,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 	positionedElements?: Set<Element>,
 ): void {
 	const window = element.ownerDocument?.defaultView;
@@ -1507,7 +1507,7 @@ function styleFlexNodeProperties(
 function styleNode(
 	layout: LayoutEngine,
 	element: Element,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 ): void {
 	const wasHidden = flexNode.getDisplay() === Flex.DISPLAY_NONE;
 	styleFlexNode(element, flexNode, layout.positionedElements);
@@ -1613,7 +1613,7 @@ class Box {
 	 * its DOM node's, held in `nodeMap`: the layout tree is keyed by node, and
 	 * only a box with no node of its own has one to keep here.
 	 */
-	flexNode: FlexTypes.Node | null;
+	flexNode: FlexTypes.LayoutNode | null;
 	styledFrom: Element | null;
 
 	/**
@@ -1624,7 +1624,7 @@ class Box {
 	 * with the box's lifetime: the children under it are this box's children,
 	 * and there is nowhere else to ask.
 	 */
-	contentRoot: FlexTypes.Node | null;
+	contentRoot: FlexTypes.LayoutNode | null;
 
 	/**
 	 * The lines this box's last PLACING measurement broke its content into.
@@ -1840,7 +1840,7 @@ function principalBox(
 function containerFlexNode(
 	layout: LayoutEngine,
 	container: Element,
-): FlexTypes.Node | undefined {
+): FlexTypes.LayoutNode | undefined {
 	return (
 		layout[kBoxes].get(container)?.contentRoot ?? layout.nodeMap.get(container)
 	);
@@ -1881,7 +1881,7 @@ function retireFlexNode(
 function boxKindMatches(
 	layout: LayoutEngine,
 	element: Element,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 ): boolean {
 	if (measuresAsRun(layout, element) !== layout[kMeasureNodes].has(flexNode)) {
 		return false;
@@ -1976,7 +1976,7 @@ function boxEntryOf(
 function runFlexNode(
 	layout: LayoutEngine,
 	node: Node,
-): FlexTypes.Node | undefined {
+): FlexTypes.LayoutNode | undefined {
 	const box = boxOf(layout, node);
 	if (box) {
 		return box.head === node ? (box.flexNode ?? undefined) : undefined;
@@ -2063,7 +2063,7 @@ function syncContainerRuns(
 				flexNode = null;
 			}
 			if (!flexNode) {
-				flexNode = Flex.Node.createWithConfig(flexConfig);
+				flexNode = Flex.LayoutNode.createWithConfig(flexConfig);
 				entry.flexNode = flexNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
@@ -2256,7 +2256,7 @@ function runContainerFrom(
 function addNode(
 	layout: LayoutEngine,
 	node: Node,
-	parentFlexNode: FlexTypes.Node | null = null,
+	parentFlexNode: FlexTypes.LayoutNode | null = null,
 ): void {
 	// A display:none ancestor removes the whole subtree from layout --
 	// fresh builds never descend past the none boundary, and rebuild
@@ -2401,7 +2401,7 @@ function addNode(
 function addElementNode(
 	layout: LayoutEngine,
 	element: Element,
-	parentFlexNode: FlexTypes.Node | null = null,
+	parentFlexNode: FlexTypes.LayoutNode | null = null,
 ): void {
 	const display = displayOf(element);
 	const asRun = measuresAsRun(layout, element);
@@ -2429,7 +2429,7 @@ function addElementNode(
 
 	let flexNode = layout.nodeMap.get(element);
 	if (!flexNode) {
-		flexNode = Flex.Node.createWithConfig(flexConfig);
+		flexNode = Flex.LayoutNode.createWithConfig(flexConfig);
 		trackNode(layout, element, flexNode);
 	}
 
@@ -2513,7 +2513,7 @@ function addElementNode(
 function addTextNode(
 	layout: LayoutEngine,
 	text: Text,
-	parentFlexNode: FlexTypes.Node | null = null,
+	parentFlexNode: FlexTypes.LayoutNode | null = null,
 ): void {
 	if (!parentFlexNode) {
 		return;
@@ -2534,7 +2534,7 @@ function addTextNode(
 
 	let flexNode = layout.nodeMap.get(text);
 	if (!flexNode) {
-		flexNode = Flex.Node.createWithConfig(flexConfig);
+		flexNode = Flex.LayoutNode.createWithConfig(flexConfig);
 		trackNode(layout, text, flexNode);
 	}
 
@@ -2629,7 +2629,7 @@ function syncContentRoot(
 
 	let root = box.contentRoot;
 	if (!root) {
-		root = Flex.Node.createWithConfig(flexConfig);
+		root = Flex.LayoutNode.createWithConfig(flexConfig);
 		root.setBlockFormattingContext(true);
 		box.contentRoot = root;
 	}
@@ -2822,7 +2822,7 @@ function retireSteppedOver(
 function containingBlockFlexNode(
 	layout: LayoutEngine,
 	element: Element,
-): FlexTypes.Node | null {
+): FlexTypes.LayoutNode | null {
 	for (
 		let ancestor = flatParentElement<Element>(element);
 		ancestor;
@@ -2872,7 +2872,7 @@ function hiddenByAncestor(
 function documentPosition(
 	layout: LayoutEngine,
 	node: Node,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 ): {x: number; y: number} {
 	const position = absolutePosition(layout, flexNode);
 	let root = flexNode;
@@ -2916,8 +2916,8 @@ function documentPosition(
  * holding it twice and lay its box out twice over.
  */
 function placeChild(
-	parent: FlexTypes.Node,
-	child: FlexTypes.Node,
+	parent: FlexTypes.LayoutNode,
+	child: FlexTypes.LayoutNode,
 	index: number,
 ): void {
 	if (child.getParent() === parent) {
@@ -2955,7 +2955,7 @@ function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 function trackNode(
 	layout: LayoutEngine,
 	domNode: Node,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 ): void {
 	layout.nodeMap.set(domNode, flexNode);
 	layout[kDOMNodeByFlexNode].set(flexNode, domNode);
@@ -5052,7 +5052,7 @@ function inlineBlockRect(
  */
 function absolutePosition(
 	layout: LayoutEngine,
-	flexNode: FlexTypes.Node,
+	flexNode: FlexTypes.LayoutNode,
 ): {x: number; y: number} {
 	// The document roots' scrollLeft/scrollTop ARE the camera (the window
 	// shim maps them onto the viewport), and the camera is applied once at
@@ -5064,7 +5064,7 @@ function absolutePosition(
 	let x = 0;
 	let y = 0;
 	for (
-		let current: FlexTypes.Node | null = flexNode;
+		let current: FlexTypes.LayoutNode | null = flexNode;
 		current;
 		current = current.getParent()
 	) {
@@ -5425,7 +5425,7 @@ function hitTestInFlow(
 function staticPosition(
 	layout: LayoutEngine,
 	element: Element,
-	containingBlock: FlexTypes.Node,
+	containingBlock: FlexTypes.LayoutNode,
 ): {left: number; top: number} | null {
 	const container = runContainerOf(layout, element);
 	if (!container) {
@@ -6043,17 +6043,17 @@ export class LayoutEngine {
 	declare terminalHeight: number;
 
 	// Viewport root node - represents terminal dimensions, no DOM element associated
-	declare viewportRootNode: FlexTypes.Node;
+	declare viewportRootNode: FlexTypes.LayoutNode;
 
 	// Public Map for debugging
-	nodeMap: Map<Node, FlexTypes.Node>;
+	nodeMap: Map<Node, FlexTypes.LayoutNode>;
 
 	// The reverse of nodeMap -- always kept in sync with it via kTrackNode/
 	// kUntrackNode, never written directly elsewhere. Lets paint-time culling
 	// go from a flex child (found by binary search over its parent's already-
 	// ordered children[]) back to the DOM/pseudo-element node it needs to
 	// paint, without re-deriving that order with a second full tree walk.
-	declare [kDOMNodeByFlexNode]: Map<FlexTypes.Node, Node>;
+	declare [kDOMNodeByFlexNode]: Map<FlexTypes.LayoutNode, Node>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	declare [kInvalidatedNodes]: Set<Node>;
@@ -6071,7 +6071,7 @@ export class LayoutEngine {
 	positionedElements: Set<Element>;
 
 	// Track layout nodes that have measure functions (for resize invalidation)
-	declare [kMeasureNodes]: Set<FlexTypes.Node>;
+	declare [kMeasureNodes]: Set<FlexTypes.LayoutNode>;
 
 	/**
 	 * Set when the terminal answered that it reorders bidirectional text itself
@@ -6123,7 +6123,7 @@ export class LayoutEngine {
 		this[kDerivedContainers] = new WeakSet<Element>();
 		this.generation = 0;
 		this.invalidations = 0;
-		this[kAnonymousBoxes] = new Map<FlexTypes.Node, Box>();
+		this[kAnonymousBoxes] = new Map<FlexTypes.LayoutNode, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
 		this[kRenderedLeaves] = new WeakMap<
@@ -6137,13 +6137,13 @@ export class LayoutEngine {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
-		this.nodeMap = new Map<Node, FlexTypes.Node>();
-		this[kDOMNodeByFlexNode] = new Map<FlexTypes.Node, Node>();
+		this.nodeMap = new Map<Node, FlexTypes.LayoutNode>();
+		this[kDOMNodeByFlexNode] = new Map<FlexTypes.LayoutNode, Node>();
 		this[kInvalidatedNodes] = new Set<Node>();
-		this[kMeasureNodes] = new Set<FlexTypes.Node>();
+		this[kMeasureNodes] = new Set<FlexTypes.LayoutNode>();
 
 		// Create viewport root node (no DOM element associated)
-		this.viewportRootNode = Flex.Node.create();
+		this.viewportRootNode = Flex.LayoutNode.create();
 		this.viewportRootNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 		this.viewportRootNode.setAlignItems(Flex.ALIGN_STRETCH);
 
@@ -7077,7 +7077,7 @@ export class LayoutEngine {
 	 * are re-derived whenever the tree moves under it and the boxes it held
 	 * must still be retired.
 	 */
-	declare [kAnonymousBoxes]: Map<FlexTypes.Node, Box>;
+	declare [kAnonymousBoxes]: Map<FlexTypes.LayoutNode, Box>;
 
 	/**
 	 * Containers whose box list may no longer match their layout children.
