@@ -162,10 +162,16 @@ export interface UAToolkit {
 	flatParentElement<T>(node: object): T | null;
 	/** Connected through the composed tree, closed roots included. */
 	flatIsConnected(node: object): boolean;
-	createFlatTreeWalker<N>(
+	/**
+	 * A TreeWalker, in the caller's node type. `whatToShow` and `filter` are
+	 * the DOM's own, with the engine's SHOW_FLAT available on top to ask for
+	 * the flat tree rather than the node tree.
+	 */
+	createTreeWalker<N>(
 		root: object,
-		dissolved?: (node: N) => boolean,
-	): FlatTreeWalker<N>;
+		whatToShow: number,
+		filter: NodeFilterInput,
+	): Walker<N>;
 	/** A control's selection as a Range, measured like any document range. */
 	selectionRangeOf(control: object): UARange | null;
 	pseudoElement<T>(host: object, name: string): T | null;
@@ -319,14 +325,19 @@ function makeUAToolkit(document: object): UAToolkit {
 		flatIsConnected(node: object): boolean {
 			return owns(node) && flatIsConnected(node);
 		},
-		createFlatTreeWalker<N>(
+		createTreeWalker<N>(
 			root: object,
-			dissolved?: (node: N) => boolean,
-		): FlatTreeWalker<N> {
+			whatToShow: number,
+			filter: NodeFilterInput,
+		): Walker<N> {
 			if (!owns(root)) {
 				throw new Error("Not this toolkit's document.");
 			}
-			return createFlatTreeWalker<N>(root as N, dissolved);
+			return new TreeWalker(
+				root as Node,
+				whatToShow,
+				filter,
+			) as unknown as Walker<N>;
 		},
 		selectionRangeOf(control: object): UARange | null {
 			return owns(control) ? selectionRangeOf(control) : null;
@@ -18376,17 +18387,248 @@ function flatIsConnected(target: object): boolean {
 	return false;
 }
 
+/* ------------------------------------------------------------ tree walking */
+
 /**
- * A walk of the flat tree, with the TreeWalker interface the DOM's own walkers
- * carry. Comments, processing instructions and every other node type that
- * generates no box are SKIPPED -- the traversal steps past one rather than
- * halting on it, so a comment cannot hide the content around it.
+ * The five hops a walk is built out of. A walker is the DOM's traversal
+ * algorithms plus a choice of which tree to run them over, and this is that
+ * choice: swap these and the same seven methods walk a different tree.
  *
- * `dissolved` names the elements the caller's box tree splices away, whose
- * children take their place in the sequence. The DOM has no opinion on which
- * those are; the box tree that asks does.
+ * The node tree reads them straight off the node. The flat tree works them out
+ * -- shadow content in its slot's place, and pseudo-element slots among the
+ * children they belong beside, neither of which is a child in the node tree
+ * for a filter to have an opinion about.
  */
-export interface FlatTreeWalker<N> {
+interface Hops {
+	parent(node: Node): Node | null;
+	firstChild(node: Node): Node | null;
+	lastChild(node: Node): Node | null;
+	nextSibling(node: Node): Node | null;
+	previousSibling(node: Node): Node | null;
+}
+
+/**
+ * All the algorithms below need of a walker: where it started, where it has got
+ * to, how it hops, and which nodes it may stop on.
+ */
+interface Walk {
+	readonly [kRoot]: Node;
+	[kCurrent]: Node;
+	readonly [kHops]: Hops;
+	[kAccepts](node: Node): number;
+}
+
+const kHops = Symbol("hops");
+const kAccepts = Symbol("accepts");
+
+const NODE_HOPS: Hops = {
+	parent: (node) => node[kParent],
+	firstChild: (node) => node[kFirstChild],
+	lastChild: (node) => node[kLastChild],
+	nextSibling: (node) => node[kNext],
+	previousSibling: (node) => node[kPrevious],
+};
+
+const FLAT_HOPS: Hops = {
+	parent: composedParentNode,
+	firstChild: composedFirstChild,
+	lastChild: composedLastChild,
+	nextSibling: composedNextSibling,
+	previousSibling: composedPreviousSibling,
+};
+
+/** DOM Standard, "traverse children". */
+function walkChildren(walk: Walk, first: boolean): Node | null {
+	const hops = walk[kHops];
+	let node: Node | null =
+		first ?
+				hops.firstChild(walk[kCurrent]) :
+				hops.lastChild(walk[kCurrent]);
+	while (node !== null) {
+		const result = walk[kAccepts](node);
+		if (result === FILTER_ACCEPT) {
+			walk[kCurrent] = node;
+			return node;
+		}
+		if (result === FILTER_SKIP) {
+			const child =
+				first ? hops.firstChild(node) : hops.lastChild(node);
+			if (child !== null) {
+				node = child;
+				continue;
+			}
+		}
+		for (;;) {
+			const sibling =
+				first ?
+						hops.nextSibling(node) :
+						hops.previousSibling(node);
+			if (sibling !== null) {
+				node = sibling;
+				break;
+			}
+			const parent: Node | null = hops.parent(node);
+			if (
+				parent === null ||
+				parent === walk[kRoot] ||
+				parent === walk[kCurrent]
+			) {
+				return null;
+			}
+			node = parent;
+		}
+	}
+	return null;
+}
+
+/**
+ * DOM Standard, "traverse siblings". A walk rooted at a node never visits that
+ * node's siblings: returning one escapes the subtree the walk was scoped to,
+ * which is how an empty inline element came to measure the width of the
+ * sibling after it.
+ */
+function walkSiblings(walk: Walk, next: boolean): Node | null {
+	const hops = walk[kHops];
+	let node = walk[kCurrent];
+	if (node === walk[kRoot]) {
+		return null;
+	}
+	for (;;) {
+		let sibling =
+			next ? hops.nextSibling(node) : hops.previousSibling(node);
+		while (sibling !== null) {
+			node = sibling;
+			const result = walk[kAccepts](node);
+			if (result === FILTER_ACCEPT) {
+				walk[kCurrent] = node;
+				return node;
+			}
+			sibling =
+				next ? hops.firstChild(node) : hops.lastChild(node);
+			if (result === FILTER_REJECT || sibling === null) {
+				sibling =
+					next ?
+							hops.nextSibling(node) :
+							hops.previousSibling(node);
+			}
+		}
+		const parent = hops.parent(node);
+		if (parent === null || parent === walk[kRoot]) {
+			return null;
+		}
+		node = parent;
+		if (walk[kAccepts](node) === FILTER_ACCEPT) {
+			return null;
+		}
+	}
+}
+
+/** DOM Standard, TreeWalker's `parentNode()`. */
+function walkParent(walk: Walk): Node | null {
+	let node: Node | null = walk[kCurrent];
+	while (node !== null && node !== walk[kRoot]) {
+		node = walk[kHops].parent(node);
+		if (node !== null && walk[kAccepts](node) === FILTER_ACCEPT) {
+			walk[kCurrent] = node;
+			return node;
+		}
+	}
+	return null;
+}
+
+/**
+ * DOM Standard, TreeWalker's `nextNode()`: down to the first child, else on to
+ * the next sibling, else up until some level has one. The climb asks each level
+ * for its OWN next sibling, starting at the node itself, which is what lets a
+ * hop answer for the level it is asked about -- an element's ::after follows
+ * the last of its content, and the flat hops hand it back at that step.
+ */
+function walkNext(walk: Walk): Node | null {
+	const hops = walk[kHops];
+	let node = walk[kCurrent];
+	let result = FILTER_ACCEPT;
+	for (;;) {
+		while (result !== FILTER_REJECT) {
+			const child = hops.firstChild(node);
+			if (child === null) {
+				break;
+			}
+			node = child;
+			result = walk[kAccepts](node);
+			if (result === FILTER_ACCEPT) {
+				walk[kCurrent] = node;
+				return node;
+			}
+		}
+		let sibling: Node | null = null;
+		let temporary: Node | null = node;
+		while (temporary !== null) {
+			if (temporary === walk[kRoot]) {
+				return null;
+			}
+			sibling = hops.nextSibling(temporary);
+			if (sibling !== null) {
+				break;
+			}
+			temporary = hops.parent(temporary);
+		}
+		if (sibling === null) {
+			return null;
+		}
+		node = sibling;
+		result = walk[kAccepts](node);
+		if (result === FILTER_ACCEPT) {
+			walk[kCurrent] = node;
+			return node;
+		}
+	}
+}
+
+/** DOM Standard, TreeWalker's `previousNode()`. */
+function walkPrevious(walk: Walk): Node | null {
+	const hops = walk[kHops];
+	let node = walk[kCurrent];
+	while (node !== walk[kRoot]) {
+		let sibling = hops.previousSibling(node);
+		while (sibling !== null) {
+			node = sibling;
+			let result = walk[kAccepts](node);
+			for (;;) {
+				if (result === FILTER_REJECT) {
+					break;
+				}
+				const child = hops.lastChild(node);
+				if (child === null) {
+					break;
+				}
+				node = child;
+				result = walk[kAccepts](node);
+			}
+			if (result === FILTER_ACCEPT) {
+				walk[kCurrent] = node;
+				return node;
+			}
+			sibling = hops.previousSibling(node);
+		}
+		const parent = hops.parent(node);
+		if (parent === null) {
+			return null;
+		}
+		node = parent;
+		if (walk[kAccepts](node) === FILTER_ACCEPT) {
+			walk[kCurrent] = node;
+			return node;
+		}
+	}
+	return null;
+}
+
+/**
+ * A TreeWalker's surface, in whatever node type the caller works in. The
+ * toolkit hands nodes across as `object`, so a consumer that has its own Node
+ * type gets the walk back through this rather than through the class.
+ */
+export interface Walker<N> {
 	readonly root: N;
 	currentNode: N;
 	nextNode(): N | null;
@@ -18398,387 +18640,10 @@ export interface FlatTreeWalker<N> {
 	previousSibling(): N | null;
 }
 
-function createFlatTreeWalker<N>(
-	root: N,
-	dissolved?: (node: N) => boolean,
-): FlatTreeWalker<N> {
-	return new FlatWalker(
-		root as unknown as Node,
-		dissolved as ((node: Node) => boolean) | undefined,
-	) as unknown as FlatTreeWalker<N>;
-}
-
-const kDissolved = Symbol("dissolved");
-
-class FlatWalker {
-	declare readonly root: Node;
-	currentNode: Node;
-	declare [kDissolved]: ((node: Node) => boolean) | null;
-
-	constructor(root: Node, dissolved?: (node: Node) => boolean) {
-		Object.defineProperty(this, "root", {value: root, enumerable: true});
-		this.currentNode = root;
-		this[kDissolved] = dissolved ?? null;
-	}
-
-	nextNode(): Node | null {
-		let node = this.currentNode;
-		for (;;) {
-			const firstChild = flatFirstChild(this, node);
-			if (firstChild !== null) {
-				if (accepts(firstChild)) {
-					this.currentNode = firstChild;
-					return firstChild;
-				}
-				node = firstChild;
-				continue;
-			}
-
-			// A walker rooted at a node never visits that node's siblings. Back
-			// at the root with nothing to descend into, the subtree is
-			// exhausted: returning the root's sibling would escape it, which is
-			// how an empty inline element measured its next sibling's width.
-			if (node === this.root) {
-				return null;
-			}
-
-			const nextSibling = flatNextSibling(this, node);
-			if (nextSibling !== null) {
-				if (accepts(nextSibling)) {
-					this.currentNode = nextSibling;
-					return nextSibling;
-				}
-				node = nextSibling;
-				continue;
-			}
-
-			let parent = flatParent(this, node);
-			while (parent !== null && parent !== this.root) {
-				// An element's ::after follows the last of its content.
-				if (parent.nodeType === ELEMENT_NODE) {
-					const after = pseudoSlot(parent as Element, "::after");
-					if (after !== null && isLastContent(this, node, parent as Element)) {
-						if (accepts(after)) {
-							this.currentNode = after;
-							return after;
-						}
-						node = after;
-						continue;
-					}
-				}
-				const parentNextSibling = flatNextSibling(this, parent);
-				if (parentNextSibling !== null) {
-					if (accepts(parentNextSibling)) {
-						this.currentNode = parentNextSibling;
-						return parentNextSibling;
-					}
-					node = parentNextSibling;
-					break;
-				}
-				parent = flatParent(this, parent);
-			}
-
-			if (parent === null || parent === this.root) {
-				return null;
-			}
-		}
-	}
-
-	previousNode(): Node | null {
-		let node = this.currentNode;
-		if (node === this.root) {
-			return null;
-		}
-		for (;;) {
-			const previousSibling = flatPreviousSibling(this, node);
-			if (previousSibling !== null) {
-				const descendant = lastDescendant(this, previousSibling);
-				if (accepts(descendant)) {
-					this.currentNode = descendant;
-					return descendant;
-				}
-				node = descendant;
-				continue;
-			}
-			const parent = flatParent(this, node);
-			if (parent === null) {
-				return null;
-			}
-			if (accepts(parent)) {
-				this.currentNode = parent;
-				return parent;
-			}
-			if (parent === this.root) {
-				return null;
-			}
-			node = parent;
-		}
-	}
-
-	parentNode(): Node | null {
-		let node: Node | null = this.currentNode;
-		while (node !== null && node !== this.root) {
-			const parent = flatParent(this, node);
-			if (parent !== null && accepts(parent)) {
-				this.currentNode = parent;
-				return parent;
-			}
-			node = parent;
-		}
-		return null;
-	}
-
-	firstChild(): Node | null {
-		let child = flatFirstChild(this, this.currentNode);
-		while (child !== null && !accepts(child)) {
-			child = flatNextSibling(this, child);
-		}
-		if (child === null) {
-			return null;
-		}
-		this.currentNode = child;
-		return child;
-	}
-
-	lastChild(): Node | null {
-		let child = flatLastChild(this, this.currentNode);
-		while (child !== null && !accepts(child)) {
-			child = flatPreviousSibling(this, child);
-		}
-		if (child === null) {
-			return null;
-		}
-		this.currentNode = child;
-		return child;
-	}
-
-	/**
-	 * Per the TreeWalker spec's traverse-siblings algorithm, the root has no
-	 * siblings within the walk: returning the root's flat sibling escapes the
-	 * subtree the walker was scoped to. (An inline-block flex item is its own
-	 * inline-run head, and collecting its leaves ends with a nextSibling()
-	 * skip -- without this guard that skip walked out of the item and swallowed
-	 * the next flex item's text into its measurement.)
-	 */
-	nextSibling(): Node | null {
-		if (this.currentNode === this.root) {
-			return null;
-		}
-		let sibling = flatNextSibling(this, this.currentNode);
-		while (sibling !== null && !accepts(sibling)) {
-			sibling = flatNextSibling(this, sibling);
-		}
-		if (sibling === null) {
-			return null;
-		}
-		this.currentNode = sibling;
-		return sibling;
-	}
-
-	/** Root-guarded like nextSibling, per spec. */
-	previousSibling(): Node | null {
-		if (this.currentNode === this.root) {
-			return null;
-		}
-		let sibling = flatPreviousSibling(this, this.currentNode);
-		while (sibling !== null && !accepts(sibling)) {
-			sibling = flatPreviousSibling(this, sibling);
-		}
-		if (sibling === null) {
-			return null;
-		}
-		this.currentNode = sibling;
-		return sibling;
-	}
-}
-
-function flatFirstChild(walker: FlatWalker, node: Node): Node | null {
-	for (let child = composedFirstChild(node); child !== null;) {
-		const found = head(walker, child);
-		if (found !== null) {
-			return found;
-		}
-		child = composedNextSibling(child);
-	}
-	return null;
-}
-
-function flatLastChild(walker: FlatWalker, node: Node): Node | null {
-	for (let child = composedLastChild(node); child !== null;) {
-		const found = tail(walker, child);
-		if (found !== null) {
-			return found;
-		}
-		child = composedPreviousSibling(child);
-	}
-	return null;
-}
-
-function flatNextSibling(walker: FlatWalker, node: Node): Node | null {
-	let current = node;
-	for (;;) {
-		for (
-			let sibling = composedNextSibling(current);
-			sibling !== null;
-			sibling = composedNextSibling(sibling)
-		) {
-			const found = head(walker, sibling);
-			if (found !== null) {
-				return found;
-			}
-		}
-		// Out of composed siblings: a dissolved parent's siblings continue
-		// the sequence.
-		const parent = composedParentNode(current);
-		if (parent === null || !isDissolved(walker, parent)) {
-			return null;
-		}
-		current = parent;
-	}
-}
-
-function flatPreviousSibling(walker: FlatWalker, node: Node): Node | null {
-	let current = node;
-	for (;;) {
-		for (
-			let sibling = composedPreviousSibling(current);
-			sibling !== null;
-			sibling = composedPreviousSibling(sibling)
-		) {
-			const found = tail(walker, sibling);
-			if (found !== null) {
-				return found;
-			}
-		}
-		const parent = composedParentNode(current);
-		if (parent === null || !isDissolved(walker, parent)) {
-			return null;
-		}
-		current = parent;
-	}
-}
-
-function flatParent(walker: FlatWalker, node: Node): Node | null {
-	let parent = composedParentNode(node);
-	while (parent !== null && isDissolved(walker, parent)) {
-		parent = composedParentNode(parent);
-	}
-	return parent;
-}
-
 /* The dissolving layer: composed hops with the caller's dissolved elements
    spliced away, so their children join the parent's child sequence. This is
    how a <slot> disappears from a box tree while its projected content flows
    through. */
-function isDissolved(
-	walker: FlatWalker,
-	node: Node,
-): boolean {
-	return (
-		walker[kDissolved] !== null &&
-		node.nodeType === ELEMENT_NODE &&
-		walker[kDissolved](node)
-	);
-}
-
-/** The first undissolved node at a node's position, or null if it has none. */
-function head(
-	walker: FlatWalker,
-	node: Node,
-): Node | null {
-	if (!isDissolved(walker, node)) {
-		return node;
-	}
-	for (let child = composedFirstChild(node); child !== null;) {
-		const found = head(walker, child);
-		if (found !== null) {
-			return found;
-		}
-		child = composedNextSibling(child);
-	}
-	return null;
-}
-
-/** Mirror of kHead: the last undissolved node at a node's position. */
-function tail(
-	walker: FlatWalker,
-	node: Node,
-): Node | null {
-	if (!isDissolved(walker, node)) {
-		return node;
-	}
-	for (let child = composedLastChild(node); child !== null;) {
-		const found = tail(walker, child);
-		if (found !== null) {
-			return found;
-		}
-		child = composedPreviousSibling(child);
-	}
-	return null;
-}
-
-function lastDescendant(
-	walker: FlatWalker,
-	node: Node,
-): Node {
-	let current = node;
-	for (
-		let child = flatLastChild(walker, current);
-		child !== null;
-		child = flatLastChild(walker, current)
-	) {
-		current = child;
-	}
-	return current;
-}
-
-/** Whether a node ends an element's content, ::after aside. */
-function isLastContent(
-	walker: FlatWalker,
-	node: Node,
-	element: Element,
-): boolean {
-	const last = lastFlatContent(walker, element);
-	if (last === null) {
-		return false;
-	}
-	if (node === last) {
-		return true;
-	}
-	for (
-		let ancestor = flatParent(walker, node);
-		ancestor !== null;
-		ancestor = flatParent(walker, ancestor)
-	) {
-		if (ancestor === last) {
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * The last of an element's content as the walker sees it, ::after aside: the
- * dissolving layer applied, and a wholly dissolved last child stepped back
- * over the way flatLastChild steps back.
- */
-function lastFlatContent(walker: FlatWalker, element: Element): Node | null {
-	for (let child = composedLastContent(element); child !== null;) {
-		const found = tail(walker, child);
-		if (found !== null) {
-			return found;
-		}
-		child = composedPreviousSibling(child);
-	}
-	return null;
-}
-
-/** Only elements and text generate boxes; every other node type is skipped. */
-function accepts(node: Node): boolean {
-	const type = node.nodeType;
-	return type === ELEMENT_NODE || type === TEXT_NODE;
-}
-
 function pseudoSlot(element: Element, name: string): Element | null {
 	const slots = element[kPseudoElements];
 	return slots === null ? null : (slots.get(name) ?? null);
@@ -18929,8 +18794,11 @@ function composedNextSibling(node: Node): Node | null {
 		return next;
 	}
 
-	// The last of an element's content is followed by its ::after.
-	const parent = node[kParent];
+	// The last of an element's content is followed by its ::after -- the
+	// COMPOSED parent's, so that climbing out of a shadow root reaches the
+	// host's. A shadowed element's ::after follows its shadow content, and
+	// the node tree cannot say so: it puts the shadow root between them.
+	const parent = composedParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		return pseudoSlot(parent as Element, "::after");
 	}
@@ -18971,7 +18839,9 @@ function composedPreviousSibling(node: Node): Node | null {
 		return previous;
 	}
 
-	const parent = node[kParent];
+	// Mirror of the ::after hop: the composed parent, so walking backwards out
+	// of a shadow root reaches the host's ::before and ::marker.
+	const parent = composedParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		const before = pseudoSlot(parent as Element, "::before");
 		if (before !== null) {
@@ -20336,7 +20206,14 @@ export class Document extends Node {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		return new TreeWalker(root, toUnsignedLong(whatToShow), filter);
+		// The flat bit is private to the engine, and the default whatToShow is
+		// every bit there is: without this mask, `createTreeWalker(root)` would
+		// walk the box tree's view of the document instead of the page's.
+		return new TreeWalker(
+			root,
+			toUnsignedLong(whatToShow) & ~SHOW_FLAT,
+			filter,
+		);
 	}
 
 	override [kCloneSingle](_document: Document): Node {
@@ -23581,6 +23458,21 @@ export const NodeFilter = {
 
 Object.freeze(NodeFilter);
 
+/**
+ * A private `whatToShow` bit asking for the FLAT tree rather than the node
+ * tree: shadow content in its slot's place, and pseudo-element slots among the
+ * children they belong beside.
+ *
+ * It rides in `whatToShow` because that is already the argument saying what a
+ * walk is interested in, and because the bit is inert in the only test that
+ * reads it: acceptance asks `1 << (nodeType - 1)`, and the highest node type
+ * there is (NOTATION, 12) reaches 0x800, so nothing below can ever produce
+ * this one. It is private because the flat tree is the box tree's view, not a
+ * thing a page should be able to ask for -- `Document.createTreeWalker` masks
+ * it off, which also stops the SHOW_ALL default from turning every walk flat.
+ */
+export const SHOW_FLAT = 0x1000;
+
 /** Run a traverser's filter over a node. */
 function filterNode(
 	traverser: {
@@ -23784,12 +23676,19 @@ export class TreeWalker {
 	declare [kFilter]: NodeFilterInput;
 	declare [kActive]: {value: boolean};
 
+	declare [kHops]: Hops;
+
 	constructor(root: Node, whatToShow: number, filter: NodeFilterInput) {
 		this[kActive] = {value: false};
 		this[kRoot] = root;
 		this[kCurrent] = root;
 		this[kWhatToShow] = whatToShow;
 		this[kFilter] = filter ?? null;
+		this[kHops] = (whatToShow & SHOW_FLAT) === 0 ? NODE_HOPS : FLAT_HOPS;
+	}
+
+	[kAccepts](node: Node): number {
+		return filterNode(this[kState], node);
 	}
 
 	get root(): Node {
@@ -23830,170 +23729,31 @@ export class TreeWalker {
 	}
 
 	parentNode(): Node | null {
-		let node: Node | null = this[kCurrent];
-		while (node !== null && node !== this[kRoot]) {
-			node = node[kParent];
-			if (node !== null && filterNode(this[kState], node) === FILTER_ACCEPT) {
-				this[kCurrent] = node;
-				return node;
-			}
-		}
-		return null;
+		return walkParent(this);
 	}
 
 	firstChild(): Node | null {
-		return traverseChildren(this, true);
+		return walkChildren(this, true);
 	}
 
 	lastChild(): Node | null {
-		return traverseChildren(this, false);
+		return walkChildren(this, false);
 	}
 
 	previousSibling(): Node | null {
-		return traverseSiblings(this, false);
+		return walkSiblings(this, false);
 	}
 
 	nextSibling(): Node | null {
-		return traverseSiblings(this, true);
+		return walkSiblings(this, true);
 	}
 
 	previousNode(): Node | null {
-		let node = this[kCurrent];
-		while (node !== this[kRoot]) {
-			let sibling = node[kPrevious];
-			while (sibling !== null) {
-				node = sibling;
-				let result = filterNode(this[kState], node);
-				while (result !== FILTER_REJECT && node[kLastChild] !== null) {
-					node = node[kLastChild] as Node;
-					result = filterNode(this[kState], node);
-				}
-				if (result === FILTER_ACCEPT) {
-					this[kCurrent] = node;
-					return node;
-				}
-				sibling = node[kPrevious];
-			}
-			const parent = node[kParent];
-			if (node === this[kRoot] || parent === null) {
-				return null;
-			}
-			node = parent;
-			if (filterNode(this[kState], node) === FILTER_ACCEPT) {
-				this[kCurrent] = node;
-				return node;
-			}
-		}
-		return null;
+		return walkPrevious(this);
 	}
 
 	nextNode(): Node | null {
-		let node = this[kCurrent];
-		let result = FILTER_ACCEPT;
-		for (;;) {
-			while (result !== FILTER_REJECT && node[kFirstChild] !== null) {
-				node = node[kFirstChild] as Node;
-				result = filterNode(this[kState], node);
-				if (result === FILTER_ACCEPT) {
-					this[kCurrent] = node;
-					return node;
-				}
-			}
-			let sibling: Node | null = null;
-			let temporary: Node | null = node;
-			while (temporary !== null) {
-				if (temporary === this[kRoot]) {
-					return null;
-				}
-				sibling = temporary[kNext];
-				if (sibling !== null) {
-					break;
-				}
-				temporary = temporary[kParent];
-			}
-			if (sibling === null) {
-				return null;
-			}
-			node = sibling;
-			result = filterNode(this[kState], node);
-			if (result === FILTER_ACCEPT) {
-				this[kCurrent] = node;
-				return node;
-			}
-		}
-	}
-}
-
-function traverseChildren(
-	walker: TreeWalker,
-	first: boolean,
-): Node | null {
-	let node: Node | null = first ?
-		walker[kCurrent][kFirstChild] :
-		walker[kCurrent][kLastChild];
-	while (node !== null) {
-		const result = filterNode(walker[kState], node);
-		if (result === FILTER_ACCEPT) {
-			walker[kCurrent] = node;
-			return node;
-		}
-		if (result === FILTER_SKIP) {
-			const child = first ? node[kFirstChild] : node[kLastChild];
-			if (child !== null) {
-				node = child;
-				continue;
-			}
-		}
-		for (;;) {
-			const sibling = first ? node[kNext] : node[kPrevious];
-			if (sibling !== null) {
-				node = sibling;
-				break;
-			}
-			const parent: Node | null = node[kParent];
-			if (
-				parent === null ||
-				parent === walker[kRoot] ||
-				parent === walker[kCurrent]
-			) {
-				return null;
-			}
-			node = parent;
-		}
-	}
-	return null;
-}
-
-function traverseSiblings(
-	walker: TreeWalker,
-	next: boolean,
-): Node | null {
-	let node = walker[kCurrent];
-	if (node === walker[kRoot]) {
-		return null;
-	}
-	for (;;) {
-		let sibling = next ? node[kNext] : node[kPrevious];
-		while (sibling !== null) {
-			node = sibling;
-			const result = filterNode(walker[kState], node);
-			if (result === FILTER_ACCEPT) {
-				walker[kCurrent] = node;
-				return node;
-			}
-			sibling = next ? node[kFirstChild] : node[kLastChild];
-			if (result === FILTER_REJECT || sibling === null) {
-				sibling = next ? node[kNext] : node[kPrevious];
-			}
-		}
-		const parent = node[kParent];
-		if (parent === null || parent === walker[kRoot]) {
-			return null;
-		}
-		node = parent;
-		if (filterNode(walker[kState], node) === FILTER_ACCEPT) {
-			return null;
-		}
+		return walkNext(this);
 	}
 }
 

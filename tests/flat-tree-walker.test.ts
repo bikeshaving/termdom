@@ -1142,3 +1142,38 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 	document.body.innerHTML = "<div><!--a--><!--b--></div>";
 	expect(names(document.querySelector("div")!)).toEqual([]);
 });
+
+test("the flat tree is not something a page can ask createTreeWalker for", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
+	const document = dom.window.document;
+
+	// The same element two ways: a light child, and a shadow child that only
+	// the flat tree reaches.
+	const host = document.createElement("div");
+	host.innerHTML = "<span>light</span>";
+	host.attachShadow({mode: "open"}).innerHTML = "<b>shadow</b>";
+	document.body.appendChild(host);
+
+	const names = (walker: {nextNode(): unknown}): string[] => {
+		const seen: string[] = [];
+		for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+			seen.push((n as Node).nodeName);
+		}
+		return seen;
+	};
+
+	// whatToShow defaults to every bit there is, the private one included. It
+	// is masked off at this door, so the default walk stays on the node tree.
+	expect(names(document.createTreeWalker(host) as never)).toEqual([
+		"SPAN",
+		"#text",
+	]);
+
+	// And a caller naming the bit outright gets it stripped rather than
+	// honoured: what is left asks for no node type at all.
+	expect(names(document.createTreeWalker(host, 0x1000) as never)).toEqual([]);
+
+	// The engine's own walk does reach the shadow child, which is the
+	// difference the bit makes.
+	expect(names(flowWalker(host) as never)).toContain("B");
+});

@@ -29,10 +29,12 @@ import {
 	type ComputedStyle,
 } from "./cascade.js";
 import {
-	type FlatTreeWalker,
+	type Walker,
 	type UAToolkit,
 	claimUAToolkit,
 	DOMRectList,
+	NodeFilter,
+	SHOW_FLAT,
 } from "./dom.js";
 
 import {
@@ -6868,15 +6870,26 @@ function pseudoElementCount(host: object): number {
 	return uaOf(host)?.pseudoElementCount(host) ?? 0;
 }
 
-function createFlatTreeWalker<N>(
+/**
+ * The nodes a box tree walk stops on: elements and text, over the flat tree.
+ * Everything else -- comments, processing instructions -- generates no box and
+ * is skipped, so it cannot hide the content around it.
+ */
+const FLOW_NODES = NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | SHOW_FLAT;
+
+function createTreeWalker<N>(
 	root: N,
-	dissolved?: (node: N) => boolean,
-): FlatTreeWalker<N> {
+	filter: ((node: N) => number) | null = null,
+): Walker<N> {
 	const ua = uaOf(root as object);
 	if (ua === undefined) {
 		throw new Error("No toolkit claimed for this document.");
 	}
-	return ua.createFlatTreeWalker<N>(root as object, dissolved);
+	return ua.createTreeWalker<N>(
+		root as object,
+		FLOW_NODES,
+		filter as ((node: object) => number) | null,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -9617,7 +9630,7 @@ function retireHiddenContent(
 	if (box) {
 		retireContentRoot(layout, box);
 	}
-	const walker = createFlatTreeWalker<Node>(element);
+	const walker = createTreeWalker<Node>(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		retireFlexNode(layout, child);
 		if (child.nodeType === child.ELEMENT_NODE) {
@@ -9703,7 +9716,7 @@ function retireSteppedOver(
 	layout: LayoutEngine,
 	parent: Element,
 ): void {
-	const walker = createFlatTreeWalker<Node>(parent);
+	const walker = createTreeWalker<Node>(parent);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (child.nodeType !== child.ELEMENT_NODE) {
 			continue;
@@ -9843,8 +9856,21 @@ function placeChild(
 }
 
 /** A walk of the boxes a node's content lays out from. */
-export function flowWalker(root: Node): FlatTreeWalker<Node> {
-	return createFlatTreeWalker<Node>(root, dissolvesIntoChildren);
+export function flowWalker(root: Node): Walker<Node> {
+	return createTreeWalker<Node>(root, contentsSkipped);
+}
+
+/**
+ * A `display: contents` element is SKIPPED, which is the DOM's own word for
+ * what it does: the element itself is never stopped on, and its children are
+ * walked in its place. Only elements are asked -- text has no display.
+ */
+function contentsSkipped(node: Node): number {
+	return (
+		node.nodeType === node.ELEMENT_NODE && dissolvesIntoChildren(node) ?
+			NodeFilter.FILTER_SKIP :
+			NodeFilter.FILTER_ACCEPT
+	);
 }
 
 /**
@@ -9856,7 +9882,7 @@ export function flowWalker(root: Node): FlatTreeWalker<Node> {
  * at the parent's last child instead drops every leaf after a nested
  * inline-block (or a display:none/absolute box) from the line.
  */
-function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
+function skipSubtree(walker: Walker<Node>): boolean {
 	while (!walker.nextSibling()) {
 		if (!walker.parentNode()) {
 			return false;
@@ -10065,7 +10091,7 @@ function restageSubtree(
 	// The flat tree, not the flow: which elements dissolve into their
 	// children is a question for the cascade, and marking one that turns
 	// out to generate no box costs nothing.
-	const walker = createFlatTreeWalker<Node>(node);
+	const walker = createTreeWalker<Node>(node);
 	for (let child = walker.nextNode(); child; child = walker.nextNode()) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			restageContainer(layout, child as Element);
