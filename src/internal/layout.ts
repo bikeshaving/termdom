@@ -14012,9 +14012,27 @@ export class LayoutEngine {
 export type {Config, LayoutNode};
 
 /**
- * The solver's own vocabulary, for the tests that drive it directly.
- * Nothing in src reaches for these -- the engine above uses them unqualified,
- * from inside this module.
+ * The solver's own vocabulary, for the tests that drive the algorithm
+ * directly. Nothing in src reaches for these: the engine above uses them
+ * unqualified, from inside this module.
+ *
+ * This is a seam, not a shortcut, and the difference is worth stating because
+ * this engine has carried plenty of the other kind. A door is only there for
+ * the tests' convenience when the front door would have answered the same
+ * question; then the tests should use the front door and the door should go.
+ * Here it would not. What these cases pin is css-flexbox-1 clause by clause --
+ * basis resolution, min/max clamping mid-grow, the six align-content packings,
+ * percentage resolution against the containing block, auto margins, baseline,
+ * the automatic minimum size -- and reaching them through markup would run the
+ * parser, the cascade, box derivation and run building first, so a failure
+ * would stop saying which clause broke. Some are not expressible that way at
+ * all: the cases that hand the solver a measure function and assert on what it
+ * was asked, which is how the measurement cache is held to its contract.
+ *
+ * The tests over markup are the other half and live in flexbox.test.ts --
+ * anonymous items, inline items, order, whitespace, the shorthands. Between
+ * them there is almost no overlap, which is what a unit and an integration
+ * test of the same feature should look like.
  */
 export const SOLVER = {
 	LayoutNode,
