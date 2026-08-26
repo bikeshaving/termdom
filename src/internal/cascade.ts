@@ -9885,6 +9885,7 @@ const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kLayoutFlush = Symbol("layoutFlush");
 const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
+const kUsedGeneration = Symbol("used values generation");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
@@ -10088,6 +10089,7 @@ export class StyleManager {
 		this[kLayoutFlush] = null;
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
+		this[kUsedGeneration] = -1;
 		this[kStyleSheetList] = null;
 		this[kPseudoNodeStyles] = new WeakMap<Element, ComputedStyle>();
 		this[kLayerPaths] = [];
@@ -10201,15 +10203,18 @@ export class StyleManager {
 			return null;
 		}
 		// The flush is taken once per layout, not once per read: an
-		// invalidation and a layout pass both stale the engine, and until one
-		// does the layout standing behind the last flush is still the answer.
-		// A caller reading four properties off two hundred elements pays one
-		// flush, not eight hundred. Nothing under the flush can reach back
-		// here -- layout reads the cascade through computedValueOf, which has
-		// no used value to ask for.
-		if (this[kLayoutEngine].layoutStale) {
+		// invalidation and a layout pass both move the engine's generation on,
+		// and until one does, the layout standing behind the last flush is
+		// still the answer. A caller reading four properties off two hundred
+		// elements pays one flush, not eight hundred. Nothing under the flush
+		// can reach back here -- layout reads the cascade through
+		// computedValueOf, which has no used value to ask for.
+		//
+		// The generation is read back AFTER the flush, because the pass the
+		// flush runs moves it on again.
+		if (this[kUsedGeneration] !== this[kLayoutEngine].generation) {
 			this[kLayoutFlush]();
-			this[kLayoutEngine].layoutStale = false;
+			this[kUsedGeneration] = this[kLayoutEngine].generation;
 			this[kUsedValues] = new WeakMap();
 		}
 		return this[kLayoutEngine].getRect(element);
@@ -10248,6 +10253,8 @@ export class StyleManager {
 	 * says nothing has been measured, which costs nothing to say.
 	 */
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
+	/** The engine generation the used values above were measured under. */
+	declare [kUsedGeneration]: number;
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
 		this[kLayoutEngine] = layoutEngine;
@@ -12292,7 +12299,7 @@ function invalidateEnclosingList(
 function parseStylesheets(
 	manager: StyleManager,
 ): void {
-	manager[kLayoutEngine]?.invalidateStructure();
+	manager[kLayoutEngine]?.invalidate();
 	const document = manager[kDocument];
 	manager[kParsedRules] = [];
 	manager[kSelectorsReachSiblings] = false;
@@ -13516,7 +13523,7 @@ function attachPseudoElementToElementForType(
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	node.appendChild(element.ownerDocument.createTextNode(content));
-	manager[kLayoutEngine]?.invalidateStructure();
+	manager[kLayoutEngine]?.invalidate();
 	manager[kLayoutEngine]?.invalidate(element);
 }
 
@@ -13530,7 +13537,7 @@ function removePseudoElement(
 		return;
 	}
 	clearPseudoElement(element, pseudoType);
-	manager[kLayoutEngine]?.invalidateStructure();
+	manager[kLayoutEngine]?.invalidate();
 	manager[kLayoutEngine]?.invalidate(element);
 }
 
@@ -13935,8 +13942,38 @@ function bracketNames(node: CSSNode): string[] {
 		.map((child) => child.name ?? "");
 }
 
+/**
+ * The grid values already parsed, by the text they were parsed from.
+ *
+ * Same argument as the grammar memo above: a track list is written once in a
+ * stylesheet and computed onto every element the rule matches, so layout asks
+ * for the same handful of strings over and over. The parsers are pure, and
+ * what they return is read and never written -- the solver already shares one
+ * EMPTY_TRACK_LIST and one AUTO_TRACK across every node it lays out -- so one
+ * parse can answer every element that declares it.
+ */
+const parsedGridValues = new Map<string, unknown>();
+
+function memoizeGridValue<T>(
+	kind: string,
+	value: string,
+	parse: (value: string) => T,
+): T {
+	const key = kind + " " + value;
+	if (parsedGridValues.has(key)) {
+		return parsedGridValues.get(key) as T;
+	}
+	const parsed = parse(value);
+	parsedGridValues.set(key, parsed);
+	return parsed;
+}
+
 /** A `<track-list>`, or null when the value is not one (and so has no effect). */
 export function parseTrackList(value: string): FlexTypes.TrackList | null {
+	return memoizeGridValue("track-list", value, parseTrackListValue);
+}
+
+function parseTrackListValue(value: string): FlexTypes.TrackList | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -14041,6 +14078,12 @@ function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
 export function parseTrackSizeList(
 	value: string,
 ): FlexTypes.TrackSize[] | null {
+	return memoizeGridValue("track-size-list", value, parseTrackSizeListValue);
+}
+
+function parseTrackSizeListValue(
+	value: string,
+): FlexTypes.TrackSize[] | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;
@@ -14066,6 +14109,10 @@ export function parseTrackSizeList(
  * cells and every named area is a solid rectangle (css-grid-2 §7.3).
  */
 export function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
+	return memoizeGridValue("areas", value, parseGridAreasValue);
+}
+
+function parseGridAreasValue(value: string): FlexTypes.GridAreaMap | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -14138,6 +14185,12 @@ export function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
 
 /** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
 export function parseGridPlacement(
+	value: string,
+): FlexTypes.GridPlacement | null {
+	return memoizeGridValue("placement", value, parseGridPlacementValue);
+}
+
+function parseGridPlacementValue(
 	value: string,
 ): FlexTypes.GridPlacement | null {
 	const text = value.trim();

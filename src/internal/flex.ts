@@ -1,10 +1,15 @@
 /**
- * A pure-JS CSS flexbox implementation over an integer cell grid.
+ * The box sizing and placement solver: where a box ends up on the integer
+ * cell grid, and how big it is.
  *
- * It implements CSS Flexible Box Layout (CSS Box Alignment / css-flexbox-1)
- * directly from the spec, over the subset of Yoga's node API that
- * LayoutEngine calls -- a shape the engine depends on, since some of these
- * names are looked up dynamically.
+ * Three layout modes over one node type, chosen by the node's display: flex
+ * (css-flexbox-1 / CSS Box Alignment), grid (css-grid-2 -- track sizing, line
+ * resolution, area placement), and the table grid rows and cells resolve to.
+ * All three are implemented from the spec rather than ported.
+ *
+ * The node API is shaped like Yoga's, which is what this replaced. Nothing
+ * depends on that shape any more; a caller assigning styles one setter at a
+ * time is the cost of it.
  *
  * Omitted, because the engine resolves them elsewhere or a cell grid has no
  * use for them: writing modes and the direction property -- bidi is resolved
@@ -19,9 +24,9 @@
 // ---------------------------------------------------------------------------
 // Constants
 //
-// Names mirror Yoga's because LayoutEngine looks some of them up dynamically by
-// string (e.g. "ALIGN_" + "space-between".toUpperCase()), so the full enum sets
-// must exist, not just the ones referenced statically.
+// Names mirror Yoga's, which is where they came from. Every one is now reached
+// statically -- the engine spells its keyword tables out -- so these can be
+// renumbered or renamed without a name built at runtime missing one.
 // ---------------------------------------------------------------------------
 
 const ALIGN_AUTO = 0;
@@ -779,6 +784,9 @@ export class Node {
 
 	cachedLayout: CachedLayout | null;
 
+	/** Set while a whole style is being assigned; see styleAll. */
+	styling: boolean;
+
 	constructor(config: Config = defaultConfig) {
 		this.children = [];
 		this.parent = null;
@@ -792,6 +800,7 @@ export class Node {
 			null,
 		);
 		this.cachedLayout = null;
+		this.styling = false;
 		this.config = config;
 		this.style = createStyle();
 		this.layout = createLayout();
@@ -852,7 +861,31 @@ export class Node {
 
 	markDirty(): void {
 		this.dirty = true;
+		if (this.styling) {
+			// Inside a style assignment: the walk up happens once at the end
+			// rather than once per property.
+			return;
+		}
 		markDirtyUpward(this);
+	}
+
+	/**
+	 * Assign a whole style, one property at a time, as one change.
+	 *
+	 * A caller applying a computed style touches scores of properties on the
+	 * same node, and each setter would otherwise walk this node's ancestors to
+	 * the root announcing the same thing. The node is dirty from the first
+	 * setter either way; only the announcement is deferred.
+	 */
+	styleAll(assign: () => void): void {
+		const outer = this.styling;
+		this.styling = true;
+		try {
+			assign();
+		} finally {
+			this.styling = outer;
+		}
+		this.markDirty();
 	}
 
 	/**

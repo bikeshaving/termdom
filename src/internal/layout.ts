@@ -98,13 +98,46 @@ function createFlatTreeWalker<N>(
 // ---------------------------------------------------------------------------
 
 /**
+ * The computed `position` values, one bit each. An absent or unrecognised
+ * value is static, which is both the initial value and what every question
+ * below already treated an empty string as.
+ */
+const POSITION_STATIC = 1 << 0;
+const POSITION_RELATIVE = 1 << 1;
+const POSITION_ABSOLUTE = 1 << 2;
+const POSITION_FIXED = 1 << 3;
+const POSITION_STICKY = 1 << 4;
+
+const POSITION_CODES: Record<string, number | undefined> = {
+	static: POSITION_STATIC,
+	relative: POSITION_RELATIVE,
+	absolute: POSITION_ABSOLUTE,
+	fixed: POSITION_FIXED,
+	sticky: POSITION_STICKY,
+};
+
+/** A box that has left the flow: its siblings lay out as if it were not there. */
+const OUT_OF_FLOW = POSITION_ABSOLUTE | POSITION_FIXED;
+/** Everything but static, which is what "positioned" means in CSS. */
+const POSITIONED =
+	POSITION_RELATIVE | POSITION_ABSOLUTE | POSITION_FIXED | POSITION_STICKY;
+
+/** An element's computed position, as a code. */
+function positionOf(element: Element): number {
+	return POSITION_CODES[getPropertyValue(element, "position")] ??
+		POSITION_STATIC;
+}
+
+/**
  * Whether a box takes part in positioned layout -- the predicate the
  * containing-block chain, stacking-context collection and the painter's
  * in-flow walk are built on.
  */
 export function isPositioned(element: Element): boolean {
-	const position = computedStyleOf(element).computedValueOf("position");
-	return position !== "" && position !== "static";
+	const position =
+		POSITION_CODES[computedStyleOf(element).computedValueOf("position")] ??
+		POSITION_STATIC;
+	return (position & POSITIONED) !== 0;
 }
 
 /**
@@ -128,8 +161,7 @@ function isOutOfFlow(node: Node): boolean {
 	if (node.nodeType !== node.ELEMENT_NODE) {
 		return false;
 	}
-	const position = getPropertyValue(node as Element, "position");
-	return position === "absolute" || position === "fixed";
+	return (positionOf(node as Element) & OUT_OF_FLOW) !== 0;
 }
 
 /**
@@ -140,26 +172,106 @@ function isOutOfFlow(node: Node): boolean {
  * content flows through.
  */
 function dissolvesIntoChildren(node: Node): boolean {
-	return getPropertyValue(node as Element, "display") === "contents";
+	return displayOf(node as Element) === DISPLAY_CONTENTS;
+}
+
+/**
+ * The computed `display` values this engine lays out, one bit each so the
+ * questions layout asks about a display -- is it inline, does it lay its
+ * children out as items, is it part of a table -- are a mask test rather than
+ * a chain of string comparisons.
+ */
+const DISPLAY_NONE = 1 << 0;
+const DISPLAY_CONTENTS = 1 << 1;
+const DISPLAY_BLOCK = 1 << 2;
+const DISPLAY_INLINE = 1 << 3;
+const DISPLAY_INLINE_BLOCK = 1 << 4;
+const DISPLAY_INLINE_FLEX = 1 << 5;
+const DISPLAY_INLINE_GRID = 1 << 6;
+const DISPLAY_FLEX = 1 << 7;
+const DISPLAY_GRID = 1 << 8;
+const DISPLAY_LIST_ITEM = 1 << 9;
+const DISPLAY_TABLE = 1 << 10;
+const DISPLAY_TABLE_ROW = 1 << 11;
+const DISPLAY_TABLE_ROW_GROUP = 1 << 12;
+const DISPLAY_TABLE_HEADER_GROUP = 1 << 13;
+const DISPLAY_TABLE_FOOTER_GROUP = 1 << 14;
+const DISPLAY_TABLE_COLUMN = 1 << 15;
+const DISPLAY_TABLE_COLUMN_GROUP = 1 << 16;
+const DISPLAY_TABLE_CELL = 1 << 17;
+const DISPLAY_TABLE_CAPTION = 1 << 18;
+
+/** A display this engine does not implement lays out as a block, per CSS. */
+const DISPLAY_CODES: Record<string, number | undefined> = {
+	"none": DISPLAY_NONE,
+	"contents": DISPLAY_CONTENTS,
+	"block": DISPLAY_BLOCK,
+	"inline": DISPLAY_INLINE,
+	"inline-block": DISPLAY_INLINE_BLOCK,
+	"inline-flex": DISPLAY_INLINE_FLEX,
+	"inline-grid": DISPLAY_INLINE_GRID,
+	"flex": DISPLAY_FLEX,
+	"grid": DISPLAY_GRID,
+	"list-item": DISPLAY_LIST_ITEM,
+	"table": DISPLAY_TABLE,
+	"table-row": DISPLAY_TABLE_ROW,
+	"table-row-group": DISPLAY_TABLE_ROW_GROUP,
+	"table-header-group": DISPLAY_TABLE_HEADER_GROUP,
+	"table-footer-group": DISPLAY_TABLE_FOOTER_GROUP,
+	"table-column": DISPLAY_TABLE_COLUMN,
+	"table-column-group": DISPLAY_TABLE_COLUMN_GROUP,
+	"table-cell": DISPLAY_TABLE_CELL,
+	"table-caption": DISPLAY_TABLE_CAPTION,
+};
+
+/** A box that sits on a line whole, measured as one opaque unit. */
+const ATOMIC_INLINE = DISPLAY_INLINE_BLOCK | DISPLAY_INLINE_GRID;
+/** A box that goes on a line rather than on rows of its own. */
+const INLINE_LEVEL = DISPLAY_INLINE | ATOMIC_INLINE;
+/** A grid container, whichever way it sits in its parent. */
+const GRID_CONTAINER = DISPLAY_GRID | DISPLAY_INLINE_GRID;
+/** A flex container, whichever way it sits in its parent. */
+const FLEX_CONTAINER = DISPLAY_FLEX | DISPLAY_INLINE_FLEX;
+/**
+ * A container that puts each child in a box of its own: it gathers no inline
+ * run across its children, and blockifies every one (css-display-3 §2.7).
+ */
+const LAYS_OUT_ITEMS = DISPLAY_FLEX | GRID_CONTAINER;
+/** The table box and every part inside it, which lay themselves out. */
+const TABLE_DISPLAY =
+	DISPLAY_TABLE |
+	DISPLAY_TABLE_ROW |
+	DISPLAY_TABLE_ROW_GROUP |
+	DISPLAY_TABLE_HEADER_GROUP |
+	DISPLAY_TABLE_FOOTER_GROUP |
+	DISPLAY_TABLE_COLUMN |
+	DISPLAY_TABLE_COLUMN_GROUP |
+	DISPLAY_TABLE_CELL |
+	DISPLAY_TABLE_CAPTION;
+
+/** An element's computed display, as a code. */
+function displayOf(element: Element): number {
+	return (
+		DISPLAY_CODES[getPropertyValue(element, "display")] ?? DISPLAY_BLOCK
+	);
 }
 
 /**
  * Whether a display makes an ATOMIC inline: a box that sits on a line whole,
  * measured as one opaque unit, whatever it lays out inside itself.
  */
-function isAtomicInline(display: string): boolean {
-	return display === "inline-block" || display === "inline-grid";
+function isAtomicInline(display: number): boolean {
+	return (display & ATOMIC_INLINE) !== 0;
 }
 
 /** Whether a display value puts a box on a line rather than on rows of its own. */
-function isInlineDisplay(display: string): boolean {
-	return display === "inline" || isAtomicInline(display);
+function isInlineDisplay(display: number): boolean {
+	return (display & INLINE_LEVEL) !== 0;
 }
 
 /** Whether an element lays its children out as flex items. */
 function isFlexContainer(element: Element): boolean {
-	const display = getPropertyValue(element, "display");
-	return display === "flex" || display === "inline-flex";
+	return (displayOf(element) & FLEX_CONTAINER) !== 0;
 }
 
 /**
@@ -167,25 +279,25 @@ function isFlexContainer(element: Element): boolean {
  * container gathers no inline run across its children, and blockifies every
  * one of them (css-display-3 §2.7).
  */
-function laysOutItems(display: string): boolean {
-	return display === "flex" || isGridDisplay(display);
+function laysOutItems(display: number): boolean {
+	return (display & LAYS_OUT_ITEMS) !== 0;
 }
 
 /** Whether a display makes a grid container. */
-function isGridDisplay(display: string): boolean {
-	return display === "grid" || display === "inline-grid";
+function isGridDisplay(display: number): boolean {
+	return (display & GRID_CONTAINER) !== 0;
 }
 
 /** Whether an element's box is a flex item of its parent's. */
 function hasFlexParent(element: Element): boolean {
 	const parent = element.parentElement;
-	return parent !== null && getPropertyValue(parent, "display") === "flex";
+	return parent !== null && displayOf(parent) === DISPLAY_FLEX;
 }
 
 /** Whether an element's box is an item of a flex or grid container's. */
 function hasItemParent(element: Element): boolean {
 	const parent = element.parentElement;
-	return parent !== null && laysOutItems(getPropertyValue(parent, "display"));
+	return parent !== null && laysOutItems(displayOf(parent));
 }
 
 /**
@@ -202,12 +314,12 @@ function isBlockifiedBox(element: Element): boolean {
  * blockification applied. `none` and `contents` generate no box of their own
  * and stand as they compute.
  */
-function usedDisplay(element: Element): string {
-	const display = getPropertyValue(element, "display");
+function usedDisplay(element: Element): number {
+	const display = displayOf(element);
 	if (!isInlineDisplay(display)) {
 		return display;
 	}
-	return isBlockifiedBox(element) ? "block" : display;
+	return isBlockifiedBox(element) ? DISPLAY_BLOCK : display;
 }
 
 /**
@@ -230,12 +342,7 @@ function isInlineLevel(node: Node): boolean {
  * position in: its static position is the container's own content-box corner,
  * as its alignment properties place it (css-flexbox-1 §4.1, css-grid-2 §9).
  */
-const NO_STATIC_POSITION_DISPLAYS = new Set([
-	"flex",
-	"grid",
-	"inline-flex",
-	"inline-grid",
-]);
+const NO_STATIC_POSITION_DISPLAYS = FLEX_CONTAINER | GRID_CONTAINER;
 
 /**
  * Whether an element's box measures its content as one run. An inline is
@@ -253,7 +360,7 @@ function measuresAsRun(
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	const display = getPropertyValue(element, "display");
+	const display = displayOf(element);
 	if (!isInlineDisplay(display)) {
 		return false;
 	}
@@ -274,7 +381,7 @@ function splitsAroundBlock(
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	if (getPropertyValue(element, "display") !== "inline") {
+	if (displayOf(element) !== DISPLAY_INLINE) {
 		return false;
 	}
 	// A grid item is blockified (css-display-3 §2.7) and is a block
@@ -282,7 +389,7 @@ function splitsAroundBlock(
 	// its content to the grid would put the item's own children in cells
 	// of their own.
 	const parent = element.parentElement;
-	if (parent && isGridDisplay(getPropertyValue(parent, "display"))) {
+	if (parent && isGridDisplay(displayOf(parent))) {
 		return false;
 	}
 	return containsBlockLevelBox(layout, element);
@@ -301,12 +408,12 @@ function containsBlockLevelBox(
 		if (isOutOfFlow(childElement)) {
 			continue;
 		}
-		const display = getPropertyValue(childElement, "display");
+		const display = displayOf(childElement);
 		// An atomic inline contains its own blocks without splitting anything.
-		if (display === "none" || isAtomicInline(display)) {
+		if (display === DISPLAY_NONE || isAtomicInline(display)) {
 			continue;
 		}
-		if (display === "inline") {
+		if (display === DISPLAY_INLINE) {
 			if (containsBlockLevelBox(layout, childElement)) {
 				return true;
 			}
@@ -502,7 +609,7 @@ function shouldCollapseWhitespaceTextNode(
 	}
 
 	// Check parent's display type - only collapse in block formatting contexts
-	const parentDisplay = getPropertyValue(parent, "display");
+	const parentDisplay = displayOf(parent);
 	if (isInlineDisplay(parentDisplay)) {
 		// In inline contexts, preserve whitespace as spaces
 		return false;
@@ -534,7 +641,7 @@ function shouldCollapseWhitespaceTextNode(
 		if (!node || node.nodeType !== node.ELEMENT_NODE) {
 			return false;
 		}
-		const display = getPropertyValue(node as Element, "display");
+		const display = displayOf(node as Element);
 		return !isInlineDisplay(display);
 	};
 
@@ -576,7 +683,7 @@ function isSuppressedFlexWhitespace(
 	if (!parent) {
 		return false;
 	}
-	if (!laysOutItems(getPropertyValue(parent, "display"))) {
+	if (!laysOutItems(displayOf(parent))) {
 		return false;
 	}
 	if (preservesSpaces(getPropertyValue(parent, "white-space"))) {
@@ -598,7 +705,7 @@ function isSuppressedFlexWhitespace(
 		// nothing but the white space, and rendering nothing. A display:
 		// none child generates no box and does not interrupt the run.
 		const siblingDisplay = usedDisplay(node as Element);
-		if (siblingDisplay === "none") {
+		if (siblingDisplay === DISPLAY_NONE) {
 			continue;
 		}
 		// An inline sibling joins this run and gives it content; anything
@@ -615,20 +722,35 @@ function isSuppressedFlexWhitespace(
 // Style to flex node
 // ---------------------------------------------------------------------------
 
-interface EnumMap {
-	align: FlexTypes.Align;
-	justify: FlexTypes.Justify;
-	wrap: FlexTypes.Wrap;
-}
+/**
+ * The alignment keywords, spelled out rather than assembled into a constant
+ * name at runtime. Written out so a keyword this engine does not implement
+ * reads as absent here, and so the solver's constants can be renumbered or
+ * renamed without a lookup silently answering null.
+ */
+const ALIGN_VALUES: Record<string, FlexTypes.Align | undefined> = {
+	"auto": Flex.ALIGN_AUTO,
+	"flex-start": Flex.ALIGN_FLEX_START,
+	"center": Flex.ALIGN_CENTER,
+	"flex-end": Flex.ALIGN_FLEX_END,
+	"stretch": Flex.ALIGN_STRETCH,
+	"baseline": Flex.ALIGN_BASELINE,
+	"space-between": Flex.ALIGN_SPACE_BETWEEN,
+	"space-around": Flex.ALIGN_SPACE_AROUND,
+	"space-evenly": Flex.ALIGN_SPACE_EVENLY,
+	"normal": Flex.ALIGN_NORMAL,
+};
 
-function getFlexConstant<TEnumName extends keyof EnumMap>(
-	enumName: TEnumName,
-	propertyName: string,
-): EnumMap[TEnumName] | null {
-	const name =
-		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
-	return (Flex as any)[name] || null;
-}
+const JUSTIFY_VALUES: Record<string, FlexTypes.Justify | undefined> = {
+	"flex-start": Flex.JUSTIFY_FLEX_START,
+	"center": Flex.JUSTIFY_CENTER,
+	"flex-end": Flex.JUSTIFY_FLEX_END,
+	"space-between": Flex.JUSTIFY_SPACE_BETWEEN,
+	"space-around": Flex.JUSTIFY_SPACE_AROUND,
+	"space-evenly": Flex.JUSTIFY_SPACE_EVENLY,
+	"normal": Flex.JUSTIFY_NORMAL,
+	"stretch": Flex.JUSTIFY_STRETCH,
+};
 
 /** A colspan/rowspan attribute, defaulting to 1 when absent or nonsense. */
 function parseSpanAttribute(element: Element, name: string): number {
@@ -871,7 +993,22 @@ function widthSizingConstant(value: string): number {
 	}
 }
 
+/**
+ * An element's computed style, onto its layout node. Assigned as one change:
+ * scores of properties land on the same node, and the solver's ancestors need
+ * telling once, not once per property.
+ */
 function styleFlexNode(
+	element: Element,
+	flexNode: FlexTypes.Node,
+	positionedElements?: Set<Element>,
+): void {
+	flexNode.styleAll(() => {
+		styleFlexNodeProperties(element, flexNode, positionedElements);
+	});
+}
+
+function styleFlexNodeProperties(
 	element: Element,
 	flexNode: FlexTypes.Node,
 	positionedElements?: Set<Element>,
@@ -883,7 +1020,8 @@ function styleFlexNode(
 	const computedStyle = computedStyleOf(element);
 
 	// Skip box model properties for inline elements (not inline-block)
-	const display = computedStyle.computedValueOf("display");
+	const display = DISPLAY_CODES[computedStyle.computedValueOf("display")] ??
+		DISPLAY_BLOCK;
 	// A flex item is BLOCKIFIED (css-display-3 §2.7): `display: inline` on a
 	// flex container's child computes to block, so its width and height apply
 	// like any block's. Forcing them auto here let the measure function answer
@@ -891,7 +1029,7 @@ function styleFlexNode(
 	// flex row came out as wide as its text.
 	const parentIsFlex = hasItemParent(element);
 	// Handle width/height based on display type
-	if (display === "inline" && !parentIsFlex) {
+	if (display === DISPLAY_INLINE && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
 		flexNode.setWidthSizing(Flex.SIZING_NONE);
@@ -936,7 +1074,7 @@ function styleFlexNode(
 
 	// An aspect ratio sizes a box, which an inline box is not; everything
 	// else carries it to the engine.
-	if (display === "inline" && !parentIsFlex) {
+	if (display === DISPLAY_INLINE && !parentIsFlex) {
 		flexNode.setAspectRatio(undefined);
 	} else {
 		flexNode.setAspectRatio(
@@ -949,7 +1087,7 @@ function styleFlexNode(
 	// padding, margin and border like any block (css-display-3 §2.7). Without
 	// the parentIsFlex exception, `.row{display:flex} .row span{padding:1}`
 	// dropped the span's padding entirely.
-	if (display === "inline" && !parentIsFlex) {
+	if (display === DISPLAY_INLINE && !parentIsFlex) {
 		// Clear all box model properties for inline elements
 		flexNode.setMargin(Flex.EDGE_TOP, 0);
 		flexNode.setMargin(Flex.EDGE_RIGHT, 0);
@@ -1123,7 +1261,7 @@ function styleFlexNode(
 	// the flex node must not add padding+border again on the CROSS axis (it
 	// double-counts, e.g. a bordered textarea in a flex row is too tall). Zero the
 	// cross-axis edges only -- the main axis is masked by flex sizing.
-	if (display === "inline-block" && hasFlexParent(element)) {
+	if (display === DISPLAY_INLINE_BLOCK && hasFlexParent(element)) {
 		const direction = getPropertyValue(
 			element.parentElement!,
 			"flex-direction",
@@ -1211,34 +1349,36 @@ function styleFlexNode(
 		flexNode.setGap(Flex.GUTTER_COLUMN, columnGap);
 	}
 
-	if (display === "none") {
+	if (display === DISPLAY_NONE) {
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
-	} else if (display === "grid" || display === "inline-grid") {
+	} else if (display === DISPLAY_GRID || display === DISPLAY_INLINE_GRID) {
 		flexNode.setDisplay(Flex.DISPLAY_GRID);
 		applyGridContainer(flexNode, computedStyle);
-	} else if (display === "flex") {
+	} else if (display === DISPLAY_FLEX) {
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
-	} else if (display === "table") {
+	} else if (display === DISPLAY_TABLE) {
 		// A layout mode of its own: columns are shared across rows, which a box
 		// per <tr> stacked on its own structurally cannot express.
 		flexNode.setDisplay(Flex.DISPLAY_TABLE);
 		flexNode.setBorderCollapse(
 			computedStyle.computedValueOf("border-collapse") === "collapse",
 		);
-	} else if (display === "table-header-group") {
+	} else if (display === DISPLAY_TABLE_HEADER_GROUP) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_HEADER_GROUP);
-	} else if (display === "table-footer-group") {
+	} else if (display === DISPLAY_TABLE_FOOTER_GROUP) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_FOOTER_GROUP);
-	} else if (display === "table-row-group") {
+	} else if (display === DISPLAY_TABLE_ROW_GROUP) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_ROW_GROUP);
-	} else if (display === "table-caption") {
+	} else if (display === DISPLAY_TABLE_CAPTION) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_CAPTION);
-	} else if (display === "table-column" || display === "table-column-group") {
+	} else if (
+		display === DISPLAY_TABLE_COLUMN || display === DISPLAY_TABLE_COLUMN_GROUP
+	) {
 		// Columns carry style, not a box of their own.
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
-	} else if (display === "table-row") {
+	} else if (display === DISPLAY_TABLE_ROW) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_ROW);
-	} else if (display === "table-cell") {
+	} else if (display === DISPLAY_TABLE_CELL) {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_CELL);
 		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
@@ -1255,7 +1395,7 @@ function styleFlexNode(
 	}
 
 	// Handle flex direction for flex containers (not table-row which has fixed direction)
-	if (display === "flex") {
+	if (display === DISPLAY_FLEX) {
 		const flexDirection = computedStyle.computedValueOf("flex-direction");
 		if (flexDirection === "row") {
 			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
@@ -1281,33 +1421,22 @@ function styleFlexNode(
 		}
 
 		const justifyContent = computedStyle.computedValueOf("justify-content");
-		const justifyValue = getFlexConstant("justify", justifyContent);
-		if (justifyValue !== null) {
-			flexNode.setJustifyContent(justifyValue);
-		} else {
-			flexNode.setJustifyContent(Flex.JUSTIFY_FLEX_START);
-		}
+		flexNode.setJustifyContent(
+			JUSTIFY_VALUES[justifyContent] ?? Flex.JUSTIFY_FLEX_START,
+		);
 
 		const alignItems = computedStyle.computedValueOf("align-items");
-		const alignValue = getFlexConstant("align", alignItems);
-		if (alignValue !== null) {
-			flexNode.setAlignItems(alignValue);
-		} else {
-			flexNode.setAlignItems(Flex.ALIGN_STRETCH);
-		}
+		flexNode.setAlignItems(ALIGN_VALUES[alignItems] ?? Flex.ALIGN_STRETCH);
 
 		const alignContent = computedStyle.computedValueOf("align-content");
-		const alignContentValue = getFlexConstant("align", alignContent);
-		if (alignContentValue !== null) {
-			flexNode.setAlignContent(alignContentValue);
-		} else {
-			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
-		}
+		flexNode.setAlignContent(
+			ALIGN_VALUES[alignContent] ?? Flex.ALIGN_FLEX_START,
+		);
 	} else if (
-		display !== "none" &&
-		display !== "grid" &&
-		display !== "inline-grid" &&
-		!display.startsWith("table")
+		display !== DISPLAY_NONE &&
+		display !== DISPLAY_GRID &&
+		display !== DISPLAY_INLINE_GRID &&
+		(display & TABLE_DISPLAY) === 0
 	) {
 		// Block layout. Displays decided above (table parts, `none`) must not be
 		// overwritten here. Resetting a table-caption to block leaves the table
@@ -1327,42 +1456,42 @@ function styleFlexNode(
 	flexNode.setBlockFormattingContext(
 		element === element.ownerDocument?.documentElement ||
 		element.tagName === "BODY" ||
-		(display !== "block" && display !== "list-item") ||
+		(display !== DISPLAY_BLOCK && display !== DISPLAY_LIST_ITEM) ||
 		computedStyle.computedValueOf("overflow") !== "visible" ||
 		isOutOfFlow(element) ||
 		parentIsFlex,
 	);
 
 	// Handle positioning properties
-	const position = computedStyle.computedValueOf("position");
+	const position =
+		POSITION_CODES[computedStyle.computedValueOf("position")] ??
+		POSITION_STATIC;
 	// The stacking-context painter hoists positioned boxes to their context
 	// root; this registry is how it finds them without an O(document) sweep
 	// per frame. Membership follows the style application that created or
 	// restyled the box.
 	if (positionedElements) {
-		if (position && position !== "static") {
+		if ((position & POSITIONED) !== 0) {
 			positionedElements.add(element);
 		} else {
 			positionedElements.delete(element);
 		}
 	}
-	if (position === "absolute") {
+	if (position === POSITION_ABSOLUTE) {
 		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
 		applyInsets(flexNode, computedStyle, INSET_EDGES, true);
-	} else if (position === "relative") {
+	} else if (position === POSITION_RELATIVE) {
 		flexNode.setPositionType(Flex.POSITION_TYPE_RELATIVE);
 		// A relative box is offset from where it would have sat, and the offset
 		// this engine applies is the start-edge one: `right`/`bottom` alone do
 		// not move it.
 		applyInsets(flexNode, computedStyle, INSET_EDGES.slice(0, 2), false);
-	} else if (position === "fixed") {
+	} else if (position === POSITION_FIXED) {
 		// The viewport is the containing block, and there is no fixed position
 		// type in the compute core: absolute against the root is the same
 		// placement, and the camera is what keeps it still.
 		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
 		applyInsets(flexNode, computedStyle, INSET_EDGES, false);
-	} else if (position === "static") {
-		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
 	} else {
 		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
 	}
@@ -1599,7 +1728,7 @@ function containerBox(
 	const opened = new Map<Box, Node[]>();
 	// A flex or grid container puts every element child in a box of its own
 	// and gathers only its contiguous text into anonymous ones.
-	const inFlex = laysOutItems(getPropertyValue(container, "display"));
+	const inFlex = laysOutItems(displayOf(container));
 	let run: Box | null = null;
 	// The enumeration below decides it again; a container that no longer
 	// reaches through a broken inline stops holding its fragments.
@@ -1607,9 +1736,9 @@ function containerBox(
 	for (const child of flowChildren(layout, container)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			const element = child as Element;
-			const display = getPropertyValue(element, "display");
+			const display = displayOf(element);
 			const inlineLevel = isInlineDisplay(display);
-			if (display === "none" || isOutOfFlow(element)) {
+			if (display === DISPLAY_NONE || isOutOfFlow(element)) {
 				const own = principalBox(layout, child, box);
 				heads.set(child, run ?? own);
 				// A hidden block still holds a box slot. An out-of-flow box
@@ -1758,7 +1887,7 @@ function boxKindMatches(
 		return false;
 	}
 	return (
-		(getPropertyValue(element, "display") === "none") ===
+		(displayOf(element) === DISPLAY_NONE) ===
 		(flexNode.getDisplay() === Flex.DISPLAY_NONE)
 	);
 }
@@ -1811,7 +1940,7 @@ function boxEntryOf(
 		if (isOutOfFlow(element)) {
 			return null;
 		}
-		if (!isInlineDisplay(getPropertyValue(element, "display"))) {
+		if (!isInlineDisplay(displayOf(element))) {
 			return null;
 		}
 	} else if (node.nodeType !== node.TEXT_NODE) {
@@ -1886,7 +2015,7 @@ function syncContainerRuns(
 ): void {
 	layout[kDirtyRunContainers].delete(container);
 	if (
-		getPropertyValue(container, "display") === "none" ||
+		displayOf(container) === DISPLAY_NONE ||
 		hiddenByAncestor(layout, container)
 	) {
 		// Content that arrives under the boundary generates no box, and
@@ -2079,7 +2208,7 @@ function runContainerOf(
 	}
 	const startsOwnRun =
 		node.nodeType === node.ELEMENT_NODE &&
-		getPropertyValue(node as Element, "display") !== "inline";
+		displayOf(node as Element) !== DISPLAY_INLINE;
 	return runContainerFrom(layout, parent, startsOwnRun);
 }
 
@@ -2104,10 +2233,10 @@ function runContainerFrom(
 		if (isOutOfFlow(current)) {
 			return current;
 		}
-		const display = getPropertyValue(current, "display");
+		const display = displayOf(current);
 		// An inline box is transparent: its content belongs to the run
 		// around it.
-		if (display === "inline") {
+		if (display === DISPLAY_INLINE) {
 			continue;
 		}
 		if (isAtomicInline(display)) {
@@ -2169,7 +2298,7 @@ function addNode(
 	// always assumed.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
-			getPropertyValue(node as Element, "position") === "fixed" ?
+			positionOf(node as Element) === POSITION_FIXED ?
 				layout.viewportRootNode :
 					containingBlockFlexNode(layout, node as Element);
 		if (containingBlock) {
@@ -2274,7 +2403,7 @@ function addElementNode(
 	element: Element,
 	parentFlexNode: FlexTypes.Node | null = null,
 ): void {
-	const display = getPropertyValue(element, "display");
+	const display = displayOf(element);
 	const asRun = measuresAsRun(layout, element);
 
 	// Inline-level content lays out in its container's anonymous boxes,
@@ -2306,7 +2435,7 @@ function addElementNode(
 
 	styleNode(layout, element, flexNode);
 
-	if (display === "none") {
+	if (display === DISPLAY_NONE) {
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
 		if (flexNode && parentFlexNode) {
 			placeChild(parentFlexNode, flexNode, flexIndex);
@@ -2480,7 +2609,7 @@ function syncContentRoot(
 	element: Element,
 ): void {
 	const box = principalBox(layout, element);
-	const display = getPropertyValue(element, "display");
+	const display = displayOf(element);
 	// An inline-grid ALWAYS lays its own content out: every one of its
 	// children is a grid item, and a grid is not something a line can
 	// contain piecemeal. An inline-block only needs a root of its own once
@@ -2489,7 +2618,7 @@ function syncContentRoot(
 	// Never a plain inline: an inline containing a block is BROKEN around
 	// it, and taking its content here would steal back the boxes that
 	// belong to its container.
-	const grid = display === "inline-grid";
+	const grid = display === DISPLAY_INLINE_GRID;
 	if (
 		!isAtomicInline(display) ||
 		(!grid && !containsBlockLevelBox(layout, element))
@@ -2699,8 +2828,7 @@ function containingBlockFlexNode(
 		ancestor;
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		const position = getPropertyValue(ancestor, "position");
-		if (position && position !== "static") {
+		if ((positionOf(ancestor) & POSITIONED) !== 0) {
 			const flexNode = layout.nodeMap.get(ancestor);
 			// A measure-function node cannot take flex children; a
 			// positioned inline-block can't serve as a flex containing
@@ -2723,7 +2851,7 @@ function hiddenByAncestor(
 		ancestor;
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if (getPropertyValue(ancestor, "display") === "none") {
+		if (displayOf(ancestor) === DISPLAY_NONE) {
 			return true;
 		}
 	}
@@ -2910,7 +3038,7 @@ function firstComposedRenderableChild(
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (
 			child.nodeType === child.ELEMENT_NODE &&
-			(getPropertyValue(child as Element, "display") === "none" ||
+			(displayOf(child as Element) === DISPLAY_NONE ||
 				isOutOfFlow(child))
 		) {
 			continue;
@@ -3706,7 +3834,7 @@ function collectLeafNodes(
 	// line, so the walk cannot stop at </span>. An out-of-flow inline is
 	// where the climb stops: it is blockified (css-display-3 §2.7) and lays
 	// its own content out.
-	const parentDisplay = getPropertyValue(parentElement, "display");
+	const parentDisplay = displayOf(parentElement);
 	let traversalRoot: Node;
 	if (laysOutItems(parentDisplay) && node.nodeType === node.ELEMENT_NODE) {
 		traversalRoot = node;
@@ -3715,7 +3843,7 @@ function collectLeafNodes(
 		for (
 			let ancestor = boxParentElement(root);
 			ancestor &&
-			getPropertyValue(root, "display") === "inline" &&
+			displayOf(root) === DISPLAY_INLINE &&
 			!isOutOfFlow(root);
 			ancestor = boxParentElement(root)
 		) {
@@ -3791,10 +3919,10 @@ function collectLeavesUnder(
 			}
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = getPropertyValue(element, "display");
+			const display = displayOf(element);
 
 			if (
-				getPropertyValue(element, "display") === "none" ||
+				displayOf(element) === DISPLAY_NONE ||
 				isOutOfFlow(element)
 			) {
 				// No box here (none) or a box ELSEWHERE (out of flow):
@@ -4131,7 +4259,7 @@ function collectLeavesUnder(
 				if (!skipSubtree(walker)) {
 					break;
 				}
-			} else if (display === "inline") {
+			} else if (display === DISPLAY_INLINE) {
 				// Inline element - traverse into its children
 				if (!walker.nextNode()) {
 					break;
@@ -4870,7 +4998,7 @@ function inlineBlockRect(
 	}
 	let descended = false;
 	for (const ancestor of enclosing) {
-		if (!isAtomicInline(getPropertyValue(ancestor, "display"))) {
+		if (!isAtomicInline(displayOf(ancestor))) {
 			continue;
 		}
 		const hop = findInlineBlockSegment(breakResult, ancestor);
@@ -5304,7 +5432,7 @@ function staticPosition(
 		return null;
 	}
 	if (
-		NO_STATIC_POSITION_DISPLAYS.has(getPropertyValue(container, "display"))
+		(displayOf(container) & NO_STATIC_POSITION_DISPLAYS) !== 0
 	) {
 		return null;
 	}
@@ -5544,7 +5672,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	// Handle element nodes
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
-		const display = getPropertyValue(element, "display");
+		const display = displayOf(element);
 
 		// For block elements, return empty array (no inline text layout)
 		if (!isInlineDisplay(display)) {
@@ -5564,7 +5692,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 						fragments.push(...rectTextsOf(layout, child));
 					} else if (
 						child.nodeType === child.ELEMENT_NODE &&
-						isInlineDisplay(getPropertyValue(child as Element, "display"))
+						isInlineDisplay(displayOf(child as Element))
 					) {
 						walk(child as Element);
 					}
@@ -5718,7 +5846,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	if (runHead.nodeType === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
-			getPropertyValue(runHeadElement, "display") === "inline" &&
+			displayOf(runHeadElement) === DISPLAY_INLINE &&
 			hasItemParent(runHeadElement)
 		) {
 			const runHeadBox = getBoxModel(runHeadElement);
@@ -5745,7 +5873,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
 		const parent = flatParentElement<Element>(currentNode)!;
 
-		if (isAtomicInline(getPropertyValue(parent, "display"))) {
+		if (isAtomicInline(displayOf(parent))) {
 			// An overflow-scrolled inline-block (a field's windowed value,
 			// scrollLeft set by the caret-follow) shifts its content by its
 			// own scroll, so the caret stays in view. A property of the box,
@@ -5803,7 +5931,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if (getPropertyValue(ancestor, "position") === "relative") {
+		if (positionOf(ancestor) === POSITION_RELATIVE) {
 			const left = parseUnitValue(getPropertyValue(ancestor, "left"));
 			const top = parseUnitValue(getPropertyValue(ancestor, "top"));
 			if (typeof left === "number") {
@@ -5906,9 +6034,6 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 // LayoutEngine
 // ---------------------------------------------------------------------------
 
-const kLayoutStale = Symbol("layoutStale");
-const kFrameDirty = Symbol("frameDirty");
-
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
@@ -5963,7 +6088,7 @@ export class LayoutEngine {
 
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
-		this.invalidateStructure();
+		this.invalidate();
 		if (this[kTerminalReordersText] === value) {
 			return;
 		}
@@ -5975,7 +6100,7 @@ export class LayoutEngine {
 	}
 
 	invalidateTextMeasurement(): void {
-		this.invalidateStructure();
+		this.invalidate();
 		for (const flexNode of this[kMeasureNodes]) {
 			flexNode.markDirty();
 		}
@@ -5996,8 +6121,8 @@ export class LayoutEngine {
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
 		this[kDerivedContainers] = new WeakSet<Element>();
-		this[kLayoutStale] = true;
-		this[kFrameDirty] = false;
+		this.generation = 0;
+		this.invalidations = 0;
 		this[kAnonymousBoxes] = new Map<FlexTypes.Node, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
@@ -6048,7 +6173,7 @@ export class LayoutEngine {
 	calculateLayout(): void {
 		// Geometry moves with the pass, so anything memoized behind a flush --
 		// a resolved value, a rect -- re-measures after it.
-		this[kLayoutStale] = true;
+		this.generation++;
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be named against the styles that stand rather than the ones that
 		// were on their way out.
@@ -6424,13 +6549,13 @@ export class LayoutEngine {
 	}
 
 	getRect(element: Element): DOMRect | null {
-		const display = getPropertyValue(element, "display");
+		const display = displayOf(element);
 
 		// A display:none element generates no box, so there is no geometry to
 		// report -- the layout node it keeps is a placeholder holding its slot
 		// among its container's children, not a box. Its client rects are empty
 		// and its resolved values are the computed ones (CSSOM View §4).
-		if (display === "none") {
+		if (display === DISPLAY_NONE) {
 			return null;
 		}
 
@@ -6464,7 +6589,7 @@ export class LayoutEngine {
 			// node's width, which for an empty inline is its containing block's,
 			// so `<div style="width:30ch"><span></span></div>` measured the span
 			// at 30 columns. inline-block keeps the fallback: its node IS its box.
-			if (display === "inline") {
+			if (display === DISPLAY_INLINE) {
 				const elementFlexNode = runFlexNode(this, element);
 				// No layout node means the element was removed or never laid
 				// out -- null, exactly as the block fallback below reports it.
@@ -6512,7 +6637,7 @@ export class LayoutEngine {
 		// all, and returning none made it invisible to elementFromPoint.
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			if (usedDisplay(element) !== "inline") {
+			if (usedDisplay(element) !== DISPLAY_INLINE) {
 				const rect = this.getRect(element);
 				return rect ? [rect] : [];
 			}
@@ -6910,8 +7035,25 @@ export class LayoutEngine {
 	 */
 	declare [kDerivedContainers]: WeakSet<Element>;
 
-	declare [kLayoutStale]: boolean;
-	declare [kFrameDirty]: boolean;
+	/**
+	 * Two counters, because there are two questions and they differ in who
+	 * moves them. Both are written only here, and a reader that cares
+	 * remembers the number it last acted on and compares -- which is what a
+	 * flag two objects shared could never say cleanly.
+	 *
+	 * `generation` moves whenever the geometry this engine reports could
+	 * differ from a moment ago: an invalidation, and also every layout pass,
+	 * since the pass itself moves boxes. The cascade's used-value cache keys
+	 * on it.
+	 *
+	 * `invalidations` moves only when something was actually invalidated. A
+	 * pass that re-measures does not move it, which is what lets the frame
+	 * loop tell "the layout ran" from "the layout changed" -- the scroll band
+	 * shifts rows the last frame painted, and may only do so when nothing
+	 * those rows were derived from has moved.
+	 */
+	declare generation: number;
+	declare invalidations: number;
 
 	/**
 	 * Note that something a frame is derived from has moved. The caches the
@@ -6924,48 +7066,8 @@ export class LayoutEngine {
 	 * record describes.
 	 */
 	invalidateFrame(): void {
-		this[kLayoutStale] = true;
-		this[kFrameDirty] = true;
-	}
-
-	/**
-	 * Note an UNBOUNDED change: a stylesheet reparse, a shadow attachment, a
-	 * pseudo-element change, the bidi reorder flip. Which boxes a container
-	 * has can have moved anywhere, so no derivation still stands: the record
-	 * of which ones do is dropped whole.
-	 */
-	invalidateStructure(): void {
-		this[kDerivedContainers] = new WeakSet<Element>();
-		this.invalidateFrame();
-	}
-
-	/**
-	 * Whether anything a frame reads has moved since the paint that cleared
-	 * this. The frame loop reads it to decide whether to paint at all, and
-	 * writes false once it has.
-	 */
-	get frameDirty(): boolean {
-		return this[kFrameDirty];
-	}
-
-	set frameDirty(value: boolean) {
-		this[kFrameDirty] = value;
-	}
-
-	/**
-	 * Whether geometry could have moved since the flush that cleared this:
-	 * every layout pass sets it, and so does every cascade invalidation -- a
-	 * style written and then measured has moved geometry the engine has not
-	 * been told about yet, and a flag that stood still there would hand the
-	 * reader the layout standing behind the write. The used-value reader
-	 * flushes on it and writes false.
-	 */
-	get layoutStale(): boolean {
-		return this[kLayoutStale];
-	}
-
-	set layoutStale(value: boolean) {
-		this[kLayoutStale] = value;
+		this.generation++;
+		this.invalidations++;
 	}
 
 	/**
@@ -6985,16 +7087,26 @@ export class LayoutEngine {
 	declare [kDirtyRunContainers]: Set<Element>;
 
 	/**
-	 * Invalidate a node, handling both block and inline elements appropriately
-	 * For inline elements, invalidates the entire inline run
-	 * For block elements, invalidates their layout by removing from nodeMap
+	 * Note that boxes must be rebuilt: one node's, or -- with no node in
+	 * particular -- every derivation this engine holds.
+	 *
+	 * A node re-enumerates its whole subtree, because run membership may have
+	 * moved: the invalidated node could be, or displace, a run head, and a
+	 * restyle inside the subtree can change any descendant's display and with
+	 * it the boxes its container holds. That is what the invalidation is about
+	 * to rebuild anyway.
+	 *
+	 * No node means an UNBOUNDED change -- a stylesheet reparse, a shadow
+	 * attachment, a pseudo-element change, the bidi reorder flip. Which boxes
+	 * a container has can have moved anywhere, so the record of which ones are
+	 * derived is dropped whole.
 	 */
-	invalidate(node: Node): void {
-		// Run membership may have moved: the invalidated node could be, or
-		// displace, a run head, and a restyle inside the subtree can change any
-		// descendant's display and with it the boxes its container holds. So
-		// the whole subtree re-enumerates -- which is what the invalidation
-		// itself is about to rebuild anyway.
+	invalidate(node?: Node): void {
+		if (node === undefined) {
+			this[kDerivedContainers] = new WeakSet<Element>();
+			this.invalidateFrame();
+			return;
+		}
 		restageSubtree(this, node);
 		invalidateNode(this, node);
 	}
@@ -7043,7 +7155,7 @@ export class LayoutEngine {
 			el;
 			el = flatParentElement<Element>(el)
 		) {
-			if (getPropertyValue(el, "position") === "fixed") {
+			if (positionOf(el) === POSITION_FIXED) {
 				return true;
 			}
 		}

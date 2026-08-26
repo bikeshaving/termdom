@@ -274,6 +274,8 @@ const kEverActivated = Symbol("everActivated");
 const kFrameScroll = Symbol("frameScroll");
 const kFrameBand = Symbol("frameBand");
 const kFrameDirty = Symbol("frameDirty");
+/** The engine invalidation count the last painted frame was built from. */
+const kPaintedGeneration = Symbol("paintedGeneration");
 
 const kScrollTop = Symbol("scrollTop");
 const kScreenTop = Symbol("screenTop");
@@ -410,6 +412,7 @@ export class TermDOM {
 	declare [kFrameScroll]: number;
 	declare [kFrameBand]: {element: Element; delta: number} | null;
 	declare [kFrameDirty]: boolean;
+	declare [kPaintedGeneration]: number;
 
 	/** How far into the document the painted region looks (window.scrollY). */
 	declare [kScrollTop]: number;
@@ -462,6 +465,7 @@ export class TermDOM {
 		this[kFrameBand] = null;
 
 		this[kFrameDirty] = true;
+		this[kPaintedGeneration] = -1;
 		this[kIsRendering] = false;
 		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
 		this[kNextRafId] = 1;
@@ -564,7 +568,7 @@ export class TermDOM {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
 			observer: this[kObserver],
-			invalidateStructure: () => this[kLayoutEngine].invalidateStructure(),
+			invalidateStructure: () => this[kLayoutEngine].invalidate(),
 			// A popover shows and hides without touching the tree, so the
 			// rules that test `:popover-open` -- the UA sheet's own display
 			// among them -- are told here, and the frame that paints what
@@ -1336,7 +1340,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// observer enrollment above will deliver.
 			// A shadow attachment recomposes the host's subtree with no
 			// mutation record, so no box enumeration still stands.
-			termDOM[kLayoutEngine].invalidateStructure();
+			termDOM[kLayoutEngine].invalidate();
 			termDOM[kStyleManager].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
@@ -2316,7 +2320,7 @@ function resolveScrollBand(
 		termdom[kFrameScroll] !== 0 ||
 		// Anything the layout derives a frame from has moved, so the rows the
 		// terminal would shift are not the rows the last frame painted.
-		termdom[kLayoutEngine].frameDirty ||
+		termdom[kLayoutEngine].invalidations !== termdom[kPaintedGeneration] ||
 		!record.element.isConnected
 	) {
 		return null;
@@ -2874,7 +2878,7 @@ async function renderInteractive(
 	// Don't pay to discover that.
 	if (
 		!termdom[kFrameDirty] &&
-		!termdom[kLayoutEngine].frameDirty &&
+		termdom[kLayoutEngine].invalidations === termdom[kPaintedGeneration] &&
 		termdom[kFrameScroll] === 0 &&
 		termdom[kFrameBand] === null &&
 		!termdom[kScreen].needsRepaint
@@ -2937,7 +2941,7 @@ async function renderInteractive(
 	termdom[kFrameScroll] = 0;
 	termdom[kFrameBand] = null;
 	termdom[kFrameDirty] = false;
-	termdom[kLayoutEngine].frameDirty = false;
+	termdom[kPaintedGeneration] = termdom[kLayoutEngine].invalidations;
 
 	if (ansi) {
 		await termdom[kExchange].write(ansi);

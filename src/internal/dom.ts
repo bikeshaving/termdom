@@ -49,7 +49,7 @@ const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
  */
 interface UAEngine {
 	layout: {
-		invalidate(node: object): void;
+		invalidate(node?: object): void;
 		calculateLayout(): void;
 		getRect(element: object): UARect | null;
 		lineFragments(text: object): UALineFragment[];
