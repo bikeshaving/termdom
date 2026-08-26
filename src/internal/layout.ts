@@ -145,17 +145,25 @@ function isContainingBlockType(positionType: PositionType): boolean {
 /** What a measurement is being asked for: no constraint, a size, or a cap. */
 type MeasureMode = "unconstrained" | "exactly" | "at-most";
 
-const EDGE_LEFT = 0;
-const EDGE_TOP = 1;
-const EDGE_RIGHT = 2;
-const EDGE_BOTTOM = 3;
-const EDGE_START = 4;
-const EDGE_END = 5;
-const EDGE_HORIZONTAL = 6;
-const EDGE_VERTICAL = 7;
-const EDGE_ALL = 8;
+/** A value held against each of the four physical edges of a box. */
+type Edges<T> = {left: T; top: T; right: T; bottom: T};
 
-type Edge = number;
+/** An edge a value is stored against. */
+type Edge = keyof Edges<unknown>;
+
+/**
+ * What a caller may NAME when setting an edge: the four it can be stored
+ * against, plus the shorthands that fan out across them. A distinct vocabulary
+ * from Edge, because none of the shorthands is a place a value can be kept --
+ * `expandEdge` is where the one becomes the other.
+ */
+type EdgeShorthand =
+	| Edge |
+	"start" |
+	"end" |
+	"horizontal" |
+	"vertical" |
+	"all";
 
 /**
  * The intrinsic sizing keywords of css-sizing-3 §5, carried beside a width of
@@ -380,26 +388,26 @@ function crossAxis(axis: FlexDirection): FlexDirection {
 function leadingEdge(axis: FlexDirection): Edge {
 	switch (axis) {
 		case "row":
-			return EDGE_LEFT;
+			return "left";
 		case "row-reverse":
-			return EDGE_RIGHT;
+			return "right";
 		case "column":
-			return EDGE_TOP;
+			return "top";
 		default:
-			return EDGE_BOTTOM;
+			return "bottom";
 	}
 }
 
 function trailingEdge(axis: FlexDirection): Edge {
 	switch (axis) {
 		case "row":
-			return EDGE_RIGHT;
+			return "right";
 		case "row-reverse":
-			return EDGE_LEFT;
+			return "left";
 		case "column":
-			return EDGE_BOTTOM;
+			return "bottom";
 		default:
-			return EDGE_TOP;
+			return "top";
 	}
 }
 
@@ -463,10 +471,10 @@ interface Style {
 	flexShrink: number;
 	flexBasis: Value;
 
-	margin: Value[];
-	position: Value[];
-	padding: Value[];
-	border: number[];
+	margin: Edges<Value>;
+	position: Edges<Value>;
+	padding: Edges<Value>;
+	border: Edges<number>;
 
 	width: Value;
 	/** SIZING_*: how an auto width resolves; none means fill or measure. */
@@ -490,9 +498,9 @@ interface LayoutResult {
 	top: number;
 	width: number;
 	height: number;
-	margin: number[];
-	padding: number[];
-	border: number[];
+	margin: Edges<number>;
+	padding: Edges<number>;
+	border: Edges<number>;
 	computedFlexBasis: number;
 	/** css-flexbox-1 §4.5 automatic minimum size, along the parent's main axis. */
 	autoMinMain: number;
@@ -573,25 +581,25 @@ function createStyle(): Style {
 		flexShrink: NaN,
 		flexBasis: AUTO_VALUE,
 
-		margin: [
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-		],
-		position: [
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-		],
-		padding: [
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-			UNDEFINED_VALUE,
-		],
-		border: [0, 0, 0, 0],
+		margin: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		position: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		padding: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		border: {left: 0, top: 0, right: 0, bottom: 0},
 
 		width: AUTO_VALUE,
 		widthSizing: "none",
@@ -610,9 +618,9 @@ function createLayout(): LayoutResult {
 		top: 0,
 		width: NaN,
 		height: NaN,
-		margin: [0, 0, 0, 0],
-		padding: [0, 0, 0, 0],
-		border: [0, 0, 0, 0],
+		margin: {left: 0, top: 0, right: 0, bottom: 0},
+		padding: {left: 0, top: 0, right: 0, bottom: 0},
+		border: {left: 0, top: 0, right: 0, bottom: 0},
 		computedFlexBasis: NaN,
 		autoMinMain: NaN,
 		lineIndex: 0,
@@ -1249,32 +1257,32 @@ class LayoutNode {
 		this.markDirty();
 	}
 
-	setMargin(edge: Edge, v: number | undefined): void {
+	setMargin(edge: EdgeShorthand, v: number | undefined): void {
 		setEdges(this, this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 
-	setMarginPercent(edge: Edge, v: number): void {
+	setMarginPercent(edge: EdgeShorthand, v: number): void {
 		setEdges(this, this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
-	setMarginAuto(edge: Edge): void {
+	setMarginAuto(edge: EdgeShorthand): void {
 		setEdges(this, this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
-	setPadding(edge: Edge, v: number | undefined): void {
+	setPadding(edge: EdgeShorthand, v: number | undefined): void {
 		setEdges(this, this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 
-	setPaddingPercent(edge: Edge, v: number): void {
+	setPaddingPercent(edge: EdgeShorthand, v: number): void {
 		setEdges(this, this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
-	setBorder(edge: Edge, v: number | undefined): void {
+	setBorder(edge: EdgeShorthand, v: number | undefined): void {
 		const width = v === undefined || Number.isNaN(v) ? 0 : v;
 		for (const index of expandEdge(edge)) {
 			this.style.border[index] = width;
@@ -1282,17 +1290,17 @@ class LayoutNode {
 		this.markDirty();
 	}
 
-	setPosition(edge: Edge, v: number | undefined): void {
+	setPosition(edge: EdgeShorthand, v: number | undefined): void {
 		setEdges(this, this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 
-	setPositionPercent(edge: Edge, v: number): void {
+	setPositionPercent(edge: EdgeShorthand, v: number): void {
 		setEdges(this, this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
-	setPositionAuto(edge: Edge): void {
+	setPositionAuto(edge: EdgeShorthand): void {
 		setEdges(this, this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
 	}
@@ -1406,8 +1414,8 @@ function markDirtyUpward(
 
 function setEdges(
 	node: LayoutNode,
-	target: Value[],
-	edge: Edge,
+	target: Edges<Value>,
+	edge: EdgeShorthand,
 	value: Value,
 ): void {
 	for (const index of expandEdge(edge)) {
@@ -1415,26 +1423,24 @@ function setEdges(
 	}
 }
 
-function expandEdge(edge: Edge): number[] {
+function expandEdge(edge: EdgeShorthand): readonly Edge[] {
 	switch (edge) {
-		case EDGE_LEFT:
-		case EDGE_START:
-			return [EDGE_LEFT];
-		case EDGE_TOP:
-			return [EDGE_TOP];
-		case EDGE_RIGHT:
-		case EDGE_END:
-			return [EDGE_RIGHT];
-		case EDGE_BOTTOM:
-			return [EDGE_BOTTOM];
-		case EDGE_HORIZONTAL:
-			return [EDGE_LEFT, EDGE_RIGHT];
-		case EDGE_VERTICAL:
-			return [EDGE_TOP, EDGE_BOTTOM];
-		case EDGE_ALL:
-			return [EDGE_LEFT, EDGE_TOP, EDGE_RIGHT, EDGE_BOTTOM];
-		default:
-			return [];
+		case "left":
+		case "start":
+			return ["left"];
+		case "top":
+			return ["top"];
+		case "right":
+		case "end":
+			return ["right"];
+		case "bottom":
+			return ["bottom"];
+		case "horizontal":
+			return ["left", "right"];
+		case "vertical":
+			return ["top", "bottom"];
+		case "all":
+			return ["left", "top", "right", "bottom"];
 	}
 }
 
@@ -1491,7 +1497,7 @@ function alignSelfOf(parent: LayoutNode, child: LayoutNode): Align {
  * box, and baseline alignment is precisely what compensates for them.
  */
 function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
-	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+	const contentTop = paddingAndBorderForEdge(node, "top", ownerWidth);
 
 	for (const child of node.children) {
 		if (child.style.mode === "none") {
@@ -1654,20 +1660,20 @@ function constrainMaxSizeForMode(
 
 /** Resolve a node's four margins against the width percentages are taken from. */
 function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
-	node.layout.margin[EDGE_LEFT] = resolveMargin(
-		node.style.margin[EDGE_LEFT],
+	node.layout.margin.left = resolveMargin(
+		node.style.margin.left,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_TOP] = resolveMargin(
-		node.style.margin[EDGE_TOP],
+	node.layout.margin.top = resolveMargin(
+		node.style.margin.top,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_RIGHT] = resolveMargin(
-		node.style.margin[EDGE_RIGHT],
+	node.layout.margin.right = resolveMargin(
+		node.style.margin.right,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_BOTTOM] = resolveMargin(
-		node.style.margin[EDGE_BOTTOM],
+	node.layout.margin.bottom = resolveMargin(
+		node.style.margin.bottom,
 		ownerWidth,
 	);
 }
@@ -3108,10 +3114,10 @@ function layoutAbsoluteChild(
 	const parentWidth = node.layout.width;
 	const parentHeight = node.layout.height;
 
-	const borderLeft = node.style.border[EDGE_LEFT];
-	const borderTop = node.style.border[EDGE_TOP];
-	const borderRight = node.style.border[EDGE_RIGHT];
-	const borderBottom = node.style.border[EDGE_BOTTOM];
+	const borderLeft = node.style.border.left;
+	const borderTop = node.style.border.top;
+	const borderRight = node.style.border.right;
+	const borderBottom = node.style.border.bottom;
 
 	// The containing block: the parent's padding box, or -- for a grid child
 	// the author placed on lines -- its grid area (css-grid-2 §9.2).
@@ -3124,16 +3130,16 @@ function layoutAbsoluteChild(
 	const basisWidth = area ? area.width : parentWidth;
 	const basisHeight = area ? area.height : parentHeight;
 
-	const left = resolveValue(child.style.position[EDGE_LEFT], basisWidth);
-	const top = resolveValue(child.style.position[EDGE_TOP], basisHeight);
-	const right = resolveValue(child.style.position[EDGE_RIGHT], basisWidth);
-	const bottom = resolveValue(child.style.position[EDGE_BOTTOM], basisHeight);
+	const left = resolveValue(child.style.position.left, basisWidth);
+	const top = resolveValue(child.style.position.top, basisHeight);
+	const right = resolveValue(child.style.position.right, basisWidth);
+	const bottom = resolveValue(child.style.position.bottom, basisHeight);
 
-	const marginLeft = resolveMargin(child.style.margin[EDGE_LEFT], basisWidth);
-	const marginTop = resolveMargin(child.style.margin[EDGE_TOP], basisWidth);
-	const marginRight = resolveMargin(child.style.margin[EDGE_RIGHT], basisWidth);
+	const marginLeft = resolveMargin(child.style.margin.left, basisWidth);
+	const marginTop = resolveMargin(child.style.margin.top, basisWidth);
+	const marginRight = resolveMargin(child.style.margin.right, basisWidth);
 	const marginBottom = resolveMargin(
-		child.style.margin[EDGE_BOTTOM],
+		child.style.margin.bottom,
 		basisWidth,
 	);
 
@@ -3141,10 +3147,10 @@ function layoutAbsoluteChild(
 	// placed in the space the insets leave rather than stretched across it --
 	// the same reading the in-flow block path gives `margin: auto`, and what
 	// centers a modal dialog in the viewport.
-	const autoLeft = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
-	const autoRight = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
-	const autoTop = child.style.margin[EDGE_TOP].unit === UNIT_AUTO;
-	const autoBottom = child.style.margin[EDGE_BOTTOM].unit === UNIT_AUTO;
+	const autoLeft = child.style.margin.left.unit === UNIT_AUTO;
+	const autoRight = child.style.margin.right.unit === UNIT_AUTO;
+	const autoTop = child.style.margin.top.unit === UNIT_AUTO;
+	const autoBottom = child.style.margin.bottom.unit === UNIT_AUTO;
 	const shrinkAcross =
 		isDefined(left) && isDefined(right) && autoLeft && autoRight;
 	const shrinkDown =
@@ -3682,10 +3688,10 @@ function layoutTable(
 
 	const leftPaddingBorder = paddingAndBorderForEdge(
 		node,
-		EDGE_LEFT,
+		"left",
 		ownerWidth,
 	);
-	const topPaddingBorder = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+	const topPaddingBorder = paddingAndBorderForEdge(node, "top", ownerWidth);
 
 	const {rows, captions, groups} = collectTableRows(node);
 	const {cells, columnCount} = buildTableGrid(rows);
@@ -4623,7 +4629,7 @@ function measureBaselineShims(
 				false,
 			);
 			const baseline =
-				resolveMargin(item.node.style.margin[EDGE_TOP], ownerWidth) +
+				resolveMargin(item.node.style.margin.top, ownerWidth) +
 				baselineWithinBorderBox(item.node, ownerWidth);
 			baselines.set(item, baseline);
 			furthest = Math.max(furthest, baseline);
@@ -5260,10 +5266,10 @@ function layoutGridItem(
 	const justify = gridSelfAlign(node, child, true);
 	const align = gridSelfAlign(node, child, false);
 
-	const autoLeft = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
-	const autoRight = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
-	const autoTop = child.style.margin[EDGE_TOP].unit === UNIT_AUTO;
-	const autoBottom = child.style.margin[EDGE_BOTTOM].unit === UNIT_AUTO;
+	const autoLeft = child.style.margin.left.unit === UNIT_AUTO;
+	const autoRight = child.style.margin.right.unit === UNIT_AUTO;
+	const autoTop = child.style.margin.top.unit === UNIT_AUTO;
+	const autoBottom = child.style.margin.bottom.unit === UNIT_AUTO;
 
 	const marginRow = marginForAxis(child, "row", ownerWidth);
 	const marginColumn = marginForAxis(child, "column", ownerWidth);
@@ -5337,11 +5343,11 @@ function layoutGridItem(
 	child.layout.left =
 		areaLeft +
 		alignmentOffset(justify, freeX, autoLeft, autoRight) +
-		resolveMargin(child.style.margin[EDGE_LEFT], ownerWidth);
+		resolveMargin(child.style.margin.left, ownerWidth);
 	child.layout.top =
 		areaTop +
 		alignmentOffset(align, freeY, autoTop, autoBottom) +
-		resolveMargin(child.style.margin[EDGE_TOP], ownerWidth);
+		resolveMargin(child.style.margin.top, ownerWidth);
 }
 
 /**
@@ -5457,8 +5463,8 @@ function layoutGrid(
 	);
 	const marginRow = marginForAxis(node, "row", ownerWidth);
 	const marginColumn = marginForAxis(node, "column", ownerWidth);
-	const contentLeft = paddingAndBorderForEdge(node, EDGE_LEFT, ownerWidth);
-	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+	const contentLeft = paddingAndBorderForEdge(node, "left", ownerWidth);
+	const contentTop = paddingAndBorderForEdge(node, "top", ownerWidth);
 
 	const innerWidth = isDefined(availableWidth) ?
 			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
@@ -5929,15 +5935,15 @@ function absoluteGridArea(
 		return null;
 	}
 
-	const paddingLeft = node.style.border[EDGE_LEFT];
-	const paddingTop = node.style.border[EDGE_TOP];
+	const paddingLeft = node.style.border.left;
+	const paddingTop = node.style.border.top;
 	const paddingRight = Math.max(
 		0,
-		node.layout.width - node.style.border[EDGE_RIGHT],
+		node.layout.width - node.style.border.right,
 	);
 	const paddingBottom = Math.max(
 		0,
-		node.layout.height - node.style.border[EDGE_BOTTOM],
+		node.layout.height - node.style.border.bottom,
 	);
 
 	const edge = (
@@ -6060,7 +6066,7 @@ function collapsedMargin(set: MarginSet): number {
 /** The margins that adjoin a child's top edge: its own, plus what escapes it. */
 function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 	clearMarginSet(into);
-	addMargin(into, child.layout.margin[EDGE_TOP]);
+	addMargin(into, child.layout.margin.top);
 	into.positive = Math.max(into.positive, child.layout.collapseTopPositive);
 	into.negative = Math.min(into.negative, child.layout.collapseTopNegative);
 }
@@ -6068,7 +6074,7 @@ function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 /** The margins that adjoin a child's bottom edge: its own, plus what escapes it. */
 function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 	clearMarginSet(into);
-	addMargin(into, child.layout.margin[EDGE_BOTTOM]);
+	addMargin(into, child.layout.margin.bottom);
 	into.positive = Math.max(into.positive, child.layout.collapseBottomPositive);
 	into.negative = Math.min(into.negative, child.layout.collapseBottomNegative);
 }
@@ -6183,8 +6189,8 @@ function generatesNoLine(child: LayoutNode): boolean {
 function blockChildFills(child: LayoutNode): boolean {
 	return (
 		!shrinkWrapsWidth(child) &&
-		child.style.margin[EDGE_LEFT].unit !== UNIT_AUTO &&
-		child.style.margin[EDGE_RIGHT].unit !== UNIT_AUTO
+		child.style.margin.left.unit !== UNIT_AUTO &&
+		child.style.margin.right.unit !== UNIT_AUTO
 	);
 }
 
@@ -6224,10 +6230,10 @@ function layoutBlock(
 	const marginColumn = marginForAxis(node, "column", ownerWidth);
 	const leftPaddingBorder = paddingAndBorderForEdge(
 		node,
-		EDGE_LEFT,
+		"left",
 		ownerWidth,
 	);
-	const topPaddingBorder = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+	const topPaddingBorder = paddingAndBorderForEdge(node, "top", ownerWidth);
 
 	// -- in-flow children ---------------------------------------------------
 
@@ -6289,10 +6295,10 @@ function layoutBlock(
 
 	const openTop =
 		!node.style.blockFormattingContext &&
-		paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth) === 0;
+		paddingAndBorderForEdge(node, "top", ownerWidth) === 0;
 	const openBottom =
 		!node.style.blockFormattingContext &&
-		paddingAndBorderForEdge(node, EDGE_BOTTOM, ownerWidth) === 0 &&
+		paddingAndBorderForEdge(node, "bottom", ownerWidth) === 0 &&
 		heightMode !== "exactly" &&
 		!styleDimIsDefined(node, "column", ownerHeight);
 
@@ -6386,10 +6392,10 @@ function layoutBlock(
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
-		const leading = child.layout.margin[EDGE_LEFT];
-		const trailing = child.layout.margin[EDGE_RIGHT];
-		const leadingAuto = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
-		const trailingAuto = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
+		const leading = child.layout.margin.left;
+		const trailing = child.layout.margin.right;
+		const leadingAuto = child.style.margin.left.unit === UNIT_AUTO;
+		const trailingAuto = child.style.margin.right.unit === UNIT_AUTO;
 		const free = contentWidth - child.layout.width - leading - trailing;
 
 		let offset = 0;
@@ -6588,30 +6594,30 @@ function layoutNodeImpl(
 	ownerHeight: number,
 	performLayout: boolean,
 ): void {
-	node.layout.padding[EDGE_LEFT] = paddingOf(node, EDGE_LEFT, ownerWidth);
-	node.layout.padding[EDGE_TOP] = paddingOf(node, EDGE_TOP, ownerWidth);
-	node.layout.padding[EDGE_RIGHT] = paddingOf(node, EDGE_RIGHT, ownerWidth);
-	node.layout.padding[EDGE_BOTTOM] = paddingOf(node, EDGE_BOTTOM, ownerWidth);
+	node.layout.padding.left = paddingOf(node, "left", ownerWidth);
+	node.layout.padding.top = paddingOf(node, "top", ownerWidth);
+	node.layout.padding.right = paddingOf(node, "right", ownerWidth);
+	node.layout.padding.bottom = paddingOf(node, "bottom", ownerWidth);
 
-	node.layout.border[EDGE_LEFT] = node.style.border[EDGE_LEFT];
-	node.layout.border[EDGE_TOP] = node.style.border[EDGE_TOP];
-	node.layout.border[EDGE_RIGHT] = node.style.border[EDGE_RIGHT];
-	node.layout.border[EDGE_BOTTOM] = node.style.border[EDGE_BOTTOM];
+	node.layout.border.left = node.style.border.left;
+	node.layout.border.top = node.style.border.top;
+	node.layout.border.right = node.style.border.right;
+	node.layout.border.bottom = node.style.border.bottom;
 
-	node.layout.margin[EDGE_LEFT] = resolveMargin(
-		node.style.margin[EDGE_LEFT],
+	node.layout.margin.left = resolveMargin(
+		node.style.margin.left,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_TOP] = resolveMargin(
-		node.style.margin[EDGE_TOP],
+	node.layout.margin.top = resolveMargin(
+		node.style.margin.top,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_RIGHT] = resolveMargin(
-		node.style.margin[EDGE_RIGHT],
+	node.layout.margin.right = resolveMargin(
+		node.style.margin.right,
 		ownerWidth,
 	);
-	node.layout.margin[EDGE_BOTTOM] = resolveMargin(
-		node.style.margin[EDGE_BOTTOM],
+	node.layout.margin.bottom = resolveMargin(
+		node.style.margin.bottom,
 		ownerWidth,
 	);
 
@@ -7626,12 +7632,7 @@ function applyMinMax(
 }
 
 /** The four insets, each with the edge it names. */
-const INSET_EDGES = [
-	["left", EDGE_LEFT],
-	["top", EDGE_TOP],
-	["right", EDGE_RIGHT],
-	["bottom", EDGE_BOTTOM],
-] as const;
+const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
 
 /**
  * The insets on a positioned box, from the cascade to the layout node.
@@ -7643,10 +7644,11 @@ const INSET_EDGES = [
 function applyInsets(
 	flexNode: LayoutNode,
 	computedStyle: ComputedStyle,
-	edges: ReadonlyArray<readonly [string, number]>,
+	edges: readonly Edge[],
 	autoWhenUnset: boolean,
 ): void {
-	for (const [property, edge] of edges) {
+	for (const edge of edges) {
+		const property = edge;
 		const value = parseUnitValue(computedStyle.computedValueOf(property));
 		if (typeof value === "number") {
 			flexNode.setPosition(edge, value);
@@ -7919,20 +7921,20 @@ function styleFlexNodeProperties(
 	// dropped the span's padding entirely.
 	if (display === "inline" && !parentIsFlex) {
 		// Clear all box model properties for inline elements
-		flexNode.setMargin(EDGE_TOP, 0);
-		flexNode.setMargin(EDGE_RIGHT, 0);
-		flexNode.setMargin(EDGE_BOTTOM, 0);
-		flexNode.setMargin(EDGE_LEFT, 0);
+		flexNode.setMargin("top", 0);
+		flexNode.setMargin("right", 0);
+		flexNode.setMargin("bottom", 0);
+		flexNode.setMargin("left", 0);
 
-		flexNode.setPadding(EDGE_TOP, 0);
-		flexNode.setPadding(EDGE_RIGHT, 0);
-		flexNode.setPadding(EDGE_BOTTOM, 0);
-		flexNode.setPadding(EDGE_LEFT, 0);
+		flexNode.setPadding("top", 0);
+		flexNode.setPadding("right", 0);
+		flexNode.setPadding("bottom", 0);
+		flexNode.setPadding("left", 0);
 
-		flexNode.setBorder(EDGE_TOP, 0);
-		flexNode.setBorder(EDGE_RIGHT, 0);
-		flexNode.setBorder(EDGE_BOTTOM, 0);
-		flexNode.setBorder(EDGE_LEFT, 0);
+		flexNode.setBorder("top", 0);
+		flexNode.setBorder("right", 0);
+		flexNode.setBorder("bottom", 0);
+		flexNode.setBorder("left", 0);
 	} else {
 		// Apply normal box model properties for block/inline-block elements
 
@@ -7941,15 +7943,15 @@ function styleFlexNodeProperties(
 			computedStyle.computedValueOf("margin-top"),
 		);
 		if (typeof marginTop === "number") {
-			flexNode.setMargin(EDGE_TOP, marginTop);
+			flexNode.setMargin("top", marginTop);
 		} else if (marginTop && "percentage" in marginTop) {
-			flexNode.setMarginPercent(EDGE_TOP, marginTop.percentage);
+			flexNode.setMarginPercent("top", marginTop.percentage);
 		} else {
 			const originalValue = computedStyle.computedValueOf("margin-top");
 			if (originalValue === "auto") {
-				flexNode.setMarginAuto(EDGE_TOP);
+				flexNode.setMarginAuto("top");
 			} else {
-				flexNode.setMargin(EDGE_TOP, undefined);
+				flexNode.setMargin("top", undefined);
 			}
 		}
 
@@ -7957,15 +7959,15 @@ function styleFlexNodeProperties(
 			computedStyle.computedValueOf("margin-right"),
 		);
 		if (typeof marginRight === "number") {
-			flexNode.setMargin(EDGE_RIGHT, marginRight);
+			flexNode.setMargin("right", marginRight);
 		} else if (marginRight && "percentage" in marginRight) {
-			flexNode.setMarginPercent(EDGE_RIGHT, marginRight.percentage);
+			flexNode.setMarginPercent("right", marginRight.percentage);
 		} else {
 			const originalValue = computedStyle.computedValueOf("margin-right");
 			if (originalValue === "auto") {
-				flexNode.setMarginAuto(EDGE_RIGHT);
+				flexNode.setMarginAuto("right");
 			} else {
-				flexNode.setMargin(EDGE_RIGHT, undefined);
+				flexNode.setMargin("right", undefined);
 			}
 		}
 
@@ -7973,15 +7975,15 @@ function styleFlexNodeProperties(
 			computedStyle.computedValueOf("margin-bottom"),
 		);
 		if (typeof marginBottom === "number") {
-			flexNode.setMargin(EDGE_BOTTOM, marginBottom);
+			flexNode.setMargin("bottom", marginBottom);
 		} else if (marginBottom && "percentage" in marginBottom) {
-			flexNode.setMarginPercent(EDGE_BOTTOM, marginBottom.percentage);
+			flexNode.setMarginPercent("bottom", marginBottom.percentage);
 		} else {
 			const originalValue = computedStyle.computedValueOf("margin-bottom");
 			if (originalValue === "auto") {
-				flexNode.setMarginAuto(EDGE_BOTTOM);
+				flexNode.setMarginAuto("bottom");
 			} else {
-				flexNode.setMargin(EDGE_BOTTOM, undefined);
+				flexNode.setMargin("bottom", undefined);
 			}
 		}
 
@@ -7989,15 +7991,15 @@ function styleFlexNodeProperties(
 			computedStyle.computedValueOf("margin-left"),
 		);
 		if (typeof marginLeft === "number") {
-			flexNode.setMargin(EDGE_LEFT, marginLeft);
+			flexNode.setMargin("left", marginLeft);
 		} else if (marginLeft && "percentage" in marginLeft) {
-			flexNode.setMarginPercent(EDGE_LEFT, marginLeft.percentage);
+			flexNode.setMarginPercent("left", marginLeft.percentage);
 		} else {
 			const originalValue = computedStyle.computedValueOf("margin-left");
 			if (originalValue === "auto") {
-				flexNode.setMarginAuto(EDGE_LEFT);
+				flexNode.setMarginAuto("left");
 			} else {
-				flexNode.setMargin(EDGE_LEFT, undefined);
+				flexNode.setMargin("left", undefined);
 			}
 		}
 
@@ -8006,44 +8008,44 @@ function styleFlexNodeProperties(
 			computedStyle.computedValueOf("padding-top"),
 		);
 		if (typeof paddingTop === "number") {
-			flexNode.setPadding(EDGE_TOP, paddingTop);
+			flexNode.setPadding("top", paddingTop);
 		} else if (paddingTop && "percentage" in paddingTop) {
-			flexNode.setPaddingPercent(EDGE_TOP, paddingTop.percentage);
+			flexNode.setPaddingPercent("top", paddingTop.percentage);
 		} else {
-			flexNode.setPadding(EDGE_TOP, undefined);
+			flexNode.setPadding("top", undefined);
 		}
 
 		const paddingRight = parseUnitValue(
 			computedStyle.computedValueOf("padding-right"),
 		);
 		if (typeof paddingRight === "number") {
-			flexNode.setPadding(EDGE_RIGHT, paddingRight);
+			flexNode.setPadding("right", paddingRight);
 		} else if (paddingRight && "percentage" in paddingRight) {
-			flexNode.setPaddingPercent(EDGE_RIGHT, paddingRight.percentage);
+			flexNode.setPaddingPercent("right", paddingRight.percentage);
 		} else {
-			flexNode.setPadding(EDGE_RIGHT, undefined);
+			flexNode.setPadding("right", undefined);
 		}
 
 		const paddingBottom = parseUnitValue(
 			computedStyle.computedValueOf("padding-bottom"),
 		);
 		if (typeof paddingBottom === "number") {
-			flexNode.setPadding(EDGE_BOTTOM, paddingBottom);
+			flexNode.setPadding("bottom", paddingBottom);
 		} else if (paddingBottom && "percentage" in paddingBottom) {
-			flexNode.setPaddingPercent(EDGE_BOTTOM, paddingBottom.percentage);
+			flexNode.setPaddingPercent("bottom", paddingBottom.percentage);
 		} else {
-			flexNode.setPadding(EDGE_BOTTOM, undefined);
+			flexNode.setPadding("bottom", undefined);
 		}
 
 		const paddingLeft = parseUnitValue(
 			computedStyle.computedValueOf("padding-left"),
 		);
 		if (typeof paddingLeft === "number") {
-			flexNode.setPadding(EDGE_LEFT, paddingLeft);
+			flexNode.setPadding("left", paddingLeft);
 		} else if (paddingLeft && "percentage" in paddingLeft) {
-			flexNode.setPaddingPercent(EDGE_LEFT, paddingLeft.percentage);
+			flexNode.setPaddingPercent("left", paddingLeft.percentage);
 		} else {
-			flexNode.setPadding(EDGE_LEFT, undefined);
+			flexNode.setPadding("left", undefined);
 		}
 
 		// Border widths. The USED width is 0 when the side's style is none or
@@ -8060,30 +8062,30 @@ function styleFlexNodeProperties(
 		};
 		const borderTopWidth = usedBorderWidth("top");
 		if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
-			flexNode.setBorder(EDGE_TOP, borderTopWidth);
+			flexNode.setBorder("top", borderTopWidth);
 		} else {
-			flexNode.setBorder(EDGE_TOP, 0);
+			flexNode.setBorder("top", 0);
 		}
 
 		const borderRightWidth = usedBorderWidth("right");
 		if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
-			flexNode.setBorder(EDGE_RIGHT, borderRightWidth);
+			flexNode.setBorder("right", borderRightWidth);
 		} else {
-			flexNode.setBorder(EDGE_RIGHT, 0);
+			flexNode.setBorder("right", 0);
 		}
 
 		const borderBottomWidth = usedBorderWidth("bottom");
 		if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
-			flexNode.setBorder(EDGE_BOTTOM, borderBottomWidth);
+			flexNode.setBorder("bottom", borderBottomWidth);
 		} else {
-			flexNode.setBorder(EDGE_BOTTOM, 0);
+			flexNode.setBorder("bottom", 0);
 		}
 
 		const borderLeftWidth = usedBorderWidth("left");
 		if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
-			flexNode.setBorder(EDGE_LEFT, borderLeftWidth);
+			flexNode.setBorder("left", borderLeftWidth);
 		} else {
-			flexNode.setBorder(EDGE_LEFT, 0);
+			flexNode.setBorder("left", 0);
 		}
 	}
 
@@ -8096,10 +8098,10 @@ function styleFlexNodeProperties(
 			element.parentElement!,
 			"flex-direction",
 		);
-		const crossEdges =
+		const crossEdges: readonly Edge[] =
 			direction === "column" || direction === "column-reverse" ?
-					[EDGE_LEFT, EDGE_RIGHT] :
-					[EDGE_TOP, EDGE_BOTTOM];
+					["left", "right"] :
+					["top", "bottom"];
 		for (const edge of crossEdges) {
 			flexNode.setPadding(edge, 0);
 			flexNode.setBorder(edge, 0);
@@ -8217,10 +8219,10 @@ function styleFlexNodeProperties(
 		const paddingLeft = computedStyle.computedValueOf("padding-left");
 		const paddingRight = computedStyle.computedValueOf("padding-right");
 		if (!paddingLeft || paddingLeft === "0px") {
-			flexNode.setPadding(EDGE_LEFT, 1); // 1 character padding
+			flexNode.setPadding("left", 1); // 1 character padding
 		}
 		if (!paddingRight || paddingRight === "0px") {
-			flexNode.setPadding(EDGE_RIGHT, 1); // 1 character padding
+			flexNode.setPadding("right", 1); // 1 character padding
 		}
 	}
 
@@ -12330,11 +12332,11 @@ function staticPosition(
 	const offsetTop = origin.y - containingOrigin.y;
 	// The flow starts inside the container's border and padding.
 	const contentLeft =
-		containerNode.layout.border[EDGE_LEFT] +
-		containerNode.layout.padding[EDGE_LEFT];
+		containerNode.layout.border.left +
+		containerNode.layout.padding.left;
 	const contentTop =
-		containerNode.layout.border[EDGE_TOP] +
-		containerNode.layout.padding[EDGE_TOP];
+		containerNode.layout.border.top +
+		containerNode.layout.padding.top;
 
 	const box = containerBox(layout, container);
 	const children = box.children!;
@@ -12388,7 +12390,7 @@ function staticPosition(
 				offsetTop +
 				previousNode.getComputedTop() +
 				previousNode.getComputedHeight() +
-				previousNode.layout.margin[EDGE_BOTTOM],
+				previousNode.layout.margin.bottom,
 		};
 	}
 	return {left: offsetLeft + contentLeft, top: offsetTop + contentTop};
@@ -14045,9 +14047,4 @@ export type {Config, LayoutNode};
 export const SOLVER = {
 	LayoutNode,
 	Config,
-	EDGE_ALL,
-	EDGE_BOTTOM,
-	EDGE_LEFT,
-	EDGE_RIGHT,
-	EDGE_TOP,
 };

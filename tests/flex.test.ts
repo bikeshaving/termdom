@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
 import {SOLVER} from "../src/internal/layout.js";
 import type {Config, LayoutNode} from "../src/internal/layout.js";
-const Flex = SOLVER;
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -341,7 +340,7 @@ describe("percentage margins and padding resolve against the containing block wi
 		root.setFlexDirection("column");
 
 		const child = box(root);
-		child.setPaddingPercent(Flex.EDGE_ALL, 10);
+		child.setPaddingPercent("all", 10);
 
 		const grandchild = box(child);
 		grandchild.setWidth(10);
@@ -365,8 +364,8 @@ describe("percentage margins and padding resolve against the containing block wi
 
 		const child = box(root);
 		child.setHeight(10);
-		child.setMarginPercent(Flex.EDGE_TOP, 10);
-		child.setMarginPercent(Flex.EDGE_LEFT, 10);
+		child.setMarginPercent("top", 10);
+		child.setMarginPercent("left", 10);
 
 		root.calculateLayout(200, 100);
 
@@ -390,8 +389,8 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_LEFT);
-		item.setMarginAuto(Flex.EDGE_RIGHT);
+		item.setMarginAuto("left");
+		item.setMarginAuto("right");
 
 		root.calculateLayout(100, 20);
 
@@ -408,7 +407,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_LEFT);
+		item.setMarginAuto("left");
 
 		root.calculateLayout(100, 20);
 
@@ -424,8 +423,8 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		const item = box(root);
 		item.setWidth(20);
 		item.setHeight(10);
-		item.setMarginAuto(Flex.EDGE_TOP);
-		item.setMarginAuto(Flex.EDGE_BOTTOM);
+		item.setMarginAuto("top");
+		item.setMarginAuto("bottom");
 
 		root.calculateLayout(100, 20);
 
@@ -445,7 +444,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto(Flex.EDGE_RIGHT);
+		item.setMarginAuto("right");
 
 		root.calculateLayout(100, 20);
 
@@ -476,7 +475,7 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		root.setAlignItems(alignItems);
 
 		const a = box(root);
-		a.setPadding(Flex.EDGE_TOP, 2);
+		a.setPadding("top", 2);
 		const aText = box(a);
 		aText.setWidth(10);
 		aText.setHeight(1);
