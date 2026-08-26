@@ -3354,9 +3354,13 @@ const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["uievents", () => new UIEvent("")],
 ]);
 
-type EventListenerOrEventListenerObject =
-	((event: Event) => void) |
-	{handleEvent(event: Event): void};
+type EventListener = (event: Event) => void;
+
+interface EventListenerObject {
+	handleEvent(event: Event): void;
+}
+
+type EventListenerOrEventListenerObject = EventListener | EventListenerObject;
 
 /** What an AbortSignal has to be for a listener to hang off it. */
 interface ListenerSignal {
@@ -3594,6 +3598,16 @@ export class EventTarget {
 	/** Null until this target is given an event handler, which most never are. */
 	declare [kHandlers]: Map<string, EventHandlerRecord> | null;
 
+	addEventListener(
+		type: string,
+		callback: EventListenerOrEventListenerObject | null,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	addEventListener(
+		type: string,
+		listener: EventListener | EventListenerObject,
+		options?: boolean | AddEventListenerOptions,
+	): void;
 	addEventListener(
 		type: string,
 		callback: EventListenerOrEventListenerObject | null,
@@ -6901,10 +6915,10 @@ export class NodeList extends LiveList {
 		thisArg?: unknown,
 	) => void;
 
-	declare keys: () => IterableIterator<number>;
-	declare values: () => IterableIterator<Node>;
-	declare entries: () => IterableIterator<[number, Node]>;
-	declare [Symbol.iterator]: () => IterableIterator<Node>;
+	declare keys: () => ArrayIterator<number>;
+	declare values: () => ArrayIterator<Node>;
+	declare entries: () => ArrayIterator<[number, Node]>;
+	declare [Symbol.iterator]: () => ArrayIterator<Node>;
 
 	declare [kCompute]: () => Node[];
 
@@ -6941,7 +6955,7 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 });
 
 export class HTMLCollection extends LiveList {
-	declare [Symbol.iterator]: () => IterableIterator<Element>;
+	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
 	declare [kCompute]: () => Element[];
 
@@ -7363,10 +7377,10 @@ export class DOMTokenList extends LiveList {
 		thisArg?: unknown,
 	) => void;
 
-	declare keys: () => IterableIterator<number>;
-	declare values: () => IterableIterator<string>;
-	declare entries: () => IterableIterator<[number, string]>;
-	declare [Symbol.iterator]: () => IterableIterator<string>;
+	declare keys: () => ArrayIterator<number>;
+	declare values: () => ArrayIterator<string>;
+	declare entries: () => ArrayIterator<[number, string]>;
+	declare [Symbol.iterator]: () => ArrayIterator<string>;
 
 	declare [kElement]: Element;
 	declare [kAttribute]: string;
@@ -8318,7 +8332,7 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 }
 
 export class NamedNodeMap extends LiveList {
-	declare [Symbol.iterator]: () => IterableIterator<Attr>;
+	declare [Symbol.iterator]: () => ArrayIterator<Attr>;
 
 	declare [kElement]: Element;
 
