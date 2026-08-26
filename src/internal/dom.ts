@@ -1242,15 +1242,13 @@ interface HostEventInstance
 	initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
 }
 
-const kDispatchState = Symbol("event dispatch state");
-
 /**
  * isTrusted is one accessor shared by every event, installed as an own
  * property of each: the interface declares it unforgeable, so it is not on
  * the prototype and cannot be redefined away.
  */
 function isTrustedGetter(this: Event): boolean {
-	return this[kDispatchState]!.trusted;
+	return this[kState]!.trusted;
 }
 
 const isTrustedProperty: PropertyDescriptor = {
@@ -1335,15 +1333,11 @@ export class Event extends EventBase {
 		Object.defineProperty(this, "isTrusted", isTrustedProperty);
 	}
 
-	get [kDispatchState](): DispatchState {
-		return this[kState]!;
-	}
-
 	/**
 	 * Whether this is a MouseEvent, which is what makes a "click" the event
 	 * that runs activation behavior. MouseEvent overrides it.
 	 */
-	get [kIsMouseEvent](): boolean {
+	[kIsMouseEvent]?(): boolean {
 		return false;
 	}
 
@@ -1413,7 +1407,7 @@ export class Event extends EventBase {
 	}
 
 	composedPath(): EventTarget[] {
-		return composedPath(this[kState]!);
+		return composedPathOf(this[kState]!);
 	}
 
 	override stopPropagation(): void {
@@ -1466,7 +1460,7 @@ Object.defineProperties(Event.prototype, {
 
 /** An event is canceled only where it is cancelable and nothing is passive. */
 function setCanceledFlag(event: Event): void {
-	const state = event[kDispatchState]!;
+	const state = event[kState]!;
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
 		// A platform event keeps its canceled flag on the platform half, which
@@ -1484,7 +1478,7 @@ function setCanceledFlag(event: Event): void {
  * current target stops crossing into a closed tree it did not start inside,
  * counting the closed roots and slots it passes.
  */
-function composedPath(state: DispatchState): EventTarget[] {
+function composedPathOf(state: DispatchState): EventTarget[] {
 	const path = state.path;
 	if (path.length === 0) {
 		return [];
@@ -1575,7 +1569,7 @@ export class CustomEvent<T = unknown> extends Event {
 		if (arguments.length < 1) {
 			throw new TypeError("initCustomEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
@@ -1724,7 +1718,7 @@ export class MessageEvent<T = unknown> extends Event {
 		if (arguments.length < 1) {
 			throw new TypeError("initMessageEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
@@ -1852,7 +1846,7 @@ export class StorageEvent extends Event {
 		if (arguments.length < 1) {
 			throw new TypeError("initStorageEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
@@ -2064,7 +2058,7 @@ export class UIEvent extends Event {
 		if (arguments.length < 1) {
 			throw new TypeError("initUIEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initEvent(type, bubbles, cancelable);
@@ -2122,10 +2116,10 @@ export class MouseEvent extends UIEvent {
 		this[kButton] = toShort(init.button ?? 0);
 		this[kButtons] = toUnsignedShort(init.buttons ?? 0);
 		this[kModifiers] = initModifiers(init);
-		this[kDispatchState]!.relatedTarget = toEventTarget(init.relatedTarget);
+		this[kState]!.relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
-	override get [kIsMouseEvent](): boolean {
+	override [kIsMouseEvent]?(): boolean {
 		return true;
 	}
 
@@ -2207,7 +2201,7 @@ export class MouseEvent extends UIEvent {
 
 	/** The window the event's target renders in, if it is in one. */
 	get [kEventView](): {scrollX: number; scrollY: number} | null {
-		const target = this[kDispatchState]!.target as Node | null;
+		const target = this[kState]!.target as Node | null;
 		if (target === null || target.ownerDocument === null) {
 			return null;
 		}
@@ -2217,7 +2211,7 @@ export class MouseEvent extends UIEvent {
 
 	/** The target's viewport-space rect, when an engine can answer. */
 	get [kTargetRect](): {left: number; top: number} | null {
-		const target = this[kDispatchState]!.target as Element | null;
+		const target = this[kState]!.target as Element | null;
 		if (
 			target === null ||
 			typeof (target as {getBoundingClientRect?: unknown})
@@ -2253,7 +2247,7 @@ export class MouseEvent extends UIEvent {
 	}
 
 	get relatedTarget(): EventTarget | null {
-		return this[kDispatchState]!.relatedTarget;
+		return this[kState]!.relatedTarget;
 	}
 
 	override get which(): number {
@@ -2287,7 +2281,7 @@ export class MouseEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initMouseEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, detail);
@@ -2297,7 +2291,7 @@ export class MouseEvent extends UIEvent {
 		this[kClientY] = toLong(clientY);
 		this[kModifiers] = initModifiers({ctrlKey, altKey, shiftKey, metaKey});
 		this[kButton] = toShort(button);
-		this[kDispatchState]!.relatedTarget = toEventTarget(relatedTarget);
+		this[kState]!.relatedTarget = toEventTarget(relatedTarget);
 	}
 }
 
@@ -2311,11 +2305,11 @@ export class FocusEvent extends UIEvent {
 	constructor(type: string, eventInitDict: FocusEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<FocusEventInit>(eventInitDict, "An event init");
-		this[kDispatchState]!.relatedTarget = toEventTarget(init.relatedTarget);
+		this[kState]!.relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
 	get relatedTarget(): EventTarget | null {
-		return this[kDispatchState]!.relatedTarget;
+		return this[kState]!.relatedTarget;
 	}
 }
 
@@ -2439,7 +2433,7 @@ export class KeyboardEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initKeyboardEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
@@ -2499,7 +2493,7 @@ export class CompositionEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initCompositionEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
@@ -2542,7 +2536,7 @@ export class TextEvent extends UIEvent {
 		if (arguments.length < 1) {
 			throw new TypeError("initTextEvent needs a type");
 		}
-		if (this[kDispatchState]!.dispatch) {
+		if (this[kState]!.dispatch) {
 			return;
 		}
 		this.initUIEvent(type, bubbles, cancelable, view, 0);
@@ -3657,6 +3651,16 @@ export class EventTarget {
 		type: string,
 		callback: EventListenerOrEventListenerObject | null,
 		options?: boolean | EventListenerOptions,
+	): void;
+	removeEventListener(
+		type: string,
+		listener: EventListener | EventListenerObject,
+		options?: boolean | EventListenerOptions,
+	): void;
+	removeEventListener(
+		type: string,
+		callback: EventListenerOrEventListenerObject | null,
+		options?: boolean | EventListenerOptions,
 	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("removeEventListener needs a type and a callback");
@@ -4045,7 +4049,7 @@ function appendToPath(
  * target is null again and its path is empty.
  */
 function adoptForeignEvent(event: Event): void {
-	if (Object.prototype.hasOwnProperty.call(event, kDispatchState)) {
+	if (Object.prototype.hasOwnProperty.call(event, kState)) {
 		return;
 	}
 	const state: DispatchState = {
@@ -4063,13 +4067,13 @@ function adoptForeignEvent(event: Event): void {
 		trusted: false,
 		foreign: true,
 	};
-	Object.defineProperty(event, kDispatchState, {value: state});
+	Object.defineProperty(event, kState, {value: state});
 	defineDispatchAccessor(event, "target", () => state.target);
 	defineDispatchAccessor(event, "srcElement", () => state.target);
 	defineDispatchAccessor(event, "currentTarget", () => state.currentTarget);
 	defineDispatchAccessor(event, "eventPhase", () => state.eventPhase);
 	Object.defineProperty(event, "composedPath", {
-		value: () => composedPath(state),
+		value: () => composedPathOf(state),
 		configurable: true,
 	});
 }
@@ -4120,7 +4124,7 @@ function dispatchFromOutside(
 	if (!(event instanceof Event)) {
 		adoptForeignEvent(event);
 	}
-	const state = event[kDispatchState]!;
+	const state = event[kState]!;
 	if (state.dispatch || !state.initialized) {
 		throw domError(
 			"InvalidStateError",
@@ -4164,7 +4168,7 @@ function dispatch(
 	event: Event,
 	trusted = true,
 ): boolean {
-	const state = event[kDispatchState]!;
+	const state = event[kState]!;
 	state.trusted = trusted;
 	state.dispatch = true;
 	let activationTarget: EventTarget | null = null;
@@ -4172,7 +4176,8 @@ function dispatch(
 	let clearTargets = false;
 	if (target !== relatedTarget || target === state.relatedTarget) {
 		let eventTarget = target;
-		const isActivationEvent = event[kIsMouseEvent] && event.type === "click";
+		const isActivationEvent = event[kIsMouseEvent]?.() === true &&
+			event.type === "click";
 		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
 		// A slottable that is assigned reaches its slot next, and the slot's
 		// tree may be closed to the tree the event started in: the struct for
@@ -4428,7 +4433,7 @@ function activateLabel(label: HTMLLabelElement, event: Event): void {
  * listener on an ancestor sees the node the event was dispatched at.
  */
 function invoke(event: Event, index: number, capturing: boolean): void {
-	const state = event[kDispatchState]!;
+	const state = event[kState]!;
 	const struct = state.path[index];
 	for (let i = index; i >= 0; i--) {
 		const adjusted = state.path[i].shadowAdjustedTarget;
@@ -4465,7 +4470,7 @@ function innerInvoke(
 	listeners: Listener[],
 	capturing: boolean,
 ): boolean {
-	const state = event[kDispatchState]!;
+	const state = event[kState]!;
 	let found = false;
 	for (const listener of listeners) {
 		if (listener.removed) {
@@ -4833,13 +4838,13 @@ export class Node extends EventTarget {
 		return this[kFirstChild] !== null;
 	}
 
-	get childNodes(): NodeList {
+	get childNodes(): NodeListOf<ChildNode> {
 		let list = this[kChildNodes]!;
 		if (list === null) {
 			list = createChildNodeList(this);
 			this[kChildNodes] = list;
 		}
-		return list;
+		return list as NodeListOf<ChildNode>;
 	}
 
 	get firstChild(): Node | null {
@@ -6953,6 +6958,36 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 	value: "NodeList",
 	configurable: true,
 });
+
+/**
+ * A node that can be a child: what lib.dom calls ChildNode, which is a Node
+ * plus the mixin the tables install on Element, CharacterData and DocumentType.
+ */
+export interface ChildNode
+	extends Node,
+	Pick<globalThis.ChildNode, "after" | "before" | "remove" | "replaceWith">,
+	Pick<
+		globalThis.NonDocumentTypeChildNode,
+			"nextElementSibling" | "previousElementSibling"
+	> {}
+
+/**
+ * lib.dom's NodeListOf: a list whose members are known, so `item` answers
+ * without a null. The engine's own NodeList is the general one, where an index
+ * past the end reads null.
+ */
+export interface NodeListOf<T extends Node> extends NodeList {
+	item(index: number): T;
+	[index: number]: T;
+	forEach(
+		callback: (node: T, index: number, list: NodeListOf<T>) => void,
+		thisArg?: unknown,
+	): void;
+	keys(): ArrayIterator<number>;
+	values(): ArrayIterator<T>;
+	entries(): ArrayIterator<[number, T]>;
+	[Symbol.iterator](): ArrayIterator<T>;
+}
 
 export class HTMLCollection extends LiveList {
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
@@ -11243,7 +11278,7 @@ export class ShadowRoot extends DocumentFragment {
 	 * dispatched inside this very tree and is not composed.
 	 */
 	override [kGetTheParent]?(event: Event): EventTarget | null {
-		const path = event[kDispatchState]!.path;
+		const path = event[kState]!.path;
 		if (
 			!event.composed &&
 			path.length > 0 &&
@@ -20511,7 +20546,7 @@ export class Document extends Node {
 			);
 		}
 		const event = constructInternal(factory);
-		event[kDispatchState]!.initialized = false;
+		event[kState]!.initialized = false;
 		return event;
 	}
 
