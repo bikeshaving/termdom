@@ -181,7 +181,7 @@ function toMarkup(trees: Tree[]): {html: string; tokens: string[]} {
 	return {html: trees.map(emit).join(""), tokens};
 }
 
-const documentArbitrary = fc
+export const documentArbitrary = fc
 	.array(treeArbitrary, {minLength: 1, maxLength: 4})
 	.map(toMarkup);
 

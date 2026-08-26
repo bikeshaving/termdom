@@ -2363,3 +2363,36 @@ describe("width sizing keywords", () => {
 		dom.dispose();
 	});
 });
+
+// Both of these came out of fuzz/layout.test.ts, shrunk from a generated
+// document to the smallest markup that still shows the difference. The
+// property searches; these name the case and run in milliseconds.
+
+test("white space beside an out-of-flow box collapses as if it were absent", () => {
+	// Nothing in flow: the box has left it, and the space has nothing to sit
+	// beside, so the container has no line to be one row tall for. The
+	// collapsing test read the COMPUTED display, where the <b> is still an
+	// inline, rather than the used one, where it has blockified.
+	const {layoutEngine, dom, processMutationsAndLayout} = createLayoutEngine(
+		"<div id=\"host\">   <b style=\"position: absolute\"></b></div>",
+	);
+	processMutationsAndLayout();
+	const host = dom.window.document.getElementById("host")!;
+	expect(layoutEngine.getRect(host)!.height).toBe(0);
+});
+
+test("a broken inline is not sized by an out-of-flow descendant", () => {
+	// The <b> is split around a block, so its rect is the union of the
+	// fragments it was broken into. An absolutely positioned child lays out
+	// against its containing block and is no part of them, so the union is
+	// empty -- the walk that gathers the fragments was descending into the
+	// child on its computed display.
+	const {layoutEngine, dom, processMutationsAndLayout} = createLayoutEngine(
+		"<b id=\"split\"><div></div>" +
+		"<div style=\"display: inline-block; position: absolute\">t000</div></b>",
+	);
+	processMutationsAndLayout();
+	const split = dom.window.document.getElementById("split")!;
+	const rect = layoutEngine.getRect(split);
+	expect(rect === null || rect.width === 0).toBe(true);
+});

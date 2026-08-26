@@ -7422,13 +7422,15 @@ function shouldCollapseWhitespaceTextNode(
 		(from) => from.nextSibling,
 	);
 
-	// Helper to check if a node is block-level
+	// Whether a node puts a box on rows of its own rather than on this line.
+	// The USED display, so a box that blockifies counts: an out-of-flow box
+	// takes no part in the flow at all, and white space beside one has nothing
+	// to sit next to, exactly as if the box were not written.
 	const isBlockLevel = (node: Node | null): boolean => {
 		if (!node || node.nodeType !== node.ELEMENT_NODE) {
 			return false;
 		}
-		const display = displayOf(node as Element);
-		return !isInlineDisplay(display);
+		return !isInlineDisplay(usedDisplay(node as Element));
 	};
 
 	// If whitespace is between two block elements, collapse it
@@ -12528,7 +12530,10 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 						fragments.push(...rectTextsOf(layout, child));
 					} else if (
 						child.nodeType === child.ELEMENT_NODE &&
-						isInlineDisplay(displayOf(child as Element))
+						// The USED display: a child out of flow lays out
+						// against its containing block, and its box is no part
+						// of the fragments this inline was broken into.
+						isInlineDisplay(usedDisplay(child as Element))
 					) {
 						walk(child as Element);
 					}
