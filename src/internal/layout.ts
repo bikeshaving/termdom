@@ -30,10 +30,12 @@ import {
 } from "./cascade.js";
 import {
 	type Walker,
-	type UAToolkit,
-	claimUAToolkit,
 	DOMRectList,
+	flatIsConnected,
+	flatParentElement,
 	NodeFilter,
+	pseudoElementCount,
+	shadowRootOf,
 	SHOW_FLAT,
 	TreeWalker,
 } from "./dom.js";
@@ -6821,51 +6823,6 @@ function approximatelyEqual(a: number, b: number): boolean {
 // Yoga-compatible default export
 // ---------------------------------------------------------------------------
 
-// The composed-tree capability, claimed per document when a LayoutEngine is
-// built for it: the claim door is open exactly while the document is
-// headless, and on the terminal path this runs before the engine installs.
-// Wrappers keep the capability per-document under the names the module has
-// always used.
-const uaByDocument = new WeakMap<object, UAToolkit>();
-
-function uaOf(node: object): UAToolkit | undefined {
-	if ((node as object | null) == null) {
-		return undefined;
-	}
-	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
-	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
-	let toolkit = uaByDocument.get(document);
-	if (toolkit === undefined) {
-		// A headless document claims on first need; a mounted one was
-		// stored at construction, and the claim door is shut behind it.
-		try {
-			toolkit = claimUAToolkit(document);
-		} catch (_err) {
-			// The claim door is shut: an engined document whose toolkit was
-			// not stored at construction has no capability here.
-			return undefined;
-		}
-		uaByDocument.set(document, toolkit);
-	}
-	return toolkit;
-}
-
-function flatParentElement<T>(node: object): T | null {
-	return uaOf(node)?.flatParentElement<T>(node) ?? null;
-}
-
-function flatIsConnected(node: object): boolean {
-	return uaOf(node)?.flatIsConnected(node) ?? false;
-}
-
-function shadowRootOf<T>(element: object): T | null {
-	return uaOf(element)?.shadowRootOf<T>(element) ?? null;
-}
-
-function pseudoElementCount(host: object): number {
-	return uaOf(host)?.pseudoElementCount(host) ?? 0;
-}
-
 /**
  * The nodes a box tree walk stops on: elements and text, over the flat tree.
  * Everything else -- comments, processing instructions -- generates no box and
@@ -12990,12 +12947,6 @@ export class LayoutEngine {
 	}
 
 	constructor(window: EngineWindow) {
-		// See the module's uaByDocument: the claim door is open exactly
-		// while the document is headless.
-		const document = window.document as unknown as object;
-		if (!uaByDocument.has(document)) {
-			uaByDocument.set(document, claimUAToolkit(document));
-		}
 		this.positionedElements = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<

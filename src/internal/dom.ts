@@ -8115,6 +8115,11 @@ Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** An attribute always has a node document, so this narrows Node's. */
+export interface Attr {
+	get ownerDocument(): Document;
+}
+
 /** Set an existing attribute's value, running the attribute change steps. */
 function setExistingAttributeValue(attribute: Attr, value: string): void {
 	const element = attribute[kOwnerElement];
@@ -9206,7 +9211,8 @@ export interface Element
 		"scrollHeight" |
 		"clientLeft" |
 		"clientTop" |
-		"scrollIntoView"
+		"scrollIntoView" |
+		Extract<keyof globalThis.Element, ARIAReflection>
 	> {
 	remove(): void;
 }
@@ -11388,7 +11394,7 @@ function isUAShadowRoot(node: object): boolean {
  * this; `Element.shadowRoot` is the author-facing view, which shows an open
  * tree and nothing else.
  */
-function shadowRootOf<T>(element: object): T | null {
+export function shadowRootOf<T>(element: object): T | null {
 	return ((element as Element)[kShadowRoot] as T) ?? null;
 }
 
@@ -18618,7 +18624,7 @@ function pseudoElement<T>(host: object, name: string): T | null {
 }
 
 /** How many pseudo-element nodes an element carries. */
-function pseudoElementCount(host: object): number {
+export function pseudoElementCount(host: object): number {
 	const slots = (host as Element)[kPseudoElements];
 	return slots === null || slots === undefined ? 0 : slots.size;
 }
@@ -18698,7 +18704,7 @@ function assignedSlotOf(node: Node): HTMLSlotElement | null {
  * child resolves to the HOST, and a pseudo-element node's is the element it
  * originates from -- and everything else is parentElement.
  */
-function flatParentElement<T>(target: object): T | null {
+export function flatParentElement<T>(target: object): T | null {
 	const node = target as Node;
 	const slot = assignedSlotOf(node);
 	if (slot !== null) {
@@ -18721,7 +18727,7 @@ function flatParentElement<T>(target: object): T | null {
  * reaches one. A pseudo-element node and a UA shadow tree's contents are both
  * outside the node tree that answers `isConnected` and both render.
  */
-function flatIsConnected(target: object): boolean {
+export function flatIsConnected(target: object): boolean {
 	let node: Node | null = target as Node;
 	while (node !== null) {
 		if (isConnectedNode(node)) {
