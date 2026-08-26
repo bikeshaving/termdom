@@ -2449,6 +2449,16 @@ export class KeyboardEvent extends UIEvent {
 	}
 }
 
+/** The key-location constants, installed on the prototype. */
+export interface KeyboardEvent
+	extends Pick<
+		globalThis.KeyboardEvent,
+		| "DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_LEFT" |
+		"DOM_KEY_LOCATION_RIGHT" |
+		"DOM_KEY_LOCATION_NUMPAD"
+	> {}
+
 Object.defineProperties(KeyboardEvent.prototype, {
 	DOM_KEY_LOCATION_STANDARD: {
 		value: DOM_KEY_LOCATION_STANDARD,
@@ -5055,6 +5065,9 @@ export class Node extends EventTarget {
 	}
 }
 
+/** The node-type constants, installed on the prototype below. */
+export interface Node extends Pick<globalThis.Node, NodeConstants> {}
+
 for (const [name, value] of [
 	["ELEMENT_NODE", ELEMENT_NODE],
 	["ATTRIBUTE_NODE", ATTRIBUTE_NODE],
@@ -7645,6 +7658,10 @@ export class CharacterData extends Node {
 	}
 }
 
+/** The ChildNode mixin, installed from the tables. */
+export interface CharacterData
+	extends Pick<globalThis.CharacterData, ChildNodeMixin> {}
+
 Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
 	value: "CharacterData",
 	configurable: true,
@@ -7954,6 +7971,10 @@ export class DocumentFragment extends Node {
 		return copy;
 	}
 }
+
+/** The ParentNode mixin, installed from the tables. */
+export interface DocumentFragment
+	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {}
 
 Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 	value: "DocumentFragment",
@@ -9120,6 +9141,64 @@ export class Element extends Node {
 	getAnimations(): globalThis.Animation[] {
 		return [];
 	}
+
+	/** A terminal has no zoom, and 1 is what no zoom is. */
+	get currentCSSZoom(): number {
+		return 1;
+	}
+
+	/** Nothing captures a pointer, so nothing has one captured. */
+	hasPointerCapture(_pointerId: number): boolean {
+		return false;
+	}
+
+	/**
+	 * Pointer capture and pointer lock both need a pointer that keeps sending
+	 * after it leaves a box. A terminal reports the cell the mouse is over and
+	 * stops at the edge of the screen, so there is nothing to capture and
+	 * nowhere to lock it to.
+	 */
+	setPointerCapture(_pointerId: number): never {
+		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	}
+
+	releasePointerCapture(_pointerId: number): never {
+		throw domError("NotSupportedError", "Pointer capture is not implemented");
+	}
+
+	requestPointerLock(): never {
+		throw domError("NotSupportedError", "Pointer lock is not implemented");
+	}
+}
+
+/**
+ * What the tables and the mount give an element, which installing says nothing
+ * about: the mixins, the reflected members, and the geometry a mount answers.
+ * Taken through Pick so a declaration cannot drift from the member it stands
+ * for -- except the two written out, which a Pick would make properties, and a
+ * subclass declares each as a method with a signature of its own.
+ */
+export interface Element
+	extends Pick<
+		globalThis.Element,
+		// `remove` and `scrollIntoView` are written out below rather than
+		// Picked: a Pick yields a property, and a subclass declares each of
+		// them as a method, which may not override one.
+		| Exclude<ChildNodeMixin, "remove"> |
+		ParentNodeMixin |
+		SelectorSurface |
+		FullscreenSurface |
+		"part" |
+		"checkVisibility" |
+		"clientWidth" |
+		"clientHeight" |
+		"scrollWidth" |
+		"scrollHeight" |
+		"clientLeft" |
+		"clientTop"
+	> {
+	remove(): void;
+	scrollIntoView(arg?: boolean | globalThis.ScrollIntoViewOptions): void;
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -9510,7 +9589,9 @@ export class HTMLElement extends Element {
 	 * shows nothing, so there is nothing to reveal into. The options are
 	 * not read: all moves are the minimal ones, block "nearest".
 	 */
-	scrollIntoView(_options?: boolean | globalThis.ScrollIntoViewOptions): void {
+	override scrollIntoView(
+		_options?: boolean | globalThis.ScrollIntoViewOptions,
+	): void {
 		mountOf(this)?.scrollIntoView(this);
 	}
 
@@ -10934,6 +11015,10 @@ export class ShadowRoot extends DocumentFragment {
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
+
+/** The ParentNode mixin and onslotchange, installed below. */
+export interface ShadowRoot
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -15030,7 +15115,7 @@ export class HTMLSelectElement extends HTMLElement {
 		this.options.add(element, before);
 	}
 
-	remove(index?: number): void {
+	override remove(index?: number): void {
 		if (arguments.length === 0) {
 			if (this[kParent] !== null) {
 				removeNode(this);
@@ -22348,6 +22433,13 @@ export class Range extends AbstractRange {
 	}
 }
 
+/** The comparison constants, installed on the prototype. */
+export interface Range
+	extends Pick<
+		globalThis.Range,
+		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
+	> {}
+
 for (const [name, value] of [
 	["START_TO_START", START_TO_START],
 	["START_TO_END", START_TO_END],
@@ -25512,6 +25604,7 @@ export interface Mount {
 	offsetPosition(element: object): {top: number; left: number};
 	offsetParent(element: object): object | null;
 	clientSize(element: object): {width: number; height: number};
+	clientEdge(element: object): {left: number; top: number};
 	scrollSize(element: object): {width: number; height: number};
 	/** How far a box is scrolled from its content's origin, in cells. */
 	scrollOffset(element: object): {left: number; top: number};
@@ -25720,6 +25813,20 @@ Object.defineProperties(HTMLElement.prototype, {
 	clientHeight: {
 		get(this: HTMLElement): number {
 			return mountOf(this)?.clientSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientLeft: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientEdge(this).left ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientTop: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientEdge(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
@@ -26465,13 +26572,6 @@ type ARIAReflection =
 /** RUNTIME: selector engine entries, installed from the tables. */
 type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
 
-/** GAP: pointer capture and locking -- no pointers to capture yet. */
-type PointerSurface =
-	| "hasPointerCapture" |
-	"releasePointerCapture" |
-	"requestPointerLock" |
-	"setPointerCapture";
-
 /** RUNTIME: the fullscreen event handlers, installed from the tables. */
 type FullscreenSurface = "onfullscreenchange" | "onfullscreenerror";
 
@@ -26832,12 +26932,8 @@ const _checked: [
 	// aside and holds the residue.
 	Equal<
 		Exclude<MissingFrom<globalThis.Element, Element>, ARIAReflection>,
-		| PointerSurface |
-		"currentCSSZoom" | // NEVER: zoom is a browser's
-		"remove" | // see the Pick above
-		"scrollIntoView" | // see the Pick above
-		"clientLeft" | // GAP: no border box to measure a border of
-		"clientTop">,
+		never
+	>,
 ] = [
 	true,
 	true,
@@ -26859,58 +26955,5 @@ const _checked: [
 	true,
 	true,
 ];
-
-/*
- * The tables above install these on prototypes at load, which is how the
- * platform's own property attributes are got: a class field is an own property
- * and writable, a static is on the constructor, and neither is what the DOM
- * says. Installing them says nothing to the compiler, so these say it -- they
- * emit nothing, and take the platform's own types so a member cannot drift
- * from the one it stands for.
- */
-
-export interface Node extends Pick<globalThis.Node, NodeConstants> {}
-
-export interface CharacterData
-	extends Pick<globalThis.CharacterData, ChildNodeMixin> {}
-
-export interface DocumentFragment
-	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {}
-
-export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
-
-export interface Element
-	extends Pick<
-		globalThis.Element,
-		// `remove` and `scrollIntoView` are left to the ledger: a subclass
-		// declares each as a method with a signature of its own, and a Pick
-		// yields a property, which is not something a method may override.
-		| Exclude<ChildNodeMixin, "remove"> |
-		ParentNodeMixin |
-		SelectorSurface |
-		FullscreenSurface |
-		"part" |
-		"checkVisibility" |
-		"clientWidth" |
-		"clientHeight" |
-		"scrollWidth" |
-		"scrollHeight"
-	> {}
-
-export interface KeyboardEvent
-	extends Pick<
-		globalThis.KeyboardEvent,
-		| "DOM_KEY_LOCATION_STANDARD" |
-		"DOM_KEY_LOCATION_LEFT" |
-		"DOM_KEY_LOCATION_RIGHT" |
-		"DOM_KEY_LOCATION_NUMPAD"
-	> {}
-
-export interface Range
-	extends Pick<
-		globalThis.Range,
-		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
-	> {}
 
 export type PlatformShapeChecked = typeof _checked;

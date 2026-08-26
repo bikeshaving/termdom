@@ -1056,6 +1056,12 @@ function createMount(termDOM: TermDOM): EngineMount {
 						Math.round(box?.height ?? 0),
 			};
 		},
+		// The border widths: what clientLeft/clientTop report, being the
+		// distance from the border box's edge to the padding box's.
+		clientEdge(target) {
+			const box = getBoxModel(target as Element);
+			return {left: box.borderLeftWidth, top: box.borderTopWidth};
+		},
 		scrollSize(target) {
 			const element = target as Element;
 			const extent = scrollExtentOf(element);
