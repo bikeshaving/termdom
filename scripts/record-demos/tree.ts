@@ -5,7 +5,7 @@ import type {TermDOM} from "../../src/index.js";
 const FS: Record<string, string[]> = {
 	".": ["src/", "examples/", "tests/", "package.json", "README.md"],
 	"./src": ["index.ts", "internal/"],
-	"./src/internal": ["screen.ts", "flex.ts", "layout.ts", "termdom.ts"],
+	"./src/internal": ["screen.ts", "solver.ts", "layout.ts", "termdom.ts"],
 	"./examples": ["animated.ts", "form.ts", "ssh-server.ts", "tree.ts"],
 	"./tests": ["keyboard.test.ts", "viewport.test.ts"],
 };

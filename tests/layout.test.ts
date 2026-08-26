@@ -1415,7 +1415,7 @@ test("Block display stacks children and keeps their specified heights", () => {
 	const listLayout = listYoga!.getComputedLayout();
 
 	// Block containers are laid out by the block algorithm, not by flex
-	expect(containerYoga!.getDisplay()).toBe(2); // DISPLAY_BLOCK value
+	expect(containerYoga!.getMode()).toBe(2); // DISPLAY_BLOCK value
 
 	// Children are stacked vertically (block behavior)
 	expect(child1Layout.top).toBe(0);

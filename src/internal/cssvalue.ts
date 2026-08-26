@@ -11,6 +11,17 @@
 import * as CSSTree from "css-tree";
 
 /**
+ * What the number in a length carries: nothing, cells, a percentage of
+ * something, or the absence of a value that `auto` is. A length is a number
+ * and one of these, and both the cascade that parses one and the solver that
+ * resolves it name them from here.
+ */
+export const UNIT_UNDEFINED = 0;
+export const UNIT_POINT = 1;
+export const UNIT_PERCENT = 2;
+export const UNIT_AUTO = 3;
+
+/**
  * The node shapes css-tree parses a declaration value into: the form raw
  * value text takes before the engine interprets it.
  */

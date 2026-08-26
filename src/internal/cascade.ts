@@ -37,12 +37,13 @@ import {
 	splitCommaList,
 	splitComponents,
 	type CSSNode,
+	UNIT_PERCENT,
+	UNIT_POINT,
 } from "./cssvalue.js";
 import {parseCSSColorComponents, serializeCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
-import Flex from "./flex.js";
-import type * as FlexTypes from "./flex.js";
+import type * as SolverTypes from "./layout.js";
 import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
@@ -13848,16 +13849,19 @@ function trackCells(node: CSSNode): number | null {
 	return Number.isFinite(number) ? number : null;
 }
 
-function pointBreadth(cells: number): FlexTypes.TrackBreadth {
-	return {kind: "length", value: {unit: Flex.UNIT_POINT, value: cells}};
+function pointBreadth(cells: number): SolverTypes.TrackBreadth {
+	return {kind: "length", value: {unit: UNIT_POINT, value: cells}};
 }
 
-function percentBreadth(percentage: number): FlexTypes.TrackBreadth {
-	return {kind: "length", value: {unit: Flex.UNIT_PERCENT, value: percentage}};
+function percentBreadth(percentage: number): SolverTypes.TrackBreadth {
+	return {
+		kind: "length",
+		value: {unit: UNIT_PERCENT, value: percentage},
+	};
 }
 
 /** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
-function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
+function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
 		return Number.isFinite(factor) && factor >= 0 ?
@@ -13889,7 +13893,7 @@ function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
 }
 
 /** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
-function parseTrackSize(node: CSSNode): FlexTypes.TrackSize | null {
+function parseTrackSize(node: CSSNode): SolverTypes.TrackSize | null {
 	if (node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
 		const args = functionArguments(node);
@@ -13969,11 +13973,11 @@ function memoizeGridValue<T>(
 }
 
 /** A `<track-list>`, or null when the value is not one (and so has no effect). */
-export function parseTrackList(value: string): FlexTypes.TrackList | null {
+export function parseTrackList(value: string): SolverTypes.TrackList | null {
 	return memoizeGridValue("track-list", value, parseTrackListValue);
 }
 
-function parseTrackListValue(value: string): FlexTypes.TrackList | null {
+function parseTrackListValue(value: string): SolverTypes.TrackList | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -13986,7 +13990,7 @@ function parseTrackListValue(value: string): FlexTypes.TrackList | null {
 		return null;
 	}
 
-	const parts: FlexTypes.TrackListPart[] = [];
+	const parts: SolverTypes.TrackListPart[] = [];
 	let names: string[] = [];
 
 	for (const node of children) {
@@ -14027,7 +14031,7 @@ function parseTrackListValue(value: string): FlexTypes.TrackList | null {
 	return {parts, endNames: names};
 }
 
-function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
+function parseTrackRepeat(node: CSSNode): SolverTypes.TrackRepeat | null {
 	const args = (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
@@ -14054,7 +14058,7 @@ function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
 		return null;
 	}
 
-	const tracks: FlexTypes.TrackListTrack[] = [];
+	const tracks: SolverTypes.TrackListTrack[] = [];
 	let names: string[] = [];
 	for (const child of args.slice(1)) {
 		if (child.type === "Brackets") {
@@ -14077,13 +14081,13 @@ function parseTrackRepeat(node: CSSNode): FlexTypes.TrackRepeat | null {
 /** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
 export function parseTrackSizeList(
 	value: string,
-): FlexTypes.TrackSize[] | null {
+): SolverTypes.TrackSize[] | null {
 	return memoizeGridValue("track-size-list", value, parseTrackSizeListValue);
 }
 
 function parseTrackSizeListValue(
 	value: string,
-): FlexTypes.TrackSize[] | null {
+): SolverTypes.TrackSize[] | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;
@@ -14092,7 +14096,7 @@ function parseTrackSizeListValue(
 	if (!children) {
 		return null;
 	}
-	const sizes: FlexTypes.TrackSize[] = [];
+	const sizes: SolverTypes.TrackSize[] = [];
 	for (const node of children) {
 		const size = parseTrackSize(node);
 		if (!size) {
@@ -14108,11 +14112,11 @@ function parseTrackSizeListValue(
  * -- and so declares nothing -- unless every row states the same number of
  * cells and every named area is a solid rectangle (css-grid-2 §7.3).
  */
-export function parseGridAreas(value: string): FlexTypes.GridAreaMap | null {
+export function parseGridAreas(value: string): SolverTypes.GridAreaMap | null {
 	return memoizeGridValue("areas", value, parseGridAreasValue);
 }
 
-function parseGridAreasValue(value: string): FlexTypes.GridAreaMap | null {
+function parseGridAreasValue(value: string): SolverTypes.GridAreaMap | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -14186,13 +14190,13 @@ function parseGridAreasValue(value: string): FlexTypes.GridAreaMap | null {
 /** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
 export function parseGridPlacement(
 	value: string,
-): FlexTypes.GridPlacement | null {
+): SolverTypes.GridPlacement | null {
 	return memoizeGridValue("placement", value, parseGridPlacementValue);
 }
 
 function parseGridPlacementValue(
 	value: string,
-): FlexTypes.GridPlacement | null {
+): SolverTypes.GridPlacement | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;

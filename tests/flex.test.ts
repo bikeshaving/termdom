@@ -1,5 +1,7 @@
 import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
-import Flex, {Config, LayoutNode} from "../src/internal/flex.js";
+import {SOLVER} from "../src/internal/layout.js";
+import type {Config, LayoutNode} from "../src/internal/layout.js";
+const Flex = SOLVER;
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -21,12 +23,12 @@ import Flex, {Config, LayoutNode} from "../src/internal/flex.js";
 let config: Config;
 
 beforeEach(() => {
-	config = Config.create();
+	config = SOLVER.Config.create();
 	config.setPointScaleFactor(1);
 });
 
 function node(): LayoutNode {
-	return LayoutNode.createWithConfig(config);
+	return SOLVER.LayoutNode.createWithConfig(config);
 }
 
 function box(parent: LayoutNode, index = parent.getChildCount()): LayoutNode {
