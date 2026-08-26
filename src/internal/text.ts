@@ -5,14 +5,13 @@
  * A renderer that addresses cells has to answer all three before it can place a
  * character, so they live together, over the generated width tables and nothing else.
  */
-
+import arabicPersianReshaper from "arabic-persian-reshaper";
 import bidiFactory from "bidi-js";
 import {
 	UNCERTAIN_RANGES,
 	WIDE_RANGES,
 	ZERO_WIDTH_RANGES,
 } from "../generated/widthtables.js";
-import arabicPersianReshaper from "arabic-persian-reshaper";
 
 // Bun is the only runtime with a native fast path worth branching on; Node
 // and Deno both take the pure-JS fallback, so neither needs detecting.
