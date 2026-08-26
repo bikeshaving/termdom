@@ -9195,10 +9195,10 @@ export interface Element
 		"scrollWidth" |
 		"scrollHeight" |
 		"clientLeft" |
-		"clientTop"
+		"clientTop" |
+		"scrollIntoView"
 	> {
 	remove(): void;
-	scrollIntoView(arg?: boolean | globalThis.ScrollIntoViewOptions): void;
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -9581,18 +9581,6 @@ export class HTMLElement extends Element {
 		if (wasFocused) {
 			mountOf(this)?.blurred(this);
 		}
-	}
-
-	/**
-	 * Reveal the element: every scroll box between it and the document
-	 * scrolls it into view, and so does the screen. A headless document
-	 * shows nothing, so there is nothing to reveal into. The options are
-	 * not read: all moves are the minimal ones, block "nearest".
-	 */
-	override scrollIntoView(
-		_options?: boolean | globalThis.ScrollIntoViewOptions,
-	): void {
-		mountOf(this)?.scrollIntoView(this);
 	}
 
 	/**
@@ -25849,6 +25837,20 @@ Object.defineProperties(HTMLElement.prototype, {
 	// rendered element -- nothing on its flat chain display:none, and it
 	// produced boxes -- with the visibility check the options ask for.
 	// Nothing a headless document holds is rendered.
+	/*
+	 * Reveal the element: every scroll box between it and the document
+	 * scrolls it into view, and so does the screen. A headless document
+	 * shows nothing, so there is nothing to reveal into. The options are not
+	 * read: all moves are the minimal ones, block "nearest".
+	 */
+	scrollIntoView: {
+		value(this: HTMLElement): void {
+			mountOf(this)?.scrollIntoView(this);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
 	checkVisibility: {
 		value(
 			this: HTMLElement,
@@ -26955,5 +26957,3 @@ const _checked: [
 	true,
 	true,
 ];
-
-export type PlatformShapeChecked = typeof _checked;
