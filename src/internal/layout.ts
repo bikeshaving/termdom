@@ -8786,6 +8786,27 @@ function boxEntryOf(
  * Which store the node sits in follows from the box's provenance rather than
  * from that distinction, so this is the one place that knows both.
  */
+/** The smallest rect enclosing a set: the box a broken inline reports. */
+function unionOf(
+	layout: LayoutEngine,
+	rects: readonly globalThis.DOMRect[],
+): globalThis.DOMRect {
+	if (rects.length === 0) {
+		return new layout.DOMRect();
+	}
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.x);
+		top = Math.min(top, rect.y);
+		right = Math.max(right, rect.x + rect.width);
+		bottom = Math.max(bottom, rect.y + rect.height);
+	}
+	return new layout.DOMRect(left, top, right - left, bottom - top);
+}
+
 function laidOutBy(
 	layout: LayoutEngine,
 	box: Box,
@@ -12034,7 +12055,7 @@ function caretRect(
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 	);
 	const x = Math.round(line.rect.x) + stringWidth(before);
-	return layout.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
+	return new layout.DOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
 }
 
 /**
@@ -12115,7 +12136,7 @@ function selectionRuns(
 					stringWidth(text.slice(0, runStart));
 				const width = stringWidth(text.slice(runStart, i));
 				runs.push({
-					rect: layout.createDOMRect(
+					rect: new layout.DOMRect(
 						x,
 						Math.round(fragment.rect.y),
 						width,
@@ -13275,7 +13296,7 @@ export class LayoutEngine {
 		const top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
 		const right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
 		const bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
-		return this.createDOMRect(
+		return new this.DOMRect(
 			rect.x + left,
 			rect.y + top,
 			Math.max(0, rect.width - left - right),
@@ -13418,7 +13439,7 @@ export class LayoutEngine {
 			// For inline elements, the fragments of its run
 			const rectTexts = rectTextsOf(this, element);
 			if (rectTexts.length > 0) {
-				return this.unionRect(rectTexts.map((rectText) => rectText.rect));
+				return unionOf(this, rectTexts.map((rectText) => rectText.rect));
 			}
 
 			// A pure inline element with no text of its own has no inline box to
@@ -13573,7 +13594,7 @@ export class LayoutEngine {
 		if (lines.length > 0 && data.endsWith("\n")) {
 			const last = lines[lines.length - 1].rect;
 			lines.push({
-				rect: this.createDOMRect(last.x, last.y + last.height, 0, last.height),
+				rect: new this.DOMRect(last.x, last.y + last.height, 0, last.height),
 				startOffset: data.length,
 				endOffset: data.length,
 				visualBase: null,
@@ -13587,7 +13608,7 @@ export class LayoutEngine {
 			const content = parent && this.contentRect(parent);
 			if (content && parent) {
 				lines.push({
-					rect: this.createDOMRect(
+					rect: new this.DOMRect(
 						Math.round(content.x),
 						Math.round(content.y),
 						0,
@@ -13808,46 +13829,6 @@ export class LayoutEngine {
 			}
 		}
 		return hitTestContext(this, paintRoot, x, y, layers, cameraScrollTop);
-	}
-
-	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
-		const list = new DOMRectList();
-		if (rects) {
-			list.push(...rects);
-		}
-		return list;
-	}
-
-	createDOMRect(
-		x = 0,
-		y = 0,
-		width = 0,
-		height = 0,
-	): globalThis.DOMRect {
-		return new this.DOMRect(x, y, width, height);
-	}
-
-	/**
-	 * The smallest rect enclosing a set of fragments -- the bounding box a
-	 * broken inline reports for itself, and the one a Range reports over the
-	 * runs it covers. An empty set encloses nothing and gives a zero rect at
-	 * the origin, which is what both public APIs return for no geometry.
-	 */
-	unionRect(rects: readonly globalThis.DOMRect[]): globalThis.DOMRect {
-		if (rects.length === 0) {
-			return this.createDOMRect();
-		}
-		let left = Infinity;
-		let top = Infinity;
-		let right = -Infinity;
-		let bottom = -Infinity;
-		for (const rect of rects) {
-			left = Math.min(left, rect.x);
-			top = Math.min(top, rect.y);
-			right = Math.max(right, rect.x + rect.width);
-			bottom = Math.max(bottom, rect.y + rect.height);
-		}
-		return this.createDOMRect(left, top, right - left, bottom - top);
 	}
 
 	/**

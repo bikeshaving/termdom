@@ -241,7 +241,7 @@ function installGeometry(window: EngineWindow): void {
 				return new DOMRect();
 			}
 			return (
-				mount.styleManager.usedRect(this) ?? mount.layoutEngine.createDOMRect()
+				mount.styleManager.usedRect(this) ?? new DOMRect()
 			);
 		},
 		configurable: true,
@@ -256,9 +256,7 @@ function installGeometry(window: EngineWindow): void {
 			// usedRect for the flush; getRects for the fragments, which a box
 			// broken across lines has more than one of.
 			mount.styleManager.usedRect(this);
-			return mount.layoutEngine.createDOMRectList(
-				mount.layoutEngine.getRects(this),
-			);
+			return mount.layoutEngine.getRects(this) as unknown as DOMRectList;
 		},
 		configurable: true,
 		writable: true,

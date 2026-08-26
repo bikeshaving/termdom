@@ -2,6 +2,7 @@ import * as DOM from "./dom.js";
 import "./inspector.js";
 import {
 	createDocumentWindow,
+	DOMRectList,
 	disconnectObservers,
 	flushObservers,
 	type EngineWindow,
@@ -877,7 +878,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 	const toViewportRect = (rect: DOMRect, element?: Element): DOMRect =>
 		element && termDOM[kLayoutEngine].isInFixedSpace(element) ?
 			rect :
-				termDOM[kLayoutEngine].createDOMRect(
+				new termDOM.window.DOMRect(
 					rect.x,
 					rect.y - termDOM[kScrollTop],
 					rect.width,
@@ -962,25 +963,25 @@ function createMount(termDOM: TermDOM): EngineMount {
 		boundingClientRect(target) {
 			const element = target as Element;
 			if (!element.isConnected) {
-				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
+				return new termDOM.window.DOMRect(0, 0, 0, 0);
 			}
 			processPendingMutationsAndRender(termDOM);
 			const rect = termDOM[kLayoutEngine].getRect(element);
 			return toViewportRect(
-				rect || termDOM[kLayoutEngine].createDOMRect(),
+				rect || new termDOM.window.DOMRect(),
 				element,
 			);
 		},
 		clientRects(target) {
 			const element = target as Element;
 			if (!element.isConnected) {
-				return termDOM[kLayoutEngine].createDOMRectList();
+				return new DOMRectList();
 			}
 			processPendingMutationsAndRender(termDOM);
 			const rects = termDOM[kLayoutEngine]
 				.getRects(element)
 				.map((rect) => toViewportRect(rect, element));
-			return termDOM[kLayoutEngine].createDOMRectList(rects);
+			return rectList(termDOM, rects);
 		},
 		// Range geometry answers from the same layout the element members
 		// use, viewport-converted identically. The caret and selection
@@ -995,9 +996,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 						(container as Element) :
 						(container.parentElement ?? undefined);
 			return toViewportRect(
-				termDOM[kLayoutEngine].unionRect(
-					termDOM[kLayoutEngine].getRangeRects(range),
-				),
+				unionRect(termDOM, termDOM[kLayoutEngine].getRangeRects(range)),
 				anchor,
 			);
 		},
@@ -1012,7 +1011,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			const rects = termDOM[kLayoutEngine]
 				.getRangeRects(range)
 				.map((rect) => toViewportRect(rect, anchor));
-			return termDOM[kLayoutEngine].createDOMRectList(rects);
+			return rectList(termDOM, rects);
 		},
 		offsetSize(target) {
 			const element = target as Element;
@@ -1614,6 +1613,42 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 			return;
 		}
 	}
+}
+
+/** A DOMRectList of this window's, holding the rects given. */
+function rectList(
+	termdom: TermDOM,
+	rects: readonly globalThis.DOMRect[],
+): globalThis.DOMRectList {
+	const list = new DOMRectList();
+	list.push(...rects);
+	return list;
+}
+
+/**
+ * The smallest rect enclosing a set of fragments -- the bounding box a broken
+ * inline reports for itself, and the one a Range reports over the runs it
+ * covers. An empty set encloses nothing and gives a zero rect at the origin,
+ * which is what both public APIs answer for no geometry.
+ */
+function unionRect(
+	termdom: TermDOM,
+	rects: readonly globalThis.DOMRect[],
+): globalThis.DOMRect {
+	if (rects.length === 0) {
+		return new termdom.window.DOMRect();
+	}
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.x);
+		top = Math.min(top, rect.y);
+		right = Math.max(right, rect.x + rect.width);
+		bottom = Math.max(bottom, rect.y + rect.height);
+	}
+	return new termdom.window.DOMRect(left, top, right - left, bottom - top);
 }
 
 /**
@@ -2549,7 +2584,7 @@ function afterRender(
 	termdom[kRenderCount]++;
 	// The viewport in document coordinates: the scroll offset, one terminal
 	// high. IntersectionObserver measures targets against it.
-	const viewport = termdom[kLayoutEngine].createDOMRect(
+	const viewport = new termdom.window.DOMRect(
 		0,
 		termdom[kScrollTop],
 		termdom[kLayoutEngine].terminalWidth,

@@ -19457,7 +19457,7 @@ export class ResizeObserver extends LayoutObserver<
 				target,
 				// Origin is the content box's offset inside the border box -- the
 				// padding and border that precede it -- not zero.
-				contentRect: layoutEngine.createDOMRect(
+				contentRect: new DOMRect(
 					content.left,
 					content.top,
 					content.width,
@@ -19506,7 +19506,6 @@ type IntersectionObserverCallback = (
 function intersectionRatio(
 	box: globalThis.DOMRect,
 	clip: globalThis.DOMRect,
-	layoutEngine: LayoutEngine,
 ): {ratio: number; rect: globalThis.DOMRect} {
 	const left = Math.max(box.left, clip.left);
 	const top = Math.max(box.top, clip.top);
@@ -19519,7 +19518,7 @@ function intersectionRatio(
 
 	return {
 		ratio: area > 0 ? (width * height) / area : width > 0 && height > 0 ? 1 : 0,
-		rect: layoutEngine.createDOMRect(left, top, width, height),
+		rect: new DOMRect(left, top, width, height),
 	};
 }
 
@@ -19535,7 +19534,6 @@ function intersectionRatio(
 function applyRootMargin(
 	rect: globalThis.DOMRect,
 	margin: string,
-	layoutEngine: LayoutEngine,
 ): globalThis.DOMRect {
 	const parts = margin.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) {
@@ -19560,7 +19558,7 @@ function applyRootMargin(
 	const bottom = resolve(b, rect.height);
 	const left = resolve(l, rect.width);
 
-	return layoutEngine.createDOMRect(
+	return new DOMRect(
 		rect.left - left,
 		rect.top - top,
 		Math.max(0, rect.width + left + right),
@@ -19622,9 +19620,9 @@ export class IntersectionObserver extends LayoutObserver<
 		if (!rootBox) {
 			return null;
 		}
-		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
+		const rootBounds = applyRootMargin(rootBox, this.rootMargin);
 
-		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
+		const {ratio, rect} = intersectionRatio(box, rootBounds);
 		const index = thresholdIndex(this, ratio);
 		if (last === index) {
 			return null;
@@ -19638,7 +19636,7 @@ export class IntersectionObserver extends LayoutObserver<
 				intersectionRatio: ratio,
 				boundingClientRect: box,
 				intersectionRect:
-					index > 0 ? rect : layoutEngine.createDOMRect(0, 0, 0, 0),
+					index > 0 ? rect : new DOMRect(0, 0, 0, 0),
 				rootBounds,
 				time: frame,
 			},
