@@ -6897,46 +6897,39 @@ function createTreeWalker<N>(
 // ---------------------------------------------------------------------------
 
 /**
- * The computed `position` values, one bit each. An absent or unrecognised
- * value is static, which is both the initial value and what every question
- * below already treated an empty string as.
+ * The computed `position` values, as the keywords themselves. An absent or
+ * unrecognised value is static, which is both the initial value and what every
+ * question below already treated an empty string as.
  */
-const POSITION_STATIC = 1 << 0;
-const POSITION_RELATIVE = 1 << 1;
-const POSITION_ABSOLUTE = 1 << 2;
-const POSITION_FIXED = 1 << 3;
-const POSITION_STICKY = 1 << 4;
+type Position =
+	| "static" |
+	"relative" |
+	"absolute" |
+	"fixed" |
+	"sticky";
 
-const POSITION_CODES: Record<string, number | undefined> = {
-	static: POSITION_STATIC,
-	relative: POSITION_RELATIVE,
-	absolute: POSITION_ABSOLUTE,
-	fixed: POSITION_FIXED,
-	sticky: POSITION_STICKY,
-};
+const POSITIONS = new Set<string>([
+	"static",
+	"relative",
+	"absolute",
+	"fixed",
+	"sticky",
+]);
 
-/** A box that has left the flow: its siblings lay out as if it were not there. */
-const OUT_OF_FLOW = POSITION_ABSOLUTE | POSITION_FIXED;
-/** Everything but static, which is what "positioned" means in CSS. */
-const POSITIONED =
-	POSITION_RELATIVE | POSITION_ABSOLUTE | POSITION_FIXED | POSITION_STICKY;
-
-/** An element's computed position, as a code. */
-function positionOf(element: Element): number {
-	return POSITION_CODES[getPropertyValue(element, "position")] ??
-		POSITION_STATIC;
+/** An element's computed position. */
+function positionOf(element: Element): Position {
+	const value = getPropertyValue(element, "position");
+	return POSITIONS.has(value) ? (value as Position) : "static";
 }
 
 /**
  * Whether a box takes part in positioned layout -- the predicate the
  * containing-block chain, stacking-context collection and the painter's
- * in-flow walk are built on.
+ * in-flow walk are built on. Everything but static is positioned, which is
+ * what the word means in CSS.
  */
 export function isPositioned(element: Element): boolean {
-	const position =
-		POSITION_CODES[computedStyleOf(element).computedValueOf("position")] ??
-		POSITION_STATIC;
-	return (position & POSITIONED) !== 0;
+	return positionOf(element) !== "static";
 }
 
 /**
@@ -6960,7 +6953,8 @@ function isOutOfFlow(node: Node): boolean {
 	if (node.nodeType !== node.ELEMENT_NODE) {
 		return false;
 	}
-	return (positionOf(node as Element) & OUT_OF_FLOW) !== 0;
+	const position = positionOf(node as Element);
+	return position === "absolute" || position === "fixed";
 }
 
 /**
@@ -8315,31 +8309,28 @@ function styleFlexNodeProperties(
 		parentIsFlex,
 	);
 
-	// Handle positioning properties
-	const position =
-		POSITION_CODES[computedStyle.computedValueOf("position")] ??
-		POSITION_STATIC;
+	const position = positionOf(element);
 	// The stacking-context painter hoists positioned boxes to their context
 	// root; this registry is how it finds them without an O(document) sweep
 	// per frame. Membership follows the style application that created or
 	// restyled the box.
 	if (positionedElements) {
-		if ((position & POSITIONED) !== 0) {
+		if (position !== "static") {
 			positionedElements.add(element);
 		} else {
 			positionedElements.delete(element);
 		}
 	}
-	if (position === POSITION_ABSOLUTE) {
+	if (position === "absolute") {
 		flexNode.setPositionType(POSITION_TYPE_ABSOLUTE);
 		applyInsets(flexNode, computedStyle, INSET_EDGES, true);
-	} else if (position === POSITION_RELATIVE) {
+	} else if (position === "relative") {
 		flexNode.setPositionType(POSITION_TYPE_RELATIVE);
 		// A relative box is offset from where it would have sat, and the offset
 		// this engine applies is the start-edge one: `right`/`bottom` alone do
 		// not move it.
 		applyInsets(flexNode, computedStyle, INSET_EDGES.slice(0, 2), false);
-	} else if (position === POSITION_FIXED) {
+	} else if (position === "fixed") {
 		// The viewport is the containing block, whatever it sits inside, and
 		// the camera is what keeps it still.
 		flexNode.setPositionType(POSITION_TYPE_FIXED);
@@ -9194,7 +9185,7 @@ function addNode(
 	// box moved, and the test is simply whether the block can be climbed to.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
-			positionOf(node as Element) === POSITION_FIXED ?
+			positionOf(node as Element) === "fixed" ?
 				layout[kViewportRoot] :
 					containingBlockFlexNode(layout, node as Element);
 		if (containingBlock && !climbsTo(parentFlexNode, containingBlock)) {
@@ -9724,7 +9715,7 @@ function containingBlockFlexNode(
 		ancestor;
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if ((positionOf(ancestor) & POSITIONED) !== 0) {
+		if (positionOf(ancestor) !== "static") {
 			const flexNode = layout[kNodeMap].get(ancestor);
 			// A measure-function node cannot take flex children; a
 			// positioned inline-block can't serve as a flex containing
@@ -12847,7 +12838,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if (positionOf(ancestor) === POSITION_RELATIVE) {
+		if (positionOf(ancestor) === "relative") {
 			const left = parseUnitValue(getPropertyValue(ancestor, "left"));
 			const top = parseUnitValue(getPropertyValue(ancestor, "top"));
 			if (typeof left === "number") {
@@ -14022,7 +14013,7 @@ export class LayoutEngine {
 			el;
 			el = flatParentElement<Element>(el)
 		) {
-			if (positionOf(el) === POSITION_FIXED) {
+			if (positionOf(el) === "fixed") {
 				return true;
 			}
 		}
