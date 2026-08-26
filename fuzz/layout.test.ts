@@ -26,7 +26,12 @@ import {documentArbitrary, makeDOM, settle, type Scene} from "./scenes.js";
 
 type Document = {html: string; tokens: string[]};
 
-const RUNS = Number(process.env.FC_NUM_RUNS ?? 25);
+/**
+ * Each case builds two or three documents and settles each, so the default is
+ * small enough to sit inside the per-file timeout with the rest of the suite.
+ * FC_NUM_RUNS widens it for a real search.
+ */
+const RUNS = Number(process.env.FC_NUM_RUNS ?? 8);
 
 /** Every element's box, by the id the generator gave it. */
 function rects(scene: Scene): Map<string, string> {

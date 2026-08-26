@@ -8643,7 +8643,8 @@ function containerFlexNode(
 	container: Element,
 ): LayoutNode | undefined {
 	return (
-		layout[kBoxes].get(container)?.contentRoot ?? layout.nodeMap.get(container)
+		layout[kBoxes].get(container)?.contentRoot ??
+		layout[kNodeMap].get(container)
 	);
 }
 
@@ -8659,7 +8660,7 @@ function retireFlexNode(
 	layout: LayoutEngine,
 	node: Node,
 ): void {
-	const flexNode = layout.nodeMap.get(node);
+	const flexNode = layout[kNodeMap].get(node);
 	if (!flexNode) {
 		return;
 	}
@@ -8792,7 +8793,7 @@ function unionOf(
 	rects: readonly globalThis.DOMRect[],
 ): globalThis.DOMRect {
 	if (rects.length === 0) {
-		return new layout.DOMRect();
+		return new layout[kDOMRect]();
 	}
 	let left = Infinity;
 	let top = Infinity;
@@ -8804,7 +8805,7 @@ function unionOf(
 		right = Math.max(right, rect.x + rect.width);
 		bottom = Math.max(bottom, rect.y + rect.height);
 	}
-	return new layout.DOMRect(left, top, right - left, bottom - top);
+	return new layout[kDOMRect](left, top, right - left, bottom - top);
 }
 
 function laidOutBy(
@@ -8814,7 +8815,7 @@ function laidOutBy(
 	if (box.kind === "anonymous") {
 		return box.layoutNode;
 	}
-	return box.node === null ? null : (layout.nodeMap.get(box.node) ?? null);
+	return box.node === null ? null : (layout[kNodeMap].get(box.node) ?? null);
 }
 
 function runFlexNode(
@@ -8825,7 +8826,7 @@ function runFlexNode(
 	if (box) {
 		return box.head === node ? (box.layoutNode ?? undefined) : undefined;
 	}
-	return layout.nodeMap.get(node);
+	return layout[kNodeMap].get(node);
 }
 
 /** The lines the run a node heads was broken into, if it has been measured. */
@@ -8841,6 +8842,11 @@ function runBreakResult(
 }
 
 const kDirtyRunContainers = Symbol("dirtyRunContainers");
+const kDOMRect = Symbol("DOMRect");
+const kRootElement = Symbol("rootElement");
+const kViewportRoot = Symbol("viewportRootNode");
+const kEngineWindow = Symbol("window");
+const kNodeMap = Symbol("nodeMap");
 
 /**
  * Bring a container's layout children into line with its box list: every
@@ -8954,7 +8960,7 @@ function syncContainerRuns(
 		if (isOutOfFlow(node)) {
 			continue;
 		}
-		const flexNode = layout.nodeMap.get(node);
+		const flexNode = layout[kNodeMap].get(node);
 		if (flexNode && flexNode.getParent() === containerFlex) {
 			// The box list is the order. A box placed among its DOM
 			// siblings knows nothing of the anonymous boxes between them --
@@ -9154,7 +9160,7 @@ function addNode(
 	if (isOutOfFlow(node)) {
 		const containingBlock =
 			positionOf(node as Element) === POSITION_FIXED ?
-				layout.viewportRootNode :
+				layout[kViewportRoot] :
 					containingBlockFlexNode(layout, node as Element);
 		if (containingBlock && !climbsTo(parentFlexNode, containingBlock)) {
 			parentFlexNode = containingBlock;
@@ -9171,7 +9177,7 @@ function addNode(
 	// inside an inline-block box paints nothing, while the same input
 	// beside a single letter of text paints fine.
 	if (parentFlexNode?.measureFunc) {
-		const stale = layout.nodeMap.get(node);
+		const stale = layout[kNodeMap].get(node);
 		if (stale && stale.getParent() === parentFlexNode) {
 			parentFlexNode.removeChild(stale);
 			layout[kMeasureNodes].delete(stale);
@@ -9181,9 +9187,9 @@ function addNode(
 		return;
 	}
 
-	if (layout.nodeMap.has(node)) {
+	if (layout[kNodeMap].has(node)) {
 		// Node already exists - this might be a moved node that needs reparenting
-		const existingFlexNode = layout.nodeMap.get(node)!;
+		const existingFlexNode = layout[kNodeMap].get(node)!;
 		// Content that an anonymous box lays out owns no layout node: one
 		// left from when this node was block-level, or headed a run under a
 		// shape the container no longer has, is retired here so the box is
@@ -9282,7 +9288,7 @@ function addElementNode(
 	// settles the order.
 	const flexIndex = parentFlexNode?.children.length ?? 0;
 
-	let flexNode = layout.nodeMap.get(element);
+	let flexNode = layout[kNodeMap].get(element);
 	if (!flexNode) {
 		flexNode = LayoutNode.createWithConfig(flexConfig);
 		trackNode(layout, element, flexNode);
@@ -9387,7 +9393,7 @@ function addTextNode(
 		return;
 	}
 
-	let flexNode = layout.nodeMap.get(text);
+	let flexNode = layout[kNodeMap].get(text);
 	if (!flexNode) {
 		flexNode = LayoutNode.createWithConfig(flexConfig);
 		trackNode(layout, text, flexNode);
@@ -9656,7 +9662,7 @@ function retireSteppedOver(
 			continue;
 		}
 		// kAddNode is what retires the box of a box-less element.
-		if (dissolves && layout.nodeMap.has(element)) {
+		if (dissolves && layout[kNodeMap].has(element)) {
 			addNode(layout, element, null);
 		}
 		retireSteppedOver(layout, element);
@@ -9684,7 +9690,7 @@ function containingBlockFlexNode(
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
 		if ((positionOf(ancestor) & POSITIONED) !== 0) {
-			const flexNode = layout.nodeMap.get(ancestor);
+			const flexNode = layout[kNodeMap].get(ancestor);
 			// A measure-function node cannot take flex children; a
 			// positioned inline-block can't serve as a flex containing
 			// block, so the hoist keeps climbing.
@@ -9693,7 +9699,7 @@ function containingBlockFlexNode(
 			}
 		}
 	}
-	return layout.nodeMap.get(layout.rootElement) ?? null;
+	return layout[kNodeMap].get(layout[kRootElement]) ?? null;
 }
 
 /** Hidden by an ancestor's display:none anywhere up the flat tree. */
@@ -9734,7 +9740,7 @@ function documentPosition(
 	for (let parent = root.getParent(); parent; parent = root.getParent()) {
 		root = parent;
 	}
-	if (root === layout.viewportRootNode) {
+	if (root === layout[kViewportRoot]) {
 		return position;
 	}
 	let host: Element | null = null;
@@ -9812,7 +9818,7 @@ function trackNode(
 	domNode: Node,
 	flexNode: LayoutNode,
 ): void {
-	layout.nodeMap.set(domNode, flexNode);
+	layout[kNodeMap].set(domNode, flexNode);
 	flexNode.owner = domNode;
 }
 
@@ -9820,7 +9826,7 @@ function untrackNode(
 	layout: LayoutEngine,
 	domNode: Node,
 ): void {
-	const flexNode = layout.nodeMap.get(domNode);
+	const flexNode = layout[kNodeMap].get(domNode);
 	if (flexNode) {
 		flexNode.owner = null;
 	}
@@ -9831,7 +9837,7 @@ function untrackNode(
 	if (box) {
 		box.fragments = null;
 	}
-	layout.nodeMap.delete(domNode);
+	layout[kNodeMap].delete(domNode);
 	if (domNode.nodeType === domNode.ELEMENT_NODE) {
 		layout.positionedElements.delete(domNode as Element);
 	}
@@ -9862,8 +9868,8 @@ function pruneDisconnectedNodes(
 			retireAnonymousBox(layout, box);
 		}
 	}
-	for (const [node, flexNode] of layout.nodeMap) {
-		if (node === layout.rootElement || isNodeLive(layout, node)) {
+	for (const [node, flexNode] of layout[kNodeMap]) {
+		if (node === layout[kRootElement] || isNodeLive(layout, node)) {
 			continue;
 		}
 
@@ -10001,7 +10007,7 @@ function restageSubtree(
 	// the walk to discover that would cost more than the boxes it saves.
 	// Anything that HAS been laid out is reachable from its own record: a
 	// tree assembled off-document announces each piece as it is joined.
-	if (!layout.nodeMap.has(node) && !layout[kBoxes].get(node)?.children) {
+	if (!layout[kNodeMap].has(node) && !layout[kBoxes].get(node)?.children) {
 		return;
 	}
 	// The flat tree, not the flow: which elements dissolve into their
@@ -10035,7 +10041,7 @@ function invalidateInlineRun(layout: LayoutEngine, node: Node): void {
 	if (container) {
 		invalidateContainerBoxes(layout, container);
 	}
-	layout.nodeMap.get(entry.node!)?.markDirty();
+	layout[kNodeMap].get(entry.node!)?.markDirty();
 }
 
 function invalidateNode(
@@ -10052,7 +10058,7 @@ function invalidateNode(
 		// For block-level elements, remove from nodeMap to force recreation
 		// We can't call markDirty() on container nodes as the engine only allows
 		// leaf nodes with measure functions to be marked dirty
-		const flexNode = layout.nodeMap.get(node);
+		const flexNode = layout[kNodeMap].get(node);
 		if (flexNode) {
 			// Get parent before removing from map
 			const parent = flexNode.getParent();
@@ -10235,7 +10241,7 @@ function invalidateEnclosingMeasure(
 			return;
 		}
 	} else if (entry) {
-		const headFlexNode = layout.nodeMap.get(entry.node!);
+		const headFlexNode = layout[kNodeMap].get(entry.node!);
 		if (headFlexNode && headFlexNode.measureFunc) {
 			headFlexNode.markDirty();
 			// Keep climbing out of any content root this run sits under:
@@ -10258,7 +10264,7 @@ function invalidateEnclosingMeasure(
 			invalidateBox(layout, enclosing);
 			return;
 		}
-		const flexNode = layout.nodeMap.get(current);
+		const flexNode = layout[kNodeMap].get(current);
 		if (flexNode) {
 			if (flexNode.measureFunc) {
 				flexNode.markDirty();
@@ -10384,7 +10390,7 @@ function markRunMeasureDirty(
 	layout: LayoutEngine,
 	runHead: Node,
 ): void {
-	const flexNode = layout.nodeMap.get(runHead);
+	const flexNode = layout[kNodeMap].get(runHead);
 	if (!flexNode) {
 		return;
 	}
@@ -11887,9 +11893,9 @@ function inlineBlockRect(
 	const ownFlexNode = descended ? undefined : runFlexNode(layout, element);
 	if (ownFlexNode) {
 		const {x, y} = documentPosition(layout, element, ownFlexNode);
-		return new layout.DOMRect(x, y, target.segment.width, target.line.height);
+		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
 	}
-	return new layout.DOMRect(
+	return new layout[kDOMRect](
 		originX + target.segment.x,
 		originY + target.line.y,
 		target.segment.width,
@@ -11913,7 +11919,7 @@ function absolutePosition(
 	// shim maps them onto the viewport), and the camera is applied once at
 	// paint, not in this document-space geometry. Only per-element scroll on
 	// other boxes belongs here.
-	const document = layout.window.document;
+	const document = layout[kEngineWindow].document;
 	const root = document.documentElement;
 	const body = document.body;
 	let x = 0;
@@ -12009,9 +12015,9 @@ function rangeTextNodes(
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
-	const walker = layout.window.document.createTreeWalker(
+	const walker = layout[kEngineWindow].document.createTreeWalker(
 		root,
-		layout.window.NodeFilter.SHOW_TEXT,
+		layout[kEngineWindow].NodeFilter.SHOW_TEXT,
 	);
 	let node: Node | null;
 	while ((node = walker.nextNode())) {
@@ -12055,7 +12061,7 @@ function caretRect(
 		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 	);
 	const x = Math.round(line.rect.x) + stringWidth(before);
-	return new layout.DOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
+	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
 }
 
 /**
@@ -12136,7 +12142,7 @@ function selectionRuns(
 					stringWidth(text.slice(0, runStart));
 				const width = stringWidth(text.slice(runStart, i));
 				runs.push({
-					rect: new layout.DOMRect(
+					rect: new layout[kDOMRect](
 						x,
 						Math.round(fragment.rect.y),
 						width,
@@ -12608,7 +12614,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 											startOffset: nestedSegment.dataStart,
 											endOffset: nestedSegment.dataEnd,
 											visualBase: nestedSegment.visualBase,
-											rect: new layout.DOMRect(
+											rect: new layout[kDOMRect](
 												containerX +
 												segment.x +
 												paddingLeft +
@@ -12640,7 +12646,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 														startOffset: innerSegment.dataStart,
 														endOffset: innerSegment.dataEnd,
 														visualBase: innerSegment.visualBase,
-														rect: new layout.DOMRect(
+														rect: new layout[kDOMRect](
 															containerX +
 															segment.x +
 															paddingLeft +
@@ -12790,7 +12796,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 			node.nodeType === node.ELEMENT_NODE ?
 					(node as Element) :
 					flatParentElement<Element>(node);
-		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
+		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
 		if (positionOf(ancestor) === POSITION_RELATIVE) {
@@ -12874,7 +12880,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 			currentBreakResult.containerWidth,
 		);
 
-		const rect = new layout.DOMRect(
+		const rect = new layout[kDOMRect](
 			containerX + minX + alignOffset + indent,
 			containerY + line.y,
 			maxX - minX,
@@ -12897,18 +12903,22 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 // ---------------------------------------------------------------------------
 
 export class LayoutEngine {
-	declare DOMRect: typeof DOMRect;
-	declare rootElement: Element;
-	declare window: EngineWindow;
+	declare [kDOMRect]: typeof DOMRect;
+	declare [kRootElement]: Element;
+	declare [kEngineWindow]: EngineWindow;
 
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 
-	// Viewport root node - represents terminal dimensions, no DOM element associated
-	declare viewportRootNode: LayoutNode;
+	/** The terminal-sized root every box hangs from; it has no DOM node. */
+	declare [kViewportRoot]: LayoutNode;
 
-	// Public Map for debugging
-	nodeMap: Map<Node, LayoutNode>;
+	/**
+	 * The layout node laying out each node that has one. Not every node does:
+	 * a run member is measured by the run around it and owns none, which is
+	 * what `laidOutBy` answers for.
+	 */
+	declare [kNodeMap]: Map<Node, LayoutNode>;
 
 	// The reverse of nodeMap -- always kept in sync with it via kTrackNode/
 	// kUntrackNode, never written directly elsewhere. Lets paint-time culling
@@ -12995,20 +13005,20 @@ export class LayoutEngine {
 				offsets: Int32Array | null;
 			}
 		>();
-		this.window = window;
-		this.DOMRect = window.DOMRect;
-		this.rootElement = window.document.documentElement;
-		this.nodeMap = new Map<Node, LayoutNode>();
+		this[kEngineWindow] = window;
+		this[kDOMRect] = window.DOMRect;
+		this[kRootElement] = window.document.documentElement;
+		this[kNodeMap] = new Map<Node, LayoutNode>();
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<LayoutNode>();
 
 		// Create viewport root node (no DOM element associated)
-		this.viewportRootNode = LayoutNode.create();
-		this.viewportRootNode.setFlexDirection(FLEX_DIRECTION_COLUMN);
-		this.viewportRootNode.setAlignItems(ALIGN_STRETCH);
+		this[kViewportRoot] = LayoutNode.create();
+		this[kViewportRoot].setFlexDirection(FLEX_DIRECTION_COLUMN);
+		this[kViewportRoot].setAlignItems(ALIGN_STRETCH);
 
 		// Attach HTML element to viewport root instead of null
-		addNode(this, this.rootElement, this.viewportRootNode);
+		addNode(this, this[kRootElement], this[kViewportRoot]);
 	}
 
 	resize(width: number, height: number): void {
@@ -13016,8 +13026,8 @@ export class LayoutEngine {
 		this.terminalHeight = height;
 
 		// Set dimensions on the viewport root node (terminal dimensions)
-		this.viewportRootNode.setWidth(width);
-		this.viewportRootNode.setHeight(height);
+		this[kViewportRoot].setWidth(width);
+		this[kViewportRoot].setHeight(height);
 
 		// Mark all leaf nodes (those with measure functions) as dirty
 		// so the engine re-invokes their measure functions with the new available
@@ -13043,7 +13053,7 @@ export class LayoutEngine {
 		// checks -- is not worth paying. Every mutation path dirties the tree on
 		// its way in, so a clean tree cannot be hiding a disconnection.
 		if (
-			!this.viewportRootNode.dirty &&
+			!this[kViewportRoot].dirty &&
 			this[kInvalidatedNodes].size === 0 &&
 			this[kDirtyRunContainers].size === 0
 		) {
@@ -13112,13 +13122,13 @@ export class LayoutEngine {
 		// clean root therefore means the previous layout is still exact, and
 		// recomputing it would be pure waste -- a full-tree relayout per frame
 		// for an animation repainting one span.
-		if (!this.viewportRootNode.dirty) {
+		if (!this[kViewportRoot].dirty) {
 			return;
 		}
 
 		// Calculate layout using viewport root node (terminal dimensions)
 		// The HTML element can now have auto height and reference viewport via percentages
-		this.viewportRootNode.calculateLayout(
+		this[kViewportRoot].calculateLayout(
 			this.terminalWidth,
 			this.terminalHeight,
 		);
@@ -13129,10 +13139,10 @@ export class LayoutEngine {
 	 */
 	dispose(): void {
 		// Clean up viewport root node (this will recursively free all child layout nodes)
-		this.viewportRootNode.freeRecursive();
+		this[kViewportRoot].freeRecursive();
 
 		// Clear the maps (now regular Maps for debugging)
-		this.nodeMap = new Map();
+		this[kNodeMap] = new Map();
 		this[kInvalidatedNodes] = new Set();
 		this[kMeasureNodes] = new Set();
 		this[kAnonymousBoxes] = new Map();
@@ -13144,7 +13154,7 @@ export class LayoutEngine {
 	 * Used for implementing standard DOM scrollHeight property
 	 */
 	getContentHeight(): number {
-		const bodyRect = this.getRect(this.rootElement.ownerDocument?.body);
+		const bodyRect = this.getRect(this[kRootElement].ownerDocument?.body);
 		if (bodyRect) {
 			return Math.ceil(bodyRect.height);
 		}
@@ -13163,7 +13173,7 @@ export class LayoutEngine {
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
 		// An element with no box of its own is culled by the anonymous box that
 		// lays its content out, whose extent covers the whole run it opens.
-		const node = this.nodeMap.get(element) ?? runFlexNode(this, element);
+		const node = this[kNodeMap].get(element) ?? runFlexNode(this, element);
 		if (!node) {
 			return false;
 		}
@@ -13196,7 +13206,7 @@ export class LayoutEngine {
 		top: number,
 		bottom: number,
 	): Node[] | null {
-		const flexNode = this.nodeMap.get(element);
+		const flexNode = this[kNodeMap].get(element);
 		if (
 			!flexNode ||
 			// A measure-function leaf (an inline/inline-block run head) never gets
@@ -13296,7 +13306,7 @@ export class LayoutEngine {
 		const top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
 		const right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
 		const bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
-		return new this.DOMRect(
+		return new this[kDOMRect](
 			rect.x + left,
 			rect.y + top,
 			Math.max(0, rect.width - left - right),
@@ -13320,7 +13330,7 @@ export class LayoutEngine {
 	scrollExtentOf(
 		element: Element,
 	): {width: number | null; height: number} | null {
-		const flexNode = this.nodeMap.get(element);
+		const flexNode = this[kNodeMap].get(element);
 		if (!flexNode || flexNode.measureFunc !== null) {
 			return null;
 		}
@@ -13381,11 +13391,11 @@ export class LayoutEngine {
 	 * by this amount rather than recomputing extents per scroll.
 	 */
 	scrolledAncestorRows(element: Element): number {
-		const flexNode = this.nodeMap.get(element) ?? runFlexNode(this, element);
+		const flexNode = this[kNodeMap].get(element) ?? runFlexNode(this, element);
 		if (!flexNode) {
 			return 0;
 		}
-		const document = this.window.document;
+		const document = this[kEngineWindow].document;
 		const root = document.documentElement;
 		const body = document.body;
 		let rows = 0;
@@ -13425,7 +13435,7 @@ export class LayoutEngine {
 		// an out-of-flow box, which no run holds any record of at all.
 		const isBlockified =
 			isInlineDisplay(display) &&
-			this.nodeMap.has(element) &&
+			this[kNodeMap].has(element) &&
 			isBlockifiedBox(element);
 
 		if (!isBlockified && isInlineDisplay(display)) {
@@ -13457,14 +13467,14 @@ export class LayoutEngine {
 					return null;
 				}
 				const position = absolutePosition(this, elementFlexNode);
-				return new this.DOMRect(position.x, position.y, 0, 0);
+				return new this[kDOMRect](position.x, position.y, 0, 0);
 			}
 		}
 
 		// Fall back to the layout node for block elements and containers -- or,
 		// for an inline-block whose own segment is unreadable, to the box that
 		// measures the run it opens.
-		const flexNode = this.nodeMap.get(element) ?? runFlexNode(this, element);
+		const flexNode = this[kNodeMap].get(element) ?? runFlexNode(this, element);
 
 		if (!flexNode) {
 			return null;
@@ -13472,7 +13482,7 @@ export class LayoutEngine {
 
 		const {x, y} = documentPosition(this, element, flexNode);
 
-		return new this.DOMRect(
+		return new this[kDOMRect](
 			x,
 			y,
 			flexNode.getComputedWidth(),
@@ -13594,7 +13604,7 @@ export class LayoutEngine {
 		if (lines.length > 0 && data.endsWith("\n")) {
 			const last = lines[lines.length - 1].rect;
 			lines.push({
-				rect: new this.DOMRect(last.x, last.y + last.height, 0, last.height),
+				rect: new this[kDOMRect](last.x, last.y + last.height, 0, last.height),
 				startOffset: data.length,
 				endOffset: data.length,
 				visualBase: null,
@@ -13608,7 +13618,7 @@ export class LayoutEngine {
 			const content = parent && this.contentRect(parent);
 			if (content && parent) {
 				lines.push({
-					rect: new this.DOMRect(
+					rect: new this[kDOMRect](
 						Math.round(content.x),
 						Math.round(content.y),
 						0,
@@ -13710,7 +13720,7 @@ export class LayoutEngine {
 	 * transform/filter have no terminal meaning here.)
 	 */
 	formsStackingContext(element: Element): boolean {
-		if (element === this.window.document.body) {
+		if (element === this[kEngineWindow].document.body) {
 			return true;
 		}
 		if (computedStyleOf(element).computedValueOf("isolation") === "isolate") {
@@ -13736,7 +13746,7 @@ export class LayoutEngine {
 		>();
 		// A stray frame can fire after the window is torn down (window.document
 		// goes null on close), and then there is nothing to layer.
-		const body = this.window.document?.body;
+		const body = this[kEngineWindow].document?.body;
 		if (!body) {
 			return layers;
 		}
@@ -13807,7 +13817,7 @@ export class LayoutEngine {
 		cameraScrollTop: number,
 	): Element | null {
 		const layers = this.collectStackingLayers(topLayer);
-		const document = this.window.document;
+		const document = this[kEngineWindow].document;
 		if (!document?.body) {
 			return null;
 		}
