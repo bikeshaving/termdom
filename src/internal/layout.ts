@@ -68,90 +68,82 @@ import {
  */
 
 // ---------------------------------------------------------------------------
-// Constants
+// The solver's vocabulary
 //
-// Names mirror Yoga's, which is where they came from. Every one is now reached
-// statically -- the engine spells its keyword tables out -- so these can be
-// renumbered or renamed without a name built at runtime missing one.
+// Yoga named these with integer enums and this engine inherited them. They are
+// the CSS keywords now, which is what they always stood for: the values arrive
+// from the cascade as keywords and are compared as keywords, so nothing has to
+// be translated on the way in, and a wrong one is a type error rather than an
+// integer that happens to be in range.
 // ---------------------------------------------------------------------------
 
-const ALIGN_AUTO = 0;
-const ALIGN_FLEX_START = 1;
-const ALIGN_CENTER = 2;
-const ALIGN_FLEX_END = 3;
-const ALIGN_STRETCH = 4;
-const ALIGN_BASELINE = 5;
-const ALIGN_SPACE_BETWEEN = 6;
-const ALIGN_SPACE_AROUND = 7;
-const ALIGN_SPACE_EVENLY = 8;
 /**
- * css-align-3 `normal`, which names no behaviour of its own: it takes the
- * meaning the layout mode gives it -- stretch for a grid item, flex-start for
- * a flex container's lines.
+ * `normal` names no behaviour of its own (css-align-3): it takes the meaning
+ * the layout mode gives it -- stretch for a grid item, flex-start for a flex
+ * container's lines.
  */
-const ALIGN_NORMAL = 9;
+type Align =
+	| "auto" |
+	"flex-start" |
+	"center" |
+	"flex-end" |
+	"stretch" |
+	"baseline" |
+	"space-between" |
+	"space-around" |
+	"space-evenly" |
+	"normal";
 
-const JUSTIFY_FLEX_START = 0;
-const JUSTIFY_CENTER = 1;
-const JUSTIFY_FLEX_END = 2;
-const JUSTIFY_SPACE_BETWEEN = 3;
-const JUSTIFY_SPACE_AROUND = 4;
-const JUSTIFY_SPACE_EVENLY = 5;
-/** See ALIGN_NORMAL. */
-const JUSTIFY_NORMAL = 6;
-const JUSTIFY_STRETCH = 7;
+type Justify =
+	| "flex-start" |
+	"center" |
+	"flex-end" |
+	"space-between" |
+	"space-around" |
+	"space-evenly" |
+	"normal" |
+	"stretch";
 
-const WRAP_NO_WRAP = 0;
-const WRAP_WRAP = 1;
-const WRAP_WRAP_REVERSE = 2;
+type Wrap = "nowrap" | "wrap" | "wrap-reverse";
 
-const FLEX_DIRECTION_COLUMN = 0;
-const FLEX_DIRECTION_COLUMN_REVERSE = 1;
-const FLEX_DIRECTION_ROW = 2;
-const FLEX_DIRECTION_ROW_REVERSE = 3;
+type FlexDirection = "column" | "column-reverse" | "row" | "row-reverse";
 
-const GUTTER_COLUMN = 0;
-const GUTTER_ROW = 1;
-const GUTTER_ALL = 2;
+/** Which axis a gap applies to. */
+type Gutter = "column" | "row" | "all";
 
-const MODE_FLEX = 0;
-const MODE_NONE = 1;
-const MODE_BLOCK = 2;
-const MODE_TABLE = 3;
-const MODE_TABLE_ROW_GROUP = 4;
-const MODE_TABLE_HEADER_GROUP = 5;
-const MODE_TABLE_FOOTER_GROUP = 6;
-const MODE_TABLE_ROW = 7;
-const MODE_TABLE_CELL = 8;
-const MODE_TABLE_CAPTION = 9;
-const MODE_GRID = 10;
+/** How a layout node lays its own children out. */
+type LayoutMode =
+	| "flex" |
+	"none" |
+	"block" |
+	"table" |
+	"table-row-group" |
+	"table-header-group" |
+	"table-footer-group" |
+	"table-row" |
+	"table-cell" |
+	"table-caption" |
+	"grid";
 
-const POSITION_TYPE_STATIC = 0;
-const POSITION_TYPE_RELATIVE = 1;
-const POSITION_TYPE_ABSOLUTE = 2;
 /**
- * Out of flow against the VIEWPORT rather than the nearest positioned box.
- * Distinct from absolute because its containing block is fixed however deep
- * it sits, so no ancestor between may claim it.
+ * `fixed` is out of flow against the VIEWPORT rather than the nearest
+ * positioned box. Distinct from absolute because its containing block is fixed
+ * however deep it sits, so no ancestor between may claim it.
  */
-const POSITION_TYPE_FIXED = 3;
+type PositionType = "static" | "relative" | "absolute" | "fixed";
 
 /** Whether a position type takes the box out of its container's flow. */
 function isOutOfFlowType(positionType: PositionType): boolean {
-	return (
-		positionType === POSITION_TYPE_ABSOLUTE ||
-		positionType === POSITION_TYPE_FIXED
-	);
+	return positionType === "absolute" || positionType === "fixed";
 }
 
 /** Whether a box is a containing block for the out-of-flow boxes below it. */
 function isContainingBlockType(positionType: PositionType): boolean {
-	return positionType !== POSITION_TYPE_STATIC;
+	return positionType !== "static";
 }
 
-const MEASURE_MODE_UNDEFINED = 0;
-const MEASURE_MODE_EXACTLY = 1;
-const MEASURE_MODE_AT_MOST = 2;
+/** What a measurement is being asked for: no constraint, a size, or a cap. */
+type MeasureMode = "unconstrained" | "exactly" | "at-most";
 
 const EDGE_LEFT = 0;
 const EDGE_TOP = 1;
@@ -163,25 +155,15 @@ const EDGE_HORIZONTAL = 6;
 const EDGE_VERTICAL = 7;
 const EDGE_ALL = 8;
 
+type Edge = number;
+
 /**
  * The intrinsic sizing keywords of css-sizing-3 §5, carried beside a width of
  * auto rather than as units of it: min/max resolution, percentages and flex
  * arithmetic go on reading auto, and only the places that decide how wide an
  * auto box comes out consult the keyword.
  */
-const SIZING_NONE = 0;
-const SIZING_MIN_CONTENT = 1;
-const SIZING_MAX_CONTENT = 2;
-const SIZING_FIT_CONTENT = 3;
-
-type Align = number;
-type Justify = number;
-type Wrap = number;
-type FlexDirection = number;
-type LayoutMode = number;
-type PositionType = number;
-type MeasureMode = number;
-type Edge = number;
+type Sizing = "none" | "min-content" | "max-content" | "fit-content";
 
 interface Size {
 	width: number;
@@ -375,33 +357,33 @@ const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 // ---------------------------------------------------------------------------
 
 function isRow(axis: FlexDirection): boolean {
-	return axis === FLEX_DIRECTION_ROW || axis === FLEX_DIRECTION_ROW_REVERSE;
+	return axis === "row" || axis === "row-reverse";
 }
 
 function isColumn(axis: FlexDirection): boolean {
 	return (
-		axis === FLEX_DIRECTION_COLUMN || axis === FLEX_DIRECTION_COLUMN_REVERSE
+		axis === "column" || axis === "column-reverse"
 	);
 }
 
 function isReverse(axis: FlexDirection): boolean {
 	return (
-		axis === FLEX_DIRECTION_ROW_REVERSE ||
-		axis === FLEX_DIRECTION_COLUMN_REVERSE
+		axis === "row-reverse" ||
+		axis === "column-reverse"
 	);
 }
 
 function crossAxis(axis: FlexDirection): FlexDirection {
-	return isRow(axis) ? FLEX_DIRECTION_COLUMN : FLEX_DIRECTION_ROW;
+	return isRow(axis) ? "column" : "row";
 }
 
 function leadingEdge(axis: FlexDirection): Edge {
 	switch (axis) {
-		case FLEX_DIRECTION_ROW:
+		case "row":
 			return EDGE_LEFT;
-		case FLEX_DIRECTION_ROW_REVERSE:
+		case "row-reverse":
 			return EDGE_RIGHT;
-		case FLEX_DIRECTION_COLUMN:
+		case "column":
 			return EDGE_TOP;
 		default:
 			return EDGE_BOTTOM;
@@ -410,11 +392,11 @@ function leadingEdge(axis: FlexDirection): Edge {
 
 function trailingEdge(axis: FlexDirection): Edge {
 	switch (axis) {
-		case FLEX_DIRECTION_ROW:
+		case "row":
 			return EDGE_RIGHT;
-		case FLEX_DIRECTION_ROW_REVERSE:
+		case "row-reverse":
 			return EDGE_LEFT;
-		case FLEX_DIRECTION_COLUMN:
+		case "column":
 			return EDGE_BOTTOM;
 		default:
 			return EDGE_TOP;
@@ -436,7 +418,7 @@ interface Style {
 	mode: LayoutMode;
 
 	/** Gaps between items: [column, row]. */
-	gap: number[];
+	gap: {column: number; row: number};
 
 	/**
 	 * css-align-3 §6: the inline-axis counterparts of align-items/align-self.
@@ -488,7 +470,7 @@ interface Style {
 
 	width: Value;
 	/** SIZING_*: how an auto width resolves; none means fill or measure. */
-	widthSizing: number;
+	widthSizing: Sizing;
 	height: Value;
 	minWidth: Value;
 	minHeight: Value;
@@ -554,19 +536,19 @@ interface LayoutResult {
  */
 function createStyle(): Style {
 	return {
-		flexDirection: FLEX_DIRECTION_ROW,
-		justifyContent: JUSTIFY_FLEX_START,
-		alignContent: ALIGN_STRETCH,
-		alignItems: ALIGN_STRETCH,
-		alignSelf: ALIGN_AUTO,
-		positionType: POSITION_TYPE_RELATIVE,
-		flexWrap: WRAP_NO_WRAP,
-		mode: MODE_FLEX,
+		flexDirection: "row",
+		justifyContent: "flex-start",
+		alignContent: "stretch",
+		alignItems: "stretch",
+		alignSelf: "auto",
+		positionType: "relative",
+		flexWrap: "nowrap",
+		mode: "flex",
 
-		gap: [0, 0],
+		gap: {column: 0, row: 0},
 
-		justifyItems: ALIGN_NORMAL,
-		justifySelf: ALIGN_AUTO,
+		justifyItems: "normal",
+		justifySelf: "auto",
 
 		gridTemplateColumns: EMPTY_TRACK_LIST,
 		gridTemplateRows: EMPTY_TRACK_LIST,
@@ -612,7 +594,7 @@ function createStyle(): Style {
 		border: [0, 0, 0, 0],
 
 		width: AUTO_VALUE,
-		widthSizing: SIZING_NONE,
+		widthSizing: "none",
 		height: AUTO_VALUE,
 		minWidth: UNDEFINED_VALUE,
 		minHeight: UNDEFINED_VALUE,
@@ -735,14 +717,14 @@ function sizeStillAnswers(
 	if (cachedMode === mode && sameConstraint(cachedAvailable, available)) {
 		return true;
 	}
-	if (mode === MEASURE_MODE_EXACTLY && available === cachedComputed) {
+	if (mode === "exactly" && available === cachedComputed) {
 		return true;
 	}
-	if (mode === MEASURE_MODE_AT_MOST) {
-		if (cachedMode === MEASURE_MODE_UNDEFINED) {
+	if (mode === "at-most") {
+		if (cachedMode === "unconstrained") {
 			return cachedComputed <= available;
 		}
-		if (cachedMode === MEASURE_MODE_AT_MOST) {
+		if (cachedMode === "at-most") {
 			return cachedAvailable > available && cachedComputed <= available;
 		}
 	}
@@ -754,7 +736,7 @@ function sizeStillAnswers(
  * the width it cannot go below.
  */
 function isMinContent(mode: MeasureMode, available: number): boolean {
-	return mode === MEASURE_MODE_AT_MOST && available === 0;
+	return mode === "at-most" && available === 0;
 }
 
 const CACHE_SLOT_COUNT = 9;
@@ -775,8 +757,8 @@ function cacheSlot(
 	widthMode: MeasureMode,
 	heightMode: MeasureMode,
 ): number {
-	const knownWidth = widthMode === MEASURE_MODE_EXACTLY;
-	const knownHeight = heightMode === MEASURE_MODE_EXACTLY;
+	const knownWidth = widthMode === "exactly";
+	const knownHeight = heightMode === "exactly";
 	if (knownWidth && knownHeight) {
 		return 0;
 	}
@@ -796,8 +778,8 @@ function cacheSlot(
 /** See FlexNode's unstackedChildCount. */
 function breaksStacking(node: LayoutNode): boolean {
 	return (
-		node.style.positionType !== POSITION_TYPE_STATIC ||
-		node.style.mode === MODE_NONE
+		node.style.positionType !== "static" ||
+		node.style.mode === "none"
 	);
 }
 
@@ -1033,13 +1015,13 @@ class LayoutNode {
 		this.markDirty();
 	}
 
-	setGap(gutter: number, value: number): void {
+	setGap(gutter: Gutter, value: number): void {
 		const gap = Number.isFinite(value) ? Math.max(0, value) : 0;
-		if (gutter === GUTTER_COLUMN || gutter === GUTTER_ALL) {
-			this.style.gap[GUTTER_COLUMN] = gap;
+		if (gutter === "column" || gutter === "all") {
+			this.style.gap["column"] = gap;
 		}
-		if (gutter === GUTTER_ROW || gutter === GUTTER_ALL) {
-			this.style.gap[GUTTER_ROW] = gap;
+		if (gutter === "row" || gutter === "all") {
+			this.style.gap["row"] = gap;
 		}
 		this.markDirty();
 	}
@@ -1194,7 +1176,7 @@ class LayoutNode {
 		this.markDirty();
 	}
 
-	setWidthSizing(v: number): void {
+	setWidthSizing(v: Sizing): void {
 		if (this.style.widthSizing !== v) {
 			this.style.widthSizing = v;
 			this.markDirty();
@@ -1363,10 +1345,10 @@ class LayoutNode {
 		return this.style.positionType;
 	}
 
-	getGap(gutter: number): number {
-		return gutter === GUTTER_ROW ?
-			this.style.gap[GUTTER_ROW] :
-			this.style.gap[GUTTER_COLUMN];
+	getGap(gutter: Gutter): number {
+		return gutter === "row" ?
+			this.style.gap["row"] :
+			this.style.gap["column"];
 	}
 
 	// -- entry point --------------------------------------------------------
@@ -1376,21 +1358,21 @@ class LayoutNode {
 		const height = resolveValue(this.style.height, ownerHeight);
 
 		let availableWidth = isDefined(width) ? width : ownerWidth;
-		let widthMode = isDefined(availableWidth) ?
-			MEASURE_MODE_EXACTLY :
-			MEASURE_MODE_UNDEFINED;
+		let widthMode: MeasureMode = isDefined(availableWidth) ?
+			"exactly" :
+			"unconstrained";
 		// A sizing keyword on a root turns the owner's width from the used
 		// width into a probe: zero for min-content, a ceiling for fit-content,
 		// and no offer at all for max-content.
-		if (!isDefined(width) && this.style.widthSizing !== SIZING_NONE) {
-			if (this.style.widthSizing === SIZING_MIN_CONTENT) {
+		if (!isDefined(width) && this.style.widthSizing !== "none") {
+			if (this.style.widthSizing === "min-content") {
 				availableWidth = 0;
-				widthMode = MEASURE_MODE_AT_MOST;
-			} else if (this.style.widthSizing === SIZING_MAX_CONTENT) {
+				widthMode = "at-most";
+			} else if (this.style.widthSizing === "max-content") {
 				availableWidth = NaN;
-				widthMode = MEASURE_MODE_UNDEFINED;
+				widthMode = "unconstrained";
 			} else if (isDefined(availableWidth)) {
-				widthMode = MEASURE_MODE_AT_MOST;
+				widthMode = "at-most";
 			}
 		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
@@ -1401,8 +1383,8 @@ class LayoutNode {
 			availableHeight,
 			widthMode,
 			isDefined(availableHeight) ?
-				MEASURE_MODE_EXACTLY :
-				MEASURE_MODE_UNDEFINED,
+				"exactly" :
+				"unconstrained",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -1488,11 +1470,11 @@ function resolveFlexBasis(node: LayoutNode, mainAxis: FlexDirection): Value {
 
 function alignSelfOf(parent: LayoutNode, child: LayoutNode): Align {
 	const align =
-		child.style.alignSelf === ALIGN_AUTO ?
+		child.style.alignSelf === "auto" ?
 			parent.style.alignItems :
 			child.style.alignSelf;
 	// `normal` behaves as `stretch` on a flex item (css-align-3 §4.2).
-	return align === ALIGN_NORMAL ? ALIGN_STRETCH : align;
+	return align === "normal" ? "stretch" : align;
 }
 
 /**
@@ -1512,7 +1494,7 @@ function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
 	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
 
 	for (const child of node.children) {
-		if (child.style.mode === MODE_NONE) {
+		if (child.style.mode === "none") {
 			continue;
 		}
 		if (isOutOfFlowType(child.style.positionType)) {
@@ -1533,8 +1515,8 @@ function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
  */
 function gapForAxis(node: LayoutNode, axis: FlexDirection): number {
 	return isRow(axis) ?
-		node.style.gap[GUTTER_COLUMN] :
-		node.style.gap[GUTTER_ROW];
+		node.style.gap["column"] :
+		node.style.gap["row"];
 }
 
 function marginForAxis(
@@ -1650,8 +1632,8 @@ function constrainMaxSizeForMode(
 	}
 
 	if (
-		mode.mode === MEASURE_MODE_EXACTLY ||
-		mode.mode === MEASURE_MODE_AT_MOST
+		mode.mode === "exactly" ||
+		mode.mode === "at-most"
 	) {
 		// A max size caps a size; it does not make it indefinite. Clamping the
 		// value but *keeping* the mode is the whole point: downgrading an EXACTLY
@@ -1662,7 +1644,7 @@ function constrainMaxSizeForMode(
 	} else {
 		// An indefinite size, on the other hand, is genuinely bounded by the max.
 		mode.value = max;
-		mode.mode = MEASURE_MODE_AT_MOST;
+		mode.mode = "at-most";
 	}
 }
 
@@ -1699,14 +1681,14 @@ function setMeasuredDimensions(
 ): void {
 	node.layout.width = boundAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		width,
 		ownerWidth,
 		ownerWidth,
 	);
 	node.layout.height = boundAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		height,
 		ownerHeight,
 		ownerWidth,
@@ -1726,16 +1708,16 @@ function layoutMeasureNode(
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
 	const innerWidth = isDefined(availableWidth) ?
 			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
@@ -1745,8 +1727,8 @@ function layoutMeasureNode(
 		NaN;
 
 	if (
-		widthMode === MEASURE_MODE_EXACTLY &&
-		heightMode === MEASURE_MODE_EXACTLY &&
+		widthMode === "exactly" &&
+		heightMode === "exactly" &&
 		// ...on a sizing pass. A measure function may do more than answer with
 		// a size -- ours breaks the text into the lines that later get PAINTED,
 		// at whatever width it was offered. Skipping it on the final pass left
@@ -1775,11 +1757,11 @@ function layoutMeasureNode(
 	);
 
 	const width =
-		widthMode === MEASURE_MODE_EXACTLY ?
+		widthMode === "exactly" ?
 			availableWidth - marginRow :
 			measured.width + paddingBorderRow;
 	const height =
-		heightMode === MEASURE_MODE_EXACTLY ?
+		heightMode === "exactly" ?
 			availableHeight - marginColumn :
 			measured.height + paddingBorderColumn;
 
@@ -1804,24 +1786,24 @@ function layoutEmptyContainer(
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
 	const width =
-		widthMode === MEASURE_MODE_UNDEFINED || widthMode === MEASURE_MODE_AT_MOST ?
+		widthMode === "unconstrained" || widthMode === "at-most" ?
 			paddingBorderRow :
 			availableWidth - marginRow;
 	const height =
-		heightMode === MEASURE_MODE_UNDEFINED ||
-		heightMode === MEASURE_MODE_AT_MOST ?
+		heightMode === "unconstrained" ||
+		heightMode === "at-most" ?
 			paddingBorderColumn :
 			availableHeight - marginColumn;
 
@@ -1852,12 +1834,12 @@ function computeFlexBasisForChild(
 
 	const rowDimDefined = styleDimIsDefined(
 		child,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const columnDimDefined = styleDimIsDefined(
 		child,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerHeight,
 	);
 
@@ -1872,7 +1854,7 @@ function computeFlexBasisForChild(
 	if (mainIsRow && rowDimDefined) {
 		child.layout.computedFlexBasis = Math.max(
 			resolveValue(child.style.width, ownerWidth),
-			paddingAndBorderForAxis(child, FLEX_DIRECTION_ROW, ownerWidth),
+			paddingAndBorderForAxis(child, "row", ownerWidth),
 		);
 		return;
 	}
@@ -1880,64 +1862,64 @@ function computeFlexBasisForChild(
 	if (!mainIsRow && columnDimDefined) {
 		child.layout.computedFlexBasis = Math.max(
 			resolveValue(child.style.height, ownerHeight),
-			paddingAndBorderForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth),
+			paddingAndBorderForAxis(child, "column", ownerWidth),
 		);
 		return;
 	}
 
 	// Basis is `content`: measure the child.
-	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
-	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
 
-	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(child, "row", ownerWidth);
+	const marginColumn = marginForAxis(child, "column", ownerWidth);
 
 	if (rowDimDefined) {
 		childWidth.value = resolveValue(child.style.width, ownerWidth) + marginRow;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	}
 	if (columnDimDefined) {
 		childHeight.value =
 			resolveValue(child.style.height, ownerHeight) + marginColumn;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	}
 
 	if (!isDefined(childWidth.value) && isDefined(width)) {
 		childWidth.value = width;
-		childWidth.mode = MEASURE_MODE_AT_MOST;
+		childWidth.mode = "at-most";
 	}
 	if (!isDefined(childHeight.value) && isDefined(height)) {
 		childHeight.value = height;
-		childHeight.mode = MEASURE_MODE_AT_MOST;
+		childHeight.mode = "at-most";
 	}
 
 	// A stretched child on a definite cross axis is measured at the full cross size.
-	const stretch = alignSelfOf(node, child) === ALIGN_STRETCH;
+	const stretch = alignSelfOf(node, child) === "stretch";
 	if (
 		!mainIsRow &&
 		isDefined(width) &&
-		widthMode === MEASURE_MODE_EXACTLY &&
+		widthMode === "exactly" &&
 		stretch &&
-		childWidth.mode !== MEASURE_MODE_EXACTLY
+		childWidth.mode !== "exactly"
 	) {
 		childWidth.value = width;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	}
 	if (
 		mainIsRow &&
 		isDefined(height) &&
-		heightMode === MEASURE_MODE_EXACTLY &&
+		heightMode === "exactly" &&
 		stretch &&
-		childHeight.mode !== MEASURE_MODE_EXACTLY
+		childHeight.mode !== "exactly"
 	) {
 		childHeight.value = height;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	}
 
-	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
 	constrainMaxSizeForMode(
 		child,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerHeight,
 		childHeight,
 	);
@@ -1985,20 +1967,20 @@ function layoutFlexbox(
 	const mainAxis = node.style.flexDirection;
 	const cross = crossAxis(mainAxis);
 	const mainIsRow = isRow(mainAxis);
-	const wrap = node.style.flexWrap !== WRAP_NO_WRAP;
+	const wrap = node.style.flexWrap !== "nowrap";
 
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
 	const leadingPaddingBorderMain = paddingAndBorderForEdge(
 		node,
@@ -2033,7 +2015,7 @@ function layoutFlexbox(
 
 	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === MODE_NONE) {
+		if (child.style.mode === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -2186,7 +2168,7 @@ function layoutFlexbox(
 		// definite. Under AT_MOST it is an upper bound, and treating it as definite
 		// would make the container report the full available cross size as its
 		// content size -- which then becomes its flex basis in the parent.
-		if (!wrap && isDefined(innerCross) && crossMode === MEASURE_MODE_EXACTLY) {
+		if (!wrap && isDefined(innerCross) && crossMode === "exactly") {
 			lineCross = Math.max(lineCross, innerCross);
 		}
 		line.crossDim = lineCross;
@@ -2201,7 +2183,7 @@ function layoutFlexbox(
 	// -- measured size ------------------------------------------------------
 
 	const measuredMain = mainIsRow ?
-		widthMode === MEASURE_MODE_EXACTLY ?
+		widthMode === "exactly" ?
 			availableWidth - marginRow :
 				boundAxis(
 					node,
@@ -2210,7 +2192,7 @@ function layoutFlexbox(
 					ownerWidth,
 					ownerWidth,
 				) :
-		heightMode === MEASURE_MODE_EXACTLY ?
+		heightMode === "exactly" ?
 			availableHeight - marginColumn :
 				boundAxis(
 					node,
@@ -2222,8 +2204,8 @@ function layoutFlexbox(
 
 	const crossIsRow = isRow(cross);
 	const crossExactly = crossIsRow ?
-		widthMode === MEASURE_MODE_EXACTLY :
-		heightMode === MEASURE_MODE_EXACTLY;
+		widthMode === "exactly" :
+		heightMode === "exactly";
 	const crossAvailable = crossIsRow ?
 		availableWidth - marginRow :
 		availableHeight - marginColumn;
@@ -2276,7 +2258,7 @@ function layoutFlexbox(
 			leadingPaddingBorderMain,
 		);
 	}
-	if (node.style.flexWrap === WRAP_WRAP_REVERSE) {
+	if (node.style.flexWrap === "wrap-reverse") {
 		mirrorWithinContentBox(
 			lines,
 			cross,
@@ -2296,17 +2278,17 @@ function layoutFlexbox(
 
 	for (const line of lines) {
 		for (const child of line.items) {
-			if (child.style.positionType !== POSITION_TYPE_RELATIVE) {
+			if (child.style.positionType !== "relative") {
 				continue;
 			}
 			child.layout.left += relativeOffset(
 				child,
-				FLEX_DIRECTION_ROW,
+				"row",
 				innerWidthFinal,
 			);
 			child.layout.top += relativeOffset(
 				child,
-				FLEX_DIRECTION_COLUMN,
+				"column",
 				innerHeightFinal,
 			);
 		}
@@ -2341,12 +2323,12 @@ function outOfFlowDescendants(
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
 		for (const child of parent.children) {
-			if (child.style.mode === MODE_NONE) {
+			if (child.style.mode === "none") {
 				continue;
 			}
 			const type = child.style.positionType;
 			const wanted =
-				viewport ? POSITION_TYPE_FIXED : POSITION_TYPE_ABSOLUTE;
+				viewport ? "fixed" : "absolute";
 			if (type === wanted) {
 				found.push(child);
 			}
@@ -2462,7 +2444,7 @@ function resolveFlexibleLengths(
 	// being sized to its content against an upper bound, so there is no free space
 	// to distribute -- the container will shrink-wrap instead. Shrinking still
 	// applies, since content that overflows the bound must be compressed.
-	if (growing && mainMode !== MEASURE_MODE_EXACTLY) {
+	if (growing && mainMode !== "exactly") {
 		commit();
 		return;
 	}
@@ -2601,14 +2583,14 @@ function autoMinimumMainSize(
 	const crossAvailable = isDefined(innerCross) ? innerCross : NaN;
 	const crossMeasureMode = isDefined(innerCross) ?
 		crossMode :
-		MEASURE_MODE_UNDEFINED;
+		"unconstrained";
 
 	layoutNode(
 		child,
 		mainIsRow ? 0 : crossAvailable,
 		mainIsRow ? crossAvailable : 0,
-		mainIsRow ? MEASURE_MODE_AT_MOST : crossMeasureMode,
-		mainIsRow ? crossMeasureMode : MEASURE_MODE_AT_MOST,
+		mainIsRow ? "at-most" : crossMeasureMode,
+		mainIsRow ? crossMeasureMode : "at-most",
 		ownerWidth,
 		ownerHeight,
 		false,
@@ -2658,8 +2640,8 @@ function layoutFlexItem(
 		isRow(cross) ? ownerWidth : ownerHeight,
 	);
 
-	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
-	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
 
 	const marginMainForChild = marginForAxis(child, mainAxis, ownerWidth);
 	const marginCrossForChild = marginForAxis(child, cross, ownerWidth);
@@ -2667,10 +2649,10 @@ function layoutFlexItem(
 	// Main axis is now definite.
 	if (mainIsRow) {
 		childWidth.value = mainSize + marginMainForChild;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	} else {
 		childHeight.value = mainSize + marginMainForChild;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	}
 
 	// Cross axis: explicit size wins, else stretch to the line, else shrink-to-fit.
@@ -2696,15 +2678,15 @@ function layoutFlexItem(
 		);
 		if (isRow(cross)) {
 			childWidth.value = bounded + marginCrossForChild;
-			childWidth.mode = MEASURE_MODE_EXACTLY;
+			childWidth.mode = "exactly";
 		} else {
 			childHeight.value = bounded + marginCrossForChild;
-			childHeight.mode = MEASURE_MODE_EXACTLY;
+			childHeight.mode = "exactly";
 		}
 	} else if (
-		align === ALIGN_STRETCH &&
+		align === "stretch" &&
 		isDefined(innerCross) &&
-		crossMode === MEASURE_MODE_EXACTLY
+		crossMode === "exactly"
 	) {
 		// Only stretch against a *definite* cross size. While the container is
 		// still being measured its cross size is merely an upper bound, and
@@ -2713,28 +2695,28 @@ function layoutFlexItem(
 		// in positionCrossAxis once the container's real cross size is known.
 		if (isRow(cross)) {
 			childWidth.value = innerCross;
-			childWidth.mode = MEASURE_MODE_EXACTLY;
+			childWidth.mode = "exactly";
 		} else {
 			childHeight.value = innerCross;
-			childHeight.mode = MEASURE_MODE_EXACTLY;
+			childHeight.mode = "exactly";
 		}
 	} else {
 		const available = isRow(cross) ? innerWidth : innerHeight;
 		if (isDefined(available)) {
 			if (isRow(cross)) {
 				childWidth.value = available;
-				childWidth.mode = MEASURE_MODE_AT_MOST;
+				childWidth.mode = "at-most";
 			} else {
 				childHeight.value = available;
-				childHeight.mode = MEASURE_MODE_AT_MOST;
+				childHeight.mode = "at-most";
 			}
 		}
 	}
 
-	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
 	constrainMaxSizeForMode(
 		child,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerHeight,
 		childHeight,
 	);
@@ -2778,8 +2760,8 @@ function stretchFlexItem(
 		child,
 		width,
 		height,
-		MEASURE_MODE_EXACTLY,
-		MEASURE_MODE_EXACTLY,
+		"exactly",
+		"exactly",
 		ownerWidth,
 		ownerHeight,
 		true,
@@ -2827,24 +2809,24 @@ function positionMainAxis(
 	} else {
 		const count = line.items.length;
 		switch (node.style.justifyContent) {
-			case JUSTIFY_CENTER:
+			case "center":
 				leading = free / 2;
 				break;
-			case JUSTIFY_FLEX_END:
+			case "flex-end":
 				leading = free;
 				break;
-			case JUSTIFY_SPACE_BETWEEN:
+			case "space-between":
 				if (count > 1) {
 					between = Math.max(free, 0) / (count - 1);
 				}
 				break;
-			case JUSTIFY_SPACE_AROUND:
+			case "space-around":
 				if (count > 0) {
 					between = Math.max(free, 0) / count;
 					leading = between / 2;
 				}
 				break;
-			case JUSTIFY_SPACE_EVENLY:
+			case "space-evenly":
 				if (count > 0) {
 					between = Math.max(free, 0) / (count + 1);
 					leading = between;
@@ -2924,24 +2906,24 @@ function positionCrossAxis(
 	const lineCount = lines.length;
 
 	switch (node.style.alignContent) {
-		case ALIGN_FLEX_END:
+		case "flex-end":
 			lineLeading = freeCross;
 			break;
-		case ALIGN_CENTER:
+		case "center":
 			lineLeading = freeCross / 2;
 			break;
-		case ALIGN_SPACE_BETWEEN:
+		case "space-between":
 			if (lineCount > 1) {
 				lineBetween = Math.max(freeCross, 0) / (lineCount - 1);
 			}
 			break;
-		case ALIGN_SPACE_AROUND:
+		case "space-around":
 			if (lineCount > 0) {
 				lineBetween = Math.max(freeCross, 0) / lineCount;
 				lineLeading = lineBetween / 2;
 			}
 			break;
-		case ALIGN_SPACE_EVENLY:
+		case "space-evenly":
 			// Equal gaps everywhere, including before the first line and after the
 			// last: n lines make n+1 gaps.
 			if (lineCount > 0) {
@@ -2949,7 +2931,7 @@ function positionCrossAxis(
 				lineLeading = lineBetween;
 			}
 			break;
-		case ALIGN_STRETCH:
+		case "stretch":
 			// Extra space is handed to the lines themselves, below.
 			break;
 		default:
@@ -2958,7 +2940,7 @@ function positionCrossAxis(
 
 	// align-content: stretch grows each line to share the free cross space.
 	const stretchPerLine =
-		node.style.alignContent === ALIGN_STRETCH &&
+		node.style.alignContent === "stretch" &&
 		lineCount > 0 &&
 		freeCross > 0 ?
 			freeCross / lineCount :
@@ -2978,10 +2960,10 @@ function positionCrossAxis(
 		let maxBaseline = 0;
 		const lineHasBaseline =
 			!crossIsRow &&
-			line.items.some((child) => alignSelfOf(node, child) === ALIGN_BASELINE);
+			line.items.some((child) => alignSelfOf(node, child) === "baseline");
 		if (lineHasBaseline) {
 			for (const child of line.items) {
-				if (alignSelfOf(node, child) !== ALIGN_BASELINE) {
+				if (alignSelfOf(node, child) !== "baseline") {
 					continue;
 				}
 				const childBaseline =
@@ -3015,7 +2997,7 @@ function positionCrossAxis(
 				crossIsRow ? ownerWidth : ownerHeight,
 			);
 			if (
-				align === ALIGN_STRETCH &&
+				align === "stretch" &&
 				!crossDimDefined &&
 				!leadingAuto &&
 				!trailingAuto
@@ -3042,13 +3024,13 @@ function positionCrossAxis(
 				offset = Math.max(availableCross, 0);
 			} else {
 				switch (align) {
-					case ALIGN_CENTER:
+					case "center":
 						offset = availableCross / 2;
 						break;
-					case ALIGN_FLEX_END:
+					case "flex-end":
 						offset = availableCross;
 						break;
-					case ALIGN_BASELINE:
+					case "baseline":
 						if (crossIsRow) {
 							// Column container: no block axis to align along.
 							offset = 0;
@@ -3168,22 +3150,22 @@ function layoutAbsoluteChild(
 	const shrinkDown =
 		isDefined(top) && isDefined(bottom) && autoTop && autoBottom;
 
-	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
-	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, basisWidth)) {
+	if (styleDimIsDefined(child, "row", basisWidth)) {
 		childWidth.value =
 			resolveValue(child.style.width, basisWidth) + marginLeft + marginRight;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	} else if (shrinkAcross) {
 		// Auto margins on both sides: the insets bound the box, they do not
 		// size it, so it shrinks to its content within them.
 		childWidth.value = blockWidth - left - right;
-		childWidth.mode = MEASURE_MODE_AT_MOST;
+		childWidth.mode = "at-most";
 	} else if (isDefined(left) && isDefined(right)) {
 		// Both insets pin the box, so its width is implied.
 		childWidth.value = blockWidth - left - right - marginLeft - marginRight;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	} else if (isDefined(blockWidth)) {
 		childWidth.value = blockWidth;
 		// `stretch` (and the `normal` a grid area gives it) fills the alignment
@@ -3191,27 +3173,27 @@ function layoutAbsoluteChild(
 		// (css-align-3 §5.2). Nothing but a grid area has an alignment
 		// container to fill, so nothing else stretches.
 		childWidth.mode =
-			area && gridSelfAlign(node, child, true) === ALIGN_STRETCH ?
-				MEASURE_MODE_EXACTLY :
-				MEASURE_MODE_AT_MOST;
+			area && gridSelfAlign(node, child, true) === "stretch" ?
+				"exactly" :
+				"at-most";
 	}
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, basisHeight)) {
+	if (styleDimIsDefined(child, "column", basisHeight)) {
 		childHeight.value =
 			resolveValue(child.style.height, basisHeight) + marginTop + marginBottom;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	} else if (shrinkDown) {
 		childHeight.value = blockHeight - top - bottom;
-		childHeight.mode = MEASURE_MODE_AT_MOST;
+		childHeight.mode = "at-most";
 	} else if (isDefined(top) && isDefined(bottom)) {
 		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	} else if (isDefined(blockHeight)) {
 		childHeight.value = blockHeight;
 		childHeight.mode =
-			area && gridSelfAlign(node, child, false) === ALIGN_STRETCH ?
-				MEASURE_MODE_EXACTLY :
-				MEASURE_MODE_AT_MOST;
+			area && gridSelfAlign(node, child, false) === "stretch" ?
+				"exactly" :
+				"at-most";
 	}
 
 	layoutNode(
@@ -3233,7 +3215,7 @@ function layoutAbsoluteChild(
 				(child.staticPositionFunc?.(node) ?? null) :
 			null;
 
-	const isGrid = node.style.mode === MODE_GRID;
+	const isGrid = node.style.mode === "grid";
 
 	// Horizontal placement.
 	if (shrinkAcross) {
@@ -3255,15 +3237,15 @@ function layoutAbsoluteChild(
 		const align = isGrid ?
 				gridSelfAlign(node, child, true) :
 			isRow(node.style.flexDirection) ?
-				node.style.justifyContent === JUSTIFY_CENTER ?
-					ALIGN_CENTER :
-					node.style.justifyContent === JUSTIFY_FLEX_END ?
-						ALIGN_FLEX_END :
-						ALIGN_FLEX_START :
-				ALIGN_FLEX_START;
-		if (align === ALIGN_CENTER) {
+				node.style.justifyContent === "center" ?
+					"center" :
+					node.style.justifyContent === "flex-end" ?
+						"flex-end" :
+						"flex-start" :
+				"flex-start";
+		if (align === "center") {
 			child.layout.left = blockLeft + free / 2;
-		} else if (align === ALIGN_FLEX_END) {
+		} else if (align === "flex-end") {
 			child.layout.left = blockLeft + free;
 		} else {
 			child.layout.left = blockLeft + marginLeft;
@@ -3286,15 +3268,15 @@ function layoutAbsoluteChild(
 		const align = isGrid ?
 				gridSelfAlign(node, child, false) :
 			isColumn(node.style.flexDirection) ?
-				node.style.alignItems === ALIGN_CENTER ?
-					ALIGN_CENTER :
-					node.style.alignItems === ALIGN_FLEX_END ?
-						ALIGN_FLEX_END :
-						ALIGN_FLEX_START :
-				ALIGN_FLEX_START;
-		if (align === ALIGN_CENTER) {
+				node.style.alignItems === "center" ?
+					"center" :
+					node.style.alignItems === "flex-end" ?
+						"flex-end" :
+						"flex-start" :
+				"flex-start";
+		if (align === "center") {
 			child.layout.top = blockTop + free / 2;
-		} else if (align === ALIGN_FLEX_END) {
+		} else if (align === "flex-end") {
 			child.layout.top = blockTop + free;
 		} else {
 			child.layout.top = blockTop + marginTop;
@@ -3382,7 +3364,7 @@ function collectTableRows(table: LayoutNode): {
 	const collectGroup = (group: LayoutNode, into: TableRow[]) => {
 		groups.push(group);
 		for (const child of group.children) {
-			if (child.style.mode === MODE_TABLE_ROW) {
+			if (child.style.mode === "table-row") {
 				into.push({node: child, group});
 			} else {
 				zeroLayout(child);
@@ -3392,7 +3374,7 @@ function collectTableRows(table: LayoutNode): {
 
 	for (const child of table.children) {
 		if (
-			child.style.mode === MODE_NONE ||
+			child.style.mode === "none" ||
 			isOutOfFlowType(child.style.positionType)
 		) {
 			zeroLayout(child);
@@ -3400,19 +3382,19 @@ function collectTableRows(table: LayoutNode): {
 		}
 
 		switch (child.style.mode) {
-			case MODE_TABLE_CAPTION:
+			case "table-caption":
 				captions.push(child);
 				break;
-			case MODE_TABLE_HEADER_GROUP:
+			case "table-header-group":
 				collectGroup(child, header);
 				break;
-			case MODE_TABLE_FOOTER_GROUP:
+			case "table-footer-group":
 				collectGroup(child, footer);
 				break;
-			case MODE_TABLE_ROW_GROUP:
+			case "table-row-group":
 				collectGroup(child, body);
 				break;
-			case MODE_TABLE_ROW:
+			case "table-row":
 				body.push({node: child, group: null});
 				break;
 			default:
@@ -3443,7 +3425,7 @@ function buildTableGrid(rows: TableRow[]): {
 		let column = 0;
 
 		for (const node of row.node.children) {
-			if (node.style.mode !== MODE_TABLE_CELL) {
+			if (node.style.mode !== "table-cell") {
 				zeroLayout(node);
 				continue;
 			}
@@ -3496,8 +3478,8 @@ function intrinsicCellWidth(
 		cell,
 		minContent ? 0 : NaN,
 		NaN,
-		minContent ? MEASURE_MODE_AT_MOST : MEASURE_MODE_UNDEFINED,
-		MEASURE_MODE_UNDEFINED,
+		minContent ? "at-most" : "unconstrained",
+		"unconstrained",
 		ownerWidth,
 		ownerHeight,
 		false,
@@ -3687,16 +3669,16 @@ function layoutTable(
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
 	const leftPaddingBorder = paddingAndBorderForEdge(
 		node,
@@ -3718,7 +3700,7 @@ function layoutTable(
 		NaN;
 
 	const widthIsDefinite =
-		widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
+		widthMode === "exactly" && isDefined(innerWidth);
 
 	const columnWidths = resolveColumnWidths(
 		cells,
@@ -3750,8 +3732,8 @@ function layoutTable(
 			caption,
 			contentWidth,
 			NaN,
-			MEASURE_MODE_EXACTLY,
-			MEASURE_MODE_UNDEFINED,
+			"exactly",
+			"unconstrained",
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -3772,8 +3754,8 @@ function layoutTable(
 			cell.node,
 			width,
 			NaN,
-			MEASURE_MODE_EXACTLY,
-			MEASURE_MODE_UNDEFINED,
+			"exactly",
+			"unconstrained",
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -3838,11 +3820,11 @@ function layoutTable(
 
 	// -- table box ---------------------------------------------------------
 	const width =
-		widthMode === MEASURE_MODE_EXACTLY ?
+		widthMode === "exactly" ?
 			availableWidth - marginRow :
 			contentWidth + paddingBorderRow;
 	const height =
-		heightMode === MEASURE_MODE_EXACTLY ?
+		heightMode === "exactly" ?
 			availableHeight - marginColumn :
 			contentHeight + paddingBorderColumn;
 
@@ -3886,8 +3868,8 @@ function layoutTable(
 			cell.node,
 			cellWidth,
 			cellHeight,
-			MEASURE_MODE_EXACTLY,
-			MEASURE_MODE_EXACTLY,
+			"exactly",
+			"exactly",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -4561,15 +4543,15 @@ function gridItemContribution(
 			child,
 			minContent ? 0 : NaN,
 			NaN,
-			minContent ? MEASURE_MODE_AT_MOST : MEASURE_MODE_UNDEFINED,
-			MEASURE_MODE_UNDEFINED,
+			minContent ? "at-most" : "unconstrained",
+			"unconstrained",
 			sizing.ownerWidth,
 			sizing.ownerHeight,
 			false,
 		);
 		return (
 			child.layout.width +
-			marginForAxis(child, FLEX_DIRECTION_ROW, sizing.ownerWidth)
+			marginForAxis(child, "row", sizing.ownerWidth)
 		);
 	}
 	const width = spanOfTracks(
@@ -4582,15 +4564,15 @@ function gridItemContribution(
 		child,
 		width,
 		NaN,
-		MEASURE_MODE_EXACTLY,
-		MEASURE_MODE_UNDEFINED,
+		"exactly",
+		"unconstrained",
 		sizing.ownerWidth,
 		sizing.ownerHeight,
 		false,
 	);
 	return (
 		child.layout.height +
-		marginForAxis(child, FLEX_DIRECTION_COLUMN, sizing.ownerWidth) +
+		marginForAxis(child, "column", sizing.ownerWidth) +
 		(sizing.baselineShims?.get(child) ?? 0)
 	);
 }
@@ -4612,7 +4594,7 @@ function measureBaselineShims(
 	const shims = new Map<LayoutNode, number>();
 	const rows = new Map<number, GridItem[]>();
 	for (const item of items) {
-		if (gridSelfAlign(node, item.node, false) !== ALIGN_BASELINE) {
+		if (gridSelfAlign(node, item.node, false) !== "baseline") {
 			continue;
 		}
 		const group = rows.get(item.rowStart);
@@ -4634,8 +4616,8 @@ function measureBaselineShims(
 				item.node,
 				spanOfTracks(columnSizes, columnGap, item.columnStart, item.columnEnd),
 				NaN,
-				MEASURE_MODE_EXACTLY,
-				MEASURE_MODE_UNDEFINED,
+				"exactly",
+				"unconstrained",
 				ownerWidth,
 				ownerHeight,
 				false,
@@ -5137,52 +5119,59 @@ function sizeTracks(sizing: TrackSizing): void {
 
 // -- alignment (css-align-3, as css-grid-2 §10 uses it) ----------------------
 
-const CONTENT_START = 0;
-const CONTENT_CENTER = 1;
-const CONTENT_END = 2;
-const CONTENT_SPACE_BETWEEN = 3;
-const CONTENT_SPACE_AROUND = 4;
-const CONTENT_SPACE_EVENLY = 5;
-/** `normal` and `stretch`: the tracks themselves take the free space (§12.8). */
-const CONTENT_STRETCH = 6;
+/**
+ * How a grid distributes the space left over around its tracks. A separate
+ * vocabulary from Align and Justify, and translated into from them: the flex
+ * keywords name the edges flex-start and flex-end, the grid ones start and
+ * end. `normal` and `stretch` mean the tracks themselves take the free space
+ * (css-align-3 §12.8).
+ */
+type ContentAlign =
+	| "start" |
+	"center" |
+	"end" |
+	"space-between" |
+	"space-around" |
+	"space-evenly" |
+	"stretch";
 
-function inlineContentAlign(node: LayoutNode): number {
+function inlineContentAlign(node: LayoutNode): ContentAlign {
 	switch (node.style.justifyContent) {
-		case JUSTIFY_CENTER:
-			return CONTENT_CENTER;
-		case JUSTIFY_FLEX_END:
-			return CONTENT_END;
-		case JUSTIFY_SPACE_BETWEEN:
-			return CONTENT_SPACE_BETWEEN;
-		case JUSTIFY_SPACE_AROUND:
-			return CONTENT_SPACE_AROUND;
-		case JUSTIFY_SPACE_EVENLY:
-			return CONTENT_SPACE_EVENLY;
-		case JUSTIFY_NORMAL:
-		case JUSTIFY_STRETCH:
-			return CONTENT_STRETCH;
+		case "center":
+			return "center";
+		case "flex-end":
+			return "end";
+		case "space-between":
+			return "space-between";
+		case "space-around":
+			return "space-around";
+		case "space-evenly":
+			return "space-evenly";
+		case "normal":
+		case "stretch":
+			return "stretch";
 		default:
-			return CONTENT_START;
+			return "start";
 	}
 }
 
-function blockContentAlign(node: LayoutNode): number {
+function blockContentAlign(node: LayoutNode): ContentAlign {
 	switch (node.style.alignContent) {
-		case ALIGN_CENTER:
-			return CONTENT_CENTER;
-		case ALIGN_FLEX_END:
-			return CONTENT_END;
-		case ALIGN_SPACE_BETWEEN:
-			return CONTENT_SPACE_BETWEEN;
-		case ALIGN_SPACE_AROUND:
-			return CONTENT_SPACE_AROUND;
-		case ALIGN_SPACE_EVENLY:
-			return CONTENT_SPACE_EVENLY;
-		case ALIGN_NORMAL:
-		case ALIGN_STRETCH:
-			return CONTENT_STRETCH;
+		case "center":
+			return "center";
+		case "flex-end":
+			return "end";
+		case "space-between":
+			return "space-between";
+		case "space-around":
+			return "space-around";
+		case "space-evenly":
+			return "space-evenly";
+		case "normal":
+		case "stretch":
+			return "stretch";
 		default:
-			return CONTENT_START;
+			return "start";
 	}
 }
 
@@ -5200,8 +5189,8 @@ function gridSelfAlign(
 	const fallback = inline ?
 		container.style.justifyItems :
 		container.style.alignItems;
-	const value = own === ALIGN_AUTO ? fallback : own;
-	return value === ALIGN_AUTO || value === ALIGN_NORMAL ? ALIGN_STRETCH : value;
+	const value = own === "auto" ? fallback : own;
+	return value === "auto" || value === "normal" ? "stretch" : value;
 }
 
 /** Lay the tracks out across the content box, per justify-content/align-content. */
@@ -5209,30 +5198,30 @@ function positionTracks(
 	tracks: GridTrack[],
 	free: number,
 	gap: number,
-	align: number,
+	align: ContentAlign,
 ): void {
 	const count = tracks.filter((track) => !track.collapsed).length;
 	let leading = 0;
 	let between = 0;
 	switch (align) {
-		case CONTENT_CENTER:
+		case "center":
 			leading = free / 2;
 			break;
-		case CONTENT_END:
+		case "end":
 			leading = free;
 			break;
-		case CONTENT_SPACE_BETWEEN:
+		case "space-between":
 			if (count > 1) {
 				between = Math.max(free, 0) / (count - 1);
 			}
 			break;
-		case CONTENT_SPACE_AROUND:
+		case "space-around":
 			if (count > 0) {
 				between = Math.max(free, 0) / count;
 				leading = between / 2;
 			}
 			break;
-		case CONTENT_SPACE_EVENLY:
+		case "space-evenly":
 			if (count > 0) {
 				between = Math.max(free, 0) / (count + 1);
 				leading = between;
@@ -5276,53 +5265,53 @@ function layoutGridItem(
 	const autoTop = child.style.margin[EDGE_TOP].unit === UNIT_AUTO;
 	const autoBottom = child.style.margin[EDGE_BOTTOM].unit === UNIT_AUTO;
 
-	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(child, "row", ownerWidth);
+	const marginColumn = marginForAxis(child, "column", ownerWidth);
 
-	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
-	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, ownerWidth)) {
+	if (styleDimIsDefined(child, "row", ownerWidth)) {
 		childWidth.value =
 			boundAxisWithinMinMax(
 				child,
-				FLEX_DIRECTION_ROW,
+				"row",
 				resolveValue(child.style.width, ownerWidth),
 				areaWidth,
 			) + marginRow;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
-	} else if (justify === ALIGN_STRETCH && !autoLeft && !autoRight) {
+		childWidth.mode = "exactly";
+	} else if (justify === "stretch" && !autoLeft && !autoRight) {
 		// An area is a definite size, so a stretched item takes all of it --
 		// the value offered includes the item's own margins, which the box
 		// takes off for itself.
 		childWidth.value = Math.max(0, areaWidth);
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	} else {
 		childWidth.value = Math.max(0, areaWidth);
-		childWidth.mode = MEASURE_MODE_AT_MOST;
+		childWidth.mode = "at-most";
 	}
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)) {
+	if (styleDimIsDefined(child, "column", ownerHeight)) {
 		childHeight.value =
 			boundAxisWithinMinMax(
 				child,
-				FLEX_DIRECTION_COLUMN,
+				"column",
 				resolveValue(child.style.height, ownerHeight),
 				areaHeight,
 			) + marginColumn;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
-	} else if (align === ALIGN_STRETCH && !autoTop && !autoBottom) {
+		childHeight.mode = "exactly";
+	} else if (align === "stretch" && !autoTop && !autoBottom) {
 		childHeight.value = Math.max(0, areaHeight);
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	} else {
 		childHeight.value = Math.max(0, areaHeight);
-		childHeight.mode = MEASURE_MODE_AT_MOST;
+		childHeight.mode = "at-most";
 	}
 
-	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
 	constrainMaxSizeForMode(
 		child,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerHeight,
 		childHeight,
 	);
@@ -5376,9 +5365,9 @@ function alignmentOffset(
 		return 0;
 	}
 	switch (align) {
-		case ALIGN_CENTER:
+		case "center":
 			return free / 2;
-		case ALIGN_FLEX_END:
+		case "flex-end":
 			return free;
 		default:
 			return 0;
@@ -5397,7 +5386,7 @@ function alignGridBaselines(
 ): void {
 	const rows = new Map<number, GridItem[]>();
 	for (const item of items) {
-		if (gridSelfAlign(node, item.node, false) !== ALIGN_BASELINE) {
+		if (gridSelfAlign(node, item.node, false) !== "baseline") {
 			continue;
 		}
 		const group = rows.get(item.rowStart);
@@ -5458,16 +5447,16 @@ function layoutGrid(
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 	const contentLeft = paddingAndBorderForEdge(node, EDGE_LEFT, ownerWidth);
 	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
 
@@ -5478,18 +5467,18 @@ function layoutGrid(
 			Math.max(0, availableHeight - marginColumn - paddingBorderColumn) :
 		NaN;
 
-	const columnGap = node.style.gap[GUTTER_COLUMN];
-	const rowGap = node.style.gap[GUTTER_ROW];
+	const columnGap = node.style.gap["column"];
+	const rowGap = node.style.gap["row"];
 
 	const definiteWidth =
-		widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
+		widthMode === "exactly" && isDefined(innerWidth);
 	const definiteHeight =
-		heightMode === MEASURE_MODE_EXACTLY && isDefined(innerHeight);
+		heightMode === "exactly" && isDefined(innerHeight);
 
 	// -- grid items ---------------------------------------------------------
 	const children: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === MODE_NONE) {
+		if (child.style.mode === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -5682,7 +5671,7 @@ function layoutGrid(
 			ownerHeight,
 			columnSizes: null,
 			columnGap,
-			stretchesAutoTracks: inlineAlign === CONTENT_STRETCH,
+			stretchesAutoTracks: inlineAlign === "stretch",
 			baselineShims: null,
 		});
 		return tracks;
@@ -5706,7 +5695,7 @@ function layoutGrid(
 	// A shrink-to-fit grid that overflows its bound is re-sized against it:
 	// the bound is the space the tracks actually have to share out.
 	if (
-		widthMode === MEASURE_MODE_AT_MOST &&
+		widthMode === "at-most" &&
 		isDefined(innerWidth) &&
 		columnsTotal > innerWidth + EPSILON
 	) {
@@ -5746,7 +5735,7 @@ function layoutGrid(
 			ownerHeight,
 			columnSizes,
 			columnGap,
-			stretchesAutoTracks: blockAlign === CONTENT_STRETCH,
+			stretchesAutoTracks: blockAlign === "stretch",
 			baselineShims,
 		});
 		return tracks;
@@ -5755,7 +5744,7 @@ function layoutGrid(
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
 	let rowsTotal = totalOf(rowTracks, rowGap);
 	if (
-		heightMode === MEASURE_MODE_AT_MOST &&
+		heightMode === "at-most" &&
 		isDefined(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
@@ -5765,21 +5754,21 @@ function layoutGrid(
 
 	// -- the grid container's own box ---------------------------------------
 	const width =
-		widthMode === MEASURE_MODE_EXACTLY ?
+		widthMode === "exactly" ?
 			availableWidth - marginRow :
 				boundAxis(
 					node,
-					FLEX_DIRECTION_ROW,
+					"row",
 					columnsTotal + paddingBorderRow,
 					ownerWidth,
 					ownerWidth,
 				);
 	const height =
-		heightMode === MEASURE_MODE_EXACTLY ?
+		heightMode === "exactly" ?
 			availableHeight - marginColumn :
 				boundAxis(
 					node,
-					FLEX_DIRECTION_COLUMN,
+					"column",
 					rowsTotal + paddingBorderColumn,
 					ownerHeight,
 					ownerWidth,
@@ -5862,17 +5851,17 @@ function layoutGrid(
 	// -- relative offsets ---------------------------------------------------
 	for (const item of items) {
 		const child = item.node;
-		if (child.style.positionType !== POSITION_TYPE_RELATIVE) {
+		if (child.style.positionType !== "relative") {
 			continue;
 		}
 		child.layout.left += relativeOffset(
 			child,
-			FLEX_DIRECTION_ROW,
+			"row",
 			usedInnerWidth,
 		);
 		child.layout.top += relativeOffset(
 			child,
-			FLEX_DIRECTION_COLUMN,
+			"column",
 			usedInnerHeight,
 		);
 	}
@@ -6087,8 +6076,8 @@ function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 /** A box that wraps its own content rather than filling its container. */
 function shrinkWrapsWidth(node: LayoutNode): boolean {
 	return (
-		node.style.mode === MODE_TABLE ||
-		node.style.widthSizing !== SIZING_NONE
+		node.style.mode === "table" ||
+		node.style.widthSizing !== "none"
 	);
 }
 
@@ -6106,25 +6095,25 @@ function layoutBlockChild(
 	ownerHeight: number,
 	performLayout: boolean,
 ): void {
-	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(child, "row", ownerWidth);
+	const marginColumn = marginForAxis(child, "column", ownerWidth);
 
-	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
-	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, ownerWidth)) {
+	if (styleDimIsDefined(child, "row", ownerWidth)) {
 		childWidth.value =
 			boundAxisWithinMinMax(
 				child,
-				FLEX_DIRECTION_ROW,
+				"row",
 				resolveValue(child.style.width, ownerWidth),
 				contentWidth,
 			) + marginRow;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
+		childWidth.mode = "exactly";
 	} else if (
 		isDefined(child.style.aspectRatio) &&
 		child.style.aspectRatio > 0 &&
-		styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)
+		styleDimIsDefined(child, "column", ownerHeight)
 	) {
 		// A definite height transfers through the box's aspect ratio, and the
 		// transferred width beats fill: the box is as wide as its ratio says,
@@ -6135,36 +6124,36 @@ function layoutBlockChild(
 		childWidth.value =
 			boundAxisWithinMinMax(
 				child,
-				FLEX_DIRECTION_ROW,
+				"row",
 				transferred,
 				contentWidth,
 			) + marginRow;
-		childWidth.mode = MEASURE_MODE_EXACTLY;
-	} else if (child.style.widthSizing === SIZING_MIN_CONTENT) {
+		childWidth.mode = "exactly";
+	} else if (child.style.widthSizing === "min-content") {
 		// The min-content probe: an AT_MOST offer of zero breaks the content
 		// at its narrowest, and the wrapped width is the box's.
 		childWidth.value = 0;
-		childWidth.mode = MEASURE_MODE_AT_MOST;
-	} else if (child.style.widthSizing === SIZING_MAX_CONTENT) {
+		childWidth.mode = "at-most";
+	} else if (child.style.widthSizing === "max-content") {
 		// An undefined offer measures the content unbroken, so the box takes
 		// its max-content width whatever the container offers.
 	} else if (isDefined(contentWidth)) {
 		// A non-filling child's AT_MOST offer is fit-content already:
 		// min(max-content, max(min-content, available)).
 		childWidth.value = contentWidth;
-		childWidth.mode = fill ? MEASURE_MODE_EXACTLY : MEASURE_MODE_AT_MOST;
+		childWidth.mode = fill ? "exactly" : "at-most";
 	}
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)) {
+	if (styleDimIsDefined(child, "column", ownerHeight)) {
 		childHeight.value =
 			resolveValue(child.style.height, ownerHeight) + marginColumn;
-		childHeight.mode = MEASURE_MODE_EXACTLY;
+		childHeight.mode = "exactly";
 	}
 
-	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
 	constrainMaxSizeForMode(
 		child,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerHeight,
 		childHeight,
 	);
@@ -6223,16 +6212,16 @@ function layoutBlock(
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		ownerWidth,
 	);
 	const paddingBorderColumn = paddingAndBorderForAxis(
 		node,
-		FLEX_DIRECTION_COLUMN,
+		"column",
 		ownerWidth,
 	);
-	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
-	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const marginRow = marginForAxis(node, "row", ownerWidth);
+	const marginColumn = marginForAxis(node, "column", ownerWidth);
 	const leftPaddingBorder = paddingAndBorderForEdge(
 		node,
 		EDGE_LEFT,
@@ -6244,7 +6233,7 @@ function layoutBlock(
 
 	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === MODE_NONE) {
+		if (child.style.mode === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -6265,7 +6254,7 @@ function layoutBlock(
 	// one is measured exactly once at the width it will keep.
 
 	let borderBoxWidth: number;
-	if (widthMode === MEASURE_MODE_EXACTLY) {
+	if (widthMode === "exactly") {
 		borderBoxWidth = availableWidth - marginRow;
 	} else {
 		// Shrink-to-fit: as wide as the widest child, within what is offered.
@@ -6282,14 +6271,14 @@ function layoutBlock(
 			widest = Math.max(
 				widest,
 				child.layout.width +
-				marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth),
+				marginForAxis(child, "row", ownerWidth),
 			);
 		}
 		borderBoxWidth = widest + paddingBorderRow;
 	}
 	borderBoxWidth = boundAxis(
 		node,
-		FLEX_DIRECTION_ROW,
+		"row",
 		borderBoxWidth,
 		ownerWidth,
 		ownerWidth,
@@ -6304,8 +6293,8 @@ function layoutBlock(
 	const openBottom =
 		!node.style.blockFormattingContext &&
 		paddingAndBorderForEdge(node, EDGE_BOTTOM, ownerWidth) === 0 &&
-		heightMode !== MEASURE_MODE_EXACTLY &&
-		!styleDimIsDefined(node, FLEX_DIRECTION_COLUMN, ownerHeight);
+		heightMode !== "exactly" &&
+		!styleDimIsDefined(node, "column", ownerHeight);
 
 	const escapingTop = marginSet();
 	const escapingBottom = marginSet();
@@ -6369,7 +6358,7 @@ function layoutBlock(
 	}
 
 	const height =
-		heightMode === MEASURE_MODE_EXACTLY ?
+		heightMode === "exactly" ?
 			availableHeight - marginColumn :
 			Math.max(0, contentHeight) + paddingBorderColumn;
 
@@ -6419,17 +6408,17 @@ function layoutBlock(
 	const innerWidthFinal = node.layout.width - paddingBorderRow;
 	const innerHeightFinal = node.layout.height - paddingBorderColumn;
 	for (const child of inFlow) {
-		if (child.style.positionType !== POSITION_TYPE_RELATIVE) {
+		if (child.style.positionType !== "relative") {
 			continue;
 		}
 		child.layout.left += relativeOffset(
 			child,
-			FLEX_DIRECTION_ROW,
+			"row",
 			innerWidthFinal,
 		);
 		child.layout.top += relativeOffset(
 			child,
-			FLEX_DIRECTION_COLUMN,
+			"column",
 			innerHeightFinal,
 		);
 	}
@@ -6464,26 +6453,26 @@ function layoutNode(
 	// cells: one cell is one cell, vertical or horizontal.
 	const ratio = node.style.aspectRatio;
 	if (isDefined(ratio) && ratio > 0) {
-		const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+		const marginRow = marginForAxis(node, "row", ownerWidth);
 		const marginColumn = marginForAxis(
 			node,
-			FLEX_DIRECTION_COLUMN,
+			"column",
 			ownerWidth,
 		);
 		if (
-			widthMode === MEASURE_MODE_EXACTLY &&
-			heightMode !== MEASURE_MODE_EXACTLY &&
+			widthMode === "exactly" &&
+			heightMode !== "exactly" &&
 			isDefined(availableWidth)
 		) {
 			availableHeight = (availableWidth - marginRow) / ratio + marginColumn;
-			heightMode = MEASURE_MODE_EXACTLY;
+			heightMode = "exactly";
 		} else if (
-			heightMode === MEASURE_MODE_EXACTLY &&
-			widthMode !== MEASURE_MODE_EXACTLY &&
+			heightMode === "exactly" &&
+			widthMode !== "exactly" &&
 			isDefined(availableHeight)
 		) {
 			availableWidth = (availableHeight - marginColumn) * ratio + marginRow;
-			widthMode = MEASURE_MODE_EXACTLY;
+			widthMode = "exactly";
 		}
 	}
 
@@ -6511,10 +6500,10 @@ function layoutNode(
 			// Margins are outside the size a measurement answers with, so both the
 			// offer and the remembered offer come down to their content side
 			// before they are compared.
-			const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+			const marginRow = marginForAxis(node, "row", ownerWidth);
 			const marginColumn = marginForAxis(
 				node,
-				FLEX_DIRECTION_COLUMN,
+				"column",
 				ownerWidth,
 			);
 			for (const cached of node.cachedMeasures) {
@@ -6636,12 +6625,12 @@ function layoutNodeImpl(
 
 	// Used track sizes belong to a grid container and nothing else: a box that
 	// stopped being one must stop reporting them.
-	if (node.style.mode !== MODE_GRID) {
+	if (node.style.mode !== "grid") {
 		node.layout.gridColumns = null;
 		node.layout.gridRows = null;
 	}
 
-	if (node.style.mode === MODE_NONE) {
+	if (node.style.mode === "none") {
 		zeroLayout(node);
 		return;
 	}
@@ -6660,7 +6649,7 @@ function layoutNodeImpl(
 		return;
 	}
 
-	if (node.style.mode === MODE_GRID) {
+	if (node.style.mode === "grid") {
 		layoutGrid(
 			node,
 			availableWidth,
@@ -6674,7 +6663,7 @@ function layoutNodeImpl(
 		return;
 	}
 
-	if (node.style.mode === MODE_TABLE) {
+	if (node.style.mode === "table") {
 		layoutTable(
 			node,
 			availableWidth,
@@ -6691,9 +6680,9 @@ function layoutNodeImpl(
 	// A table cell and a table caption are block containers for their own
 	// content, whatever the grid around them does with their boxes.
 	if (
-		node.style.mode === MODE_BLOCK ||
-		node.style.mode === MODE_TABLE_CELL ||
-		node.style.mode === MODE_TABLE_CAPTION
+		node.style.mode === "block" ||
+		node.style.mode === "table-cell" ||
+		node.style.mode === "table-caption"
 	) {
 		layoutBlock(
 			node,
@@ -6710,7 +6699,7 @@ function layoutNodeImpl(
 
 	const hasInFlowChild = node.children.some(
 		(child) =>
-			child.style.mode !== MODE_NONE &&
+			child.style.mode !== "none" &&
 			!isOutOfFlowType(child.style.positionType),
 	);
 
@@ -7559,29 +7548,42 @@ function isSuppressedFlexWhitespace(
  * reads as absent here, and so the solver's constants can be renumbered or
  * renamed without a lookup silently answering null.
  */
-const ALIGN_VALUES: Record<string, Align | undefined> = {
-	"auto": ALIGN_AUTO,
-	"flex-start": ALIGN_FLEX_START,
-	"center": ALIGN_CENTER,
-	"flex-end": ALIGN_FLEX_END,
-	"stretch": ALIGN_STRETCH,
-	"baseline": ALIGN_BASELINE,
-	"space-between": ALIGN_SPACE_BETWEEN,
-	"space-around": ALIGN_SPACE_AROUND,
-	"space-evenly": ALIGN_SPACE_EVENLY,
-	"normal": ALIGN_NORMAL,
-};
+/**
+ * The keywords each property accepts, for narrowing a computed value to the
+ * type. Both were tables mapping every keyword to itself, back when the value
+ * on this side was a number.
+ */
+const ALIGNS = new Set<string>([
+	"auto",
+	"flex-start",
+	"center",
+	"flex-end",
+	"stretch",
+	"baseline",
+	"space-between",
+	"space-around",
+	"space-evenly",
+	"normal",
+]);
 
-const JUSTIFY_VALUES: Record<string, Justify | undefined> = {
-	"flex-start": JUSTIFY_FLEX_START,
-	"center": JUSTIFY_CENTER,
-	"flex-end": JUSTIFY_FLEX_END,
-	"space-between": JUSTIFY_SPACE_BETWEEN,
-	"space-around": JUSTIFY_SPACE_AROUND,
-	"space-evenly": JUSTIFY_SPACE_EVENLY,
-	"normal": JUSTIFY_NORMAL,
-	"stretch": JUSTIFY_STRETCH,
-};
+const JUSTIFIES = new Set<string>([
+	"flex-start",
+	"center",
+	"flex-end",
+	"space-between",
+	"space-around",
+	"space-evenly",
+	"normal",
+	"stretch",
+]);
+
+function asAlign(value: string, fallback: Align): Align {
+	return ALIGNS.has(value) ? (value as Align) : fallback;
+}
+
+function asJustify(value: string, fallback: Justify): Justify {
+	return JUSTIFIES.has(value) ? (value as Justify) : fallback;
+}
 
 /** A colspan/rowspan attribute, defaulting to 1 when absent or nonsense. */
 function parseSpanAttribute(element: Element, name: string): number {
@@ -7697,38 +7699,38 @@ function parseAspectRatio(value: string): number | undefined {
  * overflows. `first`/`last baseline` both name the one baseline a cell grid
  * has (see baselineWithinBorderBox).
  */
-const ALIGNMENT_CONSTANTS: Record<string, number> = {
-	"normal": ALIGN_NORMAL,
-	"stretch": ALIGN_STRETCH,
-	"center": ALIGN_CENTER,
-	"baseline": ALIGN_BASELINE,
-	"start": ALIGN_FLEX_START,
-	"end": ALIGN_FLEX_END,
-	"flex-start": ALIGN_FLEX_START,
-	"flex-end": ALIGN_FLEX_END,
-	"self-start": ALIGN_FLEX_START,
-	"self-end": ALIGN_FLEX_END,
-	"left": ALIGN_FLEX_START,
-	"right": ALIGN_FLEX_END,
-	"space-between": ALIGN_SPACE_BETWEEN,
-	"space-around": ALIGN_SPACE_AROUND,
-	"space-evenly": ALIGN_SPACE_EVENLY,
+const ALIGNMENT_CONSTANTS: Record<string, Align> = {
+	"normal": "normal",
+	"stretch": "stretch",
+	"center": "center",
+	"baseline": "baseline",
+	"start": "flex-start",
+	"end": "flex-end",
+	"flex-start": "flex-start",
+	"flex-end": "flex-end",
+	"self-start": "flex-start",
+	"self-end": "flex-end",
+	"left": "flex-start",
+	"right": "flex-end",
+	"space-between": "space-between",
+	"space-around": "space-around",
+	"space-evenly": "space-evenly",
 };
 
 /** The inline-axis content distribution constants, which are their own enum. */
-const JUSTIFY_CONTENT_CONSTANTS: Record<string, number> = {
-	"normal": JUSTIFY_NORMAL,
-	"stretch": JUSTIFY_STRETCH,
-	"center": JUSTIFY_CENTER,
-	"start": JUSTIFY_FLEX_START,
-	"end": JUSTIFY_FLEX_END,
-	"flex-start": JUSTIFY_FLEX_START,
-	"flex-end": JUSTIFY_FLEX_END,
-	"left": JUSTIFY_FLEX_START,
-	"right": JUSTIFY_FLEX_END,
-	"space-between": JUSTIFY_SPACE_BETWEEN,
-	"space-around": JUSTIFY_SPACE_AROUND,
-	"space-evenly": JUSTIFY_SPACE_EVENLY,
+const JUSTIFY_CONTENT_CONSTANTS: Record<string, Justify> = {
+	"normal": "normal",
+	"stretch": "stretch",
+	"center": "center",
+	"start": "flex-start",
+	"end": "flex-end",
+	"flex-start": "flex-start",
+	"flex-end": "flex-end",
+	"left": "flex-start",
+	"right": "flex-end",
+	"space-between": "space-between",
+	"space-around": "space-around",
+	"space-evenly": "space-evenly",
 };
 
 /** Strip the qualifier a keyword may be written with, and fold its case. */
@@ -7746,7 +7748,7 @@ function alignmentKeyword(value: string): string {
 	return tokens[0] ?? "";
 }
 
-function alignmentConstant(value: string, fallback: number): number {
+function alignmentConstant(value: string, fallback: Align): Align {
 	if (!value || value === "auto") {
 		return fallback;
 	}
@@ -7754,9 +7756,9 @@ function alignmentConstant(value: string, fallback: number): number {
 	return constant === undefined ? fallback : constant;
 }
 
-function justifyContentConstant(value: string): number {
+function justifyContentConstant(value: string): Justify {
 	const constant = JUSTIFY_CONTENT_CONSTANTS[alignmentKeyword(value)];
-	return constant === undefined ? JUSTIFY_NORMAL : constant;
+	return constant === undefined ? "normal" : constant;
 }
 
 /** The grid container properties, from the cascade to the layout node. */
@@ -7793,34 +7795,32 @@ function applyGridContainer(
 	flexNode.setAlignContent(
 		alignmentConstant(
 			computedStyle.computedValueOf("align-content"),
-			ALIGN_NORMAL,
+			"normal",
 		),
 	);
 	flexNode.setAlignItems(
 		alignmentConstant(
 			computedStyle.computedValueOf("align-items"),
-			ALIGN_NORMAL,
+			"normal",
 		),
 	);
 	flexNode.setJustifyItems(
 		alignmentConstant(
 			computedStyle.computedValueOf("justify-items"),
-			ALIGN_NORMAL,
+			"normal",
 		),
 	);
 }
 
 /** The css-sizing-3 §5 keyword a width computed to, as the engine's constant. */
-function widthSizingConstant(value: string): number {
+function widthSizingConstant(value: string): Sizing {
 	switch (value) {
 		case "min-content":
-			return SIZING_MIN_CONTENT;
 		case "max-content":
-			return SIZING_MAX_CONTENT;
 		case "fit-content":
-			return SIZING_FIT_CONTENT;
+			return value;
 		default:
-			return SIZING_NONE;
+			return "none";
 	}
 }
 
@@ -7862,7 +7862,7 @@ function styleFlexNodeProperties(
 	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
-		flexNode.setWidthSizing(SIZING_NONE);
+		flexNode.setWidthSizing("none");
 		flexNode.setHeightAuto();
 		// Also unset min/max constraints for pure inline elements
 		flexNode.setMinWidth(undefined);
@@ -7873,7 +7873,7 @@ function styleFlexNodeProperties(
 		// For atomic inline elements, unset width/height but preserve min/max constraints
 		// This allows the measure function to work while still respecting CSS constraints
 		flexNode.setWidthAuto();
-		flexNode.setWidthSizing(SIZING_NONE);
+		flexNode.setWidthSizing("none");
 		flexNode.setHeightAuto();
 
 		applyMinMax(flexNode, computedStyle);
@@ -8143,11 +8143,11 @@ function styleFlexNodeProperties(
 	}
 
 	const alignSelf = computedStyle.computedValueOf("align-self");
-	flexNode.setAlignSelf(alignmentConstant(alignSelf, ALIGN_AUTO));
+	flexNode.setAlignSelf(alignmentConstant(alignSelf, "auto"));
 	flexNode.setJustifySelf(
 		alignmentConstant(
 			computedStyle.computedValueOf("justify-self"),
-			ALIGN_AUTO,
+			"auto",
 		),
 	);
 
@@ -8171,45 +8171,45 @@ function styleFlexNodeProperties(
 	// longhands here is enough and gets the precedence right.
 	const rowGap = parseUnitValue(computedStyle.computedValueOf("row-gap"));
 	if (typeof rowGap === "number") {
-		flexNode.setGap(GUTTER_ROW, rowGap);
+		flexNode.setGap("row", rowGap);
 	}
 
 	const columnGap = parseUnitValue(computedStyle.computedValueOf("column-gap"));
 	if (typeof columnGap === "number") {
-		flexNode.setGap(GUTTER_COLUMN, columnGap);
+		flexNode.setGap("column", columnGap);
 	}
 
 	if (display === "none") {
-		flexNode.setMode(MODE_NONE);
+		flexNode.setMode("none");
 	} else if (display === "grid" || display === "inline-grid") {
-		flexNode.setMode(MODE_GRID);
+		flexNode.setMode("grid");
 		applyGridContainer(flexNode, computedStyle);
 	} else if (display === "flex") {
-		flexNode.setMode(MODE_FLEX);
+		flexNode.setMode("flex");
 	} else if (display === "table") {
 		// A layout mode of its own: columns are shared across rows, which a box
 		// per <tr> stacked on its own structurally cannot express.
-		flexNode.setMode(MODE_TABLE);
+		flexNode.setMode("table");
 		flexNode.setBorderCollapse(
 			computedStyle.computedValueOf("border-collapse") === "collapse",
 		);
 	} else if (display === "table-header-group") {
-		flexNode.setMode(MODE_TABLE_HEADER_GROUP);
+		flexNode.setMode("table-header-group");
 	} else if (display === "table-footer-group") {
-		flexNode.setMode(MODE_TABLE_FOOTER_GROUP);
+		flexNode.setMode("table-footer-group");
 	} else if (display === "table-row-group") {
-		flexNode.setMode(MODE_TABLE_ROW_GROUP);
+		flexNode.setMode("table-row-group");
 	} else if (display === "table-caption") {
-		flexNode.setMode(MODE_TABLE_CAPTION);
+		flexNode.setMode("table-caption");
 	} else if (
 		display === "table-column" || display === "table-column-group"
 	) {
 		// Columns carry style, not a box of their own.
-		flexNode.setMode(MODE_NONE);
+		flexNode.setMode("none");
 	} else if (display === "table-row") {
-		flexNode.setMode(MODE_TABLE_ROW);
+		flexNode.setMode("table-row");
 	} else if (display === "table-cell") {
-		flexNode.setMode(MODE_TABLE_CELL);
+		flexNode.setMode("table-cell");
 		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
 
@@ -8228,39 +8228,39 @@ function styleFlexNodeProperties(
 	if (display === "flex") {
 		const flexDirection = computedStyle.computedValueOf("flex-direction");
 		if (flexDirection === "row") {
-			flexNode.setFlexDirection(FLEX_DIRECTION_ROW);
+			flexNode.setFlexDirection("row");
 		} else if (flexDirection === "row-reverse") {
-			flexNode.setFlexDirection(FLEX_DIRECTION_ROW_REVERSE);
+			flexNode.setFlexDirection("row-reverse");
 		} else if (flexDirection === "column") {
-			flexNode.setFlexDirection(FLEX_DIRECTION_COLUMN);
+			flexNode.setFlexDirection("column");
 		} else if (flexDirection === "column-reverse") {
-			flexNode.setFlexDirection(FLEX_DIRECTION_COLUMN_REVERSE);
+			flexNode.setFlexDirection("column-reverse");
 		} else {
-			flexNode.setFlexDirection(FLEX_DIRECTION_ROW);
+			flexNode.setFlexDirection("row");
 		}
 
 		const flexWrap = computedStyle.computedValueOf("flex-wrap");
 		if (flexWrap === "nowrap") {
-			flexNode.setFlexWrap(WRAP_NO_WRAP);
+			flexNode.setFlexWrap("nowrap");
 		} else if (flexWrap === "wrap") {
-			flexNode.setFlexWrap(WRAP_WRAP);
+			flexNode.setFlexWrap("wrap");
 		} else if (flexWrap === "wrap-reverse") {
-			flexNode.setFlexWrap(WRAP_WRAP_REVERSE);
+			flexNode.setFlexWrap("wrap-reverse");
 		} else {
-			flexNode.setFlexWrap(WRAP_NO_WRAP);
+			flexNode.setFlexWrap("nowrap");
 		}
 
 		const justifyContent = computedStyle.computedValueOf("justify-content");
 		flexNode.setJustifyContent(
-			JUSTIFY_VALUES[justifyContent] ?? JUSTIFY_FLEX_START,
+			asJustify(justifyContent, "flex-start"),
 		);
 
 		const alignItems = computedStyle.computedValueOf("align-items");
-		flexNode.setAlignItems(ALIGN_VALUES[alignItems] ?? ALIGN_STRETCH);
+		flexNode.setAlignItems(asAlign(alignItems, "stretch"));
 
 		const alignContent = computedStyle.computedValueOf("align-content");
 		flexNode.setAlignContent(
-			ALIGN_VALUES[alignContent] ?? ALIGN_FLEX_START,
+			asAlign(alignContent, "flex-start"),
 		);
 	} else if (
 		display !== "none" &&
@@ -8273,7 +8273,7 @@ function styleFlexNodeProperties(
 		// unable to find its own caption; resetting a runtime-hidden element
 		// ("none", set a hundred lines up) back keeps its rows painting
 		// and pushes everything below it down.
-		flexNode.setMode(MODE_BLOCK);
+		flexNode.setMode("block");
 	}
 
 	// A block formatting context contains its children's margins: none of them
@@ -8305,10 +8305,10 @@ function styleFlexNodeProperties(
 		}
 	}
 	if (position === "absolute") {
-		flexNode.setPositionType(POSITION_TYPE_ABSOLUTE);
+		flexNode.setPositionType("absolute");
 		applyInsets(flexNode, computedStyle, INSET_EDGES, true);
 	} else if (position === "relative") {
-		flexNode.setPositionType(POSITION_TYPE_RELATIVE);
+		flexNode.setPositionType("relative");
 		// A relative box is offset from where it would have sat, and the offset
 		// this engine applies is the start-edge one: `right`/`bottom` alone do
 		// not move it.
@@ -8316,10 +8316,10 @@ function styleFlexNodeProperties(
 	} else if (position === "fixed") {
 		// The viewport is the containing block, whatever it sits inside, and
 		// the camera is what keeps it still.
-		flexNode.setPositionType(POSITION_TYPE_FIXED);
+		flexNode.setPositionType("fixed");
 		applyInsets(flexNode, computedStyle, INSET_EDGES, false);
 	} else {
-		flexNode.setPositionType(POSITION_TYPE_STATIC);
+		flexNode.setPositionType("static");
 	}
 }
 
@@ -8335,11 +8335,11 @@ function styleNode(
 	element: Element,
 	flexNode: LayoutNode,
 ): void {
-	const wasHidden = flexNode.getMode() === MODE_NONE;
+	const wasHidden = flexNode.getMode() === "none";
 	styleFlexNode(element, flexNode, layout.positionedElements);
 	// Turning display:none is what makes the whole subtree box-less, and
 	// this is the one place every path that restyles a box passes through.
-	if (!wasHidden && flexNode.getMode() === MODE_NONE) {
+	if (!wasHidden && flexNode.getMode() === "none") {
 		retireHiddenContent(layout, element);
 	}
 	if (isOutOfFlow(element)) {
@@ -8719,7 +8719,7 @@ function boxKindMatches(
 	}
 	return (
 		(computedDisplay(element) === "none") ===
-		(flexNode.getMode() === MODE_NONE)
+		(flexNode.getMode() === "none")
 	);
 }
 
@@ -9306,7 +9306,7 @@ function addElementNode(
 	styleNode(layout, element, flexNode);
 
 	if (display === "none") {
-		flexNode.setMode(MODE_NONE);
+		flexNode.setMode("none");
 		if (flexNode && parentFlexNode) {
 			placeChild(parentFlexNode, flexNode, flexIndex);
 		}
@@ -9506,12 +9506,12 @@ function syncContentRoot(
 	// The root IS the box's formatting context, so it wears the display
 	// and, for a grid, the container properties the element declares --
 	// the element's own layout node is the one the run measures.
-	root.setMode(grid ? MODE_GRID : MODE_BLOCK);
+	root.setMode(grid ? "grid" : "block");
 	if (grid) {
 		applyGridContainer(root, computedStyleOf(element));
-		const gaps: Array<[string, number]> = [
-			["row-gap", GUTTER_ROW],
-			["column-gap", GUTTER_COLUMN],
+		const gaps: Array<[string, Gutter]> = [
+			["row-gap", "row"],
+			["column-gap", "column"],
 		];
 		for (const [property, gutter] of gaps) {
 			const gap = parseUnitValue(
@@ -10684,7 +10684,7 @@ function collectLeafNodes(
 	layout: LayoutEngine,
 	source: Box,
 	availableWidth: number,
-	availableWidthMode: MeasureMode = MEASURE_MODE_UNDEFINED,
+	availableWidthMode: MeasureMode = "unconstrained",
 ): Leaf[] {
 	const leafNodes: Leaf[] = [];
 	if (source.kind === "anonymous") {
@@ -10879,30 +10879,30 @@ function collectLeavesUnder(
 				// Determine content constraints
 				let contentWidth = Number.MAX_SAFE_INTEGER;
 				let contentHeight = Number.MAX_SAFE_INTEGER;
-				let contentWidthMode = MEASURE_MODE_UNDEFINED;
-				let contentHeightMode = MEASURE_MODE_UNDEFINED;
+				let contentWidthMode: MeasureMode = "unconstrained";
+				let contentHeightMode: MeasureMode = "unconstrained";
 
 				// A sizing keyword never reaches getBoxModel's numbers; it
 				// picks the probe the content is measured under instead.
 				const widthSizing =
 					boxModel.width === undefined ?
 							widthSizingConstant(getPropertyValue(element, "width")) :
-						SIZING_NONE;
+						"none";
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
-					contentWidthMode = MEASURE_MODE_EXACTLY;
-				} else if (widthSizing === SIZING_MIN_CONTENT) {
+					contentWidthMode = "exactly";
+				} else if (widthSizing === "min-content") {
 					contentWidth = 0;
-					contentWidthMode = MEASURE_MODE_AT_MOST;
+					contentWidthMode = "at-most";
 				} else if (
-					widthSizing === SIZING_FIT_CONTENT &&
+					widthSizing === "fit-content" &&
 					Number.isFinite(availableWidth) &&
 					availableWidth < Number.MAX_SAFE_INTEGER
 				) {
 					// fit-content: break at the run's available width, which
 					// caps max-content without flooring below min-content.
 					contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
-					contentWidthMode = MEASURE_MODE_AT_MOST;
+					contentWidthMode = "at-most";
 				} else if (element.tagName === "TEXTAREA") {
 					// cols sizes the CONTENT box (spec default 20), exactly as the
 					// attribute does in a browser; the box then adds whatever
@@ -10912,7 +10912,7 @@ function collectLeavesUnder(
 					// `border: none`.
 					const cols = parseInt(element.getAttribute("cols") ?? "", 10);
 					contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
-					contentWidthMode = MEASURE_MODE_EXACTLY;
+					contentWidthMode = "exactly";
 				}
 
 				// When width is this element's flex MAIN axis, its used width is
@@ -10934,16 +10934,16 @@ function collectLeavesUnder(
 					Number.isFinite(availableWidth) && isRowFlexItem(layout, element)
 				) {
 					const offered = Math.max(0, availableWidth - horizontalBoxSpace);
-					if (availableWidthMode === MEASURE_MODE_EXACTLY) {
+					if (availableWidthMode === "exactly") {
 						contentWidth = offered;
-						contentWidthMode = MEASURE_MODE_EXACTLY;
+						contentWidthMode = "exactly";
 						offerOwnsWidth = true;
 					} else if (
-						availableWidthMode === MEASURE_MODE_AT_MOST &&
+						availableWidthMode === "at-most" &&
 						offered < contentWidth
 					) {
 						contentWidth = offered;
-						contentWidthMode = MEASURE_MODE_AT_MOST;
+						contentWidthMode = "at-most";
 						offerOwnsWidth = true;
 					}
 				}
@@ -10975,15 +10975,15 @@ function collectLeavesUnder(
 					const cap = Math.max(0, maxWidthCap - horizontalBoxSpace);
 					if (cap < contentWidth) {
 						contentWidth = cap;
-						if (contentWidthMode === MEASURE_MODE_UNDEFINED) {
-							contentWidthMode = MEASURE_MODE_AT_MOST;
+						if (contentWidthMode === "unconstrained") {
+							contentWidthMode = "at-most";
 						}
 					}
 				}
 
 				if (boxModel.height !== undefined) {
 					contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
-					contentHeightMode = MEASURE_MODE_EXACTLY;
+					contentHeightMode = "exactly";
 				}
 
 				// Recursively measure inline-block content with constraints.
@@ -11007,12 +11007,12 @@ function collectLeavesUnder(
 					// width into the matching probe instead of a used width.
 					contentRoot.setWidthSizing(widthSizing);
 					contentRoot.calculateLayout(
-						contentWidthMode === MEASURE_MODE_EXACTLY ||
-						(widthSizing !== SIZING_NONE &&
-							contentWidthMode === MEASURE_MODE_AT_MOST) ?
+						contentWidthMode === "exactly" ||
+						(widthSizing !== "none" &&
+							contentWidthMode === "at-most") ?
 							contentWidth :
 							Number.NaN,
-						contentHeightMode === MEASURE_MODE_EXACTLY ?
+						contentHeightMode === "exactly" ?
 							contentHeight :
 							Number.NaN,
 					);
@@ -11177,7 +11177,7 @@ function breakNodes(
 	const leafNodes = collectLeafNodes(
 		layout,
 		source,
-		widthMode === MEASURE_MODE_UNDEFINED ? NaN : width,
+		widthMode === "unconstrained" ? NaN : width,
 		widthMode,
 	);
 
@@ -11206,7 +11206,7 @@ function breakNodes(
 	// max-content instead, making min-content zero everywhere, with a long
 	// word left nothing to stop it overflowing its box.
 	const maxWidth =
-		widthMode === MEASURE_MODE_UNDEFINED ?
+		widthMode === "unconstrained" ?
 			Number.MAX_SAFE_INTEGER :
 			width;
 
@@ -13027,8 +13027,8 @@ export class LayoutEngine {
 
 		// Create viewport root node (no DOM element associated)
 		this[kViewportRoot] = LayoutNode.create();
-		this[kViewportRoot].setFlexDirection(FLEX_DIRECTION_COLUMN);
-		this[kViewportRoot].setAlignItems(ALIGN_STRETCH);
+		this[kViewportRoot].setFlexDirection("column");
+		this[kViewportRoot].setAlignItems("stretch");
 
 		// Attach HTML element to viewport root instead of null
 		addNode(this, this[kRootElement], this[kViewportRoot]);
@@ -13231,7 +13231,7 @@ export class LayoutEngine {
 			// children (e.g. the run head's own text) still need the walker below.
 			flexNode.measureFunc !== null ||
 			flexNode.unstackedChildCount !== 0 ||
-			flexNode.getMode() !== MODE_BLOCK ||
+			flexNode.getMode() !== "block" ||
 			// A non-run-head member of an inline run (a plain <span> inside
 			// running text, but also -- unlike that span -- an inline-block
 			// sibling, which paints its own box independently rather than
@@ -13354,7 +13354,7 @@ export class LayoutEngine {
 		let bottom = 0;
 		for (const child of flexNode.children) {
 			// A display:none placeholder holds its slot with a stale layout.
-			if (child.getMode() === MODE_NONE) {
+			if (child.getMode() === "none") {
 				continue;
 			}
 			if (right !== null) {
@@ -14045,25 +14045,9 @@ export type {Config, LayoutNode};
 export const SOLVER = {
 	LayoutNode,
 	Config,
-	ALIGN_BASELINE,
-	ALIGN_CENTER,
-	ALIGN_FLEX_END,
-	ALIGN_FLEX_START,
-	ALIGN_SPACE_AROUND,
-	ALIGN_SPACE_BETWEEN,
-	ALIGN_SPACE_EVENLY,
-	ALIGN_STRETCH,
 	EDGE_ALL,
 	EDGE_BOTTOM,
 	EDGE_LEFT,
 	EDGE_RIGHT,
 	EDGE_TOP,
-	FLEX_DIRECTION_COLUMN,
-	FLEX_DIRECTION_ROW,
-	GUTTER_ALL,
-	GUTTER_COLUMN,
-	GUTTER_ROW,
-	JUSTIFY_FLEX_END,
-	MEASURE_MODE_UNDEFINED,
-	WRAP_WRAP,
 };
