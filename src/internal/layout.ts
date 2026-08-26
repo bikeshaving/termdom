@@ -6965,82 +6965,66 @@ function isOutOfFlow(node: Node): boolean {
  * content flows through.
  */
 function dissolvesIntoChildren(node: Node): boolean {
-	return computedDisplay(node as Element) === DISPLAY_CONTENTS;
+	return computedDisplay(node as Element) === "contents";
 }
 
-/**
- * The computed `display` values this engine lays out, one bit each so the
- * questions layout asks about a display -- is it inline, does it lay its
- * children out as items, is it part of a table -- are a mask test rather than
- * a chain of string comparisons.
- */
-const DISPLAY_NONE = 1 << 0;
-const DISPLAY_CONTENTS = 1 << 1;
-const DISPLAY_BLOCK = 1 << 2;
-const DISPLAY_INLINE = 1 << 3;
-const DISPLAY_INLINE_BLOCK = 1 << 4;
-const DISPLAY_INLINE_FLEX = 1 << 5;
-const DISPLAY_INLINE_GRID = 1 << 6;
-const DISPLAY_FLEX = 1 << 7;
-const DISPLAY_GRID = 1 << 8;
-const DISPLAY_LIST_ITEM = 1 << 9;
-const DISPLAY_TABLE = 1 << 10;
-const DISPLAY_TABLE_ROW = 1 << 11;
-const DISPLAY_TABLE_ROW_GROUP = 1 << 12;
-const DISPLAY_TABLE_HEADER_GROUP = 1 << 13;
-const DISPLAY_TABLE_FOOTER_GROUP = 1 << 14;
-const DISPLAY_TABLE_COLUMN = 1 << 15;
-const DISPLAY_TABLE_COLUMN_GROUP = 1 << 16;
-const DISPLAY_TABLE_CELL = 1 << 17;
-const DISPLAY_TABLE_CAPTION = 1 << 18;
+/** The computed `display` values this engine lays out. */
+type Display =
+	| "none" |
+	"contents" |
+	"block" |
+	"inline" |
+	"inline-block" |
+	"inline-flex" |
+	"inline-grid" |
+	"flex" |
+	"grid" |
+	"list-item" |
+	"table" |
+	"table-row" |
+	"table-row-group" |
+	"table-header-group" |
+	"table-footer-group" |
+	"table-column" |
+	"table-column-group" |
+	"table-cell" |
+	"table-caption";
 
 /** A display this engine does not implement lays out as a block, per CSS. */
-const DISPLAY_CODES: Record<string, number | undefined> = {
-	"none": DISPLAY_NONE,
-	"contents": DISPLAY_CONTENTS,
-	"block": DISPLAY_BLOCK,
-	"inline": DISPLAY_INLINE,
-	"inline-block": DISPLAY_INLINE_BLOCK,
-	"inline-flex": DISPLAY_INLINE_FLEX,
-	"inline-grid": DISPLAY_INLINE_GRID,
-	"flex": DISPLAY_FLEX,
-	"grid": DISPLAY_GRID,
-	"list-item": DISPLAY_LIST_ITEM,
-	"table": DISPLAY_TABLE,
-	"table-row": DISPLAY_TABLE_ROW,
-	"table-row-group": DISPLAY_TABLE_ROW_GROUP,
-	"table-header-group": DISPLAY_TABLE_HEADER_GROUP,
-	"table-footer-group": DISPLAY_TABLE_FOOTER_GROUP,
-	"table-column": DISPLAY_TABLE_COLUMN,
-	"table-column-group": DISPLAY_TABLE_COLUMN_GROUP,
-	"table-cell": DISPLAY_TABLE_CELL,
-	"table-caption": DISPLAY_TABLE_CAPTION,
-};
+const DISPLAYS = new Set<string>([
+	"none",
+	"contents",
+	"block",
+	"inline",
+	"inline-block",
+	"inline-flex",
+	"inline-grid",
+	"flex",
+	"grid",
+	"list-item",
+	"table",
+	"table-row",
+	"table-row-group",
+	"table-header-group",
+	"table-footer-group",
+	"table-column",
+	"table-column-group",
+	"table-cell",
+	"table-caption",
+]);
 
-/** A box that sits on a line whole, measured as one opaque unit. */
-const ATOMIC_INLINE = DISPLAY_INLINE_BLOCK | DISPLAY_INLINE_GRID;
-/** A box that goes on a line rather than on rows of its own. */
-const INLINE_LEVEL = DISPLAY_INLINE | ATOMIC_INLINE;
-/** A grid container, whichever way it sits in its parent. */
-const GRID_CONTAINER = DISPLAY_GRID | DISPLAY_INLINE_GRID;
-/** A flex container, whichever way it sits in its parent. */
-const FLEX_CONTAINER = DISPLAY_FLEX | DISPLAY_INLINE_FLEX;
-/**
- * A container that puts each child in a box of its own: it gathers no inline
- * run across its children, and blockifies every one (css-display-3 §2.7).
- */
-const LAYS_OUT_ITEMS = DISPLAY_FLEX | GRID_CONTAINER;
 /** The table box and every part inside it, which lay themselves out. */
-const TABLE_DISPLAY =
-	DISPLAY_TABLE |
-	DISPLAY_TABLE_ROW |
-	DISPLAY_TABLE_ROW_GROUP |
-	DISPLAY_TABLE_HEADER_GROUP |
-	DISPLAY_TABLE_FOOTER_GROUP |
-	DISPLAY_TABLE_COLUMN |
-	DISPLAY_TABLE_COLUMN_GROUP |
-	DISPLAY_TABLE_CELL |
-	DISPLAY_TABLE_CAPTION;
+const TABLE_DISPLAYS = new Set<string>([
+	"table",
+	"table-row",
+	"table-row-group",
+	"table-header-group",
+	"table-footer-group",
+	"table-column",
+	"table-column-group",
+	"table-cell",
+	"table-caption",
+]);
 
 /**
  * CSS gives `display` two axes (css-display-3 §2). The OUTER type says how a
@@ -7076,33 +7060,34 @@ const TABLE_DISPLAY =
  * which say a box is not generated at all rather than how one behaves, so
  * blockification has nothing to change and they stand as they compute.
  */
-function computedDisplay(element: Element): number {
-	return (
-		DISPLAY_CODES[getPropertyValue(element, "display")] ?? DISPLAY_BLOCK
-	);
+function computedDisplay(element: Element): Display {
+	const value = getPropertyValue(element, "display");
+	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
 /**
  * Whether a display makes an ATOMIC inline: a box that sits on a line whole,
- * measured as one opaque unit, whatever it lays out inside itself. The mask
- * form, for the doors below and the used-display arithmetic; a caller asking
- * whether an element lays its own content out wants `establishesContentRoot`.
+ * measured as one opaque unit, whatever it lays out inside itself. A caller
+ * asking whether an element lays its own content out under a root of its own
+ * wants `establishesContentRoot`.
  */
-function isAtomicInline(display: number): boolean {
-	return (display & ATOMIC_INLINE) !== 0;
+function isAtomicInline(display: Display): boolean {
+	return display === "inline-block" || display === "inline-grid";
 }
 
 /**
  * Whether a display value puts a box on a line rather than on rows of its own.
- * The mask form; a caller asking about a node wants `isInlineLevel`.
+ * A caller asking about a node wants `isInlineLevel`, which reads the used
+ * display and so has blockification already in the answer.
  */
-function isInlineDisplay(display: number): boolean {
-	return (display & INLINE_LEVEL) !== 0;
+function isInlineDisplay(display: Display): boolean {
+	return display === "inline" || isAtomicInline(display);
 }
 
 /** Whether an element lays its children out as flex items. INNER axis. */
 function isFlexContainer(element: Element): boolean {
-	return (computedDisplay(element) & FLEX_CONTAINER) !== 0;
+	const display = computedDisplay(element);
+	return display === "flex" || display === "inline-flex";
 }
 
 /**
@@ -7110,19 +7095,19 @@ function isFlexContainer(element: Element): boolean {
  * container gathers no inline run across its children, and blockifies every
  * one of them (css-display-3 §2.7). INNER axis.
  */
-function laysOutItems(display: number): boolean {
-	return (display & LAYS_OUT_ITEMS) !== 0;
+function laysOutItems(display: Display): boolean {
+	return display === "flex" || isGridDisplay(display);
 }
 
 /** Whether a display makes a grid container. INNER axis. */
-function isGridDisplay(display: number): boolean {
-	return (display & GRID_CONTAINER) !== 0;
+function isGridDisplay(display: Display): boolean {
+	return display === "grid" || display === "inline-grid";
 }
 
 /** Whether an element's box is a flex item of its parent's. */
 function hasFlexParent(element: Element): boolean {
 	const parent = element.parentElement;
-	return parent !== null && computedDisplay(parent) === DISPLAY_FLEX;
+	return parent !== null && computedDisplay(parent) === "flex";
 }
 
 /** Whether an element's box is an item of a flex or grid container's. */
@@ -7145,12 +7130,12 @@ function blockifies(element: Element): boolean {
  * blockification applied to the outer axis. `none` and `contents` generate no
  * box at all and stand as they compute.
  */
-function usedDisplay(element: Element): number {
+function usedDisplay(element: Element): Display {
 	const display = computedDisplay(element);
 	if (!isInlineDisplay(display)) {
 		return display;
 	}
-	return blockifies(element) ? DISPLAY_BLOCK : display;
+	return blockifies(element) ? "block" : display;
 }
 
 /**
@@ -7199,7 +7184,6 @@ function establishesContentRoot(element: Element): boolean {
  * position in: its static position is the container's own content-box corner,
  * as its alignment properties place it (css-flexbox-1 §4.1, css-grid-2 §9).
  */
-const NO_STATIC_POSITION_DISPLAYS = FLEX_CONTAINER | GRID_CONTAINER;
 
 /**
  * Whether an element's box measures its content as one run. An inline is
@@ -7238,7 +7222,7 @@ function splitsAroundBlock(
 	if (isOutOfFlow(element)) {
 		return false;
 	}
-	if (computedDisplay(element) !== DISPLAY_INLINE) {
+	if (computedDisplay(element) !== "inline") {
 		return false;
 	}
 	// A grid item is blockified (css-display-3 §2.7) and is a block
@@ -7267,10 +7251,10 @@ function containsBlockLevelBox(
 		}
 		const display = computedDisplay(childElement);
 		// An atomic inline contains its own blocks without splitting anything.
-		if (display === DISPLAY_NONE || isAtomicInline(display)) {
+		if (display === "none" || isAtomicInline(display)) {
 			continue;
 		}
-		if (display === DISPLAY_INLINE) {
+		if (display === "inline") {
 			if (containsBlockLevelBox(layout, childElement)) {
 				return true;
 			}
@@ -7552,7 +7536,7 @@ function isSuppressedFlexWhitespace(
 		// nothing but the white space, and rendering nothing. A display:
 		// none child generates no box and does not interrupt the run.
 		const siblingDisplay = usedDisplay(node as Element);
-		if (siblingDisplay === DISPLAY_NONE) {
+		if (siblingDisplay === "none") {
 			continue;
 		}
 		// An inline sibling joins this run and gives it content; anything
@@ -7867,8 +7851,7 @@ function styleFlexNodeProperties(
 	const computedStyle = computedStyleOf(element);
 
 	// Skip box model properties for inline elements (not inline-block)
-	const display = DISPLAY_CODES[computedStyle.computedValueOf("display")] ??
-		DISPLAY_BLOCK;
+	const display = computedDisplay(element);
 	// A flex item is BLOCKIFIED (css-display-3 §2.7): `display: inline` on a
 	// flex container's child computes to block, so its width and height apply
 	// like any block's. Forcing them auto here let the measure function answer
@@ -7876,7 +7859,7 @@ function styleFlexNodeProperties(
 	// flex row came out as wide as its text.
 	const parentIsFlex = hasItemParent(element);
 	// Handle width/height based on display type
-	if (display === DISPLAY_INLINE && !parentIsFlex) {
+	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
 		flexNode.setWidthSizing(SIZING_NONE);
@@ -7921,7 +7904,7 @@ function styleFlexNodeProperties(
 
 	// An aspect ratio sizes a box, which an inline box is not; everything
 	// else carries it to the engine.
-	if (display === DISPLAY_INLINE && !parentIsFlex) {
+	if (display === "inline" && !parentIsFlex) {
 		flexNode.setAspectRatio(undefined);
 	} else {
 		flexNode.setAspectRatio(
@@ -7934,7 +7917,7 @@ function styleFlexNodeProperties(
 	// padding, margin and border like any block (css-display-3 §2.7). Without
 	// the parentIsFlex exception, `.row{display:flex} .row span{padding:1}`
 	// dropped the span's padding entirely.
-	if (display === DISPLAY_INLINE && !parentIsFlex) {
+	if (display === "inline" && !parentIsFlex) {
 		// Clear all box model properties for inline elements
 		flexNode.setMargin(EDGE_TOP, 0);
 		flexNode.setMargin(EDGE_RIGHT, 0);
@@ -8108,7 +8091,7 @@ function styleFlexNodeProperties(
 	// the flex node must not add padding+border again on the CROSS axis (it
 	// double-counts, e.g. a bordered textarea in a flex row is too tall). Zero the
 	// cross-axis edges only -- the main axis is masked by flex sizing.
-	if (display === DISPLAY_INLINE_BLOCK && hasFlexParent(element)) {
+	if (display === "inline-block" && hasFlexParent(element)) {
 		const direction = getPropertyValue(
 			element.parentElement!,
 			"flex-direction",
@@ -8196,36 +8179,36 @@ function styleFlexNodeProperties(
 		flexNode.setGap(GUTTER_COLUMN, columnGap);
 	}
 
-	if (display === DISPLAY_NONE) {
+	if (display === "none") {
 		flexNode.setMode(MODE_NONE);
-	} else if (display === DISPLAY_GRID || display === DISPLAY_INLINE_GRID) {
+	} else if (display === "grid" || display === "inline-grid") {
 		flexNode.setMode(MODE_GRID);
 		applyGridContainer(flexNode, computedStyle);
-	} else if (display === DISPLAY_FLEX) {
+	} else if (display === "flex") {
 		flexNode.setMode(MODE_FLEX);
-	} else if (display === DISPLAY_TABLE) {
+	} else if (display === "table") {
 		// A layout mode of its own: columns are shared across rows, which a box
 		// per <tr> stacked on its own structurally cannot express.
 		flexNode.setMode(MODE_TABLE);
 		flexNode.setBorderCollapse(
 			computedStyle.computedValueOf("border-collapse") === "collapse",
 		);
-	} else if (display === DISPLAY_TABLE_HEADER_GROUP) {
+	} else if (display === "table-header-group") {
 		flexNode.setMode(MODE_TABLE_HEADER_GROUP);
-	} else if (display === DISPLAY_TABLE_FOOTER_GROUP) {
+	} else if (display === "table-footer-group") {
 		flexNode.setMode(MODE_TABLE_FOOTER_GROUP);
-	} else if (display === DISPLAY_TABLE_ROW_GROUP) {
+	} else if (display === "table-row-group") {
 		flexNode.setMode(MODE_TABLE_ROW_GROUP);
-	} else if (display === DISPLAY_TABLE_CAPTION) {
+	} else if (display === "table-caption") {
 		flexNode.setMode(MODE_TABLE_CAPTION);
 	} else if (
-		display === DISPLAY_TABLE_COLUMN || display === DISPLAY_TABLE_COLUMN_GROUP
+		display === "table-column" || display === "table-column-group"
 	) {
 		// Columns carry style, not a box of their own.
 		flexNode.setMode(MODE_NONE);
-	} else if (display === DISPLAY_TABLE_ROW) {
+	} else if (display === "table-row") {
 		flexNode.setMode(MODE_TABLE_ROW);
-	} else if (display === DISPLAY_TABLE_CELL) {
+	} else if (display === "table-cell") {
 		flexNode.setMode(MODE_TABLE_CELL);
 		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
@@ -8242,7 +8225,7 @@ function styleFlexNodeProperties(
 	}
 
 	// Handle flex direction for flex containers (not table-row which has fixed direction)
-	if (display === DISPLAY_FLEX) {
+	if (display === "flex") {
 		const flexDirection = computedStyle.computedValueOf("flex-direction");
 		if (flexDirection === "row") {
 			flexNode.setFlexDirection(FLEX_DIRECTION_ROW);
@@ -8280,15 +8263,15 @@ function styleFlexNodeProperties(
 			ALIGN_VALUES[alignContent] ?? ALIGN_FLEX_START,
 		);
 	} else if (
-		display !== DISPLAY_NONE &&
-		display !== DISPLAY_GRID &&
-		display !== DISPLAY_INLINE_GRID &&
-		(display & TABLE_DISPLAY) === 0
+		display !== "none" &&
+		display !== "grid" &&
+		display !== "inline-grid" &&
+		!TABLE_DISPLAYS.has(display)
 	) {
 		// Block layout. Displays decided above (table parts, `none`) must not be
 		// overwritten here. Resetting a table-caption to block leaves the table
 		// unable to find its own caption; resetting a runtime-hidden element
-		// (DISPLAY_NONE, set a hundred lines up) back keeps its rows painting
+		// ("none", set a hundred lines up) back keeps its rows painting
 		// and pushes everything below it down.
 		flexNode.setMode(MODE_BLOCK);
 	}
@@ -8303,7 +8286,7 @@ function styleFlexNodeProperties(
 	flexNode.setBlockFormattingContext(
 		element === element.ownerDocument?.documentElement ||
 		element.tagName === "BODY" ||
-		(display !== DISPLAY_BLOCK && display !== DISPLAY_LIST_ITEM) ||
+		(display !== "block" && display !== "list-item") ||
 		computedStyle.computedValueOf("overflow") !== "visible" ||
 		isOutOfFlow(element) ||
 		parentIsFlex,
@@ -8590,7 +8573,7 @@ function containerBox(
 	for (const child of flowChildren(layout, container)) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			const element = child as Element;
-			if (computedDisplay(element) === DISPLAY_NONE || isOutOfFlow(element)) {
+			if (computedDisplay(element) === "none" || isOutOfFlow(element)) {
 				// A hidden box holds a slot among its container's children; an
 				// out-of-flow one hangs from its containing block instead. Both
 				// are named here so the one path that builds a box reaches
@@ -8735,7 +8718,7 @@ function boxKindMatches(
 		return false;
 	}
 	return (
-		(computedDisplay(element) === DISPLAY_NONE) ===
+		(computedDisplay(element) === "none") ===
 		(flexNode.getMode() === MODE_NONE)
 	);
 }
@@ -8891,7 +8874,7 @@ function syncContainerRuns(
 ): void {
 	layout[kDirtyRunContainers].delete(container);
 	if (
-		computedDisplay(container) === DISPLAY_NONE ||
+		computedDisplay(container) === "none" ||
 		hiddenByAncestor(layout, container)
 	) {
 		// Content that arrives under the boundary generates no box, and
@@ -9084,7 +9067,7 @@ function runContainerOf(
 	}
 	const startsOwnRun =
 		node.nodeType === node.ELEMENT_NODE &&
-		computedDisplay(node as Element) !== DISPLAY_INLINE;
+		computedDisplay(node as Element) !== "inline";
 	return runContainerFrom(layout, parent, startsOwnRun);
 }
 
@@ -9112,7 +9095,7 @@ function runContainerFrom(
 		const display = computedDisplay(current);
 		// An inline box is transparent: its content belongs to the run
 		// around it.
-		if (display === DISPLAY_INLINE) {
+		if (display === "inline") {
 			continue;
 		}
 		if (isAtomicInline(display)) {
@@ -9322,7 +9305,7 @@ function addElementNode(
 
 	styleNode(layout, element, flexNode);
 
-	if (display === DISPLAY_NONE) {
+	if (display === "none") {
 		flexNode.setMode(MODE_NONE);
 		if (flexNode && parentFlexNode) {
 			placeChild(parentFlexNode, flexNode, flexIndex);
@@ -9505,7 +9488,7 @@ function syncContentRoot(
 	// Never a plain inline: an inline containing a block is BROKEN around
 	// it, and taking its content here would steal back the boxes that
 	// belong to its container.
-	const grid = display === DISPLAY_INLINE_GRID;
+	const grid = display === "inline-grid";
 	if (
 		!establishesContentRoot(element) ||
 		(!grid && !containsBlockLevelBox(layout, element))
@@ -9738,7 +9721,7 @@ function hiddenByAncestor(
 		ancestor;
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
-		if (computedDisplay(ancestor) === DISPLAY_NONE) {
+		if (computedDisplay(ancestor) === "none") {
 			return true;
 		}
 	}
@@ -9938,7 +9921,7 @@ function firstComposedRenderableChild(
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (
 			child.nodeType === child.ELEMENT_NODE &&
-			(computedDisplay(child as Element) === DISPLAY_NONE ||
+			(computedDisplay(child as Element) === "none" ||
 				isOutOfFlow(child))
 		) {
 			continue;
@@ -10743,7 +10726,7 @@ function collectLeafNodes(
 		for (
 			let ancestor = boxParentElement(root);
 			ancestor &&
-			computedDisplay(root) === DISPLAY_INLINE &&
+			computedDisplay(root) === "inline" &&
 			!isOutOfFlow(root);
 			ancestor = boxParentElement(root)
 		) {
@@ -10822,7 +10805,7 @@ function collectLeavesUnder(
 			const display = computedDisplay(element);
 
 			if (
-				computedDisplay(element) === DISPLAY_NONE ||
+				computedDisplay(element) === "none" ||
 				isOutOfFlow(element)
 			) {
 				// No box here (none) or a box ELSEWHERE (out of flow):
@@ -11159,7 +11142,7 @@ function collectLeavesUnder(
 				if (!skipSubtree(walker)) {
 					break;
 				}
-			} else if (display === DISPLAY_INLINE) {
+			} else if (display === "inline") {
 				// Inline element - traverse into its children
 				if (!walker.nextNode()) {
 					break;
@@ -12332,7 +12315,7 @@ function staticPosition(
 		return null;
 	}
 	if (
-		(computedDisplay(container) & NO_STATIC_POSITION_DISPLAYS) !== 0
+		laysOutItems(computedDisplay(container))
 	) {
 		return null;
 	}
@@ -12753,7 +12736,7 @@ function rectTextsOf(layout: LayoutEngine, node: Node): RectText[] {
 	if (runHead.nodeType === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
-			computedDisplay(runHeadElement) === DISPLAY_INLINE &&
+			computedDisplay(runHeadElement) === "inline" &&
 			hasItemParent(runHeadElement)
 		) {
 			const runHeadBox = getBoxModel(runHeadElement);
@@ -13456,7 +13439,7 @@ export class LayoutEngine {
 		// report -- the layout node it keeps is a placeholder holding its slot
 		// among its container's children, not a box. Its client rects are empty
 		// and its resolved values are the computed ones (CSSOM View §4).
-		if (display === DISPLAY_NONE) {
+		if (display === "none") {
 			return null;
 		}
 
@@ -13487,7 +13470,7 @@ export class LayoutEngine {
 			// node's width, which for an empty inline is its containing block's,
 			// so `<div style="width:30ch"><span></span></div>` measured the span
 			// at 30 columns. inline-block keeps the fallback: its node IS its box.
-			if (display === DISPLAY_INLINE) {
+			if (display === "inline") {
 				const elementFlexNode = runFlexNode(this, element);
 				// No layout node means the element was removed or never laid
 				// out -- null, exactly as the block fallback below reports it.
@@ -13535,7 +13518,7 @@ export class LayoutEngine {
 		// all, and returning none made it invisible to elementFromPoint.
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			if (usedDisplay(element) !== DISPLAY_INLINE) {
+			if (usedDisplay(element) !== "inline") {
 				const rect = this.getRect(element);
 				return rect ? [rect] : [];
 			}
