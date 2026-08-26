@@ -9206,6 +9206,146 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+Object.defineProperties(Element.prototype, {
+	matches: {
+		value(this: Element, selectors: string): boolean {
+			return selectorEngine(this[kDocument]).match(
+				String(selectors),
+				this as never,
+			);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	webkitMatchesSelector: {
+		value(this: Element, selectors: string): boolean {
+			return selectorEngine(this[kDocument]).match(
+				String(selectors),
+				this as never,
+			);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	closest: {
+		value(this: Element, selectors: string): Element | null {
+			const engine = selectorEngine(this[kDocument]);
+			const selector = String(selectors);
+			// A bad selector throws before any ancestor is examined.
+			engine.match(selector, this as never);
+			let node: Node | null = this;
+			while (node !== null && node.nodeType === ELEMENT_NODE) {
+				if (engine.match(selector, node as never)) {
+					return node as Element;
+				}
+				node = node[kParent];
+			}
+			return null;
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	// How far a box is scrolled from its content's origin. A mounted
+	// document answers from the engine, which holds the offsets it clamped
+	// against laid-out content. The storage below is what a headless
+	// document answers with: writes land and read back, and nothing moves.
+	scrollLeft: {
+		get(this: Element): number {
+			const engine = mountOf(this);
+			return engine ?
+				engine.scrollOffset(this).left :
+					(scrollOffsets.get(this)?.left ?? 0);
+		},
+		set(this: Element, value: number) {
+			const engine = mountOf(this);
+			if (engine === undefined) {
+				writeScrollOffset(this, "left", toDouble(value));
+				return;
+			}
+			engine.scrollOffsetTo(this, "left", value);
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollTop: {
+		get(this: Element): number {
+			const engine = mountOf(this);
+			return engine ?
+				engine.scrollOffset(this).top :
+					(scrollOffsets.get(this)?.top ?? 0);
+		},
+		set(this: Element, value: number) {
+			const engine = mountOf(this);
+			if (engine === undefined) {
+				writeScrollOffset(this, "top", toDouble(value));
+				return;
+			}
+			engine.scrollOffsetTo(this, "top", value);
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	// scrollTo/scroll/scrollBy, in both their forms; assignment through the
+	// accessors above is what rounds, clamps and repaints. html and body's
+	// own scrollTop accessors map to the terminal's camera, so scrolling
+	// them scrolls the document, as everywhere else.
+	scrollTo: {
+		value: scrollElementTo,
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	scroll: {
+		value: scrollElementTo,
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	scrollBy: {
+		value(
+			this: Element,
+			xOrOptions?: number | globalThis.ScrollToOptions,
+			y?: number,
+		): void {
+			const target = scrollTargetOf(xOrOptions, y);
+			if (target.left) {
+				this.scrollLeft = this.scrollLeft + target.left;
+			}
+			if (target.top) {
+				this.scrollTop = this.scrollTop + target.top;
+			}
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+});
+
+// The geometry surface: the APIs are the DOM's, what they measure is the
+// engine's. Writable so a test can stub a measurement, as on the platform.
+Object.defineProperties(Element.prototype, {
+	getBoundingClientRect: {
+		value(this: Element): globalThis.DOMRect {
+			return (
+				mountOf(this)?.boundingClientRect(this) ??
+				new DOMRect(0, 0, 0, 0)
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
+	getClientRects: {
+		value(this: Element): globalThis.DOMRectList {
+			return mountOf(this)?.clientRects(this) ?? new DOMRectList();
+		},
+		writable: true,
+		configurable: true,
+	},
+});
+
 /**
  * The element the focus state names. document.activeElement retargets to
  * the host chain, so a focus move inside a shadow tree is invisible
@@ -9708,6 +9848,117 @@ function isFocusableArea(element: Element): boolean {
 Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 	value: "HTMLElement",
 	configurable: true,
+});
+
+Object.defineProperties(HTMLElement.prototype, {
+	offsetWidth: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.offsetSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetHeight: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.offsetSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetTop: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.offsetPosition(this).top ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetLeft: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.offsetPosition(this).left ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	offsetParent: {
+		get(this: HTMLElement): Element | null {
+			return (mountOf(this)?.offsetParent(this) ?? null) as
+				Element |
+				null;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientWidth: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientHeight: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientLeft: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientEdge(this).left ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	clientTop: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.clientEdge(this).top ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollWidth: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.scrollSize(this).width ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollHeight: {
+		get(this: HTMLElement): number {
+			return mountOf(this)?.scrollSize(this).height ?? 0;
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	// checkVisibility, on the definition the focus walk already uses: a
+	// rendered element -- nothing on its flat chain display:none, and it
+	// produced boxes -- with the visibility check the options ask for.
+	// Nothing a headless document holds is rendered.
+	/*
+	 * Reveal the element: every scroll box between it and the document
+	 * scrolls it into view, and so does the screen. A headless document
+	 * shows nothing, so there is nothing to reveal into. The options are not
+	 * read: all moves are the minimal ones, block "nearest".
+	 */
+	scrollIntoView: {
+		value(this: HTMLElement): void {
+			mountOf(this)?.scrollIntoView(this);
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+	checkVisibility: {
+		value(
+			this: HTMLElement,
+			options?: globalThis.CheckVisibilityOptions,
+		): boolean {
+			return mountOf(this)?.checkVisibility(this, options) ?? false;
+		},
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	},
 });
 
 /**
@@ -20290,6 +20541,29 @@ Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+// Hit testing: the point is the viewport's, the answer the engine's. A
+// headless document renders nothing, so nothing is under any point.
+Object.defineProperties(Document.prototype, {
+	elementFromPoint: {
+		value(this: Document, x: number, y: number): Element | null {
+			return (mountOf(this)?.elementFromPoint(this, x, y) ??
+				null) as Element | null;
+		},
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	},
+	elementsFromPoint: {
+		value(this: Document, x: number, y: number): Element[] {
+			return (mountOf(this)?.elementsFromPoint(this, x, y) ??
+				[]) as Element[];
+		},
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	},
+});
+
 export class XMLDocument extends Document {
 	override [kCloneSingle](_document: Document): Node {
 		const copy = new XMLDocument();
@@ -20826,124 +21100,6 @@ markUnscopable(Element.prototype, [
 ]);
 markUnscopable(CharacterData.prototype, CHILD_NODE_UNSCOPABLES);
 markUnscopable(DocumentType.prototype, CHILD_NODE_UNSCOPABLES);
-
-Object.defineProperties(Element.prototype, {
-	matches: {
-		value(this: Element, selectors: string): boolean {
-			return selectorEngine(this[kDocument]).match(
-				String(selectors),
-				this as never,
-			);
-		},
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	webkitMatchesSelector: {
-		value(this: Element, selectors: string): boolean {
-			return selectorEngine(this[kDocument]).match(
-				String(selectors),
-				this as never,
-			);
-		},
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	closest: {
-		value(this: Element, selectors: string): Element | null {
-			const engine = selectorEngine(this[kDocument]);
-			const selector = String(selectors);
-			// A bad selector throws before any ancestor is examined.
-			engine.match(selector, this as never);
-			let node: Node | null = this;
-			while (node !== null && node.nodeType === ELEMENT_NODE) {
-				if (engine.match(selector, node as never)) {
-					return node as Element;
-				}
-				node = node[kParent];
-			}
-			return null;
-		},
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	// How far a box is scrolled from its content's origin. A mounted
-	// document answers from the engine, which holds the offsets it clamped
-	// against laid-out content. The storage below is what a headless
-	// document answers with: writes land and read back, and nothing moves.
-	scrollLeft: {
-		get(this: Element): number {
-			const engine = mountOf(this);
-			return engine ?
-				engine.scrollOffset(this).left :
-					(scrollOffsets.get(this)?.left ?? 0);
-		},
-		set(this: Element, value: number) {
-			const engine = mountOf(this);
-			if (engine === undefined) {
-				writeScrollOffset(this, "left", toDouble(value));
-				return;
-			}
-			engine.scrollOffsetTo(this, "left", value);
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	scrollTop: {
-		get(this: Element): number {
-			const engine = mountOf(this);
-			return engine ?
-				engine.scrollOffset(this).top :
-					(scrollOffsets.get(this)?.top ?? 0);
-		},
-		set(this: Element, value: number) {
-			const engine = mountOf(this);
-			if (engine === undefined) {
-				writeScrollOffset(this, "top", toDouble(value));
-				return;
-			}
-			engine.scrollOffsetTo(this, "top", value);
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	// scrollTo/scroll/scrollBy, in both their forms; assignment through the
-	// accessors above is what rounds, clamps and repaints. html and body's
-	// own scrollTop accessors map to the terminal's camera, so scrolling
-	// them scrolls the document, as everywhere else.
-	scrollTo: {
-		value: scrollElementTo,
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	scroll: {
-		value: scrollElementTo,
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	scrollBy: {
-		value(
-			this: Element,
-			xOrOptions?: number | globalThis.ScrollToOptions,
-			y?: number,
-		): void {
-			const target = scrollTargetOf(xOrOptions, y);
-			if (target.left) {
-				this.scrollLeft = this.scrollLeft + target.left;
-			}
-			if (target.top) {
-				this.scrollTop = this.scrollTop + target.top;
-			}
-		},
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-});
 
 function scrollTargetOf(
 	xOrOptions?: number | globalThis.ScrollToOptions,
@@ -22448,6 +22604,29 @@ ceReactions(Range.prototype, [
 Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 	value: "Range",
 	configurable: true,
+});
+
+Object.defineProperties(Range.prototype, {
+	getBoundingClientRect: {
+		value(this: Range): globalThis.DOMRect {
+			return (
+				mountOf(this.startContainer)?.rangeBoundingClientRect(this) ??
+				new DOMRect(0, 0, 0, 0)
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
+	getClientRects: {
+		value(this: Range): globalThis.DOMRectList {
+			return (
+				mountOf(this.startContainer)?.rangeClientRects(this) ??
+				new DOMRectList()
+			);
+		},
+		writable: true,
+		configurable: true,
+	},
 });
 
 /* -------------------------------------------------------------- selection */
@@ -25707,185 +25886,6 @@ export function mountOf(node: object): Mount | undefined {
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument;
 	return (document as Record<symbol, Mount | undefined> | null)?.[kMount];
 }
-
-// The geometry surface: the APIs are the DOM's, what they measure is the
-// engine's. Writable so a test can stub a measurement, as on the platform.
-Object.defineProperties(Element.prototype, {
-	getBoundingClientRect: {
-		value(this: Element): globalThis.DOMRect {
-			return (
-				mountOf(this)?.boundingClientRect(this) ??
-				new DOMRect(0, 0, 0, 0)
-			);
-		},
-		writable: true,
-		configurable: true,
-	},
-	getClientRects: {
-		value(this: Element): globalThis.DOMRectList {
-			return mountOf(this)?.clientRects(this) ?? new DOMRectList();
-		},
-		writable: true,
-		configurable: true,
-	},
-});
-
-Object.defineProperties(Range.prototype, {
-	getBoundingClientRect: {
-		value(this: Range): globalThis.DOMRect {
-			return (
-				mountOf(this.startContainer)?.rangeBoundingClientRect(this) ??
-				new DOMRect(0, 0, 0, 0)
-			);
-		},
-		writable: true,
-		configurable: true,
-	},
-	getClientRects: {
-		value(this: Range): globalThis.DOMRectList {
-			return (
-				mountOf(this.startContainer)?.rangeClientRects(this) ??
-				new DOMRectList()
-			);
-		},
-		writable: true,
-		configurable: true,
-	},
-});
-
-Object.defineProperties(HTMLElement.prototype, {
-	offsetWidth: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetSize(this).width ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	offsetHeight: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetSize(this).height ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	offsetTop: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetPosition(this).top ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	offsetLeft: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetPosition(this).left ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	offsetParent: {
-		get(this: HTMLElement): Element | null {
-			return (mountOf(this)?.offsetParent(this) ?? null) as
-				Element |
-				null;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	clientWidth: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.clientSize(this).width ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	clientHeight: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.clientSize(this).height ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	clientLeft: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.clientEdge(this).left ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	clientTop: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.clientEdge(this).top ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	scrollWidth: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.scrollSize(this).width ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	scrollHeight: {
-		get(this: HTMLElement): number {
-			return mountOf(this)?.scrollSize(this).height ?? 0;
-		},
-		configurable: true,
-		enumerable: true,
-	},
-	// checkVisibility, on the definition the focus walk already uses: a
-	// rendered element -- nothing on its flat chain display:none, and it
-	// produced boxes -- with the visibility check the options ask for.
-	// Nothing a headless document holds is rendered.
-	/*
-	 * Reveal the element: every scroll box between it and the document
-	 * scrolls it into view, and so does the screen. A headless document
-	 * shows nothing, so there is nothing to reveal into. The options are not
-	 * read: all moves are the minimal ones, block "nearest".
-	 */
-	scrollIntoView: {
-		value(this: HTMLElement): void {
-			mountOf(this)?.scrollIntoView(this);
-		},
-		configurable: true,
-		enumerable: true,
-		writable: true,
-	},
-	checkVisibility: {
-		value(
-			this: HTMLElement,
-			options?: globalThis.CheckVisibilityOptions,
-		): boolean {
-			return mountOf(this)?.checkVisibility(this, options) ?? false;
-		},
-		writable: true,
-		configurable: true,
-		enumerable: true,
-	},
-});
-
-// Hit testing: the point is the viewport's, the answer the engine's. A
-// headless document renders nothing, so nothing is under any point.
-Object.defineProperties(Document.prototype, {
-	elementFromPoint: {
-		value(this: Document, x: number, y: number): Element | null {
-			return (mountOf(this)?.elementFromPoint(this, x, y) ??
-				null) as Element | null;
-		},
-		writable: true,
-		configurable: true,
-		enumerable: true,
-	},
-	elementsFromPoint: {
-		value(this: Document, x: number, y: number): Element[] {
-			return (mountOf(this)?.elementsFromPoint(this, x, y) ??
-				[]) as Element[];
-		},
-		writable: true,
-		configurable: true,
-		enumerable: true,
-	},
-});
 
 /* ------------------------------------------------- clipboard and permissions */
 
