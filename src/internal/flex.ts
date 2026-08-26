@@ -83,6 +83,25 @@ const DISPLAY_GRID = 10;
 const POSITION_TYPE_STATIC = 0;
 const POSITION_TYPE_RELATIVE = 1;
 const POSITION_TYPE_ABSOLUTE = 2;
+/**
+ * Out of flow against the VIEWPORT rather than the nearest positioned box.
+ * Distinct from absolute because its containing block is fixed however deep
+ * it sits, so no ancestor between may claim it.
+ */
+const POSITION_TYPE_FIXED = 3;
+
+/** Whether a position type takes the box out of its container's flow. */
+function isOutOfFlowType(positionType: PositionType): boolean {
+	return (
+		positionType === POSITION_TYPE_ABSOLUTE ||
+		positionType === POSITION_TYPE_FIXED
+	);
+}
+
+/** Whether a box is a containing block for the out-of-flow boxes below it. */
+function isContainingBlockType(positionType: PositionType): boolean {
+	return positionType !== POSITION_TYPE_STATIC;
+}
 
 const MEASURE_MODE_UNDEFINED = 0;
 const MEASURE_MODE_EXACTLY = 1;
@@ -1455,7 +1474,7 @@ function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
 		if (child.style.display === DISPLAY_NONE) {
 			continue;
 		}
-		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
 		}
 		return child.layout.top + baselineWithinBorderBox(child, ownerWidth);
@@ -1979,7 +1998,7 @@ function layoutFlexbox(
 		}
 		resolveNodeMargins(child, ownerWidth);
 
-		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
 		}
 
@@ -2254,8 +2273,13 @@ function layoutFlexbox(
 
 	// -- absolutely positioned children ------------------------------------
 
-	for (const child of outOfFlowDescendants(node)) {
+	for (const child of outOfFlowDescendants(node, false)) {
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+	}
+	if (node.parent === null) {
+		for (const child of outOfFlowDescendants(node, true)) {
+			layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+		}
 	}
 }
 
@@ -2269,18 +2293,28 @@ function layoutFlexbox(
  * that one's to place. A box out of flow is a containing block for its own
  * descendants, so it is taken and not entered.
  */
-function outOfFlowDescendants(node: LayoutNode): LayoutNode[] {
+function outOfFlowDescendants(
+	node: LayoutNode,
+	viewport: boolean,
+): LayoutNode[] {
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
 		for (const child of parent.children) {
 			if (child.style.display === DISPLAY_NONE) {
 				continue;
 			}
-			if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+			const type = child.style.positionType;
+			const wanted =
+				viewport ? POSITION_TYPE_FIXED : POSITION_TYPE_ABSOLUTE;
+			if (type === wanted) {
 				found.push(child);
-				continue;
 			}
-			if (child.style.positionType === POSITION_TYPE_RELATIVE) {
+			// A fixed box belongs to the viewport however deep it sits, so
+			// that search passes through every containing block between. An
+			// absolute one stops at the first, which claims what falls under
+			// it -- itself included, since an out-of-flow box is a containing
+			// block for its own descendants.
+			if (!viewport && isContainingBlockType(type)) {
 				continue;
 			}
 			enter(child);
@@ -3225,6 +3259,26 @@ function layoutAbsoluteChild(
 			child.layout.top = blockTop + marginTop;
 		}
 	}
+
+	// Everything above placed the box in its CONTAINING BLOCK's space, but a
+	// layout position is read relative to the box's parent, and an out-of-flow
+	// box is rarely a child of the block that contains it. Take off what the
+	// boxes in between contribute, so accumulating the chain lands it where
+	// the containing block put it.
+	if (child.parent !== node) {
+		let offsetLeft = 0;
+		let offsetTop = 0;
+		for (
+			let between: LayoutNode | null = child.parent;
+			between !== null && between !== node;
+			between = between.parent
+		) {
+			offsetLeft += between.layout.left;
+			offsetTop += between.layout.top;
+		}
+		child.layout.left -= offsetLeft;
+		child.layout.top -= offsetTop;
+	}
 }
 
 function zeroLayout(node: LayoutNode): void {
@@ -3298,7 +3352,7 @@ function collectTableRows(table: LayoutNode): {
 	for (const child of table.children) {
 		if (
 			child.style.display === DISPLAY_NONE ||
-			child.style.positionType === POSITION_TYPE_ABSOLUTE
+			isOutOfFlowType(child.style.positionType)
 		) {
 			zeroLayout(child);
 			continue;
@@ -5399,7 +5453,7 @@ function layoutGrid(
 			continue;
 		}
 		resolveNodeMargins(child, ownerWidth);
-		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
 		}
 		children.push(child);
@@ -5783,7 +5837,7 @@ function layoutGrid(
 	}
 
 	// -- absolutely positioned children (css-grid-2 §9) ---------------------
-	for (const child of outOfFlowDescendants(node)) {
+	for (const child of outOfFlowDescendants(node, false)) {
 		layoutAbsoluteChild(
 			node,
 			child,
@@ -6154,7 +6208,7 @@ function layoutBlock(
 			continue;
 		}
 		resolveNodeMargins(child, ownerWidth);
-		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+		if (isOutOfFlowType(child.style.positionType)) {
 			continue;
 		}
 		inFlow.push(child);
@@ -6339,8 +6393,13 @@ function layoutBlock(
 		);
 	}
 
-	for (const child of outOfFlowDescendants(node)) {
+	for (const child of outOfFlowDescendants(node, false)) {
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+	}
+	if (node.parent === null) {
+		for (const child of outOfFlowDescendants(node, true)) {
+			layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+		}
 	}
 }
 
@@ -6611,7 +6670,7 @@ function layoutNodeImpl(
 	const hasInFlowChild = node.children.some(
 		(child) =>
 			child.style.display !== DISPLAY_NONE &&
-			child.style.positionType !== POSITION_TYPE_ABSOLUTE,
+			!isOutOfFlowType(child.style.positionType),
 	);
 
 	if (!hasInFlowChild && node.children.length === 0) {
@@ -6789,6 +6848,7 @@ const Flex = {
 	POSITION_TYPE_STATIC,
 	POSITION_TYPE_RELATIVE,
 	POSITION_TYPE_ABSOLUTE,
+	POSITION_TYPE_FIXED,
 
 	MEASURE_MODE_UNDEFINED,
 	MEASURE_MODE_EXACTLY,

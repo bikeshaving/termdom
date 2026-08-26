@@ -1487,10 +1487,9 @@ function styleFlexNodeProperties(
 		// not move it.
 		applyInsets(flexNode, computedStyle, INSET_EDGES.slice(0, 2), false);
 	} else if (position === POSITION_FIXED) {
-		// The viewport is the containing block, and there is no fixed position
-		// type in the compute core: absolute against the root is the same
-		// placement, and the camera is what keeps it still.
-		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
+		// The viewport is the containing block, whatever it sits inside, and
+		// the camera is what keeps it still.
+		flexNode.setPositionType(Flex.POSITION_TYPE_FIXED);
 		applyInsets(flexNode, computedStyle, INSET_EDGES, false);
 	} else {
 		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
@@ -2252,6 +2251,19 @@ function runContainerFrom(
 	return null;
 }
 
+/** Whether climbing from a layout node reaches another one. */
+function climbsTo(
+	from: FlexTypes.LayoutNode | null,
+	target: FlexTypes.LayoutNode,
+): boolean {
+	for (let node = from; node !== null; node = node.getParent()) {
+		if (node === target) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function addNode(
 	layout: LayoutEngine,
 	node: Node,
@@ -2287,20 +2299,18 @@ function addNode(
 		}
 		return;
 	}
-	// Out-of-flow boxes hoist to their containing block, appended at the
-	// end -- they neither displace siblings nor depend on tree position.
-	// position: fixed skips the ancestor climb entirely: its containing
-	// block is the VIEWPORT (the terminal-sized root the document node
-	// itself hangs from), so bottom/right resolve against the screen and
-	// the box holds still under the camera -- which is the coordinate
-	// space the painter's camera-cancel and hit-testing's conversion
-	// always assumed.
+	// An out-of-flow box stays where it sits and lets its containing block
+	// reach down for it -- unless the two are in different layout trees. An
+	// atomic inline lays its content out under a root of its own, in that
+	// root's coordinate space, and a containing block outside has no way to
+	// reach in. Crossing between trees is the one case that still needs the
+	// box moved, and the test is simply whether the block can be climbed to.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
 			positionOf(node as Element) === POSITION_FIXED ?
 				layout.viewportRootNode :
 					containingBlockFlexNode(layout, node as Element);
-		if (containingBlock) {
+		if (containingBlock && !climbsTo(parentFlexNode, containingBlock)) {
 			parentFlexNode = containingBlock;
 		}
 	}
@@ -5491,7 +5501,14 @@ function staticPosition(
 			previous.kind === "anonymous" ?
 				previous.flexNode :
 					(layout.nodeMap.get(previous.node!) ?? null);
-		if (!previousNode || previousNode.getParent() !== containerNode) {
+		// A box out of flow took no position, so nothing sits after it: the
+		// hypothetical box this is placing would have landed where the last
+		// IN-FLOW box left off.
+		if (
+			!previousNode ||
+			previousNode.getParent() !== containerNode ||
+			(previous.node !== null && isOutOfFlow(previous.node))
+		) {
 			continue;
 		}
 		return {
