@@ -9635,15 +9635,22 @@ export class HTMLElement extends Element {
 		}
 	}
 
-	get hidden(): boolean | string {
+	/**
+	 * Typed boolean, as lib.dom types it, though the third state answers
+	 * "until-found" -- which is what a browser does too: it implements the
+	 * state and its own types call it a boolean.
+	 */
+	get hidden(): boolean {
 		const value = this.getAttribute("hidden");
 		if (value === null) {
 			return false;
 		}
-		return asciiLowercase(value) === "until-found" ? "until-found" : true;
+		return (
+			asciiLowercase(value) === "until-found" ? "until-found" : true
+		) as boolean;
 	}
 
-	set hidden(value: boolean | string) {
+	set hidden(value: boolean) {
 		if (typeof value === "string" && asciiLowercase(value) === "until-found") {
 			this.setAttribute("hidden", "until-found");
 		} else if (value) {
@@ -18531,6 +18538,13 @@ Object.defineProperty(ElementInternals.prototype, Symbol.toStringTag, {
 	value: "ElementInternals",
 	configurable: true,
 });
+
+/** The ARIA reflection surface, installed on this prototype below. */
+export interface ElementInternals
+	extends Pick<
+		globalThis.ElementInternals,
+		Extract<keyof globalThis.ElementInternals, ARIAReflection>
+	> {}
 
 for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 	Object.defineProperty(ElementInternals.prototype, property, {
