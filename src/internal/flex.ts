@@ -2254,15 +2254,40 @@ function layoutFlexbox(
 
 	// -- absolutely positioned children ------------------------------------
 
-	for (const child of node.children) {
-		if (
-			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
-			child.style.display === DISPLAY_NONE
-		) {
-			continue;
-		}
+	for (const child of outOfFlowDescendants(node)) {
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 	}
+}
+
+/**
+ * The out-of-flow boxes this node is the containing block for.
+ *
+ * An out-of-flow box is laid out by its containing block, which is the nearest
+ * positioned box above it -- not, in general, the box that holds it. So the
+ * search reaches down through the in-flow boxes between, and stops at any box
+ * that is a containing block itself, since whatever falls under that one is
+ * that one's to place. A box out of flow is a containing block for its own
+ * descendants, so it is taken and not entered.
+ */
+function outOfFlowDescendants(node: LayoutNode): LayoutNode[] {
+	const found: LayoutNode[] = [];
+	const enter = (parent: LayoutNode): void => {
+		for (const child of parent.children) {
+			if (child.style.display === DISPLAY_NONE) {
+				continue;
+			}
+			if (child.style.positionType === POSITION_TYPE_ABSOLUTE) {
+				found.push(child);
+				continue;
+			}
+			if (child.style.positionType === POSITION_TYPE_RELATIVE) {
+				continue;
+			}
+			enter(child);
+		}
+	};
+	enter(node);
+	return found;
 }
 
 /** A relative box is offset by its leading inset, or pulled back by its trailing one. */
@@ -5758,13 +5783,7 @@ function layoutGrid(
 	}
 
 	// -- absolutely positioned children (css-grid-2 §9) ---------------------
-	for (const child of node.children) {
-		if (
-			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
-			child.style.display === DISPLAY_NONE
-		) {
-			continue;
-		}
+	for (const child of outOfFlowDescendants(node)) {
 		layoutAbsoluteChild(
 			node,
 			child,
@@ -6320,13 +6339,7 @@ function layoutBlock(
 		);
 	}
 
-	for (const child of node.children) {
-		if (
-			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
-			child.style.display === DISPLAY_NONE
-		) {
-			continue;
-		}
+	for (const child of outOfFlowDescendants(node)) {
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 	}
 }
