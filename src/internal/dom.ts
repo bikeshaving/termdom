@@ -2183,6 +2183,20 @@ export class MouseEvent extends UIEvent {
 		return rect === null ? this[kClientY] : this[kClientY] - rect.top;
 	}
 
+	/**
+	 * Pre-standard, and no spec defines them. Browsers report the offset from
+	 * the nearest positioned ancestor, which for a target that is not itself
+	 * positioned is what offsetX/offsetY already say, so they answer here
+	 * rather than being absent.
+	 */
+	get layerX(): number {
+		return this.offsetX;
+	}
+
+	get layerY(): number {
+		return this.offsetY;
+	}
+
 	get movementX(): number {
 		return this[kMovementX];
 	}
@@ -9077,6 +9091,35 @@ export class Element extends Node {
 		}
 		return copy;
 	}
+
+	/**
+	 * The Typed OM, which this engine does not implement: every computed value
+	 * it holds is a string, and handing back a CSSStyleValue would mean parsing
+	 * one into a type nothing else here speaks.
+	 */
+	computedStyleMap(): never {
+		throw domError(
+			"NotSupportedError",
+			"Typed OM is not implemented; use getComputedStyle",
+		);
+	}
+
+	/**
+	 * The Web Animations API, which needs a timeline this engine has none of:
+	 * frames come from terminal input and layout invalidation, not from a
+	 * clock that a running animation could be sampled against.
+	 */
+	animate(): never {
+		throw domError(
+			"NotSupportedError",
+			"Web Animations is not implemented",
+		);
+	}
+
+	/** Nothing animates, so nothing is animating. */
+	getAnimations(): globalThis.Animation[] {
+		return [];
+	}
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -10855,10 +10898,44 @@ export class ShadowRoot extends DocumentFragment {
 		return this[kHost];
 	}
 
+	/**
+	 * The DocumentOrShadowRoot surface, SCOPED to this root: each answers for
+	 * what is inside it, and nothing in this engine ever puts these inside a
+	 * shadow root -- fullscreen, pointer lock and picture-in-picture are the
+	 * document's, and hit testing is answered against the document because
+	 * that is where the boxes were painted from.
+	 */
+	get fullscreenElement(): Element | null {
+		return null;
+	}
+
+	get pointerLockElement(): Element | null {
+		return null;
+	}
+
+	get pictureInPictureElement(): Element | null {
+		return null;
+	}
+
+	elementFromPoint(_x: number, _y: number): Element | null {
+		return null;
+	}
+
+	elementsFromPoint(_x: number, _y: number): Element[] {
+		return [];
+	}
+
+	/** Nothing animates, so nothing is animating. */
+	getAnimations(): globalThis.Animation[] {
+		return [];
+	}
+
 	override [kCloneSingle](_document: Document): Node {
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
+
+installEventHandler(ShadowRoot.prototype, "onslotchange");
 
 Object.defineProperty(ShadowRoot.prototype, Symbol.toStringTag, {
 	value: "ShadowRoot",
@@ -26733,82 +26810,34 @@ const _checked: [
 	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, number>,
 
 	// -- constants only -----------------------------------------------------
-	Equal<MissingFrom<globalThis.Node, Node>, NodeConstants>,
-	Equal<MissingFrom<globalThis.Attr, Attr>, NodeConstants>,
-	Equal<
-		MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>,
-		"DOM_KEY_LOCATION_STANDARD" |
-		"DOM_KEY_LOCATION_LEFT" |
-		"DOM_KEY_LOCATION_RIGHT" |
-		"DOM_KEY_LOCATION_NUMPAD"
-	>,
+	Equal<MissingFrom<globalThis.Node, Node>, never>,
+	Equal<MissingFrom<globalThis.Attr, Attr>, never>,
+	Equal<MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>, never>,
 
 	// -- small curated ledgers ----------------------------------------------
-	// RUNTIME: constants.
-	Equal<
-		MissingFrom<globalThis.Range, Range>,
-		"START_TO_START" |
-		"START_TO_END" |
-		"END_TO_END" |
-		"END_TO_START"
-	>,
-	// NEVER: layerX/layerY are the pre-standard offsets no spec defines.
-	Equal<
-		MissingFrom<globalThis.MouseEvent, MouseEvent>,
-		"layerX" | "layerY"
-	>,
-	Equal<
-		MissingFrom<globalThis.CharacterData, CharacterData>,
-		NodeConstants | ChildNodeMixin
-	>,
-	Equal<MissingFrom<globalThis.Text, Text>, NodeConstants | ChildNodeMixin>,
-	Equal<
-		MissingFrom<globalThis.Comment, Comment>,
-		NodeConstants | ChildNodeMixin
-	>,
-	Equal<
-		MissingFrom<globalThis.DocumentFragment, DocumentFragment>,
-		NodeConstants | ParentNodeMixin
-	>,
+	Equal<MissingFrom<globalThis.Range, Range>, never>,
+	Equal<MissingFrom<globalThis.MouseEvent, MouseEvent>, never>,
+	Equal<MissingFrom<globalThis.CharacterData, CharacterData>, never>,
+	Equal<MissingFrom<globalThis.Text, Text>, never>,
+	Equal<MissingFrom<globalThis.Comment, Comment>, never>,
+	Equal<MissingFrom<globalThis.DocumentFragment, DocumentFragment>, never>,
 	Equal<
 		MissingFrom<globalThis.ShadowRoot, ShadowRoot>,
-		| NodeConstants |
-		ParentNodeMixin |
-		// RUNTIME on the document; GAP on the root:
-		"onslotchange" |
-		"adoptedStyleSheets" |
-		"fullscreenElement" |
-		"pictureInPictureElement" |
-		"pointerLockElement" |
-		"styleSheets" |
-		"elementFromPoint" |
-		"elementsFromPoint" |
-		"getAnimations"
+		// GAP: the cascade holds a root's sheets, and neither is reachable
+		// from here.
+		"adoptedStyleSheets" | "styleSheets"
 	>,
 	// The ARIA surface comes out first: it is a template literal pattern,
 	// which no finite union of key names can contain, so the ledger sets it
 	// aside and holds the residue.
 	Equal<
 		Exclude<MissingFrom<globalThis.Element, Element>, ARIAReflection>,
-		| NodeConstants |
-		ChildNodeMixin |
-		ParentNodeMixin |
-		SelectorSurface |
-		PointerSurface |
-		FullscreenSurface |
+		| PointerSurface |
 		"currentCSSZoom" | // NEVER: zoom is a browser's
-		"part" | // RUNTIME: reflected from the tables
-		"checkVisibility" | // RUNTIME on HTMLElement; lib.dom asks Element
-		"scrollIntoView" | // RUNTIME on HTMLElement; lib.dom asks Element
-		"clientWidth" | // RUNTIME on HTMLElement; lib.dom asks Element
-		"clientHeight" |
-		"scrollWidth" |
-		"scrollHeight" |
+		"remove" | // see the Pick above
+		"scrollIntoView" | // see the Pick above
 		"clientLeft" | // GAP: no border box to measure a border of
-		"clientTop" | // GAP
-		"computedStyleMap" | // GAP: Typed OM
-		"animate" | // GAP: no animation timeline
-		"getAnimations">,
+		"clientTop">,
 ] = [
 	true,
 	true,
@@ -26830,5 +26859,58 @@ const _checked: [
 	true,
 	true,
 ];
+
+/*
+ * The tables above install these on prototypes at load, which is how the
+ * platform's own property attributes are got: a class field is an own property
+ * and writable, a static is on the constructor, and neither is what the DOM
+ * says. Installing them says nothing to the compiler, so these say it -- they
+ * emit nothing, and take the platform's own types so a member cannot drift
+ * from the one it stands for.
+ */
+
+export interface Node extends Pick<globalThis.Node, NodeConstants> {}
+
+export interface CharacterData
+	extends Pick<globalThis.CharacterData, ChildNodeMixin> {}
+
+export interface DocumentFragment
+	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {}
+
+export interface ShadowRoot
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
+
+export interface Element
+	extends Pick<
+		globalThis.Element,
+		// `remove` and `scrollIntoView` are left to the ledger: a subclass
+		// declares each as a method with a signature of its own, and a Pick
+		// yields a property, which is not something a method may override.
+		| Exclude<ChildNodeMixin, "remove"> |
+		ParentNodeMixin |
+		SelectorSurface |
+		FullscreenSurface |
+		"part" |
+		"checkVisibility" |
+		"clientWidth" |
+		"clientHeight" |
+		"scrollWidth" |
+		"scrollHeight"
+	> {}
+
+export interface KeyboardEvent
+	extends Pick<
+		globalThis.KeyboardEvent,
+		| "DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_LEFT" |
+		"DOM_KEY_LOCATION_RIGHT" |
+		"DOM_KEY_LOCATION_NUMPAD"
+	> {}
+
+export interface Range
+	extends Pick<
+		globalThis.Range,
+		"START_TO_START" | "START_TO_END" | "END_TO_END" | "END_TO_START"
+	> {}
 
 export type PlatformShapeChecked = typeof _checked;
