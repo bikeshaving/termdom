@@ -1893,7 +1893,6 @@ function boxKindMatches(
 }
 
 const kAnonymousBoxes = Symbol("anonymousBoxes");
-const kDOMNodeByFlexNode = Symbol("domNodeByFlexNode");
 
 /** Free an anonymous box's layout node and forget the box. */
 function retireAnonymousBox(
@@ -1909,7 +1908,7 @@ function retireAnonymousBox(
 	flexNode.getParent()?.removeChild(flexNode);
 	layout[kMeasureNodes].delete(flexNode);
 	layout[kAnonymousBoxes].delete(flexNode);
-	layout[kDOMNodeByFlexNode].delete(flexNode);
+	flexNode.owner = null;
 	flexNode.freeRecursive();
 }
 
@@ -2083,10 +2082,10 @@ function syncContainerRuns(
 				);
 				layout[kMeasureNodes].add(flexNode);
 				layout[kAnonymousBoxes].set(flexNode, entry);
-				layout[kDOMNodeByFlexNode].set(flexNode, entry.head);
-			} else if (layout[kDOMNodeByFlexNode].get(flexNode) !== entry.head) {
+				flexNode.owner = entry.head;
+			} else if (flexNode.owner !== entry.head) {
 				// Paint reaches a box through the node that opens it.
-				layout[kDOMNodeByFlexNode].set(flexNode, entry.head);
+				flexNode.owner = entry.head;
 			}
 			if (containerFlex.getChildIndex(flexNode) !== index) {
 				flexNode.getParent()?.removeChild(flexNode);
@@ -2133,7 +2132,7 @@ function syncContainerRuns(
 	// here from its CONTAINING BLOCK -- so it stays where it is.
 	for (let i = containerFlex.children.length - 1; i >= index; i--) {
 		const child = containerFlex.children[i];
-		const node = layout[kDOMNodeByFlexNode].get(child);
+		const node = child.owner as Node | undefined;
 		if (node && isOutOfFlow(node)) {
 			continue;
 		}
@@ -2958,7 +2957,7 @@ function trackNode(
 	flexNode: FlexTypes.LayoutNode,
 ): void {
 	layout.nodeMap.set(domNode, flexNode);
-	layout[kDOMNodeByFlexNode].set(flexNode, domNode);
+	flexNode.owner = domNode;
 }
 
 function untrackNode(
@@ -2967,7 +2966,7 @@ function untrackNode(
 ): void {
 	const flexNode = layout.nodeMap.get(domNode);
 	if (flexNode) {
-		layout[kDOMNodeByFlexNode].delete(flexNode);
+		flexNode.owner = null;
 	}
 	// The lines a box holds are the product of the layout node that is
 	// going: nothing lays that content out until a box is built for it
@@ -3232,7 +3231,7 @@ function invalidateNode(
 				while (flexNode.children.length > 0) {
 					const childFlexNode = flexNode.children[0];
 					flexNode.removeChild(childFlexNode);
-					const childDOMNode = layout[kDOMNodeByFlexNode].get(childFlexNode);
+					const childDOMNode = childFlexNode.owner as Node | undefined;
 					if (childDOMNode) {
 						clearBreakResultCache(layout, childDOMNode);
 					}
@@ -5071,7 +5070,7 @@ function absolutePosition(
 		x += current.getComputedLeft();
 		y += current.getComputedTop();
 		if (current !== flexNode) {
-			const node = layout[kDOMNodeByFlexNode].get(current);
+			const node = current.owner as Node | undefined;
 			if (
 				node &&
 				node.nodeType === node.ELEMENT_NODE &&
@@ -6053,7 +6052,6 @@ export class LayoutEngine {
 	// go from a flex child (found by binary search over its parent's already-
 	// ordered children[]) back to the DOM/pseudo-element node it needs to
 	// paint, without re-deriving that order with a second full tree walk.
-	declare [kDOMNodeByFlexNode]: Map<FlexTypes.LayoutNode, Node>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	declare [kInvalidatedNodes]: Set<Node>;
@@ -6138,7 +6136,6 @@ export class LayoutEngine {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.LayoutNode>();
-		this[kDOMNodeByFlexNode] = new Map<FlexTypes.LayoutNode, Node>();
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<FlexTypes.LayoutNode>();
 
@@ -6273,7 +6270,6 @@ export class LayoutEngine {
 
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
-		this[kDOMNodeByFlexNode] = new Map();
 		this[kInvalidatedNodes] = new Set();
 		this[kMeasureNodes] = new Set();
 		this[kAnonymousBoxes] = new Map();
@@ -6396,7 +6392,7 @@ export class LayoutEngine {
 			if (child.extentTop >= bottom) {
 				break;
 			}
-			const domNode = this[kDOMNodeByFlexNode].get(child);
+			const domNode = child.owner as Node | undefined;
 			if (domNode) {
 				result.push(domNode);
 			}
@@ -6535,7 +6531,7 @@ export class LayoutEngine {
 			current;
 			current = current.getParent()
 		) {
-			const node = this[kDOMNodeByFlexNode].get(current);
+			const node = current.owner as Node | undefined;
 			if (
 				node &&
 				node.nodeType === node.ELEMENT_NODE &&

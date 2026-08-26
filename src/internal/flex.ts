@@ -787,6 +787,15 @@ export class LayoutNode {
 	/** Set while a whole style is being assigned; see styleAll. */
 	styling: boolean;
 
+	/**
+	 * The DOM node this lays out, or null for a node no node owns -- an
+	 * anonymous run's, a content root, the viewport. Held here rather than in
+	 * a map beside the tree: the reverse lookup is asked for during paint
+	 * culling and during every sweep that walks children, and a node that has
+	 * left the tree cannot go stale against itself.
+	 */
+	owner: object | null;
+
 	constructor(config: Config = defaultConfig) {
 		this.children = [];
 		this.parent = null;
@@ -801,6 +810,7 @@ export class LayoutNode {
 		);
 		this.cachedLayout = null;
 		this.styling = false;
+		this.owner = null;
 		this.config = config;
 		this.style = createStyle();
 		this.layout = createLayout();
