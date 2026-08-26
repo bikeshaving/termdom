@@ -4482,11 +4482,6 @@ class CSSStyleRule extends CSSGroupingRule {
 		notifyRule(this);
 	}
 
-	/** The parsed selector, which the cascade matches against. */
-	get selectors(): SelectorNode {
-		return this[kSelectors]!;
-	}
-
 	get style(): CSSStyleDeclaration {
 		return this[kStyle]!;
 	}
@@ -5690,15 +5685,6 @@ class CSSStyleSheet {
 		syncIndexed(this[kRuleList]!);
 	}
 
-	/**
-	 * Forget what the owner element last said, so the next read reparses it.
-	 * A <style> element's child list IS its stylesheet: changing it replaces
-	 * the sheet's rules even when the text it spells out is the same.
-	 */
-	reparseOwnerText(): void {
-		this[kText] = null;
-	}
-
 	get cssRules(): CSSRuleList {
 		this[kSync]!();
 		return this[kRuleList]!;
@@ -5867,6 +5853,15 @@ class CSSStyleSheet {
 		}
 		return Promise.resolve(this);
 	}
+}
+
+/**
+ * Forget what the owner element last said, so the next read reparses it. A
+ * <style> element's child list IS its stylesheet: changing it replaces the
+ * sheet's rules even when the text it spells out is the same.
+ */
+function reparseOwnerText(sheet: CSSStyleSheet): void {
+	sheet[kText] = null;
 }
 
 function changed(
@@ -10378,7 +10373,7 @@ export class StyleManager {
 				// root the refresh stays inside it: a widget's sheet must not
 				// rebuild the document's cascade.
 				if ((mutation.target as Element).tagName === "STYLE") {
-					sheetFor(mutation.target as Element).reparseOwnerText();
+					reparseOwnerText(sheetFor(mutation.target as Element));
 					const styleRoot = (mutation.target as Element).getRootNode();
 					if (
 						styleRoot.nodeType === 11 &&
@@ -10487,7 +10482,7 @@ export class StyleManager {
 				// shadow sheet's refresh inside its root.
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
-					sheetFor(owner).reparseOwnerText();
+					reparseOwnerText(sheetFor(owner));
 					const ownerRoot = owner.getRootNode();
 					if (
 						ownerRoot.nodeType === 11 &&
