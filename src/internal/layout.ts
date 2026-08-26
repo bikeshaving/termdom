@@ -1546,6 +1546,19 @@ type BoxKind = "node" | "anonymous";
  * A box of the box tree: what a container generates for its content, linked
  * to the box that holds it and to the boxes it holds in turn.
  *
+ * Every box is one of two kinds, and never both. A box that is LAID OUT has a
+ * layout node the solver sized and placed -- a block, an anonymous run, an
+ * atomic inline that holds block content and so is a block container in its
+ * own right. A box that is a RUN MEMBER has none: an inline or a text node
+ * sitting on a line, whose geometry lives in the break result of the run
+ * around it, because that run was measured as one unit. `laidOutBy` is the
+ * question, and answering null is what says a box is the second kind.
+ *
+ * That is why a layout node is not simply this box wearing another name.
+ * There are boxes with no node -- the run members -- and the split is a real
+ * one in CSS: a box that generates a layout unit, against content that
+ * participates in one.
+ *
  * Identity is what layout keys on, so it outlives derivation: a principal box
  * is its node's for as long as the node is one, and an anonymous box is its
  * ordinal among its container's runs -- the third run of a paragraph stays the
@@ -1608,11 +1621,12 @@ class Box {
 	holdsFragments: boolean;
 
 	/**
-	 * The layout node an anonymous box owns. A principal box's layout node is
-	 * its DOM node's, held in `nodeMap`: the layout tree is keyed by node, and
-	 * only a box with no node of its own has one to keep here.
+	 * The layout node an anonymous box owns. A principal box's is its DOM
+	 * node's, held in `nodeMap`: the layout tree is keyed by node, and only a
+	 * box with no node of its own has one to keep here. Ask
+	 * {@link laidOutBy} rather than either store.
 	 */
-	flexNode: FlexTypes.LayoutNode | null;
+	layoutNode: FlexTypes.LayoutNode | null;
 	styledFrom: Element | null;
 
 	/**
@@ -1640,7 +1654,7 @@ class Box {
 		this.heads = null;
 		this.broken = false;
 		this.holdsFragments = false;
-		this.flexNode = null;
+		this.layoutNode = null;
 		this.styledFrom = null;
 		this.contentRoot = null;
 		this.fragments = null;
@@ -1790,7 +1804,7 @@ function containerBox(
 			before.length !== now.length ||
 			before.some((node, index) => node !== now[index])
 		) {
-			reused.flexNode?.markDirty();
+			reused.layoutNode?.markDirty();
 		}
 	}
 
@@ -1898,8 +1912,8 @@ function retireAnonymousBox(
 	layout: LayoutEngine,
 	box: Box,
 ): void {
-	const flexNode = box.flexNode;
-	box.flexNode = null;
+	const flexNode = box.layoutNode;
+	box.layoutNode = null;
 	box.fragments = null;
 	if (!flexNode) {
 		return;
@@ -1971,13 +1985,36 @@ function boxEntryOf(
  * or the node's own when its box belongs to it (a flex container's
  * blockified inline children).
  */
+/**
+ * The layout node that lays a box out, or null when nothing does.
+ *
+ * Every box is one of two kinds, and never both. A box that is LAID OUT --
+ * a block, an anonymous run, an atomic inline holding block content -- has a
+ * node the solver sized and placed. A box that is a RUN MEMBER -- an inline,
+ * a text node -- has none: the run around it was measured as one unit, and
+ * its geometry lives in that run's break result rather than in a layout of
+ * its own.
+ *
+ * Which store the node sits in follows from the box's provenance rather than
+ * from that distinction, so this is the one place that knows both.
+ */
+function laidOutBy(
+	layout: LayoutEngine,
+	box: Box,
+): FlexTypes.LayoutNode | null {
+	if (box.kind === "anonymous") {
+		return box.layoutNode;
+	}
+	return box.node === null ? null : (layout.nodeMap.get(box.node) ?? null);
+}
+
 function runFlexNode(
 	layout: LayoutEngine,
 	node: Node,
 ): FlexTypes.LayoutNode | undefined {
 	const box = boxOf(layout, node);
 	if (box) {
-		return box.head === node ? (box.flexNode ?? undefined) : undefined;
+		return box.head === node ? (box.layoutNode ?? undefined) : undefined;
 	}
 	return layout.nodeMap.get(node);
 }
@@ -2048,7 +2085,7 @@ function syncContainerRuns(
 	let index = 0;
 	for (const entry of children) {
 		if (entry.kind === "anonymous") {
-			let flexNode = entry.flexNode;
+			let flexNode = entry.layoutNode;
 			const styledFrom =
 				entry.head.nodeType === entry.head.ELEMENT_NODE ?
 						(entry.head as Element) :
@@ -2062,7 +2099,7 @@ function syncContainerRuns(
 			}
 			if (!flexNode) {
 				flexNode = Flex.LayoutNode.createWithConfig(flexConfig);
-				entry.flexNode = flexNode;
+				entry.layoutNode = flexNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
 					styleFlexNode(styledFrom, flexNode, layout.positionedElements);
@@ -3293,7 +3330,7 @@ function invalidateBox(
 	layout: LayoutEngine,
 	box: Box,
 ): void {
-	box.flexNode?.markDirty();
+	box.layoutNode?.markDirty();
 	const host = enclosingContentRoot(layout, box.container);
 	if (host) {
 		invalidateEnclosingMeasure(layout, host);
@@ -3375,7 +3412,7 @@ function invalidateEnclosingMeasure(
 		entry = boxEntryOf(layout, ancestor);
 	}
 	if (entry?.kind === "anonymous") {
-		if (entry.flexNode) {
+		if (entry.layoutNode) {
 			invalidateBox(layout, entry);
 			return;
 		}
@@ -3408,7 +3445,7 @@ function invalidateEnclosingMeasure(
 		// nested inside it with it. Nothing further out ever re-runs that
 		// measure, so the climb ends here.
 		const enclosing = boxEntryOf(layout, current);
-		if (enclosing?.kind === "anonymous" && enclosing.flexNode) {
+		if (enclosing?.kind === "anonymous" && enclosing.layoutNode) {
 			invalidateBox(layout, enclosing);
 			return;
 		}
@@ -5482,7 +5519,7 @@ function staticPosition(
 	// had reached: after everything already on it, on the line that would
 	// have carried it.
 	if (entry?.kind === "anonymous") {
-		const runNode = entry.flexNode;
+		const runNode = entry.layoutNode;
 		if (runNode) {
 			const runOrigin = absolutePosition(layout, runNode);
 			const cursor = inlineCursorBefore(layout, entry, element);
@@ -5497,10 +5534,7 @@ function staticPosition(
 	const index = children.indexOf(entry ?? principalBox(layout, element));
 	for (let i = index - 1; i >= 0; i--) {
 		const previous = children[i];
-		const previousNode =
-			previous.kind === "anonymous" ?
-				previous.flexNode :
-					(layout.nodeMap.get(previous.node!) ?? null);
+		const previousNode = laidOutBy(layout, previous);
 		// A box out of flow took no position, so nothing sits after it: the
 		// hypothetical box this is placing would have landed where the last
 		// IN-FLOW box left off.
@@ -7085,7 +7119,7 @@ export class LayoutEngine {
 
 	/**
 	 * Every live anonymous box, by the layout node it owns: the reverse of
-	 * Box.flexNode, and the registry the sweeps that must reach every box
+	 * Box.layoutNode, and the registry the sweeps that must reach every box
 	 * (resize, pruning, disposal) walk. Strong, because a container's children
 	 * are re-derived whenever the tree moves under it and the boxes it held
 	 * must still be retired.
