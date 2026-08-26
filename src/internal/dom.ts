@@ -20576,12 +20576,188 @@ export class Document extends Node {
 		copyDocumentState(this, copy);
 		return copy;
 	}
+
+	/*
+	 * The legacy HTML document surface. Most of it is answerable rather than
+	 * stubbed: the collections are live and filtered the way the spec filters
+	 * them, and the colour attributes reflect the body's, which is what they
+	 * are defined to do.
+	 */
+
+	get anchors(): HTMLCollection {
+		return documentCollection(this,
+			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
+		);
+	}
+
+	get forms(): HTMLCollection {
+		return documentCollection(this, (e) => e instanceof HTMLFormElement);
+	}
+
+	get images(): HTMLCollection {
+		return documentCollection(this, (e) => e instanceof HTMLImageElement);
+	}
+
+	get scripts(): HTMLCollection {
+		return documentCollection(this, (e) => e instanceof HTMLScriptElement);
+	}
+
+	get embeds(): HTMLCollection {
+		return documentCollection(this, (e) => e instanceof HTMLEmbedElement);
+	}
+
+	/** An alias of embeds, per the spec. */
+	get plugins(): HTMLCollection {
+		return this.embeds;
+	}
+
+	/** `a` and `area` elements that have an href. */
+	get links(): HTMLCollection {
+		return documentCollection(this,
+			(e) =>
+				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
+				e.hasAttribute("href"),
+		);
+	}
+
+	/** Always empty: the applet element was removed from HTML. */
+	get applets(): HTMLCollection {
+		return documentCollection(this, () => false);
+	}
+
+	/*
+	 * The presentational attributes of body, which these are defined to
+	 * reflect. A document with no body reads them as the empty string and
+	 * drops writes, which is what reflecting nothing does.
+	 */
+
+	get bgColor(): string {
+		return this.body?.getAttribute("bgcolor") ?? "";
+	}
+
+	set bgColor(value: string) {
+		this.body?.setAttribute("bgcolor", value);
+	}
+
+	get fgColor(): string {
+		return this.body?.getAttribute("text") ?? "";
+	}
+
+	set fgColor(value: string) {
+		this.body?.setAttribute("text", value);
+	}
+
+	get alinkColor(): string {
+		return this.body?.getAttribute("alink") ?? "";
+	}
+
+	set alinkColor(value: string) {
+		this.body?.setAttribute("alink", value);
+	}
+
+	get linkColor(): string {
+		return this.body?.getAttribute("link") ?? "";
+	}
+
+	set linkColor(value: string) {
+		this.body?.setAttribute("link", value);
+	}
+
+	get vlinkColor(): string {
+		return this.body?.getAttribute("vlink") ?? "";
+	}
+
+	set vlinkColor(value: string) {
+		this.body?.setAttribute("vlink", value);
+	}
+
+	/** Specified to do nothing at all. */
+	clear(): void {}
+
+	captureEvents(): void {}
+
+	releaseEvents(): void {}
+
+	/** A terminal shows what it renders, and shows it now. */
+	get hidden(): boolean {
+		return false;
+	}
+
+	get visibilityState(): globalThis.DocumentVisibilityState {
+		return "visible";
+	}
+
+	get fullscreen(): boolean {
+		return this.fullscreenElement !== null;
+	}
+
+	get fullscreenEnabled(): boolean {
+		return true;
+	}
+
+	get pictureInPictureEnabled(): boolean {
+		return false;
+	}
+
+	/** SVG's root, which an HTML document has none of. */
+	get rootElement(): globalThis.SVGSVGElement | null {
+		return null;
+	}
+
+	/** Nothing animates, so nothing is animating. */
+	getAnimations(): globalThis.Animation[] {
+		return [];
+	}
+
+	/*
+	 * XPath, which this engine does not implement: the selector engine is
+	 * what it matches with, and an XPath expression is a language it does
+	 * not speak.
+	 */
+
+	evaluate(): never {
+		throw domError("NotSupportedError", "XPath is not implemented");
+	}
+
+	createExpression(): never {
+		throw domError("NotSupportedError", "XPath is not implemented");
+	}
+
+	createNSResolver(): never {
+		throw domError("NotSupportedError", "XPath is not implemented");
+	}
+}
+
+/** A live collection of the document's descendants that `match` accepts. */
+function documentCollection(
+	document: Document,
+	match: (element: Element) => boolean,
+): HTMLCollection {
+	return new HTMLCollection(() => {
+		const found: Element[] = [];
+		for (const node of descendants(document)) {
+			if (node.nodeType === ELEMENT_NODE && match(node as Element)) {
+				found.push(node as Element);
+			}
+		}
+		return found;
+	}, document);
 }
 
 Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	value: "Document",
 	configurable: true,
 });
+
+/**
+ * The event handler attributes installed on the prototype below, and the
+ * ParentNode mixin from the tables.
+ */
+export interface Document
+	extends Pick<
+		globalThis.Document,
+		Extract<keyof globalThis.Document, `on${string}`> | ParentNodeMixin
+	> {}
 
 // Hit testing: the point is the viewport's, the answer the engine's. A
 // headless document renders nothing, so nothing is under any point.
