@@ -20726,6 +20726,256 @@ export class Document extends Node {
 	createNSResolver(): never {
 		throw domError("NotSupportedError", "XPath is not implemented");
 	}
+
+	/*
+	 * The rest of lib.dom's Document. What a terminal document can answer, it
+	 * answers; the rest throws, so a caller reaching for an API this engine
+	 * does not have finds out at the call rather than from a value that looks
+	 * plausible.
+	 */
+
+	get dir(): string {
+		return this.documentElement?.getAttribute("dir") ?? "";
+	}
+
+	set dir(value: string) {
+		this.documentElement?.setAttribute("dir", value);
+	}
+
+	/** No network fetched this, so nothing referred to it. */
+	get referrer(): string {
+		return "";
+	}
+
+	/** Not fetched over HTTP, so there is no origin to name. */
+	get domain(): string {
+		return "";
+	}
+
+	set domain(_value: string) {}
+
+	/** A terminal has no cookie jar. */
+	get cookie(): string {
+		return "";
+	}
+
+	set cookie(_value: string) {}
+
+	get lastModified(): string {
+		return new Date(0).toUTCString();
+	}
+
+	get readyState(): globalThis.DocumentReadyState {
+		return "complete";
+	}
+
+	/** Nothing here is editable through execCommand. */
+	get designMode(): string {
+		return "off";
+	}
+
+	set designMode(_value: string) {}
+
+	/** Script does not run while this document is built. */
+	get currentScript(): globalThis.HTMLOrSVGScriptElement | null {
+		return null;
+	}
+
+	/**
+	 * The element that scrolls the viewport (CSSOM View §7). Outside quirks
+	 * mode that is the root element, always. In quirks mode the body scrolls
+	 * instead -- unless the body is itself potentially scrollable, in which
+	 * case nothing does, because the scrolling the caller means is happening
+	 * inside the body rather than to it.
+	 */
+	get scrollingElement(): Element | null {
+		if (this[kMode] !== "quirks") {
+			return this.documentElement;
+		}
+		const body = this.body;
+		if (body === null || isPotentiallyScrollable(body)) {
+			return null;
+		}
+		return body;
+	}
+
+	get pictureInPictureElement(): Element | null {
+		return null;
+	}
+
+	get pointerLockElement(): Element | null {
+		return null;
+	}
+
+	get fonts(): globalThis.FontFaceSet {
+		throw domError(
+			"NotSupportedError",
+			"The font loading API is not implemented",
+		);
+	}
+
+	get timeline(): globalThis.DocumentTimeline {
+		throw domError("NotSupportedError", "Web Animations is not implemented");
+	}
+
+	get fragmentDirective(): globalThis.FragmentDirective {
+		throw domError(
+			"NotSupportedError",
+			"Fragment directives are not implemented",
+		);
+	}
+
+	/*
+	 * The cascade holds a document's sheets and this module cannot reach it,
+	 * so these throw rather than answer an empty list a caller would believe.
+	 */
+
+	get styleSheets(): globalThis.StyleSheetList {
+		throw domError(
+			"NotSupportedError",
+			"Read the sheets through the style manager",
+		);
+	}
+
+	get adoptedStyleSheets(): globalThis.CSSStyleSheet[] {
+		throw domError(
+			"NotSupportedError",
+			"Read the sheets through the style manager",
+		);
+	}
+
+	set adoptedStyleSheets(_value: globalThis.CSSStyleSheet[]) {
+		throw domError(
+			"NotSupportedError",
+			"Read the sheets through the style manager",
+		);
+	}
+
+	/*
+	 * Markup arrives whole, so there is no open document to stream into. The
+	 * parser builds a tree from a string; document.write appends to a stream
+	 * that this engine never opens.
+	 */
+
+	open(): never {
+		throw domError("InvalidStateError", "This document is not a stream");
+	}
+
+	write(): never {
+		throw domError("InvalidStateError", "This document is not a stream");
+	}
+
+	writeln(): never {
+		throw domError("InvalidStateError", "This document is not a stream");
+	}
+
+	/* Editing commands, which this engine has no editing host for. */
+
+	execCommand(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	queryCommandEnabled(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	queryCommandIndeterm(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	queryCommandState(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	queryCommandSupported(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	queryCommandValue(): never {
+		throw domError("NotSupportedError", "execCommand is not implemented");
+	}
+
+	/* Surfaces that need a window manager, a network, or a compositor. */
+
+	caretPositionFromPoint(): never {
+		throw domError(
+			"NotSupportedError",
+			"caretPositionFromPoint is not implemented",
+		);
+	}
+
+	caretRangeFromPoint(): never {
+		throw domError(
+			"NotSupportedError",
+			"caretRangeFromPoint is not implemented",
+		);
+	}
+
+	exitPictureInPicture(): never {
+		throw domError(
+			"NotSupportedError",
+			"Picture-in-picture is not implemented",
+		);
+	}
+
+	exitPointerLock(): never {
+		throw domError("NotSupportedError", "Pointer lock is not implemented");
+	}
+
+	hasStorageAccess(): never {
+		throw domError(
+			"NotSupportedError",
+			"The storage access API is not implemented",
+		);
+	}
+
+	requestStorageAccess(): never {
+		throw domError(
+			"NotSupportedError",
+			"The storage access API is not implemented",
+		);
+	}
+
+	startViewTransition(): never {
+		throw domError("NotSupportedError", "View transitions are not implemented");
+	}
+}
+
+/**
+ * CSSOM View's "potentially scrollable": the element has a box, and neither
+ * it nor its parent leaves overflow visible on both axes. A body that scrolls
+ * its own content is not the thing that scrolls the viewport.
+ */
+function isPotentiallyScrollable(body: Element): boolean {
+	const view = body.ownerDocument?.defaultView as
+		| {
+			getComputedStyle?(element: Element): {
+				getPropertyValue(p: string): string;
+			};
+		} |
+		null |
+		undefined;
+	if (view?.getComputedStyle === undefined) {
+		return false;
+	}
+	// An absent computed value is the initial one, and overflow's is visible.
+	const hidden = (value: string): boolean =>
+		value !== "" && value !== "visible";
+	const scrolls = (element: Element): boolean => {
+		const style = view.getComputedStyle!(element);
+		return (
+			hidden(style.getPropertyValue("overflow-x")) ||
+			hidden(style.getPropertyValue("overflow-y"))
+		);
+	};
+	const parent = body[kParent];
+	return (
+		parent !== null &&
+		parent !== undefined &&
+		parent.nodeType === ELEMENT_NODE &&
+		scrolls(parent as Element) &&
+		scrolls(body)
+	);
 }
 
 /** A live collection of the document's descendants that `match` accepts. */
@@ -27149,6 +27399,10 @@ const _checked: [
 	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
 
 	// -- constants only -----------------------------------------------------
+	// NEVER: document.all is a falsy object, which no JavaScript value can
+	// be. The selector engine reads it to detect quirks, so answering with a
+	// truthy collection would be worse than not answering.
+	Equal<MissingFrom<globalThis.Document, Document>, "all">,
 	Equal<MissingFrom<globalThis.Node, Node>, never>,
 	Equal<MissingFrom<globalThis.Attr, Attr>, never>,
 	Equal<MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>, never>,
@@ -27174,6 +27428,7 @@ const _checked: [
 		never
 	>,
 ] = [
+	true,
 	true,
 	true,
 	true,

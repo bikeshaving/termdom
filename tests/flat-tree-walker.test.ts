@@ -1177,3 +1177,21 @@ test("the flat tree is not something a page can ask createTreeWalker for", () =>
 	// difference the bit makes.
 	expect(names(flowWalker(host) as never)).toContain("B");
 });
+
+test("scrollingElement is the root outside quirks mode, and the body inside it", () => {
+	// CSSOM View §7: the element that scrolls the viewport depends on the
+	// document's mode, which a missing doctype decides.
+	const standards = documentWindow(
+		"<!DOCTYPE html><html><body><p>x</p></body></html>",
+	);
+	expect(standards.window.document.compatMode).toBe("CSS1Compat");
+	expect(standards.window.document.scrollingElement).toBe(
+		standards.window.document.documentElement,
+	);
+
+	const quirks = documentWindow("<html><body><p>x</p></body></html>");
+	expect(quirks.window.document.compatMode).toBe("BackCompat");
+	expect(quirks.window.document.scrollingElement).toBe(
+		quirks.window.document.body,
+	);
+});
