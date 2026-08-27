@@ -7803,7 +7803,6 @@ export interface CharacterData
 	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
 	/** Character data always has a node document, so this narrows Node's. */
 	get ownerDocument(): Document;
-
 }
 
 Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
@@ -8275,11 +8274,9 @@ Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** An attribute always has a node document, so this narrows Node's. */
 export interface Attr {
 	/** An attribute always has a node document, so this narrows Node's. */
 	get ownerDocument(): Document;
-
 }
 
 /** Set an existing attribute's value, running the attribute change steps. */
