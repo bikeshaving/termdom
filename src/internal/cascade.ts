@@ -1397,7 +1397,6 @@ function getInitialStyle(
 	element: Element | null,
 	property: string,
 ): string {
-	// Check element-specific defaults first
 	const elementDefaults = element ? getElementDefaults(element) : null;
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
@@ -1510,9 +1509,7 @@ export function parseBorderWidthValue(
 	return parseUnitValue(value);
 }
 
-/**
- * Parse CSS box model properties from an element's computed style
- */
+/** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
 	// the author path's resolved-value work between here and the values layout
@@ -1521,7 +1518,6 @@ export function getBoxModel(element: Element): BoxModel {
 }
 
 function readBoxModel(computedStyle: ComputedValues): BoxModel {
-	// Parse explicit width/height
 	const widthValue = parseUnitValue(computedStyle.getComputedValue("width"));
 	const heightValue = parseUnitValue(computedStyle.getComputedValue("height"));
 
@@ -10278,7 +10274,6 @@ export class StyleManager {
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
 		this[kLayoutEngine] = layoutEngine;
 
-		// Parse initial stylesheets (may be empty at construction time)
 		parseStylesheets(this);
 	}
 
@@ -10364,7 +10359,8 @@ export class StyleManager {
 	}
 
 	/**
-	 * Handle DOM mutations using invalidation approach
+	 * Take a batch of mutations: drop what they invalidated, and re-parse the
+	 * stylesheets if the batch added or removed one.
 	 */
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
@@ -10415,7 +10411,6 @@ export class StyleManager {
 				// collision, on any mutation.
 				invalidateEnclosingList(this, mutation.target);
 
-				// Check for stylesheet changes
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
@@ -10447,7 +10442,6 @@ export class StyleManager {
 					}
 				}
 
-				// Check for removed stylesheets
 				for (const node of mutation.removedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
@@ -10907,9 +10901,7 @@ export class StyleManager {
 		return this[kReachingStates] && STATE_ATTRIBUTES.has(name);
 	}
 
-	/**
-	 * Get marker content for outside positioning
-	 */
+	/** The text a list item's marker draws, or null where it draws none. */
 	getMarkerContent(hostElement: Element): string | null {
 		if (!hostElement || hostElement.nodeType !== hostElement.ELEMENT_NODE) {
 			return null;
@@ -10998,9 +10990,7 @@ export class StyleManager {
 			}
 		}
 
-		// Process each pseudo-element type
 		for (const [pseudoType, rules] of pseudoRulesByType) {
-			// Collect all matching elements for this pseudo-type
 			const matchingElements = new Set<Element>();
 
 			for (const rule of rules) {
@@ -11014,7 +11004,6 @@ export class StyleManager {
 						matchingElements.add(element);
 					}
 				} catch (e) {
-					// Skip invalid selectors
 					continue;
 				}
 			}
@@ -11091,9 +11080,7 @@ export class StyleManager {
 		this[kLayoutEngine]?.invalidateFrame();
 	}
 
-	/**
-	 * Clear all cached computed styles (nuclear option)
-	 */
+	/** Drop every cached style, whatever it was cached from. */
 	clearCache(): void {
 		// Every computed style ever handed out re-resolves on its next read:
 		// this manager vouches for none of them any more.
@@ -11182,7 +11169,6 @@ export class StyleManager {
 			return 0;
 		}
 
-		// Look for counter in current scope or parent scopes
 		let currentScope: CounterScope | undefined = scope;
 		while (currentScope) {
 			if (counterName in currentScope.counters) {
@@ -12725,9 +12711,7 @@ function mediaFeatureRangeMatches(
 			mediaComparison(length, range.leftComparison, actual);
 }
 
-/**
- * Parse a single style rule and extract selector/declarations
- */
+/** One style rule as the cascade holds it: selector, declarations, scope. */
 function parseStyleRule(
 	manager: StyleManager,
 	styleRule: CSSStyleRule,
@@ -12961,9 +12945,7 @@ function parseSelector(
 	}
 }
 
-/**
- * Get matching CSS rules for an element
- */
+/** Every rule whose selector reaches this element, in cascade order. */
 function getMatchingRules(
 	manager: StyleManager,
 	element: Element,
@@ -13466,7 +13448,6 @@ function attachPseudoElementToElementForType(
 			return;
 		}
 
-		// Remove inline markers for outside positioning
 		if (listStylePosition === "outside") {
 			removePseudoElement(manager, element, "::marker");
 			return;
@@ -13585,18 +13566,14 @@ function counterPairs(
 	return pairs;
 }
 
-/**
- * Parse counter-reset CSS property
- */
+/** Start each counter `counter-reset` names at the value it gives. */
 function parseCounterReset(scope: CounterScope, counterReset: string): void {
 	for (const [name, value] of counterPairs(counterReset, 0)) {
 		scope.counters[name] = value;
 	}
 }
 
-/**
- * Parse counter-increment CSS property
- */
+/** Move each counter `counter-increment` names by the step it gives. */
 function parseCounterIncrement(
 	manager: StyleManager,
 	scope: CounterScope,
@@ -13626,13 +13603,14 @@ function incrementCounter(
 }
 
 /**
- * Get the current list-item counter value by checking previous siblings
+ * What the list-item counter stands at for this item: its list's start value
+ * plus the items before it, since siblings share one counter and each scope
+ * holds only its own element's value.
  */
 function getListItemCounterValue(
 	manager: StyleManager,
 	element: Element,
 ): number {
-	// Find the parent OL/UL that establishes the counter scope
 	let parent = element.parentElement;
 	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
 		parent = parent.parentElement;
@@ -13642,11 +13620,9 @@ function getListItemCounterValue(
 		return 0;
 	}
 
-	// Get the reset value from the OL/UL
 	const parentScope = manager[kCounterScopes].get(parent);
 	let currentValue = parentScope?.counters["list-item"] ?? 0;
 
-	// Add increments from all previous LI siblings
 	const siblings = Array.from(parent.children);
 	const currentIndex = siblings.indexOf(element);
 
@@ -13660,9 +13636,7 @@ function getListItemCounterValue(
 	return currentValue;
 }
 
-/**
- * Get counter value from a specific scope (without current scope)
- */
+/** A counter's value in this scope, or the nearest ancestor scope holding it. */
 function getCounterValueFromScope(
 	scope: CounterScope | undefined,
 	counterName: string,
