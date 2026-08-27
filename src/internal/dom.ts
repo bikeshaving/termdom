@@ -7700,7 +7700,8 @@ export class CharacterData extends Node {
 		replaceData(this, 0, this[kData]!.length, nullableString(value));
 	}
 
-	override get textContent(): string | null {
+	/** Character data is its own text content, so there is always some. */
+	override get textContent(): string {
 		return this[kData]!;
 	}
 
@@ -7763,6 +7764,7 @@ export interface CharacterData
 	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
 	/** Character data always has a node document, so this narrows Node's. */
 	get ownerDocument(): Document;
+
 }
 
 Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
@@ -8061,7 +8063,8 @@ export class DocumentFragment extends Node {
 		return "#document-fragment";
 	}
 
-	override get textContent(): string | null {
+	/** A fragment's text content is its descendants', so there is always some. */
+	override get textContent(): string {
 		return descendantText(this);
 	}
 
@@ -8069,7 +8072,7 @@ export class DocumentFragment extends Node {
 		setDescendantText(this, value);
 	}
 
-	getElementById(elementId: string): Element | null {
+	getElementById(elementId: string): globalThis.HTMLElement | null {
 		const id = String(elementId);
 		if (id === "") {
 			return null;
@@ -8077,7 +8080,7 @@ export class DocumentFragment extends Node {
 		for (const node of descendants(this)) {
 			if (node.nodeType === ELEMENT_NODE) {
 				if ((node as Element).getAttribute("id") === id) {
-					return node as Element;
+					return node as unknown as globalThis.HTMLElement;
 				}
 			}
 		}
@@ -8207,7 +8210,8 @@ export class Attr extends Node {
 		setExistingAttributeValue(this, nullableString(value));
 	}
 
-	override get textContent(): string | null {
+	/** An attribute's text content is its value, so there is always some. */
+	override get textContent(): string {
 		return this[kValue]!;
 	}
 
@@ -8234,7 +8238,9 @@ Object.defineProperty(Attr.prototype, Symbol.toStringTag, {
 
 /** An attribute always has a node document, so this narrows Node's. */
 export interface Attr {
+	/** An attribute always has a node document, so this narrows Node's. */
 	get ownerDocument(): Document;
+
 }
 
 /** Set an existing attribute's value, running the attribute change steps. */
@@ -20389,8 +20395,12 @@ const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node {
 	// Installed on the prototype, where the mount that answers them is.
-	declare elementFromPoint: (x: number, y: number) => Element | null;
-	declare elementsFromPoint: (x: number, y: number) => Element[];
+	declare elementFromPoint: (
+		x: number,
+		y: number,
+	) => globalThis.Element | null;
+
+	declare elementsFromPoint: (x: number, y: number) => globalThis.Element[];
 
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
@@ -20760,10 +20770,30 @@ export class Document extends Node {
 	}
 
 	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/1999/xhtml",
+		localName: string,
+	): HTMLCollectionOf<globalThis.HTMLElement>;
+	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/2000/svg",
+		localName: string,
+	): HTMLCollectionOf<globalThis.SVGElement>;
+	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/1998/Math/MathML",
+		localName: string,
+	): HTMLCollectionOf<globalThis.MathMLElement>;
+	getElementsByTagNameNS(
 		namespace: string | null,
 		localName: string,
-	): HTMLCollection {
-		return elementsByTagNameNS(this, namespace, String(localName));
+	): HTMLCollectionOf<globalThis.Element>;
+	getElementsByTagNameNS(
+		namespace: string | null,
+		localName: string,
+	): HTMLCollectionOf<globalThis.Element> {
+		return elementsByTagNameNS(
+			this,
+			namespace,
+			String(localName),
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
 	getElementsByClassName(
@@ -20775,7 +20805,9 @@ export class Document extends Node {
 		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
-	getElementsByName(elementName: string): NodeList {
+	getElementsByName(
+		elementName: string,
+	): globalThis.NodeListOf<globalThis.HTMLElement> {
 		const name = String(elementName);
 		return new NodeList(
 			() => {
@@ -20794,7 +20826,7 @@ export class Document extends Node {
 			this,
 			null,
 			"name",
-		);
+		) as unknown as globalThis.NodeListOf<globalThis.HTMLElement>;
 	}
 
 	getElementById(elementId: string): globalThis.HTMLElement | null {
@@ -20815,10 +20847,22 @@ export class Document extends Node {
 		return first as unknown as globalThis.HTMLElement;
 	}
 
+	createElement<K extends keyof globalThis.HTMLElementTagNameMap>(
+		tagName: K,
+		options?: globalThis.ElementCreationOptions,
+	): globalThis.HTMLElementTagNameMap[K];
+	createElement<K extends keyof globalThis.HTMLElementDeprecatedTagNameMap>(
+		tagName: K,
+		options?: globalThis.ElementCreationOptions,
+	): globalThis.HTMLElementDeprecatedTagNameMap[K];
+	createElement(
+		tagName: string,
+		options?: globalThis.ElementCreationOptions,
+	): globalThis.HTMLElement;
 	createElement(
 		localName: string,
 		options?: {is?: string; customElementRegistry?: unknown} | string,
-	): Element {
+	): globalThis.HTMLElement {
 		if (arguments.length < 1) {
 			throw new TypeError("createElement needs a name");
 		}
@@ -20840,14 +20884,36 @@ export class Document extends Node {
 			is,
 			true,
 			extractRegistry(options),
-		);
+		) as unknown as globalThis.HTMLElement;
 	}
 
+	createElementNS(
+		namespaceURI: "http://www.w3.org/1999/xhtml",
+		qualifiedName: string,
+	): globalThis.HTMLElement;
+	createElementNS(
+		namespaceURI: "http://www.w3.org/2000/svg",
+		qualifiedName: string,
+	): globalThis.SVGElement;
+	createElementNS(
+		namespaceURI: "http://www.w3.org/1998/Math/MathML",
+		qualifiedName: string,
+	): globalThis.MathMLElement;
+	createElementNS(
+		namespaceURI: string | null,
+		qualifiedName: string,
+		options?: globalThis.ElementCreationOptions,
+	): globalThis.Element;
+	createElementNS(
+		namespace: string | null,
+		qualifiedName: string,
+		options?: string | globalThis.ElementCreationOptions,
+	): globalThis.Element;
 	createElementNS(
 		namespace: string | null,
 		qualifiedName: string,
 		options?: {is?: string; customElementRegistry?: unknown} | string,
-	): Element {
+	): globalThis.Element {
 		if (arguments.length < 2) {
 			throw new TypeError("createElementNS needs a namespace and a name");
 		}
@@ -20864,7 +20930,7 @@ export class Document extends Node {
 			extractIs(options),
 			true,
 			extractRegistry(options),
-		);
+		) as unknown as globalThis.Element;
 	}
 
 	createDocumentFragment(): globalThis.DocumentFragment {
@@ -20913,7 +20979,7 @@ export class Document extends Node {
 	createProcessingInstruction(
 		target: string,
 		data: string,
-	): ProcessingInstruction {
+	): globalThis.ProcessingInstruction {
 		if (arguments.length < 2) {
 			throw new TypeError(
 				"createProcessingInstruction needs a target and data",
@@ -20930,7 +20996,7 @@ export class Document extends Node {
 		}
 		const instruction = new ProcessingInstruction(name, string);
 		instruction[kDocument] = this;
-		return instruction;
+		return instruction as unknown as globalThis.ProcessingInstruction;
 	}
 
 	importNode<T extends globalThis.Node>(node: T, deep = false): T {
@@ -21006,7 +21072,82 @@ export class Document extends Node {
 	 * The event comes back with an empty type and its initialized flag unset,
 	 * so it cannot be dispatched until initEvent gives it one.
 	 */
-	createEvent(interfaceName: string): Event {
+	/**
+	 * An event of a legacy interface, named.
+	 *
+	 * lib.dom lists every name a browser answers, most of them for interfaces
+	 * no terminal has -- an RTCTrackEvent, a WebGLContextEvent -- and the list
+	 * below is that one. Which names work is up to the user agent: the DOM
+	 * Standard has createEvent throw NotSupportedError for a name its caller's
+	 * user agent does not build, and this one builds eighteen.
+	 */
+	createEvent(eventInterface: "AnimationEvent"): globalThis.AnimationEvent;
+	createEvent(eventInterface: "AnimationPlaybackEvent"): globalThis.AnimationPlaybackEvent;
+	createEvent(eventInterface: "AudioProcessingEvent"): globalThis.AudioProcessingEvent;
+	createEvent(eventInterface: "BeforeUnloadEvent"): globalThis.BeforeUnloadEvent;
+	createEvent(eventInterface: "BlobEvent"): globalThis.BlobEvent;
+	createEvent(eventInterface: "ClipboardEvent"): globalThis.ClipboardEvent;
+	createEvent(eventInterface: "CloseEvent"): globalThis.CloseEvent;
+	createEvent(eventInterface: "CompositionEvent"): globalThis.CompositionEvent;
+	createEvent(eventInterface: "ContentVisibilityAutoStateChangeEvent"): globalThis.ContentVisibilityAutoStateChangeEvent;
+	createEvent(eventInterface: "CookieChangeEvent"): globalThis.CookieChangeEvent;
+	createEvent(eventInterface: "CustomEvent"): globalThis.CustomEvent;
+	createEvent(eventInterface: "DeviceMotionEvent"): globalThis.DeviceMotionEvent;
+	createEvent(eventInterface: "DeviceOrientationEvent"): globalThis.DeviceOrientationEvent;
+	createEvent(eventInterface: "DragEvent"): globalThis.DragEvent;
+	createEvent(eventInterface: "ErrorEvent"): globalThis.ErrorEvent;
+	createEvent(eventInterface: "Event"): globalThis.Event;
+	createEvent(eventInterface: "Events"): globalThis.Event;
+	createEvent(eventInterface: "FocusEvent"): globalThis.FocusEvent;
+	createEvent(eventInterface: "FontFaceSetLoadEvent"): globalThis.FontFaceSetLoadEvent;
+	createEvent(eventInterface: "FormDataEvent"): globalThis.FormDataEvent;
+	createEvent(eventInterface: "GamepadEvent"): globalThis.GamepadEvent;
+	createEvent(eventInterface: "HashChangeEvent"): globalThis.HashChangeEvent;
+	createEvent(eventInterface: "IDBVersionChangeEvent"): globalThis.IDBVersionChangeEvent;
+	createEvent(eventInterface: "InputEvent"): globalThis.InputEvent;
+	createEvent(eventInterface: "KeyboardEvent"): globalThis.KeyboardEvent;
+	createEvent(eventInterface: "MIDIConnectionEvent"): globalThis.MIDIConnectionEvent;
+	createEvent(eventInterface: "MIDIMessageEvent"): globalThis.MIDIMessageEvent;
+	createEvent(eventInterface: "MediaEncryptedEvent"): globalThis.MediaEncryptedEvent;
+	createEvent(eventInterface: "MediaKeyMessageEvent"): globalThis.MediaKeyMessageEvent;
+	createEvent(eventInterface: "MediaQueryListEvent"): globalThis.MediaQueryListEvent;
+	createEvent(eventInterface: "MediaStreamTrackEvent"): globalThis.MediaStreamTrackEvent;
+	createEvent(eventInterface: "MessageEvent"): globalThis.MessageEvent;
+	createEvent(eventInterface: "MouseEvent"): globalThis.MouseEvent;
+	createEvent(eventInterface: "MouseEvents"): globalThis.MouseEvent;
+	createEvent(eventInterface: "OfflineAudioCompletionEvent"): globalThis.OfflineAudioCompletionEvent;
+	createEvent(eventInterface: "PageRevealEvent"): globalThis.PageRevealEvent;
+	createEvent(eventInterface: "PageSwapEvent"): globalThis.PageSwapEvent;
+	createEvent(eventInterface: "PageTransitionEvent"): globalThis.PageTransitionEvent;
+	createEvent(eventInterface: "PaymentMethodChangeEvent"): globalThis.PaymentMethodChangeEvent;
+	createEvent(eventInterface: "PaymentRequestUpdateEvent"): globalThis.PaymentRequestUpdateEvent;
+	createEvent(eventInterface: "PictureInPictureEvent"): globalThis.PictureInPictureEvent;
+	createEvent(eventInterface: "PointerEvent"): globalThis.PointerEvent;
+	createEvent(eventInterface: "PopStateEvent"): globalThis.PopStateEvent;
+	createEvent(eventInterface: "ProgressEvent"): globalThis.ProgressEvent;
+	createEvent(eventInterface: "PromiseRejectionEvent"): globalThis.PromiseRejectionEvent;
+	createEvent(eventInterface: "RTCDTMFToneChangeEvent"): globalThis.RTCDTMFToneChangeEvent;
+	createEvent(eventInterface: "RTCDataChannelEvent"): globalThis.RTCDataChannelEvent;
+	createEvent(eventInterface: "RTCErrorEvent"): globalThis.RTCErrorEvent;
+	createEvent(eventInterface: "RTCPeerConnectionIceErrorEvent"): globalThis.RTCPeerConnectionIceErrorEvent;
+	createEvent(eventInterface: "RTCPeerConnectionIceEvent"): globalThis.RTCPeerConnectionIceEvent;
+	createEvent(eventInterface: "RTCTrackEvent"): globalThis.RTCTrackEvent;
+	createEvent(eventInterface: "SecurityPolicyViolationEvent"): globalThis.SecurityPolicyViolationEvent;
+	createEvent(eventInterface: "SpeechSynthesisErrorEvent"): globalThis.SpeechSynthesisErrorEvent;
+	createEvent(eventInterface: "SpeechSynthesisEvent"): globalThis.SpeechSynthesisEvent;
+	createEvent(eventInterface: "StorageEvent"): globalThis.StorageEvent;
+	createEvent(eventInterface: "SubmitEvent"): globalThis.SubmitEvent;
+	createEvent(eventInterface: "TextEvent"): globalThis.TextEvent;
+	createEvent(eventInterface: "ToggleEvent"): globalThis.ToggleEvent;
+	createEvent(eventInterface: "TouchEvent"): globalThis.TouchEvent;
+	createEvent(eventInterface: "TrackEvent"): globalThis.TrackEvent;
+	createEvent(eventInterface: "TransitionEvent"): globalThis.TransitionEvent;
+	createEvent(eventInterface: "UIEvent"): globalThis.UIEvent;
+	createEvent(eventInterface: "UIEvents"): globalThis.UIEvent;
+	createEvent(eventInterface: "WebGLContextEvent"): globalThis.WebGLContextEvent;
+	createEvent(eventInterface: "WheelEvent"): globalThis.WheelEvent;
+	createEvent(eventInterface: string): globalThis.Event;
+	createEvent(interfaceName: string): globalThis.Event {
 		if (arguments.length < 1) {
 			throw new TypeError("createEvent needs an interface name");
 		}
@@ -21020,7 +21161,7 @@ export class Document extends Node {
 		}
 		const event = constructInternal(factory);
 		event[kState]!.initialized = false;
-		return event;
+		return event as unknown as globalThis.Event;
 	}
 
 	createRange(): globalThis.Range {
@@ -21047,25 +21188,29 @@ export class Document extends Node {
 	}
 
 	createNodeIterator(
-		root: Node,
+		root: globalThis.Node,
 		whatToShow = 0xffffffff,
-		filter: NodeFilterInput = null,
-	): NodeIterator {
+		filter: globalThis.NodeFilter | null = null,
+	): globalThis.NodeIterator {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		const iterator = new NodeIterator(root, toUnsignedLong(whatToShow), filter);
+		const iterator = new NodeIterator(
+			root as Node,
+			toUnsignedLong(whatToShow),
+			filter as NodeFilterInput,
+		);
 		// The spec keys the pre-removing steps off the root's node document,
 		// which need not be the document the iterator was created from.
-		registerNodeIterator(getRoot(root), iterator);
-		return iterator;
+		registerNodeIterator(getRoot(root as Node), iterator);
+		return iterator as unknown as globalThis.NodeIterator;
 	}
 
 	createTreeWalker(
-		root: Node,
+		root: globalThis.Node,
 		whatToShow = 0xffffffff,
-		filter: NodeFilterInput = null,
-	): TreeWalker {
+		filter: globalThis.NodeFilter | null = null,
+	): globalThis.TreeWalker {
 		if (!(root instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -21073,10 +21218,10 @@ export class Document extends Node {
 		// every bit there is: without this mask, `createTreeWalker(root)` would
 		// walk the box tree's view of the document instead of the page's.
 		return new TreeWalker(
-			root,
+			root as Node,
 			toUnsignedLong(whatToShow) & ~SHOW_FLAT,
-			filter,
-		);
+			filter as NodeFilterInput,
+		) as unknown as globalThis.TreeWalker;
 	}
 
 	override [kCloneSingle]?(_document: Document): Node {
@@ -21553,18 +21698,18 @@ export interface Document
 // headless document renders nothing, so nothing is under any point.
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
-		value(this: Document, x: number, y: number): Element | null {
+		value(this: Document, x: number, y: number): globalThis.Element | null {
 			return (mountOf(this)?.elementFromPoint(this, x, y) ??
-				null) as Element | null;
+				null) as globalThis.Element | null;
 		},
 		writable: true,
 		configurable: true,
 		enumerable: true,
 	},
 	elementsFromPoint: {
-		value(this: Document, x: number, y: number): Element[] {
+		value(this: Document, x: number, y: number): globalThis.Element[] {
 			return (mountOf(this)?.elementsFromPoint(this, x, y) ??
-				[]) as Element[];
+				[]) as globalThis.Element[];
 		},
 		writable: true,
 		configurable: true,
@@ -21714,7 +21859,7 @@ export class DOMImplementation {
 			element = document.createElementNS(
 				namespace == null ? null : String(namespace),
 				name,
-			);
+			) as unknown as Element;
 		}
 		if (doctype != null) {
 			appendNode(doctype as unknown as DocumentType, document);
