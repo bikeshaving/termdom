@@ -1544,7 +1544,9 @@ const kDetail = Symbol("detail");
  * CustomEvent: an instance is an Event here and a platform Event, though not
  * a platform CustomEvent.
  */
-export class CustomEvent<T = unknown> extends Event {
+export class CustomEvent<T = unknown>
+	extends Event
+	implements globalThis.CustomEvent<T> {
 	declare [kDetail]?: T | null;
 
 	constructor(type: string, eventInitDict: CustomEventInit<T> = {}) {
@@ -1556,8 +1558,13 @@ export class CustomEvent<T = unknown> extends Event {
 		this[kDetail] = init.detail ?? null;
 	}
 
-	get detail(): T | null {
-		return this[kDetail]!;
+	/**
+	 * lib.dom types this T, and it is null until an init gives it one -- the
+	 * same lie every browser's types tell, because the alternative is every
+	 * caller unwrapping a detail they just passed in.
+	 */
+	get detail(): T {
+		return this[kDetail]! as T;
 	}
 
 	initCustomEvent(
@@ -2052,7 +2059,7 @@ export class UIEvent extends Event {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view = null,
+		view: globalThis.Window | null = null,
 		detail = 0,
 	): void {
 		if (arguments.length < 1) {
@@ -2093,7 +2100,7 @@ const kDefaultView = Symbol("the window this document is displayed in");
  * A click that is one of these is what dispatch runs an activation behavior
  * for, which is what `[kIsMouseEvent]` answers.
  */
-export class MouseEvent extends UIEvent {
+export class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	declare [kScreenX]?: number;
 	declare [kScreenY]?: number;
 	declare [kClientX]?: number;
@@ -2265,7 +2272,7 @@ export class MouseEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view = null,
+		view: globalThis.Window | null = null,
 		detail = 0,
 		screenX = 0,
 		screenY = 0,
@@ -2276,7 +2283,7 @@ export class MouseEvent extends UIEvent {
 		shiftKey = false,
 		metaKey = false,
 		button = 0,
-		relatedTarget: EventTarget | null = null,
+		relatedTarget: globalThis.EventTarget | null = null,
 	): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initMouseEvent needs a type");
@@ -2332,7 +2339,7 @@ const kCharCode = Symbol("charCode");
 const kKeyCode = Symbol("keyCode");
 
 /** An event of a key, named by the character it types and the key it is. */
-export class KeyboardEvent extends UIEvent {
+export class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 	declare [kKey]?: string;
 	declare [kCode]?: string;
 	declare [kLocation]?: number;
@@ -2422,7 +2429,7 @@ export class KeyboardEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view = null,
+		view: globalThis.Window | null = null,
 		key = "",
 		location = 0,
 		ctrlKey = false,
@@ -2487,7 +2494,7 @@ export class CompositionEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view = null,
+		view: globalThis.Window | null = null,
 		data = "",
 	): void {
 		if (arguments.length < 1) {
@@ -2530,7 +2537,7 @@ export class TextEvent extends UIEvent {
 		type: string,
 		bubbles = false,
 		cancelable = false,
-		view = null,
+		view: globalThis.Window | null = null,
 		data = "",
 	): void {
 		if (arguments.length < 1) {
@@ -4727,7 +4734,7 @@ const kRegistry = Symbol("custom element registry");
 const kAttributeList = Symbol("attribute list");
 const kDocumentURL = Symbol("document URL");
 
-export class Node extends EventTarget {
+export class Node extends EventTarget implements globalThis.Node {
 	[kRegistry]?: CustomElementRegistry | null;
 	[kParent]?: Node | null;
 	[kFirstChild]?: Node | null;
@@ -6182,7 +6189,7 @@ const kNextSibling = Symbol("nextSibling");
 const kTarget = Symbol("processing instruction target");
 
 /** A record of one mutation, as an observer's callback receives it. */
-export class MutationRecord {
+export class MutationRecord implements globalThis.MutationRecord {
 	declare [kType]?: string;
 	declare [kTarget]?: Node;
 	declare [kAddedNodes]?: NodeList;
@@ -6215,28 +6222,28 @@ export class MutationRecord {
 		this[kNextSibling] = nextSibling;
 	}
 
-	get type(): string {
-		return this[kType]!;
+	get type(): globalThis.MutationRecordType {
+		return this[kType]! as globalThis.MutationRecordType;
 	}
 
-	get target(): Node {
-		return this[kTarget]!;
+	get target(): globalThis.Node {
+		return this[kTarget]! as unknown as globalThis.Node;
 	}
 
-	get addedNodes(): NodeList {
-		return this[kAddedNodes]!;
+	get addedNodes(): globalThis.NodeList {
+		return this[kAddedNodes]! as unknown as globalThis.NodeList;
 	}
 
-	get removedNodes(): NodeList {
-		return this[kRemovedNodes]!;
+	get removedNodes(): globalThis.NodeList {
+		return this[kRemovedNodes]! as unknown as globalThis.NodeList;
 	}
 
-	get previousSibling(): Node | null {
-		return this[kPreviousSibling]!;
+	get previousSibling(): globalThis.Node | null {
+		return this[kPreviousSibling]! as unknown as globalThis.Node | null;
 	}
 
-	get nextSibling(): Node | null {
-		return this[kNextSibling]!;
+	get nextSibling(): globalThis.Node | null {
+		return this[kNextSibling]! as unknown as globalThis.Node | null;
 	}
 
 	get attributeName(): string | null {
@@ -6335,7 +6342,7 @@ const kNodes = Symbol("nodes");
 const kRecords = Symbol("records");
 
 /** An observer of a tree: what it watches, and the records it has to deliver. */
-export class MutationObserver {
+export class MutationObserver implements globalThis.MutationObserver {
 	declare [kCallback]?: MutationCallback;
 	/** The targets observe() named, and the nodes whose transient
 	 * registrations outlived a checkpoint. Held strongly: each node's
@@ -7667,7 +7674,7 @@ function validateTokens(tokens: string[]): void {
 
 /* --------------------------------------------------------- character data */
 
-export class CharacterData extends Node {
+export class CharacterData extends Node implements globalThis.CharacterData {
 	[kData]?: string;
 
 	constructor(data: string) {
@@ -7816,7 +7823,7 @@ function queueCharacterDataMutationRecord(
 
 const kManualSlot = Symbol("manual slot assignment");
 
-export class Text extends CharacterData {
+export class Text extends CharacterData implements globalThis.Text {
 	[kAssignedSlot]?: HTMLSlotElement | null;
 	[kManualSlot]?: HTMLSlotElement | null;
 
@@ -7921,7 +7928,7 @@ Object.defineProperty(CDATASection.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class Comment extends CharacterData {
+export class Comment extends CharacterData implements globalThis.Comment {
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kDocument] = currentDocument();
@@ -8046,7 +8053,7 @@ Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class DocumentFragment extends Node {
+export class DocumentFragment extends Node implements globalThis.DocumentFragment {
 	[kHost]?: Element | null;
 
 	constructor() {
@@ -8135,7 +8142,7 @@ const kValue = Symbol("attribute value");
 const kOwnerElement = Symbol("owner element");
 const kQualifiedName = Symbol("qualified name");
 
-export class Attr extends Node {
+export class Attr extends Node implements globalThis.Attr {
 	[kNamespace]?: string | null;
 	[kPrefix]?: string | null;
 	[kLocalName]?: string;
@@ -8440,7 +8447,7 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 	return null;
 }
 
-export class NamedNodeMap extends LiveList {
+export class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 	declare [Symbol.iterator]: () => ArrayIterator<Attr>;
 
 	declare [kElement]?: Element;
@@ -8621,7 +8628,7 @@ type ScrollMethod = (
 	y?: number,
 ) => void;
 
-export class Element extends Node {
+export class Element extends Node implements globalThis.Element {
 	[kNamespace]?: string | null;
 	[kPrefix]?: string | null;
 	[kLocalName]?: string;
@@ -11366,7 +11373,7 @@ const kAvailableToInternals = Symbol("available to element internals");
  * that already steps from a fragment to its host -- pre-insertion validity,
  * retargeting, the composed path -- work across it without a second concept.
  */
-export class ShadowRoot extends DocumentFragment {
+export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
 	[kShadowMode]?: "open" | "closed";
 	[kUAInternal]?: boolean;
 	[kDelegatesFocus]?: boolean;
@@ -20393,7 +20400,7 @@ const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 const kNwsapi = Symbol("selector engine");
 
-export class Document extends Node {
+export class Document extends Node implements globalThis.Document {
 	// Installed on the prototype, where the mount that answers them is.
 	declare elementFromPoint: (
 		x: number,
@@ -22953,7 +22960,7 @@ function staticRangePoints(init: unknown): [Node, number, Node, number] {
 	];
 }
 
-export class StaticRange extends AbstractRange {
+export class StaticRange extends AbstractRange implements globalThis.StaticRange {
 	constructor(init: StaticRangeInit) {
 		super(...staticRangePoints(init));
 	}
@@ -23351,7 +23358,7 @@ function insertIntoRange(range: Range, node: Node): void {
 
 const kRangeSelection = Symbol("the selection whose range this is");
 
-export class Range extends AbstractRange {
+export class Range extends AbstractRange implements globalThis.Range {
 	[kRangeSelection]?: Selection | null;
 
 	// Installed on the prototype, where the mount that measures them is.
@@ -23924,7 +23931,7 @@ const kDirection = Symbol("direction");
 const kStart = Symbol("start");
 const kEnd = Symbol("end");
 
-export class Selection {
+export class Selection implements globalThis.Selection {
 	declare [kDocument]?: Document;
 	/** The range the Range API sees, which lives in a single tree. */
 	declare [kRange]?: Range | null;
@@ -27869,35 +27876,6 @@ export class Window extends EventTarget {
 installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 
-/**
- * ---- The platform's shape, held by the compiler --------------------------
- *
- * For each class above, the members lib.dom declares that the class type
- * does not, asserted EQUAL to a ledger. A member appearing on neither
- * side is conformance; a member missing from the ledger is drift the
- * build refuses; a ledger entry the type grew into is staleness the
- * build refuses just the same.
- *
- * The bins the ledger's comments sort by:
- * - RUNTIME: real on instances -- the tables in htmltables.ts and the
- *   engine install them -- but invisible to the class type. Type debt,
- *   not missing behavior.
- * - GAP: not implemented at all. Work candidates.
- * - NEVER: deliberately absent on a terminal.
- *
- * Key coverage only, by design: whole-interface assignability is
- * transitively global (one interface drags the entire co-recursive type
- * graph, including lib.dom's own inaccuracies), so signatures graduate
- * member by member instead.
- */
-
-/** The platform keys an internal type has not declared. */
-type MissingFrom<Platform, Internal> = Exclude<keyof Platform, keyof Internal>;
-
-/** Exact equality of two key unions, either direction's drift refused. */
-type Equal<A, B> =
-	[A] extends [B] ? ([B] extends [A] ? true : never) : never;
-
 /** RUNTIME: the Node interface constants, installed on prototypes at load. */
 type NodeConstants =
 	"ELEMENT_NODE" |
@@ -28273,62 +28251,3 @@ function buildWindow(document: Document): EngineWindow {
 export function createDocumentWindow(html: string, url?: string): EngineWindow {
 	return buildWindow(parseHTMLDocument(html, url));
 }
-
-// -- key-complete today, held that way. The value assignment is the
-// enforcement: an entry whose Equal resolves never refuses a true.
-//
-// This checks NAMES, in one direction, and nothing else. A member that is
-// present and wrongly typed passes it -- textContent returning string|null,
-// insertAdjacentElement taking a string, getElementsByClassName answering an
-// HTMLCollection where lib.dom says HTMLCollectionOf all sat here green.
-// `implements globalThis.X` on the class is the real check, and it reports
-// every mismatch at once instead of the first one in a chain. A class earns
-// the clause when it conforms and leaves this list; what is left below has
-// not earned it yet.
-const _checked: [
-	Equal<MissingFrom<globalThis.CustomEvent, CustomEvent>, never>,
-	Equal<MissingFrom<globalThis.StaticRange, StaticRange>, never>,
-	Equal<MissingFrom<globalThis.Selection, Selection>, never>,
-	Equal<MissingFrom<globalThis.MutationObserver, MutationObserver>, never>,
-	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
-
-	// -- constants only -----------------------------------------------------
-	Equal<MissingFrom<globalThis.Document, Document>, never>,
-	Equal<MissingFrom<globalThis.Node, Node>, never>,
-	Equal<MissingFrom<globalThis.Attr, Attr>, never>,
-	Equal<MissingFrom<globalThis.KeyboardEvent, KeyboardEvent>, never>,
-
-	// -- small curated ledgers ----------------------------------------------
-	Equal<MissingFrom<globalThis.Range, Range>, never>,
-	Equal<MissingFrom<globalThis.MouseEvent, MouseEvent>, never>,
-	Equal<MissingFrom<globalThis.CharacterData, CharacterData>, never>,
-	Equal<MissingFrom<globalThis.Text, Text>, never>,
-	Equal<MissingFrom<globalThis.Comment, Comment>, never>,
-	Equal<MissingFrom<globalThis.DocumentFragment, DocumentFragment>, never>,
-	Equal<MissingFrom<globalThis.ShadowRoot, ShadowRoot>, never>,
-	// The ARIA surface comes out first: it is a template literal pattern,
-	// which no finite union of key names can contain, so the ledger sets it
-	// aside and holds the residue.
-	Equal<
-		Exclude<MissingFrom<globalThis.Element, Element>, ARIAReflection>,
-		never
-	>,
-] = [
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-	true,
-];
