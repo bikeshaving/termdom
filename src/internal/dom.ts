@@ -12030,16 +12030,6 @@ builtinRegistry.define(HTML_NAMESPACE, "slot", HTMLSlotElement);
 
 const kTemplateContent = Symbol("template content");
 
-/**
- * A template: an element whose children are parsed into a fragment beside it
- * rather than into the tree.
- *
- * The fragment is the shape a shadow tree is written in -- a declarative
- * shadow root is a template, and every test that builds one builds it from a
- * template's content -- so the element that owns that fragment belongs beside
- * the slot rather than a phase later. Its host is the template, which is what
- * stops a template from being appended into its own contents.
- */
 const kTemplateDocument = Symbol("templateDocument");
 
 /**
@@ -12061,6 +12051,16 @@ function getTemplateContentsOwner(document: Document): Document {
 	return owner;
 }
 
+/**
+ * A template: an element whose children are parsed into a fragment beside it
+ * rather than into the tree.
+ *
+ * The fragment is the shape a shadow tree is written in -- a declarative
+ * shadow root is a template, and every test that builds one builds it from a
+ * template's content -- so the element that owns that fragment belongs beside
+ * the slot rather than a phase later. Its host is the template, which is what
+ * stops a template from being appended into its own contents.
+ */
 export class HTMLTemplateElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
