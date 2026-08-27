@@ -4823,14 +4823,21 @@ export class Node extends EventTarget {
 		return init.composed ? shadowIncludingRoot(this) : getRoot(this);
 	}
 
-	get parentNode(): Node | null {
-		return this[kParent]!;
+	/** lib.dom names this ParentNode, the mixin a parent carries. */
+	get parentNode(): globalThis.ParentNode | null {
+		return this[kParent]! as unknown as globalThis.ParentNode | null;
 	}
 
-	get parentElement(): Element | null {
+	/**
+	 * lib.dom types this HTMLElement where the spec says Element -- an SVG or
+	 * MathML parent is an Element and not an HTMLElement. The platform's own
+	 * types are wrong in the same way every browser's are, and this follows
+	 * them rather than being right alone.
+	 */
+	get parentElement(): globalThis.HTMLElement | null {
 		const parent = this[kParent]!;
 		return parent !== null && parent.nodeType === ELEMENT_NODE ?
-				(parent as Element) :
+				(parent as unknown as globalThis.HTMLElement) :
 			null;
 	}
 
@@ -5026,7 +5033,7 @@ export class Node extends EventTarget {
 				const parent = this.parentElement;
 				return parent === null ?
 					null :
-						locateNamespacePrefix(parent, namespace);
+						locateNamespacePrefix(parent as unknown as Element, namespace);
 			}
 		}
 	}
@@ -7800,8 +7807,11 @@ export class Text extends CharacterData {
 		return this[kAssignedSlot] ?? this[kParent]!;
 	}
 
-	get assignedSlot(): HTMLSlotElement | null {
-		return findASlot(this, true);
+	get assignedSlot(): globalThis.HTMLSlotElement | null {
+		return findASlot(
+			this,
+			true,
+		) as unknown as globalThis.HTMLSlotElement | null;
 	}
 
 	override get nodeType(): number {
@@ -8715,7 +8725,7 @@ export class Element extends Node {
 		return this[kRegistry]!;
 	}
 
-	attachShadow(init: ShadowRootInit): ShadowRoot {
+	attachShadow(init: globalThis.ShadowRootInit): globalThis.ShadowRoot {
 		const options = toDictionary<ShadowRootInit>(init, "A ShadowRootInit");
 		const mode = String(options.mode);
 		if (mode !== "open" && mode !== "closed") {
@@ -8740,7 +8750,7 @@ export class Element extends Node {
 		);
 		const root = this[kShadowRoot]! as ShadowRoot;
 		mountOf(this)?.shadowAttached(this, root);
-		return root;
+		return root as unknown as globalThis.ShadowRoot;
 	}
 
 	/**
@@ -8758,22 +8768,22 @@ export class Element extends Node {
 		return engine.requestFullscreen(this, options);
 	}
 
-	get shadowRoot(): ShadowRoot | null {
+	get shadowRoot(): globalThis.ShadowRoot | null {
 		const shadow = this[kShadowRoot]!;
 		if (shadow === null || shadow[kShadowMode] !== "open") {
 			return null;
 		}
-		return shadow;
+		return shadow as unknown as globalThis.ShadowRoot | null;
 	}
 
-	get attributes(): NamedNodeMap {
+	get attributes(): globalThis.NamedNodeMap {
 		let map = this[kAttributesMap]!;
 		if (map === null) {
 			map = new NamedNodeMap(this);
 			ensure(map);
 			this[kAttributesMap] = map;
 		}
-		return map;
+		return map as unknown as globalThis.NamedNodeMap;
 	}
 
 	hasAttributes(): boolean {
@@ -8908,12 +8918,24 @@ export class Element extends Node {
 		return getAttributeByNamespace(this, namespace, String(localName)) !== null;
 	}
 
-	getAttributeNode(qualifiedName: string): Attr | null {
-		return getAttributeByName(this, String(qualifiedName));
+	getAttributeNode(qualifiedName: string): globalThis.Attr | null {
+		return getAttributeByName(
+			this,
+			String(qualifiedName),
+		) as unknown as globalThis.Attr |
+		null;
 	}
 
-	getAttributeNodeNS(namespace: string | null, localName: string): Attr | null {
-		return getAttributeByNamespace(this, namespace, String(localName));
+	getAttributeNodeNS(
+		namespace: string | null,
+		localName: string,
+	): globalThis.Attr | null {
+		return getAttributeByNamespace(
+			this,
+			namespace,
+			String(localName),
+		) as unknown as globalThis.Attr |
+		null;
 	}
 
 	setAttributeNode(attr: Attr): Attr | null {
@@ -9297,6 +9319,11 @@ export class Element extends Node {
 
 	requestPointerLock(): never {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
+	}
+
+	/** An element always has a node document, which lib.dom says too. */
+	override get ownerDocument(): Document {
+		return this[kDocument]!;
 	}
 }
 
@@ -9821,8 +9848,10 @@ export class HTMLElement extends Element {
 	}
 
 	/** The internals of a custom element, which only its definition may take. */
-	attachInternals(): ElementInternals {
-		return attachElementInternals(this);
+	attachInternals(): globalThis.ElementInternals {
+		return attachElementInternals(
+			this,
+		) as unknown as globalThis.ElementInternals;
 	}
 
 	/**
@@ -10171,7 +10200,8 @@ function isInertTree(element: Element): boolean {
 		if (node.hasAttribute("inert")) {
 			return true;
 		}
-		const parent: Element | null = node.parentElement;
+		const parent: Element | null = node.parentElement as unknown as Element |
+			null;
 		if (parent !== null) {
 			node = parent;
 			continue;
@@ -11376,10 +11406,7 @@ export class ShadowRoot extends DocumentFragment {
 		replaceAll(fragment, this);
 	}
 
-	getHTML(options?: {
-		serializableShadowRoots?: boolean;
-		shadowRoots?: ShadowRoot[];
-	}): string {
+	getHTML(options?: globalThis.GetHTMLOptions): string {
 		const init = toDictionary<{
 			serializableShadowRoots?: boolean;
 			shadowRoots?: ShadowRoot[];
@@ -22193,7 +22220,9 @@ function locateNamespacePrefix(
 		}
 	}
 	const parent = element.parentElement;
-	return parent === null ? null : locateNamespacePrefix(parent, namespace);
+	return parent === null ?
+		null :
+			locateNamespacePrefix(parent as unknown as Element, namespace);
 }
 
 function locateNamespace(node: Node, prefix: string | null): string | null {
@@ -22228,7 +22257,9 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 				}
 			}
 			const parent = element.parentElement;
-			return parent === null ? null : locateNamespace(parent, prefix);
+			return parent === null ?
+				null :
+					locateNamespace(parent as unknown as Element, prefix);
 		}
 		case DOCUMENT_NODE: {
 			const element = (node as Document).documentElement;
@@ -22243,7 +22274,9 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 		}
 		default: {
 			const parent = node.parentElement;
-			return parent === null ? null : locateNamespace(parent, prefix);
+			return parent === null ?
+				null :
+					locateNamespace(parent as unknown as Element, prefix);
 		}
 	}
 }
@@ -25016,7 +25049,9 @@ function selectorEngine(document: Document): SelectorEngine {
 				if (node === element) {
 					return true;
 				}
-				const parent: Element | null = node.parentElement;
+				const parent: Element |
+					null = node.parentElement as unknown as Element |
+					null;
 				if (parent !== null) {
 					node = parent;
 					continue;
