@@ -8,6 +8,8 @@
  * scrolled band. Nothing above this knows the terminal has a cursor.
  */
 import {
+	graphemeSegmenter,
+	PRINTABLE_ASCII,
 	probingTeaches,
 	stringWidth,
 	widthIsUncertain,
@@ -172,11 +174,6 @@ function packAttrs(style: CellStyle | undefined): number {
 }
 
 /* --------------------------------------------------------------- graphemes */
-
-/** One shared grapheme segmenter -- construction is expensive. */
-const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
-/** Text that needs no segmentation: one char, one cell, no combining. */
-const asciiPrintable = /^[\x20-\x7e]*$/;
 
 /**
  * A char-plane value at or above this is an index into `internedGraphemes`
@@ -1000,7 +997,7 @@ export class CellContext {
 
 	/** Measure `text` the way `drawText` will lay it down. */
 	measureText(text: string): TextMetrics {
-		if (asciiPrintable.test(text)) {
+		if (PRINTABLE_ASCII.test(text)) {
 			return {width: text.length};
 		}
 		let width = 0;
@@ -1015,7 +1012,7 @@ export class CellContext {
 
 		// Printable ASCII needs no grapheme segmentation: every char is its
 		// own one-cell grapheme.
-		if (asciiPrintable.test(text)) {
+		if (PRINTABLE_ASCII.test(text)) {
 			for (let i = 0; i < text.length; i++) {
 				if (currentX + 1 > this.cols) {
 					break;

@@ -19,8 +19,11 @@ import {
 // global itself rather than a flag, so its absence narrows the call away.
 const bun = globalThis.Bun;
 
-/** Grapheme clusters: what the terminal treats as one character. */
-const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
+/**
+ * One shared grapheme segmenter: what the terminal treats as one character.
+ * Constructing one is expensive, so the whole engine reads through this.
+ */
+export const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 
 /**
  * Combining marks and format characters -- the two Unicode categories whose
@@ -85,7 +88,7 @@ class LRUCache<TKey, TValue> {
 }
 
 // Printable ASCII is its own width.
-const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+export const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
 // Width is a pure property of the string. LRU-bounded so an endless stream
 // of unique strings (a logger) cannot grow the cache without limit.
@@ -327,7 +330,7 @@ export function writeClusterWidths(
 		return;
 	}
 
-	for (const {index, segment} of segmenter.segment(str)) {
+	for (const {index, segment} of graphemeSegmenter.segment(str)) {
 		out[offset + index + segment.length - 1] = graphemeWidth(segment);
 	}
 }
@@ -345,7 +348,7 @@ function stringWidthFallback(str: string): number {
 	// emoji family and a combining accent are each one cluster occupying one
 	// cell's worth of base character, however many code points they contain.
 	let width = 0;
-	for (const {segment} of segmenter.segment(str)) {
+	for (const {segment} of graphemeSegmenter.segment(str)) {
 		width += graphemeWidth(segment);
 	}
 	return width;
@@ -397,7 +400,7 @@ function graphemeWidth(cluster: string): number {
 	}
 
 	// Two regional indicators form a flag, which renders as two cells; a lone
-	// one is a narrow letter. The segmenter clusters them in pairs for us.
+	// one is a narrow letter. The graphemeSegmenter clusters them in pairs for us.
 	if (code >= 0x1f1e6 && code <= 0x1f1ff) {
 		return Array.from(cluster).length > 1 ? 2 : 1;
 	}
@@ -433,7 +436,7 @@ function graphemeWidth(cluster: string): number {
  */
 function graphemeBoundaries(value: string): number[] {
 	const boundaries = [0];
-	for (const {index, segment} of segmenter.segment(value)) {
+	for (const {index, segment} of graphemeSegmenter.segment(value)) {
 		boundaries.push(index + segment.length);
 	}
 	return boundaries;
