@@ -1758,6 +1758,23 @@ function withMarkerSeparator(marker: string): string {
 }
 
 /**
+ * The `content` a list item's marker falls back to when no rule declared one:
+ * what its list-style-type spells, quoted the way a content value is written.
+ * Null for an item outside a list, which has no marker to spell.
+ */
+function defaultMarkerContent(hostElement: Element): string | null {
+	const listParent = hostElement.parentElement;
+	if (
+		!listParent ||
+		(listParent.tagName !== "UL" && listParent.tagName !== "OL")
+	) {
+		return null;
+	}
+	const marker = getListMarker(hostElement, listParent);
+	return marker ? `"${withMarkerSeparator(marker)}"` : null;
+}
+
+/**
  * Strip the quotes from a CSS `content` value.
  *
  * A content value is a *sequence* of components -- quoted strings, and functions
@@ -10910,27 +10927,13 @@ export class StyleManager {
 		const styles = computePseudoElementStyle(this, hostElement, "::marker");
 		let content = styles.content;
 
-		// If no explicit CSS content, generate default marker using list-style-type
 		if (!content || content === "none" || content === "normal") {
-			const listParent = hostElement.parentElement;
-			if (
-				listParent &&
-				(listParent.tagName === "UL" || listParent.tagName === "OL")
-			) {
-				// Use getListMarker function to handle all list-style-type values
-				const marker = getListMarker(hostElement, listParent);
-				if (marker) {
-					content = `"${withMarkerSeparator(marker)}"`;
-				}
-			}
+			content = defaultMarkerContent(hostElement) ?? content;
 		}
-
-		// Only return marker if it has content
 		if (!content || content === "none" || content === "normal") {
 			return null;
 		}
 
-		// Remove quotes from content string
 		let textContent = unquoteContent(content);
 
 		textContent = this.resolveCounterFunction(hostElement, textContent);
@@ -10938,9 +10941,7 @@ export class StyleManager {
 		return textContent;
 	}
 
-	/**
-	 * Check if element should have a pseudo-element based on CSS rules
-	 */
+	/** Whether any rule gives this element a pseudo-element of this type. */
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
 		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
@@ -10977,11 +10978,13 @@ export class StyleManager {
 	}
 
 	/**
-	 * Efficiently scan document and attach pseudo-element nodes to elements that have matching pseudo-element rules
-	 * Uses CSS rules to find matching elements rather than checking every element
+	 * Give every element a rule reaches its pseudo-element nodes.
+	 *
+	 * Driven from the rules rather than the tree: each pseudo rule names the
+	 * elements it matches, so the walk costs what the sheets ask for and not
+	 * what the document holds.
 	 */
 	attachPseudoElementsToDocument(): void {
-		// Group pseudo-element rules by pseudo-type for efficient processing
 		const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
 		for (const rule of this[kParsedRules]) {
@@ -11024,7 +11027,8 @@ export class StyleManager {
 			}
 		}
 
-		// Handle special case: ::marker for list-item elements (only for inside positioning)
+		// A list item's ::marker needs no rule to exist: list-style-type gives
+		// it content on its own, so the items are found by tag as well.
 		const listItems = this[kDocument].querySelectorAll(
 			'[style*="list-item"], li',
 		);
@@ -11049,9 +11053,7 @@ export class StyleManager {
 	 */
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
-	/**
-	 * Attach pseudo-element nodes to a specific element if it has matching pseudo-element rules
-	 */
+	/** The same, for one element: the door a mutation comes back through. */
 	attachPseudoElementsToElement(element: Element): void {
 		// No pseudo rule names this element's type, no counter scope reaches
 		// it, and it carries no pseudo of its own to reconsider: everything
@@ -11105,15 +11107,16 @@ export class StyleManager {
 		this[kCounterScopes] = new WeakMap();
 	}
 
-	// ============================================================================
-	// CSS COUNTER SUPPORT
-	// ============================================================================
 	/**
-	 * Initialize counters for an element based on CSS properties
-	 * Non-recursive approach to avoid memory issues
+	 * Give an element its counter scope: what counter-reset starts here, what
+	 * counter-increment moves, and the automatic list-item counter a list and
+	 * its items carry.
+	 *
+	 * The parent's scope is read, never built: an element whose parent has no
+	 * scope yet gets none as its parent, and building it recursively up a deep
+	 * tree is what this avoids.
 	 */
 	initializeCounters(element: Element): void {
-		// Skip if already initialized
 		if (this[kCounterScopes].has(element)) {
 			return;
 		}
@@ -11142,13 +11145,11 @@ export class StyleManager {
 			"counter-increment",
 		);
 
-		// Get parent scope if parent exists (but don't recursively initialize parents)
 		const parentElement = element.parentElement;
 		const parentScope = parentElement ?
 				this[kCounterScopes].get(parentElement) :
 			undefined;
 
-		// Create counter scope for this element
 		const scope: CounterScope = {
 			element,
 			counters: {},
@@ -11156,12 +11157,10 @@ export class StyleManager {
 		};
 		this[kCounterScopes].set(element, scope);
 
-		// Handle counter-reset first
 		if (counterReset && counterReset !== "none") {
 			parseCounterReset(scope, counterReset);
 		}
 
-		// Handle automatic list-item counter for ol/ul elements
 		if (element.tagName === "OL" || element.tagName === "UL") {
 			const startValue =
 				element.tagName === "OL" ?
@@ -11170,12 +11169,10 @@ export class StyleManager {
 			scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
 		}
 
-		// Handle counter-increment after reset
 		if (counterIncrement && counterIncrement !== "none") {
 			parseCounterIncrement(this, scope, counterIncrement);
 		}
 
-		// Handle automatic list-item increment for li elements
 		if (element.tagName === "LI") {
 			incrementCounter(this, scope, "list-item", 1);
 		}
@@ -13318,13 +13315,11 @@ function pseudoContentFor(
 	const styles = computePseudoElementStyle(manager, hostElement, pseudoType);
 	let content = styles.content;
 
-	// For ::marker pseudo-elements, generate default content if none specified
 	if (pseudoType === "::marker") {
 		const computedStyle = manager.declarationFor(hostElement);
 		const display = computedStyle.getComputedValue("display");
 
 		if (display === "list-item") {
-			// Check if explicitly set to outside positioning
 			const listStylePosition =
 				computedStyle.getComputedValue("list-style-position") || "outside";
 
@@ -13333,29 +13328,16 @@ function pseudoContentFor(
 				return null;
 			}
 
-			// If no explicit CSS content, generate default marker using list-style-type
 			if (!content || content === "none" || content === "normal") {
-				const listParent = hostElement.parentElement;
-				if (
-					listParent &&
-					(listParent.tagName === "UL" || listParent.tagName === "OL")
-				) {
-					// Use getListMarker function to handle all list-style-type values
-					const marker = getListMarker(hostElement, listParent);
-					if (marker) {
-						content = `"${marker} "`;
-					}
-				}
+				content = defaultMarkerContent(hostElement) ?? content;
 			}
 		}
 	}
 
-	// Only create pseudo-element if it has content
 	if (!content || content === "none" || content === "normal") {
 		return null;
 	}
 
-	// Remove quotes from content string
 	const textContent = unquoteContent(content);
 
 	return manager.resolveCounterFunction(hostElement, textContent);
@@ -13476,10 +13458,9 @@ function attachPseudoElementToElementForType(
 		return;
 	}
 
-	// Initialize counters for this element first (needed for counter() functions)
+	// counter() in a content value reads these, so they must exist first.
 	manager.initializeCounters(element);
 
-	// Skip ::marker for elements without display: list-item or with outside positioning
 	if (pseudoType === "::marker") {
 		const computedStyle = manager.declarationFor(element);
 		const display = computedStyle.getComputedValue("display");
@@ -13633,21 +13614,19 @@ function parseCounterIncrement(
 	}
 }
 
-/**
- * Increment a counter by a specific amount
- */
+/** Move a counter by `increment`, from wherever its current value lives. */
 function incrementCounter(
 	manager: StyleManager,
 	scope: CounterScope,
 	counterName: string,
 	increment: number,
 ): void {
-	// For list-item counters, we need to check previous siblings for the most recent value
+	// A list item counts from the item before it, not from its scope: siblings
+	// share one list, and each scope only ever holds its own element's value.
 	if (counterName === "list-item" && scope.element.tagName === "LI") {
 		const currentValue = getListItemCounterValue(manager, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
-		// For other counters, get value from parent scopes
 		const currentValue = getCounterValueFromScope(scope.parent,
 			counterName,
 		);
