@@ -2,8 +2,9 @@
  * The terminal's understanding of a run of text: how wide it is, where its
  * grapheme clusters break, and which direction it flows.
  *
- * A renderer that addresses cells has to answer all three before it can place a
- * character, so they live together, over the generated width tables and nothing else.
+ * A renderer that addresses cells has to answer all three before it can place
+ * a character, so they live together, over the generated width tables and
+ * nothing else.
  */
 import arabicPersianReshaper from "arabic-persian-reshaper";
 import bidiFactory from "bidi-js";
@@ -17,6 +18,9 @@ import {
 // and Deno both take the pure-JS fallback, so neither needs detecting. The
 // global itself rather than a flag, so its absence narrows the call away.
 const bun = globalThis.Bun;
+
+/** Grapheme clusters: what the terminal treats as one character. */
+const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 
 /**
  * Combining marks and format characters -- the two Unicode categories whose
@@ -331,11 +335,10 @@ export function writeClusterWidths(
 /**
  * Pure-JS string width, used on runtimes without Bun.
  *
- * Exported so tests can hold it against Bun.stringWidth directly: under Bun the
- * branch above skips this code for most strings, so little else would catch it
- * drifting. The two must agree everywhere Bun is still consulted -- width drives
- * wrapping and cell alignment, so a disagreement misrenders text on Node and
- * Deno only.
+ * Under Bun the branch above skips this for most strings, so little catches it
+ * drifting. It must agree with Bun.stringWidth everywhere Bun is still
+ * consulted -- width drives wrapping and cell alignment, so a disagreement
+ * misrenders text on Node and Deno only.
  */
 function stringWidthFallback(str: string): number {
 	// Width is a property of the grapheme cluster, not the code point: a ZWJ
@@ -349,8 +352,6 @@ function stringWidthFallback(str: string): number {
 }
 
 // Every supported runtime ships Intl.Segmenter; clusters are its job.
-const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
-
 /**
  * Spacing combining marks (general category Mc). Unlike Mn and Me, which draw
  * onto the character before them, these ADVANCE -- Devanagari's vowel signs are

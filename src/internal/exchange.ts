@@ -1,3 +1,14 @@
+/**
+ * The terminal session: what the terminal can do, what it has been told, and
+ * what it says back.
+ *
+ * Everything above this file works in cells and events. The exchange asks the
+ * terminal what it supports, keeps the ledger of every mode it put the
+ * terminal into so they can all be undone on the way out, writes the wire
+ * text, and sorts what comes back into input for the engine and answers for
+ * the queries it is still waiting on.
+ */
+
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import type {ColorDepth} from "./color.js";
 import {

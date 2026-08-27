@@ -21,6 +21,18 @@ export const UNIT_POINT = 1;
 export const UNIT_PERCENT = 2;
 export const UNIT_AUTO = 3;
 
+/** The keywords every property accepts, whatever its own grammar. */
+export const CSS_WIDE_KEYWORDS = new Set([
+	"inherit",
+	"initial",
+	"revert",
+	"revert-layer",
+	"unset",
+]);
+
+/** The characters CSS counts as whitespace. */
+export const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
+
 /**
  * The node shapes css-tree parses a declaration value into: the form raw
  * value text takes before the engine interprets it.
@@ -152,15 +164,6 @@ export function splitCommaList(value: string): string[] {
 	}
 	return items;
 }
-
-/** The keywords every property accepts, whatever its own grammar. */
-export const CSS_WIDE_KEYWORDS = new Set([
-	"inherit",
-	"initial",
-	"revert",
-	"revert-layer",
-	"unset",
-]);
 
 /**
  * A declared value in its CSSOM spelling: comments removed, runs of whitespace
@@ -331,8 +334,6 @@ function canonicalizeValue(property: string, value: string): string {
 	);
 	return out;
 }
-
-export const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 
 function endOfString(input: string, start: number): number {
 	const quote = input[start];

@@ -1,3 +1,12 @@
+/**
+ * The escape sequences, as text: functions that write them and functions that
+ * read them back.
+ *
+ * Nothing here holds state or touches a terminal. Numbers and strings go in,
+ * a string or a parsed record comes out, so a sequence can be tested without
+ * a session and read without one running.
+ */
+
 import {type ColorDepth, rgbTo256, rgbToBasic8} from "./color.js";
 
 /* -------------------------------------------------------------- the cursor */

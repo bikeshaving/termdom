@@ -1,3 +1,13 @@
+/**
+ * The shell: the frame loop, and the wiring that makes the other modules one
+ * running program.
+ *
+ * It answers none of their questions itself. The document holds the tree, the
+ * cascade decides style, the box tree decides geometry and the paint walk
+ * decides cells; this decides when to ask, and owns the terminal the answers
+ * are written to.
+ */
+
 import * as DOM from "./dom.js";
 import "./inspector.js";
 import {
@@ -310,19 +320,11 @@ const kOnDisclosureToggle = Symbol("onDisclosureToggle");
 const kOnFieldEditEvent = Symbol("onFieldEditEvent");
 
 /**
- * Everything the window installers below need from the TermDOM that installed
- * them -- the whole seam, in one place, instead of a closure over the
- * instance.
+ * One document on one terminal: the object an application holds.
  *
- * Getters and callbacks, never values. The installers run once and then live
- * for as long as the document does: prototype methods, property getters and
- * event plumbing that run long after the constructor returned. Most of what
- * they reach for does not exist yet when they are installed -- the renderer,
- * the style manager, the layout engine and the mutation observer are all
- * assigned later in the same constructor -- and the rest (the camera, the
- * anchor, the frame counter) moves while the program runs. A captured value
- * would freeze `undefined` for half of these and a stale number for the other
- * half.
+ * It builds the document and the engine that lays it out, takes hold of the
+ * terminal on the first frame, and from then on runs the loop -- mutations
+ * in, a painted frame out -- until dispose() gives the terminal back.
  */
 export class TermDOM {
 	readonly document: Document;
@@ -337,9 +339,6 @@ export class TermDOM {
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling.
 	declare [kPainter]: Painter;
-	// Where the viewport looks in the document: scrollTop (window.scrollY),
-	// screenTop (the command-start row), and the fullscreen anchor. See Viewport.
-
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	declare [kIsRendering]: boolean;
@@ -362,9 +361,6 @@ export class TermDOM {
 
 	// Monotonic frame counter, used to timestamp observer entries.
 	declare [kRenderCount]: number;
-
-	// An overflowed field's horizontal scroll lives on the value part's own
-	// scrollLeft (set by kScrollFieldCaretIntoView), not a side table.
 
 	/**
 	 * The UA's capabilities, returned by the one installUAEngine handshake:

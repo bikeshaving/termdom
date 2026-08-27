@@ -1,8 +1,11 @@
 /**
- * String renderings of DOM objects, for debugging.
+ * What a DOM object looks like when a debugger prints it.
+ *
+ * Node calls these through its inspect hook, so `console.log(element)` shows
+ * markup rather than a field dump. Importing the module installs the hooks;
+ * nothing else here is exported.
  */
 
-// ANSI color codes for pretty printing
 import {
 	Comment,
 	DOMRect,
@@ -15,15 +18,31 @@ import {
 } from "./dom.js";
 
 const colors = {
-	attr: "\x1b[36m", // Cyan for attributes
+	attr: "\x1b[36m",
 	bold: "\x1b[1m",
-	comment: "\x1b[90m", // Gray for comments
+	comment: "\x1b[90m",
 	dim: "\x1b[2m",
 	reset: "\x1b[0m",
-	tag: "\x1b[35m", // Magenta for tags
-	text: "\x1b[37m", // White for text content
-	value: "\x1b[32m", // Green for values
+	tag: "\x1b[35m",
+	text: "\x1b[37m",
+	value: "\x1b[32m",
 };
+
+const plain = {
+	attr: "",
+	bold: "",
+	comment: "",
+	dim: "",
+	reset: "",
+	tag: "",
+	text: "",
+	value: "",
+};
+
+/** The colours to render with, or the same keys emptied out. */
+function palette(colorize: boolean): typeof plain {
+	return colorize ? colors : plain;
+}
 
 interface NodeInspectOptions {
 	colors?: boolean;
@@ -46,18 +65,7 @@ function inspectDocument(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	let output = `${c.comment}#document${c.reset}`;
 
@@ -102,23 +110,11 @@ function formatElement(
 	options: InspectorOptions & {currentDepth?: number} = {},
 ): string {
 	const {maxDepth = 2, colorize = true, currentDepth = 0} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const tagName = element.tagName.toLowerCase();
 	let output = `${c.tag}<${tagName}${c.reset}`;
 
-	// Add attributes
 	const attrs = formatAttributes(element, {colorize});
 	if (attrs) {
 		output += " " + attrs;
@@ -168,22 +164,10 @@ function formatAttributes(
 	options: {colorize?: boolean} = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const attrs: string[] = [];
 
-	// Always show id and class
 	if (element.id) {
 		attrs.push(`${c.attr}id${c.reset}=${c.value}"${element.id}"${c.reset}`);
 	}
@@ -228,18 +212,7 @@ function formatChildren(
 	options: InspectorOptions & {currentDepth?: number},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const children = Array.from(element.childNodes);
 
@@ -254,7 +227,6 @@ function formatChildren(
 		return "";
 	}
 
-	// Multiple children
 	const parts: string[] = [];
 	const indent = "  ".repeat(options.currentDepth || 0);
 
@@ -277,18 +249,7 @@ function inspectText(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const content = text.textContent || "";
 	if (!content.trim()) {
@@ -307,18 +268,7 @@ function inspectComment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const content = comment.textContent || "";
 	return `${c.comment}<!--${content}-->${c.reset}`;
@@ -329,18 +279,7 @@ function inspectFragment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	let output = `${c.comment}#document-fragment${c.reset}`;
 
@@ -359,18 +298,7 @@ function inspectDOMRect(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	return `${c.comment}DOMRect${c.reset} { ${c.attr}x${c.reset}: ${c.value}${rect.x}${c.reset}, ${c.attr}y${c.reset}: ${c.value}${rect.y}${c.reset}, ${c.attr}width${c.reset}: ${c.value}${rect.width}${c.reset}, ${c.attr}height${c.reset}: ${c.value}${rect.height}${c.reset} }`;
 }
@@ -380,18 +308,7 @@ function inspectNodeList(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true, maxDepth = 0} = options;
-	const c = colorize ?
-		colors :
-			{
-				tag: "",
-				attr: "",
-				value: "",
-				text: "",
-				comment: "",
-				reset: "",
-				dim: "",
-				bold: "",
-			};
+	const c = palette(colorize);
 
 	const typeName = nodeList.constructor.name;
 	const length = nodeList.length;
@@ -401,7 +318,6 @@ function inspectNodeList(
 	}
 
 	if (maxDepth === 0) {
-		// Just show count and first few tag names
 		const preview = Array.from(nodeList)
 			.slice(0, 3)
 			.map((node: any) => {

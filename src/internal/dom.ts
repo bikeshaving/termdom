@@ -1,3 +1,16 @@
+/**
+ * The DOM: the tree an author writes against, and the standards it owes them.
+ *
+ * Nodes, events, ranges, selections, shadow trees, the HTML element classes
+ * and the parser that builds them. Everything here is specified somewhere
+ * else -- the DOM, HTML and CSSOM-View standards -- so where the code and a
+ * standard disagree the standard is right, and where this file departs from
+ * one on purpose the comment above the code says why.
+ *
+ * It knows nothing about layout or the terminal. The geometry it answers with
+ * and the widgets it upgrades come from the engine mounted on it.
+ */
+
 import {parseFragment, parse as parse5Parse} from "parse5";
 import NWSAPI from "nwsapi";
 import {
