@@ -7100,7 +7100,8 @@ Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
 });
 
 /** lib.dom's HTMLCollectionOf: a collection whose members are known. */
-export interface HTMLCollectionOf<T extends Element> extends HTMLCollection {
+export interface HTMLCollectionOf<T> {
+	readonly length: number;
 	item(index: number): T | null;
 	namedItem(name: string): T | null;
 	[index: number]: T;
@@ -8937,19 +8938,60 @@ export class Element extends Node {
 		return attr;
 	}
 
-	getElementsByTagName(qualifiedName: string): HTMLCollection {
-		return elementsByTagName(this, String(qualifiedName));
+	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.HTMLElementTagNameMap[K]>;
+	getElementsByTagName<K extends keyof globalThis.SVGElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.SVGElementTagNameMap[K]>;
+	getElementsByTagName<K extends keyof globalThis.MathMLElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.MathMLElementTagNameMap[K]>;
+	getElementsByTagName<
+		K extends keyof globalThis.HTMLElementDeprecatedTagNameMap,
+	>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.HTMLElementDeprecatedTagNameMap[K]>;
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<Element>;
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<Element> {
+		return elementsByTagName(
+			this,
+			String(qualifiedName),
+		) as unknown as HTMLCollectionOf<Element>;
 	}
 
 	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/1999/xhtml",
+		localName: string,
+	): HTMLCollectionOf<HTMLElement>;
+	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/2000/svg",
+		localName: string,
+	): HTMLCollectionOf<SVGElement>;
+	getElementsByTagNameNS(
+		namespaceURI: "http://www.w3.org/1998/Math/MathML",
+		localName: string,
+	): HTMLCollectionOf<MathMLElement>;
+	getElementsByTagNameNS(
 		namespace: string | null,
 		localName: string,
-	): HTMLCollection {
-		return elementsByTagNameNS(this, namespace, String(localName));
+	): HTMLCollectionOf<Element>;
+	getElementsByTagNameNS(
+		namespace: string | null,
+		localName: string,
+	): HTMLCollectionOf<Element> {
+		return elementsByTagNameNS(
+			this,
+			namespace,
+			String(localName),
+		) as unknown as HTMLCollectionOf<Element>;
 	}
 
 	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
-		return elementsByClassName(this, String(classNames)) as HTMLCollectionOf<
+		return elementsByClassName(
+			this,
+			String(classNames),
+		) as unknown as HTMLCollectionOf<
 			Element
 		>;
 	}
@@ -20592,7 +20634,10 @@ export class Document extends Node {
 	}
 
 	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
-		return elementsByClassName(this, String(classNames)) as HTMLCollectionOf<
+		return elementsByClassName(
+			this,
+			String(classNames),
+		) as unknown as HTMLCollectionOf<
 			Element
 		>;
 	}
@@ -20910,14 +20955,14 @@ export class Document extends Node {
 	get anchors(): HTMLCollectionOf<HTMLAnchorElement> {
 		return documentCollection(this,
 			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
-		) as HTMLCollectionOf<HTMLAnchorElement>;
+		) as unknown as HTMLCollectionOf<HTMLAnchorElement>;
 	}
 
 	get forms(): HTMLCollectionOf<HTMLFormElement> {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLFormElement,
-		) as HTMLCollectionOf<
+		) as unknown as HTMLCollectionOf<
 			HTMLFormElement
 		>;
 	}
@@ -20926,7 +20971,7 @@ export class Document extends Node {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLImageElement,
-		) as HTMLCollectionOf<
+		) as unknown as HTMLCollectionOf<
 			HTMLImageElement
 		>;
 	}
@@ -20935,7 +20980,7 @@ export class Document extends Node {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLScriptElement,
-		) as HTMLCollectionOf<
+		) as unknown as HTMLCollectionOf<
 			HTMLScriptElement
 		>;
 	}
@@ -20944,7 +20989,7 @@ export class Document extends Node {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLEmbedElement,
-		) as HTMLCollectionOf<
+		) as unknown as HTMLCollectionOf<
 			HTMLEmbedElement
 		>;
 	}
@@ -20960,7 +21005,7 @@ export class Document extends Node {
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		) as HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement>;
+		) as unknown as HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement>;
 	}
 
 	/** Always empty: the applet element was removed from HTML. */
