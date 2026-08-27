@@ -13496,6 +13496,7 @@ function submitForm(
 	});
 	dispatch(form, event);
 }
+
 const kResetControl = Symbol("put a control back to its default");
 /** Put a control back to the value its attributes name. */
 function resetControl(control: Element): void {
@@ -13506,6 +13507,7 @@ function resetControl(control: Element): void {
 		enqueueCallbackReaction(control, "formResetCallback", []);
 	}
 }
+
 interface SubmitEventInit extends EventInit {
 	submitter?: HTMLElement | null;
 }
@@ -13620,6 +13622,7 @@ function matching(
 	}
 	return matches;
 }
+
 export interface HTMLFormControlsCollection {
 	namedItem(name: string): RadioNodeList | Element | null;
 }
@@ -14772,6 +14775,7 @@ function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
 			return "value";
 	}
 }
+
 const VALID_DATE = /^[0-9]{4,}-[0-9]{2}-[0-9]{2}$/;
 const VALID_MONTH = /^[0-9]{4,}-[0-9]{2}$/;
 const VALID_WEEK = /^[0-9]{4,}-W[0-9]{2}$/;
@@ -16905,6 +16909,7 @@ export class HTMLStyleElement extends HTMLElement {
 function styleElementCount(document: Document): number {
 	return document[kStyleElements]!;
 }
+
 export interface HTMLTableCaptionElement
 	extends Pick<
 		globalThis.HTMLTableCaptionElement,
