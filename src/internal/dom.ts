@@ -12666,6 +12666,17 @@ export interface HTMLButtonElement
 		"value"
 	> {}
 
+export interface HTMLButtonElement
+	extends Pick<
+		globalThis.HTMLButtonElement,
+		"formAction" |
+		"formEnctype" |
+		"formMethod" |
+		"formNoValidate" |
+		"formTarget" |
+		"popoverTargetAction"
+	> {}
+
 export class HTMLButtonElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
 	declare type: string;
@@ -12698,6 +12709,13 @@ export class HTMLButtonElement extends HTMLElement {
  * a bitmap, and there is none, so getContext answers null exactly as it does
  * for a context type an implementation does not support.
  */
+export interface HTMLCanvasElement
+	extends Pick<
+		globalThis.HTMLCanvasElement,
+		"height" |
+		"width"
+	> {}
+
 export class HTMLCanvasElement extends HTMLElement {
 	getContext(contextId: string): null {
 		if (arguments.length < 1) {
@@ -13692,6 +13710,12 @@ export interface HTMLIFrameElement
 		"width"
 	> {}
 
+export interface HTMLIFrameElement
+	extends Pick<
+		globalThis.HTMLIFrameElement,
+		"loading"
+	> {}
+
 export class HTMLIFrameElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13896,6 +13920,21 @@ export interface HTMLInputElement
 		"src" |
 		"step" |
 		"useMap"
+	> {}
+
+export interface HTMLInputElement
+	extends Pick<
+		globalThis.HTMLInputElement,
+		"autocomplete" |
+		"formAction" |
+		"formEnctype" |
+		"formMethod" |
+		"formNoValidate" |
+		"formTarget" |
+		"height" |
+		"popoverTargetAction" |
+		"size" |
+		"width"
 	> {}
 
 export class HTMLInputElement extends HTMLElement {
@@ -14948,6 +14987,13 @@ export interface HTMLLinkElement
 		"type"
 	> {}
 
+export interface HTMLLinkElement
+	extends Pick<
+		globalThis.HTMLLinkElement,
+		"as" |
+		"fetchPriority"
+	> {}
+
 export class HTMLLinkElement extends HTMLElement {
 	get sheet(): null {
 		return null;
@@ -15003,6 +15049,13 @@ export interface HTMLMarqueeElement
 		"width"
 	> {}
 
+export interface HTMLMarqueeElement
+	extends Pick<
+		globalThis.HTMLMarqueeElement,
+		"hspace" |
+		"vspace"
+	> {}
+
 export class HTMLMarqueeElement extends HTMLElement {
 	start(): void {}
 
@@ -15043,6 +15096,12 @@ export interface HTMLMediaElement
 		"defaultMuted" |
 		"loop" |
 		"src"
+	> {}
+
+export interface HTMLMediaElement
+	extends Pick<
+		globalThis.HTMLMediaElement,
+		"preload"
 	> {}
 
 export class HTMLMediaElement extends HTMLElement {
@@ -15191,6 +15250,13 @@ export interface HTMLVideoElement
 		globalThis.HTMLVideoElement,
 		"playsInline" |
 		"poster"
+	> {}
+
+export interface HTMLVideoElement
+	extends Pick<
+		globalThis.HTMLVideoElement,
+		"height" |
+		"width"
 	> {}
 
 export class HTMLVideoElement extends HTMLMediaElement {
@@ -15477,6 +15543,13 @@ export interface HTMLObjectElement
 		"type" |
 		"useMap" |
 		"width"
+	> {}
+
+export interface HTMLObjectElement
+	extends Pick<
+		globalThis.HTMLObjectElement,
+		"hspace" |
+		"vspace"
 	> {}
 
 export class HTMLObjectElement extends HTMLElement {
@@ -16017,6 +16090,13 @@ export interface HTMLSelectElement
 		"multiple" |
 		"name" |
 		"required"
+	> {}
+
+export interface HTMLSelectElement
+	extends Pick<
+		globalThis.HTMLSelectElement,
+		"autocomplete" |
+		"size"
 	> {}
 
 export class HTMLSelectElement extends HTMLElement {
@@ -16655,6 +16735,13 @@ export interface HTMLSourceElement
 		"type"
 	> {}
 
+export interface HTMLSourceElement
+	extends Pick<
+		globalThis.HTMLSourceElement,
+		"height" |
+		"width"
+	> {}
+
 export class HTMLSourceElement extends HTMLElement {}
 
 export class HTMLSpanElement extends HTMLElement {}
@@ -16737,6 +16824,14 @@ export interface HTMLTableCellElement
 		"width"
 	> {}
 
+export interface HTMLTableCellElement
+	extends Pick<
+		globalThis.HTMLTableCellElement,
+		"colSpan" |
+		"rowSpan" |
+		"scope"
+	> {}
+
 export class HTMLTableCellElement extends HTMLElement {
 	get cellIndex(): number {
 		const parent = this[kParent]!;
@@ -16751,6 +16846,16 @@ export interface HTMLTableColElement
 	extends Pick<
 		globalThis.HTMLTableColElement,
 		"width"
+	> {}
+
+export interface HTMLTableColElement
+	extends Pick<
+		globalThis.HTMLTableColElement,
+		"align" |
+		"ch" |
+		"chOff" |
+		"span" |
+		"vAlign"
 	> {}
 
 export class HTMLTableColElement extends HTMLElement {}
@@ -17052,6 +17157,15 @@ export interface HTMLTableRowElement
 		"bgColor"
 	> {}
 
+export interface HTMLTableRowElement
+	extends Pick<
+		globalThis.HTMLTableRowElement,
+		"align" |
+		"ch" |
+		"chOff" |
+		"vAlign"
+	> {}
+
 export class HTMLTableRowElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -17140,6 +17254,15 @@ function rowCells(row: Element): Element[] {
 }
 
 /** A head, body or foot of a table, and the rows it holds. */
+export interface HTMLTableSectionElement
+	extends Pick<
+		globalThis.HTMLTableSectionElement,
+		"align" |
+		"ch" |
+		"chOff" |
+		"vAlign"
+	> {}
+
 export class HTMLTableSectionElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -17207,6 +17330,15 @@ export interface HTMLTextAreaElement
 		"placeholder" |
 		"readOnly" |
 		"required"
+	> {}
+
+export interface HTMLTextAreaElement
+	extends Pick<
+		globalThis.HTMLTextAreaElement,
+		"autocomplete" |
+		"cols" |
+		"rows" |
+		"wrap"
 	> {}
 
 export class HTMLTextAreaElement extends HTMLElement {
@@ -17730,6 +17862,12 @@ export interface HTMLTrackElement
 		"label" |
 		"src" |
 		"srclang"
+	> {}
+
+export interface HTMLTrackElement
+	extends Pick<
+		globalThis.HTMLTrackElement,
+		"kind"
 	> {}
 
 export class HTMLTrackElement extends HTMLElement {}
