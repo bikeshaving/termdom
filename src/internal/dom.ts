@@ -6989,7 +6989,7 @@ export interface NodeListOf<T extends Node> extends NodeList {
 	[Symbol.iterator](): ArrayIterator<T>;
 }
 
-export class HTMLCollection extends LiveList {
+class HTMLCollectionBase extends LiveList {
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
 	declare [kCompute]?: () => Element[];
@@ -7065,7 +7065,14 @@ export class HTMLCollection extends LiveList {
 		const at = toUnsignedLong(index);
 		return at < items.length ? (items[at] as Element) : null;
 	}
+}
 
+/**
+ * A collection with named access. Split from the base the way lib.dom
+ * splits it: HTMLFormControlsCollection answers a RadioNodeList for a
+ * shared name, which is wider than this returns and cannot override it.
+ */
+export class HTMLCollection extends HTMLCollectionBase {
 	namedItem(name: string): Element | null {
 		if (name === "") {
 			return null;
@@ -8479,7 +8486,7 @@ export interface NamedNodeMap {
 
 installArrayIteration(NodeList.prototype, true);
 installArrayIteration(DOMTokenList.prototype, true);
-installArrayIteration(HTMLCollection.prototype, false);
+installArrayIteration(HTMLCollectionBase.prototype, false);
 installArrayIteration(NamedNodeMap.prototype, false);
 
 /* ---------------------------------------------------------------- elements */
@@ -12245,36 +12252,40 @@ export class HTMLAnchorElement extends HTMLElement {
 	}
 }
 
-export interface HTMLAnchorElement
-	extends Pick<
-		globalThis.HTMLAnchorElement,
-		"charset" |
-		"coords" |
-		"download" |
-		"hash" |
-		"host" |
-		"hostname" |
-		"href" |
-		"hreflang" |
-		"name" |
-		"origin" |
-		"password" |
-		"pathname" |
-		"ping" |
-		"port" |
-		"protocol" |
-		"referrerPolicy" |
-		"rel" |
-		"relList" |
-		"rev" |
-		"search" |
-		"shape" |
-		"target" |
-		"text" |
-		"toString" |
-		"type" |
-		"username"
-	> {}
+/**
+ * What an anchor reflects, and the URL surface it decomposes an href into.
+ * Written out rather than picked: a computed projection satisfies keyof and
+ * does not satisfy assignability, which is the thing this is for.
+ */
+export interface HTMLAnchorElement {
+	hash: string;
+	host: string;
+	hostname: string;
+	href: string;
+	toString(): string;
+	readonly origin: string;
+	password: string;
+	pathname: string;
+	port: string;
+	protocol: string;
+	search: string;
+	username: string;
+	charset: string;
+	coords: string;
+	download: string;
+	hreflang: string;
+	name: string;
+	ping: string;
+	referrerPolicy: string;
+	rel: string;
+	get relList(): DOMTokenList;
+	set relList(value: string);
+	rev: string;
+	shape: string;
+	target: string;
+	text: string;
+	type: string;
+}
 /** One part of a hyperlink's URL, read from it and written back through it. */
 function hyperlinkPart(
 	read: (url: URL) => string,
@@ -13098,26 +13109,28 @@ export class HTMLFormElement extends HTMLElement {
 	}
 }
 
-export interface HTMLFormElement
-	extends Pick<
-		globalThis.HTMLFormElement,
-		"acceptCharset" |
-		"action" |
-		"autocomplete" |
-		"checkValidity" |
-		"encoding" |
-		"enctype" |
-		"length" |
-		"method" |
-		"name" |
-		"noValidate" |
-		"rel" |
-		"relList" |
-		"reportValidity" |
-		"reset" |
-		"submit" |
-		"target"
-	> {}
+/** What a form reflects, and the controls it owns. */
+export interface HTMLFormElement {
+	acceptCharset: string;
+	action: string;
+	autocomplete: AutoFillBase;
+	elements: HTMLFormControlsCollection;
+	encoding: string;
+	enctype: string;
+	length: number;
+	method: string;
+	name: string;
+	noValidate: boolean;
+	rel: string;
+	get relList(): DOMTokenList;
+	set relList(value: string);
+	target: string;
+	checkValidity(): boolean;
+	reportValidity(): boolean;
+	requestSubmit(submitter?: HTMLElement | null): void;
+	reset(): void;
+	submit(): void;
+}
 /** The listed controls a form owns, in tree order. */
 function listedControls(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
@@ -13217,7 +13230,7 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
  * The controls of a form, which answers a name with every control that has
  * it: one element, or a list of the radio buttons that share it.
  */
-export class HTMLFormControlsCollection extends HTMLCollection {
+export class HTMLFormControlsCollection extends HTMLCollectionBase {
 	declare [kOwner]?: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
@@ -13228,7 +13241,7 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		this[kOwner] = owner;
 	}
 
-	override namedItem(name: string): Element | null {
+	namedItem(name: string): RadioNodeList | Element | null {
 		const key = String(name);
 		if (key === "") {
 			return null;
@@ -13240,9 +13253,7 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		if (matches.length === 1) {
 			return matches[0] as Element;
 		}
-		// The list is what the interface answers with for a shared name; the
-		// declared type is the collection's, whose base has no way to say so
-		// -- lib.dom gives this collection a base without namedItem at all.
+		// A shared name answers with the list of everything that shares it.
 		return new RadioNodeList(
 			() => matching(this, key),
 			this[kOwner]!,
@@ -13282,16 +13293,6 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		}
 		return named;
 	}
-}
-
-/**
- * A shared name answers with the list of everything that shares it, which
- * the implementation below already does. lib.dom bases this collection on
- * HTMLCollectionBase, which has no namedItem to widen; this one extends
- * HTMLCollection, so the wider return is declared here instead.
- */
-export interface HTMLFormControlsCollection {
-	namedItem(name: string): RadioNodeList | Element | null;
 }
 
 function matching(
