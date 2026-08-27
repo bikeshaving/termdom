@@ -452,6 +452,50 @@ export class TermDOM {
 	// CUP and DECSC sequences straight into the file. An injected transport
 	// asserts a terminal exists on the other end.
 
+
+	/**
+	 * Reveal what a disclosure opened. A details that closes has taken content
+	 * away rather than added it, so there is nothing to bring into view.
+	 */
+	declare [kOnDisclosureToggle]: (event: Event) => void;
+
+	/**
+	 * Keep a focused field's caret in view and repaint, on the standard
+	 * input/select/change events its own edit fires. Scoped to the active
+	 * field: an event from elsewhere (a select commit, an author's dispatch on
+	 * an unfocused control, a text input's change on blur) must not yank the
+	 * camera to it.
+	 */
+	declare [kOnFieldEditEvent]: (event: Event) => void;
+
+	/**
+	 * Take hold of the terminal: begin the session (input, resizes, closure),
+	 * the startup cursor/mode queries, and mouse reporting.
+	 *
+	 * Construction is inert -- a constructor has no business writing escape
+	 * sequences or flipping a tty into raw mode. Attachment is the one door to
+	 * the terminal; dispose() reverses it.
+	 *
+	 * Passing a different transport rebinds to it -- the construction-time
+	 * transport (the global process by default) was only a stand-in, and this
+	 * re-derives every terminal-dependent fact from the one handed here.
+	 * Rebinding is only allowed before the first attach; re-attaching a live
+	 * instance to another terminal needs teardown that does not exist yet.
+	 */
+	declare [kAttachReady]: Promise<void>;
+	// Resolves once attach()'s begin phase has run (session started, cursor
+	// detection initialized): a render triggered between attach() and that
+	// phase -- a requestAnimationFrame, a mutation -- must not paint an
+	// unanchored first frame. Awaited only while attaching, so steady-state
+	// renders stay fully synchronous: an unconditional await would defer
+	// each frame a microtask, and the scrollTop clamp is synchronous by
+	// contract.
+	declare [kAttachBegun]: Promise<void>;
+
+	// The scratch engine behind renderANSI/print: created on first use,
+	// sized from the transport, recreated if the width changes, reused
+	// across calls.
+	declare [kStaticSibling]: TermDOM | null;
 	constructor(options: TermDOMOptions = {}) {
 		this[kScrollTop] = 0;
 		this[kScreenTop] = 0;
@@ -527,9 +571,9 @@ export class TermDOM {
 		// reaches through it until a DOM member is actually called.
 		this[kMountHandle] = DOM.mount(document, createMount(this));
 
-		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
+		// Order matters: the style manager takes over getComputedStyle, and the
+		// layout engine reads styles through it from the moment it is built.
 		this[kStyleManager] = new StyleManager(this.window);
-		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.window);
 		this[kStyleManager].setLayoutEngine(this[kLayoutEngine]);
 		// A resolved value is a measurement, so it takes the same flush every
@@ -538,8 +582,6 @@ export class TermDOM {
 			processPendingMutationsAndRender(this),
 		);
 		adoptTerminalSize(this, this[kTransport].cols, this[kTransport].rows);
-
-		// Initialize scrolling management after window setup
 
 		const observer = new this.window.MutationObserver((mutations) => {
 			handlePendingMutations(this, mutations);
@@ -612,48 +654,7 @@ export class TermDOM {
 		// terminal's page is one screen tall: what it revealed is often below
 		// the fold that hid it. Bring it into view, the way moving focus does.
 		this.document.addEventListener("toggle", this[kOnDisclosureToggle], true);
-
-		// Initial processing of all elements is handled by StyleManager's constructor
 	}
-
-	/**
-	 * Reveal what a disclosure opened. A details that closes has taken content
-	 * away rather than added it, so there is nothing to bring into view.
-	 */
-	declare [kOnDisclosureToggle]: (event: Event) => void;
-
-	/**
-	 * Keep a focused field's caret in view and repaint, on the standard
-	 * input/select/change events its own edit fires. Scoped to the active
-	 * field: an event from elsewhere (a select commit, an author's dispatch on
-	 * an unfocused control, a text input's change on blur) must not yank the
-	 * camera to it.
-	 */
-	declare [kOnFieldEditEvent]: (event: Event) => void;
-
-	/**
-	 * Take hold of the terminal: begin the session (input, resizes, closure),
-	 * the startup cursor/mode queries, and mouse reporting.
-	 *
-	 * Construction is inert -- a constructor has no business writing escape
-	 * sequences or flipping a tty into raw mode. Attachment is the one door to
-	 * the terminal; dispose() reverses it.
-	 *
-	 * Passing a different transport rebinds to it -- the construction-time
-	 * transport (the global process by default) was only a stand-in, and this
-	 * re-derives every terminal-dependent fact from the one handed here.
-	 * Rebinding is only allowed before the first attach; re-attaching a live
-	 * instance to another terminal needs teardown that does not exist yet.
-	 */
-	declare [kAttachReady]: Promise<void>;
-	// Resolves once attach()'s begin phase has run (session started, cursor
-	// detection initialized): a render triggered between attach() and that
-	// phase -- a requestAnimationFrame, a mutation -- must not paint an
-	// unanchored first frame. Awaited only while attaching, so steady-state
-	// renders stay fully synchronous: an unconditional await would defer
-	// each frame a microtask, and the scrollTop clamp is synchronous by
-	// contract.
-	declare [kAttachBegun]: Promise<void>;
 
 	attach(transport: TerminalTransport = this[kTransport]): Promise<void> {
 		const rebinding = transport !== this[kTransport];
@@ -721,11 +722,6 @@ export class TermDOM {
 		})();
 		return this[kAttachReady];
 	}
-
-	// The scratch engine behind renderANSI/print: created on first use,
-	// sized from the transport, recreated if the width changes, reused
-	// across calls.
-	declare [kStaticSibling]: TermDOM | null;
 
 	/**
 	 * Render an HTML string to an ANSI string at the transport's width:
@@ -1801,8 +1797,8 @@ function buildExchange(
 /**
  * Adopt `transport` and re-derive everything that comes from the terminal:
  * color depth, the viewport size, and the session. The collaborators that
- * hold the transport -- the renderer, the session -- are rebuilt rather
- * than mutated: the renderer has no color-depth setter, and a rebind always
+ * hold the transport -- the screen and the exchange -- are rebuilt rather
+ * than mutated: the screen has no color-depth setter, and a rebind always
  * precedes the first frame. The transport-independent collaborators
  * (layout, style, painter, viewport) are untouched; only the layout is
  * resized to the new terminal.
@@ -1840,8 +1836,8 @@ function adoptTerminalSize(
 /**
  * Adopt a new terminal size: update the reported dimensions, re-parse the
  * stylesheets and re-evaluate media queries against them (a viewport change
- * can flip any @media answer), and resize the layout. The renderer is left
- * to the caller -- a resize resizes it in place, a rebind replaces it.
+ * can flip any @media answer), and resize the layout. The screen is left to
+ * the caller -- a resize resizes it in place, a rebind replaces it.
  */
 function applyTerminalSize(
 	termdom: TermDOM,
@@ -3084,7 +3080,7 @@ function reserveRows(
 		void termdom[kExchange].write(
 			cursorTo(termdom[kViewport].height, 1) + index().repeat(push),
 		);
-		// Do NOT shift the renderer's previous buffer. Its rows are relative to
+		// Do NOT shift the screen's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
 		// scrolled -- the two cancel, so buffer coordinates are unchanged.
 		// Shifting it desynced the diff by `push` rows: the model compared
