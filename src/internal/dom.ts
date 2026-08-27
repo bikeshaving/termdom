@@ -20580,8 +20580,17 @@ export class Document extends Node {
 		return this[kRegistry]!;
 	}
 
-	get location(): null {
-		return null;
+	/**
+	 * The location of the browsing context this document is displayed in.
+	 * A document with none has no location, and lib.dom types this non-null
+	 * anyway, so an unmounted document answers null under a type that says
+	 * otherwise.
+	 */
+	get location(): globalThis.Location {
+		const view = this[kDefaultView]! as Window | null;
+		return (view === null ?
+			null :
+			view.location) as unknown as globalThis.Location;
 	}
 
 	/**
@@ -27270,6 +27279,178 @@ Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
 /* ---------------------------------------------------------------- window */
 
 const kNavigator = Symbol("navigator");
+const kWindowLocation = Symbol("the window's location");
+const kLocationWindow = Symbol("the window a location belongs to");
+const kStrings = Symbol("the strings a list holds");
+
+/**
+ * A frozen list of strings, which the platform hands back where a plain
+ * array would do. The only one here is Location.ancestorOrigins, which is
+ * empty because a terminal document is nobody's frame.
+ */
+export class DOMStringList {
+	declare [kStrings]?: readonly string[];
+
+	/** Materialised for what the list holds, which for now is nothing. */
+	[index: number]: string;
+
+	constructor(strings: readonly string[]) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kStrings] = strings;
+	}
+
+	get length(): number {
+		return this[kStrings]!.length;
+	}
+
+	item(index: number): string | null {
+		const at = toUnsignedLong(index);
+		return at < this[kStrings]!.length ? this[kStrings]![at]! : null;
+	}
+
+	contains(string: string): boolean {
+		return this[kStrings]!.includes(String(string));
+	}
+}
+
+Object.defineProperty(DOMStringList.prototype, Symbol.toStringTag, {
+	value: "DOMStringList",
+	configurable: true,
+});
+
+/**
+ * The URL of the document a window is displaying, taken apart the way the
+ * URL Standard takes one apart.
+ *
+ * Every reading member here is live: it re-reads the document's URL rather
+ * than caching what it was built with, because that URL is the truth and a
+ * copy would go stale. Every WRITING member navigates, and there is nowhere
+ * to navigate to -- this DOM has one document per window and no way to
+ * fetch another -- so each throws rather than pretending it moved.
+ */
+export class Location {
+	declare [kLocationWindow]?: Window;
+
+	constructor(window: Window) {
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		this[kLocationWindow] = window;
+	}
+
+	get href(): string {
+		return this[kLocationWindow]!.document[kDocumentURL]!;
+	}
+
+	set href(_value: string) {
+		throw noNavigation();
+	}
+
+	get origin(): string {
+		return locationURL(this)?.origin ?? "null";
+	}
+
+	get protocol(): string {
+		return locationURL(this)?.protocol ?? "";
+	}
+
+	set protocol(_value: string) {
+		throw noNavigation();
+	}
+
+	get host(): string {
+		return locationURL(this)?.host ?? "";
+	}
+
+	set host(_value: string) {
+		throw noNavigation();
+	}
+
+	get hostname(): string {
+		return locationURL(this)?.hostname ?? "";
+	}
+
+	set hostname(_value: string) {
+		throw noNavigation();
+	}
+
+	get port(): string {
+		return locationURL(this)?.port ?? "";
+	}
+
+	set port(_value: string) {
+		throw noNavigation();
+	}
+
+	get pathname(): string {
+		return locationURL(this)?.pathname ?? "";
+	}
+
+	set pathname(_value: string) {
+		throw noNavigation();
+	}
+
+	get search(): string {
+		return locationURL(this)?.search ?? "";
+	}
+
+	set search(_value: string) {
+		throw noNavigation();
+	}
+
+	get hash(): string {
+		return locationURL(this)?.hash ?? "";
+	}
+
+	set hash(_value: string) {
+		throw noNavigation();
+	}
+
+	/** A terminal document is nobody's frame, so it has no ancestors. */
+	get ancestorOrigins(): DOMStringList {
+		return constructInternal(() => new DOMStringList([]));
+	}
+
+	assign(_url: string | URL): void {
+		throw noNavigation();
+	}
+
+	replace(_url: string | URL): void {
+		throw noNavigation();
+	}
+
+	reload(): void {
+		throw noNavigation();
+	}
+
+	toString(): string {
+		return this.href;
+	}
+}
+
+Object.defineProperty(Location.prototype, Symbol.toStringTag, {
+	value: "Location",
+	configurable: true,
+});
+
+/**
+ * The document URL, parsed. A caller can hand a document any string for its
+ * URL, so this answers null where that string is not one the URL Standard
+ * can take apart, and each member above falls back to what a browser answers
+ * for an opaque location.
+ */
+function locationURL(location: Location): URL | null {
+	return URL.parse(location.href);
+}
+
+function noNavigation(): DOMException {
+	return domError(
+		"NotSupportedError",
+		"This DOM displays one document per window and cannot navigate",
+	);
+}
 
 /**
  * The window a document is displayed in: an EventTarget whose members are
@@ -27283,6 +27464,7 @@ const kNavigator = Symbol("navigator");
 export class Window extends EventTarget {
 	readonly document: Document;
 	declare [kNavigator]?: Navigator | undefined;
+	declare [kWindowLocation]?: Location | undefined;
 	constructor(document: Document) {
 		super();
 		this.document = document;
@@ -27290,6 +27472,20 @@ export class Window extends EventTarget {
 		// displayed document is the one bare node constructors belong to.
 		document[kDefaultView] = this;
 		ambientDocument = document;
+	}
+
+	/**
+	 * Where the window is, which is where its document came from. One object
+	 * per window, as the HTML Standard has it: the document's own location
+	 * is this one, and a caller who holds on to it holds on to the same one.
+	 */
+	get location(): Location {
+		let location = this[kWindowLocation]!;
+		if (location === undefined) {
+			location = constructInternal(() => new Location(this));
+			this[kWindowLocation] = location;
+		}
+		return location;
 	}
 
 	// The realm has one registry: definitions are per-realm because the
@@ -27635,6 +27831,7 @@ export const platform = {
 	DOMRect,
 	DOMRectList,
 	DOMRectReadOnly,
+	DOMStringList,
 	DOMStringMap,
 	DOMTokenList,
 	DataTransfer,
@@ -27728,6 +27925,7 @@ export const platform = {
 	InputEvent,
 	IntersectionObserver,
 	KeyboardEvent,
+	Location,
 	MathMLElement,
 	MessageEvent,
 	MouseEvent,

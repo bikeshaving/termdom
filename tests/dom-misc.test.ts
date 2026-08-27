@@ -115,3 +115,60 @@ test("attachInternals refuses with a NotSupportedError", () => {
 	expect(thrown?.name).toBe("NotSupportedError");
 	expect(thrown instanceof TypeError).toBe(false);
 });
+
+test("a window's location takes the document's URL apart", () => {
+	const window = new Window(
+		parseHTMLDocument(
+			"<!doctype html>",
+			"https://example.com:8443/a/b?q=1#top",
+		),
+	);
+	const location = window.location;
+	expect(location.href).toBe("https://example.com:8443/a/b?q=1#top");
+	expect(location.protocol).toBe("https:");
+	expect(location.host).toBe("example.com:8443");
+	expect(location.hostname).toBe("example.com");
+	expect(location.port).toBe("8443");
+	expect(location.pathname).toBe("/a/b");
+	expect(location.search).toBe("?q=1");
+	expect(location.hash).toBe("#top");
+	expect(location.origin).toBe("https://example.com:8443");
+	expect(String(location)).toBe(location.href);
+
+	// One object per window, and the document's is the window's.
+	expect(window.location).toBe(location);
+	expect(window.document.location).toBe(location as never);
+
+	// A terminal document is nobody's frame.
+	expect(location.ancestorOrigins.length).toBe(0);
+	expect(location.ancestorOrigins.item(0)).toBe(null);
+	expect(location.ancestorOrigins.contains("https://example.com:8443")).toBe(
+		false,
+	);
+});
+
+test("a location will not navigate, and an unmounted document has none", () => {
+	const window = new Window(parseHTMLDocument("<!doctype html>"));
+	const location = window.location;
+	expect(location.href).toBe("about:blank");
+
+	for (const navigate of [
+		() => location.reload(),
+		() => location.assign("https://example.com/"),
+		() => location.replace("https://example.com/"),
+		() => (location.href = "https://example.com/"),
+		() => (location.pathname = "/elsewhere"),
+		() => (location.hash = "#elsewhere"),
+	]) {
+		let thrown: any = null;
+		try {
+			navigate();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown?.name).toBe("NotSupportedError");
+	}
+
+	// A document nobody displays is in no browsing context, so it is nowhere.
+	expect(createHTMLDocument().location).toBe(null as never);
+});
