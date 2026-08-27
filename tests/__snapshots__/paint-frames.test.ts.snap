@@ -1,0 +1,71 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`a fixed box holds its row while the document scrolls under it 1`] = `[48;2;0;0;102mpinned header                           [0m
+row 16                                  
+row 17                                  
+row 18                                  
+row 19                                  
+row 20                                  
+row 21                                  
+row 22                                  
+`;
+
+exports[`a grid area names where its items go 1`] = `[48;2;17;17;68mheader                                  [0m
+[48;2;17;68;17mnav       [48;2;68;17;17mmain                          [0m
+[48;2;17;68;17m          [48;2;68;17;17m                              [0m
+[48;2;17;68;17m          [48;2;68;17;17m                              [0m
+[48;2;17;68;17m          [48;2;68;17;17m                              [0m
+[48;2;68;68;68mfooter                                  [0m
+                                        
+                                        
+`;
+
+exports[`a grid places its items on the tracks it declares 1`] = `[48;2;68;0;0mTL      [0m [48;2;0;68;0mhead                  [0m [48;2;0;0;68mTR      [0m
+                                        
+[48;2;68;68;0mside    [0m [48;2;0;68;68mwide body                      [0m
+[48;2;68;68;0m        [0m [48;2;0;68;68m                               [0m
+[48;2;68;68;0m        [0m [48;2;0;68;68m                               [0m
+                                        
+[48;2;68;0;68mBL      [0m [48;2;68;68;68mfooter                         [0m
+                                        
+                                        
+                                        
+`;
+
+exports[`a negative z-index paints behind the content of its parent 1`] = `[48;2;34;34;34min flow text                            [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
+
+exports[`an absolute box leaves the flow it came from 1`] = `[48;2;34;34;34mbefore                            [48;2;136;0;0mpinned[0m
+[48;2;34;34;34mafter                                   [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
+
+exports[`z-index decides which of three stacked boxes is seen 1`] = `                                        
+  [48;2;136;0;0mz3 wins the cells       [0m              [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
+
+exports[`z-index decides which of two overlapping boxes is seen 1`] = `                                        
+  [48;2;136;0;0mTOP z3              [48;2;0;0;136m        [0m          [0m
+      [48;2;0;136;0mmid z2              [0m              [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
