@@ -33,16 +33,42 @@ type Document = {html: string; tokens: string[]};
  */
 const RUNS = Number(process.env.FC_NUM_RUNS ?? 8);
 
-/** Every element's box, by the id the generator gave it. */
+/**
+ * Pinned, as every other suite here pins it. A property that draws its own
+ * seed each run fails on documents nobody can get back: the one that found
+ * the aliasing below took a thousand runs to catch again, because the seed
+ * it failed on was gone.
+ */
+const SEED = Number(process.env.FC_SEED ?? 1);
+
+/**
+ * Every element's box, by the id the generator gave it -- minus any id that
+ * more than one element ended up with.
+ *
+ * The generator's ids are unique in the markup it writes, and parsing can
+ * make them stop being unique: a block inside an inline sends the parser
+ * through the adoption agency, which reconstructs the formatting element,
+ * ATTRIBUTES AND ALL. `<p><em><div>x</div></em></p>` yields two `em`s
+ * carrying one id, one empty in the `p` and one holding the text in the
+ * `div`. Keying a map by that id keeps whichever came last, so the two
+ * documents below would be compared at different elements and disagree
+ * about a box neither of them moved.
+ */
 function rects(scene: Scene): Map<string, string> {
 	const out = new Map<string, string>();
+	const aliased = new Set<string>();
 	const all = scene.dom.document.querySelectorAll("[data-f]");
 	for (const element of Array.from(all) as any[]) {
+		const id = element.getAttribute("data-f");
+		if (out.has(id)) {
+			aliased.add(id);
+			continue;
+		}
 		const r = element.getBoundingClientRect();
-		out.set(
-			element.getAttribute("data-f"),
-			`${r.x},${r.y},${r.width},${r.height}`,
-		);
+		out.set(id, `${r.x},${r.y},${r.width},${r.height}`);
+	}
+	for (const id of aliased) {
+		out.delete(id);
 	}
 	return out;
 }
@@ -138,7 +164,7 @@ test("a box out of flow lays the others out as if it were not there", async () =
 				expect(differences).toEqual([]);
 			},
 		),
-		{numRuns: RUNS},
+		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
 	);
 });
 
@@ -190,7 +216,7 @@ test("an absolute box lands by its containing block, not its depth", async () =>
 				expect(b).toBe(a);
 			},
 		),
-		{numRuns: RUNS},
+		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
 	);
 });
 
@@ -207,6 +233,6 @@ test("laying out an unchanged document again moves nothing", async () => {
 			scene.dom.dispose();
 			expect([...after.entries()]).toEqual([...before.entries()]);
 		}),
-		{numRuns: RUNS},
+		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
 	);
 });

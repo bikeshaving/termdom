@@ -499,6 +499,11 @@ const find = (document: any, id: string): any =>
  * Wait for the frame to stop changing. A resize debounces and then asks the
  * terminal where the cursor is, and a screen switch straddles two frames, so
  * the settled frame is the one that repeats.
+ *
+ * A frame that never repeats throws. Returning quietly is worse than useless
+ * here: every caller reads geometry or pixels straight afterwards, so a scene
+ * that ran out of ticks reports whatever it happened to be mid-flight, and a
+ * property that fails on it looks exactly like one that found a real bug.
  */
 export async function settle(scene: Scene, ticks = 30): Promise<void> {
 	let last: string | null = null;
@@ -516,6 +521,10 @@ export async function settle(scene: Scene, ticks = 30): Promise<void> {
 			last = frame;
 		}
 	}
+	throw new Error(
+		`The frame was still changing after ${ticks} ticks, so nothing read ` +
+		"from this scene means anything.",
+	);
 }
 
 /**
