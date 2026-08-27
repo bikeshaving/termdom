@@ -20168,16 +20168,14 @@ function walkPrevious(walk: TreeWalker): Node | null {
 	return null;
 }
 
-/* The dissolving layer: composed hops with the caller's dissolved elements
-   spliced away, so their children join the parent's child sequence. This is
-   how a <slot> disappears from a box tree while its projected content flows
-   through. */
+/* The composed hops: the flat tree, pseudo-element slots among the children
+   they belong beside. */
+
+/** An element's pseudo-element of a given name, or null where it has none. */
 function pseudoSlot(element: Element, name: string): Element | null {
 	const slots = element[kPseudoElements]!;
 	return slots === null ? null : (slots.get(name) ?? null);
 }
-
-/* The composed hops: the flat tree before any dissolving. */
 
 function composedFirstChild(node: Node): Node | null {
 	if (node.nodeType !== ELEMENT_NODE) {
