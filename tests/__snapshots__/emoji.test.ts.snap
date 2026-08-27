@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`handles emoji width calculation 1`] = `Text 🚀 More                                                                    
+exports[`handles emoji width calculation 1`] = `Text🚀More                                                                      
                                                                                 
                                                                                 
                                                                                 

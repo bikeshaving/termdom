@@ -11,6 +11,8 @@
  *   - where such a box lands depends on its containing block, not on how many
  *     boxes sit between the two;
  *   - a pass over an unchanged document changes nothing;
+ *   - collapsible spaces at a block's edges are removed, so putting some
+ *     there changes nothing;
  *   - a box taken out of the tree and put back where it was leaves the
  *     geometry it left.
  *
@@ -235,6 +237,93 @@ test("laying out an unchanged document again moves nothing", async () => {
 			scene.dom.dispose();
 			expect([...after.entries()]).toEqual([...before.entries()]);
 		}),
+		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
+	);
+});
+
+/**
+ * Elements whose content may take collapsible spaces at its edges without
+ * anything moving: a block container, in a white-space value that collapses.
+ *
+ * A block's first line begins at its content edge and its last line ends
+ * there, and css-text-3 §4.1.1 removes a collapsible run at either. Inline
+ * boxes are left out because their edges are not a line's: a space inside
+ * `a<b> x</b>` sits between two words and is content.
+ */
+const EDGE_SAFE_DISPLAYS = new Set([
+	"block",
+	"flow-root",
+	"list-item",
+	"inline-block",
+	"flex",
+	"inline-flex",
+	"grid",
+	"inline-grid",
+]);
+
+function takesEdgeSpaces(scene: Scene, element: any): boolean {
+	const style = scene.dom.window.getComputedStyle(element);
+	const whiteSpace = style.getPropertyValue("white-space") || "normal";
+	return (
+		EDGE_SAFE_DISPLAYS.has(style.getPropertyValue("display")) &&
+		whiteSpace !== "pre" &&
+		whiteSpace !== "pre-wrap" &&
+		whiteSpace !== "break-spaces"
+	);
+}
+
+test("collapsible spaces at a block's edge change nothing", async () => {
+	await fc.assert(
+		fc.asyncProperty(
+			documentArbitrary,
+			fc.nat(),
+			fc.boolean(),
+			async (document: Document, pick: number, atEnd: boolean) => {
+				const markup = document.html;
+				// Which elements may take the spaces is a question about
+				// computed style, so it takes a laid-out document to answer.
+				const probe = await build(markup);
+				const eligible = (
+					Array.from(
+						probe.dom.document.querySelectorAll("[data-f]"),
+					) as any[]
+				)
+					.filter((element) => takesEdgeSpaces(probe, element))
+					.map((element) => element.getAttribute("data-f"));
+				const before = rects(probe);
+				probe.dom.dispose();
+				if (eligible.length === 0) {
+					return;
+				}
+				const target = eligible[pick % eligible.length];
+
+				const padded = await build(markup, (scene) => {
+					const element = scene.dom.document.querySelector(
+						`[data-f="${target}"]`,
+					);
+					// Spaces and tabs only. A newline is collapsible too, but
+					// not under pre-line, which keeps its lines and takes its
+					// spaces -- and this asks about the spaces.
+					const spaces = scene.dom.document.createTextNode(" \t  ");
+					if (atEnd) {
+						element?.appendChild(spaces);
+					} else {
+						element?.insertBefore(spaces, element.firstChild);
+					}
+				});
+				const after = rects(padded);
+				padded.dom.dispose();
+
+				const differences: string[] = [];
+				for (const [id, box] of before) {
+					const other = after.get(id);
+					if (other !== undefined && other !== box) {
+						differences.push(`${id}: plain=${box} padded=${other}`);
+					}
+				}
+				expect(differences).toEqual([]);
+			},
+		),
 		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
 	);
 });

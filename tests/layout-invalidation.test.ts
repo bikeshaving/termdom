@@ -337,11 +337,11 @@ test("a run's first node turning block-level takes a box of its own", async () =
 	const span = document.getElementById("s")!;
 	span.style.display = "block";
 	await nextFrame(dom);
-	expect(lines()).toEqual(["head", " tail"]);
+	expect(lines()).toEqual(["head", "tail"]);
 
 	span.style.display = "none";
 	await nextFrame(dom);
-	expect(lines()).toEqual([" tail"]);
+	expect(lines()).toEqual(["tail"]);
 
 	span.style.display = "inline";
 	await nextFrame(dom);
@@ -473,7 +473,7 @@ test("a style that changes what descendants inherit re-measures them", async () 
 		"<span id=\"s\"><em style=\"display: flex\"><span>   x   </span></em></span>";
 	await nextFrame(dom);
 	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
-	expect(line()).toBe(" x");
+	expect(line()).toBe("x");
 
 	document.getElementById("s")!.classList.add("pre");
 	await nextFrame(dom);
@@ -482,7 +482,7 @@ test("a style that changes what descendants inherit re-measures them", async () 
 	// And an inline style says the same thing.
 	document.getElementById("s")!.classList.remove("pre");
 	await nextFrame(dom);
-	expect(line()).toBe(" x");
+	expect(line()).toBe("x");
 	document.getElementById("s")!.setAttribute("style", "white-space: pre");
 	await nextFrame(dom);
 	expect(line()).toBe("   x");
@@ -748,7 +748,7 @@ test("a block turned flex gives each child a box of its own", async () => {
 
 	document.getElementById("s")!.setAttribute("style", "display: flex");
 	await nextFrame(dom);
-	expect(line()).toBe("* AB");
+	expect(line()).toBe("*AB");
 
 	dom.dispose();
 });

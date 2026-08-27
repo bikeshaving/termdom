@@ -11323,74 +11323,60 @@ function processWhitespace(
 	// The spaces a run opens and closes on collapse away: they sit at the edge
 	// of a line, and css-text-3 §4.1.1 removes them there.
 	if (text.length > 0) {
-		// A lone text leaf keeps its edge spaces, because something measuring
-		// it on its own still needs them. A run that is NOTHING but collapsible
-		// spaces has nothing to measure: it collapses away, and what is left is
-		// a line box with no text in it, which css2 §9.4.2 says to treat as not
-		// existing. Without this an empty inline beside the spaces -- the `b` in
-		// `   <b></b><div>x</div>` -- kept a whole row that no browser draws.
-		const blank = /^[^\S\n]*$/.test(text);
-
-		if (leafNodes.length > 1 || blank) {
-			// Where the run stops being collapsible. A `pre` leaf keeps its own
-			// spaces and only its own: normal text before it still loses the
-			// spaces it opened with, and text after it still loses the ones it
-			// ended on. Asking whether ANYTHING in the run preserves spaces
-			// spared both edges, so `   <b class="pre">x</b>` opened on a space
-			// that no browser draws.
-			let guardStart = text.length;
-			let guardEnd = 0;
-			for (const item of items) {
-				const leaf = item.leafNode;
-				if (
-					leaf.type === "text" &&
-					preservesSpaces(whiteSpaceOf(leaf.node))
-				) {
-					guardStart = Math.min(guardStart, item.start);
-					guardEnd = Math.max(guardEnd, item.end);
-				}
+		// Where the run stops being collapsible. A `pre` leaf keeps its own
+		// spaces and only its own: normal text before it still loses the spaces
+		// it opened with, and text after it still loses the ones it ended on.
+		// Asking whether ANYTHING in the run preserves spaces spared both edges,
+		// so `   <b class="pre">x</b>` opened on a space no browser draws.
+		let guardStart = text.length;
+		let guardEnd = 0;
+		for (const item of items) {
+			const leaf = item.leafNode;
+			if (leaf.type === "text" && preservesSpaces(whiteSpaceOf(leaf.node))) {
+				guardStart = Math.min(guardStart, item.start);
+				guardEnd = Math.max(guardEnd, item.end);
 			}
+		}
 
-			// Spaces and tabs, never the newline a <br> contributes: that
-			// one is a forced break, not collapsible whitespace, and
-			// trimming it dropped the blank line `<br>text` opens with.
-			const leading = text.match(/^[^\S\n]*/)?.[0].length || 0;
-			const trailing = text.match(/[^\S\n]*$/)?.[0].length || 0;
-			const trimStart = Math.min(leading, guardStart);
-			const trimmedEnd = Math.max(text.length - trailing, guardEnd);
+		// Spaces and tabs, never the newline a <br> contributes: that one is a
+		// forced break, not collapsible whitespace, and trimming it dropped the
+		// blank line `<br>text` opens with.
+		const leading = text.match(/^[^\S\n]*/)?.[0].length || 0;
+		const trailing = text.match(/[^\S\n]*$/)?.[0].length || 0;
+		const trimStart = Math.min(leading, guardStart);
+		const trimmedEnd = Math.max(text.length - trailing, guardEnd);
 
-			if (trimStart > 0 || trimmedEnd < text.length) {
-				text = text.slice(trimStart, trimmedEnd);
+		if (trimStart > 0 || trimmedEnd < text.length) {
+			text = text.slice(trimStart, trimmedEnd);
 
-				// Each leaf's own text must be trimmed by exactly what its
-				// offsets moved. Shifting the offsets alone left the painter
-				// slicing the UNtrimmed string at trimmed positions, so a run
-				// whose first leaf lost a leading space painted one character
-				// past its measured width -- and the line clipped the last
-				// one off: "<br> abcdef" rendered " abcde".
-				for (const item of items) {
-					const clampedStart = Math.min(
-						Math.max(item.start, trimStart),
-						trimmedEnd,
+			// Each leaf's own text must be trimmed by exactly what its
+			// offsets moved. Shifting the offsets alone left the painter
+			// slicing the UNtrimmed string at trimmed positions, so a run
+			// whose first leaf lost a leading space painted one character
+			// past its measured width -- and the line clipped the last
+			// one off: "<br> abcdef" rendered " abcde".
+			for (const item of items) {
+				const clampedStart = Math.min(
+					Math.max(item.start, trimStart),
+					trimmedEnd,
+				);
+				const clampedEnd = Math.min(
+					Math.max(item.end, trimStart),
+					trimmedEnd,
+				);
+				if (item.processedContent !== undefined) {
+					item.processedContent = item.processedContent.slice(
+						clampedStart - item.start,
+						clampedEnd - item.start,
 					);
-					const clampedEnd = Math.min(
-						Math.max(item.end, trimStart),
-						trimmedEnd,
+					item.dataOffsets = shiftRenderedOffsets(
+						item.dataOffsets ?? null,
+						clampedStart - item.start,
+						item.processedContent.length,
 					);
-					if (item.processedContent !== undefined) {
-						item.processedContent = item.processedContent.slice(
-							clampedStart - item.start,
-							clampedEnd - item.start,
-						);
-						item.dataOffsets = shiftRenderedOffsets(
-							item.dataOffsets ?? null,
-							clampedStart - item.start,
-							item.processedContent.length,
-						);
-					}
-					item.start = clampedStart - trimStart;
-					item.end = clampedEnd - trimStart;
 				}
+				item.start = clampedStart - trimStart;
+				item.end = clampedEnd - trimStart;
 			}
 		}
 	}

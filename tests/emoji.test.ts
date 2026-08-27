@@ -167,9 +167,10 @@ test("handles emoji width calculation", async () => {
 	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
-	// With corrected whitespace handling, spaces are preserved for proper width measurement
-	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
-	expect(output).toContain("Text 🚀 More");
+	// Each span is a flex item, so each is a box of its own with a line of its
+	// own, and the spaces sit at the edges of those lines. They collapse away:
+	// the emoji still measures two columns, and nothing separates it.
+	expect(output).toContain("Text🚀More");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("emoji-width-layout");
@@ -209,8 +210,9 @@ test("whitespace collapse affecting emoji rendering", async () => {
 	expect(output).toContain("🚀🚀");
 	expect(output).toContain("B");
 
-	// With corrected whitespace handling, spaces are preserved between spans
-	expect(output).toContain("A 🚀🚀 B"); // Spaces preserved for proper layout
+	// Each span is a flex item, so the trailing spaces of "A   " and the
+	// leading spaces of "   B" are at the edges of their own lines and go.
+	expect(output).toContain("A🚀🚀B");
 
 	dom.dispose();
 });
