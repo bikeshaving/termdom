@@ -21,7 +21,7 @@
 
 import type {EngineWindow, UAToolkit} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
-import {type StyleManager, computedStyleOf} from "./cascade.js";
+import {type StyleManager, getComputedValues} from "./cascade.js";
 import {decodeKey, decodeMouseReport, domCodeFor, tokenizeInput} from
 	"./wire.js";
 
@@ -95,7 +95,7 @@ function sequentialFocusEntries(
 			ancestor;
 			ancestor = toolkit.flatParentElement<Element>(ancestor)
 		) {
-			if (computedStyleOf(ancestor).computedValueOf("display") === "none") {
+			if (getComputedValues(ancestor).getComputedValue("display") === "none") {
 				return false;
 			}
 		}

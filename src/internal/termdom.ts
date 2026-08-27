@@ -17,7 +17,7 @@ import {
 } from "./exchange.js";
 import {transportFromProcess} from "./pty.js";
 import {Screen} from "./screen.js";
-import {StyleManager, computedStyleOf, getBoxModel} from "./cascade.js";
+import {StyleManager, getComputedValues, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";
 import {
 	EventHandler,
@@ -916,7 +916,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			ancestor;
 			ancestor = ancestor.parentElement
 		) {
-			const position = computedStyleOf(ancestor).computedValueOf("position");
+			const position = getComputedValues(ancestor).getComputedValue("position");
 			if (position && position !== "static") {
 				return ancestor as HTMLElement;
 			}
@@ -1114,11 +1114,11 @@ function createMount(termDOM: TermDOM): EngineMount {
 							extent.height :
 							extent.width;
 				if (size !== null && port) {
-					const style = computedStyleOf(element);
+					const style = getComputedValues(element);
 					const overflow =
-						style.computedValueOf(
+						style.getComputedValue(
 							`overflow-${axis === "top" ? "y" : "x"}`,
-						) || style.computedValueOf("overflow");
+						) || style.getComputedValue("overflow");
 					const scrollable =
 						overflow === "auto" ||
 						overflow === "scroll" ||
@@ -1302,13 +1302,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 				ancestor !== termDOM.document.documentElement;
 				ancestor = toolkit.flatParentElement<Element>(ancestor)
 			) {
-				const style = computedStyleOf(ancestor);
-				const overflow = style.computedValueOf("overflow");
+				const style = getComputedValues(ancestor);
+				const overflow = style.getComputedValue("overflow");
 				const scrollable = (value: string) =>
 					value === "auto" || value === "scroll" || value === "hidden";
 				if (
-					scrollable(style.computedValueOf("overflow-y") || overflow) ||
-					scrollable(style.computedValueOf("overflow-x") || overflow)
+					scrollable(style.getComputedValue("overflow-y") || overflow) ||
+					scrollable(style.getComputedValue("overflow-x") || overflow)
 				) {
 					revealIn(ancestor);
 				}
@@ -1618,7 +1618,7 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			computedStyleOf(node).computedValueOf("display") === "none"
+			getComputedValues(node).getComputedValue("display") === "none"
 		) {
 			(active as HTMLElement).blur();
 			return;
@@ -2742,10 +2742,10 @@ function wheelScrollerFor(
 		element && element !== body && element !== root;
 		element = termdom[kUAToolkit].flatParentElement<Element>(element)
 	) {
-		const style = computedStyleOf(element);
+		const style = getComputedValues(element);
 		const overflowY =
-			style.computedValueOf("overflow-y") ||
-			style.computedValueOf("overflow");
+			style.getComputedValue("overflow-y") ||
+			style.getComputedValue("overflow");
 		if (overflowY !== "auto" && overflowY !== "scroll") {
 			continue;
 		}

@@ -995,7 +995,7 @@ test("a viewport-relative length re-resolves when the terminal resizes", async (
 
 test("an author's shorthand read does not poison the computed value", async () => {
 	// getComputedStyle().margin answers with USED values; the engine's own
-	// computedValueOf answers with computed ones. The two must not share an
+	// getComputedValue answers with computed ones. The two must not share an
 	// answer.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
@@ -1009,8 +1009,8 @@ test("an author's shorthand read does not poison the computed value", async () =
 	// The author's read resolves the percentage against the containing block.
 	expect(declaration.margin).toBe("20px");
 	// The engine's read still answers what the cascade said.
-	expect(declaration.computedValueOf("margin")).toBe("50%");
-	expect(declaration.computedValueOf("margin-top")).toBe("50%");
+	expect(declaration.getComputedValue("margin")).toBe("50%");
+	expect(declaration.getComputedValue("margin-top")).toBe("50%");
 
 	dom.dispose();
 });

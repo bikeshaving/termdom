@@ -14,9 +14,9 @@ import {
 	renderTextFragment,
 } from "./layout.js";
 import {
-	type ComputedStyle,
+	type ComputedValues,
 	type StyleManager,
-	computedStyleOf,
+	getComputedValues,
 	getBoxModel,
 	pseudoStyleOf,
 	resolveBorderSides,
@@ -43,13 +43,15 @@ type ClipRect = {left: number; top: number; right: number; bottom: number};
  * nothing at all. Read the longhand first, since it is where the value is, and
  * fall back to the shorthand for the styles that set it that way.
  */
-function hasUnderline(style: ComputedStyle): boolean {
-	return style.computedValueOf("text-decoration-line").includes("underline");
+function hasUnderline(style: ComputedValues): boolean {
+	return style.getComputedValue("text-decoration-line").includes("underline");
 }
 
 /** Whether a computed style asks for a line-through (SGR strikethrough). */
-function hasLineThrough(style: ComputedStyle): boolean {
-	return style.computedValueOf("text-decoration-line").includes("line-through");
+function hasLineThrough(style: ComputedValues): boolean {
+	return style
+		.getComputedValue("text-decoration-line")
+		.includes("line-through");
 }
 
 /** Whether an overflow value clips its axis: everything but visible does. */
@@ -169,12 +171,12 @@ function backgroundFill(value: string): number | "default" | "inverse" | null {
  * shared by text nodes and the input painter's shadow parts.
  */
 function cellStyleFromComputed(
-	computedStyle: ComputedStyle,
+	computedStyle: ComputedValues,
 ): CellStyle {
-	const color = computedStyle.computedValueOf("color");
-	const bgColor = computedStyle.computedValueOf("background-color");
+	const color = computedStyle.getComputedValue("color");
+	const bgColor = computedStyle.getComputedValue("background-color");
 	const {bold, dim} = resolveFontWeight(
-		computedStyle.computedValueOf("font-weight"),
+		computedStyle.getComputedValue("font-weight"),
 	);
 	// background-color: Highlight is CSS's spelling of "swap the cell's
 	// colors": SGR inverse, the terminal-native highlight with no color
@@ -199,10 +201,10 @@ function cellStyleFromComputed(
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
-		italic: computedStyle.computedValueOf("font-style") === "italic",
+		italic: computedStyle.getComputedValue("font-style") === "italic",
 		underline: hasUnderline(computedStyle),
 		underlineStyle:
-			computedStyle.computedValueOf("text-decoration-style") === "double" ?
+			computedStyle.getComputedValue("text-decoration-style") === "double" ?
 					("double" as const) :
 				undefined,
 		strikethrough: hasLineThrough(computedStyle),
@@ -224,8 +226,8 @@ function selectionStyleFor(
 	base: CellStyle,
 ): CellStyle {
 	const declaration = pseudoStyleOf(element, "::selection");
-	const fg = declaration.computedValueOf("color");
-	const bg = declaration.computedValueOf("background-color");
+	const fg = declaration.getComputedValue("color");
+	const bg = declaration.getComputedValue("background-color");
 	if (!fg && !bg) {
 		return base;
 	}
@@ -371,7 +373,7 @@ function renderBackdrop(
 	ctx: CellContext,
 ): void {
 	const fill = backgroundFill(
-		pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
+		pseudoStyleOf(element, "::backdrop").getComputedValue("background-color"),
 	);
 	if (fill === null) {
 		return;
@@ -407,29 +409,29 @@ function renderElement(
 	// it last held.
 	// One computed-style read per element per paint; every property below
 	// comes off this declaration.
-	const computed = computedStyleOf(element);
-	if (computed.computedValueOf("display") === "none") {
+	const computed = getComputedValues(element);
+	if (computed.getComputedValue("display") === "none") {
 		return;
 	}
 
 	const rect = painter[kLayout].getRect(element);
 
-	const color = computed.computedValueOf("color");
-	const backgroundColor = computed.computedValueOf("background-color");
+	const color = computed.getComputedValue("color");
+	const backgroundColor = computed.getComputedValue("background-color");
 	const {bold, dim} = resolveFontWeight(
-		computed.computedValueOf("font-weight"),
+		computed.getComputedValue("font-weight"),
 	);
-	const italic = computed.computedValueOf("font-style") === "italic";
+	const italic = computed.getComputedValue("font-style") === "italic";
 	const underline = hasUnderline(computed);
 	const underlineStyle =
-		computed.computedValueOf("text-decoration-style") === "double" ?
+		computed.getComputedValue("text-decoration-style") === "double" ?
 				("double" as const) :
 			undefined;
 	// visibility:hidden reserves the box (layout is untouched) but paints
 	// nothing of it -- unlike display:none, which removes the box entirely. A
 	// descendant that sets visibility:visible still paints, since visibility
 	// inherits and each element resolves its own computed value here.
-	const visible = computed.computedValueOf("visibility") !== "hidden";
+	const visible = computed.getComputedValue("visibility") !== "hidden";
 
 	// background-color: Canvas -- the CSS system color for the document
 	// background -- clears the box to the terminal's DEFAULT background:
@@ -510,7 +512,7 @@ function renderElement(
 			if (!line) {
 				return undefined;
 			}
-			const borderColor = computed.computedValueOf(prop);
+			const borderColor = computed.getComputedValue(prop);
 			if (isTransparentColor(borderColor)) {
 				return undefined;
 			}
@@ -675,9 +677,9 @@ function renderElement(
 	// A non-visible overflow clips *descendants* to this element's own box --
 	// never the element's own border/background painted above, which is why
 	// this is scoped to just the children, not the whole function.
-	const overflow = computed.computedValueOf("overflow");
-	const overflowX = computed.computedValueOf("overflow-x") || overflow;
-	const overflowY = computed.computedValueOf("overflow-y") || overflow;
+	const overflow = computed.getComputedValue("overflow");
+	const overflowX = computed.getComputedValue("overflow-x") || overflow;
+	const overflowY = computed.getComputedValue("overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
 	ctx.clipRect = overflowClipRect(
 		element,
@@ -715,15 +717,15 @@ function renderElement(
 	// underline along its bottom row in the same color. Bottom only:
 	// overline (SGR 53) is unreliable.
 	if (rect && visible) {
-		const computed = computedStyleOf(element);
-		const outlineStyle = computed.computedValueOf("outline-style");
+		const computed = getComputedValues(element);
+		const outlineStyle = computed.getComputedValue("outline-style");
 		if (
 			outlineStyle &&
 			outlineStyle !== "none" &&
-			parseFloat(computed.computedValueOf("outline-width")) !== 0
+			parseFloat(computed.getComputedValue("outline-width")) !== 0
 		) {
 			const outlineColor = computed
-				.computedValueOf("outline-color")
+				.getComputedValue("outline-color")
 				.trim()
 				.toLowerCase();
 			const hasColor =
@@ -791,10 +793,10 @@ function positionedClipFor(
 		if (!isPositioned(ancestor)) {
 			continue;
 		}
-		const style = computedStyleOf(ancestor);
-		const overflow = style.computedValueOf("overflow");
-		const overflowX = style.computedValueOf("overflow-x") || overflow;
-		const overflowY = style.computedValueOf("overflow-y") || overflow;
+		const style = getComputedValues(ancestor);
+		const overflow = style.getComputedValue("overflow");
+		const overflowX = style.getComputedValue("overflow-x") || overflow;
+		const overflowY = style.getComputedValue("overflow-y") || overflow;
 		if (overflowClips(overflowX) || overflowClips(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
@@ -879,8 +881,8 @@ function renderOutsideMarker(
 	element: Element,
 	ctx: CellContext,
 ): void {
-	const computedStyle = computedStyleOf(element);
-	const display = computedStyle.computedValueOf("display");
+	const computedStyle = getComputedValues(element);
+	const display = computedStyle.getComputedValue("display");
 
 	// Only handle list items
 	if (display !== "list-item") {
@@ -888,7 +890,7 @@ function renderOutsideMarker(
 	}
 
 	const listStylePosition =
-		computedStyle.computedValueOf("list-style-position") || "outside";
+		computedStyle.getComputedValue("list-style-position") || "outside";
 
 	// Only handle outside positioning
 	if (listStylePosition !== "outside") {
@@ -922,12 +924,12 @@ function renderOutsideMarker(
 	// ::marker inherits color from its originating element, so fall back to the
 	// list item's own color rather than rendering the marker unstyled.
 	const markerColor =
-		markerStyle.computedValueOf("color") ||
-		computedStyle.computedValueOf("color");
+		markerStyle.getComputedValue("color") ||
+		computedStyle.getComputedValue("color");
 	const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-		markerStyle.computedValueOf("font-weight"),
+		markerStyle.getComputedValue("font-weight"),
 	);
-	const markerItalic = markerStyle.computedValueOf("font-style") === "italic";
+	const markerItalic = markerStyle.getComputedValue("font-style") === "italic";
 	const markerUnderline = hasUnderline(markerStyle);
 
 	const markerTextStyle = {
@@ -977,15 +979,15 @@ function renderText(
 		return;
 	}
 
-	const computedStyle: ComputedStyle = computedStyleOf(parentElement);
+	const computedStyle: ComputedValues = getComputedValues(parentElement);
 
 	// visibility inherits, so the parent's own resolved value already accounts
 	// for a closer ancestor overriding back to visible.
-	if (computedStyle.computedValueOf("visibility") === "hidden") {
+	if (computedStyle.getComputedValue("visibility") === "hidden") {
 		return;
 	}
 
-	const textTransform = computedStyle.computedValueOf("text-transform");
+	const textTransform = computedStyle.getComputedValue("text-transform");
 	const textStyle = cellStyleFromComputed(computedStyle);
 
 	// One fragment per line the node covers -- the same geometry
@@ -993,7 +995,7 @@ function renderText(
 	// range of `data` its line renders. The characters to draw come from the
 	// node itself, rendered under its own `white-space` and then transformed:
 	// nothing of the line breaker's is read here.
-	const whiteSpace = computedStyle.computedValueOf("white-space");
+	const whiteSpace = computedStyle.getComputedValue("white-space");
 	const fragments = painter[kLayout].lineFragments(textNode);
 	let painted = false;
 	for (const fragment of fragments) {

@@ -23,10 +23,10 @@ import {
 	parseTrackList,
 	parseTrackSizeList,
 	type BoxModel,
-	computedStyleOf,
+	getComputedValues,
 	getPropertyValue,
 	parseUnitValue,
-	type ComputedStyle,
+	type ComputedValues,
 } from "./cascade.js";
 import {
 	DOMRectList,
@@ -6881,7 +6881,7 @@ export function isPositioned(element: Element): boolean {
  * -- auto paints in the same layer but does NOT form a context.
  */
 function zIndexValueOf(element: Element): number | "auto" {
-	const zIndex = computedStyleOf(element).computedValueOf("z-index");
+	const zIndex = getComputedValues(element).getComputedValue("z-index");
 	if (!zIndex || zIndex === "auto") {
 		return "auto";
 	}
@@ -7560,7 +7560,7 @@ function parseSpanAttribute(element: Element, name: string): number {
  */
 function applyMinMax(
 	flexNode: LayoutNode,
-	computedStyle: ComputedStyle,
+	computedStyle: ComputedValues,
 ): void {
 	const constraints = [
 		["min-width", flexNode.setMinWidth, flexNode.setMinWidthPercent],
@@ -7569,7 +7569,7 @@ function applyMinMax(
 		["max-height", flexNode.setMaxHeight, flexNode.setMaxHeightPercent],
 	] as const;
 	for (const [property, setLength, setPercent] of constraints) {
-		const value = parseUnitValue(computedStyle.computedValueOf(property));
+		const value = parseUnitValue(computedStyle.getComputedValue(property));
 		if (typeof value === "number") {
 			setLength.call(flexNode, value);
 		} else if (value && "percentage" in value) {
@@ -7592,19 +7592,19 @@ const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
  */
 function applyInsets(
 	flexNode: LayoutNode,
-	computedStyle: ComputedStyle,
+	computedStyle: ComputedValues,
 	edges: readonly Edge[],
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
 		const property = edge;
-		const value = parseUnitValue(computedStyle.computedValueOf(property));
+		const value = parseUnitValue(computedStyle.getComputedValue(property));
 		if (typeof value === "number") {
 			flexNode.setPosition(edge, value);
 		} else if (value && "percentage" in value) {
 			flexNode.setPositionPercent(edge, value.percentage);
 		} else if (autoWhenUnset) {
-			const declared = computedStyle.computedValueOf(property);
+			const declared = computedStyle.getComputedValue(property);
 			if (declared === "auto" || !declared) {
 				flexNode.setPositionAuto(edge);
 			}
@@ -7715,49 +7715,49 @@ function justifyContentConstant(value: string): Justify {
 /** The grid container properties, from the cascade to the layout node. */
 function applyGridContainer(
 	flexNode: LayoutNode,
-	computedStyle: ComputedStyle,
+	computedStyle: ComputedValues,
 ): void {
 	flexNode.setGridTemplateColumns(
-		parseTrackList(computedStyle.computedValueOf("grid-template-columns")),
+		parseTrackList(computedStyle.getComputedValue("grid-template-columns")),
 	);
 	flexNode.setGridTemplateRows(
-		parseTrackList(computedStyle.computedValueOf("grid-template-rows")),
+		parseTrackList(computedStyle.getComputedValue("grid-template-rows")),
 	);
 	flexNode.setGridTemplateAreas(
-		parseGridAreas(computedStyle.computedValueOf("grid-template-areas")),
+		parseGridAreas(computedStyle.getComputedValue("grid-template-areas")),
 	);
 	flexNode.setGridAutoColumns(
-		parseTrackSizeList(computedStyle.computedValueOf("grid-auto-columns")),
+		parseTrackSizeList(computedStyle.getComputedValue("grid-auto-columns")),
 	);
 	flexNode.setGridAutoRows(
-		parseTrackSizeList(computedStyle.computedValueOf("grid-auto-rows")),
+		parseTrackSizeList(computedStyle.getComputedValue("grid-auto-rows")),
 	);
 
 	const flow = computedStyle
-		.computedValueOf("grid-auto-flow")
+		.getComputedValue("grid-auto-flow")
 		.toLowerCase()
 		.split(/\s+/)
 		.filter(Boolean);
 	flexNode.setGridAutoFlow(flow.includes("column"), flow.includes("dense"));
 
 	flexNode.setJustifyContent(
-		justifyContentConstant(computedStyle.computedValueOf("justify-content")),
+		justifyContentConstant(computedStyle.getComputedValue("justify-content")),
 	);
 	flexNode.setAlignContent(
 		alignmentConstant(
-			computedStyle.computedValueOf("align-content"),
+			computedStyle.getComputedValue("align-content"),
 			"normal",
 		),
 	);
 	flexNode.setAlignItems(
 		alignmentConstant(
-			computedStyle.computedValueOf("align-items"),
+			computedStyle.getComputedValue("align-items"),
 			"normal",
 		),
 	);
 	flexNode.setJustifyItems(
 		alignmentConstant(
-			computedStyle.computedValueOf("justify-items"),
+			computedStyle.getComputedValue("justify-items"),
 			"normal",
 		),
 	);
@@ -7799,7 +7799,7 @@ function styleFlexNodeProperties(
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
-	const computedStyle = computedStyleOf(element);
+	const computedStyle = getComputedValues(element);
 
 	// Skip box model properties for inline elements (not inline-block)
 	const display = computedDisplay(element);
@@ -7830,7 +7830,7 @@ function styleFlexNodeProperties(
 		applyMinMax(flexNode, computedStyle);
 	} else {
 		// For block elements, apply explicit dimensions normally
-		const widthValue = computedStyle.computedValueOf("width");
+		const widthValue = computedStyle.getComputedValue("width");
 		const width = parseUnitValue(widthValue);
 		if (typeof width === "number") {
 			flexNode.setWidth(width);
@@ -7841,7 +7841,7 @@ function styleFlexNodeProperties(
 		}
 		flexNode.setWidthSizing(widthSizingConstant(widthValue));
 
-		const height = parseUnitValue(computedStyle.computedValueOf("height"));
+		const height = parseUnitValue(computedStyle.getComputedValue("height"));
 		if (typeof height === "number") {
 			flexNode.setHeight(height);
 		} else if (height && "percentage" in height) {
@@ -7859,7 +7859,7 @@ function styleFlexNodeProperties(
 		flexNode.setAspectRatio(undefined);
 	} else {
 		flexNode.setAspectRatio(
-			parseAspectRatio(computedStyle.computedValueOf("aspect-ratio")),
+			parseAspectRatio(computedStyle.getComputedValue("aspect-ratio")),
 		);
 	}
 
@@ -7889,14 +7889,14 @@ function styleFlexNodeProperties(
 
 		// Margins
 		const marginTop = parseSignedUnitValue(
-			computedStyle.computedValueOf("margin-top"),
+			computedStyle.getComputedValue("margin-top"),
 		);
 		if (typeof marginTop === "number") {
 			flexNode.setMargin("top", marginTop);
 		} else if (marginTop && "percentage" in marginTop) {
 			flexNode.setMarginPercent("top", marginTop.percentage);
 		} else {
-			const originalValue = computedStyle.computedValueOf("margin-top");
+			const originalValue = computedStyle.getComputedValue("margin-top");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("top");
 			} else {
@@ -7905,14 +7905,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginRight = parseSignedUnitValue(
-			computedStyle.computedValueOf("margin-right"),
+			computedStyle.getComputedValue("margin-right"),
 		);
 		if (typeof marginRight === "number") {
 			flexNode.setMargin("right", marginRight);
 		} else if (marginRight && "percentage" in marginRight) {
 			flexNode.setMarginPercent("right", marginRight.percentage);
 		} else {
-			const originalValue = computedStyle.computedValueOf("margin-right");
+			const originalValue = computedStyle.getComputedValue("margin-right");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("right");
 			} else {
@@ -7921,14 +7921,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginBottom = parseSignedUnitValue(
-			computedStyle.computedValueOf("margin-bottom"),
+			computedStyle.getComputedValue("margin-bottom"),
 		);
 		if (typeof marginBottom === "number") {
 			flexNode.setMargin("bottom", marginBottom);
 		} else if (marginBottom && "percentage" in marginBottom) {
 			flexNode.setMarginPercent("bottom", marginBottom.percentage);
 		} else {
-			const originalValue = computedStyle.computedValueOf("margin-bottom");
+			const originalValue = computedStyle.getComputedValue("margin-bottom");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("bottom");
 			} else {
@@ -7937,14 +7937,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginLeft = parseSignedUnitValue(
-			computedStyle.computedValueOf("margin-left"),
+			computedStyle.getComputedValue("margin-left"),
 		);
 		if (typeof marginLeft === "number") {
 			flexNode.setMargin("left", marginLeft);
 		} else if (marginLeft && "percentage" in marginLeft) {
 			flexNode.setMarginPercent("left", marginLeft.percentage);
 		} else {
-			const originalValue = computedStyle.computedValueOf("margin-left");
+			const originalValue = computedStyle.getComputedValue("margin-left");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("left");
 			} else {
@@ -7954,7 +7954,7 @@ function styleFlexNodeProperties(
 
 		// Paddings
 		const paddingTop = parseUnitValue(
-			computedStyle.computedValueOf("padding-top"),
+			computedStyle.getComputedValue("padding-top"),
 		);
 		if (typeof paddingTop === "number") {
 			flexNode.setPadding("top", paddingTop);
@@ -7965,7 +7965,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingRight = parseUnitValue(
-			computedStyle.computedValueOf("padding-right"),
+			computedStyle.getComputedValue("padding-right"),
 		);
 		if (typeof paddingRight === "number") {
 			flexNode.setPadding("right", paddingRight);
@@ -7976,7 +7976,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingBottom = parseUnitValue(
-			computedStyle.computedValueOf("padding-bottom"),
+			computedStyle.getComputedValue("padding-bottom"),
 		);
 		if (typeof paddingBottom === "number") {
 			flexNode.setPadding("bottom", paddingBottom);
@@ -7987,7 +7987,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingLeft = parseUnitValue(
-			computedStyle.computedValueOf("padding-left"),
+			computedStyle.getComputedValue("padding-left"),
 		);
 		if (typeof paddingLeft === "number") {
 			flexNode.setPadding("left", paddingLeft);
@@ -8001,12 +8001,12 @@ function styleFlexNodeProperties(
 		// hidden (css-backgrounds §3.3) -- same gate as getBoxModel, or the
 		// two box models disagree about the same element.
 		const usedBorderWidth = (side: string) => {
-			const style = computedStyle.computedValueOf(`border-${side}-style`);
+			const style = computedStyle.getComputedValue(`border-${side}-style`);
 			if (!style || style === "none" || style === "hidden") {
 				return null;
 			}
 			return parseBorderWidthValue(
-				computedStyle.computedValueOf(`border-${side}-width`),
+				computedStyle.getComputedValue(`border-${side}-width`),
 			);
 		};
 		const borderTopWidth = usedBorderWidth("top");
@@ -8060,7 +8060,7 @@ function styleFlexNodeProperties(
 	// Solver item properties. A block container reads none of them -- they are
 	// applied whatever the parent is, and simply go unasked outside a flex
 	// container, which is what CSS says of them.
-	const flexGrow = computedStyle.computedValueOf("flex-grow");
+	const flexGrow = computedStyle.getComputedValue("flex-grow");
 	const growValue = parseFloat(flexGrow);
 	if (!isNaN(growValue) && growValue >= 0) {
 		flexNode.setFlexGrow(growValue);
@@ -8068,10 +8068,10 @@ function styleFlexNodeProperties(
 		flexNode.setFlexGrow(undefined);
 	}
 
-	const orderValue = parseInt(computedStyle.computedValueOf("order"), 10);
+	const orderValue = parseInt(computedStyle.getComputedValue("order"), 10);
 	flexNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
 
-	const flexShrink = computedStyle.computedValueOf("flex-shrink");
+	const flexShrink = computedStyle.getComputedValue("flex-shrink");
 	const shrinkValue = parseFloat(flexShrink);
 	if (!isNaN(shrinkValue) && shrinkValue >= 0) {
 		flexNode.setFlexShrink(shrinkValue);
@@ -8079,13 +8079,15 @@ function styleFlexNodeProperties(
 		flexNode.setFlexShrink(undefined);
 	}
 
-	const flexBasis = parseUnitValue(computedStyle.computedValueOf("flex-basis"));
+	const flexBasis = parseUnitValue(
+		computedStyle.getComputedValue("flex-basis"),
+	);
 	if (typeof flexBasis === "number") {
 		flexNode.setFlexBasis(flexBasis);
 	} else if (flexBasis && "percentage" in flexBasis) {
 		flexNode.setFlexBasisPercent(flexBasis.percentage);
 	} else {
-		const originalValue = computedStyle.computedValueOf("flex-basis");
+		const originalValue = computedStyle.getComputedValue("flex-basis");
 		if (originalValue === "auto") {
 			flexNode.setFlexBasisAuto();
 		} else {
@@ -8093,11 +8095,11 @@ function styleFlexNodeProperties(
 		}
 	}
 
-	const alignSelf = computedStyle.computedValueOf("align-self");
+	const alignSelf = computedStyle.getComputedValue("align-self");
 	flexNode.setAlignSelf(alignmentConstant(alignSelf, "auto"));
 	flexNode.setJustifySelf(
 		alignmentConstant(
-			computedStyle.computedValueOf("justify-self"),
+			computedStyle.getComputedValue("justify-self"),
 			"auto",
 		),
 	);
@@ -8106,26 +8108,28 @@ function styleFlexNodeProperties(
 	// properties above: outside a grid container nothing asks for them, which
 	// is exactly what CSS says of them.
 	flexNode.setGridRowStart(
-		parseGridPlacement(computedStyle.computedValueOf("grid-row-start")),
+		parseGridPlacement(computedStyle.getComputedValue("grid-row-start")),
 	);
 	flexNode.setGridRowEnd(
-		parseGridPlacement(computedStyle.computedValueOf("grid-row-end")),
+		parseGridPlacement(computedStyle.getComputedValue("grid-row-end")),
 	);
 	flexNode.setGridColumnStart(
-		parseGridPlacement(computedStyle.computedValueOf("grid-column-start")),
+		parseGridPlacement(computedStyle.getComputedValue("grid-column-start")),
 	);
 	flexNode.setGridColumnEnd(
-		parseGridPlacement(computedStyle.computedValueOf("grid-column-end")),
+		parseGridPlacement(computedStyle.getComputedValue("grid-column-end")),
 	);
 
 	// gap. The `gap` shorthand is expanded in the cascade, so reading the
 	// longhands here is enough and gets the precedence right.
-	const rowGap = parseUnitValue(computedStyle.computedValueOf("row-gap"));
+	const rowGap = parseUnitValue(computedStyle.getComputedValue("row-gap"));
 	if (typeof rowGap === "number") {
 		flexNode.setGap("row", rowGap);
 	}
 
-	const columnGap = parseUnitValue(computedStyle.computedValueOf("column-gap"));
+	const columnGap = parseUnitValue(
+		computedStyle.getComputedValue("column-gap"),
+	);
 	if (typeof columnGap === "number") {
 		flexNode.setGap("column", columnGap);
 	}
@@ -8142,7 +8146,7 @@ function styleFlexNodeProperties(
 		// per <tr> stacked on its own structurally cannot express.
 		flexNode.setMode("table");
 		flexNode.setBorderCollapse(
-			computedStyle.computedValueOf("border-collapse") === "collapse",
+			computedStyle.getComputedValue("border-collapse") === "collapse",
 		);
 	} else if (display === "table-header-group") {
 		flexNode.setMode("table-header-group");
@@ -8165,8 +8169,8 @@ function styleFlexNodeProperties(
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
 
 		// Add default padding for table cells if not explicitly set
-		const paddingLeft = computedStyle.computedValueOf("padding-left");
-		const paddingRight = computedStyle.computedValueOf("padding-right");
+		const paddingLeft = computedStyle.getComputedValue("padding-left");
+		const paddingRight = computedStyle.getComputedValue("padding-right");
 		if (!paddingLeft || paddingLeft === "0px") {
 			flexNode.setPadding("left", 1); // 1 character padding
 		}
@@ -8177,7 +8181,7 @@ function styleFlexNodeProperties(
 
 	// Handle flex direction for flex containers (not table-row which has fixed direction)
 	if (display === "flex") {
-		const flexDirection = computedStyle.computedValueOf("flex-direction");
+		const flexDirection = computedStyle.getComputedValue("flex-direction");
 		if (flexDirection === "row") {
 			flexNode.setFlexDirection("row");
 		} else if (flexDirection === "row-reverse") {
@@ -8190,7 +8194,7 @@ function styleFlexNodeProperties(
 			flexNode.setFlexDirection("row");
 		}
 
-		const flexWrap = computedStyle.computedValueOf("flex-wrap");
+		const flexWrap = computedStyle.getComputedValue("flex-wrap");
 		if (flexWrap === "nowrap") {
 			flexNode.setFlexWrap("nowrap");
 		} else if (flexWrap === "wrap") {
@@ -8201,15 +8205,15 @@ function styleFlexNodeProperties(
 			flexNode.setFlexWrap("nowrap");
 		}
 
-		const justifyContent = computedStyle.computedValueOf("justify-content");
+		const justifyContent = computedStyle.getComputedValue("justify-content");
 		flexNode.setJustifyContent(
 			asJustify(justifyContent, "flex-start"),
 		);
 
-		const alignItems = computedStyle.computedValueOf("align-items");
+		const alignItems = computedStyle.getComputedValue("align-items");
 		flexNode.setAlignItems(asAlign(alignItems, "stretch"));
 
-		const alignContent = computedStyle.computedValueOf("align-content");
+		const alignContent = computedStyle.getComputedValue("align-content");
 		flexNode.setAlignContent(
 			asAlign(alignContent, "flex-start"),
 		);
@@ -8238,7 +8242,7 @@ function styleFlexNodeProperties(
 		element === element.ownerDocument?.documentElement ||
 		element.tagName === "BODY" ||
 		(display !== "block" && display !== "list-item") ||
-		computedStyle.computedValueOf("overflow") !== "visible" ||
+		computedStyle.getComputedValue("overflow") !== "visible" ||
 		isOutOfFlow(element) ||
 		parentIsFlex,
 	);
@@ -9459,14 +9463,14 @@ function syncContentRoot(
 	// the element's own layout node is the one the run measures.
 	root.setMode(grid ? "grid" : "block");
 	if (grid) {
-		applyGridContainer(root, computedStyleOf(element));
+		applyGridContainer(root, getComputedValues(element));
 		const gaps: Array<[string, Gutter]> = [
 			["row-gap", "row"],
 			["column-gap", "column"],
 		];
 		for (const [property, gutter] of gaps) {
 			const gap = parseUnitValue(
-				computedStyleOf(element).computedValueOf(property),
+				getComputedValues(element).getComputedValue(property),
 			);
 			root.setGap(gutter, typeof gap === "number" ? gap : 0);
 		}
@@ -12198,7 +12202,7 @@ function hitTestInFlow(
 	if (element.nodeType !== 1) {
 		return null;
 	}
-	if (computedStyleOf(element).computedValueOf("display") === "none") {
+	if (getComputedValues(element).getComputedValue("display") === "none") {
 		return null;
 	}
 	// A display:contents element generates no box, so there is nothing to
@@ -12899,6 +12903,7 @@ export class LayoutEngine {
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	declare [kInvalidatedNodes]: Set<Node>;
+
 	/**
 	 * Every element whose computed position was not static when styleFlexNode
 	 * last styled it.
@@ -12921,6 +12926,19 @@ export class LayoutEngine {
 	 * correct, two is a sentence backwards again.
 	 */
 	declare [kTerminalReordersText]: boolean;
+
+	/**
+	 * The last rendering of each text node, under the one key its rendering is
+	 * a function of: the data and the white-space it was rendered under. A
+	 * node holds one, because a text node has one data and one white-space at
+	 * a time. One inline run is broken several times per build -- once per
+	 * width the sizing pass tries -- and the rendering is the same every time.
+	 */
+	declare [kRenderedLeaves]: WeakMap<Text, {
+		key: string;
+		text: string;
+		offsets: Int32Array | null;
+	}>;
 
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
@@ -13696,7 +13714,9 @@ export class LayoutEngine {
 		if (element === this[kEngineWindow].document.body) {
 			return true;
 		}
-		if (computedStyleOf(element).computedValueOf("isolation") === "isolate") {
+		if (
+			getComputedValues(element).getComputedValue("isolation") === "isolate"
+		) {
 			return true;
 		}
 		return isPositioned(element) && zIndexValueOf(element) !== "auto";
@@ -13963,17 +13983,4 @@ export class LayoutEngine {
 		}
 		return false;
 	}
-
-	/**
-	 * The last rendering of each text node, under the one key its rendering is
-	 * a function of: the data and the white-space it was rendered under. A
-	 * node holds one, because a text node has one data and one white-space at
-	 * a time. One inline run is broken several times per build -- once per
-	 * width the sizing pass tries -- and the rendering is the same every time.
-	 */
-	declare [kRenderedLeaves]: WeakMap<Text, {
-		key: string;
-		text: string;
-		offsets: Int32Array | null;
-	}>;
 }
