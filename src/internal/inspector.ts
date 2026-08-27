@@ -120,7 +120,6 @@ function formatElement(
 		output += " " + attrs;
 	}
 
-	// Self-closing tags
 	const selfClosing = [
 		"area",
 		"base",

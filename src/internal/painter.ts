@@ -398,13 +398,12 @@ function renderElement(
 		return;
 	}
 
-	// display:none generates NO box and no descendant boxes -- final, per
-	// CSS. Stray run state under a hidden subtree (an editing todo's
-	// hidden .view) could otherwise ghost-paint at whatever coordinates
-	// it last held.
 	// One computed-style read per element per paint; every property below
 	// comes off this declaration.
 	const computed = getComputedValues(element);
+	// display:none generates NO box and no descendant boxes -- final, per
+	// CSS. Stray run state under a hidden subtree (an editing todo's hidden
+	// .view) could otherwise ghost-paint at whatever coordinates it last held.
 	if (computed.getComputedValue("display") === "none") {
 		return;
 	}
@@ -489,7 +488,6 @@ function renderElement(
 		}
 	}
 
-	// Handle borders
 	if (rect && visible) {
 		const sides = resolveBorderSides(element);
 		// Border color per CSS: each side's border-<side>-color, whose
@@ -545,7 +543,6 @@ function renderElement(
 		}
 	}
 
-	// Handle list-style-position: outside markers
 	if (visible) {
 		renderOutsideMarker(painter, element, ctx);
 	}
@@ -586,7 +583,6 @@ function renderElement(
 		}
 	}
 
-	// No manual lifecycle management needed
 
 	// The stacking-context painter slots its negative-z layer here: after
 	// this element's own background and border, before any of its in-flow
@@ -598,9 +594,8 @@ function renderElement(
 	// The IN-FLOW walk: children paint in tree order, and POSITIONED
 	// children don't paint here at all -- per CSS they are hoisted to
 	// their nearest stacking context and painted in its layer order (see
-	// kRenderStackingContext). The old per-sibling z sort could never
-	// let a deep overlay escape its parent's siblings; hoisting is what
-	// makes a modal or dropdown paint over unrelated subtrees.
+	// renderStackingContext). That hoist is what lets a modal or a dropdown
+	// paint over subtrees unrelated to its parent's siblings.
 	// The element's own scroll shifts its children, not itself: the child
 	// walk below culls against the band moved by that much more, and the
 	// walk state carries the accumulated shift to every descendant. The
@@ -635,7 +630,6 @@ function renderElement(
 			children.push(childNode);
 		}
 	} else {
-		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
 		const walker = flowWalker(element);
 		for (
 			let childNode = walker.firstChild();
@@ -702,10 +696,6 @@ function renderElement(
 		ctx.clipRect = previousClip;
 		painter[kScrolledRows] = scrolledRows;
 	}
-
-	// A focused textarea's own selection now paints inline while the child
-	// walk lays down the value text -- kRenderTextSelection reads the
-	// control's selectionStart/End, the same way it reads a document Range.
 
 	// An `outline` paints last (a focus ring). A bordered box already has a
 	// ring of glyphs at its perimeter, so the outline repaints them in the
@@ -805,7 +795,7 @@ function positionedClipFor(
 
 /**
  * Paint a stacking context in the CSS layer order: the root's own box,
- * negative-z child contexts, in-flow content (the kRenderElement walk,
+ * negative-z child contexts, in-flow content (the renderElement walk,
  * which skips positioned descendants), the positioned z:auto/0 layer,
  * then positive-z contexts. A z:auto member doesn't isolate: it paints
  * as an in-flow subtree here while its own positioned descendants sit
@@ -880,7 +870,6 @@ function renderOutsideMarker(
 	const computedStyle = getComputedValues(element);
 	const display = computedStyle.getComputedValue("display");
 
-	// Only handle list items
 	if (display !== "list-item") {
 		return;
 	}
@@ -888,18 +877,15 @@ function renderOutsideMarker(
 	const listStylePosition =
 		computedStyle.getComputedValue("list-style-position") || "outside";
 
-	// Only handle outside positioning
 	if (listStylePosition !== "outside") {
 		return;
 	}
 
-	// Prevent duplicate rendering in the same frame
 	if (painter[kRenderedOutsideMarkers].has(element)) {
 		return;
 	}
 	painter[kRenderedOutsideMarkers].add(element);
 
-	// Get marker content from StyleManager
 	const markerContent = painter[kStyleManager].getMarkerContent(element);
 	if (!markerContent) {
 		return;
@@ -915,7 +901,6 @@ function renderOutsideMarker(
 	// own text.
 	const markerWidth = ctx.measureText(markerContent).width;
 
-	// Get marker styles
 	const markerStyle = getPseudoStyle(element, "::marker");
 	// ::marker inherits color from its originating element, so fall back to the
 	// list item's own color rather than rendering the marker unstyled.
@@ -939,11 +924,9 @@ function renderOutsideMarker(
 		underline: markerUnderline,
 	};
 
-	// Position marker just before the list item's content area (outside positioning)
 	const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
 	const markerY = Math.round(rect.top);
 
-	// Render the marker (clipped to available space, never mutate the DOM)
 	ctx.drawText(markerContent, markerX, markerY, markerTextStyle);
 }
 
@@ -954,9 +937,7 @@ function getGlyphText(painter: Painter, element: Element): Text | null {
 	return (glyph?.firstChild as Text | null) ?? null;
 }
 
-/**
- * Render a text node with proper styling from its parent element or pseudo-element
- */
+/** Draw a text node's fragments, in the style its flat-tree parent computes. */
 function renderText(
 	painter: Painter,
 	textNode: Text,
@@ -1084,7 +1065,7 @@ function selectionRangeFor(
 /**
  * Overlay the selection on a text node as inverse video (or the author's
  * ::selection colors) by redrawing its selected runs in the highlight style.
- * The selected Range comes from kSelectionRangeFor; the runs' rects and text
+ * The selected Range comes from selectionRangeFor; the runs' rects and text
  * come from the layout's Range geometry, so the painter does no offset math.
  * Case transforms never change cell width, so transforming each run's raw
  * text repaints exactly the cells the base pass laid down.
@@ -1102,9 +1083,10 @@ function renderTextSelection(
 	}
 	const {range, selectionParent} = found;
 	const selectionStyle = selectionStyleFor(selectionParent, textStyle);
+	// Nothing came back changed, so no ::selection rule reaches this node.
 	if (selectionStyle === textStyle) {
 		return;
-	} // no ::selection rule reaches here
+	}
 
 	for (const run of painter[kLayout].getRangeRuns(range)) {
 		ctx.drawText(

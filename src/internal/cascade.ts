@@ -1525,7 +1525,6 @@ function readBoxModel(computedStyle: ComputedValues): BoxModel {
 	const widthValue = parseUnitValue(computedStyle.getComputedValue("width"));
 	const heightValue = parseUnitValue(computedStyle.getComputedValue("height"));
 
-	// Parse padding
 	const paddingTop = parseUnitValue(
 		computedStyle.getComputedValue("padding-top"),
 	);
@@ -1539,7 +1538,6 @@ function readBoxModel(computedStyle: ComputedValues): BoxModel {
 		computedStyle.getComputedValue("padding-left"),
 	);
 
-	// Parse margin
 	const marginTop = parseSignedUnitValue(
 		computedStyle.getComputedValue("margin-top"),
 	);
@@ -8697,7 +8695,7 @@ function resolveCustomProperty(
 	name: string,
 ): string | null {
 	// A custom property is just an ordinary (always-inherited) cascade lookup
-	// -- kResolvePropertyValueRaw's step 4 already walks ancestors for it.
+	// -- resolvePropertyValueRaw's step 4 already walks ancestors for it.
 	return resolvePropertyValueRaw(declaration, name) || null;
 }
 
@@ -10003,7 +10001,7 @@ export class StyleManager {
 	 */
 	declare [kHoverRulesExist]: boolean;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
-	// (keyboard true, pointer false). kRuleMatches gates such rules on it.
+	// (keyboard true, pointer false). ruleMatches gates such rules on it.
 	declare [kFocusVisibleActive]: boolean;
 	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
@@ -10418,13 +10416,10 @@ export class StyleManager {
 								shouldRefreshStylesheets = true;
 							}
 						} else {
-							// Invalidate caches for new elements
-							invalidateElementCaches(this, element);
-							// Process pseudo-elements for new elements
-							this.attachPseudoElementsToElement(element);
+												invalidateElementCaches(this, element);
+												this.attachPseudoElementsToElement(element);
 
-							// Also handle any child elements
-							const childElements = element.querySelectorAll("*");
+												const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
 								invalidateElementCaches(this, childElement);
 								this.attachPseudoElementsToElement(childElement);
@@ -10934,7 +10929,6 @@ export class StyleManager {
 		// Remove quotes from content string
 		let textContent = unquoteContent(content);
 
-		// Resolve counter() functions in the content
 		textContent = this.resolveCounterFunction(hostElement, textContent);
 
 		return textContent;
@@ -11069,7 +11063,6 @@ export class StyleManager {
 		) {
 			return;
 		}
-		// Initialize counters for this element first
 		this.initializeCounters(element);
 
 		const pseudoTypes = ["::before", "::after", "::marker"];
@@ -12882,7 +12875,7 @@ function parseSelector(
 
 	// :host selectors only mean anything inside a shadow tree's own
 	// stylesheet; the selector engine rejects them outright, so they parse
-	// into a structured predicate matched by kRuleMatches instead.
+	// into a structured predicate matched by ruleMatches instead.
 	const subjectTag = reading.subjectTag;
 
 	// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
@@ -12917,7 +12910,7 @@ function parseSelector(
 	// Check if this is a pseudo-element rule. ::placeholder/::selection
 	// are widget-part pseudos: no content node ever attaches for them --
 	// they resolve onto the UA shadow tree's [part] elements (see
-	// kGetMatchingRules) or the selection painter.
+	// getMatchingRules) or the selection painter.
 	// Any pseudo-element, not just the ones this engine gives a box: a
 	// rule for `::highlight(x)` still has to answer through
 	// getComputedStyle, which is the whole of what CSSOM asks of it.
@@ -13361,7 +13354,6 @@ function pseudoContentFor(
 	// Remove quotes from content string
 	const textContent = unquoteContent(content);
 
-	// Resolve counter() functions in the content
 	return manager.resolveCounterFunction(hostElement, textContent);
 }
 

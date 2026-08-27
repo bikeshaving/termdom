@@ -349,7 +349,7 @@ export class TermDOM {
 	declare [kFrameCallbacks]: Map<number, FrameRequestCallback>;
 	declare [kNextRafId]: number;
 	// One updater per live MediaQueryList: re-evaluates its query and fires
-	// "change" if the answer flipped. Run by kHandleResize -- SIGWINCH is
+	// "change" if the answer flipped. Run by handleResize -- SIGWINCH is
 	// this screen's window resize.
 	declare [kMediaQueryUpdaters]: Set<() => void>;
 	// document.close() sealed the current document into scrollback; the next
@@ -442,7 +442,7 @@ export class TermDOM {
 	// with a :hover rule).
 	declare [kMountHandle]: DOM.MountHandle;
 	// The field whose caret the NEXT frame must reveal -- set by edits,
-	// consumed inside kRenderInteractive after its layout flush. Last
+	// consumed inside renderInteractive after its layout flush. Last
 	// edit before the frame wins.
 	declare [kPendingCaretReveal]: | HTMLInputElement |
 		HTMLTextAreaElement |
@@ -1534,8 +1534,8 @@ function createMount(termDOM: TermDOM): EngineMount {
  * pseudo-elements/caches, the layout tree, and the autofocus default
  * action. In the same order everywhere it's called, since mutations reach
  * this from two different places -- the observer's own async callback
- * below, and kProcessPendingMutationsAndRender/kRenderStatic/
- * kRenderInteractive's synchronous `takeRecords()` drain (a geometry read
+ * below, and processPendingMutationsAndRender/renderStatic/
+ * renderInteractive's synchronous `takeRecords()` drain (a geometry read
  * or a scheduled render needs fresh layout NOW, not whenever the next
  * microtask checkpoint happens to land) -- and whichever one runs first
  * empties the queue for the other.

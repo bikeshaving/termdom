@@ -2323,8 +2323,7 @@ export class Screen {
 				suffix += privateMode(2026, false); // synchronized output, end
 			}
 
-			// Generate ANSI and finalize
-			let output = generateANSI(
+				let output = generateANSI(
 				diff,
 				this[kColorDepth],
 				this[kRenderedLines],
