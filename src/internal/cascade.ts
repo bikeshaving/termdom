@@ -1028,10 +1028,17 @@ function expandShorthands(
 				// The shorthand itself is serialized from these on read.
 				continue;
 			}
+			// One edge's line, physical or flow-relative: `border-top: 1px solid`,
+			// `border-inline-start: 1px solid`. The edge is whatever follows
+			// `border-`, which names both kinds.
 			case "border-top":
 			case "border-right":
 			case "border-bottom":
-			case "border-left": {
+			case "border-left":
+			case "border-block-start":
+			case "border-block-end":
+			case "border-inline-start":
+			case "border-inline-end": {
 				const edge = property.slice("border-".length);
 				const {width, lineStyle, color} = splitLineValue(property, value);
 				out[`border-${edge}-width`] = width ?? "medium";
@@ -1079,20 +1086,6 @@ function expandShorthands(
 					if (color) {
 						out[`border-${axis}-${end}-color`] = color;
 					}
-				}
-				break;
-			}
-			// One flow-relative edge's line: `border-inline-start: 1px solid`.
-			case "border-block-start":
-			case "border-block-end":
-			case "border-inline-start":
-			case "border-inline-end": {
-				const edge = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(property, value);
-				out[`border-${edge}-width`] = width ?? "medium";
-				out[`border-${edge}-style`] = lineStyle ?? "none";
-				if (color) {
-					out[`border-${edge}-color`] = color;
 				}
 				break;
 			}
@@ -1722,6 +1715,15 @@ function matchesGrammar(property: string, value: string, atRule = ""): boolean {
 	}
 	grammarMatches.set(key, valid);
 	return valid;
+}
+
+/** Whether an element brings a stylesheet with it: a style, or a rel=stylesheet link. */
+function isStyleElement(element: Element): boolean {
+	return (
+		element.tagName === "STYLE" ||
+		(element.tagName === "LINK" &&
+			element.getAttribute("rel") === "stylesheet")
+	);
 }
 
 /** Minimum gutter a UL/OL reserves for its markers, in cells. */
@@ -10414,11 +10416,7 @@ export class StyleManager {
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
-						if (
-							element.tagName === "STYLE" ||
-							(element.tagName === "LINK" &&
-								element.getAttribute("rel") === "stylesheet")
-						) {
+						if (isStyleElement(element)) {
 							const addedRoot = element.getRootNode();
 							if (
 								element.tagName === "STYLE" &&
@@ -10445,11 +10443,7 @@ export class StyleManager {
 				for (const node of mutation.removedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
-						if (
-							element.tagName === "STYLE" ||
-							(element.tagName === "LINK" &&
-								element.getAttribute("rel") === "stylesheet")
-						) {
+						if (isStyleElement(element)) {
 							shouldRefreshStylesheets = true;
 						}
 					}

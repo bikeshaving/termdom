@@ -6594,22 +6594,7 @@ function layoutNodeImpl(
 	node.layout.border.right = node.style.border.right;
 	node.layout.border.bottom = node.style.border.bottom;
 
-	node.layout.margin.left = resolveMargin(
-		node.style.margin.left,
-		ownerWidth,
-	);
-	node.layout.margin.top = resolveMargin(
-		node.style.margin.top,
-		ownerWidth,
-	);
-	node.layout.margin.right = resolveMargin(
-		node.style.margin.right,
-		ownerWidth,
-	);
-	node.layout.margin.bottom = resolveMargin(
-		node.style.margin.bottom,
-		ownerWidth,
-	);
+	resolveNodeMargins(node, ownerWidth);
 
 	// A box that is not a block container escapes no margins: only block layout
 	// writes these, so every other mode has to say so for itself.
