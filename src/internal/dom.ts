@@ -8587,7 +8587,7 @@ installArrayIteration(NamedNodeMap.prototype, false);
 /* ---------------------------------------------------------------- elements */
 
 type CustomElementState =
-	"uncustomized" |
+	| "uncustomized" |
 	"undefined" |
 	"failed" |
 	"custom" |
@@ -28550,7 +28550,7 @@ installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 
 /** RUNTIME: the Node interface constants, installed on prototypes at load. */
 type NodeConstants =
-	"ELEMENT_NODE" |
+	| "ELEMENT_NODE" |
 	"ATTRIBUTE_NODE" |
 	"TEXT_NODE" |
 	"CDATA_SECTION_NODE" |
