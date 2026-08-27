@@ -12615,6 +12615,12 @@ Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
  * Its own href is the odd one out: it resolves against the document's URL
  * rather than against the base, because it is the base.
  */
+export interface HTMLBaseElement
+	extends Pick<
+		globalThis.HTMLBaseElement,
+		"target"
+	> {}
+
 export class HTMLBaseElement extends HTMLElement {
 	get href(): string {
 		const value = this.getAttribute("href");
@@ -12630,11 +12636,36 @@ export class HTMLBaseElement extends HTMLElement {
 	}
 }
 
+export interface HTMLBodyElement
+	extends Pick<
+		globalThis.HTMLBodyElement,
+		"aLink" |
+		"background" |
+		"bgColor" |
+		"link" |
+		"text" |
+		"vLink"
+	> {}
+
 export class HTMLBodyElement extends HTMLElement {}
+
+export interface HTMLBRElement
+	extends Pick<
+		globalThis.HTMLBRElement,
+		"clear"
+	> {}
 
 export class HTMLBRElement extends HTMLElement {}
 
 /** A button, whose activation submits or resets the form it belongs to. */
+export interface HTMLButtonElement
+	extends Pick<
+		globalThis.HTMLButtonElement,
+		"disabled" |
+		"name" |
+		"value"
+	> {}
+
 export class HTMLButtonElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
 	declare type: string;
@@ -12676,6 +12707,12 @@ export class HTMLCanvasElement extends HTMLElement {
 		return null;
 	}
 }
+
+export interface HTMLDataElement
+	extends Pick<
+		globalThis.HTMLDataElement,
+		"value"
+	> {}
 
 export class HTMLDataElement extends HTMLElement {}
 
@@ -12726,6 +12763,13 @@ const kEngine = Symbol("engine");
  * included, which no light-tree selector could reach. Hiding a closed
  * details' body is then one display flip on that container.
  */
+export interface HTMLDetailsElement
+	extends Pick<
+		globalThis.HTMLDetailsElement,
+		"name" |
+		"open"
+	> {}
+
 export class HTMLDetailsElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -12885,6 +12929,12 @@ const kPreviouslyFocused = Symbol("previouslyFocused");
  * of the document unreachable until it closes; showing one with `show()`
  * leaves it exactly where it is, an ordinary box that happens to be visible.
  */
+export interface HTMLDialogElement
+	extends Pick<
+		globalThis.HTMLDialogElement,
+		"open"
+	> {}
+
 export class HTMLDialogElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13069,9 +13119,27 @@ function isConnectedNode(node: Node): boolean {
 	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
 }
 
+export interface HTMLDirectoryElement
+	extends Pick<
+		globalThis.HTMLDirectoryElement,
+		"compact"
+	> {}
+
 export class HTMLDirectoryElement extends HTMLElement {}
 
+export interface HTMLDivElement
+	extends Pick<
+		globalThis.HTMLDivElement,
+		"align"
+	> {}
+
 export class HTMLDivElement extends HTMLElement {}
+
+export interface HTMLDListElement
+	extends Pick<
+		globalThis.HTMLDListElement,
+		"compact"
+	> {}
 
 export class HTMLDListElement extends HTMLElement {}
 
@@ -13097,6 +13165,13 @@ export interface HTMLEmbedElement
 const kElements = Symbol("elements");
 
 /** A group of controls, and the group's own disabling. */
+export interface HTMLFieldSetElement
+	extends Pick<
+		globalThis.HTMLFieldSetElement,
+		"disabled" |
+		"name"
+	> {}
+
 export class HTMLFieldSetElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13133,6 +13208,14 @@ export class HTMLFieldSetElement extends HTMLElement {
 		return elements;
 	}
 }
+
+export interface HTMLFontElement
+	extends Pick<
+		globalThis.HTMLFontElement,
+		"color" |
+		"face" |
+		"size"
+	> {}
 
 export class HTMLFontElement extends HTMLElement {}
 
@@ -13506,6 +13589,19 @@ Object.defineProperty(RadioNodeList.prototype, Symbol.toStringTag, {
 });
 
 /** A frame, which names no browsing context here either. */
+export interface HTMLFrameElement
+	extends Pick<
+		globalThis.HTMLFrameElement,
+		"frameBorder" |
+		"longDesc" |
+		"marginHeight" |
+		"marginWidth" |
+		"name" |
+		"noResize" |
+		"scrolling" |
+		"src"
+	> {}
+
 export class HTMLFrameElement extends HTMLElement {
 	get contentDocument(): null {
 		return null;
@@ -13516,13 +13612,42 @@ export class HTMLFrameElement extends HTMLElement {
 	}
 }
 
+export interface HTMLFrameSetElement
+	extends Pick<
+		globalThis.HTMLFrameSetElement,
+		"cols" |
+		"rows"
+	> {}
+
 export class HTMLFrameSetElement extends HTMLElement {}
 
 export class HTMLHeadElement extends HTMLElement {}
 
+export interface HTMLHeadingElement
+	extends Pick<
+		globalThis.HTMLHeadingElement,
+		"align"
+	> {}
+
 export class HTMLHeadingElement extends HTMLElement {}
 
+export interface HTMLHRElement
+	extends Pick<
+		globalThis.HTMLHRElement,
+		"align" |
+		"color" |
+		"noShade" |
+		"size" |
+		"width"
+	> {}
+
 export class HTMLHRElement extends HTMLElement {}
+
+export interface HTMLHtmlElement
+	extends Pick<
+		globalThis.HTMLHtmlElement,
+		"version"
+	> {}
 
 export class HTMLHtmlElement extends HTMLElement {}
 
@@ -13547,6 +13672,26 @@ interface FrameWindowLike {
  * document a browser shows before any navigation. There is no second
  * realm: the frame's constructors are this realm's own.
  */
+export interface HTMLIFrameElement
+	extends Pick<
+		globalThis.HTMLIFrameElement,
+		"align" |
+		"allow" |
+		"allowFullscreen" |
+		"frameBorder" |
+		"height" |
+		"longDesc" |
+		"marginHeight" |
+		"marginWidth" |
+		"name" |
+		"referrerPolicy" |
+		"sandbox" |
+		"scrolling" |
+		"src" |
+		"srcdoc" |
+		"width"
+	> {}
+
 export class HTMLIFrameElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13728,6 +13873,31 @@ const kGlyphText = Symbol("glyphText");
  * editing keys are the control's own default action, a keydown listener like a
  * browser's editing internals.
  */
+export interface HTMLInputElement
+	extends Pick<
+		globalThis.HTMLInputElement,
+		"accept" |
+		"align" |
+		"alt" |
+		"defaultChecked" |
+		"defaultValue" |
+		"dirName" |
+		"disabled" |
+		"max" |
+		"maxLength" |
+		"min" |
+		"minLength" |
+		"multiple" |
+		"name" |
+		"pattern" |
+		"placeholder" |
+		"readOnly" |
+		"required" |
+		"src" |
+		"step" |
+		"useMap"
+	> {}
+
 export class HTMLInputElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -14682,6 +14852,12 @@ function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
 }
 
 /** A label, and the control its click reaches. */
+export interface HTMLLabelElement
+	extends Pick<
+		globalThis.HTMLLabelElement,
+		"htmlFor"
+	> {}
+
 export class HTMLLabelElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
 		const control = this.control;
@@ -14724,6 +14900,12 @@ export class HTMLLabelElement extends HTMLElement {
 }
 
 /** The caption of a fieldset, which names the form the fieldset belongs to. */
+export interface HTMLLegendElement
+	extends Pick<
+		globalThis.HTMLLegendElement,
+		"align"
+	> {}
+
 export class HTMLLegendElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
 		const parent = this[kParent]!;
@@ -14734,9 +14916,38 @@ export class HTMLLegendElement extends HTMLElement {
 	}
 }
 
+export interface HTMLLIElement
+	extends Pick<
+		globalThis.HTMLLIElement,
+		"type" |
+		"value"
+	> {}
+
 export class HTMLLIElement extends HTMLElement {}
 
 /** A link to a resource, which is never fetched, so it never has a sheet. */
+export interface HTMLLinkElement
+	extends Pick<
+		globalThis.HTMLLinkElement,
+		"blocking" |
+		"charset" |
+		"crossOrigin" |
+		"disabled" |
+		"href" |
+		"hreflang" |
+		"imageSizes" |
+		"imageSrcset" |
+		"integrity" |
+		"media" |
+		"referrerPolicy" |
+		"rel" |
+		"relList" |
+		"rev" |
+		"sizes" |
+		"target" |
+		"type"
+	> {}
+
 export class HTMLLinkElement extends HTMLElement {
 	get sheet(): null {
 		return null;
@@ -14746,6 +14957,12 @@ export class HTMLLinkElement extends HTMLElement {
 const kAreas = Symbol("areas");
 
 /** An image map, and the areas inside it. */
+export interface HTMLMapElement
+	extends Pick<
+		globalThis.HTMLMapElement,
+		"name"
+	> {}
+
 export class HTMLMapElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -14773,6 +14990,19 @@ export class HTMLMapElement extends HTMLElement {
 }
 
 /** A marquee, whose scrolling is a rendering the tree does not do. */
+export interface HTMLMarqueeElement
+	extends Pick<
+		globalThis.HTMLMarqueeElement,
+		"behavior" |
+		"bgColor" |
+		"direction" |
+		"height" |
+		"scrollAmount" |
+		"scrollDelay" |
+		"trueSpeed" |
+		"width"
+	> {}
+
 export class HTMLMarqueeElement extends HTMLElement {
 	start(): void {}
 
@@ -14804,6 +15034,17 @@ const kPreservesPitch = Symbol("preservesPitch");
  * resource's own objects -- its buffered ranges, its tracks, its error --
  * are absent rather than answering with an empty stand-in.
  */
+export interface HTMLMediaElement
+	extends Pick<
+		globalThis.HTMLMediaElement,
+		"autoplay" |
+		"controls" |
+		"crossOrigin" |
+		"defaultMuted" |
+		"loop" |
+		"src"
+	> {}
+
 export class HTMLMediaElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -14945,6 +15186,13 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 });
 export class HTMLAudioElement extends HTMLMediaElement {}
 /** A video, whose intrinsic dimensions are zero until one is decoded. */
+export interface HTMLVideoElement
+	extends Pick<
+		globalThis.HTMLVideoElement,
+		"playsInline" |
+		"poster"
+	> {}
+
 export class HTMLVideoElement extends HTMLMediaElement {
 	get videoWidth(): number {
 		return 0;
@@ -14955,7 +15203,23 @@ export class HTMLVideoElement extends HTMLMediaElement {
 	}
 }
 
+export interface HTMLMenuElement
+	extends Pick<
+		globalThis.HTMLMenuElement,
+		"compact"
+	> {}
+
 export class HTMLMenuElement extends HTMLElement {}
+
+export interface HTMLMetaElement
+	extends Pick<
+		globalThis.HTMLMetaElement,
+		"content" |
+		"httpEquiv" |
+		"media" |
+		"name" |
+		"scheme"
+	> {}
 
 export class HTMLMetaElement extends HTMLElement {}
 
@@ -15180,6 +15444,13 @@ const METER_ATTRIBUTES = new Set([
 	"optimum",
 ]);
 
+export interface HTMLModElement
+	extends Pick<
+		globalThis.HTMLModElement,
+		"cite" |
+		"dateTime"
+	> {}
+
 export class HTMLModElement extends HTMLElement {}
 
 /**
@@ -15189,6 +15460,25 @@ export class HTMLModElement extends HTMLElement {}
  * context: its document, its window and its SVG document are all null, which
  * is what they are for an object that loaded nothing.
  */
+export interface HTMLObjectElement
+	extends Pick<
+		globalThis.HTMLObjectElement,
+		"align" |
+		"archive" |
+		"border" |
+		"code" |
+		"codeBase" |
+		"codeType" |
+		"data" |
+		"declare" |
+		"height" |
+		"name" |
+		"standby" |
+		"type" |
+		"useMap" |
+		"width"
+	> {}
+
 export class HTMLObjectElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -15207,6 +15497,15 @@ export class HTMLObjectElement extends HTMLElement {
 	}
 }
 
+export interface HTMLOListElement
+	extends Pick<
+		globalThis.HTMLOListElement,
+		"compact" |
+		"reversed" |
+		"start" |
+		"type"
+	> {}
+
 export class HTMLOListElement extends HTMLElement {}
 
 export class HTMLOptGroupElement extends HTMLElement {
@@ -15219,6 +15518,12 @@ const kSelectedness = Symbol("an option's selectedness");
 const kSelectednessValue = Symbol("selectedness value");
 const kOptionDirty = Symbol("an option's dirtiness");
 /** One choice of a select, whose selectedness is its own state. */
+export interface HTMLOptionElement
+	extends Pick<
+		globalThis.HTMLOptionElement,
+		"defaultSelected"
+	> {}
+
 export class HTMLOptionElement extends HTMLElement {
 	/** Installed from the element table, and read by the select's own tree. */
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -15458,6 +15763,13 @@ const kDirty = Symbol("dirty");
 const kStored = Symbol("stored");
 
 /** The result of a calculation, whose value resets to its child text. */
+export interface HTMLOutputElement
+	extends Pick<
+		globalThis.HTMLOutputElement,
+		"htmlFor" |
+		"name"
+	> {}
+
 export class HTMLOutputElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -15512,11 +15824,32 @@ export class HTMLOutputElement extends HTMLElement {
 	}
 }
 
+export interface HTMLParagraphElement
+	extends Pick<
+		globalThis.HTMLParagraphElement,
+		"align"
+	> {}
+
 export class HTMLParagraphElement extends HTMLElement {}
+
+export interface HTMLParamElement
+	extends Pick<
+		globalThis.HTMLParamElement,
+		"name" |
+		"type" |
+		"value" |
+		"valueType"
+	> {}
 
 export class HTMLParamElement extends HTMLElement {}
 
 export class HTMLPictureElement extends HTMLElement {}
+
+export interface HTMLPreElement
+	extends Pick<
+		globalThis.HTMLPreElement,
+		"width"
+	> {}
 
 export class HTMLPreElement extends HTMLElement {}
 
@@ -15602,6 +15935,12 @@ export class HTMLProgressElement extends HTMLElement {
 	}
 }
 
+export interface HTMLQuoteElement
+	extends Pick<
+		globalThis.HTMLQuoteElement,
+		"cite"
+	> {}
+
 export class HTMLQuoteElement extends HTMLElement {}
 
 /**
@@ -15671,6 +16010,15 @@ const kHighlight = Symbol("highlight");
  * selectedness above and the highlight below; the keyboard and mouse behavior
  * is the control's own default action.
  */
+export interface HTMLSelectElement
+	extends Pick<
+		globalThis.HTMLSelectElement,
+		"disabled" |
+		"multiple" |
+		"name" |
+		"required"
+	> {}
+
 export class HTMLSelectElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -16297,6 +16645,16 @@ function askForAReset(select: HTMLSelectElement): void {
 	}
 }
 
+export interface HTMLSourceElement
+	extends Pick<
+		globalThis.HTMLSourceElement,
+		"media" |
+		"sizes" |
+		"src" |
+		"srcset" |
+		"type"
+	> {}
+
 export class HTMLSourceElement extends HTMLElement {}
 
 export class HTMLSpanElement extends HTMLElement {}
@@ -16309,6 +16667,14 @@ const kStyleElements = Symbol("how many style elements the tree holds");
  * The sheet itself belongs to the engine's cascade, not to the tree: there is
  * none here, which is what makes `sheet` null and `disabled` false.
  */
+export interface HTMLStyleElement
+	extends Pick<
+		globalThis.HTMLStyleElement,
+		"blocking" |
+		"media" |
+		"type"
+	> {}
+
 export class HTMLStyleElement extends HTMLElement {
 	/**
 	 * A document with no cascade behind it parses no CSS, and so holds no
@@ -16346,9 +16712,31 @@ export class HTMLStyleElement extends HTMLElement {
 function styleElementCount(document: Document): number {
 	return document[kStyleElements]!;
 }
+export interface HTMLTableCaptionElement
+	extends Pick<
+		globalThis.HTMLTableCaptionElement,
+		"align"
+	> {}
+
 export class HTMLTableCaptionElement extends HTMLElement {}
 
 /** One cell of a row, which knows where in the row it sits. */
+export interface HTMLTableCellElement
+	extends Pick<
+		globalThis.HTMLTableCellElement,
+		"abbr" |
+		"align" |
+		"axis" |
+		"bgColor" |
+		"ch" |
+		"chOff" |
+		"headers" |
+		"height" |
+		"noWrap" |
+		"vAlign" |
+		"width"
+	> {}
+
 export class HTMLTableCellElement extends HTMLElement {
 	get cellIndex(): number {
 		const parent = this[kParent]!;
@@ -16359,12 +16747,32 @@ export class HTMLTableCellElement extends HTMLElement {
 	}
 }
 
+export interface HTMLTableColElement
+	extends Pick<
+		globalThis.HTMLTableColElement,
+		"width"
+	> {}
+
 export class HTMLTableColElement extends HTMLElement {}
 
 const kTBodies = Symbol("tBodies");
 const kRows = Symbol("rows");
 
 /** A table, and the rows and sections a caller reaches and builds. */
+export interface HTMLTableElement
+	extends Pick<
+		globalThis.HTMLTableElement,
+		"align" |
+		"bgColor" |
+		"border" |
+		"cellPadding" |
+		"cellSpacing" |
+		"frame" |
+		"rules" |
+		"summary" |
+		"width"
+	> {}
+
 export class HTMLTableElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -16638,6 +17046,12 @@ function tableRows(table: Element): Element[] {
 const kCells = Symbol("cells");
 
 /** One row of a table, and the cells it holds. */
+export interface HTMLTableRowElement
+	extends Pick<
+		globalThis.HTMLTableRowElement,
+		"bgColor"
+	> {}
+
 export class HTMLTableRowElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -16782,6 +17196,19 @@ const kGoalColumn = Symbol("goalColumn");
  * line-break anchor. The tree is derived from the value above, and the editing
  * keys are the control's own default action.
  */
+export interface HTMLTextAreaElement
+	extends Pick<
+		globalThis.HTMLTextAreaElement,
+		"dirName" |
+		"disabled" |
+		"maxLength" |
+		"minLength" |
+		"name" |
+		"placeholder" |
+		"readOnly" |
+		"required"
+	> {}
+
 export class HTMLTextAreaElement extends HTMLElement {
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -17267,6 +17694,12 @@ function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
 }
 
+export interface HTMLTimeElement
+	extends Pick<
+		globalThis.HTMLTimeElement,
+		"dateTime"
+	> {}
+
 export class HTMLTimeElement extends HTMLElement {}
 
 /** The document's title, which is the text this element holds. */
@@ -17290,7 +17723,23 @@ function childText(element: Element): string {
 	return text;
 }
 
+export interface HTMLTrackElement
+	extends Pick<
+		globalThis.HTMLTrackElement,
+		"default" |
+		"label" |
+		"src" |
+		"srclang"
+	> {}
+
 export class HTMLTrackElement extends HTMLElement {}
+
+export interface HTMLUListElement
+	extends Pick<
+		globalThis.HTMLUListElement,
+		"compact" |
+		"type"
+	> {}
 
 export class HTMLUListElement extends HTMLElement {}
 
