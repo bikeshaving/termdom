@@ -4151,7 +4151,10 @@ function splitMediaQueryList(text: string): string[] {
 const kMedia = Symbol("media");
 
 /** The media queries a sheet or an `@media` rule applies under. */
-export class MediaList {
+export class MediaList implements globalThis.MediaList {
+	/** The queries by position, which syncIndexed materialises on each change. */
+	[index: number]: string;
+
 	/**
 	 * The queries, in their canonical spelling. Mutated in place: the indexed
 	 * getter reads this array, and a list an author holds keeps answering.
@@ -4222,7 +4225,7 @@ export class MediaList {
 		this[kOnChange]?.();
 	}
 
-	[Symbol.iterator](): IterableIterator<string> {
+	[Symbol.iterator](): ArrayIterator<string> {
 		return this[kMedia]![Symbol.iterator]();
 	}
 

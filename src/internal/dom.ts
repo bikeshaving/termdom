@@ -1284,7 +1284,7 @@ const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
 /** An event, and the flags a listener sets on it while it is dispatched. */
-export class Event extends EventBase {
+export class Event extends EventBase implements globalThis.Event {
 	declare [kType]?: string;
 	declare [kBubbles]?: boolean;
 	declare [kCancelable]?: boolean;
@@ -3582,7 +3582,7 @@ const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
 /** An event target: a listener list, and the parent a dispatch walks to. */
-export class EventTarget {
+export class EventTarget implements globalThis.EventTarget {
 	constructor() {
 		this[kListeners] = [];
 		this[kHandlers] = null;
@@ -7421,7 +7421,7 @@ const kAttribute = Symbol("attribute");
 const kSupported = Symbol("supported");
 const kTokens = Symbol("tokens");
 
-export class DOMTokenList extends LiveList {
+export class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	declare forEach: (
 		callback: (token: string, index: number, list: DOMTokenList) => void,
 		thisArg?: unknown,
@@ -8948,11 +8948,13 @@ export class Element extends Node {
 		return elementsByTagNameNS(this, namespace, String(localName));
 	}
 
-	getElementsByClassName(classNames: string): HTMLCollection {
-		return elementsByClassName(this, String(classNames));
+	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
+		return elementsByClassName(this, String(classNames)) as HTMLCollectionOf<
+			Element
+		>;
 	}
 
-	override get textContent(): string | null {
+	override get textContent(): string {
 		return descendantText(this);
 	}
 
@@ -9018,11 +9020,14 @@ export class Element extends Node {
 		replaceChild(this, fragment, parent);
 	}
 
-	insertAdjacentElement(where: string, element: Element): Element | null {
+	insertAdjacentElement(
+		where: InsertPosition,
+		element: Element,
+	): Element | null {
 		return insertAdjacent(this, String(where), element) as Element | null;
 	}
 
-	insertAdjacentText(where: string, data: string): void {
+	insertAdjacentText(where: InsertPosition, data: string): void {
 		const text = new Text(String(data));
 		text[kDocument] = this[kDocument]!;
 		insertAdjacent(this, String(where), text);
@@ -20586,8 +20591,10 @@ export class Document extends Node {
 		return elementsByTagNameNS(this, namespace, String(localName));
 	}
 
-	getElementsByClassName(classNames: string): HTMLCollection {
-		return elementsByClassName(this, String(classNames));
+	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
+		return elementsByClassName(this, String(classNames)) as HTMLCollectionOf<
+			Element
+		>;
 	}
 
 	getElementsByName(elementName: string): NodeList {
@@ -27732,14 +27739,20 @@ export function createDocumentWindow(html: string, url?: string): EngineWindow {
 
 // -- key-complete today, held that way. The value assignment is the
 // enforcement: an entry whose Equal resolves never refuses a true.
+//
+// This checks NAMES, in one direction, and nothing else. A member that is
+// present and wrongly typed passes it -- textContent returning string|null,
+// insertAdjacentElement taking a string, getElementsByClassName answering an
+// HTMLCollection where lib.dom says HTMLCollectionOf all sat here green.
+// `implements globalThis.X` on the class is the real check, and it reports
+// every mismatch at once instead of the first one in a chain. A class earns
+// the clause when it conforms and leaves this list; what is left below has
+// not earned it yet.
 const _checked: [
-	Equal<MissingFrom<globalThis.EventTarget, EventTarget>, never>,
-	Equal<MissingFrom<globalThis.Event, Event>, never>,
 	Equal<MissingFrom<globalThis.CustomEvent, CustomEvent>, never>,
 	Equal<MissingFrom<globalThis.StaticRange, StaticRange>, never>,
 	Equal<MissingFrom<globalThis.Selection, Selection>, never>,
 	Equal<MissingFrom<globalThis.MutationObserver, MutationObserver>, never>,
-	Equal<MissingFrom<globalThis.DOMTokenList, DOMTokenList>, never>,
 	Equal<MissingFrom<globalThis.NamedNodeMap, NamedNodeMap>, never>,
 
 	// -- constants only -----------------------------------------------------
@@ -27769,9 +27782,6 @@ const _checked: [
 		never
 	>,
 ] = [
-	true,
-	true,
-	true,
 	true,
 	true,
 	true,
