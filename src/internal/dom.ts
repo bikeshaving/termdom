@@ -7735,7 +7735,10 @@ export class CharacterData extends Node {
 
 /** The ChildNode mixin, installed from the tables. */
 export interface CharacterData
-	extends Pick<globalThis.CharacterData, ChildNodeMixin> {}
+	extends Pick<globalThis.CharacterData, ChildNodeMixin> {
+	/** Character data always has a node document, so this narrows Node's. */
+	get ownerDocument(): Document;
+}
 
 Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
 	value: "CharacterData",
@@ -7944,6 +7947,11 @@ export class ProcessingInstruction extends CharacterData {
 	}
 }
 
+/** A processing instruction always has a node document, as its parent does. */
+export interface ProcessingInstruction {
+	get ownerDocument(): Document;
+}
+
 Object.defineProperty(ProcessingInstruction.prototype, Symbol.toStringTag, {
 	value: "ProcessingInstruction",
 	configurable: true,
@@ -7996,6 +8004,11 @@ export class DocumentType extends Node {
 		copy[kDocument] = document;
 		return copy;
 	}
+}
+
+/** A doctype always has a node document, so this narrows Node's. */
+export interface DocumentType {
+	get ownerDocument(): Document;
 }
 
 Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
@@ -8052,7 +8065,10 @@ export class DocumentFragment extends Node {
 
 /** The ParentNode mixin, installed from the tables. */
 export interface DocumentFragment
-	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {}
+	extends Pick<globalThis.DocumentFragment, ParentNodeMixin> {
+	/** A fragment always has a node document, so this narrows Node's. */
+	get ownerDocument(): Document;
+}
 
 Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 	value: "DocumentFragment",
@@ -21437,7 +21453,10 @@ export interface Document
 		// a property holding undefined throws where an absent one sends it
 		// down the path that works.
 		"all"
-	> {}
+	> {
+	/** A document is nobody's node document, which lib.dom says too. */
+	get ownerDocument(): null;
+}
 
 // Hit testing: the point is the viewport's, the answer the engine's. A
 // headless document renders nothing, so nothing is under any point.
