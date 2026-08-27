@@ -160,10 +160,12 @@ async function requestFullscreenElement(
 			void termdom[kExchange].write(eraseScreen() + cursorHome());
 		}
 
-		fireFullscreenChangeEvent(termdom, element);
+		fireFullscreenEvent(termdom, "fullscreenchange", element);
 	} catch (error) {
 		termdom[kFullscreenStack].pop();
-		fireFullscreenErrorEvent(termdom, element, error as Error);
+		fireFullscreenEvent(termdom, "fullscreenerror", element, {
+			error: error as Error,
+		});
 		throw error;
 	}
 }
@@ -178,60 +180,48 @@ async function exitFullscreenElement(termdom: TermDOM): Promise<void> {
 		termdom[kExchange].setMode("altScreen", false);
 	}
 
-	fireFullscreenChangeEvent(termdom, exitingElement);
+	fireFullscreenEvent(termdom, "fullscreenchange", exitingElement);
 }
 
-function fireFullscreenChangeEvent(
+/**
+ * Fire one of the two fullscreen events.
+ *
+ * ONE target, per the Fullscreen Standard: the element while it is still in
+ * the document, otherwise the document itself. Both events bubble, so a
+ * document listener hears them either way -- and firing at the document as
+ * well as the element would deliver every one of them twice.
+ */
+function fireFullscreenEvent(
 	termdom: TermDOM,
+	type: "fullscreenchange" | "fullscreenerror",
 	element: Element,
+	detail?: {error: Error},
 ): void {
 	const window = getFullscreenWindow(termdom, element);
 	if (!window) {
 		return;
 	}
-
-	const event = new window.CustomEvent("fullscreenchange", {
-		bubbles: true,
-		cancelable: false,
-	});
-
-	// Per spec: fired on the element, and it BUBBLES -- document listeners
-	// hear it through the bubble; dispatching on the document as well
-	// delivered every transition twice.
-	fireAsUserAgent(element, event);
-}
-
-function fireFullscreenErrorEvent(
-	termdom: TermDOM,
-	element: Element,
-	error: Error,
-): void {
-	const window = getFullscreenWindow(termdom, element);
-	if (!window) {
-		return;
-	}
-
-	const event = new window.CustomEvent("fullscreenerror", {
-		bubbles: true,
-		cancelable: false,
-		detail: {error},
-	});
-
-	// Fire on both element and document
-	fireAsUserAgent(element, event);
-	if (element.ownerDocument) {
-		fireAsUserAgent(element.ownerDocument, event);
-	}
+	const target =
+		element.isConnected ? element : (element.ownerDocument ?? element);
+	fireAsUserAgent(
+		target,
+		new window.CustomEvent(type, {
+			bubbles: true,
+			cancelable: false,
+			...(detail ? {detail} : {}),
+		}),
+	);
 }
 
 function getFullscreenWindow(
 	termdom: TermDOM,
 	element?: Element,
-): any {
-	// Get window from the element's document, or from the stack
+): EngineWindow | undefined {
 	const targetElement = element || termdom[kFullscreenStack][0];
 	const document = targetElement ? targetElement.ownerDocument : null;
-	return document ? document.defaultView : undefined;
+	return (document ? document.defaultView : undefined) as
+		| EngineWindow
+		| undefined;
 }
 
 /**

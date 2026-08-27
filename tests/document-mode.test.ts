@@ -371,3 +371,33 @@ test("[Symbol.dispose] tears down, so `using` works", () => {
 	// Idempotent with an explicit dispose(); tearing down twice is safe.
 	expect(() => dom.dispose()).not.toThrow();
 });
+
+test("a fullscreen transition reaches a document listener once", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div id=\"stage\">x</div>";
+	await nextFrame(dom);
+
+	// The event fires at the element and bubbles, so a document listener hears
+	// it through the bubble. Firing at the document as well would deliver every
+	// transition twice, which is the shape this pins.
+	const onDocument: string[] = [];
+	const onElement: string[] = [];
+	dom.document.addEventListener("fullscreenchange", () => {
+		onDocument.push("change");
+	});
+	const stage = dom.document.getElementById("stage")!;
+	stage.addEventListener("fullscreenchange", () => {
+		onElement.push("change");
+	});
+
+	await stage.requestFullscreen();
+	expect(onElement).toEqual(["change"]);
+	expect(onDocument).toEqual(["change"]);
+
+	await dom.document.exitFullscreen();
+	expect(onElement).toEqual(["change", "change"]);
+	expect(onDocument).toEqual(["change", "change"]);
+
+	dom.dispose();
+});
