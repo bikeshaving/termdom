@@ -7361,7 +7361,6 @@ function shouldCollapseWhitespaceTextNode(
 		return false;
 	}
 
-	// Get parent element
 	const parent = textNode.parentElement;
 	if (!parent) {
 		return false;
@@ -7809,7 +7808,6 @@ function styleFlexNodeProperties(
 	// with the content size instead, and `<span style="width:30ch">` inside a
 	// flex row came out as wide as its text.
 	const parentIsFlex = hasItemParent(element);
-	// Handle width/height based on display type
 	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
@@ -7869,7 +7867,6 @@ function styleFlexNodeProperties(
 	// the parentIsFlex exception, `.row{display:flex} .row span{padding:1}`
 	// dropped the span's padding entirely.
 	if (display === "inline" && !parentIsFlex) {
-		// Clear all box model properties for inline elements
 		flexNode.setMargin("top", 0);
 		flexNode.setMargin("right", 0);
 		flexNode.setMargin("bottom", 0);
@@ -7885,8 +7882,6 @@ function styleFlexNodeProperties(
 		flexNode.setBorder("bottom", 0);
 		flexNode.setBorder("left", 0);
 	} else {
-		// Apply normal box model properties for block/inline-block elements
-
 		// Margins
 		const marginTop = parseSignedUnitValue(
 			computedStyle.getComputedValue("margin-top"),
@@ -8168,7 +8163,6 @@ function styleFlexNodeProperties(
 		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
 
-		// Add default padding for table cells if not explicitly set
 		const paddingLeft = computedStyle.getComputedValue("padding-left");
 		const paddingRight = computedStyle.getComputedValue("padding-right");
 		if (!paddingLeft || paddingLeft === "0px") {
@@ -9193,10 +9187,8 @@ function addNode(
 			}
 		}
 		if (existingFlexNode && parentFlexNode) {
-			// Check if it's already a child of the correct parent
 			const currentParent = existingFlexNode.getParent();
 			if (currentParent !== parentFlexNode) {
-				// Remove from current parent first (if any)
 				if (currentParent) {
 					currentParent.removeChild(existingFlexNode);
 				}
@@ -10025,7 +10017,6 @@ function invalidateNode(
 	layout: LayoutEngine,
 	node: Node,
 ): void {
-	// Track this node for re-adding during calculateLayout
 	layout[kInvalidatedNodes].add(node);
 
 	// If it's an inline-level node, invalidate the entire run
@@ -10037,7 +10028,6 @@ function invalidateNode(
 		// leaf nodes with measure functions to be marked dirty
 		const flexNode = layout[kNodeMap].get(node);
 		if (flexNode) {
-			// Get parent before removing from map
 			const parent = flexNode.getParent();
 			if (parent) {
 				parent.removeChild(flexNode);
@@ -10819,7 +10809,6 @@ function collectLeavesUnder(
 					}
 				}
 
-				// Calculate available content dimensions
 				const horizontalBoxSpace =
 					boxModel.paddingLeft +
 					boxModel.paddingRight +
@@ -11136,7 +11125,6 @@ function breakNodes(
 		widthMode,
 	);
 
-	// Handle empty case
 	if (leafNodes.length === 0) {
 		return {lines: [], totalHeight: 0, maxLineWidth: 0};
 	}
@@ -11150,7 +11138,6 @@ function breakNodes(
 			flatParentElement<Element>(opener)! :
 				(opener as Element);
 
-	// Get default CSS properties from the opening element
 	const whiteSpace = getPropertyValue(styleElement, "white-space");
 	const wordBreak = getPropertyValue(styleElement, "word-break");
 	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
@@ -11165,7 +11152,6 @@ function breakNodes(
 			Number.MAX_SAFE_INTEGER :
 			width;
 
-	// Process and break the content with dynamic per-element styling
 	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
 	// preserving whitespace and honouring newlines, which kProcessWhitespace
@@ -12490,7 +12476,6 @@ function isPointInRects(
 	const allRects = rects.flat();
 	return allRects.some((rect) => {
 		if (Array.isArray(rect) || rect instanceof DOMRectList) {
-			// Handle nested arrays/lists
 			return isPointInRects(x, y, ...rect);
 		}
 		return (
@@ -12512,7 +12497,6 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 	// 1. Direct calls on inline-block elements (special case below)
 	// 2. Calls on elements/text inside inline-blocks (general walk-up logic)
 
-	// Handle element nodes
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
 		const display = computedDisplay(element);
@@ -12656,19 +12640,16 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 		}
 	}
 
-	// Find the inline run head for this node
 	const runHead = getBoxEntry(layout, node)?.head ?? null;
 	if (!runHead) {
 		return [];
 	}
 
-	// Get stored BreakResult for the run head
 	let breakResult = runBreakResult(layout, runHead);
 	if (!breakResult) {
 		return [];
 	}
 
-	// Get run head's absolute position by accumulating parent positions
 	const flexNode = runFlexNode(layout, runHead);
 	if (!flexNode) {
 		return [];
@@ -12726,7 +12707,6 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 			// independent of whether its segment is found below.
 			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
 			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
-			// Find this inline-block in current breakResult
 			let found = false;
 			for (const line of currentBreakResult.lines) {
 				for (const segment of line.segments) {
@@ -12761,7 +12741,6 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 		currentNode = parent;
 	}
 
-	// Apply accumulated offsets
 	containerX += accumulatedOffsetX;
 	containerY += accumulatedOffsetY;
 	breakResult = currentBreakResult;
@@ -12895,13 +12874,6 @@ export class LayoutEngine {
 	 */
 	declare [kNodeMap]: Map<Node, LayoutNode>;
 
-	// The reverse of nodeMap -- always kept in sync with it via kTrackNode/
-	// kUntrackNode, never written directly elsewhere. Lets paint-time culling
-	// go from a flex child (found by binary search over its parent's already-
-	// ordered children[]) back to the DOM/pseudo-element node it needs to
-	// paint, without re-deriving that order with a second full tree walk.
-
-	// Track nodes that were invalidated and need re-adding during calculateLayout
 	declare [kInvalidatedNodes]: Set<Node>;
 
 	/**
@@ -12917,7 +12889,7 @@ export class LayoutEngine {
 	 */
 	positionedElements: Set<Element>;
 
-	// Track layout nodes that have measure functions (for resize invalidation)
+	/** Re-measured on resize: what they answered was for another width. */
 	declare [kMeasureNodes]: Set<LayoutNode>;
 
 	/**
@@ -12989,7 +12961,6 @@ export class LayoutEngine {
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<LayoutNode>();
 
-		// Create viewport root node (no DOM element associated)
 		this[kViewportRoot] = LayoutNode.create();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
@@ -13120,7 +13091,6 @@ export class LayoutEngine {
 		// Clean up viewport root node (this will recursively free all child layout nodes)
 		this[kViewportRoot].freeRecursive();
 
-		// Clear the maps (now regular Maps for debugging)
 		this[kNodeMap] = new Map();
 		this[kInvalidatedNodes] = new Set();
 		this[kMeasureNodes] = new Set();
