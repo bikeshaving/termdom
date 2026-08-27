@@ -1154,10 +1154,9 @@ function dispatchKey(handler: EventHandler, key: string): void {
 	// element as part of entering it -- but focus() only takes
 	// elements that are already focusable (tabindex, form controls, etc.),
 	// so an arbitrary fullscreen container is otherwise unreachable here.
-	// Fall back to it (before document.body) so keydown still lands on it,
-	// the same as the dedicated fullscreen dispatch this replaced -- but
-	// still prefer an explicitly focused descendant (e.g. an input inside
-	// the fullscreen element), which the old dispatch ignored.
+	// Fall back to it, before document.body, so keydown still lands on it --
+	// but prefer an explicitly focused descendant, an input inside the
+	// fullscreen element being the case that matters.
 	const active = view.document.activeElement;
 	const targetElement =
 		active && active !== view.document.body ?

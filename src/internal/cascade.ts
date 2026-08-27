@@ -1677,6 +1677,9 @@ function isValidDeclaration(
  */
 const grammarMatches = new Map<string, boolean>();
 
+/** Every property CSSOM exposes, shorthands included. */
+const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
+
 /**
  * Whether a declared value matches the property's grammar, as the property
  * index states it. A value that does not is not a declaration at all: it
@@ -2399,8 +2402,6 @@ interface CSSDeclaration {
 	important: boolean;
 }
 
-/** Every property CSSOM exposes, shorthands included. */
-const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
 const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
 
@@ -3521,6 +3522,15 @@ function find(
 	return declaration[kByName]!.get(property);
 }
 
+/** The descriptor names each at-rule's block may hold, and no others. */
+const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
+
+/**
+ * The properties a keyframe cannot declare: an animation's own, which describe
+ * the animation rather than a step of it.
+ */
+const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
+
 /**
  * Whether this block may hold `name`: a supported CSS property or a custom
  * property, or -- in an at-rule's block -- any descriptor it names, since
@@ -4608,8 +4618,6 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
  */
 const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
 
-/** The descriptor names each at-rule's block may hold, and no others. */
-const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
 for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	const name = `CSS${atRule
 		.slice(1)
@@ -4860,11 +4868,6 @@ class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
 	}
 }
 
-/**
- * The properties a keyframe cannot declare: an animation's own, which describe
- * the animation rather than a step of it.
- */
-const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
 const kKeyText = Symbol("keyText");
 
@@ -5618,6 +5621,9 @@ const kDisabled = Symbol("disabled");
 const kText = Symbol("text");
 const kOwnerRule = Symbol("ownerRule");
 
+/** Whether a sheet may be adopted: only a constructed one, per spec. */
+const constructedSheets = new WeakSet<CSSStyleSheet>();
+
 /**
  * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
  * document adopts.
@@ -5923,8 +5929,6 @@ function checkRuleOrder(
 	}
 }
 
-/** Whether a sheet may be adopted: only a constructed one, per spec. */
-const constructedSheets = new WeakSet<CSSStyleSheet>();
 
 // ---- Selectors -------------------------------------------------------------
 

@@ -862,6 +862,16 @@ function sealToScrollback(
 }
 
 /**
+ * The engine's element scroll offsets, in cells: what the mount's
+ * scrollOffset answers with and what its scrollOffsetTo clamps and writes.
+ * A box nothing scrolled is absent and reads zero.
+ */
+const elementScrollOffsets = new WeakMap<
+	Element,
+	{left: number; top: number}
+>();
+
+/**
  * The document's Mount: the geometry half of the public DOM surface,
  * answered from this engine's layout. Reached through the document -- no
  * prototype carries engine state for these.
@@ -2302,15 +2312,6 @@ function processPendingMutationsAndRender(
 	return hadMutations;
 }
 
-/**
- * The engine's element scroll offsets, in cells: what the mount's
- * scrollOffset answers with and what its scrollOffsetTo clamps and writes.
- * A box nothing scrolled is absent and reads zero.
- */
-const elementScrollOffsets = new WeakMap<
-	Element,
-	{left: number; top: number}
->();
 
 function writeElementScroll(
 	element: Element,

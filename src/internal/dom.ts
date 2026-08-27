@@ -517,6 +517,9 @@ function getSelectionRange(element: object): UARange | null {
 	);
 }
 
+/** The range a document answers control-selection queries with. */
+const selectionRanges = new WeakMap<UADocument, UARange>();
+
 /**
  * The Range a text control's selection covers within the value text of the
  * tree it renders, or null when the selection is collapsed -- there is nothing
@@ -548,8 +551,6 @@ function textSelectionRange(
 	return range;
 }
 
-/** The range a document answers control-selection queries with. */
-const selectionRanges = new WeakMap<UADocument, UARange>();
 
 /** A node's own document, as the tree-building code below reads it. */
 function getUADocument(node: object): UADocument {
@@ -5457,6 +5458,12 @@ const kCustomState = Symbol("custom element state");
 const kAssignedSlot = Symbol("assigned slot");
 const kDefinition = Symbol("element definition");
 /**
+ * Every NodeIterator, keyed by the root of the tree its own root lives in,
+ * held the same way as the ranges above and re-homed by the same moves.
+ */
+const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
+
+/**
  * Move node into newParent before child.
  *
  * The tree ends up where remove-then-insert would leave it, but as one
@@ -5573,6 +5580,19 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	);
 	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
 }
+
+/**
+ * Every live range, keyed by the root of the tree its boundary points live
+ * in. Both boundaries always share one root: the boundary setters collapse
+ * the other point on a root change, as the spec says.
+ *
+ * The root is held weakly, so an unreachable tree takes its ranges with it;
+ * the ranges are held strongly, which keeps collection unobservable where a
+ * WeakRef would expose it. A range changes trees only through the boundary
+ * setters and through its tree being inserted somewhere, and both of those
+ * re-home it.
+ */
+const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
 
 /** Insert node into parent before child. */
 function insertNode(
@@ -9394,6 +9414,9 @@ export class Element extends Node implements globalThis.Element {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
 }
+
+/** The scroll offsets of the boxes that have been scrolled at all. */
+const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
 
 /**
  * What the tables and the mount give an element, which installing says nothing
@@ -14000,6 +14023,15 @@ export interface HTMLInputElement
 		"width"
 	> {}
 
+/** The types whose value a caller can select a range of. */
+const SELECTABLE_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"password",
+]);
+
 export class HTMLInputElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -14736,14 +14768,6 @@ function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
 			return "value";
 	}
 }
-/** The types whose value a caller can select a range of. */
-const SELECTABLE_INPUT_TYPES = new Set([
-	"text",
-	"search",
-	"url",
-	"tel",
-	"password",
-]);
 const VALID_DATE = /^[0-9]{4,}-[0-9]{2}-[0-9]{2}$/;
 const VALID_MONTH = /^[0-9]{4,}-[0-9]{2}$/;
 const VALID_WEEK = /^[0-9]{4,}-W[0-9]{2}$/;
@@ -15414,6 +15438,16 @@ function setGaugeFill(bar: UAElement, fraction: number | null): void {
 
 const kBar = Symbol("bar");
 
+/** The attributes a meter's own rendering is read from. */
+const METER_ATTRIBUTES = new Set([
+	"value",
+	"min",
+	"max",
+	"low",
+	"high",
+	"optimum",
+]);
+
 /**
  * A gauge, whose six numbers are each read inside the ones around them.
  *
@@ -15563,15 +15597,6 @@ function level(
 	}
 	return value >= low && value <= high ? "optimum" : "suboptimum";
 }
-/** The attributes a meter's own rendering is read from. */
-const METER_ATTRIBUTES = new Set([
-	"value",
-	"min",
-	"max",
-	"low",
-	"high",
-	"optimum",
-]);
 
 export interface HTMLModElement
 	extends Pick<
@@ -22923,8 +22948,6 @@ function scrollElementTo(
 	}
 }
 
-/** The scroll offsets of the boxes that have been scrolled at all. */
-const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
 
 function writeScrollOffset(
 	element: object,
@@ -23280,24 +23303,7 @@ function comparePoints(
 	return precedesSibling(chainA[depth], chainB[depth]) ? BEFORE : AFTER;
 }
 
-/**
- * Every live range, keyed by the root of the tree its boundary points live
- * in. Both boundaries always share one root: the boundary setters collapse
- * the other point on a root change, as the spec says.
- *
- * The root is held weakly, so an unreachable tree takes its ranges with it;
- * the ranges are held strongly, which keeps collection unobservable where a
- * WeakRef would expose it. A range changes trees only through the boundary
- * setters and through its tree being inserted somewhere, and both of those
- * re-home it.
- */
-const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
 
-/**
- * Every NodeIterator, keyed by the root of the tree its own root lives in,
- * held the same way as the ranges above and re-homed by the same moves.
- */
-const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
 
 function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
 	let set = nodeIteratorsByRoot.get(treeRoot);
