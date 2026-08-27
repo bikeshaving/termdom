@@ -9612,6 +9612,7 @@ function innermostActive(document: Document): Element | null {
 	return current;
 }
 
+/** The marker an entry in a construction stack becomes once super() ran. */
 const alreadyConstructed = Symbol("already constructed");
 
 export class HTMLElement extends Element {
@@ -10603,8 +10604,6 @@ function isValidCustomElementName(name: string): boolean {
 }
 
 /* --------------------------------------------------- custom element reactions */
-
-/** The marker an entry in a construction stack becomes once super() ran. */
 
 type CustomElementConstructor = new () => Element;
 

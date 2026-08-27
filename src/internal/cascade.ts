@@ -3172,8 +3172,6 @@ function camelCaseProperty(property: string, lowercaseFirst = false): string {
  */
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
-/** Marks a prototype whose `style` accessor is already the engine's. */
-
 const kElement = Symbol("element");
 const kParentRule = Symbol("parentRule");
 const kOnChange = Symbol("onChange");
@@ -7461,8 +7459,6 @@ const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 
 /** The sheets a document or shadow root has adopted. */
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
-
-/** Marks a prototype whose CSSOM accessors are already the engine's. */
 
 function sheetFor(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
