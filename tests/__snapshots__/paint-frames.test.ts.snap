@@ -32,7 +32,23 @@ exports[`a grid places its items on the tracks it declares 1`] = `[48;2;68;0;0m
                                         
 `;
 
+exports[`a negative z-index hoists past a parent that is no stacking context 1`] = `[48;2;34;34;34min flow text                            [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
+
 exports[`a negative z-index paints behind the content of its parent 1`] = `[48;2;34;34;34min flow text                            [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+`;
+
+exports[`a negative z-index paints behind the content of its stacking context 1`] = `[48;2;102;0;0min flow text                  [48;2;34;34;34m          [0m
                                         
                                         
                                         

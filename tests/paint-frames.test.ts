@@ -142,27 +142,43 @@ test("z-index decides which of three stacked boxes is seen", async () => {
 	dom.dispose();
 });
 
-/**
- * A negative z-index box paints at step 2 of css2 appendix E: after the
- * background of the element that forms the stacking context, and before its
- * in-flow content. So it stays visible in every cell the content does not
- * cover.
- *
- * It does not. On its own it paints; the moment its parent has in-flow
- * content it vanishes entirely, and the parent background is all that
- * reaches the screen:
- *
- *     no z-index, no sibling   -> the box paints
- *     z-index: -1, no sibling  -> the box paints
- *     z-index: -1, w/ sibling  -> the box is gone
- *     z-index:  0, w/ sibling  -> both paint
- *
- * Left as a todo rather than snapshotted, because a snapshot of the wrong
- * frame is a regression with a signature on it.
- */
-test.todo("a negative z-index paints behind the content of its parent", async () => {
+test("a negative z-index paints behind the content of its stacking context", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({transport: terminal.transport});
+	// The anchor takes z-index: 0, which is what makes it a stacking context --
+	// position: relative alone does not. So the box below belongs to it, and
+	// paints at step 2 of css2 appendix E: after this element's background,
+	// before its in-flow content. The text wins the cells it covers; the box
+	// keeps the rest.
+	dom.document.body.innerHTML =
+		"<div style=\"position: relative; z-index: 0; background-color: #222\">" +
+		"<div style=\"position: absolute; top: 0; left: 0; width: 30ch; " +
+		"z-index: -1; background-color: #600\">behind</div>" +
+		"<div>in flow text</div>" +
+		"</div>";
+	await nextFrame(dom);
+
+	const frame = terminal.getStaticANSI();
+	// The in-flow text covers every cell the box behind put a glyph in, so
+	// the proof that the box painted at all is its ground, not its text.
+	expect(terminal.getVisibleText().split("\n")[0]).toContain("in flow text");
+	// Both grounds reach the screen: the anchor's, and the box behind it.
+	expect(frame).toContain("48;2;34;34;34m");
+	expect(frame).toContain("48;2;102;0;0m");
+
+	expect(frame).toMatchSnapshot();
+	terminal.writeANSI("stacking-negative-z");
+	dom.dispose();
+});
+
+test("a negative z-index hoists past a parent that is no stacking context", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	// The same markup with the anchor's z-index left at auto. It is then not
+	// a stacking context, so the box hoists to the nearest one -- the root --
+	// and paints before the root's in-flow content, which is the anchor. The
+	// anchor's own background covers it, and only that ground reaches the
+	// screen. This is the case that reads as a bug and is not one.
 	dom.document.body.innerHTML =
 		"<div style=\"position: relative; background-color: #222\">" +
 		"<div style=\"position: absolute; top: 0; left: 0; width: 30ch; " +
@@ -172,9 +188,11 @@ test.todo("a negative z-index paints behind the content of its parent", async ()
 	await nextFrame(dom);
 
 	const frame = terminal.getStaticANSI();
-	const row = terminal.getVisibleText().split("\n")[0];
-	// The text wins the cells it occupies, and the box behind keeps the rest.
-	expect(row).toContain("in flow text");
-	expect(frame).toContain("48;2;102;0;0m");
+	expect(terminal.getVisibleText().split("\n")[0]).toContain("in flow text");
+	expect(frame).toContain("48;2;34;34;34m");
+	expect(frame).not.toContain("48;2;102;0;0m");
+
+	expect(frame).toMatchSnapshot();
+	terminal.writeANSI("stacking-negative-z-hoisted");
 	dom.dispose();
 });
