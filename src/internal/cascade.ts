@@ -8801,8 +8801,8 @@ function resolvePropertyValueRaw(
 	}
 
 	// 1 & 2. Inline style and stylesheet rules, with an !important tier above
-	// the normal cascade. #cssRules is pre-sorted by specificity/source order,
-	// so within each tier the last match wins.
+	// the normal cascade. The parsed rules are pre-sorted by specificity and
+	// source order, so within each tier the last match wins.
 	let ruleValue: string | null = null;
 	let importantRuleValue: string | null = null;
 	// `!important` reverses the layer order (css-cascade-5 §6.4.4): the

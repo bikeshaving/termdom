@@ -394,14 +394,14 @@ const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
 const kMouseCaptureYielded = Symbol("mouseCaptureYielded");
 const kScrollChainTimer = Symbol("scrollChainTimer");
-const kSCROLL_CHAIN_TIMEOUT_MS = Symbol("SCROLL_CHAIN_TIMEOUT_MS");
+const kScrollChainTimeoutMs = Symbol("scrollChainTimeoutMs");
 const kMouseDownTarget = Symbol("mouseDownTarget");
 const kPopoverPressTarget = Symbol("popoverPressTarget");
 const kSelectionDragAnchor = Symbol("selectionDragAnchor");
 const kFieldDragAnchor = Symbol("fieldDragAnchor");
 const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
-const kDBLCLICK_INTERVAL_MS = Symbol("DBLCLICK_INTERVAL_MS");
+const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
 export class EventHandler {
 	declare [kView]: EventView;
@@ -435,7 +435,7 @@ export class EventHandler {
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
 	// -- terminals snap to the live screen on input, which is exactly the
 	// moment the wheel should become ours again -- or, failing that, by
-	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see kScrollChainTimer).
+	// kScrollChainTimeoutMs of silence (see kScrollChainTimer).
 	declare [kMouseCaptureYielded]: boolean;
 	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
 	// activity produces literally no signal (that's the entire mechanism --
@@ -448,7 +448,7 @@ export class EventHandler {
 	// tick immediately re-yields -- a disable/enable toggle on every gap for
 	// as long as the user keeps scrolling, not just a one-time early
 	// re-enable.
-	static readonly [kSCROLL_CHAIN_TIMEOUT_MS] = 3000;
+	static readonly [kScrollChainTimeoutMs] = 3000;
 	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
@@ -474,7 +474,7 @@ export class EventHandler {
 	// The target and time of the last completed click, to detect a second one
 	// close enough behind it to be a dblclick -- browsers' own double-click
 	// interval varies by OS/user setting; 500ms is the common default.
-	static readonly [kDBLCLICK_INTERVAL_MS] = 500;
+	static readonly [kDblclickIntervalMs] = 500;
 	declare [kLastClickTarget]: Element | null;
 	declare [kLastClickTime]: number;
 
@@ -617,7 +617,7 @@ export class EventHandler {
 				// document top, so the scroll escapes to the parent scroller --
 				// here, the terminal's own scrollback. Yield the mouse so the
 				// next wheel tick scrolls the shell history natively; the next
-				// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
+				// keystroke reclaims it, and kScrollChainTimeoutMs of silence
 				// reclaims it too, in case the user scrolls back down without
 				// ever pressing a key -- wheel activity while yielded produces no
 				// signal we could otherwise catch that on. An app opts out the
@@ -631,7 +631,7 @@ export class EventHandler {
 				this[kScrollChainTimer] = setTimeout(() => {
 					this[kScrollChainTimer] = null;
 					this.reclaimMouseCapture();
-				}, EventHandler[kSCROLL_CHAIN_TIMEOUT_MS]);
+				}, EventHandler[kScrollChainTimeoutMs]);
 			}
 			return;
 		}
@@ -1102,7 +1102,7 @@ function release(
 		const now = performance.now();
 		if (
 			handler[kLastClickTarget] === target &&
-			now - handler[kLastClickTime] <= EventHandler[kDBLCLICK_INTERVAL_MS]
+			now - handler[kLastClickTime] <= EventHandler[kDblclickIntervalMs]
 		) {
 			view.fireAsUserAgent(
 				target,
@@ -1163,13 +1163,6 @@ function dispatchKey(handler: EventHandler, key: string): void {
 			active :
 			handler[kDefaults].fullscreenTarget() || view.document.body;
 
-	// Escape does NOT exit fullscreen. The browser's guarantee exists
-	// because requestFullscreen takes the user's screen; the alt screen
-	// takes nothing -- the emulator, the multiplexer and the signals stay
-	// the user's -- and terminal convention gives Escape to the app, where
-	// a modal editor or a cancel affordance spends it. A fullscreen app
-	// exits by its own affordance or document.exitFullscreen().
-
 	const keydownEvent = new view.window.KeyboardEvent("keydown", {
 		key: keyName,
 		code: domCodeFor(keyName),
@@ -1194,6 +1187,12 @@ function dispatchKey(handler: EventHandler, key: string): void {
 	// the one the key reaches, so a popover over a dialog closes first.
 	// Fullscreen does not intercept the key on the way. Unlike Tab below,
 	// a preventDefault on keydown does not suppress it.
+	// It does NOT exit fullscreen. The browser's guarantee exists because
+	// requestFullscreen takes the user's screen; the alt screen takes
+	// nothing -- the emulator, the multiplexer and the signals stay the
+	// user's -- and terminal convention gives Escape to the app, where a
+	// modal editor or a cancel affordance spends it. A fullscreen app exits
+	// by its own affordance or document.exitFullscreen().
 	if (keyName === "Escape") {
 		const target = handler[kDefaults].closeRequestTarget();
 		if (target !== null) {
@@ -1379,12 +1378,6 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 		}
 	}
 
-	// Tab past the last focusable (or Shift+Tab before the first) rests on
-	// nothing. That is the leg of a browser's cycle where focus walks the
-	// chrome and the page sees activeElement fall back to body; a terminal
-	// has no chrome, so the blurred stop stands in for it. It is also what
-	// keeps a scope with a single focusable element escapable -- a pure
-	// wrap would cycle Tab onto it forever.
 	// Leaving a barred subtree continues at the barrier owner's tree
 	// successor, whatever its tabindex: the owner opted its subtree out of
 	// the tab order, so the exit rejoins plain tree order beside it.
@@ -1446,6 +1439,12 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 		}
 	}
 
+	// Tab past the last focusable (or Shift+Tab before the first) rests on
+	// nothing. That is the leg of a browser's cycle where focus walks the
+	// chrome and the page sees activeElement fall back to body; a terminal
+	// has no chrome, so the blurred stop stands in for it. It is also what
+	// keeps a scope with a single focusable element escapable -- a pure
+	// wrap would cycle Tab onto it forever.
 	if (nextIndex === -1) {
 		if (current !== null) {
 			(current as HTMLElement).blur();
@@ -1472,7 +1471,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
  * asked of the layout.
  *
  * Null over a form control, whose value is not document text -- its
- * selection is the control's own bounded world, which #fieldOffsetAt asks
+ * selection is the control's own bounded world, which fieldOffsetAt asks
  * about instead. The two never merge: getSelection() cannot see inside a
  * control, per spec.
  */
