@@ -12583,6 +12583,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 		configurable: true,
 	},
 };
+
 /** The URL a hyperlink's href names, or null where it names none. */
 function hyperlinkURL(element: Element): URL | null {
 	const value = element.getAttribute("href");
@@ -17890,6 +17891,7 @@ type TextareaVisualLine = {
 	/** Data offset of the caret slot AFTER the line's last character. */
 	endOffset: number;
 };
+
 /**
  * The visual line index a caret offset sits on, given a textarea's visual
  * lines.

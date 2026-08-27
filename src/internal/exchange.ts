@@ -155,6 +155,7 @@ const MODE_SPELLINGS = {
 		panic: false,
 	},
 } as const;
+
 type ModeName = keyof typeof MODE_SPELLINGS;
 
 const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];

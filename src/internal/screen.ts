@@ -83,6 +83,7 @@ interface BoxSides {
 const Color = {
 	Mask: 0xffffff,
 } as const;
+
 type Color = number;
 
 /**
@@ -135,6 +136,7 @@ const Attr = {
 	WidthMask: 0x1f << 9,
 	WidthWide: 0x1f,
 } as const;
+
 type Attr = number;
 
 /** The style bits of a CellStyle, packed. Width is added by the caller. */
@@ -255,6 +257,7 @@ const BorderEdgeStyle = {
 	// on nothing else: the runs between corners are the same line either way.
 	Rounded: 0b00010000,
 } as const;
+
 type BorderEdgeStyle = number;
 
 const BorderMask = {
@@ -265,6 +268,7 @@ const BorderMask = {
 	Edge: 0xff,
 	Style: 0b00001111,
 } as const;
+
 type BorderMask = number;
 
 const BorderShift = {
@@ -273,6 +277,7 @@ const BorderShift = {
 	Bottom: 16,
 	Left: 24,
 } as const;
+
 type BorderShift = number;
 
 const BORDER_EDGE_MASKS = [
