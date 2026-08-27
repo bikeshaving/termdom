@@ -282,7 +282,6 @@ const BORDER_EDGE_MASKS = [
 	{shift: BorderShift.Left, mask: BorderMask.Left},
 ];
 
-// Edge extraction utilities
 function getBorderEdge(border: number, mask: number): number {
 	const shift = Math.log2(mask & -mask);
 	return (border & mask) >> shift;
@@ -310,9 +309,7 @@ function getEdgeRounded(edgeValue: number): boolean {
 	return (edgeValue & BorderEdgeStyle.Rounded) !== 0;
 }
 
-/**
- * Merge two border encodings, choosing the higher precedence style for each edge
- */
+/** Merge two border encodings, taking the stronger style on each edge. */
 function meetEdges(existing: number, incoming: number): number {
 	let met = 0;
 	for (const {mask} of BORDER_EDGE_MASKS) {
@@ -474,10 +471,7 @@ const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 	"┘": "╯",
 };
 
-/**
- * Generate the appropriate box-drawing character for a cell based on its
- * border encoding
- */
+/** The box-drawing character a cell's border encoding spells. */
 function getBorderChar(borderEncoding: number): string {
 	const topEdge = getBorderEdge(borderEncoding, BorderMask.Top);
 	const rightEdge = getBorderEdge(borderEncoding, BorderMask.Right);
@@ -550,19 +544,19 @@ function getBorderChar(borderEncoding: number): string {
 		(hasLeft ? 1 : 0);
 
 	if (count === 4) {
-		return charSet.cross;
-	} // ┼
+		return charSet.cross; // ┼
+	}
 
 	if (count === 3) {
 		if (!hasTop) {
-			return charSet.topTee;
-		} // ┬
+			return charSet.topTee; // ┬
+		}
 		if (!hasBottom) {
-			return charSet.bottomTee;
-		} // ┴
+			return charSet.bottomTee; // ┴
+		}
 		if (!hasLeft) {
-			return charSet.rightTee;
-		} // ├
+			return charSet.rightTee; // ├
+		}
 		return charSet.leftTee; // ┤
 	}
 
@@ -585,11 +579,11 @@ function getBorderChar(borderEncoding: number): string {
 	}
 
 	if (hasLeft || hasRight) {
-		return charSet.horizontal;
-	} // ─
+		return charSet.horizontal; // ─
+	}
 	if (hasTop || hasBottom) {
-		return charSet.vertical;
-	} // │
+		return charSet.vertical; // │
+	}
 
 	return " ";
 }
@@ -1049,7 +1043,7 @@ export class CellContext {
 	/**
 	 * Merge an underline/overline across a row, preserving existing glyphs (an
 	 * empty cell becomes a spaced edge). Used to render `outline` as a full-width
-	 * edge; setText can't, since it overwrites. The style's fg is the row's
+	 * edge; drawText can't, since it overwrites. The style's fg is the row's
 	 * DEFAULT color: a cell that already carries an explicit foreground
 	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
@@ -1674,9 +1668,8 @@ function generateANSI(
 					// same column for two different advances. The room to leave
 					// is the widest advance a cluster can plausibly have, plus
 					// what the unmeasured clusters already on this row may have
-					// pushed the real cursor past the predicted one. Defer --
-					// the cluster keeps its place in line and gets measured
-					// wherever it next appears with room.
+					// pushed the real cursor past the predicted one.
+					//
 					// Defer -- the cluster keeps its place in line and gets
 					// measured wherever it next appears with room -- or, if it
 					// never has room, on a later frame's probe train.
@@ -2072,7 +2065,6 @@ export class Screen {
 				resetScrollRegion();
 		}
 
-		// Create drawing context and execute drawing operations
 		const context = new CellContext(next, frameRows, cols, offset);
 		this[kEndFrame] = (): string => {
 			// Whether this frame probes is the width authority's call, taken
@@ -2198,7 +2190,6 @@ export class Screen {
 				}
 			}
 
-			// Check for content
 			let hasContent = false;
 
 			const diffCells = frameRows * cols;
@@ -2255,7 +2246,6 @@ export class Screen {
 				hasContent = true;
 			}
 
-			// Build output with proper framing
 			let prefix = scrollPrefix;
 			let suffix = "";
 			// The frame's on-screen start row, when a positioning branch names one
@@ -2265,7 +2255,6 @@ export class Screen {
 				prefix += privateMode(25, false); // DECTCEM - hide the cursor
 				prefix += privateMode(2026, true); // synchronized output, start
 
-				// Add cursor positioning
 				if (this[kNeedsScreenReset]) {
 					// After a resize the terminal has rewrapped everything on screen,
 					// including our previous frame, and moved the cursor to somewhere we
@@ -2286,14 +2275,12 @@ export class Screen {
 					this[kNeedsFullClear] = false;
 					frameStartRow = this[kResetAtRow];
 				} else if (cursorPosition !== undefined) {
-					// Explicit cursor position provided (e.g., from cursor detection)
 					prefix += cursorTo(cursorPosition + 1, 1);
 					// Save cursor at content start so DECRC-based cleanup works correctly
 					prefix += saveCursor();
 					this[kHasSavedCursor] = true;
 					frameStartRow = cursorPosition;
 				} else if (offset > 0) {
-					// Position based on viewport offset
 					prefix += cursorTo(offset + 1, 1);
 					frameStartRow = offset;
 				} else if (this[kHasSavedCursor]) {
@@ -2320,21 +2307,20 @@ export class Screen {
 				suffix += privateMode(2026, false); // synchronized output, end
 			}
 
-				let output = generateANSI(
+			let output = generateANSI(
 				diff,
 				this[kColorDepth],
 				this[kRenderedLines],
 				measurer,
 			);
 
-			// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
-			// the trailing newline would scroll the terminal on each re-render,
-			// progressively pushing the command line into scrollback.
+			// The frame is repainted in place, so a trailing newline would
+			// scroll the terminal on every re-render, pushing the command line
+			// into the scrollback a row at a time.
 			if (output.endsWith("\r\n")) {
 				output = output.slice(0, -2);
 			}
 
-			// Calculate current content height (highest rendered row + 1)
 			let contentHeight = 0;
 			for (const row of this[kRenderedLines]) {
 				if (row + 1 > contentHeight) {
@@ -2346,9 +2332,8 @@ export class Screen {
 			// Only needed when content shrank (previous render was taller).
 			let staleOutput = "";
 			if (this[kHasSavedCursor] && this[kPrevContentHeight] > contentHeight) {
-				// Content shrank — clear the lines that are no longer used.
-				// Position to content start, then move past current content,
-				// then erase to end of screen.
+				// Back to content start, past what the frame does paint, and
+				// erase from there down.
 				staleOutput += restoreCursor(); // back to content start
 				if (contentHeight > 0) {
 					staleOutput += cursorDown(contentHeight);
