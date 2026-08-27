@@ -4815,12 +4815,14 @@ export class Node extends EventTarget {
 				(this[kDocument]! as Document);
 	}
 
-	getRootNode(options?: {composed?: boolean}): Node {
+	getRootNode(options?: globalThis.GetRootNodeOptions): globalThis.Node {
 		const init = toDictionary<{composed?: boolean}>(
 			options ?? {},
 			"A GetRootNodeOptions",
 		);
-		return init.composed ? shadowIncludingRoot(this) : getRoot(this);
+		return (
+			init.composed ? shadowIncludingRoot(this) : getRoot(this)
+		) as unknown as globalThis.Node;
 	}
 
 	/** lib.dom names this ParentNode, the mixin a parent carries. */
@@ -4845,29 +4847,29 @@ export class Node extends EventTarget {
 		return this[kFirstChild] !== null;
 	}
 
-	get childNodes(): NodeListOf<ChildNode> {
+	get childNodes(): NodeListOf<globalThis.ChildNode> {
 		let list = this[kChildNodes]!;
 		if (list === null) {
 			list = createChildNodeList(this);
 			this[kChildNodes] = list;
 		}
-		return list as NodeListOf<ChildNode>;
+		return list as unknown as NodeListOf<globalThis.ChildNode>;
 	}
 
-	get firstChild(): ChildNode | null {
-		return this[kFirstChild]! as ChildNode | null;
+	get firstChild(): globalThis.ChildNode | null {
+		return this[kFirstChild]! as unknown as globalThis.ChildNode | null;
 	}
 
-	get lastChild(): ChildNode | null {
-		return this[kLastChild]! as ChildNode | null;
+	get lastChild(): globalThis.ChildNode | null {
+		return this[kLastChild]! as unknown as globalThis.ChildNode | null;
 	}
 
-	get previousSibling(): ChildNode | null {
-		return this[kPrevious]! as ChildNode | null;
+	get previousSibling(): globalThis.ChildNode | null {
+		return this[kPrevious]! as unknown as globalThis.ChildNode | null;
 	}
 
-	get nextSibling(): ChildNode | null {
-		return this[kNext]! as ChildNode | null;
+	get nextSibling(): globalThis.ChildNode | null {
+		return this[kNext]! as unknown as globalThis.ChildNode | null;
 	}
 
 	get nodeValue(): string | null {
@@ -4930,26 +4932,30 @@ export class Node extends EventTarget {
 		}
 	}
 
-	cloneNode(deep = false): Node {
+	cloneNode(deep = false): globalThis.Node {
 		if (isShadowRoot(this)) {
 			throw domError("NotSupportedError", "A shadow root cannot be cloned");
 		}
-		return cloneNode(this, undefined, Boolean(deep));
+		return cloneNode(
+			this,
+			undefined,
+			Boolean(deep),
+		) as unknown as globalThis.Node;
 	}
 
-	isEqualNode(otherNode: Node | null): boolean {
-		return otherNode != null && equalNodes(this, otherNode);
+	isEqualNode(otherNode: globalThis.Node | null): boolean {
+		return otherNode != null && equalNodes(this, otherNode as unknown as Node);
 	}
 
-	isSameNode(otherNode: Node | null): boolean {
-		return this === otherNode;
+	isSameNode(otherNode: globalThis.Node | null): boolean {
+		return (this as unknown as globalThis.Node) === otherNode;
 	}
 
-	compareDocumentPosition(other: Node): number {
-		if (this === other) {
+	compareDocumentPosition(other: globalThis.Node): number {
+		if ((this as unknown as globalThis.Node) === other) {
 			return 0;
 		}
-		let node1: Node | null = other;
+		let node1: Node | null = other as unknown as Node;
 		let node2: Node | null = this;
 		let attr1: Attr | null = null;
 		let attr2: Attr | null = null;
@@ -4980,7 +4986,7 @@ export class Node extends EventTarget {
 		if (node1 === null || node2 === null || getRoot(node1) !== getRoot(node2)) {
 			const first =
 				node1 === null || node2 === null ?
-					this[kSerial]! < other[kSerial]! :
+					this[kSerial]! < (other as unknown as Node)[kSerial]! :
 					getRoot(node2)[kSerial]! < getRoot(node1)[kSerial]!;
 			return (
 				DOCUMENT_POSITION_DISCONNECTED +
@@ -5005,8 +5011,10 @@ export class Node extends EventTarget {
 			DOCUMENT_POSITION_FOLLOWING;
 	}
 
-	contains(other: Node | null): boolean {
-		return other != null && isInclusiveAncestor(this, other);
+	contains(other: globalThis.Node | null): boolean {
+		return (
+			other != null && isInclusiveAncestor(this, other as unknown as Node)
+		);
 	}
 
 	lookupPrefix(namespace: string | null): string | null {
@@ -5050,32 +5058,43 @@ export class Node extends EventTarget {
 		return locateNamespace(this, null) === ns;
 	}
 
-	insertBefore<T extends Node>(node: T, child: Node | null): T {
+	insertBefore<T extends globalThis.Node>(
+		node: T,
+		child: globalThis.Node | null,
+	): T {
 		if (arguments.length < 2) {
 			throw new TypeError("insertBefore needs a node and a child");
 		}
-		return preInsert(node, this, child) as unknown as T;
+		return preInsert(
+			node as unknown as Node,
+			this,
+			child as unknown as Node | null,
+		) as unknown as T;
 	}
 
-	appendChild<T extends Node>(node: T): T {
+	appendChild<T extends globalThis.Node>(node: T): T {
 		if (arguments.length < 1) {
 			throw new TypeError("appendChild needs a node");
 		}
-		return preInsert(node, this, null) as unknown as T;
+		return preInsert(node as unknown as Node, this, null) as unknown as T;
 	}
 
-	replaceChild<T extends Node>(node: Node, child: T): T {
+	replaceChild<T extends globalThis.Node>(node: globalThis.Node, child: T): T {
 		if (arguments.length < 2) {
 			throw new TypeError("replaceChild needs a node and a child");
 		}
-		return replaceChild(child, node, this) as unknown as T;
+		return replaceChild(
+			child as unknown as Node,
+			node as unknown as Node,
+			this,
+		) as unknown as T;
 	}
 
-	removeChild<T extends Node>(child: T): T {
+	removeChild<T extends globalThis.Node>(child: T): T {
 		if (arguments.length < 1) {
 			throw new TypeError("removeChild needs a child");
 		}
-		return preRemove(child, this) as unknown as T;
+		return preRemove(child as unknown as Node, this) as unknown as T;
 	}
 
 	/* The spec's per-node steps. Subclasses override; the algorithms call. */
@@ -6925,14 +6944,18 @@ const kCompute = Symbol("compute");
 
 export class NodeList extends LiveList {
 	declare forEach: (
-		callback: (node: Node, index: number, list: NodeList) => void,
+		callback: (
+			node: globalThis.Node,
+			index: number,
+			list: NodeList,
+		) => void,
 		thisArg?: unknown,
 	) => void;
 
 	declare keys: () => ArrayIterator<number>;
-	declare values: () => ArrayIterator<Node>;
-	declare entries: () => ArrayIterator<[number, Node]>;
-	declare [Symbol.iterator]: () => ArrayIterator<Node>;
+	declare values: () => ArrayIterator<globalThis.Node>;
+	declare entries: () => ArrayIterator<[number, globalThis.Node]>;
+	declare [Symbol.iterator]: () => ArrayIterator<globalThis.Node>;
 
 	declare [kCompute]?: () => Node[];
 
@@ -6956,10 +6979,12 @@ export class NodeList extends LiveList {
 		return ensure(this).length;
 	}
 
-	item(index: number): Node | null {
+	item(index: number): globalThis.Node | null {
 		const items = ensure(this);
 		const at = toUnsignedLong(index);
-		return at < items.length ? items[at] : null;
+		return at < items.length ?
+				(items[at] as unknown as globalThis.Node) :
+			null;
 	}
 }
 
@@ -6985,7 +7010,7 @@ export interface ChildNode
  * without a null. The engine's own NodeList is the general one, where an index
  * past the end reads null.
  */
-export interface NodeListOf<T extends Node> extends NodeList {
+export interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	item(index: number): T;
 	[index: number]: T;
 	forEach(
@@ -8006,9 +8031,12 @@ export class DocumentType extends Node {
 	}
 }
 
-/** A doctype always has a node document, so this narrows Node's. */
 export interface DocumentType {
+	/** A doctype always has a node document, so this narrows Node's. */
 	get ownerDocument(): Document;
+
+	/** A doctype has no text content, which lib.dom says too. */
+	get textContent(): null;
 }
 
 Object.defineProperty(DocumentType.prototype, Symbol.toStringTag, {
@@ -8949,21 +8977,21 @@ export class Element extends Node {
 		null;
 	}
 
-	setAttributeNode(attr: Attr): Attr | null {
+	setAttributeNode(attr: globalThis.Attr): globalThis.Attr | null {
 		if (!(attr instanceof Attr)) {
 			throw new TypeError("That is not an Attr");
 		}
-		return setAttributeNode(this, attr);
+		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
-	setAttributeNodeNS(attr: Attr): Attr | null {
+	setAttributeNodeNS(attr: globalThis.Attr): globalThis.Attr | null {
 		if (!(attr instanceof Attr)) {
 			throw new TypeError("That is not an Attr");
 		}
-		return setAttributeNode(this, attr);
+		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
-	removeAttributeNode(attr: Attr): Attr {
+	removeAttributeNode(attr: globalThis.Attr): globalThis.Attr {
 		if (!(attr instanceof Attr)) {
 			throw new TypeError("That is not an Attr");
 		}
@@ -8971,7 +8999,7 @@ export class Element extends Node {
 			throw notFoundError("That attribute is not on this element");
 		}
 		removeAttributeNode(this, attr);
-		return attr;
+		return attr as unknown as globalThis.Attr;
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
@@ -8988,48 +9016,52 @@ export class Element extends Node {
 	>(
 		qualifiedName: K,
 	): HTMLCollectionOf<globalThis.HTMLElementDeprecatedTagNameMap[K]>;
-	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<Element>;
-	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<Element> {
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
+		globalThis.Element
+	>;
+	getElementsByTagName(qualifiedName: string): HTMLCollectionOf<
+		globalThis.Element
+	> {
 		return elementsByTagName(
 			this,
 			String(qualifiedName),
-		) as unknown as HTMLCollectionOf<Element>;
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
 	getElementsByTagNameNS(
 		namespaceURI: "http://www.w3.org/1999/xhtml",
 		localName: string,
-	): HTMLCollectionOf<HTMLElement>;
+	): HTMLCollectionOf<globalThis.HTMLElement>;
 	getElementsByTagNameNS(
 		namespaceURI: "http://www.w3.org/2000/svg",
 		localName: string,
-	): HTMLCollectionOf<SVGElement>;
+	): HTMLCollectionOf<globalThis.SVGElement>;
 	getElementsByTagNameNS(
 		namespaceURI: "http://www.w3.org/1998/Math/MathML",
 		localName: string,
-	): HTMLCollectionOf<MathMLElement>;
+	): HTMLCollectionOf<globalThis.MathMLElement>;
 	getElementsByTagNameNS(
 		namespace: string | null,
 		localName: string,
-	): HTMLCollectionOf<Element>;
+	): HTMLCollectionOf<globalThis.Element>;
 	getElementsByTagNameNS(
 		namespace: string | null,
 		localName: string,
-	): HTMLCollectionOf<Element> {
+	): HTMLCollectionOf<globalThis.Element> {
 		return elementsByTagNameNS(
 			this,
 			namespace,
 			String(localName),
-		) as unknown as HTMLCollectionOf<Element>;
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
-	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
+	getElementsByClassName(
+		classNames: string,
+	): HTMLCollectionOf<globalThis.Element> {
 		return elementsByClassName(
 			this,
 			String(classNames),
-		) as unknown as HTMLCollectionOf<
-			Element
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
 	override get textContent(): string {
@@ -9097,9 +9129,13 @@ export class Element extends Node {
 
 	insertAdjacentElement(
 		where: InsertPosition,
-		element: Element,
-	): Element | null {
-		return insertAdjacent(this, String(where), element) as Element | null;
+		element: globalThis.Element,
+	): globalThis.Element | null {
+		return insertAdjacent(
+			this,
+			String(where),
+			element as unknown as Element,
+		) as unknown as globalThis.Element | null;
 	}
 
 	insertAdjacentText(where: InsertPosition, data: string): void {
@@ -9519,9 +9555,10 @@ Object.defineProperties(Element.prototype, {
  * activeElement chain.
  */
 function innermostActive(document: Document): Element | null {
-	let current = document.activeElement;
+	let current = document.activeElement as unknown as Element | null;
 	while (current !== null) {
-		const inner = current[kShadowRoot]?.activeElement ?? null;
+		const inner = (current[kShadowRoot]?.activeElement ??
+			null) as unknown as Element | null;
 		if (inner === null) {
 			break;
 		}
@@ -11355,7 +11392,7 @@ export class ShadowRoot extends DocumentFragment {
 	 * shadow-including ancestor of the focus that is one of THIS root's
 	 * descendants, or null when the focus is elsewhere entirely.
 	 */
-	get activeElement(): Element | null {
+	get activeElement(): globalThis.Element | null {
 		const document = this.ownerDocument as Document | null;
 		// The RAW focus, not the document's retargeted answer -- that one
 		// already collapsed shadow content to its host.
@@ -11364,7 +11401,7 @@ export class ShadowRoot extends DocumentFragment {
 		while (current !== null) {
 			const root = current.getRootNode() as Node;
 			if (root === (this as unknown as Node)) {
-				return current as Element;
+				return current as unknown as globalThis.Element;
 			}
 			current =
 				root instanceof ShadowRoot ?
@@ -11460,15 +11497,15 @@ export class ShadowRoot extends DocumentFragment {
 	 * document's, and hit testing is answered against the document because
 	 * that is where the boxes were painted from.
 	 */
-	get fullscreenElement(): Element | null {
+	get fullscreenElement(): globalThis.Element | null {
 		return null;
 	}
 
-	get pointerLockElement(): Element | null {
+	get pointerLockElement(): globalThis.Element | null {
 		return null;
 	}
 
-	get pictureInPictureElement(): Element | null {
+	get pictureInPictureElement(): globalThis.Element | null {
 		return null;
 	}
 
@@ -11878,21 +11915,23 @@ export class HTMLSlotElement extends HTMLElement {
 		this.setAttribute("name", String(value));
 	}
 
-	assignedNodes(options?: {flatten?: boolean}): Node[] {
+	assignedNodes(options?: globalThis.AssignedNodesOptions): globalThis.Node[] {
 		const init = toDictionary<{flatten?: boolean}>(
 			options ?? {},
 			"An AssignedNodesOptions",
 		);
 		if (!init.flatten) {
-			return [...this[kAssignedNodes]!];
+			return [...this[kAssignedNodes]!] as unknown as globalThis.Node[];
 		}
-		return findFlattenedSlottables(this);
+		return findFlattenedSlottables(this) as unknown as globalThis.Node[];
 	}
 
-	assignedElements(options?: {flatten?: boolean}): Element[] {
+	assignedElements(
+		options?: globalThis.AssignedNodesOptions,
+	): globalThis.Element[] {
 		return this.assignedNodes(options).filter(
 			(node) => node.nodeType === ELEMENT_NODE,
-		) as Element[];
+		) as globalThis.Element[];
 	}
 
 	/**
@@ -11901,7 +11940,7 @@ export class HTMLSlotElement extends HTMLElement {
 	 * from a slot in another shadow tree leaves that tree's assignment stale
 	 * until its slots are recomputed too.
 	 */
-	assign(...nodes: Slottable[]): void {
+	assign(...nodes: Array<globalThis.Element | globalThis.Text>): void {
 		for (const node of nodes) {
 			if (!(node instanceof Node) || !isSlottable(node)) {
 				throw new TypeError("Only an element or a text node can be assigned");
@@ -11913,7 +11952,7 @@ export class HTMLSlotElement extends HTMLElement {
 		}
 		const assigned: Slottable[] = [];
 		for (const node of nodes) {
-			const slottable = node as Slottable;
+			const slottable = node as unknown as Slottable;
 			if (assigned.includes(slottable)) {
 				continue;
 			}
@@ -17573,7 +17612,8 @@ function hidePopover(
 		if (
 			focusPreviousElement &&
 			active !== null &&
-			(active === element || element.contains(active))
+			(active === element ||
+				element.contains(active as unknown as globalThis.Node))
 		) {
 			(previouslyFocused as HTMLElement).focus();
 		}
@@ -17822,7 +17862,7 @@ function popoverTargetAttributeElement(node: Node): Element | null {
 		// or in one that tree composes into; it goes stale, rather than
 		// dangling, when the target is moved out from under it.
 		for (let root: Node = getRoot(element); ;) {
-			if (root.contains(explicit)) {
+			if (root.contains(explicit as unknown as globalThis.Node)) {
 				return explicit;
 			}
 			if (!isShadowRoot(root)) {
@@ -17843,7 +17883,9 @@ function popoverTargetAttributeElement(node: Node): Element | null {
 	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) {
 		return null;
 	}
-	return (root as Document | ShadowRoot).getElementById(id);
+	return (root as Document | ShadowRoot).getElementById(
+		id,
+	) as unknown as Element | null;
 }
 
 /** Set the element a popovertarget names, per HTML's element reflection. */
@@ -18125,6 +18167,9 @@ const kDatasetNames = Symbol("the names a data map has materialized");
  * element carries goes straight through to the attribute.
  */
 export class DOMStringMap {
+	/** Materialised by the dataset sync, one property per data attribute. */
+	[name: string]: string | undefined;
+
 	[kDatasetElement]?: Element;
 	[kDatasetNames]?: string[];
 
@@ -20433,21 +20478,21 @@ export class Document extends Node {
 		return this[kContentType]!;
 	}
 
-	get implementation(): DOMImplementation {
+	get implementation(): globalThis.DOMImplementation {
 		let implementation = this[kImplementation]!;
 		if (implementation === null) {
 			implementation = new DOMImplementation(this);
 			this[kImplementation] = implementation;
 		}
-		return implementation;
+		return implementation as unknown as globalThis.DOMImplementation;
 	}
 
 	declare [kImplementation]?: DOMImplementation | null;
 
-	get doctype(): DocumentType | null {
+	get doctype(): globalThis.DocumentType | null {
 		for (let node = this[kFirstChild]!; node !== null; node = node[kNext]!) {
 			if (node.nodeType === DOCUMENT_TYPE_NODE) {
-				return node as DocumentType;
+				return node as unknown as globalThis.DocumentType;
 			}
 		}
 		return null;
@@ -20457,9 +20502,15 @@ export class Document extends Node {
 	 * The window this document is displayed in, which is null until an
 	 * environment mounts the document in one. A document with no browsing
 	 * context has none, and nothing in this DOM creates one.
+	 *
+	 * lib.dom intersects Window with typeof globalThis, because in a browser
+	 * the window IS the global. Here it is not, and a caller who reaches
+	 * through this for a global that only a browser has finds nothing.
 	 */
-	get defaultView(): object | null {
-		return this[kDefaultView]!;
+	get defaultView(): (globalThis.Window & typeof globalThis) | null {
+		return this[kDefaultView]! as
+			| (globalThis.Window & typeof globalThis) |
+			null;
 	}
 
 	/**
@@ -20467,11 +20518,11 @@ export class Document extends Node {
 	 * it. An element that leaves the tree takes focus with it and hands it
 	 * back to the body.
 	 */
-	get activeElement(): Element | null {
+	get activeElement(): globalThis.Element | null {
 		const active = this[kActiveElement]!;
 		if (active === null || !active.isConnected) {
 			this[kActiveElement] = null;
-			return (this.body as unknown as Element | null);
+			return this.body;
 		}
 		// RETARGET to this scope, per HTML: focus inside a shadow tree reads
 		// as the host from the document; the tree's own root answers with
@@ -20480,14 +20531,14 @@ export class Document extends Node {
 		for (;;) {
 			const root = getRoot(current);
 			if (root === (this as Node)) {
-				return current as Element;
+				return current as unknown as globalThis.Element;
 			}
 			if (root instanceof ShadowRoot && root.host !== null) {
 				current = root.host as unknown as Node;
 				continue;
 			}
 			this[kActiveElement] = null;
-			return (this.body as unknown as Element | null);
+			return this.body;
 		}
 	}
 
@@ -20497,8 +20548,9 @@ export class Document extends Node {
 	}
 
 	/** The element filling the viewport, or null when none is. */
-	get fullscreenElement(): Element | null {
-		return (mountOf(this)?.fullscreenElement(this) ?? null) as Element | null;
+	get fullscreenElement(): globalThis.Element | null {
+		return (mountOf(this)?.fullscreenElement(this) ??
+			null) as globalThis.Element | null;
 	}
 
 	/** Return the fullscreen element to the flow it came from. */
@@ -20672,8 +20724,30 @@ export class Document extends Node {
 		return null as unknown as globalThis.HTMLElement;
 	}
 
-	getElementsByTagName(qualifiedName: string): HTMLCollection {
-		return elementsByTagName(this, String(qualifiedName));
+	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.HTMLElementTagNameMap[K]>;
+	getElementsByTagName<K extends keyof globalThis.SVGElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.SVGElementTagNameMap[K]>;
+	getElementsByTagName<K extends keyof globalThis.MathMLElementTagNameMap>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.MathMLElementTagNameMap[K]>;
+	getElementsByTagName<
+		K extends keyof globalThis.HTMLElementDeprecatedTagNameMap,
+	>(
+		qualifiedName: K,
+	): HTMLCollectionOf<globalThis.HTMLElementDeprecatedTagNameMap[K]>;
+	getElementsByTagName(
+		qualifiedName: string,
+	): HTMLCollectionOf<globalThis.Element>;
+	getElementsByTagName(
+		qualifiedName: string,
+	): HTMLCollectionOf<globalThis.Element> {
+		return elementsByTagName(
+			this,
+			String(qualifiedName),
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
 	getElementsByTagNameNS(
@@ -20683,13 +20757,13 @@ export class Document extends Node {
 		return elementsByTagNameNS(this, namespace, String(localName));
 	}
 
-	getElementsByClassName(classNames: string): HTMLCollectionOf<Element> {
+	getElementsByClassName(
+		classNames: string,
+	): HTMLCollectionOf<globalThis.Element> {
 		return elementsByClassName(
 			this,
 			String(classNames),
-		) as unknown as HTMLCollectionOf<
-			Element
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.Element>;
 	}
 
 	getElementsByName(elementName: string): NodeList {
@@ -20702,7 +20776,7 @@ export class Document extends Node {
 						element.namespaceURI === HTML_NAMESPACE &&
 						element.getAttribute("name") === name
 					) {
-						matches.push(element);
+						matches.push(element as unknown as Node);
 					}
 				}
 				return matches;
@@ -20714,14 +20788,14 @@ export class Document extends Node {
 		);
 	}
 
-	getElementById(elementId: string): Element | null {
+	getElementById(elementId: string): globalThis.HTMLElement | null {
 		const id = String(elementId);
 		const entries = this[kIdMap]!.get(id);
 		if (entries === undefined || entries.length === 0) {
 			return null;
 		}
 		if (entries.length === 1) {
-			return entries[0];
+			return entries[0] as unknown as globalThis.HTMLElement;
 		}
 		let first = entries[0];
 		for (let index = 1; index < entries.length; index++) {
@@ -20729,7 +20803,7 @@ export class Document extends Node {
 				first = entries[index];
 			}
 		}
-		return first;
+		return first as unknown as globalThis.HTMLElement;
 	}
 
 	createElement(
@@ -20784,22 +20858,22 @@ export class Document extends Node {
 		);
 	}
 
-	createDocumentFragment(): DocumentFragment {
+	createDocumentFragment(): globalThis.DocumentFragment {
 		const fragment = new DocumentFragment();
 		fragment[kDocument] = this;
-		return fragment;
+		return fragment as unknown as globalThis.DocumentFragment;
 	}
 
-	createTextNode(data: string): Text {
+	createTextNode(data: string): globalThis.Text {
 		if (arguments.length < 1) {
 			throw new TypeError("createTextNode needs data");
 		}
 		const text = new Text(String(data));
 		text[kDocument] = this;
-		return text;
+		return text as unknown as globalThis.Text;
 	}
 
-	createCDATASection(data: string): CDATASection {
+	createCDATASection(data: string): globalThis.CDATASection {
 		if (isHTMLDocument(this)) {
 			throw domError(
 				"NotSupportedError",
@@ -20815,16 +20889,16 @@ export class Document extends Node {
 		}
 		const section = new CDATASection(string);
 		section[kDocument] = this;
-		return section;
+		return section as unknown as globalThis.CDATASection;
 	}
 
-	createComment(data: string): Comment {
+	createComment(data: string): globalThis.Comment {
 		if (arguments.length < 1) {
 			throw new TypeError("createComment needs data");
 		}
 		const comment = new Comment(String(data));
 		comment[kDocument] = this;
-		return comment;
+		return comment as unknown as globalThis.Comment;
 	}
 
 	createProcessingInstruction(
@@ -20850,7 +20924,7 @@ export class Document extends Node {
 		return instruction;
 	}
 
-	importNode(node: Node, deep = false): Node {
+	importNode<T extends globalThis.Node>(node: T, deep = false): T {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -20860,10 +20934,14 @@ export class Document extends Node {
 		if (isShadowRoot(node)) {
 			throw domError("NotSupportedError", "A shadow root cannot be imported");
 		}
-		return cloneNode(node, this, Boolean(deep));
+		return cloneNode(
+			node as unknown as Node,
+			this,
+			Boolean(deep),
+		) as unknown as T;
 	}
 
-	adoptNode(node: Node): Node {
+	adoptNode<T extends globalThis.Node>(node: T): T {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
@@ -20873,11 +20951,11 @@ export class Document extends Node {
 		if (isShadowRoot(node)) {
 			throw hierarchyRequestError("A shadow root cannot be adopted");
 		}
-		adoptNode(node, this);
+		adoptNode(node as unknown as Node, this);
 		return node;
 	}
 
-	createAttribute(localName: string): Attr {
+	createAttribute(localName: string): globalThis.Attr {
 		if (arguments.length < 1) {
 			throw new TypeError("createAttribute needs a name");
 		}
@@ -20888,10 +20966,13 @@ export class Document extends Node {
 		}
 		const attribute = new Attr(null, null, name, "");
 		attribute[kDocument] = this;
-		return attribute;
+		return attribute as unknown as globalThis.Attr;
 	}
 
-	createAttributeNS(namespace: string | null, qualifiedName: string): Attr {
+	createAttributeNS(
+		namespace: string | null,
+		qualifiedName: string,
+	): globalThis.Attr {
 		if (arguments.length < 2) {
 			throw new TypeError("createAttributeNS needs a namespace and a name");
 		}
@@ -20907,7 +20988,7 @@ export class Document extends Node {
 			"",
 		);
 		attribute[kDocument] = this;
-		return attribute;
+		return attribute as unknown as globalThis.Attr;
 	}
 
 	/**
@@ -20933,10 +21014,10 @@ export class Document extends Node {
 		return event;
 	}
 
-	createRange(): Range {
+	createRange(): globalThis.Range {
 		const range = new Range();
 		setRangePoints(range, this, 0, this, 0);
-		return range;
+		return range as unknown as globalThis.Range;
 	}
 
 	/**
@@ -20947,13 +21028,13 @@ export class Document extends Node {
 	 * browsing context to have: a document is the top of this DOM, so the
 	 * selection is the document's and this is the only door to it.
 	 */
-	getSelection(): Selection {
+	getSelection(): globalThis.Selection | null {
 		let selection = this[kSelection]!;
 		if (selection === null) {
 			selection = createSelection(this);
 			this[kSelection] = selection;
 		}
-		return selection;
+		return selection as unknown as globalThis.Selection;
 	}
 
 	createNodeIterator(
@@ -21002,65 +21083,63 @@ export class Document extends Node {
 	 * are defined to do.
 	 */
 
-	get anchors(): HTMLCollectionOf<HTMLAnchorElement> {
+	get anchors(): HTMLCollectionOf<globalThis.HTMLAnchorElement> {
 		return documentCollection(this,
 			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
-		) as unknown as HTMLCollectionOf<HTMLAnchorElement>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
 	}
 
-	get forms(): HTMLCollectionOf<HTMLFormElement> {
+	get forms(): HTMLCollectionOf<globalThis.HTMLFormElement> {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLFormElement,
-		) as unknown as HTMLCollectionOf<
-			HTMLFormElement
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLFormElement>;
 	}
 
-	get images(): HTMLCollectionOf<HTMLImageElement> {
+	get images(): HTMLCollectionOf<globalThis.HTMLImageElement> {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLImageElement,
-		) as unknown as HTMLCollectionOf<
-			HTMLImageElement
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLImageElement>;
 	}
 
-	get scripts(): HTMLCollectionOf<HTMLScriptElement> {
+	get scripts(): HTMLCollectionOf<globalThis.HTMLScriptElement> {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLScriptElement,
-		) as unknown as HTMLCollectionOf<
-			HTMLScriptElement
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLScriptElement>;
 	}
 
-	get embeds(): HTMLCollectionOf<HTMLEmbedElement> {
+	get embeds(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return documentCollection(
 			this,
 			(e) => e instanceof HTMLEmbedElement,
-		) as unknown as HTMLCollectionOf<
-			HTMLEmbedElement
-		>;
+		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
 
 	/** An alias of embeds, per the spec. */
-	get plugins(): HTMLCollectionOf<HTMLEmbedElement> {
+	get plugins(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return this.embeds;
 	}
 
 	/** `a` and `area` elements that have an href. */
-	get links(): HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement> {
+	get links(): HTMLCollectionOf<
+		globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+	> {
 		return documentCollection(this,
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
 				e.hasAttribute("href"),
-		) as unknown as HTMLCollectionOf<HTMLAnchorElement | HTMLAreaElement>;
+		) as unknown as HTMLCollectionOf<
+			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
+		>;
 	}
 
 	/** Always empty: the applet element was removed from HTML. */
-	get applets(): HTMLCollection {
-		return documentCollection(this, () => false);
+	get applets(): HTMLCollectionOf<globalThis.Element> {
+		return documentCollection(this, () => false) as unknown as HTMLCollectionOf<
+			globalThis.Element
+		>;
 	}
 
 	/*
@@ -21226,22 +21305,22 @@ export class Document extends Node {
 	 * case nothing does, because the scrolling the caller means is happening
 	 * inside the body rather than to it.
 	 */
-	get scrollingElement(): Element | null {
+	get scrollingElement(): globalThis.Element | null {
 		if (this[kMode] !== "quirks") {
-			return (this.documentElement as unknown as Element | null);
+			return this.documentElement;
 		}
 		const body = this.body as unknown as Element | null;
 		if (body === null || isPotentiallyScrollable(body)) {
 			return null;
 		}
-		return body;
+		return body as unknown as globalThis.Element;
 	}
 
-	get pictureInPictureElement(): Element | null {
+	get pictureInPictureElement(): globalThis.Element | null {
 		return null;
 	}
 
-	get pointerLockElement(): Element | null {
+	get pointerLockElement(): globalThis.Element | null {
 		return null;
 	}
 
@@ -21456,6 +21535,9 @@ export interface Document
 	> {
 	/** A document is nobody's node document, which lib.dom says too. */
 	get ownerDocument(): null;
+
+	/** A document has no text content of its own, as lib.dom says. */
+	get textContent(): null;
 }
 
 // Hit testing: the point is the viewport's, the answer the engine's. A
@@ -21609,7 +21691,7 @@ export class DOMImplementation {
 	createDocument(
 		namespace: string | null,
 		qualifiedName: string | null,
-		doctype: DocumentType | null = null,
+		doctype: globalThis.DocumentType | null = null,
 	): XMLDocument {
 		if (arguments.length < 2) {
 			throw new TypeError("createDocument needs a namespace and a name");
@@ -21626,7 +21708,7 @@ export class DOMImplementation {
 			);
 		}
 		if (doctype != null) {
-			appendNode(doctype, document);
+			appendNode(doctype as unknown as DocumentType, document);
 		}
 		if (element !== null) {
 			appendNode(element, document);
@@ -21731,7 +21813,8 @@ function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
 	if (converted.length === 1) {
 		return converted[0];
 	}
-	const fragment = document.createDocumentFragment();
+	const fragment =
+		document.createDocumentFragment() as unknown as DocumentFragment;
 	for (const node of converted) {
 		appendNode(node, fragment);
 	}
@@ -24361,8 +24444,8 @@ function caretColumnOf(
 	point: [Node, number],
 ): number | null {
 	const range = document.createRange();
-	range.setStart(point[0], point[1]);
-	range.setEnd(point[0], point[1]);
+	range.setStart(point[0] as unknown as globalThis.Node, point[1]);
+	range.setEnd(point[0] as unknown as globalThis.Node, point[1]);
 	const rect = layout.getRangeRects(range)[0];
 	return rect === undefined ? null : rect.x;
 }
@@ -25207,7 +25290,8 @@ function treeAdapterFor(document: Document | null) {
 			return created;
 		},
 		createDocumentFragment(): DocumentFragment {
-			return (target as Document).createDocumentFragment();
+			return (target as Document)
+				.createDocumentFragment() as unknown as DocumentFragment;
 		},
 		createElement(
 			tagName: string,
@@ -25227,10 +25311,12 @@ function treeAdapterFor(document: Document | null) {
 			return element;
 		},
 		createCommentNode(data: string): Comment {
-			return (target as Document).createComment(data);
+			return (target as Document).createComment(data) as unknown as Comment;
 		},
 		createTextNode(value: string): Text {
-			return (target as Document).createTextNode(value);
+			return (target as Document).createTextNode(
+				value,
+			) as unknown as Text;
 		},
 		appendChild(parentNode: Node, newNode: Node): void {
 			insertNode(newNode, parentNode, null, true);
@@ -25255,7 +25341,7 @@ function treeAdapterFor(document: Document | null) {
 			publicId: string,
 			systemId: string,
 		): void {
-			const existing = documentNode.doctype;
+			const existing = documentNode.doctype as unknown as DocumentType | null;
 			if (existing !== null) {
 				existing[kName] = name;
 				existing[kPublicId] = publicId;
@@ -25286,7 +25372,7 @@ function treeAdapterFor(document: Document | null) {
 			}
 			adapter.appendChild(
 				parentNode,
-				(target as Document).createTextNode(text),
+				(target as Document).createTextNode(text) as unknown as Text,
 			);
 		},
 		insertTextBefore(
@@ -25301,7 +25387,7 @@ function treeAdapterFor(document: Document | null) {
 			}
 			adapter.insertBefore(
 				parentNode,
-				(target as Document).createTextNode(text),
+				(target as Document).createTextNode(text) as unknown as Text,
 				referenceNode,
 			);
 		},
@@ -25522,7 +25608,8 @@ function parseFragmentHTML(
 	} finally {
 		parseRegistry = outerRegistry;
 	}
-	const fragment = document.createDocumentFragment();
+	const fragment =
+		document.createDocumentFragment() as unknown as DocumentFragment;
 	for (const child of childNodeArray(parsed)) {
 		insertNode(child, fragment, null, true);
 	}
@@ -25970,7 +26057,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			(last as CharacterData)[kData]! += data;
 			return;
 		}
-		const text = document.createTextNode(data);
+		const text = document.createTextNode(data) as unknown as Text;
 		insertNode(text, parent, null, true);
 	}
 
@@ -26225,7 +26312,7 @@ function parseXMLDocument(source: string, contentType: string): Document {
 			"parsererror",
 			PARSERERROR_NAMESPACE,
 		);
-		const text = document.createTextNode(error.message);
+		const text = document.createTextNode(error.message) as unknown as Text;
 		insertNode(text, parserError, null, true);
 		insertNode(parserError, document, null, true);
 	}
@@ -27331,7 +27418,7 @@ export class Window extends EventTarget {
 	 * The Selection API defines the window's getSelection as a call to the
 	 * document's, and this is that call.
 	 */
-	getSelection(): Selection | null {
+	getSelection(): globalThis.Selection | null {
 		return this.document.getSelection();
 	}
 

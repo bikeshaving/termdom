@@ -259,7 +259,7 @@ function formatChildren(
 	const indent = "  ".repeat(options.currentDepth || 0);
 
 	for (const child of children) {
-		const childStr = inspectNode(child, options);
+		const childStr = inspectNode(child as unknown as Node, options);
 		if (childStr.trim()) {
 			parts.push("\n" + indent + childStr);
 		}
@@ -345,7 +345,7 @@ function inspectFragment(
 	let output = `${c.comment}#document-fragment${c.reset}`;
 
 	for (const child of Array.from(fragment.childNodes)) {
-		const childStr = inspectNode(child, options);
+		const childStr = inspectNode(child as unknown as Node, options);
 		if (childStr) {
 			output += "\n" + childStr;
 		}
