@@ -5041,32 +5041,32 @@ export class Node extends EventTarget {
 		return locateNamespace(this, null) === ns;
 	}
 
-	insertBefore(node: Node, child: Node | null): Node {
+	insertBefore<T extends Node>(node: T, child: Node | null): T {
 		if (arguments.length < 2) {
 			throw new TypeError("insertBefore needs a node and a child");
 		}
-		return preInsert(node, this, child);
+		return preInsert(node, this, child) as unknown as T;
 	}
 
-	appendChild(node: Node): Node {
+	appendChild<T extends Node>(node: T): T {
 		if (arguments.length < 1) {
 			throw new TypeError("appendChild needs a node");
 		}
-		return preInsert(node, this, null);
+		return preInsert(node, this, null) as unknown as T;
 	}
 
-	replaceChild(node: Node, child: Node): Node {
+	replaceChild<T extends Node>(node: Node, child: T): T {
 		if (arguments.length < 2) {
 			throw new TypeError("replaceChild needs a node and a child");
 		}
-		return replaceChild(child, node, this);
+		return replaceChild(child, node, this) as unknown as T;
 	}
 
-	removeChild(child: Node): Node {
+	removeChild<T extends Node>(child: T): T {
 		if (arguments.length < 1) {
 			throw new TypeError("removeChild needs a child");
 		}
-		return preRemove(child, this);
+		return preRemove(child, this) as unknown as T;
 	}
 
 	/* The spec's per-node steps. Subclasses override; the algorithms call. */
@@ -6990,6 +6990,9 @@ export interface NodeListOf<T extends Node> extends NodeList {
 }
 
 class HTMLCollectionBase extends LiveList {
+	/** Materialised by the live list, as on every indexed collection here. */
+	[index: number]: Element;
+
 	declare [Symbol.iterator]: () => ArrayIterator<Element>;
 
 	declare [kCompute]?: () => Element[];
