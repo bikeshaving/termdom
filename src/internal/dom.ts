@@ -2460,7 +2460,7 @@ export class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 export interface KeyboardEvent
 	extends Pick<
 		globalThis.KeyboardEvent,
-		| "DOM_KEY_LOCATION_STANDARD" |
+		"DOM_KEY_LOCATION_STANDARD" |
 		"DOM_KEY_LOCATION_LEFT" |
 		"DOM_KEY_LOCATION_RIGHT" |
 		"DOM_KEY_LOCATION_NUMPAD"
