@@ -5360,12 +5360,20 @@ function hasPreceding(child: Node | null, type: number): boolean {
 	return false;
 }
 
-/** Ensure pre-insertion validity of node into parent before child. */
-function ensurePreInsertionValidity(
+/**
+ * Steps 1-5 of both "ensure pre-insertion validity" and "replace" (DOM
+ * §4.2.3), which the standard writes out twice: what may hold children, what
+ * may be inserted, and where it may go. The two part company at step 6, where
+ * a document's one-element rule counts the replaced child differently.
+ *
+ * `absentChild` is the message for a child that is not the parent's, which is
+ * the only wording the two share nothing of.
+ */
+function validateInsertion(
 	node: Node,
 	parent: Node,
 	child: Node | null,
-	replacingAll = false,
+	absentChild: string,
 ): void {
 	const parentType = parent.nodeType;
 	if (
@@ -5379,7 +5387,7 @@ function ensurePreInsertionValidity(
 		throw hierarchyRequestError("A node cannot be inserted into itself");
 	}
 	if (child !== null && child[kParent] !== parent) {
-		throw notFoundError("The reference child is not a child of that parent");
+		throw notFoundError(absentChild);
 	}
 	const type = node.nodeType;
 	if (
@@ -5396,6 +5404,23 @@ function ensurePreInsertionValidity(
 	) {
 		throw hierarchyRequestError("That node cannot go there");
 	}
+}
+
+/** Ensure pre-insertion validity of node into parent before child. */
+function ensurePreInsertionValidity(
+	node: Node,
+	parent: Node,
+	child: Node | null,
+	replacingAll = false,
+): void {
+	validateInsertion(
+		node,
+		parent,
+		child,
+		"The reference child is not a child of that parent",
+	);
+	const parentType = parent.nodeType;
+	const type = node.nodeType;
 	if (parentType !== DOCUMENT_NODE) {
 		return;
 	}
@@ -5758,35 +5783,14 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 	if (!(node instanceof Node) || !(child instanceof Node)) {
 		throw new TypeError("That is not a node");
 	}
+	validateInsertion(
+		node,
+		parent,
+		child,
+		"The replaced child is not a child of that parent",
+	);
 	const parentType = parent.nodeType;
-	if (
-		parentType !== DOCUMENT_NODE &&
-		parentType !== DOCUMENT_FRAGMENT_NODE &&
-		parentType !== ELEMENT_NODE
-	) {
-		throw hierarchyRequestError("That parent cannot have children");
-	}
-	if (isHostIncludingInclusiveAncestor(node, parent)) {
-		throw hierarchyRequestError("A node cannot be inserted into itself");
-	}
-	if (child[kParent] !== parent) {
-		throw notFoundError("The replaced child is not a child of that parent");
-	}
 	const type = node.nodeType;
-	if (
-		type !== DOCUMENT_FRAGMENT_NODE &&
-		type !== DOCUMENT_TYPE_NODE &&
-		type !== ELEMENT_NODE &&
-		!isCharacterData(node)
-	) {
-		throw hierarchyRequestError("That node cannot be inserted");
-	}
-	if (
-		(type === TEXT_NODE && parentType === DOCUMENT_NODE) ||
-		(type === DOCUMENT_TYPE_NODE && parentType !== DOCUMENT_NODE)
-	) {
-		throw hierarchyRequestError("That node cannot go there");
-	}
 	if (parentType === DOCUMENT_NODE) {
 		if (type === DOCUMENT_FRAGMENT_NODE) {
 			const elementCount = countChildren(node, ELEMENT_NODE);
