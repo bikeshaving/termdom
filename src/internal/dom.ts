@@ -2099,6 +2099,7 @@ const kButtons = Symbol("buttons");
 const kModifiers = Symbol("modifiers");
 
 const kDefaultView = Symbol("the window this document is displayed in");
+
 /**
  * An event of a pointing device.
  *
@@ -5473,6 +5474,7 @@ const kCustomState = Symbol("custom element state");
 
 const kAssignedSlot = Symbol("assigned slot");
 const kDefinition = Symbol("element definition");
+
 /**
  * Every NodeIterator, keyed by the root of the tree its own root lives in,
  * held the same way as the ranges above and re-homed by the same moves.
@@ -5892,6 +5894,7 @@ function preRemove(child: Node, parent: Node): Node {
 const kRoot = Symbol("root");
 
 const kActiveElement = Symbol("focused area");
+
 /** Remove a node from its parent. */
 function removeNode(node: Node, suppressObservers = false): void {
 	const parent = node[kParent]!;
@@ -12828,6 +12831,7 @@ const kStateAtQueue = Symbol("stateAtQueue");
 const kContent = Symbol("content");
 
 const kEngine = Symbol("engine");
+
 /**
  * A disclosure, whose open attribute is its whole state.
  *
@@ -12965,6 +12969,7 @@ interface ToggleEventInit extends EventInit {
 const kOldState = Symbol("oldState");
 const kNewState = Symbol("newState");
 const kSource = Symbol("source");
+
 /** The event a details or a popover fires when it opens or closes. */
 export class ToggleEvent extends Event {
 	declare [kOldState]?: string;
@@ -12998,6 +13003,7 @@ Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 });
 
 const kPreviouslyFocused = Symbol("previouslyFocused");
+
 /**
  * A dialog.
  *
@@ -13171,6 +13177,7 @@ function close(
 }
 
 const kTopLayer = Symbol("the document's top layer");
+
 /**
  * A document's TOP LAYER: the elements that render above every stacking
  * context of the document, in the order they entered it. Membership is what
@@ -13498,6 +13505,7 @@ function submitForm(
 }
 
 const kResetControl = Symbol("put a control back to its default");
+
 /** Put a control back to the value its attributes name. */
 function resetControl(control: Element): void {
 	const resettable = control as unknown as Record<symbol, () => void>;
@@ -13513,6 +13521,7 @@ interface SubmitEventInit extends EventInit {
 }
 
 const kSubmitter = Symbol("submitter");
+
 /** The event a form fires before it is submitted, naming the button. */
 export class SubmitEvent extends Event {
 	declare [kSubmitter]?: HTMLElement | null;
@@ -13632,6 +13641,7 @@ Object.defineProperty(
 	Symbol.toStringTag,
 	{value: "HTMLFormControlsCollection", configurable: true},
 );
+
 /** The radio buttons that share a name, and the value the checked one has. */
 export class RadioNodeList extends NodeList {
 	constructor(compute: () => Node[], owner: Node | null = null) {
@@ -14784,6 +14794,7 @@ const VALID_DATETIME_LOCAL =
 	/^[0-9]{4,}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,3})?)?$/;
 const VALID_FLOAT = /^-?(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
 const VALID_SIMPLE_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 /** A floating-point number as the value space of the numeric types reads it. */
 function parseFloatingPoint(value: string): number | null {
 	if (!VALID_FLOAT.test(value)) {
@@ -15177,6 +15188,7 @@ const kMuted = Symbol("muted");
 const kPlaybackRate = Symbol("playbackRate");
 const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
 const kPreservesPitch = Symbol("preservesPitch");
+
 /**
  * A media element.
  *
@@ -15343,6 +15355,7 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 	HAVE_ENOUGH_DATA: {value: HAVE_ENOUGH_DATA, enumerable: true},
 });
 export class HTMLAudioElement extends HTMLMediaElement {}
+
 /** A video, whose intrinsic dimensions are zero until one is decoded. */
 export interface HTMLVideoElement
 	extends Pick<
@@ -15690,6 +15703,7 @@ export class HTMLOptGroupElement extends HTMLElement {
 const kSelectedness = Symbol("an option's selectedness");
 const kSelectednessValue = Symbol("selectedness value");
 const kOptionDirty = Symbol("an option's dirtiness");
+
 /** One choice of a select, whose selectedness is its own state. */
 export interface HTMLOptionElement
 	extends Pick<

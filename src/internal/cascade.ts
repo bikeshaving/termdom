@@ -158,6 +158,7 @@ const BORDER_STYLE_KEYWORDS = new Set([
 ]);
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
+
 /** The two ends of a flow-relative axis, in the order a pair shorthand states them. */
 const AXIS_ENDS = ["start", "end"] as const;
 

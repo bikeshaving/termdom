@@ -9420,6 +9420,7 @@ function syncContentRoot(
 		syncContainerRuns(layout, element);
 	}
 }
+
 /** Retire a box's content root once its content is all inline again. */
 function retireContentRoot(box: Box): void {
 	const root = box.contentRoot;

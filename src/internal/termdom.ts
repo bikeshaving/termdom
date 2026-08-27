@@ -275,6 +275,7 @@ const kEverActivated = Symbol("everActivated");
 const kFrameScroll = Symbol("frameScroll");
 const kFrameBand = Symbol("frameBand");
 const kFrameDirty = Symbol("frameDirty");
+
 /** The engine invalidation count the last painted frame was built from. */
 const kPaintedGeneration = Symbol("paintedGeneration");
 
