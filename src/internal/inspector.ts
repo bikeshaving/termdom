@@ -67,7 +67,11 @@ function inspectDocument(
 
 	if (doc.documentElement) {
 		output +=
-			"\n" + formatElement(doc.documentElement, {...options, currentDepth: 0});
+			"\n" +
+			formatElement(doc.documentElement as unknown as Element, {
+				...options,
+				currentDepth: 0,
+			});
 	}
 
 	return output;

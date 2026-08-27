@@ -5017,7 +5017,9 @@ export class Node extends EventTarget {
 			case ELEMENT_NODE:
 				return locateNamespacePrefix(this as unknown as Element, namespace);
 			case DOCUMENT_NODE: {
-				const element = (this as unknown as Document).documentElement;
+				const element =
+					(this as unknown as Document).documentElement as unknown as Element |
+					null;
 				return element === null ?
 					null :
 						locateNamespacePrefix(element, namespace);
@@ -13300,9 +13302,9 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
  * it: one element, or a list of the radio buttons that share it.
  *
  * WebIDL has this inherit HTMLCollection, so it does. What it answers for a
- * shared name is wider than what it inherits, which a subclass may not say in
- * TypeScript, so the merged interface below says it instead. lib.dom reaches
- * the same place by splitting HTMLCollection in two, which no engine does.
+ * shared name is wider than what it inherits, which a subclass may not say
+ * in TypeScript, so the merged interface below says it instead. lib.dom
+ * reaches the same place by splitting the base in two, which no engine does.
  */
 export class HTMLFormControlsCollection extends HTMLCollection {
 	declare [kOwner]?: Node | null;
@@ -20453,7 +20455,7 @@ export class Document extends Node {
 		const active = this[kActiveElement]!;
 		if (active === null || !active.isConnected) {
 			this[kActiveElement] = null;
-			return this.body;
+			return (this.body as unknown as Element | null);
 		}
 		// RETARGET to this scope, per HTML: focus inside a shadow tree reads
 		// as the host from the document; the tree's own root answers with
@@ -20469,7 +20471,7 @@ export class Document extends Node {
 				continue;
 			}
 			this[kActiveElement] = null;
-			return this.body;
+			return (this.body as unknown as Element | null);
 		}
 	}
 
@@ -20520,10 +20522,10 @@ export class Document extends Node {
 	 * document any DOM test can be written against; each follows the HTML
 	 * Standard's own definition.
 	 */
-	get head(): Element | null {
-		const root = this.documentElement;
+	get head(): globalThis.HTMLHeadElement {
+		const root = this.documentElement as unknown as Element | null;
 		if (root === null) {
-			return null;
+			return null as unknown as globalThis.HTMLHeadElement;
 		}
 		for (let node = root[kFirstChild]!; node !== null; node = node[kNext]!) {
 			if (
@@ -20531,16 +20533,16 @@ export class Document extends Node {
 				(node as Element)[kNamespace] === HTML_NAMESPACE &&
 				(node as Element)[kLocalName] === "head"
 			) {
-				return node as Element;
+				return node as unknown as globalThis.HTMLHeadElement;
 			}
 		}
-		return null;
+		return null as unknown as globalThis.HTMLHeadElement;
 	}
 
-	get body(): Element | null {
-		const root = this.documentElement;
+	get body(): globalThis.HTMLElement {
+		const root = this.documentElement as unknown as Element | null;
 		if (root === null) {
-			return null;
+			return null as unknown as globalThis.HTMLElement;
 		}
 		for (let node = root[kFirstChild]!; node !== null; node = node[kNext]!) {
 			if (
@@ -20549,38 +20551,39 @@ export class Document extends Node {
 				((node as Element)[kLocalName] === "body" ||
 					(node as Element)[kLocalName] === "frameset")
 			) {
-				return node as Element;
+				return node as unknown as globalThis.HTMLElement;
 			}
 		}
-		return null;
+		return null as unknown as globalThis.HTMLElement;
 	}
 
-	set body(value: Element | null) {
+	set body(value: globalThis.HTMLElement) {
 		if (
-			value == null ||
+			(value as unknown as Element | null) == null ||
 			value.nodeType !== ELEMENT_NODE ||
-			value[kNamespace] !== HTML_NAMESPACE ||
-			(value[kLocalName] !== "body" && value[kLocalName] !== "frameset")
+			(value as unknown as Element)[kNamespace] !== HTML_NAMESPACE ||
+			((value as unknown as Element)[kLocalName] !== "body" &&
+				(value as unknown as Element)[kLocalName] !== "frameset")
 		) {
 			throw hierarchyRequestError("That element cannot be a document body");
 		}
-		const existing = this.body;
-		if (existing === value) {
+		const existing = this.body as unknown as Element | null;
+		if (existing === (value as unknown as Element)) {
 			return;
 		}
-		const root = this.documentElement;
+		const root = this.documentElement as unknown as Element | null;
 		if (root === null) {
 			throw hierarchyRequestError("There is no document element");
 		}
 		if (existing !== null) {
-			replaceChild(existing, value, root);
+			replaceChild(existing, value as unknown as Element, root);
 		} else {
-			appendNode(value, root);
+			appendNode(value as unknown as Element, root);
 		}
 	}
 
 	get title(): string {
-		const root = this.documentElement;
+		const root = this.documentElement as unknown as Element | null;
 		let element: Element | null = null;
 		if (
 			root !== null &&
@@ -20632,7 +20635,7 @@ export class Document extends Node {
 			}
 		}
 		if (element === null) {
-			const head = this.head;
+			const head = this.head as unknown as Element | null;
 			if (head === null) {
 				return;
 			}
@@ -20644,13 +20647,13 @@ export class Document extends Node {
 		mountOf(this)?.titleChanged(String(value));
 	}
 
-	get documentElement(): Element | null {
+	get documentElement(): globalThis.HTMLElement {
 		for (let node = this[kFirstChild]!; node !== null; node = node[kNext]!) {
 			if (node.nodeType === ELEMENT_NODE) {
-				return node as Element;
+				return node as unknown as globalThis.HTMLElement;
 			}
 		}
-		return null;
+		return null as unknown as globalThis.HTMLElement;
 	}
 
 	getElementsByTagName(qualifiedName: string): HTMLCollection {
@@ -21209,9 +21212,9 @@ export class Document extends Node {
 	 */
 	get scrollingElement(): Element | null {
 		if (this[kMode] !== "quirks") {
-			return this.documentElement;
+			return (this.documentElement as unknown as Element | null);
 		}
-		const body = this.body;
+		const body = this.body as unknown as Element | null;
 		if (body === null || isPotentiallyScrollable(body)) {
 			return null;
 		}
@@ -22262,7 +22265,8 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 					locateNamespace(parent as unknown as Element, prefix);
 		}
 		case DOCUMENT_NODE: {
-			const element = (node as Document).documentElement;
+			const element = (node as Document).documentElement as unknown as Element |
+				null;
 			return element === null ? null : locateNamespace(element, prefix);
 		}
 		case DOCUMENT_TYPE_NODE:

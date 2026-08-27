@@ -76,7 +76,7 @@ test("the toolkit reads past the type gate the author meets", () => {
 
 	// A closed root hides from the author and answers to the toolkit.
 	const host = document.createElement("div");
-	document.body!.appendChild(host);
+	document.body.appendChild(host as unknown as globalThis.Node);
 	const closed = host.attachShadow({mode: "closed"});
 	expect(host.shadowRoot).toBe(null);
 	expect(toolkit.shadowRootOf(host)).toBe(closed);
