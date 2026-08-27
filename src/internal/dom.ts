@@ -6375,10 +6375,12 @@ const kRecords = Symbol("records");
 /** An observer of a tree: what it watches, and the records it has to deliver. */
 export class MutationObserver implements globalThis.MutationObserver {
 	declare [kCallback]?: MutationCallback;
-	/** The targets observe() named, and the nodes whose transient
+	/**
+	 * The targets observe() named, and the nodes whose transient
 	 * registrations outlived a checkpoint. Held strongly: each node's
 	 * registered observer list holds this observer right back, and a cycle
-	 * collects together once both sides are unreachable. */
+	 * collects together once both sides are unreachable.
+	 */
 	declare [kNodes]?: Set<Node>;
 	declare [kRecords]?: MutationRecord[];
 

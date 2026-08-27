@@ -43,8 +43,10 @@ export interface TerminalSize {
 }
 
 export interface TerminalCloseInfo {
-	/** Exit status, process semantics: the process wrapper hands it to
-	 * process.exit; an SSH wrapper sends it as exit-status. */
+	/**
+	 * Exit status, process semantics: the process wrapper hands it to
+	 * process.exit; an SSH wrapper sends it as exit-status.
+	 */
 	status?: number;
 	/** The signal that ended the session ("SIGHUP", "SIGTERM"), when one did. */
 	signal?: string;
@@ -95,15 +97,19 @@ export interface TerminalTransport {
 	 * an SSH wrapper resolves it when its channel opens.
 	 */
 	readonly ready: Promise<void>;
-	/** The terminal went away: hangup, disconnect, process exit. Always
-	 * fulfills with a TerminalCloseInfo; fields may be absent. */
+	/**
+	 * The terminal went away: hangup, disconnect, process exit. Always
+	 * fulfills with a TerminalCloseInfo; fields may be absent.
+	 */
 	readonly closed: Promise<TerminalCloseInfo>;
-	/** The app is done with the terminal (window.close()'s last act). A
+	/**
+	 * The app is done with the terminal (window.close()'s last act). A
 	 * transport that owns its medium ends it -- the process transport exits
 	 * the process with info's status; an SSH transport would end the channel.
 	 * One that doesn't (an embedded pane, a test harness) implements this as
 	 * a no-op: the engine has already flushed and disposed by the time it
-	 * calls here. */
+	 * calls here.
+	 */
 	close(info?: TerminalCloseInfo): void;
 }
 
