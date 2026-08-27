@@ -23,7 +23,9 @@ const bun = globalThis.Bun;
  * One shared grapheme segmenter: what the terminal treats as one character.
  * Constructing one is expensive, so the whole engine reads through this.
  */
-export const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
+export const graphemeSegmenter = new Intl.Segmenter("en", {
+	granularity: "grapheme",
+});
 
 /**
  * Combining marks and format characters -- the two Unicode categories whose
@@ -485,9 +487,9 @@ function inRanges(
 	return false;
 }
 
-// ============================================================================
-// Bidirectional text + Arabic shaping (UAX #9)
-// ============================================================================
+// ---------------------------------------------------------------------------
+// Bidirectional text and Arabic shaping (UAX #9)
+// ---------------------------------------------------------------------------
 
 /**
  * Right-to-left text, for a renderer that addresses cells directly.

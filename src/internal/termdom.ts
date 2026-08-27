@@ -220,8 +220,8 @@ function getFullscreenWindow(
 	const targetElement = element || termdom[kFullscreenStack][0];
 	const document = targetElement ? targetElement.ownerDocument : null;
 	return (document ? document.defaultView : undefined) as
-		| EngineWindow
-		| undefined;
+		| EngineWindow |
+		undefined;
 }
 
 /**
@@ -451,7 +451,6 @@ export class TermDOM {
 	// interpret cursor movement either, so the interactive frame would write
 	// CUP and DECSC sequences straight into the file. An injected transport
 	// asserts a terminal exists on the other end.
-
 
 	/**
 	 * Reveal what a disclosure opened. A details that closes has taken content
@@ -2297,7 +2296,6 @@ function processPendingMutationsAndRender(
 	clampScrolledOffsets(termdom);
 	return hadMutations;
 }
-
 
 function writeElementScroll(
 	element: Element,

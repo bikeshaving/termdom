@@ -2419,7 +2419,6 @@ interface CSSDeclaration {
 	important: boolean;
 }
 
-
 const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
 
 /** The components of a line shorthand, in the order its grammar writes them. */
@@ -3751,9 +3750,9 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 
-// ============================================================================
-// CSSOM: STYLESHEETS AND RULES
-// ============================================================================
+// ---------------------------------------------------------------------------
+// The CSSOM: stylesheets and the rules in them
+// ---------------------------------------------------------------------------
 
 /**
  * The window whose CSSOM was installed last.
@@ -4885,7 +4884,6 @@ class CSSFontPaletteValuesRule extends CSSNamedDeclarationRule {
 	}
 }
 
-
 const kKeyText = Symbol("keyText");
 
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
@@ -5945,7 +5943,6 @@ function checkRuleOrder(
 		hierarchy();
 	}
 }
-
 
 // ---- Selectors -------------------------------------------------------------
 
@@ -8280,7 +8277,8 @@ function toPhysicalProperty(
  * longhands different questions -- and their answers must not meet, which
  * is why only the computed one is memoized.
  */
-function shorthand(property: string,
+function shorthand(
+	property: string,
 	longhands: readonly string[],
 	read: (longhand: string) => string,
 ): string {
@@ -10437,10 +10435,10 @@ export class StyleManager {
 								shouldRefreshStylesheets = true;
 							}
 						} else {
-												invalidateElementCaches(this, element);
-												this.attachPseudoElementsToElement(element);
+							invalidateElementCaches(this, element);
+							this.attachPseudoElementsToElement(element);
 
-												const childElements = element.querySelectorAll("*");
+							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
 								invalidateElementCaches(this, childElement);
 								this.attachPseudoElementsToElement(childElement);
@@ -13093,9 +13091,7 @@ function scopeProximity(
  * least), and the innermost taking the NEAREST, which is the one the
  * element's selector and its proximity are measured from.
  */
-function scopingRoot(element: Element,
-	rule: ParsedCSSRule,
-): Element | null {
+function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 	const conditions = rule.scopes!;
 	let outer: Element | null = null;
 	for (let index = 0; index < conditions.length; index++) {
@@ -13140,8 +13136,7 @@ function scopingRoot(element: Element,
  * UA-internal tree. Author shadow trees are not eligible -- their parts
  * are theirs to style from inside.
  */
-function partPseudoFor(element: Element,
-): string | null {
+function partPseudoFor(element: Element): string | null {
 	const root = element.getRootNode();
 	if (isUAShadowRoot(root)) {
 		const part = element.getAttribute("part");
@@ -13593,9 +13588,7 @@ function counterPairs(
 /**
  * Parse counter-reset CSS property
  */
-function parseCounterReset(scope: CounterScope,
-	counterReset: string,
-): void {
+function parseCounterReset(scope: CounterScope, counterReset: string): void {
 	for (const [name, value] of counterPairs(counterReset, 0)) {
 		scope.counters[name] = value;
 	}
@@ -13627,9 +13620,7 @@ function incrementCounter(
 		const currentValue = getListItemCounterValue(manager, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
-		const currentValue = getCounterValueFromScope(scope.parent,
-			counterName,
-		);
+		const currentValue = getCounterValueFromScope(scope.parent, counterName);
 		scope.counters[counterName] = currentValue + increment;
 	}
 }
@@ -13672,7 +13663,8 @@ function getListItemCounterValue(
 /**
  * Get counter value from a specific scope (without current scope)
  */
-function getCounterValueFromScope(scope: CounterScope | undefined,
+function getCounterValueFromScope(
+	scope: CounterScope | undefined,
 	counterName: string,
 ): number {
 	// Look for counter in current scope or parent scopes

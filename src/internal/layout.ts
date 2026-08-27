@@ -1403,7 +1403,8 @@ function markDirtyUpward(
 	}
 }
 
-function setEdges(target: Edges<Value>,
+function setEdges(
+	target: Edges<Value>,
 	edge: EdgeShorthand,
 	value: Value,
 ): void {
@@ -7333,8 +7334,7 @@ export function renderTextFragment(
  * Determines if a whitespace-only text node should be collapsed to nothing
  * according to CSS whitespace collapsing rules in block formatting contexts
  */
-function shouldCollapseWhitespaceTextNode(textNode: Text,
-): boolean {
+function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// Only collapse whitespace-only text nodes
 	if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
 		return false;
@@ -7428,8 +7428,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text,
  * white space (white-space: pre/pre-wrap on the container) stays an
  * item, and a run that reaches any inline content is a real item.
  */
-function isSuppressedFlexWhitespace(text: Text,
-): boolean {
+function isSuppressedFlexWhitespace(text: Text): boolean {
 	const parent = text.parentElement;
 	if (!parent) {
 		return false;
@@ -8954,8 +8953,7 @@ function boxParentElement(node: Node): Element | null {
 }
 
 /** The flat-tree parent that can hold a box, pseudo-elements included. */
-function getBoxParent(node: Node,
-): Element | null {
+function getBoxParent(node: Node): Element | null {
 	return boxParentElement(node);
 }
 
@@ -9438,8 +9436,7 @@ function syncContentRoot(
 	}
 }
 /** Retire a box's content root once its content is all inline again. */
-function retireContentRoot(box: Box,
-): void {
+function retireContentRoot(box: Box): void {
 	const root = box.contentRoot;
 	if (!root) {
 		return;
@@ -9610,8 +9607,7 @@ function containingBlockFlexNode(
 }
 
 /** Hidden by an ancestor's display:none anywhere up the flat tree. */
-function hiddenByAncestor(node: Node,
-): boolean {
+function hiddenByAncestor(node: Node): boolean {
 	for (
 		let ancestor = flatParentElement<Element>(node);
 		ancestor;
@@ -9765,8 +9761,7 @@ function untrackNode(
  * A node is live if it is still in the document, or -- for pseudo-elements,
  * which are never "connected" themselves -- if its host element is.
  */
-function isNodeLive(node: Node,
-): boolean {
+function isNodeLive(node: Node): boolean {
 	// Flat-tree connectivity: a pseudo-element node and a control's
 	// shadow parts are outside the node tree and still render, so the
 	// prune sweep must not reap them every frame.
@@ -9807,8 +9802,7 @@ function pruneDisconnectedNodes(
  * display:none elements -- a UA shadow tree's <style> would otherwise
  * terminate leaf collection at position zero.
  */
-function firstComposedRenderableChild(element: Element,
-): Node | null {
+function firstComposedRenderableChild(element: Element): Node | null {
 	const walker = flowWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (
@@ -9828,8 +9822,7 @@ function firstComposedRenderableChild(element: Element,
  * a row-direction flex container, so the flex algorithm -- not its own
  * CSS width -- owns its used width.
  */
-function isRowFlexItem(element: Element,
-): boolean {
+function isRowFlexItem(element: Element): boolean {
 	const parent = flatParentElement<Element>(element);
 	if (!parent) {
 		return false;
@@ -11292,8 +11285,7 @@ function processWhitespace(
 }
 
 /** Does ANY text leaf in the run carry white-space: nowrap? */
-function hasNowrapLeaf(content: ProcessedContent,
-): boolean {
+function hasNowrapLeaf(content: ProcessedContent): boolean {
 	return content.items.some((item) => {
 		if (item.leafNode.type === "text") {
 			return getWhiteSpace(item.leafNode.node) === "nowrap";
@@ -11302,7 +11294,8 @@ function hasNowrapLeaf(content: ProcessedContent,
 	});
 }
 
-function findBreakPoints(content: ProcessedContent,
+function findBreakPoints(
+	content: ProcessedContent,
 	options: BreakOptions,
 ): BreakPoint[] {
 	// Nothing may break a nowrap run except a break the CONTENT demands: a
@@ -11452,10 +11445,7 @@ function buildLines(
 			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
-		const lineNodes = getNodesInRange(content.items,
-			lineStart,
-			bestBreak,
-		);
+		const lineNodes = getNodesInRange(content.items, lineStart, bestBreak);
 
 		if (lineNodes.length > 0) {
 			const lineHeight = Math.max(
@@ -11494,7 +11484,8 @@ function buildLines(
 }
 
 /** The width of text[start..end) of a run, in terminal cells. */
-function measureText(content: ProcessedContent,
+function measureText(
+	content: ProcessedContent,
 	start: number,
 	end: number,
 ): number {
@@ -11946,7 +11937,8 @@ function caretRect(
  * point landed on the line, which is what picks between two lines painted
  * on the same row.
  */
-function offsetInFragment(textNode: Text,
+function offsetInFragment(
+	textNode: Text,
 	whiteSpace: string,
 	fragment: LineFragment,
 	x: number,
@@ -12253,7 +12245,8 @@ const ZERO_OFFSET = {x: 0, y: 0};
  * no box in it: the trailing edge of the last content placed before that
  * node, and the top of the line it landed on, relative to the run's box.
  */
-function inlineCursorBefore(run: Box,
+function inlineCursorBefore(
+	run: Box,
 	element: Element,
 ): {x: number; y: number} {
 	const breakResult = run.fragments;
@@ -12273,7 +12266,8 @@ function inlineCursorBefore(run: Box,
 	return cursor;
 }
 
-function getNodesInRange(items: ProcessedContent["items"],
+function getNodesInRange(
+	items: ProcessedContent["items"],
 	start: number,
 	end: number,
 ): LineResult["segments"] {
@@ -12805,7 +12799,6 @@ export class LayoutEngine {
 		text: string;
 		offsets: Int32Array | null;
 	}>;
-
 
 	// Text-fragment index per break result: text node -> the fragments the
 	// breaker placed for it, each with its OUTER line index, x offset (nested
@@ -13597,11 +13590,7 @@ export class LayoutEngine {
 				if (!clampToNearestLine && fragment.endOffset <= fragment.startOffset) {
 					continue;
 				}
-				const found = offsetInFragment(textNode,
-					whiteSpace,
-					fragment,
-					x,
-				);
+				const found = offsetInFragment(textNode, whiteSpace, fragment, x);
 				if (!best || found.distance < best.distance) {
 					best = {
 						node: textNode,
@@ -13618,7 +13607,8 @@ export class LayoutEngine {
 		if (!nearest) {
 			return null;
 		}
-		const found = offsetInFragment(nearest.node,
+		const found = offsetInFragment(
+			nearest.node,
 			getWhiteSpace(nearest.node),
 			nearest.fragment,
 			x,

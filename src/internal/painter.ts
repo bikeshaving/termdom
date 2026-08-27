@@ -364,9 +364,7 @@ export class Painter {
  * author writing `dialog::backdrop { background-color: ... }` replaces the
  * scrim and one writing `transparent` removes it.
  */
-function renderBackdrop(element: Element,
-	ctx: CellContext,
-): void {
+function renderBackdrop(element: Element, ctx: CellContext): void {
 	const fill = backgroundFill(
 		getPseudoStyle(element, "::backdrop").getComputedValue("background-color"),
 	);
@@ -582,7 +580,6 @@ function renderElement(
 			}
 		}
 	}
-
 
 	// The stacking-context painter slots its negative-z layer here: after
 	// this element's own background and border, before any of its in-flow

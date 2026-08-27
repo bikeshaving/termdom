@@ -551,7 +551,6 @@ function textSelectionRange(
 	return range;
 }
 
-
 /** A node's own document, as the tree-building code below reads it. */
 function getUADocument(node: object): UADocument {
 	return (node as Node).ownerDocument as unknown as UADocument;
@@ -22948,7 +22947,6 @@ function scrollElementTo(
 	}
 }
 
-
 function writeScrollOffset(
 	element: object,
 	axis: "left" | "top",
@@ -23302,8 +23300,6 @@ function comparePoints(
 	}
 	return precedesSibling(chainA[depth], chainB[depth]) ? BEFORE : AFTER;
 }
-
-
 
 function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
 	let set = nodeIteratorsByRoot.get(treeRoot);
@@ -25407,9 +25403,7 @@ function focusPoint(
 }
 
 /** The range the Range API builds from an ordered pair of points. */
-function rangeFor(start: [Node, number],
-	end: [Node, number],
-): Range {
+function rangeFor(start: [Node, number], end: [Node, number]): Range {
 	const range = new Range();
 	setRangeBoundary(range, start[0], start[1], true);
 	setRangeBoundary(range, end[0], end[1], false);
@@ -25478,9 +25472,7 @@ function selectionChanged(
 	scheduleSelectionChange(selection[kDocument]!);
 }
 
-function composedOrder(point: Range,
-	other: Range,
-): number {
+function composedOrder(point: Range, other: Range): number {
 	return compareComposedPoints(
 		point[kStartNode]!,
 		point[kStartOffset]!,
