@@ -6640,6 +6640,7 @@ abstract class LiveList implements Materializable {
 	declare [kChildMember]?: ((node: Node) => boolean) | null;
 	declare [kWide]?: boolean;
 	declare [kWatched]?: string | symbol | null;
+	declare [kNames]?: string[];
 
 	/**
 	 * @param childMember - which of the owner's children the list holds, where
@@ -6703,8 +6704,6 @@ abstract class LiveList implements Materializable {
 		}
 		return members;
 	}
-
-	declare [kNames]?: string[];
 
 	[kSync]?(): void {
 		if (this[kRegistered] === null) {
@@ -9793,7 +9792,7 @@ export class HTMLElement extends Element {
 		this.setAttribute("autocorrect", value ? "on" : "off");
 	}
 
-	/** Hidden reflects as `any`: a string for the third state, else a boolean. */
+	/** Whether the element and its subtree are inert: present or absent. */
 	get inert(): boolean {
 		return this.hasAttribute("inert");
 	}
