@@ -111,10 +111,11 @@ export interface TerminalTransport {
 
 /**
  * The private modes and stack controls this engine sets, named once. `set`
- * engages, `reset` hands the terminal back; wire spells both. Orderly teardown resets what was
- * engaged, in this declaration order; the transport's panic paths blanket-
- * reset the union. A mode written anywhere else is a restore leak waiting --
- * new modes are added here and set through TerminalExchange.setMode.
+ * engages, `reset` hands the terminal back; wire spells both. An orderly
+ * teardown resets what was engaged, in this declaration order; the
+ * transport's panic paths blanket-reset the union. A mode written anywhere
+ * else is a restore leak waiting -- new modes are added here, and set
+ * through TerminalExchange.setMode.
  */
 const MODE_SPELLINGS = {
 	motionReporting: {
@@ -168,25 +169,7 @@ export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 
 /* ------------------------------------------------------------ the exchange */
 
-/**
- * The conversation held over a transport: one reader, one writer, and the
- * demultiplexer between them.
- *
- * Everything the wire carries arrives interleaved on one byte stream -- that
- * is the terminal protocol's nature -- so this is where it fans out:
- * bracketed-paste bodies, DECRPM mode replies and DSR cursor replies (spliced
- * out and routed to whichever query waits), mouse reports, and finally
- * keystrokes. The engine sees typed callbacks and dispatches DOM events; no
- * other layer parses input.
- *
- * The query half is round-trips the engine cannot have synchronously. A DSR cursor query locates the command-start row so the
- * painted region anchors correctly; DECRQM queries settle capabilities the
- * renderer's contract depends on (explicit bidi, grapheme-cluster widths).
- * Answers may never come -- most terminals implement no such modes -- so every
- * query is bounded by a timer, and silence is a valid answer meaning "no
- * opinion, ours stands". Every timer is tracked so dispose() can clear it; a
- * live one keeps the event loop open, which across a test suite is fatal.
- */
+/** What the exchange tells the engine, as it works out what arrived. */
 interface ExchangeHandlers {
 	/** Decoded non-mouse input: batched keystrokes after the demux. */
 	onKeys(keyInput: string): void;
@@ -272,6 +255,26 @@ const kWidthRun = Symbol("widthRun");
 const kWidthDrift = Symbol("widthDrift");
 const kWidthRunLost = Symbol("widthRunLost");
 
+/**
+ * The conversation held over a transport: one reader, one writer, and the
+ * demultiplexer between them.
+ *
+ * Everything the wire carries arrives interleaved on one byte stream -- that
+ * is the terminal protocol's nature -- so this is where it fans out:
+ * bracketed-paste bodies, DECRPM mode replies and DSR cursor replies (spliced
+ * out and routed to whichever query waits), mouse reports, and finally
+ * keystrokes. The engine sees typed callbacks and dispatches DOM events; no
+ * other layer parses input.
+ *
+ * The query half is the round-trips the engine cannot have synchronously. A
+ * DSR cursor query locates the command-start row so the painted region
+ * anchors correctly; DECRQM queries settle capabilities the renderer's
+ * contract depends on (explicit bidi, grapheme-cluster widths). Answers may
+ * never come -- most terminals implement no such modes -- so every query is
+ * bounded by a timer, and silence is a valid answer meaning "no opinion,
+ * ours stands". Every timer is tracked so dispose() can clear it; a live one
+ * keeps the event loop open, which across a test suite is fatal.
+ */
 export class TerminalExchange {
 	declare [kTransport]: TerminalTransport;
 	declare [kInteractive]: boolean;
@@ -404,6 +407,8 @@ export class TerminalExchange {
 	// Replaced by every write, so probes taken while building one frame are
 	// told apart from probes taken while building the next.
 	declare [kWriteBatch]: object;
+	declare [kWidthMeasurer]: WidthMeasurer;
+
 	/**
 	 * Generous: the reply crosses whatever the transport is, and a terminal
 	 * answering late is still answering. Only a session that gets NOTHING back
@@ -429,8 +434,6 @@ export class TerminalExchange {
 	 * with, and the query gives up rather than buffer the wire.
 	 */
 	static readonly [kClipboardReplyLimit] = 1 << 16;
-
-	declare [kWidthMeasurer]: WidthMeasurer;
 
 	/**
 	 * The frame's channel for measuring cluster advances. Whether asking is
@@ -716,9 +719,10 @@ export class TerminalExchange {
 			ansiMode(8, false) + ansiModeQuery(8),
 		);
 
+		// No bidi at all: cells land as written, which is the contract we want.
 		if (answer === null || answer === 0) {
 			return;
-		} // No bidi: cells as written.
+		}
 		this[kPriorBidiMode] = answer;
 
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
@@ -814,9 +818,8 @@ export class TerminalExchange {
 			this[kCursorDetectionSequence] = this[kDsrSequence]++;
 			void this.write(cursorPositionQuery());
 
-			// Timeout after 1000ms. The timer is held so it can be cleared the
-			// moment a response arrives --
-			// otherwise it keeps the event loop alive a further second.
+			// The timer is held so a response can clear it; left running, it
+			// keeps the event loop alive a further second.
 			this[kCursorDetectionTimer] = setTimeout(() => {
 				this[kCursorDetectionTimer] = null;
 				if (this[kCursorDetectionHandler]) {
