@@ -3,10 +3,7 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import type {
-	UAToolkit,
-} from "./dom.js";
-import type {EngineWindow} from "./dom.js";
+import type {EngineWindow, UAToolkit} from "./dom.js";
 import {
 	type LayoutEngine,
 	flowWalker,
@@ -349,7 +346,7 @@ export class Painter {
 			// chain; seed the culling shift its scrolled ancestors impose.
 			this[kScrolledRows] = this[kLayout].scrolledAncestorRows(element);
 			try {
-				renderBackdrop(this, element, ctx);
+				renderBackdrop(element, ctx);
 				renderStackingContext(this, element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
@@ -367,9 +364,7 @@ export class Painter {
  * author writing `dialog::backdrop { background-color: ... }` replaces the
  * scrim and one writing `transparent` removes it.
  */
-function renderBackdrop(
-	painter: Painter,
-	element: Element,
+function renderBackdrop(element: Element,
 	ctx: CellContext,
 ): void {
 	const fill = backgroundFill(

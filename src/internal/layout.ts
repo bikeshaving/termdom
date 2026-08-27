@@ -5,7 +5,6 @@
  * It reads computed styles and produces geometry. Every rect the DOM answers
  * with, and every cell the painter places, comes from what it computed.
  */
-import type {EngineWindow} from "./dom.js";
 import LineBreaker from "linebreak";
 import {
 	hasRTL,
@@ -37,6 +36,7 @@ import {
 	getShadowRoot,
 	SHOW_FLAT,
 	TreeWalker,
+	type EngineWindow,
 } from "./dom.js";
 
 import {
@@ -1249,27 +1249,27 @@ export class LayoutNode {
 	}
 
 	setMargin(edge: EdgeShorthand, v: number | undefined): void {
-		setEdges(this, this.style.margin, edge, toValue(v));
+		setEdges(this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setMarginPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this, this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setMarginAuto(edge: EdgeShorthand): void {
-		setEdges(this, this.style.margin, edge, AUTO_VALUE);
+		setEdges(this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
 	setPadding(edge: EdgeShorthand, v: number | undefined): void {
-		setEdges(this, this.style.padding, edge, toValue(v));
+		setEdges(this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPaddingPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this, this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
@@ -1282,17 +1282,17 @@ export class LayoutNode {
 	}
 
 	setPosition(edge: EdgeShorthand, v: number | undefined): void {
-		setEdges(this, this.style.position, edge, toValue(v));
+		setEdges(this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 
 	setPositionPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this, this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
 	setPositionAuto(edge: EdgeShorthand): void {
-		setEdges(this, this.style.position, edge, AUTO_VALUE);
+		setEdges(this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
@@ -1403,9 +1403,7 @@ function markDirtyUpward(
 	}
 }
 
-function setEdges(
-	node: LayoutNode,
-	target: Edges<Value>,
+function setEdges(target: Edges<Value>,
 	edge: EdgeShorthand,
 	value: Value,
 ): void {
@@ -7335,9 +7333,7 @@ export function renderTextFragment(
  * Determines if a whitespace-only text node should be collapsed to nothing
  * according to CSS whitespace collapsing rules in block formatting contexts
  */
-function shouldCollapseWhitespaceTextNode(
-	layout: LayoutEngine,
-	textNode: Text,
+function shouldCollapseWhitespaceTextNode(textNode: Text,
 ): boolean {
 	// Only collapse whitespace-only text nodes
 	if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
@@ -7432,9 +7428,7 @@ function shouldCollapseWhitespaceTextNode(
  * white space (white-space: pre/pre-wrap on the container) stays an
  * item, and a run that reaches any inline content is a real item.
  */
-function isSuppressedFlexWhitespace(
-	layout: LayoutEngine,
-	text: Text,
+function isSuppressedFlexWhitespace(text: Text,
 ): boolean {
 	const parent = text.parentElement;
 	if (!parent) {
@@ -8514,7 +8508,7 @@ function containerBox(
 			}
 		} else if (child.nodeType !== child.TEXT_NODE) {
 			continue;
-		} else if (isSuppressedFlexWhitespace(layout, child as Text)) {
+		} else if (isSuppressedFlexWhitespace(child as Text)) {
 			// Collapsible white space between flex items renders nothing at
 			// all (css-flexbox-1 §4), so it opens no anonymous item.
 			continue;
@@ -8705,7 +8699,7 @@ function getBoxEntry(
 		if (entry) {
 			return entry;
 		}
-		const parent = getBoxParent(layout, current);
+		const parent = getBoxParent(current);
 		if (!parent) {
 			return principalBox(layout, current);
 		}
@@ -8793,7 +8787,7 @@ function syncContainerRuns(
 	layout[kDirtyRunContainers].delete(container);
 	if (
 		computedDisplay(container) === "none" ||
-		hiddenByAncestor(layout, container)
+		hiddenByAncestor(container)
 	) {
 		// Content that arrives under the boundary generates no box, and
 		// whatever boxes it brought from where it was visible are retired
@@ -8960,9 +8954,7 @@ function boxParentElement(node: Node): Element | null {
 }
 
 /** The flat-tree parent that can hold a box, pseudo-elements included. */
-function getBoxParent(
-	layout: LayoutEngine,
-	node: Node,
+function getBoxParent(node: Node,
 ): Element | null {
 	return boxParentElement(node);
 }
@@ -8979,7 +8971,7 @@ function getRunContainer(
 	layout: LayoutEngine,
 	node: Node,
 ): Element | null {
-	const parent = getBoxParent(layout, node);
+	const parent = getBoxParent(node);
 	if (!parent) {
 		return null;
 	}
@@ -9005,7 +8997,7 @@ function runContainerFrom(
 	for (
 		let current: Element | null = box;
 		current;
-		current = getBoxParent(layout, current)
+		current = getBoxParent(current)
 	) {
 		if (isOutOfFlow(current)) {
 			return current;
@@ -9052,7 +9044,7 @@ function addNode(
 	// fresh builds never descend past the none boundary, and rebuild
 	// sweeps must not smuggle descendants back in under the hidden
 	// container (the flex engine does not ignore them).
-	if (hiddenByAncestor(layout, node)) {
+	if (hiddenByAncestor(node)) {
 		// Whatever boxes the node brought with it from where it was visible
 		// go with it: nothing under the boundary generates one.
 		retireFlexNode(layout, node);
@@ -9254,7 +9246,7 @@ function addElementNode(
 	// element that stops being an inline-block lays its block content out
 	// here, and a content root left behind would go on claiming the same
 	// children.
-	retireContentRoot(layout, principalBox(layout, element));
+	retireContentRoot(principalBox(layout, element));
 
 	// Only DIRECT children: an inline child broken apart by a block-level
 	// box holds boxes this container lays out, and those reach the tree
@@ -9299,7 +9291,7 @@ function addTextNode(
 		return;
 	}
 
-	if (isSuppressedFlexWhitespace(layout, text)) {
+	if (isSuppressedFlexWhitespace(text)) {
 		return;
 	}
 
@@ -9401,7 +9393,7 @@ function syncContentRoot(
 		!establishesContentRoot(element) ||
 		(!grid && !containsBlockLevelBox(layout, element))
 	) {
-		retireContentRoot(layout, box);
+		retireContentRoot(box);
 		return;
 	}
 
@@ -9446,9 +9438,7 @@ function syncContentRoot(
 	}
 }
 /** Retire a box's content root once its content is all inline again. */
-function retireContentRoot(
-	layout: LayoutEngine,
-	box: Box,
+function retireContentRoot(box: Box,
 ): void {
 	const root = box.contentRoot;
 	if (!root) {
@@ -9480,7 +9470,7 @@ function retireHiddenContent(
 	retireContainerBoxes(layout, element);
 	const box = layout[kBoxes].get(element);
 	if (box) {
-		retireContentRoot(layout, box);
+		retireContentRoot(box);
 	}
 	const walker = createTreeWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
@@ -9620,9 +9610,7 @@ function containingBlockFlexNode(
 }
 
 /** Hidden by an ancestor's display:none anywhere up the flat tree. */
-function hiddenByAncestor(
-	layout: LayoutEngine,
-	node: Node,
+function hiddenByAncestor(node: Node,
 ): boolean {
 	for (
 		let ancestor = flatParentElement<Element>(node);
@@ -9777,9 +9765,7 @@ function untrackNode(
  * A node is live if it is still in the document, or -- for pseudo-elements,
  * which are never "connected" themselves -- if its host element is.
  */
-function isNodeLive(
-	layout: LayoutEngine,
-	node: Node,
+function isNodeLive(node: Node,
 ): boolean {
 	// Flat-tree connectivity: a pseudo-element node and a control's
 	// shadow parts are outside the node tree and still render, so the
@@ -9794,12 +9780,12 @@ function pruneDisconnectedNodes(
 ): void {
 	// A box outlives the nodes that pass through it, but not its container.
 	for (const box of [...layout[kAnonymousBoxes].values()]) {
-		if (!isNodeLive(layout, box.container)) {
+		if (!isNodeLive(box.container)) {
 			retireAnonymousBox(layout, box);
 		}
 	}
 	for (const [node, flexNode] of layout[kNodeMap]) {
-		if (node === layout[kRootElement] || isNodeLive(layout, node)) {
+		if (node === layout[kRootElement] || isNodeLive(node)) {
 			continue;
 		}
 
@@ -9821,9 +9807,7 @@ function pruneDisconnectedNodes(
  * display:none elements -- a UA shadow tree's <style> would otherwise
  * terminate leaf collection at position zero.
  */
-function firstComposedRenderableChild(
-	layout: LayoutEngine,
-	element: Element,
+function firstComposedRenderableChild(element: Element,
 ): Node | null {
 	const walker = flowWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
@@ -9844,9 +9828,7 @@ function firstComposedRenderableChild(
  * a row-direction flex container, so the flex algorithm -- not its own
  * CSS width -- owns its used width.
  */
-function isRowFlexItem(
-	layout: LayoutEngine,
-	element: Element,
+function isRowFlexItem(element: Element,
 ): boolean {
 	const parent = flatParentElement<Element>(element);
 	if (!parent) {
@@ -10677,7 +10659,7 @@ function collectLeavesUnder(
 
 				if (
 					isWhitespaceOnly &&
-					shouldCollapseWhitespaceTextNode(layout, textNode)
+					shouldCollapseWhitespaceTextNode(textNode)
 				) {
 					if (!walker.nextNode()) {
 						break;
@@ -10822,7 +10804,7 @@ function collectLeavesUnder(
 				// overflows, it does not re-wrap.
 				let offerOwnsWidth = false;
 				if (
-					Number.isFinite(availableWidth) && isRowFlexItem(layout, element)
+					Number.isFinite(availableWidth) && isRowFlexItem(element)
 				) {
 					const offered = Math.max(0, availableWidth - horizontalBoxSpace);
 					if (availableWidthMode === "exactly") {
@@ -10910,7 +10892,7 @@ function collectLeavesUnder(
 					finalContentWidth = contentRoot.getComputedWidth();
 					finalContentHeight = contentRoot.getComputedHeight();
 				} else {
-					const contentStart = firstComposedRenderableChild(layout, element);
+					const contentStart = firstComposedRenderableChild(element);
 					if (contentStart) {
 						inlineBlockResult = breakNodes(
 							layout,
@@ -11106,8 +11088,8 @@ function breakNodes(
 	const nowrap =
 		preservesLines ||
 		(whiteSpace || "normal") === "nowrap" ||
-		hasNowrapLeaf(layout, processedContent);
-	const breaks = findBreakPoints(layout, processedContent, {
+		hasNowrapLeaf(processedContent);
+	const breaks = findBreakPoints(processedContent, {
 		maxWidth,
 		whiteSpace: whiteSpace || "normal",
 		nowrap,
@@ -11310,9 +11292,7 @@ function processWhitespace(
 }
 
 /** Does ANY text leaf in the run carry white-space: nowrap? */
-function hasNowrapLeaf(
-	layout: LayoutEngine,
-	content: ProcessedContent,
+function hasNowrapLeaf(content: ProcessedContent,
 ): boolean {
 	return content.items.some((item) => {
 		if (item.leafNode.type === "text") {
@@ -11322,9 +11302,7 @@ function hasNowrapLeaf(
 	});
 }
 
-function findBreakPoints(
-	layout: LayoutEngine,
-	content: ProcessedContent,
+function findBreakPoints(content: ProcessedContent,
 	options: BreakOptions,
 ): BreakPoint[] {
 	// Nothing may break a nowrap run except a break the CONTENT demands: a
@@ -11414,7 +11392,7 @@ function buildLines(
 		while (low <= high) {
 			const mid = (low + high) >> 1;
 			if (
-				measureText(layout, content, lineStart, breaks[mid].position) <=
+				measureText(content, lineStart, breaks[mid].position) <=
 				maxWidth
 			) {
 				lastFitting = mid;
@@ -11430,7 +11408,7 @@ function buildLines(
 		const chosen = required <= lastFitting ? required : lastFitting;
 		if (chosen >= cursor) {
 			bestBreak = breaks[chosen].position;
-			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
 		// No break opportunity fits. Under overflow-wrap: normal the line
@@ -11442,7 +11420,7 @@ function buildLines(
 				cursor < breaks.length ?
 					breaks[cursor].position :
 					content.text.length;
-			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
 		if (bestBreak === lineStart) {
@@ -11463,7 +11441,7 @@ function buildLines(
 					continue; // Try again with the new position
 				}
 
-				const width = measureText(layout, content, lineStart, pos);
+				const width = measureText(content, lineStart, pos);
 				if (width > maxWidth && pos > lineStart + 1) {
 					pos--;
 					break;
@@ -11471,12 +11449,10 @@ function buildLines(
 				pos++;
 			}
 			bestBreak = Math.min(pos, content.text.length);
-			bestBreakWidth = measureText(layout, content, lineStart, bestBreak);
+			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
-		const lineNodes = getNodesInRange(
-			layout,
-			content.items,
+		const lineNodes = getNodesInRange(content.items,
 			lineStart,
 			bestBreak,
 		);
@@ -11518,9 +11494,7 @@ function buildLines(
 }
 
 /** The width of text[start..end) of a run, in terminal cells. */
-function measureText(
-	layout: LayoutEngine,
-	content: ProcessedContent,
+function measureText(content: ProcessedContent,
 	start: number,
 	end: number,
 ): number {
@@ -11972,9 +11946,7 @@ function caretRect(
  * point landed on the line, which is what picks between two lines painted
  * on the same row.
  */
-function offsetInFragment(
-	layout: LayoutEngine,
-	textNode: Text,
+function offsetInFragment(textNode: Text,
 	whiteSpace: string,
 	fragment: LineFragment,
 	x: number,
@@ -12225,7 +12197,7 @@ function staticPosition(
 			entry = found;
 			break;
 		}
-		const parent = getBoxParent(layout, current);
+		const parent = getBoxParent(current);
 		if (!parent) {
 			break;
 		}
@@ -12239,7 +12211,7 @@ function staticPosition(
 		const runNode = entry.layoutNode;
 		if (runNode) {
 			const runOrigin = absolutePosition(layout, runNode);
-			const cursor = inlineCursorBefore(layout, entry, element);
+			const cursor = inlineCursorBefore(entry, element);
 			return {
 				left: runOrigin.x - containingOrigin.x + cursor.x,
 				top: runOrigin.y - containingOrigin.y + cursor.y,
@@ -12281,9 +12253,7 @@ const ZERO_OFFSET = {x: 0, y: 0};
  * no box in it: the trailing edge of the last content placed before that
  * node, and the top of the line it landed on, relative to the run's box.
  */
-function inlineCursorBefore(
-	layout: LayoutEngine,
-	run: Box,
+function inlineCursorBefore(run: Box,
 	element: Element,
 ): {x: number; y: number} {
 	const breakResult = run.fragments;
@@ -12303,9 +12273,7 @@ function inlineCursorBefore(
 	return cursor;
 }
 
-function getNodesInRange(
-	layout: LayoutEngine,
-	items: ProcessedContent["items"],
+function getNodesInRange(items: ProcessedContent["items"],
 	start: number,
 	end: number,
 ): LineResult["segments"] {
@@ -13337,7 +13305,7 @@ export class LayoutEngine {
 				const run = getBox(this, element);
 				if (run?.layoutNode) {
 					const origin = absolutePosition(this, run.layoutNode);
-					const cursor = inlineCursorBefore(this, run, element);
+					const cursor = inlineCursorBefore(run, element);
 					return new this[kDOMRect](
 						origin.x + cursor.x,
 						origin.y + cursor.y,
@@ -13560,9 +13528,7 @@ export class LayoutEngine {
 				if (!clampToNearestLine && fragment.endOffset <= fragment.startOffset) {
 					continue;
 				}
-				const found = offsetInFragment(
-					this,
-					textNode,
+				const found = offsetInFragment(textNode,
 					whiteSpace,
 					fragment,
 					x,
@@ -13583,9 +13549,7 @@ export class LayoutEngine {
 		if (!nearest) {
 			return null;
 		}
-		const found = offsetInFragment(
-			this,
-			nearest.node,
+		const found = offsetInFragment(nearest.node,
 			getWhiteSpace(nearest.node),
 			nearest.fragment,
 			x,

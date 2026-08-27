@@ -6,7 +6,6 @@
  * painter read what it resolved.
  */
 
-import type {EngineWindow} from "./dom.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {
 	Document as DOMDocumentClass,
@@ -21,6 +20,7 @@ import {
 	type UAToolkit,
 	claimUAToolkit,
 	TransitionEvent,
+	type EngineWindow,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
 import {
@@ -7998,7 +7998,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands ?
-					shorthand(this, property, longhands, (longhand) =>
+					shorthand(property, longhands, (longhand) =>
 						this[kBaseValue](longhand),
 					) : // A flow-relative longhand shares its computed value with the
 					// physical longhand it maps to, so it is answered as that one.
@@ -8084,7 +8084,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(property);
 		if (longhands) {
-			return shorthand(this, property, longhands, (longhand) =>
+			return shorthand(property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
 			);
 		}
@@ -8261,9 +8261,7 @@ function toPhysicalProperty(
  * longhands different questions -- and their answers must not meet, which
  * is why only the computed one is memoized.
  */
-function shorthand(
-	declaration: ComputedStyleDeclaration,
-	property: string,
+function shorthand(property: string,
 	longhands: readonly string[],
 	read: (longhand: string) => string,
 ): string {
@@ -11163,7 +11161,7 @@ export class StyleManager {
 
 		// Handle counter-reset first
 		if (counterReset && counterReset !== "none") {
-			parseCounterReset(this, scope, counterReset);
+			parseCounterReset(scope, counterReset);
 		}
 
 		// Handle automatic list-item counter for ol/ul elements
@@ -12982,7 +12980,7 @@ function getMatchingRules(
 	// ::placeholder rules cascade directly onto the [part="placeholder"]
 	// span, the way a browser resolves ::placeholder onto its input's
 	// internal placeholder element.
-	const partPseudo = partPseudoFor(manager, element);
+	const partPseudo = partPseudoFor(element);
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
 	const shadowHost =
@@ -13061,7 +13059,7 @@ function matchesRule(
 	if (!rule.scopes) {
 		return element.matches(selector);
 	}
-	return scopingRoot(manager, element, {...rule, selector}) !== null;
+	return scopingRoot(element, {...rule, selector}) !== null;
 }
 
 /**
@@ -13075,7 +13073,7 @@ function scopeProximity(
 	element: Element,
 	rule: ParsedCSSRule,
 ): number {
-	const root = scopingRoot(manager, element, rule);
+	const root = scopingRoot(element, rule);
 	if (!root) {
 		return UNSCOPED;
 	}
@@ -13101,9 +13099,7 @@ function scopeProximity(
  * least), and the innermost taking the NEAREST, which is the one the
  * element's selector and its proximity are measured from.
  */
-function scopingRoot(
-	manager: StyleManager,
-	element: Element,
+function scopingRoot(element: Element,
 	rule: ParsedCSSRule,
 ): Element | null {
 	const conditions = rule.scopes!;
@@ -13150,9 +13146,7 @@ function scopingRoot(
  * UA-internal tree. Author shadow trees are not eligible -- their parts
  * are theirs to style from inside.
  */
-function partPseudoFor(
-	manager: StyleManager,
-	element: Element,
+function partPseudoFor(element: Element,
 ): string | null {
 	const root = element.getRootNode();
 	if (isUAShadowRoot(root)) {
@@ -13622,9 +13616,7 @@ function counterPairs(
 /**
  * Parse counter-reset CSS property
  */
-function parseCounterReset(
-	manager: StyleManager,
-	scope: CounterScope,
+function parseCounterReset(scope: CounterScope,
 	counterReset: string,
 ): void {
 	for (const [name, value] of counterPairs(counterReset, 0)) {
@@ -13660,9 +13652,7 @@ function incrementCounter(
 		scope.counters[counterName] = currentValue + increment;
 	} else {
 		// For other counters, get value from parent scopes
-		const currentValue = getCounterValueFromScope(
-			manager,
-			scope.parent,
+		const currentValue = getCounterValueFromScope(scope.parent,
 			counterName,
 		);
 		scope.counters[counterName] = currentValue + increment;
@@ -13707,9 +13697,7 @@ function getListItemCounterValue(
 /**
  * Get counter value from a specific scope (without current scope)
  */
-function getCounterValueFromScope(
-	manager: StyleManager,
-	scope: CounterScope | undefined,
+function getCounterValueFromScope(scope: CounterScope | undefined,
 	counterName: string,
 ): number {
 	// Look for counter in current scope or parent scopes

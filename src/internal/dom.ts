@@ -24787,7 +24787,7 @@ export class Selection implements globalThis.Selection {
 		const point: [Node, number] = [node, at];
 		associate(
 			this,
-			rangeFor(this, point, point),
+			rangeFor(point, point),
 			point,
 			point,
 			this[kDirection]!,
@@ -24809,7 +24809,7 @@ export class Selection implements globalThis.Selection {
 		const point: [Node, number] = [range[kStartNode]!, range[kStartOffset]!];
 		associate(
 			this,
-			rangeFor(this, point, point),
+			rangeFor(point, point),
 			point,
 			point,
 			this[kDirection]!,
@@ -24824,7 +24824,7 @@ export class Selection implements globalThis.Selection {
 		const point: [Node, number] = [range[kEndNode]!, range[kEndOffset]!];
 		associate(
 			this,
-			rangeFor(this, point, point),
+			rangeFor(point, point),
 			point,
 			point,
 			this[kDirection]!,
@@ -24849,8 +24849,8 @@ export class Selection implements globalThis.Selection {
 		const anchorFirst =
 			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
 		const range = anchorFirst ?
-				rangeFor(this, anchor, focus) :
-				rangeFor(this, focus, anchor);
+				rangeFor(anchor, focus) :
+				rangeFor(focus, anchor);
 		associate(
 			this,
 			range,
@@ -24888,8 +24888,8 @@ export class Selection implements globalThis.Selection {
 		const anchorFirst =
 			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
 		const range = anchorFirst ?
-				rangeFor(this, anchor, focus) :
-				rangeFor(this, focus, anchor);
+				rangeFor(anchor, focus) :
+				rangeFor(focus, anchor);
 		associate(
 			this,
 			range,
@@ -24915,7 +24915,7 @@ export class Selection implements globalThis.Selection {
 		}
 		const anchor: [Node, number] = [node, 0];
 		const focus: [Node, number] = [node, childCount];
-		associate(this, rangeFor(this, anchor, focus), anchor, focus, "forwards");
+		associate(this, rangeFor(anchor, focus), anchor, focus, "forwards");
 	}
 
 	deleteFromDocument(): void {
@@ -25388,9 +25388,7 @@ function focusPoint(
 }
 
 /** The range the Range API builds from an ordered pair of points. */
-function rangeFor(
-	selection: Selection,
-	start: [Node, number],
+function rangeFor(start: [Node, number],
 	end: [Node, number],
 ): Range {
 	const range = new Range();
@@ -25449,21 +25447,19 @@ function selectionChanged(
 		selection[kEnd] = end;
 	} else if (which === "start") {
 		selection[kStart] = start;
-		if (composedOrder(selection, start, selection[kEnd]!) === AFTER) {
+		if (composedOrder(start, selection[kEnd]!) === AFTER) {
 			selection[kEnd] = start;
 		}
 	} else {
 		selection[kEnd] = end;
-		if (composedOrder(selection, end, selection[kStart]!) === BEFORE) {
+		if (composedOrder(end, selection[kStart]!) === BEFORE) {
 			selection[kStart] = end;
 		}
 	}
 	scheduleSelectionChange(selection[kDocument]!);
 }
 
-function composedOrder(
-	selection: Selection,
-	point: Range,
+function composedOrder(point: Range,
 	other: Range,
 ): number {
 	return compareComposedPoints(
