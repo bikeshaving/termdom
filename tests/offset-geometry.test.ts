@@ -137,7 +137,7 @@ test("body's own clientHeight/scrollHeight (viewport height, real content height
 
 test("offsetWidth/Height and clientWidth/Height stay mechanically consistent with border width", async () => {
 	// offsetWidth/Height, clientWidth/Height, and offsetTop/Left are all
-	// derived from the same #layoutRectOf/#contentBoxOf internals in
+	// derived from the same #layoutRectOf/#getContentBox internals in
 	// termdom.ts, not independently written formulas -- so this identity can't
 	// silently drift out of sync across an edit to just one of them the way
 	// duplicated code could.

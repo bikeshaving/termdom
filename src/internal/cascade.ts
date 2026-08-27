@@ -15,7 +15,7 @@ import {
 	HTMLStyleElement as DOMHTMLStyleElement,
 	SVGElement as DOMSVGElement,
 	ShadowRoot as DOMShadowRoot,
-	mountOf,
+	getMount,
 	observeTree,
 	type Document as DOMDocument,
 	type UAToolkit,
@@ -66,7 +66,7 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 const uaByDocument = new WeakMap<object, UAToolkit>();
 
-function uaOf(node: object): UAToolkit | undefined {
+function getUA(node: object): UAToolkit | undefined {
 	if ((node as object | null) == null) {
 		return undefined;
 	}
@@ -89,31 +89,31 @@ function uaOf(node: object): UAToolkit | undefined {
 }
 
 function flatParentElement<T>(node: object): T | null {
-	return uaOf(node)?.flatParentElement<T>(node) ?? null;
+	return getUA(node)?.flatParentElement<T>(node) ?? null;
 }
 
-function shadowRootOf<T>(element: object): T | null {
-	return uaOf(element)?.shadowRootOf<T>(element) ?? null;
+function getShadowRoot<T>(element: object): T | null {
+	return getUA(element)?.getShadowRoot<T>(element) ?? null;
 }
 
 function pseudoElement<T>(host: object, name: string): T | null {
-	return uaOf(host)?.pseudoElement<T>(host, name) ?? null;
+	return getUA(host)?.pseudoElement<T>(host, name) ?? null;
 }
 
 function pseudoElementCount(host: object): number {
-	return uaOf(host)?.pseudoElementCount(host) ?? 0;
+	return getUA(host)?.pseudoElementCount(host) ?? 0;
 }
 
-function pseudoHostOf<T>(node: object): T | null {
-	return uaOf(node)?.pseudoHostOf<T>(node) ?? null;
+function getPseudoHost<T>(node: object): T | null {
+	return getUA(node)?.getPseudoHost<T>(node) ?? null;
 }
 
-function pseudoNameOf(node: object): string | null {
-	return uaOf(node)?.pseudoNameOf(node) ?? null;
+function getPseudoName(node: object): string | null {
+	return getUA(node)?.getPseudoName(node) ?? null;
 }
 
 function ensurePseudoElement<T>(target: object, name: string): T {
-	const ua = uaOf(target);
+	const ua = getUA(target);
 	if (ua === undefined) {
 		throw new Error("No toolkit claimed for this document.");
 	}
@@ -121,11 +121,11 @@ function ensurePseudoElement<T>(target: object, name: string): T {
 }
 
 function clearPseudoElement(host: object, name: string): void {
-	uaOf(host)?.clearPseudoElement(host, name);
+	getUA(host)?.clearPseudoElement(host, name);
 }
 
 function isUAShadowRoot(node: object): boolean {
-	return uaOf(node)?.isUAShadowRoot(node) ?? false;
+	return getUA(node)?.isUAShadowRoot(node) ?? false;
 }
 
 function styleElementCount(document: DOMDocument): number {
@@ -2110,7 +2110,7 @@ interface LengthContext {
  */
 const INITIAL_FONT_SIZE = 1;
 
-function fontSizeOf(style: ComputedValues): number {
+function getFontSize(style: ComputedValues): number {
 	const size = parseFloat(style.getComputedValue("font-size"));
 	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
 }
@@ -3372,7 +3372,7 @@ class CSSStyleDeclaration implements DeclarationSource {
 }
 
 /** The declarations as the cascade consumes them: longhands, importance included. */
-function declarationBlockOf(style: CSSStyleDeclaration): DeclarationBlock {
+function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	style[kSync]!();
 	if (style[kDeclarations]!.length === 0) {
 		return EMPTY_DECLARATIONS;
@@ -4532,8 +4532,8 @@ function selectorNamespace(
 	let subjectStated = false;
 	let sawPrefix = false;
 	let valid = true;
-	for (const one of childrenOf(list)) {
-		const parts = childrenOf(one);
+	for (const one of getChildren(list)) {
+		const parts = getChildren(one);
 		let start = 0;
 		for (const [index, part] of parts.entries()) {
 			if (part.type === "Combinator") {
@@ -5386,7 +5386,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 		super(parentStyleSheet, null);
 		this[kBlocks] = new Map<string, CSSStyleDeclaration>();
 		this[kFontFamily] = fontFamily.trim();
-		for (const child of nodesOf(node.block ?? {})) {
+		for (const child of getNodes(node.block ?? {})) {
 			if (child.type !== "Atrule" || !child.name) {
 				continue;
 			}
@@ -6083,7 +6083,7 @@ interface SelectorNode {
 	b?: string | null;
 }
 
-function childrenOf(node: SelectorNode): SelectorNode[] {
+function getChildren(node: SelectorNode): SelectorNode[] {
 	const children = node.children;
 	if (!children) {
 		return [];
@@ -6178,8 +6178,8 @@ const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
 /** The weight of the heaviest selector in a list; zero for an empty one. */
 function listSpecificity(list: SelectorNode): Specificity {
 	let most: Specificity = [0, 0, 0];
-	for (const selector of childrenOf(list)) {
-		const weight = selectorSpecificityOf(selector);
+	for (const selector of getChildren(list)) {
+		const weight = getSelectorSpecificity(selector);
 		if (
 			weight[0] > most[0] ||
 			(weight[0] === most[0] &&
@@ -6192,7 +6192,7 @@ function listSpecificity(list: SelectorNode): Specificity {
 }
 
 /** The weight of one complex selector: every simple selector in it, summed. */
-function selectorSpecificityOf(selector: SelectorNode): Specificity {
+function getSelectorSpecificity(selector: SelectorNode): Specificity {
 	const total: Specificity = [0, 0, 0];
 	const add = (weight: Specificity): void => {
 		total[0] += weight[0];
@@ -6200,12 +6200,12 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 		total[2] += weight[2];
 	};
 	const argumentWeight = (node: SelectorNode): Specificity => {
-		for (const child of childrenOf(node)) {
+		for (const child of getChildren(node)) {
 			if (child.type === "SelectorList") {
 				return listSpecificity(child);
 			}
 			if (child.type === "Selector") {
-				return selectorSpecificityOf(child);
+				return getSelectorSpecificity(child);
 			}
 			if (child.type === "Nth" && child.selector) {
 				return listSpecificity(child.selector);
@@ -6213,7 +6213,7 @@ function selectorSpecificityOf(selector: SelectorNode): Specificity {
 		}
 		return [0, 0, 0];
 	};
-	for (const part of childrenOf(selector)) {
+	for (const part of getChildren(selector)) {
 		switch (part.type) {
 			case "IdSelector":
 				total[0]++;
@@ -6363,12 +6363,12 @@ function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
 				if (STATE_PSEUDO_CLASSES.has(pseudoName(String(node.name ?? "")))) {
 					keys.states = true;
 				}
-				harvestKeys(childrenOf(node), keys);
+				harvestKeys(getChildren(node), keys);
 				break;
 			case "PseudoElementSelector":
 			case "SelectorList":
 			case "Selector":
-				harvestKeys(childrenOf(node), keys);
+				harvestKeys(getChildren(node), keys);
 				break;
 			case "Nth":
 				if (node.selector) {
@@ -6409,7 +6409,7 @@ function readSelector(selector: string): SelectorReading {
 	const specificity = weight
 		.map((count) => String(count).padStart(3, "0"))
 		.join("-");
-	const complex = childrenOf(list).find((child) => child.type === "Selector");
+	const complex = getChildren(list).find((child) => child.type === "Selector");
 	const compounds: CompoundKeys[] = [];
 	let parts: SelectorNode[] = [];
 	const closeCompound = (): void => {
@@ -6423,7 +6423,7 @@ function readSelector(selector: string): SelectorReading {
 		compounds.push(keys);
 		parts = [];
 	};
-	for (const part of complex ? childrenOf(complex) : []) {
+	for (const part of complex ? getChildren(complex) : []) {
 		if (part.type === "Combinator") {
 			closeCompound();
 		} else {
@@ -6431,7 +6431,7 @@ function readSelector(selector: string): SelectorReading {
 		}
 	}
 	closeCompound();
-	return {specificity, subjectTag: subjectTagOf(complex), compounds};
+	return {specificity, subjectTag: getSubjectTag(complex), compounds};
 }
 
 /**
@@ -6440,12 +6440,12 @@ function readSelector(selector: string): SelectorReading {
  * attribute or a bare pseudo-class can be any element, and so can a type in a
  * namespace, which the matcher reads against the namespaces the sheet bound.
  */
-function subjectTagOf(complex: SelectorNode | undefined): string | undefined {
+function getSubjectTag(complex: SelectorNode | undefined): string | undefined {
 	if (!complex) {
 		return undefined;
 	}
 	let type: SelectorNode | undefined;
-	for (const part of childrenOf(complex)) {
+	for (const part of getChildren(complex)) {
 		if (part.type === "Combinator") {
 			type = undefined;
 		} else if (part.type === "TypeSelector" && type === undefined) {
@@ -6491,7 +6491,7 @@ function serializeSelectorList(
 	list: SelectorNode,
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): string {
-	return childrenOf(list)
+	return getChildren(list)
 		.map((selector) => serializeSelector(selector, namespaces))
 		.join(", ");
 }
@@ -6503,7 +6503,7 @@ function serializeSelector(
 	let out = "";
 	// A universal selector is written only when it stands alone in its
 	// compound, or carries a namespace prefix.
-	const parts = childrenOf(selector);
+	const parts = getChildren(selector);
 	for (const [index, part] of parts.entries()) {
 		// A universal selector says nothing that the compound around it does
 		// not already say, so it is written only when it stands alone.
@@ -6564,7 +6564,7 @@ function serializeSimpleSelector(
 				LEGACY_PSEUDO_ELEMENTS.has(decoded);
 			const colons = element ? "::" : ":";
 			const name = serializeCSSIdentifier(decoded);
-			const args = childrenOf(node);
+			const args = getChildren(node);
 			if (args.length === 0) {
 				return `${colons}${name}`;
 			}
@@ -6690,11 +6690,11 @@ function parsePseudoElementArgument(text: string): string | null {
 		return null;
 	}
 	// One pseudo-element, not a list of them.
-	const list = childrenOf(selectors);
+	const list = getChildren(selectors);
 	if (list.length !== 1) {
 		return null;
 	}
-	const compound = childrenOf(list[0] ?? {type: ""});
+	const compound = getChildren(list[0] ?? {type: ""});
 	const pseudo = compound[compound.length - 1];
 	if (
 		compound.length !== 2 ||
@@ -6783,7 +6783,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 					valid = false;
 					return;
 				}
-				if (!validPseudoElementArguments(name, childrenOf(node))) {
+				if (!validPseudoElementArguments(name, getChildren(node))) {
 					valid = false;
 					return;
 				}
@@ -6797,7 +6797,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 		// A functional pseudo's arguments are selectors only for the pseudos
 		// that take them; `::part(title)` and `:lang(ja)` name something else,
 		// and their arguments carry no selector to validate.
-		for (const child of childrenOf(node)) {
+		for (const child of getChildren(node)) {
 			if (child.type === "SelectorList") {
 				checkList(child);
 			} else if (child.type === "Selector") {
@@ -6808,7 +6808,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 		}
 	};
 	const checkSelector = (selector: SelectorNode): void => {
-		const parts = childrenOf(selector);
+		const parts = getChildren(selector);
 		if (parts.length === 0) {
 			valid = false;
 			return;
@@ -6818,7 +6818,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 		}
 	};
 	const checkList = (node: SelectorNode): void => {
-		for (const selector of childrenOf(node)) {
+		for (const selector of getChildren(node)) {
 			checkSelector(selector);
 		}
 	};
@@ -6889,7 +6889,7 @@ interface ParsedNode {
 	children?: {toArray(): ParsedNode[]} | null;
 }
 
-function nodesOf(container: {
+function getNodes(container: {
 	children?: {toArray(): ParsedNode[]} | null;
 }): ParsedNode[] {
 	return container.children ? container.children.toArray() : [];
@@ -6907,7 +6907,7 @@ function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 	if (!node.block) {
 		return declarations;
 	}
-	for (const child of nodesOf(node.block)) {
+	for (const child of getNodes(node.block)) {
 		if (child.type !== "Declaration" || !child.value) {
 			continue;
 		}
@@ -6926,7 +6926,7 @@ function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 			continue;
 		}
 		if (child.value.type === "Value" && value === raw.trim()) {
-			seedValueNodes(value, nodesOf(child.value as never) as CSSNode[]);
+			seedValueNodes(value, getNodes(child.value as never) as CSSNode[]);
 		}
 		declarations.push({
 			name,
@@ -7083,7 +7083,7 @@ function convertRule(
 		case "container":
 			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					nodesOf(node.block ?? {}),
+					getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -7115,7 +7115,7 @@ function convertRule(
 		case "keyframes":
 		case "-webkit-keyframes":
 			return new CSSKeyframesRule(prelude, sheet, (rule) =>
-				nodesOf(node.block ?? {})
+				getNodes(node.block ?? {})
 					.filter((frame) => frame.type === "Rule")
 					.map(
 						(frame) =>
@@ -7149,7 +7149,7 @@ function convertRule(
 				parentRule,
 				(group) =>
 					convertRules(
-						nodesOf(node.block ?? {}),
+						getNodes(node.block ?? {}),
 						source,
 						sheet,
 						group,
@@ -7160,7 +7160,7 @@ function convertRule(
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					nodesOf(node.block ?? {}),
+					getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -7185,7 +7185,7 @@ function convertRule(
 		case "scope":
 			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					nodesOf(node.block ?? {}),
+					getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -7195,7 +7195,7 @@ function convertRule(
 		case "starting-style":
 			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
 				convertRules(
-					nodesOf(node.block ?? {}),
+					getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -7205,7 +7205,7 @@ function convertRule(
 		case "supports":
 			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
 				convertRules(
-					nodesOf(node.block ?? {}),
+					getNodes(node.block ?? {}),
 					source,
 					sheet,
 					group,
@@ -7219,7 +7219,7 @@ function convertRule(
 
 /** The style rules nested inside a style rule's own block. */
 function nestedRules(node: ParsedNode): ParsedNode[] {
-	return nodesOf(node.block ?? {}).filter(
+	return getNodes(node.block ?? {}).filter(
 		(child) => child.type === "Rule" || child.type === "Atrule",
 	);
 }
@@ -7820,15 +7820,15 @@ export interface ComputedValues {
 export function getComputedValues(element: Element): ComputedValues {
 	// A pseudo-element node's style is its host's declaration for the
 	// pseudo-element it fills; it matches no selector of its own.
-	const host = pseudoHostOf<Element>(element);
+	const host = getPseudoHost<Element>(element);
 	if (host !== null) {
-		const name = pseudoNameOf(element) as string;
+		const name = getPseudoName(element) as string;
 		const manager = host.ownerDocument ?
 				documentManagers.get(host.ownerDocument) :
 			undefined;
 		return manager ?
 				manager.pseudoNodeStyleFor(element, host, name) :
-				pseudoStyleOf(host, name);
+				getPseudoStyle(host, name);
 	}
 	const document = element.ownerDocument;
 	if (!document) {
@@ -7858,7 +7858,7 @@ function foreignComputedStyle(
 }
 
 /** A pseudo-element's computed style, on the same internal read path. */
-export function pseudoStyleOf(
+export function getPseudoStyle(
 	element: Element,
 	pseudoElement: string,
 ): ComputedValues {
@@ -7950,7 +7950,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	 */
 	[kUsedValue](property: string): string {
 		const manager = this[kManager]!;
-		const used = usedValuesOf(manager, this);
+		const used = getUsedValues(manager, this);
 		const memoized = used.get(property);
 		if (memoized !== undefined) {
 			return memoized;
@@ -7975,7 +7975,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		const value = this[kBaseValue](property);
 		const manager = this[kManager];
 		if (manager !== null && manager[kTransitionCount] > 0) {
-			const transitional = transitionValueOf(
+			const transitional = getTransitionValue(
 				manager,
 				this[kElement]!,
 				"",
@@ -8002,7 +8002,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 						this[kBaseValue](longhand),
 					) : // A flow-relative longhand shares its computed value with the
 					// physical longhand it maps to, so it is answered as that one.
-					computed(this, physicalOf(this, property));
+					computed(this, toPhysicalProperty(this, property));
 			this[kResolved].set(property, value);
 		}
 		return value;
@@ -8062,7 +8062,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same answer.
-		property = physicalOf(this, property);
+		property = toPhysicalProperty(this, property);
 		if (this[kManager] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property);
 		}
@@ -8203,9 +8203,9 @@ function lengthContext(
 		null;
 	const font = own ?
 		parent ?
-				fontSizeOf(getComputedValues(parent)) :
+				getFontSize(getComputedValues(parent)) :
 			INITIAL_FONT_SIZE :
-			fontSizeOf(declaration);
+			getFontSize(declaration);
 	const root = rootFontSize(declaration, own);
 	const viewport = declaration[kManager]?.viewportSize();
 	return {
@@ -8233,15 +8233,15 @@ function rootFontSize(
 		return INITIAL_FONT_SIZE;
 	}
 	return root === declaration[kElement]! ?
-			fontSizeOf(declaration) :
-			fontSizeOf(getComputedValues(root));
+			getFontSize(declaration) :
+			getFontSize(getComputedValues(root));
 }
 
 /**
  * The name a longhand computes under: itself, or -- for a flow-relative
  * longhand -- the physical longhand this element's `direction` maps it to.
  */
-function physicalOf(
+function toPhysicalProperty(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
@@ -8439,7 +8439,7 @@ function containingBlockBox(
 			const ancestorPosition =
 				getComputedValues(ancestor).getComputedValue("position");
 			if (ancestorPosition && ancestorPosition !== "static") {
-				return boxOf(declaration, ancestor, false);
+				return getBox(declaration, ancestor, false);
 			}
 		}
 		return viewportBox(declaration);
@@ -8452,16 +8452,16 @@ function containingBlockBox(
 		) {
 			const overflow = getComputedValues(ancestor).getComputedValue("overflow");
 			if (overflow && overflow !== "visible") {
-				return boxOf(declaration, ancestor, true);
+				return getBox(declaration, ancestor, true);
 			}
 		}
 	}
 	const parent = flatParentElement<Element>(declaration[kElement]!);
-	return parent ? boxOf(declaration, parent, true) : viewportBox(declaration);
+	return parent ? getBox(declaration, parent, true) : viewportBox(declaration);
 }
 
 /** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
-function boxOf(
+function getBox(
 	declaration: MeasuredDeclaration,
 	element: Element,
 	content: boolean,
@@ -8618,7 +8618,7 @@ function inlineDeclarations(
 ): DeclarationBlock {
 	const style = (declaration[kElement]! as HTMLElement).style;
 	return style instanceof CSSStyleDeclaration ?
-			declarationBlockOf(style) :
+			getDeclarationBlock(style) :
 		EMPTY_DECLARATIONS;
 }
 
@@ -9175,7 +9175,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				this[kPseudoElement],
 			);
 			if (node) {
-				return measure(boxViewOf(this, node), property, computed);
+				return measure(getBoxView(this, node), property, computed);
 			}
 		}
 		if (!computed.endsWith("%")) {
@@ -9253,7 +9253,7 @@ function pseudoTransitionValue(
 	) {
 		return null;
 	}
-	return transitionValueOf(
+	return getTransitionValue(
 		manager,
 		declaration[kElement]!,
 		declaration[kPseudoElement],
@@ -9269,7 +9269,7 @@ function pseudoTransitionValue(
  * composition may retire a node and make another, and a view naming the old
  * one would measure a rect no layout holds.
  */
-function boxViewOf(
+function getBoxView(
 	declaration: PseudoStyleDeclaration,
 	node: Element,
 ): MeasuredDeclaration {
@@ -9777,7 +9777,7 @@ function scopeRootMatches(
  * scoping limit between the two. The root is always in its own scope, limit
  * or no limit.
  */
-function inScopeOf(
+function isInScope(
 	element: Element,
 	root: Element,
 	condition: ScopeCondition,
@@ -10195,7 +10195,7 @@ export class StyleManager {
 	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
 	viewportSize(): {width: number; height: number} | null {
-		return mountOf(this[kWindow].document)?.viewportSize() ?? null;
+		return getMount(this[kWindow].document)?.viewportSize() ?? null;
 	}
 
 	/** The element's border-box rect, measured after that flush. */
@@ -10366,7 +10366,7 @@ export class StyleManager {
 				for (
 					let ancestor: Element | null = start;
 					ancestor;
-					ancestor = uaOf(ancestor)?.flatParentElement<Element>(
+					ancestor = getUA(ancestor)?.flatParentElement<Element>(
 						ancestor,
 					) ?? null
 				) {
@@ -10565,7 +10565,7 @@ export class StyleManager {
 				node = flatParentElement<Element>(node)
 			) {
 				invalidateElementCaches(this, node);
-				const shadowRoot = shadowRootOf<ShadowRoot>(node);
+				const shadowRoot = getShadowRoot<ShadowRoot>(node);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
 						invalidateElementCaches(this, descendant);
@@ -10620,7 +10620,7 @@ export class StyleManager {
 			// A host's hover reaches into its shadow tree through
 			// :host(:hover) rules and inheritance, the same reach a focus
 			// move has.
-			const shadowRoot = shadowRootOf<ShadowRoot>(node);
+			const shadowRoot = getShadowRoot<ShadowRoot>(node);
 			if (shadowRoot) {
 				for (const descendant of shadowRoot.querySelectorAll("*")) {
 					invalidateElementCaches(this, descendant);
@@ -11240,7 +11240,7 @@ export class StyleManager {
 }
 
 /** The used values a declaration has measured behind the last flush. */
-function usedValuesOf(
+function getUsedValues(
 	manager: StyleManager,
 	declaration: object,
 ): Map<string, string> {
@@ -11760,7 +11760,7 @@ function currentTransitionValue(
  * wall: the clock moves once per tick, so a frame's reads agree with each
  * other and with what the painter draws.
  */
-function transitionValueOf(
+function getTransitionValue(
 	manager: StyleManager,
 	element: Element,
 	pseudo: string,
@@ -12110,7 +12110,7 @@ function flushTransitionEvents(manager: StyleManager): void {
 			elapsedTime: item.elapsedTime,
 			pseudoElement: item.pseudoElement,
 		});
-		uaOf(item.element)?.dispatchAsUserAgent(item.element, event);
+		getUA(item.element)?.dispatchAsUserAgent(item.element, event);
 	}
 }
 
@@ -12748,7 +12748,7 @@ function parseStyleRule(
 	// A rule's selector list is a set of selectors that share a block, and
 	// each is matched -- and weighed -- on its own. `#a::before, #b` is one
 	// pseudo-element rule and one ordinary rule, not one of either.
-	const block = declarationBlockOf(styleRule.style);
+	const block = getDeclarationBlock(styleRule.style);
 	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 	for (const selector of splitSelectorList(styleRule.selectorText)) {
 		parseSelector(
@@ -13123,7 +13123,7 @@ function scopingRoot(
 			if (!scopeRootMatches(candidate, condition, outer)) {
 				continue;
 			}
-			if (!inScopeOf(element, candidate, condition)) {
+			if (!isInScope(element, candidate, condition)) {
 				continue;
 			}
 			if (innermost) {

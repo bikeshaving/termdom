@@ -50,7 +50,7 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
 	if (from === undefined) {
 		return undefined;
 	}
-	return (DOM.mountOf(from) as EngineMount | undefined)?.engine;
+	return (DOM.getMount(from) as EngineMount | undefined)?.engine;
 }
 
 /**
@@ -118,7 +118,7 @@ function isFullscreen(termdom: TermDOM): boolean {
 	return termdom[kFullscreenStack].length > 0;
 }
 
-function fullscreenElementOf(termdom: TermDOM): Element | null {
+function getFullscreenElement(termdom: TermDOM): Element | null {
 	const stack = termdom[kFullscreenStack];
 	// Style computation consults this during construction, before the field
 	// is assigned.
@@ -929,7 +929,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 	// both clientWidth/Height and scrollWidth/Height report -- see
 	// scrollSize for why scroll* falls back to client* rather than the
 	// element's true unclamped content size.
-	const contentBoxOf = (
+	const getContentBox = (
 		element: Element,
 	): {width: number; height: number} | null => {
 		const rect = layoutRectOf(element);
@@ -1048,7 +1048,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		},
 		clientSize(target) {
 			const element = target as Element;
-			const box = contentBoxOf(element);
+			const box = getContentBox(element);
 			return {
 				width: Math.round(box?.width ?? 0),
 				height: isRoot(element) ?
@@ -1065,7 +1065,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		scrollSize(target) {
 			const element = target as Element;
 			const extent = scrollExtentOf(element);
-			const box = contentBoxOf(element);
+			const box = getContentBox(element);
 			return {
 				width: extent?.width ?? Math.round(box?.width ?? 0),
 				height: isRoot(element) ?
@@ -1407,7 +1407,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		},
 		exitFullscreen() {
 			return (async () => {
-				const element = fullscreenElementOf(termDOM);
+				const element = getFullscreenElement(termDOM);
 				termDOM[kScreenSwitching] = true;
 				try {
 					await termDOM[kRenderInFlight];
@@ -1429,7 +1429,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			})();
 		},
 		fullscreenElement() {
-			return fullscreenElementOf(termDOM);
+			return getFullscreenElement(termDOM);
 		},
 		// The terminal is the window and the screen both, so the inner and
 		// outer pairs are one size, and the root elements report the height
@@ -1601,7 +1601,7 @@ function handlePendingMutations(
 function dropUnfocusableFocus(termdom: TermDOM): void {
 	let active = termdom.document.activeElement;
 	while (active !== null) {
-		const shadow = termdom[kUAToolkit].shadowRootOf<ShadowRoot>(active);
+		const shadow = termdom[kUAToolkit].getShadowRoot<ShadowRoot>(active);
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;
@@ -1723,7 +1723,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			},
 			modalScope: () => topmostModalDialog(termdom),
 			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
-			fullscreenTarget: () => fullscreenElementOf(termdom),
+			fullscreenTarget: () => getFullscreenElement(termdom),
 		},
 		toolkit: termdom[kUAToolkit],
 		styleManager: termdom[kStyleManager],
@@ -2131,7 +2131,7 @@ function queueCaretReveal(
  * The focus of a control's selection record, or null for an element with
  * no record: the caret, in the value text's own offsets.
  */
-function selectionFocusOf(termdom: TermDOM, element: Element): number | null {
+function getSelectionFocus(termdom: TermDOM, element: Element): number | null {
 	const record = termdom[kUAToolkit].selectionOf(element);
 	if (record === null) {
 		return null;
@@ -2149,7 +2149,7 @@ function caretRectFor(
 	termdom: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
-	const focus = selectionFocusOf(termdom, element);
+	const focus = getSelectionFocus(termdom, element);
 	if (focus === null) {
 		return null;
 	}
@@ -2249,7 +2249,7 @@ function scrollFieldCaretIntoView(
 	}
 	// The caret is wherever the input renders it, in the value text's own
 	// offsets -- the same text `shown` is read from.
-	const cursor = selectionFocusOf(termdom, input);
+	const cursor = getSelectionFocus(termdom, input);
 	if (cursor === null) {
 		return;
 	}
@@ -2691,9 +2691,9 @@ function findElementAtDocumentPoint(
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
 	for (
-		let host = element && termdom[kUAToolkit].pseudoHostOf<Element>(element);
+		let host = element && termdom[kUAToolkit].getPseudoHost<Element>(element);
 		host;
-		host = termdom[kUAToolkit].pseudoHostOf<Element>(element!)
+		host = termdom[kUAToolkit].getPseudoHost<Element>(element!)
 	) {
 		element = host;
 	}

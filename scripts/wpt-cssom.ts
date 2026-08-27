@@ -205,14 +205,14 @@ function installGeometry(window: EngineWindow): void {
 		return;
 	}
 	geometryInstalled = true;
-	const mountOf = (
+	const getMount = (
 		element: Element,
 	): {styleManager: StyleManager; layoutEngine: LayoutEngine} | undefined =>
 		element.ownerDocument ? mounts.get(element.ownerDocument) : undefined;
 	const clientBox = (
 		element: Element,
 	): {width: number; height: number} | null => {
-		const rect = mountOf(element)?.styleManager.usedRect(element);
+		const rect = getMount(element)?.styleManager.usedRect(element);
 		if (!rect) {
 			return null;
 		}
@@ -236,7 +236,7 @@ function installGeometry(window: EngineWindow): void {
 	}
 	Object.defineProperty(window.Element.prototype, "getBoundingClientRect", {
 		value(this: Element): DOMRect {
-			const mount = mountOf(this);
+			const mount = getMount(this);
 			if (!mount) {
 				return new DOMRect();
 			}
@@ -249,7 +249,7 @@ function installGeometry(window: EngineWindow): void {
 	});
 	Object.defineProperty(window.Element.prototype, "getClientRects", {
 		value(this: Element): DOMRectList {
-			const mount = mountOf(this);
+			const mount = getMount(this);
 			if (!mount) {
 				return [] as unknown as DOMRectList;
 			}

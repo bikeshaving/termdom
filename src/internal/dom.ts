@@ -116,7 +116,7 @@ interface UALineFragment {
  */
 export interface UAToolkit {
 	/** Open a closed shadow root: the composition privilege. */
-	shadowRootOf<T>(element: object): T | null;
+	getShadowRoot<T>(element: object): T | null;
 	/**
 	 * A text control's selection record, past the type gate the author
 	 * meets -- selectionStart is null on a number input per spec, and the
@@ -163,11 +163,11 @@ export interface UAToolkit {
 	/** Connected through the composed tree, closed roots included. */
 	flatIsConnected(node: object): boolean;
 	/** A control's selection as a Range, measured like any document range. */
-	selectionRangeOf(control: object): UARange | null;
+	getSelectionRange(control: object): UARange | null;
 	pseudoElement<T>(host: object, name: string): T | null;
 	pseudoElementCount(host: object): number;
-	pseudoHostOf<T>(node: object): T | null;
-	pseudoNameOf(node: object): string | null;
+	getPseudoHost<T>(node: object): T | null;
+	getPseudoName(node: object): string | null;
 	ensurePseudoElement<T>(target: object, name: string): T;
 	clearPseudoElement(host: object, name: string): void;
 	isUAShadowRoot(node: object): boolean;
@@ -241,15 +241,15 @@ function makeUAToolkit(document: object): UAToolkit {
 		return anchor === (document as unknown as Document);
 	};
 	return {
-		shadowRootOf<T>(element: object): T | null {
-			return owns(element) ? shadowRootOf<T>(element) : null;
+		getShadowRoot<T>(element: object): T | null {
+			return owns(element) ? getShadowRoot<T>(element) : null;
 		},
 		selectionOf(control: object) {
 			if (!owns(control)) {
 				return null;
 			}
 			const record = (
-				control as {[kUASelection]?: () => ReturnType<typeof uaSelectionOf>}
+				control as {[kUASelection]?: () => ReturnType<typeof getUASelection>}
 			)[kUASelection]!;
 			return record ? record.call(control) : null;
 		},
@@ -272,10 +272,10 @@ function makeUAToolkit(document: object): UAToolkit {
 				upgradeUAWidgetsIn(root as Element);
 			}
 		},
-		topLayer: topLayerOf(document),
+		topLayer: getTopLayer(document),
 		renderedTopLayer(): Element[] {
 			const rendered: Element[] = [];
-			for (const element of topLayerOf(document)) {
+			for (const element of getTopLayer(document)) {
 				// COMPOSITION-connected: a UA part (the select's picker) lives
 				// in a fragment and is never DOM-connected while very much on
 				// screen.
@@ -315,8 +315,8 @@ function makeUAToolkit(document: object): UAToolkit {
 		flatIsConnected(node: object): boolean {
 			return owns(node) && flatIsConnected(node);
 		},
-		selectionRangeOf(control: object): UARange | null {
-			return owns(control) ? selectionRangeOf(control) : null;
+		getSelectionRange(control: object): UARange | null {
+			return owns(control) ? getSelectionRange(control) : null;
 		},
 		pseudoElement<T>(host: object, name: string): T | null {
 			return owns(host) ? pseudoElement<T>(host, name) : null;
@@ -324,11 +324,11 @@ function makeUAToolkit(document: object): UAToolkit {
 		pseudoElementCount(host: object): number {
 			return owns(host) ? pseudoElementCount(host) : 0;
 		},
-		pseudoHostOf<T>(node: object): T | null {
-			return owns(node) ? pseudoHostOf<T>(node) : null;
+		getPseudoHost<T>(node: object): T | null {
+			return owns(node) ? getPseudoHost<T>(node) : null;
 		},
-		pseudoNameOf(node: object): string | null {
-			return owns(node) ? pseudoNameOf(node) : null;
+		getPseudoName(node: object): string | null {
+			return owns(node) ? getPseudoName(node) : null;
 		},
 		ensurePseudoElement<T>(target: object, name: string): T {
 			if (!owns(target)) {
@@ -408,12 +408,12 @@ type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
 /** A text control's selection, read past the type gate the author meets. */
-function uaSelectionOf(control: object): {
+function getUASelection(control: object): {
 	start: number;
 	end: number;
 	direction: string;
 } {
-	return (control as {[kUASelection](): ReturnType<typeof uaSelectionOf>})[
+	return (control as {[kUASelection](): ReturnType<typeof getUASelection>})[
 		kUASelection
 	]();
 }
@@ -496,7 +496,7 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-function selectionRangeOf(element: object): UARange | null {
+function getSelectionRange(element: object): UARange | null {
 	return (
 		(element as Record<symbol, (() => UARange | null) | undefined>)[
 			kUASelectionRange
@@ -517,14 +517,14 @@ function textSelectionRange(
 	if (!valueText) {
 		return null;
 	}
-	const {start, end} = uaSelectionOf(control);
+	const {start, end} = getUASelection(control);
 	const length = valueText.data.length;
 	const from = Math.max(0, Math.min(start, length));
 	const to = Math.max(0, Math.min(end, length));
 	if (to <= from) {
 		return null;
 	}
-	const document = uaDocumentOf(control);
+	const document = getUADocument(control);
 	let range = selectionRanges.get(document);
 	if (range === undefined) {
 		range = document.createRange();
@@ -539,7 +539,7 @@ function textSelectionRange(
 const selectionRanges = new WeakMap<UADocument, UARange>();
 
 /** A node's own document, as the tree-building code below reads it. */
-function uaDocumentOf(node: object): UADocument {
+function getUADocument(node: object): UADocument {
 	return (node as Node).ownerDocument as unknown as UADocument;
 }
 
@@ -591,7 +591,7 @@ function applySharedFieldEdit(
 	ctrlKey: boolean,
 ): FieldEditResult | null {
 	const value = field[kUAValue]!;
-	const {start, end, direction} = uaSelectionOf(field);
+	const {start, end, direction} = getUASelection(field);
 	const backward = direction === "backward";
 	const caret = backward ? start : end;
 	const anchor = backward ? end : start;
@@ -697,7 +697,7 @@ function insertFieldText(field: HTMLInputElement, text: string): void {
 		return;
 	}
 	const value = field[kUAValue]!;
-	const {start, end} = uaSelectionOf(field);
+	const {start, end} = getUASelection(field);
 	const next = value.slice(0, start) + text + value.slice(end);
 	if (field.type === "number" && !isFloatPrefix(next)) {
 		return;
@@ -717,7 +717,7 @@ function printableFieldEdit(
 	text: string,
 ): FieldEditResult {
 	const value = field[kUAValue]!;
-	const {start, end} = uaSelectionOf(field);
+	const {start, end} = getUASelection(field);
 	return collapsedEdit(
 		value.slice(0, start) + text + value.slice(end),
 		start + text.length,
@@ -777,7 +777,7 @@ function applyFieldEdit(
 	result: FieldEditResult,
 ): void {
 	const value = field[kUAValue]!;
-	const {start, end, direction} = uaSelectionOf(field);
+	const {start, end, direction} = getUASelection(field);
 	if (result.value !== value) {
 		field[kSetUAValue]!(result.value);
 		field[kSetUASelection]!(result.start, result.end, result.direction);
@@ -801,7 +801,7 @@ function insertPaste(
 		return;
 	}
 	const value = field[kUAValue]!;
-	const {start, end} = uaSelectionOf(field);
+	const {start, end} = getUASelection(field);
 	applyFieldEdit(
 		field,
 		collapsedEdit(
@@ -813,7 +813,7 @@ function insertPaste(
 
 /** Add a `part`-attributed span (holding one empty text node) to a UA root. */
 function addPart(root: UARoot, part: string): UAElement {
-	const document = uaDocumentOf(root);
+	const document = getUADocument(root);
 	const span = document.createElement("span");
 	span.setAttribute("part", part);
 	span.appendChild(document.createTextNode(""));
@@ -850,7 +850,7 @@ function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
 
 /** The `<style>` element carrying a widget's UA stylesheet. */
 function uaStyleElement(host: Element, styles: string): UAElement {
-	const style = uaDocumentOf(host).createElement("style");
+	const style = getUADocument(host).createElement("style");
 	style.textContent = styles;
 	return style;
 }
@@ -860,7 +860,7 @@ function uaStyleElement(host: Element, styles: string): UAElement {
  * A document has no ownerDocument, so it stands for itself: the selection
  * asks about a whole document where a control asks about a node.
  */
-function uaEngineOf(node: object): UAEngine | undefined {
+function getUAEngine(node: object): UAEngine | undefined {
 	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
 		symbol,
 		UAEngine
@@ -1407,7 +1407,7 @@ export class Event extends EventBase implements globalThis.Event {
 	}
 
 	composedPath(): EventTarget[] {
-		return composedPathOf(this[kState]!);
+		return getComposedPath(this[kState]!);
 	}
 
 	override stopPropagation(): void {
@@ -1478,7 +1478,7 @@ function setCanceledFlag(event: Event): void {
  * current target stops crossing into a closed tree it did not start inside,
  * counting the closed roots and slots it passes.
  */
-function composedPathOf(state: DispatchState): EventTarget[] {
+function getComposedPath(state: DispatchState): EventTarget[] {
 	const path = state.path;
 	if (path.length === 0) {
 		return [];
@@ -3402,7 +3402,7 @@ interface HoverListenerTally {
 
 const hoverListenerTallies = new WeakMap<Document, HoverListenerTally>();
 
-function hoverTallyOf(document: Document): HoverListenerTally {
+function getHoverTally(document: Document): HoverListenerTally {
 	let tally = hoverListenerTallies.get(document);
 	if (tally === undefined) {
 		tally = {count: 0, onChange: null};
@@ -3423,12 +3423,12 @@ function hoverTallyFor(
 		return null;
 	}
 	if (target instanceof Node) {
-		return hoverTallyOf(target[kDocument]!);
+		return getHoverTally(target[kDocument]!);
 	}
 	// A window is an EventTarget with a document; anything else counts
 	// nowhere.
 	const document = (target as {document?: unknown}).document;
-	return document instanceof Document ? hoverTallyOf(document) : null;
+	return document instanceof Document ? getHoverTally(document) : null;
 }
 
 /**
@@ -3459,7 +3459,7 @@ function watchHoverListeners(
 	document: Document,
 	onChange: () => void,
 ): () => number {
-	const tally = hoverTallyOf(document);
+	const tally = getHoverTally(document);
 	tally.onChange = onChange;
 	return () => tally.count;
 }
@@ -4080,7 +4080,7 @@ function adoptForeignEvent(event: Event): void {
 	defineDispatchAccessor(event, "currentTarget", () => state.currentTarget);
 	defineDispatchAccessor(event, "eventPhase", () => state.eventPhase);
 	Object.defineProperty(event, "composedPath", {
-		value: () => composedPathOf(state),
+		value: () => getComposedPath(state),
 		configurable: true,
 	});
 }
@@ -8801,7 +8801,7 @@ export class Element extends Node implements globalThis.Element {
 			registry === undefined ? globalCustomElements : registry,
 		);
 		const root = this[kShadowRoot]! as ShadowRoot;
-		mountOf(this)?.shadowAttached(this, root);
+		getMount(this)?.shadowAttached(this, root);
 		return root as unknown as globalThis.ShadowRoot;
 	}
 
@@ -8811,7 +8811,7 @@ export class Element extends Node implements globalThis.Element {
 	 * document rejects.
 	 */
 	requestFullscreen(options?: globalThis.FullscreenOptions): Promise<void> {
-		const engine = mountOf(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return Promise.reject(
 				new TypeError("The element's document is not displayed"),
@@ -9469,13 +9469,13 @@ Object.defineProperties(Element.prototype, {
 	// document answers with: writes land and read back, and nothing moves.
 	scrollLeft: {
 		get(this: Element): number {
-			const engine = mountOf(this);
+			const engine = getMount(this);
 			return engine ?
 				engine.scrollOffset(this).left :
 					(scrollOffsets.get(this)?.left ?? 0);
 		},
 		set(this: Element, value: number) {
-			const engine = mountOf(this);
+			const engine = getMount(this);
 			if (engine === undefined) {
 				writeScrollOffset(this, "left", toDouble(value));
 				return;
@@ -9487,13 +9487,13 @@ Object.defineProperties(Element.prototype, {
 	},
 	scrollTop: {
 		get(this: Element): number {
-			const engine = mountOf(this);
+			const engine = getMount(this);
 			return engine ?
 				engine.scrollOffset(this).top :
 					(scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
-			const engine = mountOf(this);
+			const engine = getMount(this);
 			if (engine === undefined) {
 				writeScrollOffset(this, "top", toDouble(value));
 				return;
@@ -9525,7 +9525,7 @@ Object.defineProperties(Element.prototype, {
 			xOrOptions?: number | globalThis.ScrollToOptions,
 			y?: number,
 		): void {
-			const target = scrollTargetOf(xOrOptions, y);
+			const target = getScrollTarget(xOrOptions, y);
 			if (target.left) {
 				this.scrollLeft = this.scrollLeft + target.left;
 			}
@@ -9545,7 +9545,7 @@ Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
 			return (
-				mountOf(this)?.boundingClientRect(this) ??
+				getMount(this)?.boundingClientRect(this) ??
 				new DOMRect(0, 0, 0, 0)
 			);
 		},
@@ -9554,7 +9554,7 @@ Object.defineProperties(Element.prototype, {
 	},
 	getClientRects: {
 		value(this: Element): globalThis.DOMRectList {
-			return mountOf(this)?.clientRects(this) ?? new DOMRectList();
+			return getMount(this)?.clientRects(this) ?? new DOMRectList();
 		},
 		writable: true,
 		configurable: true,
@@ -9932,7 +9932,7 @@ export class HTMLElement extends Element {
 			document[kActiveElement] = this;
 		}
 		if (previous !== this && innermostActive(document) === this) {
-			mountOf(this)?.focusMoved(previous, this);
+			getMount(this)?.focusMoved(previous, this);
 		}
 	}
 
@@ -9944,7 +9944,7 @@ export class HTMLElement extends Element {
 			document[kActiveElement] = null;
 		}
 		if (wasFocused) {
-			mountOf(this)?.blurred(this);
+			getMount(this)?.blurred(this);
 		}
 	}
 
@@ -10036,8 +10036,8 @@ export class HTMLElement extends Element {
 		if (!isShowingPopover(this)) {
 			return;
 		}
-		const state = popoverStateOf(this);
-		topLayerOf(this[kDocument]!).delete(this);
+		const state = getPopoverState(this);
+		getTopLayer(this[kDocument]!).delete(this);
 		state.visibility = "hidden";
 		state.mode = null;
 		state.trigger = null;
@@ -10136,35 +10136,35 @@ export interface HTMLElement
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetSize(this).width ?? 0;
+			return getMount(this)?.offsetSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetHeight: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetSize(this).height ?? 0;
+			return getMount(this)?.offsetSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetTop: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetPosition(this).top ?? 0;
+			return getMount(this)?.offsetPosition(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetLeft: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.offsetPosition(this).left ?? 0;
+			return getMount(this)?.offsetPosition(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			return (mountOf(this)?.offsetParent(this) ?? null) as
+			return (getMount(this)?.offsetParent(this) ?? null) as
 				Element |
 				null;
 		},
@@ -10173,42 +10173,42 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientWidth: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.clientSize(this).width ?? 0;
+			return getMount(this)?.clientSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientHeight: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.clientSize(this).height ?? 0;
+			return getMount(this)?.clientSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.clientEdge(this).left ?? 0;
+			return getMount(this)?.clientEdge(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.clientEdge(this).top ?? 0;
+			return getMount(this)?.clientEdge(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollWidth: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.scrollSize(this).width ?? 0;
+			return getMount(this)?.scrollSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollHeight: {
 		get(this: HTMLElement): number {
-			return mountOf(this)?.scrollSize(this).height ?? 0;
+			return getMount(this)?.scrollSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
@@ -10225,7 +10225,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	 */
 	scrollIntoView: {
 		value(this: HTMLElement): void {
-			mountOf(this)?.scrollIntoView(this);
+			getMount(this)?.scrollIntoView(this);
 		},
 		configurable: true,
 		enumerable: true,
@@ -10236,7 +10236,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			this: HTMLElement,
 			options?: globalThis.CheckVisibilityOptions,
 		): boolean {
-			return mountOf(this)?.checkVisibility(this, options) ?? false;
+			return getMount(this)?.checkVisibility(this, options) ?? false;
 		},
 		writable: true,
 		configurable: true,
@@ -11638,7 +11638,7 @@ function attachShadowRoot(
  * or clonable root, so `element.shadowRoot` stays null, `attachShadow` on the
  * same element still throws the NotSupportedError the specification demands,
  * `cloneNode` copies nothing, and serialization never names it: the tree is
- * reachable only through {@link shadowRootOf} and the control that built it.
+ * reachable only through {@link getShadowRoot} and the control that built it.
  */
 function attachUAShadowRoot<T>(target: object): T {
 	const host = target as Element;
@@ -11667,7 +11667,7 @@ function isUAShadowRoot(node: object): boolean {
  * this; `Element.shadowRoot` is the author-facing view, which shows an open
  * tree and nothing else.
  */
-export function shadowRootOf<T>(element: object): T | null {
+export function getShadowRoot<T>(element: object): T | null {
 	return ((element as Element)[kShadowRoot]! as T) ?? null;
 }
 
@@ -12017,7 +12017,7 @@ const kTemplateDocument = Symbol("templateDocument");
  * why a template's content answers a different ownerDocument than its
  * element. A contents owner owns its own templates' contents itself.
  */
-function templateContentsOwnerOf(document: Document): Document {
+function getTemplateContentsOwner(document: Document): Document {
 	if (document[kTemplateDocument] === document) {
 		return document;
 	}
@@ -12042,7 +12042,7 @@ export class HTMLTemplateElement extends HTMLElement {
 		let content = this[kTemplateContent]!;
 		if (content === null) {
 			content = new DocumentFragment();
-			content[kDocument] = templateContentsOwnerOf(this[kDocument]!);
+			content[kDocument] = getTemplateContentsOwner(this[kDocument]!);
 			content[kHost] = this;
 			this[kTemplateContent] = content;
 		}
@@ -12711,7 +12711,7 @@ export class HTMLButtonElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 
 	/**
@@ -12833,12 +12833,12 @@ export class HTMLDetailsElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
 		this[kEngine] = engine;
-		const document = uaDocumentOf(this);
+		const document = getUADocument(this);
 		const root = buildUARoot(this, engine, DETAILS_UA_STYLES);
 		const shadow = root as unknown as ShadowRoot;
 		const summarySlot = document.createElement("slot");
@@ -13024,7 +13024,7 @@ export class HTMLDialogElement extends HTMLElement {
 		// The top layer is the modality: everything else -- `:modal`, the
 		// backdrop, the hit-testing that stops clicks reaching the page --
 		// reads membership rather than a flag of its own.
-		topLayerOf(this[kDocument]!).add(this);
+		getTopLayer(this[kDocument]!).add(this);
 		this.setAttribute("open", "");
 		focusDialog(this);
 	}
@@ -13036,7 +13036,7 @@ export class HTMLDialogElement extends HTMLElement {
 	 */
 	override [kRemovingSteps]?(oldParent: Node): void {
 		super[kRemovingSteps]!(oldParent);
-		topLayerOf(this[kDocument]!).delete(this);
+		getTopLayer(this[kDocument]!).delete(this);
 	}
 
 	close(returnValue?: string): void {
@@ -13113,7 +13113,7 @@ function close(
 	const document = dialog[kDocument]!;
 	const wasModal = isModalDialog(dialog);
 	dialog.removeAttribute("open");
-	topLayerOf(document).delete(dialog);
+	getTopLayer(document).delete(dialog);
 	// The page gets its focus back where the dialog took it from -- when the
 	// dialog holds focus, or held the whole page inert as the modal one.
 	const previous = dialog[kPreviouslyFocused]!;
@@ -13142,7 +13142,7 @@ const kTopLayer = Symbol("the document's top layer");
  * context of the document, in the order they entered it. Membership is what
  * `showModal` grants and `close` revokes, and what the renderer paints last.
  */
-function topLayerOf(document: object): Set<Element> {
+function getTopLayer(document: object): Set<Element> {
 	return (document as Document)[kTopLayer]!;
 }
 /**
@@ -13154,7 +13154,7 @@ function topLayerOf(document: object): Set<Element> {
 function isModalDialog(node: object): boolean {
 	return (
 		node instanceof HTMLDialogElement &&
-		topLayerOf(node[kDocument]!).has(node as Element)
+		getTopLayer(node[kDocument]!).has(node as Element)
 	);
 }
 /** Whether a node's root is a document, which is what connected means. */
@@ -14067,7 +14067,7 @@ export class HTMLInputElement extends HTMLElement {
 			}
 
 			const value = this[kUAValue]!;
-			const {start, end, direction} = uaSelectionOf(this);
+			const {start, end, direction} = getUASelection(this);
 			const anchor = direction === "backward" ? end : start;
 			const caret = direction === "backward" ? start : end;
 
@@ -14118,7 +14118,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return this.type === "hidden" ? createStaticNodeList([]) : labelsOf(this);
+		return this.type === "hidden" ? createStaticNodeList([]) : getLabels(this);
 	}
 
 	get list(): HTMLDataListElement | null {
@@ -14474,7 +14474,7 @@ export class HTMLInputElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -14624,7 +14624,7 @@ function legacyCanceledActivationBehavior(
 	const previous = input[kPreviousRadio]!;
 	input[kPreviousRadio] = null;
 	input[kChecked] = false;
-	if (previous !== null && radioGroupOf(input).includes(previous)) {
+	if (previous !== null && getRadioGroup(input).includes(previous)) {
 		previous[kChecked] = true;
 	}
 }
@@ -14639,7 +14639,7 @@ function setCheckedness(
 	if (!checked || input.type !== "radio") {
 		return;
 	}
-	for (const other of radioGroupOf(input)) {
+	for (const other of getRadioGroup(input)) {
 		if (other !== input) {
 			other[kChecked] = false;
 			widgetChanged(other);
@@ -14765,7 +14765,7 @@ function isFloatPrefix(value: string): boolean {
  * produce "0.3", never "0.30000000000000004". An exponent literal names no
  * place count and answers zero.
  */
-function decimalPlacesOf(text: string | null | undefined): number {
+function getDecimalPlaces(text: string | null | undefined): number {
 	if (!text) {
 		return 0;
 	}
@@ -14839,9 +14839,9 @@ function steppedValue(input: HTMLInputElement, steps: number): string | null {
 		return null;
 	}
 	const places = Math.max(
-		decimalPlacesOf(stepAttribute),
-		decimalPlacesOf(input.getAttribute("min")),
-		decimalPlacesOf(input[kUAValue]!),
+		getDecimalPlaces(stepAttribute),
+		getDecimalPlaces(input.getAttribute("min")),
+		getDecimalPlaces(input[kUAValue]!),
 	);
 	return String(Number(next.toFixed(Math.min(places, 20))));
 }
@@ -14910,7 +14910,7 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 	return number;
 }
 /** The radio buttons an input shares a group with: its name, form and tree. */
-function radioGroupOf(input: HTMLInputElement): HTMLInputElement[] {
+function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	const name = input.getAttribute("name");
 	if (name === null || name === "") {
 		return [input];
@@ -14937,7 +14937,7 @@ function radioGroupOf(input: HTMLInputElement): HTMLInputElement[] {
 }
 /** The radio button of a group that is checked, if one is. */
 function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
-	return radioGroupOf(input).find((radio) => radio.checked);
+	return getRadioGroup(input).find((radio) => radio.checked);
 }
 
 /** A label, and the control its click reaches. */
@@ -15372,7 +15372,7 @@ function buildGaugeRoot(
 	engine: UAEngine,
 	styles: string,
 ): {bar: UAElement; groove: UAText} {
-	const document = uaDocumentOf(host);
+	const document = getUADocument(host);
 	const root = buildUARoot(host, engine, styles);
 	const track = addPart(root, "track");
 	track.removeChild(track.firstChild!);
@@ -15424,7 +15424,7 @@ export class HTMLMeterElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -15522,7 +15522,7 @@ export class HTMLMeterElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 }
 
@@ -15674,7 +15674,7 @@ export class HTMLOptionElement extends HTMLElement {
 			return;
 		}
 		this[kSelectednessValue] = value;
-		const select = selectOf(this);
+		const select = getSelect(this);
 		const selected = select === null ? null : select[kSelectedOptions]!;
 		if (selected !== null) {
 			syncMethod.call(selected);
@@ -15682,7 +15682,7 @@ export class HTMLOptionElement extends HTMLElement {
 	}
 
 	get form(): HTMLFormElement | null {
-		const select = selectOf(this);
+		const select = getSelect(this);
 		return select === null ? null : formOwner(select);
 	}
 
@@ -15715,15 +15715,15 @@ export class HTMLOptionElement extends HTMLElement {
 	}
 
 	get index(): number {
-		const select = selectOf(this);
+		const select = getSelect(this);
 		if (select === null) {
 			return 0;
 		}
-		return optionsOf(select).indexOf(this);
+		return getOptions(select).indexOf(this);
 	}
 
 	get selected(): boolean {
-		const select = selectOf(this);
+		const select = getSelect(this);
 		if (select !== null) {
 			askForAReset(select);
 		}
@@ -15733,12 +15733,12 @@ export class HTMLOptionElement extends HTMLElement {
 	set selected(value: boolean) {
 		this[kOptionDirty] = true;
 		this[kSelectedness] = Boolean(value);
-		const select = selectOf(this);
+		const select = getSelect(this);
 		if (select === null) {
 			return;
 		}
 		if (this[kSelectedness] && !select.hasAttribute("multiple")) {
-			for (const option of optionsOf(select)) {
+			for (const option of getOptions(select)) {
 				if (option !== this) {
 					option[kSelectedness] = false;
 				}
@@ -15759,7 +15759,7 @@ export class HTMLOptionElement extends HTMLElement {
 			namespace === null && localName === "selected" && !this[kOptionDirty]!) {
 			this[kSelectedness] = value !== null;
 		}
-		const select = selectOf(this);
+		const select = getSelect(this);
 		if (select !== null) {
 			widgetChanged(select);
 		}
@@ -15772,7 +15772,7 @@ export class HTMLOptionElement extends HTMLElement {
 	}
 }
 /** The select an option belongs to, directly or through its group. */
-function selectOf(option: Element): HTMLSelectElement | null {
+function getSelect(option: Element): HTMLSelectElement | null {
 	const parent = option[kParent]!;
 	if (parent === null) {
 		return null;
@@ -15796,7 +15796,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	declare [kSelect]?: HTMLSelectElement;
 
 	constructor(select: HTMLSelectElement) {
-		super(() => optionsOf(select), select);
+		super(() => getOptions(select), select);
 		this[kSelect] = select;
 	}
 
@@ -15806,7 +15806,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 
 	override set length(value: number) {
 		const wanted = toUnsignedLong(value);
-		const options = optionsOf(this[kSelect]!);
+		const options = getOptions(this[kSelect]!);
 		if (wanted > options.length) {
 			if (wanted > 100000) {
 				return;
@@ -15849,7 +15849,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 		let reference: Node | null = null;
 		if (before !== undefined && before !== null) {
 			if (typeof before === "number") {
-				const options = optionsOf(this[kSelect]!);
+				const options = getOptions(this[kSelect]!);
 				const index = toLong(before);
 				reference =
 					index >= 0 && index < options.length ? options[index] : null;
@@ -15857,7 +15857,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 				if (!(before instanceof Element)) {
 					throw new TypeError("That is not an element");
 				}
-				if (!optionsOf(this[kSelect]!).includes(before as HTMLOptionElement)) {
+				if (!getOptions(this[kSelect]!).includes(before as HTMLOptionElement)) {
 					throw notFoundError("That option is not in this select");
 				}
 				reference = before;
@@ -15869,7 +15869,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	}
 
 	remove(index: number): void {
-		const options = optionsOf(this[kSelect]!);
+		const options = getOptions(this[kSelect]!);
 		const at = toLong(index);
 		if (at < 0 || at >= options.length) {
 			return;
@@ -15912,7 +15912,7 @@ export class HTMLOutputElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 
 	get defaultValue(): string {
@@ -15999,7 +15999,7 @@ export class HTMLProgressElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -16054,7 +16054,7 @@ export class HTMLProgressElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 }
 
@@ -16292,7 +16292,7 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 
 	get type(): string {
@@ -16343,7 +16343,7 @@ export class HTMLSelectElement extends HTMLElement {
 		let selected = this[kSelectedOptions]!;
 		if (selected === null) {
 			selected = new HTMLCollection(
-				() => optionsOf(this).filter((option) => option[kSelectedness]!),
+				() => getOptions(this).filter((option) => option[kSelectedness]!),
 				this,
 			);
 			this[kSelectedOptions] = selected;
@@ -16354,12 +16354,12 @@ export class HTMLSelectElement extends HTMLElement {
 
 	get selectedIndex(): number {
 		askForAReset(this);
-		return optionsOf(this).findIndex((option) => option[kSelectedness]!);
+		return getOptions(this).findIndex((option) => option[kSelectedness]!);
 	}
 
 	set selectedIndex(value: number) {
 		const index = toLong(value);
-		const options = optionsOf(this);
+		const options = getOptions(this);
 		for (let at = 0; at < options.length; at++) {
 			options[at][kSelectedness] = false;
 			options[at][kOptionDirty] = true;
@@ -16372,7 +16372,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	get value(): string {
 		askForAReset(this);
-		for (const option of optionsOf(this)) {
+		for (const option of getOptions(this)) {
 			if (option[kSelectedness]!) {
 				return option.value;
 			}
@@ -16382,7 +16382,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	set value(value: string) {
 		const wanted = String(value);
-		const options = optionsOf(this);
+		const options = getOptions(this);
 		let found = false;
 		for (const option of options) {
 			if (!found && option.value === wanted) {
@@ -16397,7 +16397,7 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	[kResetControl]?(): void {
-		for (const option of optionsOf(this)) {
+		for (const option of getOptions(this)) {
 			option[kSelectedness] = option.hasAttribute("selected");
 			option[kOptionDirty] = false;
 		}
@@ -16410,12 +16410,12 @@ export class HTMLSelectElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
 		this[kEngine] = engine;
-		const document = uaDocumentOf(this);
+		const document = getUADocument(this);
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, holding one row
 		// per option). Composition hides the light option list.
@@ -16478,7 +16478,7 @@ export class HTMLSelectElement extends HTMLElement {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
-			topLayerOf(this[kDocument]!).delete(picker as unknown as Element);
+			getTopLayer(this[kDocument]!).delete(picker as unknown as Element);
 			return;
 		}
 
@@ -16506,7 +16506,7 @@ export class HTMLSelectElement extends HTMLElement {
 		}
 		// An open picker paints in the top layer, over following content. The
 		// widget owns the membership with the display flip, as one intent.
-		topLayerOf(this[kDocument]!).add(picker as unknown as Element);
+		getTopLayer(this[kDocument]!).add(picker as unknown as Element);
 	}
 
 	/**
@@ -16535,7 +16535,7 @@ function optionList(
 	select: HTMLSelectElement,
 ): HTMLOptionElement[] {
 	askForAReset(select);
-	return optionsOf(select);
+	return getOptions(select);
 }
 
 /**
@@ -16594,7 +16594,7 @@ function reconcileRows(
 	select: HTMLSelectElement,
 	picker: UAElement,
 ): void {
-	const document = uaDocumentOf(select);
+	const document = getUADocument(select);
 	const rows = pickerRows(select);
 	while (picker.childNodes.length > rows.length) {
 		picker.removeChild(picker.lastChild!);
@@ -16724,7 +16724,7 @@ function optionIndexOfRow(picker: UAElement, row: UAElement): number {
 	return -1;
 }
 /** The options of a select: its option children, and its groups' children. */
-function optionsOf(select: Element): HTMLOptionElement[] {
+function getOptions(select: Element): HTMLOptionElement[] {
 	const options: HTMLOptionElement[] = [];
 	for (let node = select[kFirstChild]!; node !== null; node = node[kNext]!) {
 		if (node instanceof HTMLOptionElement) {
@@ -16755,7 +16755,7 @@ function displaySize(select: HTMLSelectElement): number {
  * than one selected keeps only the last.
  */
 function askForAReset(select: HTMLSelectElement): void {
-	const options = optionsOf(select);
+	const options = getOptions(select);
 	const selected = options.filter((option) => option[kSelectedness]!);
 	if (
 		!select.hasAttribute("multiple") &&
@@ -17436,7 +17436,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 			}
 
 			const value = this[kUAValue]!;
-			const {start, end, direction} = uaSelectionOf(this);
+			const {start, end, direction} = getUASelection(this);
 			const backward = direction === "backward";
 			const caret = backward ? start : end;
 			const anchor = backward ? end : start;
@@ -17514,7 +17514,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get labels(): NodeList {
-		return labelsOf(this);
+		return getLabels(this);
 	}
 
 	get type(): string {
@@ -17696,12 +17696,12 @@ export class HTMLTextAreaElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = uaEngineOf(this);
+		const engine = getUAEngine(this);
 		if (engine === undefined) {
 			return;
 		}
 		this[kEngine] = engine;
-		const document = uaDocumentOf(this);
+		const document = getUADocument(this);
 		const root = buildUARoot(this, engine, TEXTAREA_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as UAText;
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
@@ -17958,7 +17958,7 @@ interface PopoverState {
  */
 const popoverStates = new WeakMap<Element, PopoverState>();
 
-function popoverStateOf(element: Element): PopoverState {
+function getPopoverState(element: Element): PopoverState {
 	let state = popoverStates.get(element);
 	if (state === undefined) {
 		state = {
@@ -18015,7 +18015,7 @@ function isShowingPopover(node: object): boolean {
  */
 function showingAutoPopovers(document: Document): Element[] {
 	const popovers: Element[] = [];
-	for (const element of topLayerOf(document)) {
+	for (const element of getTopLayer(document)) {
 		const state = popoverStates.get(element);
 		if (state?.mode === "auto" && state.visibility === "showing") {
 			popovers.push(element);
@@ -18037,7 +18037,7 @@ function topmostAutoPopover(document: object): Element | null {
  * reveal, have nothing else to hear it from.
  */
 function popoverStateChanged(element: Element): void {
-	uaEngineOf(element)?.stateChanged(element);
+	getUAEngine(element)?.stateChanged(element);
 }
 
 /**
@@ -18058,7 +18058,7 @@ function popoverValidity(
 	if (popoverAttributeState(element) === null) {
 		return domError("NotSupportedError", "That element is not a popover");
 	}
-	const showing = popoverStateOf(element).visibility === "showing";
+	const showing = getPopoverState(element).visibility === "showing";
 	if (expectedToBeShowing !== showing) {
 		return false;
 	}
@@ -18114,7 +18114,7 @@ function showPopover(
 		}
 		return;
 	}
-	const state = popoverStateOf(element);
+	const state = getPopoverState(element);
 	document[kPopoverShowing] = true;
 	const cleanup = (): void => {
 		document[kPopoverShowing] = false;
@@ -18171,7 +18171,7 @@ function showPopover(
 	}
 	state.previouslyFocused = null;
 	const originallyFocused = document[kActiveElement]!;
-	topLayerOf(document).add(element);
+	getTopLayer(document).add(element);
 	state.visibility = "showing";
 	state.trigger = source;
 	popoverFocusingSteps(element);
@@ -18202,7 +18202,7 @@ function hidePopover(
 		return;
 	}
 	const document = element[kDocument]!;
-	const state = popoverStateOf(element);
+	const state = getPopoverState(element);
 	const nestedHide = state.hiding;
 	state.hiding = true;
 	if (nestedHide) {
@@ -18246,7 +18246,7 @@ function hidePopover(
 			return;
 		}
 	}
-	topLayerOf(document).delete(element);
+	getTopLayer(document).delete(element);
 	state.trigger = null;
 	state.mode = null;
 	state.visibility = "hidden";
@@ -18396,7 +18396,7 @@ function nearestInclusiveTargetPopover(node: Node): Element | null {
 		current !== null;
 		current = flatParentElement<Node>(current)
 	) {
-		const target = popoverTargetElementOf(current);
+		const target = getPopoverTargetElement(current);
 		if (
 			target !== null &&
 			popoverAttributeState(target) === "auto" &&
@@ -18472,7 +18472,7 @@ function queuePopoverToggleEventTask(
 	newState: string,
 	source: Element | null,
 ): void {
-	const state = popoverStateOf(element);
+	const state = getPopoverState(element);
 	if (state.toggleTask !== null) {
 		oldState = state.toggleTask.oldState;
 		state.toggleTask.canceled = true;
@@ -18577,7 +18577,7 @@ function isPopoverInvokerButton(node: Node): boolean {
  * that submits a form is not an invoker -- its activation is the submission,
  * and the attribute on it does nothing.
  */
-function popoverTargetElementOf(node: Node): Element | null {
+function getPopoverTargetElement(node: Node): Element | null {
 	if (!isPopoverInvokerButton(node)) {
 		return null;
 	}
@@ -18602,7 +18602,7 @@ function popoverTargetElementOf(node: Node): Element | null {
  * nothing -- the click that reaches it is the popover's own.
  */
 function popoverTargetActivationBehavior(node: Element, target: unknown): void {
-	const popover = popoverTargetElementOf(node);
+	const popover = getPopoverTargetElement(node);
 	if (popover === null) {
 		return;
 	}
@@ -19356,7 +19356,7 @@ export class ElementInternals {
 
 	get labels(): NodeList {
 		requireFormAssociated(this);
-		return labelsOf(this[kElementInternalsTarget]!);
+		return getLabels(this[kElementInternalsTarget]!);
 	}
 
 	get states(): CustomStateSet {
@@ -19671,7 +19671,7 @@ function attachElementInternals(element: HTMLElement): ElementInternals {
 }
 
 /** The labels whose control an element is. */
-function labelsOf(element: Element): NodeList {
+function getLabels(element: Element): NodeList {
 	if (!isLabelable(element)) {
 		return createStaticNodeList([]);
 	}
@@ -19767,12 +19767,12 @@ export function pseudoElementCount(host: object): number {
  * every other node: this is what tells a pseudo-element node apart, and where
  * the flat tree finds the parent a node with no parent renders inside.
  */
-function pseudoHostOf<T>(node: object): T | null {
+function getPseudoHost<T>(node: object): T | null {
 	return ((node as Element)[kPseudoHost]! as T) ?? null;
 }
 
 /** The pseudo-element name a slot node fills, such as "::before". */
-function pseudoNameOf(node: object): string | null {
+function getPseudoName(node: object): string | null {
 	return (node as Element)[kPseudoName]!;
 }
 
@@ -19823,7 +19823,7 @@ function clearPseudoElement(host: object, name: string): void {
  */
 
 /** The slot a node is assigned to: the stored assignment, closed trees too. */
-function assignedSlotOf(node: Node): HTMLSlotElement | null {
+function getAssignedSlot(node: Node): HTMLSlotElement | null {
 	const type = node.nodeType;
 	return type === ELEMENT_NODE || type === TEXT_NODE ?
 			(node as Slottable)[kAssignedSlot]! :
@@ -19839,7 +19839,7 @@ function assignedSlotOf(node: Node): HTMLSlotElement | null {
  */
 export function flatParentElement<T>(target: object): T | null {
 	const node = target as Node;
-	const slot = assignedSlotOf(node);
+	const slot = getAssignedSlot(node);
 	if (slot !== null) {
 		return slot as unknown as T;
 	}
@@ -20220,7 +20220,7 @@ function composedNextSibling(node: Node): Node | null {
 	// A projected node's composed siblings are its neighbours in the slot's
 	// assigned-node list, NOT its light-tree siblings: the light nextSibling
 	// may be assigned to a different slot, or to none.
-	const slot = assignedSlotOf(node);
+	const slot = getAssignedSlot(node);
 	if (slot !== null) {
 		const assigned = slot[kAssignedNodes]!;
 		const index = assigned.indexOf(node as Slottable);
@@ -20263,7 +20263,7 @@ function composedPreviousSibling(node: Node): Node | null {
 		return null;
 	}
 
-	const slot = assignedSlotOf(node);
+	const slot = getAssignedSlot(node);
 	if (slot !== null) {
 		const assigned = slot[kAssignedNodes]!;
 		const index = assigned.indexOf(node as Slottable);
@@ -20302,7 +20302,7 @@ function composedParentNode(node: Node): Node | null {
 	if (host !== null && host !== undefined) {
 		return host;
 	}
-	const slot = assignedSlotOf(node);
+	const slot = getAssignedSlot(node);
 	if (slot !== null) {
 		return slot;
 	}
@@ -20481,7 +20481,7 @@ interface ContentBox {
  * generates no box at all (display:none or detached) -- reported as "nothing",
  * which the observer turns into an all-zero rect.
  */
-function contentBoxOf(
+function getContentBox(
 	element: globalThis.Element,
 	layoutEngine: LayoutEngine,
 ): ContentBox | null {
@@ -20515,7 +20515,7 @@ const kObserverCallback = Symbol("observer callback");
  */
 const documentObservers = new WeakMap<object, Set<AnyObserver>>();
 
-function observersOf(document: object): Set<AnyObserver> {
+function getObservers(document: object): Set<AnyObserver> {
 	let observers = documentObservers.get(document);
 	if (observers === undefined) {
 		observers = new Set<AnyObserver>();
@@ -20592,7 +20592,7 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		if (document === null) {
 			return;
 		}
-		const observers = observersOf(document);
+		const observers = getObservers(document);
 		observers.add(this as unknown as AnyObserver);
 		this[kHomes]!.add(observers);
 	}
@@ -20738,7 +20738,7 @@ export class ResizeObserver extends LayoutObserver<
 		// An element with no box -- display:none, or detached -- has a size, and
 		// that size is zero. Reporting it is how the DOM lets a component notice
 		// it has been hidden; skipping it stranded the last size it ever had.
-		const content = contentBoxOf(target, layoutEngine) ?? {
+		const content = getContentBox(target, layoutEngine) ?? {
 			width: 0,
 			height: 0,
 			top: 0,
@@ -21186,13 +21186,13 @@ export class Document extends Node implements globalThis.Document {
 
 	/** The element filling the viewport, or null when none is. */
 	get fullscreenElement(): globalThis.Element | null {
-		return (mountOf(this)?.fullscreenElement(this) ??
+		return (getMount(this)?.fullscreenElement(this) ??
 			null) as globalThis.Element | null;
 	}
 
 	/** Return the fullscreen element to the flow it came from. */
 	exitFullscreen(): Promise<void> {
-		const engine = mountOf(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return Promise.reject(
 				new TypeError("The document is not displayed"),
@@ -21210,7 +21210,7 @@ export class Document extends Node implements globalThis.Document {
 	 * document below the sealed block.
 	 */
 	close(): void {
-		mountOf(this)?.documentClosed();
+		getMount(this)?.documentClosed();
 	}
 
 	get customElementRegistry(): CustomElementRegistry | null {
@@ -21358,7 +21358,7 @@ export class Document extends Node implements globalThis.Document {
 		}
 		setDescendantText(element, String(value));
 		// A terminal's window title is the document's, set in-band.
-		mountOf(this)?.titleChanged(String(value));
+		getMount(this)?.titleChanged(String(value));
 	}
 
 	get documentElement(): globalThis.HTMLElement {
@@ -22326,7 +22326,7 @@ export interface Document
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element | null {
-			return (mountOf(this)?.elementFromPoint(this, x, y) ??
+			return (getMount(this)?.elementFromPoint(this, x, y) ??
 				null) as globalThis.Element | null;
 		},
 		writable: true,
@@ -22335,7 +22335,7 @@ Object.defineProperties(Document.prototype, {
 	},
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
-			return (mountOf(this)?.elementsFromPoint(this, x, y) ??
+			return (getMount(this)?.elementsFromPoint(this, x, y) ??
 				[]) as globalThis.Element[];
 		},
 		writable: true,
@@ -22886,7 +22886,7 @@ markUnscopable(Element.prototype, [
 markUnscopable(CharacterData.prototype, CHILD_NODE_UNSCOPABLES);
 markUnscopable(DocumentType.prototype, CHILD_NODE_UNSCOPABLES);
 
-function scrollTargetOf(
+function getScrollTarget(
 	xOrOptions?: number | globalThis.ScrollToOptions,
 	y?: number,
 ): {left?: number; top?: number} {
@@ -22901,7 +22901,7 @@ function scrollElementTo(
 	xOrOptions?: number | globalThis.ScrollToOptions,
 	y?: number,
 ): void {
-	const target = scrollTargetOf(xOrOptions, y);
+	const target = getScrollTarget(xOrOptions, y);
 	if (target.left !== undefined) {
 		this.scrollLeft = target.left;
 	}
@@ -23626,7 +23626,7 @@ function isPartiallyContained(node: Node, range: Range): boolean {
 }
 
 /** The node, furthest from the root, that holds both boundary points. */
-function commonAncestorOf(range: Range): Node {
+function getCommonAncestor(range: Range): Node {
 	let container = range[kStartNode]!;
 	while (!isInclusiveAncestor(container, range[kEndNode]!)) {
 		container = container[kParent]! as Node;
@@ -23745,7 +23745,7 @@ interface ExtractionShape {
  * of, the ones it holds whole, and the one it ends inside of.
  */
 function extractionShape(range: Range): ExtractionShape {
-	const commonAncestor = commonAncestorOf(range);
+	const commonAncestor = getCommonAncestor(range);
 	const startNode = range[kStartNode]!;
 	const endNode = range[kEndNode]!;
 	let firstPartiallyContained: Node | null = null;
@@ -23998,7 +23998,7 @@ export class Range extends AbstractRange implements globalThis.Range {
 	}
 
 	get commonAncestorContainer(): Node {
-		return commonAncestorOf(this);
+		return getCommonAncestor(this);
 	}
 
 	setStart(node: Node, offset: number): void {
@@ -24135,7 +24135,7 @@ export class Range extends AbstractRange implements globalThis.Range {
 			return;
 		}
 		const nodesToRemove: Node[] = [];
-		for (const node of descendants(commonAncestorOf(this))) {
+		for (const node of descendants(getCommonAncestor(this))) {
 			if (!isContained(node, this)) {
 				continue;
 			}
@@ -24358,7 +24358,7 @@ export class Range extends AbstractRange implements globalThis.Range {
 		if (startNode instanceof Text) {
 			string += startNode[kData]!.slice(this[kStartOffset]!);
 		}
-		for (const node of descendants(commonAncestorOf(this))) {
+		for (const node of descendants(getCommonAncestor(this))) {
 			if (!(node instanceof Text)) {
 				continue;
 			}
@@ -24406,7 +24406,7 @@ Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
 			return (
-				mountOf(this.startContainer)?.rangeBoundingClientRect(this) ??
+				getMount(this.startContainer)?.rangeBoundingClientRect(this) ??
 				new DOMRect(0, 0, 0, 0)
 			);
 		},
@@ -24416,7 +24416,7 @@ Object.defineProperties(Range.prototype, {
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
 			return (
-				mountOf(this.startContainer)?.rangeClientRects(this) ??
+				getMount(this.startContainer)?.rangeClientRects(this) ??
 				new DOMRectList()
 			);
 		},
@@ -24446,7 +24446,7 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the engine hears it here -- before the coalescing guard
 	// below, which drops the second move of a task but not its repaint.
-	mountOf(document)?.selectionMoved();
+	getMount(document)?.selectionMoved();
 	if (document[kSelectionChangeScheduled]!) {
 		return;
 	}
@@ -25118,7 +25118,7 @@ function flattenSelectionText(nodes: Text[]): SelectionText {
  * offset, so it lands on the first painted text at or after that child --
  * and past the last child, at the end of the element's own text.
  */
-function selectionIndexOf(
+function getSelectionIndex(
 	run: SelectionText,
 	node: Node,
 	offset: number,
@@ -25219,7 +25219,7 @@ function selectionLineAt(lines: SelectionLine[], index: number): number {
 }
 
 /** The column a caret paints at, asked of the layout. */
-function caretColumnOf(
+function getCaretColumn(
 	document: Document,
 	layout: UAEngine["layout"],
 	point: [Node, number],
@@ -25260,7 +25260,7 @@ function selectionLineMove(
 		return selectionPointAt(run, lines[lines.length - 1].end);
 	}
 	const here = selectionPointAt(run, index);
-	const column = here === null ? null : caretColumnOf(document, layout, here);
+	const column = here === null ? null : getCaretColumn(document, layout, here);
 	const root = document.body ?? document.documentElement;
 	const found =
 		column === null || root === null ?
@@ -25285,7 +25285,7 @@ function modifiedPoint(
 	granularity: string,
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
-	const engine = uaEngineOf(document);
+	const engine = getUAEngine(document);
 	const layout = engine?.layout ?? null;
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
@@ -25300,7 +25300,7 @@ function modifiedPoint(
 	if (run.parts.length === 0) {
 		return null;
 	}
-	const index = selectionIndexOf(run, from[0], from[1]);
+	const index = getSelectionIndex(run, from[0], from[1]);
 	if (index === null) {
 		return null;
 	}
@@ -27694,7 +27694,7 @@ export function mount(document: object, engine: Mount): MountHandle {
 }
 
 /** The mount of a node's document, or undefined when it is headless. */
-export function mountOf(node: object): Mount | undefined {
+export function getMount(node: object): Mount | undefined {
 	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
 	const document =
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument;
@@ -27803,7 +27803,7 @@ type Reached =
  * dispatched itself are all outside.
  */
 function reachClipboard(document: Document, what: string): Reached {
-	const mount = mountOf(document);
+	const mount = getMount(document);
 	const terminal = mount?.clipboardTerminal() ?? null;
 	if (terminal === null) {
 		return {
@@ -27973,7 +27973,7 @@ export class PermissionStatus extends EventTarget {
 		) {
 			return "denied";
 		}
-		const mount = mountOf(document);
+		const mount = getMount(document);
 		if (!mount || mount.clipboardTerminal() === null) {
 			return "denied";
 		}
@@ -28271,7 +28271,7 @@ export class Window extends EventTarget {
 	// moves them, and a value frozen at construction would have reported the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
-		return mountOf(this.document)?.viewportSize().width ?? 0;
+		return getMount(this.document)?.viewportSize().width ?? 0;
 	}
 
 	get outerWidth(): number {
@@ -28279,7 +28279,7 @@ export class Window extends EventTarget {
 	}
 
 	get innerHeight(): number {
-		return mountOf(this.document)?.viewportSize().height ?? 0;
+		return getMount(this.document)?.viewportSize().height ?? 0;
 	}
 
 	get outerHeight(): number {
@@ -28289,14 +28289,14 @@ export class Window extends EventTarget {
 	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
 	// the anchor after the window is built.
 	get screenTop(): number {
-		return mountOf(this.document)?.screenTop() ?? 0;
+		return getMount(this.document)?.screenTop() ?? 0;
 	}
 
 	// Standard window scrolling, mapped onto the camera: scrollY is how far
 	// the camera has moved down the document, scrollBy moves it. A terminal
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		return mountOf(this.document)?.documentScrollOffset().top ?? 0;
+		return getMount(this.document)?.documentScrollOffset().top ?? 0;
 	}
 
 	get pageYOffset(): number {
@@ -28304,7 +28304,7 @@ export class Window extends EventTarget {
 	}
 
 	get scrollX(): number {
-		return mountOf(this.document)?.documentScrollOffset().left ?? 0;
+		return getMount(this.document)?.documentScrollOffset().left ?? 0;
 	}
 
 	get pageXOffset(): number {
@@ -28317,7 +28317,7 @@ export class Window extends EventTarget {
 	// document.documentElement.scrollTop always): one camera, four ways to
 	// read or move it.
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		const mount = mountOf(this.document);
+		const mount = getMount(this.document);
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? mount?.documentScrollOffset().top ?? 0) :
@@ -28334,7 +28334,7 @@ export class Window extends EventTarget {
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? 0) :
 					(y ?? 0);
-		mountOf(this.document)?.scrollDocumentBy(top);
+		getMount(this.document)?.scrollDocumentBy(top);
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it
@@ -28342,11 +28342,11 @@ export class Window extends EventTarget {
 	// so "await a frame" always means the frame carrying the pending
 	// mutations has landed.
 	requestAnimationFrame(callback: FrameRequestCallback): number {
-		return mountOf(this.document)?.requestFrame(callback) ?? 0;
+		return getMount(this.document)?.requestFrame(callback) ?? 0;
 	}
 
 	cancelAnimationFrame(handle: number): void {
-		mountOf(this.document)?.cancelFrame(handle);
+		getMount(this.document)?.cancelFrame(handle);
 	}
 
 	/**
@@ -28370,10 +28370,10 @@ export class Window extends EventTarget {
 				permissions: constructInternal(() => new Permissions(document)),
 				userActivation: {
 					get hasBeenActive(): boolean {
-						return mountOf(document)?.everActivated() ?? false;
+						return getMount(document)?.everActivated() ?? false;
 					},
 					get isActive(): boolean {
-						return mountOf(document)?.userActive() ?? false;
+						return getMount(document)?.userActive() ?? false;
 					},
 				},
 			} as unknown as Navigator;
@@ -28402,7 +28402,7 @@ export class Window extends EventTarget {
 	 */
 	matchMedia(query: string): MediaQueryList {
 		const media = String(query);
-		const mount = mountOf(this.document);
+		const mount = getMount(this.document);
 		const matches = (): boolean => mount?.mediaMatches(media) ?? false;
 		const list = new EventTarget();
 		// `matches` reads live; this holds the value the last "change" event
@@ -28476,7 +28476,7 @@ export class Window extends EventTarget {
 	 * carries nothing from the last one.
 	 */
 	close(): void {
-		const mount = mountOf(this.document);
+		const mount = getMount(this.document);
 		if (mount === undefined) {
 			return;
 		}

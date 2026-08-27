@@ -315,8 +315,8 @@ test("StyleManager createPseudoElementNode", async () => {
 	const pseudoNode = toolkit.pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
-	expect(toolkit.pseudoNameOf(pseudoNode!)).toBe("::before");
-	expect(toolkit.pseudoHostOf(pseudoNode!)).toBe(testDiv);
+	expect(toolkit.getPseudoName(pseudoNode!)).toBe("::before");
+	expect(toolkit.getPseudoHost(pseudoNode!)).toBe(testDiv);
 
 	// Test element with no content
 	const emptyDiv = document.createElement("div");

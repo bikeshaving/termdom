@@ -71,7 +71,7 @@ interface SequentialEntry {
 	barrier: Element | null;
 }
 
-function tabindexOf(element: Element): number {
+function getTabIndex(element: Element): number {
 	const parsed = parseInt(element.getAttribute("tabindex") || "0", 10);
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
@@ -119,7 +119,7 @@ function sequentialFocusEntries(
 	};
 	const isFocusable = (element: Element): boolean =>
 		element.matches(FOCUSABLE_SELECTOR) &&
-		tabindexOf(element) >= 0 &&
+		getTabIndex(element) >= 0 &&
 		!isInert(element) &&
 		isRendered(element);
 
@@ -139,8 +139,8 @@ function sequentialFocusEntries(
 				return;
 			}
 			const element = node as Element;
-			const ownerTabindex = tabindexOf(element);
-			const shadow = toolkit.shadowRootOf(element) as
+			const ownerTabindex = getTabIndex(element);
+			const shadow = toolkit.getShadowRoot(element) as
 				| ShadowRootLike |
 				null;
 			if (shadow !== null) {
@@ -1332,7 +1332,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	// activeElement down.
 	let current = view.document.activeElement;
 	while (current !== null) {
-		const shadow = toolkit.shadowRootOf<ShadowRoot>(current);
+		const shadow = toolkit.getShadowRoot<ShadowRoot>(current);
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;

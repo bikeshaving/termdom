@@ -18,7 +18,7 @@ import {
 	type StyleManager,
 	getComputedValues,
 	getBoxModel,
-	pseudoStyleOf,
+	getPseudoStyle,
 	resolveBorderSides,
 } from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
@@ -225,7 +225,7 @@ function selectionStyleFor(
 	element: Element,
 	base: CellStyle,
 ): CellStyle {
-	const declaration = pseudoStyleOf(element, "::selection");
+	const declaration = getPseudoStyle(element, "::selection");
 	const fg = declaration.getComputedValue("color");
 	const bg = declaration.getComputedValue("background-color");
 	if (!fg && !bg) {
@@ -373,7 +373,7 @@ function renderBackdrop(
 	ctx: CellContext,
 ): void {
 	const fill = backgroundFill(
-		pseudoStyleOf(element, "::backdrop").getComputedValue("background-color"),
+		getPseudoStyle(element, "::backdrop").getComputedValue("background-color"),
 	);
 	if (fill === null) {
 		return;
@@ -567,7 +567,8 @@ function renderElement(
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
 			const node =
-				painter[kToolkit].valueTextOf(element) ?? glyphTextOf(painter, element);
+				painter[kToolkit].valueTextOf(element) ??
+				getGlyphText(painter, element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -920,7 +921,7 @@ function renderOutsideMarker(
 	const markerWidth = ctx.measureText(markerContent).width;
 
 	// Get marker styles
-	const markerStyle = pseudoStyleOf(element, "::marker");
+	const markerStyle = getPseudoStyle(element, "::marker");
 	// ::marker inherits color from its originating element, so fall back to the
 	// list item's own color rather than rendering the marker unstyled.
 	const markerColor =
@@ -952,8 +953,8 @@ function renderOutsideMarker(
 }
 
 /** The text a toggle's glyph renders through, from its closed tree. */
-function glyphTextOf(painter: Painter, element: Element): Text | null {
-	const root = painter[kToolkit].shadowRootOf<ShadowRoot>(element);
+function getGlyphText(painter: Painter, element: Element): Text | null {
+	const root = painter[kToolkit].getShadowRoot<ShadowRoot>(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
 }
@@ -1039,7 +1040,7 @@ function selectionRangeFor(
 ): {range: Range; selectionParent: Element} | null {
 	const active = painter[kDocument].activeElement;
 	if (active && painter[kToolkit].isTextField(active)) {
-		const fieldRange = painter[kToolkit].selectionRangeOf(active);
+		const fieldRange = painter[kToolkit].getSelectionRange(active);
 		// The control's range names the text it renders its value through, so
 		// node identity is the whole test -- no widget anatomy to know.
 		if (fieldRange && fieldRange.startContainer === textNode) {

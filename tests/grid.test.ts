@@ -36,7 +36,7 @@ interface Rendered {
 	resolved(property: string, selector?: string): string;
 }
 
-function boxOf(element: Element): Box {
+function getBox(element: Element): Box {
 	const rect = element.getBoundingClientRect();
 	return {
 		left: rect.left,
@@ -63,9 +63,9 @@ async function render(html: string, cols = 30, rows = 12): Promise<Rendered> {
 	return {
 		dom,
 		document: dom.document,
-		item: (index) => boxOf(query("i", index)),
-		items: () => Array.from(dom.document.querySelectorAll("i")).map(boxOf),
-		box: (selector, index = 0) => boxOf(query(selector, index)),
+		item: (index) => getBox(query("i", index)),
+		items: () => Array.from(dom.document.querySelectorAll("i")).map(getBox),
+		box: (selector, index = 0) => getBox(query(selector, index)),
 		rows: () => {
 			const lines = terminal
 				.getVisibleText()
@@ -1525,7 +1525,7 @@ async function mutationMatchesFresh(
 	expect(before.rows()).toEqual(fresh.rows());
 	const geometry = (rendered: Rendered) =>
 		Array.from(rendered.document.querySelectorAll("*")).map((element) => {
-			const box = boxOf(element);
+			const box = getBox(element);
 			return `${element.tagName}#${element.id}.${element.className}: ${box.left},${box.top} ${box.width}x${box.height}`;
 		});
 	expect(geometry(before)).toEqual(geometry(fresh));
@@ -1679,7 +1679,7 @@ test("a resize relays the flexible tracks out", async () => {
 
 	const widths = (): number[] =>
 		Array.from(dom.document.querySelectorAll("i")).map(
-			(element) => boxOf(element).width,
+			(element) => getBox(element).width,
 		);
 	// The relayout arrives after the resize debounce and a cursor round trip.
 	for (let attempt = 0; attempt < 40; attempt++) {

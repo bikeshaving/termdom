@@ -27,11 +27,11 @@ function ensurePseudoElement<T>(host: object, name: string): T {
 function pseudoElement<T>(host: object, name: string): T | null {
 	return ua(host).pseudoElement<T>(host, name);
 }
-function pseudoHostOf<T>(node: object): T | null {
-	return ua(node).pseudoHostOf<T>(node);
+function getPseudoHost<T>(node: object): T | null {
+	return ua(node).getPseudoHost<T>(node);
 }
-function pseudoNameOf(node: object): string | null {
-	return ua(node).pseudoNameOf(node);
+function getPseudoName(node: object): string | null {
+	return ua(node).getPseudoName(node);
 }
 import {flowWalker} from "../src/internal/layout.js";
 
@@ -118,11 +118,11 @@ test("A bare document - flat-tree walker pseudo-element traversal", () => {
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 10) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -240,11 +240,11 @@ test("A bare document - flat-tree walker utility functions", () => {
 	expect(pseudoElement<Element>(div, "::after")).toBe(null);
 
 	// Test pseudo node creation
-	expect(pseudoNameOf(beforeNode)).toBe("::before");
-	expect(pseudoHostOf(beforeNode)).toBe(div);
+	expect(getPseudoName(beforeNode)).toBe("::before");
+	expect(getPseudoHost(beforeNode)).toBe(div);
 	expect(beforeNode.textContent).toBe("Before");
-	expect(pseudoHostOf(beforeNode) !== null).toBe(true);
-	expect(pseudoHostOf(div) !== null).toBe(false);
+	expect(getPseudoHost(beforeNode) !== null).toBe(true);
+	expect(getPseudoHost(div) !== null).toBe(false);
 });
 
 test("A bare document - flat-tree walker ::marker pseudo-element traversal", () => {
@@ -275,11 +275,11 @@ test("A bare document - flat-tree walker ::marker pseudo-element traversal", () 
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 10) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -492,12 +492,12 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 
 	let node = walker.nextNode();
 	while (node && nodes.length < 20) {
-		const metadata = pseudoNameOf(node);
+		const metadata = getPseudoName(node);
 		nodes.push({
 			name: node.nodeName,
 			className: (node as any).className || undefined,
 			content: node.textContent || "",
-			isPseudo: pseudoHostOf(node) !== null,
+			isPseudo: getPseudoHost(node) !== null,
 			pseudoType: metadata ?? undefined,
 		});
 		node = walker.nextNode();
@@ -835,7 +835,7 @@ test("FAILING - flat-tree walker ::after elements in layout engine pattern", () 
 
 	let child = walker.firstChild();
 	while (child) {
-		const pseudoMeta = pseudoNameOf(child);
+		const pseudoMeta = getPseudoName(child);
 		foundNodes.push({
 			type: child.nodeType === child.TEXT_NODE ? "TEXT" : "ELEMENT",
 			content: child.textContent || "",

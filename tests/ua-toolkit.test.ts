@@ -39,7 +39,7 @@ test("a toolkit taken on another document opens nothing here", async () => {
 
 	const bystander = createHTMLDocument();
 	const stolen = installUAEngine(bystander, {} as never);
-	expect(stolen.shadowRootOf(input)).toBe(null);
+	expect(stolen.getShadowRoot(input)).toBe(null);
 	expect(stolen.selectionOf(input)).toBe(null);
 	expect(stolen.valueTextOf(input)).toBe(null);
 
@@ -79,5 +79,5 @@ test("the toolkit reads past the type gate the author meets", () => {
 	document.body.appendChild(host as unknown as globalThis.Node);
 	const closed = host.attachShadow({mode: "closed"});
 	expect(host.shadowRoot).toBe(null);
-	expect(toolkit.shadowRootOf(host)).toBe(closed);
+	expect(toolkit.getShadowRoot(host)).toBe(closed);
 });

@@ -1343,7 +1343,7 @@ function styleDiff(
 				fg: fg === 0 ? undefined : fg,
 				bg: bg === 0 ? undefined : bg,
 				attributes: attrsChanged(attrs, 0),
-				underline: {from: "none", to: underlineOf(attrs)},
+				underline: {from: "none", to: getUnderline(attrs)},
 			},
 			colorDepth,
 		);
@@ -1384,14 +1384,14 @@ function styleDiff(
 	}
 	if (fgChanged || bgChanged) {
 		run.attributes = attrsChanged(attrs, prevAttrs);
-		run.underline = {from: underlineOf(prevAttrs), to: underlineOf(attrs)};
+		run.underline = {from: getUnderline(prevAttrs), to: getUnderline(attrs)};
 	}
 
 	return sgrStyle(run, colorDepth);
 }
 
 /** The underline the bits ask for. DoubleUnderline needs Underline with it. */
-function underlineOf(attrs: number): UnderlineStyle {
+function getUnderline(attrs: number): UnderlineStyle {
 	if (!(attrs & Attr.Underline)) {
 		return "none";
 	}

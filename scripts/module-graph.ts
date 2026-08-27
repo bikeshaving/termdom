@@ -89,7 +89,7 @@ const DOM_DOORS = [
 	"createDocumentWindow",
 	"installUAEngine",
 	"mount",
-	"mountOf",
+	"getMount",
 	"observeTree",
 	"parseHTMLDocument",
 	"platform",
