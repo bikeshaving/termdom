@@ -12456,6 +12456,7 @@ export interface HTMLAnchorElement {
 	text: string;
 	type: string;
 }
+
 /** One part of a hyperlink's URL, read from it and written back through it. */
 function hyperlinkPart(
 	read: (url: URL) => string,
@@ -12474,6 +12475,7 @@ function hyperlinkPart(
 		configurable: true,
 	};
 }
+
 /**
  * The members a hyperlink carries: its URL, and the parts of that URL.
  *
@@ -12595,6 +12597,7 @@ function hyperlinkURL(element: Element): URL | null {
 		return null;
 	}
 }
+
 /** Change one part of a hyperlink's URL and write the whole of it back. */
 function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	const url = hyperlinkURL(element);
@@ -13176,6 +13179,7 @@ const kTopLayer = Symbol("the document's top layer");
 function getTopLayer(document: object): Set<Element> {
 	return (document as Document)[kTopLayer]!;
 }
+
 /**
  * Whether an element is showing modally -- the state `:modal` matches. A
  * dialog is modal exactly while it is in its document's top layer: `show()`
@@ -13188,6 +13192,7 @@ function isModalDialog(node: object): boolean {
 		getTopLayer(node[kDocument]!).has(node as Element)
 	);
 }
+
 /** Whether a node's root is a document, which is what connected means. */
 function isConnectedNode(node: Node): boolean {
 	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
@@ -13427,6 +13432,7 @@ export interface HTMLFormElement {
 	reset(): void;
 	submit(): void;
 }
+
 /** The listed controls a form owns, in tree order. */
 function listedControls(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
@@ -13449,6 +13455,7 @@ function listedControls(form: HTMLFormElement): Element[] {
 	}
 	return controls;
 }
+
 /** Whether an element is a button that submits its form. */
 function isSubmitButton(element: Element): boolean {
 	if (element instanceof HTMLButtonElement) {
@@ -13460,6 +13467,7 @@ function isSubmitButton(element: Element): boolean {
 	}
 	return false;
 }
+
 /**
  * Submit a form.
  *
@@ -14745,6 +14753,7 @@ function build(
 	engine.layout.invalidate(input);
 	input[kUAReconcile]!();
 }
+
 /** How an input's type reads and writes its value. */
 function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
 	switch (type) {
@@ -14877,6 +14886,7 @@ function steppedValue(input: HTMLInputElement, steps: number): string | null {
 	);
 	return String(Number(next.toFixed(Math.min(places, 20))));
 }
+
 /**
  * The value an input stores for what was written to it.
  *
@@ -14924,6 +14934,7 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 			return value;
 	}
 }
+
 /** A range's value: the number it names, pulled inside the range it allows. */
 function clampRangeValue(input: HTMLInputElement, value: string): number {
 	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
@@ -14941,6 +14952,7 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 	}
 	return number;
 }
+
 /** The radio buttons an input shares a group with: its name, form and tree. */
 function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	const name = input.getAttribute("name");
@@ -14967,6 +14979,7 @@ function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	}
 	return group;
 }
+
 /** The radio button of a group that is checked, if one is. */
 function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
 	return getRadioGroup(input).find((radio) => radio.checked);
@@ -15804,6 +15817,7 @@ export class HTMLOptionElement extends HTMLElement {
 		clone[kOptionDirty] = this[kOptionDirty]!;
 	}
 }
+
 /** The select an option belongs to, directly or through its group. */
 function getSelect(option: Element): HTMLSelectElement | null {
 	const parent = option[kParent]!;
@@ -16697,6 +16711,7 @@ function commit(
 	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
 	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
 }
+
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
 	part: "option" | "optgroup";
@@ -16706,6 +16721,7 @@ interface PickerRow {
 	grouped: boolean;
 	highlighted: boolean;
 }
+
 /**
  * Whether an option is disabled: its own attribute, or the group it belongs
  * to carrying one -- the two the HTML Standard reads together.
@@ -16717,6 +16733,7 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 	const parent = option[kParent]!;
 	return parent instanceof HTMLOptGroupElement && parent.disabled;
 }
+
 /** Whether a document-space point falls inside a rect. */
 function rectContains(rect: UARect, x: number, y: number): boolean {
 	return (
@@ -16726,6 +16743,7 @@ function rectContains(rect: UARect, x: number, y: number): boolean {
 		y < rect.y + rect.height
 	);
 }
+
 /** Set or clear a picker row's state attribute, writing only on a change. */
 function setRowFlag(row: UAElement, name: string, on: boolean): void {
 	if (on === row.hasAttribute(name)) {
@@ -16737,6 +16755,7 @@ function setRowFlag(row: UAElement, name: string, on: boolean): void {
 		row.removeAttribute(name);
 	}
 }
+
 /**
  * The index into a select's option list that a picker row stands for: the rows
  * that are options, counted in tree order.
@@ -16756,6 +16775,7 @@ function optionIndexOfRow(picker: UAElement, row: UAElement): number {
 	}
 	return -1;
 }
+
 /** The options of a select: its option children, and its groups' children. */
 function getOptions(select: Element): HTMLOptionElement[] {
 	const options: HTMLOptionElement[] = [];
@@ -16776,12 +16796,14 @@ function getOptions(select: Element): HTMLOptionElement[] {
 	}
 	return options;
 }
+
 /** The number of rows a select shows, which its size attribute names. */
 function displaySize(select: HTMLSelectElement): number {
 	const value = select.getAttribute("size");
 	const parsed = value === null ? null : parseNonNegativeInteger(value);
 	return parsed === null || parsed === 0 ? 1 : parsed;
 }
+
 /**
  * The selectedness setting algorithm: a select that shows one row and has
  * nothing selected selects its first enabled option, and a select with more
@@ -16874,6 +16896,7 @@ export class HTMLStyleElement extends HTMLElement {
 		this[kDocument]![kStyleElements] = this[kDocument]![kStyleElements]! - 1;
 	}
 }
+
 /**
  * How many style elements a document's trees hold, as a number that changes
  * whenever one joins or leaves. A cascade polls this to notice a sheet that
@@ -17172,6 +17195,7 @@ export class HTMLTableElement extends HTMLElement {
 		removeNode(rows[at]);
 	}
 }
+
 /** Whether a node is an HTML element with a given local name. */
 function isHTMLElementNamed(node: Node, localName: string): boolean {
 	return (
@@ -17180,6 +17204,7 @@ function isHTMLElementNamed(node: Node, localName: string): boolean {
 		(node as Element)[kLocalName] === localName
 	);
 }
+
 /** The child elements of a parent with a given HTML local name, in order. */
 function childElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
@@ -17197,6 +17222,7 @@ function childElementsNamed(parent: Node, localName: string): Element[] {
 	}
 	return found;
 }
+
 /**
  * A table's rows: the head's, then the ones the table holds itself and its
  * bodies hold, then the foot's.
@@ -17325,6 +17351,7 @@ function table(
 			(grandparent as Element) :
 		null;
 }
+
 /** The cells of a row: its td and th children, in order. */
 function rowCells(row: Element): Element[] {
 	const cells: Element[] = [];
@@ -17847,6 +17874,7 @@ function verticalTarget(
 	}
 	return target.endOffset;
 }
+
 /**
  * One visual (soft-wrapped or hard-broken) line of a laid-out textarea: the
  * range of the value it covers. A value renders as pre-wrap, so the line's
@@ -17880,6 +17908,7 @@ function textareaLineAt(
 	}
 	return lines.length - 1;
 }
+
 /**
  * A textarea's laid-out visual lines with their data ranges -- a thin field
  * view over the shared `lineFragments` primitive (the empty and trailing-newline
@@ -17904,6 +17933,7 @@ function textareaVisualLines(
 	}
 	return {value: valueText.data, lines};
 }
+
 /** A raw value holds line breaks as single line feeds. */
 function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
@@ -17927,6 +17957,7 @@ export class HTMLTitleElement extends HTMLElement {
 		setDescendantText(this, String(value));
 	}
 }
+
 /** The text of an element's Text children, which is not its descendants'. */
 function childText(element: Element): string {
 	let text = "";
@@ -18682,6 +18713,7 @@ function isShadowIncludingInclusiveDescendant(
 	}
 	return false;
 }
+
 /** The class each entry of the element table names. */
 const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 	HTMLAnchorElement,
@@ -23305,6 +23337,7 @@ function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
 	}
 	set.add(iterator);
 }
+
 /** How many ranges have ever been registered; the mutation steps' fast path. */
 let liveRangesEver = 0;
 
