@@ -548,7 +548,7 @@ function textSelectionRange(
 	return range;
 }
 
-/** The range a document answers control-selection queries with. @see caretRanges */
+/** The range a document answers control-selection queries with. */
 const selectionRanges = new WeakMap<UADocument, UARange>();
 
 /** A node's own document, as the tree-building code below reads it. */

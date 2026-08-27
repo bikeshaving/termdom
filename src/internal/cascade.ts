@@ -1850,7 +1850,7 @@ function getListGutterWidth(listElement: Element): number {
 /**
  * The box shorthands whose computed answer is serialized from their four
  * longhands rather than resolved in its own right. Border shorthands are
- * excluded on purpose: resolveBorderStyles reads the longhands directly, and
+ * excluded on purpose: resolveBorderSides reads the longhands directly, and
  * `border` answers what was authored.
  */
 const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
@@ -7907,7 +7907,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kCSSRules]: ParsedCSSRule[];
 	/**
 	 * The manager to re-ask for matching rules, and the one that says whether
-	 * this declaration still stands for the cascade (see resolvedDeclarations).
+	 * this declaration still stands for the cascade.
 	 * A computed style is LIVE: the object an author holds keeps answering the
 	 * element's current values across class flips, rule insertions and sheet
 	 * replacements, so it re-resolves rather than being replaced.
@@ -9428,7 +9428,7 @@ for (const property of ACCESSOR_PROPERTIES) {
 	}
 }
 
-/** An element's border sides, in `drawBorder`'s own vocabulary. */
+/** An element's border sides, in `drawBox`'s own vocabulary. */
 interface BorderSides {
 	top?: LineStyle["style"];
 	right?: LineStyle["style"];

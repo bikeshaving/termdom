@@ -2508,7 +2508,7 @@ function handleResize(
 	// exactly recoverable:
 	//
 	//   1. The cursor is parked on our content's bottom row after every frame,
-	//      and it rides its line through the rewrap (renderFrame parks it).
+	//      and it rides its line through the rewrap.
 	//   2. Every row we paint is a hard line, so the old frame's rewrapped
 	//      height is computable from the previous frame's own line lengths.
 	//
@@ -2667,9 +2667,8 @@ function topmostCloseRequestTarget(
  * Hit-test a document-relative point (flushing pending layout first). The
  * one place both document.elementFromPoint (which converts its public,
  * viewport-relative x/y into this space) and mouse hit-testing (whose
- * points are already document-relative, from the viewport's screenToDocumentPoint) go
- * through, so a click always tests against fresh layout regardless of
- * entry point.
+ * points are already document-relative, from documentPointAt) go through,
+ * so a click always tests against fresh layout whichever way it arrived.
  */
 function findElementAtDocumentPoint(
 	termdom: TermDOM,
@@ -3103,7 +3102,7 @@ function reserveRows(
 		// document-mode region grew past the space below the shell prompt.
 		//
 		// A pending post-resize screen reset IS screen-absolute, though, and
-		// must ride the scroll (see shiftScreenReset).
+		// must ride the scroll (see the screen's own `scrolled`).
 		termdom[kScreen].scrolled(push);
 	}
 

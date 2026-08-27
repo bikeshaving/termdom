@@ -935,9 +935,9 @@ export class CellContext {
 	cols: number;
 	viewportOffset: number;
 	// Where the focused text element wants the real terminal cursor, in the
-	// same coordinates setText uses. When set, the frame parks the cursor there
-	// and shows it -- IME composition anchors at the real cursor, so a fake
-	// inverse-cell caret is not enough for text entry.
+	// same coordinates every draw call uses. When set, the frame parks the
+	// cursor there and shows it -- IME composition anchors at the real cursor,
+	// so a fake inverse-cell caret is not enough for text entry.
 	caret: {col: number; row: number} | null;
 	// The active overflow:hidden clip, in the same document-space (row, col)
 	// coordinates as every draw call below -- set/restored by the renderer
