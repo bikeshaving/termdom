@@ -12647,6 +12647,31 @@ export interface HTMLBodyElement
 		"vLink"
 	> {}
 
+export interface HTMLBodyElement
+	extends Pick<
+		globalThis.HTMLBodyElement,
+		"onafterprint" |
+		"onbeforeprint" |
+		"onbeforeunload" |
+		"ongamepadconnected" |
+		"ongamepaddisconnected" |
+		"onhashchange" |
+		"onlanguagechange" |
+		"onmessage" |
+		"onmessageerror" |
+		"onoffline" |
+		"ononline" |
+		"onpagehide" |
+		"onpagereveal" |
+		"onpageshow" |
+		"onpageswap" |
+		"onpopstate" |
+		"onrejectionhandled" |
+		"onstorage" |
+		"onunhandledrejection" |
+		"onunload"
+	> {}
+
 export class HTMLBodyElement extends HTMLElement {}
 
 export interface HTMLBRElement
@@ -13635,6 +13660,31 @@ export interface HTMLFrameSetElement
 		globalThis.HTMLFrameSetElement,
 		"cols" |
 		"rows"
+	> {}
+
+export interface HTMLFrameSetElement
+	extends Pick<
+		globalThis.HTMLFrameSetElement,
+		"onafterprint" |
+		"onbeforeprint" |
+		"onbeforeunload" |
+		"ongamepadconnected" |
+		"ongamepaddisconnected" |
+		"onhashchange" |
+		"onlanguagechange" |
+		"onmessage" |
+		"onmessageerror" |
+		"onoffline" |
+		"ononline" |
+		"onpagehide" |
+		"onpagereveal" |
+		"onpageshow" |
+		"onpageswap" |
+		"onpopstate" |
+		"onrejectionhandled" |
+		"onstorage" |
+		"onunhandledrejection" |
+		"onunload"
 	> {}
 
 export class HTMLFrameSetElement extends HTMLElement {}
