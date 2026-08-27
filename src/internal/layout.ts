@@ -29,7 +29,6 @@ import {
 	type ComputedStyle,
 } from "./cascade.js";
 import {
-	type Walker,
 	DOMRectList,
 	flatIsConnected,
 	flatParentElement,
@@ -6830,15 +6829,11 @@ function approximatelyEqual(a: number, b: number): boolean {
  */
 const FLOW_NODES = NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | SHOW_FLAT;
 
-function createTreeWalker<N>(
-	root: N,
-	filter: ((node: N) => number) | null = null,
-): Walker<N> {
-	return new TreeWalker(
-		root as never,
-		FLOW_NODES,
-		filter as never,
-	) as unknown as Walker<N>;
+function createTreeWalker(
+	root: Node,
+	filter: ((node: Node) => number) | null = null,
+): TreeWalker {
+	return new TreeWalker(root as never, FLOW_NODES, filter as never);
 }
 
 // ---------------------------------------------------------------------------
@@ -9530,7 +9525,7 @@ function retireHiddenContent(
 	if (box) {
 		retireContentRoot(layout, box);
 	}
-	const walker = createTreeWalker<Node>(element);
+	const walker = createTreeWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		retireFlexNode(layout, child);
 		if (child.nodeType === child.ELEMENT_NODE) {
@@ -9616,7 +9611,7 @@ function retireSteppedOver(
 	layout: LayoutEngine,
 	parent: Element,
 ): void {
-	const walker = createTreeWalker<Node>(parent);
+	const walker = createTreeWalker(parent);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (child.nodeType !== child.ELEMENT_NODE) {
 			continue;
@@ -9756,8 +9751,8 @@ function placeChild(
 }
 
 /** A walk of the boxes a node's content lays out from. */
-export function flowWalker(root: Node): Walker<Node> {
-	return createTreeWalker<Node>(root, contentsSkipped);
+export function flowWalker(root: Node): TreeWalker {
+	return createTreeWalker(root, contentsSkipped);
 }
 
 /**
@@ -9782,7 +9777,7 @@ function contentsSkipped(node: Node): number {
  * at the parent's last child instead drops every leaf after a nested
  * inline-block (or a display:none/absolute box) from the line.
  */
-function skipSubtree(walker: Walker<Node>): boolean {
+function skipSubtree(walker: TreeWalker): boolean {
 	while (!walker.nextSibling()) {
 		if (!walker.parentNode()) {
 			return false;
@@ -9991,7 +9986,7 @@ function restageSubtree(
 	// The flat tree, not the flow: which elements dissolve into their
 	// children is a question for the cascade, and marking one that turns
 	// out to generate no box costs nothing.
-	const walker = createTreeWalker<Node>(node);
+	const walker = createTreeWalker(node);
 	for (let child = walker.nextNode(); child; child = walker.nextNode()) {
 		if (child.nodeType === child.ELEMENT_NODE) {
 			restageContainer(layout, child as Element);

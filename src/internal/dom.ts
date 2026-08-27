@@ -20085,23 +20085,6 @@ function walkPrevious(walk: TreeWalker): Node | null {
 	return null;
 }
 
-/**
- * A TreeWalker's surface, in whatever node type the caller works in. The
- * toolkit hands nodes across as `object`, so a consumer that has its own Node
- * type gets the walk back through this rather than through the class.
- */
-export interface Walker<N> {
-	readonly root: N;
-	currentNode: N;
-	nextNode(): N | null;
-	previousNode(): N | null;
-	parentNode(): N | null;
-	firstChild(): N | null;
-	lastChild(): N | null;
-	nextSibling(): N | null;
-	previousSibling(): N | null;
-}
-
 /* The dissolving layer: composed hops with the caller's dissolved elements
    spliced away, so their children join the parent's child sequence. This is
    how a <slot> disappears from a box tree while its projected content flows
@@ -25742,7 +25725,7 @@ Object.defineProperty(NodeIterator.prototype, Symbol.toStringTag, {
 
 const kCurrent = Symbol("current");
 
-export class TreeWalker {
+export class TreeWalker implements globalThis.TreeWalker {
 	declare [kRoot]?: Node;
 	declare [kCurrent]?: Node;
 	declare [kWhatToShow]?: number;
@@ -25757,27 +25740,27 @@ export class TreeWalker {
 		this[kFilter] = filter ?? null;
 	}
 
-	get root(): Node {
-		return this[kRoot]!;
+	get root(): globalThis.Node {
+		return this[kRoot]! as unknown as globalThis.Node;
 	}
 
 	get whatToShow(): number {
 		return this[kWhatToShow]!;
 	}
 
-	get filter(): NodeFilterInput {
-		return this[kFilter]!;
+	get filter(): globalThis.NodeFilter | null {
+		return this[kFilter]! as globalThis.NodeFilter | null;
 	}
 
-	get currentNode(): Node {
-		return this[kCurrent]!;
+	get currentNode(): globalThis.Node {
+		return this[kCurrent]! as unknown as globalThis.Node;
 	}
 
-	set currentNode(node: Node) {
+	set currentNode(node: globalThis.Node) {
 		if (!(node instanceof Node)) {
 			throw new TypeError("That is not a node");
 		}
-		this[kCurrent] = node;
+		this[kCurrent] = node as Node;
 	}
 
 	get [kState](): {
@@ -25794,32 +25777,32 @@ export class TreeWalker {
 		};
 	}
 
-	parentNode(): Node | null {
-		return walkParent(this);
+	parentNode(): globalThis.Node | null {
+		return walkParent(this) as unknown as globalThis.Node | null;
 	}
 
-	firstChild(): Node | null {
-		return walkChildren(this, true);
+	firstChild(): globalThis.Node | null {
+		return walkChildren(this, true) as unknown as globalThis.Node | null;
 	}
 
-	lastChild(): Node | null {
-		return walkChildren(this, false);
+	lastChild(): globalThis.Node | null {
+		return walkChildren(this, false) as unknown as globalThis.Node | null;
 	}
 
-	previousSibling(): Node | null {
-		return walkSiblings(this, false);
+	previousSibling(): globalThis.Node | null {
+		return walkSiblings(this, false) as unknown as globalThis.Node | null;
 	}
 
-	nextSibling(): Node | null {
-		return walkSiblings(this, true);
+	nextSibling(): globalThis.Node | null {
+		return walkSiblings(this, true) as unknown as globalThis.Node | null;
 	}
 
-	previousNode(): Node | null {
-		return walkPrevious(this);
+	previousNode(): globalThis.Node | null {
+		return walkPrevious(this) as unknown as globalThis.Node | null;
 	}
 
-	nextNode(): Node | null {
-		return walkNext(this);
+	nextNode(): globalThis.Node | null {
+		return walkNext(this) as unknown as globalThis.Node | null;
 	}
 }
 
