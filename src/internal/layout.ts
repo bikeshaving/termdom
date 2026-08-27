@@ -12806,6 +12806,84 @@ export class LayoutEngine {
 		offsets: Int32Array | null;
 	}>;
 
+
+	// Text-fragment index per break result: text node -> the fragments the
+	// breaker placed for it, each with its OUTER line index, x offset (nested
+	// inline-block content already shifted by its box's position and padding,
+	// as the merge in the rect-text walk expects), width, processed text, the
+	// data range that renders back to it, and a global ordinal preserving
+	// segment order. WeakMap-keyed on the break result object: re-breaking
+	// builds a fresh object, so entries can never go stale.
+	declare [kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
+
+	/**
+	 * The box tree's nodes, by the DOM node each is the principal box of: the
+	 * identity a derivation reconciles against, so that a container rebuilt
+	 * around a node finds the box that node already had, holding the layout
+	 * node and the fragments it was laid out with.
+	 */
+	declare [kBoxes]: WeakMap<Node, Box>;
+
+	/**
+	 * Every live anonymous box, by the layout node it owns: the reverse of
+	 * Box.layoutNode, and the registry the sweeps that must reach every box
+	 * (resize, pruning, disposal) walk. Strong, because a container's children
+	 * are re-derived whenever the tree moves under it and the boxes it held
+	 * must still be retired.
+	 */
+	declare [kAnonymousBoxes]: Map<LayoutNode, Box>;
+
+	/**
+	 * The containers whose enumeration still describes their children. A
+	 * mutation drops the ones it disturbs as it arrives -- the container a
+	 * node's box sits in, and the one an element's own children's boxes sit
+	 * in -- so that flipping a class on one row of a long list re-enumerates
+	 * that row, and not the nine hundred and ninety-five boxes around it. An
+	 * unbounded change drops the set: a fresh one says nothing is derived,
+	 * which costs nothing to say and re-derives each container lazily, on the
+	 * read that needs it.
+	 *
+	 * Weak, because a container named here may be the last thing a removed
+	 * subtree is held by, and a container never read again is never cleared.
+	 */
+	declare [kDerivedContainers]: WeakSet<Element>;
+
+	/**
+	 * Containers whose box list may no longer match their layout children.
+	 * Reconciled once per pass, in calculateLayout, however many mutations
+	 * dirtied them.
+	 */
+	declare [kDirtyRunContainers]: Set<Element>;
+
+	/**
+	 * Elements whose computed style the cascade has dropped, awaiting the work
+	 * that drop implies for layout. Collected rather than acted on: the cascade
+	 * announces them mid-invalidation, while descendants still hold the styles
+	 * they are about to lose, and every question layout asks here -- which box
+	 * holds this element, what kind of box it is -- is a question about the
+	 * styles that have not finished arriving.
+	 */
+	declare [kRestyled]: Set<Element>;
+
+	/**
+	 * Two counters, because there are two questions and they differ in who
+	 * moves them. Both are written only here, and a reader that cares
+	 * remembers the number it last acted on and compares -- which is what a
+	 * flag two objects shared could never say cleanly.
+	 *
+	 * `generation` moves whenever the geometry this engine reports could
+	 * differ from a moment ago: an invalidation, and also every layout pass,
+	 * since the pass itself moves boxes. The cascade's used-value cache keys
+	 * on it.
+	 *
+	 * `invalidations` moves only when something was actually invalidated. A
+	 * pass that re-measures does not move it, which is what lets the frame
+	 * loop tell "the layout ran" from "the layout changed" -- the scroll band
+	 * shifts rows the last frame painted, and may only do so when nothing
+	 * those rows were derived from has moved.
+	 */
+	declare generation: number;
+	declare invalidations: number;
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
 		this.invalidate();
@@ -13338,15 +13416,6 @@ export class LayoutEngine {
 		);
 	}
 
-	// Text-fragment index per break result: text node -> the fragments the
-	// breaker placed for it, each with its OUTER line index, x offset (nested
-	// inline-block content already shifted by its box's position and padding,
-	// as the merge in the rect-text walk expects), width, processed text, the
-	// data range that renders back to it, and a global ordinal preserving
-	// segment order. WeakMap-keyed on the break result object: re-breaking
-	// builds a fresh object, so entries can never go stale.
-	declare [kRectTextIndices]: WeakMap<object, Map<Text, TextFragmentEntry[]>>;
-
 	getRects(node: Node): DOMRect[] {
 		// Everything except true inline content is an atomic box with one rect.
 		// That includes inline-block: it participates in a line, but it is a
@@ -13688,49 +13757,6 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * The box tree's nodes, by the DOM node each is the principal box of: the
-	 * identity a derivation reconciles against, so that a container rebuilt
-	 * around a node finds the box that node already had, holding the layout
-	 * node and the fragments it was laid out with.
-	 */
-	declare [kBoxes]: WeakMap<Node, Box>;
-
-	/**
-	 * The containers whose enumeration still describes their children. A
-	 * mutation drops the ones it disturbs as it arrives -- the container a
-	 * node's box sits in, and the one an element's own children's boxes sit
-	 * in -- so that flipping a class on one row of a long list re-enumerates
-	 * that row, and not the nine hundred and ninety-five boxes around it. An
-	 * unbounded change drops the set: a fresh one says nothing is derived,
-	 * which costs nothing to say and re-derives each container lazily, on the
-	 * read that needs it.
-	 *
-	 * Weak, because a container named here may be the last thing a removed
-	 * subtree is held by, and a container never read again is never cleared.
-	 */
-	declare [kDerivedContainers]: WeakSet<Element>;
-
-	/**
-	 * Two counters, because there are two questions and they differ in who
-	 * moves them. Both are written only here, and a reader that cares
-	 * remembers the number it last acted on and compares -- which is what a
-	 * flag two objects shared could never say cleanly.
-	 *
-	 * `generation` moves whenever the geometry this engine reports could
-	 * differ from a moment ago: an invalidation, and also every layout pass,
-	 * since the pass itself moves boxes. The cascade's used-value cache keys
-	 * on it.
-	 *
-	 * `invalidations` moves only when something was actually invalidated. A
-	 * pass that re-measures does not move it, which is what lets the frame
-	 * loop tell "the layout ran" from "the layout changed" -- the scroll band
-	 * shifts rows the last frame painted, and may only do so when nothing
-	 * those rows were derived from has moved.
-	 */
-	declare generation: number;
-	declare invalidations: number;
-
-	/**
 	 * Note that something a frame is derived from has moved. The caches the
 	 * engine derives a frame from -- the box enumerations, the resolved
 	 * geometry -- are stale from here on, and the next frame has something to
@@ -13744,22 +13770,6 @@ export class LayoutEngine {
 		this.generation++;
 		this.invalidations++;
 	}
-
-	/**
-	 * Every live anonymous box, by the layout node it owns: the reverse of
-	 * Box.layoutNode, and the registry the sweeps that must reach every box
-	 * (resize, pruning, disposal) walk. Strong, because a container's children
-	 * are re-derived whenever the tree moves under it and the boxes it held
-	 * must still be retired.
-	 */
-	declare [kAnonymousBoxes]: Map<LayoutNode, Box>;
-
-	/**
-	 * Containers whose box list may no longer match their layout children.
-	 * Reconciled once per pass, in calculateLayout, however many mutations
-	 * dirtied them.
-	 */
-	declare [kDirtyRunContainers]: Set<Element>;
 
 	/**
 	 * Note that boxes must be rebuilt: one node's, or -- with no node in
@@ -13791,16 +13801,6 @@ export class LayoutEngine {
 			restageForRecord(this, record);
 		}
 	}
-
-	/**
-	 * Elements whose computed style the cascade has dropped, awaiting the work
-	 * that drop implies for layout. Collected rather than acted on: the cascade
-	 * announces them mid-invalidation, while descendants still hold the styles
-	 * they are about to lose, and every question layout asks here -- which box
-	 * holds this element, what kind of box it is -- is a question about the
-	 * styles that have not finished arriving.
-	 */
-	declare [kRestyled]: Set<Element>;
 
 	/**
 	 * The cascade dropped an element's computed style.
