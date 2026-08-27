@@ -9019,10 +9019,7 @@ export class Element extends Node {
 		replaceAll(fragment, markupHost(this));
 	}
 
-	getHTML(options?: {
-		serializableShadowRoots?: boolean;
-		shadowRoots?: ShadowRoot[];
-	}): string {
+	getHTML(options?: globalThis.GetHTMLOptions): string {
 		const init = toDictionary<{
 			serializableShadowRoots?: boolean;
 			shadowRoots?: ShadowRoot[];
@@ -11456,7 +11453,11 @@ export class ShadowRoot extends DocumentFragment {
 
 /** The ParentNode mixin and onslotchange, installed below. */
 export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {
+	/** Installed by the cascade, which is what holds a root's sheets. */
+	readonly styleSheets: globalThis.StyleSheetList;
+	adoptedStyleSheets: globalThis.CSSStyleSheet[];
+}
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -27813,12 +27814,7 @@ const _checked: [
 	Equal<MissingFrom<globalThis.Text, Text>, never>,
 	Equal<MissingFrom<globalThis.Comment, Comment>, never>,
 	Equal<MissingFrom<globalThis.DocumentFragment, DocumentFragment>, never>,
-	Equal<
-		MissingFrom<globalThis.ShadowRoot, ShadowRoot>,
-		// GAP: the cascade holds a root's sheets, and neither is reachable
-		// from here.
-		"adoptedStyleSheets" | "styleSheets"
-	>,
+	Equal<MissingFrom<globalThis.ShadowRoot, ShadowRoot>, never>,
 	// The ARIA surface comes out first: it is a template literal pattern,
 	// which no finite union of key names can contain, so the ledger sets it
 	// aside and holds the residue.
