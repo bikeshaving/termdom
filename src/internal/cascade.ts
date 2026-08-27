@@ -6402,7 +6402,6 @@ function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
  * Its subject is anchored to no type and it names no keys, so it is indexed
  * where anything can find it.
  */
-
 function readSelector(selector: string): SelectorReading {
 	let failed = false;
 	let list: SelectorNode | null = null;
@@ -8853,8 +8852,8 @@ function resolvePropertyValueRaw(
 		}
 	}
 
-	// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
-	// These take priority over inherited values
+	// 3. The UA's own per-element defaults -- strong's bold, for one -- which
+	// stand above anything inherited.
 	const tagName = declaration[kElement]!.tagName.toLowerCase();
 
 	// A list's marker gutter is sized to its widest marker rather than taken
@@ -8888,9 +8887,10 @@ function resolvePropertyValueRaw(
 		return elementDefaults[property];
 	}
 
-	// 4. For inherited properties, walk up the DOM using getComputedStyle
-	// which correctly resolves CSS rules on parent elements. Custom properties
-	// (--x) always inherit -- there's no fixed list for them to be in.
+	// 4. What the element inherits: the nearest ancestor with a value for an
+	// inherited property, asked through the same resolution so the ancestor's
+	// own rules are applied. A custom property always inherits -- there is no
+	// fixed list for one to be in.
 	if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
 		const window = declaration[kElement]!.ownerDocument?.defaultView;
 		if (window) {
@@ -8912,7 +8912,7 @@ function resolvePropertyValueRaw(
 		}
 	}
 
-	// 5. Fallback to universal defaults and CSS spec defaults
+	// 5. The property's initial value.
 	return getInitialStyle(declaration[kElement]!, property);
 }
 
@@ -8997,6 +8997,10 @@ const kBoxView = Symbol("boxView");
  * A pseudo-element's computed style: a flat declaration set -- the matched
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
+ *
+ * LIVE, for the same reason an element's is: the object an author holds keeps
+ * answering the pseudo-element's current values across class flips and sheet
+ * replacements. The manager says when what it holds no longer stands.
  */
 class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoDeclarations]: Record<string, string>;
@@ -9013,13 +9017,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element | null;
 	declare [kPseudoElement]: string;
 	declare [kManager]: StyleManager | null;
-	/**
-	 * A pseudo-element's computed style is LIVE for the same reason an
-	 * element's is: the object an author holds keeps answering the
-	 * pseudo-element's current values across class flips and sheet
-	 * replacements. The manager says when what it holds no longer stands.
-	 */
-
 	constructor(
 		declarations: Record<string, string>,
 		element?: Element,
