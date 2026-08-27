@@ -1337,7 +1337,7 @@ export class Event extends EventBase implements globalThis.Event {
 	 * Whether this is a MouseEvent, which is what makes a "click" the event
 	 * that runs activation behavior. MouseEvent overrides it.
 	 */
-	[kIsMouseEvent]?(): boolean {
+	get [kIsMouseEvent](): boolean {
 		return false;
 	}
 
@@ -2119,7 +2119,7 @@ export class MouseEvent extends UIEvent {
 		this[kState]!.relatedTarget = toEventTarget(init.relatedTarget);
 	}
 
-	override [kIsMouseEvent]?(): boolean {
+	override get [kIsMouseEvent](): boolean {
 		return true;
 	}
 
@@ -4176,8 +4176,8 @@ function dispatch(
 	let clearTargets = false;
 	if (target !== relatedTarget || target === state.relatedTarget) {
 		let eventTarget = target;
-		const isActivationEvent = event[kIsMouseEvent]?.() === true &&
-			event.type === "click";
+		const isActivationEvent =
+			event[kIsMouseEvent] && event.type === "click";
 		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
 		// A slottable that is assigned reaches its slot next, and the slot's
 		// tree may be closed to the tree the event started in: the struct for
@@ -6996,7 +6996,7 @@ export interface NodeListOf<T extends Node> extends NodeList {
 	[Symbol.iterator](): ArrayIterator<T>;
 }
 
-class HTMLCollectionBase extends LiveList {
+export class HTMLCollection extends LiveList {
 	/** Materialised by the live list, as on every indexed collection here. */
 	[index: number]: Element;
 
@@ -7075,14 +7075,7 @@ class HTMLCollectionBase extends LiveList {
 		const at = toUnsignedLong(index);
 		return at < items.length ? (items[at] as Element) : null;
 	}
-}
 
-/**
- * A collection with named access. Split from the base the way lib.dom
- * splits it: HTMLFormControlsCollection answers a RadioNodeList for a
- * shared name, which is wider than this returns and cannot override it.
- */
-export class HTMLCollection extends HTMLCollectionBase {
 	namedItem(name: string): Element | null {
 		if (name === "") {
 			return null;
@@ -8500,7 +8493,7 @@ export interface NamedNodeMap {
 
 installArrayIteration(NodeList.prototype, true);
 installArrayIteration(DOMTokenList.prototype, true);
-installArrayIteration(HTMLCollectionBase.prototype, false);
+installArrayIteration(HTMLCollection.prototype, false);
 installArrayIteration(NamedNodeMap.prototype, false);
 
 /* ---------------------------------------------------------------- elements */
@@ -9320,11 +9313,6 @@ export class Element extends Node {
 	requestPointerLock(): never {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
-
-	/** An element always has a node document, which lib.dom says too. */
-	override get ownerDocument(): Document {
-		return this[kDocument]!;
-	}
 }
 
 /**
@@ -9356,6 +9344,9 @@ export interface Element
 		Extract<keyof globalThis.Element, ARIAReflection>
 	> {
 	remove(): void;
+
+	/** An element always has a node document, so this narrows Node's. */
+	get ownerDocument(): Document;
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -13307,8 +13298,13 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 /**
  * The controls of a form, which answers a name with every control that has
  * it: one element, or a list of the radio buttons that share it.
+ *
+ * WebIDL has this inherit HTMLCollection, so it does. What it answers for a
+ * shared name is wider than what it inherits, which a subclass may not say in
+ * TypeScript, so the merged interface below says it instead. lib.dom reaches
+ * the same place by splitting HTMLCollection in two, which no engine does.
  */
-export class HTMLFormControlsCollection extends HTMLCollectionBase {
+export class HTMLFormControlsCollection extends HTMLCollection {
 	declare [kOwner]?: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
@@ -13319,7 +13315,7 @@ export class HTMLFormControlsCollection extends HTMLCollectionBase {
 		this[kOwner] = owner;
 	}
 
-	namedItem(name: string): RadioNodeList | Element | null {
+	override namedItem(name: string): Element | null {
 		const key = String(name);
 		if (key === "") {
 			return null;
@@ -13389,6 +13385,10 @@ function matching(
 	}
 	return matches;
 }
+export interface HTMLFormControlsCollection {
+	namedItem(name: string): RadioNodeList | Element | null;
+}
+
 Object.defineProperty(
 	HTMLFormControlsCollection.prototype,
 	Symbol.toStringTag,
