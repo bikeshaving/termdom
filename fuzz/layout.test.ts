@@ -10,7 +10,9 @@
  *     if it were not in the document at all;
  *   - where such a box lands depends on its containing block, not on how many
  *     boxes sit between the two;
- *   - a pass over an unchanged document changes nothing.
+ *   - a pass over an unchanged document changes nothing;
+ *   - a box taken out of the tree and put back where it was leaves the
+ *     geometry it left.
  *
  * The first two are the rules the out-of-flow rework had to preserve, and the
  * shape of the bugs it caused on the way: an absolute box displacing the one
@@ -233,6 +235,49 @@ test("laying out an unchanged document again moves nothing", async () => {
 			scene.dom.dispose();
 			expect([...after.entries()]).toEqual([...before.entries()]);
 		}),
+		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
+	);
+});
+
+test("a box taken out and put back leaves the geometry it left", async () => {
+	await fc.assert(
+		fc.asyncProperty(
+			documentArbitrary,
+			fc.nat(),
+			async (document: Document, pick: number) => {
+				const scene = await build(document.html);
+				const present = ids(scene);
+				if (present.length === 0) {
+					scene.dom.dispose();
+					return;
+				}
+				const target = present[pick % present.length];
+				const before = rects(scene);
+
+				// Layout is a function of the tree, so a tree that ends where
+				// it started must lay out where it started. What this catches
+				// is the cache: an invalidation that a removal opens and a
+				// reinsertion fails to close leaves the second pass reading
+				// what the first one measured.
+				const element = scene.dom.document.querySelector(
+					`[data-f="${target}"]`,
+				) as any;
+				const parent = element?.parentNode;
+				const next = element?.nextSibling;
+				if (element === null || parent == null) {
+					scene.dom.dispose();
+					return;
+				}
+				element.remove();
+				await settle(scene);
+				parent.insertBefore(element, next);
+				await settle(scene);
+
+				const after = rects(scene);
+				scene.dom.dispose();
+				expect([...after.entries()]).toEqual([...before.entries()]);
+			},
+		),
 		{numRuns: RUNS, seed: SEED, includeErrorInReport: true},
 	);
 });

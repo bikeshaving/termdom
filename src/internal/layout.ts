@@ -13437,14 +13437,29 @@ export class LayoutEngine {
 			// at 30 columns. inline-block keeps the fallback: its node IS its box.
 			if (display === "inline") {
 				const elementFlexNode = runFlexNode(this, element);
-				// No layout node means the element was removed or never laid
-				// out -- null, exactly as the block fallback below reports it.
-				// A laid-out empty inline gets a zero-size rect at its position.
-				if (!elementFlexNode) {
-					return null;
+				if (elementFlexNode) {
+					const position = absolutePosition(this, elementFlexNode);
+					return new this[kDOMRect](position.x, position.y, 0, 0);
 				}
-				const position = absolutePosition(this, elementFlexNode);
-				return new this[kDOMRect](position.x, position.y, 0, 0);
+				// An empty inline that does not OPEN its run has no layout node
+				// of its own, and it still has a place: the cursor the line had
+				// reached when it got there. Reporting null instead put every
+				// one of them at the viewport origin -- the `span` in
+				// `<div>ab<span></span>cd</div>` answered 0 rather than 2.
+				const run = boxOf(this, element);
+				if (run?.layoutNode) {
+					const origin = absolutePosition(this, run.layoutNode);
+					const cursor = inlineCursorBefore(this, run, element);
+					return new this[kDOMRect](
+						origin.x + cursor.x,
+						origin.y + cursor.y,
+						0,
+						0,
+					);
+				}
+				// No layout node and no run means the element was removed or
+				// never laid out -- null, as the block fallback below reports.
+				return null;
 			}
 		}
 

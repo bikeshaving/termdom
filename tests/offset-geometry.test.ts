@@ -159,3 +159,31 @@ test("offsetWidth/Height and clientWidth/Height stay mechanically consistent wit
 	}
 	dom.dispose();
 });
+
+test("an empty inline sits where the line had reached", async () => {
+	// It has no fragments to measure, so its rect is the cursor between the
+	// ones around it -- a zero-width box at the place it would occupy, which
+	// is what a browser reports. Only an empty inline that OPENED its run
+	// used to get one; every other answered at the viewport origin.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const x = async (markup: string): Promise<number> => {
+		dom.document.body.innerHTML = `<div style="padding-left: 2ch">${markup}</div>`;
+		await nextFrame(dom);
+		return dom.document.querySelector("#t")!.getBoundingClientRect().x;
+	};
+
+	// The content edge, wherever the run opens.
+	expect(await x("<span id=t></span>")).toBe(2);
+	expect(await x("<span id=t></span>y")).toBe(2);
+	// Spaces before it collapse away, so the line has reached nothing.
+	expect(await x("   <span id=t></span>")).toBe(2);
+	// And after content, the cursor is past it.
+	expect(await x("y<span id=t></span>")).toBe(3);
+	expect(await x("ab<span id=t></span>cd")).toBe(4);
+	expect(await x("<b>y</b><span id=t></span>")).toBe(3);
+
+	dom.dispose();
+});
