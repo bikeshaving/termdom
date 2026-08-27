@@ -813,15 +813,7 @@ function insertPaste(
 	if (!text) {
 		return;
 	}
-	const value = field[kUAValue]!;
-	const {start, end} = getUASelection(field);
-	applyFieldEdit(
-		field,
-		collapsedEdit(
-			value.slice(0, start) + text + value.slice(end),
-			start + text.length,
-		),
-	);
+	applyFieldEdit(field, printableFieldEdit(field, text));
 }
 
 /** Add a `part`-attributed span (holding one empty text node) to a UA root. */
