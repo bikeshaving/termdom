@@ -36,6 +36,7 @@ import {
 	hidePopoversUntil,
 	isShowingPopover,
 	isTextField,
+	keyboardActivation,
 	lockDataTransfer,
 	setUASelection,
 	topmostAutoPopover,
@@ -368,9 +369,6 @@ export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	}
 }
 
-/** Input types that are buttons rather than fields. */
-const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
-
 /**
  * The keys that are a modifier and nothing else, which a user pressing them
  * has not yet asked for anything with.
@@ -421,36 +419,6 @@ export function isActivationTriggering(event: {
 		default:
 			return false;
 	}
-}
-
-/**
- * Does a keypress on this element activate it, the way a click would?
- *
- * Buttons do, on Enter and on Space. Links do, on Enter only -- Space scrolls
- * the page in a browser rather than following the link, and the difference is
- * observable enough to be worth keeping.
- */
-function keyboardActivation(
-	element: Element,
-): {enter: boolean; space: boolean} | null {
-	const tag = element.tagName;
-	if (tag === "BUTTON") {
-		return {enter: true, space: true};
-	}
-	if (tag === "INPUT") {
-		const type = (element as HTMLInputElement).type;
-		return BUTTON_INPUT_TYPES.has(type) ? {enter: true, space: true} : null;
-	}
-	if (tag === "A" && element.hasAttribute("href")) {
-		return {enter: true, space: false};
-	}
-	// A summary activates on both keys, and activation is what opens the
-	// disclosure; whether this summary is its details' summary is the
-	// activation behavior's own question.
-	if (tag === "SUMMARY") {
-		return {enter: true, space: true};
-	}
-	return null;
 }
 
 /* ----------------------------------------------------------- collaborators */
@@ -1338,13 +1306,12 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 
 		// Field editing (input and textarea) is each widget's own keydown
 		// listener, run during dispatch above -- not a default action here.
+		// Which elements a key activates is the DOM's, beside the activation
+		// behaviors it runs. Without this default action a focused button and
+		// a focused link took focus and painted :focus while doing nothing,
+		// advertising an affordance they did not have.
 		const activation = keyboardActivation(targetElement);
 		if (activation) {
-			// A focused button activates on Enter and on Space, and a link on
-			// Enter, per HTML's activation behavior. Without this, both took
-			// focus and painted :focus while doing nothing -- advertising an
-			// affordance they did not have. `input[type=submit|button]`
-			// activate here; text inputs never match keyboardActivation.
 			if (
 				(keyName === "Enter" && activation.enter) ||
 				(keyName === " " && activation.space)

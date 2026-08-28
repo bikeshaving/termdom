@@ -4106,6 +4106,45 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 	}
 }
 
+/** Input types that are buttons rather than fields. */
+const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
+
+/**
+ * Which keys activate an element, the way a click does, or null for an element
+ * a keystroke does not activate at all.
+ *
+ * Buttons take Enter and Space. Links take Enter only -- Space scrolls the
+ * page in a browser rather than following the link, and the difference is
+ * observable enough to be worth keeping. A summary takes both, and whether
+ * this summary is its details' summary is the activation behavior's own
+ * question above.
+ *
+ * The elements are the ones hasActivationBehavior lists, minus the label,
+ * whose behavior is a click forwarded to its control rather than a key of its
+ * own. Which keys a terminal sends is the input interpreter's; which elements
+ * they mean anything to is this file's.
+ */
+export function keyboardActivation(
+	target: object,
+): {enter: boolean; space: boolean} | null {
+	const element = target as Element;
+	const tag = element.tagName;
+	if (tag === "BUTTON") {
+		return {enter: true, space: true};
+	}
+	if (tag === "INPUT") {
+		const type = (element as HTMLInputElement).type;
+		return BUTTON_INPUT_TYPES.has(type) ? {enter: true, space: true} : null;
+	}
+	if (tag === "A" && element.hasAttribute("href")) {
+		return {enter: true, space: false};
+	}
+	if (tag === "SUMMARY") {
+		return {enter: true, space: true};
+	}
+	return null;
+}
+
 /**
  * A summary is the one element whose activation behavior depends on where it
  * sits: HTML gives it no interface of its own, and only the first summary of
