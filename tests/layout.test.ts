@@ -1499,6 +1499,30 @@ test("box-sizing decides what a declared width names", async () => {
 		.toBe("10px");
 });
 
+test("a content-box width counts the edges the painter draws", async () => {
+	const termdom = new TermDOM({transport: new MockProcess().transport});
+	const {document} = termdom;
+	// `border: solid` carries the initial medium width, which on a cell grid
+	// is the same one cell `border: 1px solid` draws, so the twins differ by
+	// exactly the edges: a cell of padding and a cell of border either side.
+	const edges = "width: 10ch; border: solid red; padding: 0 1ch";
+	document.body.innerHTML =
+		`<div id="b" style="${edges}">x</div>` +
+		`<div id="c" style="${edges}; box-sizing: content-box">x</div>` +
+		"<div id=\"n\" style=\"width: 10ch; box-sizing: content-box;" +
+		" border: thick solid red; border-right-style: none\">x</div>";
+	await nextFrame(termdom);
+	const rect = (id: string): DOMRect =>
+		(document.getElementById(id) as HTMLElement).getBoundingClientRect();
+
+	expect(rect("b").width).toBe(10);
+	expect(rect("c").width).toBe(14);
+	// A side whose style is none draws nothing and takes nothing, however
+	// wide the width property says (css-backgrounds §3.3).
+	expect(rect("n").width).toBe(11);
+	termdom.dispose();
+});
+
 test("a resolved value measures the layout the last style write asked for", async () => {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = termdom;

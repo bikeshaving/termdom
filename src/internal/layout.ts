@@ -7600,47 +7600,41 @@ function widthSizingConstant(value: string): Sizing {
 
 /**
  * The padding and border a `box-sizing: content-box` box adds to its declared
- * size, or null where this pass cannot know it.
+ * size.
  *
  * The solver sizes border boxes: a declared width is the width of the box it
  * draws. A content-box width names the content alone, so the box the solver
  * must be given is that width plus the edges around it (css-sizing-3 §5.1).
  *
- * Null where an edge is a percentage, since those resolve against a containing
- * block that is not decided yet. Such a box keeps the border-box reading, which
- * is this engine's default and the one a terminal wants: a border is a whole
- * cell and cannot be drawn outside the track it was given.
+ * The edges are the ones the box model already resolved, so they are the ones
+ * the painter draws: a keyword border width is the cell it takes, a side whose
+ * style is none or hidden takes nothing, and an edge written as a percentage --
+ * which resolves against a containing block this pass has not decided -- takes
+ * nothing rather than carrying the edges beside it away with it.
  */
 function contentBoxEdges(
+	element: Element,
 	computedStyle: ComputedValues,
 	vertical: boolean,
-): number | null {
+): number {
 	if (computedStyle.getComputedValue("box-sizing") !== "content-box") {
 		return 0;
 	}
-	const names =
-		vertical ?
-				[
-					"padding-top",
-					"padding-bottom",
-					"border-top-width",
-					"border-bottom-width",
-				] :
-				[
-					"padding-left",
-					"padding-right",
-					"border-left-width",
-					"border-right-width",
-				];
-	let total = 0;
-	for (const name of names) {
-		const value = parseUnitValue(computedStyle.getComputedValue(name));
-		if (typeof value !== "number") {
-			return null;
-		}
-		total += value;
+	const box = getBoxModel(element);
+	if (vertical) {
+		return (
+			box.paddingTop +
+			box.paddingBottom +
+			box.borderTopWidth +
+			box.borderBottomWidth
+		);
 	}
-	return total;
+	return (
+		box.paddingLeft +
+		box.paddingRight +
+		box.borderLeftWidth +
+		box.borderRightWidth
+	);
 }
 
 /**
@@ -7694,7 +7688,7 @@ function styleFlexNodeProperties(
 		const widthValue = computedStyle.getComputedValue("width");
 		const width = parseUnitValue(widthValue);
 		if (typeof width === "number") {
-			flexNode.setWidth(width + (contentBoxEdges(computedStyle, false) ?? 0));
+			flexNode.setWidth(width + contentBoxEdges(element, computedStyle, false));
 		} else if (width && "percentage" in width) {
 			flexNode.setWidthPercent(width.percentage);
 		} else {
@@ -7704,7 +7698,9 @@ function styleFlexNodeProperties(
 
 		const height = parseUnitValue(computedStyle.getComputedValue("height"));
 		if (typeof height === "number") {
-			flexNode.setHeight(height + (contentBoxEdges(computedStyle, true) ?? 0));
+			flexNode.setHeight(
+				height + contentBoxEdges(element, computedStyle, true),
+			);
 		} else if (height && "percentage" in height) {
 			flexNode.setHeightPercent(height.percentage);
 		} else {
