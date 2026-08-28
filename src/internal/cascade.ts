@@ -1246,8 +1246,6 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"width": "auto",
 	"height": "auto",
 	"box-sizing": "border-box",
-	// Terminal-optimized flexbox defaults
-	// Container properties
 	"flex-direction": "row",
 	"flex-wrap": "nowrap",
 	// `normal` is CSS's own initial value on both, and the one grid needs: it
@@ -1260,7 +1258,6 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"gap": "0",
 	"row-gap": "0",
 	"column-gap": "0",
-	// Item properties
 	"flex-grow": "0",
 	"flex-shrink": "1",
 	"flex-basis": "auto",
@@ -1525,8 +1522,8 @@ function readBoxModel(computedStyle: ComputedValues): BoxModel {
 		computedStyle.getComputedValue("margin-left"),
 	);
 
-	// Parse border. The USED width is 0 when the side's style is none or
-	// hidden (css-backgrounds §3.3), however wide the width property says --
+	// The USED width is 0 when the side's style is none or hidden
+	// (css-backgrounds §3.3), however wide the width property says --
 	// `border-style: none` must release the space, not just the glyphs.
 	const borderWidthFor = (side: string) => {
 		const style = computedStyle.getComputedValue(`border-${side}-style`);
@@ -9862,7 +9859,6 @@ function subjectCompoundStart(selector: string): number {
 	return start;
 }
 
-// CSS Counter interfaces
 interface CounterState {
 	[counterName: string]: number;
 }
@@ -10006,7 +10002,6 @@ export class StyleManager {
 	 */
 	declare [kParsedStyleSheetCount]: number;
 
-	// CSS Counter support
 	declare [kCounterScopes]: WeakMap<Element, CounterScope>;
 
 	/**
@@ -10109,14 +10104,12 @@ export class StyleManager {
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
-		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = (
 			element: Element,
 			pseudoElt?: string | null,
 		): globalThis.CSSStyleDeclaration =>
 			getResolvedStyle(this, element, pseudoElt);
 
-		// Hook into methods that should invalidate cached styles
 		setupInvalidationHooks(this);
 	}
 
@@ -10472,7 +10465,6 @@ export class StyleManager {
 			}
 		}
 
-		// If stylesheets changed, refresh everything
 		if (shouldRefreshStylesheets) {
 			this.refreshStylesheets();
 		}
@@ -10894,7 +10886,6 @@ export class StyleManager {
 
 	/** Whether any rule gives this element a pseudo-element of this type. */
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
-		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
 			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getComputedValue("display");
@@ -10902,7 +10893,7 @@ export class StyleManager {
 				computedStyle.getComputedValue("list-style-position") || "outside";
 
 			if (display === "list-item" && listStylePosition !== "outside") {
-				return true; // Only create inline markers for inside positioning
+				return true;
 			}
 		}
 
@@ -10956,9 +10947,9 @@ export class StyleManager {
 
 			for (const rule of rules) {
 				try {
-					// Find all elements matching this rule's selector, within the
-					// rule's own tree scope -- a document query can't see shadow
-					// elements and a shadow rule must never claim document ones.
+					// Within the rule's own tree scope: a document query cannot see
+					// shadow elements, and a shadow rule must never claim document
+					// ones.
 					const scope = (rule.scope ?? this[kDocument]) as ParentNode;
 					const elements = scope.querySelectorAll(rule.selector);
 					for (const element of elements) {
@@ -10969,7 +10960,6 @@ export class StyleManager {
 				}
 			}
 
-			// Attach pseudo-elements to matching elements
 			for (const element of matchingElements) {
 				attachPseudoElementToElementForType(this, element, pseudoType);
 			}
@@ -10986,7 +10976,6 @@ export class StyleManager {
 			const listStylePosition =
 				computedStyle.getComputedValue("list-style-position") || "outside";
 
-			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
 				attachPseudoElementToElementForType(this, element, "::marker");
 			}
@@ -11138,7 +11127,7 @@ export class StyleManager {
 			currentScope = currentScope.parent;
 		}
 
-		return 0; // Counter not found
+		return 0;
 	}
 
 	/**
@@ -11146,7 +11135,6 @@ export class StyleManager {
 	 * Supports: counter(name), counter(name, style)
 	 */
 	resolveCounterFunction(element: Element, content: string): string {
-		// Replace all counter() functions in the content
 		return content.replace(
 			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
 			(_match, counterName, style) => {
@@ -11208,9 +11196,6 @@ function getResolvedStyle(
 	// A computed style describes the DOM as it stands, so an author read
 	// goes through the flush a geometry read does.
 	manager.flushStyle();
-	// Ensure stylesheets are parsed if the document's sheet list changed
-	// since the last parse, or a newly registered shadow root's sheet
-	// awaits
 	if (
 		manager[kStylesheetsDirty] ||
 		styleSheetCount(manager) !== manager[kParsedStyleSheetCount]
@@ -12851,10 +12836,9 @@ function parseSelector(
 		}
 	}
 
-	// Check if this is a pseudo-element rule. ::placeholder/::selection
-	// are widget-part pseudos: no content node ever attaches for them --
-	// they resolve onto the UA shadow tree's [part] elements (see
-	// getMatchingRules) or the selection painter.
+	// ::placeholder and ::selection are widget-part pseudos: no content node
+	// ever attaches for them -- they resolve onto the UA shadow tree's [part]
+	// elements (see getMatchingRules) or the selection painter.
 	// Any pseudo-element, not just the ones this engine gives a box: a
 	// rule for `::highlight(x)` still has to answer through
 	// getComputedStyle, which is the whole of what CSSOM asks of it.
@@ -13188,7 +13172,6 @@ function ruleMatches(
 			root.nodeType === 11 && Boolean((root as ShadowRoot).host);
 		return !inShadowTree && matchesRule(manager, element, rule, rule.selector);
 	} catch (err) {
-		// Fallback for unsupported selectors
 		return false;
 	}
 }
@@ -13261,7 +13244,6 @@ function pseudoContentFor(
 			const listStylePosition =
 				computedStyle.getComputedValue("list-style-position") || "outside";
 
-			// Skip inline marker creation for outside positioning (the default)
 			if (listStylePosition === "outside") {
 				return null;
 			}
@@ -13590,7 +13572,7 @@ function getListItemCounterValue(
 	for (let i = 0; i < currentIndex; i++) {
 		const sibling = siblings[i];
 		if (sibling.tagName === "LI") {
-			currentValue += 1; // Each LI increments by 1
+			currentValue += 1;
 		}
 	}
 
@@ -13602,7 +13584,6 @@ function getCounterValueFromScope(
 	scope: CounterScope | undefined,
 	counterName: string,
 ): number {
-	// Look for counter in current scope or parent scopes
 	let currentScope = scope;
 	while (currentScope) {
 		if (counterName in currentScope.counters) {
@@ -13610,7 +13591,7 @@ function getCounterValueFromScope(
 		}
 		currentScope = currentScope.parent;
 	}
-	return 0; // Counter not found
+	return 0;
 }
 
 /**
