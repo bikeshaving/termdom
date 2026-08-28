@@ -26,6 +26,10 @@ import {
 	getPropertyValue,
 	parseUnitValue,
 	type ComputedValues,
+	UNIT_AUTO,
+	UNIT_PERCENT,
+	UNIT_POINT,
+	UNIT_UNDEFINED,
 } from "./cascade.js";
 import {
 	DOMRectList,
@@ -38,13 +42,6 @@ import {
 	TreeWalker,
 	type EngineWindow,
 } from "./dom.js";
-
-import {
-	UNIT_AUTO,
-	UNIT_PERCENT,
-	UNIT_POINT,
-	UNIT_UNDEFINED,
-} from "./cssvalue.js";
 
 // ---------------------------------------------------------------------------
 // The vocabulary boxes are sized and placed in
