@@ -24,8 +24,8 @@ import {
 	type TerminalCloseInfo,
 	type TerminalSize,
 	type TerminalTransport,
+	transportFromProcess,
 } from "./exchange.js";
-import {transportFromProcess} from "./pty.js";
 import {Screen} from "./screen.js";
 import {StyleManager, getComputedValues, getBoxModel} from "./cascade.js";
 import {stringWidth} from "./text.js";

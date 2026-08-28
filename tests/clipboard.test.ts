@@ -9,7 +9,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {decode64, encode64} from "../src/internal/wire.js";
-import {transportFromProcess} from "../src/internal/pty.js";
+import {transportFromProcess} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 

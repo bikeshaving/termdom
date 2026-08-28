@@ -1,6 +1,6 @@
 import {test, expect, describe} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {transportFromProcess} from "../src/internal/pty.js";
+import {transportFromProcess} from "../src/internal/exchange.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // A raw-capture mock: it keeps the exact bytes TermDOM writes, so tests can

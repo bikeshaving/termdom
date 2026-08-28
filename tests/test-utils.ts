@@ -8,7 +8,7 @@ import {
 	type TTYWriteStream,
 	type TTYReadStream,
 	transportFromProcess,
-} from "../src/internal/pty.js";
+} from "../src/internal/exchange.js";
 import type {TerminalTransport} from "../src/internal/exchange.js";
 import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
