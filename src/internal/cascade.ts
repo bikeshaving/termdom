@@ -7737,9 +7737,10 @@ const USED_TRACK_PROPERTIES = new Set([
 	"grid-template-rows",
 ]);
 
-/** The containers whose children have an automatic minimum size. */
+/** The pseudo-elements this engine gives a node of their own. */
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
+/** The containers whose children have an automatic minimum size. */
 const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
 
 /** The block-level display an inline-level box takes as a flex or grid item. */
@@ -7894,15 +7895,20 @@ const kCustom = Symbol("custom");
 const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
 
+/**
+ * An element's computed style, read through the computed-value boundary an
+ * author's `getComputedStyle` sits behind.
+ *
+ * LIVE: the object an author holds keeps answering the element's current
+ * values across class flips, rule insertions and sheet replacements, so it
+ * re-resolves rather than being replaced.
+ */
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
 	/**
 	 * The manager to re-ask for matching rules, and the one that says whether
 	 * this declaration still stands for the cascade.
-	 * A computed style is LIVE: the object an author holds keeps answering the
-	 * element's current values across class flips, rule insertions and sheet
-	 * replacements, so it re-resolves rather than being replaced.
 	 */
 	declare [kManager]: StyleManager | null;
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
@@ -8624,12 +8630,10 @@ function resolveFromParent(
 /**
  * Resolve `var(--name[, fallback])` references in a declared value.
  *
- * Custom properties always inherit (they aren't subject to the fixed
- * INHERITED_PROPERTIES list), so lookup walks the element's own inline style
- * and matching rules first, then the parent chain via getComputedStyle --
- * which recurses through this same substitution at each ancestor, so a
- * custom property whose own value references another var() resolves too.
- * A depth guard stops a property that (invalidly) refers to itself.
+ * A reference is replaced by whatever the cascade holds for the custom
+ * property, and that value is substituted in turn, so a custom property whose
+ * own value references another resolves too. A depth guard stops a property
+ * that (invalidly) refers to itself.
  */
 function substituteVar(
 	declaration: ComputedStyleDeclaration,
@@ -8691,10 +8695,9 @@ function resolveCustomProperty(
 }
 
 /**
- * Resolve property value applying CSS cascade: inline styles > CSS rules >
- * defaults, with `!important` promoted above all of that (an important
- * stylesheet rule beats even a non-important inline style, per spec), and
- * `var()` references substituted in whatever wins.
+ * What the cascade leaves standing for a property, with `var()` references
+ * substituted in it and `currentcolor` answered as the color it names. The
+ * cascade itself is the function below.
  */
 function resolvePropertyValue(
 	declaration: ComputedStyleDeclaration,
@@ -9617,9 +9620,8 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
  * The default marker text for a list item, e.g. "\u2022" or "iii.".
  *
  * Keyed off the *computed* list-style-type, not the parent's tag name: a `ul`
- * can be `list-style-type: decimal` and an `ol` can be `disc`, and either can be
- * `none`. Reading the type off the tag made all three impossible, and ignored a
- * list-style-type set on the `li` itself.
+ * can be `list-style-type: decimal` and an `ol` can be `disc`, either can be
+ * `none`, and the type can be declared on the `li` itself.
  */
 function getListMarker(listItem: Element, listParent: Element): string {
 	const listStyleType =
@@ -9995,9 +9997,7 @@ export class StyleManager {
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
 	 * which is what lets a sheet appended right before the first paint
-	 * apply even when no MutationObserver is attached. (The old sentinel
-	 * was kParsedRules.length === 0, which stopped meaning "never parsed"
-	 * the moment the UA document sheet guaranteed one rule.)
+	 * apply even when no MutationObserver is attached.
 	 */
 	declare [kParsedStyleSheetCount]: number;
 
@@ -10431,9 +10431,8 @@ export class StyleManager {
 				// Sibling combinators reach right: `.on ~ .light` matches (or
 				// stops matching) a FOLLOWING sibling when this element's
 				// attributes change, and that sibling's cached styles know
-				// nothing of it. :has() reaches ancestors, for which only the
-				// nuclear cache
-				// clear is honest.
+				// nothing of it. :has() reaches ancestors, for which only
+				// dropping every cached style is honest.
 				if (this[kSelectorsReachAncestors]) {
 					this.clearCache();
 				} else if (this[kSelectorsReachSiblings]) {
@@ -12797,13 +12796,13 @@ function parseSelector(
 		uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
 	);
 
-	// :host selectors only mean anything inside a shadow tree's own
-	// stylesheet; the selector engine rejects them outright, so they parse
-	// into a structured predicate matched by ruleMatches instead.
 	const subjectTag = reading.subjectTag;
 
-	// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
-	// those followed by a descendant (or `>` child) selector.
+	// :host selectors only mean anything inside a shadow tree's own
+	// stylesheet; the selector engine rejects them outright, so they parse
+	// into a structured predicate matched by ruleMatches instead. The forms
+	// read here: `:host`, `:host(sel)`, `:host:focus`, and any of those
+	// followed by a descendant (or `>` child) selector.
 	if (scope && selector.startsWith(":host")) {
 		// The argument needs balanced-paren matching, not [^)]*: the UA
 		// field sheet's own :host(:not(:focus)) nests one level deep.
