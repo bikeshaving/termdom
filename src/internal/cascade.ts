@@ -7779,6 +7779,13 @@ export interface ComputedValues {
 	getComputedValue(property: string): string;
 }
 
+/** What a read answers before a document has a cascade behind it. */
+const EMPTY_COMPUTED_VALUES: ComputedValues = {
+	getComputedValue(): string {
+		return "";
+	},
+};
+
 /**
  * An element's COMPUTED values, which is the stage before layout: relative
  * units resolved, percentages and `auto` still standing. Not what
@@ -7861,13 +7868,6 @@ function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
 	syncIndexed(declaration);
 	return declaration;
 }
-
-/** What a read answers before a document has a cascade behind it. */
-const EMPTY_COMPUTED_VALUES: ComputedValues = {
-	getComputedValue(): string {
-		return "";
-	},
-};
 
 const kCSSRules = Symbol("cssRules");
 const kManager = Symbol("manager");
@@ -13420,14 +13420,6 @@ function removePseudoElement(
 	manager[kLayoutEngine]?.invalidate(element);
 }
 
-function setupInvalidationHooks(
-	manager: StyleManager,
-): void {
-	// An error thrown out of a constructed sheet is this realm's own.
-	cssomWindow = manager[kWindow];
-	Object.assign(manager[kWindow], CSSOM_WINDOW_GLOBALS);
-}
-
 /** The CSSOM interfaces a window exposes as globals. */
 const CSSOM_WINDOW_GLOBALS = {
 	CSSStyleSheet,
@@ -13459,6 +13451,14 @@ const CSSOM_WINDOW_GLOBALS = {
 	CSSStyleProperties,
 	CSS: CSSNamespace,
 };
+
+function setupInvalidationHooks(
+	manager: StyleManager,
+): void {
+	// An error thrown out of a constructed sheet is this realm's own.
+	cssomWindow = manager[kWindow];
+	Object.assign(manager[kWindow], CSSOM_WINDOW_GLOBALS);
+}
 
 /**
  * `[ <custom-ident> <integer>? ]+`: each identifier opens a pair, a number
