@@ -84,11 +84,6 @@ function fireAsUserAgent(
 	}
 }
 
-/** Whether an activation-triggering event is being dispatched right now. */
-function isUserActive(termdom: TermDOM): boolean {
-	return termdom[kActivationDepth] > 0;
-}
-
 export interface TermDOMOptions {
 	/**
 	 * The terminal this instance renders to. Defaults to a wrapper around the
@@ -122,7 +117,6 @@ function getFullscreenElement(termdom: TermDOM): Element | null {
 async function requestFullscreenElement(
 	termdom: TermDOM,
 	element: Element,
-	_options?: globalThis.FullscreenOptions,
 ): Promise<void> {
 	if (!element.isConnected) {
 		const error = new Error("The element is not contained by a document.");
@@ -146,12 +140,10 @@ async function requestFullscreenElement(
 			);
 		}
 
-		fireFullscreenEvent(termdom, "fullscreenchange", element);
+		fireFullscreenEvent("fullscreenchange", element);
 	} catch (error) {
 		termdom[kFullscreenStack].pop();
-		fireFullscreenEvent(termdom, "fullscreenerror", element, {
-			error: error as Error,
-		});
+		fireFullscreenEvent("fullscreenerror", element, {error: error as Error});
 		throw error;
 	}
 }
@@ -166,7 +158,7 @@ async function exitFullscreenElement(termdom: TermDOM): Promise<void> {
 		termdom[kExchange].setMode("altScreen", false);
 	}
 
-	fireFullscreenEvent(termdom, "fullscreenchange", exitingElement);
+	fireFullscreenEvent("fullscreenchange", exitingElement);
 }
 
 /**
@@ -178,17 +170,16 @@ async function exitFullscreenElement(termdom: TermDOM): Promise<void> {
  * well as the element would deliver every one of them twice.
  */
 function fireFullscreenEvent(
-	termdom: TermDOM,
 	type: "fullscreenchange" | "fullscreenerror",
 	element: Element,
 	detail?: {error: Error},
 ): void {
-	const window = getFullscreenWindow(termdom, element);
+	const document = element.ownerDocument;
+	const window = document.defaultView as unknown as EngineWindow | null;
 	if (!window) {
 		return;
 	}
-	const target =
-		element.isConnected ? element : (element.ownerDocument ?? element);
+	const target = element.isConnected ? element : document;
 	fireAsUserAgent(
 		target,
 		new window.CustomEvent(type, {
@@ -197,17 +188,6 @@ function fireFullscreenEvent(
 			...(detail ? {detail} : {}),
 		}),
 	);
-}
-
-function getFullscreenWindow(
-	termdom: TermDOM,
-	element?: Element,
-): EngineWindow | undefined {
-	const targetElement = element || termdom[kFullscreenStack][0];
-	const document = targetElement ? targetElement.ownerDocument : null;
-	return (document ? document.defaultView : undefined) as
-		| EngineWindow |
-		undefined;
 }
 
 /**
@@ -424,12 +404,6 @@ export class TermDOM {
 	// grapheme clusters) queries whose replies arrive interleaved with typing.
 	declare [kExchange]: TerminalExchange;
 
-	// A defaulted transport over a piped stdout -- a pipe, a file, a CI log --
-	// has no viewport, no cursor, no scrollback and no resize. It cannot
-	// interpret cursor movement either, so the interactive frame would write
-	// CUP and DECSC sequences straight into the file. An injected transport
-	// asserts a terminal exists on the other end.
-
 	/**
 	 * Reveal what a disclosure opened. A details that closes has taken content
 	 * away rather than added it, so there is nothing to bring into view.
@@ -445,20 +419,8 @@ export class TermDOM {
 	 */
 	declare [kOnFieldEditEvent]: (event: Event) => void;
 
-	/**
-	 * Take hold of the terminal: begin the session (input, resizes, closure),
-	 * the startup cursor/mode queries, and mouse reporting.
-	 *
-	 * Construction is inert -- a constructor has no business writing escape
-	 * sequences or flipping a tty into raw mode. Attachment is the one door to
-	 * the terminal; dispose() reverses it.
-	 *
-	 * Passing a different transport rebinds to it -- the construction-time
-	 * transport (the global process by default) was only a stand-in, and this
-	 * re-derives every terminal-dependent fact from the one handed here.
-	 * Rebinding is only allowed before the first attach; re-attaching a live
-	 * instance to another terminal needs teardown that does not exist yet.
-	 */
+	// What attach() hands back and hands back again: resolved once the session
+	// is established and the first frame written.
 	declare [kAttachReady]: Promise<void>;
 	// Resolves once attach()'s begin phase has run (session started, cursor
 	// detection initialized): a render triggered between attach() and that
@@ -473,6 +435,7 @@ export class TermDOM {
 	// sized from the transport, recreated if the width changes, reused
 	// across calls.
 	declare [kStaticSibling]: TermDOM | null;
+
 	constructor(options: TermDOMOptions = {}) {
 		this[kScrollTop] = 0;
 		this[kScreenTop] = 0;
@@ -632,6 +595,20 @@ export class TermDOM {
 		this.document.addEventListener("toggle", this[kOnDisclosureToggle], true);
 	}
 
+	/**
+	 * Take hold of the terminal: begin the session (input, resizes, closure),
+	 * the startup cursor/mode queries, and mouse reporting.
+	 *
+	 * Construction is inert -- a constructor has no business writing escape
+	 * sequences or flipping a tty into raw mode. Attachment is the one door to
+	 * the terminal; dispose() reverses it.
+	 *
+	 * Passing a different transport rebinds to it -- the construction-time
+	 * transport (the global process by default) was only a stand-in, and this
+	 * re-derives every terminal-dependent fact from the one handed here.
+	 * Rebinding is only allowed before the first attach; re-attaching a live
+	 * instance to another terminal needs teardown that does not exist yet.
+	 */
 	attach(transport: TerminalTransport = this[kTransport]): Promise<void> {
 		const rebinding = transport !== this[kTransport];
 		// A disposed instance owes the terminal nothing and takes nothing back.
@@ -792,8 +769,6 @@ export class TermDOM {
 		}
 		this[kEventHandler].dispose();
 
-		// Shadow DOM cleanup is automatic with symbol-based storage
-
 		if (this[kStaticSibling]) {
 			void this[kStaticSibling].dispose();
 			this[kStaticSibling] = null;
@@ -804,23 +779,6 @@ export class TermDOM {
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
-}
-
-/**
- * The frame handle a requestAnimationFrame callback is keyed by, so a
- * cancelAnimationFrame can name the callback it cancels.
- */
-function allocateFrameHandle(
-	termdom: TermDOM,
-): number {
-	return termdom[kNextRafId]++;
-}
-
-function sealToScrollback(
-	termdom: TermDOM,
-): void {
-	flushDocument(termdom);
-	termdom[kSealed] = true;
 }
 
 /**
@@ -1332,7 +1290,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				void render(termDOM);
 			}
 		},
-		requestFullscreen(target, options) {
+		requestFullscreen(target) {
 			const element = target as Element;
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
@@ -1351,11 +1309,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				termDOM[kScreenSwitching] = true;
 				try {
 					await termDOM[kRenderInFlight];
-					await requestFullscreenElement(
-						termDOM,
-						element,
-						options as FullscreenOptions | undefined,
-					);
+					await requestFullscreenElement(termDOM, element);
 					// The element's UA styles changed (it now fills the
 					// viewport) and neither a mutation nor a focus move fired.
 					termDOM[kStyleManager].handleFocusChange(element);
@@ -1422,7 +1376,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// painted: a bare timer would be decoupled from the (async) paint,
 		// so a callback could fire before the frame is written.
 		requestFrame(callback) {
-			const id = allocateFrameHandle(termDOM);
+			const id = termDOM[kNextRafId]++;
 			termDOM[kFrameCallbacks].set(id, callback as FrameRequestCallback);
 			void render(termDOM);
 			return id;
@@ -1474,7 +1428,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// painted session.
 		documentClosed() {
 			if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
-				sealToScrollback(termDOM);
+				flushDocument(termDOM);
+				termDOM[kSealed] = true;
 			}
 		},
 		// A hover listener appearing or vanishing moves the "does anything
@@ -1492,7 +1447,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				null;
 		},
 		userActive() {
-			return isUserActive(termDOM);
+			return termDOM[kActivationDepth] > 0;
 		},
 		everActivated() {
 			return termDOM[kEverActivated];
@@ -1642,7 +1597,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			get window(): EngineWindow {
 				return termdom.window;
 			},
-			fireAsUserAgent: (target, event) => fireAsUserAgent(target, event),
+			fireAsUserAgent,
 			requestRender: () => {
 				void render(termdom);
 			},
