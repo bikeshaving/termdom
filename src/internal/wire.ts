@@ -228,12 +228,17 @@ function decodeMouseEscape(token: string): MouseEscape | null {
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
+/** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
+const CLIPBOARD_START = "\x1b]52;";
+
 /**
  * The length of an incomplete escape sequence at the end of `chunk`, or 0.
  * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
- * arrived, or an SS3 (ESC O) missing its one final character. A bare
- * trailing ESC reports 0 -- it may be the Escape key itself, and holding it
- * for a continuation that never comes would swallow the keystroke.
+ * arrived, an SS3 (ESC O) missing its one final character, or as much of the
+ * clipboard reply's opening as has come -- past that opening the reply holds
+ * itself, since its own terminator is what ends it. A bare trailing ESC
+ * reports 0 -- it may be the Escape key itself, and holding it for a
+ * continuation that never comes would swallow the keystroke.
  */
 function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
@@ -253,11 +258,15 @@ function splitTrailingEscape(chunk: string): number {
 	if (kind === "O" && esc + 2 >= chunk.length) {
 		return chunk.length - esc;
 	}
+	const tail = chunk.slice(esc);
+	if (
+		tail.length < CLIPBOARD_START.length &&
+		CLIPBOARD_START.startsWith(tail)
+	) {
+		return tail.length;
+	}
 	return 0;
 }
-
-/** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
-const CLIPBOARD_START = "\x1b]52;";
 
 /**
  * A whole OSC 52 reply: the selection field, then a base64 payload, then BEL

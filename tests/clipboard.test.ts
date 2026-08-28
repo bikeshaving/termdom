@@ -681,3 +681,38 @@ test("the wire's base64 tolerates what terminals send", () => {
 	const long = "x".repeat(300);
 	expect(replyText(write(long))).toBe(long);
 });
+
+test("a reply cut inside its own opening still reads as a reply", () => {
+	const wire = new Wire();
+	expect(wire.feed("\x1b]5")).toEqual([]);
+	expect(wire.feed("2;c;aGk=\x07")).toEqual([{kind: "clipboard", text: "hi"}]);
+	// Every cut past the escape itself, and one opening that only looks like
+	// this one.
+	for (const at of [2, 3, 4, 5, 6, 7, 8]) {
+		const split = new Wire();
+		const reply = "\x1b]52;c;aGk=\x07";
+		const items = [
+			...split.feed(reply.slice(0, at)),
+			...split.feed(reply.slice(at)),
+		];
+		expect(items).toEqual([{kind: "clipboard", text: "hi"}]);
+	}
+	const other = new Wire();
+	expect(other.feed("\x1b]2").map((item) => item.kind)).toEqual([
+		"key",
+		"key",
+		"key",
+	]);
+	// A bare trailing ESC is the Escape key, held for nothing.
+	expect(new Wire().feed("\x1b")).toEqual([
+		{
+			kind: "key",
+			key: "Escape",
+			char: "",
+			shiftKey: false,
+			ctrlKey: false,
+			altKey: false,
+			metaKey: false,
+		},
+	]);
+});
