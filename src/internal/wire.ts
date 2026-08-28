@@ -462,18 +462,152 @@ const CLIPBOARD_START = "\x1b]52;";
 const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
 
 /**
- * One utterance off the wire: a key token (a CSI or SS3 sequence, or a single
- * character), an SGR mouse escape, a whole paste body, or a reply to one of
- * the probes. A clipboard reply's text is null when the reply outgrew the
- * held-reply limit before its terminator arrived.
+ * One keystroke, read: the key its spelling names and the modifiers that
+ * spelling carries. `key` is a name for the keys a terminal spells out
+ * ("ArrowUp", "Enter") and the character itself for the rest; `char` is the
+ * character the keystroke produces, empty when it produces none.
+ */
+export interface WireKey {
+	kind: "key";
+	key: string;
+	char: string;
+	shiftKey: boolean;
+	ctrlKey: boolean;
+	altKey: boolean;
+	metaKey: boolean;
+}
+
+/**
+ * One utterance off the wire: a keystroke, an SGR mouse escape, a whole paste
+ * body, or a reply to one of the probes. A clipboard reply's text is null when
+ * the reply outgrew the held-reply limit before its terminator arrived.
  */
 export type WireItem =
-	{kind: "key"; token: string} |
+	WireKey |
 	{kind: "mouse"; button: number; col: number; row: number; release: boolean} |
 	{kind: "paste"; text: string} |
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "clipboard"; text: string | null};
+
+/** Shift+Tab: CSI Z, the one named spelling carrying a modifier of its own. */
+const SHIFT_TAB = "\x1b[Z";
+
+/**
+ * The key each spelled-out token names. Enter is carriage return; line feed is
+ * the Ctrl+J chord, which a terminal sends as its control byte like any other
+ * letter's, and which an application binds if it wants a soft newline where
+ * Enter already means something else. A lone ESC is the Escape key -- not the
+ * start of a CSI or SS3 sequence, since the reader peels those off whole.
+ *
+ * F1-F4 arrive in the SS3 encoding, the modern xterm default. F5-F12 arrive as
+ * CSI-tilde -- note the historical gap (no ~16), a quirk of the original xterm
+ * numbering every terminal descended from it still follows.
+ */
+const KEY_BY_TOKEN: Record<string, string> = {
+	"\r": "Enter",
+	"\t": "Tab",
+	[SHIFT_TAB]: "Tab",
+	"\x7f": "Backspace",
+	"\x1b": "Escape",
+	"\x1b[A": "ArrowUp",
+	"\x1b[B": "ArrowDown",
+	"\x1b[C": "ArrowRight",
+	"\x1b[D": "ArrowLeft",
+	"\x1b[H": "Home",
+	"\x1b[1~": "Home",
+	"\x1b[F": "End",
+	"\x1b[4~": "End",
+	"\x1b[2~": "Insert",
+	"\x1b[3~": "Delete",
+	"\x1b[5~": "PageUp",
+	"\x1b[6~": "PageDown",
+	"\x1bOP": "F1",
+	"\x1bOQ": "F2",
+	"\x1bOR": "F3",
+	"\x1bOS": "F4",
+	"\x1b[15~": "F5",
+	"\x1b[17~": "F6",
+	"\x1b[18~": "F7",
+	"\x1b[19~": "F8",
+	"\x1b[20~": "F9",
+	"\x1b[21~": "F10",
+	"\x1b[23~": "F11",
+	"\x1b[24~": "F12",
+};
+
+/** The cursor keys xterm's modified spelling names, by its final letter. */
+const MODIFIED_CURSOR_KEYS: Record<string, string> = {
+	A: "ArrowUp",
+	B: "ArrowDown",
+	C: "ArrowRight",
+	D: "ArrowLeft",
+	F: "End",
+	H: "Home",
+};
+
+/**
+ * xterm's extended CSI encoding for a modified cursor key: CSI 1 ; <mod>
+ * <letter>, e.g. Alt+Up = CSI 1;3A, Shift+Home = CSI 1;2H. The reader yields
+ * the whole sequence as one token -- it scans for the CSI final byte whatever
+ * parameters precede it -- so this is pure decoding, no parsing changes.
+ */
+const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHF])$/;
+
+/** What one key token means: the key it names, and its modifiers. */
+function decodeKeyToken(token: string): WireKey {
+	const code = token.charCodeAt(0);
+
+	// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
+	// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
+	// it with Shift (the terminal only ever sends the one byte). Tab(0x09) and
+	// Enter(0x0D) are excluded even though they fall in this range: those bytes
+	// are what the physical Tab and Enter keys send, indistinguishable from
+	// Ctrl+I and Ctrl+M, so the named key wins. Line feed(0x0A) collides with
+	// no key and stays the Ctrl+J chord.
+	if (code >= 1 && code <= 26 && code !== 9 && code !== 13) {
+		return {
+			kind: "key",
+			key: String.fromCharCode(code + 96), // 0x01 -> 'a' ... 0x1A -> 'z'
+			char: "",
+			shiftKey: false,
+			ctrlKey: true,
+			altKey: false,
+			metaKey: false,
+		};
+	}
+
+	const modified = token.match(MODIFIED_CURSOR_KEY);
+	if (modified) {
+		// mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta (meta included for
+		// spec-completeness; nothing on macOS actually sends it, since Cmd+key
+		// never reaches the PTY at all).
+		const bits = parseInt(modified[1], 10) - 1;
+		return {
+			kind: "key",
+			key: MODIFIED_CURSOR_KEYS[modified[2]],
+			char: "",
+			shiftKey: (bits & 1) !== 0,
+			altKey: (bits & 2) !== 0,
+			ctrlKey: (bits & 4) !== 0,
+			metaKey: (bits & 8) !== 0,
+		};
+	}
+
+	// A token this table does not name is passed along as it arrived. What is
+	// left produces a character when it is one character wide and neither a
+	// control byte nor DEL -- every printable character, not only the ASCII
+	// ones.
+	return {
+		kind: "key",
+		key: KEY_BY_TOKEN[token] ?? token,
+		char: token.length === 1 && code >= 32 && code !== 127 ? token : "",
+		shiftKey: token === SHIFT_TAB,
+		ctrlKey: false,
+		altKey: false,
+		metaKey: false,
+	};
+}
 
 /** What one CSI token means: a mouse escape, a reply, or a keystroke. */
 function decodeControlToken(token: string): WireItem {
@@ -497,7 +631,7 @@ function decodeControlToken(token: string): WireItem {
 			value: parseInt(mode[3], 10),
 		};
 	}
-	return {kind: "key", token};
+	return decodeKeyToken(token);
 }
 
 const kTail = Symbol("tail");
@@ -623,12 +757,12 @@ export class WireReader {
 					continue;
 				}
 				if (data[i + 1] === "O" && i + 2 < data.length) {
-					items.push({kind: "key", token: data.slice(i, i + 3)});
+					items.push(decodeKeyToken(data.slice(i, i + 3)));
 					i += 3;
 					continue;
 				}
 			}
-			items.push({kind: "key", token: data[i]});
+			items.push(decodeKeyToken(data[i]));
 			i++;
 		}
 		return items;

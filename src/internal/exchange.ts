@@ -24,6 +24,7 @@ import {
 	pushTitle,
 	setWindowTitle,
 	type WireItem,
+	type WireKey,
 	type WireProbe,
 	WireReader,
 } from "./wire.js";
@@ -180,8 +181,8 @@ export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 
 /** What the exchange tells the engine, as it works out what arrived. */
 interface ExchangeHandlers {
-	/** One chunk's contiguous key tokens, as the reader lexed them. */
-	onKeys(tokens: string[]): void;
+	/** One chunk's contiguous keystrokes, as the reader decoded them. */
+	onKeys(keys: WireKey[]): void;
 	onMouse(button: number, x: number, y: number, release: boolean): void;
 	onPaste(text: string): void;
 	onResize(size: TerminalSize): void;
@@ -1148,12 +1149,12 @@ async function resizeLoop(
 
 /**
  * The demultiplexer: one pass over what the reader says a chunk meant, in
- * stream order. Contiguous key tokens are batched into one onKeys call;
+ * stream order. Contiguous keystrokes are batched into one onKeys call;
  * everything else is dispatched where it stands, so a report glued to fast
  * keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
  */
 function route(session: TerminalExchange, chunk: string): void {
-	let keys: string[] = [];
+	let keys: WireKey[] = [];
 	const flushKeys = () => {
 		if (keys.length > 0) {
 			session[kHandlers].onKeys(keys);
@@ -1165,12 +1166,14 @@ function route(session: TerminalExchange, chunk: string): void {
 			case "key":
 				// Ctrl-C: raw mode delivers it as data, and its default action
 				// is the engine's to decide (window.close()), not this layer's.
-				if (item.token === "\x03") {
+				// Ctrl+c and nothing else is that one byte: no other spelling
+				// decodes to the letter with the control modifier.
+				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
 					session[kHandlers].onCloseRequest();
 					break;
 				}
-				keys.push(item.token);
+				keys.push(item);
 				break;
 			case "mouse":
 				flushKeys();

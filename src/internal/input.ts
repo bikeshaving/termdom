@@ -1,14 +1,16 @@
 /**
  * The input interpreter: a line discipline for the DOM.
  *
- * Wire tokens -- key chunks, SGR mouse reports, paste bodies -- come in here
- * and DOM events go out; what a token means to the DOM (key names to
- * keyCodes, report bits to buttons) is decoded here, where the events are
- * built. Interpretation is stateful, because a gesture is
- * spread over reports: a click is a press and a release on one element, a
- * dblclick is two clicks close in time, a drag is a press whose motion means
- * selection rather than hover. That transient state is this module's, held for
- * as long as the gesture lasts and no longer.
+ * Wire items -- keystrokes, SGR mouse reports, paste bodies -- come in here
+ * and DOM events go out; what one means to the DOM (key names to keyCodes,
+ * report bits to buttons) is decoded here, where the events are built. No
+ * escape syntax reaches this far; the wire has already spelled it out.
+ *
+ * Interpretation is stateful, because a gesture is spread over reports: a
+ * click is a press and a release on one element, a dblclick is two clicks
+ * close in time, a drag is a press whose motion means selection rather than
+ * hover. That transient state is this module's, held for as long as the
+ * gesture lasts and no longer.
  *
  * Named for Blink's EventHandler, which is the same object: one class turning
  * platform input into DOM events, owning the interaction state interpretation
@@ -36,9 +38,10 @@ import {
 	topmostClickedPopover,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
+import type {WireKey} from "./wire.js";
 import {type StyleManager, getComputedValues} from "./cascade.js";
 
-/* --------------------------------------------- what a wire token means */
+/* -------------------------------------------------- what a wire item means */
 
 /**
  * The DOM `code` values for the keys whose physical identity a terminal escape
@@ -102,225 +105,51 @@ function domCodeFor(keyName: string): string {
 	return `Key${keyName.toUpperCase()}`;
 }
 
-/** A single decoded keystroke: the semantics of one key token. */
-interface KeyStroke {
-	/** The named key (`"ArrowUp"`, `"Enter"`, or the literal character). */
-	keyName: string;
-	keyCode: number;
-	/** The character code, for the keypress default only; 0 for non-printing. */
-	charCode: number;
-	shiftKey: boolean;
-	ctrlKey: boolean;
-	altKey: boolean;
-	metaKey: boolean;
-}
+/**
+ * The legacy `keyCode` for the keys a terminal names. Long deprecated in the
+ * DOM and still what plenty of code reads, so every keyboard event carries one.
+ */
+const NAMED_KEY_NUMBERS: Record<string, number> = {
+	Enter: 13,
+	Tab: 9,
+	Backspace: 8,
+	Escape: 27,
+	ArrowUp: 38,
+	ArrowDown: 40,
+	ArrowRight: 39,
+	ArrowLeft: 37,
+	Home: 36,
+	End: 35,
+	Insert: 45,
+	Delete: 46,
+	PageUp: 33,
+	PageDown: 34,
+	F1: 112,
+	F2: 113,
+	F3: 114,
+	F4: 115,
+	F5: 116,
+	F6: 117,
+	F7: 118,
+	F8: 119,
+	F9: 120,
+	F10: 121,
+	F11: 122,
+	F12: 123,
+};
 
-/** Resolve one key token into a KeyStroke. */
-function decodeKey(token: string): KeyStroke {
-	let keyName = token;
-	let keyCode = 0;
-	let charCode = token.charCodeAt(0);
-	let shiftKey = false;
-	let ctrlKey = false;
-	let altKey = false;
-	let metaKey = false;
-
-	// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
-	// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
-	// it with Shift (the terminal only ever sends the one byte). Tab(0x09) and
-	// Enter(0x0D) are excluded even though they fall in this range: those bytes
-	// are what the physical Tab and Enter keys send, indistinguishable from
-	// Ctrl+I and Ctrl+M, so the named key wins. Line feed(0x0A) collides with
-	// no key and stays the Ctrl+J chord. Ctrl+C(0x03) never reaches here: it is
-	// intercepted earlier, unconditionally, for SIGINT.
-	const modifiedArrow = token.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
-	if (charCode >= 1 && charCode <= 26 && charCode !== 9 && charCode !== 13) {
-		keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
-		keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
-		ctrlKey = true;
-	} else if (modifiedArrow) {
-		// xterm's extended CSI encoding for a modified cursor key: CSI 1 ;
-		// <mod> <letter>, e.g. Alt+Up = \x1b[1;3A, Shift+Home = \x1b[1;2H.
-		// The wire's reader already yields this whole sequence as one token
-		// unchanged -- it scans for the CSI final byte regardless of what
-		// parameters precede it -- so this is pure decoding, no parsing
-		// changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl,
-		// 8=Meta (metaKey included for spec-completeness; nothing on macOS
-		// actually sends it, since Cmd+key never reaches the PTY at all).
-		const modifierBits = parseInt(modifiedArrow[1], 10) - 1;
-		shiftKey = (modifierBits & 1) !== 0;
-		altKey = (modifierBits & 2) !== 0;
-		ctrlKey = (modifierBits & 4) !== 0;
-		metaKey = (modifierBits & 8) !== 0;
-		const cursorKeyByLetter: Record<string, [string, number]> = {
-			A: ["ArrowUp", 38],
-			B: ["ArrowDown", 40],
-			C: ["ArrowRight", 39],
-			D: ["ArrowLeft", 37],
-			F: ["End", 35],
-			H: ["Home", 36],
-		};
-		[keyName, keyCode] = cursorKeyByLetter[modifiedArrow[2]];
-		charCode = 0;
-	} else {
-		switch (token) {
-			// Enter is carriage return. Line feed is the Ctrl+J chord, which a
-			// terminal sends as its control byte like any other letter's, and
-			// which an application binds if it wants a soft newline where Enter
-			// already means something else.
-			case "\r":
-				keyName = "Enter";
-				keyCode = 13;
-				charCode = 13;
-				break;
-			case "\t":
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				break;
-			case "\x1b[Z":
-				// Shift+Tab
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				shiftKey = true;
-				break;
-			case "\x7f":
-				keyName = "Backspace";
-				keyCode = 8;
-				charCode = 8;
-				break;
-			case "\x1b":
-				// A lone Escape -- not the start of a CSI/SS3 sequence, since the
-				// wire's reader peels those off as their own multi-char tokens.
-				keyName = "Escape";
-				keyCode = 27;
-				charCode = 0;
-				break;
-			case "\x1b[A":
-				keyName = "ArrowUp";
-				keyCode = 38;
-				charCode = 0;
-				break;
-			case "\x1b[B":
-				keyName = "ArrowDown";
-				keyCode = 40;
-				charCode = 0;
-				break;
-			case "\x1b[C":
-				keyName = "ArrowRight";
-				keyCode = 39;
-				charCode = 0;
-				break;
-			case "\x1b[D":
-				keyName = "ArrowLeft";
-				keyCode = 37;
-				charCode = 0;
-				break;
-			case "\x1b[H":
-			case "\x1b[1~":
-				keyName = "Home";
-				keyCode = 36;
-				charCode = 0;
-				break;
-			case "\x1b[F":
-			case "\x1b[4~":
-				keyName = "End";
-				keyCode = 35;
-				charCode = 0;
-				break;
-			case "\x1b[2~":
-				keyName = "Insert";
-				keyCode = 45;
-				charCode = 0;
-				break;
-			case "\x1b[3~":
-				keyName = "Delete";
-				keyCode = 46;
-				charCode = 0;
-				break;
-			case "\x1b[5~":
-				keyName = "PageUp";
-				keyCode = 33;
-				charCode = 0;
-				break;
-			case "\x1b[6~":
-				keyName = "PageDown";
-				keyCode = 34;
-				charCode = 0;
-				break;
-			// F1-F4: SS3 encoding, the modern xterm default. F5-F12: CSI-tilde --
-			// note the historical gap (no ~16), a quirk of the original xterm
-			// numbering every terminal descended from it still follows.
-			case "\x1bOP":
-				keyName = "F1";
-				keyCode = 112;
-				charCode = 0;
-				break;
-			case "\x1bOQ":
-				keyName = "F2";
-				keyCode = 113;
-				charCode = 0;
-				break;
-			case "\x1bOR":
-				keyName = "F3";
-				keyCode = 114;
-				charCode = 0;
-				break;
-			case "\x1bOS":
-				keyName = "F4";
-				keyCode = 115;
-				charCode = 0;
-				break;
-			case "\x1b[15~":
-				keyName = "F5";
-				keyCode = 116;
-				charCode = 0;
-				break;
-			case "\x1b[17~":
-				keyName = "F6";
-				keyCode = 117;
-				charCode = 0;
-				break;
-			case "\x1b[18~":
-				keyName = "F7";
-				keyCode = 118;
-				charCode = 0;
-				break;
-			case "\x1b[19~":
-				keyName = "F8";
-				keyCode = 119;
-				charCode = 0;
-				break;
-			case "\x1b[20~":
-				keyName = "F9";
-				keyCode = 120;
-				charCode = 0;
-				break;
-			case "\x1b[21~":
-				keyName = "F10";
-				keyCode = 121;
-				charCode = 0;
-				break;
-			case "\x1b[23~":
-				keyName = "F11";
-				keyCode = 122;
-				charCode = 0;
-				break;
-			case "\x1b[24~":
-				keyName = "F12";
-				keyCode = 123;
-				charCode = 0;
-				break;
-			default:
-				// For regular characters, keyCode is often the uppercase charCode
-				if (token.length === 1) {
-					keyCode = token.toUpperCase().charCodeAt(0);
-				}
-		}
+/**
+ * The legacy `keyCode` for a resolved key name: the number for a named key,
+ * and for a single character the uppercase character's code -- which is the
+ * letter's own keyCode, so Ctrl+A and a typed "a" agree. 0 for anything else,
+ * an escape sequence this engine does not name being the only such thing.
+ */
+function legacyKeyCode(keyName: string): number {
+	const named = NAMED_KEY_NUMBERS[keyName];
+	if (named !== undefined) {
+		return named;
 	}
-
-	return {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey};
+	return keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0;
 }
 
 /** A single decoded SGR mouse report: the semantics of the report bits. */
@@ -1187,17 +1016,17 @@ export class EventHandler {
 	}
 
 	/**
-	 * One chunk's key tokens, as the wire's reader lexed them. A keystroke
+	 * One chunk's keystrokes, as the wire's reader decoded them. A keystroke
 	 * also means the user is back at the live screen -- terminals snap to
 	 * the bottom on input -- so it takes the mouse back from a
 	 * scroll-chaining yield.
 	 */
-	handleKeys(tokens: string[]): void {
+	handleKeys(keys: WireKey[]): void {
 		if (this[kMouseCaptureYielded]) {
 			this.reclaimMouseCapture();
 		}
-		for (const token of tokens) {
-			dispatchKey(this, token);
+		for (const key of keys) {
+			dispatchKey(this, key);
 		}
 	}
 }
@@ -1474,10 +1303,10 @@ function release(
 	handler[kMouseDownTarget] = null;
 }
 
-function dispatchKey(handler: EventHandler, key: string): void {
+function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	const view = handler[kView];
-	const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
-		decodeKey(key);
+	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
+	const keyCode = legacyKeyCode(keyName);
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
 	if (handler[kStyleManager].setFocusVisible(true)) {
@@ -1559,7 +1388,7 @@ function dispatchKey(handler: EventHandler, key: string): void {
 			// activate here; text inputs never match keyboardActivation.
 			if (
 				(keyName === "Enter" && activation.enter) ||
-				(key === " " && activation.space)
+				(keyName === " " && activation.space)
 			) {
 				// The user agent's own click, not click()'s synthetic one: it
 				// is trusted, as the click a browser generates for keyboard
@@ -1584,13 +1413,13 @@ function dispatchKey(handler: EventHandler, key: string): void {
 	// A character-producing key fires keypress between keydown and keyup,
 	// and inserting the character is that event's default action -- so a
 	// field's `input` arrives after keypress, as it does in a browser, and a
-	// keypress a listener cancels inserts nothing. Every printable
-	// character, not only the ASCII ones: charCode is the character's own
-	// code, and DEL and the control codes are the keys named elsewhere.
-	if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
+	// keypress a listener cancels inserts nothing. Which keystrokes produce a
+	// character is the wire's answer; charCode is that character's own code.
+	if (notCanceled && char !== "") {
+		const charCode = char.charCodeAt(0);
 		const keypressEvent = new view.window.KeyboardEvent("keypress", {
-			key,
-			code: domCodeFor(key),
+			key: char,
+			code: domCodeFor(char),
 			keyCode: charCode,
 			charCode,
 			which: charCode,
@@ -1602,7 +1431,7 @@ function dispatchKey(handler: EventHandler, key: string): void {
 			cancelable: true,
 		});
 		if (view.fireAsUserAgent(targetElement, keypressEvent)) {
-			insertText(handler, targetElement, key);
+			insertText(handler, targetElement, char);
 		}
 	}
 

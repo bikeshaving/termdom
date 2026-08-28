@@ -1721,9 +1721,9 @@ function buildExchange(
 			// without a mutation record, and no cheaper answer than the paint
 			// exists. A keystroke that changes nothing costs one culled paint
 			// and an empty diff, which is what it is worth.
-			onKeys: (tokens) => {
+			onKeys: (keys) => {
 				termdom[kFrameDirty] = true;
-				termdom[kEventHandler].handleKeys(tokens);
+				termdom[kEventHandler].handleKeys(keys);
 			},
 			onMouse: (button, x, y, release) => {
 				termdom[kFrameDirty] = true;
