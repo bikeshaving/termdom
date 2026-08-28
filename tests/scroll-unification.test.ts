@@ -2,8 +2,8 @@
  * window.scrollY/pageYOffset/scrollBy/scrollTo/scroll and
  * document.documentElement/body.scrollTop are all one value: the document
  * camera. Previously scrollTo/scroll/scrollTop wrote a completely separate,
- * unused piece of ScrollingManager state -- calling window.scrollTo(0, 100)
- * did not move what window.scrollY reported. See the spec-conformance audit.
+ * unused piece of state of their own -- calling window.scrollTo(0, 100) did
+ * not move what window.scrollY reported. See the spec-conformance audit.
  */
 
 import {test, expect} from "@b9g/libuild/test";

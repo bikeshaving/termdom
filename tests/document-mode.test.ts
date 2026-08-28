@@ -166,9 +166,9 @@ test("document mode waits for cursor detection so the anchor never shifts", asyn
 		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
 	});
 
-	// Construction kicks off auto-detection; its promise is pending right now. We do
-	// NOT await it -- the render must, which is the fix. (detectCursor defaults off
-	// for a non-real process, so enable it to exercise the path.)
+	// Construction kicks off auto-detection; its promise is pending right now.
+	// We do NOT await it -- the render must, which is the fix. The shared
+	// transport is what puts detection on the path at all.
 	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML = "<div id=\"a\">A-0</div><div id=\"b\">B</div>";
 	await nextFrame(dom);

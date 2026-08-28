@@ -195,11 +195,26 @@ function frameOf(terminal: any): string {
 const find = (document: any, id: string): any =>
 	id === "body" ? document.body : document.querySelector(`[data-f="${id}"]`);
 
+/**
+ * Give every untagged element an id no element in the document already has.
+ *
+ * Tagging runs again after each action, and the elements an action added are
+ * the untagged ones. Counting from zero every time would hand a new element
+ * the id an old one is still wearing, and `find` would then answer with
+ * whichever came first in the document -- so a recorded repro would name
+ * elements it never touched.
+ */
 function tag(document: any): void {
+	const elements = Array.from(document.body.querySelectorAll("*")) as any[];
 	let counter = 0;
-	for (const element of Array.from(
-		document.body.querySelectorAll("*"),
-	) as any[]) {
+	for (const element of elements) {
+		const existing = element.getAttribute("data-f");
+		const index = existing === null ? -1 : Number(existing.slice(1));
+		if (Number.isInteger(index) && index >= counter) {
+			counter = index + 1;
+		}
+	}
+	for (const element of elements) {
 		if (!element.hasAttribute("data-f")) {
 			element.setAttribute("data-f", `e${counter++}`);
 		}

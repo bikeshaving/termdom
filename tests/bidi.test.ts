@@ -111,14 +111,31 @@ test("direction: rtl right-aligns the line and keeps Latin runs readable", async
 });
 
 test("the terminal is asked to leave bidi to us, and its answer is honoured", async () => {
-	// MockProcess wraps a real headless terminal, which does not implement BDSM
-	// and answers DECRQM with 0 ("not recognised") -- so we reorder.
+	// MockProcess wraps a real headless terminal, which does not implement
+	// BDSM and answers DECRQM with 0 ("not recognised") -- so we reorder. The
+	// reordering alone would happen with no negotiation at all, so what this
+	// reads is the asking: mode 8 reset to explicit, then queried.
 	const terminal = new MockProcess({cols: 20, rows: 4});
+	const stdout = terminal.stdout as unknown as {
+		write: (...args: unknown[]) => boolean;
+	};
+	const original = stdout.write.bind(stdout);
+	let wire = "";
+	stdout.write = (...args: unknown[]) => {
+		wire += String(args[0]);
+		return original(...args);
+	};
+
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
 	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 60));
 
+	// Explicit mode, then "what is mode 8 now?", in that order.
+	expect(wire).toContain("\x1b[8l\x1b[8$p");
+	// Nothing came back, and silence has always meant no bidi, so the order
+	// on screen is the one we put there.
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(HEBREW_VISUAL);
 
 	dom.dispose();

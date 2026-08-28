@@ -131,10 +131,10 @@ test("body's own clientHeight/scrollHeight (viewport height, real content height
 
 	// clientHeight is the terminal's own height, unrelated to content.
 	expect(dom.document.body.clientHeight).toBe(10);
-	// scrollHeight is the document's real content height (2 lines here), which
-	// the general contentBoxSize() fallback -- had it applied to body -- would
-	// get wrong, since body has no explicit height for a border-box rect to
-	// report; the existing instance-level override must still be winning.
+	// scrollHeight is the document's real content height (2 lines here). The
+	// general fallback, which reads the border-box rect, would get this wrong
+	// -- body has no explicit height for such a rect to report -- so body's
+	// own override has to be the one answering.
 	expect(dom.document.body.scrollHeight).toBe(2);
 	dom.dispose();
 });

@@ -335,8 +335,8 @@ test("content positioning with different terminal sizes", async () => {
 		<div>Third line content</div>
 	`;
 
-	// Small terminal test. detectCursor:true is required for cursor detection
-	// (and therefore push-up) to run at all -- without it, screenTop stays 0
+	// The shared transport is what lets cursor detection -- and therefore
+	// push-up -- run at all. Over a plain transport screenTop stays 0
 	// regardless of content, which is not what this test is about.
 	await new Promise<void>((resolve) => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());

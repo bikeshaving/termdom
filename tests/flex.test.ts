@@ -596,7 +596,7 @@ describe("gap (css-align-3)", () => {
 		expect(rect(items[2]).top).toBe(2);
 	});
 
-	test("GUTTER_ALL sets both axes", () => {
+	test("a gap set on 'all' sets both axes", () => {
 		const root = node();
 		root.setGap("all", 4);
 		expect(root.getGap("row")).toBe(4);

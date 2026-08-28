@@ -156,13 +156,21 @@ test("auto tracks size to their content and share what is left", async () => {
 });
 
 test("min-content and max-content size a track to its content", async () => {
-	// The word cannot break, so both are its width: 8 cells, and the second
-	// track takes the rest.
-	const {item, resolved} = await render(
-		grid("grid-template-columns: min-content auto", "<i>unbreakab</i><i>x</i>"),
-	);
-	expect(item(0).width).toBe(9);
-	expect(resolved("grid-template-columns")).toBe("9px 21px");
+	// The word cannot break, so both keywords come out at its width -- 9
+	// cells -- and the second track takes the rest. Naming both means asking
+	// for both: one of them alone leaves the other free to mean anything.
+	for (const keyword of ["min-content", "max-content"]) {
+		const {item, resolved} = await render(
+			grid(
+				`grid-template-columns: ${keyword} auto`,
+				"<i>unbreakab</i><i>x</i>",
+			),
+		);
+		expect(`${keyword}: ${item(0).width}`).toBe(`${keyword}: 9`);
+		expect(`${keyword}: ${resolved("grid-template-columns")}`).toBe(
+			`${keyword}: 9px 21px`,
+		);
+	}
 });
 
 test("minmax clamps a track between its two breadths", async () => {
@@ -732,16 +740,20 @@ test("implicit columns are created past the explicit grid", async () => {
 });
 
 test("an implicit track before the explicit grid shifts everything after it", async () => {
-	// A negative line creates tracks in front of line 1, and the explicit
-	// grid slides right by them.
-	const {items, resolved} = await render(
+	// Negative lines count back from the end of the EXPLICIT grid, so in a
+	// one-track grid -1 is line 2 and -2 is line 1. Reaching past -2 asks for
+	// a line that does not exist yet, and the track made for it goes in front
+	// of line 1 -- pushing the explicit track right by its width.
+	const {items} = await render(
 		grid(
 			"grid-template-columns: 4px; grid-auto-columns: 3px",
-			"<i style=\"grid-column: -2 / -1\">a</i><i style=\"grid-column: 1 / 2\">b</i>",
+			"<i style=\"grid-column: -3 / -2\">a</i><i style=\"grid-column: 1 / 2\">b</i>",
 		),
 	);
-	expect(resolved("grid-template-columns")).toBe("4px");
-	expect(items()[0].left).toBe(0);
+	// The new track is 3 wide and starts the grid; the explicit one keeps its
+	// own 4 and begins where the new one ends.
+	expect(items()[0]).toEqual({left: 0, top: 0, width: 3, height: 1});
+	expect(items()[1]).toEqual({left: 3, top: 0, width: 4, height: 1});
 });
 
 test("order moves an item's place on the grid, not only its painting", async () => {
@@ -1522,6 +1534,9 @@ async function mutationMatchesFresh(
 	const finalHTML = before.document.body.innerHTML;
 	const fresh = await render(finalHTML, cols, rows);
 
+	// A floor first: two empty renders agree about everything, so a fixture
+	// that painted nothing would satisfy every comparison below it.
+	expect(before.rows().join("").trim().length).toBeGreaterThan(0);
 	expect(before.rows()).toEqual(fresh.rows());
 	const geometry = (rendered: Rendered) =>
 		Array.from(rendered.document.querySelectorAll("*")).map((element) => {

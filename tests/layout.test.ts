@@ -96,44 +96,40 @@ function createLayoutEngine(html = "<div></div>"): {
 	return {dom, layoutEngine, observer, processMutationsAndLayout};
 }
 
-// CSS-to-Yoga property mapping tests
-test("styleYogaNode - basic layout", () => {
+// CSS properties reaching the layout engine
+test("a pixel width and height size the box", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		"<div style=\"width: 100px; height: 50px;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
-	// Should have valid rect (exact values depend on CSS parsing)
-	expect(rect).not.toBeNull();
-	expect(rect!.width).toBeGreaterThan(0);
-	expect(rect!.height).toBeGreaterThan(0);
+	expect([rect!.width, rect!.height]).toEqual([100, 50]);
 });
 
-test("styleYogaNode - percentage dimensions", () => {
+test("a percentage width resolves against the container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		"<div style=\"width: 50%;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
-	// Should handle percentage (exact calculation depends on parent sizing)
-	expect(rect).not.toBeNull();
-	expect(rect!.width).toBeGreaterThan(0);
+	// Half of the 300 the engine was resized to.
+	expect(rect!.width).toBe(150);
 });
 
-test("styleYogaNode - margins", () => {
+test("a margin offsets the box and takes room from its width", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		"<div style=\"margin: 10px;\"></div>",
 	);
 	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
-	// Should handle margin properties (exact positioning depends on layout calculation)
-	expect(rect).not.toBeNull();
+	// Pushed in by 10 on each side, leaving 280 of the 300.
+	expect([rect!.left, rect!.top, rect!.width]).toEqual([10, 10, 280]);
 });
 
-test("styleYogaNode - flexbox container", () => {
+test("flex factors divide the container between the children", () => {
 	const {dom, layoutEngine} = createLayoutEngine(`
 		<div style="display: flex;">
 			<div style="flex: 1;"></div>
@@ -147,10 +143,9 @@ test("styleYogaNode - flexbox container", () => {
 	const child1Rect = layoutEngine.getRect(children[0] as Element);
 	const child2Rect = layoutEngine.getRect(children[1] as Element);
 
-	// Both children should have valid rects in flex layout
-	expect(child1Rect).not.toBeNull();
-	expect(child2Rect).not.toBeNull();
-	expect(child2Rect!.width).toBeGreaterThanOrEqual(child1Rect!.width); // flex: 2 should be >= flex: 1
+	// One share and two shares of 300.
+	expect([child1Rect!.left, child1Rect!.width]).toEqual([0, 100]);
+	expect([child2Rect!.left, child2Rect!.width]).toEqual([100, 200]);
 });
 
 // Tree construction tests
@@ -328,7 +323,7 @@ test("a run whose first node is removed re-measures from the next", () => {
 	expect(fragments[0].rect.y).toBe(containerRect.y);
 });
 
-test("emoji text RectLengths preserve character boundaries", () => {
+test("emoji line fragments preserve character boundaries", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		"<span>🎨 Colorful Text 🌈</span>",
 	);
@@ -358,7 +353,7 @@ test("emoji text RectLengths preserve character boundaries", () => {
 	expect(reconstructedText).not.toContain("🎨Colorful"); // Should NOT be missing space
 });
 
-test("RectLength text slicing mismatch with whitespace", () => {
+test("line fragment slicing mismatch with whitespace", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		"<div style=\"width: 20ch;\"><span>Hello   </span><span>World</span></div>",
 	);
@@ -443,8 +438,9 @@ test("inline head element gets incorrect rect from yoga node", () => {
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
-	// The head should report width of just its content (4), not the entire run (8)
-	// But currently it reports the width of the entire run because it uses the Yoga node
+	// The head should report width of just its content (4), not the entire run
+	// (8) -- but it reports the run's width, because both spans share the one
+	// layout node their inline run was laid out as.
 	const headRect = layoutEngine.getRect(spans[0]);
 	const tailRect = layoutEngine.getRect(spans[1]);
 
@@ -470,7 +466,7 @@ test("inline run with mixed content - whitespace handling", () => {
 	expect(container).not.toBeNull(); // Layout calculation completed successfully
 });
 
-test("text truncation due to RectLength accumulation error", () => {
+test("text truncation due to fragment offset accumulation error", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 12ch;">
 			<span>First   </span><span>Second   </span><span>Third</span>
