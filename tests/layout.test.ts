@@ -1467,6 +1467,33 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 	termdom.dispose();
 });
 
+test("box-sizing decides what a declared width names", async () => {
+	const termdom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = termdom;
+	// Same declaration twice: 10 cells wide, a cell of padding either side and
+	// a cell of border either side, so the edges come to 4.
+	const edges = "width: 10ch; border: 1px solid red; padding: 0 1ch";
+	document.body.innerHTML =
+		`<div id="b" style="${edges}">x</div>` +
+		`<div id="c" style="${edges}; box-sizing: content-box">x</div>`;
+	await nextFrame(termdom);
+	const rect = (id: string): DOMRect =>
+		(document.getElementById(id) as HTMLElement).getBoundingClientRect();
+
+	// border-box is this engine's default, and the declaration is the whole
+	// box: the edges are drawn inside the 10 cells.
+	expect(rect("b").width).toBe(10);
+	// content-box names the content alone, so the box grows by its edges.
+	expect(rect("c").width).toBe(14);
+
+	// Either way the resolved value is the content width, which is what the
+	// content-box declaration asked for and what the border-box one has left.
+	expect(window.getComputedStyle(document.getElementById("b")!).width)
+		.toBe("6px");
+	expect(window.getComputedStyle(document.getElementById("c")!).width)
+		.toBe("10px");
+});
+
 test("a resolved value measures the layout the last style write asked for", async () => {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = termdom;
@@ -1476,11 +1503,13 @@ test("a resolved value measures the layout the last style write asked for", asyn
 
 	// A used value is measured, so the write before it has to reach layout:
 	// the read takes the same flush a rect read does.
+	// The resolved value of width is the CONTENT width, so the 4 cells of
+	// padding come off the border box the declaration sized.
 	target.style.paddingLeft = "4ch";
 	target.style.width = "10ch";
-	expect(window.getComputedStyle(target).width).toBe("10px");
+	expect(window.getComputedStyle(target).width).toBe("6px");
 	target.style.width = "20ch";
-	expect(window.getComputedStyle(target).width).toBe("20px");
+	expect(window.getComputedStyle(target).width).toBe("16px");
 });
 
 // === LAYOUT INVALIDATION TESTS ===

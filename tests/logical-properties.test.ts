@@ -153,8 +153,10 @@ test("a logical property computes to the same value as its physical name", async
 	expect(of("margin-block-end")).toBe("3px");
 	expect(of("padding-right")).toBe("1px");
 	expect(of("padding-inline-end")).toBe("1px");
-	expect(of("width")).toBe("9px");
-	expect(of("inline-size")).toBe("9px");
+	// The declaration sizes the border box, and a resolved width is the
+	// content, so the 1px of inline-end padding comes off both readings.
+	expect(of("width")).toBe("8px");
+	expect(of("inline-size")).toBe("8px");
 	expect(of("height")).toBe("4px");
 	expect(of("block-size")).toBe("4px");
 });

@@ -8327,13 +8327,11 @@ function measure(
 			) +
 			edge(declaration, vertical ? "padding-top" : "padding-left") +
 			edge(declaration, vertical ? "padding-bottom" : "padding-right");
+		// The rect is the border box whichever way the box was sized, and the
+		// resolved value of width is the CONTENT width either way (cssom-view
+		// §7.1), so the edges come off regardless of box-sizing.
 		const border = vertical ? rect.height : rect.width;
-		// `box-sizing: border-box` measures the border box itself.
-		const content =
-			declaration.getPropertyValue("box-sizing") === "border-box" ?
-				border :
-				border - edges;
-		return usedLength(Math.max(0, content));
+		return usedLength(Math.max(0, border - edges));
 	}
 
 	// An `auto` margin is whatever space the box was given: the distance

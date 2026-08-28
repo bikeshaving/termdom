@@ -7730,6 +7730,51 @@ function widthSizingConstant(value: string): Sizing {
 }
 
 /**
+ * The padding and border a `box-sizing: content-box` box adds to its declared
+ * size, or null where this pass cannot know it.
+ *
+ * The solver sizes border boxes: a declared width is the width of the box it
+ * draws. A content-box width names the content alone, so the box the solver
+ * must be given is that width plus the edges around it (css-sizing-3 §5.1).
+ *
+ * Null where an edge is a percentage, since those resolve against a containing
+ * block that is not decided yet. Such a box keeps the border-box reading, which
+ * is this engine's default and the one a terminal wants: a border is a whole
+ * cell and cannot be drawn outside the track it was given.
+ */
+function contentBoxEdges(
+	computedStyle: ComputedValues,
+	vertical: boolean,
+): number | null {
+	if (computedStyle.getComputedValue("box-sizing") !== "content-box") {
+		return 0;
+	}
+	const names =
+		vertical ?
+				[
+					"padding-top",
+					"padding-bottom",
+					"border-top-width",
+					"border-bottom-width",
+				] :
+				[
+					"padding-left",
+					"padding-right",
+					"border-left-width",
+					"border-right-width",
+				];
+	let total = 0;
+	for (const name of names) {
+		const value = parseUnitValue(computedStyle.getComputedValue(name));
+		if (typeof value !== "number") {
+			return null;
+		}
+		total += value;
+	}
+	return total;
+}
+
+/**
  * An element's computed style, onto its layout node. Assigned as one change:
  * scores of properties land on the same node, and the solver's ancestors need
  * telling once, not once per property.
@@ -7780,7 +7825,7 @@ function styleFlexNodeProperties(
 		const widthValue = computedStyle.getComputedValue("width");
 		const width = parseUnitValue(widthValue);
 		if (typeof width === "number") {
-			flexNode.setWidth(width);
+			flexNode.setWidth(width + (contentBoxEdges(computedStyle, false) ?? 0));
 		} else if (width && "percentage" in width) {
 			flexNode.setWidthPercent(width.percentage);
 		} else {
@@ -7790,7 +7835,7 @@ function styleFlexNodeProperties(
 
 		const height = parseUnitValue(computedStyle.getComputedValue("height"));
 		if (typeof height === "number") {
-			flexNode.setHeight(height);
+			flexNode.setHeight(height + (contentBoxEdges(computedStyle, true) ?? 0));
 		} else if (height && "percentage" in height) {
 			flexNode.setHeightPercent(height.percentage);
 		} else {
