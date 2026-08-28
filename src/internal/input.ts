@@ -37,7 +37,6 @@ import {
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {type StyleManager, getComputedValues} from "./cascade.js";
-import {tokenizeInput} from "./wire.js";
 
 /* --------------------------------------------- what a wire token means */
 
@@ -142,7 +141,7 @@ function decodeKey(token: string): KeyStroke {
 	} else if (modifiedArrow) {
 		// xterm's extended CSI encoding for a modified cursor key: CSI 1 ;
 		// <mod> <letter>, e.g. Alt+Up = \x1b[1;3A, Shift+Home = \x1b[1;2H.
-		// The tokenizer already yields this whole sequence as one token
+		// The wire's reader already yields this whole sequence as one token
 		// unchanged -- it scans for the CSI final byte regardless of what
 		// parameters precede it -- so this is pure decoding, no parsing
 		// changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl,
@@ -193,7 +192,7 @@ function decodeKey(token: string): KeyStroke {
 				break;
 			case "\x1b":
 				// A lone Escape -- not the start of a CSI/SS3 sequence, since the
-				// tokenizer already peels those off as their own multi-char tokens.
+				// wire's reader peels those off as their own multi-char tokens.
 				keyName = "Escape";
 				keyCode = 27;
 				charCode = 0;
@@ -1188,15 +1187,18 @@ export class EventHandler {
 	}
 
 	/**
-	 * A chunk of decoded keystrokes. A keystroke also means the user is back
-	 * at the live screen -- terminals snap to the bottom on input -- so it
-	 * takes the mouse back from a scroll-chaining yield.
+	 * One chunk's key tokens, as the wire's reader lexed them. A keystroke
+	 * also means the user is back at the live screen -- terminals snap to
+	 * the bottom on input -- so it takes the mouse back from a
+	 * scroll-chaining yield.
 	 */
-	handleKeys(keyInput: string): void {
+	handleKeys(tokens: string[]): void {
 		if (this[kMouseCaptureYielded]) {
 			this.reclaimMouseCapture();
 		}
-		dispatchKey(this, keyInput);
+		for (const token of tokens) {
+			dispatchKey(this, token);
+		}
 	}
 }
 
@@ -1474,15 +1476,6 @@ function release(
 
 function dispatchKey(handler: EventHandler, key: string): void {
 	const view = handler[kView];
-	// Tokenize multi-key chunks and dispatch each token on its own.
-	const tokens = Array.from(tokenizeInput(key));
-	if (tokens.length > 1) {
-		for (const token of tokens) {
-			dispatchKey(handler, token);
-		}
-		return;
-	}
-
 	const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
 		decodeKey(key);
 

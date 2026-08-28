@@ -180,8 +180,8 @@ export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 
 /** What the exchange tells the engine, as it works out what arrived. */
 interface ExchangeHandlers {
-	/** Decoded non-mouse input: batched keystrokes after the demux. */
-	onKeys(keyInput: string): void;
+	/** One chunk's contiguous key tokens, as the reader lexed them. */
+	onKeys(tokens: string[]): void;
 	onMouse(button: number, x: number, y: number, release: boolean): void;
 	onPaste(text: string): void;
 	onResize(size: TerminalSize): void;
@@ -1153,11 +1153,11 @@ async function resizeLoop(
  * keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
  */
 function route(session: TerminalExchange, chunk: string): void {
-	let keys = "";
+	let keys: string[] = [];
 	const flushKeys = () => {
 		if (keys.length > 0) {
 			session[kHandlers].onKeys(keys);
-			keys = "";
+			keys = [];
 		}
 	};
 	for (const item of session[kWireReader].feed(chunk)) {
@@ -1170,7 +1170,7 @@ function route(session: TerminalExchange, chunk: string): void {
 					session[kHandlers].onCloseRequest();
 					break;
 				}
-				keys += item.token;
+				keys.push(item.token);
 				break;
 			case "mouse":
 				flushKeys();

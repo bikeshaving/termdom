@@ -396,45 +396,6 @@ function clipboardQuery(): string {
 
 /* --------------------------------------------------------- what comes back */
 
-/**
- * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
- * byte), SS3 sequences (ESC O x), and single characters.
- *
- * Fast input arrives batched -- a held arrow key delivers
- * "\x1b[B\x1b[B\x1b[B" in one chunk, and a terminal report can land glued to
- * ordinary keystrokes. Anything that treats a chunk as one key swallows
- * everything after the first token: a held arrow repeated once per chunk
- * instead of once per press, and a stray cursor report ate every key packed
- * behind it.
- */
-export function* tokenizeInput(input: string): Generator<string> {
-	let i = 0;
-	while (i < input.length) {
-		if (input[i] === "\x1b" && i + 1 < input.length) {
-			if (input[i + 1] === "[") {
-				// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
-				let end = i + 2;
-				while (
-					end < input.length &&
-					!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
-				) {
-					end++;
-				}
-				yield input.slice(i, Math.min(end + 1, input.length));
-				i = end + 1;
-				continue;
-			}
-			if (input[i + 1] === "O" && i + 2 < input.length) {
-				yield input.slice(i, i + 3);
-				i += 3;
-				continue;
-			}
-		}
-		yield input[i];
-		i++;
-	}
-}
-
 /** The numbers an SGR mouse escape carries. */
 interface MouseEscape {
 	button: number;
