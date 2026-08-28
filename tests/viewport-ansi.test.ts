@@ -125,10 +125,9 @@ describe("Viewport Integration Tests", () => {
 		expect(lines.filter((l) => l === "No double offset").length).toBe(1);
 	});
 
-	// Push-up (moving the anchor up so overflowing content fits) is not yet
-	// implemented -- see the matching test.todo in viewport.test.ts. Kept here so
-	// the ANSI-path version of the gap stays recorded.
-	test.todo(
+	// The ANSI-path version of the push-up viewport.test.ts asserts through
+	// window.screenTop: the same scenario, read off the bytes instead.
+	test(
 		"content overflowing the space below the anchor pushes up to fit",
 		async () => {
 			const terminal = new MockProcess({rows: 5, cols: 40});

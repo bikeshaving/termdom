@@ -251,7 +251,7 @@ test("Pseudo-element specificity", async () => {
 	termdom.dispose();
 });
 
-test.todo("StyleManager auto-refresh on DOM changes", async () => {
+test("StyleManager auto-refresh on DOM changes", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;

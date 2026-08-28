@@ -849,7 +849,7 @@ test("whitespace next to inline flex items is not an item either", async () => {
 	dom.dispose();
 });
 
-test.todo("white-space: pre keeps whitespace items, per spec", async () => {
+test("white-space: pre keeps whitespace items, per spec", async () => {
 	// The suppression correctly spares this item (pre is not collapsible),
 	// but a pre-existing quirk measures whitespace-only runs at zero width,
 	// so the preserved spaces occupy no cells. The ITEM part of §4 is

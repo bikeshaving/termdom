@@ -357,18 +357,24 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	await nextFrame(dom);
 
 	const meter = document.querySelector("meter") as HTMLMeterElement;
-	// The level is a color, so the three readings differ in SGR and nowhere
-	// else. Above high with the optimum above high is the good one; between
-	// low and high is one region away; below low is two.
-	const optimum = terminal.getStaticANSI();
+	// Each level names its own colour in the UA sheet, so the reading has to
+	// be the SGR itself. Asserting only that the three frames DIFFER proves
+	// nothing: the bar fills proportionally, so 9, 5 and 1 already differ by
+	// fill length whatever colour they are painted in.
+	const sgrOf = (): string => {
+		const match = terminal.getStaticANSI().match(/38;2;(\d+);(\d+);(\d+)/);
+		return match ? `${match[1]},${match[2]},${match[3]}` : "none";
+	};
+	// Above high, with the optimum above high: the good region.
+	expect(sgrOf()).toBe("95,175,95");
+	// Between low and high: one region away from the optimum.
 	meter.setAttribute("value", "5");
 	await nextFrame(dom);
-	const suboptimum = terminal.getStaticANSI();
+	expect(sgrOf()).toBe("215,175,95");
+	// Below low: two regions away.
 	meter.setAttribute("value", "1");
 	await nextFrame(dom);
-	const worst = terminal.getStaticANSI();
-
-	expect(new Set([optimum, suboptimum, worst]).size).toBe(3);
+	expect(sgrOf()).toBe("215,95,95");
 
 	dom.dispose();
 });

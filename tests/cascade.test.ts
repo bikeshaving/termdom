@@ -177,7 +177,7 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("padding")).toBe("0px");
 	});
 
-	test.todo("property inheritance", () => {
+	test("property inheritance", () => {
 		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
@@ -341,7 +341,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("background-color")).toBe("#f0f0f0");
 	});
 
-	test.todo("multiple stylesheets with cascade resolution", () => {
+	test("multiple stylesheets with cascade resolution", () => {
 		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
@@ -370,7 +370,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("margin")).toBe("10px");
 	});
 
-	test.todo("!important declarations", () => {
+	test("!important declarations", () => {
 		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
@@ -394,7 +394,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 	});
 
-	test.todo("complex selectors", () => {
+	test("complex selectors", () => {
 		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
@@ -539,7 +539,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("background-position")).toBe("center");
 	});
 
-	test.todo("CSS media queries", () => {
+	test("CSS media queries", () => {
 		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
