@@ -3,7 +3,16 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import type {EngineWindow, UAToolkit} from "./dom.js";
+import {
+	type EngineWindow,
+	fieldValueText,
+	flatParentElement,
+	getSelectionRange,
+	getShadowRoot,
+	isTextField,
+	renderedTopLayer,
+	selectionRecordOf,
+} from "./dom.js";
 import {
 	type LayoutEngine,
 	flowWalker,
@@ -271,7 +280,6 @@ const kScrollTop = Symbol("scrollTop");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
-const kToolkit = Symbol("toolkit");
 
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal
@@ -308,9 +316,6 @@ export class Painter {
 	// paints that many rows higher, so every band-culling comparison moves
 	// the band by this amount instead of the extents.
 	declare [kScrolledRows]: number;
-	// The UA's capabilities, granted to the engine and shared here: the walk
-	// opens closed shadow trees and reads control selections through it.
-	declare [kToolkit]: UAToolkit;
 
 	constructor(deps: {
 		window: EngineWindow;
@@ -319,7 +324,6 @@ export class Painter {
 		styleManager: StyleManager;
 		scrollTop: () => number;
 		topLayer: Set<Element>;
-		toolkit: UAToolkit;
 	}) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
@@ -329,7 +333,6 @@ export class Painter {
 		this[kStyleManager] = deps.styleManager;
 		this[kScrollTop] = deps.scrollTop;
 		this[kTopLayer] = deps.topLayer;
-		this[kToolkit] = deps.toolkit;
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
@@ -338,7 +341,7 @@ export class Painter {
 		this[kScrolledRows] = 0;
 		const layers = this[kLayout].collectStackingLayers(this[kTopLayer]);
 		renderStackingContext(this, this[kDocument].body, ctx, layers);
-		const rendered = this[kToolkit].renderedTopLayer() as unknown as Element[];
+		const rendered = renderedTopLayer(this[kDocument]) as unknown as Element[];
 		for (const element of rendered) {
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
@@ -547,18 +550,17 @@ function renderElement(
 
 	// The ACTIVE element wears the terminal cursor at the focus of its
 	// selection: a field's caret, a select's label, a toggle's glyph. The
-	// record and the closed tree come through the UA toolkit; the geometry
-	// is the measurement any Range takes. The content origin stands in when
-	// the focus has no box (an empty value); an element with no selection
-	// record leaves the cursor where the frame parked it.
+	// record and the closed tree come through the UA-side accessors; the
+	// geometry is the measurement any Range takes. The content origin stands
+	// in when the focus has no box (an empty value); an element with no
+	// selection record leaves the cursor where the frame parked it.
 	if (rect && visible && element === painter[kDocument].activeElement) {
-		const record = painter[kToolkit].selectionOf(element);
+		const record = selectionRecordOf(element);
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
 			const node =
-				painter[kToolkit].valueTextOf(element) ??
-				getGlyphText(painter, element);
+				fieldValueText(element) ?? getGlyphText(painter, element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -769,9 +771,9 @@ function positionedClipFor(
 ): CellContext["clipRect"] {
 	let clip = contextClip;
 	for (
-		let ancestor = painter[kToolkit].flatParentElement<Element>(element);
+		let ancestor = flatParentElement<Element>(element);
 		ancestor && ancestor !== contextRoot;
-		ancestor = painter[kToolkit].flatParentElement<Element>(ancestor)
+		ancestor = flatParentElement<Element>(ancestor)
 	) {
 		if (!isPositioned(ancestor)) {
 			continue;
@@ -929,7 +931,7 @@ function renderOutsideMarker(
 
 /** The text a toggle's glyph renders through, from its closed tree. */
 function getGlyphText(painter: Painter, element: Element): Text | null {
-	const root = painter[kToolkit].getShadowRoot<ShadowRoot>(element);
+	const root = getShadowRoot<ShadowRoot>(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
 }
@@ -948,7 +950,7 @@ function renderText(
 	// The FLAT-tree parent: slotted bare text draws its inherited styles
 	// through the slot's shadow chain, not from the host it came from, and
 	// the text of a pseudo-element draws the pseudo-element's own.
-	const parentElement = painter[kToolkit].flatParentElement<Element>(textNode);
+	const parentElement = flatParentElement<Element>(textNode);
 	if (!parentElement) {
 		return;
 	}
@@ -1012,8 +1014,8 @@ function selectionRangeFor(
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
 	const active = painter[kDocument].activeElement;
-	if (active && painter[kToolkit].isTextField(active)) {
-		const fieldRange = painter[kToolkit].getSelectionRange(active);
+	if (active && isTextField(active)) {
+		const fieldRange = getSelectionRange(active);
 		// The control's range names the text it renders its value through, so
 		// node identity is the whole test -- no widget anatomy to know.
 		if (fieldRange && fieldRange.startContainer === textNode) {
@@ -1031,9 +1033,7 @@ function selectionRangeFor(
 	if (!documentRange.intersectsNode(textNode)) {
 		return null;
 	}
-	const selectionParent = painter[kToolkit].flatParentElement<Element>(
-		textNode,
-	);
+	const selectionParent = flatParentElement<Element>(textNode);
 	if (!selectionParent) {
 		return null;
 	}

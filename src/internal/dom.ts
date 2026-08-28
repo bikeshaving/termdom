@@ -104,81 +104,6 @@ interface UALineFragment {
 	endOffset: number;
 }
 
-/**
- * The user-agent surface of this module: what an engine does that the DOM API
- * gives an author no way to do. Opening a closed shadow root, reading a
- * control's selection past the type gate the spec puts in front of it,
- * building the UA widgets, the top layer, and dispatch with isTrusted set.
- *
- * These are one object because they are the seam between the DOM and the
- * engines built on it: the cascade, the layout, the input and the renderer
- * take this instead of reaching into two dozen internals apiece. It is not a
- * privilege boundary. The package publishes its entry point and nothing else,
- * so there is no caller this could be kept from.
- */
-export interface UAToolkit {
-	/** Open a closed shadow root. */
-	getShadowRoot<T>(element: object): T | null;
-	/**
-	 * A text control's selection record, past the type gate the author
-	 * meets -- selectionStart is null on a number input per spec, and the
-	 * UA still has a caret to draw. Null for a control with no selection.
-	 */
-	selectionOf(
-		control: object,
-	): {start: number; end: number; direction: string} | null;
-	/** The text node a control's editable value renders through. */
-	valueTextOf(control: object): globalThis.Text | null;
-	/** Whether a control edits text -- the caret-and-chords family. */
-	isTextField(element: {tagName: string; type?: string}): boolean;
-	/** Move a text control's selection, past the type gate the author meets. */
-	setSelection(
-		control: object,
-		start: number,
-		end: number,
-		direction?: string,
-	): void;
-	/** Build a control's UA widget if it has one and does not have it yet. */
-	upgradeWidget(element: object): void;
-	/** Build the UA widgets in a subtree, the root element included. */
-	upgradeWidgetsIn(root: object): void;
-	/** This document's top layer, by reference. */
-	topLayer: Set<Element>;
-	/**
-	 * The top layer's members that are on screen, in the order they joined.
-	 * A member off the flat tree is passed over rather than dropped: it is
-	 * the tree's business whether it comes back, not the reader's.
-	 */
-	renderedTopLayer(): Element[];
-	isModalDialog(node: object): boolean;
-	isShowingPopover(node: object): boolean;
-	topmostAutoPopover(): Element | null;
-	topmostClickedPopover(node: object): Element | null;
-	closePopover(element: object): void;
-	hidePopoversUntil(
-		endpoint: object | null,
-		focusPreviousElement: boolean,
-		fireEvents: boolean,
-	): void;
-	/** The composed-tree walk: the parent through slots and shadow roots. */
-	flatParentElement<T>(node: object): T | null;
-	/** A control's selection as a Range, measured like any document range. */
-	getSelectionRange(control: object): globalThis.Range | null;
-	pseudoElement<T>(host: object, name: string): T | null;
-	pseudoElementCount(host: object): number;
-	getPseudoHost<T>(node: object): T | null;
-	getPseudoName(node: object): string | null;
-	ensurePseudoElement<T>(target: object, name: string): T;
-	clearPseudoElement(host: object, name: string): void;
-	isUAShadowRoot(node: object): boolean;
-	/** How many style elements this document holds. */
-	styleElementCount(): number;
-	/** Dispatch as the user agent: isTrusted true, default actions armed. */
-	dispatchAsUserAgent(target: object, event: object): boolean;
-	/** Empty and mode-lock a clipboard transfer as its dispatch ends. */
-	lockDataTransfer(transfer: object): void;
-}
-
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
 /**
@@ -186,100 +111,12 @@ const kUAEngine = Symbol("the engine a document's UA widgets render through");
  * through. Once per document: a second engine would build every widget a
  * second time, and the two would disagree about what is on screen.
  */
-export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
+export function installUAEngine(document: object, engine: UAEngine): void {
 	const doc = document as Record<symbol, UAEngine | undefined>;
 	if (doc[kUAEngine] !== undefined) {
 		throw new Error("This document already has its user agent.");
 	}
 	doc[kUAEngine] = engine;
-	return uaToolkitFor(document);
-}
-
-/** One toolkit per document: every caller gets the same object. */
-const uaToolkits = new WeakMap<object, UAToolkit>();
-
-/**
- * This document's toolkit, built on first ask. A document with no engine has
- * one too -- the cascade and the layout are built for documents no terminal
- * will ever render, and they need the same seam.
- */
-export function uaToolkitFor(document: object): UAToolkit {
-	let toolkit = uaToolkits.get(document);
-	if (toolkit === undefined) {
-		toolkit = makeUAToolkit(document);
-		uaToolkits.set(document, toolkit);
-	}
-	return toolkit;
-}
-
-function makeUAToolkit(document: object): UAToolkit {
-	return {
-		getShadowRoot,
-		selectionOf(control: object) {
-			const record = (
-				control as {[kUASelection]?: () => ReturnType<typeof getUASelection>}
-			)[kUASelection];
-			return record ? record.call(control) : null;
-		},
-		valueTextOf(control: object): globalThis.Text | null {
-			return fieldValueText(control);
-		},
-		isTextField,
-		setSelection(control, start, end, direction?: string): void {
-			setUASelection(control, start, end, direction);
-		},
-		upgradeWidget(element: object): void {
-			upgradeUAWidget(element);
-		},
-		upgradeWidgetsIn(root: object): void {
-			upgradeUAWidgetsIn(root as Element);
-		},
-		topLayer: getTopLayer(document),
-		renderedTopLayer(): Element[] {
-			const rendered: Element[] = [];
-			for (const element of getTopLayer(document)) {
-				// COMPOSITION-connected: a UA part (the select's picker) lives
-				// in a fragment and is never DOM-connected while very much on
-				// screen.
-				if (flatIsConnected(element)) {
-					rendered.push(element);
-				}
-			}
-			return rendered;
-		},
-		isModalDialog,
-		isShowingPopover,
-		topmostAutoPopover(): Element | null {
-			return topmostAutoPopover(document);
-		},
-		topmostClickedPopover,
-		closePopover,
-		hidePopoversUntil(
-			endpoint: object | null,
-			focusPreviousElement: boolean,
-			fireEvents: boolean,
-		): void {
-			hidePopoversUntil(document, endpoint, focusPreviousElement, fireEvents);
-		},
-		flatParentElement,
-		getSelectionRange,
-		pseudoElement,
-		pseudoElementCount,
-		getPseudoHost,
-		getPseudoName,
-		ensurePseudoElement,
-		clearPseudoElement,
-		isUAShadowRoot,
-		styleElementCount(): number {
-			return styleElementCount(document as Document);
-		},
-		dispatchAsUserAgent(target: object, event: object): boolean {
-			return dispatchAsUserAgent(target as EventTarget, event as Event);
-		},
-		lockDataTransfer(transfer: object): void {
-			lockDataTransfer(transfer as DataTransfer);
-		},
-	};
 }
 
 const kUAUpgrade = Symbol("build a control's UA widget");
@@ -290,7 +127,7 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  * and a control that left the tree and came back only catches up the state it
  * drifted from.
  */
-function upgradeUAWidget(element: object): void {
+export function upgradeUAWidget(element: object): void {
 	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
 }
 
@@ -310,8 +147,8 @@ const UPGRADEABLE_CONTROLS = new Set([
  * query: every insertion pays this, and a document of ordinary markup must pay
  * as little as a tag comparison per element.
  */
-function upgradeUAWidgetsIn(root: Element): void {
-	const stack: Element[] = [root];
+export function upgradeUAWidgetsIn(root: object): void {
+	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
 		if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
@@ -340,10 +177,24 @@ function getUASelection(control: object): {
 	]();
 }
 
+/**
+ * A text control's selection record, past the type gate the author meets --
+ * selectionStart is null on a number input per spec, and the UA still has a
+ * caret to draw. Null for a control with no selection.
+ */
+export function selectionRecordOf(
+	control: object,
+): {start: number; end: number; direction: string} | null {
+	const record = (
+		control as {[kUASelection]?: () => ReturnType<typeof getUASelection>}
+	)[kUASelection];
+	return record ? record.call(control) : null;
+}
+
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Move a text control's selection, past the type gate the author meets. */
-function setUASelection(
+export function setUASelection(
 	control: object,
 	start: number,
 	end: number,
@@ -374,7 +225,7 @@ function widgetChanged(element: object): void {
  * The one spelling of the question: the paint, the caret scroll and the
  * press-to-park default action all have to agree on which elements are fields.
  */
-function isTextField(element: {
+export function isTextField(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
@@ -399,7 +250,7 @@ const kUAValueText = Symbol(
  * editing internals reach it: the renderer reads it to place the caret, the
  * editing path to hit-test a point.
  */
-function fieldValueText(field: object): globalThis.Text | null {
+export function fieldValueText(field: object): globalThis.Text | null {
 	return (
 		(field as Record<
 			symbol,
@@ -422,7 +273,7 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-function getSelectionRange(element: object): globalThis.Range | null {
+export function getSelectionRange(element: object): globalThis.Range | null {
 	return (
 		(element as Record<symbol, (() => globalThis.Range | null) | undefined>)[
 			kUASelectionRange
@@ -2805,7 +2656,7 @@ Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
  * text is theirs to read, and the clipboard is not theirs to rewrite through
  * the event.
  */
-function lockDataTransfer(transfer: DataTransfer): void {
+export function lockDataTransfer(transfer: DataTransfer): void {
 	transfer[kTransferMode] = "readonly";
 }
 
@@ -4074,11 +3925,8 @@ function dispatchFromOutside(
  * focus move becomes a DOM event -- everything a user or the terminal itself
  * caused, as opposed to what an application constructs and dispatches.
  */
-function dispatchAsUserAgent(
-	target: EventTarget,
-	event: Event,
-): boolean {
-	return dispatchFromOutside(target, event, true);
+export function dispatchAsUserAgent(target: object, event: object): boolean {
+	return dispatchFromOutside(target as EventTarget, event as Event, true);
 }
 
 /**
@@ -11608,7 +11456,7 @@ function attachUAShadowRoot<T>(target: object): T {
  * stylesheet of such a tree is a UA rule, which every author rule outranks
  * whatever its specificity.
  */
-function isUAShadowRoot(node: object): boolean {
+export function isUAShadowRoot(node: object): boolean {
 	return node instanceof ShadowRoot && node[kUAInternal]!;
 }
 
@@ -13101,8 +12949,26 @@ const kTopLayer = Symbol("the document's top layer");
  * context of the document, in the order they entered it. Membership is what
  * `showModal` grants and `close` revokes, and what the renderer paints last.
  */
-function getTopLayer(document: object): Set<Element> {
+export function getTopLayer(document: object): Set<Element> {
 	return (document as Document)[kTopLayer]!;
+}
+
+/**
+ * The top layer's members that are on screen, in the order they joined.
+ * A member off the flat tree is passed over rather than dropped: it is
+ * the tree's business whether it comes back, not the reader's.
+ */
+export function renderedTopLayer(document: object): Element[] {
+	const rendered: Element[] = [];
+	for (const element of getTopLayer(document)) {
+		// COMPOSITION-connected: a UA part (the select's picker) lives
+		// in a fragment and is never DOM-connected while very much on
+		// screen.
+		if (flatIsConnected(element)) {
+			rendered.push(element);
+		}
+	}
+	return rendered;
 }
 
 /**
@@ -13111,7 +12977,7 @@ function getTopLayer(document: object): Set<Element> {
  * never puts one there and `close()` takes it out, so there is no second
  * flag to keep in step with the first.
  */
-function isModalDialog(node: object): boolean {
+export function isModalDialog(node: object): boolean {
 	return (
 		node instanceof HTMLDialogElement &&
 		getTopLayer(node[kDocument]!).has(node as Element)
@@ -16848,7 +16714,7 @@ export class HTMLStyleElement extends HTMLElement {
  * whenever one joins or leaves. A cascade polls this to notice a sheet that
  * appeared since it last parsed, which is cheaper than walking for one.
  */
-function styleElementCount(document: Document): number {
+export function styleElementCount(document: Document): number {
 	return document[kStyleElements]!;
 }
 
@@ -18015,7 +17881,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 }
 
 /** Whether an element is a popover in the showing state -- `:popover-open`. */
-function isShowingPopover(node: object): boolean {
+export function isShowingPopover(node: object): boolean {
 	return (
 		node instanceof HTMLElement &&
 		popoverStates.get(node)?.visibility === "showing"
@@ -18038,7 +17904,7 @@ function showingAutoPopovers(document: Document): Element[] {
 }
 
 /** The auto popover on top of a document's stack, or null while none is up. */
-function topmostAutoPopover(document: object): Element | null {
+export function topmostAutoPopover(document: object): Element | null {
 	const popovers = showingAutoPopovers(document as Document);
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
@@ -18289,7 +18155,7 @@ function hidePopover(
  * Close a popover the way a close request does -- Escape on the topmost auto
  * popover -- which is a hide that gives focus back and fires its events.
  */
-function closePopover(element: object): void {
+export function closePopover(element: object): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
@@ -18327,7 +18193,7 @@ function hidePopoverStackUntil(
  * HTML's hide popovers until, which is the stack unwind light dismiss and an
  * opening popover both run. With no hint stack, it is the auto stack's.
  */
-function hidePopoversUntil(
+export function hidePopoversUntil(
 	document: object,
 	endpoint: object | null,
 	focusPreviousElement: boolean,
@@ -18435,7 +18301,7 @@ function popoverStackPosition(popover: Element | null): number {
  * which is the deeper of the popover the node is in and the popover the node
  * invokes. Light dismiss closes everything stacked above it.
  */
-function topmostClickedPopover(node: object): Element | null {
+export function topmostClickedPopover(node: object): Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
 	const target = nearestInclusiveTargetPopover(node as Node);
 	return popoverStackPosition(clicked) > popoverStackPosition(target) ?
@@ -19763,7 +19629,7 @@ function checkValidity(element: Element): boolean {
  * everything the engine already does with an element -- computed style, a box,
  * text children -- works on it unchanged.
  */
-function pseudoElement<T>(host: object, name: string): T | null {
+export function pseudoElement<T>(host: object, name: string): T | null {
 	const slots = (host as Element)[kPseudoElements]!;
 	return slots === null || slots === undefined ?
 		null :
@@ -19781,12 +19647,12 @@ export function pseudoElementCount(host: object): number {
  * every other node: this is what tells a pseudo-element node apart, and where
  * the flat tree finds the parent a node with no parent renders inside.
  */
-function getPseudoHost<T>(node: object): T | null {
+export function getPseudoHost<T>(node: object): T | null {
 	return ((node as Element)[kPseudoHost]! as T) ?? null;
 }
 
 /** The pseudo-element name a slot node fills, such as "::before". */
-function getPseudoName(node: object): string | null {
+export function getPseudoName(node: object): string | null {
 	return (node as Element)[kPseudoName]!;
 }
 
@@ -19795,7 +19661,7 @@ function getPseudoName(node: object): string | null {
  * time it is asked for. The node is an element named after the pseudo-element
  * so a debugger's dump reads plainly; it is never serialized.
  */
-function ensurePseudoElement<T>(target: object, name: string): T {
+export function ensurePseudoElement<T>(target: object, name: string): T {
 	const host = target as Element;
 	let slots = host[kPseudoElements]!;
 	if (slots === null) {
@@ -19813,7 +19679,7 @@ function ensurePseudoElement<T>(target: object, name: string): T {
 }
 
 /** Drop an element's pseudo-element node for a name. */
-function clearPseudoElement(host: object, name: string): void {
+export function clearPseudoElement(host: object, name: string): void {
 	(host as Element)[kPseudoElements]?.delete(name);
 }
 

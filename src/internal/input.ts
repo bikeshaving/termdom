@@ -19,7 +19,20 @@
  * reaches into rendering.
  */
 
-import type {EngineWindow, UAToolkit} from "./dom.js";
+import {
+	type EngineWindow,
+	closePopover,
+	fieldValueText,
+	flatParentElement,
+	getShadowRoot,
+	hidePopoversUntil,
+	isShowingPopover,
+	isTextField,
+	lockDataTransfer,
+	setUASelection,
+	topmostAutoPopover,
+	topmostClickedPopover,
+} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {type StyleManager, getComputedValues} from "./cascade.js";
 import {decodeKey, decodeMouseReport, domCodeFor, tokenizeInput} from
@@ -83,7 +96,6 @@ function getTabIndex(element: Element): number {
 function sequentialFocusEntries(
 	root: Document | Element,
 	layoutEngine: LayoutEngine,
-	toolkit: UAToolkit,
 ): SequentialEntry[] {
 	const isRendered = (element: Element): boolean => {
 		// Browsers keep unrendered elements out of tab order: a hidden
@@ -93,7 +105,7 @@ function sequentialFocusEntries(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = toolkit.flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (getComputedValues(ancestor).getComputedValue("display") === "none") {
 				return false;
@@ -109,7 +121,7 @@ function sequentialFocusEntries(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = toolkit.flatParentElement<Element>(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (ancestor.hasAttribute("inert")) {
 				return true;
@@ -140,7 +152,7 @@ function sequentialFocusEntries(
 			}
 			const element = node as Element;
 			const ownerTabindex = getTabIndex(element);
-			const shadow = toolkit.getShadowRoot(element) as
+			const shadow = getShadowRoot(element) as
 				| ShadowRootLike |
 				null;
 			if (shadow !== null) {
@@ -386,7 +398,6 @@ export interface UADefaultActions {
 const kView = Symbol("view");
 const kHitTest = Symbol("hitTest");
 const kDefaults = Symbol("defaults");
-const kToolkit = Symbol("toolkit");
 const kStyleManager = Symbol("styleManager");
 const kLayout = Symbol("layout");
 const kLastMouse = Symbol("lastMouse");
@@ -407,7 +418,6 @@ export class EventHandler {
 	declare [kView]: EventView;
 	declare [kHitTest]: HitTester;
 	declare [kDefaults]: UADefaultActions;
-	declare [kToolkit]: UAToolkit;
 	declare [kStyleManager]: StyleManager;
 	declare [kLayout]: LayoutEngine;
 
@@ -482,14 +492,12 @@ export class EventHandler {
 		view: EventView;
 		hitTest: HitTester;
 		defaults: UADefaultActions;
-		toolkit: UAToolkit;
 		styleManager: StyleManager;
 		layout: LayoutEngine;
 	}) {
 		this[kView] = deps.view;
 		this[kHitTest] = deps.hitTest;
 		this[kDefaults] = deps.defaults;
-		this[kToolkit] = deps.toolkit;
 		this[kStyleManager] = deps.styleManager;
 		this[kLayout] = deps.layout;
 		this[kLastMouse] = null;
@@ -704,7 +712,7 @@ export class EventHandler {
 				for (
 					let node: Element | null = element;
 					node;
-					node = this[kToolkit].flatParentElement<Element>(node)
+					node = flatParentElement<Element>(node)
 				) {
 					chain.push(node);
 				}
@@ -815,7 +823,7 @@ export class EventHandler {
 				view.document.body;
 		const clipboardData = new view.window.DataTransfer();
 		clipboardData.setData("text/plain", text);
-		this[kToolkit].lockDataTransfer(clipboardData);
+		lockDataTransfer(clipboardData);
 		const proceed = view.fireAsUserAgent(
 			target,
 			new view.window.ClipboardEvent("paste", {
@@ -872,7 +880,7 @@ function dragTo(
 		const {element: fieldElement, offset: anchor} = handler[kFieldDragAnchor];
 		const focus = fieldOffsetAt(handler, fieldElement, x, y);
 		if (focus !== null) {
-			handler[kToolkit].setSelection(
+			setUASelection(
 				fieldElement,
 				Math.min(anchor, focus),
 				Math.max(anchor, focus),
@@ -924,7 +932,7 @@ function press(
 	// The popover a press belongs to, which the release compares
 	// against: light dismiss is a press and a release in the same
 	// place, so a drag out of a popover does not close it.
-	handler[kPopoverPressTarget] = handler[kToolkit].topmostClickedPopover(
+	handler[kPopoverPressTarget] = topmostClickedPopover(
 		target,
 	);
 	handler[kFieldDragAnchor] = null;
@@ -963,13 +971,13 @@ function press(
 	// field's own bounded selectionStart/End world, never the
 	// document selection: the same split a browser makes.
 	const field =
-		base === 0 && inDocument && handler[kToolkit].isTextField(target) ?
+		base === 0 && inDocument && isTextField(target) ?
 				(target as HTMLInputElement | HTMLTextAreaElement) :
 			null;
 	if (field) {
 		const offset = fieldOffsetAt(handler, field, x, y);
 		if (offset !== null) {
-			handler[kToolkit].setSelection(field, offset, offset);
+			setUASelection(field, offset, offset);
 			handler[kFieldDragAnchor] = {element: field, offset};
 			// The DOCUMENT selection still clears on entry -- a page
 			// selection doesn't stay highlighted behind a field click
@@ -1034,11 +1042,14 @@ function release(
 	// counts as part of it, so the click that follows toggles rather than
 	// reopens what this closed. It runs before the click, where a browser
 	// runs it, and no listener can prevent it.
-	const dismissAncestor = handler[kToolkit].topmostClickedPopover(target);
+	const dismissAncestor = topmostClickedPopover(target);
 	const samePopoverPress = dismissAncestor === handler[kPopoverPressTarget];
 	handler[kPopoverPressTarget] = null;
-	if (samePopoverPress && handler[kToolkit].topmostAutoPopover() !== null) {
-		handler[kToolkit].hidePopoversUntil(dismissAncestor, false, true);
+	if (
+		samePopoverPress &&
+		topmostAutoPopover(handler[kView].document) !== null
+	) {
+		hidePopoversUntil(handler[kView].document, dismissAncestor, false, true);
 	}
 	// A selection is only a selection: writing the clipboard is a
 	// deliberate act, through navigator.clipboard. The terminal's own
@@ -1196,8 +1207,8 @@ function dispatchKey(handler: EventHandler, key: string): void {
 	if (keyName === "Escape") {
 		const target = handler[kDefaults].closeRequestTarget();
 		if (target !== null) {
-			if (handler[kToolkit].isShowingPopover(target)) {
-				handler[kToolkit].closePopover(target);
+			if (isShowingPopover(target)) {
+				closePopover(target);
 			} else {
 				(target as HTMLDialogElement).requestClose();
 			}
@@ -1318,19 +1329,18 @@ function insertText(
 /** Focus the next or previous focusable element. */
 function moveFocus(handler: EventHandler, reverse: boolean): void {
 	const view = handler[kView];
-	const toolkit = handler[kToolkit];
 	// A modal dialog makes the rest of the document inert, and the visible
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
 	const scope = handler[kDefaults].modalScope() ?? view.document;
-	const entries = sequentialFocusEntries(scope, handler[kLayout], toolkit);
+	const entries = sequentialFocusEntries(scope, handler[kLayout]);
 
 	// activeElement retargets to the shadow host at document scope; the
 	// walk needs the innermost focused element, so follow each root's own
 	// activeElement down.
 	let current = view.document.activeElement;
 	while (current !== null) {
-		const shadow = toolkit.getShadowRoot<ShadowRoot>(current);
+		const shadow = getShadowRoot<ShadowRoot>(current);
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;
@@ -1421,7 +1431,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 				for (
 					let ancestor: Element | null = element;
 					ancestor !== null;
-					ancestor = toolkit.flatParentElement<Element>(ancestor)
+					ancestor = flatParentElement<Element>(ancestor)
 				) {
 					if (ancestor === owner) {
 						return true;
@@ -1497,7 +1507,7 @@ function selectable(
 	handler: EventHandler,
 	position: {node: Text; offset: number},
 ): boolean {
-	const parent = handler[kToolkit].flatParentElement<Element>(position.node);
+	const parent = flatParentElement<Element>(position.node);
 	return parent === null || handler[kStyleManager].isSelectable(parent);
 }
 
@@ -1516,7 +1526,7 @@ function fieldOffsetAt(
 	// The value's own text: a field's selection is measured in ITS offsets,
 	// and for a password that text is the bullets, which is what was
 	// painted and so what the point lands on.
-	const valueText = handler[kToolkit].valueTextOf(element);
+	const valueText = fieldValueText(element);
 	if (!valueText) {
 		return null;
 	}

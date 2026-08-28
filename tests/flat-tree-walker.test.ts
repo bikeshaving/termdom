@@ -3,26 +3,11 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {
 	createDocumentWindow,
-	type UAToolkit,
-	uaToolkitFor,
+	ensurePseudoElement,
+	getPseudoHost,
+	getPseudoName,
+	pseudoElement,
 } from "../src/internal/dom.js";
-
-function ua(node: object): UAToolkit {
-	return uaToolkitFor((node as {ownerDocument?: object}).ownerDocument ?? node);
-}
-
-function ensurePseudoElement<T>(host: object, name: string): T {
-	return ua(host).ensurePseudoElement<T>(host, name);
-}
-function pseudoElement<T>(host: object, name: string): T | null {
-	return ua(host).pseudoElement<T>(host, name);
-}
-function getPseudoHost<T>(node: object): T | null {
-	return ua(node).getPseudoHost<T>(node);
-}
-function getPseudoName(node: object): string | null {
-	return ua(node).getPseudoName(node);
-}
 import {flowWalker} from "../src/internal/layout.js";
 
 /**

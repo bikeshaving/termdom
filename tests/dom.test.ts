@@ -19,7 +19,7 @@ import {
 	parseHTMLDocument,
 	Text,
 	Window,
-	installUAEngine,
+	isTextField,
 } from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
@@ -1859,13 +1859,12 @@ test("one predicate names the elements that edit text", () => {
 	// this question, and a spelling that forgot `hidden` sent a press on a
 	// hidden input down the field-drag path.
 	const document = make();
-	const toolkit = installUAEngine(document, {} as never);
 	const field = (tag: string, type?: string) => {
 		const element = document.createElement(tag);
 		if (type !== undefined) {
 			(element as any).type = type;
 		}
-		return toolkit.isTextField(element as any);
+		return isTextField(element as any);
 	};
 
 	expect(field("textarea")).toBe(true);

@@ -1,7 +1,12 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {createDocumentWindow, uaToolkitFor} from "../src/internal/dom.js";
+import {
+	createDocumentWindow,
+	getPseudoHost,
+	getPseudoName,
+	pseudoElement,
+} from "../src/internal/dom.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -289,10 +294,9 @@ test("StyleManager auto-refresh on DOM changes", async () => {
 
 test("StyleManager createPseudoElementNode", async () => {
 	// The test is UA-side code: it builds its own cascade over a document
-	// no engine holds, and takes its toolkit the way any user agent would.
+	// no engine holds.
 	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
 	const {document} = window;
-	const toolkit = uaToolkitFor(document);
 
 	const style = document.createElement("style");
 	style.textContent = `
@@ -311,25 +315,25 @@ test("StyleManager createPseudoElementNode", async () => {
 	testDiv.className = "test";
 
 	styleManager.attachPseudoElementsToElement(testDiv);
-	const pseudoNode = toolkit.pseudoElement<Element>(testDiv, "::before");
+	const pseudoNode = pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
-	expect(toolkit.getPseudoName(pseudoNode!)).toBe("::before");
-	expect(toolkit.getPseudoHost(pseudoNode!)).toBe(testDiv);
+	expect(getPseudoName(pseudoNode!)).toBe("::before");
+	expect(getPseudoHost(pseudoNode!)).toBe(testDiv);
 
 	// Test element with no content
 	const emptyDiv = document.createElement("div");
 	emptyDiv.className = "empty";
 
 	styleManager.attachPseudoElementsToElement(emptyDiv);
-	expect(toolkit.pseudoElement(emptyDiv, "::before")).toBeNull();
+	expect(pseudoElement(emptyDiv, "::before")).toBeNull();
 
 	// Test element with content: normal
 	const normalDiv = document.createElement("div");
 	normalDiv.className = "normal";
 
 	styleManager.attachPseudoElementsToElement(normalDiv);
-	expect(toolkit.pseudoElement(normalDiv, "::before")).toBeNull();
+	expect(pseudoElement(normalDiv, "::before")).toBeNull();
 
 	// Test shouldCreatePseudoElement
 	expect(styleManager.shouldCreatePseudoElement(testDiv, "::before")).toBe(

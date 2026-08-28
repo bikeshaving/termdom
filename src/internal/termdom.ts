@@ -80,20 +80,13 @@ function fireAsUserAgent(
 	event: {type: string; key?: string; inputType?: string},
 ): boolean {
 	const engine = engineOfTarget(target);
-	// A mounted target dispatches through its engine's toolkit; a headless
-	// one through its document's, which is the same object either way.
-	const shaped = target as {ownerDocument?: object; document?: object};
-	const toolkit =
-		engine !== undefined ?
-			engine[kUAToolkit] :
-				DOM.uaToolkitFor(shaped.ownerDocument ?? shaped.document ?? target);
 	if (engine === undefined || !isActivationTriggering(event)) {
-		return toolkit.dispatchAsUserAgent(target, event);
+		return DOM.dispatchAsUserAgent(target, event);
 	}
 	engine[kActivationDepth]++;
 	engine[kEverActivated] = true;
 	try {
-		return toolkit.dispatchAsUserAgent(target, event);
+		return DOM.dispatchAsUserAgent(target, event);
 	} finally {
 		engine[kActivationDepth]--;
 	}
@@ -259,7 +252,6 @@ const kScreenSwitching = Symbol("screenSwitching");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 
-const kUAToolkit = Symbol("uaToolkit");
 const kEventHandler = Symbol("eventHandler");
 
 const kResizeTimer = Symbol("resizeTimer");
@@ -351,12 +343,6 @@ export class TermDOM {
 
 	// Monotonic frame counter, used to timestamp observer entries.
 	declare [kRenderCount]: number;
-
-	/**
-	 * The user-agent surface of the DOM module: open a closed shadow root,
-	 * read a control's selection past the type gate, build the UA widgets.
-	 */
-	declare [kUAToolkit]: DOM.UAToolkit;
 
 	// The input interpreter: decoded wire items in, DOM events out, and the
 	// transient gesture state interpretation needs.
@@ -598,7 +584,7 @@ export class TermDOM {
 		// The collaborators a control's own shadow tree renders through. From
 		// here a control builds and keeps its tree itself; the shell only says
 		// when a newly connected one should be upgraded.
-		this[kUAToolkit] = DOM.installUAEngine(this.document, {
+		DOM.installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
 			observer: this[kObserver],
@@ -620,8 +606,7 @@ export class TermDOM {
 			layout: this[kLayoutEngine],
 			styleManager: this[kStyleManager],
 			scrollTop: () => this[kScrollTop],
-			topLayer: this[kUAToolkit].topLayer as unknown as Set<Element>,
-			toolkit: this[kUAToolkit],
+			topLayer: DOM.getTopLayer(this.document) as unknown as Set<Element>,
 		});
 
 		// The session first: the screen measures widths over the session's
@@ -1161,7 +1146,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			);
 			while (current !== null) {
 				stack.push(current);
-				current = termDOM[kUAToolkit].flatParentElement<Element>(current);
+				current = DOM.flatParentElement<Element>(current);
 			}
 			return stack;
 		},
@@ -1175,7 +1160,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			for (
 				let ancestor: Element | null = element;
 				ancestor;
-				ancestor = termDOM[kUAToolkit].flatParentElement<Element>(ancestor)
+				ancestor = DOM.flatParentElement<Element>(ancestor)
 			) {
 				if (styleOf(ancestor).display === "none") {
 					return false;
@@ -1283,13 +1268,12 @@ function createMount(termDOM: TermDOM): EngineMount {
 				}
 			};
 
-			const toolkit = termDOM[kUAToolkit];
 			for (
-				let ancestor = toolkit.flatParentElement<Element>(element);
+				let ancestor = DOM.flatParentElement<Element>(element);
 				ancestor &&
 				ancestor !== termDOM.document.body &&
 				ancestor !== termDOM.document.documentElement;
-				ancestor = toolkit.flatParentElement<Element>(ancestor)
+				ancestor = DOM.flatParentElement<Element>(ancestor)
 			) {
 				const style = getComputedValues(ancestor);
 				const overflow = style.getComputedValue("overflow");
@@ -1572,7 +1556,7 @@ function handlePendingMutations(
 			if (added.nodeType !== added.ELEMENT_NODE) {
 				continue;
 			}
-			termdom[kUAToolkit].upgradeWidgetsIn(added as Element);
+			DOM.upgradeUAWidgetsIn(added);
 		}
 	}
 	termdom[kStyleManager].handleMutations(relevant);
@@ -1590,7 +1574,7 @@ function handlePendingMutations(
 function dropUnfocusableFocus(termdom: TermDOM): void {
 	let active = termdom.document.activeElement;
 	while (active !== null) {
-		const shadow = termdom[kUAToolkit].getShadowRoot<ShadowRoot>(active);
+		const shadow = DOM.getShadowRoot<ShadowRoot>(active);
 		const inner = shadow?.activeElement ?? null;
 		if (inner === null) {
 			break;
@@ -1603,7 +1587,7 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 	for (
 		let node: Element | null = active;
 		node !== null;
-		node = termdom[kUAToolkit].flatParentElement<Element>(node)
+		node = DOM.flatParentElement<Element>(node)
 	) {
 		if (
 			node.hasAttribute("inert") ||
@@ -1714,7 +1698,6 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
 			fullscreenTarget: () => getFullscreenElement(termdom),
 		},
-		toolkit: termdom[kUAToolkit],
 		styleManager: termdom[kStyleManager],
 		layout: termdom[kLayoutEngine],
 	});
@@ -2051,7 +2034,7 @@ function documentPaintHeight(
 ): number {
 	let height = documentFlowHeight(termdom);
 	const rendered =
-		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
 	for (const element of rendered) {
 		// A modal's ::backdrop paints the whole viewport, so the frame
 		// emits that many rows whatever the dialog's own box says. The
@@ -2059,7 +2042,7 @@ function documentPaintHeight(
 		// lets the frame's last rows push the terminal past its bottom,
 		// a physical scroll no bookkeeping records -- and from then on
 		// the anchor lies by that many rows.
-		if (termdom[kUAToolkit].isModalDialog(element)) {
+		if (DOM.isModalDialog(element)) {
 			return termdom[kViewport].height;
 		}
 		const rect = termdom[kLayoutEngine].getRect(element);
@@ -2121,7 +2104,7 @@ function queueCaretReveal(
  * no record: the caret, in the value text's own offsets.
  */
 function getSelectionFocus(termdom: TermDOM, element: Element): number | null {
-	const record = termdom[kUAToolkit].selectionOf(element);
+	const record = DOM.selectionRecordOf(element);
 	if (record === null) {
 		return null;
 	}
@@ -2142,7 +2125,7 @@ function caretRectFor(
 	if (focus === null) {
 		return null;
 	}
-	const node = termdom[kUAToolkit].valueTextOf(element);
+	const node = DOM.fieldValueText(element);
 	if (node === null) {
 		return null;
 	}
@@ -2214,7 +2197,7 @@ function scrollFieldCaretIntoView(
 	termdom: TermDOM,
 	input: HTMLInputElement,
 ): void {
-	const valueText = termdom[kUAToolkit].valueTextOf(input);
+	const valueText = DOM.fieldValueText(input);
 	const valueSpan = valueText?.parentElement as HTMLElement | null;
 	if (!valueText || !valueSpan) {
 		return;
@@ -2616,9 +2599,9 @@ function topmostModalDialog(
 ): HTMLDialogElement | null {
 	let modal: HTMLDialogElement | null = null;
 	const rendered =
-		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
 	for (const element of rendered) {
-		if (termdom[kUAToolkit].isModalDialog(element)) {
+		if (DOM.isModalDialog(element)) {
 			modal = element as HTMLDialogElement;
 		}
 	}
@@ -2634,12 +2617,12 @@ function topmostModalDialog(
 function topmostCloseRequestTarget(
 	termdom: TermDOM,
 ): Element | null {
-	const popover = termdom[kUAToolkit].topmostAutoPopover() as Element | null;
+	const popover = DOM.topmostAutoPopover(termdom.document) as Element | null;
 	let target: Element | null = null;
 	const rendered =
-		termdom[kUAToolkit].renderedTopLayer() as unknown as Element[];
+		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
 	for (const element of rendered) {
-		if (termdom[kUAToolkit].isModalDialog(element) || element === popover) {
+		if (DOM.isModalDialog(element) || element === popover) {
 			target = element;
 		}
 	}
@@ -2663,15 +2646,15 @@ function findElementAtDocumentPoint(
 		termdom.document.documentElement,
 		x,
 		y,
-		termdom[kUAToolkit].topLayer as unknown as Set<Element>,
+		DOM.getTopLayer(termdom.document) as unknown as Set<Element>,
 		termdom[kScrollTop],
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
 	for (
-		let host = element && termdom[kUAToolkit].getPseudoHost<Element>(element);
+		let host = element && DOM.getPseudoHost<Element>(element);
 		host;
-		host = termdom[kUAToolkit].getPseudoHost<Element>(element!)
+		host = DOM.getPseudoHost<Element>(element!)
 	) {
 		element = host;
 	}
@@ -2718,7 +2701,7 @@ function wheelScrollerFor(
 	for (
 		let element: Element | null = target;
 		element && element !== body && element !== root;
-		element = termdom[kUAToolkit].flatParentElement<Element>(element)
+		element = DOM.flatParentElement<Element>(element)
 	) {
 		const style = getComputedValues(element);
 		const overflowY =
@@ -2932,7 +2915,7 @@ async function renderInteractive(
 	const activeField = termdom.document.activeElement;
 	if (
 		activeField instanceof (termdom.window as any).HTMLInputElement &&
-		termdom[kUAToolkit].isTextField(activeField as HTMLInputElement)
+		DOM.isTextField(activeField as HTMLInputElement)
 	) {
 		scrollFieldCaretIntoView(termdom, activeField as HTMLInputElement);
 	}

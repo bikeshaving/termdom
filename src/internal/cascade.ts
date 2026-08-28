@@ -17,8 +17,17 @@ import {
 	getMount,
 	observeTree,
 	type Document as DOMDocument,
-	type UAToolkit,
-	uaToolkitFor,
+	flatParentElement,
+	getShadowRoot,
+	pseudoElement,
+	pseudoElementCount,
+	getPseudoHost,
+	getPseudoName,
+	ensurePseudoElement,
+	clearPseudoElement,
+	isUAShadowRoot,
+	styleElementCount,
+	dispatchAsUserAgent,
 	TransitionEvent,
 	type EngineWindow,
 } from "./dom.js";
@@ -54,67 +63,6 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
-
-// ---------------------------------------------------------------------------
-// The UA toolkit, claimed per document
-//
-// The composed-tree and pseudo-element capabilities come from the claim a
-// StyleManager makes when it is built (or from the engine's own install,
-// which closes further claims). The wrappers below keep the capability
-// per-document while the cascade's call sites stay one name deep.
-// ---------------------------------------------------------------------------
-
-function getUA(node: object): UAToolkit | undefined {
-	if ((node as object | null) == null) {
-		return undefined;
-	}
-	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
-	return uaToolkitFor(n.ownerDocument ?? n.host?.ownerDocument ?? node);
-}
-
-function flatParentElement<T>(node: object): T | null {
-	return getUA(node)?.flatParentElement<T>(node) ?? null;
-}
-
-function getShadowRoot<T>(element: object): T | null {
-	return getUA(element)?.getShadowRoot<T>(element) ?? null;
-}
-
-function pseudoElement<T>(host: object, name: string): T | null {
-	return getUA(host)?.pseudoElement<T>(host, name) ?? null;
-}
-
-function pseudoElementCount(host: object): number {
-	return getUA(host)?.pseudoElementCount(host) ?? 0;
-}
-
-function getPseudoHost<T>(node: object): T | null {
-	return getUA(node)?.getPseudoHost<T>(node) ?? null;
-}
-
-function getPseudoName(node: object): string | null {
-	return getUA(node)?.getPseudoName(node) ?? null;
-}
-
-function ensurePseudoElement<T>(target: object, name: string): T {
-	const ua = getUA(target);
-	if (ua === undefined) {
-		throw new Error("No toolkit claimed for this document.");
-	}
-	return ua.ensurePseudoElement<T>(target, name);
-}
-
-function clearPseudoElement(host: object, name: string): void {
-	getUA(host)?.clearPseudoElement(host, name);
-}
-
-function isUAShadowRoot(node: object): boolean {
-	return getUA(node)?.isUAShadowRoot(node) ?? false;
-}
-
-function styleElementCount(document: DOMDocument): number {
-	return uaToolkitFor(document).styleElementCount();
-}
 
 // ---------------------------------------------------------------------------
 // User-agent element defaults and shorthand expansion
@@ -10320,9 +10268,7 @@ export class StyleManager {
 				for (
 					let ancestor: Element | null = start;
 					ancestor;
-					ancestor = getUA(ancestor)?.flatParentElement<Element>(
-						ancestor,
-					) ?? null
+					ancestor = flatParentElement<Element>(ancestor)
 				) {
 					invalidateElementCaches(this, ancestor);
 				}
@@ -12008,7 +11954,7 @@ function flushTransitionEvents(manager: StyleManager): void {
 			elapsedTime: item.elapsedTime,
 			pseudoElement: item.pseudoElement,
 		});
-		getUA(item.element)?.dispatchAsUserAgent(item.element, event);
+		dispatchAsUserAgent(item.element, event);
 	}
 }
 

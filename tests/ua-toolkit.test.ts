@@ -5,10 +5,12 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
+	getShadowRoot,
 	installUAEngine,
+	selectionRecordOf,
 	type Document,
 	parseHTMLDocument,
-	uaToolkitFor,
+	upgradeUAWidget,
 } from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
@@ -31,18 +33,10 @@ test("a document takes one engine and refuses a second", async () => {
 	dom.dispose();
 });
 
-test("a document has one toolkit, whichever door asks for it", () => {
+test("the UA surface reads past the type gate the author meets", () => {
+	// The test is the user agent here: it upgrades the widgets itself, which
+	// is the path an engine takes.
 	const document = createHTMLDocument();
-	const installed = installUAEngine(document, {} as never);
-	expect(uaToolkitFor(document)).toBe(installed);
-	expect(uaToolkitFor(createHTMLDocument())).not.toBe(installed);
-});
-
-test("the toolkit reads past the type gate the author meets", () => {
-	// The test is the user agent here: it takes the toolkit and upgrades the
-	// widgets itself, which is the path an engine takes.
-	const document = createHTMLDocument();
-	const toolkit = uaToolkitFor(document);
 	document.body!.innerHTML =
 		"<input id=\"n\" type=\"number\" value=\"12\">" +
 		"<input id=\"c\" type=\"checkbox\"><div id=\"d\">plain</div>";
@@ -50,25 +44,25 @@ test("the toolkit reads past the type gate the author meets", () => {
 	const number = document.getElementById("n") as unknown as HTMLInputElement;
 	const checkbox = document.getElementById("c") as unknown as HTMLInputElement;
 	const div = document.getElementById("d")!;
-	toolkit.upgradeWidget(number);
-	toolkit.upgradeWidget(checkbox);
+	upgradeUAWidget(number);
+	upgradeUAWidget(checkbox);
 	// The author-facing API hides a number input's selection per spec.
 	expect(number.selectionStart).toBe(null);
 
-	const record = toolkit.selectionOf(number);
+	const record = selectionRecordOf(number);
 	expect(record).not.toBe(null);
 	expect(typeof record!.start).toBe("number");
 	// A toggle's selection is degenerate: always collapsed, never null --
 	// its focus point is where the cursor parks.
-	const toggled = toolkit.selectionOf(checkbox);
+	const toggled = selectionRecordOf(checkbox);
 	expect(toggled).not.toBe(null);
 	expect(toggled!.start).toBe(toggled!.end);
-	expect(toolkit.selectionOf(div)).toBe(null);
+	expect(selectionRecordOf(div)).toBe(null);
 
-	// A closed root hides from the author and answers to the toolkit.
+	// A closed root hides from the author and answers to the engine.
 	const host = document.createElement("div");
 	document.body.appendChild(host as unknown as globalThis.Node);
 	const closed = host.attachShadow({mode: "closed"});
 	expect(host.shadowRoot).toBe(null);
-	expect(toolkit.getShadowRoot(host)).toBe(closed);
+	expect(getShadowRoot(host)).toBe(closed);
 });
