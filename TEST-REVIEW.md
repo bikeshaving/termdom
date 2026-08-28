@@ -173,3 +173,85 @@ unimplemented; the border half works.
   `npm test` (`SHAPES` is set nowhere; `CLUSTERS`, `SHAPE_CLASSES`, `dialog`,
   and four actions never run). The `made` id (`m0`..`m7`) can never be selected,
   so nothing a script creates can afterwards be removed or restyled.
+
+## 7. The security test cannot fail (highest severity)
+
+**`security.test.ts:40` — reverting the sanitiser leaves this test green.**
+
+`FORBIDDEN_BYTES` deliberately excludes `0x1b`, and none of the four
+`FORBIDDEN_SEQUENCES` (`"\x1b]0;"`, `"\x1b[2J"`, `"\x1b]"`, `"\x1bP"`) can be
+formed by a bare surviving ESC. Verified empirically: splicing a raw ESC back
+into the current output where the payload's would land produces **zero**
+assertion failures. Three of six payloads — `"tail\x1b"`, `"\x1b"`,
+`"edge0123456789012345678\x1b"` — are checked by nothing, and the comment
+names the trailing case as *the one that used to survive*.
+
+Reverting `screen.ts:1031` (`if (code < 0x20 || (code >= 0x7f && code < 0xa0))
+continue;`) would not fail this suite.
+
+**No positive control either.** Every assertion is an absence, so a blank frame
+or a silently-dropped `textContent` passes all six payloads. The sanitised text
+does reach the output today (`before]0;pwnedafter`), so one
+`expect(out).toContain("before]0;pwned")` closes it.
+
+Fix direction: assert on the emitted cell content — the row's text is exactly
+`"tail"` — not only on absent byte patterns.
+
+**`security.test.ts:70` — two of three injection vectors are inert.** The
+`<img onerror>` third can never fire (termdom loads no images; `onerror` exists
+in `src/` only as an attribute-name table entry). And the flag is set on the
+*test realm's* `globalThis`, while `dom.window !== globalThis` — if inline
+handlers were ever compiled they would most plausibly evaluate against the
+document's window, and the test would still read `false`. Assert
+`(dom.window as any).__termdomPwned` too. The `onclick` third is genuine.
+
+## 8. Width oracle generates 87% duplicates
+
+`width-oracle-domain.ts:89` — `seed * 1103515245` reaches ~2.3e18, past 2^53,
+so the low bits are lost before the mask. Measured: the state cycles after
+**16,404 draws**, and `randomMixedStrings()` returns 20,000 entries but only
+**2,581 distinct strings**. The committed oracle stores 20,000 widths for 2,581
+distinct inputs. Determinism is unaffected; the breadth is not there.
+`Math.imul(seed, 1103515245)` restores the full period.
+
+## 9. Three more disabled tests that pass
+
+- `stylesheet.test.ts:254` — "StyleManager auto-refresh on DOM changes" passes
+  completely (black → red on adding a sheet → blue on editing it).
+- `pseudo-element.test.ts:186` — all four rendering assertions pass; the one
+  failure is `shouldCreatePseudoElement(el, "::before")` for `content: ""`,
+  which returns `true`. Per CSS `content: ""` *does* generate an empty box, so
+  the engine looks right and the test's expectation looks wrong.
+- `pseudo-element.test.ts:292` — genuinely fails: `flowWalker(container)` yields
+  only `"MIDDLE"`, never `"BEFORE"`. Either the walker does not enumerate
+  pseudo-elements or the expectation is obsolete. It also names
+  `ExpandedTreeWalker`, which does not exist.
+
+## 10. More stale comments (group 5)
+
+- `viewport.test.ts:67` — `// FAILING: Currently renders at top` on a file that
+  runs 38 passed, 0 failed.
+- `viewport.test.ts:198` — `// TODO: ...when coordinate transformation is
+  implemented`; the very next test proves it is.
+- `viewport.test.ts:1124` — "the bottom sits on the last screen row" is wrong by
+  four rows (measured: `screenTop` 2, content on rows 2–13 of 18).
+- `viewport.test.ts:50` — "leaving 2 lines available"; row 8 of 10 leaves 3, as
+  the same comment says correctly at lines 75 and 234.
+- `css-conformance.test.ts:10` — "Snapshots are Bun-only"; `installSnapshotMatcher`
+  is gated on `!isBrowser`, so they run on node too.
+- `css-conformance.test.ts:373` — `KNOWN_GAPS` is `[]`, so the loop registers
+  zero tests under a three-line comment describing the mechanism.
+
+## 11. Weak security-adjacent assertions worth strengthening
+
+- `width-measurement.test.ts:458` — "takes the rest of its run with it" never
+  checks the rest of the run; `expect(stringWidth(second)).toBe(2)` passes today
+  and would make the test check its name.
+- `width-measurement.test.ts:481` — "a split reply is still a reply" asserts only
+  `keys.length === 0`; discarding the reply entirely also passes. The reply *is*
+  applied (2 → 1 across chunks), so asserting that is free.
+- `observers.test.ts:330` — "fires at every threshold crossing" accepts two
+  callbacks out of six possible.
+- `style-parity.test.ts:176` — `POSITION_DEPENDENT` skips all three margin
+  probes, so five margin rows assert nothing. Measured: only `margin: auto`
+  actually disagrees; the blanket skip is four times broader than the problem.
