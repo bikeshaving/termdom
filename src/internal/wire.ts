@@ -391,7 +391,7 @@ interface MouseEscape {
 }
 
 /** One SGR mouse escape, whole, or null when the token is something else. */
-export function decodeMouseEscape(token: string): MouseEscape | null {
+function decodeMouseEscape(token: string): MouseEscape | null {
 	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 	if (!match) {
 		return null;
@@ -409,117 +409,13 @@ const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
 /**
- * Where a paste begins in a chunk, spliced the way a cursor report is. Two
- * finders rather than one: inside a paste only the end fence means anything,
- * and the caller says which side of the fence it is on by which it asks.
- */
-export function decodePasteStart(
-	chunk: string,
-): {index: number; length: number} | null {
-	const index = chunk.indexOf(PASTE_START);
-	return index === -1 ? null : {index, length: PASTE_START.length};
-}
-
-/** The end fence closing a paste already begun. */
-export function decodePasteEnd(
-	chunk: string,
-): {index: number; length: number} | null {
-	const index = chunk.indexOf(PASTE_END);
-	return index === -1 ? null : {index, length: PASTE_END.length};
-}
-
-/** A CPR reply, as it was spelled, and where in the chunk it sat. */
-interface CursorReport {
-	text: string;
-	row: number;
-	col: number;
-	index: number;
-	length: number;
-}
-
-/**
- * The first cursor-position reply in a chunk that may also hold typing --
- * "jjj\x1b[12;1Rjjj" is one chunk -- so the caller can splice it out and let
- * the keystrokes through.
- */
-export function decodeCursorReport(chunk: string): CursorReport | null {
-	const match = chunk.match(/\x1b\[(\d+);(\d+)R/);
-	if (!match) {
-		return null;
-	}
-	return {
-		text: match[0],
-		row: parseInt(match[1], 10),
-		col: parseInt(match[2], 10),
-		index: match.index ?? 0,
-		length: match[0].length,
-	};
-}
-
-/** A DECRPM reply: the mode asked about, private modes keeping their "?". */
-interface ModeReport {
-	mode: string;
-	value: number;
-	index: number;
-	length: number;
-}
-
-/** The first mode reply in a chunk, spliced the way a cursor report is. */
-export function decodeModeReport(chunk: string): ModeReport | null {
-	const match = chunk.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
-	if (!match) {
-		return null;
-	}
-	return {
-		mode: (match[1] ? "?" : "") + match[2],
-		value: parseInt(match[3], 10),
-		index: match.index ?? 0,
-		length: match[0].length,
-	};
-}
-
-/**
- * An OSC 52 clipboard reply found in a chunk. `text` is null while the
- * terminator has not arrived, and `end` is then the chunk's length: the
- * caller holds the tail and tries again with the next chunk.
- */
-interface ClipboardReply {
-	start: number;
-	end: number;
-	text: string | null;
-}
-
-/**
- * The clipboard reply a chunk carries, or null when it carries none. An OSC
- * ends in BEL or ST, and its body is base64 that no other reader would
- * survive tokenizing, so the whole utterance is read here.
- */
-export function decodeClipboardReply(chunk: string): ClipboardReply | null {
-	const start = chunk.indexOf("\x1b]52;");
-	if (start === -1) {
-		return null;
-	}
-	const reply = chunk
-		.slice(start)
-		.match(/^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/);
-	if (!reply) {
-		return {start, end: chunk.length, text: null};
-	}
-	// A payload no reading rescues answers as an empty clipboard: OSC 52
-	// has no channel for saying more.
-	const decoded = decode64(reply[1]);
-	const text = decoded === null ? "" : new TextDecoder().decode(decoded);
-	return {start, end: start + reply[0].length, text};
-}
-
-/**
  * The length of an incomplete escape sequence at the end of `chunk`, or 0.
  * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
  * arrived, or an SS3 (ESC O) missing its one final character. A bare
  * trailing ESC reports 0 -- it may be the Escape key itself, and holding it
  * for a continuation that never comes would swallow the keystroke.
  */
-export function splitTrailingEscape(chunk: string): number {
+function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
 	if (esc === -1 || esc === chunk.length - 1) {
 		return 0;

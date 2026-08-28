@@ -116,19 +116,8 @@ interface KeyStroke {
 	metaKey: boolean;
 }
 
-/**
- * Resolve one key token into a KeyStroke, or null if the token is a terminal
- * reply rather than a keystroke.
- *
- * A cursor-position report (CSI row;col R) with no query outstanding is a late
- * or duplicate answer, not a key the user pressed -- decoding it as one would
- * dispatch a nonsense event, so it is dropped.
- */
-function decodeKey(token: string): KeyStroke | null {
-	if (/^\x1b\[\d+;\d+R$/.test(token)) {
-		return null;
-	}
-
+/** Resolve one key token into a KeyStroke. */
+function decodeKey(token: string): KeyStroke {
 	let keyName = token;
 	let keyCode = 0;
 	let charCode = token.charCodeAt(0);
@@ -1494,15 +1483,8 @@ function dispatchKey(handler: EventHandler, key: string): void {
 		return;
 	}
 
-	// A cursor position report with no query outstanding is a late or
-	// duplicate terminal reply, not a keystroke: decodeKey returns null and
-	// nothing is dispatched.
-	const stroke = decodeKey(key);
-	if (!stroke) {
-		return;
-	}
 	const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
-		stroke;
+		decodeKey(key);
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
 	if (handler[kStyleManager].setFocusVisible(true)) {

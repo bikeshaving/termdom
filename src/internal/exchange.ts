@@ -16,11 +16,6 @@ import {
 	ansiModeQuery,
 	clipboardQuery,
 	clipboardWrite,
-	decodeClipboardReply,
-	decodeCursorReport,
-	decodeModeReport,
-	decodeMouseEscape,
-	splitTrailingEscape,
 	cursorPositionQuery,
 	eraseToLineEnd,
 	popTitle,
@@ -28,9 +23,7 @@ import {
 	privateModeQuery,
 	pushTitle,
 	setWindowTitle,
-	tokenizeInput,
-	decodePasteEnd,
-	decodePasteStart,
+	WireReader,
 } from "./wire.js";
 
 /* -------------------------------------------------- the transport contract */
@@ -229,8 +222,7 @@ const kDisposed = Symbol("disposed");
 const kLastWrite = Symbol("lastWrite");
 const kWriteBatch = Symbol("writeBatch");
 
-const kPasteBuffer = Symbol("pasteBuffer");
-const kPartialEscape = Symbol("partialEscape");
+const kWireReader = Symbol("wireReader");
 
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
@@ -246,9 +238,7 @@ const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 
 const kClipboardHandler = Symbol("clipboardHandler");
 const kClipboardTimer = Symbol("clipboardTimer");
-const kClipboardBuffer = Symbol("clipboardBuffer");
 const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
-const kClipboardReplyLimit = Symbol("clipboardReplyLimit");
 
 const kProbingEnded = Symbol("probingEnded");
 const kWidthProbes = Symbol("widthProbes");
@@ -274,11 +264,11 @@ const kWidthRunLost = Symbol("widthRunLost");
  * demultiplexer between them.
  *
  * Everything the wire carries arrives interleaved on one byte stream -- that
- * is the terminal protocol's nature -- so this is where it fans out:
- * bracketed-paste bodies, DECRPM mode replies and DSR cursor replies (spliced
- * out and routed to whichever query waits), mouse reports, and finally
- * keystrokes. The engine sees typed callbacks and dispatches DOM events; no
- * other layer parses input.
+ * is the terminal protocol's nature. The wire's reader says what each chunk
+ * meant, and this is where the items fan out: pastes, DECRPM mode replies and
+ * DSR cursor replies to whichever query waits, mouse reports, keystrokes. The
+ * engine sees typed callbacks and dispatches DOM events; no other layer
+ * parses input.
  *
  * The query half is the round-trips the engine cannot have synchronously. A
  * DSR cursor query locates the command-start row so the painted region
@@ -305,22 +295,19 @@ export class TerminalExchange {
 	// The last queued write, so flush() can await everything before it.
 	declare [kLastWrite]: Promise<void>;
 
-	// Body of a bracketed paste (ESC[200~..ESC[201~) across chunks; null when
-	// no paste is in flight.
-	declare [kPasteBuffer]: string | null;
-	// A trailing incomplete escape sequence, held for the next chunk: network
-	// transports fragment arbitrarily, and half a CSI decodes as garbage
-	// keystrokes. A bare trailing ESC is NOT held -- it is the Escape key
-	// far more often than a split, and holding it would delay every Escape.
-	declare [kPartialEscape]: string;
+	// The wire's read-side syntax and its cross-chunk state -- split escapes,
+	// an open paste body, an open clipboard reply -- live in the reader; this
+	// class only dispatches the items it returns.
+	declare [kWireReader]: WireReader;
 
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
 	declare [kHasDetectedCommandStart]: boolean;
-	// The pending DSR reply handler and its timeout. Cursor detection and the
-	// resize re-anchor share these slots so input routing and dispose can see
-	// them; overlapping queries check handler identity before clearing.
-	declare [kCursorDetectionHandler]: ((data: string) => void) | null;
+	// The pending DSR reply handler and its timeout, called with the reply's
+	// 1-based row. Cursor detection and the resize re-anchor share these slots
+	// so input routing and dispose can see them; overlapping queries check
+	// handler identity before clearing.
+	declare [kCursorDetectionHandler]: ((row: number) => void) | null;
 	declare [kCursorDetectionTimer]: ReturnType<typeof setTimeout> | null;
 	// Resolves when startup command-start detection settles (or times out), so
 	// the first frame waits for the anchor rather than painting at row 0 first.
@@ -336,16 +323,12 @@ export class TerminalExchange {
 	declare [kModeProbeTimers]: Set<ReturnType<typeof setTimeout>>;
 	/**
 	 * The outstanding OSC 52 clipboard query: the handler its reply resolves,
-	 * the timeout that gives up on it, and the half of a reply held for the
-	 * next chunk. One query at a time -- the reply carries no sequence, so a
-	 * second would have nothing to be told apart by.
-	 *
-	 * The buffer is only ever non-null while a query is outstanding, so a
-	 * typed ESC ] is routed as keystrokes exactly as before.
+	 * and the timeout that gives up on it. One query at a time -- the reply
+	 * carries no sequence, so a second would have nothing to be told apart
+	 * by. A reply arriving with no query outstanding is dropped.
 	 */
 	declare [kClipboardHandler]: ((payload: string | null) => void) | null;
 	declare [kClipboardTimer]: ReturnType<typeof setTimeout> | null;
-	declare [kClipboardBuffer]: string | null;
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	declare [kPriorBidiMode]: number | null;
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
@@ -442,12 +425,6 @@ export class TerminalExchange {
 	 * that does answer answers at typing latency.
 	 */
 	static readonly [kClipboardQueryTimeout] = 500;
-	/**
-	 * The most of a clipboard reply that is held while its terminator is
-	 * awaited. A larger payload is not a clipboard the terminal is answering
-	 * with, and the query gives up rather than buffer the wire.
-	 */
-	static readonly [kClipboardReplyLimit] = 1 << 16;
 
 	/**
 	 * The frame's channel for measuring cluster advances. Whether asking is
@@ -470,8 +447,7 @@ export class TerminalExchange {
 		this[kStarted] = false;
 		this[kDisposed] = false;
 		this[kLastWrite] = Promise.resolve();
-		this[kPasteBuffer] = null;
-		this[kPartialEscape] = "";
+		this[kWireReader] = new WireReader();
 		this[kHasDetectedCommandStart] = false;
 		this[kCursorDetectionHandler] = null;
 		this[kCursorDetectionTimer] = null;
@@ -480,7 +456,6 @@ export class TerminalExchange {
 		this[kModeProbeTimers] = new Set<ReturnType<typeof setTimeout>>();
 		this[kClipboardHandler] = null;
 		this[kClipboardTimer] = null;
-		this[kClipboardBuffer] = null;
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
@@ -804,8 +779,6 @@ export class TerminalExchange {
 				return;
 			}
 
-			let responseBuffer = "";
-
 			const finish = () => {
 				this[kCursorDetectionHandler] = null;
 				if (this[kCursorDetectionTimer] !== null) {
@@ -814,19 +787,14 @@ export class TerminalExchange {
 				}
 			};
 
-			this[kCursorDetectionHandler] = (dataStr: string) => {
-				responseBuffer += dataStr;
+			this[kCursorDetectionHandler] = (row: number) => {
+				finish();
 
-				const match = decodeCursorReport(responseBuffer);
-				if (match) {
-					finish();
+				// Convert 1-based terminal row to the 0-based anchor.
+				this[kHandlers].onCommandStart(row - 1);
 
-					// Convert 1-based terminal row to the 0-based anchor.
-					this[kHandlers].onCommandStart(match.row - 1);
-
-					this[kHasDetectedCommandStart] = true;
-					resolve(match.row);
-				}
+				this[kHasDetectedCommandStart] = true;
+				resolve(row);
 			};
 
 			this[kCursorDetectionSequence] = this[kDsrSequence]++;
@@ -866,25 +834,20 @@ export class TerminalExchange {
 			// dispose can see them), so every cleanup must check identity before
 			// clearing -- otherwise a superseded query's cleanup kills its
 			// successor's handler and timeout, and that resize never redraws.
-			let responseBuffer = "";
 			let localTimer: ReturnType<typeof setTimeout> | null = null;
 
-			const handler = (dataStr: string) => {
-				responseBuffer += dataStr;
-				const match = decodeCursorReport(responseBuffer);
-				if (match) {
-					if (this[kCursorDetectionHandler] === handler) {
-						this[kCursorDetectionHandler] = null;
-					}
-					if (localTimer !== null) {
-						clearTimeout(localTimer);
-						if (this[kCursorDetectionTimer] === localTimer) {
-							this[kCursorDetectionTimer] = null;
-						}
-						localTimer = null;
-					}
-					resolve(match.row - 1);
+			const handler = (row: number) => {
+				if (this[kCursorDetectionHandler] === handler) {
+					this[kCursorDetectionHandler] = null;
 				}
+				if (localTimer !== null) {
+					clearTimeout(localTimer);
+					if (this[kCursorDetectionTimer] === localTimer) {
+						this[kCursorDetectionTimer] = null;
+					}
+					localTimer = null;
+				}
+				resolve(row - 1);
 			};
 
 			// Replacing a stale handler is fine: its own timeout still fires and
@@ -1192,22 +1155,13 @@ async function readLoop(
 			if (!value) {
 				continue;
 			}
-			let chunk = session[kPartialEscape] + value;
-			session[kPartialEscape] = "";
-			const held = splitTrailingEscape(chunk);
-			if (held > 0 && held <= 32) {
-				session[kPartialEscape] = chunk.slice(-held);
-				chunk = chunk.slice(0, -held);
-			}
-			if (chunk) {
-				try {
-					route(session, chunk);
-				} catch (err) {
-					// Only the read can tell the conversation is over, so a
-					// throw from routing -- a decode, a listener -- costs its
-					// chunk and no more.
-					reportInputFailure(err);
-				}
+			try {
+				route(session, value);
+			} catch (err) {
+				// Only the read can tell the conversation is over, so a
+				// throw from routing -- a decode, a listener -- costs its
+				// chunk and no more.
+				reportInputFailure(err);
 			}
 		}
 	} catch (_err) {
@@ -1236,114 +1190,62 @@ async function resizeLoop(
 }
 
 /**
- * The demultiplexer. One route table for everything the wire carries, in
- * priority order; re-entered with the remainder whenever a reply or paste
- * fence is spliced out of a chunk that also holds real typing.
+ * The demultiplexer: one pass over what the reader says a chunk meant, in
+ * stream order. Contiguous key tokens are batched into one onKeys call;
+ * everything else is dispatched where it stands, so a report glued to fast
+ * keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
  */
-function route(
-	session: TerminalExchange,
-	dataStr: string,
-): void {
-	// Bracketed paste: its body is literal text (a pasted newline must not
-	// fire Enter), buffered across chunks until ESC[201~. Checked before the
-	// report routes so paste content isn't parsed as a reply.
-	if (session[kPasteBuffer] !== null) {
-		const end = decodePasteEnd(dataStr);
-		if (end === null) {
-			session[kPasteBuffer] += dataStr;
-			return;
+function route(session: TerminalExchange, chunk: string): void {
+	let keys = "";
+	const flushKeys = () => {
+		if (keys.length > 0) {
+			session[kHandlers].onKeys(keys);
+			keys = "";
 		}
-		session[kHandlers].onPaste(
-			session[kPasteBuffer] + dataStr.slice(0, end.index),
-		);
-		session[kPasteBuffer] = null;
-		const after = dataStr.slice(end.index + end.length);
-		if (after.length) {
-			route(session, after);
-		}
-		return;
-	}
-	const start = decodePasteStart(dataStr);
-	if (start !== null) {
-		const before = dataStr.slice(0, start.index);
-		if (before.length) {
-			route(session, before);
-		}
-		session[kPasteBuffer] = "";
-		route(session, dataStr.slice(start.index + start.length));
-		return;
-	}
-
-	// The clipboard reply, while one is asked for: its base64 body would not
-	// survive tokenization, and it can arrive split, so it is taken out of
-	// the chunk before anything else looks at it.
-	if (session[kClipboardHandler] !== null) {
-		const rest = routeClipboardReply(session, dataStr);
-		if (rest !== null) {
-			if (rest.length > 0) {
-				route(session, rest);
-			}
-			return;
-		}
-	}
-
-	// Replies (highest priority): the terminal's answer about a mode
-	// (DECRPM) or the cursor position (DSR). Fast typing can land in the
-	// same chunk as a report -- "jjj\x1b[12;1Rjjj" -- so hand the report to
-	// the waiting query and let the rest continue through as keystrokes.
-	const modeReport = decodeModeReport(dataStr);
-	if (
-		modeReport &&
-		feedModeReport(session, modeReport.mode, modeReport.value)
-	) {
-		const rest =
-			dataStr.slice(0, modeReport.index) +
-			dataStr.slice(modeReport.index + modeReport.length);
-		if (rest.length > 0) {
-			route(session, rest);
-		}
-		return;
-	}
-
-	const report = decodeCursorReport(dataStr);
-	if (report && feedCursorReport(session, report.text, report.col)) {
-		const rest =
-			dataStr.slice(0, report.index) +
-			dataStr.slice(report.index + report.length);
-		if (rest.length > 0) {
-			route(session, rest);
-		}
-		return;
-	}
-
-	// Ctrl-C: raw mode delivers it as data, and its default action is the
-	// engine's to decide (window.close()), not this layer's.
-	if (dataStr.charCodeAt(0) === 0x03) {
-		session[kHandlers].onCloseRequest();
-		return;
-	}
-
-	// SGR mouse reports, peeled off token by token so a report glued to
-	// fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
-	let keyInput = "";
-	for (const token of tokenizeInput(dataStr)) {
-		const mouse = decodeMouseEscape(token);
-		if (mouse) {
-			session[kHandlers].onMouse(
-				mouse.button,
-				mouse.col,
-				mouse.row,
-				mouse.release,
-			);
-		} else {
-			keyInput += token;
+	};
+	for (const item of session[kWireReader].feed(chunk)) {
+		switch (item.kind) {
+			case "key":
+				// Ctrl-C: raw mode delivers it as data, and its default action
+				// is the engine's to decide (window.close()), not this layer's.
+				if (item.token === "\x03") {
+					flushKeys();
+					session[kHandlers].onCloseRequest();
+					break;
+				}
+				keys += item.token;
+				break;
+			case "mouse":
+				flushKeys();
+				session[kHandlers].onMouse(
+					item.button,
+					item.col,
+					item.row,
+					item.release,
+				);
+				break;
+			case "paste":
+				flushKeys();
+				session[kHandlers].onPaste(item.text);
+				break;
+			case "cursor-report":
+				flushKeys();
+				feedCursorReport(session, item.row, item.col);
+				break;
+			case "mode-report":
+				flushKeys();
+				feedModeReport(session, item.mode, item.value);
+				break;
+			case "clipboard":
+				flushKeys();
+				// An answer nobody asked for is dropped, never typed.
+				if (session[kClipboardHandler] !== null) {
+					settleClipboardQuery(session, item.text);
+				}
+				break;
 		}
 	}
-	if (keyInput.length === 0) {
-		return;
-	}
-
-	session[kHandlers].onKeys(keyInput);
+	flushKeys();
 }
 
 /* ------------------------------------------------------- query correlation */
@@ -1363,62 +1265,24 @@ function settleClipboardQuery(
 		session[kClipboardTimer] = null;
 	}
 	session[kClipboardHandler] = null;
-	session[kClipboardBuffer] = null;
 	waiting?.(payload);
 }
 
 /**
- * Take the OSC 52 reply out of a chunk that may also hold typing, or say the
- * chunk is not one. Returns the remainder to route on as ordinary input, or
- * null for "no reply here, route the whole chunk yourself".
- *
- * An OSC carries base64 and ends in BEL or ST, and no other branch of the
- * route table knows either, so a reply split across chunks would be shredded
- * into keystrokes. It is held whole here instead -- only while a query is
- * outstanding, so nothing a user types is ever held.
+ * Route a DECRPM mode reply to whichever negotiation is waiting on it. One
+ * that nothing waits on is a late or duplicate answer, and is dropped.
  */
-function routeClipboardReply(
-	session: TerminalExchange,
-	dataStr: string,
-): string | null {
-	let chunk = dataStr;
-	if (session[kClipboardBuffer] !== null) {
-		chunk = session[kClipboardBuffer] + chunk;
-		session[kClipboardBuffer] = null;
-	}
-	const reply = decodeClipboardReply(chunk);
-	if (reply === null) {
-		return null;
-	}
-	const before = chunk.slice(0, reply.start);
-	if (reply.text === null) {
-		// The terminator has not arrived. Hold the fragment for the next chunk
-		// and let whatever preceded it through as input.
-		const held = chunk.slice(reply.start);
-		if (held.length <= TerminalExchange[kClipboardReplyLimit]) {
-			session[kClipboardBuffer] = held;
-			return before;
-		}
-		settleClipboardQuery(session, null);
-		return before;
-	}
-	settleClipboardQuery(session, reply.text);
-	return before + chunk.slice(reply.end);
-}
-
-/** Route a DECRPM mode reply to whichever negotiation is waiting on it. */
 function feedModeReport(
 	session: TerminalExchange,
 	mode: string,
 	value: number,
-): boolean {
+): void {
 	const waiting = session[kModeProbeHandlers].get(mode);
 	if (!waiting) {
-		return false;
+		return;
 	}
 	session[kModeProbeHandlers].delete(mode);
 	waiting(value);
-	return true;
 }
 
 /**
@@ -1428,27 +1292,25 @@ function feedModeReport(
  * start, resize re-anchor) and the width probes a frame appends after a
  * cluster -- and a terminal answers DSR in the order it was asked. So the
  * oldest outstanding query owns the reply, and neither kind can take the
- * other's.
+ * other's. A reply nothing waits on is a late or duplicate answer: dropped.
  */
 function feedCursorReport(
 	session: TerminalExchange,
-	report: string,
+	row: number,
 	column: number,
-): boolean {
+): void {
 	const probe = session[kWidthProbes][0];
 	if (
 		session[kCursorDetectionHandler] !== null &&
 		(probe === undefined || session[kCursorDetectionSequence] < probe.sequence)
 	) {
-		session[kCursorDetectionHandler](report);
-		return true;
+		session[kCursorDetectionHandler](row);
+		return;
 	}
 	if (probe !== undefined) {
 		session[kWidthProbes].shift();
 		settleWidthProbe(session, probe, column);
-		return true;
 	}
-	return false;
 }
 
 /**
