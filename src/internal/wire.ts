@@ -108,7 +108,7 @@ export function sgrReset(): string {
  * eight the oldest terminals have. Parameters, not a whole SGR -- a run of
  * them shares one escape.
  */
-export function sgrColor(
+function sgrColor(
 	color: number,
 	isFg: boolean,
 	colorDepth: ColorDepth,
@@ -265,7 +265,7 @@ for (let i = 0; i < BASE64_ALPHABET.length; i++) {
 }
 
 /** Padded base64, as OSC 52 carries a clipboard payload. */
-export function encode64(bytes: Uint8Array): string {
+function encode64(bytes: Uint8Array): string {
 	let out = "";
 	let i = 0;
 	for (; i + 2 < bytes.length; i += 3) {
@@ -297,7 +297,7 @@ export function encode64(bytes: Uint8Array): string {
  * both. Null for a payload no reading rescues -- a digit count of one past
  * a four-digit boundary carries no byte.
  */
-export function decode64(text: string): Uint8Array | null {
+function decode64(text: string): Uint8Array | null {
 	const bytes = new Uint8Array((text.length * 3) >> 2);
 	let held = 0;
 	let bits = 0;
@@ -344,9 +344,9 @@ export function setWindowTitle(text: string): string {
 	return `\x1b]2;${title}\x07`;
 }
 
-/** OSC 52: put base64 payload on the terminal's clipboard. */
-export function clipboardWrite(payload: string): string {
-	return `\x1b]52;c;${payload}\x07`;
+/** OSC 52: put text on the terminal's clipboard. */
+export function clipboardWrite(text: string): string {
+	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 
 /** OSC 52 with "?": ask the terminal for the clipboard's contents. */
@@ -748,7 +748,7 @@ export const PASTE_START = "\x1b[200~";
 export const PASTE_END = "\x1b[201~";
 
 /** The numbers an SGR mouse escape carries. */
-export interface MouseEscape {
+interface MouseEscape {
 	button: number;
 	col: number;
 	row: number;
@@ -770,7 +770,7 @@ export function decodeMouseEscape(token: string): MouseEscape | null {
 }
 
 /** A CPR reply, as it was spelled, and where in the chunk it sat. */
-export interface CursorReport {
+interface CursorReport {
 	text: string;
 	row: number;
 	col: number;
@@ -798,7 +798,7 @@ export function decodeCursorReport(chunk: string): CursorReport | null {
 }
 
 /** A DECRPM reply: the mode asked about, private modes keeping their "?". */
-export interface ModeReport {
+interface ModeReport {
 	mode: string;
 	value: number;
 	index: number;
@@ -824,7 +824,7 @@ export function decodeModeReport(chunk: string): ModeReport | null {
  * terminator has not arrived, and `end` is then the chunk's length: the
  * caller holds the tail and tries again with the next chunk.
  */
-export interface ClipboardReply {
+interface ClipboardReply {
 	start: number;
 	end: number;
 	text: string | null;

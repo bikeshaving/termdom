@@ -8,7 +8,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {decode64, encode64} from "../src/internal/wire.js";
+import {clipboardWrite, decodeClipboardReply} from "../src/internal/wire.js";
 import {transportFromProcess} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
@@ -659,19 +659,18 @@ test("permissions.query refuses a name that is not one", async () => {
 });
 
 test("the wire's base64 tolerates what terminals send", () => {
-	const bytes = (text: string) => new TextEncoder().encode(text);
-	const read = (payload: string) => {
-		const decoded = decode64(payload);
-		return decoded === null ? null : new TextDecoder().decode(decoded);
-	};
-	expect(encode64(bytes("hi"))).toBe("aGk=");
+	const read = (payload: string) =>
+		decodeClipboardReply(`\x1b]52;c;${payload}\x07`)!.text;
+	expect(clipboardWrite("hi")).toBe("\x1b]52;c;aGk=\x07");
 	expect(read("aGk=")).toBe("hi");
 	expect(read("aGk")).toBe("hi");
 	expect(read("aG\r\nk=")).toBe("hi");
 	expect(read("=aGk=")).toBe("hi");
 	expect(read("")).toBe("");
-	expect(read("A")).toBe(null);
-	expect(read("aGkAB")).toBe(null);
+	// A payload no reading rescues answers as an empty clipboard: OSC 52
+	// has no channel for saying more.
+	expect(read("A")).toBe("");
+	expect(read("aGkAB")).toBe("");
 	const long = "x".repeat(300);
-	expect(read(encode64(bytes(long)))).toBe(long);
+	expect(decodeClipboardReply(clipboardWrite(long))!.text).toBe(long);
 });
