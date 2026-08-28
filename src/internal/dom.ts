@@ -20415,51 +20415,50 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	 * what was last reported for it. One entry per target, as the DOM says: a
 	 * second observe() of the same target replaces the first's options.
 	 */
-	[kTargets]?: Map<
+	[kTargets]: Map<
 		globalThis.Element,
 		{options: TOptions | undefined; last: TState | null}
 	>;
 
 	/** The documents running this observer, one per document it has a target in. */
-	[kHomes]?: Set<Set<AnyObserver>>;
+	[kHomes]: Set<object>;
 
 	constructor() {
 		this[kTargets] = new Map<
 			globalThis.Element,
 			{options: TOptions | undefined; last: TState | null}
 		>();
-		this[kHomes] = new Set<Set<AnyObserver>>();
+		this[kHomes] = new Set<object>();
 	}
 
 	observe(target: globalThis.Element, options?: TOptions): void {
 		// A fresh target has no last state, so its first measurement always counts
 		// as a change -- which is what fires the initial callback the DOM promises.
-		this[kTargets]!.set(target, {
+		this[kTargets].set(target, {
 			options,
-			last: this[kTargets]!.get(target)?.last ?? null,
+			last: this[kTargets].get(target)?.last ?? null,
 		});
 		const document = target.ownerDocument;
 		if (document === null) {
 			return;
 		}
-		const observers = getObservers(document);
-		observers.add(this as unknown as AnyObserver);
-		this[kHomes]!.add(observers);
+		getObservers(document).add(this as unknown as AnyObserver);
+		this[kHomes].add(document);
 	}
 
 	unobserve(target: globalThis.Element): void {
-		this[kTargets]!.delete(target);
-		if (this[kTargets]!.size === 0) {
+		this[kTargets].delete(target);
+		if (this[kTargets].size === 0) {
 			this.disconnect();
 		}
 	}
 
 	disconnect(): void {
-		this[kTargets]!.clear();
-		for (const observers of this[kHomes]!) {
-			observers.delete(this as unknown as AnyObserver);
+		this[kTargets].clear();
+		for (const document of this[kHomes]) {
+			documentObservers.get(document)?.delete(this as unknown as AnyObserver);
 		}
-		this[kHomes]!.clear();
+		this[kHomes].clear();
 	}
 
 	/**
@@ -20472,7 +20471,7 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	}
 
 	/** Measure one target: its new state, and the entry to report, or null. */
-	abstract [kMeasure]?(
+	abstract [kMeasure](
 		target: globalThis.Element,
 		last: TState | null,
 		layoutEngine: LayoutEngine,
@@ -20481,7 +20480,7 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		options: TOptions | undefined,
 	): {state: TState; entry: TEntry} | null;
 
-	abstract [kDeliver]?(entries: TEntry[]): void;
+	abstract [kDeliver](entries: TEntry[]): void;
 }
 
 function checkObserver<TState, TEntry, TOptions = void>(
@@ -20491,8 +20490,8 @@ function checkObserver<TState, TEntry, TOptions = void>(
 	frame: number,
 ): void {
 	const entries: TEntry[] = [];
-	for (const [target, observation] of observer[kTargets]!) {
-		const result = observer[kMeasure]!(
+	for (const [target, observation] of observer[kTargets]) {
+		const result = observer[kMeasure](
 			target,
 			observation.last,
 			layoutEngine,
@@ -20507,7 +20506,7 @@ function checkObserver<TState, TEntry, TOptions = void>(
 		entries.push(result.entry);
 	}
 	if (entries.length > 0) {
-		observer[kDeliver]!(entries);
+		observer[kDeliver](entries);
 	}
 }
 
@@ -20577,7 +20576,7 @@ export class ResizeObserver extends LayoutObserver<
 		super.observe(target, options);
 	}
 
-	[kMeasure]?(
+	[kMeasure](
 		target: globalThis.Element,
 		last: ResizeSize | null,
 		layoutEngine: LayoutEngine,
@@ -20641,7 +20640,7 @@ export class ResizeObserver extends LayoutObserver<
 		};
 	}
 
-	[kDeliver]?(entries: ResizeObserverEntry[]): void {
+	[kDeliver](entries: ResizeObserverEntry[]): void {
 		this[kObserverCallback]!(entries, this);
 	}
 }
@@ -20763,7 +20762,7 @@ export class IntersectionObserver extends LayoutObserver<
 		return this[kIntersectionRoot]!;
 	}
 
-	[kMeasure]?(
+	[kMeasure](
 		target: globalThis.Element,
 		last: number | null,
 		layoutEngine: LayoutEngine,
@@ -20808,7 +20807,7 @@ export class IntersectionObserver extends LayoutObserver<
 		};
 	}
 
-	[kDeliver]?(entries: IntersectionObserverEntry[]): void {
+	[kDeliver](entries: IntersectionObserverEntry[]): void {
 		this[kObserverCallback]!(entries, this);
 	}
 }
