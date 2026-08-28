@@ -1,7 +1,11 @@
 /**
  * The paint walk: a document's boxes in paint order, resolved to styled cells.
  *
- * It reads the DOM, computed styles and geometry, and writes nothing but cells.
+ * It reads the DOM, computed styles and geometry, changes none of them, and
+ * writes only into the CellContext it is handed. Start at Painter.paint and
+ * follow the three functions under it: renderStackingContext puts the layers
+ * of one stacking context in CSS order, renderElement paints one box and walks
+ * its in-flow children, and renderText draws the runs inside it.
  */
 import {
 	type EngineWindow,
@@ -28,7 +32,6 @@ import {
 	resolveBorderSides,
 } from "./cascade.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
-
 import type {CellStyle, CellContext, LineStyle} from "./screen.js";
 
 /**
@@ -172,10 +175,7 @@ function backgroundFill(value: string): number | "default" | "inverse" | null {
 	return cssColorToNumber(value);
 }
 
-/**
- * A computed style reduced to terminal cell attributes -- one mapping,
- * shared by text nodes and the input painter's shadow parts.
- */
+/** A computed style reduced to the cell attributes a text run draws with. */
 function cellStyleFromComputed(
 	computedStyle: ComputedValues,
 ): CellStyle {
@@ -290,11 +290,10 @@ const kScrolledRows = Symbol("scrolledRows");
  * scheduling and mutates no DOM -- callers hand it a fresh context and call
  * {@link Painter.paint}.
  *
- * Two pieces of render state are shared with TermDOM rather than owned here: the
- * top layer (the shell decides what is promoted; the walk only reads and prunes
- * disconnected members) and the per-field scroll offsets (the walk writes them
- * as it windows an overflowing value; hit-testing reads them back). Both arrive
- * by reference through the constructor.
+ * The top layer is the one piece of render state shared with TermDOM rather
+ * than owned here: the shell decides what is promoted, and the walk only reads
+ * it, passing over a member that has left the flat tree rather than dropping
+ * it. It arrives by reference through the constructor.
  */
 export class Painter {
 	declare [kWindow]: EngineWindow;
@@ -413,15 +412,6 @@ function renderElement(
 
 	const color = computed.getComputedValue("color");
 	const backgroundColor = computed.getComputedValue("background-color");
-	const {bold, dim} = resolveFontWeight(
-		computed.getComputedValue("font-weight"),
-	);
-	const italic = computed.getComputedValue("font-style") === "italic";
-	const underline = hasUnderline(computed);
-	const underlineStyle =
-		computed.getComputedValue("text-decoration-style") === "double" ?
-				("double" as const) :
-			undefined;
 	// visibility:hidden reserves the box (layout is untouched) but paints
 	// nothing of it -- unlike display:none, which removes the box entirely. A
 	// descendant that sets visibility:visible still paints, since visibility
@@ -441,6 +431,9 @@ function renderElement(
 		Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
 	const isHighlightBox =
 		Boolean(backgroundColor) && isSystemHighlightColor(backgroundColor);
+	// Only the two colors: an element's own box is a background fill and a
+	// border ring, and the weight, slant and decorations it computes reach the
+	// terminal through the text runs inside it, never through the box.
 	const style = {
 		fg:
 			color && color !== "initial" && !isSystemHighlightColor(color) ?
@@ -454,11 +447,6 @@ function renderElement(
 			!isSystemHighlightColor(backgroundColor) ?
 					cssColorToNumber(backgroundColor) :
 				undefined,
-		bold,
-		dim,
-		italic,
-		underline,
-		underlineStyle,
 	};
 
 	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
@@ -702,7 +690,6 @@ function renderElement(
 	// underline along its bottom row in the same color. Bottom only:
 	// overline (SGR 53) is unreliable.
 	if (rect && visible) {
-		const computed = getComputedValues(element);
 		const outlineStyle = computed.getComputedValue("outline-style");
 		if (
 			outlineStyle &&
@@ -767,8 +754,8 @@ function positionedClipFor(
 	painter: Painter,
 	element: Element,
 	contextRoot: Element,
-	contextClip: CellContext["clipRect"],
-): CellContext["clipRect"] {
+	contextClip: ClipRect | null,
+): ClipRect | null {
 	let clip = contextClip;
 	for (
 		let ancestor = flatParentElement<Element>(element);
