@@ -547,8 +547,7 @@ function renderElement(
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
-			const node =
-				fieldValueText(element) ?? getGlyphText(painter, element);
+			const node = fieldValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -917,7 +916,7 @@ function renderOutsideMarker(
 }
 
 /** The text a toggle's glyph renders through, from its closed tree. */
-function getGlyphText(painter: Painter, element: Element): Text | null {
+function getGlyphText(element: Element): Text | null {
 	const root = getShadowRoot<ShadowRoot>(element);
 	const glyph = root ? root.querySelector('[part="glyph"]') : null;
 	return (glyph?.firstChild as Text | null) ?? null;
