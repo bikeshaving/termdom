@@ -67,7 +67,7 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 export type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /** The keywords every property accepts, whatever its own grammar. */
-export const CSS_WIDE_KEYWORDS = new Set([
+const CSS_WIDE_KEYWORDS = new Set([
 	"inherit",
 	"initial",
 	"revert",
@@ -76,13 +76,13 @@ export const CSS_WIDE_KEYWORDS = new Set([
 ]);
 
 /** The characters CSS counts as whitespace. */
-export const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
+const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 
 /**
  * The node shapes css-tree parses a declaration value into: the form raw
  * value text takes before the engine interprets it.
  */
-export type CSSNode = {
+type CSSNode = {
 	type: string;
 	name?: string;
 	value?: string;
@@ -98,7 +98,7 @@ export type CSSNode = {
 const valueNodes = new Map<string, CSSNode[] | null>();
 
 /** A value's top-level nodes, or null for text css-tree refuses. */
-export function cssValueChildren(value: string): CSSNode[] | null {
+function cssValueChildren(value: string): CSSNode[] | null {
 	let nodes = valueNodes.get(value);
 	if (nodes === undefined) {
 		try {
@@ -122,7 +122,7 @@ export function cssValueChildren(value: string): CSSNode[] | null {
  * spelling is the authored spelling may seed the cache: for it, the sheet's
  * parse is the parse cssValueChildren would run on the cached key.
  */
-export function seedValueNodes(value: string, nodes: CSSNode[]): void {
+function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	if (valueNodes.has(value)) {
 		return;
 	}
@@ -133,20 +133,20 @@ export function seedValueNodes(value: string, nodes: CSSNode[]): void {
 }
 
 /** The one node a value holds, or undefined for none or several. */
-export function singleValueNode(value: string): CSSNode | undefined {
+function singleValueNode(value: string): CSSNode | undefined {
 	const nodes = cssValueChildren(value);
 	return nodes && nodes.length === 1 ? nodes[0] : undefined;
 }
 
 /** The arguments of a function node, with the comma operators dropped. */
-export function functionArguments(node: CSSNode): CSSNode[] {
+function functionArguments(node: CSSNode): CSSNode[] {
 	return (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
 }
 
 /** The milliseconds a `<time>` token spells, or null for anything else. */
-export function cssTimeMs(token: string): number | null {
+function cssTimeMs(token: string): number | null {
 	const node = singleValueNode(token.trim());
 	if (!node || node.type !== "Dimension") {
 		return null;
@@ -167,7 +167,7 @@ export function cssTimeMs(token: string): number | null {
  * function's own arguments, not components: `rgb(95, 175, 255)` is one color,
  * however many spaces it carries.
  */
-export function splitComponents(value: string): string[] {
+function splitComponents(value: string): string[] {
 	const components: string[] = [];
 	let depth = 0;
 	let start = 0;
@@ -189,7 +189,7 @@ export function splitComponents(value: string): string[] {
 }
 
 /** Split a comma-separated value list, leaving function arguments whole. */
-export function splitCommaList(value: string): string[] {
+function splitCommaList(value: string): string[] {
 	const items: string[] = [];
 	let depth = 0;
 	let start = 0;
@@ -221,7 +221,7 @@ export function splitCommaList(value: string): string[] {
  * drops its quotes, and a counter() naming the style every counter already
  * has drops the argument.
  */
-export function serializeCSSValue(input: string, property = ""): string {
+function serializeCSSValue(input: string, property = ""): string {
 	const custom = property.startsWith("--");
 	let out = "";
 	let space = false;
@@ -411,7 +411,7 @@ function startsIdentifier(input: string, index: number): boolean {
  * Serialize a number as CSSOM says: the shortest form that round-trips, with
  * no leading `+`, no bare leading `.`, and no negative zero.
  */
-export function serializeCSSNumber(text: string): string {
+function serializeCSSNumber(text: string): string {
 	const value = Number(text);
 	if (!Number.isFinite(value)) {
 		return text;
@@ -446,7 +446,7 @@ function expandExponential(text: string): string {
 }
 
 /** Serialize a string: double-quoted, with quotes and backslashes escaped. */
-export function serializeCSSString(text: string): string {
+function serializeCSSString(text: string): string {
 	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
 }
 
@@ -455,7 +455,7 @@ export function serializeCSSString(text: string): string {
  * not stand in an identifier is written as a hex escape, and one that merely
  * needs quoting takes a backslash.
  */
-export function serializeCSSIdentifier(value: string): string {
+function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
 	let out = "";
 	for (let i = 0; i < text.length; i++) {
@@ -4625,7 +4625,7 @@ function detachRule(rule: CSSRule): void {
 }
 
 /** A rule of a stylesheet: the base every rule type shares. */
-export abstract class CSSRule {
+abstract class CSSRule {
 	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
 	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
 	static readonly IMPORT_RULE = RULE_TYPES.IMPORT_RULE;
@@ -4678,7 +4678,7 @@ const kRuleList = Symbol("ruleList");
 const kRules = Symbol("rules");
 
 /** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
-export abstract class CSSGroupingRule extends CSSRule {
+abstract class CSSGroupingRule extends CSSRule {
 	declare [kRules]?: CSSRule[];
 	declare [kRuleList]?: CSSRuleList;
 
@@ -4760,7 +4760,7 @@ function serializeGroupRules(group: CSSGroupingRule): string {
 }
 
 /** A grouping rule gated on a condition: `@media`, `@supports`. */
-export abstract class CSSConditionRule extends CSSGroupingRule {
+abstract class CSSConditionRule extends CSSGroupingRule {
 	abstract get conditionText(): string;
 }
 
