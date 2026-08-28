@@ -3,8 +3,12 @@
  * grapheme clusters break, and which direction it flows.
  *
  * A renderer that addresses cells has to answer all three before it can place
- * a character, so they live together, over the generated width tables and
- * nothing else.
+ * a character, so they live together. Width and cluster breaking are this
+ * file's own work, over the generated tables and a ledger of what the attached
+ * terminal was actually seen to do -- start at stringWidth and graphemeWidth,
+ * and read clusterAdvances for why a prediction is not the last word.
+ * Direction is two pinned libraries' work, introduced where the bidi section
+ * begins.
  */
 import arabicPersianReshaper from "arabic-persian-reshaper";
 import bidiFactory from "bidi-js";
@@ -89,7 +93,7 @@ class LRUCache<TKey, TValue> {
 	}
 }
 
-// Printable ASCII is its own width.
+/** Printable ASCII is its own width. */
 export const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
 // Width is a pure property of the string. LRU-bounded so an endless stream
@@ -346,9 +350,6 @@ export function writeClusterWidths(
  * misrenders text on Node and Deno only.
  */
 function stringWidthFallback(str: string): number {
-	// Width is a property of the grapheme cluster, not the code point: a ZWJ
-	// emoji family and a combining accent are each one cluster occupying one
-	// cell's worth of base character, however many code points they contain.
 	let width = 0;
 	for (const {segment} of graphemeSegmenter.segment(str)) {
 		width += graphemeWidth(segment);
@@ -356,7 +357,6 @@ function stringWidthFallback(str: string): number {
 	return width;
 }
 
-// Every supported runtime ships Intl.Segmenter; clusters are its job.
 /**
  * Spacing combining marks (general category Mc). Unlike Mn and Me, which draw
  * onto the character before them, these ADVANCE -- Devanagari's vowel signs are
@@ -377,9 +377,6 @@ function graphemeWidth(cluster: string): number {
 
 	const code = cluster.codePointAt(0)!;
 
-	if (code === 0) {
-		return 0;
-	}
 	// Control characters
 	if (code < 32 || (code >= 0x7f && code < 0xa0)) {
 		return 0;
@@ -552,8 +549,8 @@ export function inferParagraphDirection(text: string): "ltr" | "rtl" {
  * Reorder one line from logical order into the visual order a terminal should
  * paint, and shape its Arabic.
  *
- * Shaping runs LAST, on the reordered string, and only here at the end of
- * layout -- never on the text that gets measured. It is not length-preserving:
+ * Shaping runs LAST -- here, at the end of layout, never on the text that gets
+ * measured. It is not length-preserving:
  * a lam-alef pair collapses into one ligature codepoint, so shaping earlier
  * would slide every character offset after it, and those offsets are what the
  * caret and selection are expressed in. The cost of doing it here instead is
@@ -561,10 +558,7 @@ export function inferParagraphDirection(text: string): "ltr" | "rtl" {
  * a blemish, where the other way is a wrong caret.
  */
 export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
-	if (!text) {
-		return text;
-	}
-	if (!hasRTL(text)) {
+	if (!text || !hasRTL(text)) {
 		return text;
 	}
 
