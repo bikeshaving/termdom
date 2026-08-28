@@ -1,10 +1,12 @@
 /**
- * The escape sequences, as text: functions that write them and functions that
- * read them back.
+ * The escape sequences, as text: functions that write them, and a reader that
+ * turns what comes back into typed items.
  *
- * Nothing here holds state or touches a terminal. Numbers and strings go in,
- * a string or a parsed record comes out, so a sequence can be tested without
- * a session and read without one running.
+ * Nothing here touches a terminal. The writers are pure -- numbers and
+ * strings go in, a string comes out -- and the reader holds syntactic state
+ * only: the tail of an escape sequence, a paste body, or a clipboard reply
+ * that a chunk boundary cut mid-utterance. A sequence can still be tested
+ * without a session and read without one running.
  */
 
 import {type ColorDepth, rgbTo256, rgbToBasic8} from "./color.js";
@@ -536,4 +538,189 @@ export function splitTrailingEscape(chunk: string): number {
 		return chunk.length - esc;
 	}
 	return 0;
+}
+
+/* -------------------------------------------------------------- the reader */
+
+/** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
+const CLIPBOARD_START = "\x1b]52;";
+
+/**
+ * A whole OSC 52 reply: the selection field, then a base64 payload, then BEL
+ * or ST. The payload stops at ESC so a reply ended by ST still bounds it.
+ */
+const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
+
+/**
+ * One utterance off the wire: a key token (a CSI or SS3 sequence, or a single
+ * character), an SGR mouse escape, a whole paste body, or a reply to one of
+ * the probes. A clipboard reply's text is null when the reply outgrew the
+ * held-reply limit before its terminator arrived.
+ */
+export type WireItem =
+	{kind: "key"; token: string} |
+	{kind: "mouse"; button: number; col: number; row: number; release: boolean} |
+	{kind: "paste"; text: string} |
+	{kind: "cursor-report"; row: number; col: number} |
+	{kind: "mode-report"; mode: string; value: number} |
+	{kind: "clipboard"; text: string | null};
+
+/** What one CSI token means: a mouse escape, a reply, or a keystroke. */
+function decodeControlToken(token: string): WireItem {
+	const mouse = decodeMouseEscape(token);
+	if (mouse) {
+		return {kind: "mouse", ...mouse};
+	}
+	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
+	if (cursor) {
+		return {
+			kind: "cursor-report",
+			row: parseInt(cursor[1], 10),
+			col: parseInt(cursor[2], 10),
+		};
+	}
+	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
+	if (mode) {
+		return {
+			kind: "mode-report",
+			mode: (mode[1] ? "?" : "") + mode[2],
+			value: parseInt(mode[3], 10),
+		};
+	}
+	return {kind: "key", token};
+}
+
+const kTail = Symbol("tail");
+const kPasteBody = Symbol("pasteBody");
+const kReplyBody = Symbol("replyBody");
+const kReplyLimit = Symbol("replyLimit");
+
+/**
+ * The read side of the wire, chunk by chunk: feed() takes raw input as a
+ * transport delivers it and returns what it means, in stream order.
+ *
+ * The reader owns every cut a chunk boundary can make. An escape sequence
+ * split before its final byte is held for the next chunk -- but never a bare
+ * trailing ESC, which may be the Escape key itself, and holding it would
+ * swallow the keystroke. An open paste body is buffered until its end fence
+ * and returned as one item; the body is literal text, and nothing inside it
+ * is read except that fence. An open clipboard reply is buffered until its
+ * terminator, and recognized whether or not anyone asked: its base64 would
+ * otherwise type as keystrokes, and dropping an unasked-for answer is the
+ * caller's decision to make, not a syntax accident.
+ */
+export class WireReader {
+	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
+	declare [kTail]: string;
+	// The body of an open paste; null when no paste is in flight.
+	declare [kPasteBody]: string | null;
+	// An open clipboard reply, from its ESC ] 52 on; null when none is.
+	declare [kReplyBody]: string | null;
+
+	/**
+	 * The most of a clipboard reply held while its terminator is awaited. A
+	 * larger payload is not a clipboard a terminal is answering with, and the
+	 * reader gives the reply up as null rather than buffer the wire.
+	 */
+	static readonly [kReplyLimit] = 1 << 16;
+
+	constructor() {
+		this[kTail] = "";
+		this[kPasteBody] = null;
+		this[kReplyBody] = null;
+	}
+
+	/** Read one chunk, and say what arrived. */
+	feed(chunk: string): WireItem[] {
+		let data = this[kTail] + chunk;
+		this[kTail] = "";
+		// Hold a split escape for its continuation -- but only a short one:
+		// what outgrows a real sequence is not going to finish, and holding
+		// it would swallow input for good.
+		const held = splitTrailingEscape(data);
+		if (held > 0 && held <= 32) {
+			this[kTail] = data.slice(-held);
+			data = data.slice(0, -held);
+		}
+
+		const items: WireItem[] = [];
+		let i = 0;
+		while (i < data.length) {
+			// Inside a paste only the end fence means anything; a start fence
+			// in the body must not restart one.
+			if (this[kPasteBody] !== null) {
+				const end = data.indexOf(PASTE_END, i);
+				if (end === -1) {
+					this[kPasteBody] += data.slice(i);
+					return items;
+				}
+				items.push({
+					kind: "paste",
+					text: this[kPasteBody] + data.slice(i, end),
+				});
+				this[kPasteBody] = null;
+				i = end + PASTE_END.length;
+				continue;
+			}
+			// Inside a clipboard reply everything belongs to it until BEL or
+			// ST closes it. A payload no reading rescues answers as an empty
+			// clipboard: OSC 52 has no channel for saying more.
+			if (this[kReplyBody] !== null) {
+				const reply = this[kReplyBody] + data.slice(i);
+				this[kReplyBody] = null;
+				const match = reply.match(CLIPBOARD_REPLY);
+				if (!match) {
+					if (reply.length <= WireReader[kReplyLimit]) {
+						this[kReplyBody] = reply;
+					} else {
+						items.push({kind: "clipboard", text: null});
+					}
+					return items;
+				}
+				const decoded = decode64(match[1]);
+				items.push({
+					kind: "clipboard",
+					text: decoded === null ? "" : new TextDecoder().decode(decoded),
+				});
+				data = reply;
+				i = match[0].length;
+				continue;
+			}
+			if (data.startsWith(PASTE_START, i)) {
+				this[kPasteBody] = "";
+				i += PASTE_START.length;
+				continue;
+			}
+			if (data.startsWith(CLIPBOARD_START, i)) {
+				this[kReplyBody] = "";
+				continue;
+			}
+			if (data[i] === "\x1b" && i + 1 < data.length) {
+				if (data[i + 1] === "[") {
+					// CSI: parameter/intermediate bytes end at a final byte
+					// 0x40-0x7e.
+					let end = i + 2;
+					while (
+						end < data.length &&
+						!(data.charCodeAt(end) >= 0x40 && data.charCodeAt(end) <= 0x7e)
+					) {
+						end++;
+					}
+					items.push(
+						decodeControlToken(data.slice(i, Math.min(end + 1, data.length))),
+					);
+					i = end + 1;
+					continue;
+				}
+				if (data[i + 1] === "O" && i + 2 < data.length) {
+					items.push({kind: "key", token: data.slice(i, i + 3)});
+					i += 3;
+					continue;
+				}
+			}
+			items.push({kind: "key", token: data[i]});
+			i++;
+		}
+		return items;
+	}
 }
