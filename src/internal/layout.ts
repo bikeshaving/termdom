@@ -26,10 +26,7 @@ import {
 	getPropertyValue,
 	parseUnitValue,
 	type ComputedValues,
-	UNIT_AUTO,
-	UNIT_PERCENT,
-	UNIT_POINT,
-	UNIT_UNDEFINED,
+	type Unit,
 } from "./cascade.js";
 import {
 	DOMRectList,
@@ -197,15 +194,15 @@ type StaticPositionFunction = (
 // ---------------------------------------------------------------------------
 
 interface Value {
-	unit: number;
+	unit: Unit;
 	value: number;
 }
 
-const UNDEFINED_VALUE: Value = {unit: UNIT_UNDEFINED, value: NaN};
-const AUTO_VALUE: Value = {unit: UNIT_AUTO, value: NaN};
+const UNDEFINED_VALUE: Value = {unit: "undefined", value: NaN};
+const AUTO_VALUE: Value = {unit: "auto", value: NaN};
 
 /**
- * Coerce a setter argument into a Value. Accepts numbers (points), percent
+ * Coerce a setter argument into a Value. Accepts numbers (cells), percent
  * strings like "50%" or "0%", undefined/NaN (undefined), and "auto".
  */
 function toValue(input: number | string | undefined | null): Value {
@@ -215,7 +212,7 @@ function toValue(input: number | string | undefined | null): Value {
 	if (typeof input === "number") {
 		return Number.isNaN(input) ?
 			UNDEFINED_VALUE :
-				{unit: UNIT_POINT, value: input};
+				{unit: "cell", value: input};
 	}
 	const trimmed = input.trim();
 	if (trimmed === "auto") {
@@ -225,20 +222,20 @@ function toValue(input: number | string | undefined | null): Value {
 		const parsed = parseFloat(trimmed.slice(0, -1));
 		return Number.isNaN(parsed) ?
 			UNDEFINED_VALUE :
-				{unit: UNIT_PERCENT, value: parsed};
+				{unit: "percent", value: parsed};
 	}
 	const parsed = parseFloat(trimmed);
 	return Number.isNaN(parsed) ?
 		UNDEFINED_VALUE :
-			{unit: UNIT_POINT, value: parsed};
+			{unit: "cell", value: parsed};
 }
 
 /** Resolve a Value against an owner size. Returns NaN when unresolvable. */
 function resolveValue(value: Value, ownerSize: number): number {
 	switch (value.unit) {
-		case UNIT_POINT:
+		case "cell":
 			return value.value;
-		case UNIT_PERCENT:
+		case "percent":
 			return Number.isNaN(ownerSize) ? NaN : (value.value * ownerSize) / 100;
 		default:
 			return NaN;
@@ -251,7 +248,7 @@ function isDefined(n: number): boolean {
 
 /** Resolve a margin Value; `auto` and undefined both contribute 0 of length. */
 function resolveMargin(value: Value, ownerWidth: number): number {
-	if (value.unit === UNIT_AUTO) {
+	if (value.unit === "auto") {
 		return 0;
 	}
 	const resolved = resolveValue(value, ownerWidth);
@@ -1148,7 +1145,7 @@ export class LayoutNode {
 
 	setFlexBasisPercent(v: number | undefined): void {
 		this.style.flexBasis =
-			v === undefined ? UNDEFINED_VALUE : {unit: UNIT_PERCENT, value: v};
+			v === undefined ? UNDEFINED_VALUE : {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1163,7 +1160,7 @@ export class LayoutNode {
 	}
 
 	setWidthPercent(v: number): void {
-		this.style.width = {unit: UNIT_PERCENT, value: v};
+		this.style.width = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1185,7 +1182,7 @@ export class LayoutNode {
 	}
 
 	setHeightPercent(v: number): void {
-		this.style.height = {unit: UNIT_PERCENT, value: v};
+		this.style.height = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1211,7 +1208,7 @@ export class LayoutNode {
 	}
 
 	setMinWidthPercent(v: number): void {
-		this.style.minWidth = {unit: UNIT_PERCENT, value: v};
+		this.style.minWidth = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1221,7 +1218,7 @@ export class LayoutNode {
 	}
 
 	setMinHeightPercent(v: number): void {
-		this.style.minHeight = {unit: UNIT_PERCENT, value: v};
+		this.style.minHeight = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1231,7 +1228,7 @@ export class LayoutNode {
 	}
 
 	setMaxWidthPercent(v: number): void {
-		this.style.maxWidth = {unit: UNIT_PERCENT, value: v};
+		this.style.maxWidth = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1241,7 +1238,7 @@ export class LayoutNode {
 	}
 
 	setMaxHeightPercent(v: number): void {
-		this.style.maxHeight = {unit: UNIT_PERCENT, value: v};
+		this.style.maxHeight = {unit: "percent", value: v};
 		this.markDirty();
 	}
 
@@ -1251,7 +1248,7 @@ export class LayoutNode {
 	}
 
 	setMarginPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.margin, edge, {unit: "percent", value: v});
 		this.markDirty();
 	}
 
@@ -1266,7 +1263,7 @@ export class LayoutNode {
 	}
 
 	setPaddingPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.padding, edge, {unit: "percent", value: v});
 		this.markDirty();
 	}
 
@@ -1284,7 +1281,7 @@ export class LayoutNode {
 	}
 
 	setPositionPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		setEdges(this.style.position, edge, {unit: "percent", value: v});
 		this.markDirty();
 	}
 
@@ -1455,7 +1452,7 @@ function resolveFlexShrink(node: LayoutNode): number {
 /** flex-basis: auto falls back to the main-axis size property. */
 function resolveFlexBasis(node: LayoutNode, mainAxis: FlexDirection): Value {
 	const basis = node.style.flexBasis;
-	if (basis.unit !== UNIT_AUTO && basis.unit !== UNIT_UNDEFINED) {
+	if (basis.unit !== "auto" && basis.unit !== "undefined") {
 		return basis;
 	}
 	return isRow(mainAxis) ? node.style.width : node.style.height;
@@ -1551,14 +1548,14 @@ function styleDimIsDefined(
 	ownerSize: number,
 ): boolean {
 	const value = isRow(axis) ? node.style.width : node.style.height;
-	if (value.unit === UNIT_AUTO || value.unit === UNIT_UNDEFINED) {
+	if (value.unit === "auto" || value.unit === "undefined") {
 		return false;
 	}
-	if (value.unit === UNIT_POINT && value.value < 0) {
+	if (value.unit === "cell" && value.value < 0) {
 		return false;
 	}
 	if (
-		value.unit === UNIT_PERCENT &&
+		value.unit === "percent" &&
 		(value.value < 0 || Number.isNaN(ownerSize))
 	) {
 		return false;
@@ -2558,7 +2555,7 @@ function autoMinimumMainSize(
 	const mainOwnerSize = mainIsRow ? ownerWidth : ownerHeight;
 
 	const specifiedMin = mainIsRow ? child.style.minWidth : child.style.minHeight;
-	if (specifiedMin.unit !== UNIT_UNDEFINED && specifiedMin.unit !== UNIT_AUTO) {
+	if (specifiedMin.unit !== "undefined" && specifiedMin.unit !== "auto") {
 		return NaN;
 	}
 
@@ -2786,10 +2783,10 @@ function positionMainAxis(
 	// Auto margins on the main axis eat all remaining free space.
 	let autoMarginCount = 0;
 	for (const child of line.items) {
-		if (child.style.margin[leadingEdge(mainAxis)].unit === UNIT_AUTO) {
+		if (child.style.margin[leadingEdge(mainAxis)].unit === "auto") {
 			autoMarginCount++;
 		}
-		if (child.style.margin[trailingEdge(mainAxis)].unit === UNIT_AUTO) {
+		if (child.style.margin[trailingEdge(mainAxis)].unit === "auto") {
 			autoMarginCount++;
 		}
 	}
@@ -2836,9 +2833,9 @@ function positionMainAxis(
 	let cursor = leadingPaddingBorderMain + leading;
 	for (const child of line.items) {
 		const leadingAuto =
-			child.style.margin[leadingEdge(mainAxis)].unit === UNIT_AUTO;
+			child.style.margin[leadingEdge(mainAxis)].unit === "auto";
 		const trailingAuto =
-			child.style.margin[trailingEdge(mainAxis)].unit === UNIT_AUTO;
+			child.style.margin[trailingEdge(mainAxis)].unit === "auto";
 
 		if (leadingAuto) {
 			cursor += autoShare;
@@ -2978,9 +2975,9 @@ function positionCrossAxis(
 			);
 
 			const leadingAuto =
-				child.style.margin[leadingEdge(cross)].unit === UNIT_AUTO;
+				child.style.margin[leadingEdge(cross)].unit === "auto";
 			const trailingAuto =
-				child.style.margin[trailingEdge(cross)].unit === UNIT_AUTO;
+				child.style.margin[trailingEdge(cross)].unit === "auto";
 
 			// Stretch items now that the line's cross size is definite. Auto
 			// margins opt an item out of stretching -- they absorb the space instead.
@@ -3134,10 +3131,10 @@ function layoutAbsoluteChild(
 	// placed in the space the insets leave rather than stretched across it --
 	// the same reading the in-flow block path gives `margin: auto`, and what
 	// centers a modal dialog in the viewport.
-	const autoLeft = child.style.margin.left.unit === UNIT_AUTO;
-	const autoRight = child.style.margin.right.unit === UNIT_AUTO;
-	const autoTop = child.style.margin.top.unit === UNIT_AUTO;
-	const autoBottom = child.style.margin.bottom.unit === UNIT_AUTO;
+	const autoLeft = child.style.margin.left.unit === "auto";
+	const autoRight = child.style.margin.right.unit === "auto";
+	const autoTop = child.style.margin.top.unit === "auto";
+	const autoBottom = child.style.margin.bottom.unit === "auto";
 	const shrinkAcross =
 		isDefined(left) && isDefined(right) && autoLeft && autoRight;
 	const shrinkDown =
@@ -5253,10 +5250,10 @@ function layoutGridItem(
 	const justify = gridSelfAlign(node, child, true);
 	const align = gridSelfAlign(node, child, false);
 
-	const autoLeft = child.style.margin.left.unit === UNIT_AUTO;
-	const autoRight = child.style.margin.right.unit === UNIT_AUTO;
-	const autoTop = child.style.margin.top.unit === UNIT_AUTO;
-	const autoBottom = child.style.margin.bottom.unit === UNIT_AUTO;
+	const autoLeft = child.style.margin.left.unit === "auto";
+	const autoRight = child.style.margin.right.unit === "auto";
+	const autoTop = child.style.margin.top.unit === "auto";
+	const autoBottom = child.style.margin.bottom.unit === "auto";
 
 	const marginRow = marginForAxis(child, "row", ownerWidth);
 	const marginColumn = marginForAxis(child, "column", ownerWidth);
@@ -6176,8 +6173,8 @@ function generatesNoLine(child: LayoutNode): boolean {
 function blockChildFills(child: LayoutNode): boolean {
 	return (
 		!shrinkWrapsWidth(child) &&
-		child.style.margin.left.unit !== UNIT_AUTO &&
-		child.style.margin.right.unit !== UNIT_AUTO
+		child.style.margin.left.unit !== "auto" &&
+		child.style.margin.right.unit !== "auto"
 	);
 }
 
@@ -6381,8 +6378,8 @@ function layoutBlock(
 		const child = inFlow[i];
 		const leading = child.layout.margin.left;
 		const trailing = child.layout.margin.right;
-		const leadingAuto = child.style.margin.left.unit === UNIT_AUTO;
-		const trailingAuto = child.style.margin.right.unit === UNIT_AUTO;
+		const leadingAuto = child.style.margin.left.unit === "auto";
+		const trailingAuto = child.style.margin.right.unit === "auto";
 		const free = contentWidth - child.layout.width - leading - trailing;
 
 		let offset = 0;

@@ -58,15 +58,13 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 // ---------------------------------------------------------------------------
 
 /**
- * What the number in a length carries: nothing, cells, a percentage of
- * something, or the absence of a value that `auto` is. A length is a number
+ * What the number in a length carries: cells, a percentage of something, the
+ * `auto` that is a value of its own, or nothing at all. A length is a number
  * and one of these, and both the cascade that parses one and the solver that
- * resolves it name them from here.
+ * resolves it name them from here. Yoga numbered these and called a cell a
+ * point; they are words now, and a wrong one is a type error.
  */
-export const UNIT_UNDEFINED = 0;
-export const UNIT_POINT = 1;
-export const UNIT_PERCENT = 2;
-export const UNIT_AUTO = 3;
+export type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /** The keywords every property accepts, whatever its own grammar. */
 export const CSS_WIDE_KEYWORDS = new Set([
@@ -14081,13 +14079,13 @@ function trackCells(node: CSSNode): number | null {
 }
 
 function pointBreadth(cells: number): SolverTypes.TrackBreadth {
-	return {kind: "length", value: {unit: UNIT_POINT, value: cells}};
+	return {kind: "length", value: {unit: "cell", value: cells}};
 }
 
 function percentBreadth(percentage: number): SolverTypes.TrackBreadth {
 	return {
 		kind: "length",
-		value: {unit: UNIT_PERCENT, value: percentage},
+		value: {unit: "percent", value: percentage},
 	};
 }
 
