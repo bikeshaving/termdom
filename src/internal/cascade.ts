@@ -1205,7 +1205,9 @@ function expandShorthands(
 
 // ---- CSS spec defaults ----
 /**
- * CSS specification defaults for properties
+ * The initial values this engine states for itself. They stand ahead of the
+ * property index's, which is what lets a cell grid answer `font-size` with one
+ * cell where the index says `medium`, and `box-sizing` with `border-box`.
  */
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"display": "inline",
@@ -1323,7 +1325,9 @@ function getElementDefaults(
 
 // ---- Inheritance / initial-value tables ----
 /**
- * Properties that inherit by default
+ * The properties an element takes from its flat-tree parent where no
+ * declaration reaches it. A custom property inherits too, and is in no list:
+ * there is no fixed set of names for one to be in.
  */
 const INHERITED_PROPERTIES = new Set([
 	"color",
@@ -1383,9 +1387,6 @@ function getInitialStyle(
 	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
-/**
- * Helper to get computed style property value for an element.
- */
 export function getPropertyValue(element: Element, property: string): string {
 	// The COMPUTED value, not the resolved one: layout and paint decide
 	// geometry from this, and a used value here would feed layout its own
@@ -1442,9 +1443,7 @@ export function parseUnitValue(
 	return number !== null && number < 0 ? null : parsed;
 }
 
-/**
- * CSS Box Model representation for layout calculations
- */
+/** The edges a box carries, in cells, and the sizes it declares. */
 export interface BoxModel {
 	width?: number;
 	height?: number;
@@ -10902,9 +10901,7 @@ export class StyleManager {
 		return !!(content && content !== "none" && content !== "normal");
 	}
 
-	/**
-	 * Refresh stylesheet parsing (call when stylesheets change)
-	 */
+	/** Read the sheets again, and rebuild what was laid out under the old ones. */
 	refreshStylesheets(): void {
 		parseStylesheets(this);
 
@@ -11131,8 +11128,8 @@ export class StyleManager {
 	}
 
 	/**
-	 * Resolve counter() function in CSS content
-	 * Supports: counter(name), counter(name, style)
+	 * A content value with each `counter(name)` or `counter(name, style)`
+	 * replaced by the number the counter stands at for this element.
 	 */
 	resolveCounterFunction(element: Element, content: string): string {
 		return content.replace(
@@ -11146,9 +11143,7 @@ export class StyleManager {
 		);
 	}
 
-	/**
-	 * Clean up resources
-	 */
+	/** Drop every cache and stop the transition tick: the document is going. */
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
@@ -13177,7 +13172,8 @@ function ruleMatches(
 }
 
 /**
- * Compute style properties for a pseudo-element
+ * What a pseudo-element's matched rules leave declared, the last rule to name
+ * a slot holding it.
  */
 function computePseudoElementStyle(
 	manager: StyleManager,
@@ -13361,7 +13357,8 @@ function pseudoRuleCouldMatch(
 }
 
 /**
- * Attach a specific pseudo-element type to an element if it should have one
+ * Bring one of an element's pseudo-elements into line with the rules: the node
+ * it has, or has no longer, and the text that node holds.
  */
 function attachPseudoElementToElementForType(
 	manager: StyleManager,
