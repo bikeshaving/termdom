@@ -64,15 +64,15 @@ interface UAEngine {
 	layout: {
 		invalidate(node?: object): void;
 		calculateLayout(): void;
-		getRect(element: object): UARect | null;
+		getRect(element: object): globalThis.DOMRect | null;
 		lineFragments(text: object): UALineFragment[];
-		getRangeRects(range: object): UARect[];
+		getRangeRects(range: object): globalThis.DOMRect[];
 		caretPositionFromPoint(
 			x: number,
 			y: number,
 			root: object,
 			clampToNearestLine?: boolean,
-		): {node: UAText; offset: number} | null;
+		): {node: globalThis.Text; offset: number} | null;
 	};
 	styles: {
 		registerShadowRoot(root: object): void;
@@ -92,21 +92,6 @@ interface UAEngine {
 }
 
 /**
- * A control's shadow tree as the engine above reads it.
- *
- * The classes in this file are the implementation of these interfaces, but most
- * of their members arrive from the element tables at setup rather than from a
- * class body, so the tree a control builds is named here by the platform
- * interfaces every consumer of it already speaks.
- */
-type UARoot = globalThis.ShadowRoot;
-type UAElement = globalThis.HTMLElement;
-type UAText = globalThis.Text;
-type UARange = globalThis.Range;
-type UARect = globalThis.DOMRect;
-type UADocument = globalThis.Document;
-
-/**
  * One laid-out line of a text node: where it sits, and the range of the
  * node's raw data it renders. A line is a property of the layout and not of
  * the string, so this is the only thing that can answer "what line is this
@@ -114,7 +99,7 @@ type UADocument = globalThis.Document;
  * selection's alike.
  */
 interface UALineFragment {
-	rect: UARect;
+	rect: globalThis.DOMRect;
 	startOffset: number;
 	endOffset: number;
 }
@@ -143,7 +128,7 @@ export interface UAToolkit {
 		control: object,
 	): {start: number; end: number; direction: string} | null;
 	/** The text node a control's editable value renders through. */
-	valueTextOf(control: object): UAText | null;
+	valueTextOf(control: object): globalThis.Text | null;
 	/** Whether a control edits text -- the caret-and-chords family. */
 	isTextField(element: {tagName: string; type?: string}): boolean;
 	/** Move a text control's selection, past the type gate the author meets. */
@@ -178,7 +163,7 @@ export interface UAToolkit {
 	/** The composed-tree walk: the parent through slots and shadow roots. */
 	flatParentElement<T>(node: object): T | null;
 	/** A control's selection as a Range, measured like any document range. */
-	getSelectionRange(control: object): UARange | null;
+	getSelectionRange(control: object): globalThis.Range | null;
 	pseudoElement<T>(host: object, name: string): T | null;
 	pseudoElementCount(host: object): number;
 	getPseudoHost<T>(node: object): T | null;
@@ -236,7 +221,7 @@ function makeUAToolkit(document: object): UAToolkit {
 			)[kUASelection];
 			return record ? record.call(control) : null;
 		},
-		valueTextOf(control: object): UAText | null {
+		valueTextOf(control: object): globalThis.Text | null {
 			return fieldValueText(control);
 		},
 		isTextField,
@@ -414,9 +399,13 @@ const kUAValueText = Symbol(
  * editing internals reach it: the renderer reads it to place the caret, the
  * editing path to hit-test a point.
  */
-function fieldValueText(field: object): UAText | null {
+function fieldValueText(field: object): globalThis.Text | null {
 	return (
-		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
+		(field as Record<
+			symbol,
+			globalThis.Text | null | undefined
+		>)[kUAValueText] ??
+		null
 	);
 }
 
@@ -433,16 +422,16 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-function getSelectionRange(element: object): UARange | null {
+function getSelectionRange(element: object): globalThis.Range | null {
 	return (
-		(element as Record<symbol, (() => UARange | null) | undefined>)[
+		(element as Record<symbol, (() => globalThis.Range | null) | undefined>)[
 			kUASelectionRange
 		]?.() ?? null
 	);
 }
 
 /** The range a document answers control-selection queries with. */
-const selectionRanges = new WeakMap<UADocument, UARange>();
+const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
 
 /**
  * The Range a text control's selection covers within the value text of the
@@ -452,8 +441,8 @@ const selectionRanges = new WeakMap<UADocument, UARange>();
  */
 function textSelectionRange(
 	control: HTMLInputElement | HTMLTextAreaElement,
-	valueText: UAText | null,
-): UARange | null {
+	valueText: globalThis.Text | null,
+): globalThis.Range | null {
 	if (!valueText) {
 		return null;
 	}
@@ -476,8 +465,8 @@ function textSelectionRange(
 }
 
 /** A node's own document, as the tree-building code below reads it. */
-function getUADocument(node: object): UADocument {
-	return (node as Node).ownerDocument as unknown as UADocument;
+function getUADocument(node: object): globalThis.Document {
+	return (node as Node).ownerDocument as unknown as globalThis.Document;
 }
 
 /** A field's value and selection after an editing key -- what to apply. */
@@ -741,7 +730,10 @@ function insertPaste(
 }
 
 /** Add a `part`-attributed span (holding one empty text node) to a UA root. */
-function addPart(root: UARoot, part: string): UAElement {
+function addPart(
+	root: globalThis.ShadowRoot,
+	part: string,
+): globalThis.HTMLElement {
 	const document = getUADocument(root);
 	const span = document.createElement("span");
 	span.setAttribute("part", part);
@@ -758,8 +750,12 @@ function addPart(root: UARoot, part: string): UAElement {
  * invalidation that swaps the composed tree in -- the parts lay out through the
  * normal pipeline, and layout must hear about every change to them.
  */
-function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
-	const root = attachUAShadowRoot<UARoot>(host);
+function buildUARoot(
+	host: Element,
+	engine: UAEngine,
+	styles: string,
+): globalThis.ShadowRoot {
+	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
 	engine.invalidateStructure();
 	engine.observer.observe(root, {
 		childList: true,
@@ -778,7 +774,7 @@ function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
 }
 
 /** The `<style>` element carrying a widget's UA stylesheet. */
-function uaStyleElement(host: Element, styles: string): UAElement {
+function uaStyleElement(host: Element, styles: string): globalThis.HTMLElement {
 	const style = getUADocument(host).createElement("style");
 	style.textContent = styles;
 	return style;
@@ -12786,7 +12782,7 @@ export class HTMLDetailsElement extends HTMLElement {
 	declare [kStateAtQueue]?: string;
 
 	declare [kEngine]?: UAEngine | null;
-	declare [kContent]?: UAElement | null;
+	declare [kContent]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
 		if (this[kEngine] !== null) {
@@ -14091,10 +14087,10 @@ export class HTMLInputElement extends HTMLElement {
 	// different trees, so a type flip rebuilds.
 	declare [kEngine]?: UAEngine | null;
 	declare [kKind]?: "field" | "toggle" | null;
-	declare [kRoot]?: UARoot | null;
-	declare [kValueText]?: UAText | null;
-	declare [kPlaceholderText]?: UAText | null;
-	declare [kGlyphText]?: UAText | null;
+	declare [kRoot]?: globalThis.ShadowRoot | null;
+	declare [kValueText]?: globalThis.Text | null;
+	declare [kPlaceholderText]?: globalThis.Text | null;
+	declare [kGlyphText]?: globalThis.Text | null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -14442,11 +14438,11 @@ export class HTMLInputElement extends HTMLElement {
 
 	/* --------------------------------------------------- the rendered tree */
 
-	get [kUAValueText](): UAText | null {
+	get [kUAValueText](): globalThis.Text | null {
 		return this[kValueText]!;
 	}
 
-	[kUASelectionRange]?(): UARange | null {
+	[kUASelectionRange]?(): globalThis.Range | null {
 		return textSelectionRange(this, this[kValueText]!);
 	}
 
@@ -14675,15 +14671,15 @@ function build(
 	input[kKind] = kindFor(input);
 
 	if (input[kKind] === "field") {
-		input[kValueText] = addPart(root, "value").firstChild as UAText;
+		input[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		input[kPlaceholderText] = addPart(
 			root,
 			"placeholder",
-		).firstChild as UAText;
+		).firstChild as globalThis.Text;
 	} else {
 		input[kValueText] = null;
 		input[kPlaceholderText] = null;
-		input[kGlyphText] = addPart(root, "glyph").firstChild as UAText;
+		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
 	engine.layout.invalidate(input);
 	input[kUAReconcile]!();
@@ -15355,7 +15351,7 @@ function buildGaugeRoot(
 	host: Element,
 	engine: UAEngine,
 	styles: string,
-): {bar: UAElement; groove: UAText} {
+): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
 	const root = buildUARoot(host, engine, styles);
 	const track = addPart(root, "track");
@@ -15375,7 +15371,10 @@ function buildGaugeRoot(
 }
 
 /** Set a gauge bar's filled fraction, writing the width only on a change. */
-function setGaugeFill(bar: UAElement, fraction: number | null): void {
+function setGaugeFill(
+	bar: globalThis.HTMLElement,
+	fraction: number | null,
+): void {
 	const width =
 		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
 	if (bar.style.width !== width) {
@@ -15411,7 +15410,7 @@ export class HTMLMeterElement extends HTMLElement {
 	}
 
 	declare [kEngine]?: UAEngine | null;
-	declare [kBar]?: UAElement | null;
+	declare [kBar]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
 		if (this[kEngine] !== null) {
@@ -15979,7 +15978,7 @@ export class HTMLProgressElement extends HTMLElement {
 	}
 
 	declare [kEngine]?: UAEngine | null;
-	declare [kBar]?: UAElement | null;
+	declare [kBar]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
 		if (this[kEngine] !== null) {
@@ -16218,7 +16217,7 @@ export class HTMLSelectElement extends HTMLElement {
 			const picker = this[kPicker]!;
 			const row = (Array.from(
 				picker.childNodes,
-			) as UAElement[]).find((node) => {
+			) as globalThis.HTMLElement[]).find((node) => {
 				const rect = engine.layout.getRect(node);
 				return rect ? rectContains(rect, x, y) : false;
 			});
@@ -16256,8 +16255,8 @@ export class HTMLSelectElement extends HTMLElement {
 	declare [kSelectedOptions]?: HTMLCollection | null;
 
 	declare [kEngine]?: UAEngine | null;
-	declare [kValueText]?: UAText | null;
-	declare [kPicker]?: UAElement | null;
+	declare [kValueText]?: globalThis.Text | null;
+	declare [kPicker]?: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN; null = closed.
 	declare [kHighlight]?: number | null;
 
@@ -16270,7 +16269,7 @@ export class HTMLSelectElement extends HTMLElement {
 		return {start: 0, end: 0, direction: "none"};
 	}
 
-	get [kUAValueText](): UAText | null {
+	get [kUAValueText](): globalThis.Text | null {
 		return this[kValueText]!;
 	}
 
@@ -16407,8 +16406,8 @@ export class HTMLSelectElement extends HTMLElement {
 		// (part=indicator), and the picker popover (part=picker, holding one row
 		// per option). Composition hides the light option list.
 		const root = buildUARoot(this, engine, SELECT_UA_STYLES);
-		this[kValueText] = addPart(root, "value").firstChild as UAText;
-		(addPart(root, "indicator").firstChild as UAText).data = " ▾";
+		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
+		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
 		picker.setAttribute("part", "picker");
 		root.appendChild(picker);
@@ -16579,7 +16578,7 @@ function pickerRows(
  */
 function reconcileRows(
 	select: HTMLSelectElement,
-	picker: UAElement,
+	picker: globalThis.HTMLElement,
 ): void {
 	const document = getUADocument(select);
 	const rows = pickerRows(select);
@@ -16590,7 +16589,7 @@ function reconcileRows(
 		picker.appendChild(document.createElement("div"));
 	}
 	rows.forEach((row, index) => {
-		const node = picker.childNodes[index] as UAElement;
+		const node = picker.childNodes[index] as globalThis.HTMLElement;
 		// Attribute writes are guarded: setAttribute queues a mutation record
 		// even when unchanged, and this root is observed -- an unconditional
 		// write is an infinite render loop.
@@ -16675,7 +16674,7 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 }
 
 /** Whether a document-space point falls inside a rect. */
-function rectContains(rect: UARect, x: number, y: number): boolean {
+function rectContains(rect: globalThis.DOMRect, x: number, y: number): boolean {
 	return (
 		x >= rect.x &&
 		x < rect.x + rect.width &&
@@ -16685,7 +16684,11 @@ function rectContains(rect: UARect, x: number, y: number): boolean {
 }
 
 /** Set or clear a picker row's state attribute, writing only on a change. */
-function setRowFlag(row: UAElement, name: string, on: boolean): void {
+function setRowFlag(
+	row: globalThis.HTMLElement,
+	name: string,
+	on: boolean,
+): void {
 	if (on === row.hasAttribute(name)) {
 		return;
 	}
@@ -16700,7 +16703,10 @@ function setRowFlag(row: UAElement, name: string, on: boolean): void {
  * The index into a select's option list that a picker row stands for: the rows
  * that are options, counted in tree order.
  */
-function optionIndexOfRow(picker: UAElement, row: UAElement): number {
+function optionIndexOfRow(
+	picker: globalThis.HTMLElement,
+	row: globalThis.HTMLElement,
+): number {
 	if (row.getAttribute("part") !== "option") {
 		return -1;
 	}
@@ -17505,9 +17511,9 @@ export class HTMLTextAreaElement extends HTMLElement {
 	declare [kSelectionDirection]?: string;
 
 	declare [kEngine]?: UAEngine | null;
-	declare [kValueText]?: UAText | null;
-	declare [kPlaceholderText]?: UAText | null;
-	declare [kPlaceholderSpan]?: UAElement | null;
+	declare [kValueText]?: globalThis.Text | null;
+	declare [kPlaceholderText]?: globalThis.Text | null;
+	declare [kPlaceholderSpan]?: globalThis.HTMLElement | null;
 	declare [kGoalColumn]?: number | null;
 
 	get form(): HTMLFormElement | null {
@@ -17684,11 +17690,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	/* --------------------------------------------------- the rendered tree */
 
-	get [kUAValueText](): UAText | null {
+	get [kUAValueText](): globalThis.Text | null {
 		return this[kValueText]!;
 	}
 
-	[kUASelectionRange]?(): UARange | null {
+	[kUASelectionRange]?(): globalThis.Range | null {
 		return textSelectionRange(this, this[kValueText]!);
 	}
 
@@ -17704,9 +17710,10 @@ export class HTMLTextAreaElement extends HTMLElement {
 		this[kEngine] = engine;
 		const document = getUADocument(this);
 		const root = buildUARoot(this, engine, TEXTAREA_UA_STYLES);
-		this[kValueText] = addPart(root, "value").firstChild as UAText;
+		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
-		this[kPlaceholderText] = this[kPlaceholderSpan]!.firstChild as UAText;
+		this[kPlaceholderText] =
+			this[kPlaceholderSpan]!.firstChild as globalThis.Text;
 		// The trailing <br> anchor, the same trick a browser's editor uses: it
 		// makes the run's content always end in exactly one line break, so the
 		// line count equals the LOGICAL line count -- the breaker never emits a
