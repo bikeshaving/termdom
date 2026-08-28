@@ -87,16 +87,6 @@ export function insertLines(count: number): string {
 
 /* --------------------------------------------------------------- the style */
 
-/**
- * SGR: a semicolon-joined parameter list -- "1;4;38;5;196" -- in one
- * escape. Callers compose the run; nothing is validated here, and an
- * empty list is the terminal's reset, so a caller with nothing to say
- * must not call.
- */
-export function sgr(parameters: string): string {
-	return `\x1b[${parameters}m`;
-}
-
 /** SGR 0: back to the terminal's own defaults. */
 export function sgrReset(): string {
 	return "\x1b[0m";
@@ -125,11 +115,6 @@ function sgrColor(
 		case "ansi":
 			return String((isFg ? 30 : 40) + rgbToBasic8(color));
 	}
-}
-
-/** SGR 0 as a parameter, for a run that shares one escape with nothing. */
-export function sgrDefaults(): string {
-	return "0";
 }
 
 /** The attributes an SGR run states by name, apart from the underline. */
@@ -181,9 +166,9 @@ function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
 }
 
 /**
- * The SGR parameters spelling a run, in the order a terminal wants to hear
- * them: colors, then attributes. Parameters, not a whole SGR; "" when the run
- * says nothing, and a caller with nothing to say must not emit an escape.
+ * The SGR spelling a run, parameters in the order a terminal wants to hear
+ * them: colors, then attributes. "" when the run says nothing -- no escape
+ * is ever emitted empty, since an empty SGR is the terminal's reset.
  */
 export function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
 	const codes: string[] = [];
@@ -213,7 +198,7 @@ export function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
 	state("strikethrough", "9", "29");
 	state("overline", "53", "55");
 
-	return codes.join(";");
+	return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
 }
 
 /* --------------------------------------------------------------- the modes */

@@ -28,8 +28,6 @@ import {
 	restoreCursor,
 	saveCursor,
 	setScrollRegion,
-	sgr,
-	sgrDefaults,
 	sgrReset,
 	sgrStyle,
 	type StyleAttribute,
@@ -881,10 +879,7 @@ function gridLine(
 		}
 
 		if (colorDepth !== null) {
-			const style = styleDiff(grid, index, previous, colorDepth);
-			if (style !== "") {
-				line += sgr(style);
-			}
+			line += styleDiff(grid, index, previous, colorDepth);
 		}
 
 		const encoding = grid.border[index];
@@ -1363,7 +1358,7 @@ function styleDiff(
 	// encoding, which the glyph carries rather than the SGR.
 	const wasDefault = prevFg === 0 && prevBg === 0 && prevAttrs === 0;
 	if (fg === 0 && bg === 0 && attrs === 0) {
-		return wasDefault ? "" : sgrDefaults();
+		return wasDefault ? "" : sgrReset();
 	}
 
 	const fgChanged =
@@ -1643,7 +1638,7 @@ function generateANSI(
 
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
 			if (styleSeq !== "") {
-				output += sgr(styleSeq);
+				output += styleSeq;
 				rowHasANSI = true;
 			}
 
