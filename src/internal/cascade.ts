@@ -1870,6 +1870,37 @@ export function parseBorderWidthValue(
 	return parseUnitValue(value);
 }
 
+/**
+ * A `<ratio>`, as the width/height quotient the solver sizes a box by.
+ *
+ * The ratio counts cells: one cell is one cell, vertical or horizontal. `1px`
+ * and `1ch` are both one cell here, so `aspect-ratio: 1` on a box 10 cells
+ * wide makes it 10 rows tall -- there is no compensation for a glyph being
+ * visually taller than it is wide. Undefined for `auto`, for a value with an
+ * `auto` component, and for a zero or negative component, all of which leave
+ * the box to size itself.
+ */
+export function parseAspectRatio(value: string): number | undefined {
+	if (!value || value.includes("auto")) {
+		return undefined;
+	}
+	const parts = value.split("/");
+	if (parts.length > 2) {
+		return undefined;
+	}
+	const width = parseFloat(parts[0]);
+	const height = parts.length === 2 ? parseFloat(parts[1]) : 1;
+	if (
+		!Number.isFinite(width) ||
+		!Number.isFinite(height) ||
+		width <= 0 ||
+		height <= 0
+	) {
+		return undefined;
+	}
+	return width / height;
+}
+
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
