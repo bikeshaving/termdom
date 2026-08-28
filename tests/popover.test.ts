@@ -237,8 +237,6 @@ test("a canceled beforetoggle keeps the popover closed", async () => {
 	expect(popover.matches(":popover-open")).toBe(false);
 	expect(seen).toEqual(["beforetoggle"]);
 
-	// Closing is not cancelable: a popover that will not close is a trap.
-	popover.togglePopover(true);
 	dom.dispose();
 });
 

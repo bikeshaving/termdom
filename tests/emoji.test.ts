@@ -217,7 +217,7 @@ test("whitespace collapse affecting emoji rendering", async () => {
 	dom.dispose();
 });
 
-test("text after emoji gets truncated", async () => {
+test("text after an emoji keeps its last character", async () => {
 	const terminal = new MockProcess();
 	const dom = new TermDOM({transport: terminal.transport});
 

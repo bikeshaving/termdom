@@ -443,33 +443,28 @@ test("keyboard events bubble up the DOM", async () => {
 	await new Promise((r) => setTimeout(r, 0));
 
 	const parent = document.createElement("div");
-	const child = document.createElement("span");
+	const child = document.createElement("input");
 	parent.appendChild(child);
 	document.body.appendChild(parent);
 
-	const parentEvents: string[] = [];
-	const childEvents: string[] = [];
+	const seen: string[] = [];
+	document.body.addEventListener("keydown", () => seen.push("body"));
+	parent.addEventListener("keydown", () => seen.push("parent"));
+	child.addEventListener("keydown", () => seen.push("child"));
 
-	parent.addEventListener("keydown", () => parentEvents.push("parent"));
-	child.addEventListener("keydown", () => childEvents.push("child"));
-
-	// Simulate keydown on child
+	// Nothing focused: the key lands on the body, and the elements under it
+	// hear nothing -- a dispatch does not descend.
 	(terminal.stdin as any).emit("data", Buffer.from("a"));
 	await new Promise((r) => setTimeout(r, 0));
+	expect(seen).toEqual(["body"]);
 
-	// Events should bubble from child to parent
-	expect(childEvents.length).toBe(0); // No direct events on child since we target document.body
-	expect(parentEvents.length).toBe(0); // No direct events on parent either
-
-	// Events go to document.body by default in our implementation
-	const bodyEvents: string[] = [];
-	document.body.addEventListener("keydown", () => bodyEvents.push("body"));
-
+	// Focused: the key lands on the field and climbs from there, so each
+	// ancestor hears it once, innermost first.
+	seen.length = 0;
+	child.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("b"));
 	await new Promise((r) => setTimeout(r, 0));
-
-	await new Promise((r) => setTimeout(r, 0));
-	expect(bodyEvents.length).toBe(1);
+	expect(seen).toEqual(["child", "parent", "body"]);
 });
 
 test("can create keyboard event manually", () => {
@@ -605,7 +600,7 @@ test("TTY detection works correctly", () => {
 	expect(typeof mockProcess.stdin.setRawMode).toBe("function");
 });
 
-test("non-TTY environment doesn't set up keyboard handling", () => {
+test("non-TTY environment doesn't set up keyboard handling", async () => {
 	// Create a non-TTY mock process
 	const nonTTYProcess = {
 		stdout: {
@@ -625,12 +620,22 @@ test("non-TTY environment doesn't set up keyboard handling", () => {
 		},
 	};
 
-	// This should work without trying to set up keyboard handling
+	const writes: string[] = [];
+	nonTTYProcess.stdout.write = (chunk: string): boolean => {
+		writes.push(chunk);
+		return true;
+	};
 	const termdom = new TermDOM({
 		transport: transportFromProcess(nonTTYProcess as any),
 	});
+	termdom.attach();
+	await new Promise((r) => setTimeout(r, 10));
 
-	expect(termdom).toBeDefined();
+	// No raw mode to enter and no cursor to hide: a non-TTY takes none of the
+	// escape sequences a session would write, and setRawMode is never reached
+	// -- the mock has none to reach.
+	expect(writes.join("")).not.toContain("\x1b[?");
+	termdom.dispose();
 });
 
 test("a batched chunk of plain keys dispatches one keydown per key", async () => {

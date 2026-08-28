@@ -126,9 +126,11 @@ test("can render HTML to terminal without errors", async () => {
 	div.style.setProperty("color", "blue");
 	document.body.appendChild(div);
 
-	// Should render without throwing errors
-	// DOM automatically re-renders via MutationObserver
-	await new Promise((resolve) => setTimeout(resolve));
+	await nextFrame(dom);
+
+	// The text reaches the screen, and the color it was given reaches it too.
+	expect(terminal.getVisibleText()).toContain("Test content");
+	expect(terminal.getStaticANSI()).toContain("38;2;0;0;255m");
 	dom.dispose();
 });
 

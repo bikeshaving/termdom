@@ -808,7 +808,7 @@ test("A bare document - flat-tree walker parentNode respects root boundary", () 
 	expect((walker.currentNode as any).className).toBe("paragraph");
 });
 
-test("FAILING - flat-tree walker ::after elements in layout engine pattern", () => {
+test("flat-tree walker reaches ::after in the layout engine's pattern", () => {
 	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
