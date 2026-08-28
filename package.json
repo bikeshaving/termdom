@@ -74,7 +74,7 @@
   "devDependencies": {
     "@b9g/crank": "^0.7.11",
     "@b9g/eslint-config": "^0.1.0",
-    "@b9g/libuild": "^0.2.21",
+    "@b9g/libuild": "^0.2.22",
     "@eslint/js": "^9.39.5",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/prismjs": "^1.26.6",
