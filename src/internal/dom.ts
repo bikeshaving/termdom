@@ -7,8 +7,21 @@
  * standard disagree the standard is right, and where this file departs from
  * one on purpose the comment above the code says why.
  *
- * It knows nothing about layout or the terminal. The geometry it answers with
- * and the widgets it upgrades come from the engine mounted on it.
+ * Start at Node and the four mutation algorithms under it -- insert, replace,
+ * remove and adopt -- which every other section reaches through: the live
+ * collections, the mutation observers and the slot assignments all hang off
+ * them. Events are their own half of the file, from the Event classes down to
+ * dispatch, which is where a click becomes an activation behavior. Two trees
+ * are answered here and a reader has to keep them apart: the node tree the
+ * standards describe, and the flat tree a renderer draws, which the section
+ * of that name builds out of shadow roots, slots and pseudo-element nodes.
+ *
+ * It knows nothing about layout or the terminal. The geometry it answers with,
+ * the events a focus move fires and the frames it schedules come from the Mount
+ * an engine installs on a document; a document with no mount answers the way
+ * the standards say a document with no browsing context does. The widgets it
+ * upgrades render through the UAEngine at the top of this file, and the cascade
+ * and the layout engine are below it, not above.
  */
 
 import {parseFragment, parse as parse5Parse} from "parse5";
@@ -1191,10 +1204,7 @@ export class Event extends EventBase implements globalThis.Event {
 }
 
 /** Swap the type a dispatch invokes listeners under, for the legacy pass. */
-function setEventType(
-	event: Event,
-	type: string,
-): void {
+function setEventType(event: Event, type: string): void {
 	event[kType] = type;
 }
 
@@ -1773,9 +1783,10 @@ const kWhich = Symbol("which");
 /**
  * An event of a user interface.
  *
- * `view` is the Window the event came through, and there is no Window in this
- * DOM: it is null, and an init that names one is a type error rather than a
- * value quietly dropped.
+ * `view` is the Window the event came through, and an event here never carries
+ * one: it is null, and an init that names one is a type error rather than a
+ * value quietly dropped. The window a target renders in is reached from that
+ * target's document, which is what pageX and pageY do.
  */
 class UIEvent extends Event {
 	declare [kDetail]?: number;
@@ -3668,11 +3679,15 @@ const PREFIXED_HANDLER_TYPES = new Map([
 ]);
 
 /**
- * Install one event handler IDL attribute on an interface's prototype.
+ * Install one event handler IDL attribute.
  *
- * On the prototype, once per interface: the accessor pair is the interface's,
- * and what an instance holds is the handler map it only grows when something
- * actually sets a handler on it.
+ * On the prototype wherever there is an interface to put it on: the accessor
+ * pair is the interface's, and what an instance holds is the handler map it
+ * only grows when something actually sets a handler on it. A target built one
+ * at a time -- a media query list -- takes it on the object.
+ *
+ * A handler IS a listener, per spec, and this routes it through the same
+ * listener list as any other, so dispatch order and dedup are the same.
  */
 function installEventHandler(prototype: object, name: string): void {
 	const type = PREFIXED_HANDLER_TYPES.get(name) ?? name.slice(2);
@@ -3910,7 +3925,8 @@ export function dispatchAsUserAgent(target: object, event: object): boolean {
  * and is walked in both directions whether or not the event bubbles.
  *
  * The spec threads a legacy target override flag through here for HTML's load
- * event, which retargets to a Window; there is no Window in this DOM.
+ * event, which retargets a document's load to its Window. Nothing here fires
+ * that event, so the flag has nothing to carry.
  *
  * Firing an event is the user agent's act, so an event dispatched here is
  * trusted unless the caller says otherwise -- click() says otherwise, since
@@ -5506,7 +5522,7 @@ function childNodeArray(parent: Node): Node[] {
 	return nodes;
 }
 
-/** Append, with the observers of the append suppressed. */
+/** Append a node to a parent, as appendChild does past its argument check. */
 function appendNode(node: Node, parent: Node): Node {
 	return preInsert(node, parent, null);
 }
@@ -5861,7 +5877,7 @@ function notifyMutationObservers(): void {
 			if (pendingMutationObservers.has(registered.observer)) {
 				queued = true;
 			} else {
-				observeNode(registered.observer, node);
+				registered.observer[kNodes]!.add(node);
 			}
 		}
 		if (queued) {
@@ -6149,7 +6165,7 @@ export class MutationObserver implements globalThis.MutationObserver {
 			if (registered.observer !== this || registered.source !== null) {
 				continue;
 			}
-			for (const node of [...liveNodes(this), ...transientNodes]) {
+			for (const node of [...this[kNodes]!, ...transientNodes]) {
 				removeTransientObservers(node, (entry) => entry.source === registered);
 			}
 			registered.options = normalized;
@@ -6157,11 +6173,11 @@ export class MutationObserver implements globalThis.MutationObserver {
 		}
 		list.push({observer: this, options: normalized, source: null});
 		registeredObserverCount++;
-		observeNode(this, target);
+		this[kNodes]!.add(target);
 	}
 
 	disconnect(): void {
-		for (const node of [...liveNodes(this), ...transientNodes]) {
+		for (const node of [...this[kNodes]!, ...transientNodes]) {
 			const list = node[kRegisteredObservers]!;
 			if (list === null) {
 				continue;
@@ -6185,33 +6201,10 @@ export class MutationObserver implements globalThis.MutationObserver {
 	}
 }
 
-/** The nodes whose registered observer list names this one. */
-function liveNodes(
-	observer: MutationObserver,
-): Node[] {
-	return [...observer[kNodes]!];
-}
-
-function observeNode(
-	observer: MutationObserver,
-	node: Node,
-): void {
-	observer[kNodes]!.add(node);
-}
-
-function enqueueRecord(
-	observer: MutationObserver,
-	record: MutationRecord,
-): void {
-	observer[kRecords]!.push(record);
-}
-
-function notifyObserver(
-	observer: MutationObserver,
-): void {
+function notifyObserver(observer: MutationObserver): void {
 	const records = observer[kRecords]!;
 	observer[kRecords] = [];
-	for (const node of liveNodes(observer)) {
+	for (const node of [...observer[kNodes]!]) {
 		removeTransientObservers(node, () => true);
 	}
 	for (const node of transientNodes) {
@@ -6305,8 +6298,7 @@ function queueMutationRecord(
 		return;
 	}
 	for (const [observer, mappedOldValue] of interested) {
-		enqueueRecord(
-			observer,
+		observer[kRecords]!.push(
 			new MutationRecord(
 				type,
 				target,
@@ -6531,9 +6523,7 @@ function drop(list: LiveList): void {
 	list[kMembersMoved]!();
 }
 
-function recompute(
-	list: LiveList,
-): void {
+function recompute(list: LiveList): void {
 	list[kItems] = list.compute();
 	list[kExact] = true;
 	list[kMembersMoved]!();
@@ -6608,17 +6598,12 @@ function splice(
  * The list as it was last computed, where that is still the list the tree
  * holds; null where the tree has moved on from it.
  */
-function computed(
-	list: LiveList,
-): Node[] | null {
+function computed(list: LiveList): Node[] | null {
 	return list[kExact]! ? list[kItems]! : null;
 }
 
 /** Define an index for every member the collection has, and no more. */
-function defineIndices(
-	list: LiveList,
-	length: number,
-): void {
+function defineIndices(list: LiveList, length: number): void {
 	const indexed = list as unknown as Record<number | string, unknown>;
 	for (let index = list[kDefined]!; index < length; index++) {
 		const at = index;
@@ -6639,9 +6624,7 @@ function defineIndices(
 	list[kDefined] = length;
 }
 
-function materialize(
-	list: LiveList,
-): void {
+function materialize(list: LiveList): void {
 	const items = list[kItems]!;
 	const record = list as unknown as Record<number | string, unknown>;
 	defineIndices(list, items.length);
@@ -6672,7 +6655,12 @@ function materialize(
 	}
 }
 
-/** The list's members, recomputed if what it is over has moved on. */
+/**
+ * The list's members, recomputed if what it is over has moved on.
+ *
+ * The indices a collection defines are observable without reading it, so a
+ * collection is put through this as it is made rather than on first read.
+ */
 function ensure(list: LiveList): Node[] {
 	if (!list[kLive]!) {
 		if (!list[kExact]!) {
@@ -7096,8 +7084,6 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 				name === lowered :
 				name === qualifiedName;
 		});
-		// The indices a collection defines are observable without reading it,
-		// so a collection materializes them as it is made.
 		ensure(collection);
 		cache.set(key, collection);
 	}
@@ -7121,8 +7107,6 @@ function elementsByTagNameNS(
 				(ns === "*" || element[kNamespace] === ns) &&
 				(localName === "*" || element[kLocalName] === localName),
 		);
-		// The indices a collection defines are observable without reading it,
-		// so a collection materializes them as it is made.
 		ensure(collection);
 		cache.set(key, collection);
 	}
@@ -7182,8 +7166,6 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 			}
 			return true;
 		});
-		// The indices a collection defines are observable without reading it,
-		// so a collection materializes them as it is made.
 		ensure(collection);
 		cache.set(key, collection);
 	}
@@ -7363,14 +7345,12 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 }
 
-function write(
-	list: DOMTokenList,
-	tokens: string[],
-): void {
-	if (list[kElement]!.getAttributeNode(list[kAttribute]!) === null) {
-		if (tokens.length === 0) {
-			return;
-		}
+function write(list: DOMTokenList, tokens: string[]): void {
+	if (
+		tokens.length === 0 &&
+		list[kElement]!.getAttributeNode(list[kAttribute]!) === null
+	) {
+		return;
 	}
 	list[kElement]!.setAttribute(list[kAttribute]!, tokens.join(" "));
 }
@@ -8875,7 +8855,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	get outerHTML(): string {
-		return serializeOuterHTML(this);
+		return serializeNode(this, false, []);
 	}
 
 	set outerHTML(value: string) {
@@ -9181,25 +9161,23 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** Whether a selector matches an element, which two names ask for. */
+function elementMatches(this: Element, selectors: string): boolean {
+	return selectorEngine(this[kDocument]!).match(
+		String(selectors),
+		this as never,
+	);
+}
+
 Object.defineProperties(Element.prototype, {
 	matches: {
-		value(this: Element, selectors: string): boolean {
-			return selectorEngine(this[kDocument]!).match(
-				String(selectors),
-				this as never,
-			);
-		},
+		value: elementMatches,
 		configurable: true,
 		enumerable: true,
 		writable: true,
 	},
 	webkitMatchesSelector: {
-		value(this: Element, selectors: string): boolean {
-			return selectorEngine(this[kDocument]!).match(
-				String(selectors),
-				this as never,
-			);
-		},
+		value: elementMatches,
 		configurable: true,
 		enumerable: true,
 		writable: true,
@@ -9679,9 +9657,8 @@ export class HTMLElement extends Element {
 	 *
 	 * The focus STATE moves here. The focus/blur/focusin/focusout events
 	 * are the mount's to fire, because their order interleaves with
-	 * whatever else a move of focus does -- a repaint, a caret reveal --
-	 * and this DOM has no window to fire them at. A headless document moves
-	 * the state and stops.
+	 * whatever else a move of focus does -- a repaint, a caret reveal. A
+	 * headless document moves the state and stops.
 	 */
 	focus(): void {
 		const document = this[kDocument]!;
@@ -9974,16 +9951,10 @@ Object.defineProperties(HTMLElement.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
-	// checkVisibility, on the definition the focus walk already uses: a
-	// rendered element -- nothing on its flat chain display:none, and it
-	// produced boxes -- with the visibility check the options ask for.
-	// Nothing a headless document holds is rendered.
-	/*
-	 * Reveal the element: every scroll box between it and the document
-	 * scrolls it into view, and so does the screen. A headless document
-	 * shows nothing, so there is nothing to reveal into. The options are not
-	 * read: all moves are the minimal ones, block "nearest".
-	 */
+	// Reveal the element: every scroll box between it and the document
+	// scrolls it into view, and so does the screen. A headless document shows
+	// nothing, so there is nothing to reveal into. The options are not read:
+	// all moves are the minimal ones, block "nearest".
 	scrollIntoView: {
 		value(this: HTMLElement): void {
 			getMount(this)?.scrollIntoView(this);
@@ -9992,6 +9963,10 @@ Object.defineProperties(HTMLElement.prototype, {
 		enumerable: true,
 		writable: true,
 	},
+	// On the definition the focus walk already uses: a rendered element --
+	// nothing on its flat chain display:none, and it produced boxes -- with
+	// the visibility check the options ask for. Nothing a headless document
+	// holds is rendered.
 	checkVisibility: {
 		value(
 			this: HTMLElement,
@@ -10012,16 +9987,12 @@ Object.defineProperties(HTMLElement.prototype, {
  * it, wherever in a shadow tree it stands.
  */
 function isInertTree(element: Element): boolean {
-	for (
-		let node: Element | null = element;
-		node !== null;
-
-	) {
+	let node: Element | null = element;
+	while (node !== null) {
 		if (node.hasAttribute("inert")) {
 			return true;
 		}
-		const parent: Element | null = node.parentElement as unknown as Element |
-			null;
+		const parent = node.parentElement as unknown as Element | null;
 		if (parent !== null) {
 			node = parent;
 			continue;
@@ -10908,15 +10879,14 @@ function definitionForConstructor(
 /**
  * The registry every document in this realm shares.
  *
- * The spec hangs one off each Window; there is no Window here, and a document
- * reaches this one through the algorithms below rather than through a global,
- * so the tree stays standalone.
+ * Definitions are per-realm because the classes that carry them are, so one
+ * registry serves every document here. A window names it, and a document
+ * reaches it through the algorithms below rather than through a global, so a
+ * tree with no window behind it still resolves its definitions.
  */
-const customElements = constructInternal(
+const globalCustomElements = constructInternal(
 	() => new CustomElementRegistry(),
 );
-
-const globalCustomElements = customElements;
 
 /**
  * The registry a node's definitions come from.
@@ -12204,13 +12174,7 @@ function hyperlinkPart(
 	};
 }
 
-/**
- * The members a hyperlink carries: its URL, and the parts of that URL.
- *
- * A link's activation behavior is to follow it, and this DOM does not
- * navigate: the behavior is here so that dispatch counts a link as an
- * activation target, and following it is the one step that does not happen.
- */
+/** The members a hyperlink carries: its URL, and the parts of that URL. */
 const hyperlinkMembers: PropertyDescriptorMap = {
 	href: {
 		get(this: Element): string {
@@ -12806,7 +12770,7 @@ class HTMLDialogElement extends HTMLElement {
 	}
 
 	close(returnValue?: string): void {
-		close(this, returnValue, false);
+		close(this, returnValue);
 	}
 
 	requestClose(returnValue?: string): void {
@@ -12817,18 +12781,8 @@ class HTMLDialogElement extends HTMLElement {
 		if (canceled) {
 			return;
 		}
-		close(this, returnValue, false);
+		close(this, returnValue);
 	}
-}
-
-/**
- * The dialog focusing steps, as the popover focusing steps reach them: a
- * dialog shown as a popover focuses like a dialog, not like a popover.
- */
-function dialogFocusingSteps(
-	dialog: HTMLDialogElement,
-): void {
-	focusDialog(dialog);
 }
 
 /**
@@ -12871,7 +12825,6 @@ function focusDialog(
 function close(
 	dialog: HTMLDialogElement,
 	returnValue: string | undefined,
-	_fromRequest: boolean,
 ): void {
 	if (!dialog.hasAttribute("open")) {
 		return;
@@ -13793,7 +13746,6 @@ const SELECTABLE_INPUT_TYPES = new Set([
 ]);
 
 class HTMLInputElement extends HTMLElement {
-	/** Installed from the element table, and read by the algorithms below. */
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kValue] = "";
@@ -13894,6 +13846,7 @@ class HTMLInputElement extends HTMLElement {
 		};
 	}
 
+	/** Installed from the element table, and read by the algorithms below. */
 	declare type: string;
 
 	declare [kValue]?: string;
@@ -15153,7 +15106,6 @@ class HTMLMetaElement extends HTMLElement {}
  * shadow tree, clipped to the fraction CSS gives the bar.
  */
 const GAUGE_BAR_GLYPH = "█";
-
 const GAUGE_GROOVE_GLYPH = "░";
 
 /**
@@ -15162,7 +15114,7 @@ const GAUGE_GROOVE_GLYPH = "░";
  */
 function gaugeRun(host: Element, glyph: string): string {
 	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
-		?.defaultView;
+		.defaultView;
 	const width = view?.innerWidth;
 	return glyph.repeat(
 		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
@@ -15459,17 +15411,17 @@ interface HTMLOptionElement
 	> {}
 
 class HTMLOptionElement extends HTMLElement {
-	/** Installed from the element table, and read by the select's own tree. */
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
 		this[kSelectednessValue] = false;
 		this[kOptionDirty] = false;
 	}
 
+	/** Installed from the element table, and read by the select's own tree. */
 	declare disabled: boolean;
 
 	declare [kSelectednessValue]?: boolean;
-	[kOptionDirty]?: boolean;
+	declare [kOptionDirty]?: boolean;
 
 	/**
 	 * An option's selectedness, which is no attribute and no part of a tree:
@@ -16056,8 +16008,8 @@ class HTMLSelectElement extends HTMLElement {
 					if (index !== this.selectedIndex) {
 						commit(this, index);
 					} else {
-						this[kUAReconcile]!();
-					} // Re-press the selection: just close.
+						this[kUAReconcile]!(); // Re-press the selection: just close.
+					}
 				}
 				return;
 			}
@@ -16343,9 +16295,7 @@ class HTMLSelectElement extends HTMLElement {
 /* --------------------------------------------------- the rendered tree */
 
 /** The options the tree renders: `options`, without building a collection. */
-function optionList(
-	select: HTMLSelectElement,
-): HTMLOptionElement[] {
+function optionList(select: HTMLSelectElement): HTMLOptionElement[] {
 	askForAReset(select);
 	return getOptions(select);
 }
@@ -16642,9 +16592,9 @@ export interface HTMLStyleElement
 export class HTMLStyleElement extends HTMLElement {
 	/**
 	 * A document with no cascade behind it parses no CSS, and so holds no
-	 * sheet. A window's cascade replaces this accessor with one that answers
-	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
-	 * which is what an author reaches through `styleEl.sheet`.
+	 * sheet. The cascade replaces this accessor with one that answers the
+	 * element's real CSSStyleSheet, which is what an author reaches through
+	 * `styleEl.sheet`.
 	 */
 	get sheet(): CSSStyleSheet | null {
 		return null;
@@ -18188,25 +18138,12 @@ function topmostPopoverAncestor(
 /** The index of the last popover in a stack a node sits inside of. */
 function lastFlatAncestorIndex(popovers: Element[], node: Element): number {
 	for (let i = popovers.length - 1; i >= 0; i--) {
-		if (isFlatTreeDescendant(node, popovers[i])) {
+		const popover = popovers[i];
+		if (node !== popover && isFlatInclusiveAncestor(popover, node)) {
 			return i;
 		}
 	}
 	return -1;
-}
-
-/** Whether a node renders inside an element, shadow trees crossed. */
-function isFlatTreeDescendant(node: Node, ancestor: Element): boolean {
-	for (
-		let current = flatParentElement<Node>(node);
-		current !== null;
-		current = flatParentElement<Node>(current)
-	) {
-		if (current === ancestor) {
-			return true;
-		}
-	}
-	return false;
 }
 
 /** HTML's nearest inclusive open popover: the auto popover a node is in. */
@@ -18276,7 +18213,8 @@ export function topmostClickedPopover(node: object): Element | null {
  */
 function popoverFocusingSteps(element: Element): void {
 	if (element instanceof HTMLDialogElement) {
-		dialogFocusingSteps(element);
+		// A dialog shown as a popover focuses like a dialog, not like a popover.
+		focusDialog(element);
 		return;
 	}
 	if (element.hasAttribute("autofocus")) {
@@ -18447,8 +18385,8 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 	}
 	if (
 		target instanceof Node &&
-		isShadowIncludingInclusiveDescendant(target, popover) &&
-		isShadowIncludingInclusiveDescendant(popover, node) &&
+		isFlatInclusiveAncestor(popover, target) &&
+		isFlatInclusiveAncestor(node, popover) &&
 		popover !== node
 	) {
 		return;
@@ -18472,11 +18410,11 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 	}
 }
 
-/** Whether a node is the element itself or renders anywhere beneath it. */
-function isShadowIncludingInclusiveDescendant(
-	node: Node,
-	ancestor: Node,
-): boolean {
+/**
+ * Whether a node is another or renders anywhere beneath it: the flat tree's
+ * answer, where isShadowIncludingInclusiveAncestor is the node tree's.
+ */
+function isFlatInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	for (
 		let current: Node | null = node;
 		current !== null;
@@ -18838,7 +18776,7 @@ function isActuallyDisabled(element: Element): boolean {
 		return (
 			element[kLocalName] === "option" &&
 			parent !== null &&
-			isHTMLTag(parent, new Set(["optgroup"])) &&
+			isHTMLElementNamed(parent, "optgroup") &&
 			(parent as Element).hasAttribute("disabled")
 		);
 	}
@@ -18858,7 +18796,7 @@ function isDisabledByFieldSet(element: Element): boolean {
 		node !== null;
 		node = node[kParent]!
 	) {
-		if (!isHTMLTag(node, new Set(["fieldset"]))) {
+		if (!isHTMLElementNamed(node, "fieldset")) {
 			continue;
 		}
 		const fieldset = node as Element;
@@ -19146,7 +19084,6 @@ Object.defineProperty(CustomStateSet.prototype, Symbol.toStringTag, {
 
 const kValidity = Symbol("validity");
 const kValidationMessage = Symbol("validation message");
-const kValidationAnchor = Symbol("validation anchor");
 const kSubmissionValue = Symbol("submission value");
 const kElementInternalsTarget = Symbol("the element an internals belongs to");
 
@@ -19162,7 +19099,6 @@ class ElementInternals {
 	[kSubmissionValue]?: unknown;
 	[kValidityFlags]?: ValidityFlags;
 	[kValidationMessage]?: string;
-	[kValidationAnchor]?: HTMLElement | null;
 	[kStates]?: CustomStateSet | null;
 	declare [kValidity]?: ValidityState;
 
@@ -19172,7 +19108,6 @@ class ElementInternals {
 		this[kSubmissionValue] = null;
 		this[kValidityFlags] = noValidityFlags();
 		this[kValidationMessage] = "";
-		this[kValidationAnchor] = null;
 		this[kStates] = null;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
@@ -19256,7 +19191,6 @@ class ElementInternals {
 		}
 		this[kValidityFlags] = next;
 		this[kValidationMessage] = anyFailed ? String(message ?? "") : "";
-		this[kValidationAnchor] = anchor ?? null;
 	}
 
 	get willValidate(): boolean {
@@ -19279,15 +19213,18 @@ class ElementInternals {
 		return checkValidity(this[kElementInternalsTarget]!);
 	}
 
+	/**
+	 * The same answer as checkValidity, and no report: reporting is a browser
+	 * showing the validation message in chrome of its own, and a terminal has
+	 * none to show it in.
+	 */
 	reportValidity(): boolean {
 		requireFormAssociated(this);
 		return checkValidity(this[kElementInternalsTarget]!);
 	}
 }
 
-function requireFormAssociated(
-	internals: ElementInternals,
-): void {
+function requireFormAssociated(internals: ElementInternals): void {
 	if (!isFormAssociatedCustom(internals[kElementInternalsTarget]!)) {
 		throw domError(
 			"NotSupportedError",
@@ -19549,7 +19486,7 @@ function willValidate(element: Element): boolean {
 		return false;
 	}
 	for (let node: Node | null = element; node !== null; node = node[kParent]!) {
-		if (isHTMLTag(node, new Set(["datalist"]))) {
+		if (isHTMLElementNamed(node, "datalist")) {
 			return false;
 		}
 	}
@@ -19992,11 +19929,9 @@ function composedLastChild(node: Node): Node | null {
 }
 
 /**
- * Mirror of composedContentFirstChild: an element's composed content from the
- * end, pseudo-elements aside -- its shadow tree's last child when it hosts
- * one, a slot's last assigned node when it has any, and its own last child
- * otherwise. This is what a ::after follows, which is why it is separate from
- * composedLastChild, whose answer IS the ::after when there is one.
+ * What a ::after follows: the last child an element renders, or the ::before
+ * or ::marker it renders instead when it has no content of its own. Separate
+ * from composedLastChild, whose answer IS the ::after when there is one.
  */
 function composedLastContent(element: Element): Node | null {
 	const child = lastRenderedChild(element);
@@ -20830,8 +20765,9 @@ let ambientDocument: Document | null = null;
 /**
  * The document a constructor with no document of its own belongs to.
  *
- * With no window there is no "current global object", so a bare `new Text()`
- * belongs to whichever document was last made ambient, or to one made here.
+ * A window here is not the global object, so there is no "current global
+ * object" to ask: a bare `new Text()` belongs to whichever document was last
+ * displayed in a window, or to one made here when none has been.
  */
 function currentDocument(): Document {
 	if (currentDocumentForConstruction !== null) {
@@ -20913,7 +20849,7 @@ export class Document extends Node implements globalThis.Document {
 
 	/** Parse a document, declarative shadow roots included. */
 	static parseHTMLUnsafe(html: string): Document {
-		return parseHTMLUnsafe(String(html));
+		return parseHTMLDocument(String(html), "about:blank", true, null);
 	}
 
 	override get nodeType(): number {
@@ -20973,9 +20909,9 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	/**
-	 * The window this document is displayed in, which is null until an
-	 * environment mounts the document in one. A document with no browsing
-	 * context has none, and nothing in this DOM creates one.
+	 * The window this document is displayed in, which is null until a Window
+	 * is built over it. A document nothing displays has none, and answers the
+	 * way the standards say a document with no browsing context does.
 	 *
 	 * lib.dom intersects Window with typeof globalThis, because in a browser
 	 * the window IS the global. Here it is not, and a caller who reaches
@@ -21638,9 +21574,9 @@ export class Document extends Node implements globalThis.Document {
 	 * The selection over this document.
 	 *
 	 * The Selection API hangs this off the Window as well, and returns null for
-	 * a document with no browsing context. There is no Window here and no
-	 * browsing context to have: a document is the top of this DOM, so the
-	 * selection is the document's and this is the only door to it.
+	 * a document with no browsing context. There is no browsing context here to
+	 * have: the selection is the document's own, a window's getSelection is a
+	 * call to this one, and a document nothing displays still has a selection.
 	 */
 	getSelection(): globalThis.Selection | null {
 		let selection = this[kSelection]!;
@@ -22486,13 +22422,7 @@ const parentNodeMembers = {
 	},
 	childElementCount: {
 		get(this: Node): number {
-			let count = 0;
-			for (let node = this[kFirstChild]!; node !== null; node = node[kNext]!) {
-				if (node.nodeType === ELEMENT_NODE) {
-					count++;
-				}
-			}
-			return count;
+			return countChildren(this, ELEMENT_NODE);
 		},
 		configurable: true,
 		enumerable: true,
@@ -24070,7 +24000,7 @@ class Range extends AbstractRange implements globalThis.Range {
 	}
 
 	detach(): void {
-		// The method's functionality was removed; it is kept for compatibility.
+		// The spec keeps this as a no-op.
 	}
 
 	isPointInRange(node: Node, offset: number): boolean {
@@ -24093,14 +24023,11 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (at > nodeLength(node)) {
 			throw indexSizeError("The offset is past the end of the node");
 		}
-		if (
-			comparePoints(node, at, this[kStartNode]!, this[kStartOffset]!) ===
-			BEFORE ||
-			comparePoints(node, at, this[kEndNode]!, this[kEndOffset]!) === AFTER
-		) {
-			return false;
-		}
-		return true;
+		return (
+			comparePoints(node, at, this[kStartNode]!, this[kStartOffset]!) !==
+			BEFORE &&
+			comparePoints(node, at, this[kEndNode]!, this[kEndOffset]!) !== AFTER
+		);
 	}
 
 	comparePoint(node: Node, offset: number): number {
@@ -25157,10 +25084,7 @@ function modifiedPoint(
 }
 
 /** Whether a node is in the selection's document, shadow trees included. */
-function inDocument(
-	selection: Selection,
-	node: Node,
-): boolean {
+function inDocument(selection: Selection, node: Node): boolean {
 	return shadowIncludingRoot(node) === selection[kDocument]!;
 }
 
@@ -25169,9 +25093,7 @@ function inDocument(
  * its range is in the document, a shadow tree of the document included. A
  * range that has left the document is not one the selection answers with.
  */
-function documentRange(
-	selection: Selection,
-): Range | null {
+function documentRange(selection: Selection): Range | null {
 	const range = selection[kRange]!;
 	if (range === null) {
 		return null;
@@ -25179,9 +25101,7 @@ function documentRange(
 	return inDocument(selection, range[kStartNode]!) ? range : null;
 }
 
-function anchorPoint(
-	selection: Selection,
-): [Node, number] | null {
+function anchorPoint(selection: Selection): [Node, number] | null {
 	const range = selection[kRange]!;
 	if (range === null) {
 		return null;
@@ -25191,9 +25111,7 @@ function anchorPoint(
 			[range[kEndNode]!, range[kEndOffset]!];
 }
 
-function focusPoint(
-	selection: Selection,
-): [Node, number] | null {
+function focusPoint(selection: Selection): [Node, number] | null {
 	const range = selection[kRange]!;
 	if (range === null) {
 		return null;
@@ -25340,7 +25258,6 @@ export const SHOW_FLAT = 0x1000;
 /** Run a traverser's filter over a node. */
 function filterNode(
 	traverser: {
-		root: Node;
 		whatToShow: number;
 		filter: NodeFilterInput;
 		active: {value: boolean};
@@ -25368,11 +25285,6 @@ function filterNode(
 		traverser.active.value = false;
 	}
 	return toUnsignedLong(result);
-}
-
-/** The next node in tree order after a node, inside a root. */
-function followingWithin(node: Node, root: Node): Node | null {
-	return nextInTree(node, root);
 }
 
 /** The node preceding a node in tree order, inside a root. */
@@ -25446,14 +25358,10 @@ class NodeIterator {
 	}
 }
 
-function traverse(
-	iterator: NodeIterator,
-	forward: boolean,
-): Node | null {
+function traverse(iterator: NodeIterator, forward: boolean): Node | null {
 	let node: Node | null = iterator[kReference]!;
 	let before = iterator[kPointerBefore]!;
 	const state = {
-		root: iterator[kRoot]!,
 		whatToShow: iterator[kWhatToShow]!,
 		filter: iterator[kFilter]!,
 		active: iterator[kActive]!,
@@ -25461,7 +25369,7 @@ function traverse(
 	for (;;) {
 		if (forward) {
 			if (!before) {
-				node = followingWithin(node as Node, iterator[kRoot]!);
+				node = nextInTree(node as Node, iterator[kRoot]!);
 				if (node === null) {
 					return null;
 				}
@@ -25504,9 +25412,9 @@ function preRemoveFromIterator(
 		return;
 	}
 	if (iterator[kPointerBefore]!) {
-		let next = followingWithin(toBeRemoved, iterator[kRoot]!);
+		let next = nextInTree(toBeRemoved, iterator[kRoot]!);
 		while (next !== null && isInclusiveAncestor(toBeRemoved, next)) {
-			next = followingWithin(next, iterator[kRoot]!);
+			next = nextInTree(next, iterator[kRoot]!);
 		}
 		if (next !== null) {
 			iterator[kReference] = next;
@@ -25572,13 +25480,11 @@ export class TreeWalker implements globalThis.TreeWalker {
 	}
 
 	get [kState](): {
-		root: Node;
 		whatToShow: number;
 		filter: NodeFilterInput;
 		active: {value: boolean};
 	} {
 		return {
-			root: this[kRoot]!,
 			whatToShow: this[kWhatToShow]!,
 			filter: this[kFilter]!,
 			active: this[kActive]!,
@@ -25645,7 +25551,6 @@ interface SelectorEngine {
 	match(selector: string, element: never): boolean;
 	first(selector: string, context: never): unknown;
 	select(selector: string, context: never): unknown[];
-	configure(options: Record<string, boolean>): void;
 }
 
 /** The selector engine a document queries through, built on first use. */
@@ -25735,18 +25640,12 @@ function selectorEngine(document: Document): SelectorEngine {
 		// `:focus-within` climbs the same chain and keeps going: every
 		// ancestor and every host above the focused element matches.
 		engine.Snapshot.hasFocusWithinState = (element: Element): boolean => {
-			const active = document[kActiveElement]!;
-			for (
-				let node: Element | null = active;
-				node !== null;
-
-			) {
+			let node: Element | null = document[kActiveElement]!;
+			while (node !== null) {
 				if (node === element) {
 					return true;
 				}
-				const parent: Element |
-					null = node.parentElement as unknown as Element |
-					null;
+				const parent = node.parentElement as unknown as Element | null;
 				if (parent !== null) {
 					node = parent;
 					continue;
@@ -25799,7 +25698,7 @@ function selectorEngine(document: Document): SelectorEngine {
 		// document.activeElement, and its `:focus-within` cannot reach an
 		// ancestor at all. Its `:hover` predates hover state existing here at
 		// all. The names above resolve through the raw states instead, and
-		// every selector is spelled onto them on the way in -- the four entry
+		// every selector is spelled onto them on the way in -- the three entry
 		// points below are the only doors.
 		const STATE_REWRITES: Array<[RegExp, string]> = [
 			[/:focus-within(?![\w-])/gi, ":-termdom-focus-within"],
@@ -25820,18 +25719,12 @@ function selectorEngine(document: Document): SelectorEngine {
 		const rawMatch = engine.match.bind(engine);
 		const rawFirst = engine.first.bind(engine);
 		const rawSelect = engine.select.bind(engine);
-		const withClosest = engine as unknown as {
-			closest(selector: string, ...rest: unknown[]): unknown;
-		};
-		const rawClosest = withClosest.closest.bind(engine);
 		engine.match = (selector: string, element: unknown, ...rest: unknown[]) =>
 			rawMatch(rewriteState(selector), element, ...rest);
 		engine.first = (selector: string, ...rest: unknown[]) =>
 			rawFirst(rewriteState(selector), ...rest);
 		engine.select = (selector: string, ...rest: unknown[]) =>
 			rawSelect(rewriteState(selector), ...rest);
-		withClosest.closest = (selector: string, ...rest: unknown[]) =>
-			rawClosest(rewriteState(selector), ...rest);
 		if (document.documentElement !== null) {
 			document[kNwsapi] = engine;
 		}
@@ -26206,11 +26099,6 @@ function parseFragmentHTML(
 		attachDeclarativeShadowRoots(fragment);
 	}
 	return fragment;
-}
-
-/** Parse a whole document, declarative shadow roots and all. */
-function parseHTMLUnsafe(html: string): Document {
-	return parseHTMLDocument(String(html), "about:blank", true, null);
 }
 
 /* ------------------------------------------------------------- XML parsing */
@@ -27047,10 +26935,6 @@ function serializeFragment(
 	return html;
 }
 
-function serializeOuterHTML(element: Element): string {
-	return serializeNode(element, false, []);
-}
-
 /** The template a declarative shadow root serializes as. */
 function serializeShadowRoot(
 	shadow: ShadowRoot,
@@ -27375,12 +27259,13 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 /* -------------------------------------------------------------- mounting */
 
 /**
- * The engine's answers for the APIs a document alone cannot give --
- * geometry so far; the rest of the installed surface migrates here. A
- * mounting engine installs one per document, and a node reaches it
- * through its ownerDocument, one hop. A headless document has none: it is
- * the spec's no-browsing-context document, and the members consulting a
- * mount degrade to that -- zero rects, empty lists, null parents.
+ * The engine's answers for the APIs a document alone cannot give: what the
+ * boxes measure, what a move of focus fires, when a frame lands, what the
+ * viewport is, and what the terminal behind it can do. A mounting engine
+ * installs one per document, and a node reaches it through its ownerDocument,
+ * one hop. A headless document has none: it is the spec's
+ * no-browsing-context document, and the members consulting a mount degrade to
+ * that -- zero rects, empty lists, null parents.
  */
 export interface Mount {
 	boundingClientRect(element: object): globalThis.DOMRect;
@@ -27789,30 +27674,8 @@ class PermissionStatus extends EventTarget {
 	}
 }
 
-// The one event handler attribute a permission status carries. An event
-// handler attribute IS a listener, per spec: routing it through
-// add/removeEventListener keeps dispatch order and dedup like any other.
-const kOnChange = Symbol("onchange");
-Object.defineProperty(PermissionStatus.prototype, "onchange", {
-	get(this: PermissionStatus): unknown {
-		return (this as unknown as Record<symbol, unknown>)[kOnChange] ?? null;
-	},
-	set(this: PermissionStatus, value: unknown): void {
-		const held = this as unknown as Record<symbol, unknown>;
-		type Listener = Parameters<PermissionStatus["addEventListener"]>[1];
-		const previous = held[kOnChange]! as Listener | undefined;
-		if (previous) {
-			this.removeEventListener("change", previous);
-		}
-		const next = typeof value === "function" ? (value as Listener) : null;
-		held[kOnChange] = next;
-		if (next) {
-			this.addEventListener("change", next);
-		}
-	},
-	enumerable: true,
-	configurable: true,
-});
+// The one event handler attribute a permission status carries.
+installEventHandler(PermissionStatus.prototype, "onchange");
 
 Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
 	value: "PermissionStatus",
@@ -28068,10 +27931,8 @@ export class Window extends EventTarget {
 		return location;
 	}
 
-	// The realm has one registry: definitions are per-realm because the
-	// classes are, and a window names the registry the realm holds.
 	get customElements(): CustomElementRegistry {
-		return customElements;
+		return globalCustomElements;
 	}
 
 	// The terminal is the window and the screen both, so the inner and outer
@@ -28216,27 +28077,10 @@ export class Window extends EventTarget {
 		// `matches` reads live; this holds the value the last "change" event
 		// reported.
 		let notified = matches();
-		let onchange: ((event: Event) => void) | null = null;
+		installEventHandler(list, "onchange");
 		Object.defineProperties(list, {
 			media: {get: () => media, enumerable: true, configurable: true},
 			matches: {get: matches, enumerable: true, configurable: true},
-			onchange: {
-				get: () => onchange,
-				set: (value: ((event: Event) => void) | null) => {
-					// An event-handler attribute IS a listener, per spec:
-					// route it through add/removeEventListener so dispatch
-					// order and dedup behave like any other handler.
-					if (onchange) {
-						list.removeEventListener("change", onchange);
-					}
-					onchange = typeof value === "function" ? value : null;
-					if (onchange) {
-						list.addEventListener("change", onchange);
-					}
-				},
-				enumerable: true,
-				configurable: true,
-			},
 			// The pre-2020 MediaQueryList API, still what much deployed code
 			// calls: plain aliases for the EventTarget pair.
 			addListener: {
