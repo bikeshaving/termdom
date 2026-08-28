@@ -216,12 +216,12 @@ export function ansiMode(code: number, on: boolean): string {
 }
 
 /** DECRQM for a private mode: what is this mode set to? */
-export function privateModeQuery(code: number): string {
+function privateModeQuery(code: number): string {
 	return `\x1b[?${code}$p`;
 }
 
 /** DECRQM for an ANSI mode. */
-export function ansiModeQuery(code: number): string {
+function ansiModeQuery(code: number): string {
 	return `\x1b[${code}$p`;
 }
 
@@ -240,6 +240,59 @@ export function popTitle(): string {
 /** DSR 6: where is the cursor? Answered by a CPR report. */
 export function cursorPositionQuery(): string {
 	return "\x1b[6n";
+}
+
+/**
+ * A question and the rule that knows its answer: the bytes that ask, and
+ * which of the wire's items carries the reply. The asking itself -- writing
+ * the request, waiting, giving up -- is the session's business; wire only
+ * pairs each spelling with its match.
+ */
+export interface WireProbe<T> {
+	/** The bytes that ask. */
+	request: string;
+	/** The answer an item carries, or undefined when the item is not it. */
+	matches(item: WireItem): T | undefined;
+}
+
+/** Where is the cursor? Answered by the next cursor report, one-based. */
+export function cursorPositionProbe(): WireProbe<{row: number; col: number}> {
+	return {
+		request: cursorPositionQuery(),
+		matches: (item) =>
+			item.kind === "cursor-report" ?
+					{row: item.row, col: item.col} :
+				undefined,
+	};
+}
+
+/**
+ * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers
+ * it, a private mode keeping its "?" ("8", "?2027"), and the answer is the
+ * DECRPM value for that mode alone.
+ */
+export function modeProbe(mode: string): WireProbe<number> {
+	const request = mode.startsWith("?") ?
+			privateModeQuery(parseInt(mode.slice(1), 10)) :
+			ansiModeQuery(parseInt(mode, 10));
+	return {
+		request,
+		matches: (item) =>
+			item.kind === "mode-report" && item.mode === mode ?
+				item.value :
+				undefined,
+	};
+}
+
+/**
+ * OSC 52 with "?": what is on the clipboard? The answer is the reply's text,
+ * null when the reply outgrew the reader's held-reply limit.
+ */
+export function clipboardProbe(): WireProbe<string | null> {
+	return {
+		request: clipboardQuery(),
+		matches: (item) => (item.kind === "clipboard" ? item.text : undefined),
+	};
 }
 
 /* -------------------------------------------------------------- the base64 */
@@ -337,7 +390,7 @@ export function clipboardWrite(text: string): string {
 }
 
 /** OSC 52 with "?": ask the terminal for the clipboard's contents. */
-export function clipboardQuery(): string {
+function clipboardQuery(): string {
 	return "\x1b]52;c;?\x07";
 }
 

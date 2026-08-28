@@ -13,16 +13,18 @@ import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import type {ColorDepth} from "./color.js";
 import {
 	ansiMode,
-	ansiModeQuery,
-	clipboardQuery,
+	clipboardProbe,
 	clipboardWrite,
+	cursorPositionProbe,
 	cursorPositionQuery,
 	eraseToLineEnd,
+	modeProbe,
 	popTitle,
 	privateMode,
-	privateModeQuery,
 	pushTitle,
 	setWindowTitle,
+	type WireItem,
+	type WireProbe,
 	WireReader,
 } from "./wire.js";
 
@@ -208,6 +210,26 @@ interface ExchangeHandlers {
 	onClosed(info: TerminalCloseInfo): void;
 }
 
+/**
+ * One question awaiting its answer. The probe itself comes from wire, which
+ * pairs the request with the rule matching its reply; the session adds what
+ * only it knows -- the deadline, and for cursor probes the DSR send order
+ * that keeps them and the width probes from taking each other's replies.
+ * Oldest first: the first pending probe an item matches is the one it
+ * answers, and an item matching none is a late or duplicate reply, dropped.
+ */
+interface PendingProbe {
+	matches(item: WireItem): unknown;
+	/** Resolve the asker with the matched answer, clearing the deadline. */
+	settle(answer: unknown): void;
+	/** The deadline; expiring removes the probe and tells the asker. */
+	timer: ReturnType<typeof setTimeout>;
+	/** DSR send order, cursor probes only. */
+	sequence?: number;
+	/** The clipboard probe: one at a time, and dispose answers it null. */
+	clipboard?: boolean;
+}
+
 const kTransport = Symbol("transport");
 const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
@@ -225,19 +247,13 @@ const kWriteBatch = Symbol("writeBatch");
 const kWireReader = Symbol("wireReader");
 
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
-const kCursorDetectionHandler = Symbol("cursorDetectionHandler");
-const kCursorDetectionTimer = Symbol("cursorDetectionTimer");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
-const kCursorDetectionSequence = Symbol("cursorDetectionSequence");
 const kDsrSequence = Symbol("dsrSequence");
+const kPendingProbes = Symbol("pendingProbes");
 
-const kModeProbeHandlers = Symbol("modeProbeHandlers");
-const kModeProbeTimers = Symbol("modeProbeTimers");
 const kPriorBidiMode = Symbol("priorBidiMode");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 
-const kClipboardHandler = Symbol("clipboardHandler");
-const kClipboardTimer = Symbol("clipboardTimer");
 const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 
 const kProbingEnded = Symbol("probingEnded");
@@ -303,32 +319,20 @@ export class TerminalExchange {
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
 	declare [kHasDetectedCommandStart]: boolean;
-	// The pending DSR reply handler and its timeout, called with the reply's
-	// 1-based row. Cursor detection and the resize re-anchor share these slots
-	// so input routing and dispose can see them; overlapping queries check
-	// handler identity before clearing.
-	declare [kCursorDetectionHandler]: ((row: number) => void) | null;
-	declare [kCursorDetectionTimer]: ReturnType<typeof setTimeout> | null;
 	// Resolves when startup command-start detection settles (or times out), so
 	// the first frame waits for the anchor rather than painting at row 0 first.
 	declare [kCursorDetectionPromise]: Promise<void> | null;
 
 	/**
-	 * Outstanding DECRQM queries, keyed by the mode as it appears in the reply
-	 * ("8", "?2027"). Two negotiations run concurrently at startup and their
-	 * answers can arrive in either order, so they are matched by mode number
-	 * rather than by whoever asked last.
+	 * Every question written and not yet answered or given up on, oldest
+	 * first: the anchor and re-anchor cursor queries, the DECRQM
+	 * negotiations, the clipboard read. Each item off the wire answers the
+	 * first probe here that matches it. Two mode negotiations run
+	 * concurrently at startup and their answers can arrive in either order --
+	 * each probe matches on its own mode number, so neither takes the
+	 * other's.
 	 */
-	declare [kModeProbeHandlers]: Map<string, (value: number) => void>;
-	declare [kModeProbeTimers]: Set<ReturnType<typeof setTimeout>>;
-	/**
-	 * The outstanding OSC 52 clipboard query: the handler its reply resolves,
-	 * and the timeout that gives up on it. One query at a time -- the reply
-	 * carries no sequence, so a second would have nothing to be told apart
-	 * by. A reply arriving with no query outstanding is dropped.
-	 */
-	declare [kClipboardHandler]: ((payload: string | null) => void) | null;
-	declare [kClipboardTimer]: ReturnType<typeof setTimeout> | null;
+	declare [kPendingProbes]: PendingProbe[];
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	declare [kPriorBidiMode]: number | null;
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
@@ -340,8 +344,6 @@ export class TerminalExchange {
 	 * measurement from taking each other's replies.
 	 */
 	declare [kDsrSequence]: number;
-	/** The sequence number of the outstanding cursor query, if any. */
-	declare [kCursorDetectionSequence]: number;
 	/** Width probes written and not yet answered, oldest first. */
 	declare [kProbingEnded]: boolean;
 	declare [kWidthProbes]: Array<{
@@ -449,17 +451,11 @@ export class TerminalExchange {
 		this[kLastWrite] = Promise.resolve();
 		this[kWireReader] = new WireReader();
 		this[kHasDetectedCommandStart] = false;
-		this[kCursorDetectionHandler] = null;
-		this[kCursorDetectionTimer] = null;
 		this[kCursorDetectionPromise] = null;
-		this[kModeProbeHandlers] = new Map<string, (value: number) => void>();
-		this[kModeProbeTimers] = new Set<ReturnType<typeof setTimeout>>();
-		this[kClipboardHandler] = null;
-		this[kClipboardTimer] = null;
+		this[kPendingProbes] = [];
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
-		this[kCursorDetectionSequence] = 0;
 		this[kWidthProbes] = [];
 		this[kProbingEnded] = false;
 		this[kWidthSettled] = new Set<string>();
@@ -702,11 +698,7 @@ export class TerminalExchange {
 		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await probeMode(
-			this,
-			"8",
-			ansiMode(8, false) + ansiModeQuery(8),
-		);
+		const answer = await probeMode(this, "8", ansiMode(8, false));
 
 		// No bidi at all: cells land as written, which is the contract we want.
 		if (answer === null || answer === 0) {
@@ -759,7 +751,7 @@ export class TerminalExchange {
 		const answer = await probeMode(
 			this,
 			"?2027",
-			MODE_SPELLINGS.clusterWidths.set + privateModeQuery(2027),
+			MODE_SPELLINGS.clusterWidths.set,
 		);
 		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
@@ -779,36 +771,22 @@ export class TerminalExchange {
 				return;
 			}
 
-			const finish = () => {
-				this[kCursorDetectionHandler] = null;
-				if (this[kCursorDetectionTimer] !== null) {
-					clearTimeout(this[kCursorDetectionTimer]);
-					this[kCursorDetectionTimer] = null;
-				}
-			};
+			const probe = cursorPositionProbe();
+			enrollProbe(
+				this,
+				probe,
+				({row}) => {
+					// Convert 1-based terminal row to the 0-based anchor.
+					this[kHandlers].onCommandStart(row - 1);
 
-			this[kCursorDetectionHandler] = (row: number) => {
-				finish();
-
-				// Convert 1-based terminal row to the 0-based anchor.
-				this[kHandlers].onCommandStart(row - 1);
-
-				this[kHasDetectedCommandStart] = true;
-				resolve(row);
-			};
-
-			this[kCursorDetectionSequence] = this[kDsrSequence]++;
-			void this.write(cursorPositionQuery());
-
-			// The timer is held so a response can clear it; left running, it
-			// keeps the event loop alive a further second.
-			this[kCursorDetectionTimer] = setTimeout(() => {
-				this[kCursorDetectionTimer] = null;
-				if (this[kCursorDetectionHandler]) {
-					this[kCursorDetectionHandler] = null;
-					reject(new Error("Timeout waiting for cursor position response"));
-				}
-			}, 1000);
+					this[kHasDetectedCommandStart] = true;
+					resolve(row);
+				},
+				() => reject(new Error("Timeout waiting for cursor position response")),
+				1000,
+				{sequence: this[kDsrSequence]++},
+			);
+			void this.write(probe.request);
 		});
 	}
 
@@ -828,49 +806,24 @@ export class TerminalExchange {
 				return;
 			}
 
-			// Queries can overlap: a drag fires resizes faster than the terminal
-			// answers, and each handleResize issues its own query. The handler
-			// and timer live in shared instance slots (so input routing and
-			// dispose can see them), so every cleanup must check identity before
-			// clearing -- otherwise a superseded query's cleanup kills its
-			// successor's handler and timeout, and that resize never redraws.
-			let localTimer: ReturnType<typeof setTimeout> | null = null;
-
-			const handler = (row: number) => {
-				if (this[kCursorDetectionHandler] === handler) {
-					this[kCursorDetectionHandler] = null;
-				}
-				if (localTimer !== null) {
-					clearTimeout(localTimer);
-					if (this[kCursorDetectionTimer] === localTimer) {
-						this[kCursorDetectionTimer] = null;
-					}
-					localTimer = null;
-				}
-				resolve(row - 1);
-			};
-
-			// Replacing a stale handler is fine: its own timeout still fires and
-			// rejects it, and the caller drops an answer to a question it has
-			// stopped asking.
-			this[kCursorDetectionHandler] = handler;
-
-			this[kCursorDetectionSequence] = this[kDsrSequence]++;
-			void this.write(cursorPositionQuery());
-
+			// Queries can overlap: a drag fires resizes faster than the
+			// terminal answers, and each handleResize issues its own query.
+			// Each is its own pending probe, and DSR answers arrive in ask
+			// order, so every query gets its own reply.
+			//
 			// Short timeout: the redraw should feel immediate, and a terminal
-			// that does not answer promptly falls back to the computed re-anchor.
-			localTimer = setTimeout(() => {
-				if (this[kCursorDetectionHandler] === handler) {
-					this[kCursorDetectionHandler] = null;
-				}
-				if (this[kCursorDetectionTimer] === localTimer) {
-					this[kCursorDetectionTimer] = null;
-				}
-				localTimer = null;
-				reject(new Error("Timeout waiting for cursor position response"));
-			}, 200);
-			this[kCursorDetectionTimer] = localTimer;
+			// that does not answer promptly falls back to the computed
+			// re-anchor.
+			const probe = cursorPositionProbe();
+			enrollProbe(
+				this,
+				probe,
+				({row}) => resolve(row - 1),
+				() => reject(new Error("Timeout waiting for cursor position response")),
+				200,
+				{sequence: this[kDsrSequence]++},
+			);
+			void this.write(probe.request);
 		});
 	}
 
@@ -889,13 +842,20 @@ export class TerminalExchange {
 			return Promise.resolve(null);
 		}
 		return new Promise<string | null>((resolve) => {
-			settleClipboardQuery(this, null);
-			const timer = setTimeout(() => {
-				settleClipboardQuery(this, null);
-			}, TerminalExchange[kClipboardQueryTimeout]);
-			this[kClipboardTimer] = timer;
-			this[kClipboardHandler] = resolve;
-			void this.write(clipboardQuery());
+			// One query at a time -- the reply carries no sequence, so a
+			// second would have nothing to be told apart by. Asking again
+			// answers the first asker with silence.
+			abandonClipboardProbe(this);
+			const probe = clipboardProbe();
+			enrollProbe(
+				this,
+				probe,
+				resolve,
+				() => resolve(null),
+				TerminalExchange[kClipboardQueryTimeout],
+				{clipboard: true},
+			);
+			void this.write(probe.request);
 		});
 	}
 
@@ -914,7 +874,7 @@ export class TerminalExchange {
 		}
 		const settled = () =>
 			this[kWidthProbes].length === 0 &&
-			this[kCursorDetectionHandler] === null;
+			!this[kPendingProbes].some((probe) => probe.sequence !== undefined);
 		if (settled()) {
 			return Promise.resolve();
 		}
@@ -951,17 +911,14 @@ export class TerminalExchange {
 		// its reset, having never been set.
 		this.restoreEngagedModes();
 		this[kGraphemeClustersNegotiated] = false;
-		settleClipboardQuery(this, null);
-		for (const timer of this[kModeProbeTimers]) {
-			clearTimeout(timer);
+		// The clipboard read is answered with silence; the rest of the pending
+		// probes are simply dropped, their timers cleared so nothing keeps the
+		// event loop alive.
+		abandonClipboardProbe(this);
+		for (const probe of this[kPendingProbes]) {
+			clearTimeout(probe.timer);
 		}
-		this[kModeProbeTimers].clear();
-		this[kModeProbeHandlers].clear();
-		if (this[kCursorDetectionTimer] !== null) {
-			clearTimeout(this[kCursorDetectionTimer]);
-			this[kCursorDetectionTimer] = null;
-		}
-		this[kCursorDetectionHandler] = null;
+		this[kPendingProbes].length = 0;
 		if (this[kWidthProbeTimer] !== null) {
 			clearTimeout(this[kWidthProbeTimer]);
 			this[kWidthProbeTimer] = null;
@@ -1228,20 +1185,9 @@ function route(session: TerminalExchange, chunk: string): void {
 				flushKeys();
 				session[kHandlers].onPaste(item.text);
 				break;
-			case "cursor-report":
+			default:
 				flushKeys();
-				feedCursorReport(session, item.row, item.col);
-				break;
-			case "mode-report":
-				flushKeys();
-				feedModeReport(session, item.mode, item.value);
-				break;
-			case "clipboard":
-				flushKeys();
-				// An answer nobody asked for is dropped, never typed.
-				if (session[kClipboardHandler] !== null) {
-					settleClipboardQuery(session, item.text);
-				}
+				dispatchReply(session, item);
 				break;
 		}
 	}
@@ -1251,73 +1197,95 @@ function route(session: TerminalExchange, chunk: string): void {
 /* ------------------------------------------------------- query correlation */
 
 /**
- * Answer the outstanding clipboard query and forget it. Called with the
- * payload the terminal sent, or null wherever the query ends without one:
- * the timeout, a replacement query, dispose.
+ * Put a probe in the pending table, bounded by a deadline: `settle` gets the
+ * matched answer, `expire` runs when the deadline passes unanswered. The
+ * caller writes the probe's request itself -- some ride other bytes.
  */
-function settleClipboardQuery(
+function enrollProbe<T>(
 	session: TerminalExchange,
-	payload: string | null,
+	probe: WireProbe<T>,
+	settle: (answer: T) => void,
+	expire: () => void,
+	timeoutMs: number,
+	extras?: {sequence?: number; clipboard?: boolean},
 ): void {
-	const waiting = session[kClipboardHandler];
-	if (session[kClipboardTimer] !== null) {
-		clearTimeout(session[kClipboardTimer]);
-		session[kClipboardTimer] = null;
-	}
-	session[kClipboardHandler] = null;
-	waiting?.(payload);
+	const entry: PendingProbe = {
+		matches: probe.matches,
+		settle: (answer: unknown) => {
+			clearTimeout(entry.timer);
+			settle(answer as T);
+		},
+		timer: setTimeout(() => {
+			const index = session[kPendingProbes].indexOf(entry);
+			if (index !== -1) {
+				session[kPendingProbes].splice(index, 1);
+			}
+			expire();
+		}, timeoutMs),
+		...extras,
+	};
+	session[kPendingProbes].push(entry);
 }
 
 /**
- * Route a DECRPM mode reply to whichever negotiation is waiting on it. One
- * that nothing waits on is a late or duplicate answer, and is dropped.
+ * Answer the outstanding clipboard query with silence and forget it. Called
+ * wherever the query ends without a reply: a replacement query, dispose.
  */
-function feedModeReport(
-	session: TerminalExchange,
-	mode: string,
-	value: number,
-): void {
-	const waiting = session[kModeProbeHandlers].get(mode);
-	if (!waiting) {
-		return;
+function abandonClipboardProbe(session: TerminalExchange): void {
+	const pending = session[kPendingProbes];
+	const index = pending.findIndex((probe) => probe.clipboard);
+	if (index !== -1) {
+		const [probe] = pending.splice(index, 1);
+		probe.settle(null);
 	}
-	session[kModeProbeHandlers].delete(mode);
-	waiting(value);
 }
 
 /**
- * Route a DSR cursor-position reply to whichever query it answers.
+ * Route one reply item to whichever question it answers: the first pending
+ * probe that matches it, and one matching none is dropped as a late,
+ * duplicate or unasked-for answer.
  *
- * Two kinds of query share this reply shape -- the anchor queries (command
- * start, resize re-anchor) and the width probes a frame appends after a
- * cluster -- and a terminal answers DSR in the order it was asked. So the
- * oldest outstanding query owns the reply, and neither kind can take the
- * other's. A reply nothing waits on is a late or duplicate answer: dropped.
+ * Cursor reports need one more rule. Two kinds of query share that reply
+ * shape -- the anchor queries here and the width probes a frame appends
+ * after a cluster -- and a terminal answers DSR in the order it was asked,
+ * so the oldest outstanding query owns the reply and neither kind can take
+ * the other's.
  */
-function feedCursorReport(
-	session: TerminalExchange,
-	row: number,
-	column: number,
-): void {
-	const probe = session[kWidthProbes][0];
-	if (
-		session[kCursorDetectionHandler] !== null &&
-		(probe === undefined || session[kCursorDetectionSequence] < probe.sequence)
-	) {
-		session[kCursorDetectionHandler](row);
+function dispatchReply(session: TerminalExchange, item: WireItem): void {
+	const pending = session[kPendingProbes];
+	let index = -1;
+	let answer: unknown;
+	for (let i = 0; i < pending.length; i++) {
+		answer = pending[i].matches(item);
+		if (answer !== undefined) {
+			index = i;
+			break;
+		}
+	}
+	if (item.kind === "cursor-report") {
+		const width = session[kWidthProbes][0];
+		if (
+			width !== undefined &&
+			(index === -1 || width.sequence < (pending[index].sequence ?? Infinity))
+		) {
+			session[kWidthProbes].shift();
+			settleWidthProbe(session, width, item.col);
+			return;
+		}
+	}
+	if (index === -1) {
 		return;
 	}
-	if (probe !== undefined) {
-		session[kWidthProbes].shift();
-		settleWidthProbe(session, probe, column);
-	}
+	const [probe] = pending.splice(index, 1);
+	probe.settle(answer);
 }
 
 /**
  * Set a terminal mode and ask what it actually is now (DECRQM), resolving
  * with the reported value -- or null if the terminal says nothing, which is
  * the common case, since most implement no such mode and answer only the
- * queries they know.
+ * queries they know. `prelude` is the set bytes the query rides behind, in
+ * one write.
  *
  * The reply values are DECRPM's: 0 not recognised, 1 set, 2 reset, 3
  * permanently set, 4 permanently reset. 0 and silence mean the same thing
@@ -1326,23 +1294,14 @@ function feedCursorReport(
 function probeMode(
 	session: TerminalExchange,
 	mode: string,
-	request: string,
+	prelude: string,
 ): Promise<number | null> {
 	return new Promise<number | null>((resolve) => {
 		// The same second the cursor probe allows: a cold start or a slow SSH
 		// link can outlast a tighter window, and answering late is answering.
-		const timer = setTimeout(() => {
-			session[kModeProbeTimers].delete(timer);
-			session[kModeProbeHandlers].delete(mode);
-			resolve(null);
-		}, 1000);
-		session[kModeProbeTimers].add(timer);
-		session[kModeProbeHandlers].set(mode, (value: number) => {
-			clearTimeout(timer);
-			session[kModeProbeTimers].delete(timer);
-			resolve(value);
-		});
-		void session.write(request);
+		const probe = modeProbe(mode);
+		enrollProbe(session, probe, resolve, () => resolve(null), 1000);
+		void session.write(prelude + probe.request);
 	});
 }
 
