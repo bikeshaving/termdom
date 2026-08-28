@@ -7376,30 +7376,6 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
  * type. A value this engine does not implement is absent here, and falls back
  * rather than reaching the solver as something it cannot read.
  */
-const ALIGNS = new Set<string>([
-	"auto",
-	"flex-start",
-	"center",
-	"flex-end",
-	"stretch",
-	"baseline",
-	"space-between",
-	"space-around",
-	"space-evenly",
-	"normal",
-]);
-
-const JUSTIFIES = new Set<string>([
-	"flex-start",
-	"center",
-	"flex-end",
-	"space-between",
-	"space-around",
-	"space-evenly",
-	"normal",
-	"stretch",
-]);
-
 const DIRECTIONS = new Set<string>([
 	"row",
 	"row-reverse",
@@ -7408,14 +7384,6 @@ const DIRECTIONS = new Set<string>([
 ]);
 
 const WRAPS = new Set<string>(["nowrap", "wrap", "wrap-reverse"]);
-
-function asAlign(value: string, fallback: Align): Align {
-	return ALIGNS.has(value) ? (value as Align) : fallback;
-}
-
-function asJustify(value: string, fallback: Justify): Justify {
-	return JUSTIFIES.has(value) ? (value as Justify) : fallback;
-}
 
 function asFlexDirection(value: string): FlexDirection {
 	return DIRECTIONS.has(value) ? (value as FlexDirection) : "row";
@@ -8078,16 +8046,21 @@ function styleFlexNodeProperties(
 			asWrap(computedStyle.getComputedValue("flex-wrap")),
 		);
 		flexNode.setJustifyContent(
-			asJustify(
+			justifyContentConstant(
 				computedStyle.getComputedValue("justify-content"),
-				"flex-start",
 			),
 		);
 		flexNode.setAlignItems(
-			asAlign(computedStyle.getComputedValue("align-items"), "stretch"),
+			alignmentConstant(
+				computedStyle.getComputedValue("align-items"),
+				"stretch",
+			),
 		);
 		flexNode.setAlignContent(
-			asAlign(computedStyle.getComputedValue("align-content"), "flex-start"),
+			alignmentConstant(
+				computedStyle.getComputedValue("align-content"),
+				"flex-start",
+			),
 		);
 	} else if (
 		display !== "none" &&

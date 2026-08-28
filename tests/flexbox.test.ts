@@ -849,6 +849,40 @@ test("whitespace next to inline flex items is not an item either", async () => {
 	dom.dispose();
 });
 
+test("a flex container takes the alignment keywords css-align-3 names", async () => {
+	// css-align-3 §4/§6: `start`/`end` and their writing-mode-relative and
+	// physical spellings are the same alignments `flex-start`/`flex-end` name
+	// on a flex container in a left-to-right row. A grid container and
+	// align-self already read them; a flex container has to read them too.
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"display:flex;align-items:start;width:20ch;height:5px\">" +
+		"<div id=\"s\">a</div></div>" +
+		"<div style=\"display:flex;align-items:end;width:20ch;height:5px\">" +
+		"<div id=\"e\">a</div></div>" +
+		"<div style=\"display:flex;justify-content:end;width:20ch\">" +
+		"<div id=\"j\">ab</div></div>" +
+		"<div style=\"display:flex;justify-content:right;width:20ch\">" +
+		"<div id=\"r\">ab</div></div>";
+	await nextFrame(dom);
+
+	const rect = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect();
+	// start is flex-start, not the stretch an unread keyword falls back to:
+	// the item keeps its own one-row height at the top of a five-row line.
+	expect(rect("s").height).toBe(1);
+	expect(rect("s").top).toBe(0);
+	// end is flex-end: the last of the second container's five rows.
+	expect(rect("e").height).toBe(1);
+	expect(rect("e").top).toBe(9); // five rows above it, then four
+
+	// end and right both flush the two-cell item against the far edge.
+	expect(rect("j").left).toBe(18);
+	expect(rect("r").left).toBe(18);
+	dom.dispose();
+});
+
 test("white-space: pre keeps whitespace items, per spec", async () => {
 	// The suppression correctly spares this item (pre is not collapsible),
 	// but a pre-existing quirk measures whitespace-only runs at zero width,
