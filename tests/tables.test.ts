@@ -164,6 +164,53 @@ test("rowspan makes a cell cover its rows", async () => {
 	dom.dispose();
 });
 
+test("a span is the attribute's own clamp: 1000 columns at most", async () => {
+	// HTML caps colspan at 1000, which is what the reflected colSpan hands
+	// back. A cell asking for 5000 columns therefore builds the same
+	// thousand-column table a cell asking for 1000 builds, and every row is
+	// laid out over those thousand columns.
+	const table = async (span: string) => {
+		const {box, dom, document} = await render(
+			`<table style="width:40ch">
+				<tr><td colspan="${span}">a</td></tr>
+				<tr><td>b</td><td>c</td></tr>
+			</table>`,
+		);
+		const colSpan = (document.querySelector("td") as any).colSpan as number;
+		const row = [box("td", 1), box("td", 2)];
+		dom.dispose();
+		return {colSpan, row};
+	};
+
+	const asked = await table("5000");
+	const capped = await table("1000");
+	const narrower = await table("999");
+
+	expect(asked.colSpan).toBe(1000);
+	expect(asked.row).toEqual(capped.row);
+	// The comparison has teeth: one column fewer lays the row out differently,
+	// so an unclamped 5000 could not have matched.
+	expect(narrower.row).not.toEqual(capped.row);
+});
+
+test("rowspan=\"0\" covers one row, not the rest of its row group", async () => {
+	// HTML says rowspan="0" spans to the end of the row group. This table
+	// algorithm has no such reach, and the layout clamps the zero the
+	// reflected rowSpan hands it back up to one: a known gap, written down
+	// rather than parsed away.
+	const {box, dom} = await render(
+		`<table style="width:30ch">
+			<tr><td rowspan="0">tall</td><td>b</td></tr>
+			<tr><td>d</td></tr>
+		</table>`,
+	);
+
+	const tall = box("td", 0);
+	const upper = box("td", 1);
+	expect(tall.height).toBe(upper.height);
+	dom.dispose();
+});
+
 test("tfoot renders after the body even when written before it", async () => {
 	// display: table-footer-group is placed after the row groups, whatever the
 	// source order.

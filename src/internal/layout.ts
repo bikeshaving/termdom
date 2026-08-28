@@ -7393,16 +7393,6 @@ function asWrap(value: string): Wrap {
 	return WRAPS.has(value) ? (value as Wrap) : "nowrap";
 }
 
-/** A colspan/rowspan attribute, defaulting to 1 when absent or nonsense. */
-function parseSpanAttribute(element: Element, name: string): number {
-	const raw = element.getAttribute(name);
-	if (!raw) {
-		return 1;
-	}
-	const span = parseInt(raw, 10);
-	return Number.isFinite(span) && span > 0 ? span : 1;
-}
-
 /**
  * The min and max constraints on a box, from the cascade to the layout node.
  *
@@ -8017,8 +8007,16 @@ function styleFlexNodeProperties(
 		flexNode.setMode("table-row");
 	} else if (display === "table-cell") {
 		flexNode.setMode("table-cell");
-		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
-		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
+		// The spans are the reflected properties, which carry the ranges HTML
+		// gives the attributes: colSpan 1 to 1000, rowSpan 0 to 65534. A zero
+		// rowspan means "to the end of the row group", which this table
+		// algorithm cannot reach, so such a cell covers the one row it is in --
+		// a gap stated here rather than hidden in a parse. An element that is a
+		// cell only by `display: table-cell` reflects neither, and spans one of
+		// each, as it does in a browser.
+		const cell = element as {colSpan?: number; rowSpan?: number};
+		flexNode.setColSpan(cell.colSpan ?? 1);
+		flexNode.setRowSpan(Math.max(1, cell.rowSpan ?? 1));
 
 		// A cell with no horizontal padding of its own takes one cell either
 		// side, so neighbouring columns' text does not run together.
