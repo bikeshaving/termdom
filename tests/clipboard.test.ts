@@ -8,7 +8,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {clipboardWrite, WireReader} from "../src/internal/wire.js";
+import {Wire} from "../src/internal/wire.js";
 import {transportFromProcess} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
@@ -659,15 +659,16 @@ test("permissions.query refuses a name that is not one", async () => {
 });
 
 test("the wire's base64 tolerates what terminals send", () => {
+	const write = (text: string) => new Wire().clipboardWrite(text).take();
 	const replyText = (reply: string) => {
-		const [item] = new WireReader().feed(reply);
+		const [item] = new Wire().feed(reply);
 		if (item?.kind !== "clipboard") {
 			throw new Error(`${JSON.stringify(reply)} did not read as a clipboard`);
 		}
 		return item.text;
 	};
 	const read = (payload: string) => replyText(`\x1b]52;c;${payload}\x07`);
-	expect(clipboardWrite("hi")).toBe("\x1b]52;c;aGk=\x07");
+	expect(write("hi")).toBe("\x1b]52;c;aGk=\x07");
 	expect(read("aGk=")).toBe("hi");
 	expect(read("aGk")).toBe("hi");
 	expect(read("aG\r\nk=")).toBe("hi");
@@ -678,5 +679,5 @@ test("the wire's base64 tolerates what terminals send", () => {
 	expect(read("A")).toBe("");
 	expect(read("aGkAB")).toBe("");
 	const long = "x".repeat(300);
-	expect(replyText(clipboardWrite(long))).toBe(long);
+	expect(replyText(write(long))).toBe(long);
 });

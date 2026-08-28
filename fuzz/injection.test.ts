@@ -19,7 +19,7 @@ import {test, expect} from "@b9g/libuild/test";
 import fc from "fast-check";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {setWindowTitle} from "../src/internal/wire.js";
+import {Wire} from "../src/internal/wire.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 100);
 const SEED = Number(process.env.FC_SEED ?? 1);
@@ -84,7 +84,7 @@ const dangerous: fc.Arbitrary<string> = fc
 test("a title carries no command but the one that frames it", () => {
 	fc.assert(
 		fc.property(dangerous, (payload) => {
-			const encoded = setWindowTitle(payload);
+			const encoded = new Wire().title(payload).take();
 
 			// The sequence this function writes and nothing else: one ESC to
 			// open it, one BEL to close it, and no other control anywhere.

@@ -12,21 +12,10 @@
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
 import type {ColorDepth} from "./color.js";
 import {
-	ansiMode,
-	clipboardProbe,
-	clipboardWrite,
-	cursorPositionProbe,
-	cursorPositionQuery,
-	eraseToLineEnd,
-	modeProbe,
-	popTitle,
-	privateMode,
-	pushTitle,
-	setWindowTitle,
+	Wire,
 	type WireItem,
 	type WireKey,
 	type WireProbe,
-	WireReader,
 } from "./wire.js";
 
 /* -------------------------------------------------- the transport contract */
@@ -111,6 +100,12 @@ export interface TerminalTransport {
 /* --------------------------------------------------------- the mode ledger */
 
 /**
+ * A wire of its own for the ledger below, which is a constant and spelled
+ * before any session exists.
+ */
+const spelling = new Wire();
+
+/**
  * The private modes and stack controls this engine sets, named once. `set`
  * engages, `reset` hands the terminal back; wire spells both. An orderly
  * teardown resets what was engaged, in this declaration order; the
@@ -120,26 +115,30 @@ export interface TerminalTransport {
  */
 const MODE_SPELLINGS = {
 	motionReporting: {
-		set: privateMode(1003, true),
-		reset: privateMode(1003, false),
+		set: spelling.privateMode(1003, true).take(),
+		reset: spelling.privateMode(1003, false).take(),
 		panic: true,
 	},
 	mouseCapture: {
-		set: privateMode(1002, true) + privateMode(1006, true),
-		reset: privateMode(1006, false) + privateMode(1002, false),
+		set: spelling.privateMode(1002, true).privateMode(1006, true).take(),
+		reset: spelling.privateMode(1006, false).privateMode(1002, false).take(),
 		panic: true,
 	},
 	cursorHidden: {
-		set: privateMode(25, false),
-		reset: privateMode(25, true),
+		set: spelling.privateMode(25, false).take(),
+		reset: spelling.privateMode(25, true).take(),
 		panic: true,
 	},
 	bracketedPaste: {
-		set: privateMode(2004, true),
-		reset: privateMode(2004, false),
+		set: spelling.privateMode(2004, true).take(),
+		reset: spelling.privateMode(2004, false).take(),
 		panic: true,
 	},
-	titleStack: {set: pushTitle(), reset: popTitle(), panic: true},
+	titleStack: {
+		set: spelling.pushTitle().take(),
+		reset: spelling.popTitle().take(),
+		panic: true,
+	},
 	// The Fullscreen API's screen switch. The panic spelling is ?1047, the
 	// switch WITHOUT the cursor restore: a bare ?1049l restores a saved
 	// cursor even when the alternate screen is not active (tmux and xterm
@@ -147,15 +146,15 @@ const MODE_SPELLINGS = {
 	// blanket restore cuts ahead of the queued payout, so a cursor-moving
 	// reset there teleports the payout onto rows the app never owned.
 	altScreen: {
-		set: privateMode(1049, true),
-		reset: privateMode(1049, false),
-		panic: privateMode(1047, false),
+		set: spelling.privateMode(1049, true).take(),
+		reset: spelling.privateMode(1049, false).take(),
+		panic: spelling.privateMode(1047, false).take(),
 	},
 	// Negotiated, not imposed: a terminal that ignored the offer must not
 	// see the reset, so only the engaged-tracking restore may write it.
 	clusterWidths: {
-		set: privateMode(2027, true),
-		reset: privateMode(2027, false),
+		set: spelling.privateMode(2027, true).take(),
+		reset: spelling.privateMode(2027, false).take(),
 		panic: false,
 	},
 } as const;
@@ -245,7 +244,7 @@ const kDisposed = Symbol("disposed");
 const kLastWrite = Symbol("lastWrite");
 const kWriteBatch = Symbol("writeBatch");
 
-const kWireReader = Symbol("wireReader");
+const kWire = Symbol("wire");
 
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
@@ -312,10 +311,11 @@ export class TerminalExchange {
 	// The last queued write, so flush() can await everything before it.
 	declare [kLastWrite]: Promise<void>;
 
-	// The wire's read-side syntax and its cross-chunk state -- split escapes,
-	// an open paste body, an open clipboard reply -- live in the reader; this
-	// class only dispatches the items it returns.
-	declare [kWireReader]: WireReader;
+	// The session's wire, both ways: every sequence this exchange writes is
+	// spelled through it, and its read-side syntax and cross-chunk state --
+	// split escapes, an open paste body, an open clipboard reply -- live
+	// there too; this class only dispatches the items it returns.
+	declare [kWire]: Wire;
 
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
@@ -438,6 +438,15 @@ export class TerminalExchange {
 		return this[kWidthMeasurer];
 	}
 
+	/**
+	 * The session's wire, for the engine's own few spellings. One per session,
+	 * so what the engine writes and what the exchange writes are spelled by
+	 * the same object -- and every one of them goes out through write().
+	 */
+	get wire(): Wire {
+		return this[kWire];
+	}
+
 	constructor(deps: {
 		transport: TerminalTransport;
 		interactive: boolean;
@@ -450,7 +459,7 @@ export class TerminalExchange {
 		this[kStarted] = false;
 		this[kDisposed] = false;
 		this[kLastWrite] = Promise.resolve();
-		this[kWireReader] = new WireReader();
+		this[kWire] = new Wire(deps.transport.colorDepth);
 		this[kHasDetectedCommandStart] = false;
 		this[kCursorDetectionPromise] = null;
 		this[kPendingProbes] = [];
@@ -510,7 +519,13 @@ export class TerminalExchange {
 					sentAt: Date.now(),
 				});
 				armWidthProbeTimer(this);
-				return cursorPositionQuery();
+				// Ask through the wire like anything else, then hand the bytes
+				// back rather than write them: this ask rides the frame that
+				// paints the cluster. The matcher is dropped -- a width reply
+				// is claimed by the queue above, in the DSR send order the
+				// sequence number keeps, never by the pending table.
+				this[kWire].cursorPositionProbe();
+				return this[kWire].take();
 			},
 		};
 		this[kTransport] = deps.transport;
@@ -699,7 +714,11 @@ export class TerminalExchange {
 		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await probeMode(this, "8", ansiMode(8, false));
+		const answer = await probeMode(
+			this,
+			"8",
+			this[kWire].ansiMode(8, false).take(),
+		);
 
 		// No bidi at all: cells land as written, which is the contract we want.
 		if (answer === null || answer === 0) {
@@ -723,7 +742,7 @@ export class TerminalExchange {
 		if (!this[kInteractive]) {
 			return;
 		}
-		void this.write("\r" + eraseToLineEnd());
+		void this.write("\r" + this[kWire].eraseToLineEnd().take());
 	}
 
 	/**
@@ -772,7 +791,7 @@ export class TerminalExchange {
 				return;
 			}
 
-			const probe = cursorPositionProbe();
+			const probe = this[kWire].cursorPositionProbe();
 			enrollProbe(
 				this,
 				probe,
@@ -787,7 +806,7 @@ export class TerminalExchange {
 				1000,
 				{sequence: this[kDsrSequence]++},
 			);
-			void this.write(probe.request);
+			void this.write(this[kWire].take());
 		});
 	}
 
@@ -815,7 +834,7 @@ export class TerminalExchange {
 			// Short timeout: the redraw should feel immediate, and a terminal
 			// that does not answer promptly falls back to the computed
 			// re-anchor.
-			const probe = cursorPositionProbe();
+			const probe = this[kWire].cursorPositionProbe();
 			enrollProbe(
 				this,
 				probe,
@@ -824,18 +843,18 @@ export class TerminalExchange {
 				200,
 				{sequence: this[kDsrSequence]++},
 			);
-			void this.write(probe.request);
+			void this.write(this[kWire].take());
 		});
 	}
 
 	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
-		return this.write(clipboardWrite(text));
+		return this.write(this[kWire].clipboardWrite(text).take());
 	}
 
 	/** OSC 2: set the terminal's title (the stack holds the prior one). */
 	setTitle(text: string): Promise<void> {
-		return this.write(setWindowTitle(text));
+		return this.write(this[kWire].title(text).take());
 	}
 
 	queryClipboard(): Promise<string | null> {
@@ -847,7 +866,7 @@ export class TerminalExchange {
 			// second would have nothing to be told apart by. Asking again
 			// answers the first asker with silence.
 			abandonClipboardProbe(this);
-			const probe = clipboardProbe();
+			const probe = this[kWire].clipboardProbe();
 			enrollProbe(
 				this,
 				probe,
@@ -856,7 +875,7 @@ export class TerminalExchange {
 				TerminalExchange[kClipboardQueryTimeout],
 				{clipboard: true},
 			);
-			void this.write(probe.request);
+			void this.write(this[kWire].take());
 		});
 	}
 
@@ -904,7 +923,7 @@ export class TerminalExchange {
 		// mode it reported, so the next command inherits its own settings rather
 		// than ours. Only when it was SET -- reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
-			void this.write(ansiMode(8, true));
+			void this.write(this[kWire].ansiMode(8, true).take());
 			this[kPriorBidiMode] = null;
 		}
 		// The engaged modes go back too -- 2027 among them, for a terminal
@@ -1161,7 +1180,7 @@ function route(session: TerminalExchange, chunk: string): void {
 			keys = [];
 		}
 	};
-	for (const item of session[kWireReader].feed(chunk)) {
+	for (const item of session[kWire].feed(chunk)) {
 		switch (item.kind) {
 			case "key":
 				// Ctrl-C: raw mode delivers it as data, and its default action
@@ -1201,8 +1220,9 @@ function route(session: TerminalExchange, chunk: string): void {
 
 /**
  * Put a probe in the pending table, bounded by a deadline: `settle` gets the
- * matched answer, `expire` runs when the deadline passes unanswered. The
- * caller writes the probe's request itself -- some ride other bytes.
+ * matched answer, `expire` runs when the deadline passes unanswered. Asking
+ * is the caller's: the wire method it took the probe from has already put the
+ * request in the buffer, and the caller flushes it -- some ride other bytes.
  */
 function enrollProbe<T>(
 	session: TerminalExchange,
@@ -1302,9 +1322,9 @@ function probeMode(
 	return new Promise<number | null>((resolve) => {
 		// The same second the cursor probe allows: a cold start or a slow SSH
 		// link can outlast a tighter window, and answering late is answering.
-		const probe = modeProbe(mode);
+		const probe = session[kWire].modeProbe(mode);
 		enrollProbe(session, probe, resolve, () => resolve(null), 1000);
-		void session.write(prelude + probe.request);
+		void session.write(prelude + session[kWire].take());
 	});
 }
 

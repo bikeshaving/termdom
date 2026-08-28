@@ -35,14 +35,6 @@ import {
 	isActivationTriggering,
 	type DocumentPoint,
 } from "./input.js";
-import {
-	cursorHome,
-	cursorTo,
-	eraseBelow,
-	eraseScreen,
-	eraseToLineEnd,
-	index,
-} from "./wire.js";
 
 /** The mount this engine installs, which is how a node finds it back. */
 interface EngineMount extends DOM.Mount {
@@ -149,7 +141,9 @@ async function requestFullscreenElement(
 			termdom[kExchange].engageMode("cursorHidden");
 			// The alternate screen comes up holding whatever the terminal left
 			// in it, so the entry clears it and homes the cursor.
-			void termdom[kExchange].write(eraseScreen() + cursorHome());
+			void termdom[kExchange].write(
+				termdom[kExchange].wire.eraseScreen().cursorHome().take(),
+			);
 		}
 
 		fireFullscreenEvent(termdom, "fullscreenchange", element);
@@ -2796,12 +2790,13 @@ function flushDocument(
 	// preserves a fully-erased screen by pushing it into scrollback (the
 	// courtesy it extends to `clear`), which archived a copy of the final
 	// frame above the payout -- the document twice, interleaved.
-	void termdom[kExchange].write(cursorTo(top + 1, 1));
-	const erase = eraseToLineEnd();
+	const wire = termdom[kExchange].wire;
+	void termdom[kExchange].write(wire.cursorTo(top + 1, 1).take());
+	const erase = wire.eraseToLineEnd().take();
 	void termdom[kExchange].write(
 		erase + output.replace(/\r\n(?!$)/g, "\r\n" + erase),
 	);
-	void termdom[kExchange].write(eraseBelow());
+	void termdom[kExchange].write(wire.eraseBelow().take());
 }
 
 /**
@@ -3056,9 +3051,12 @@ function reserveRows(
 ): number {
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
-		void termdom[kExchange].write(
-			cursorTo(termdom[kViewport].height, 1) + index().repeat(push),
-		);
+		const wire = termdom[kExchange].wire;
+		wire.cursorTo(termdom[kViewport].height, 1);
+		for (let i = 0; i < push; i++) {
+			wire.index();
+		}
+		void termdom[kExchange].write(wire.take());
 		// Do NOT shift the screen's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
 		// scrolled -- the two cancel, so buffer coordinates are unchanged.

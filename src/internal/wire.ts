@@ -1,98 +1,17 @@
 /**
- * The escape sequences, as text: functions that write them, and a reader that
- * turns what comes back into typed items.
+ * The escape sequences, as text: one duplex object that writes them and reads
+ * what comes back.
  *
- * Nothing here touches a terminal. The writers are pure -- numbers and
- * strings go in, a string comes out -- and the reader holds syntactic state
- * only: the tail of an escape sequence, a paste body, or a clipboard reply
- * that a chunk boundary cut mid-utterance. A sequence can still be tested
- * without a session and read without one running.
+ * Nothing here touches a terminal. A Wire is a buffer and a lexer: the writer
+ * half spells sequences into a buffer that take() drains, and the reader half
+ * holds syntactic state only -- the tail of an escape sequence, a paste body,
+ * or a clipboard reply that a chunk boundary cut mid-utterance. A sequence can
+ * still be spelled without a session and read without one running.
  */
 
 import {type ColorDepth, rgbTo256, rgbToBasic8} from "./color.js";
 
-/* -------------------------------------------------------------- the cursor */
-
-/** CUP: the cursor to a one-based row and column. */
-export function cursorTo(row: number, col: number): string {
-	return `\x1b[${row};${col}H`;
-}
-
-/** CUP with no parameters: the top-left cell. */
-export function cursorHome(): string {
-	return "\x1b[H";
-}
-
-/** CUF: the cursor forward by columns. */
-export function cursorForward(columns: number): string {
-	return `\x1b[${columns}C`;
-}
-
-/** CUD: the cursor down by rows, stopping at the bottom margin. */
-export function cursorDown(rows: number): string {
-	return `\x1b[${rows}B`;
-}
-
-/** DECSC: remember where the cursor is. */
-export function saveCursor(): string {
-	return "\x1b7";
-}
-
-/** DECRC: the cursor back to where DECSC left it. */
-export function restoreCursor(): string {
-	return "\x1b8";
-}
-
-/** IND: down one row, scrolling the screen when the cursor is at the end. */
-export function index(): string {
-	return "\x1bD";
-}
-
-/* -------------------------------------------------------------- the eraser */
-
-/** EL 0: from the cursor to the end of its row. */
-export function eraseToLineEnd(): string {
-	return "\x1b[K";
-}
-
-/** ED 0: from the cursor to the end of the screen. */
-export function eraseBelow(): string {
-	return "\x1b[J";
-}
-
-/** ED 2: the whole screen, cursor left where it stands. */
-export function eraseScreen(): string {
-	return "\x1b[2J";
-}
-
-/* ------------------------------------------------------- the scroll region */
-
-/** DECSTBM: the scrolling region, one-based rows. Homes the cursor. */
-export function setScrollRegion(top: number, bottom: number): string {
-	return `\x1b[${top};${bottom}r`;
-}
-
-/** DECSTBM with no parameters: the region is the whole screen again. */
-export function resetScrollRegion(): string {
-	return "\x1b[r";
-}
-
-/** DL: delete rows at the cursor, pulling the region up. */
-export function deleteLines(count: number): string {
-	return `\x1b[${count}M`;
-}
-
-/** IL: insert blank rows at the cursor, pushing the region down. */
-export function insertLines(count: number): string {
-	return `\x1b[${count}L`;
-}
-
 /* --------------------------------------------------------------- the style */
-
-/** SGR 0: back to the terminal's own defaults. */
-export function sgrReset(): string {
-	return "\x1b[0m";
-}
 
 /**
  * The SGR parameters naming a 24-bit color at the depth the terminal speaks:
@@ -172,7 +91,7 @@ function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
  * them: colors, then attributes. "" when the run says nothing -- no escape
  * is ever emitted empty, since an empty SGR is the terminal's reset.
  */
-export function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
+function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
 	const codes: string[] = [];
 	if (run.fg !== undefined) {
 		codes.push(run.fg === null ? "39" : sgrColor(run.fg, true, colorDepth));
@@ -203,96 +122,16 @@ export function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
 	return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
 }
 
-/* --------------------------------------------------------------- the modes */
-
-/** DECSET/DECRST: engage or release a private mode by number. */
-export function privateMode(code: number, on: boolean): string {
-	return `\x1b[?${code}${on ? "h" : "l"}`;
-}
-
-/** SM/RM: engage or release an ANSI mode by number. */
-export function ansiMode(code: number, on: boolean): string {
-	return `\x1b[${code}${on ? "h" : "l"}`;
-}
-
-/** DECRQM for a private mode: what is this mode set to? */
-function privateModeQuery(code: number): string {
-	return `\x1b[?${code}$p`;
-}
-
-/** DECRQM for an ANSI mode. */
-function ansiModeQuery(code: number): string {
-	return `\x1b[${code}$p`;
-}
-
-/** XTWINOPS 22: push the window title onto the terminal's own stack. */
-export function pushTitle(): string {
-	return "\x1b[22;0t";
-}
-
-/** XTWINOPS 23: pop the title the push saved. */
-export function popTitle(): string {
-	return "\x1b[23;0t";
-}
-
-/* -------------------------------------------------------------- the probes */
-
-/** DSR 6: where is the cursor? Answered by a CPR report. */
-export function cursorPositionQuery(): string {
-	return "\x1b[6n";
-}
+/* ------------------------------------------------------------ the refusals */
 
 /**
- * A question and the rule that knows its answer: the bytes that ask, and
- * which of the wire's items carries the reply. The asking itself -- writing
- * the request, waiting, giving up -- is the session's business; wire only
- * pairs each spelling with its match.
+ * The characters no payload may put on the wire: C0, DEL, and the C1 range
+ * whose single bytes are CSI, OSC and DCS. One of these in untrusted text
+ * would end the sequence around it or start one of its own, so everything
+ * that writes text to the terminal refuses them.
  */
-export interface WireProbe<T> {
-	/** The bytes that ask. */
-	request: string;
-	/** The answer an item carries, or undefined when the item is not it. */
-	matches(item: WireItem): T | undefined;
-}
-
-/** Where is the cursor? Answered by the next cursor report, one-based. */
-export function cursorPositionProbe(): WireProbe<{row: number; col: number}> {
-	return {
-		request: cursorPositionQuery(),
-		matches: (item) =>
-			item.kind === "cursor-report" ?
-					{row: item.row, col: item.col} :
-				undefined,
-	};
-}
-
-/**
- * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers
- * it, a private mode keeping its "?" ("8", "?2027"), and the answer is the
- * DECRPM value for that mode alone.
- */
-export function modeProbe(mode: string): WireProbe<number> {
-	const request = mode.startsWith("?") ?
-			privateModeQuery(parseInt(mode.slice(1), 10)) :
-			ansiModeQuery(parseInt(mode, 10));
-	return {
-		request,
-		matches: (item) =>
-			item.kind === "mode-report" && item.mode === mode ?
-				item.value :
-				undefined,
-	};
-}
-
-/**
- * OSC 52 with "?": what is on the clipboard? The answer is the reply's text,
- * null when the reply outgrew the reader's held-reply limit.
- */
-export function clipboardProbe(): WireProbe<string | null> {
-	return {
-		request: clipboardQuery(),
-		matches: (item) => (item.kind === "clipboard" ? item.text : undefined),
-	};
+function isControlByte(code: number): boolean {
+	return code < 0x20 || (code >= 0x7f && code < 0xa0);
 }
 
 /* -------------------------------------------------------------- the base64 */
@@ -361,48 +200,6 @@ function decode64(text: string): Uint8Array | null {
 	return bytes.subarray(0, length);
 }
 
-/* ----------------------------------------------------------------- the OSC */
-
-/**
- * OSC 2: the window title.
- *
- * The title is a document's, so it is untrusted text going somewhere the cell
- * grid never sees. A control character in it would end this sequence early and
- * leave the rest of the string to the terminal as its own commands, so the
- * same characters the grid refuses in a cell are dropped here: C0, DEL, and
- * the C1 range whose single bytes are CSI, OSC and DCS.
- */
-export function setWindowTitle(text: string): string {
-	let title = "";
-	for (const char of text) {
-		if (isControlByte(char.codePointAt(0)!)) {
-			continue;
-		}
-		title += char;
-	}
-	return `\x1b]2;${title}\x07`;
-}
-
-/**
- * The characters no payload may put on the wire: C0, DEL, and the C1 range
- * whose single bytes are CSI, OSC and DCS. One of these in untrusted text
- * would end the sequence around it or start one of its own, so everything
- * that writes text to the terminal refuses them.
- */
-export function isControlByte(code: number): boolean {
-	return code < 0x20 || (code >= 0x7f && code < 0xa0);
-}
-
-/** OSC 52: put text on the terminal's clipboard. */
-export function clipboardWrite(text: string): string {
-	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
-}
-
-/** OSC 52 with "?": ask the terminal for the clipboard's contents. */
-function clipboardQuery(): string {
-	return "\x1b]52;c;?\x07";
-}
-
 /* --------------------------------------------------------- what comes back */
 
 /** The numbers an SGR mouse escape carries. */
@@ -459,8 +256,6 @@ function splitTrailingEscape(chunk: string): number {
 	return 0;
 }
 
-/* -------------------------------------------------------------- the reader */
-
 /** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
 const CLIPBOARD_START = "\x1b]52;";
 
@@ -498,6 +293,17 @@ export type WireItem =
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "clipboard"; text: string | null};
+
+/**
+ * The rule that knows a question's answer: which of the wire's items carries
+ * the reply, and what it says. The asking itself -- writing the request,
+ * waiting, giving up -- is the session's business; the wire puts the request
+ * in its buffer and hands back the match.
+ */
+export interface WireProbe<T> {
+	/** The answer an item carries, or undefined when the item is not it. */
+	matches(item: WireItem): T | undefined;
+}
 
 /** Shift+Tab: CSI Z, the one named spelling carrying a modifier of its own. */
 const SHIFT_TAB = "\x1b[Z";
@@ -643,16 +449,35 @@ function decodeControlToken(token: string): WireItem {
 	return decodeKeyToken(token);
 }
 
+/* ---------------------------------------------------------------- the wire */
+
+const kOut = Symbol("out");
+const kColorDepth = Symbol("colorDepth");
 const kTail = Symbol("tail");
 const kPasteBody = Symbol("pasteBody");
 const kReplyBody = Symbol("replyBody");
 const kReplyLimit = Symbol("replyLimit");
 
 /**
- * The read side of the wire, chunk by chunk: feed() takes raw input as a
- * transport delivers it and returns what it means, in stream order.
+ * The wire, both ways: a buffer of sequences waiting to go out, and the lexer
+ * that says what came back.
  *
- * The reader owns every cut a chunk boundary can make. An escape sequence
+ * The writer half is fluent and every method returns the wire, so a frame's
+ * bytes are spelled rather than concatenated -- `wire.cursorTo(row, 1)
+ * .style(run).text(glyphs).eraseToLineEnd()` -- and take() hands the caller
+ * everything spelled since the last one. Where a call site wants a single
+ * spelling as a string, `wire.privateMode(2004, true).take()` is the idiom.
+ *
+ * The writer half is also the only door untrusted text has onto the wire.
+ * text(), title() and clipboardWrite() are the three that carry a document's
+ * own characters, and each makes what it carries safe: the first two drop the
+ * bytes a terminal would read as commands, and the third base64s its payload
+ * out of the question entirely. A cell's grapheme is refused earlier still --
+ * carry() is where the screen asks, since a cell is a column and a refused
+ * byte must be turned away before it takes one -- so the glyphs a frame emits
+ * are safe before they ever reach text().
+ *
+ * The reader half owns every cut a chunk boundary can make. An escape sequence
  * split before its final byte is held for the next chunk -- but never a bare
  * trailing ESC, which may be the Escape key itself, and holding it would
  * swallow the keystroke. An open paste body is buffered until its end fence
@@ -661,8 +486,17 @@ const kReplyLimit = Symbol("replyLimit");
  * terminator, and recognized whether or not anyone asked: its base64 would
  * otherwise type as keystrokes, and dropping an unasked-for answer is the
  * caller's decision to make, not a syntax accident.
+ *
+ * The two halves share an object and nothing else, and their lifecycles say
+ * so. take() drains the write buffer and only the write buffer. Read state
+ * survives everything except construction -- there is no reset -- because a
+ * held tail or an open paste must never be droppable mid-stream.
  */
-export class WireReader {
+export class Wire {
+	/** Everything spelled since the last take(), in order. */
+	declare [kOut]: string[];
+	/** What the terminal can display; style() spells colors at this depth. */
+	declare [kColorDepth]: ColorDepth;
 	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
 	declare [kTail]: string;
 	// The body of an open paste; null when no paste is in flight.
@@ -677,11 +511,258 @@ export class WireReader {
 	 */
 	static readonly [kReplyLimit] = 1 << 16;
 
-	constructor() {
+	/** A reader-only wire has no colors to spell and omits the depth. */
+	constructor(colorDepth: ColorDepth = "rgb") {
+		this[kOut] = [];
+		this[kColorDepth] = colorDepth;
 		this[kTail] = "";
 		this[kPasteBody] = null;
 		this[kReplyBody] = null;
 	}
+
+	/**
+	 * What the wire will carry of one grapheme: the grapheme itself, or "" for
+	 * one of the bytes no payload may put on the wire. The screen's cell writer
+	 * asks here -- a cell is a column, and a control character taking one would
+	 * leave the column holding an invisible byte.
+	 */
+	static carry(grapheme: string): string {
+		return isControlByte(grapheme.codePointAt(0)!) ? "" : grapheme;
+	}
+
+	/** Everything spelled since the last take, and the buffer is empty again. */
+	take(): string {
+		const out = this[kOut].join("");
+		this[kOut].length = 0;
+		return out;
+	}
+
+	/* ---------------------------------------------------------- the cursor */
+
+	/** CUP: the cursor to a one-based row and column. */
+	cursorTo(row: number, col: number): this {
+		this[kOut].push(`\x1b[${row};${col}H`);
+		return this;
+	}
+
+	/** CUP with no parameters: the top-left cell. */
+	cursorHome(): this {
+		this[kOut].push("\x1b[H");
+		return this;
+	}
+
+	/** CUF: the cursor forward by columns. */
+	cursorForward(columns: number): this {
+		this[kOut].push(`\x1b[${columns}C`);
+		return this;
+	}
+
+	/** CUD: the cursor down by rows, stopping at the bottom margin. */
+	cursorDown(rows: number): this {
+		this[kOut].push(`\x1b[${rows}B`);
+		return this;
+	}
+
+	/** DECSC: remember where the cursor is. */
+	saveCursor(): this {
+		this[kOut].push("\x1b7");
+		return this;
+	}
+
+	/** DECRC: the cursor back to where DECSC left it. */
+	restoreCursor(): this {
+		this[kOut].push("\x1b8");
+		return this;
+	}
+
+	/** IND: down one row, scrolling the screen when the cursor is at the end. */
+	index(): this {
+		this[kOut].push("\x1bD");
+		return this;
+	}
+
+	/* ---------------------------------------------------------- the eraser */
+
+	/** EL 0: from the cursor to the end of its row. */
+	eraseToLineEnd(): this {
+		this[kOut].push("\x1b[K");
+		return this;
+	}
+
+	/** ED 0: from the cursor to the end of the screen. */
+	eraseBelow(): this {
+		this[kOut].push("\x1b[J");
+		return this;
+	}
+
+	/** ED 2: the whole screen, cursor left where it stands. */
+	eraseScreen(): this {
+		this[kOut].push("\x1b[2J");
+		return this;
+	}
+
+	/* --------------------------------------------------- the scroll region */
+
+	/** DECSTBM: the scrolling region, one-based rows. Homes the cursor. */
+	setScrollRegion(top: number, bottom: number): this {
+		this[kOut].push(`\x1b[${top};${bottom}r`);
+		return this;
+	}
+
+	/** DECSTBM with no parameters: the region is the whole screen again. */
+	resetScrollRegion(): this {
+		this[kOut].push("\x1b[r");
+		return this;
+	}
+
+	/** DL: delete rows at the cursor, pulling the region up. */
+	deleteLines(count: number): this {
+		this[kOut].push(`\x1b[${count}M`);
+		return this;
+	}
+
+	/** IL: insert blank rows at the cursor, pushing the region down. */
+	insertLines(count: number): this {
+		this[kOut].push(`\x1b[${count}L`);
+		return this;
+	}
+
+	/* ----------------------------------------------------------- the style */
+
+	/** SGR 0: back to the terminal's own defaults. */
+	sgrReset(): this {
+		this[kOut].push("\x1b[0m");
+		return this;
+	}
+
+	/**
+	 * SGR: the escape a run of style spells, at the wire's own color depth.
+	 * A run that says nothing writes nothing -- no escape is ever emitted
+	 * empty, since an empty SGR is the terminal's reset.
+	 */
+	style(run: StyleRun): this {
+		const escape = sgrStyle(run, this[kColorDepth]);
+		if (escape !== "") {
+			this[kOut].push(escape);
+		}
+		return this;
+	}
+
+	/* ----------------------------------------------------------- the modes */
+
+	/** DECSET/DECRST: engage or release a private mode by number. */
+	privateMode(code: number, on: boolean): this {
+		this[kOut].push(`\x1b[?${code}${on ? "h" : "l"}`);
+		return this;
+	}
+
+	/** SM/RM: engage or release an ANSI mode by number. */
+	ansiMode(code: number, on: boolean): this {
+		this[kOut].push(`\x1b[${code}${on ? "h" : "l"}`);
+		return this;
+	}
+
+	/** XTWINOPS 22: push the window title onto the terminal's own stack. */
+	pushTitle(): this {
+		this[kOut].push("\x1b[22;0t");
+		return this;
+	}
+
+	/** XTWINOPS 23: pop the title the push saved. */
+	popTitle(): this {
+		this[kOut].push("\x1b[23;0t");
+		return this;
+	}
+
+	/* --------------------------------------------------------- the payload */
+
+	/**
+	 * Glyphs, as themselves. The bytes the wire refuses are dropped: text is a
+	 * document's, so a control character in it would end whatever sequence
+	 * surrounds it and leave the rest of the string to the terminal as its own
+	 * commands.
+	 */
+	text(glyphs: string): this {
+		let safe = "";
+		for (const char of glyphs) {
+			if (isControlByte(char.codePointAt(0)!)) {
+				continue;
+			}
+			safe += char;
+		}
+		this[kOut].push(safe);
+		return this;
+	}
+
+	/**
+	 * OSC 2: the window title. Untrusted text going somewhere the cell grid
+	 * never sees, so it is refused the same characters a cell is.
+	 */
+	title(text: string): this {
+		this[kOut].push("\x1b]2;");
+		this.text(text);
+		this[kOut].push("\x07");
+		return this;
+	}
+
+	/**
+	 * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
+	 * beyond refusing -- there is nothing in the alphabet to refuse.
+	 */
+	clipboardWrite(text: string): this {
+		this[kOut].push(
+			`\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`,
+		);
+		return this;
+	}
+
+	/* ---------------------------------------------------------- the probes */
+
+	/**
+	 * DSR 6: where is the cursor? Answered by the next cursor report,
+	 * one-based.
+	 */
+	cursorPositionProbe(): WireProbe<{row: number; col: number}> {
+		this[kOut].push("\x1b[6n");
+		return {
+			matches: (item) =>
+				item.kind === "cursor-report" ?
+						{row: item.row, col: item.col} :
+					undefined,
+		};
+	}
+
+	/**
+	 * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers
+	 * it, a private mode keeping its "?" ("8", "?2027"), and the answer is the
+	 * DECRPM value for that mode alone.
+	 */
+	modeProbe(mode: string): WireProbe<number> {
+		this[kOut].push(
+			mode.startsWith("?") ?
+				`\x1b[?${parseInt(mode.slice(1), 10)}$p` :
+				`\x1b[${parseInt(mode, 10)}$p`,
+		);
+		return {
+			matches: (item) =>
+				item.kind === "mode-report" && item.mode === mode ?
+					item.value :
+					undefined,
+		};
+	}
+
+	/**
+	 * OSC 52 with "?": what is on the clipboard? The answer is the reply's
+	 * text, null when the reply outgrew the reader's held-reply limit.
+	 */
+	clipboardProbe(): WireProbe<string | null> {
+		this[kOut].push("\x1b]52;c;?\x07");
+		return {
+			matches: (item) => (item.kind === "clipboard" ? item.text : undefined),
+		};
+	}
+
+	/* ---------------------------------------------------------- the reader */
 
 	/** Read one chunk, and say what arrived. */
 	feed(chunk: string): WireItem[] {
@@ -723,7 +804,7 @@ export class WireReader {
 				this[kReplyBody] = null;
 				const match = reply.match(CLIPBOARD_REPLY);
 				if (!match) {
-					if (reply.length <= WireReader[kReplyLimit]) {
+					if (reply.length <= Wire[kReplyLimit]) {
 						this[kReplyBody] = reply;
 					} else {
 						items.push({kind: "clipboard", text: null});
