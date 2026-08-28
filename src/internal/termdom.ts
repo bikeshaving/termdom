@@ -80,14 +80,13 @@ function fireAsUserAgent(
 	event: {type: string; key?: string; inputType?: string},
 ): boolean {
 	const engine = engineOfTarget(target);
-	// A target no engine mounts is headless by definition, so the claim
-	// door is open for it; a mounted target dispatches through its engine's
-	// own toolkit.
+	// A mounted target dispatches through its engine's toolkit; a headless
+	// one through its document's, which is the same object either way.
 	const shaped = target as {ownerDocument?: object; document?: object};
 	const toolkit =
 		engine !== undefined ?
 			engine[kUAToolkit] :
-				DOM.claimUAToolkit(shaped.ownerDocument ?? shaped.document ?? target);
+				DOM.uaToolkitFor(shaped.ownerDocument ?? shaped.document ?? target);
 	if (engine === undefined || !isActivationTriggering(event)) {
 		return toolkit.dispatchAsUserAgent(target, event);
 	}
@@ -354,10 +353,8 @@ export class TermDOM {
 	declare [kRenderCount]: number;
 
 	/**
-	 * The UA's capabilities, returned by the one installUAEngine handshake:
-	 * open a closed shadow root, read a control's selection past the type
-	 * gate. Holding this object is what makes this engine the document's
-	 * user agent -- it is never re-exported and never reachable from a node.
+	 * The user-agent surface of the DOM module: open a closed shadow root,
+	 * read a control's selection past the type gate, build the UA widgets.
 	 */
 	declare [kUAToolkit]: DOM.UAToolkit;
 

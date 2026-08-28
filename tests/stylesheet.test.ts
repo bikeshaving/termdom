@@ -1,7 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
-import {claimUAToolkit, createDocumentWindow} from "../src/internal/dom.js";
+import {createDocumentWindow, uaToolkitFor} from "../src/internal/dom.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -289,11 +289,10 @@ test("StyleManager auto-refresh on DOM changes", async () => {
 
 test("StyleManager createPseudoElementNode", async () => {
 	// The test is UA-side code: it builds its own cascade over a document
-	// no engine holds and claims the toolkit through the public door, the
-	// way any user agent would.
+	// no engine holds, and takes its toolkit the way any user agent would.
 	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
 	const {document} = window;
-	const toolkit = claimUAToolkit(document);
+	const toolkit = uaToolkitFor(document);
 
 	const style = document.createElement("style");
 	style.textContent = `

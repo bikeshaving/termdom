@@ -1,15 +1,14 @@
 /**
- * The UA capability handshake: installUAEngine hands its caller the things a
- * user agent may do that a page may not, exactly once per document, scoped
- * to that document.
+ * The user-agent surface of the DOM module: the things an engine does that
+ * the DOM API gives an author no way to do.
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
-	claimUAToolkit,
 	installUAEngine,
 	type Document,
 	parseHTMLDocument,
+	uaToolkitFor,
 } from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
@@ -21,37 +20,29 @@ function createHTMLDocument(title?: string): Document {
 			`<!doctype html><title>${title}</title>`,
 	);
 }
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
-test("a document takes one user agent and refuses a second", async () => {
+test("a document takes one engine and refuses a second", async () => {
+	// Two engines would build every UA widget twice and then disagree about
+	// what is on screen.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	expect(() => installUAEngine(dom.document, {} as never)).toThrow();
 	dom.dispose();
 });
 
-test("a toolkit taken on another document opens nothing here", async () => {
-	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = "<input value=\"x\">";
-	await nextFrame(dom);
-	const input = dom.document.querySelector("input")!;
-
-	const bystander = createHTMLDocument();
-	const stolen = installUAEngine(bystander, {} as never);
-	expect(stolen.getShadowRoot(input)).toBe(null);
-	expect(stolen.selectionOf(input)).toBe(null);
-	expect(stolen.valueTextOf(input)).toBe(null);
-
-	dom.dispose();
+test("a document has one toolkit, whichever door asks for it", () => {
+	const document = createHTMLDocument();
+	const installed = installUAEngine(document, {} as never);
+	expect(uaToolkitFor(document)).toBe(installed);
+	expect(uaToolkitFor(createHTMLDocument())).not.toBe(installed);
 });
 
 test("the toolkit reads past the type gate the author meets", () => {
-	// The test is the user agent here: it claims the toolkit on a document
-	// no engine holds and upgrades the widgets itself -- the same path an
-	// engine takes, through the same two public doors.
+	// The test is the user agent here: it takes the toolkit and upgrades the
+	// widgets itself, which is the path an engine takes.
 	const document = createHTMLDocument();
-	const toolkit = claimUAToolkit(document);
+	const toolkit = uaToolkitFor(document);
 	document.body!.innerHTML =
 		"<input id=\"n\" type=\"number\" value=\"12\">" +
 		"<input id=\"c\" type=\"checkbox\"><div id=\"d\">plain</div>";

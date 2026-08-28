@@ -120,15 +120,19 @@ interface UALineFragment {
 }
 
 /**
- * What the user agent may do that a page may not. The capability is the
- * return value of the one handshake that makes an engine a document's user
- * agent: it is never exported on its own, no element reaches it, and a
- * second install on the same document refuses -- so holding the toolkit IS
- * being the UA. Page code, including code that deep-imports this module,
- * has no way in.
+ * The user-agent surface of this module: what an engine does that the DOM API
+ * gives an author no way to do. Opening a closed shadow root, reading a
+ * control's selection past the type gate the spec puts in front of it,
+ * building the UA widgets, the top layer, and dispatch with isTrusted set.
+ *
+ * These are one object because they are the seam between the DOM and the
+ * engines built on it: the cascade, the layout, the input and the renderer
+ * take this instead of reaching into two dozen internals apiece. It is not a
+ * privilege boundary. The package publishes its entry point and nothing else,
+ * so there is no caller this could be kept from.
  */
 export interface UAToolkit {
-	/** Open a closed shadow root: the composition privilege. */
+	/** Open a closed shadow root. */
 	getShadowRoot<T>(element: object): T | null;
 	/**
 	 * A text control's selection record, past the type gate the author
@@ -153,7 +157,7 @@ export interface UAToolkit {
 	upgradeWidget(element: object): void;
 	/** Build the UA widgets in a subtree, the root element included. */
 	upgradeWidgetsIn(root: object): void;
-	/** The granted document's top layer, by reference. */
+	/** This document's top layer, by reference. */
 	topLayer: Set<Element>;
 	/**
 	 * The top layer's members that are on screen, in the order they joined.
@@ -173,8 +177,6 @@ export interface UAToolkit {
 	): void;
 	/** The composed-tree walk: the parent through slots and shadow roots. */
 	flatParentElement<T>(node: object): T | null;
-	/** Connected through the composed tree, closed roots included. */
-	flatIsConnected(node: object): boolean;
 	/** A control's selection as a Range, measured like any document range. */
 	getSelectionRange(control: object): UARange | null;
 	pseudoElement<T>(host: object, name: string): T | null;
@@ -184,23 +186,20 @@ export interface UAToolkit {
 	ensurePseudoElement<T>(target: object, name: string): T;
 	clearPseudoElement(host: object, name: string): void;
 	isUAShadowRoot(node: object): boolean;
-	/** How many style elements the granted document holds. */
+	/** How many style elements this document holds. */
 	styleElementCount(): number;
-	/**
-	 * Dispatch as the user agent: isTrusted true, default actions armed.
-	 * The one dispatch door script never gets.
-	 */
+	/** Dispatch as the user agent: isTrusted true, default actions armed. */
 	dispatchAsUserAgent(target: object, event: object): boolean;
 	/** Empty and mode-lock a clipboard transfer as its dispatch ends. */
 	lockDataTransfer(transfer: object): void;
-	createBeforeUnloadEvent(): BeforeUnloadEvent;
 }
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
 
 /**
  * Give a document the collaborators its controls' shadow trees render
- * through, and take the UA's capabilities in exchange. Once per document.
+ * through. Once per document: a second engine would build every widget a
+ * second time, and the two would disagree about what is on screen.
  */
 export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 	const doc = document as Record<symbol, UAEngine | undefined>;
@@ -208,82 +207,47 @@ export function installUAEngine(document: object, engine: UAEngine): UAToolkit {
 		throw new Error("This document already has its user agent.");
 	}
 	doc[kUAEngine] = engine;
-	return buildUAToolkit(document);
+	return uaToolkitFor(document);
 }
 
-/**
- * The headless door to the capabilities: the cascade and the layout claim
- * here when they are built for a document no terminal will ever render --
- * tests, WPT runs, author-created documents. Claims close the moment an
- * engine installs: page code only ever runs after that, so on a rendered
- * document this always refuses, and the toolkit stays the UA's.
- */
-export function claimUAToolkit(document: object): UAToolkit {
-	const doc = document as Record<symbol, UAEngine | undefined>;
-	if (doc[kUAEngine] !== undefined) {
-		throw new Error("This document's user agent holds its own toolkit.");
-	}
-	return buildUAToolkit(document);
-}
-
-/** One toolkit per document: every door hands out the same object. */
+/** One toolkit per document: every caller gets the same object. */
 const uaToolkits = new WeakMap<object, UAToolkit>();
 
-function buildUAToolkit(document: object): UAToolkit {
-	const existing = uaToolkits.get(document);
-	if (existing !== undefined) {
-		return existing;
+/**
+ * This document's toolkit, built on first ask. A document with no engine has
+ * one too -- the cascade and the layout are built for documents no terminal
+ * will ever render, and they need the same seam.
+ */
+export function uaToolkitFor(document: object): UAToolkit {
+	let toolkit = uaToolkits.get(document);
+	if (toolkit === undefined) {
+		toolkit = makeUAToolkit(document);
+		uaToolkits.set(document, toolkit);
 	}
-	const toolkit = makeUAToolkit(document);
-	uaToolkits.set(document, toolkit);
 	return toolkit;
 }
 
 function makeUAToolkit(document: object): UAToolkit {
-	// Each capability answers only for the document it was granted for, so
-	// a toolkit taken by installing on a throwaway document opens nothing.
-	const owns = (target: object): boolean => {
-		const node = target as Node & {host?: Node};
-		if (node === (document as unknown as Node)) {
-			return true;
-		}
-		const anchor =
-			node.ownerDocument ??
-			node.host?.ownerDocument ??
-			(node as unknown as {document?: object}).document;
-		return anchor === (document as unknown as Document);
-	};
 	return {
-		getShadowRoot<T>(element: object): T | null {
-			return owns(element) ? getShadowRoot<T>(element) : null;
-		},
+		getShadowRoot,
 		selectionOf(control: object) {
-			if (!owns(control)) {
-				return null;
-			}
 			const record = (
 				control as {[kUASelection]?: () => ReturnType<typeof getUASelection>}
-			)[kUASelection]!;
+			)[kUASelection];
 			return record ? record.call(control) : null;
 		},
 		valueTextOf(control: object): UAText | null {
-			return owns(control) ? fieldValueText(control) : null;
+			return fieldValueText(control);
 		},
 		isTextField,
 		setSelection(control, start, end, direction?: string): void {
-			if (owns(control)) {
-				setUASelection(control, start, end, direction);
-			}
+			setUASelection(control, start, end, direction);
 		},
 		upgradeWidget(element: object): void {
-			if (owns(element)) {
-				upgradeUAWidget(element);
-			}
+			upgradeUAWidget(element);
 		},
 		upgradeWidgetsIn(root: object): void {
-			if (owns(root)) {
-				upgradeUAWidgetsIn(root as Element);
-			}
+			upgradeUAWidgetsIn(root as Element);
 		},
 		topLayer: getTopLayer(document),
 		renderedTopLayer(): Element[] {
@@ -298,23 +262,13 @@ function makeUAToolkit(document: object): UAToolkit {
 			}
 			return rendered;
 		},
-		isModalDialog(node: object): boolean {
-			return owns(node) && isModalDialog(node);
-		},
-		isShowingPopover(node: object): boolean {
-			return owns(node) && isShowingPopover(node);
-		},
+		isModalDialog,
+		isShowingPopover,
 		topmostAutoPopover(): Element | null {
 			return topmostAutoPopover(document);
 		},
-		topmostClickedPopover(node: object): Element | null {
-			return owns(node) ? topmostClickedPopover(node) : null;
-		},
-		closePopover(element: object): void {
-			if (owns(element)) {
-				closePopover(element);
-			}
-		},
+		topmostClickedPopover,
+		closePopover,
 		hidePopoversUntil(
 			endpoint: object | null,
 			focusPreviousElement: boolean,
@@ -322,54 +276,24 @@ function makeUAToolkit(document: object): UAToolkit {
 		): void {
 			hidePopoversUntil(document, endpoint, focusPreviousElement, fireEvents);
 		},
-		flatParentElement<T>(node: object): T | null {
-			return owns(node) ? flatParentElement<T>(node) : null;
-		},
-		flatIsConnected(node: object): boolean {
-			return owns(node) && flatIsConnected(node);
-		},
-		getSelectionRange(control: object): UARange | null {
-			return owns(control) ? getSelectionRange(control) : null;
-		},
-		pseudoElement<T>(host: object, name: string): T | null {
-			return owns(host) ? pseudoElement<T>(host, name) : null;
-		},
-		pseudoElementCount(host: object): number {
-			return owns(host) ? pseudoElementCount(host) : 0;
-		},
-		getPseudoHost<T>(node: object): T | null {
-			return owns(node) ? getPseudoHost<T>(node) : null;
-		},
-		getPseudoName(node: object): string | null {
-			return owns(node) ? getPseudoName(node) : null;
-		},
-		ensurePseudoElement<T>(target: object, name: string): T {
-			if (!owns(target)) {
-				throw new Error("Not this toolkit's document.");
-			}
-			return ensurePseudoElement<T>(target, name);
-		},
-		clearPseudoElement(host: object, name: string): void {
-			if (owns(host)) {
-				clearPseudoElement(host, name);
-			}
-		},
-		isUAShadowRoot(node: object): boolean {
-			return owns(node) && isUAShadowRoot(node);
-		},
+		flatParentElement,
+		getSelectionRange,
+		pseudoElement,
+		pseudoElementCount,
+		getPseudoHost,
+		getPseudoName,
+		ensurePseudoElement,
+		clearPseudoElement,
+		isUAShadowRoot,
 		styleElementCount(): number {
 			return styleElementCount(document as Document);
 		},
 		dispatchAsUserAgent(target: object, event: object): boolean {
-			if (!owns(target)) {
-				throw new Error("Not this toolkit's document.");
-			}
 			return dispatchAsUserAgent(target as EventTarget, event as Event);
 		},
 		lockDataTransfer(transfer: object): void {
 			lockDataTransfer(transfer as DataTransfer);
 		},
-		createBeforeUnloadEvent,
 	};
 }
 

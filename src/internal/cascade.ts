@@ -18,7 +18,7 @@ import {
 	observeTree,
 	type Document as DOMDocument,
 	type UAToolkit,
-	claimUAToolkit,
+	uaToolkitFor,
 	TransitionEvent,
 	type EngineWindow,
 } from "./dom.js";
@@ -64,28 +64,12 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 // per-document while the cascade's call sites stay one name deep.
 // ---------------------------------------------------------------------------
 
-const uaByDocument = new WeakMap<object, UAToolkit>();
-
 function getUA(node: object): UAToolkit | undefined {
 	if ((node as object | null) == null) {
 		return undefined;
 	}
 	const n = node as {ownerDocument?: object; host?: {ownerDocument?: object}};
-	const document = n.ownerDocument ?? n.host?.ownerDocument ?? node;
-	let toolkit = uaByDocument.get(document);
-	if (toolkit === undefined) {
-		// A headless document claims on first need; a mounted one was
-		// stored at construction, and the claim door is shut behind it.
-		try {
-			toolkit = claimUAToolkit(document);
-		} catch (_err) {
-			// The claim door is shut: an engined document whose toolkit was
-			// not stored at construction has no capability here.
-			return undefined;
-		}
-		uaByDocument.set(document, toolkit);
-	}
-	return toolkit;
+	return uaToolkitFor(n.ownerDocument ?? n.host?.ownerDocument ?? node);
 }
 
 function flatParentElement<T>(node: object): T | null {
@@ -129,7 +113,7 @@ function isUAShadowRoot(node: object): boolean {
 }
 
 function styleElementCount(document: DOMDocument): number {
-	return uaByDocument.get(document)?.styleElementCount() ?? 0;
+	return uaToolkitFor(document).styleElementCount();
 }
 
 // ---------------------------------------------------------------------------
@@ -10125,15 +10109,6 @@ export class StyleManager {
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
-		// The composed-tree capability: claimed here while the document is
-		// headless (tests, WPT, headless windows). On the terminal path
-		// this constructor runs before the engine installs, so the claim is
-		// the UA constructing itself; page code arrives after the install
-		// closes the door.
-		if (!uaByDocument.has(this[kDocument])) {
-			uaByDocument.set(this[kDocument], claimUAToolkit(this[kDocument]));
-		}
-
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = (
 			element: Element,

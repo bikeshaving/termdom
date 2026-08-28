@@ -2,23 +2,13 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {
-	claimUAToolkit,
 	createDocumentWindow,
 	type UAToolkit,
+	uaToolkitFor,
 } from "../src/internal/dom.js";
 
-// One claim per bare document: the door is open because nothing here ever
-// installs an engine.
-const toolkits = new WeakMap<object, UAToolkit>();
 function ua(node: object): UAToolkit {
-	const document =
-		(node as {ownerDocument?: object}).ownerDocument ?? node;
-	let toolkit = toolkits.get(document);
-	if (toolkit === undefined) {
-		toolkit = claimUAToolkit(document);
-		toolkits.set(document, toolkit);
-	}
-	return toolkit;
+	return uaToolkitFor((node as {ownerDocument?: object}).ownerDocument ?? node);
 }
 
 function ensurePseudoElement<T>(host: object, name: string): T {
