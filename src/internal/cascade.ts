@@ -10623,11 +10623,9 @@ export class StyleManager {
 			this[kStylesheetsDirty] = true;
 			return;
 		}
-		const stale = this[kParsedRules].length;
 		this[kParsedRules] = this[kParsedRules].filter(
 			(rule) => rule.scope !== root,
 		);
-		void stale;
 		const before = this[kParsedRules].length;
 		for (const sheet of shadowStyleSheets(root)) {
 			parseStyleSheet(this, sheet, root);
