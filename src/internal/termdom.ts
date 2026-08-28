@@ -1707,8 +1707,6 @@ function buildExchange(
 ): TerminalExchange {
 	return new TerminalExchange({
 		transport: termdom[kTransport],
-		interactive: termdom[kTransport].interactive,
-		anchorDetection: termdom[kTransport].sharesScreen,
 		handlers: {
 			// Input dirties the journal wholesale. Reactive pseudo-state
 			// (:focus, :hover, :active) and the document selection move

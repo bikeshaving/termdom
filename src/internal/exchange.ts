@@ -6,7 +6,12 @@
  * terminal what it supports, keeps the ledger of every mode it put the
  * terminal into so they can all be undone on the way out, writes the wire
  * text, and sorts what comes back into input for the engine and answers for
- * the queries it is still waiting on.
+ * the queries it is still waiting on. Start at TerminalExchange.
+ *
+ * The one terminal this engine ships a wrapper for -- a Node process -- is
+ * written as an ordinary TerminalTransport at the end of the module, where
+ * raw mode, the stdin listener and the signal handlers are all it can reach:
+ * nothing above transportFromProcess names Node.
  */
 
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
@@ -184,7 +189,12 @@ interface ExchangeHandlers {
 	onKeys(keys: WireKey[]): void;
 	onMouse(button: number, x: number, y: number, release: boolean): void;
 	onPaste(text: string): void;
-	onResize(size: TerminalSize): void;
+	/**
+	 * The terminal resized. A notification and nothing more: the transport's
+	 * `cols`/`rows` are the value, and by the time this runs they answer with
+	 * the new one.
+	 */
+	onResize(): void;
 	/** Ctrl-C with no listener claiming it: the default action is window.close(). */
 	onCloseRequest(): void;
 	/** Where the region's start row is, once cursor detection lands. */
@@ -449,10 +459,9 @@ export class TerminalExchange {
 
 	constructor(deps: {
 		transport: TerminalTransport;
-		interactive: boolean;
-		anchorDetection: boolean;
 		handlers: ExchangeHandlers;
 	}) {
+		const interactive = deps.transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
 		this[kResizeReader] = null;
@@ -469,7 +478,7 @@ export class TerminalExchange {
 		this[kWidthProbes] = [];
 		this[kProbingEnded] = false;
 		this[kWidthSettled] = new Set<string>();
-		this[kWidthProbing] = deps.interactive;
+		this[kWidthProbing] = interactive;
 		this[kWidthAnswered] = false;
 		this[kWidthProbeTimer] = null;
 		this[kDriftBatch] = null;
@@ -529,9 +538,11 @@ export class TerminalExchange {
 			},
 		};
 		this[kTransport] = deps.transport;
-		this[kInteractive] = deps.interactive;
+		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
-		this[kAnchorDetectionEnabled] = deps.anchorDetection && deps.interactive;
+		// A shared screen is one with a shell's rows above ours, which is what
+		// there is an anchor to find; a terminal that answers nothing has none.
+		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
 		this[kHandlers] = deps.handlers;
 	}
 
@@ -999,9 +1010,7 @@ function requestStarvationFrame(session: TerminalExchange): void {
  * Keep a deadline running for as long as any probe is outstanding, timed
  * from the oldest of them.
  */
-function armWidthProbeTimer(
-	session: TerminalExchange,
-): void {
+function armWidthProbeTimer(session: TerminalExchange): void {
 	if (session[kWidthProbeTimer] !== null) {
 		return;
 	}
@@ -1108,17 +1117,6 @@ function settleWidthProbe(
 
 /* ---------------------------------------------------- input demultiplexing */
 
-/**
- * A throw from routing one chunk, raised again out of band. Nothing here
- * reports an error to the document, and swallowing one would hide it, so it
- * leaves as an uncaught exception while the read goes on.
- */
-function reportInputFailure(err: unknown): void {
-	queueMicrotask(() => {
-		throw err;
-	});
-}
-
 async function readLoop(
 	session: TerminalExchange,
 	reader: ReadableStreamDefaultReader<string>,
@@ -1137,8 +1135,12 @@ async function readLoop(
 			} catch (err) {
 				// Only the read can tell the conversation is over, so a
 				// throw from routing -- a decode, a listener -- costs its
-				// chunk and no more.
-				reportInputFailure(err);
+				// chunk and no more. Nothing here reports an error to the
+				// document and swallowing one would hide it, so it is
+				// raised again out of band while the read goes on.
+				queueMicrotask(() => {
+					throw err;
+				});
 			}
 		}
 	} catch (_err) {
@@ -1158,7 +1160,7 @@ async function resizeLoop(
 				return;
 			}
 			if (value) {
-				session[kHandlers].onResize(value);
+				session[kHandlers].onResize();
 			}
 		}
 	} catch (_err) {
@@ -1328,12 +1330,7 @@ function probeMode(
 	});
 }
 
-/**
- * The process transport: a Node-process-shaped object wrapped as the
- * TerminalTransport an exchange talks over. Raw mode, the stdin listener,
- * the signal handlers and the terminal's color depth live here, at the end
- * of the module, so the exchange above stays free of Node.
- */
+/* --------------------------------------------------- the process transport */
 
 // The Node process shape the default wrapper consumes. The engine itself
 // never touches these: they exist so `transportFromProcess` can be typed
