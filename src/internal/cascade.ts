@@ -4,6 +4,21 @@
  *
  * Nothing below this file decides what an element's style is. Layout and the
  * painter read what it resolved.
+ *
+ * Start at StyleManager, which holds one document's cascade: it parses the
+ * sheets into rules, matches them against elements, and hands out the
+ * declarations everything else reads. There are two ways to ask it. The
+ * engine's own read is getComputedValues, which answers the COMPUTED value --
+ * what the cascade said, before any box exists. An author's is
+ * getComputedStyle, which answers the RESOLVED value, and so measures the
+ * properties layout decides.
+ *
+ * Above the manager: the value-text boundary, where CSS text becomes parsed
+ * nodes and canonical strings; the shorthand expansion and default tables a
+ * declaration resolves against; the CSSOM classes a sheet, a rule and a
+ * declaration block are; and the selector reading that drives matching. Below
+ * it: transitions, the counters a marker and a content value count with, and
+ * the grid values the solver takes already parsed.
  */
 
 import {LINE_STYLES, type LineStyle} from "./screen.js";
@@ -1622,10 +1637,10 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"box-sizing": "border-box",
 	"flex-direction": "row",
 	"flex-wrap": "nowrap",
-	// `normal` is CSS's own initial value on both, and the one grid needs: it
-	// is what tells a grid's auto tracks to fill the container. In a flex
-	// container it means what flex-start meant here before, so nothing about
-	// flex layout moves.
+	// `normal` is CSS's own initial value on both, and the one a grid needs:
+	// it is what tells a grid's auto tracks to fill the container. A flex
+	// container packs its items at the main-start edge under it, which is what
+	// flex-start asks for.
 	"justify-content": "normal",
 	"align-items": "stretch",
 	"align-content": "normal",
@@ -1860,10 +1875,7 @@ export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
 	// the author path's resolved-value work between here and the values layout
 	// is about to decide geometry from.
-	return readBoxModel(getComputedValues(element));
-}
-
-function readBoxModel(computedStyle: ComputedValues): BoxModel {
+	const computedStyle = getComputedValues(element);
 	const widthValue = parseUnitValue(computedStyle.getComputedValue("width"));
 	const heightValue = parseUnitValue(computedStyle.getComputedValue("height"));
 
@@ -2086,20 +2098,13 @@ const DEFAULT_LIST_GUTTER = 4;
 const listGutterInProgress = new WeakSet<Element>();
 
 /**
- * The active StyleManager for a window.
+ * The active StyleManager for a document.
  *
- * The gutter is resolved deep inside the cascade, which has no StyleManager to
- * hand, but it has to measure the *resolved* ::marker content -- the same string
- * the renderer will draw -- and only the StyleManager can produce that.
- */
-const styleManagers = new WeakMap<object, StyleManager>();
-
-/**
- * The same registry keyed by DOCUMENT rather than window.
- *
- * A window is one object per document, and an element holds its document
- * rather than its window: the internal read path takes this door so that a
- * cascade is found from a node without a hop through the window.
+ * A node holds its document rather than its window, so this is the door every
+ * read of the cascade from a node takes -- including the ones taken deep
+ * inside the cascade itself, which have no StyleManager in hand: the list
+ * gutter measures the *resolved* ::marker content, the same string the
+ * renderer will draw, and only the StyleManager can produce that.
  */
 const documentManagers = new WeakMap<object, StyleManager>();
 
@@ -2196,8 +2201,7 @@ function getListGutterWidth(listElement: Element): number {
 	}
 	listGutterInProgress.add(listElement);
 	try {
-		const window = listElement.ownerDocument.defaultView;
-		const styleManager = window ? styleManagers.get(window) : undefined;
+		const styleManager = documentManagers.get(listElement.ownerDocument);
 
 		let widest = 0;
 		for (const child of Array.from(listElement.children)) {
@@ -2217,20 +2221,6 @@ function getListGutterWidth(listElement: Element): number {
 		listGutterInProgress.delete(listElement);
 	}
 }
-
-/**
- * The box shorthands whose computed answer is serialized from their four
- * longhands rather than resolved in its own right. Border shorthands are
- * excluded on purpose: resolveBorderSides reads the longhands directly, and
- * `border` answers what was authored.
- */
-const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
-	["margin", ["margin-top", "margin-right", "margin-bottom", "margin-left"]],
-	[
-		"padding",
-		["padding-top", "padding-right", "padding-bottom", "padding-left"],
-	],
-]);
 
 /** Properties whose value is a `<color>`. */
 const COLOR_PROPERTIES = new Set([
@@ -3469,17 +3459,12 @@ function serializeShorthandValue(
 /**
  * A shorthand's components with the ones left at their initial value omitted,
  * which is what makes `border-top: 1px solid` serialize without its color.
- * `required` names a component index written whatever its value.
  */
 function dropInitials(
 	components: ReadonlyArray<readonly [string, string]>,
-	required = -1,
 ): string {
 	const kept = components
-		.filter(([longhand, value], index) => {
-			if (index === required) {
-				return true;
-			}
+		.filter(([longhand, value]) => {
 			const initial = CSS_INITIAL_VALUES[longhand];
 			return !initial || value !== initial;
 		})
@@ -3572,8 +3557,6 @@ class CSSStyleDeclaration implements DeclarationSource {
 			keyframe?: boolean;
 		} = {},
 	) {
-		this[kDescriptors] = "";
-		this[kKeyframe] = false;
 		this[kDeclarations] = [];
 		this[kByName] = new Map<string, CSSDeclaration>();
 		this[kAttributeText] = null;
@@ -6005,9 +5988,7 @@ class CSSStyleSheet {
 		ownerNode: Element | null = null,
 	) {
 		this[kRules] = [];
-		this[kOwnerNode] = null;
 		this[kOwnerRule] = null;
-		this[kDisabled] = false;
 		this[kText] = null;
 		this[kOwnerNode] = ownerNode;
 		this[kConstructed] = ownerNode === null;
@@ -6019,7 +6000,7 @@ class CSSStyleSheet {
 		this[kDisabled] = Boolean(options.disabled);
 		this[kMedia] = new MediaList(
 			ownerNode?.getAttribute("media") ?? options.media ?? "",
-			() => changed(this),
+			() => sheetChanged(this),
 		);
 		this[kRuleList] = createRuleList(this[kRules]!);
 	}
@@ -6093,7 +6074,7 @@ class CSSStyleSheet {
 			return;
 		}
 		this[kDisabled] = value;
-		changed(this);
+		sheetChanged(this);
 	}
 
 	insertRule(text: string, index = 0): number {
@@ -6121,7 +6102,7 @@ class CSSStyleSheet {
 		checkRuleOrder(this, inserted, index);
 		this[kRules]!.splice(index, 0, inserted);
 		syncIndexed(this[kRuleList]!);
-		changed(this);
+		sheetChanged(this);
 		return index;
 	}
 
@@ -6159,7 +6140,7 @@ class CSSStyleSheet {
 		detachRule(removed);
 		this[kRules]!.splice(index, 1);
 		syncIndexed(this[kRuleList]!);
-		changed(this);
+		sheetChanged(this);
 	}
 
 	/** The legacy IE spellings, defined in terms of the modern pair. */
@@ -6197,7 +6178,7 @@ class CSSStyleSheet {
 			),
 		);
 		syncIndexed(this[kRuleList]!);
-		changed(this);
+		sheetChanged(this);
 	}
 
 	replace(text: string): Promise<CSSStyleSheet> {
@@ -6217,12 +6198,6 @@ class CSSStyleSheet {
  */
 function reparseOwnerText(sheet: CSSStyleSheet): void {
 	sheet[kText] = null;
-}
-
-function changed(
-	sheet: CSSStyleSheet,
-): void {
-	sheetNotifiers.get(sheet)?.();
 }
 
 /**
@@ -7794,21 +7769,31 @@ const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 /** The sheets a document or shadow root has adopted. */
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
+/**
+ * A node's root as a shadow root, or null when it is not one. A bare fragment
+ * is a document fragment too and hosts nothing, which is what separates it
+ * from a tree some element composes.
+ */
+function asShadowRoot(root: Node): ShadowRoot | null {
+	return root.nodeType === 11 && (root as ShadowRoot).host ?
+			(root as ShadowRoot) :
+		null;
+}
+
 function sheetFor(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
 	if (!sheet) {
 		sheet = new CSSStyleSheet({}, element);
 		sheetNotifiers.set(sheet, () => {
-			const window = element.ownerDocument?.defaultView;
-			const manager = window ? styleManagers.get(window) : undefined;
+			const manager = managerForTree(element);
 			if (!manager) {
 				return;
 			}
 			// A shadow sheet's change refreshes its root; only a document
 			// sheet's change rebuilds the document cascade.
-			const root = element.getRootNode();
-			if (root.nodeType === 11 && (root as ShadowRoot).host) {
-				manager.refreshShadowRoot(root as ShadowRoot);
+			const root = asShadowRoot(element.getRootNode());
+			if (root) {
+				manager.refreshShadowRoot(root);
 			} else {
 				manager.refreshStylesheets();
 			}
@@ -7816,22 +7801,6 @@ function sheetFor(element: Element): CSSStyleSheet {
 		elementSheets.set(element, sheet);
 	}
 	return sheet;
-}
-
-/**
- * The `<style>` elements a document holds, as a bare length to poll.
- *
- * The document counts them as they join and leave its trees, so a length read
- * answers "has a sheet appeared" without walking for one -- cheap enough to
- * ask on every computed-style read.
- */
-function documentStyleSheetList(document: Document): {length: number} {
-	const counted = document as unknown as DOMDocument;
-	return {
-		get length(): number {
-			return styleElementCount(counted);
-		},
-	};
 }
 
 /**
@@ -8379,10 +8348,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			this[kResolved],
 		);
 		this[kResolved] = new Map();
-		const manager = this[kManager];
-		if (manager) {
-			dropUsedValues(manager, this);
-		}
+		dropUsedValues(this[kManager], this);
 		if ((this as IndexedCollection)[kIndexCount] !== undefined) {
 			syncIndexed(this);
 		}
@@ -9025,7 +8991,9 @@ function substituteVar(
 		const fallback =
 			commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
 
-		const resolved = resolveCustomProperty(declaration, name);
+		// A custom property is an ordinary (always-inherited) cascade lookup:
+		// resolvePropertyValueRaw's step 4 already walks ancestors for it.
+		const resolved = resolvePropertyValueRaw(declaration, name) || null;
 		if (resolved !== null) {
 			out += substituteVar(declaration, resolved, depth + 1);
 		} else if (fallback !== undefined) {
@@ -9037,15 +9005,6 @@ function substituteVar(
 		i = j;
 	}
 	return out;
-}
-
-function resolveCustomProperty(
-	declaration: ComputedStyleDeclaration,
-	name: string,
-): string | null {
-	// A custom property is just an ordinary (always-inherited) cascade lookup
-	// -- resolvePropertyValueRaw's step 4 already walks ancestors for it.
-	return resolvePropertyValueRaw(declaration, name) || null;
 }
 
 /**
@@ -9378,8 +9337,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				this[kElement]!,
 				this[kPseudoElement],
 			);
-		}
-		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
 			storeTransitionFallback(
 				this[kManager],
 				this[kElement]!,
@@ -9700,7 +9657,6 @@ const ACCESSOR_PROPERTIES = new Set<string>([
 	...LENGTH_PROPERTIES,
 	...COLOR_PROPERTIES,
 	...INHERITED_PROPERTIES,
-	...BOX_SHORTHAND_LONGHANDS.keys(),
 	"align-content",
 	"align-items",
 	"align-self",
@@ -10237,7 +10193,6 @@ const kUsedGeneration = Symbol("used values generation");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
-const kStyleSheetList = Symbol("styleSheetList");
 const kFocusVisibleActive = Symbol("focusVisibleActive");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
@@ -10435,7 +10390,6 @@ export class StyleManager {
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
 		this[kUsedGeneration] = -1;
-		this[kStyleSheetList] = null;
 		this[kPseudoNodeStyles] = new WeakMap<Element, ComputedValues>();
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
@@ -10453,9 +10407,6 @@ export class StyleManager {
 		this[kLayoutEngine] = layoutEngine;
 		this[kDocument] = window.document;
 
-		// The list gutter is resolved inside the cascade, which cannot reach a
-		// StyleManager any other way. See getListGutterWidth().
-		styleManagers.set(window, this);
 		documentManagers.set(this[kDocument], this);
 		window.getComputedStyle = (
 			element: Element,
@@ -10468,12 +10419,7 @@ export class StyleManager {
 
 	/** The rules matching an element, in cascade order. */
 	matchingRules(element: Element): ParsedCSSRule[] {
-		if (
-			this[kStylesheetsDirty] ||
-			styleSheetCount(this) !== this[kParsedStyleSheetCount]
-		) {
-			parseStylesheets(this);
-		}
+		parseStylesheetsIfStale(this);
 		return getMatchingRules(this, element);
 	}
 
@@ -10521,7 +10467,7 @@ export class StyleManager {
 	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
 	viewportSize(): {width: number; height: number} | null {
-		return getMount(this[kWindow].document)?.viewportSize() ?? null;
+		return getMount(this[kDocument])?.viewportSize() ?? null;
 	}
 
 	/** The element's border-box rect, measured after that flush. */
@@ -10705,12 +10651,9 @@ export class StyleManager {
 				// rebuild the document's cascade.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					reparseOwnerText(sheetFor(mutation.target as Element));
-					const styleRoot = (mutation.target as Element).getRootNode();
-					if (
-						styleRoot.nodeType === 11 &&
-						(styleRoot as ShadowRoot).host
-					) {
-						this.refreshShadowRoot(styleRoot as ShadowRoot);
+					const styleRoot = asShadowRoot(mutation.target.getRootNode());
+					if (styleRoot) {
+						this.refreshShadowRoot(styleRoot);
 					} else {
 						shouldRefreshStylesheets = true;
 					}
@@ -10726,13 +10669,12 @@ export class StyleManager {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
-							const addedRoot = element.getRootNode();
-							if (
-								element.tagName === "STYLE" &&
-								addedRoot.nodeType === 11 &&
-								(addedRoot as ShadowRoot).host
-							) {
-								this.refreshShadowRoot(addedRoot as ShadowRoot);
+							const addedRoot =
+								element.tagName === "STYLE" ?
+										asShadowRoot(element.getRootNode()) :
+									null;
+							if (addedRoot) {
+								this.refreshShadowRoot(addedRoot);
 							} else {
 								shouldRefreshStylesheets = true;
 							}
@@ -10800,12 +10742,9 @@ export class StyleManager {
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
 					reparseOwnerText(sheetFor(owner));
-					const ownerRoot = owner.getRootNode();
-					if (
-						ownerRoot.nodeType === 11 &&
-						(ownerRoot as ShadowRoot).host
-					) {
-						this.refreshShadowRoot(ownerRoot as ShadowRoot);
+					const ownerRoot = asShadowRoot(owner.getRootNode());
+					if (ownerRoot) {
+						this.refreshShadowRoot(ownerRoot);
 					} else {
 						shouldRefreshStylesheets = true;
 					}
@@ -10817,15 +10756,6 @@ export class StyleManager {
 			this.refreshStylesheets();
 		}
 	}
-
-	/**
-	 * The document's style-element list, held so the count below is a bare
-	 * length read. The count is polled on every computed-style read to catch
-	 * a <style> appended in the same tick, before the mutation observer
-	 * delivers; adopted sheets and a sheet's own mutations reach the cascade
-	 * through refreshStylesheets instead.
-	 */
-	declare [kStyleSheetList]: {length: number} | null;
 
 	/**
 	 * Whether an element's text can enter a selection: the used value of
@@ -10952,12 +10882,7 @@ export class StyleManager {
 	 * frames still describes the current document.
 	 */
 	hoverRulesExist(): boolean {
-		if (
-			this[kStylesheetsDirty] ||
-			styleSheetCount(this) !== this[kParsedStyleSheetCount]
-		) {
-			parseStylesheets(this);
-		}
+		parseStylesheetsIfStale(this);
 		return this[kHoverRulesExist];
 	}
 
@@ -10981,12 +10906,7 @@ export class StyleManager {
 	declarationFor(element: Element): ComputedStyleDeclaration {
 		let declaration = this[kComputedStyleCache].get(element);
 		if (!declaration) {
-			if (
-				this[kStylesheetsDirty] ||
-				styleSheetCount(this) !== this[kParsedStyleSheetCount]
-			) {
-				parseStylesheets(this);
-			}
+			parseStylesheetsIfStale(this);
 			declaration = new ComputedStyleDeclaration(
 				element,
 				getMatchingRules(this, element),
@@ -11354,9 +11274,7 @@ export class StyleManager {
 		}
 		this.initializeCounters(element);
 
-		const pseudoTypes = ["::before", "::after", "::marker"];
-
-		for (const pseudoType of pseudoTypes) {
+		for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
 			attachPseudoElementToElementForType(this, element, pseudoType);
 		}
 	}
@@ -11459,35 +11377,21 @@ export class StyleManager {
 		}
 	}
 
-	getCounterValue(element: Element, counterName: string): number {
-		const scope = this[kCounterScopes].get(element);
-		if (!scope) {
-			return 0;
-		}
-
-		let currentScope: CounterScope | undefined = scope;
-		while (currentScope) {
-			if (counterName in currentScope.counters) {
-				return currentScope.counters[counterName];
-			}
-			currentScope = currentScope.parent;
-		}
-
-		return 0;
-	}
-
 	/**
 	 * A content value with each `counter(name)` or `counter(name, style)`
 	 * replaced by the number the counter stands at for this element.
 	 */
 	resolveCounterFunction(element: Element, content: string): string {
+		const scope = this[kCounterScopes].get(element);
 		return content.replace(
 			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
 			(_match, counterName, style) => {
 				const trimmedName = counterName.trim();
 				const trimmedStyle = style?.trim() || "decimal";
-				const value = this.getCounterValue(element, trimmedName);
-				return formatCounterValue(value, trimmedStyle);
+				return formatCounterValue(
+					counterValueInScope(scope, trimmedName),
+					trimmedStyle,
+				);
 			},
 		);
 	}
@@ -11540,12 +11444,7 @@ function getResolvedStyle(
 	// A computed style describes the DOM as it stands, so an author read
 	// goes through the flush a geometry read does.
 	manager.flushStyle();
-	if (
-		manager[kStylesheetsDirty] ||
-		styleSheetCount(manager) !== manager[kParsedStyleSheetCount]
-	) {
-		parseStylesheets(manager);
-	}
+	parseStylesheetsIfStale(manager);
 	// An element that is not being rendered has no style to report: it is
 	// out of the document, or out of the flat tree its document composes.
 	// Only an author read comes through here -- the engine reads through
@@ -12462,11 +12361,33 @@ function tickTransitions(manager: StyleManager): void {
 	scheduleTransitionTick(manager);
 }
 
+/**
+ * How many `<style>` elements the document holds.
+ *
+ * The document counts them as they join and leave its trees, so this answers
+ * "has a sheet appeared" without walking for one -- cheap enough to poll on
+ * every computed-style read, which is what catches a sheet appended in the
+ * same tick, before the mutation observer delivers. Adopted sheets and a
+ * sheet's own mutations reach the cascade through refreshStylesheets instead.
+ */
 function styleSheetCount(
 	manager: StyleManager,
 ): number {
-	manager[kStyleSheetList] ??= documentStyleSheetList(manager[kDocument]);
-	return manager[kStyleSheetList].length;
+	return styleElementCount(manager[kDocument] as unknown as DOMDocument);
+}
+
+/**
+ * Read the sheets again when what the cascade holds no longer describes them:
+ * a mutation marked them dirty, or a `<style>` joined or left the document
+ * since the last parse.
+ */
+function parseStylesheetsIfStale(manager: StyleManager): void {
+	if (
+		manager[kStylesheetsDirty] ||
+		styleSheetCount(manager) !== manager[kParsedStyleSheetCount]
+	) {
+		parseStylesheets(manager);
+	}
 }
 
 /**
@@ -13246,8 +13167,7 @@ function getMatchingRules(
 	const partPseudo = partPseudoFor(element);
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
-	const shadowHost =
-		root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
+	const shadowHost = asShadowRoot(root)?.host ?? null;
 	const partNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
@@ -13289,7 +13209,7 @@ function getMatchingRules(
 			(rule) =>
 				[
 					rule,
-					rule.scopes ? scopeProximity(manager, element, rule) : UNSCOPED,
+					rule.scopes ? scopeProximity(element, rule) : UNSCOPED,
 				] as const,
 		),
 	);
@@ -13314,7 +13234,6 @@ function getMatchingRules(
  * DOM outright.
  */
 function matchesRule(
-	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 	selector: string,
@@ -13332,7 +13251,6 @@ function matchesRule(
  * already been filtered out.
  */
 function scopeProximity(
-	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 ): number {
@@ -13500,21 +13418,20 @@ function ruleMatches(
 		if (rule.scope) {
 			return (
 				root === rule.scope &&
-				matchesRule(manager, element, rule, rule.selector)
+				matchesRule(element, rule, rule.selector)
 			);
 		}
 		// UA document rules apply in EVERY tree scope, as a browser's own
 		// UA sheet styles shadow trees.
 		if (rule.uaOrigin) {
-			return matchesRule(manager, element, rule, rule.selector);
+			return matchesRule(element, rule, rule.selector);
 		}
 		// AUTHOR document rules match everything OUTSIDE shadow trees --
 		// including detached elements (styles resolve before insertion,
 		// and always have here); the boundary they must not cross is the
 		// shadow root.
-		const inShadowTree =
-			root.nodeType === 11 && Boolean((root as ShadowRoot).host);
-		return !inShadowTree && matchesRule(manager, element, rule, rule.selector);
+		const inShadowTree = asShadowRoot(root) !== null;
+		return !inShadowTree && matchesRule(element, rule, rule.selector);
 	} catch (err) {
 		return false;
 	}
@@ -13886,7 +13803,7 @@ function incrementCounter(
 		const currentValue = getListItemCounterValue(manager, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
-		const currentValue = getCounterValueFromScope(scope.parent, counterName);
+		const currentValue = counterValueInScope(scope.parent, counterName);
 		scope.counters[counterName] = currentValue + increment;
 	}
 }
@@ -13926,7 +13843,7 @@ function getListItemCounterValue(
 }
 
 /** A counter's value in this scope, or the nearest ancestor scope holding it. */
-function getCounterValueFromScope(
+function counterValueInScope(
 	scope: CounterScope | undefined,
 	counterName: string,
 ): number {
@@ -14076,15 +13993,8 @@ function trackCells(node: CSSNode): number | null {
 	return Number.isFinite(number) ? number : null;
 }
 
-function pointBreadth(cells: number): SolverTypes.TrackBreadth {
+function cellBreadth(cells: number): SolverTypes.TrackBreadth {
 	return {kind: "length", value: {unit: "cell", value: cells}};
-}
-
-function percentBreadth(percentage: number): SolverTypes.TrackBreadth {
-	return {
-		kind: "length",
-		value: {unit: "percent", value: percentage},
-	};
 }
 
 /** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
@@ -14097,14 +14007,16 @@ function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
 	}
 	const cells = trackCells(node);
 	if (cells !== null) {
-		return pointBreadth(cells);
+		return cellBreadth(cells);
 	}
 	if (node.type === "Percentage") {
 		const percentage = parseFloat(node.value ?? "");
-		return Number.isFinite(percentage) ? percentBreadth(percentage) : null;
+		return Number.isFinite(percentage) ?
+				{kind: "length", value: {unit: "percent", value: percentage}} :
+			null;
 	}
 	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
-		return pointBreadth(0);
+		return cellBreadth(0);
 	}
 	if (node.type === "Identifier") {
 		switch ((node.name ?? "").toLowerCase()) {
