@@ -145,13 +145,16 @@ const MODE_SPELLINGS = {
 		panic: true,
 	},
 	titleStack: {set: pushTitle(), reset: popTitle(), panic: true},
-	// The Fullscreen API's screen switch. Panic-marked: a crash mid-fullscreen
-	// hands the main screen back instead of stranding the user in the
-	// alternate one.
+	// The Fullscreen API's screen switch. The panic spelling is ?1047, the
+	// switch WITHOUT the cursor restore: a bare ?1049l restores a saved
+	// cursor even when the alternate screen is not active (tmux and xterm
+	// both), and the saved slot outlives whichever program set it. The
+	// blanket restore cuts ahead of the queued payout, so a cursor-moving
+	// reset there teleports the payout onto rows the app never owned.
 	altScreen: {
 		set: privateMode(1049, true),
 		reset: privateMode(1049, false),
-		panic: true,
+		panic: privateMode(1047, false),
 	},
 	// Negotiated, not imposed: a terminal that ignored the offer must not
 	// see the reset, so only the engaged-tracking restore may write it.
@@ -167,12 +170,17 @@ type ModeName = keyof typeof MODE_SPELLINGS;
 const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
 
 /**
- * The blanket restore the panic paths write: the reset of each panic-marked
- * mode, engaged or not -- a panic path cannot know, and each is idempotent.
+ * The blanket restore the panic paths write: each panic-marked mode's reset,
+ * engaged or not -- a panic path cannot know, and each must therefore hold as
+ * a no-op on a terminal the mode never touched. A mode whose ordinary reset
+ * is not that no-op carries its own panic spelling instead.
  */
 export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	(name) => MODE_SPELLINGS[name].panic,
-).map((name) => MODE_SPELLINGS[name].reset).join("");
+).map((name) => {
+	const {panic, reset} = MODE_SPELLINGS[name];
+	return typeof panic === "string" ? panic : reset;
+}).join("");
 
 /* ------------------------------------------------------------ the exchange */
 

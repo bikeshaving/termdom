@@ -98,7 +98,13 @@ test("a title never carries its own escape sequences to the terminal", async () 
 	// screen. All three are the document's text, none of them are commands.
 	dom.document.title = "safe\x07\x1b]0;PWNED\x07\x1b[2J";
 	await nextFrame(dom);
-	await new Promise((r) => setTimeout(r, 20));
+
+	// The title rides the write queue, so wait for it to arrive rather than
+	// for a fixed span -- under a loaded runner a fixed one is a coin flip.
+	const deadline = Date.now() + 2000;
+	while (!raw().includes("\x1b]2;") && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 5));
+	}
 
 	const out = raw();
 	expect(out).toContain("\x1b]2;safe]0;PWNED[2J\x07");
