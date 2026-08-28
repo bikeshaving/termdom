@@ -1,12 +1,18 @@
 /**
- * The HTML element interfaces over the tree: what each tag reflects, and what
- * it does when activated.
+ * The tables dom.ts builds the HTML element interfaces from: which interface
+ * each tag is created through, which content attributes it reflects and how,
+ * and the event handler IDL attributes an element, document or window carries.
+ *
+ * Data and nothing else -- no behavior lives here. A reflection is a
+ * ReflectSpec, the helpers below are its spellings, and dom.ts reads the kind
+ * and installs the accessor. Start at HTML_INTERFACES, the per-tag table.
  */
 
 /**
  * How a content attribute is reflected by an IDL attribute.
  *
  * - `string`: a DOMString, the empty string when the attribute is absent.
+ * - `nullable-string`: a DOMString?, null when the attribute is absent.
  * - `url`: a URL, resolved against the document's base URL on getting.
  * - `boolean`: present or absent.
  * - `long`, `unsigned-long`: a number parsed from the attribute, falling back
@@ -15,7 +21,6 @@
  * - `enum`: limited to only known values, with a missing-value default and an
  *   invalid-value default.
  * - `tokenlist`: a DOMTokenList over the attribute's tokens.
- * - `nullable-string`: a DOMString?, null when the attribute is absent.
  */
 type ReflectKind =
 	"string" |
@@ -57,9 +62,7 @@ export interface ReflectSpec {
 interface InterfaceSpec {
 	/** The interface's name, which is also its Symbol.toStringTag. */
 	name: string;
-	/** The interface it inherits from; HTMLElement where this is absent. */
-	base?: string;
-	/** The tags built through it. */
+	/** The tags built through it; empty for one that only serves as a base. */
 	tags: readonly string[];
 	/** The attributes it reflects. */
 	reflect?: readonly ReflectSpec[];
@@ -327,7 +330,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			bool("noHref", "nohref"),
 		],
 	},
-	{name: "HTMLAudioElement", base: "HTMLMediaElement", tags: ["audio"]},
+	{name: "HTMLAudioElement", tags: ["audio"]},
 	{
 		name: "HTMLBRElement",
 		tags: ["br"],
@@ -1000,7 +1003,6 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 	},
 	{
 		name: "HTMLVideoElement",
-		base: "HTMLMediaElement",
 		tags: ["video"],
 		reflect: [
 			ulong("width", "width", 0),
