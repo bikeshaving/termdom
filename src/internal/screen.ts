@@ -28,6 +28,7 @@ import {
 	restoreCursor,
 	saveCursor,
 	setScrollRegion,
+	isControlByte,
 	sgrReset,
 	sgrStyle,
 	type StyleAttribute,
@@ -1020,10 +1021,10 @@ export class CellContext {
 		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
 
-			// Never write a control char to a cell: a trailing one would survive to
-			// the output as a raw escape byte (injection from untrusted text).
-			const code = char.codePointAt(0)!;
-			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+			// Never write a control char to a cell: a cell is a column, and one
+			// of the wire's refused bytes would survive to the output as a raw
+			// escape byte (injection from untrusted text).
+			if (isControlByte(char.codePointAt(0)!)) {
 				continue;
 			}
 

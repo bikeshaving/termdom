@@ -375,13 +375,22 @@ function decode64(text: string): Uint8Array | null {
 export function setWindowTitle(text: string): string {
 	let title = "";
 	for (const char of text) {
-		const code = char.codePointAt(0)!;
-		if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+		if (isControlByte(char.codePointAt(0)!)) {
 			continue;
 		}
 		title += char;
 	}
 	return `\x1b]2;${title}\x07`;
+}
+
+/**
+ * The characters no payload may put on the wire: C0, DEL, and the C1 range
+ * whose single bytes are CSI, OSC and DCS. One of these in untrusted text
+ * would end the sequence around it or start one of its own, so everything
+ * that writes text to the terminal refuses them.
+ */
+export function isControlByte(code: number): boolean {
+	return code < 0x20 || (code >= 0x7f && code < 0xa0);
 }
 
 /** OSC 52: put text on the terminal's clipboard. */
