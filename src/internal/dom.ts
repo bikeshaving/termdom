@@ -9427,7 +9427,7 @@ export interface Element
 		// `remove` and `scrollIntoView` are written out below rather than
 		// Picked: a Pick yields a property, and a subclass declares each of
 		// them as a method, which may not override one.
-		| Exclude<ChildNodeMixin, "remove"> |
+		Exclude<ChildNodeMixin, "remove"> |
 		ParentNodeMixin |
 		SelectorSurface |
 		FullscreenSurface |
