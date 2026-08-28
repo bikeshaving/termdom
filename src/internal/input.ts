@@ -21,6 +21,10 @@
  * What the engine keeps is what touches the frame: the camera, the wire's
  * reporting modes, the paint. Those arrive as collaborators, so nothing here
  * reaches into rendering.
+ *
+ * Start at EventHandler. Its handleKeys, handleMouseReport and handlePaste are
+ * the three doors, one per kind of wire item, and the gestures they run are
+ * the functions below the class.
  */
 
 import {
@@ -44,70 +48,10 @@ import {type StyleManager, getComputedValues} from "./cascade.js";
 /* -------------------------------------------------- what a wire item means */
 
 /**
- * The DOM `code` values for the keys whose physical identity a terminal escape
- * sequence pins down exactly, independent of any US-QWERTY assumption.
- */
-const NAMED_KEY_CODES: Record<string, string> = {
-	"Enter": "Enter",
-	"Tab": "Tab",
-	"Backspace": "Backspace",
-	"Escape": "Escape",
-	"ArrowUp": "ArrowUp",
-	"ArrowDown": "ArrowDown",
-	"ArrowLeft": "ArrowLeft",
-	"ArrowRight": "ArrowRight",
-	"Home": "Home",
-	"End": "End",
-	"Insert": "Insert",
-	"Delete": "Delete",
-	"PageUp": "PageUp",
-	"PageDown": "PageDown",
-	"F1": "F1",
-	"F2": "F2",
-	"F3": "F3",
-	"F4": "F4",
-	"F5": "F5",
-	"F6": "F6",
-	"F7": "F7",
-	"F8": "F8",
-	"F9": "F9",
-	"F10": "F10",
-	"F11": "F11",
-	"F12": "F12",
-	" ": "Space",
-};
-
-/**
- * The DOM `code` for a resolved key name -- physical key identity, independent
- * of modifiers. Exact for named/special keys (the escape sequence uniquely
- * identifies the physical key) and for letters/digits under the near-universal
- * assumption of a US QWERTY layout. Not exact for punctuation: a terminal only
- * ever tells us the character a key combination *produced* ("!" from Shift+1
- * on US layout, but a different physical key entirely on others), never which
- * physical key+modifiers produced it -- there is no protocol-level signal for
- * that, unlike the modifier bits `ctrlKey`/`altKey`/`shiftKey` decode from.
- * Falls back to `Key<uppercased character>`, which is a guess.
- */
-function domCodeFor(keyName: string): string {
-	const named = NAMED_KEY_CODES[keyName];
-	if (named) {
-		return named;
-	}
-	if (keyName.length === 1) {
-		const upper = keyName.toUpperCase();
-		if (upper >= "A" && upper <= "Z") {
-			return `Key${upper}`;
-		}
-		if (keyName >= "0" && keyName <= "9") {
-			return `Digit${keyName}`;
-		}
-	}
-	return `Key${keyName.toUpperCase()}`;
-}
-
-/**
- * The legacy `keyCode` for the keys a terminal names. Long deprecated in the
- * DOM and still what plenty of code reads, so every keyboard event carries one.
+ * The keys a terminal names, and the legacy `keyCode` each one carries. That
+ * number is long deprecated in the DOM and still what plenty of code reads, so
+ * every keyboard event has one. The roster is also the answer to which key
+ * names are physical identities, which is what domCodeFor asks of it.
  */
 const NAMED_KEY_NUMBERS: Record<string, number> = {
 	Enter: 13,
@@ -137,6 +81,37 @@ const NAMED_KEY_NUMBERS: Record<string, number> = {
 	F11: 122,
 	F12: 123,
 };
+
+/**
+ * The DOM `code` for a resolved key name -- physical key identity, independent
+ * of modifiers. A named key is its own code, Space excepted, since the escape
+ * sequence the wire read it from identifies the physical key exactly. So is a
+ * letter or digit, under the near-universal assumption of a US QWERTY layout.
+ * Not exact for punctuation: a terminal only ever tells us the character a key
+ * combination *produced* ("!" from Shift+1 on US layout, but a different
+ * physical key entirely on others), never which physical key+modifiers
+ * produced it -- there is no protocol-level signal for that, unlike the
+ * modifier bits an event's `ctrlKey`/`altKey`/`shiftKey` come from. Falls back
+ * to `Key<uppercased character>`, which is a guess.
+ */
+function domCodeFor(keyName: string): string {
+	if (keyName === " ") {
+		return "Space";
+	}
+	if (keyName in NAMED_KEY_NUMBERS) {
+		return keyName;
+	}
+	if (keyName.length === 1) {
+		const upper = keyName.toUpperCase();
+		if (upper >= "A" && upper <= "Z") {
+			return `Key${upper}`;
+		}
+		if (keyName >= "0" && keyName <= "9") {
+			return `Digit${keyName}`;
+		}
+	}
+	return `Key${keyName.toUpperCase()}`;
+}
 
 /**
  * The legacy `keyCode` for a resolved key name: the number for a named key,
@@ -177,10 +152,7 @@ interface MouseReport {
  * mapping. The report's row/column and the dispatch itself stay with the
  * caller, which owns the hit-test and the render loop.
  */
-function decodeMouseReport(
-	code: number,
-	isRelease: boolean,
-): MouseReport {
+function decodeMouseReport(code: number, isRelease: boolean): MouseReport {
 	const shiftKey = (code & 4) !== 0;
 	const altKey = (code & 8) !== 0;
 	const ctrlKey = (code & 16) !== 0;
@@ -190,7 +162,6 @@ function decodeMouseReport(
 	// Wheel: 64 = up, 65 = down.
 	const wheelDeltaY = base === 64 ? -3 : base === 65 ? 3 : null;
 
-	// Buttons: 0/1/2 = left/middle/right.
 	const button = base === 1 ? 1 : base === 2 ? 2 : 0;
 	const buttons = isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1;
 
@@ -213,21 +184,10 @@ function decodeMouseReport(
 //
 // `a[href]` is in the list because an anchor WITH an href is focusable and
 // sequentially reachable per HTML, and an anchor without one is not -- the
-// attribute qualifier draws that line for free. Leaving links out made
-// navigation link-shaped UI (TodoMVC's All/Active/Completed filters) reachable
-// only by mouse.
+// attribute qualifier draws that line for free, and link-shaped navigation
+// stays reachable by keyboard.
 const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
-
-/** What a slot looks like from a module that must not import DOM classes. */
-interface SlotLike extends Element {
-	assignedNodes(): Node[];
-}
-
-interface ShadowRootLike {
-	children: ArrayLike<Element> & Iterable<Element>;
-	delegatesFocus?: boolean;
-}
 
 /**
  * One entry in a focus navigation scope: a single element, or a scope
@@ -320,9 +280,7 @@ function sequentialFocusEntries(
 			}
 			const element = node as Element;
 			const ownerTabindex = getTabIndex(element);
-			const shadow = getShadowRoot(element) as
-				| ShadowRootLike |
-				null;
+			const shadow = getShadowRoot<ShadowRoot>(element);
 			if (shadow !== null) {
 				// A negative tabindex on the owner bars the whole expansion
 				// from outside entry; inside it, order still holds.
@@ -341,7 +299,7 @@ function sequentialFocusEntries(
 			if (element.localName === "slot") {
 				const innerBarrier =
 					ownerTabindex < 0 ? (barrier ?? element) : barrier;
-				const assigned = (element as SlotLike).assignedNodes();
+				const assigned = (element as HTMLSlotElement).assignedNodes();
 				const slotContents =
 					assigned.length > 0 ? assigned : element.childNodes;
 				const inner = buildScope(
@@ -456,7 +414,6 @@ export function isActivationTriggering(event: {
 		case "mousedown":
 		case "mouseup":
 		case "click":
-		case "pointerup":
 		case "paste":
 			return true;
 		case "beforeinput":
@@ -496,7 +453,7 @@ function keyboardActivation(
 	return null;
 }
 
-/* ------------------------------------------------------------ collaborators */
+/* ----------------------------------------------------------- collaborators */
 
 /** A point in document space, and whether the cell it came from is in one. */
 export interface DocumentPoint {
@@ -539,8 +496,9 @@ interface HitTester {
 
 /**
  * The user-agent behaviors a dispatched event triggers that belong to the
- * frame rather than to interpretation: scrolling, the top layer, the wire's
- * reporting modes.
+ * engine rather than to interpretation: scrolling, the top layer and
+ * fullscreen, the wire's reporting modes, and the hover the host is told
+ * about.
  */
 interface UADefaultActions {
 	/**
@@ -561,7 +519,7 @@ interface UADefaultActions {
 	fullscreenTarget(): Element | null;
 }
 
-/* ----------------------------------------------------------- the interpreter */
+/* --------------------------------------------------------- the interpreter */
 
 const kView = Symbol("view");
 const kHitTest = Symbol("hitTest");
@@ -582,6 +540,11 @@ const kLastClickTarget = Symbol("lastClickTarget");
 const kLastClickTime = Symbol("lastClickTime");
 const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
+/**
+ * The interpreter itself: the collaborators it was built with, the gesture
+ * state a chunk of input leaves behind it, and the doors that input comes in
+ * through.
+ */
 export class EventHandler {
 	declare [kView]: EventView;
 	declare [kHitTest]: HitTester;
@@ -634,7 +597,7 @@ export class EventHandler {
 	declare [kMouseDownTarget]: Element | null;
 	// The popover the last mousedown belonged to, which light dismiss compares
 	// the release against.
-	declare [kPopoverPressTarget]: object | null;
+	declare [kPopoverPressTarget]: Element | null;
 	// Where a left-button drag started selecting text, as a caret position --
 	// the selection's anchor. The focus end follows the drag; both feed
 	// Selection.setBaseAndExtent, which handles backward drags itself.
@@ -689,23 +652,6 @@ export class EventHandler {
 		return this[kMouseCaptureYielded];
 	}
 
-	/**
-	 * End a scroll-chaining yield, from whichever of the two triggers reaches
-	 * it first -- a keystroke (the common case) or the fallback timer (see
-	 * kScrollChainTimer). Both need the same cleanup, so this is the one place
-	 * that does it: clear the pending timer (the other trigger firing later
-	 * would be a harmless no-op, but there is no reason to let it) and restore
-	 * mouse capture.
-	 */
-	reclaimMouseCapture(): void {
-		if (this[kScrollChainTimer] !== null) {
-			clearTimeout(this[kScrollChainTimer]);
-			this[kScrollChainTimer] = null;
-		}
-		this[kMouseCaptureYielded] = false;
-		this[kDefaults].mouseCaptureChanged();
-	}
-
 	/** Drop the gesture timers, so none of them keeps the event loop open. */
 	dispose(): void {
 		if (this[kScrollChainTimer] !== null) {
@@ -715,8 +661,8 @@ export class EventHandler {
 	}
 
 	/**
-	 * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row
-	 * M/m`). These only arrive while capture is on.
+	 * A mouse report from the terminal: the code byte, the 1-based cell, and
+	 * whether the button went up. These only arrive while capture is on.
 	 *
 	 * Reports become the DOM's own mouse events, dispatched at the element
 	 * under the cell (document.elementFromPoint is layout-true), with the
@@ -785,10 +731,7 @@ export class EventHandler {
 					cancelable: true,
 				}),
 			);
-			if (notCanceled && this[kDefaults].scrollByWheel(
-				target as Element,
-				wheelDeltaY,
-			)) {
+			if (notCanceled && this[kDefaults].scrollByWheel(target, wheelDeltaY)) {
 				// Scroll chaining, the browser default: the camera is at the
 				// document top, so the scroll escapes to the parent scroller --
 				// here, the terminal's own scrollback. Yield the mouse so the
@@ -806,7 +749,7 @@ export class EventHandler {
 				}
 				this[kScrollChainTimer] = setTimeout(() => {
 					this[kScrollChainTimer] = null;
-					this.reclaimMouseCapture();
+					reclaimMouseCapture(this);
 				}, EventHandler[kScrollChainTimeoutMs]);
 			}
 			return;
@@ -1023,7 +966,7 @@ export class EventHandler {
 	 */
 	handleKeys(keys: WireKey[]): void {
 		if (this[kMouseCaptureYielded]) {
-			this.reclaimMouseCapture();
+			reclaimMouseCapture(this);
 		}
 		for (const key of keys) {
 			dispatchKey(this, key);
@@ -1032,6 +975,23 @@ export class EventHandler {
 }
 
 /* -------------------------------------------- gestures and default actions */
+
+/**
+ * End a scroll-chaining yield, from whichever of the two triggers reaches it
+ * first -- a keystroke (the common case) or the fallback timer (see
+ * kScrollChainTimer). Both need the same cleanup, so this is the one place
+ * that does it: clear the pending timer (the other trigger firing later would
+ * be a harmless no-op, but there is no reason to let it) and restore mouse
+ * capture.
+ */
+function reclaimMouseCapture(handler: EventHandler): void {
+	if (handler[kScrollChainTimer] !== null) {
+		clearTimeout(handler[kScrollChainTimer]);
+		handler[kScrollChainTimer] = null;
+	}
+	handler[kMouseCaptureYielded] = false;
+	handler[kDefaults].mouseCaptureChanged();
+}
 
 /**
  * A drag's motion: the anchor set by the press says which selection the
@@ -1103,9 +1063,7 @@ function press(
 	// The popover a press belongs to, which the release compares
 	// against: light dismiss is a press and a release in the same
 	// place, so a drag out of a popover does not close it.
-	handler[kPopoverPressTarget] = topmostClickedPopover(
-		target,
-	);
+	handler[kPopoverPressTarget] = topmostClickedPopover(target);
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
 	if (handler[kStyleManager].setFocusVisible(false)) {
@@ -1122,7 +1080,7 @@ function press(
 	// Default action: mousedown moves focus, exactly as in a browser --
 	// to the nearest focusable ancestor, or away from the active element
 	// when the click lands on nothing focusable.
-	const focusable = target.closest?.(FOCUSABLE_SELECTOR);
+	const focusable = target.closest(FOCUSABLE_SELECTOR);
 	const active = view.document.activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
@@ -1216,20 +1174,15 @@ function release(
 	const dismissAncestor = topmostClickedPopover(target);
 	const samePopoverPress = dismissAncestor === handler[kPopoverPressTarget];
 	handler[kPopoverPressTarget] = null;
-	if (
-		samePopoverPress &&
-		topmostAutoPopover(handler[kView].document) !== null
-	) {
-		hidePopoversUntil(handler[kView].document, dismissAncestor, false, true);
+	if (samePopoverPress && topmostAutoPopover(view.document) !== null) {
+		hidePopoversUntil(view.document, dismissAncestor, false, true);
 	}
 	// A selection is only a selection: writing the clipboard is a
 	// deliberate act, through navigator.clipboard. The terminal's own
 	// select-to-copy remains available as Shift+drag, which bypasses
 	// mouse reporting.
 	let selectedByDrag = false;
-	if (handler[kFieldDragAnchor]) {
-		handler[kFieldDragAnchor] = null;
-	}
+	handler[kFieldDragAnchor] = null;
 	if (handler[kSelectionDragAnchor]) {
 		handler[kSelectionDragAnchor] = null;
 		const text = view.window.getSelection()?.toString() ?? "";
@@ -1303,6 +1256,12 @@ function release(
 	handler[kMouseDownTarget] = null;
 }
 
+/**
+ * One keystroke, as the wire decoded it: keydown at the focused element, the
+ * close request Escape carries whether or not a listener took the keydown,
+ * then the default actions a live keydown leaves -- Tab, an activation, the
+ * keypress a character-producing key owes -- and keyup.
+ */
 function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	const view = handler[kView];
 	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
@@ -1585,7 +1544,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 			const within = (element: Element): boolean => {
 				for (
 					let ancestor: Element | null = element;
-					ancestor !== null;
+					ancestor;
 					ancestor = flatParentElement<Element>(ancestor)
 				) {
 					if (ancestor === owner) {
