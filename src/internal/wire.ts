@@ -380,10 +380,6 @@ export function* tokenizeInput(input: string): Generator<string> {
 	}
 }
 
-/** The fences a terminal wraps pasted text in, DEC private mode 2004. */
-export const PASTE_START = "\x1b[200~";
-export const PASTE_END = "\x1b[201~";
-
 /** The numbers an SGR mouse escape carries. */
 interface MouseEscape {
 	button: number;
@@ -404,6 +400,30 @@ export function decodeMouseEscape(token: string): MouseEscape | null {
 		row: parseInt(match[3], 10),
 		release: match[4] === "m",
 	};
+}
+
+/** The fences a terminal wraps pasted text in, DEC private mode 2004. */
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/**
+ * Where a paste begins in a chunk, spliced the way a cursor report is. Two
+ * finders rather than one: inside a paste only the end fence means anything,
+ * and the caller says which side of the fence it is on by which it asks.
+ */
+export function decodePasteStart(
+	chunk: string,
+): {index: number; length: number} | null {
+	const index = chunk.indexOf(PASTE_START);
+	return index === -1 ? null : {index, length: PASTE_START.length};
+}
+
+/** The end fence closing a paste already begun. */
+export function decodePasteEnd(
+	chunk: string,
+): {index: number; length: number} | null {
+	const index = chunk.indexOf(PASTE_END);
+	return index === -1 ? null : {index, length: PASTE_END.length};
 }
 
 /** A CPR reply, as it was spelled, and where in the chunk it sat. */

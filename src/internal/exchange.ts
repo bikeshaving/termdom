@@ -29,8 +29,8 @@ import {
 	pushTitle,
 	setWindowTitle,
 	tokenizeInput,
-	PASTE_END,
-	PASTE_START,
+	decodePasteEnd,
+	decodePasteStart,
 } from "./wire.js";
 
 /* -------------------------------------------------- the transport contract */
@@ -1248,27 +1248,29 @@ function route(
 	// fire Enter), buffered across chunks until ESC[201~. Checked before the
 	// report routes so paste content isn't parsed as a reply.
 	if (session[kPasteBuffer] !== null) {
-		const end = dataStr.indexOf(PASTE_END);
-		if (end === -1) {
+		const end = decodePasteEnd(dataStr);
+		if (end === null) {
 			session[kPasteBuffer] += dataStr;
 			return;
 		}
-		session[kHandlers].onPaste(session[kPasteBuffer] + dataStr.slice(0, end));
+		session[kHandlers].onPaste(
+			session[kPasteBuffer] + dataStr.slice(0, end.index),
+		);
 		session[kPasteBuffer] = null;
-		const after = dataStr.slice(end + PASTE_END.length);
+		const after = dataStr.slice(end.index + end.length);
 		if (after.length) {
 			route(session, after);
 		}
 		return;
 	}
-	const pasteStart = dataStr.indexOf(PASTE_START);
-	if (pasteStart !== -1) {
-		const before = dataStr.slice(0, pasteStart);
+	const start = decodePasteStart(dataStr);
+	if (start !== null) {
+		const before = dataStr.slice(0, start.index);
 		if (before.length) {
 			route(session, before);
 		}
 		session[kPasteBuffer] = "";
-		route(session, dataStr.slice(pasteStart + PASTE_START.length));
+		route(session, dataStr.slice(start.index + start.length));
 		return;
 	}
 
