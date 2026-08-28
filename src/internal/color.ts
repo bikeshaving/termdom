@@ -1,13 +1,18 @@
 /**
- * CSS color parsing: a color string to packed 24-bit RGB (0xRRGGBB), or null.
+ * CSS colors, for a renderer whose only colors are the terminal's.
  *
- * Named colors, #hex, rgb()/rgba(), and hsl()/hsla(). The NAMED_COLORS table is
- * generated from Bun.color so the pure-JS path agrees with Bun exactly. A leaf
- * with no dependencies, consumed by the cascade (styles) and termdom.
+ * Everything funnels through one private parser -- named colors, #hex,
+ * rgb()/rgba(), hsl()/hsla() -- which answers packed 24-bit RGB (0xRRGGBB)
+ * with an alpha, or null for a string that names no color. Start at
+ * parseColor; the exports are the questions the rest of the engine asks of
+ * it, plus the two quantizers that fold 24-bit RGB down to a terminal that
+ * speaks 256 colors or eight. A leaf: it imports nothing.
  */
 
-// Named CSS colors, 24-bit RGB (0xRRGGBB), matching Bun.color(name, "number").
-// Generated from Bun.color so the two agree exactly.
+/**
+ * The named CSS colors, as 24-bit RGB. Generated from Bun.color(name,
+ * "number"), so this path and Bun's agree exactly.
+ */
 const NAMED_COLORS: Record<string, number> = {
 	aliceblue: 0xf0f8ff,
 	antiquewhite: 0xfaebd7,
@@ -168,10 +173,10 @@ const NAMED_COLORS: Record<string, number> = {
  * sentinel -- the terminal's own default foreground or background -- and a
  * nonzero value is packed RGB that the emitter renders at any color depth.
  *
- * Canvas, CanvasText, Highlight and HighlightText keep their special painter
- * translations (default-background clear, default foreground, SGR inverse);
- * the values here only answer for the paths those guards do not intercept,
- * such as a border or outline color.
+ * Canvas and the Highlight pair -- with SelectedItem, its non-text twin --
+ * keep their special painter translations: clear to the terminal's own
+ * background, and swap the cell's colors. The values here only answer for the
+ * paths those guards do not intercept, such as a border or outline color.
  */
 const SYSTEM_COLORS: Record<string, number> = {
 	accentcolor: 0x0000ff, // the accent: blue
@@ -278,7 +283,7 @@ function parseColor(text: string): {color: number; alpha: number} | null {
 			[r1, g1, b1] = [0, x, c];
 		} else if (h < 300) {
 			[r1, g1, b1] = [x, 0, c];
-		}	else {
+		} else {
 			[r1, g1, b1] = [c, 0, x];
 		}
 		const r = Math.round((r1 + m) * 255);
