@@ -2097,7 +2097,7 @@ function queueCaretReveal(
  * The focus of a control's selection record, or null for an element with
  * no record: the caret, in the value text's own offsets.
  */
-function getSelectionFocus(termdom: TermDOM, element: Element): number | null {
+function getSelectionFocus(element: Element): number | null {
 	const record = DOM.selectionRecordOf(element);
 	if (record === null) {
 		return null;
@@ -2115,7 +2115,7 @@ function caretRectFor(
 	termdom: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
-	const focus = getSelectionFocus(termdom, element);
+	const focus = getSelectionFocus(element);
 	if (focus === null) {
 		return null;
 	}
@@ -2215,7 +2215,7 @@ function scrollFieldCaretIntoView(
 	}
 	// The caret is wherever the input renders it, in the value text's own
 	// offsets -- the same text `shown` is read from.
-	const cursor = getSelectionFocus(termdom, input);
+	const cursor = getSelectionFocus(input);
 	if (cursor === null) {
 		return;
 	}
