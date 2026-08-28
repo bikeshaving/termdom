@@ -9521,7 +9521,7 @@ const BULLET_MARKERS: Record<string, string> = {
 	square: "\u25aa",
 };
 
-/** list-style-types that produce a counter, and therefore a trailing "." */
+/** The list-style-types that count, and so draw a marker ending in a dot. */
 const COUNTER_STYLES = new Set([
 	"decimal",
 	"decimal-leading-zero",
@@ -13153,8 +13153,8 @@ function ruleMatches(
 }
 
 /**
- * What a pseudo-element's matched rules leave declared, the last rule to name
- * a slot holding it.
+ * What a pseudo-element's matched rules leave declared: each slot holds what
+ * the last rule to name it said, under whichever of the slot's names it used.
  */
 function computePseudoElementStyle(
 	manager: StyleManager,
