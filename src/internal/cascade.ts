@@ -127,7 +127,7 @@ function styleElementCount(document: DOMDocument): number {
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
-// ---- Shorthand expansion (the UA table is built on it) ----
+// ---- Shorthand expansion ----
 const BORDER_STYLE_KEYWORDS = new Set([
 	"none",
 	"hidden",
@@ -5169,7 +5169,7 @@ class CSSScopeRule extends CSSGroupingRule {
 	}
 }
 
-/** `@starting-style`: parsed, with no transitions behind it. */
+/** `@starting-style`: parsed, and its rules never apply. */
 class CSSStartingStyleRule extends CSSGroupingRule {
 	get type(): number {
 		return 0;
@@ -9908,8 +9908,8 @@ export class StyleManager {
 	declare [kCurrentDeclarations]: WeakSet<object>;
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
-	 * Nothing else parses a shadow tree's stylesheets, so parsing walks these
-	 * and feeds each <style>'s text through the parser document sheets take.
+	 * Nothing else names a shadow tree's sheets, so a parse walks these and
+	 * reads each root's own sheets the way it reads the document's.
 	 */
 	declare [kShadowRoots]: Set<ShadowRoot>;
 	declare [kPseudoElementStyleCache]: WeakMap<
@@ -12407,10 +12407,10 @@ function parseStyleSheet(
 			});
 		} else if (rule instanceof CSSStartingStyleRule) {
 			// `@starting-style` declares the style a box starts a transition
-			// FROM. This engine runs no transitions, so a rule inside it
-			// would have no moment to stop applying in and would style the
-			// box for good: it parses into the CSSOM and reaches the
-			// cascade never.
+			// FROM, which is a moment nothing here hands a rule: one inside it
+			// would have no moment to stop applying in and would style the box
+			// for good, so it parses into the CSSOM and reaches the cascade
+			// never.
 			continue;
 		} else if (rule instanceof CSSGroupingRule) {
 			parseStyleSheet(manager, rule, scope, uaOrigin, context);
