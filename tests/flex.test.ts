@@ -1,5 +1,5 @@
-import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
-import {Config, LayoutNode} from "../src/internal/layout.js";
+import {describe, expect, test} from "@b9g/libuild/test";
+import {LayoutNode} from "../src/internal/layout.js";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -18,15 +18,8 @@ import {Config, LayoutNode} from "../src/internal/layout.js";
 
 // termdom drives the engine with web defaults, which are also the CSS initial
 // values: flex-direction row, flex-shrink 1, align-content stretch.
-let config: Config;
-
-beforeEach(() => {
-	config = Config.create();
-	config.setPointScaleFactor(1);
-});
-
 function node(): LayoutNode {
-	return LayoutNode.createWithConfig(config);
+	return LayoutNode.create();
 }
 
 function box(parent: LayoutNode, index = parent.getChildCount()): LayoutNode {
