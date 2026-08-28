@@ -41,6 +41,7 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 import type {LayoutEngine} from "./layout.js";
+import type {StyleManager} from "./cascade.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -61,24 +62,8 @@ const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
  * are installed on a document once, at setup, and reached from there.
  */
 interface UAEngine {
-	layout: {
-		invalidate(node?: object): void;
-		calculateLayout(): void;
-		getRect(element: object): globalThis.DOMRect | null;
-		lineFragments(text: object): UALineFragment[];
-		getRangeRects(range: object): globalThis.DOMRect[];
-		caretPositionFromPoint(
-			x: number,
-			y: number,
-			root: object,
-			clampToNearestLine?: boolean,
-		): {node: globalThis.Text; offset: number} | null;
-	};
-	styles: {
-		registerShadowRoot(root: object): void;
-		/** The used user-select answer selection movement filters through. */
-		isSelectable(element: object): boolean;
-	};
+	layout: LayoutEngine;
+	styles: StyleManager;
 	/**
 	 * Note that a state no attribute records moved -- a popover shown or
 	 * hidden. Nothing about it is a mutation, so the rules that test it and
@@ -86,22 +71,9 @@ interface UAEngine {
 	 * from.
 	 */
 	stateChanged(element: object): void;
-	observer: {observe(target: object, options: object): void};
+	observer: MutationObserver;
 	/** Note the unbounded change attaching a shadow tree is. */
 	invalidateStructure(): void;
-}
-
-/**
- * One laid-out line of a text node: where it sits, and the range of the
- * node's raw data it renders. A line is a property of the layout and not of
- * the string, so this is the only thing that can answer "what line is this
- * offset on" -- for a textarea's vertical motion and for the document
- * selection's alike.
- */
-interface UALineFragment {
-	rect: globalThis.DOMRect;
-	startOffset: number;
-	endOffset: number;
 }
 
 const kUAEngine = Symbol("the engine a document's UA widgets render through");
@@ -608,7 +580,7 @@ function buildUARoot(
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
 	engine.invalidateStructure();
-	engine.observer.observe(root, {
+	engine.observer.observe(root as unknown as Node, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -25125,7 +25097,7 @@ function selectionLineMove(
 				layout.caretPositionFromPoint(
 					column,
 					lines[target].y,
-					root as unknown as object,
+					root as unknown as globalThis.Node,
 					true,
 				);
 	if (found === null) {
