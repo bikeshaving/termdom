@@ -342,7 +342,7 @@ export interface DocumentPoint {
  * The document events are built in and dispatched into, and the frame that
  * paints what a dispatch changed.
  */
-export interface EventView {
+interface EventView {
 	readonly document: Document;
 	readonly window: EngineWindow;
 	/**
@@ -362,7 +362,7 @@ export interface EventView {
 }
 
 /** Where a reported cell lands in the document, and what is under it. */
-export interface HitTester {
+interface HitTester {
 	/** The document point under a 1-based terminal cell. */
 	documentPointAt(col: number, row: number): DocumentPoint;
 	/** The element at a document point, against fresh layout. */
@@ -374,7 +374,7 @@ export interface HitTester {
  * frame rather than to interpretation: scrolling, the top layer, the wire's
  * reporting modes.
  */
-export interface UADefaultActions {
+interface UADefaultActions {
 	/**
 	 * Scroll a wheel tick nothing canceled -- the innermost scroll box that
 	 * can still move, else the camera. True when the tick escaped past both,
