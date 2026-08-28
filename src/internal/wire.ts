@@ -323,9 +323,25 @@ export function decode64(text: string): Uint8Array | null {
 
 /* ----------------------------------------------------------------- the OSC */
 
-/** OSC 2: the window title. */
+/**
+ * OSC 2: the window title.
+ *
+ * The title is a document's, so it is untrusted text going somewhere the cell
+ * grid never sees. A control character in it would end this sequence early and
+ * leave the rest of the string to the terminal as its own commands, so the
+ * same characters the grid refuses in a cell are dropped here: C0, DEL, and
+ * the C1 range whose single bytes are CSI, OSC and DCS.
+ */
 export function setWindowTitle(text: string): string {
-	return `\x1b]2;${text}\x07`;
+	let title = "";
+	for (const char of text) {
+		const code = char.codePointAt(0)!;
+		if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+			continue;
+		}
+		title += char;
+	}
+	return `\x1b]2;${title}\x07`;
 }
 
 /** OSC 52: put base64 payload on the terminal's clipboard. */

@@ -37,34 +37,80 @@ const FORBIDDEN_BYTES: number[] = [
 // Whole attacker sequences that must never appear intact in the output.
 const FORBIDDEN_SEQUENCES = ["\x1b]0;", "\x1b[2J", "\x1b]", "\x1bP"];
 
-test("control characters in text never reach the terminal output", async () => {
-	// Mid-string, trailing, and lone -- the trailing case is the one that used
-	// to survive, since stripping relied on the next glyph overwriting the cell.
-	const payloads = [
-		"before\x1b]0;pwned\x07after", // OSC window-title set, mid-string
-		"tail\x1b", // lone trailing ESC
-		"\x1b", // nothing but ESC
-		"\x9b31mgotcha", // C1 CSI (single-byte, no ESC needed)
-		"edge0123456789012345678\x1b", // control at the column boundary
-		"a\x1b]0;t\x07\x1b]0;t\x07b", // repeated title sets
-	];
+// Each payload with the row it must paint: the control characters gone and
+// every other character kept. Asserting the row is what catches a control
+// character that reached a CELL -- a lone ESC forms none of the sequences
+// below, so the byte checks alone cannot see it, and the trailing case is the
+// one that used to survive.
+const PAYLOADS: Array<[string, string]> = [
+	// OSC window-title set, mid-string.
+	["before\x1b]0;pwned\x07after", "before]0;pwnedafter"],
+	["tail\x1b", "tail"],
+	["\x1b", ""],
+	// C1 CSI, a single byte needing no ESC.
+	["\x9b31mgotcha", "31mgotcha"],
+	// A control at the column boundary, on a terminal 20 columns wide.
+	["edge0123456789012345678\x1b", "edge0123456789012345"],
+	["a\x1b]0;t\x07\x1b]0;t\x07b", "a]0;t]0;tb"],
+];
 
-	for (const payload of payloads) {
-		const t = new MockProcess({rows: 4, cols: 20});
-		const raw = captureRawOutput(t);
-		const dom = new TermDOM({transport: t.transport});
-		dom.document.body.textContent = payload;
-		await nextFrame(dom);
+// One test per payload rather than a loop: a payload whose escape reaches the
+// terminal takes the emulator with it, and a loop lets that one smother every
+// case after it.
+for (const [payload, painted] of PAYLOADS) {
+	test(`control characters never reach the terminal: ${JSON.stringify(payload)}`,
+		async () => {
+			const t = new MockProcess({rows: 4, cols: 20});
+			const raw = captureRawOutput(t);
+			const dom = new TermDOM({transport: t.transport});
+			dom.document.body.textContent = payload;
+			await nextFrame(dom);
 
-		const out = raw();
-		for (const byte of FORBIDDEN_BYTES) {
-			expect(out.includes(String.fromCharCode(byte))).toBe(false);
+			// The text reaches the screen stripped of its controls and whole
+			// otherwise. This is also the liveness check the byte tests below
+			// need: every one of them passes on a frame that painted nothing.
+			expect(t.getVisibleText().split("\n")[0]).toBe(painted);
+
+			const out = raw();
+			for (const byte of FORBIDDEN_BYTES) {
+				expect(out.includes(String.fromCharCode(byte))).toBe(false);
+			}
+			for (const seq of FORBIDDEN_SEQUENCES) {
+				expect(out.includes(seq)).toBe(false);
+			}
+			dom.dispose();
+		});
+}
+
+/**
+ * The title does not go through the cell grid: it is interpolated into an OSC
+ * sequence and written straight to the terminal. A control character in it
+ * ends that sequence early and hands the rest of the string to the terminal as
+ * its own commands, so it is sanitized where it is encoded.
+ */
+test("a title never carries its own escape sequences to the terminal", async () => {
+	const t = new MockProcess({rows: 4, cols: 20});
+	const dom = new TermDOM({transport: t.transport});
+	await nextFrame(dom);
+	const raw = captureRawOutput(t);
+
+	// BEL ends the OSC, the second OSC retitles the window, the CSI wipes the
+	// screen. All three are the document's text, none of them are commands.
+	dom.document.title = "safe\x07\x1b]0;PWNED\x07\x1b[2J";
+	await nextFrame(dom);
+	await new Promise((r) => setTimeout(r, 20));
+
+	const out = raw();
+	expect(out).toContain("\x1b]2;safe]0;PWNED[2J\x07");
+	for (const byte of FORBIDDEN_BYTES) {
+		if (byte === 0x07) {
+			continue; // the terminator this sequence legitimately ends with
 		}
-		for (const seq of FORBIDDEN_SEQUENCES) {
-			expect(out.includes(seq)).toBe(false);
-		}
-		dom.dispose();
+		expect(out.includes(String.fromCharCode(byte))).toBe(false);
 	}
+	expect(out.includes("\x1b]0;")).toBe(false);
+	expect(out.includes("\x1b[2J")).toBe(false);
+	dom.dispose();
 });
 
 test("a <script> in rendered HTML is inert (no code execution)", async () => {

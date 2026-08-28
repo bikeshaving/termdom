@@ -607,7 +607,7 @@ test("non-TTY environment doesn't set up keyboard handling", async () => {
 			isTTY: false,
 			columns: 80,
 			rows: 24,
-			write: () => true,
+			write: (_chunk: string) => true,
 		},
 		stdin: {
 			isTTY: false,
