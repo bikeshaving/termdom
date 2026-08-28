@@ -53,13 +53,6 @@ interface InspectorOptions {
 	colorize?: boolean;
 }
 
-function inspectElement(
-	element: Element,
-	options: InspectorOptions = {},
-): string {
-	return formatElement(element, options);
-}
-
 function inspectDocument(
 	doc: Document,
 	options: InspectorOptions = {},
@@ -76,7 +69,7 @@ function inspectDocument(
 	if (doc.documentElement) {
 		output +=
 			"\n" +
-			formatElement(doc.documentElement as unknown as Element, {
+			inspectElement(doc.documentElement as unknown as Element, {
 				...options,
 				currentDepth: 0,
 			});
@@ -101,11 +94,11 @@ function inspectNode(
 		case 11: // DOCUMENT_FRAGMENT_NODE
 			return inspectFragment(node as DocumentFragment, options);
 		default:
-			return `${node.nodeName}`;
+			return node.nodeName;
 	}
 }
 
-function formatElement(
+function inspectElement(
 	element: Element,
 	options: InspectorOptions & {currentDepth?: number} = {},
 ): string {
@@ -142,7 +135,6 @@ function formatElement(
 
 	output += `${c.tag}>${c.reset}`;
 
-	// Add children if within depth limit
 	if (currentDepth < maxDepth && element.childNodes.length > 0) {
 		const childrenStr = formatChildren(element, {
 			...options,
@@ -177,7 +169,6 @@ function formatAttributes(
 		);
 	}
 
-	// Show only important attributes
 	const importantAttrs = [
 		"href",
 		"src",
@@ -215,7 +206,6 @@ function formatChildren(
 
 	const children = Array.from(element.childNodes);
 
-	// Single text node - inline it
 	if (children.length === 1 && children[0].nodeType === 3) {
 		const text = children[0].textContent || "";
 		if (text.trim() && text.length < 50) {
