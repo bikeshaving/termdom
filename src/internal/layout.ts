@@ -3832,6 +3832,12 @@ interface GridTrack {
 	growthLimit: number;
 	/** The `fit-content()` clamp; Infinity for every other sizing function. */
 	fitContentLimit: number;
+	/**
+	 * css-grid-2 §12.5.1: the growth limit was set from a content contribution
+	 * one step ago and is not the author's word on the track, so the next
+	 * distribution grows past it as though it were still infinite.
+	 */
+	infinitelyGrowable: boolean;
 	/** Scratch space for one distribution pass: an increase not yet applied. */
 	planned: number;
 	/** The track's start edge within the container's content box. */
@@ -3897,6 +3903,7 @@ function createTrack(size: TrackSize, ownerSize: number): GridTrack {
 		base,
 		growthLimit: Math.max(limit, base),
 		fitContentLimit,
+		infinitelyGrowable: false,
 		planned: 0,
 		position: 0,
 		collapsed: false,
@@ -4609,8 +4616,18 @@ function distributeExtraSpace(
 				track.base :
 				track.growthLimit :
 			track.base;
+	// A base grows toward its own growth limit. A growth limit grows toward
+	// nothing at all -- it is already where it stops -- unless it was set from
+	// a contribution one step ago, which is what infinitely growable marks:
+	// such a limit grows on, up to a fit-content() clamp if the track has one
+	// (css-grid-2 §12.5.1).
 	const limitOf = (track: GridTrack) =>
-		toLimits ? track.fitContentLimit : track.growthLimit;
+		toLimits ?
+				Math.min(
+					track.infinitelyGrowable ? Infinity : track.growthLimit,
+					track.fitContentLimit,
+				) :
+			track.growthLimit;
 
 	let remaining = space;
 	const frozen = new Set<number>();
@@ -4801,6 +4818,9 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 			intrinsicMax,
 		);
 		// 4. intrinsic maximums
+		const wasInfinite = indices.map(
+			(index) => tracks[index].growthLimit === Infinity,
+		);
 		distributeExtraSpace(
 			tracks,
 			indices,
@@ -4809,16 +4829,29 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 			intrinsicMax,
 			intrinsicMax,
 		);
-		// 5. max-content maximums
+		// A limit this step turned from infinite to finite is the item's own
+		// contribution, not a size the author asked for, so the step below may
+		// grow past it (css-grid-2 §12.5).
+		indices.forEach((index, at) => {
+			tracks[index].infinitelyGrowable =
+				wasInfinite[at] && tracks[index].growthLimit !== Infinity;
+		});
+		// 5. max-content maximums. `auto` is a max-content maximum here, both
+		// for the tracks the space is shared among and for the ones that take
+		// what none of them could hold (css-grid-2 §7.2.3).
+		const maxContentMax = (track: GridTrack) =>
+			track.size.max.kind === "max-content" || track.size.max.kind === "auto";
 		distributeExtraSpace(
 			tracks,
 			indices,
 			maxContent - limitSum() - gaps,
 			true,
-			(track) =>
-				track.size.max.kind === "max-content" || track.size.max.kind === "auto",
-			(track) => track.size.max.kind === "max-content",
+			maxContentMax,
+			maxContentMax,
 		);
+		for (const index of indices) {
+			tracks[index].infinitelyGrowable = false;
+		}
 	}
 
 	// -- items crossing a flexible track ------------------------------------

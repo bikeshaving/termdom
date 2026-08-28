@@ -1256,6 +1256,35 @@ test("a spanning item widens the tracks it crosses only by what it needs", async
 	expect(resolved("grid-template-columns")).toBe("6px 6px");
 });
 
+test("a limit made from a contribution is grown past (css-grid-2 §12.5.1)", async () => {
+	// Two tracks with a fixed minimum and an auto maximum, so only the growth
+	// limits move here. Column 1 holds "aa", and the step that sizes tracks to
+	// their own items sets its growth limit to that item's max-content
+	// contribution: 2, an author's content speaking for that one track.
+	// Column 2 holds nothing of its own, so its growth limit is still infinite.
+	//
+	// Then the spanning item, whose min-content contribution is 5 (the longest
+	// word) and whose max-content contribution is 9 (the whole line). The
+	// intrinsic-maximums step hands out 5 - (2 + 0) = 3. Column 1 is already at
+	// its limit and can take none of it, so column 2 takes all 3 and its limit
+	// turns from infinite to finite -- which is what marks it infinitely
+	// growable. The max-content-maximums step then hands out 9 - (2 + 3) = 4,
+	// and only column 2 may take it: it grows past the 3 it was handed a moment
+	// ago, to 7, while column 1 stays at the 2 its own item asked for.
+	//
+	// Sharing that space equally instead -- what treating every track as
+	// infinitely growable comes to -- would leave column 1 at five and a half.
+	const {resolved} = await render(
+		grid(
+			"justify-content: start; width: 20px;" +
+			" grid-template-columns: minmax(0, auto) minmax(0, auto)",
+			"<i style=\"grid-row: 1; grid-column: 1\">aa</i>" +
+			"<i style=\"grid-row: 2; grid-column: span 2\">bbb ccccc</i>",
+		),
+	);
+	expect(resolved("grid-template-columns")).toBe("2px 7px");
+});
+
 test("a spanning item does not widen a fixed track", async () => {
 	const {resolved} = await render(
 		grid(
