@@ -1,6 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {transportFromProcess} from "../src/internal/exchange.js";
+import {Wire} from "../src/internal/wire.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -2518,6 +2519,42 @@ test("a non-ASCII printable key fires keypress and is inserted", async () => {
 
 	expect(seen).toEqual(["é"]);
 	expect(input.value).toBe("é");
+
+	dom.dispose();
+});
+
+test("an astral character is one keystroke, not two halves", async () => {
+	const items = new Wire().feed("😀");
+	expect(items).toEqual([
+		{
+			kind: "key",
+			key: "😀",
+			char: "😀",
+			shiftKey: false,
+			ctrlKey: false,
+			altKey: false,
+			metaKey: false,
+		},
+	]);
+
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.document.body.innerHTML = "<input id=\"a\" type=\"text\" autofocus>";
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	await nextFrame(dom);
+
+	const seen: Array<[string, number]> = [];
+	input.addEventListener("keypress", (event) =>
+		seen.push([
+			(event as KeyboardEvent).key,
+			(event as any).charCode as number,
+		]),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("😀"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	expect(seen).toEqual([["😀", 0x1f600]]);
+	expect(input.value).toBe("😀");
 
 	dom.dispose();
 });

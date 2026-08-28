@@ -421,11 +421,15 @@ function decodeKeyToken(token: string): WireKey {
 	// A token this table does not name is passed along as it arrived. What is
 	// left produces a character when it is one character wide and neither a
 	// control byte nor DEL -- every printable character, not only the ASCII
-	// ones.
+	// ones, and a character outside the basic plane is one character across
+	// the two code units that spell it.
+	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
+	const printable =
+		astral || (token.length === 1 && code >= 32 && code !== 127);
 	return {
 		kind: "key",
 		key: KEY_BY_TOKEN[token] ?? token,
-		char: token.length === 1 && code >= 32 && code !== 127 ? token : "",
+		char: printable ? token : "",
 		shiftKey: token === SHIFT_TAB,
 		ctrlKey: false,
 		altKey: false,
@@ -861,8 +865,15 @@ export class Wire {
 					continue;
 				}
 			}
-			items.push(decodeKeyToken(data[i]));
-			i++;
+			// A character outside the basic plane arrives as two code units,
+			// and it is one keystroke: split, its halves are lone surrogates,
+			// which name no key and spell no character.
+			const code = data.charCodeAt(i);
+			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ?
+				2 :
+				1;
+			items.push(decodeKeyToken(data.slice(i, i + width)));
+			i += width;
 		}
 		return items;
 	}

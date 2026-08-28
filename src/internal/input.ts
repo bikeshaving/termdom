@@ -1342,7 +1342,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// keypress a listener cancels inserts nothing. Which keystrokes produce a
 	// character is the wire's answer; charCode is that character's own code.
 	if (notCanceled && char !== "") {
-		const charCode = char.charCodeAt(0);
+		const charCode = char.codePointAt(0)!;
 		const keypressEvent = new view.window.KeyboardEvent("keypress", {
 			key: char,
 			code: domCodeFor(char),
