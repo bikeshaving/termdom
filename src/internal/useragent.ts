@@ -17,7 +17,7 @@
  * underline lives here as the :focus rules a browser would write; what
  * cannot be written as CSS -- the fullscreen viewport block, a select
  * sized to its widest option, the size attribute -- stays with the
- * cascade's element hook.
+ * cascade's getElementDefaults.
  */
 export const UA_ELEMENT_STYLES = `
 	head { display: none; }
@@ -106,7 +106,6 @@ export const UA_ELEMENT_STYLES = `
 	}
 `;
 
-// ---- UA document stylesheet ----
 /**
  * The UA DOCUMENT stylesheet. Rules here are UA origin (every author rule
  * outranks them) and, uniquely, apply in EVERY tree scope, exactly as a
@@ -144,8 +143,9 @@ export const UA_DOCUMENT_STYLES = `
 	 * explicit values are spelled as attribute selectors instead, which say
 	 * the same thing and leave an unrecognized value matching nothing, so it
 	 * inherits its parent's direction as the directionality algorithm says.
-	 * :dir() carries the cases that read the content: dir=auto, and a bdi
-	 * with no attribute at all. It reads the first character rather than the
+	 * :dir() carries the cases that read the content: dir=auto, a bdi with no
+	 * attribute at all, and a tel input, whose digits HTML reads left to right
+	 * whatever surrounds them. It reads the first character rather than the
 	 * first character with a strong direction, so auto content opening with
 	 * digits or punctuation reads left-to-right.
 	 *
@@ -189,6 +189,7 @@ export const UA_DOCUMENT_STYLES = `
 `;
 
 // ---- Form-widget internal shadow stylesheets ----
+
 /**
  * The UA stylesheet of a textarea's internal shadow tree. Unlike the input,
  * the textarea's parts render through the NORMAL pipeline -- the value text
