@@ -2398,8 +2398,6 @@ interface CSSDeclaration {
 	important: boolean;
 }
 
-const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
-
 /** The components of a line shorthand, in the order its grammar writes them. */
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
 
@@ -2501,13 +2499,6 @@ function slotNames(property: string, direction: string): readonly string[] {
 	);
 }
 
-const CORNER_NAMES = [
-	"top-left",
-	"top-right",
-	"bottom-right",
-	"bottom-left",
-] as const;
-
 /**
  * The shape of a shorthand's grammar, and so how its value serializes: a box
  * of four sides or corners collapsed to one to four values, a radius box
@@ -2539,13 +2530,6 @@ const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 /** The placement shorthands, whose components are separated by slashes. */
 const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
 
-/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
-function isGridCustomIdent(value: string): boolean {
-	return (
-		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
-	);
-}
-
 /**
  * The longhands a shorthand resets but whose values its own grammar cannot
  * state: a block missing them cannot serialize as the shorthand, and they
@@ -2563,7 +2547,7 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	const indexed = reset ?
 			all.filter((longhand) => !reset.includes(longhand)) :
 		all;
-	const box = boxOrder(indexed, EDGE_NAMES) ?? boxOrder(indexed, CORNER_NAMES);
+	const box = boxOrder(indexed, EDGES) ?? boxOrder(indexed, CORNERS);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
 	// A corner box whose longhands are radii writes its two axes around a
@@ -3065,7 +3049,7 @@ function serializeShorthandValue(
 		// component when that is a name, and `auto` otherwise.
 		case "grid-line": {
 			const implied = (from: string): string =>
-				isGridCustomIdent(from) ? from : "auto";
+				isCustomIdent(from) ? from : "auto";
 			const kept = [...values];
 			// grid-area's four are [row-start, column-start, row-end,
 			// column-end]; the pair shorthands' two are [start, end].
@@ -6493,8 +6477,6 @@ function serializeSelector(
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): string {
 	let out = "";
-	// A universal selector is written only when it stands alone in its
-	// compound, or carries a namespace prefix.
 	const parts = getChildren(selector);
 	for (const [index, part] of parts.entries()) {
 		// A universal selector says nothing that the compound around it does
