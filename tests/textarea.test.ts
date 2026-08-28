@@ -285,9 +285,12 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 	for (let i = 0; i < 8; i++) {
 		await type(terminal, `line${i}\r`);
 		await nextFrame(dom);
-		// The caret's row stays on screen the whole way down.
-		expect(buffer.cursorY).toBeGreaterThanOrEqual(0);
-		expect(buffer.cursorY).toBeLessThan(6);
+		// The caret's row stays on screen the whole way down. Its own
+		// coordinates cannot say so -- the terminal clamps them into the
+		// window whether the camera moved or not -- so the reading is the
+		// line just typed, which sits directly above the caret's new one.
+		const above = buffer.getLine(buffer.cursorY - 1)?.translateToString(true);
+		expect(`${i}: ${above?.includes(`line${i}`)}`).toBe(`${i}: true`);
 	}
 	// The latest line is visible; the first has scrolled off.
 	const text = () => terminal.getPlainText();
@@ -429,7 +432,11 @@ test("a drag inside the textarea selects within its value", async () => {
 	expect(document.activeElement).toBe(textarea);
 	expect(textarea.selectionStart).toBe(1);
 	expect(textarea.selectionEnd).toBeGreaterThan(6); // into line two
-	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
+	// The document's own selection stays out of it -- and is there to be
+	// asked, so a missing selection is a failure rather than a pass.
+	const selection = dom.window.getSelection();
+	expect(selection).not.toBe(null);
+	expect(selection!.isCollapsed).toBe(true);
 
 	dom.dispose();
 });

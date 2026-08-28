@@ -22,53 +22,87 @@ function createHTMLDocument(title?: string): Document {
 }
 
 /**
- * Markup covering each branch the serialization algorithm has: the elements
- * whose parser eats an opening newline, the escapes text and attributes take,
- * the raw-text parents that take none, void elements, and the node types that
- * are not elements.
+ * Markup covering each branch the serialization algorithm has, paired with
+ * what serializing it has to give back: the elements whose parser eats an
+ * opening newline, the escapes text and attributes take, the raw-text parents
+ * that take none, void elements, and the node types that are not elements.
+ *
+ * The two halves differ only where the parser changed the tree. Everywhere
+ * else they are the same string, and the pair says so rather than leaving it
+ * to be inferred.
  */
-const CORPUS: string[] = [
-	// The newline a pre, textarea or listing swallows.
-	"<pre>\nkept</pre>",
-	"<pre>\n\n</pre>",
-	"<pre>\n</pre>",
-	"<pre>plain</pre>",
-	"<textarea>\n\n</textarea>",
-	"<textarea>\nkept</textarea>",
-	"<textarea>\n</textarea>",
-	"<listing>\n\n</listing>",
-	"<pre><span>\nnot the first child</span></pre>",
+const CORPUS: Array<[string, string]> = [
+	// The newline a pre, textarea or listing swallows. Serializing puts one
+	// back only when the text still starts with one, so that reparsing lands
+	// on the same tree rather than eating a second newline.
+	["<pre>\nkept</pre>", "<pre>kept</pre>"],
+	["<pre>\n\n</pre>", "<pre>\n\n</pre>"],
+	["<pre>\n</pre>", "<pre></pre>"],
+	["<pre>plain</pre>", "<pre>plain</pre>"],
+	["<textarea>\n\n</textarea>", "<textarea>\n\n</textarea>"],
+	["<textarea>\nkept</textarea>", "<textarea>kept</textarea>"],
+	["<textarea>\n</textarea>", "<textarea></textarea>"],
+	["<listing>\n\n</listing>", "<listing>\n\n</listing>"],
+	[
+		"<pre><span>\nnot the first child</span></pre>",
+		"<pre><span>\nnot the first child</span></pre>",
+	],
 	// Escapes in text.
-	"<p>a &amp; b &lt; c &gt; d</p>",
-	"<p>&nbsp;</p>",
-	"<p>&lt;script&gt;</p>",
+	["<p>a &amp; b &lt; c &gt; d</p>", "<p>a &amp; b &lt; c &gt; d</p>"],
+	["<p>&nbsp;</p>", "<p>&nbsp;</p>"],
+	["<p>&lt;script&gt;</p>", "<p>&lt;script&gt;</p>"],
 	// Escapes in attributes: the quote and the ampersand, but not the angles.
-	'<p title="a &amp; b"></p>',
-	'<p title="&quot;quoted&quot;"></p>',
-	'<p title="a < b > c"></p>',
-	'<p title="&nbsp;"></p>',
+	['<p title="a &amp; b"></p>', '<p title="a &amp; b"></p>'],
+	['<p title="&quot;quoted&quot;"></p>', '<p title="&quot;quoted&quot;"></p>'],
+	['<p title="a < b > c"></p>', '<p title="a < b > c"></p>'],
+	['<p title="&nbsp;"></p>', '<p title="&nbsp;"></p>'],
 	// Raw text takes no escaping at all.
-	"<style>a::before { content: '&<>' }</style>",
-	"<script>if (a &&  b) {}</script>",
+	[
+		"<style>a::before { content: '&<>' }</style>",
+		"<style>a::before { content: '&<>' }</style>",
+	],
+	["<script>if (a &&  b) {}</script>", "<script>if (a &&  b) {}</script>"],
 	// Void elements have no end tag and no children.
-	"<p>before<br>after</p>",
-	'<p><img src="x.png" alt="a &amp; b"></p>',
-	"<hr>",
-	'<input type="checkbox" checked="">',
+	["<p>before<br>after</p>", "<p>before<br>after</p>"],
+	[
+		'<p><img src="x.png" alt="a &amp; b"></p>',
+		'<p><img src="x.png" alt="a &amp; b"></p>',
+	],
+	["<hr>", "<hr>"],
+	['<input type="checkbox" checked="">', '<input type="checkbox" checked="">'],
 	// The other node types.
-	"<p><!-- a comment --></p>",
-	"<p>text<!--c-->more</p>",
+	["<p><!-- a comment --></p>", "<p><!-- a comment --></p>"],
+	["<p>text<!--c-->more</p>", "<p>text<!--c-->more</p>"],
 	// Structure the parser normalizes on the way in.
-	"<table><tbody><tr><td>cell</td></tr></tbody></table>",
-	"<ul><li>one</li><li>two</li></ul>",
-	"<p>a<b>bold<i>both</i></b>a</p>",
-	"<template>\n<p>inert</p></template>",
-	"<div dir=\"rtl\" lang='he'>שלום</div>",
+	[
+		"<table><tbody><tr><td>cell</td></tr></tbody></table>",
+		"<table><tbody><tr><td>cell</td></tr></tbody></table>",
+	],
+	["<ul><li>one</li><li>two</li></ul>", "<ul><li>one</li><li>two</li></ul>"],
+	["<p>a<b>bold<i>both</i></b>a</p>", "<p>a<b>bold<i>both</i></b>a</p>"],
+	[
+		"<template>\n<p>inert</p></template>",
+		"<template>\n<p>inert</p></template>",
+	],
+	// An attribute is written back in double quotes whichever quotes it came in.
+	[
+		"<div dir=\"rtl\" lang='he'>שלום</div>",
+		'<div dir="rtl" lang="he">שלום</div>',
+	],
 ];
+
+test("innerHTML serializes each of the serializer's cases", () => {
+	const document = createHTMLDocument("");
+	for (const [markup, expected] of CORPUS) {
+		const first = document.createElement("div");
+		first.innerHTML = markup;
+		expect(`${markup} -> ${first.innerHTML}`).toBe(`${markup} -> ${expected}`);
+	}
+});
 
 test("innerHTML round-trips to a fixpoint over the serializer's cases", () => {
 	const document = createHTMLDocument("");
-	for (const markup of CORPUS) {
+	for (const [markup] of CORPUS) {
 		const first = document.createElement("div");
 		first.innerHTML = markup;
 		const once = first.innerHTML;

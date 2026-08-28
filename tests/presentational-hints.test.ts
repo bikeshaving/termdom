@@ -10,8 +10,8 @@
  * The table below is that list, transcribed from the Rendering section
  * (2026-08-14). Every entry is either implemented -- and then a test here
  * shows the attribute reaching a computed value -- or named with the reason it
- * is not. An entry in neither table, or in both, fails the guard: a hint is
- * handled or somebody looked at it and wrote down why not.
+ * is not. An entry in both tables fails the guard: a hint is handled or
+ * somebody looked at it and wrote down why not.
  */
 import {test, expect} from "@b9g/libuild/test";
 import {createDocumentWindow} from "../src/internal/dom.js";
@@ -153,17 +153,18 @@ const EXCLUDED_HINTS: Record<string, string> = {
 		"background-color on the button's anonymous content box -- no color well",
 };
 
-test("every attribute the Rendering section styles is implemented or named", () => {
-	const names = new Set([
-		...Object.keys(IMPLEMENTED_HINTS),
-		...Object.keys(EXCLUDED_HINTS),
-	]);
-	for (const name of names) {
-		const implemented = name in IMPLEMENTED_HINTS;
-		const excluded = name in EXCLUDED_HINTS;
-		expect(`${name}: ${implemented !== excluded}`).toBe(`${name}: true`);
+test("no attribute is both implemented and excluded, and every exclusion says why", () => {
+	// Whether the transcription is complete is not something the tables can
+	// answer about themselves -- they are the transcription. What they can
+	// answer is that no entry appears in both, that neither has been emptied,
+	// and that an exclusion carries its reason.
+	expect(Object.keys(IMPLEMENTED_HINTS).length).toBeGreaterThan(0);
+	expect(Object.keys(EXCLUDED_HINTS).length).toBeGreaterThan(0);
+	for (const name of Object.keys(IMPLEMENTED_HINTS)) {
+		expect(`${name} excluded: ${name in EXCLUDED_HINTS}`).toBe(
+			`${name} excluded: false`,
+		);
 	}
-	// An exclusion says why, in words, not by being empty.
 	for (const [name, reason] of Object.entries(EXCLUDED_HINTS)) {
 		expect(`${name}: ${reason.length > 12}`).toBe(`${name}: true`);
 	}

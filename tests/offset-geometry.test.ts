@@ -114,8 +114,12 @@ test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn
 	await nextFrame(dom);
 
 	const box = dom.document.getElementById("box")!;
-	expect(box.scrollWidth).toBe(box.clientWidth);
-	expect(box.scrollHeight).toBe(box.clientHeight);
+	// Both sides of the equality are stated, so a box that measured zero in
+	// every direction cannot satisfy it.
+	expect(box.clientWidth).toBe(8);
+	expect(box.clientHeight).toBe(3);
+	expect(box.scrollWidth).toBe(8);
+	expect(box.scrollHeight).toBe(3);
 	dom.dispose();
 });
 
