@@ -29,7 +29,7 @@ import bidiFactory from "bidi-js";
  * naming anything else does not parse, which is what makes `:gibberish`
  * invalid rather than merely unmatched.
  */
-export const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
+const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"active",
 	"any-link",
 	"autofill",
@@ -107,7 +107,7 @@ export const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"window-inactive",
 ]);
 
-export const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
+const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"after",
 	"backdrop",
 	"before",
@@ -144,7 +144,7 @@ export const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
  * The pseudo-elements whose selector takes an argument, and so are written
  * only in functional form -- `::part(name)`, never a bare `::part`.
  */
-export const FUNCTIONAL_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
+const FUNCTIONAL_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"highlight",
 	"part",
 	"picker",
@@ -410,7 +410,7 @@ function no(): boolean {
 }
 
 /** What a match knows beyond the element it starts from. */
-export interface MatchState {
+interface MatchState {
 	resolver: SelectorResolver;
 	/** The element `:scope` names, or null when the selector names none. */
 	scope: MatchNode | null;
@@ -547,7 +547,7 @@ const GRAMMAR_ONLY: CompileOptions = {
 };
 
 /** Parse a selector list to an AST, or null when the text is not one. */
-export function parseSelectorAST(text: string): SelectorNode | null {
+function parseSelectorAST(text: string): SelectorNode | null {
 	const source = String(text);
 	if (source.trim() === "" || hasEmptySelector(source)) {
 		return null;
@@ -2267,25 +2267,17 @@ function stateFor(options: QueryOptions): MatchState {
 	};
 }
 
-/** Whether an element matches a compiled selector. */
-export function matchesCompiled(
-	selector: CompiledSelector,
-	element: MatchNode,
-	options: QueryOptions = {},
-): boolean {
-	const state = stateFor(options);
-	return selector.list.some((complex) =>
-		matchComplex(complex, element, state, false),
-	);
-}
-
 /** Whether an element matches a selector, which is what `matches()` asks. */
 export function matchesSelector(
 	element: MatchNode,
 	text: string,
 	options: QueryOptions = {},
 ): boolean {
-	return matchesCompiled(compileSelector(text, options), element, options);
+	const selector = compileSelector(text, options);
+	const state = stateFor(options);
+	return selector.list.some((complex) =>
+		matchComplex(complex, element, state, false),
+	);
 }
 
 /** Every element under a root that a selector selects, in tree order. */
