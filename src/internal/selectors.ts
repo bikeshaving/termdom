@@ -262,7 +262,7 @@ export function pseudoName(name: string): string {
 /** The namespaces a selector's prefixes are read against. */
 export interface SelectorNamespaces {
 	default: string | null;
-	prefixes: ReadonlyMap<string, string>;
+	prefixes: Map<string, string>;
 }
 
 export const NO_NAMESPACES: SelectorNamespaces = {
@@ -529,6 +529,21 @@ function hasEmptySelector(text: string): boolean {
 	return empty(text.length);
 }
 
+/**
+ * How a stylesheet's own grammar check reads a selector: for shape alone. A
+ * prefix means whatever the sheet declares -- which is not this reading's
+ * business -- and `&` stands where a rule encloses it.
+ */
+const GRAMMAR_ONLY: CompileOptions = {
+	namespaces: null,
+	pseudoElements: true,
+	nesting: true,
+	// `@scope` lets a rule open with a combinator. One that does so anywhere
+	// else reads as a selector and then selects nothing, since there is no
+	// root for it to be relative to.
+	relative: true,
+};
+
 /** Parse a selector list to an AST, or null when the text is not one. */
 export function parseSelectorAST(text: string): SelectorNode | null {
 	const source = String(text);
@@ -563,7 +578,7 @@ export function parseSelectorList(text: string): SelectorNode | null {
 		return null;
 	}
 	try {
-		compileList(list, {namespaces: null, pseudoElements: true});
+		compileSelector(text, GRAMMAR_ONLY);
 	} catch (_err) {
 		return null;
 	}
@@ -588,11 +603,18 @@ export interface CompileOptions {
 	pseudoElements?: boolean;
 	/** Whether a selector may open with a combinator, as `@scope` lets it. */
 	relative?: boolean;
+	/**
+	 * Whether `&` may stand in the selector, which it may inside a style rule
+	 * and nowhere else. It selects nothing on its own: the rule it is nested in
+	 * is what gives it something to name.
+	 */
+	nesting?: boolean;
 }
 
 interface Compiling {
 	namespaces: SelectorNamespaces | null;
 	pseudoElements: boolean;
+	nesting: boolean;
 }
 
 /** Compile a selector list's AST into the matchers it names. */
@@ -604,6 +626,7 @@ function compileList(
 		namespaces:
 			options.namespaces === undefined ? NO_NAMESPACES : options.namespaces,
 		pseudoElements: options.pseudoElements ?? false,
+		nesting: options.nesting ?? false,
 	};
 	const compiled: CompiledComplex[] = [];
 	for (const selector of getChildren(list)) {
@@ -772,7 +795,11 @@ function compileSimple(
 			compilePseudoElement(part, compound, compiling);
 			return;
 		case "NestingSelector":
-			throw new SelectorError("a nesting selector needs a rule around it");
+			if (!compiling.nesting) {
+				throw new SelectorError("a nesting selector needs a rule around it");
+			}
+			compound.tests.push(no);
+			return;
 		default:
 			throw new SelectorError(`unreadable selector part ${part.type}`);
 	}
@@ -2044,7 +2071,9 @@ function hasMatch(
 	element: MatchNode,
 	state: MatchState,
 ): boolean {
-	const inside: MatchState = {...state, anchor: element, scope: element};
+	// The anchor is what a leading combinator hangs from. `:scope` is not
+	// touched: inside `:has()` it still names whatever the query scoped to.
+	const inside: MatchState = {...state, anchor: element};
 	for (const complex of inner) {
 		const leading = complex.combinators[0] ?? " ";
 		const sideways = leading === "+" || leading === "~";
@@ -2163,7 +2192,7 @@ function cacheKey(text: string, options: CompileOptions): string {
 					.join(" ");
 	return `${namespaces?.default ?? ""} ${map} ${
 		options.pseudoElements ? "p" : ""
-	}${options.relative ? "r" : ""} ${text}`;
+	}${options.relative ? "r" : ""}${options.nesting ? "n" : ""} ${text}`;
 }
 
 /**
@@ -2216,7 +2245,9 @@ function stateFor(options: QueryOptions): MatchState {
 		resolver: options.resolver ?? INERT_RESOLVER,
 		scope: options.scope ?? null,
 		shadow: options.shadow ?? null,
-		anchor: null,
+		// A relative selector hangs from the scoping root, which is also what
+		// `:scope` names; inside `:has()` both become the anchor instead.
+		anchor: options.scope ?? null,
 	};
 }
 

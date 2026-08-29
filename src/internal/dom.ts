@@ -25,7 +25,15 @@
  */
 
 import {parseFragment, parse as parse5Parse} from "parse5";
-import NWSAPI from "nwsapi";
+import {
+	type MatchNode,
+	type SelectorResolver,
+	SelectorError,
+	closestSelector,
+	matchesSelector,
+	selectAll,
+	selectFirst,
+} from "./selectors.js";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
@@ -3191,17 +3199,7 @@ function hoverTallyFor(
 	return document instanceof Document ? getHoverTally(document) : null;
 }
 
-/**
- * True while the UA's own machinery registers listeners: nwsapi installs
- * document mouseover/mouseout trackers for its builtin `:hover`, and those
- * are nobody observing hover.
- */
-let hoverTallySuspended = false;
-
 function tallyHoverListener(target: EventTarget, listener: Listener): void {
-	if (hoverTallySuspended) {
-		return;
-	}
 	const tally = hoverTallyFor(target, listener.type);
 	if (tally !== null) {
 		listener.hoverTally = tally;
@@ -9202,10 +9200,18 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 
 /** Whether a selector matches an element, which two names ask for. */
 function elementMatches(this: Element, selectors: string): boolean {
-	return selectorEngine(this[kDocument]!).match(
-		String(selectors),
-		this as never,
-	);
+	if (arguments.length < 1) {
+		throw new TypeError("matches needs a selector");
+	}
+	try {
+		return matchesSelector(
+			this as unknown as MatchNode,
+			String(selectors),
+			queryOptions(this),
+		);
+	} catch (error) {
+		throw asSyntaxError(error);
+	}
 }
 
 Object.defineProperties(Element.prototype, {
@@ -9223,18 +9229,20 @@ Object.defineProperties(Element.prototype, {
 	},
 	closest: {
 		value(this: Element, selectors: string): Element | null {
-			const engine = selectorEngine(this[kDocument]!);
-			const selector = String(selectors);
-			// A bad selector throws before any ancestor is examined.
-			engine.match(selector, this as never);
-			let node: Node | null = this;
-			while (node !== null && node.nodeType === ELEMENT_NODE) {
-				if (engine.match(selector, node as never)) {
-					return node as Element;
-				}
-				node = node[kParent]!;
+			if (arguments.length < 1) {
+				throw new TypeError("closest needs a selector");
 			}
-			return null;
+			try {
+				// `:scope` names the element closest() was called on, for every
+				// ancestor it then tries.
+				return closestSelector(
+					this as unknown as MatchNode,
+					String(selectors),
+					queryOptions(this),
+				) as unknown as Element | null;
+			} catch (error) {
+				throw asSyntaxError(error);
+			}
 		},
 		configurable: true,
 		enumerable: true,
@@ -20830,7 +20838,6 @@ const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
-const kNwsapi = Symbol("selector engine");
 
 export class Document extends Node implements globalThis.Document {
 	// Installed on the prototype, where the mount that answers them is.
@@ -20851,7 +20858,6 @@ export class Document extends Node implements globalThis.Document {
 		this[kIdMap] = new Map<string, Element[]>();
 		this[kSelection] = null;
 		this[kSelectionChangeScheduled] = false;
-		this[kNwsapi] = null;
 		this[kTemplateDocument] = null;
 		this[kActiveElement] = null;
 		this[kDefaultView] = null;
@@ -20874,7 +20880,6 @@ export class Document extends Node implements globalThis.Document {
 
 	[kSelection]?: Selection | null;
 	[kSelectionChangeScheduled]?: boolean;
-	[kNwsapi]?: ReturnType<typeof NWSAPI> | null;
 	[kTemplateDocument]?: Document | null;
 	[kActiveElement]?: Element | null;
 	[kDefaultView]?: object | null;
@@ -22517,10 +22522,18 @@ const parentNodeMembers = {
 	},
 	querySelector: {
 		value(this: Node, selectors: string): Element | null {
-			return selectorEngine(this[kDocument]!).first(
-				String(selectors),
-				this as never,
-			) as Element | null;
+			if (arguments.length < 1) {
+				throw new TypeError("querySelector needs a selector");
+			}
+			try {
+				return selectFirst(
+					this as unknown as MatchNode,
+					String(selectors),
+					queryOptions(this),
+				) as unknown as Element | null;
+			} catch (error) {
+				throw asSyntaxError(error);
+			}
 		},
 		configurable: true,
 		enumerable: true,
@@ -22528,11 +22541,20 @@ const parentNodeMembers = {
 	},
 	querySelectorAll: {
 		value(this: Node, selectors: string): NodeList {
-			const found = selectorEngine(this[kDocument]!).select(
-				String(selectors),
-				this as never,
-			) as unknown as Node[];
-			return createStaticNodeList(found.slice());
+			if (arguments.length < 1) {
+				throw new TypeError("querySelectorAll needs a selector");
+			}
+			try {
+				return createStaticNodeList(
+					selectAll(
+						this as unknown as MatchNode,
+						String(selectors),
+						queryOptions(this),
+					) as unknown as Node[],
+				);
+			} catch (error) {
+				throw asSyntaxError(error);
+			}
 		},
 		configurable: true,
 		enumerable: true,
@@ -25586,189 +25608,350 @@ function setHoveredElement(
 	}
 }
 
-interface SelectorEngine {
-	match(selector: string, element: never): boolean;
-	first(selector: string, context: never): unknown;
-	select(selector: string, context: never): unknown[];
+/** Whether the user agent is showing focus rings, per document. */
+const focusVisibleDocuments = new WeakMap<Document, boolean>();
+
+/**
+ * Say whether `:focus-visible` matches the focused element, and answer
+ * whether that changed.
+ *
+ * A focus ring belongs to how the focus was moved -- a key shows one, a click
+ * does not -- so the input handler sets this, and the cascade repaints when it
+ * moves.
+ */
+export function setDocumentFocusVisible(
+	document: object,
+	active: boolean,
+): boolean {
+	const node = document as Document;
+	if ((focusVisibleDocuments.get(node) ?? true) === active) {
+		return false;
+	}
+	focusVisibleDocuments.set(node, active);
+	return true;
 }
 
-/** The selector engine a document queries through, built on first use. */
-function selectorEngine(document: Document): SelectorEngine {
-	let engine = document[kNwsapi]!;
-	if (engine === null) {
-		// nwsapi's factory registers document mouseover/mouseout listeners
-		// for its own builtin :hover, which the rewrites below bypass; they
-		// must not read as the document observing hover.
-		hoverTallySuspended = true;
-		try {
-			engine = NWSAPI({
-				document: document as never,
-				DOMException: PlatformDOMException as never,
-			});
-		} finally {
-			hoverTallySuspended = false;
+/** Whether an element is the focused area of its document, or a host above it. */
+function hasFocus(element: Element): boolean {
+	const active = element[kDocument]![kActiveElement]!;
+	if (active === null) {
+		return false;
+	}
+	if (element === active) {
+		return true;
+	}
+	for (
+		let root = getRoot(active as unknown as Node);
+		isShadowRoot(root);
+		root = getRoot(root)
+	) {
+		const host = (root as ShadowRoot)[kHost]! as unknown as Element;
+		if (host === element) {
+			return true;
 		}
-		engine.configure({
-			LOGERRORS: false,
-			IDS_DUPES: true,
-			MIXEDCASE: true,
-		});
-		// `:modal` is a state no attribute records, so the engine cannot
-		// derive it from the tree: it asks the document's top layer, through
-		// the resolver object the compiled matchers already close over.
-		engine.Snapshot.isModal = isModalDialog;
-		engine.registerSelector(
-			":modal",
-			/^:modal(.*)/i,
-			(match: string[], source: string) => ({
-				match,
-				source: `if(s.isModal(e)){${source}}`,
-				status: true,
-				modvar: null,
-			}),
-		);
-		// `:popover-open` is the same kind of state: a popover's showing lives
-		// in the top layer and in nothing the tree records, so the engine asks
-		// rather than derives.
-		engine.Snapshot.isPopoverOpen = isShowingPopover;
-		engine.registerSelector(
-			":popover-open",
-			/^:popover-open(.*)/i,
-			(match: string[], source: string) => ({
-				match,
-				source: `if(s.isPopoverOpen(e)){${source}}`,
-				status: true,
-				modvar: null,
-			}),
-		);
-		// `:focus` per HTML, not per light tree: the focused element
-		// matches wherever it is, and so does every shadow host on the
-		// chain above it -- which the engine's document.activeElement
-		// cannot see, since retargeting stops at the first host.
-		engine.Snapshot.hasFocusState = (element: Element): boolean => {
-			const active = document[kActiveElement]!;
-			if (active === null) {
-				return false;
-			}
-			if (element === active) {
-				return true;
-			}
-			for (
-				let root = getRoot(active);
-				isShadowRoot(root);
-				root = getRoot(root as unknown as Node)
-			) {
-				const host = (root as ShadowRoot)[kHost]! as Element;
-				if (host === element) {
-					return true;
-				}
-				root = host as unknown as Node;
-			}
-			return false;
-		};
-		engine.registerSelector(
-			":-termdom-focus",
-			/^:-termdom-focus(?![\w-])(.*)/i,
-			(match: string[], source: string) => ({
-				match,
-				source: `if(s.hasFocusState(e)){${source}}`,
-				status: true,
-				modvar: null,
-			}),
-		);
-		// `:focus-within` climbs the same chain and keeps going: every
-		// ancestor and every host above the focused element matches.
-		engine.Snapshot.hasFocusWithinState = (element: Element): boolean => {
-			let node: Element | null = document[kActiveElement]!;
-			while (node !== null) {
-				if (node === element) {
-					return true;
-				}
-				const parent = node.parentElement as unknown as Element | null;
-				if (parent !== null) {
-					node = parent;
-					continue;
-				}
-				const root = getRoot(node);
-				node = isShadowRoot(root) ?
-						((root as ShadowRoot)[kHost]! as Element) :
-					null;
-			}
-			return false;
-		};
-		engine.registerSelector(
-			":-termdom-focus-within",
-			/^:-termdom-focus-within(?![\w-])(.*)/i,
-			(match: string[], source: string) => ({
-				match,
-				source: `if(s.hasFocusWithinState(e)){${source}}`,
-				status: true,
-				modvar: null,
-			}),
-		);
-		// `:hover` matches the element under the pointer and its flat-tree
-		// ancestors, per css-selectors-4's "an element that is designated" --
-		// which slot projection and shadow hosts reorder past what the light
-		// tree records, so the climb is the flat parent's.
-		engine.Snapshot.hasHoverState = (element: Element): boolean => {
-			for (
-				let node: Element | null = hoveredElements.get(document) ?? null;
-				node !== null;
-				node = flatParentElement<Element>(node)
-			) {
-				if (node === element) {
-					return true;
-				}
-			}
-			return false;
-		};
-		engine.registerSelector(
-			":-termdom-hover",
-			/^:-termdom-hover(?![\w-])(.*)/i,
-			(match: string[], source: string) => ({
-				match,
-				source: `if(s.hasHoverState(e)){${source}}`,
-				status: true,
-				modvar: null,
-			}),
-		);
-		// The engine's own compiled `:focus` family predates shadow trees:
-		// its focus test wants a focusable-looking shape at
-		// document.activeElement, and its `:focus-within` cannot reach an
-		// ancestor at all. Its `:hover` predates hover state existing here at
-		// all. The names above resolve through the raw states instead, and
-		// every selector is spelled onto them on the way in -- the three entry
-		// points below are the only doors.
-		const STATE_REWRITES: Array<[RegExp, string]> = [
-			[/:focus-within(?![\w-])/gi, ":-termdom-focus-within"],
-			[/:focus-visible(?![\w-])/gi, ":-termdom-focus"],
-			[/:focus(?![\w-])/gi, ":-termdom-focus"],
-			[/:hover(?![\w-])/gi, ":-termdom-hover"],
-		];
-		const rewriteState = (selector: string): string => {
-			if (!/:focus|:hover/i.test(selector)) {
-				return selector;
-			}
-			let rewritten = selector;
-			for (const [pattern, name] of STATE_REWRITES) {
-				rewritten = rewritten.replace(pattern, name);
-			}
-			return rewritten;
-		};
-		const rawMatch = engine.match.bind(engine);
-		const rawFirst = engine.first.bind(engine);
-		const rawSelect = engine.select.bind(engine);
-		engine.match = (selector: string, element: unknown, ...rest: unknown[]) =>
-			rawMatch(rewriteState(selector), element, ...rest);
-		engine.first = (selector: string, ...rest: unknown[]) =>
-			rawFirst(rewriteState(selector), ...rest);
-		engine.select = (selector: string, ...rest: unknown[]) =>
-			rawSelect(rewriteState(selector), ...rest);
-		if (document.documentElement !== null) {
-			document[kNwsapi] = engine;
+		root = host as unknown as Node;
+	}
+	return false;
+}
+
+/** The names an element publishes to its host's `::part()`. */
+function partNames(element: Element): string[] {
+	const value = element.getAttribute("part");
+	return value === null ? [] : splitOnASCIIWhitespace(value);
+}
+
+/** The element a document's URL fragment names, which `:target` matches. */
+function isTargetElement(element: Element): boolean {
+	const document = element[kDocument]!;
+	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
+		return false;
+	}
+	const url = document[kDocumentURL]!;
+	const hash = url.indexOf("#");
+	if (hash === -1) {
+		return false;
+	}
+	const fragment = url.slice(hash + 1);
+	if (fragment === "") {
+		return false;
+	}
+	let decoded = fragment;
+	try {
+		decoded = decodeURIComponent(fragment);
+	} catch (_err) {
+		// A fragment that is not valid percent-encoding names itself.
+	}
+	const id = element.getAttribute("id");
+	if (id === decoded || id === fragment) {
+		return true;
+	}
+	// The `a` element's name attribute is the old spelling of an anchor.
+	return (
+		element.namespaceURI === HTML_NAMESPACE &&
+		element.localName === "a" &&
+		element.getAttribute("name") === decoded
+	);
+}
+
+/** Whether a control's placeholder is the text a user is looking at. */
+function isPlaceholderShown(element: Element): boolean {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return false;
+	}
+	const name = element.localName;
+	if (name !== "input" && name !== "textarea") {
+		return false;
+	}
+	const placeholder = element.getAttribute("placeholder");
+	if (
+		placeholder === null || placeholder === "" || /[\r\n]/.test(placeholder)
+	) {
+		return false;
+	}
+	if (name === "input" && !PLACEHOLDER_INPUT_TYPES.has(inputType(element))) {
+		return false;
+	}
+	return (element as unknown as {value: string}).value === "";
+}
+
+/** The input types that show a placeholder. */
+const PLACEHOLDER_INPUT_TYPES = new Set([
+	"email",
+	"number",
+	"password",
+	"search",
+	"tel",
+	"text",
+	"url",
+]);
+
+function inputType(element: Element): string {
+	return asciiLowercase(element.getAttribute("type") ?? "text");
+}
+
+/** Whether a control is the one its form submits or checks by default. */
+function isDefaultControl(element: Element): boolean {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return false;
+	}
+	const name = element.localName;
+	if (name === "option") {
+		return element.getAttribute("selected") !== null;
+	}
+	if (name === "input") {
+		const type = inputType(element);
+		if (type === "checkbox" || type === "radio") {
+			return element.getAttribute("checked") !== null;
 		}
 	}
-	return engine as unknown as SelectorEngine;
+	if (name !== "button" && name !== "input") {
+		return false;
+	}
+	const type = name === "button" ?
+			asciiLowercase(element.getAttribute("type") ?? "submit") :
+			inputType(element);
+	if (type !== "submit" && type !== "image") {
+		return false;
+	}
+	const form = (element as unknown as {form?: Element | null}).form ?? null;
+	if (form === null) {
+		return false;
+	}
+	// The default button is the first submit button in tree order.
+	for (const candidate of form.querySelectorAll(
+		"button, input",
+	) as unknown as Iterable<Element>) {
+		const local = candidate.localName;
+		const kind = local === "button" ?
+				asciiLowercase(candidate.getAttribute("type") ?? "submit") :
+				inputType(candidate);
+		if (kind === "submit" || kind === "image") {
+			return candidate === element;
+		}
+	}
+	return false;
+}
+
+/** Whether an element is showing what it can open, which `:open` matches. */
+function isOpenElement(element: Element): boolean {
+	if (element.namespaceURI !== HTML_NAMESPACE) {
+		return false;
+	}
+	switch (element.localName) {
+		case "details":
+		case "dialog":
+			return element.getAttribute("open") !== null;
+		case "select":
+			return (
+				(element as unknown as {[kHighlight]?: unknown})[kHighlight] != null
+			);
+		default:
+			return false;
+	}
+}
+
+/**
+ * Everything the selector matcher asks of the engine around a tree.
+ *
+ * Each entry answers a question a node cannot answer for itself: a state the
+ * user agent holds, a link the flat tree draws that the node tree does not, or
+ * a fact about the document an element belongs to. One object serves every
+ * document, so a headless tree queries through the same code as a painted one
+ * -- the states simply answer no.
+ */
+export const selectorResolver: SelectorResolver = {
+	root(node: MatchNode): MatchNode {
+		return getRoot(node as unknown as Node) as unknown as MatchNode;
+	},
+	shadowHost(root: MatchNode): MatchNode | null {
+		const node = root as unknown as Node;
+		return isShadowRoot(node) ?
+				((node as ShadowRoot)[kHost]! as unknown as MatchNode) :
+			null;
+	},
+	flatParent(element: MatchNode): MatchNode | null {
+		return flatParentElement<MatchNode>(element);
+	},
+	assignedSlot(element: MatchNode): MatchNode | null {
+		return (
+			((element as unknown as Element).assignedSlot as unknown as MatchNode) ??
+			null
+		);
+	},
+	parts(element: MatchNode): readonly string[] {
+		return partNames(element as unknown as Element);
+	},
+	html(node: MatchNode): boolean {
+		return isHTMLDocument((node as unknown as Node)[kDocument]!);
+	},
+	quirks(node: MatchNode): boolean {
+		return (node as unknown as Node)[kDocument]![kMode] === "quirks";
+	},
+	hovered(element: MatchNode): boolean {
+		// An element is hovered when the pointer is over it or over anything it
+		// contains in the FLAT tree, which slot projection reorders past what
+		// the node tree records.
+		const document = (element as unknown as Node)[kDocument]!;
+		for (
+			let node: MatchNode | null =
+				(hoveredElements.get(document) as unknown as MatchNode) ?? null;
+			node !== null;
+			node = flatParentElement<MatchNode>(node)
+		) {
+			if (node === element) {
+				return true;
+			}
+		}
+		return false;
+	},
+	active(): boolean {
+		// Nothing here is ever being activated between a press and a release:
+		// a terminal reports the key or the click, not the half of it.
+		return false;
+	},
+	focused(element: MatchNode): boolean {
+		return hasFocus(element as unknown as Element);
+	},
+	focusVisible(element: MatchNode): boolean {
+		const document = (element as unknown as Node)[kDocument]!;
+		return (
+			(focusVisibleDocuments.get(document) ?? true) &&
+			hasFocus(element as unknown as Element)
+		);
+	},
+	focusWithin(element: MatchNode): boolean {
+		// The climb keeps going past every shadow host above the focused
+		// element, which is where the node tree's parent chain runs out.
+		let node: Element | null =
+			(element as unknown as Node)[kDocument]![kActiveElement]!;
+		while (node !== null) {
+			if ((node as unknown as MatchNode) === element) {
+				return true;
+			}
+			const parent = node.parentElement as unknown as Element | null;
+			if (parent !== null) {
+				node = parent;
+				continue;
+			}
+			const root = getRoot(node as unknown as Node);
+			node = isShadowRoot(root) ?
+					((root as ShadowRoot)[kHost]! as unknown as Element) :
+				null;
+		}
+		return false;
+	},
+	target(element: MatchNode): boolean {
+		return isTargetElement(element as unknown as Element);
+	},
+	modal(element: MatchNode): boolean {
+		return isModalDialog(element as object);
+	},
+	popoverOpen(element: MatchNode): boolean {
+		return isShowingPopover(element as object);
+	},
+	fullscreen(): boolean {
+		// A terminal has one surface and everything is already on it.
+		return false;
+	},
+	defined(element: MatchNode): boolean {
+		return (element as unknown as Element)[kCustomState] !== "undefined";
+	},
+	state(element: MatchNode, name: string): boolean {
+		const internals = (element as unknown as Element)[kInternals] ?? null;
+		const states = internals === null ? null : (internals[kStates] ?? null);
+		return states !== null && states[kStates]!.has(name);
+	},
+	checked(element: MatchNode): boolean {
+		const node = element as unknown as Element;
+		if (node.namespaceURI !== HTML_NAMESPACE) {
+			return false;
+		}
+		if (node.localName === "option") {
+			return (node as unknown as HTMLOptionElement).selected;
+		}
+		if (node.localName !== "input") {
+			return false;
+		}
+		const type = inputType(node);
+		return (
+			(type === "checkbox" || type === "radio") &&
+			(node as unknown as HTMLInputElement).checked
+		);
+	},
+	indeterminate(element: MatchNode): boolean {
+		const node = element as unknown as Element;
+		if (node.namespaceURI !== HTML_NAMESPACE || node.localName !== "input") {
+			return false;
+		}
+		return (
+			inputType(node) === "checkbox" &&
+			(node as unknown as HTMLInputElement).indeterminate
+		);
+	},
+	placeholderShown(element: MatchNode): boolean {
+		return isPlaceholderShown(element as unknown as Element);
+	},
+	defaulted(element: MatchNode): boolean {
+		return isDefaultControl(element as unknown as Element);
+	},
+	open(element: MatchNode): boolean {
+		return isOpenElement(element as unknown as Element);
+	},
+};
+
+/** What a query over a tree is answered with, and the errors it throws. */
+function queryOptions(scope: Node): {
+	resolver: SelectorResolver;
+	scope: MatchNode;
+} {
+	return {resolver: selectorResolver, scope: scope as unknown as MatchNode};
+}
+
+/** A selector the matcher will not read is a SyntaxError, per the DOM. */
+function asSyntaxError(error: unknown): unknown {
+	return error instanceof SelectorError ?
+			domError("SyntaxError", error.message) :
+		error;
 }
 
 /* ----------------------------------------------------------------- parsing */

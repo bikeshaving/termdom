@@ -43,10 +43,24 @@ import {
 	isUAShadowRoot,
 	styleElementCount,
 	dispatchAsUserAgent,
+	selectorResolver,
+	setDocumentFocusVisible,
 	TransitionEvent,
 	type EngineWindow,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
+import {
+	type MatchNode,
+	type SelectorNamespaces,
+	type SelectorNode,
+	LEGACY_PSEUDO_ELEMENTS,
+	NO_NAMESPACES,
+	compileSelector,
+	getChildren,
+	matchesSelector as selectorMatches,
+	parseSelectorList,
+	pseudoName,
+} from "./selectors.js";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
 import type * as SolverTypes from "./layout.js";
@@ -5259,77 +5273,24 @@ class CSSStyleRule extends CSSGroupingRule {
 }
 
 /**
- * A selector's namespace constraint, and the selector with the prefixes that
- * state it taken off.
+ * Whether every namespace prefix in a selector is one the sheet declared.
  *
- * CSS Namespaces 2: a compound selector with no type selector is qualified by
- * the default namespace all the same, so with an HTML default namespace
- * declared `.style1` selects no SVG element -- `.style1` means `*|*.style1`
- * only where no default namespace was declared. The DOM's own matcher knows
- * nothing of a sheet's namespace map, so the constraint is answered here and
- * the prefixes come off the text handed to that matcher.
- *
- * `namespace` is the URI the subject must be in, null for no namespace at all,
- * and undefined when any will do. It constrains the SUBJECT of the selector;
- * an ancestor written with a prefix is matched on its local name alone.
+ * A prefix no `@namespace` declared names no namespace, and a selector naming
+ * one does not parse. The prefixes themselves stay in the selector: the
+ * matcher is handed the sheet's map and reads them against it, which is also
+ * how a compound with no type selector at all comes to be qualified by the
+ * default namespace.
  */
-function selectorNamespace(
+function namespacePrefixesDeclared(
 	selector: string,
 	namespaces: SelectorNamespaces,
-): {selector: string; namespace?: string | null; valid: boolean} {
-	const list = parseSelectorList(selector);
-	if (!list) {
-		return {selector, valid: true};
+): boolean {
+	try {
+		compileSelector(selector, {namespaces, pseudoElements: true});
+		return true;
+	} catch (_err) {
+		return false;
 	}
-	let subject: string | null | undefined;
-	let subjectStated = false;
-	let sawPrefix = false;
-	let valid = true;
-	for (const one of getChildren(list)) {
-		const parts = getChildren(one);
-		let start = 0;
-		for (const [index, part] of parts.entries()) {
-			if (part.type === "Combinator") {
-				start = index + 1;
-			}
-		}
-		for (const [index, part] of parts.entries()) {
-			if (part.type !== "TypeSelector") {
-				continue;
-			}
-			const name = part.name as string;
-			const bar = name.lastIndexOf("|");
-			if (bar === -1) {
-				continue;
-			}
-			sawPrefix = true;
-			part.name = name.slice(bar + 1);
-			const prefix = name.slice(0, bar);
-			let uri: string | null | undefined;
-			if (prefix === "") {
-				uri = null;
-			} else if (prefix !== "*") {
-				uri = namespaces.prefixes.get(CSSTree.ident.decode(prefix));
-				// A prefix no @namespace declared makes the selector invalid,
-				// and an invalid selector matches nothing.
-				if (uri === undefined) {
-					valid = false;
-				}
-			}
-			if (index >= start) {
-				subject = uri;
-				subjectStated = true;
-			}
-		}
-	}
-	if (!subjectStated) {
-		subject = namespaces.default ?? undefined;
-	}
-	return {
-		selector: sawPrefix ? serializeSelectorList(list) : selector,
-		namespace: subject,
-		valid,
-	};
 }
 
 /** The namespaces a sheet's `@namespace` rules declare. */
@@ -6668,167 +6629,6 @@ function checkRuleOrder(
 // ---- Selectors -------------------------------------------------------------
 
 /**
- * The pseudo-classes and pseudo-elements a selector may name. A selector
- * naming anything else does not parse, which is what makes `:gibberish`
- * invalid rather than merely unmatched.
- */
-const PSEUDO_CLASSES = new Set([
-	"active",
-	"any-link",
-	"autofill",
-	"blank",
-	"buffering",
-	"checked",
-	"current",
-	"default",
-	"defined",
-	"dir",
-	"disabled",
-	"empty",
-	"enabled",
-	"first",
-	"first-child",
-	"first-of-type",
-	"focus",
-	"focus-visible",
-	"focus-within",
-	"fullscreen",
-	"future",
-	"has",
-	"host",
-	"host-context",
-	"hover",
-	"in-range",
-	"indeterminate",
-	"invalid",
-	"is",
-	"lang",
-	"last-child",
-	"last-of-type",
-	"left",
-	"link",
-	"local-link",
-	"modal",
-	"muted",
-	"not",
-	"nth-child",
-	"nth-col",
-	"nth-last-child",
-	"nth-last-col",
-	"nth-last-of-type",
-	"nth-of-type",
-	"only-child",
-	"only-of-type",
-	"open",
-	"optional",
-	"out-of-range",
-	"past",
-	"paused",
-	"picture-in-picture",
-	"placeholder-shown",
-	"playing",
-	"popover-open",
-	"read-only",
-	"read-write",
-	"required",
-	"right",
-	"root",
-	"scope",
-	"seeking",
-	"stalled",
-	"state",
-	"target",
-	"target-current",
-	"target-within",
-	"user-invalid",
-	"user-valid",
-	"valid",
-	"visited",
-	"volume-locked",
-	"where",
-	"window-inactive",
-]);
-
-const PSEUDO_ELEMENTS = new Set([
-	"after",
-	"backdrop",
-	"before",
-	"checkmark",
-	"column",
-	"cue",
-	"cue-region",
-	"details-content",
-	"file-selector-button",
-	"first-letter",
-	"first-line",
-	"grammar-error",
-	"highlight",
-	"marker",
-	"part",
-	"picker",
-	"picker-icon",
-	"placeholder",
-	"scroll-button",
-	"scroll-marker",
-	"scroll-marker-group",
-	"selection",
-	"slotted",
-	"spelling-error",
-	"target-text",
-	"view-transition",
-	"view-transition-group",
-	"view-transition-image-pair",
-	"view-transition-new",
-	"view-transition-old",
-]);
-
-/**
- * The pseudo-elements whose selector takes an argument, and so are written
- * only in functional form -- `::part(name)`, never a bare `::part`.
- */
-const FUNCTIONAL_PSEUDO_ELEMENTS = new Set([
-	"highlight",
-	"part",
-	"picker",
-	"scroll-button",
-	"slotted",
-	"view-transition-group",
-	"view-transition-image-pair",
-	"view-transition-new",
-	"view-transition-old",
-]);
-
-/** The pseudo-elements that may also be written with one colon, from CSS 2. */
-const LEGACY_PSEUDO_ELEMENTS = new Set([
-	"after",
-	"before",
-	"first-letter",
-	"first-line",
-]);
-
-/** A selector AST node, as the CSS parser hands it over. */
-interface SelectorNode {
-	type: string;
-	name?: string | {type: string; name: string};
-	matcher?: string | null;
-	value?: {type: string; value?: string; name?: string} | null;
-	flags?: string | null;
-	children?: {toArray(): SelectorNode[]} | SelectorNode[] | null;
-	nth?: SelectorNode | null;
-	selector?: SelectorNode | null;
-	a?: string | null;
-	b?: string | null;
-}
-
-function getChildren(node: SelectorNode): SelectorNode[] {
-	const children = node.children;
-	if (!children) {
-		return [];
-	}
-	return Array.isArray(children) ? children : children.toArray();
-}
-
-/**
  * A qualified name -- `ns|local`, `*|local`, `local` -- with each part
  * serialized as an identifier and `*` left as itself.
  */
@@ -6871,16 +6671,6 @@ function serializeQualifiedName(
  * The namespaces a selector is read against: the sheet's default namespace, if
  * it declared one, and the prefixes it bound.
  */
-interface SelectorNamespaces {
-	default: string | null;
-	prefixes: Map<string, string>;
-}
-
-const NO_NAMESPACES: SelectorNamespaces = {
-	default: null,
-	prefixes: new Map(),
-};
-
 /**
  * A selector's weight, as the three counts selectors-4 §17 keeps: ids,
  * then classes/attributes/pseudo-classes, then types/pseudo-elements.
@@ -7210,15 +7000,6 @@ function serializeIdentifierSource(name: string): string {
 }
 
 /**
- * A pseudo's name as it is compared and serialized: the identifier the source
- * escapes spell, ASCII-lowercased. `::\000041fter` and `::AFTER` are both
- * `::after`, and an escape is part of the spelling, not of the name.
- */
-function pseudoName(name: string): string {
-	return CSSTree.ident.decode(name).toLowerCase();
-}
-
-/**
  * Serialize a group of selectors, per CSSOM: the selectors joined by ", ",
  * each simple selector in its canonical spelling -- identifiers escaped,
  * attribute values quoted, combinators spaced, An+B reduced.
@@ -7472,132 +7253,6 @@ function splitSelectorList(text: string): string[] {
 	return selectors.filter(Boolean);
 }
 
-/**
- * Parse a selector list, or null when it does not parse -- which includes a
- * pseudo this engine does not know, since an unknown pseudo makes the whole
- * selector invalid.
- */
-function parseSelectorList(text: string): SelectorNode | null {
-	let list: SelectorNode;
-	// A selector list has to select something: the empty string is not one.
-	if (!String(text).trim()) {
-		return null;
-	}
-	try {
-		list = CSSTree.parse(String(text), {
-			context: "selectorList",
-			onParseError(error: Error) {
-				throw error;
-			},
-		}) as unknown as SelectorNode;
-	} catch (_err) {
-		return null;
-	}
-	if (list.type !== "SelectorList") {
-		return null;
-	}
-	let valid = true;
-	const checkSimple = (node: SelectorNode): void => {
-		if (!valid) {
-			return;
-		}
-		switch (node.type) {
-			case "PseudoClassSelector": {
-				const name = pseudoName(node.name as string);
-				// `:before` and friends are the CSS 2 spelling of a pseudo-element.
-				if (!PSEUDO_CLASSES.has(name) && !LEGACY_PSEUDO_ELEMENTS.has(name)) {
-					valid = false;
-					return;
-				}
-				break;
-			}
-			case "PseudoElementSelector": {
-				const name = pseudoName(node.name as string);
-				if (!PSEUDO_ELEMENTS.has(name)) {
-					valid = false;
-					return;
-				}
-				if (!validPseudoElementArguments(name, getChildren(node))) {
-					valid = false;
-					return;
-				}
-				break;
-			}
-			// A chunk the parser could not read is not a simple selector.
-			case "Raw":
-				valid = false;
-				return;
-		}
-		// A functional pseudo's arguments are selectors only for the pseudos
-		// that take them; `::part(title)` and `:lang(ja)` name something else,
-		// and their arguments carry no selector to validate.
-		for (const child of getChildren(node)) {
-			if (child.type === "SelectorList") {
-				checkList(child);
-			} else if (child.type === "Selector") {
-				checkSelector(child);
-			} else if (child.type === "Nth" && child.selector) {
-				checkList(child.selector);
-			}
-		}
-	};
-	const checkSelector = (selector: SelectorNode): void => {
-		const parts = getChildren(selector);
-		if (parts.length === 0) {
-			valid = false;
-			return;
-		}
-		for (const part of parts) {
-			checkSimple(part);
-		}
-	};
-	const checkList = (node: SelectorNode): void => {
-		for (const selector of getChildren(node)) {
-			checkSelector(selector);
-		}
-	};
-	checkList(list);
-	return valid ? list : null;
-}
-
-/**
- * Whether a pseudo-element's arguments fit its grammar: the functional ones
- * take an identifier (or, for `::slotted`, a compound selector), and the rest
- * take nothing at all.
- */
-function validPseudoElementArguments(
-	name: string,
-	args: SelectorNode[],
-): boolean {
-	if (!FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
-		return args.length === 0;
-	}
-	if (args.length === 0) {
-		return false;
-	}
-	if (name === "slotted") {
-		return args.every((argument) => argument.type === "Selector");
-	}
-	const text = args
-		.map((argument) =>
-			argument.type === "Raw" ?
-					String((argument as {value?: string}).value ?? "") :
-				"",
-		)
-		.join("")
-		.trim();
-	// The argument is an identifier, so the escapes in it spell the name.
-	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
-		return false;
-	}
-	const identifier = CSSTree.ident.decode(text);
-	// `::picker` names the element whose picker it is, and nothing else does.
-	if (name === "picker") {
-		return identifier === "select";
-	}
-	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier);
-}
-
 // ---- The text parser -------------------------------------------------------
 
 /** The span of source text a parsed node covers. */
@@ -7793,7 +7448,7 @@ function convertRule(
 		// naming one does not parse.
 		if (
 			prelude.includes("|") &&
-			!selectorNamespace(prelude, namespaces).valid
+			!namespacePrefixesDeclared(prelude, namespaces)
 		) {
 			return null;
 		}
@@ -10398,18 +10053,17 @@ interface ParsedCSSRule {
 	 */
 	scope?: Node;
 	/**
-	 * Parsed form of a `:host`-prefixed selector (only meaningful with a
-	 * shadow `scope`): `predicate` is the parenthesized/compound condition
-	 * the HOST must match (null = unconditional), `rest` targets descendant
-	 * shadow-tree elements (null = the rule styles the host itself), and
-	 * `child` restricts `rest` to direct children of the shadow root.
+	 * Whether the selector names `:host`, which is the one thing that reaches
+	 * out of the tree its stylesheet belongs to. Only meaningful with a
+	 * shadow `scope`.
 	 */
-	host?: {predicate: string | null; rest: string | null; child: boolean};
+	reachesHost?: boolean;
 	/**
-	 * The namespace the selector's subject must be in: a URI, null for no
-	 * namespace, absent when the selector names none and any will do.
+	 * The namespaces the sheet declared, which the selector's prefixes -- and
+	 * its typeless compounds -- are read against. Absent for a sheet that
+	 * declared none, where a prefix is invalid and a compound is unqualified.
 	 */
-	namespace?: string | null;
+	namespaces?: SelectorNamespaces;
 	/**
 	 * True for rules declared by a UA-internal shadow tree's stylesheet.
 	 * Cascade ORIGIN, the tier above specificity: every author rule beats
@@ -10471,14 +10125,15 @@ function scopeRootMatches(
 	element: Element,
 	condition: ScopeCondition,
 	outer: Element | null,
+	namespaces?: SelectorNamespaces,
 ): boolean {
 	if (condition.start === null) {
 		return element === condition.owner;
 	}
 	return splitSelectorList(condition.start).some((selector) =>
 		outer ?
-				matchesInScope(element, selector, outer) :
-				matchesSelector(element, selector),
+				matchesInScope(element, selector, outer, namespaces) :
+				matchesSelector(element, selector, namespaces),
 	);
 }
 
@@ -10491,11 +10146,16 @@ function isInScope(
 	element: Element,
 	root: Element,
 	condition: ScopeCondition,
+	namespaces?: SelectorNamespaces,
 ): boolean {
 	const limits = condition.end ? splitSelectorList(condition.end) : [];
 	let node: Element | null = element;
 	for (; node && node !== root; node = node.parentElement) {
-		if (limits.some((selector) => matchesInScope(node!, selector, root))) {
+		if (
+			limits.some((selector) =>
+				matchesInScope(node!, selector, root, namespaces),
+			)
+		) {
 			return false;
 		}
 	}
@@ -10503,9 +10163,17 @@ function isInScope(
 }
 
 /** `element.matches`, with a selector the matcher rejects matching nothing. */
-function matchesSelector(element: Element, selector: string): boolean {
+function matchesSelector(
+	element: Element,
+	selector: string,
+	namespaces?: SelectorNamespaces,
+): boolean {
 	try {
-		return element.matches(selector);
+		return selectorMatches(element as unknown as MatchNode, selector, {
+			resolver: selectorResolver,
+			scope: element as unknown as MatchNode,
+			namespaces,
+		});
 	} catch (_err) {
 		return false;
 	}
@@ -10516,71 +10184,24 @@ function matchesSelector(element: Element, selector: string): boolean {
  * given scoping root.
  *
  * A selector opening with a combinator is relative to the root, which is what
- * `@scope { > .a { } }` means. The root's own subtree is the DOM's own scoping
- * root, so a selector reaching down from `:scope` is matched by asking it for
- * the elements it selects; a selector whose subject IS the root cannot be, and
- * matches with `:scope` standing for any element -- the identity it asserts is
- * already established.
+ * `@scope { > .a { } }` means, so the matcher is told to expect one.
  */
 function matchesInScope(
 	element: Element,
 	selector: string,
 	root: Element,
+	namespaces?: SelectorNamespaces,
 ): boolean {
-	let text = selector.trim();
-	if (/^[>+~]/.test(text)) {
-		text = `:scope ${text}`;
-	}
 	try {
-		if (!text.includes(":scope")) {
-			return element.matches(text);
-		}
-		if (element === root) {
-			const subject = subjectCompoundStart(text);
-			// `:scope` on a non-subject compound asks the root to be a strict
-			// descendant of itself.
-			if (text.slice(0, subject).includes(":scope")) {
-				return false;
-			}
-			return element.matches(
-				text.slice(0, subject) + text.slice(subject).replaceAll(":scope", "*"),
-			);
-		}
-		for (const found of root.querySelectorAll(text)) {
-			if (found === element) {
-				return true;
-			}
-		}
-		return false;
+		return selectorMatches(element as unknown as MatchNode, selector, {
+			resolver: selectorResolver,
+			scope: root as unknown as MatchNode,
+			relative: true,
+			namespaces,
+		});
 	} catch (_err) {
 		return false;
 	}
-}
-
-/** Where a complex selector's subject compound starts: past its last combinator. */
-function subjectCompoundStart(selector: string): number {
-	let depth = 0;
-	let quote = "";
-	let start = 0;
-	for (let index = 0; index < selector.length; index++) {
-		const char = selector[index];
-		if (quote) {
-			if (char === "\\") {
-				index++;
-			} else if (char === quote) {
-				quote = "";
-			}
-		} else if (char === '"' || char === "'") {
-			quote = char;
-		} else if (char === "(" || char === "[") {
-			depth++;
-		} else if (char === ")" || char === "]") {
-			depth--;
-		} else if (depth === 0 && /[\s>+~]/.test(char)) {
-			start = index + 1;
-		}
-	}
-	return start;
 }
 
 interface CounterState {
@@ -10606,7 +10227,6 @@ const kUsedGeneration = Symbol("used values generation");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
-const kFocusVisibleActive = Symbol("focusVisibleActive");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
 const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
@@ -10714,7 +10334,6 @@ export class StyleManager {
 	declare [kHoverRulesExist]: boolean;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
 	// (keyboard true, pointer false). ruleMatches gates such rules on it.
-	declare [kFocusVisibleActive]: boolean;
 	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
@@ -10796,7 +10415,6 @@ export class StyleManager {
 		this[kScopedRulesExist] = false;
 		this[kHasRulesExist] = false;
 		this[kHoverRulesExist] = false;
-		this[kFocusVisibleActive] = true;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
 		this[kLayoutFlush] = null;
@@ -11301,11 +10919,7 @@ export class StyleManager {
 
 	/** Set the `:focus-visible` state; returns whether it changed. */
 	setFocusVisible(active: boolean): boolean {
-		if (this[kFocusVisibleActive] === active) {
-			return false;
-		}
-		this[kFocusVisibleActive] = active;
-		return true;
+		return setDocumentFocusVisible(this[kDocument], active);
 	}
 
 	/**
@@ -13448,14 +13062,17 @@ function parseSelector(
 		scopes = context.scopes;
 		manager[kScopedRulesExist] = true;
 	}
-	let namespace: string | null | undefined;
-	if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
-		const resolved = selectorNamespace(selector, sheetNamespaces);
-		if (!resolved.valid) {
-			return;
-		}
-		selector = resolved.selector;
-		namespace = resolved.namespace;
+	// The sheet's namespaces travel with the rule: a prefix it never declared
+	// makes the selector invalid, and the rest the matcher reads for itself.
+	let namespaces: SelectorNamespaces | undefined;
+	if (sheetNamespaces !== NO_NAMESPACES) {
+		namespaces = sheetNamespaces;
+	}
+	if (
+		selector.includes("|") &&
+		!namespacePrefixesDeclared(selector, sheetNamespaces)
+	) {
+		return;
 	}
 	if (selector.includes("+") || selector.includes("~")) {
 		manager[kSelectorsReachSiblings] = true;
@@ -13481,38 +13098,10 @@ function parseSelector(
 	);
 
 	const subjectTag = reading.subjectTag;
-
-	// :host selectors only mean anything inside a shadow tree's own
-	// stylesheet; the selector engine rejects them outright, so they parse
-	// into a structured predicate matched by ruleMatches instead. The forms
-	// read here: `:host`, `:host(sel)`, `:host:focus`, and any of those
-	// followed by a descendant (or `>` child) selector.
-	if (scope && selector.startsWith(":host")) {
-		// The argument needs balanced-paren matching, not [^)]*: the UA
-		// field sheet's own :host(:not(:focus)) nests one level deep.
-		const hostMatch = selector.match(
-			/^:host(?:\(((?:[^()]|\([^()]*\))*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
-		);
-		if (hostMatch) {
-			const [, arg, compound, child, restRaw] = hostMatch;
-			const predicate = [arg, compound].filter(Boolean).join("") || null;
-			const rest = restRaw.trim() || null;
-			manager[kParsedRules].push({
-				selector,
-				declarations,
-				important,
-				order,
-				specificity,
-				scope,
-				host: {predicate, rest, child: Boolean(child)},
-				uaOrigin,
-				layer,
-				layerRank: 0,
-				scopes,
-			});
-			return;
-		}
-	}
+	// `:host` reaches OUT of the tree its stylesheet belongs to, and it is the
+	// only thing that does: a rule that names it is tried against the host as
+	// well as against the tree's own elements.
+	const reachesHost = scope !== undefined && selector.includes(":host");
 
 	// ::placeholder and ::selection are widget-part pseudos: no content node
 	// ever attaches for them -- they resolve onto the UA shadow tree's [part]
@@ -13538,7 +13127,8 @@ function parseSelector(
 			pseudoElement,
 			scope,
 			uaOrigin,
-			namespace,
+			namespaces,
+			reachesHost,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -13560,7 +13150,8 @@ function parseSelector(
 			specificity,
 			scope,
 			uaOrigin,
-			namespace,
+			namespaces,
+			reachesHost,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -13641,6 +13232,30 @@ function getMatchingRules(
 }
 
 /**
+ * Whether a rule's selector matches an element, read against the namespaces
+ * its sheet declared and inside the tree it was written in.
+ */
+function ruleSelectorMatches(
+	element: Element,
+	rule: ParsedCSSRule,
+	selector: string,
+	root?: Element,
+): boolean {
+	try {
+		return selectorMatches(element as unknown as MatchNode, selector, {
+			resolver: selectorResolver,
+			scope: (root ?? element) as unknown as MatchNode,
+			relative: root !== undefined,
+			namespaces: rule.namespaces,
+			shadow: (rule.reachesHost ? rule.scope : null) as MatchNode | null,
+		});
+	} catch (_err) {
+		// A rule whose selector this engine cannot read styles nothing.
+		return false;
+	}
+}
+
+/**
  * Whether an element matches one of a rule's selectors. A scoped rule's
  * selector is written relative to a scoping root and reaches only the
  * elements that root has in scope; every other rule's is matched by the
@@ -13652,7 +13267,7 @@ function matchesRule(
 	selector: string,
 ): boolean {
 	if (!rule.scopes) {
-		return element.matches(selector);
+		return ruleSelectorMatches(element, rule, selector);
 	}
 	return scopingRoot(element, {...rule, selector}) !== null;
 }
@@ -13708,14 +13323,16 @@ function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 			if (outer && candidate !== outer && !outer.contains(candidate)) {
 				break;
 			}
-			if (!scopeRootMatches(candidate, condition, outer)) {
+			if (
+				!scopeRootMatches(candidate, condition, outer, rule.namespaces)
+			) {
 				continue;
 			}
-			if (!isInScope(element, candidate, condition)) {
+			if (!isInScope(element, candidate, condition, rule.namespaces)) {
 				continue;
 			}
 			if (innermost) {
-				if (!matchesInScope(element, rule.selector, candidate)) {
+				if (!ruleSelectorMatches(element, rule, rule.selector, candidate)) {
 					continue;
 				}
 				// The nearest root the rule reaches the element from.
@@ -13766,88 +13383,42 @@ function ruleMatches(
 	// comparison come first. A scoped rule from another tree can never
 	// match: one identity check retires a widget's whole sheet for every
 	// element outside it.
-	if (
-		rule.scope !== undefined &&
-		rule.host === undefined &&
-		rule.scope !== (elementRoot ?? element.getRootNode())
-	) {
-		return false;
-	}
-	// The subject's type, when the selector names one: this reject costs a
-	// string comparison instead of a selector match. A :host rule's subject
-	// is the host, which the branch below resolves for itself.
-	if (rule.subjectTag !== undefined && rule.host === undefined) {
+	const root = elementRoot ?? element.getRootNode();
+	if (rule.scope !== undefined && rule.scope !== root) {
+		// A `:host` rule is the exception: its subject is the host, which
+		// stands outside the tree the rule was written in.
+		if (
+			!rule.reachesHost ||
+			element !== (rule.scope as ShadowRoot).host
+		) {
+			return false;
+		}
+	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
+		// The subject's type, when the selector names one: this reject costs a
+		// string comparison instead of a selector match.
 		const local = element.localName;
 		// A foreign element's local name keeps its case (feGaussianBlur), and
 		// the tag here is lowercased, so the reject only fires when neither
 		// reading matches -- the case-sensitivity a selector really has is
 		// then the matcher's to decide.
-		if (
-			local !== rule.subjectTag &&
-			local.toLowerCase() !== rule.subjectTag
-		) {
+		if (local !== rule.subjectTag && local.toLowerCase() !== rule.subjectTag) {
 			return false;
 		}
 	}
-	try {
-		// The namespace the selector qualifies its subject with, which the
-		// DOM's own matcher cannot answer.
-		if (
-			rule.namespace !== undefined &&
-			element.namespaceURI !== rule.namespace
-		) {
-			return false;
-		}
-		// The selector engine treats `:focus-visible` as `:focus`, so gate it
-		// on our own flag.
-		if (
-			!manager[kFocusVisibleActive] &&
-			rule.selector.includes(":focus-visible")
-		) {
-			return false;
-		}
-		if (rule.host) {
-			const scope = rule.scope as ShadowRoot;
-			const host = scope.host;
-			if (!host) {
-				return false;
-			}
-			const {predicate, rest, child} = rule.host;
-			if (predicate && !host.matches(predicate)) {
-				return false;
-			}
-			if (!rest) {
-				return element === host;
-			}
-			if (element.getRootNode() !== scope) {
-				return false;
-			}
-			if (!element.matches(rest)) {
-				return false;
-			}
-			return child ? element.parentNode === scope : true;
-		}
-		const root = elementRoot ?? element.getRootNode();
-		if (rule.scope) {
-			return (
-				root === rule.scope &&
-				matchesRule(element, rule, rule.selector)
-			);
-		}
-		// UA document rules apply in EVERY tree scope, as a browser's own
-		// UA sheet styles shadow trees.
-		if (rule.uaOrigin) {
-			return matchesRule(element, rule, rule.selector);
-		}
-		// AUTHOR document rules match everything OUTSIDE shadow trees --
-		// including detached elements (styles resolve before insertion,
-		// and always have here); the boundary they must not cross is the
-		// shadow root.
-		const inShadowTree = asShadowRoot(root) !== null;
-		return !inShadowTree && matchesRule(element, rule, rule.selector);
-	} catch (err) {
-		return false;
+	if (rule.scope) {
+		return matchesRule(element, rule, rule.selector);
 	}
+	// UA document rules apply in EVERY tree scope, as a browser's own
+	// UA sheet styles shadow trees.
+	if (rule.uaOrigin) {
+		return matchesRule(element, rule, rule.selector);
+	}
+	// AUTHOR document rules match everything OUTSIDE shadow trees --
+	// including detached elements (styles resolve before insertion,
+	// and always have here); the boundary they must not cross is the
+	// shadow root.
+	return asShadowRoot(root) === null &&
+		matchesRule(element, rule, rule.selector);
 }
 
 /**
@@ -14024,11 +13595,7 @@ function pseudoRuleCouldMatch(
 		return false;
 	}
 	for (const rule of rules) {
-		try {
-			if (element.matches(rule.selector)) {
-				return true;
-			}
-		} catch (_err) {
+		if (ruleSelectorMatches(element, rule, rule.selector)) {
 			return true;
 		}
 	}

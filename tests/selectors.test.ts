@@ -284,9 +284,19 @@ test(":has reaches down, across and no further than it should", () => {
 	expect(ids(HAS, "ul:has(li b)")).toEqual(["list"]);
 });
 
-test(":has nests, and :scope inside it names the element asked about", () => {
+test(":has nests, and :scope inside it still names the query's root", () => {
+	const document = tree(HAS);
 	expect(ids(HAS, "ul:has(li:has(b))")).toEqual(["list"]);
-	expect(ids(HAS, "li:has(:scope b)")).toEqual(["l3"]);
+	expect(
+		matchesSelector(find(document, "list"), "ul:has(> :scope)", {
+			scope: find(document, "l2"),
+		}),
+	).toBe(true);
+	expect(
+		matchesSelector(find(document, "list"), "ul:has(> :scope)", {
+			scope: find(document, "deep"),
+		}),
+	).toBe(false);
 });
 
 test(":has takes no unreadable branch", () => {
@@ -311,12 +321,20 @@ test(":scope names what each entry point scopes to", () => {
 	).toBe(find(document, "l1"));
 });
 
-test("a relative selector is only relative where one is allowed", () => {
+test("a relative selector hangs from the root it is scoped to", () => {
 	const document = tree(NTH);
 	const list = find(document, "list");
 	expect(
-		selectAll(document, "> li", {scope: list, relative: true}).length,
-	).toBe(0);
+		selectAll(document, "> li", {scope: list, relative: true}).map(
+			(element) => element.getAttribute("id"),
+		),
+	).toEqual(["l1", "l2", "l3", "l4", "l5"]);
+	expect(
+		selectAll(document, "> li", {
+			scope: find(document, "l1"),
+			relative: true,
+		}),
+	).toEqual([]);
 	expect(() => selectAll(document, "> li")).toThrow(SelectorError);
 });
 

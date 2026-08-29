@@ -203,12 +203,13 @@ test("dir=auto reads the direction off the content", () => {
 	).toBe(
 		"ltr",
 	);
-	// The boundary, pinned rather than asserted away: the selector engine's
-	// :dir() reads the FIRST character rather than the first character with a
-	// strong direction, so content opening with digits or punctuation reads
-	// left-to-right whatever follows. Writing dir=rtl says it outright.
+	// The first character with a STRONG direction decides, so digits and
+	// punctuation ahead of the text settle nothing.
 	expect(
 		computed("<div dir=\"auto\" id=\"d\">123 - שלום</div>", "d", "direction"),
+	).toBe("rtl");
+	expect(
+		computed("<div dir=\"auto\" id=\"d\">123 - hello</div>", "d", "direction"),
 	).toBe("ltr");
 });
 
