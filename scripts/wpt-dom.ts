@@ -1143,6 +1143,7 @@ function installGlobals(
 		dispatchEvent: (event: object) => boolean;
 		getSelection: () => unknown;
 		getComputedStyle: (...args: unknown[]) => unknown;
+		customElements: unknown;
 		requestAnimationFrame: (callback: (time: number) => void) => number;
 		cancelAnimationFrame: (handle: number) => void;
 	};
@@ -1155,6 +1156,10 @@ function installGlobals(
 	const values: Record<string, unknown> = {
 		...domGlobals(dom),
 		document,
+		// The registry is the window's, not the module's: a bare
+		// `customElements.define` in a test file has to reach the one the
+		// document upgrades through.
+		customElements: win.customElements,
 		getComputedStyle: win.getComputedStyle.bind(win),
 		requestAnimationFrame: win.requestAnimationFrame.bind(win),
 		cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
