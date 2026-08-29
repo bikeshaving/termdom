@@ -15,7 +15,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {createDocumentWindow} from "../src/internal/dom.js";
-import {StyleManager} from "../src/internal/cascade.js";
+import {StyleManager} from "../src/internal/cssom.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.js";
 

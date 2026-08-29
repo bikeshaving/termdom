@@ -1,5 +1,5 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {StyleManager} from "../src/internal/cascade.js";
+import {StyleManager} from "../src/internal/cssom.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";

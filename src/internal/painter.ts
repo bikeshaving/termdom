@@ -32,7 +32,7 @@ import {
 	resolveBorderSides,
 	cssColorToNumber,
 	isTransparentColor,
-} from "./cascade.js";
+} from "./cssom.js";
 import type {CellStyle, CellContext, LineStyle} from "./screen.js";
 
 /**

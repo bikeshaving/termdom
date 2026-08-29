@@ -2,7 +2,7 @@ import {describe, test, expect} from "@b9g/libuild/test";
 import {
 	LayoutEngine,
 } from "../src/internal/layout.js";
-import {StyleManager} from "../src/internal/cascade.js";
+import {StyleManager} from "../src/internal/cssom.js";
 import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {createDocumentWindow} from "../src/internal/dom.js";

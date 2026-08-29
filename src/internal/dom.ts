@@ -54,7 +54,7 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 import type {LayoutEngine} from "./layout.js";
-import type {StyleManager} from "./cascade.js";
+import type {StyleManager} from "./cssom.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";

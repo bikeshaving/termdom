@@ -16,7 +16,7 @@ declare module "linebreak" {
 
 declare module "css-tree" {
 	// The CSS text parser behind this engine's CSSOM: it turns stylesheet,
-	// selector and value text into ASTs, which styles.ts serializes per the
+	// selector and value text into ASTs, which cssom.ts serializes per the
 	// CSSOM algorithms and matches the cascade against. Only the parse,
 	// generate and lexer surface is consumed.
 	export interface CSSTreeNode {

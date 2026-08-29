@@ -34,7 +34,7 @@ import {
 	parseUnitValue,
 	type ComputedValues,
 	type Unit,
-} from "./cascade.js";
+} from "./cssom.js";
 import {
 	DOMRectList,
 	flatIsConnected,

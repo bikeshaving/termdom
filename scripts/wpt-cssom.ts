@@ -18,7 +18,7 @@ import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {createContext, runInContext} from "node:vm";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {getBoxModel, MediaList, StyleManager} from "../src/internal/cascade.ts";
+import {getBoxModel, MediaList, StyleManager} from "../src/internal/cssom.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
 import {createDocumentWindow, type EngineWindow} from "../src/internal/dom.ts";
 

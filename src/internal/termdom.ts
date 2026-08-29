@@ -27,7 +27,7 @@ import {
 	transportFromProcess,
 } from "./exchange.js";
 import {Screen} from "./screen.js";
-import {StyleManager, getComputedValues, getBoxModel} from "./cascade.js";
+import {StyleManager, getComputedValues, getBoxModel} from "./cssom.js";
 import {stringWidth} from "./text.js";
 import {
 	EventHandler,
