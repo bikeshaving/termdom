@@ -465,18 +465,20 @@ export interface CompiledSelector {
 function closeAtEndOfInput(text: string): string {
 	const open: string[] = [];
 	let quote = "";
+	let dangling = false;
 	for (let index = 0; index < text.length; index++) {
 		const char = text[index];
-		if (quote !== "") {
-			if (char === "\\") {
-				index++;
-			} else if (char === quote) {
-				quote = "";
-			}
+		if (char === "\\") {
+			// An escape with nothing left to escape stands for U+FFFD, so the
+			// name it is part of is a name and the selector is a selector.
+			dangling = index === text.length - 1;
+			index++;
 			continue;
 		}
-		if (char === "\\") {
-			index++;
+		if (quote !== "") {
+			if (char === quote) {
+				quote = "";
+			}
 		} else if (char === '"' || char === "'") {
 			quote = char;
 		} else if (char === "(") {
@@ -489,10 +491,12 @@ function closeAtEndOfInput(text: string): string {
 			}
 		}
 	}
-	if (open.length === 0 && quote === "") {
+	if (open.length === 0 && quote === "" && !dangling) {
 		return text;
 	}
-	return text + quote + open.reverse().join("");
+	return (
+		text + (dangling ? "\uFFFD" : "") + quote + open.reverse().join("")
+	);
 }
 
 /**
@@ -546,9 +550,24 @@ const GRAMMAR_ONLY: CompileOptions = {
 	relative: true,
 };
 
+/**
+ * The text as CSS reads it, before anything is parsed: newlines normalized,
+ * and every null and lone surrogate standing for U+FFFD (CSS Syntax 3).
+ */
+function preprocess(text: string): string {
+	if (!/[\0\r\f\uD800-\uDFFF]/.test(text)) {
+		return text;
+	}
+	return text
+		.replace(/\r\n?|\f/g, "\n")
+		.replace(/\0/g, "\uFFFD")
+		.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "\uFFFD")
+		.replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
+}
+
 /** Parse a selector list to an AST, or null when the text is not one. */
 function parseSelectorAST(text: string): SelectorNode | null {
-	const source = String(text);
+	const source = preprocess(String(text));
 	if (source.trim() === "" || hasEmptySelector(source)) {
 		return null;
 	}

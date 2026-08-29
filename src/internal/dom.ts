@@ -21255,15 +21255,31 @@ export class Document extends Node implements globalThis.Document {
 		const name = String(elementName);
 		return new NodeList(
 			() => {
+				// The tree is walked here rather than read out of the collection
+				// of every element: a list built on another live list holds what
+				// that one held, and the two are resynchronized in the order they
+				// were first read.
 				const matches: Node[] = [];
-				for (const element of this.getElementsByTagName("*")) {
-					if (
-						element.namespaceURI === HTML_NAMESPACE &&
-						element.getAttribute("name") === name
+				const visit = (node: Node): void => {
+					for (
+						let child = node[kFirstChild]!;
+						child !== null;
+						child = child[kNext]!
 					) {
-						matches.push(element as unknown as Node);
+						if (child.nodeType !== ELEMENT_NODE) {
+							continue;
+						}
+						const element = child as Element;
+						if (
+							element.namespaceURI === HTML_NAMESPACE &&
+							element.getAttribute("name") === name
+						) {
+							matches.push(child);
+						}
+						visit(child);
 					}
-				}
+				};
+				visit(this as unknown as Node);
 				return matches;
 			},
 			true,

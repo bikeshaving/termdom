@@ -73,6 +73,15 @@ test("a selector this engine cannot read is a SyntaxError, not a miss", () => {
 test("CSS closes what an author left open at the end of the input", () => {
 	expect(ids('<p id=a title="x">', '[title="x"')).toEqual(["a"]);
 	expect(ids("<p id=a>", "::slotted(foo")).toEqual([]);
+	// An escape with nothing left to escape spells U+FFFD, so the selector
+	// is a selector and selects the id nothing here carries.
+	expect(ids('<p id="eof\\">', "#eof\\")).toEqual([]);
+	expect(ids('<p id="eof\uFFFD">', "#eof\\")).toEqual(["eof\uFFFD"]);
+});
+
+test("a null and a lone surrogate both stand for U+FFFD", () => {
+	expect(ids('<p id="a\uFFFDb">', "#a\u0000b")).toEqual(["a\uFFFDb"]);
+	expect(ids('<p id="\uFFFD">', "#\uD800")).toEqual(["\uFFFD"]);
 });
 
 test("an escaped class or id names the character it spells", () => {
