@@ -483,12 +483,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: a frame's document URL",
 	"dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html":
 		"requires-browsing-context: an element adopted between an HTML and an XML frame",
-	"dom/nodes/Element-matches.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
-	"dom/nodes/Element-webkitMatchesSelector.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
-	"dom/nodes/ParentNode-querySelector-All.html":
-		"requires-browsing-context: the selector corpus is loaded into a frame",
 	"dom/nodes/Node-parentNode.html":
 		"requires-browsing-context: a frame's document element parentage",
 	"dom/nodes/query-target-in-load-event.html":
@@ -1005,6 +999,115 @@ function resolveScript(src: string, file: string): string {
 	return stack.join("/");
 }
 
+/**
+ * The documents a test file points a frame at, read out of the cache before
+ * the file runs.
+ *
+ * A frame's `src` names a document to fetch, and this engine fetches nothing,
+ * so an unhelped frame holds about:blank forever. The suite's selector corpus
+ * is loaded that way -- the 454 selectors of `dom/nodes/selectors.js` are run
+ * against a fixture document a frame carries -- so the harness performs the
+ * fetch the browser would: every path the file assigns to a `src`, or writes
+ * on a frame in its markup, is collected here and handed over below.
+ */
+async function framePages(
+	document: Document,
+	html: string,
+	file: string,
+): Promise<Map<string, string>> {
+	const paths = new Set<string>();
+	for (const match of html.matchAll(/\.src\s*=\s*["']([^"']+)["']/g)) {
+		paths.add(match[1]);
+	}
+	for (const frame of document.getElementsByTagName("iframe")) {
+		const src = frame.getAttribute("src");
+		if (src !== null) {
+			paths.add(src);
+		}
+	}
+	const pages = new Map<string, string>();
+	for (const path of paths) {
+		const name = path.split("#")[0];
+		if (!/\.html$/.test(name)) {
+			continue;
+		}
+		const text = await cached(resolveScript(name, file));
+		if (text !== null) {
+			pages.set(path, text);
+		}
+	}
+	return pages;
+}
+
+/**
+ * Give this realm's frames the documents their `src` names.
+ *
+ * A frame already builds a content document on insertion and fires load from
+ * a task; what it cannot do is put anything but about:blank in it. The two
+ * accessors below answer with the fetched document instead, parsed at the
+ * frame's own URL so that the fragment `:target` reads is the one the src
+ * carries. A src the harness did not fetch falls through to the frame's own
+ * answer, so every other test file sees the DOM it saw before.
+ */
+function installFramePages(
+	dom: DOMModule,
+	document: Document,
+	pages: Map<string, string>,
+	url: string,
+): void {
+	if (pages.size === 0) {
+		return;
+	}
+	const prototype = Object.getPrototypeOf(
+		document.createElement("iframe"),
+	) as object;
+	const inherited = {
+		document: Object.getOwnPropertyDescriptor(prototype, "contentDocument")!,
+		window: Object.getOwnPropertyDescriptor(prototype, "contentWindow")!,
+	};
+	const loaded = new WeakMap<object, Document>();
+	const load = (frame: object): Document | null => {
+		const src = (frame as {getAttribute(name: string): string | null})
+			.getAttribute("src");
+		const text = src === null ? undefined : pages.get(src);
+		if (text === undefined) {
+			return null;
+		}
+		let document = loaded.get(frame);
+		if (document === undefined) {
+			document = dom.parseHTMLDocument(text, new URL(src!, url).href);
+			// The frame's window, which the corpus reads its interfaces off
+			// (`doc.defaultView.NodeList`) the way the outer document reads
+			// them off the harness realm. One realm serves both, so the
+			// constructors it names are the same objects either way.
+			Object.defineProperty(document, "defaultView", {
+				value: Object.assign(Object.create(globalThis) as object, {
+					...domGlobals(dom),
+					document,
+				}),
+				configurable: true,
+			});
+			loaded.set(frame, document);
+		}
+		return document;
+	};
+	Object.defineProperty(prototype, "contentDocument", {
+		get(this: object): unknown {
+			return load(this) ?? inherited.document.get!.call(this);
+		},
+		configurable: true,
+	});
+	Object.defineProperty(prototype, "contentWindow", {
+		get(this: object): unknown {
+			const document = load(this);
+			return document === null ?
+					inherited.window.get!.call(this) :
+					{document, frameElement: this};
+		},
+		configurable: true,
+	});
+}
+
 /** The document a `.any.js` or `.window.js` test would be generated into. */
 function generatedDocument(file: string, source: string): string {
 	const metas = [...source.matchAll(/^\/\/\s*META:\s*script=(\S+)/gm)];
@@ -1065,18 +1168,28 @@ function installGlobals(
 		},
 		...windowShim,
 	};
-	for (const [name, value] of Object.entries(values)) {
+	const names = [
+		...Object.keys(values),
+		"self",
+		"window",
+		"parent",
+		"top",
+		"frames",
+	];
+	// Everything is read before anything is written. Several of the runtime's
+	// own globals are built on first read out of a module that reads other
+	// globals as it loads, so a name saved after its neighbours were replaced
+	// would be built against this DOM's classes instead of the runtime's.
+	for (const name of names) {
 		saved.set(name, {
 			had: Object.prototype.hasOwnProperty.call(scope, name),
 			value: scope[name],
 		});
+	}
+	for (const [name, value] of Object.entries(values)) {
 		scope[name] = value;
 	}
 	for (const name of ["self", "window", "parent", "top", "frames"]) {
-		saved.set(name, {
-			had: Object.prototype.hasOwnProperty.call(scope, name),
-			value: scope[name],
-		});
 		scope[name] = scope;
 	}
 	// The window's named property access. A great many test files name their
@@ -1249,6 +1362,8 @@ async function runMountedFile(
 	if (!harnessLoaded) {
 		return {file, harness: "REFTEST", subtests: []};
 	}
+
+	installFramePages(dom, document, await framePages(document, html, file), url);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const globals = installGlobals(dom, engine.window, document, url);
