@@ -118,7 +118,7 @@ if (process.argv.includes("--check")) {
 			);
 		}
 	}
-	const LEAVES = ["internal/text", "internal/wire", "internal/color"];
+	const LEAVES = ["internal/text", "internal/wire"];
 	const isLeaf = (name: string): boolean =>
 		name.startsWith("generated/") || LEAVES.includes(name);
 	for (const [name, deps] of imports) {

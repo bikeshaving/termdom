@@ -23,13 +23,13 @@ import {
 	type WidthMeasurer,
 } from "./text.js";
 import {
+	type ColorDepth,
 	type StyleAttribute,
 	type StyleAttributes,
 	type StyleRun,
 	type UnderlineStyle,
 	Wire,
 } from "./wire.js";
-import type {ColorDepth} from "./color.js";
 
 /* ------------------------------------------------------------------- cells */
 

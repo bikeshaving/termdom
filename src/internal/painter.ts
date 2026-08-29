@@ -30,8 +30,9 @@ import {
 	getBoxModel,
 	getPseudoStyle,
 	resolveBorderSides,
+	cssColorToNumber,
+	isTransparentColor,
 } from "./cascade.js";
-import {cssColorToNumber, isTransparentColor} from "./color.js";
 import type {CellStyle, CellContext, LineStyle} from "./screen.js";
 
 /**
