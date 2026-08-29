@@ -297,6 +297,8 @@ export interface MatchNode {
 	readonly namespaceURI: string | null;
 	readonly nodeValue: string | null;
 	readonly parentNode: MatchNode | null;
+	readonly previousSibling: MatchNode | null;
+	readonly nextSibling: MatchNode | null;
 	readonly childNodes: ArrayLike<MatchNode>;
 	readonly attributes: ArrayLike<MatchAttribute>;
 	getAttribute(name: string): string | null;
@@ -1295,7 +1297,13 @@ function identifierArgument(args: SelectorNode[], name: string): string {
 	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
 		throw new SelectorError(`:${name} takes one identifier`);
 	}
-	return CSSTree.ident.decode(text);
+	// The escapes in it spell the name, and the name has to be an identifier:
+	// `1` is a number wherever it is written.
+	const identifier = CSSTree.ident.decode(text);
+	if (!/^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier)) {
+		throw new SelectorError(`:${name} takes one identifier`);
+	}
+	return identifier;
 }
 
 /** Compile a selector list argument, dropping the branches that do not read. */
@@ -2136,17 +2144,25 @@ function elementSiblings(element: MatchNode): MatchNode[] {
 }
 
 function previousElement(element: MatchNode): MatchNode | null {
-	const siblings = elementSiblings(element);
-	const index = siblings.indexOf(element);
-	return index > 0 ? siblings[index - 1] : null;
+	for (
+		let node = element.previousSibling;
+		node !== null;
+		node = node.previousSibling
+	) {
+		if (node.nodeType === ELEMENT_NODE) {
+			return node;
+		}
+	}
+	return null;
 }
 
 function nextElement(element: MatchNode): MatchNode | null {
-	const siblings = elementSiblings(element);
-	const index = siblings.indexOf(element);
-	return index !== -1 && index + 1 < siblings.length ?
-		siblings[index + 1] :
-		null;
+	for (let node = element.nextSibling; node !== null; node = node.nextSibling) {
+		if (node.nodeType === ELEMENT_NODE) {
+			return node;
+		}
+	}
+	return null;
 }
 
 /** How far an element is from one end of its siblings of the same type. */

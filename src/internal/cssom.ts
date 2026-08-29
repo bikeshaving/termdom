@@ -59,6 +59,7 @@ import {
 	getChildren,
 	matchesSelector as selectorMatches,
 	parseSelectorList,
+	selectAll,
 	pseudoName,
 } from "./selectors.js";
 import {stringWidth} from "./text.js";
@@ -11239,17 +11240,18 @@ export class StyleManager {
 			const matchingElements = new Set<Element>();
 
 			for (const rule of rules) {
-				try {
-					// Within the rule's own tree scope: a document query cannot see
-					// shadow elements, and a shadow rule must never claim document
-					// ones.
-					const scope = (rule.scope ?? this[kDocument]) as ParentNode;
-					const elements = scope.querySelectorAll(rule.selector);
-					for (const element of elements) {
-						matchingElements.add(element);
-					}
-				} catch (e) {
-					continue;
+				// Within the rule's own tree scope: a document query cannot see
+				// shadow elements, and a shadow rule must never claim document
+				// ones. A `:host` rule reaches the one element outside it.
+				const scope = (rule.scope ?? this[kDocument]) as Node;
+				for (const element of selectForRule(scope, rule)) {
+					matchingElements.add(element);
+				}
+				const host = rule.reachesHost ?
+						((rule.scope as ShadowRoot).host as Element | null) :
+					null;
+				if (host && ruleSelectorMatches(host, rule, rule.selector)) {
+					matchingElements.add(host);
 				}
 			}
 
@@ -13252,6 +13254,20 @@ function ruleSelectorMatches(
 	} catch (_err) {
 		// A rule whose selector this engine cannot read styles nothing.
 		return false;
+	}
+}
+
+/** Every element under a root that a rule's selector reaches. */
+function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
+	try {
+		return selectAll(root as unknown as MatchNode, rule.selector, {
+			resolver: selectorResolver,
+			scope: root as unknown as MatchNode,
+			namespaces: rule.namespaces,
+			shadow: (rule.reachesHost ? rule.scope : null) as MatchNode | null,
+		}) as unknown as Element[];
+	} catch (_err) {
+		return [];
 	}
 }
 
