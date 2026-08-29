@@ -16,12 +16,12 @@ window's legacy named access to elements by id.
 
 - Test files in the suites: 1173
 - Reference tests (no testharness, scored by pixels): 55
-- Excluded, each with its reason below: 359
+- Excluded, each with its reason below: 356
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 678
+- Files whose harness completed: 681
 - Files whose harness did not complete: 81
-- Subtests passed: 95718
-- Subtests failed: 1522
+- Subtests passed: 88619
+- Subtests failed: 2005
 
 ## Exclusions
 
@@ -96,7 +96,7 @@ window's legacy named access to elements by id.
 | dom/events/EventListener-incumbent-global-subframe-1.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-incumbent-global-subframe-2.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
-| dom/events/EventListener-invoke-legacy.html | requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event |
+| dom/events/EventListener-invoke-legacy.html | requires-css-animations: four of the six subtests await a running CSS animation's events |
 | dom/events/click-on-absolute-pseudo.html | requires-user-input: a pointer action sequence over a pseudo-element |
 | dom/events/event-global-extra.window.js | requires-browsing-context: window.event across frames |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | requires-browsing-context: window.event during a beforeunload the window fires |
@@ -190,7 +190,7 @@ window's legacy named access to elements by id.
 | dom/events/webkit-animation-end-event.html | requires-css-animations: a running CSS animation |
 | dom/events/webkit-animation-iteration-event.html | requires-css-animations: a running CSS animation |
 | dom/events/webkit-animation-start-event.html | requires-css-animations: a running CSS animation |
-| dom/events/webkit-transition-end-event.html | requires-css-animations: a running CSS transition |
+| dom/events/webkit-transition-end-event.html | requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document |
 | dom/events/window-event-restored-after-throwing-onerror.html | requires-browsing-context: window.event inside window.onerror |
 | dom/nodes/Document-URL.html | requires-browsing-context: a frame's document URL |
 | dom/nodes/Document-characterSet-normalization-1.html | requires-fetch: encoding labels normalized from fetched documents |
@@ -221,12 +221,9 @@ window's legacy named access to elements by id.
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_changed.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own |
 | dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html | requires-browsing-context: an element adopted between an HTML and an XML frame |
-| dom/nodes/Element-matches.html | requires-browsing-context: the selector corpus is loaded into a frame |
-| dom/nodes/Element-webkitMatchesSelector.html | requires-browsing-context: the selector corpus is loaded into a frame |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to |
 | dom/nodes/MutationObserver-document.html | requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions |
 | dom/nodes/Node-parentNode.html | requires-browsing-context: a frame's document element parentage |
-| dom/nodes/ParentNode-querySelector-All.html | requires-browsing-context: the selector corpus is loaded into a frame |
 | dom/nodes/insertion-removing-steps/Node-append-form-and-script-from-fragment.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/Node-appendChild-script-and-button-from-div.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
@@ -432,14 +429,6 @@ A selection whose range is inside a shadow tree of the document still answers `r
 
 An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.
 
-### dom/nodes/Element-matches-namespaced-elements.html, querySelector-mixed-case.html
-
-A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, which carries no namespace prefix map.
-
-### dom/nodes/Element-closest.html
-
-`:scope` inside matches() and closest() resolves against the document rather than the element the method was called on. The selector engine is nwsapi, and its match entry point takes no scoping root.
-
 ### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute
 
 The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick="..."` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.
@@ -450,7 +439,7 @@ The event handler IDL attributes are implemented on HTMLElement, SVGElement, Mat
 
 ### custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls
 
-`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented.
+`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.
 
 ### the focus members, and every subtest that moves focus
 
@@ -485,18 +474,18 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/ChildNode-after.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-before.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-replaceWith.html | OK | 33 | 0 |
-| dom/nodes/Comment-constructor.html | OK | 15 | 1 |
-| dom/nodes/DOMImplementation-createDocument.html | OK | 434 | 0 |
+| dom/nodes/Comment-constructor.html | OK | 13 | 3 |
+| dom/nodes/DOMImplementation-createDocument.html | OK | 1 | 1 |
 | dom/nodes/DOMImplementation-createDocumentType.html | OK | 82 | 0 |
 | dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html | OK | 1 | 0 |
-| dom/nodes/DOMImplementation-createHTMLDocument.html | OK | 13 | 0 |
+| dom/nodes/DOMImplementation-createHTMLDocument.html | OK | 4 | 9 |
 | dom/nodes/DOMImplementation-hasFeature.html | OK | 137 | 0 |
 | dom/nodes/Document-URL.html | EXCLUDED (requires-browsing-context: a frame's document URL) | 0 | 0 |
 | dom/nodes/Document-adoptNode-DocumentFragment-with-host.window.js | OK | 7 | 0 |
 | dom/nodes/Document-adoptNode.html | OK | 4 | 0 |
 | dom/nodes/Document-characterSet-normalization-1.html | EXCLUDED (requires-fetch: encoding labels normalized from fetched documents) | 0 | 0 |
 | dom/nodes/Document-characterSet-normalization-2.html | EXCLUDED (requires-fetch: encoding labels normalized from fetched documents) | 0 | 0 |
-| dom/nodes/Document-constructor.html | OK | 5 | 0 |
+| dom/nodes/Document-constructor.html | OK | 3 | 2 |
 | dom/nodes/Document-contentType/contentType/contenttype_bmp.html | EXCLUDED (requires-fetch: the document's content type comes from the response that delivered it) | 0 | 0 |
 | dom/nodes/Document-contentType/contentType/contenttype_css.html | EXCLUDED (requires-fetch: the document's content type comes from the response that delivered it) | 0 | 0 |
 | dom/nodes/Document-contentType/contentType/contenttype_datauri_02.html | EXCLUDED (requires-fetch: the document's content type comes from the response that delivered it) | 0 | 0 |
@@ -514,7 +503,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-contentType/contentType/xhr_responseType_document.html | EXCLUDED (requires-fetch: the document's content type comes from the response that delivered it) | 0 | 0 |
 | dom/nodes/Document-createAttribute.html | OK | 36 | 0 |
 | dom/nodes/Document-createCDATASection.html | OK | 1 | 0 |
-| dom/nodes/Document-createComment.html | OK | 6 | 0 |
+| dom/nodes/Document-createComment.html | OK | 0 | 6 |
 | dom/nodes/Document-createElement-namespace-tests/bare_mathml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/bare_svg.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace-tests/bare_xhtml.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
@@ -527,23 +516,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Document-createElement-namespace-tests/xhtml_ns_removed.html | EXCLUDED (not-a-test: these are the XHTML, SVG and MathML fixture documents Document-createElement-namespace.html loads into a frame; they carry no testharness of their own) | 0 | 0 |
 | dom/nodes/Document-createElement-namespace.html | OK | 21 | 30 |
 | dom/nodes/Document-createElement.html | OK | 49 | 98 |
-| dom/nodes/Document-createElementNS.html | OK | 206 | 390 |
+| dom/nodes/Document-createElementNS.html | OK | 195 | 401 |
 | dom/nodes/Document-createEvent-touchevent.window.js | OK | 3 | 0 |
-| dom/nodes/Document-createEvent.https.html | OK | 261 | 12 |
-| dom/nodes/Document-createProcessingInstruction.html | OK | 12 | 0 |
-| dom/nodes/Document-createTextNode.html | OK | 6 | 0 |
-| dom/nodes/Document-createTreeWalker.html | OK | 5 | 0 |
-| dom/nodes/Document-doctype.html | OK | 2 | 0 |
-| dom/nodes/Document-getElementById.html | OK | 18 | 0 |
-| dom/nodes/Document-getElementsByClassName.html | OK | 1 | 0 |
-| dom/nodes/Document-getElementsByTagName.html | OK | 16 | 2 |
-| dom/nodes/Document-getElementsByTagNameNS.html | OK | 14 | 0 |
-| dom/nodes/Document-implementation.html | OK | 2 | 0 |
+| dom/nodes/Document-createEvent.https.html | OK | 225 | 48 |
+| dom/nodes/Document-createProcessingInstruction.html | OK | 9 | 3 |
+| dom/nodes/Document-createTextNode.html | OK | 0 | 6 |
+| dom/nodes/Document-createTreeWalker.html | OK | 4 | 1 |
+| dom/nodes/Document-doctype.html | OK | 1 | 1 |
+| dom/nodes/Document-getElementById.html | OK | 14 | 4 |
+| dom/nodes/Document-getElementsByClassName.html | OK | 0 | 1 |
+| dom/nodes/Document-getElementsByTagName.html | OK | 12 | 6 |
+| dom/nodes/Document-getElementsByTagNameNS.html | OK | 12 | 2 |
+| dom/nodes/Document-implementation.html | OK | 1 | 1 |
 | dom/nodes/Document-importNode.html | OK | 5 | 0 |
 | dom/nodes/DocumentFragment-constructor.html | OK | 2 | 0 |
 | dom/nodes/DocumentFragment-getElementById.html | OK | 5 | 0 |
 | dom/nodes/DocumentFragment-querySelectorAll-after-modification.html | OK | 1 | 0 |
-| dom/nodes/DocumentType-literal.html | OK | 1 | 0 |
+| dom/nodes/DocumentType-literal.html | OK | 0 | 1 |
 | dom/nodes/DocumentType-remove.html | OK | 4 | 0 |
 | dom/nodes/Element-childElement-null.html | OK | 1 | 0 |
 | dom/nodes/Element-childElementCount-dynamic-add.html | OK | 1 | 0 |
@@ -552,20 +541,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-childElementCount.html | OK | 1 | 0 |
 | dom/nodes/Element-children.html | OK | 2 | 0 |
 | dom/nodes/Element-classlist.html | OK | 1420 | 0 |
-| dom/nodes/Element-closest.html | OK | 25 | 4 |
+| dom/nodes/Element-closest.html | OK | 28 | 1 |
 | dom/nodes/Element-firstElementChild-namespace.html | OK | 1 | 0 |
 | dom/nodes/Element-firstElementChild.html | OK | 1 | 0 |
-| dom/nodes/Element-getElementsByClassName.html | OK | 3 | 0 |
+| dom/nodes/Element-getElementsByClassName.html | OK | 1 | 2 |
 | dom/nodes/Element-getElementsByTagName-change-document-HTMLNess.html | EXCLUDED (requires-browsing-context: an element adopted between an HTML and an XML frame) | 0 | 0 |
-| dom/nodes/Element-getElementsByTagName.html | OK | 17 | 2 |
-| dom/nodes/Element-getElementsByTagNameNS.html | OK | 16 | 0 |
+| dom/nodes/Element-getElementsByTagName.html | OK | 13 | 6 |
+| dom/nodes/Element-getElementsByTagNameNS.html | OK | 14 | 2 |
 | dom/nodes/Element-hasAttribute.html | OK | 2 | 0 |
 | dom/nodes/Element-hasAttributes.html | OK | 2 | 0 |
 | dom/nodes/Element-insertAdjacentElement.html | OK | 6 | 0 |
 | dom/nodes/Element-insertAdjacentText.html | OK | 6 | 0 |
 | dom/nodes/Element-lastElementChild.html | OK | 1 | 0 |
-| dom/nodes/Element-matches-namespaced-elements.html | OK | 4 | 2 |
-| dom/nodes/Element-matches.html | EXCLUDED (requires-browsing-context: the selector corpus is loaded into a frame) | 0 | 0 |
+| dom/nodes/Element-matches-namespaced-elements.html | OK | 6 | 0 |
+| dom/nodes/Element-matches.html | OK | 667 | 2 |
 | dom/nodes/Element-nextElementSibling.html | OK | 1 | 0 |
 | dom/nodes/Element-previousElementSibling.html | OK | 1 | 0 |
 | dom/nodes/Element-remove.html | OK | 4 | 0 |
@@ -575,9 +564,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Element-setAttribute.html | OK | 2 | 0 |
 | dom/nodes/Element-siblingElement-null.html | OK | 1 | 0 |
 | dom/nodes/Element-tagName.html | OK | 6 | 0 |
-| dom/nodes/Element-webkitMatchesSelector.html | EXCLUDED (requires-browsing-context: the selector corpus is loaded into a frame) | 0 | 0 |
+| dom/nodes/Element-webkitMatchesSelector.html | OK | 667 | 2 |
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
-| dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
+| dom/nodes/MutationObserver-callback-arguments.html | OK | 0 | 1 |
 | dom/nodes/MutationObserver-characterData.html | OK | 23 | 0 |
 | dom/nodes/MutationObserver-childList.html | OK | 40 | 0 |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | EXCLUDED (requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to) | 0 | 0 |
@@ -593,12 +582,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/Node-childNodes-cache-2.html | OK | 1 | 0 |
 | dom/nodes/Node-childNodes-cache.html | OK | 1 | 0 |
 | dom/nodes/Node-childNodes.html | OK | 6 | 0 |
-| dom/nodes/Node-cloneNode-XMLDocument.html | OK | 1 | 0 |
+| dom/nodes/Node-cloneNode-XMLDocument.html | OK | 0 | 1 |
 | dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js | OK | 0 | 1 |
 | dom/nodes/Node-cloneNode-document-with-doctype.html | OK | 3 | 0 |
 | dom/nodes/Node-cloneNode-external-stylesheet-no-bc.sub.html | OK | 1 | 0 |
 | dom/nodes/Node-cloneNode-svg.html | OK | 4 | 0 |
-| dom/nodes/Node-cloneNode.html | OK | 135 | 0 |
+| dom/nodes/Node-cloneNode.html | OK | 58 | 77 |
 | dom/nodes/Node-compareDocumentPosition.html | OK | 1444 | 0 |
 | dom/nodes/Node-constants.html | OK | 8 | 0 |
 | dom/nodes/Node-contains.html | OK | 1482 | 0 |
@@ -628,10 +617,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
-| dom/nodes/ParentNode-children.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-children.html | OK | 0 | 1 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
 | dom/nodes/ParentNode-querySelector-All-content.html | REFTEST | 0 | 0 |
-| dom/nodes/ParentNode-querySelector-All.html | EXCLUDED (requires-browsing-context: the selector corpus is loaded into a frame) | 0 | 0 |
+| dom/nodes/ParentNode-querySelector-All.html | OK | 1975 | 0 |
 | dom/nodes/ParentNode-querySelector-case-insensitive.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-querySelector-escapes.html | OK | 68 | 0 |
 | dom/nodes/ParentNode-querySelector-scope.html | OK | 4 | 0 |
@@ -640,17 +629,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/ParentNode-querySelectors-namespaces.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectors-space-and-dash-attribute-value.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-replaceChildren.html | OK | 31 | 0 |
-| dom/nodes/Text-constructor.html | OK | 15 | 1 |
+| dom/nodes/Text-constructor.html | OK | 13 | 3 |
 | dom/nodes/Text-splitText.html | OK | 6 | 0 |
 | dom/nodes/Text-wholeText.html | OK | 1 | 0 |
 | dom/nodes/adoption.window.js | OK | 6 | 0 |
 | dom/nodes/append-on-Document.html | OK | 5 | 0 |
 | dom/nodes/attach-shadow-realm-after-adoption.html | OK | 4 | 1 |
 | dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 2 | 0 |
-| dom/nodes/attributes-namednodemap.html | OK | 8 | 0 |
-| dom/nodes/attributes.html | OK | 67 | 0 |
+| dom/nodes/attributes-namednodemap.html | OK | 7 | 1 |
+| dom/nodes/attributes.html | OK | 61 | 6 |
 | dom/nodes/case.html | OK | 285 | 0 |
-| dom/nodes/create-element-realm-after-adoption.html | OK | 2 | 3 |
+| dom/nodes/create-element-realm-after-adoption.html | OK | 1 | 4 |
 | dom/nodes/getElementsByClassName-32.html | OK | 4 | 0 |
 | dom/nodes/getElementsByClassName-empty-set.html | OK | 3 | 0 |
 | dom/nodes/getElementsByClassName-whitespace-class-names.html | OK | 26 | 0 |
@@ -679,15 +668,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/continue-css-transition-left.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/continue-css-transition-transform.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/continue-css-transition-left.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/continue-css-transition-transform.html | OK | 0 | 1 |
 | dom/nodes/moveBefore/css-animation-commit-styles.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/css-transition-cross-document.html | EXCLUDED (requires-browsing-context: the transitioning node moves into a frame's document) | 0 | 0 |
-| dom/nodes/moveBefore/css-transition-cross-shadow.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/css-transition-to-disconnected-document.html | TIMEOUT | 0 | 1 |
-| dom/nodes/moveBefore/css-transition-trigger.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/css-transition-cross-shadow.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/css-transition-to-disconnected-document.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/css-transition-trigger.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/custom-element-move-reactions.html | OK | 7 | 0 |
 | dom/nodes/moveBefore/fieldset-child-blur-event.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 1 | 0 |
@@ -699,10 +688,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | EXCLUDED (requires-browsing-context: the move happens inside a frame's document) | 0 | 0 |
 | dom/nodes/moveBefore/listed-form-element-reset.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/live-range-updates.html | OK | 3 | 0 |
+| dom/nodes/moveBefore/live-range-updates.html | OK | 0 | 3 |
 | dom/nodes/moveBefore/modal-dialog.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-as-flex-item.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/moveBefore-dir.html | OK | 0 | 1 |
+| dom/nodes/moveBefore/moveBefore-dir.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-id-map.html | OK | 3 | 1 |
 | dom/nodes/moveBefore/moveBefore-lang.html | OK | 1 | 0 |
@@ -740,7 +729,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/nodes/query-target-in-load-event.part.html | REFTEST | 0 | 0 |
 | dom/nodes/querySelector-empty-id.html | OK | 1 | 0 |
 | dom/nodes/querySelector-id-nth-child.html | OK | 2 | 0 |
-| dom/nodes/querySelector-mixed-case.html | OK | 0 | 1 |
+| dom/nodes/querySelector-mixed-case.html | OK | 1 | 0 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
 | dom/nodes/remove-next-sibling-during-replace-with.html | EXCLUDED (requires-browsing-context: the fixture is named through the window's named property access) | 0 | 0 |
@@ -754,7 +743,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html | EXCLUDED (requires-browsing-context: a filter from a detached frame's realm) | 0 | 0 |
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm.html | EXCLUDED (requires-browsing-context: filters that are objects from another realm) | 0 | 0 |
 | dom/traversal/TreeWalker-acceptNode-filter.html | OK | 12 | 0 |
-| dom/traversal/TreeWalker-basic.html | OK | 6 | 0 |
+| dom/traversal/TreeWalker-basic.html | OK | 4 | 2 |
 | dom/traversal/TreeWalker-currentNode.html | OK | 4 | 0 |
 | dom/traversal/TreeWalker-nextNode-detached-currentNode.window.js | OK | 3 | 0 |
 | dom/traversal/TreeWalker-previousNodeLastChildReject.html | OK | 1 | 0 |
@@ -764,7 +753,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/traversal/TreeWalker-traversal-skip-most.html | OK | 2 | 0 |
 | dom/traversal/TreeWalker-traversal-skip.html | OK | 6 | 0 |
 | dom/traversal/TreeWalker-walking-outside-a-tree.html | OK | 1 | 0 |
-| dom/traversal/TreeWalker.html | OK | 761 | 0 |
+| dom/traversal/TreeWalker.html | OK | 609 | 152 |
 | dom/collections/HTMLCollection-as-prototype.html | OK | 0 | 2 |
 | dom/collections/HTMLCollection-delete.html | OK | 0 | 4 |
 | dom/collections/HTMLCollection-empty-name.html | OK | 7 | 0 |
@@ -780,10 +769,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/lists/DOMTokenList-iteration.html | OK | 6 | 0 |
 | dom/lists/DOMTokenList-stringifier.html | OK | 1 | 0 |
 | dom/lists/DOMTokenList-value.html | OK | 1 | 0 |
-| dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
-| dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
-| dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | OK | 24 | 24 |
+| dom/events/AddEventListenerOptions-once.any.js | OK | 0 | 4 |
+| dom/events/AddEventListenerOptions-passive.any.js | OK | 0 | 5 |
+| dom/events/AddEventListenerOptions-signal.any.js | OK | 0 | 11 |
+| dom/events/Body-FrameSet-Event-Handlers.html | ERROR (Right-hand side of 'instanceof' is not an object) | 0 | 0 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
 | dom/events/Event-cancelBubble.html | OK | 8 | 0 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
@@ -793,16 +782,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | TIMEOUT | 28 | 5 |
-| dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 9 | 24 |
+| dom/events/Event-dispatch-click.tentative.html | OK | 2 | 4 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
-| dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
+| dom/events/Event-dispatch-detached-input-and-change.html | OK | 6 | 6 |
 | dom/events/Event-dispatch-handlers-changed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
 | dom/events/Event-dispatch-multiple-cancelBubble.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-omitted-capture.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 4 | 5 |
+| dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 5 | 4 |
 | dom/events/Event-dispatch-order-at-target.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
@@ -814,16 +803,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/Event-dispatch-target-removed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
 | dom/events/Event-dispatch-throwing.html | EXCLUDED (requires-browsing-context: a listener's exception is counted as an error event at the window) | 0 | 0 |
-| dom/events/Event-init-while-dispatching.html | OK | 5 | 0 |
+| dom/events/Event-init-while-dispatching.html | OK | 2 | 3 |
 | dom/events/Event-initEvent.html | OK | 12 | 0 |
 | dom/events/Event-isTrusted.any.js | OK | 1 | 0 |
 | dom/events/Event-propagation.html | OK | 7 | 0 |
 | dom/events/Event-returnValue.html | OK | 7 | 0 |
 | dom/events/Event-stopImmediatePropagation.html | OK | 1 | 0 |
 | dom/events/Event-stopPropagation-cancel-bubbling.html | OK | 0 | 1 |
-| dom/events/Event-subclasses-constructors.html | OK | 43 | 6 |
+| dom/events/Event-subclasses-constructors.html | OK | 13 | 36 |
 | dom/events/Event-timestamp-cross-realm-getter.html | EXCLUDED (requires-browsing-context: a timeStamp getter taken from a frame's realm) | 0 | 0 |
-| dom/events/Event-timestamp-high-resolution.html | OK | 4 | 0 |
+| dom/events/Event-timestamp-high-resolution.html | OK | 1 | 3 |
 | dom/events/Event-timestamp-high-resolution.https.html | OK | 0 | 1 |
 | dom/events/Event-timestamp-safe-resolution.html | OK | 0 | 1 |
 | dom/events/Event-type-empty.html | OK | 2 | 0 |
@@ -836,17 +825,17 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/EventListener-incumbent-global-subframe-1.sub.html | EXCLUDED (requires-browsing-context: a subframe of the incumbent-global test) | 0 | 0 |
 | dom/events/EventListener-incumbent-global-subframe-2.sub.html | EXCLUDED (requires-browsing-context: a subframe of the incumbent-global test) | 0 | 0 |
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | EXCLUDED (requires-browsing-context: a subframe of the incumbent-global test) | 0 | 0 |
-| dom/events/EventListener-invoke-legacy.html | EXCLUDED (requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event) | 0 | 0 |
+| dom/events/EventListener-invoke-legacy.html | EXCLUDED (requires-css-animations: four of the six subtests await a running CSS animation's events) | 0 | 0 |
 | dom/events/EventListenerOptions-capture.html | OK | 4 | 0 |
 | dom/events/EventTarget-add-listener-platform-object.html | OK | 1 | 0 |
-| dom/events/EventTarget-add-remove-listener.any.js | OK | 1 | 0 |
-| dom/events/EventTarget-addEventListener.any.js | OK | 1 | 0 |
-| dom/events/EventTarget-constructible.any.js | OK | 3 | 0 |
+| dom/events/EventTarget-add-remove-listener.any.js | OK | 0 | 1 |
+| dom/events/EventTarget-addEventListener.any.js | OK | 0 | 1 |
+| dom/events/EventTarget-constructible.any.js | OK | 0 | 3 |
 | dom/events/EventTarget-dispatchEvent-returnvalue.html | OK | 2 | 0 |
 | dom/events/EventTarget-dispatchEvent.html | OK | 23 | 2 |
 | dom/events/EventTarget-removeEventListener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-this-of-listener.html | OK | 6 | 0 |
-| dom/events/KeyEvent-initKeyEvent.html | OK | 3 | 0 |
+| dom/events/KeyEvent-initKeyEvent.html | OK | 1 | 2 |
 | dom/events/click-on-absolute-pseudo.html | EXCLUDED (requires-user-input: a pointer action sequence over a pseudo-element) | 0 | 0 |
 | dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
@@ -859,8 +848,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/focus-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
 | dom/events/handler-count.html | EXCLUDED (requires-user-input: pointer action sequences against a running CSS animation) | 0 | 0 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
-| dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
-| dom/events/mouse-event-retarget.html | OK | 1 | 0 |
+| dom/events/legacy-pre-activation-behavior.window.js | OK | 0 | 1 |
+| dom/events/mouse-event-retarget.html | OK | 0 | 1 |
 | dom/events/no-focus-events-at-clicking-editable-content-in-link.html | EXCLUDED (requires-user-input: clicks on editable content, and the focus events HTML fires from them) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
@@ -951,11 +940,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
-| dom/events/webkit-transition-end-event.html | EXCLUDED (requires-css-animations: a running CSS transition) | 0 | 0 |
+| dom/events/webkit-transition-end-event.html | EXCLUDED (requires-window-event-propagation: the harness awaits transitionend on window, and this DOM's dispatch path ends at the document) | 0 | 0 |
 | dom/events/window-composed-path.html | OK | 1 | 0 |
 | dom/events/window-event-restored-after-throwing-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
-| dom/ranges/Range-attribute-nodes.html | OK | 26 | 0 |
+| dom/ranges/Range-attribute-nodes.html | OK | 0 | 26 |
 | dom/ranges/Range-attributes.html | OK | 1 | 0 |
 | dom/ranges/Range-cloneContents-around-shadow.html | OK | 25 | 0 |
 | dom/ranges/Range-cloneContents-around-shadow.tentative.html | OK | 5 | 0 |
@@ -965,10 +954,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-collapse.html | OK | 186 | 0 |
 | dom/ranges/Range-commonAncestorContainer-2.html | OK | 6 | 0 |
 | dom/ranges/Range-commonAncestorContainer.html | OK | 63 | 0 |
-| dom/ranges/Range-compareBoundaryPoints.html | OK | 9313 | 0 |
+| dom/ranges/Range-compareBoundaryPoints.html | ERROR (Cannot read properties of undefined (reading 'START_TO_START')) | 0 | 0 |
 | dom/ranges/Range-comparePoint-2.html | OK | 3 | 0 |
 | dom/ranges/Range-comparePoint.html | OK | 5580 | 0 |
-| dom/ranges/Range-constructor.html | OK | 1 | 0 |
+| dom/ranges/Range-constructor.html | OK | 0 | 1 |
 | dom/ranges/Range-deleteContents-around-shadow.html | OK | 27 | 0 |
 | dom/ranges/Range-deleteContents-around-shadow.tentative.html | OK | 6 | 0 |
 | dom/ranges/Range-deleteContents-in-ShadowRoot.html | OK | 4 | 0 |
@@ -981,7 +970,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-extractContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | dom/ranges/Range-in-shadow-after-the-shadow-removed.html | EXCLUDED (requires-browsing-context: the shadow mode under test is read out of document.location, which is null here) | 0 | 0 |
 | dom/ranges/Range-insertNode.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
-| dom/ranges/Range-intersectsNode-2.html | OK | 1 | 0 |
+| dom/ranges/Range-intersectsNode-2.html | OK | 0 | 1 |
 | dom/ranges/Range-intersectsNode-binding.html | OK | 1 | 0 |
 | dom/ranges/Range-intersectsNode-shadow.html | OK | 1 | 0 |
 | dom/ranges/Range-intersectsNode.html | OK | 2356 | 0 |
@@ -998,10 +987,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | dom/ranges/Range-mutations-splitText.html | OK | 116 | 0 |
 | dom/ranges/Range-selectNode.html | OK | 296 | 0 |
 | dom/ranges/Range-set.html | OK | 10920 | 0 |
-| dom/ranges/Range-stringifier.html | OK | 5 | 0 |
+| dom/ranges/Range-stringifier.html | OK | 0 | 1 |
 | dom/ranges/Range-surroundContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | dom/ranges/Range-test-iframe.html | REFTEST | 0 | 0 |
-| dom/ranges/StaticRange-constructor.html | OK | 17 | 0 |
+| dom/ranges/StaticRange-constructor.html | OK | 1 | 16 |
 | dom/ranges/tentative/OpaqueRange-auto-disconnect.html | EXCLUDED (not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite) | 0 | 0 |
 | dom/ranges/tentative/OpaqueRange-basic.html | EXCLUDED (not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite) | 0 | 0 |
 | dom/ranges/tentative/OpaqueRange-disconnect.html | EXCLUDED (not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite) | 0 | 0 |
@@ -1042,8 +1031,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/anonymous/details-ancestor.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/anonymous/details-mutate.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
-| selection/bidi/modify-extend-by-character.html | OK | 0 | 28 |
-| selection/bidi/modify-move-by-character.html | OK | 0 | 28 |
+| selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
+| selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
 | selection/bidi/modify.tentative.html | OK | 15 | 21 |
 | selection/canvas-click.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
 | selection/canvas-drag.html | EXCLUDED (requires-user-input: a pointer action sequence over a canvas) | 0 | 0 |
@@ -1066,7 +1055,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
 | selection/contenteditable/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the editing host is focused by a pointer action sequence) | 0 | 0 |
-| selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR (Cannot read properties of null (reading 'search')) | 0 | 0 |
+| selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
 | selection/contenteditable/modify.tentative.html | OK | 2 | 13 |
@@ -1120,8 +1109,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/selection-modify-extend-word-generated-content.html | OK | 0 | 2 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
 | selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
-| selection/selection-range-after-textcontrol-removed.html | TIMEOUT | 0 | 0 |
-| selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html | TIMEOUT | 0 | 0 |
+| selection/selection-range-after-textcontrol-removed.html | OK | 2 | 0 |
+| selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html | OK | 0 | 4 |
 | selection/selection-shadow-dom-crash-print.html | REFTEST | 0 | 0 |
 | selection/setBaseAndExtent.html | OK | 120 | 0 |
 | selection/shadow-dom/cross-shadow-boundary-1.html | REFTEST | 0 | 0 |
@@ -1140,7 +1129,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/shadow-dom/tentative/Selection-deleteFromDocument-around-shadow.html | OK | 33 | 0 |
 | selection/shadow-dom/tentative/Selection-direction.html | OK | 7 | 0 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | OK | 1 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | ERROR (Cannot read properties of null (reading 'search')) | 0 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | OK | 2 | 4 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 8 | 1 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 3 | 0 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
@@ -1156,22 +1145,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
 | selection/textcontrols/selectionchange.html | OK | 44 | 16 |
-| selection/toString-ff-bug-001.html | OK | 1 | 0 |
+| selection/toString-ff-bug-001.html | OK | 0 | 1 |
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
 | selection/user-select-on-input-and-contenteditable.html | EXCLUDED (requires-user-input: the selection is made by a pointer action sequence) | 0 | 0 |
-| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
+| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 0 | 14 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
 | shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 0 | 41 |
-| shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
-| shadow-dom/Element-interface-attachShadow.html | OK | 6 | 0 |
+| shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (Class extends value undefined is not a constructor or null) | 0 | 0 |
+| shadow-dom/Element-interface-attachShadow.html | OK | 5 | 1 |
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
-| shadow-dom/Extensions-to-Event-Interface.html | OK | 16 | 0 |
-| shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
+| shadow-dom/Extensions-to-Event-Interface.html | OK | 8 | 8 |
+| shadow-dom/HTMLSlotElement-interface.html | OK | 10 | 8 |
 | shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
-| shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 1 | 2 |
+| shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 0 | 3 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
 | shadow-dom/Range-prototype-insertNode.html | OK | 1 | 0 |
 | shadow-dom/ShadowRoot-interface.html | OK | 10 | 2 |
@@ -1186,7 +1175,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 20 | 2 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html | OK | 0 | 2 |
@@ -1245,13 +1234,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
 | shadow-dom/event-composed-path-with-related-target.html | OK | 13 | 0 |
 | shadow-dom/event-composed-path.html | OK | 11 | 0 |
-| shadow-dom/event-composed.html | OK | 9 | 0 |
+| shadow-dom/event-composed.html | OK | 7 | 2 |
 | shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
 | shadow-dom/event-inside-shadow-tree.html | OK | 12 | 0 |
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
 | shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
-| shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
-| shadow-dom/event-with-related-target.html | OK | 18 | 0 |
+| shadow-dom/event-post-dispatch.html | OK | 8 | 8 |
+| shadow-dom/event-with-related-target.html | OK | 0 | 18 |
 | shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | OK | 1 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | OK | 1 | 0 |
@@ -1302,15 +1291,15 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/DocumentOrShadowRoot-activeElement.html | OK | 6 | 0 |
 | shadow-dom/focus/ShadowRoot-delegatesFocus.html | OK | 3 | 0 |
 | shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html | OK | 1 | 1 |
-| shadow-dom/focus/click-focus-delegatesFocus-click.html | OK | 2 | 4 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | OK | 0 | 1 |
-| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
+| shadow-dom/focus/click-focus-delegatesFocus-click.html | ERROR (innerText is not implemented) | 0 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html | ERROR (innerText is not implemented) | 0 | 0 |
+| shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | ERROR (innerText is not implemented) | 0 | 0 |
 | shadow-dom/focus/click-focus-slot-ancestor.html | OK | 0 | 3 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-autofocus.html | OK | 1 | 4 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-method-delegatesFocus-nested-browsing-context.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-method-delegatesFocus.html | OK | 2 | 13 |
+| shadow-dom/focus/focus-method-delegatesFocus.html | ERROR (innerText is not implemented) | 0 | 0 |
 | shadow-dom/focus/focus-method-with-delegatesFocus.html | ERROR (missing script resources/shadow-dom.js) | 0 | 0 |
 | shadow-dom/focus/focus-preserved-on-slot-reorder.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-pseudo-matches-on-shadow-host.html | TIMEOUT | 0 | 0 |
@@ -1318,24 +1307,24 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/focus/focus-pseudo-on-shadow-host-2.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-3.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-scroll-under-delegatesFocus.html | OK | 0 | 1 |
-| shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 12 | 0 |
+| shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 0 | 12 |
 | shadow-dom/focus/focus-shadowhost-display-none.html | OK | 0 | 2 |
 | shadow-dom/focus/focus-slot-box-generated-tabindex-0.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tab-on-shadow-host.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-negative-delegatesFocus.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-negative.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-slot-one.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-varying-delegatesFocus.html | OK | 1 | 0 |
+| shadow-dom/focus/focus-tabindex-order-shadow-negative-delegatesFocus.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-negative.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-slot-one.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-varying-delegatesFocus.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-3.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-delegatesFocus.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-negative.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set-scrollable.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
+| shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-delegatesFocus.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-negative.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set-scrollable.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 0 | 1 |
+| shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
@@ -1357,12 +1346,12 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/layout-slot-no-longer-assigned.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-fallback.html | REFTEST | 0 | 0 |
 | shadow-dom/leaktests/get-elements.html | OK | 4 | 1 |
-| shadow-dom/leaktests/html-collection.html | OK | 0 | 9 |
+| shadow-dom/leaktests/html-collection.html | OK | 8 | 1 |
 | shadow-dom/leaktests/selection.html | EXCLUDED (requires-browsing-context: a Selection over a rendered frame) | 0 | 0 |
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
 | shadow-dom/nested-hover-pseudo-class-removal.html | EXCLUDED (requires-user-input: a pointer action sequence over a :hover rule) | 0 | 0 |
-| shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 14 | 8 |
+| shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 10 | 12 |
 | shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | OK | 0 | 3 |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/commandfor.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
@@ -1395,7 +1384,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/slot-reconciliation-at-node-removal.html | OK | 1 | 0 |
 | shadow-dom/slotchange-customelements.html | OK | 0 | 1 |
 | shadow-dom/slotchange-event.html | OK | 32 | 0 |
-| shadow-dom/slotchange.html | TIMEOUT | 16 | 1 |
+| shadow-dom/slotchange.html | OK | 17 | 0 |
 | shadow-dom/slots-fallback-in-document.html | OK | 2 | 0 |
 | shadow-dom/slots-fallback.html | OK | 13 | 0 |
 | shadow-dom/slots-outside-shadow-dom.html | OK | 1 | 0 |
@@ -1413,8 +1402,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | OK | 1 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | OK | 1 | 1 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | OK | 0 | 2 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | OK | 2 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | OK | 2 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | OK | 1 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
@@ -1425,7 +1414,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/events/retargeting-focus-events/test-003.html | EXCLUDED (requires-browsing-context: focus events in a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | OK | 1 | 0 |
+| shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | OK | 0 | 1 |
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
@@ -1436,7 +1425,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-002.html | REFTEST | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 6 | 8 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 13 | 1 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 3 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 6 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 18 | 0 |
@@ -1463,16 +1452,16 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | shadow-dom/wheel-event-related-target.html | EXCLUDED (requires-user-input: a wheel action sequence driven through testdriver) | 0 | 0 |
 | custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html | OK | 5 | 0 |
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
-| custom-elements/CustomElementRegistry.html | OK | 45 | 1 |
+| custom-elements/CustomElementRegistry.html | OK | 43 | 3 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
 | custom-elements/Document-createElement.html | OK | 11 | 25 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
-| custom-elements/Document-createElementNS.html | OK | 4 | 0 |
+| custom-elements/Document-createElementNS.html | OK | 3 | 1 |
 | custom-elements/ElementInternals-accessibility.html | OK | 50 | 0 |
 | custom-elements/ElementInternals-accessibility.tentative.html | OK | 3 | 0 |
 | custom-elements/ElementInternals-role.html | EXCLUDED (requires-testdriver: every case reads a computed role out of the browser's own accessibility tree through testdriver.js) | 0 | 0 |
-| custom-elements/HTMLElement-attachInternals.html | OK | 3 | 1 |
+| custom-elements/HTMLElement-attachInternals.html | OK | 1 | 3 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
 | custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
 | custom-elements/adopted-callback.html | OK | 61 | 10 |
@@ -1485,7 +1474,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/createElement-reentrant-construction.window.js | OK | 2 | 0 |
 | custom-elements/cross-realm-callback-report-exception.html | ERROR (Cannot set properties of undefined (setting 'onerror')) | 0 | 0 |
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
-| custom-elements/customized-built-in-constructor-exceptions.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
+| custom-elements/customized-built-in-constructor-exceptions.html | ERROR (Class extends value undefined is not a constructor or null) | 0 | 0 |
 | custom-elements/disconnected-callbacks.html | OK | 35 | 5 |
 | custom-elements/element-internals-aria-element-reflection.html | OK | 5 | 4 |
 | custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
@@ -1508,7 +1497,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
-| custom-elements/form-associated/form-associated-callback.html | OK | 2 | 3 |
+| custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
 | custom-elements/form-associated/form-disabled-callback.html | OK | 1 | 9 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
@@ -1518,21 +1507,21 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/htmlconstructor/newtarget.html | OK | 2 | 8 |
 | custom-elements/microtasks-and-constructors.html | EXCLUDED (requires-script-execution: the case is which microtasks run while the parser is inside an element) | 0 | 0 |
 | custom-elements/overwritten-customElements-global.html | OK | 4 | 0 |
-| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (This document is not a stream) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-element-synchronously.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements-with-is.html | EXCLUDED (customized built-ins: the parser reading an is attribute) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
-| custom-elements/parser/parser-custom-element-in-foreign-content.html | OK | 1 | 0 |
+| custom-elements/parser/parser-custom-element-in-foreign-content.html | OK | 0 | 1 |
 | custom-elements/parser/parser-fallsback-to-unknown-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-sets-attributes-and-children.html | EXCLUDED (requires-script-execution: the reactions counted are the ones the parser enqueues between tags) | 0 | 0 |
 | custom-elements/parser/parser-uses-constructed-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
-| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (This document is not a stream) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
-| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 4 |
+| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 3 | 1 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 0 |
-| custom-elements/range-and-constructors.html | OK | 2 | 0 |
+| custom-elements/pseudo-class-defined.html | TIMEOUT | 11 | 1 |
+| custom-elements/range-and-constructors.html | OK | 0 | 2 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 0 | 3 |
 | custom-elements/reactions/AriaMixin-element-attributes.html | OK | 16 | 0 |
@@ -1591,50 +1580,50 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 | custom-elements/reactions/customized-builtins/HTMLTableColElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTimeElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/with-exceptions.html | OK | 0 | 1 |
-| custom-elements/registries/Construct.html | OK | 2 | 1 |
-| custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
-| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
-| custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 2 | 0 |
-| custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 2 | 3 |
-| custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
-| custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
+| custom-elements/registries/Construct.html | OK | 0 | 3 |
+| custom-elements/registries/CustomElementRegistry-define.html | OK | 0 | 3 |
+| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 3 | 10 |
+| custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 0 | 2 |
+| custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 0 | 5 |
+| custom-elements/registries/Document-createElement.html | ERROR (CustomElementRegistry is not a constructor) | 0 | 0 |
+| custom-elements/registries/Document-createElementNS.html | ERROR (CustomElementRegistry is not a constructor) | 0 | 0 |
 | custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
-| custom-elements/registries/Document-importNode.html | OK | 11 | 9 |
-| custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
-| custom-elements/registries/Element-customElementRegistry.html | OK | 10 | 1 |
-| custom-elements/registries/Element-innerHTML.html | OK | 8 | 4 |
-| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 10 | 2 |
+| custom-elements/registries/Document-importNode.html | ERROR (CustomElementRegistry is not a constructor) | 0 | 0 |
+| custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 0 | 3 |
+| custom-elements/registries/Element-customElementRegistry.html | OK | 4 | 7 |
+| custom-elements/registries/Element-innerHTML.html | OK | 1 | 11 |
+| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 6 | 6 |
 | custom-elements/registries/ShadowRoot-init-declarative.html | OK | 3 | 0 |
 | custom-elements/registries/ShadowRoot-innerHTML.html | OK | 0 | 4 |
 | custom-elements/registries/adoption.window.js | ERROR | 0 | 36 |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
-| custom-elements/registries/constructor-reentry-createElement.window.js | OK | 2 | 2 |
+| custom-elements/registries/constructor-reentry-createElement.window.js | OK | 0 | 4 |
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
 | custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
 | custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
 | custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
-| custom-elements/registries/element-mutation.html | OK | 15 | 0 |
+| custom-elements/registries/element-mutation.html | OK | 0 | 15 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
 | custom-elements/registries/initial-about-blank.window.js | OK | 0 | 1 |
 | custom-elements/registries/per-document.html | OK | 1 | 2 |
 | custom-elements/registries/pseudo-class-defined.window.js | OK | 0 | 3 |
 | custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | OK | 6 | 17 |
-| custom-elements/registries/scoped-registry-append.html | OK | 7 | 9 |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 6 | 8 |
+| custom-elements/registries/scoped-registry-append.html | OK | 5 | 11 |
+| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 1 | 13 |
 | custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
-| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 13 | 53 |
-| custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 10 | 2 |
-| custom-elements/registries/scoped-registry-initialize.html | OK | 27 | 0 |
-| custom-elements/registries/scoped-registry-registry-define-get-etc.html | OK | 7 | 0 |
-| custom-elements/registries/template.window.js | OK | 4 | 6 |
+| custom-elements/registries/scoped-registry-effective-global-registry.html | ERROR (CustomElementRegistry is not a constructor) | 0 | 0 |
+| custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 0 | 12 |
+| custom-elements/registries/scoped-registry-initialize.html | ERROR (CustomElementRegistry is not a constructor) | 0 | 0 |
+| custom-elements/registries/scoped-registry-registry-define-get-etc.html | OK | 0 | 7 |
+| custom-elements/registries/template.window.js | OK | 3 | 7 |
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
-| custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
+| custom-elements/state/ElementInternals-states.html | OK | 3 | 1 |
 | custom-elements/state/state-css-selector-nth-of.html | OK | 1 | 2 |
 | custom-elements/state/state-css-selector-shadow-dom.html | OK | 0 | 3 |
 | custom-elements/state/state-css-selector.html | OK | 5 | 5 |
-| custom-elements/state/state-pseudo-class.html | OK | 3 | 5 |
+| custom-elements/state/state-pseudo-class.html | OK | 5 | 3 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html | OK | 0 | 11 |
 | custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html | OK | 0 | 11 |
 | custom-elements/upgrading.html | EXCLUDED (requires-script-execution: the elements upgraded are ones the parser created around the script that defines them) | 0 | 0 |
@@ -1650,7 +1639,39 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/Comment-constructor.html
 
+- new Comment(): prototype chain: Cannot read properties of undefined (reading 'prototype')
+- new Comment(): instanceof: Right-hand side of 'instanceof' is not an object
 - new Comment() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
+
+### dom/nodes/DOMImplementation-createDocument.html
+
+- DOMImplementation.createDocument(namespace, qualifiedName, doctype): Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/DOMImplementation-createHTMLDocument.html
+
+- createHTMLDocument test 0: "","","": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 1: null,"null","null": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 2: undefined,undefined,"": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 3: "foo  bar baz","foo  bar baz","foo bar baz": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 4: "foo\t\tbar baz","foo\t\tbar baz","foo bar baz": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 5: "foo\n\nbar baz","foo\n\nbar baz","foo bar baz": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 6: "foo\f\fbar baz","foo\f\fbar baz","foo bar baz": Right-hand side of 'instanceof' is not an object
+- createHTMLDocument test 7: "foo\r\rbar baz","foo\r\rbar baz","foo bar baz": Right-hand side of 'instanceof' is not an object
+- Missing title argument: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-constructor.html
+
+- new Document(): interfaces: Right-hand side of 'instanceof' is not an object
+- new Document(): URL parsing: assert_equals: expected (undefined) undefined but got (function) function "class HTMLAnchorElement extends HTMLElement {
+
+### dom/nodes/Document-createComment.html
+
+- createComment("\v"): Right-hand side of 'instanceof' is not an object
+- createComment("a -- b"): Right-hand side of 'instanceof' is not an object
+- createComment("a-"): Right-hand side of 'instanceof' is not an object
+- createComment("-b"): Right-hand side of 'instanceof' is not an object
+- createComment(null): Right-hand side of 'instanceof' is not an object
+- createComment(undefined): Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Document-createElement-namespace.html
 
@@ -2178,9 +2199,26 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - createElementNS test in XHTML document: "foo:",null,null: assert_equals: expected "Dummy XHTML document" but got ""
 - createElementNS test in XML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XML document" but got ""
 - createElementNS test in XHTML document: "foo:","","INVALID_CHARACTER_ERR": assert_equals: expected "Dummy XHTML document" but got ""
+- Lower-case HTML element without a prefix: Right-hand side of 'instanceof' is not an object
+- Lower-case HTML element with a prefix: Right-hand side of 'instanceof' is not an object
+- Lower-case non-HTML element without a prefix: Right-hand side of 'instanceof' is not an object
+- Lower-case non-HTML element with a prefix: Right-hand side of 'instanceof' is not an object
+- Upper-case HTML element without a prefix: Right-hand side of 'instanceof' is not an object
+- Upper-case HTML element with a prefix: Right-hand side of 'instanceof' is not an object
+- Upper-case non-HTML element without a prefix: Right-hand side of 'instanceof' is not an object
+- Upper-case non-HTML element with a prefix: Right-hand side of 'instanceof' is not an object
+- null namespace: Right-hand side of 'instanceof' is not an object
+- undefined namespace: Right-hand side of 'instanceof' is not an object
+- empty string namespace: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Document-createEvent.https.html
 
+- BeforeUnloadEvent should be an alias for BeforeUnloadEvent.: Cannot read properties of undefined (reading 'prototype')
+- beforeunloadevent should be an alias for BeforeUnloadEvent.: Cannot read properties of undefined (reading 'prototype')
+- BEFOREUNLOADEVENT should be an alias for BeforeUnloadEvent.: Cannot read properties of undefined (reading 'prototype')
+- CompositionEvent should be an alias for CompositionEvent.: Cannot read properties of undefined (reading 'prototype')
+- compositionevent should be an alias for CompositionEvent.: Cannot read properties of undefined (reading 'prototype')
+- COMPOSITIONEVENT should be an alias for CompositionEvent.: Cannot read properties of undefined (reading 'prototype')
 - DeviceMotionEvent should be an alias for DeviceMotionEvent.: No event interface is named "DeviceMotionEvent"
 - createEvent('DeviceMotionEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
 - devicemotionevent should be an alias for DeviceMotionEvent.: No event interface is named "devicemotionevent"
@@ -2193,32 +2231,133 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - createEvent('deviceorientationevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
 - DEVICEORIENTATIONEVENT should be an alias for DeviceOrientationEvent.: No event interface is named "DEVICEORIENTATIONEVENT"
 - createEvent('DEVICEORIENTATIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- DragEvent should be an alias for DragEvent.: Cannot read properties of undefined (reading 'prototype')
+- dragevent should be an alias for DragEvent.: Cannot read properties of undefined (reading 'prototype')
+- DRAGEVENT should be an alias for DragEvent.: Cannot read properties of undefined (reading 'prototype')
+- HashChangeEvent should be an alias for HashChangeEvent.: Cannot read properties of undefined (reading 'prototype')
+- hashchangeevent should be an alias for HashChangeEvent.: Cannot read properties of undefined (reading 'prototype')
+- HASHCHANGEEVENT should be an alias for HashChangeEvent.: Cannot read properties of undefined (reading 'prototype')
+- KeyboardEvent should be an alias for KeyboardEvent.: Cannot read properties of undefined (reading 'prototype')
+- keyboardevent should be an alias for KeyboardEvent.: Cannot read properties of undefined (reading 'prototype')
+- KEYBOARDEVENT should be an alias for KeyboardEvent.: Cannot read properties of undefined (reading 'prototype')
+- MessageEvent should be an alias for MessageEvent.: Cannot read properties of undefined (reading 'prototype')
+- messageevent should be an alias for MessageEvent.: Cannot read properties of undefined (reading 'prototype')
+- MESSAGEEVENT should be an alias for MessageEvent.: Cannot read properties of undefined (reading 'prototype')
+- MouseEvent should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- mouseevent should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- MOUSEEVENT should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- MouseEvents should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- mouseevents should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- MOUSEEVENTS should be an alias for MouseEvent.: Cannot read properties of undefined (reading 'prototype')
+- StorageEvent should be an alias for StorageEvent.: Cannot read properties of undefined (reading 'prototype')
+- storageevent should be an alias for StorageEvent.: Cannot read properties of undefined (reading 'prototype')
+- STORAGEEVENT should be an alias for StorageEvent.: Cannot read properties of undefined (reading 'prototype')
+- TextEvent should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
+- textevent should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
+- TEXTEVENT should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
+- UIEvent should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+- uievent should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+- UIEVENT should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+- UIEvents should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+- uievents should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+- UIEVENTS should be an alias for UIEvent.: Cannot read properties of undefined (reading 'prototype')
+
+### dom/nodes/Document-createProcessingInstruction.html
+
+- Should get a ProcessingInstruction for target "xml:fail" and data "x".: Right-hand side of 'instanceof' is not an object
+- Should get a ProcessingInstruction for target "A·A" and data "x".: Right-hand side of 'instanceof' is not an object
+- Should get a ProcessingInstruction for target "a0" and data "x".: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-createTextNode.html
+
+- createTextNode("\v"): Right-hand side of 'instanceof' is not an object
+- createTextNode("a -- b"): Right-hand side of 'instanceof' is not an object
+- createTextNode("a-"): Right-hand side of 'instanceof' is not an object
+- createTextNode("-b"): Right-hand side of 'instanceof' is not an object
+- createTextNode(null): Right-hand side of 'instanceof' is not an object
+- createTextNode(undefined): Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-createTreeWalker.html
+
+- Optional arguments to createTreeWalker should be optional (1 passed).: assert_equals: expected 4294967295 but got -4097
+
+### dom/nodes/Document-doctype.html
+
+- Window document with doctype: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-getElementById.html
+
+- on static page: Right-hand side of 'instanceof' is not an object
+- Document.getElementById with a script-inserted element: Right-hand side of 'instanceof' is not an object
+- add id attribute via innerHTML: Right-hand side of 'instanceof' is not an object
+- add id attribute via outerHTML: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-getElementsByClassName.html
+
+- getElementsByClassName() should be a live collection: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Document-getElementsByTagName.html
 
+- Interfaces: Right-hand side of 'instanceof' is not an object
 - Shouldn't be able to set unsigned properties on a HTMLCollection (non-strict mode): assert_equals: expected (undefined) undefined but got (string) "foopy"
 - Shouldn't be able to set unsigned properties on a HTMLCollection (strict mode): assert_throws_js: function "function() {
+- Should be able to set expando shadowing a proto prop (item): Cannot read properties of undefined (reading 'prototype')
+- Should be able to set expando shadowing a proto prop (namedItem): Cannot read properties of undefined (reading 'prototype')
+- getElementsByTagName() should be a live collection: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-getElementsByTagNameNS.html
+
+- Document.getElementsByTagNameNS: Right-hand side of 'instanceof' is not an object
+- getElementsByTagNameNS() should be a live collection: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Document-implementation.html
+
+- Getting implementation off the same document: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/DocumentType-literal.html
+
+- DocumentType literals: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Element-closest.html
 
-- Element.closest with context node 'test11' and selector ':invalid': e.checkValidity is not a function
-- Element.closest with context node 'test4' and selector ':scope': assert_equals: :scope expected "test4" but got "test2"
-- Element.closest with context node 'test4' and selector 'select > :scope': assert_equals: select > :scope expected "test4" but got ""
-- Element.closest with context node 'test4' and selector ':has(> :scope)': assert_equals: :has(> :scope) expected "test3" but got "test5"
+- Element.closest with context node 'test11' and selector ':invalid': assert_equals: :invalid expected "test2" but got ""
+
+### dom/nodes/Element-getElementsByClassName.html
+
+- Interface should be correct.: Right-hand side of 'instanceof' is not an object
+- getElementsByClassName() should be a live collection: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Element-getElementsByTagName.html
 
+- Interfaces: Right-hand side of 'instanceof' is not an object
 - Shouldn't be able to set unsigned properties on a HTMLCollection (non-strict mode): assert_equals: expected (undefined) undefined but got (string) "foopy"
 - Shouldn't be able to set unsigned properties on a HTMLCollection (strict mode): assert_throws_js: function "function() {
+- Should be able to set expando shadowing a proto prop (item): Cannot read properties of undefined (reading 'prototype')
+- Should be able to set expando shadowing a proto prop (namedItem): Cannot read properties of undefined (reading 'prototype')
+- getElementsByTagName() should be a live collection: Right-hand side of 'instanceof' is not an object
 
-### dom/nodes/Element-matches-namespaced-elements.html
+### dom/nodes/Element-getElementsByTagNameNS.html
 
-- has a namespace, *|, matches: '*,,h' is not a valid selector
-- has a namespace, *|, webkitMatchesSelector: '*,,h' is not a valid selector
+- Element.getElementsByTagNameNS: Right-hand side of 'instanceof' is not an object
+- getElementsByTagNameNS() should be a live collection: Right-hand side of 'instanceof' is not an object
+
+### dom/nodes/Element-matches.html
+
+- NULL Element.matches no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+- UNDEFINED Element.matches no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+
+### dom/nodes/Element-webkitMatchesSelector.html
+
+- NULL Element.webkitMatchesSelector no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+- UNDEFINED Element.webkitMatchesSelector no parameter: assert_throws_js: This should throw a TypeError. undefined is not a constructor
+
+### dom/nodes/MutationObserver-callback-arguments.html
+
+- Callback is invoked with |this| value of MutationObserver and two arguments: Right-hand side of 'instanceof' is not an object
 
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
-- Custom element reactions follow script execution: A customized built-in element is not implemented here
+- Custom element reactions follow script execution: Class extends value undefined is not a constructor or null
 
 ### dom/nodes/Node-appendChild.html
 
@@ -2226,9 +2365,93 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Adopting an orphan: Cannot read properties of undefined (reading 'document')
 - Adopting a non-orphan: Cannot read properties of undefined (reading 'document')
 
+### dom/nodes/Node-cloneNode-XMLDocument.html
+
+- Created with createDocument: assert_equals: Precondition check: document.implementation.createDocument() creates an XMLDocument expected (undefined) undefined but got (function) function "class XMLDocument extends Document {
+
 ### dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js
 
-- cloneNode() and document's allow declarative shadow roots: doc.write is not a function
+- cloneNode() and document's allow declarative shadow roots: This document is not a stream
+
+### dom/nodes/Node-cloneNode.html
+
+- createElement(a): Right-hand side of 'instanceof' is not an object
+- createElement(area): Right-hand side of 'instanceof' is not an object
+- createElement(audio): Right-hand side of 'instanceof' is not an object
+- createElement(base): Right-hand side of 'instanceof' is not an object
+- createElement(body): Right-hand side of 'instanceof' is not an object
+- createElement(br): Right-hand side of 'instanceof' is not an object
+- createElement(button): Right-hand side of 'instanceof' is not an object
+- createElement(canvas): Right-hand side of 'instanceof' is not an object
+- createElement(caption): Right-hand side of 'instanceof' is not an object
+- createElement(col): Right-hand side of 'instanceof' is not an object
+- createElement(colgroup): Right-hand side of 'instanceof' is not an object
+- createElement(data): Right-hand side of 'instanceof' is not an object
+- createElement(datalist): Right-hand side of 'instanceof' is not an object
+- createElement(dialog): Right-hand side of 'instanceof' is not an object
+- createElement(del): Right-hand side of 'instanceof' is not an object
+- createElement(dir): Right-hand side of 'instanceof' is not an object
+- createElement(div): Right-hand side of 'instanceof' is not an object
+- createElement(dl): Right-hand side of 'instanceof' is not an object
+- createElement(embed): Right-hand side of 'instanceof' is not an object
+- createElement(fieldset): Right-hand side of 'instanceof' is not an object
+- createElement(font): Right-hand side of 'instanceof' is not an object
+- createElement(form): Right-hand side of 'instanceof' is not an object
+- createElement(frame): Right-hand side of 'instanceof' is not an object
+- createElement(frameset): Right-hand side of 'instanceof' is not an object
+- createElement(h1): Right-hand side of 'instanceof' is not an object
+- createElement(h2): Right-hand side of 'instanceof' is not an object
+- createElement(h3): Right-hand side of 'instanceof' is not an object
+- createElement(h4): Right-hand side of 'instanceof' is not an object
+- createElement(h5): Right-hand side of 'instanceof' is not an object
+- createElement(h6): Right-hand side of 'instanceof' is not an object
+- createElement(head): Right-hand side of 'instanceof' is not an object
+- createElement(hr): Right-hand side of 'instanceof' is not an object
+- createElement(html): Right-hand side of 'instanceof' is not an object
+- createElement(iframe): Right-hand side of 'instanceof' is not an object
+- createElement(img): Right-hand side of 'instanceof' is not an object
+- createElement(input): Right-hand side of 'instanceof' is not an object
+- createElement(ins): Right-hand side of 'instanceof' is not an object
+- createElement(label): Right-hand side of 'instanceof' is not an object
+- createElement(legend): Right-hand side of 'instanceof' is not an object
+- createElement(li): Right-hand side of 'instanceof' is not an object
+- createElement(map): Right-hand side of 'instanceof' is not an object
+- createElement(meta): Right-hand side of 'instanceof' is not an object
+- createElement(meter): Right-hand side of 'instanceof' is not an object
+- createElement(object): Right-hand side of 'instanceof' is not an object
+- createElement(ol): Right-hand side of 'instanceof' is not an object
+- createElement(optgroup): Right-hand side of 'instanceof' is not an object
+- createElement(option): Right-hand side of 'instanceof' is not an object
+- createElement(output): Right-hand side of 'instanceof' is not an object
+- createElement(p): Right-hand side of 'instanceof' is not an object
+- createElement(param): Right-hand side of 'instanceof' is not an object
+- createElement(pre): Right-hand side of 'instanceof' is not an object
+- createElement(progress): Right-hand side of 'instanceof' is not an object
+- createElement(q): Right-hand side of 'instanceof' is not an object
+- createElement(script): Right-hand side of 'instanceof' is not an object
+- createElement(select): Right-hand side of 'instanceof' is not an object
+- createElement(source): Right-hand side of 'instanceof' is not an object
+- createElement(span): Right-hand side of 'instanceof' is not an object
+- createElement(table): Right-hand side of 'instanceof' is not an object
+- createElement(tbody): Right-hand side of 'instanceof' is not an object
+- createElement(td): Right-hand side of 'instanceof' is not an object
+- createElement(template): Right-hand side of 'instanceof' is not an object
+- createElement(textarea): Right-hand side of 'instanceof' is not an object
+- createElement(th): Right-hand side of 'instanceof' is not an object
+- createElement(time): Right-hand side of 'instanceof' is not an object
+- createElement(title): Right-hand side of 'instanceof' is not an object
+- createElement(tr): Right-hand side of 'instanceof' is not an object
+- createElement(track): Right-hand side of 'instanceof' is not an object
+- createElement(ul): Right-hand side of 'instanceof' is not an object
+- createElement(video): Right-hand side of 'instanceof' is not an object
+- createElement(unknown): Right-hand side of 'instanceof' is not an object
+- createElementNS HTML: Right-hand side of 'instanceof' is not an object
+- createProcessingInstruction: Right-hand side of 'instanceof' is not an object
+- createAttribute: Right-hand side of 'instanceof' is not an object
+- createAttributeNS: Right-hand side of 'instanceof' is not an object
+- implementation.createDocumentType: Right-hand side of 'instanceof' is not an object
+- node with children: Right-hand side of 'instanceof' is not an object
+- Node with custom prototype: Cannot read properties of undefined (reading 'prototype')
 
 ### dom/nodes/Node-removeChild.html
 
@@ -2242,16 +2465,36 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Passing a non-detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
 - Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
 
+### dom/nodes/ParentNode-children.html
+
+- ParentNode.children should be a live collection: Right-hand side of 'instanceof' is not an object
+
 ### dom/nodes/Text-constructor.html
 
+- new Text(): prototype chain: Cannot read properties of undefined (reading 'prototype')
+- new Text(): instanceof: Right-hand side of 'instanceof' is not an object
 - new Text() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
 
 ### dom/nodes/attach-shadow-realm-after-adoption.html
 
 - attachShadow() invoked via another realm's method uses the node document realm: Cannot read properties of undefined (reading 'prototype')
 
+### dom/nodes/attributes-namednodemap.html
+
+- setNamedItem and removeNamedItem on `attributes` should not interfere with existing method names: Cannot read properties of undefined (reading 'prototype')
+
+### dom/nodes/attributes.html
+
+- Own property correctness with non-namespaced attribute before same-name namespaced one: Right-hand side of 'instanceof' is not an object
+- Own property correctness with namespaced attribute before same-name non-namespaced one: Right-hand side of 'instanceof' is not an object
+- Own property correctness with two namespaced attributes with the same name-with-prefix: Right-hand side of 'instanceof' is not an object
+- Own property names should only include all-lowercase qualified names for an HTML element in an HTML document: Right-hand side of 'instanceof' is not an object
+- Own property names should include all qualified names for a non-HTML element in an HTML document: Right-hand side of 'instanceof' is not an object
+- Own property names should include all qualified names for an HTML element in a non-HTML document: Right-hand side of 'instanceof' is not an object
+
 ### dom/nodes/create-element-realm-after-adoption.html
 
+- Built-in element: innerHTML creates it in the node document's realm: Right-hand side of 'instanceof' is not an object
 - Built-in element: the created element's realm is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
 - Custom element: innerHTML upgrades it using the node document's registry: assert_true: <x-baz> uses the node document's (top-level) registry expected true got false
 - Custom element: the registry used is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
@@ -2268,37 +2511,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Node.moveBefore should preserve CSS animation state (transform): Test timed out
 
-### dom/nodes/moveBefore/continue-css-transition-left-pseudo.html
-
-- Node.moveBefore should preserve CSS transition state on pseudo-elements (left): Test timed out
-
-### dom/nodes/moveBefore/continue-css-transition-left.html
-
-- Node.moveBefore should preserve CSS transition state (left): Test timed out
-
-### dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html
-
-- Node.moveBefore should preserve CSS transition state on pseudo-elements (transform): Test timed out
-
 ### dom/nodes/moveBefore/continue-css-transition-transform.html
 
-- Node.moveBefore should preserve CSS transition state (transform): Test timed out
+- Node.moveBefore should preserve CSS transition state (transform): assert_equals: expected 200 but got 0
 
 ### dom/nodes/moveBefore/css-animation-commit-styles.html
 
 - Calling commitStyles after Node.moveBefore should commit mid-transition value: Test timed out
-
-### dom/nodes/moveBefore/css-transition-cross-shadow.html
-
-- Moving an element with a transition across shadow boundaries preserves the transition: Test timed out
-
-### dom/nodes/moveBefore/css-transition-to-disconnected-document.html
-
-- Moving an element with a transition to a disconnected document should reset the transitionm state: Test timed out
-
-### dom/nodes/moveBefore/css-transition-trigger.html
-
-- Node.moveBefore should trigger CSS transition state (left) if needed: Test timed out
 
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
@@ -2309,9 +2528,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Element loses hover when moved to different position: assert_true: expected true got false
 - Hover works immediately after moved: assert_true: expected true got false
 
-### dom/nodes/moveBefore/moveBefore-dir.html
+### dom/nodes/moveBefore/live-range-updates.html
 
-- moveBefore() correctly updates the computed dir for moved nodes: assert_false: expected false got true
+- moveBefore still results in range startContainer snapping up to parent when startContainer is moved: Range is not a constructor
+- moveBefore still causes range startContainer to snap up to parent, when startContainer ancestor is moved: Range is not a constructor
+- moveBefore still causes range endContainer to snap up to parent, when endContainer ancestor is moved: Range is not a constructor
 
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
@@ -2327,7 +2548,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/nodes/moveBefore/pointer-events.html
 
-- Pointer capture should not be released when moving: promise_test: Unhandled rejection with value: object "TypeError: item.setPointerCapture is not a function"
+- Pointer capture should not be released when moving: promise_test: Unhandled rejection with value: object "NotSupportedError: Pointer capture is not implemented"
 
 ### dom/nodes/moveBefore/preserve-render-blocking-style.html
 
@@ -2383,9 +2604,165 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Text node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 - Comment node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
 
-### dom/nodes/querySelector-mixed-case.html
+### dom/traversal/TreeWalker-basic.html
 
-- Mixed HTML/SVG/MathML tree with various mixed-case attributes: ',testAttr,,,alpha,, s,' is not a valid selector
+- Construct a TreeWalker by document.createTreeWalker(root).: assert_equals: whatToShow expected 4294967295 but got -4097
+- Construct a TreeWalker by document.createTreeWalker(root, undefined, undefined).: assert_equals: whatToShow expected 4294967295 but got -4097
+
+### dom/traversal/TreeWalker.html
+
+- document.createTreeWalker(paras[0], 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0], 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0], 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0], 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0].firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0].firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0].firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[0].firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1].firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1].firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1].firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1].firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[5].firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[5].firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[5].firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[5].firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1.firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1.firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1.firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara1.firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1.firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1.firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1.firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara1.firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(document, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(document, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(document, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(document, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedDiv, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedDiv, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedDiv, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedDiv, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoc, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoc, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoc, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoc, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara2, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara2, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara2, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignPara2, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoc, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoc, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoc, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoc, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlElement, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlElement, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlElement, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlElement, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedTextNode, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedTextNode, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedTextNode, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedTextNode, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignTextNode, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignTextNode, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignTextNode, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignTextNode, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(processingInstruction, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(processingInstruction, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(processingInstruction, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(processingInstruction, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedProcessingInstruction, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedProcessingInstruction, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedProcessingInstruction, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedProcessingInstruction, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(comment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(comment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(comment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(comment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedComment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedComment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedComment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedComment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(docfrag, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(docfrag, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(docfrag, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(docfrag, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(doctype, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(doctype, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(doctype, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(doctype, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoctype, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoctype, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoctype, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDoctype, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1], 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1], 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1], 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(paras[1], 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2.firstChild, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2.firstChild, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2.firstChild, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedPara2.firstChild, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(testDiv, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(testDiv, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(testDiv, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(testDiv, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlElement, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlElement, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlElement, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlElement, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignTextNode, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignTextNode, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignTextNode, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignTextNode, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlTextNode, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlTextNode, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlTextNode, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlTextNode, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlTextNode, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlTextNode, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlTextNode, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlTextNode, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlComment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlComment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlComment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlComment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignComment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignComment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignComment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignComment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignComment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignComment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignComment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedForeignComment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlComment, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlComment, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlComment, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(detachedXmlComment, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDocfrag, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDocfrag, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDocfrag, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(foreignDocfrag, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDocfrag, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDocfrag, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDocfrag, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDocfrag, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoctype, 0xFFFFFFFF, null): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoctype, 0xFFFFFFFF, (function(node) { return true })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoctype, 0xFFFFFFFF, (function(node) { return false })): assert_equals: .whatToShow expected 4294967295 but got -4097
+- document.createTreeWalker(xmlDoctype, 0xFFFFFFFF, (function(node) { return node.nodeName[0] == '#' })): assert_equals: .whatToShow expected 4294967295 but got -4097
 
 ### dom/collections/HTMLCollection-as-prototype.html
 
@@ -2428,32 +2805,34 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - a.relList in http://www.w3.org/2000/svg namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 - a.relList in http://www.w3.org/1998/Math/MathML namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 
-### dom/events/Body-FrameSet-Event-Handlers.html
+### dom/events/AddEventListenerOptions-once.any.js
 
-- Reflect HTMLBodyElement.onblur: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onblur: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onerror: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onerror: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onload: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onload: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLBodyElement.onresize: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
-- Reflect HTMLFrameSetElement.onresize: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLFrameSetElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
+- Once listener should be invoked only once: EventTarget is not a constructor
+- Once listener should be invoked only once even if the event is nested: EventTarget is not a constructor
+- Once listener should be added / removed like normal listeners: EventTarget is not a constructor
+- Multiple once listeners should be invoked even if the stopImmediatePropagation is set: EventTarget is not a constructor
+
+### dom/events/AddEventListenerOptions-passive.any.js
+
+- Supports passive option on addEventListener only: EventTarget is not a constructor
+- preventDefault should be ignored if-and-only-if the passive option is true: EventTarget is not a constructor
+- returnValue should be ignored if-and-only-if the passive option is true: EventTarget is not a constructor
+- passive behavior of one listener should be unaffected by the presence of other listeners: EventTarget is not a constructor
+- Equivalence of option values: EventTarget is not a constructor
+
+### dom/events/AddEventListenerOptions-signal.any.js
+
+- Passing an AbortSignal to addEventListener options should allow removing a listener: EventTarget is not a constructor
+- Passing an AbortSignal to addEventListener does not prevent removeEventListener: EventTarget is not a constructor
+- Passing an AbortSignal to addEventListener works with the once flag: EventTarget is not a constructor
+- Removing a once listener works with a passed signal: EventTarget is not a constructor
+- Passing an AbortSignal to multiple listeners: EventTarget is not a constructor
+- Passing an AbortSignal to addEventListener works with the capture flag: EventTarget is not a constructor
+- Aborting from a listener does not call future listeners: EventTarget is not a constructor
+- Adding then aborting a listener in another listener does not call it: EventTarget is not a constructor
+- Aborting from a nested listener should remove it: EventTarget is not a constructor
+- Passing null as the signal should throw: EventTarget is not a constructor
+- Passing null as the signal should throw (listener is also null): EventTarget is not a constructor
 
 ### dom/events/Event-dispatch-bubbles-false.html
 
@@ -2465,21 +2844,50 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/Event-dispatch-click.html
 
-- pick the first with activation behavior <a href>: Test timed out
+- basic with dispatchEvent(): MouseEvent is not a constructor
+- look at parents only when event bubbles: MouseEvent is not a constructor
+- look at parents when event bubbles: MouseEvent is not a constructor
+- pick the first with activation behavior <input type=checkbox>: MouseEvent is not a constructor
+- pick the first with activation behavior <a href>: MouseEvent is not a constructor
+- pick the first with activation behavior <input type=radio>: MouseEvent is not a constructor
+- event state during post-click handling: MouseEvent is not a constructor
+- redispatch during post-click handling: MouseEvent is not a constructor
+- disconnected checkbox should be checked from dispatchEvent(new MouseEvent('click')): MouseEvent is not a constructor
+- disconnected radio should be checked from dispatchEvent(new MouseEvent('click')): MouseEvent is not a constructor
+- disabled checkbox should be checked from dispatchEvent(new MouseEvent("click")): MouseEvent is not a constructor
+- disabled radio should be checked from dispatchEvent(new MouseEvent("click")): MouseEvent is not a constructor
+- disabled checkbox should fire onclick: MouseEvent is not a constructor
+- disabled radio should fire onclick: MouseEvent is not a constructor
+- disabled checkbox should get legacy-canceled-activation behavior: MouseEvent is not a constructor
+- disabled radio should get legacy-canceled-activation behavior: MouseEvent is not a constructor
+- disabled checkbox should get legacy-canceled-activation behavior 2: MouseEvent is not a constructor
+- disabled radio should get legacy-canceled-activation behavior 2: MouseEvent is not a constructor
 - disabling checkbox in onclick listener shouldn't suppress oninput: Test timed out
 - disabling checkbox in onclick listener shouldn't suppress onchange: Test timed out
 - disabling radio in onclick listener shouldn't suppress oninput: Test timed out
 - disabling radio in onclick listener shouldn't suppress onchange: Test timed out
+- disabled submit button should not activate: MouseEvent is not a constructor
+- submit button should not activate if the event listener disables it: MouseEvent is not a constructor
 
 ### dom/events/Event-dispatch-click.tentative.html
 
-- checkbox morphed into another type should not mutate checked state: assert_false: expected false got true
-- radio morphed into another type should not steal the existing checked state: assert_false: expected false got true
+- disabled checkbox should not be checked from label click by dispatchEvent: MouseEvent is not a constructor
+- disabled radio should not be checked from label click by dispatchEvent: MouseEvent is not a constructor
+- checkbox morphed into another type should not mutate checked state: MouseEvent is not a constructor
+- radio morphed into another type should not steal the existing checked state: MouseEvent is not a constructor
+
+### dom/events/Event-dispatch-detached-input-and-change.html
+
+- detached checkbox should not emit input or change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
+- detached radio should not emit input or change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
+- attached checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
+- attached radio should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
+- attached to shadow dom checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
+- attached to shadow dom radio should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not a constructor
 
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
-- CSS Transitions transitionrun, transitionstart, transitionend events fire on disabled form elements: Test timed out
-- CSS Transitions transitioncancel event fires on disabled form elements: 
+- CSS Transitions transitioncancel event fires on disabled form elements: Test timed out
 - CSS Animation animationstart, animationiteration, animationend fire on disabled form elements: 
 - CSS Animation's animationcancel event fires on disabled form elements: 
 - Real clicks on disabled elements must not dispatch events.: 
@@ -2489,18 +2897,60 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Redispatching DOMContentLoaded event after being dispatched: Cannot read properties of undefined (reading 'isTrusted')
 - Redispatching mouseup event whose default action dispatches a click event: assert_true: Failed to send mouse click due to Error: element click intercepted error expected true got false
 
+### dom/events/Event-init-while-dispatching.html
+
+- Calling initKeyboardEvent while dispatching.: KeyboardEvent is not a constructor
+- Calling initMouseEvent while dispatching.: MouseEvent is not a constructor
+- Calling initUIEvent while dispatching.: UIEvent is not a constructor
+
 ### dom/events/Event-stopPropagation-cancel-bubbling.html
 
-- Event-stopPropagation-cancel-bubbling: assert_unreached: stopPropagation in the capture handler should have canceled this bubble handler. Reached unreachable code
+- Event-stopPropagation-cancel-bubbling: MouseEvent is not a constructor
 
 ### dom/events/Event-subclasses-constructors.html
 
-- UIEvent constructor (argument with non-default values): There is no window for an event to come through
+- UIEvent constructor (no argument): self[iface] is not a constructor
+- UIEvent constructor (undefined argument): self[iface] is not a constructor
+- UIEvent constructor (null argument): self[iface] is not a constructor
+- UIEvent constructor (empty argument): self[iface] is not a constructor
+- UIEvent constructor (argument with default values): self[iface] is not a constructor
+- UIEvent constructor (argument with non-default values): self[iface] is not a constructor
+- FocusEvent constructor (no argument): Right-hand side of 'instanceof' is not an object
+- FocusEvent constructor (undefined argument): Right-hand side of 'instanceof' is not an object
+- FocusEvent constructor (null argument): Right-hand side of 'instanceof' is not an object
+- FocusEvent constructor (empty argument): Right-hand side of 'instanceof' is not an object
+- FocusEvent constructor (argument with default values): Right-hand side of 'instanceof' is not an object
 - FocusEvent constructor (argument with non-default values): There is no window for an event to come through
-- MouseEvent constructor (argument with non-default values): There is no window for an event to come through
-- WheelEvent constructor (argument with non-default values): There is no window for an event to come through
-- KeyboardEvent constructor (argument with non-default values): There is no window for an event to come through
-- CompositionEvent constructor (argument with non-default values): There is no window for an event to come through
+- MouseEvent constructor (no argument): self[iface] is not a constructor
+- MouseEvent constructor (undefined argument): self[iface] is not a constructor
+- MouseEvent constructor (null argument): self[iface] is not a constructor
+- MouseEvent constructor (empty argument): self[iface] is not a constructor
+- MouseEvent constructor (argument with default values): self[iface] is not a constructor
+- MouseEvent constructor (argument with non-default values): self[iface] is not a constructor
+- WheelEvent constructor (no argument): self[iface] is not a constructor
+- WheelEvent constructor (undefined argument): self[iface] is not a constructor
+- WheelEvent constructor (null argument): self[iface] is not a constructor
+- WheelEvent constructor (empty argument): self[iface] is not a constructor
+- WheelEvent constructor (argument with default values): self[iface] is not a constructor
+- WheelEvent constructor (argument with non-default values): self[iface] is not a constructor
+- KeyboardEvent constructor (no argument): self[iface] is not a constructor
+- KeyboardEvent constructor (undefined argument): self[iface] is not a constructor
+- KeyboardEvent constructor (null argument): self[iface] is not a constructor
+- KeyboardEvent constructor (empty argument): self[iface] is not a constructor
+- KeyboardEvent constructor (argument with default values): self[iface] is not a constructor
+- KeyboardEvent constructor (argument with non-default values): self[iface] is not a constructor
+- CompositionEvent constructor (no argument): self[iface] is not a constructor
+- CompositionEvent constructor (undefined argument): self[iface] is not a constructor
+- CompositionEvent constructor (null argument): self[iface] is not a constructor
+- CompositionEvent constructor (empty argument): self[iface] is not a constructor
+- CompositionEvent constructor (argument with default values): self[iface] is not a constructor
+- CompositionEvent constructor (argument with non-default values): self[iface] is not a constructor
+
+### dom/events/Event-timestamp-high-resolution.html
+
+- Constructed MouseEvent timestamp should be high resolution and have the same time origin as performance.now(): window[eventType] is not a constructor
+- Constructed KeyboardEvent timestamp should be high resolution and have the same time origin as performance.now(): window[eventType] is not a constructor
+- Constructed WheelEvent timestamp should be high resolution and have the same time origin as performance.now(): window[eventType] is not a constructor
 
 ### dom/events/Event-timestamp-high-resolution.https.html
 
@@ -2508,7 +2958,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### dom/events/Event-timestamp-safe-resolution.html
 
-- Event timestamp should not have a resolution better than 5 microseconds: assert_greater_than_equal: expected a number greater than or equal to 5 but got 1
+- Event timestamp should not have a resolution better than 5 microseconds: MouseEvent is not a constructor
 
 ### dom/events/EventListener-handleEvent.html
 
@@ -2516,10 +2966,37 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - throws if `handleEvent` is falsy and not callable: assert_true: Timed out waiting for error expected true got false
 - throws if `handleEvent` is thruthy and not callable: assert_true: Timed out waiting for error expected true got false
 
+### dom/events/EventTarget-add-remove-listener.any.js
+
+- Removing an event listener without explicit capture arg should succeed: EventTarget is not a constructor
+
+### dom/events/EventTarget-addEventListener.any.js
+
+- Adding a null event listener should succeed: EventTarget is not a constructor
+
+### dom/events/EventTarget-constructible.any.js
+
+- A constructed EventTarget can be used as expected: EventTarget is not a constructor
+- A constructed EventTarget implements dispatch correctly: EventTarget is not a constructor
+- EventTarget can be subclassed: Class extends value undefined is not a constructor or null
+
 ### dom/events/EventTarget-dispatchEvent.html
 
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceMotionEvent).: No event interface is named "DeviceMotionEvent"
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (DeviceOrientationEvent).: No event interface is named "DeviceOrientationEvent"
+
+### dom/events/KeyEvent-initKeyEvent.html
+
+- KeyboardEvent.initKeyEvent shouldn't be defined (created by constructor): KeyboardEvent is not a constructor
+- KeyboardEvent.prototype.initKeyEvent shouldn't be defined: Cannot read properties of undefined (reading 'prototype')
+
+### dom/events/legacy-pre-activation-behavior.window.js
+
+- Use NONE phase during legacy-pre-activation behavior: MouseEvent is not a constructor
+
+### dom/events/mouse-event-retarget.html
+
+- offsetX is correctly adjusted: MouseEvent is not a constructor
 
 ### dom/events/passive-by-default.html
 
@@ -2538,69 +3015,93 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Retarget a shadow-tree relatedTarget: XMLHttpRequest is not defined
 - Reset if target pointed to a shadow tree pre-dispatch: XMLHttpRequest is not defined
 - Reset targets on early return: assert_equals: expected null but got DocumentFragment node with 2 children
-- Reset targets before activation behavior: assert_equals: expected null but got Element node <input type="checkbox"></input>
+- Reset targets before activation behavior: MouseEvent is not a constructor
+
+### dom/ranges/Range-attribute-nodes.html
+
+- setStart() to an Attr node at offset 0 is allowed: Range is not a constructor
+- setEnd() to an Attr node at offset 0 is allowed: Range is not a constructor
+- setStart() to an Attr node past its length (0) throws IndexSizeError: Range is not a constructor
+- setEnd() to an Attr node past its length (0) throws IndexSizeError: Range is not a constructor
+- setStartBefore() with an Attr node throws InvalidNodeTypeError (null parent): Range is not a constructor
+- setStartAfter() with an Attr node throws InvalidNodeTypeError (null parent): Range is not a constructor
+- setEndBefore() with an Attr node throws InvalidNodeTypeError (null parent): Range is not a constructor
+- setEndAfter() with an Attr node throws InvalidNodeTypeError (null parent): Range is not a constructor
+- selectNode() with an Attr node throws InvalidNodeTypeError (null parent): Range is not a constructor
+- selectNodeContents() on an Attr node selects an empty range rooted at the Attr: Range is not a constructor
+- comparePoint() with an Attr node not sharing the range's root throws WrongDocumentError: Range is not a constructor
+- isPointInRange() with an Attr node not sharing the range's root returns false: Range is not a constructor
+- intersectsNode() with an Attr node not sharing the range's root returns false: Range is not a constructor
+- comparePoint() with an Attr node sharing the range's root: Range is not a constructor
+- isPointInRange() with an Attr node sharing the range's root: Range is not a constructor
+- intersectsNode() with an Attr node sharing the range's root returns true: Range is not a constructor
+- compareBoundaryPoints() across an Attr-rooted range and a document-rooted range throws WrongDocumentError: Range is not a constructor
+- compareBoundaryPoints() between two ranges rooted at the same Attr node returns 0: Range is not a constructor
+- deleteContents() on an Attr-rooted range is a no-op: Range is not a constructor
+- extractContents() on an Attr-rooted range returns an empty fragment: Range is not a constructor
+- cloneContents() on an Attr-rooted range returns an empty fragment: Range is not a constructor
+- insertNode() into an Attr-rooted range throws HierarchyRequestError: Range is not a constructor
+- surroundContents() on an Attr-rooted range throws HierarchyRequestError: Range is not a constructor
+- insertNode() with an Attr node argument throws HierarchyRequestError: Range is not a constructor
+- cloneRange() preserves an Attr-rooted range: Range is not a constructor
+- stringifying an Attr-rooted range returns the empty string: Range is not a constructor
+
+### dom/ranges/Range-constructor.html
+
+- Range constructor test: Range is not a constructor
+
+### dom/ranges/Range-intersectsNode-2.html
+
+- Range.intersectsNode() simple cases: Range is not a constructor
+
+### dom/ranges/Range-stringifier.html
+
+- Range stringifier: Range is not a constructor
+
+### dom/ranges/StaticRange-constructor.html
+
+- Construct static range with Element container: StaticRange is not a constructor
+- Construct static range with Text container: StaticRange is not a constructor
+- Construct static range with Element startContainer and Text endContainer: StaticRange is not a constructor
+- Construct static range with Text startContainer and Element endContainer: StaticRange is not a constructor
+- Construct static range with ProcessingInstruction container: StaticRange is not a constructor
+- Construct static range with Comment container: StaticRange is not a constructor
+- Construct static range with CDATASection container: StaticRange is not a constructor
+- Construct static range with Document container: StaticRange is not a constructor
+- Construct static range with DocumentFragment container: StaticRange is not a constructor
+- Construct collapsed static range: StaticRange is not a constructor
+- Construct inverted static range: StaticRange is not a constructor
+- Construct static range with offset greater than length: StaticRange is not a constructor
+- Construct static range with standalone Node container: StaticRange is not a constructor
+- Construct static range with endpoints in disconnected trees: StaticRange is not a constructor
+- Construct static range with endpoints in disconnected documents: StaticRange is not a constructor
+- Throw on DocumentType or Attr container: assert_throws_dom: throw a InvalidNodeTypeError when a DocumentType is passed as a startContainer or endContainer function "function() {
 
 ### selection/bidi/modify-extend-by-character.html
 
-- LTR text in LTR paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
-- LTR text in LTR paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
-- RTL text in RTL paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
-- RTL text in RTL paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
-- RTL text in LTR paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
-- RTL text in LTR paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
-- LTR text in RTL paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
-- LTR text in RTL paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
-- LTR-RTL context in LTR paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 7 but got 4
-- LTR-RTL context in LTR paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 8 but got 11
-- RTL-LTR context in LTR paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 10 but got 7
-- RTL-LTR context in LTR paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 11 but got 14
-- Mixed context in auto-dir paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 8 but got 5
-- Mixed context in auto-dir paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 14 but got 17
-- LTR text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
-- LTR text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
-- RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
-- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
-- RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
-- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
-- LTR text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
-- LTR text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
-- LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 4
-- LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 11
-- RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 7
-- RTL-LTR context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 7 but got 14
-- Mixed context in auto-dir paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 5 but got 17
-- Mixed context in auto-dir paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 17 but got 5
+- RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
+- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 11
+- RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
+- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 10
+- LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 7
+- LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 8
+- RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 10
+- RTL-LTR context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 7 but got 11
+- Mixed context in auto-dir paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 5 but got 18
+- Mixed context in auto-dir paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 17 but got 2
 
 ### selection/bidi/modify-move-by-character.html
 
-- LTR text in LTR paragraph: move forward 2 chars: assert_equals: expected 5 but got 3
-- LTR text in LTR paragraph: move backward 2 chars: assert_equals: expected 3 but got 5
-- RTL text in RTL paragraph: move forward 2 chars: assert_equals: expected 4 but got 2
-- RTL text in RTL paragraph: move backward 2 chars: assert_equals: expected 2 but got 4
-- RTL text in LTR paragraph: move forward 2 chars: assert_equals: expected 4 but got 2
-- RTL text in LTR paragraph: move backward 2 chars: assert_equals: expected 2 but got 4
-- LTR text in RTL paragraph: move forward 2 chars: assert_equals: expected 5 but got 3
-- LTR text in RTL paragraph: move backward 2 chars: assert_equals: expected 3 but got 5
-- LTR-RTL context in LTR paragraph: move forward 3 chars: assert_equals: expected 7 but got 4
-- LTR-RTL context in LTR paragraph: move backward 3 chars: assert_equals: expected 8 but got 11
-- RTL-LTR context in LTR paragraph: move forward 3 chars: assert_equals: expected 10 but got 7
-- RTL-LTR context in LTR paragraph: move backward 3 chars: assert_equals: expected 11 but got 14
-- Mixed context in auto-dir paragraph: move forward 3 chars: assert_equals: expected 8 but got 5
-- Mixed context in auto-dir paragraph: move backward 3 chars: assert_equals: expected 14 but got 17
-- LTR text in LTR paragraph: move right 2 chars: assert_equals: expected 5 but got 3
-- LTR text in LTR paragraph: move left 2 chars: assert_equals: expected 3 but got 5
-- RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 4
-- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 2
-- RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 4
-- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 2
-- LTR text in RTL paragraph: move right 2 chars: assert_equals: expected 5 but got 3
-- LTR text in RTL paragraph: move left 2 chars: assert_equals: expected 3 but got 5
-- LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 4
-- LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 11
-- RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 7
-- RTL-LTR context in LTR paragraph: move left 3 chars: assert_equals: expected 7 but got 14
-- Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 17
-- Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 5
+- RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 6
+- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 11
+- RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 6
+- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 10
+- LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 7
+- LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 8
+- RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 10
+- RTL-LTR context in LTR paragraph: move left 3 chars: assert_equals: expected 7 but got 11
+- Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 18
+- Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 2
 
 ### selection/bidi/modify.tentative.html
 
@@ -2733,11 +3234,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### selection/extend-selection-backward-on-input.html
 
-- Should not crash if block node is in an inline node and block_flow is a pseudo node: document.execCommand is not a function
+- Should not crash if block node is in an inline node and block_flow is a pseudo node: execCommand is not implemented
 
 ### selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html
 
-- selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "TypeError: document.execCommand is not a function"
+- selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
 
 ### selection/modify-line-flex-column.tentative.html
 
@@ -2780,12 +3281,26 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: assert_in_array: The start container should be in the middle line value Text node "previous line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
 - extending selection from middle of last word of the middle line shouldn't extend the range to the next line: assert_in_array: The end container should be in the middle line value Text node "last line" not in array [Element node <p id="middleLine">middle line</p>, Text node "middle line"]
 
+### selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html
+
+- Selection range in shadow should not be as a selection range after the host is removed: null is not a shadow root mode
+- Selection range in shadow should not be as a selection range after the host parent is removed: null is not a shadow root mode
+- Selection range in shadow should not be as a selection range after the host is replaced with itself (.replaceWith): null is not a shadow root mode
+- Selection range in shadow should not be as a selection range after the host is replaced with itself (.replaceChild: null is not a shadow root mode
+
 ### selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html
 
 - containsNode of non-assigned node should return false (when all children of the host is selected): assert_false: expected false got true
 - containsNode of non-assigned node should return false (when the host is selected): assert_false: expected false got true
 - containsNode of non-assigned node child should return false (when all children of the host is selected): assert_false: expected false got true
 - containsNode of non-assigned node child should return false (when the host is selected): assert_false: expected false got true
+
+### selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html
+
+- Range is fully in shadow tree. Removing shadow host collapses composed StaticRange. Note it does not update previously returned composed StaticRange.: null is not a shadow root mode
+- Range is fully in shadow tree. Removing parent of shadow host collapses composed StaticRange.: null is not a shadow root mode
+- Range is across shadow trees. Replacing shadowRoot content rescopes new composed range to the shadowRoot.: null is not a shadow root mode
+- Range is across shadow trees. Removing ancestor shadow host rescopes composed range end to parent.: null is not a shadow root mode
 
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
@@ -2814,6 +3329,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Setting initial zero selection range on the disconnected textarea element: assert_equals: expected 0 but got 1
 - Calling setRangeText() on empty the disconnected textarea element: assert_equals: expected 0 but got 1
 
+### selection/toString-ff-bug-001.html
+
+- Can serialize a range which starts at the end of an element: Range is not a constructor
+
 ### selection/toString-user-select-none.html
 
 - Selection.toString() excludes basic user-select: none content: assert_equals: Basic user-select: none content should be excluded expected "ac" but got "\n    abc\n  "
@@ -2822,19 +3341,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'ready')"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'ready')"
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: document.caretPositionFromPoint is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: document.caretPositionFromPoint is not a function
+- document.caretPositionFromPoint() throws when called without the correct parameters: assert_throws_js: function "() => { document.caretPositionFromPoint(5, 5, "foo"); }" threw object "NotSupportedError: caretPositionFromPoint is not implemented" ("NotSupportedError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: The font loading API is not implemented"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: caretPositionFromPoint is not implemented
 
 ### shadow-dom/Document-prototype-currentScript.html
 
@@ -2848,20 +3368,20 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
 
 - document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: shadow.elementFromPoint is not a function
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: shadow.elementFromPoint is not a function
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: assert_equals: expected Element node <test-element style="display: block;"></test-element> but got null
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: assert_equals: expected Element node <test-element style="display: inline-block;"></test-element> but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;">text</test-element> but got null
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: shadow.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: shadow.elementFromPoint is not a function
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: assert_equals: expected Element node <test-element style="display: block;">text</test-element> but got null
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: assert_equals: expected Element node <test-element style="display: inline-block;">text</test-e... but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: assert_equals: expected Element node <span>text</span> but got null
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: block;"><span>text</span></...
 - document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: assert_equals: expected Element node <span>text</span> but got Element node <test-element style="display: inline-block;"><span>text</...
 - document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: shadow.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: shadow.elementFromPoint is not a function
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: assert_equals: expected Element node <span>text</span> but got null
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: assert_equals: expected Element node <span>text</span> but got null
 - document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline: assert_equals: expected Element node <test-element style="display: inline;"></test-element> but got null
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: shadow.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: shadow.elementFromPoint is not a function
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: assert_equals: expected Element node <slot>fallback</slot> but got null
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: assert_equals: expected Element node <slot>fallback</slot> but got null
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline: assert_equals: expected Element node <inner-host>hello</inner-host> but got null
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block: assert_equals: expected Element node <inner-host>hello</inner-host> but got Element node <test-element style="display: block;"><inner-host>hello</...
 - document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block: assert_equals: expected Element node <inner-host>hello</inner-host> but got Element node <test-element style="display: inline-block;"><inner-host>...
@@ -2872,34 +3392,61 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block: assert_equals: expected Element node <inner-host></inner-host> but got Element node <test-element style="display: block;"><inner-host></inner...
 - document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block: assert_equals: expected Element node <inner-host></inner-host> but got Element node <test-element style="display: inline-block;"><inner-host>...
 - document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;"></test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: shadow.elementsFromPoint is not a function
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: shadow.elementsFromPoint is not a function
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;"></test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline-block;"></test-element>, Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;">text</test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: shadow.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: shadow.elementsFromPoint is not a function
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;">text</test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline-block;">text</test-e..., Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: inline;"><span>text</span><..., Element node <div id="container"><test-element style="display: inline;..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: block;"><span>text</span></..., Element node <div id="container"><test-element style="display: block;"..., Element node <body>
 - document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: inline-block;"><span>text</..., Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;"></test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block: shadow.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block: shadow.elementsFromPoint is not a function
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: block;"></test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element style="display: inline-block;"></test-element>, Element node <div id="container"><test-element style="display: inline-..., Element node <body>
 - document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: inline;"></test-element>, Element node <div id="container"><test-element style="display: inline;..., Element node <body>
-- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: shadow.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: shadow.elementsFromPoint is not a function
-- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: shadow.elementsFromPoint is not a function
-- elementsFromPoint should return all elements under a point, even when context object is not connected: assert_equals: expected 4 but got 0
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: assert_array_equals: lengths differ, expected array [Element node <slot>fallback</slot>, Element node <div><slot>fallback</slot></div>, Element node <test-element style="display: block;"></test-element>, Element node <div id="container"><test-element style="display: block;"..., Element node <body>
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: assert_array_equals: lengths differ, expected array [Element node <slot>fallback</slot>, Element node <div><slot>fallback</slot></div>, Element node <test-element style="display: inline-block;"></test-element>, Element node <div id="container"><test-element style="display: inline-..., Element node <body>
+- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: assert_array_equals: lengths differ, expected array [Element node <test-element style="display: block;"></test-element>, Element node <div><test-element style="display: block;"></test-element..., Element node <div id="container"><div><test-element style="display: bl..., Element node <body>
+- elementsFromPoint should return all elements under a point, even when context object is not connected: innerText is not implemented
+
+### shadow-dom/Element-interface-attachShadow.html
+
+- Nodes other than Element should not have attachShadow: Cannot read properties of undefined (reading 'prototype')
+
+### shadow-dom/Extensions-to-Event-Interface.html
+
+- The event must not propagate out of open mode shadow boundaries when the composed flag is unset on an event with relatedTarget: MouseEvent is not a constructor
+- The event must not propagate out of closed mode shadow boundaries when the composed flag is unset on an event with relatedTarget: MouseEvent is not a constructor
+- The event must not propagate out of open mode shadow tree of the target but must propagate out of inner shadow trees when the scoped flag is set: MouseEvent is not a constructor
+- The event must not propagate out of closed mode shadow tree of the target but must propagate out of inner shadow trees when the scoped flag is set: MouseEvent is not a constructor
+- The event must propagate out of open mode shadow tree in which the relative target and the relative related target are the same: MouseEvent is not a constructor
+- The event must propagate out of closed mode shadow tree in which the relative target and the relative related target are the same: MouseEvent is not a constructor
+- composedPath() must contain and only contain the unclosed nodes of target in open mode shadow trees: MouseEvent is not a constructor
+- composedPath() must contain and only contain the unclosed nodes of target in closed mode shadow trees: MouseEvent is not a constructor
+
+### shadow-dom/HTMLSlotElement-interface.html
+
+- HTMLSlotElement must be defined on window: Cannot read properties of undefined (reading 'prototype')
+- "name" attribute on HTMLSlotElement must reflect "name" attribute: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes() on a HTMLSlotElement must return an empty array when the slot element is not in a tree or in a document tree: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes({"flattened":false}) on a HTMLSlotElement must return an empty array when the slot element is not in a tree or in a document tree: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes({"flattened":true}) on a HTMLSlotElement must return an empty array when the slot element is not in a tree or in a document tree: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes() must return the list of assigned nodes when none of the assigned nodes themselves are slots: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes({"flattened":false}) must return the list of assigned nodes when none of the assigned nodes themselves are slots: Cannot read properties of undefined (reading 'prototype')
+- assignedNodes({"flattened":true}) must return the list of assigned nodes when none of the assigned nodes themselves are slots: Cannot read properties of undefined (reading 'prototype')
 
 ### shadow-dom/HighlightRegistry-highlightsFromPoint.html
 
 - CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: CSS is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
-- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: Highlight is not defined
-- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: Highlight is not defined
+- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: Range is not a constructor
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: Range is not a constructor
 - CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS is not defined
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
 
-- MouseEvent's offsetX and offsetY attributes must be relative to the target.: assert_equals: The target must be at (45px, 30px) expected 45 but got 40
-- MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.: assert_equals: The target must be at (45px, 30px) expected 45 but got 40
+- MouseEvent's offsetX and offsetY attributes must be relative to the target.: MouseEvent is not a constructor
+- MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.: MouseEvent is not a constructor
+- MouseEvent's offsetX and offsetY attributes must be relative to the target when an event is dispatched on a slotted content.: MouseEvent is not a constructor
 
 ### shadow-dom/ShadowRoot-interface.html
 
@@ -2910,6 +3457,11 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - button element with accesskey in the shadow tree of open mode: Test timed out
 - button element with accesskey in the shadow tree of closed mode: 
+
+### shadow-dom/declarative/declarative-shadow-dom-basic.html
+
+- Declarative Shadow DOM: Feature detection: Cannot read properties of undefined (reading 'prototype')
+- Declarative Shadow DOM: Multiple roots: Right-hand side of 'instanceof' is not an object
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
@@ -2931,7 +3483,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html
 
-- shadowRootAdoptedStyleSheets is exposed as a configurable, enumerable accessor on HTMLTemplateElement.prototype.: assert_true: HTMLTemplateElement.prototype must expose shadowRootAdoptedStyleSheets. expected true got false
+- shadowRootAdoptedStyleSheets is exposed as a configurable, enumerable accessor on HTMLTemplateElement.prototype.: Cannot read properties of undefined (reading 'prototype')
 
 ### shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-reflection.html
 
@@ -2946,13 +3498,46 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: assert_true: dragenter should have fired on target1 expected true got false
 
+### shadow-dom/event-composed.html
+
+- A synthetic MouseEvent should be scoped by default: MouseEvent is not a constructor
+- A synthetic MouseEvent with composed=true should not be scoped: MouseEvent is not a constructor
+
 ### shadow-dom/event-post-dispatch.html
 
-- Event properties post dispatch when target get moved into the shadow tree by event listener: assert_equals: expected (object) object "[object MouseEvent]" but got (undefined) undefined
+- Event properties post dispatch with relatedTarget in the same shadow tree. (composed: true): MouseEvent is not a constructor
+- Event properties post dispatch with relatedTarget in the same shadow tree. (composed: false): MouseEvent is not a constructor
+- Event properties post dispatch with relatedTarget in the document tree and the shadow tree. (composed: true): MouseEvent is not a constructor
+- Event properties post dispatch with relatedTarget in the document tree and the shadow tree. (composed: false): MouseEvent is not a constructor
+- Event properties post dispatch with relatedTarget in the different shadow trees. (composed: true): MouseEvent is not a constructor
+- Event properties post dispatch with relatedTarget in the different shadow trees. (composed: false): MouseEvent is not a constructor
+- Event properties post dispatch when target get moved out of the shadow tree by event listener: MouseEvent is not a constructor
+- Event properties post dispatch when target get moved into the shadow tree by event listener: MouseEvent is not a constructor
+
+### shadow-dom/event-with-related-target.html
+
+- Firing an event at B1a with relatedNode at B1 with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at B1 with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at B1b1 with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at B1b1 with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1b1 with relatedNode at B1a with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1b1 with relatedNode at B1a with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at D1 with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at D1 with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at D1 with relatedNode at B1a with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at D1 with relatedNode at B1a with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at A1a with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at A1a with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at A1a with relatedNode at B1a with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at A1a with relatedNode at B1a with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at A1a (detached) with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at B1a with relatedNode at A1a (detached) with closed mode shadow trees: MouseEvent is not a constructor
+- Firing an event at A1a with relatedNode at B1a (detached) with open mode shadow trees: MouseEvent is not a constructor
+- Firing an event at A1a with relatedNode at B1a (detached) with closed mode shadow trees: MouseEvent is not a constructor
 
 ### shadow-dom/execcommand-insertList-in-shadow.html
 
-- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "TypeError: document.execCommand is not a function"
+- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
 
 ### shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html
 
@@ -2961,21 +3546,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html
 
 - Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <div id="host">
-
-### shadow-dom/focus/click-focus-delegatesFocus-click.html
-
-- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
-### shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html
-
-- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
-
-### shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html
-
-- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
 ### shadow-dom/focus/click-focus-slot-ancestor.html
 
@@ -2998,34 +3568,81 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
 
-### shadow-dom/focus/focus-method-delegatesFocus.html
-
-- focus() on host with delegatesFocus, all tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & tabindex =-1, all other tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & no tabindex, all other tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & tabindex = 0, all other tabindex=-1: assert_equals: expected Element node <div tabindex="-1"></div> but got null
-- focus() on host with delegatesFocus, all tabindex=-1: assert_equals: expected Element node <div tabindex="-1"></div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #belowSlots with tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #outside with tabindex=0: assert_equals: expected Element node <body>
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots and #belowSlots with tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots with tabindex=0 and #belowSlots with tabindex=1: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus & tabindex=0, #slottedToFirstSlot, #slottedToSecondSlot, #belowSlots  with tabindex=0: assert_equals: expected Element node <div tabindex="0"></div> but got null
-- focus() on host with delegatesFocus with another host with no delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <div id="host">
-- focus() on host with delegatesFocus with another host with delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <div id="host">
-- focus() on host with delegatesFocus and slotted focusable children: assert_equals: expected Element node <div><div><input></div></div> but got Element node <div id="host">
-
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
 - delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+
+### shadow-dom/focus/focus-selector-delegatesFocus.html
+
+- :focus applies to host with delegatesFocus=true when the shadow root's descendant has focus: innerText is not implemented
+- :focus does not apply to host with delegatesFocus=true when slotted element has focus: innerText is not implemented
+- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=true is focused: innerText is not implemented
+- :focus should be removed from hosts with delegatesFocus=true when none of the elements in a nested shadow tree with delegatesFocus=true is focused: innerText is not implemented
+- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=false is focused: innerText is not implemented
+- :focus should be removed from hosts with delegatesFocus=true when none of the elements in a nested shadow tree with delegatesFocus=false is focused: innerText is not implemented
+- :focus applies to host with delegatesFocus=false when the shadow root's descendant has focus: innerText is not implemented
+- :focus does not apply to host with delegatesFocus=false when slotted element has focus: innerText is not implemented
+- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=true is focused: innerText is not implemented
+- :focus should be removed from hosts with delegatesFocus=false when none of the elements in a nested shadow tree with delegatesFocus=true is focused: innerText is not implemented
+- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=false is focused: innerText is not implemented
+- :focus should be removed from hosts with delegatesFocus=false when none of the elements in a nested shadow tree with delegatesFocus=false is focused: innerText is not implemented
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
 - when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: assert_equals: expected "none" but got "block"
 - when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: assert_equals: expected "none" but got "block"
 
+### shadow-dom/focus/focus-tabindex-order-shadow-negative-delegatesFocus.html
+
+- Order when all tabindex=-1 is and delegatesFocus = true: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-negative.html
+
+- Order when all elements in shadow tree has negative tabindex: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-slot-one.html
+
+- Order when all tabindex=0, except for one slot that has tabindex=1: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-varying-delegatesFocus.html
+
+- Order when tabindex varies and delegatesFocus = true: innerText is not implemented
+
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
+
+### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex.html
+
+- Order with various tabindex values: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-delegatesFocus.html
+
+- Order when all tabindex=0 is and delegatesFocus = true: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-negative.html
+
+- Order when all tabindex=0 except for host, which has tabindex=-1: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set-scrollable.html
+
+- Order when all tabindex=0 except scrollable host (tabindex not set): innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set.html
+
+- Order when all tabindex=0 except host (tabindex not set): innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html
+
+- Order when all tabindex=0 except for host, which has tabindex=1: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html
+
+- Order when all tabindex=0 and host is scrollable: innerText is not implemented
+
+### shadow-dom/focus/focus-tabindex-order-shadow-zero.html
+
+- Order when all tabindex=0 is and delegatesFocus = false: innerText is not implemented
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
 
@@ -3059,18 +3676,14 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/leaktests/html-collection.html
 
-- document.scripts should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
 - document.all should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.forms should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.images should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.links should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.anchors should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.embeds should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.plugins should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.applets should not contain any nodes: Cannot read properties of undefined (reading 'length')
 
 ### shadow-dom/offsetParent-across-shadow-boundaries.html
 
+- offsetParent must return the offset parent in the same shadow tree of open mode: Right-hand side of 'instanceof' is not an object
+- offsetParent must return the offset parent in the same shadow tree of closed mode: Right-hand side of 'instanceof' is not an object
+- offsetParent must return the offset parent in the same shadow tree of open mode even when nested: Right-hand side of 'instanceof' is not an object
+- offsetParent must return the offset parent in the same shadow tree of closed mode even when nested: Right-hand side of 'instanceof' is not an object
 - offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of open mode: assert_equals: expected null but got Element node <div id="container" style="position: relative"><div><div ...
 - offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of closed mode: assert_equals: expected null but got Element node <div id="container" style="position: relative"><div><div ...
 - offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of open mode did not have any offset parent: assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got Element node <body>
@@ -3082,9 +3695,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
 
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 11
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected 38 but got 10
 - Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected 8 but got 0
-- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 24
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected 88 but got 20
 
 ### shadow-dom/scroll-restore-shadow.html
 
@@ -3094,37 +3707,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - slotchange must fire on initialization of custom elements with slotted children: assert_true: expected true got false
 
-### shadow-dom/slotchange.html
+### shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html
 
-- slotchange event: Append a child to a host (onslotchange).: Test timed out
-
-### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
-
-- A_10_01_02_06_01_T02: s.elementFromPoint is not a function
-
-### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html
-
-- A_10_01_02_06_02_T01: s.elementFromPoint is not a function
-- A_10_01_02_06_02_T02: s.elementFromPoint is not a function
+- A_05_02_03_T01: MouseEvent is not a constructor
 
 ### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
 
-- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: Cannot read properties of undefined (reading 'length')
 - Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
 
 ### custom-elements/CustomElementRegistry-getName.html
 
-- customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: A customized built-in element is not implemented here
+- customElements.getName returns the name of the entry with the given customized built in constructor when there is a matching entry.: Class extends value undefined is not a constructor or null
 
 ### custom-elements/CustomElementRegistry.html
 
+- CustomElementRegistry interface must have define as a method: Cannot read properties of undefined (reading 'prototype')
 - customElements.define must not throw when defining another custom element in a different global object during Get(constructor, "prototype"): assert_true: expected true got false
+- CustomElementRegistry interface must have get as a method: Cannot read properties of undefined (reading 'prototype')
 
 ### custom-elements/Document-createElement.html
 
@@ -3151,17 +3750,23 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
-- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Right-hand side of 'instanceof' is not an object
 - document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
+
+### custom-elements/Document-createElementNS.html
+
+- autonomous: document.createElementNS should not create HTMLUnknownElement for a valid custom element name: Right-hand side of 'instanceof' is not an object
 
 ### custom-elements/HTMLElement-attachInternals.html
 
-- attachInternals() throws a NotSupportedError if it is called for a customized built-in element: A customized built-in element is not implemented here
+- Successful attachInternals() and the second call.: Right-hand side of 'instanceof' is not an object
+- attachInternals() throws a NotSupportedError if it is called for a customized built-in element: Class extends value undefined is not a constructor or null
+- If a custom element definition for the local name of the element has disable internals flag, throw a NotSupportedError: Right-hand side of 'instanceof' is not an object
 
 ### custom-elements/HTMLElement-constructor.html
 
-- Custom element constructor must throw TypeError when it does not extend HTMLElement: assert_throws_js: function "function () { new SomeCustomElement(); }" did not throw
-- Custom element constructor must throw TypeError when it does not extend the proper element interface: A customized built-in element is not implemented here
+- Custom element constructor must throw TypeError when it does not extend HTMLElement: Class extends value undefined is not a constructor or null
+- Custom element constructor must throw TypeError when it does not extend the proper element interface: Class extends value undefined is not a constructor or null
 
 ### custom-elements/adopted-callback.html
 
@@ -3209,7 +3814,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/ElementInternals-form.html
 
-- ElementInternals.form should return the target element's form owner: Cannot read properties of undefined (reading '0')
+- ElementInternals.form should return the target element's form owner: assert_equals: expected (undefined) undefined but got (object) Element node <form id="custom-form">
 
 ### custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html
 
@@ -3276,7 +3881,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
-- Custom control affects validation at the owner form: form.checkValidity is not a function
+- Custom control affects validation at the owner form: assert_equals: expected 3 but got 2
 - Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
 
 ### custom-elements/form-associated/disabled-delegatesFocus.html
@@ -3285,7 +3890,7 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/fieldset-elements.html
 
-- Form associated custom elements should work with fieldset.elements: Cannot read properties of undefined (reading '0')
+- Form associated custom elements should work with fieldset.elements: Cannot read properties of undefined (reading 'elements')
 
 ### custom-elements/form-associated/focusability.html
 
@@ -3295,7 +3900,6 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 - Associate by parser, customized at element creation: assert_equals: fieldset.elements expected (object) Element node <pre-defined id="pd1"></pre-defined> but got (undefined) undefined
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
-- Updating "id" attribute of form element: undefined is not iterable (cannot read property Symbol(Symbol.iterator))
 
 ### custom-elements/form-associated/form-disabled-callback.html
 
@@ -3311,9 +3915,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
-- Form associated custom elements should work with document.forms.elements.namedItem(): Cannot read properties of undefined (reading '0')
-- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: Cannot read properties of undefined (reading '0')
-- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: Cannot read properties of undefined (reading '0')
+- Form associated custom elements should work with document.forms.elements.namedItem(): Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: Cannot read properties of undefined (reading 'elements')
+- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: Cannot read properties of undefined (reading 'elements')
 
 ### custom-elements/form-associated/form-reset-callback.html
 
@@ -3329,8 +3933,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
 - If prototype is not object (string), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
 - If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling proxy constructor directly: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { new countingProxy() }" did not throw
-- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling via Reflect: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { Reflect.construct(HTMLParagraphElement, [], countingProxy) }" did not throw
+- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling proxy constructor directly: promise_test: Unhandled rejection with value: object "TypeError: Class extends value undefined is not a constructor or null"
+- HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling via Reflect: promise_test: Unhandled rejection with value: object "TypeError: Class extends value undefined is not a constructor or null"
 
 ### custom-elements/htmlconstructor/newtarget.html
 
@@ -3343,6 +3947,10 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'length')"
 - If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
 
+### custom-elements/parser/parser-custom-element-in-foreign-content.html
+
+- HTML parser should not create custom elements in non-HTML namespaces: Right-hand side of 'instanceof' is not an object
+
 ### custom-elements/perform-microtask-checkpoint-before-construction.html
 
 - HTML parser must perform a microtask checkpoint before constructing a custom element: assert_true: expected true got false
@@ -3350,16 +3958,22 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/pseudo-class-defined-customized-builtins.html
 
-- <abbr is="my-abbr"> should not be :defined: Cannot read properties of null (reading 'customElements')
-- createElement("abbr", is:"my-abbr") should not be :defined: Cannot read properties of null (reading 'customElements')
-- createElementNS("http://www.w3.org/1999/xhtml", "abbr", is:"my-abbr") should not be :defined: Cannot read properties of null (reading 'customElements')
-- createElementNS("http://www.w3.org/2000/svg", "abbr", is:"my-abbr") should be :defined: Cannot read properties of null (reading 'customElements')
+- <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
+
+### custom-elements/pseudo-class-defined.html
+
+- this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 0
+
+### custom-elements/range-and-constructors.html
+
+- Range.cloneContents should invoke constructor in tree order: Range is not a constructor
+- Range.extractContents should invoke constructor in tree order: Range is not a constructor
 
 ### custom-elements/reactions/Animation.html
 
-- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: instance.animate is not a function
-- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: instance.animate is not a function
-- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: instance.animate is not a function
+- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: Web Animations is not implemented
+- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: Web Animations is not implemented
+- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: Web Animations is not implemented
 
 ### custom-elements/reactions/DOMStringMap.html
 
@@ -3378,9 +3992,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - body on Document must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
 - open on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
 - write on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- write on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: contentWindow.document.open is not a function"
+- write on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 - writeln on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-- writeln on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: contentWindow.document.open is not a function"
+- writeln on Document must enqueue connectedCallback after constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 
 ### custom-elements/reactions/HTMLAnchorElement.html
 
@@ -3388,8 +4002,8 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/reactions/HTMLElement.html
 
-- innerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
-- outerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
+- innerText on HTMLElement must enqueue a disconnected reaction: innerText is not implemented
+- outerText on HTMLElement must enqueue a disconnected reaction: outerText is not implemented
 
 ### custom-elements/reactions/HTMLOptionElement.html
 
@@ -3449,13 +4063,41 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/Construct.html
 
-- A constructor with only a scoped custom element registry definition should fail upon construction: assert_throws_js: function "() => new ABElement" did not throw
+- A constructor with only a scoped custom element registry definition should fail upon construction: CustomElementRegistry is not a constructor
+- A constructor uses the global registry to create an element: CustomElementRegistry is not a constructor
+- A constructor creating an element from another registry before or after super call should work: CustomElementRegistry is not a constructor
+
+### custom-elements/registries/CustomElementRegistry-define.html
+
+- Create a CustomElementRegistry not identically equal to window.customElements: CustomElementRegistry is not a constructor
+- Defining an element in the global registry does not add a definition to a scoped CustomElementRegistry: CustomElementRegistry is not a constructor
+- Defining an element in a scoped global registry does not add a definition to the global registry: CustomElementRegistry is not a constructor
+
+### custom-elements/registries/CustomElementRegistry-initialize.html
+
+- initialize throws when the registry scoped is false and the root document already has another registry: CustomElementRegistry is not a constructor
+- initialize is a function on both global and scoped CustomElementRegistry: CustomElementRegistry is not a constructor
+- initialize sets element.customElementRegistry to a scoped registry: CustomElementRegistry is not a constructor
+- initialize does not set descendants whose customElementRegistry already uses a different registry: CustomElementRegistry is not a constructor
+- initialize does not set the registry of nested shadow tree to a scoped registry: CustomElementRegistry is not a constructor
+- initialize sets element.customElementRegistry permantently: CustomElementRegistry is not a constructor
+- initialize is no-op on a subtree with a non-null registry: CustomElementRegistry is not a constructor
+- initialize works on Document: CustomElementRegistry is not a constructor
+- initialize works on DocumentFragment: CustomElementRegistry is not a constructor
+- initialize sets registry on shadow root descendants with no registry: CustomElementRegistry is not a constructor
+
+### custom-elements/registries/CustomElementRegistry-multi-register.html
+
+- Same constructor can be registered to different registries: CustomElementRegistry is not a constructor
+- Non-global registries still reject duplicate registrations of the same constructor: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
-- upgrade is a no-op when called on a shadow root with no association: That is not a node
-- upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
-- upgrade should not upgrade a candidate element not associated with a registry: That is not a node
+- upgrade is a function on both global and scoped CustomElementRegistry: CustomElementRegistry is not a constructor
+- upgrade is a no-op when called on a shadow root with no association: CustomElementRegistry is not a constructor
+- upgrade is a no-op when called on an element associated with a different registry: CustomElementRegistry is not a constructor
+- upgrade should upgrade a candidate element when called on a shadow root with an association: CustomElementRegistry is not a constructor
+- upgrade should not upgrade a candidate element not associated with a registry: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
@@ -3475,44 +4117,51 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 - Cloning including shadow tree with global registry (scoped registry target): 
 - Cloning including shadow tree with scoped registry (scoped registry target): 
 
-### custom-elements/registries/Document-importNode.html
-
-- importNode should clone using the specified registry if target's registry is null: assert_true: expected true got false
-- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- importNode should clone a template content using the global registry by default: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
-- importNode should clone a template content using a specified scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
-- importNode should clone a template content with a nested template element using a scoped registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
-- importNode: pass options argument with value { selfOnly: true }: assert_false: expected false got true
-- importNode: pass options argument with value { customElementRegistry: null }: assert_throws_js: function "() => document.importNode(root, { customElementRegistry: null })" did not throw
-- importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: assert_equals: imported container with null registry should use the fallback registry expected object "[object CustomElementRegistry]" but got null
-
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
 
-- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: frame.contentDocument.open is not a function
+- customElementRegistry on a failed custom element created by calling createElement on CustomElementRegistry should return the registry: CustomElementRegistry is not a constructor
+- customElementRegistry on a failed custom element created by setting innerHTML should return the associated scoped registry: CustomElementRegistry is not a constructor
+- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: This document is not a stream
 
 ### custom-elements/registries/Element-customElementRegistry.html
 
 - customElementRegistry on a clone of a declarative shadow tree with shadowrootcustomelementregistry should return the global registry after getting inserted into a document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- customElementRegistry on an element inside a declarative shadow DOM with shadowrootcustomelementregistry should return the scoped registry after calling initialize: CustomElementRegistry is not a constructor
+- customElementRegistry on a builtin element created by calling createElement on CustomElementRegistry should return the registry: CustomElementRegistry is not a constructor
+- customElementRegistry on an upgarde candidate created by calling createElement on CustomElementRegistry should return the registry: CustomElementRegistry is not a constructor
+- customElementRegistry on an unknown element created by calling createElement on CustomElementRegistry should return the registry: CustomElementRegistry is not a constructor
+- customElementRegistry on a defined custom element created by calling createElement on CustomElementRegistry should return the registry: CustomElementRegistry is not a constructor
+- customElementRegistry inside a custom element constructor should return the correct registry: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/Element-innerHTML.html
 
+- innerHTML on a disconnected element should use the scoped registry it was created with: CustomElementRegistry is not a constructor
+- nested descendants in innerHTML on a disconnected element should use the scoped registry the element was created with: CustomElementRegistry is not a constructor
+- innerHTML on a disconnected element should use the scoped registry it was created with when parsing a simple HTML: CustomElementRegistry is not a constructor
+- innerHTML on an inserted element should continue to use the scoped registry it was created with: CustomElementRegistry is not a constructor
 - insertAdjacentHTML should use the element's registry even when the registry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- innerHTML on a template with a scoped registry should use the scoped registry of the document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: assert_true: expected true got false
+- createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: CustomElementRegistry is not a constructor
+- innerHTML on a template with a scoped registry should use the scoped registry of the document: CustomElementRegistry is not a constructor
+- createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: CustomElementRegistry is not a constructor
+- insertAdjacentHTML with beforebegin should use the containing scope's registry: CustomElementRegistry is not a constructor
+- insertAdjacentHTML with afterend should use the containing scope's registry: CustomElementRegistry is not a constructor
+- outerHTML setter should use the parent scope's registry, not the replaced element's: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/ShadowRoot-init-customElementRegistry.html
 
-- A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- A newly attached ShadowRoot should use the global registry by default even if the host uses a custom registry: CustomElementRegistry is not a constructor
+- A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: CustomElementRegistry is not a constructor
+- A newly attached disconnected ShadowRoot should use the scoped registry if explicitly specified in attachShadow: CustomElementRegistry is not a constructor
+- A newly attached connected ShadowRoot should use the scoped registry if explicitly specified in attachShadow: CustomElementRegistry is not a constructor
+- attachShadow() should use null registry when customElementRegistry is null (host uses custom registry): CustomElementRegistry is not a constructor
+- attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/ShadowRoot-innerHTML.html
 
-- innerHTML on a shadow root should use the scoped registry: assert_true: expected true got false
-- innerHTML on a connected shadow root should use the associated scoped registry: assert_true: expected true got false
-- innerHTML on a connected shadow root should not upgrade a custom element inside a template element: assert_equals: expected "SomeElement" but got "SomeElement1"
-- innerHTML on a connected shadow root should be able to create an unknown element: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- innerHTML on a shadow root should use the scoped registry: CustomElementRegistry is not a constructor
+- innerHTML on a connected shadow root should use the associated scoped registry: CustomElementRegistry is not a constructor
+- innerHTML on a connected shadow root should not upgrade a custom element inside a template element: CustomElementRegistry is not a constructor
+- innerHTML on a connected shadow root should be able to create an unknown element: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/adoption.window.js
 
@@ -3555,20 +4204,40 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/registries/constructor-direct-call-fallback-registry.window.js
 
-- Direct construction of a global-only element after super() during a scoped upgrade: assert_true: expected true got false
-- Direct construction of a global-only element before super() during a scoped upgrade: assert_true: expected true got false
+- Direct construction of a global-only element after super() during a scoped upgrade: CustomElementRegistry is not a constructor
+- Direct construction of a global-only element before super() during a scoped upgrade: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/constructor-reentry-createElement.window.js
 
-- Re-entry via createElement with a different registry after super(): assert_true: expected true got false
-- Re-entry via createElement with a different registry before super(): assert_true: expected true got false
+- Re-entry via createElement with a different registry after super(): CustomElementRegistry is not a constructor
+- Re-entry via createElement with a different registry before super(): CustomElementRegistry is not a constructor
+- Direct construction of a global-only element after super() during a scoped createElement construction: CustomElementRegistry is not a constructor
+- Direct construction of a global-only element before super() during a scoped createElement construction: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/constructor-reentry-with-different-definition.html
 
-- Re-entry via upgrade before calling super(): assert_true: expected true got false
-- Re-entry via upgrade after calling super(): assert_true: expected true got false
-- Re-entry via direct constructor call before calling super(): assert_true: expected true got false
-- Re-entry via direct constructor call after calling super(): assert_true: expected true got false
+- Re-entry via upgrade before calling super(): CustomElementRegistry is not a constructor
+- Re-entry via upgrade after calling super(): CustomElementRegistry is not a constructor
+- Re-entry via direct constructor call before calling super(): CustomElementRegistry is not a constructor
+- Re-entry via direct constructor call after calling super(): CustomElementRegistry is not a constructor
+
+### custom-elements/registries/element-mutation.html
+
+- An element with global registry should not change its registry when run append into a shadow tree with scoped registry.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run append out of the shadow tree.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run append into another shadow tree with different scoped registry.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry after append into and removal from a scoped shadow root.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry when run append between scoped shadow roots.: CustomElementRegistry is not a constructor
+- An element with global registry should not change its registry when run appendChild into a shadow tree with scoped registry.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run appendChild out of the shadow tree.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run appendChild into another shadow tree with different scoped registry.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry after appendChild into and removal from a scoped shadow root.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry when run appendChild between scoped shadow roots.: CustomElementRegistry is not a constructor
+- An element with global registry should not change its registry when run prepend into a shadow tree with scoped registry.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run prepend out of the shadow tree.: CustomElementRegistry is not a constructor
+- An element with scoped registry should not change its registry when run prepend into another shadow tree with different scoped registry.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry after prepend into and removal from a scoped shadow root.: CustomElementRegistry is not a constructor
+- A freshly created element should preserve global registry when run prepend between scoped shadow roots.: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/global.window.js
 
@@ -3585,13 +4254,13 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/registries/per-document.html
 
 - Navigating from the initial about:blank must replace window.customElements: assert_not_equals: got disallowed value object "[object CustomElementRegistry]"
-- document.open() must not replace window.customElements: frame.document.open is not a function
+- document.open() must not replace window.customElements: This document is not a stream
 
 ### custom-elements/registries/pseudo-class-defined.window.js
 
-- "uncustomized" :defined doesn't care about your registry': Cannot read properties of null (reading 'customElements')
-- "custom" :defined doesn't care about your registry: assert_true: expected true got false
-- "custom" :defined should apply after initialize: Cannot read properties of null (reading 'customElements')
+- "uncustomized" :defined doesn't care about your registry': CustomElementRegistry is not a constructor
+- "custom" :defined doesn't care about your registry: CustomElementRegistry is not a constructor
+- "custom" :defined should apply after initialize: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html
 
@@ -3616,105 +4285,81 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 ### custom-elements/registries/scoped-registry-append.html
 
 - Connecting a custom element candiate with null registry does not set the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Inserting a custom element candiate with null registry does not change the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Connecting a custom element candiate with a scoped custom element registry does not change the registry: CustomElementRegistry is not a constructor
+- Inserting a custom element candiate with null registry does not change the registry: CustomElementRegistry is not a constructor
+- Inserting the shadow host of a shadow root with a scoped custom element registry does not change the registry: CustomElementRegistry is not a constructor
 - Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: win.CustomElementRegistry is not a constructor
 - adoptNode then inserting into a scoped shadow root should preserve global registry: win.CustomElementRegistry is not a constructor
 - Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Null registry element should gain effective global registry of global registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: CustomElementRegistry is not a constructor
+- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/scoped-registry-define-upgrade-criteria.html
 
-- Adding definition to global registry should not affect shadow roots using scoped registry: assert_false: expected false got true
-- Adding definition to scoped registry should affect all associated shadow roots: assert_true: expected true got false
-- Adding definition to scoped registry should not affect document tree scope: assert_true: expected true got false
-- Adding definition to scoped registry should not affect shadow roots using other registries: assert_true: expected true got false
-- Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
-- Adding definition to scoped registry affects associated shadow roots in all iframes: assert_true: expected true got false
-- Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function
+- Adding definition to scoped registry should upgrade nodes associated with the registry.: CustomElementRegistry is not a constructor
+- Adding definition to global registry should not affect shadow roots using scoped registry: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should affect all associated shadow roots: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should not affect document tree scope: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should not affect shadow roots using other registries: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should upgrade nodes even after the node is moved into a separate shadow tree.: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry affects associated shadow roots in all iframes: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry affects associated shadow roots in other frame trees: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should not upgrade disconnected elements: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should not upgrade nodes in constructed documents: CustomElementRegistry is not a constructor
+- Adding definition to scoped registry should not upgrade nodes in detached frames: CustomElementRegistry is not a constructor
 - Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function"
 
 ### custom-elements/registries/scoped-registry-define-upgrade-order.html
 
-- Upgrade in tree order in the same tree scope: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
-- Upgrade in shadow-including tree order across tree scopes: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
-- Upgrade order does not depend on shadow root attach order: assert_array_equals: lengths differ, expected array ["a", "c", "b"] length 3, got [] length 0
-- Upgrade in association order across documents, then tree order in each document: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
-- Upgrade order is not affected by DOM order between child frames: assert_array_equals: lengths differ, expected array ["a", "b"] length 2, got [] length 0
-- Upgrade order is affected by shadow tree adoption across documents: assert_array_equals: lengths differ, expected array ["b", "a"] length 2, got [] length 0
-- Elements in the "owner" window of a scoped registry are not always upgraded first: assert_array_equals: lengths differ, expected array ["a", "b"] length 2, got [] length 0
-
-### custom-elements/registries/scoped-registry-effective-global-registry.html
-
-- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Null registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Scoped registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Null registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with exclusive DocumentFragment parent appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Global registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Upgrade in tree order in the same tree scope: CustomElementRegistry is not a constructor
+- Upgrade in shadow-including tree order across tree scopes: CustomElementRegistry is not a constructor
+- Upgrade order does not depend on shadow root attach order: CustomElementRegistry is not a constructor
+- Upgrade in association order across documents, then tree order in each document: CustomElementRegistry is not a constructor
+- Upgrade order is not affected by DOM order between child frames: CustomElementRegistry is not a constructor
+- Upgrade order is affected by shadow tree adoption across documents: CustomElementRegistry is not a constructor
+- Elements in the "owner" window of a scoped registry are not always upgraded first: CustomElementRegistry is not a constructor
 
 ### custom-elements/registries/scoped-registry-initialize-upgrades.html
 
-- CustomElementRegistry.prototype.initialize upgrades already initialized elements: assert_equals: expected "ABElement" but got "HTMLElement"
-- CustomElementRegistry.prototype.initialize upgrades custom elements in imperative shadow root when inserted before define(): assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Document: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: CustomElementRegistry is not a constructor
+- Document: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: CustomElementRegistry is not a constructor
+- Document: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: CustomElementRegistry is not a constructor
+- HTMLDocument: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: CustomElementRegistry is not a constructor
+- HTMLDocument: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: CustomElementRegistry is not a constructor
+- HTMLDocument: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: CustomElementRegistry is not a constructor
+- XHTMLDocument: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: CustomElementRegistry is not a constructor
+- XHTMLDocument: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: CustomElementRegistry is not a constructor
+- XHTMLDocument: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: CustomElementRegistry is not a constructor
+- CustomElementRegistry.prototype.initialize upgrades already initialized elements: CustomElementRegistry is not a constructor
+- CustomElementRegistry.prototype.initialize upgrades custom elements in declarative shadow root when initialize() runs before define(): CustomElementRegistry is not a constructor
+- CustomElementRegistry.prototype.initialize upgrades custom elements in imperative shadow root when inserted before define(): CustomElementRegistry is not a constructor
+
+### custom-elements/registries/scoped-registry-registry-define-get-etc.html
+
+- Custom element registries with a registered custom element return the class in their get method, and the name in their getName method: CustomElementRegistry is not a constructor
+- Scoped Custom element registries do not inherit names or classes from the global registry: CustomElementRegistry is not a constructor
+- Scoped Custom element registries return the same constructor when it is defined in both: CustomElementRegistry is not a constructor
+- Scoped Custom element registries allow registering name that exists in global registry: CustomElementRegistry is not a constructor
+- Custom element registries with a registered custom element resolve the class in their whenDefined method: promise_test: Unhandled rejection with value: object "TypeError: CustomElementRegistry is not a constructor"
+- Scoped Custom element registries resolve the same constructor from whenDefined when it is defined in both: promise_test: Unhandled rejection with value: object "TypeError: CustomElementRegistry is not a constructor"
+- Scoped Custom element registry getters do not resolve globally registered classes from whenDefined: promise_test: Unhandled rejection with value: object "TypeError: CustomElementRegistry is not a constructor"
 
 ### custom-elements/registries/template.window.js
 
 - shadowRootCustomElementRegistry reflects as string: assert_equals: expected (string) "" but got (undefined) undefined
 - Serializing a null registry ShadowRoot with a global registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
-- Serializing a scoped registry ShadowRoot with a global registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
-- Serializing a scoped registry ShadowRoot with a null registry host (document): assert_equals: expected "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template></span>" but got "<span><template shadowrootmode=\"open\" shadowrootserializable=\"\"></template></span>"
-- Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
-- Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
+- Serializing a scoped registry ShadowRoot with a global registry host (document): CustomElementRegistry is not a constructor
+- Serializing a scoped registry ShadowRoot with a null registry host (document): CustomElementRegistry is not a constructor
+- Serializing a null registry ShadowRoot with a scoped registry host (document): CustomElementRegistry is not a constructor
+- Serializing a scoped registry ShadowRoot with a scoped registry host (document): CustomElementRegistry is not a constructor
+- A declarative shadow root gets its default registry from its node document: CustomElementRegistry is not a constructor
+
+### custom-elements/state/ElementInternals-states.html
+
+- CustomStateSet behavior of ElementInternals.states: Initial state: Right-hand side of 'instanceof' is not an object
 
 ### custom-elements/state/state-css-selector-nth-of.html
 
@@ -3737,39 +4382,37 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/state/state-pseudo-class.html
 
-- :state() parsing passes: unknown pseudo-class selector ':state(foo)'
-- :state(foo) in simple cases: unknown pseudo-class selector ':state(foo)'
-- :state(foo) and other pseudo classes: unknown pseudo-class selector ':state(foo)'
+- :state(foo) serialization: Cannot read properties of undefined (reading 'selectorText')
 - :state(foo) and ::part(): assert_equals: :state() matching should be case-sensitive expected "0" but got "0.5"
 - :state(foo) and :host(): assert_equals: expected "dotted" but got "solid"
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
-- document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open("text/html") must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open(URL) must NOT throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.close() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.write must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.writeln must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open("text/html") of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.close() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.write of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.writeln of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open("text/html") must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open(URL) must NOT throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.close() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.write must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.writeln must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open("text/html") of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.close() of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.write of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.writeln of another document must not throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-reactions.html
 
-- document.open() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open("text/html") must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open(URL) must NOT throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.close() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.write must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.writeln must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.open("text/html") of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.close() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.write of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
-- document.writeln of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "TypeError: document.open is not a function"
+- document.open() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open("text/html") must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open(URL) must NOT throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.close() must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.write must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.writeln must throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.open("text/html") of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.close() of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.write of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- document.writeln of another document must not throw an InvalidStateError when processing custom element reactions for a synchronous constructed custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
@@ -3782,9 +4425,9 @@ These pass their subtests and their harness times out. Each is a 250-million-ite
 
 ### custom-elements/upgrading/upgrading-enqueue-reactions.html
 
-- Upgrading a custom element must enqueue attributeChangedCallback on each attribute: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
-- Upgrading a custom element not must enqueue attributeChangedCallback on unobserved attributes: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
-- Upgrading a custom element must enqueue connectedCallback if the element in the document: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
-- Upgrading a custom element must enqueue attributeChangedCallback before connectedCallback: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
-- Upgrading a custom element must not invoke attributeChangedCallback and connectedCallback when the element failed to upgrade: promise_test: Unhandled rejection with value: object "TypeError: contentDocument.write is not a function"
+- Upgrading a custom element must enqueue attributeChangedCallback on each attribute: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- Upgrading a custom element not must enqueue attributeChangedCallback on unobserved attributes: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- Upgrading a custom element must enqueue connectedCallback if the element in the document: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- Upgrading a custom element must enqueue attributeChangedCallback before connectedCallback: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
+- Upgrading a custom element must not invoke attributeChangedCallback and connectedCallback when the element failed to upgrade: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
 

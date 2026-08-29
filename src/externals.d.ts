@@ -106,53 +106,6 @@ declare module "bidi-js" {
 	export default function bidiFactory(): Bidi;
 }
 
-declare module "nwsapi" {
-	/**
-	 * The CSS Selectors engine dom.ts rents rather than writing a matcher.
-	 *
-	 * The factory takes the "global" a document lives in -- here an object
-	 * carrying the document and the DOMException constructor to throw with --
-	 * and returns the engine bound to it.
-	 */
-	export interface NWSAPI {
-		match(selector: string, element: unknown, callback?: unknown): boolean;
-		first(selector: string, context?: unknown, callback?: unknown): unknown;
-		select(selector: string, context?: unknown, callback?: unknown): unknown[];
-		configure(options: Record<string, boolean>): void;
-		/**
-		 * The resolver object every compiled matcher is handed as `s`: the
-		 * engine's own helpers, and the ones a registered selector adds.
-		 */
-		Snapshot: Record<string, unknown>;
-		/**
-		 * Teach the engine a pseudo-class it does not know. The expression
-		 * matches the selector with the rest of it captured last (the parser
-		 * pops that remainder); the callback wraps the source compiled so far
-		 * in the test, and reports whether it recognized the selector.
-		 */
-		registerSelector(
-			name: string,
-			expression: RegExp,
-			callback: (
-				match: string[],
-				source: string,
-				mode: boolean,
-				callback: unknown,
-			) => {
-				match?: string[];
-				source: string;
-				status: boolean;
-				modvar: string | null;
-			},
-		): void;
-	}
-
-	export default function nwsapi(global: {
-		document: unknown;
-		DOMException?: unknown;
-	}): NWSAPI;
-}
-
 declare module "arabic-persian-reshaper" {
 	interface Shaper {
 		convertArabic(text: string): string;

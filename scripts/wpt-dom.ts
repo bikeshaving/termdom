@@ -928,14 +928,6 @@ const DEVIATIONS: Array<[string, string]> = [
 		"An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.",
 	],
 	[
-		"dom/nodes/Element-matches-namespaced-elements.html, querySelector-mixed-case.html",
-		"A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, which carries no namespace prefix map.",
-	],
-	[
-		"dom/nodes/Element-closest.html",
-		"`:scope` inside matches() and closest() resolves against the document rather than the element the method was called on. The selector engine is nwsapi, and its match entry point takes no scoping root.",
-	],
-	[
 		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
 		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.",
 	],
@@ -945,7 +937,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
-		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented.",
+		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented. `:valid`, `:invalid`, `:user-valid`, `:user-invalid`, `:in-range` and `:out-of-range` read the same flags, so they are selectors this engine accepts and matches nothing with -- which is the `:invalid` subtest of dom/nodes/Element-closest.html.",
 	],
 	[
 		"the focus members, and every subtest that moves focus",
