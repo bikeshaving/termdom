@@ -556,6 +556,21 @@ async function runFile(file: string): Promise<Outcome> {
 	return outcome;
 }
 
+/** Put every name on the realm, over whatever the window already put there. */
+function defineAll(
+	scope: Record<string, unknown>,
+	values: Record<string, unknown>,
+): void {
+	for (const [name, value] of Object.entries(values)) {
+		Object.defineProperty(scope, name, {
+			value,
+			writable: true,
+			enumerable: true,
+			configurable: true,
+		});
+	}
+}
+
 /**
  * A realm of the file's own, with the file's window as its global.
  *
@@ -614,7 +629,9 @@ function createRealm(window: EngineWindow, url: string): object {
 			});
 		}
 	}
-	Object.assign(scope, {
+	// Defined rather than assigned: the loop above copies the window's own
+	// accessors onto the realm, and a getter with no setter refuses a write.
+	defineAll(scope, {
 		document: window.document,
 		location: {
 			href: url,
