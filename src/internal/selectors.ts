@@ -12,7 +12,9 @@
  * Nothing here imports the engine. The resolver is the whole of what a matcher
  * knows about the document around it, so a headless tree matches through the
  * same code as one being painted, and a bug in a pseudo-class is a bug in one
- * function rather than in a string of generated source.
+ * function rather than in a string of generated source. The two libraries it
+ * does import are the ones that read text: css-tree for the selector, and
+ * bidi-js for the first strong character `:dir(auto)` turns on.
  *
  * Matching runs right to left, from the subject compound outwards, which is
  * what makes a long descendant selector cheap: the first compound that fails
