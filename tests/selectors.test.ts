@@ -225,6 +225,27 @@ test("the four combinators, read right to left", () => {
 	expect(ids(TREE, "#p1 ~ p")).toEqual(["p2", "p3"]);
 });
 
+test("a deep tree costs no stack", () => {
+	const document = tree("<div id=top></div>");
+	const top = find(document, "top") as unknown as {
+		appendChild(child: unknown): void;
+		ownerDocument: {createElement(name: string): unknown};
+	};
+	let node = top;
+	for (let depth = 0; depth < 20000; depth++) {
+		const child = top.ownerDocument.createElement("div") as typeof top & {
+			setAttribute(name: string, value: string): void;
+		};
+		if (depth === 19999) {
+			child.setAttribute("class", "deep");
+		}
+		node.appendChild(child);
+		node = child;
+	}
+	expect(selectAll(document, ".deep").length).toBe(1);
+	expect(selectAll(document, "#top:has(.deep)").length).toBe(1);
+});
+
 test("results come back in tree order, once each", () => {
 	expect(ids(TREE, "p, #p2, div p")).toEqual(["p1", "p2", "p3"]);
 });

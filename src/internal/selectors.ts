@@ -301,7 +301,7 @@ export interface MatchNode {
 	readonly parentNode: MatchNode | null;
 	readonly previousSibling: MatchNode | null;
 	readonly nextSibling: MatchNode | null;
-	readonly childNodes: ArrayLike<MatchNode>;
+	readonly firstChild: MatchNode | null;
 	readonly attributes: ArrayLike<MatchAttribute>;
 	getAttribute(name: string): string | null;
 }
@@ -1734,9 +1734,11 @@ function canOpen(element: MatchNode): boolean {
 }
 
 function isEmpty(element: MatchNode): boolean {
-	const children = element.childNodes;
-	for (let index = 0; index < children.length; index++) {
-		const child = children[index];
+	for (
+		let child = element.firstChild;
+		child !== null;
+		child = child.nextSibling
+	) {
 		if (child.nodeType === ELEMENT_NODE) {
 			return false;
 		}
@@ -1936,9 +1938,11 @@ function autoDirection(element: MatchNode): "ltr" | "rtl" {
 /** The text a `dir=auto` scan reads under an element, in tree order. */
 function textUnder(element: MatchNode, all: boolean): string {
 	let text = "";
-	const children = element.childNodes;
-	for (let index = 0; index < children.length; index++) {
-		const child = children[index];
+	for (
+		let child = element.firstChild;
+		child !== null;
+		child = child.nextSibling
+	) {
 		if (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE) {
 			text += child.nodeValue ?? "";
 			continue;
@@ -2104,37 +2108,20 @@ function hasMatch(
 	// touched: inside `:has()` it still names whatever the query scoped to.
 	const inside: MatchState = {...state, anchor: element};
 	for (const complex of inner) {
+		const selects = (node: MatchNode): boolean =>
+			matchComplex(complex, node, inside, false);
 		const leading = complex.combinators[0] ?? " ";
-		const sideways = leading === "+" || leading === "~";
-		let found = false;
-		const visit = (node: MatchNode): boolean => {
-			if (matchComplex(complex, node, inside, false)) {
-				return true;
-			}
-			for (const child of elementChildren(node)) {
-				if (visit(child)) {
+		if (leading === "+" || leading === "~") {
+			for (
+				let sibling = nextElement(element);
+				sibling !== null;
+				sibling = nextElement(sibling)
+			) {
+				if (selects(sibling) || walk(sibling, selects)) {
 					return true;
 				}
 			}
-			return false;
-		};
-		if (sideways) {
-			for (
-				let sibling = nextElement(element);
-				sibling !== null && !found;
-				sibling = nextElement(sibling)
-			) {
-				found = visit(sibling);
-			}
-		} else {
-			for (const child of elementChildren(element)) {
-				if (visit(child)) {
-					found = true;
-					break;
-				}
-			}
-		}
-		if (found) {
+		} else if (walk(element, selects)) {
 			return true;
 		}
 	}
@@ -2150,10 +2137,9 @@ function parentElement(node: MatchNode): MatchNode | null {
 
 function elementChildren(node: MatchNode): MatchNode[] {
 	const found: MatchNode[] = [];
-	const children = node.childNodes;
-	for (let index = 0; index < children.length; index++) {
-		if (children[index].nodeType === ELEMENT_NODE) {
-			found.push(children[index]);
+	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+		if (child.nodeType === ELEMENT_NODE) {
+			found.push(child);
 		}
 	}
 	return found;
@@ -2370,18 +2356,42 @@ export function closestSelector(
 	return null;
 }
 
-/** Every element in a subtree, in tree order, until the visitor says stop. */
+/**
+ * The node after this one in tree order, stopping at a root: its first child,
+ * or else the next sibling of the nearest ancestor that has one.
+ */
+function nextInTree(node: MatchNode, root: MatchNode): MatchNode | null {
+	if (node.firstChild !== null) {
+		return node.firstChild;
+	}
+	for (
+		let current: MatchNode | null = node;
+		current !== null && current !== root;
+		current = current.parentNode
+	) {
+		if (current.nextSibling !== null) {
+			return current.nextSibling;
+		}
+	}
+	return null;
+}
+
+/**
+ * Every element under a root, in tree order, until the visitor says stop.
+ *
+ * The walk steps along the links a node already has rather than recursing, so
+ * a deep tree costs no stack and a wide one allocates nothing.
+ */
 function walk(
 	root: MatchNode,
 	visit: (element: MatchNode) => boolean,
 ): boolean {
-	const children = root.childNodes;
-	for (let index = 0; index < children.length; index++) {
-		const child = children[index];
-		if (child.nodeType !== ELEMENT_NODE) {
-			continue;
-		}
-		if (visit(child) || walk(child, visit)) {
+	for (
+		let node = nextInTree(root, root);
+		node !== null;
+		node = nextInTree(node, root)
+	) {
+		if (node.nodeType === ELEMENT_NODE && visit(node)) {
 			return true;
 		}
 	}
