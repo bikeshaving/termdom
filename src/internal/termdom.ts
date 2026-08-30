@@ -3007,7 +3007,7 @@ function reserveRows(
 		const wire = termdom[kExchange].wire;
 		wire.cursorTo(termdom[kViewport].height, 1);
 		for (let i = 0; i < push; i++) {
-			wire.index();
+			wire.scrollStep();
 		}
 		void termdom[kExchange].write(wire.take());
 		// Do NOT shift the screen's previous buffer. Its rows are relative to

@@ -849,7 +849,7 @@ function gridLine(grid: CellGrid, row: number, wire: Wire): string {
 	}
 
 	if (previous !== -1) {
-		wire.sgrReset();
+		wire.resetStyle();
 	}
 	return wire.take();
 }
@@ -974,10 +974,12 @@ export class CellContext {
 		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
 
-			// Never write a control char to a cell: a cell is a column, and one
-			// of the wire's refused bytes would survive to the output as a raw
-			// escape byte (injection from untrusted text).
-			if (Wire.carry(char) === "") {
+			// Never write a control char to a cell: a cell is a column, and a
+			// control byte must be turned away before it takes one, or it
+			// survives to the output as a raw escape byte (injection from
+			// untrusted text).
+			const code = char.codePointAt(0)!;
+			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
 				continue;
 			}
 
@@ -1310,7 +1312,7 @@ function styleDiff(
 	const wasDefault = prevFg === 0 && prevBg === 0 && prevAttrs === 0;
 	if (fg === 0 && bg === 0 && attrs === 0) {
 		if (!wasDefault) {
-			wire.sgrReset();
+			wire.resetStyle();
 		}
 		return;
 	}
@@ -1648,7 +1650,7 @@ function generateANSI(
 		if (rowHasContent) {
 			prevIndex = -1;
 			if (rowHasANSI) {
-				output += wire.sgrReset().take();
+				output += wire.resetStyle().take();
 			}
 		}
 	}

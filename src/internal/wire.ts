@@ -62,7 +62,7 @@ function rgbToBasic8(color: number): number {
  * eight the oldest terminals have. Parameters, not a whole SGR -- a run of
  * them shares one escape.
  */
-function sgrColor(
+function colorParameters(
 	color: number,
 	isFg: boolean,
 	colorDepth: ColorDepth,
@@ -134,13 +134,17 @@ function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
  * them: colors, then attributes. "" when the run says nothing -- no escape
  * is ever emitted empty, since an empty SGR is the terminal's reset.
  */
-function sgrStyle(run: StyleRun, colorDepth: ColorDepth): string {
+function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
 	const codes: string[] = [];
 	if (run.fg !== undefined) {
-		codes.push(run.fg === null ? "39" : sgrColor(run.fg, true, colorDepth));
+		codes.push(
+			run.fg === null ? "39" : colorParameters(run.fg, true, colorDepth),
+		);
 	}
 	if (run.bg !== undefined) {
-		codes.push(run.bg === null ? "49" : sgrColor(run.bg, false, colorDepth));
+		codes.push(
+			run.bg === null ? "49" : colorParameters(run.bg, false, colorDepth),
+		);
 	}
 
 	const wanted = run.attributes;
@@ -528,10 +532,7 @@ const kReplyLimit = Symbol("replyLimit");
  * text(), title() and clipboardWrite() are the three that carry a document's
  * own characters, and each makes what it carries safe: the first two drop the
  * bytes a terminal would read as commands, and the third base64s its payload
- * out of the question entirely. A cell's grapheme is refused earlier still --
- * carry() is where the screen asks, since a cell is a column and a refused
- * byte must be turned away before it takes one -- so the glyphs a frame emits
- * are safe before they ever reach text().
+ * out of the question entirely.
  *
  * The reader half owns every cut a chunk boundary can make. An escape sequence
  * split before its final byte is held for the next chunk -- but never a bare
@@ -574,16 +575,6 @@ export class Wire {
 		this[kTail] = "";
 		this[kPasteBody] = null;
 		this[kReplyBody] = null;
-	}
-
-	/**
-	 * What the wire will carry of one grapheme: the grapheme itself, or "" for
-	 * one of the bytes no payload may put on the wire. The screen's cell writer
-	 * asks here -- a cell is a column, and a control character taking one would
-	 * leave the column holding an invisible byte.
-	 */
-	static carry(grapheme: string): string {
-		return isControlByte(grapheme.codePointAt(0)!) ? "" : grapheme;
 	}
 
 	/** Everything spelled since the last take, and the buffer is empty again. */
@@ -632,7 +623,7 @@ export class Wire {
 	}
 
 	/** IND: down one row, scrolling the screen when the cursor is at the end. */
-	index(): this {
+	scrollStep(): this {
 		this[kOut].push("\x1bD");
 		return this;
 	}
@@ -686,7 +677,7 @@ export class Wire {
 	/* ----------------------------------------------------------- the style */
 
 	/** SGR 0: back to the terminal's own defaults. */
-	sgrReset(): this {
+	resetStyle(): this {
 		this[kOut].push("\x1b[0m");
 		return this;
 	}
@@ -697,7 +688,7 @@ export class Wire {
 	 * empty, since an empty SGR is the terminal's reset.
 	 */
 	style(run: StyleRun): this {
-		const escape = sgrStyle(run, this[kColorDepth]);
+		const escape = styleEscape(run, this[kColorDepth]);
 		if (escape !== "") {
 			this[kOut].push(escape);
 		}
@@ -713,7 +704,7 @@ export class Wire {
 	}
 
 	/** SM/RM: engage or release an ANSI mode by number. */
-	ansiMode(code: number, on: boolean): this {
+	mode(code: number, on: boolean): this {
 		this[kOut].push(`\x1b[${code}${on ? "h" : "l"}`);
 		return this;
 	}

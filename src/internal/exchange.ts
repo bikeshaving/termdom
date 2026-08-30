@@ -728,7 +728,7 @@ export class TerminalExchange {
 		const answer = await probeMode(
 			this,
 			"8",
-			this[kWire].ansiMode(8, false).take(),
+			this[kWire].mode(8, false).take(),
 		);
 
 		// No bidi at all: cells land as written, which is the contract we want.
@@ -934,7 +934,7 @@ export class TerminalExchange {
 		// mode it reported, so the next command inherits its own settings rather
 		// than ours. Only when it was SET -- reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
-			void this.write(this[kWire].ansiMode(8, true).take());
+			void this.write(this[kWire].mode(8, true).take());
 			this[kPriorBidiMode] = null;
 		}
 		// The engaged modes go back too -- 2027 among them, for a terminal
