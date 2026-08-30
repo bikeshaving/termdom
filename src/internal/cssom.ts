@@ -47,19 +47,21 @@ import {
 	setDocumentFocusVisible,
 	TransitionEvent,
 	type EngineWindow,
+	type Element as DOMElement,
+	type Node as DOMNode,
 } from "./dom.js";
 import * as CSSTree from "css-tree";
 import {
-	type MatchNode,
+	type CompiledSelector,
 	type SelectorNamespaces,
 	type SelectorNode,
 	LEGACY_PSEUDO_ELEMENTS,
 	NO_NAMESPACES,
 	compileSelector,
 	getChildren,
-	matchesSelector as selectorMatches,
+	matchesCompiled,
 	parseSelectorList,
-	selectAll,
+	selectAllCompiled,
 	pseudoName,
 } from "./selectors.js";
 import {stringWidth} from "./text.js";
@@ -10030,7 +10032,18 @@ function getListMarker(listItem: Element, listParent: Element): string {
 
 // TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
-	selector: string;
+	/**
+	 * The rule's selector, compiled against the namespaces its sheet declared.
+	 * A rule is matched through this and never through its text: the selector
+	 * is read once, when the sheet is parsed. Null for a selector this engine
+	 * cannot read, which styles nothing.
+	 */
+	matcher: CompiledSelector | null;
+	/**
+	 * The same selector read relative to a scoping root, which is what
+	 * `@scope { > .a { } }` writes. Only a rule inside an `@scope` has one.
+	 */
+	relativeMatcher: CompiledSelector | null;
 	/**
 	 * The element type the selector's subject is anchored to, lowercased --
 	 * absent when the subject names no type and any element could be it. Every
@@ -10060,12 +10073,6 @@ interface ParsedCSSRule {
 	 */
 	reachesHost?: boolean;
 	/**
-	 * The namespaces the sheet declared, which the selector's prefixes -- and
-	 * its typeless compounds -- are read against. Absent for a sheet that
-	 * declared none, where a prefix is invalid and a compound is unqualified.
-	 */
-	namespaces?: SelectorNamespaces;
-	/**
 	 * True for rules declared by a UA-internal shadow tree's stylesheet.
 	 * Cascade ORIGIN, the tier above specificity: every author rule beats
 	 * every UA rule, which is what lets `input::placeholder { color }`
@@ -10092,13 +10099,20 @@ interface ParsedCSSRule {
 }
 
 /**
- * One `@scope (start) to (end)` prelude: the selector lists naming the scoping
- * roots and the scoping limits. `start` is null for `@scope` written without a
- * root, whose root is the element the stylesheet's owner node sits in.
+ * One `@scope (start) to (end)` prelude, compiled: the selectors naming the
+ * scoping roots and the scoping limits. `roots` is null for `@scope` written
+ * without a root, whose root is the element the stylesheet's owner node sits
+ * in.
  */
 interface ScopeCondition {
-	start: string | null;
-	end: string | null;
+	roots: readonly CompiledSelector[] | null;
+	/**
+	 * The same roots read relative to the scope an enclosing `@scope` opened,
+	 * which is what lets `@scope (.a) { @scope (> .b) }` say what it says.
+	 */
+	rootsInOuter: readonly CompiledSelector[];
+	/** The scoping limits, read relative to the root they close. */
+	limits: readonly CompiledSelector[];
 	/** The implicit scoping root, for a condition that names none. */
 	owner: Element | null;
 }
@@ -10126,16 +10140,15 @@ function scopeRootMatches(
 	element: Element,
 	condition: ScopeCondition,
 	outer: Element | null,
-	namespaces?: SelectorNamespaces,
 ): boolean {
-	if (condition.start === null) {
+	if (condition.roots === null) {
 		return element === condition.owner;
 	}
-	return splitSelectorList(condition.start).some((selector) =>
-		outer ?
-				matchesInScope(element, selector, outer, namespaces) :
-				matchesSelector(element, selector, namespaces),
-	);
+	// Inside an enclosing scope the roots are read relative to the root that
+	// scope found, which is also what `:scope` names for them.
+	return outer ?
+			condition.rootsInOuter.some((root) => selects(element, root, outer)) :
+			condition.roots.some((root) => selects(element, root, element));
 }
 
 /**
@@ -10147,62 +10160,56 @@ function isInScope(
 	element: Element,
 	root: Element,
 	condition: ScopeCondition,
-	namespaces?: SelectorNamespaces,
 ): boolean {
-	const limits = condition.end ? splitSelectorList(condition.end) : [];
 	let node: Element | null = element;
 	for (; node && node !== root; node = node.parentElement) {
-		if (
-			limits.some((selector) =>
-				matchesInScope(node!, selector, root, namespaces),
-			)
-		) {
+		if (condition.limits.some((limit) => selects(node!, limit, root))) {
 			return false;
 		}
 	}
 	return node === root;
 }
 
-/** `element.matches`, with a selector the matcher rejects matching nothing. */
-function matchesSelector(
+/**
+ * Whether a compiled selector selects an element, with `:scope` naming the
+ * given node and the engine answering everything the tree cannot.
+ *
+ * The cascade types its nodes as the platform's interfaces and the matcher
+ * types them as this DOM's own classes. They are the same objects under two
+ * names, and this is where either is written as the other.
+ */
+function selects(
 	element: Element,
-	selector: string,
-	namespaces?: SelectorNamespaces,
+	selector: CompiledSelector,
+	scope: Node,
+	shadow: Node | null = null,
 ): boolean {
-	try {
-		return selectorMatches(element as unknown as MatchNode, selector, {
-			resolver: selectorResolver,
-			scope: element as unknown as MatchNode,
-			namespaces,
-		});
-	} catch (_err) {
-		return false;
-	}
+	return matchesCompiled(element as unknown as DOMElement, selector, {
+		resolver: selectorResolver,
+		scope: scope as unknown as DOMNode,
+		shadow: shadow as DOMNode | null,
+	});
 }
 
 /**
- * Whether an element matches a scoped selector, `:scope` standing for the
- * given scoping root.
- *
- * A selector opening with a combinator is relative to the root, which is what
- * `@scope { > .a { } }` means, so the matcher is told to expect one.
+ * The selectors of a list a stylesheet declared, compiled once. One this
+ * engine cannot read selects nothing and is dropped, which is what an
+ * unreadable selector did at every match before.
  */
-function matchesInScope(
-	element: Element,
-	selector: string,
-	root: Element,
-	namespaces?: SelectorNamespaces,
-): boolean {
-	try {
-		return selectorMatches(element as unknown as MatchNode, selector, {
-			resolver: selectorResolver,
-			scope: root as unknown as MatchNode,
-			relative: true,
-			namespaces,
-		});
-	} catch (_err) {
-		return false;
+function compileSelectors(
+	text: string,
+	options: {namespaces: SelectorNamespaces; relative?: boolean},
+): CompiledSelector[] {
+	const compiled: CompiledSelector[] = [];
+	for (const selector of splitSelectorList(text)) {
+		try {
+			compiled.push(compileSelector(selector, options));
+		} catch (_err) {
+			// A prelude is sliced out of its at-rule's text, so what arrives here
+			// has passed no grammar check of its own.
+		}
 	}
+	return compiled;
 }
 
 interface CounterState {
@@ -11250,7 +11257,7 @@ export class StyleManager {
 				const host = rule.reachesHost ?
 						((rule.scope as ShadowRoot).host as Element | null) :
 					null;
-				if (host && ruleSelectorMatches(host, rule, rule.selector)) {
+				if (host && ruleSelectorMatches(host, rule)) {
 					matchingElements.add(host);
 				}
 			}
@@ -12711,17 +12718,9 @@ function parseStyleSheet(
 					);
 			parseStyleSheet(manager, rule, scope, uaOrigin, {...context, layer});
 		} else if (rule instanceof CSSScopeRule) {
-			const owner = rule.parentStyleSheet?.ownerNode ?? null;
 			parseStyleSheet(manager, rule, scope, uaOrigin, {
 				...context,
-				scopes: [
-					...context.scopes,
-					{
-						start: rule.start,
-						end: rule.end,
-						owner: owner ? owner.parentElement : null,
-					},
-				],
+				scopes: [...context.scopes, readScopeCondition(rule)],
 			});
 		} else if (rule instanceof CSSStartingStyleRule) {
 			// `@starting-style` declares the style a box starts a transition
@@ -12951,6 +12950,28 @@ function mediaFeatureRangeMatches(
 			mediaComparison(length, range.leftComparison, actual);
 }
 
+/**
+ * One `@scope` prelude as the cascade holds it, read against the namespaces
+ * the sheet that wrote it declared.
+ */
+function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
+	const namespaces = sheetNamespaces(rule.parentStyleSheet);
+	const start = rule.start;
+	const owner = rule.parentStyleSheet?.ownerNode ?? null;
+	return {
+		roots: start === null ? null : compileSelectors(start, {namespaces}),
+		rootsInOuter:
+			start === null ?
+					[] :
+					compileSelectors(start, {namespaces, relative: true}),
+		limits:
+			rule.end ?
+					compileSelectors(rule.end, {namespaces, relative: true}) :
+					[],
+		owner: owner ? owner.parentElement : null,
+	};
+}
+
 /** One style rule as the cascade holds it: selector, declarations, scope. */
 function parseStyleRule(
 	manager: StyleManager,
@@ -13025,6 +13046,29 @@ function indexReachingKeys(
 			manager[kReachingStates] = true;
 		}
 	}
+}
+
+/**
+ * A rule's selector, read once and kept: the plain reading every rule is
+ * matched by, and the relative one a rule inside an `@scope` is also read
+ * with. A selector this engine cannot read compiles to neither, and the rule
+ * styles nothing.
+ */
+function compileRuleSelector(
+	selector: string,
+	namespaces: SelectorNamespaces | undefined,
+	scopes: readonly ScopeCondition[] | undefined,
+): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
+	const read = (relative: boolean): CompiledSelector | null => {
+		try {
+			return compileSelector(selector, {namespaces, relative});
+		} catch (_err) {
+			// Only the shape of a sheet's selector was checked when the rule was
+			// parsed: a prefix no `@namespace` declared is refused here.
+			return null;
+		}
+	};
+	return {matcher: read(false), relativeMatcher: scopes ? read(true) : null};
 }
 
 function parseSelector(
@@ -13120,7 +13164,7 @@ function parseSelector(
 		const rule: ParsedCSSRule = {
 			// A pseudo-element written with no originating selector
 			// originates on every element, which is what `*` names.
-			selector: baseSelector.trim() || "*",
+			...compileRuleSelector(baseSelector.trim() || "*", namespaces, scopes),
 			subjectTag: reading.subjectTag,
 			declarations,
 			important,
@@ -13129,7 +13173,6 @@ function parseSelector(
 			pseudoElement,
 			scope,
 			uaOrigin,
-			namespaces,
 			reachesHost,
 			layer,
 			layerRank: 0,
@@ -13144,7 +13187,7 @@ function parseSelector(
 		}
 	} else {
 		manager[kParsedRules].push({
-			selector,
+			...compileRuleSelector(selector, namespaces, scopes),
 			subjectTag,
 			declarations,
 			important,
@@ -13152,7 +13195,6 @@ function parseSelector(
 			specificity,
 			scope,
 			uaOrigin,
-			namespaces,
 			reachesHost,
 			layer,
 			layerRank: 0,
@@ -13240,52 +13282,45 @@ function getMatchingRules(
 function ruleSelectorMatches(
 	element: Element,
 	rule: ParsedCSSRule,
-	selector: string,
 	root?: Element,
 ): boolean {
-	try {
-		return selectorMatches(element as unknown as MatchNode, selector, {
-			resolver: selectorResolver,
-			scope: (root ?? element) as unknown as MatchNode,
-			relative: root !== undefined,
-			namespaces: rule.namespaces,
-			shadow: (rule.reachesHost ? rule.scope : null) as MatchNode | null,
-		});
-	} catch (_err) {
-		// A rule whose selector this engine cannot read styles nothing.
+	// A rule read from a scoping root is the relative reading of its selector;
+	// anywhere else it is the plain one. A rule whose selector this engine
+	// cannot read has neither, and styles nothing.
+	const matcher = root === undefined ? rule.matcher : rule.relativeMatcher;
+	if (matcher === null) {
 		return false;
 	}
+	return selects(element, matcher, root ?? element, ruleShadow(rule));
 }
 
 /** Every element under a root that a rule's selector reaches. */
 function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
-	try {
-		return selectAll(root as unknown as MatchNode, rule.selector, {
-			resolver: selectorResolver,
-			scope: root as unknown as MatchNode,
-			namespaces: rule.namespaces,
-			shadow: (rule.reachesHost ? rule.scope : null) as MatchNode | null,
-		}) as unknown as Element[];
-	} catch (_err) {
+	if (rule.matcher === null) {
 		return [];
 	}
+	return selectAllCompiled(root as unknown as DOMNode, rule.matcher, {
+		resolver: selectorResolver,
+		scope: root as unknown as DOMNode,
+		shadow: ruleShadow(rule) as DOMNode | null,
+	}) as unknown as Element[];
+}
+
+/** The shadow root a `:host` rule was written in, which is all `:host` reads. */
+function ruleShadow(rule: ParsedCSSRule): Node | null {
+	return (rule.reachesHost ? rule.scope : null) ?? null;
 }
 
 /**
- * Whether an element matches one of a rule's selectors. A scoped rule's
- * selector is written relative to a scoping root and reaches only the
- * elements that root has in scope; every other rule's is matched by the
- * DOM outright.
+ * Whether an element matches a rule's selector. A scoped rule's selector is
+ * written relative to a scoping root and reaches only the elements that root
+ * has in scope; every other rule's is matched by the DOM outright.
  */
-function matchesRule(
-	element: Element,
-	rule: ParsedCSSRule,
-	selector: string,
-): boolean {
+function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	if (!rule.scopes) {
-		return ruleSelectorMatches(element, rule, selector);
+		return ruleSelectorMatches(element, rule);
 	}
-	return scopingRoot(element, {...rule, selector}) !== null;
+	return scopingRoot(element, rule) !== null;
 }
 
 /**
@@ -13339,16 +13374,14 @@ function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 			if (outer && candidate !== outer && !outer.contains(candidate)) {
 				break;
 			}
-			if (
-				!scopeRootMatches(candidate, condition, outer, rule.namespaces)
-			) {
+			if (!scopeRootMatches(candidate, condition, outer)) {
 				continue;
 			}
-			if (!isInScope(element, candidate, condition, rule.namespaces)) {
+			if (!isInScope(element, candidate, condition)) {
 				continue;
 			}
 			if (innermost) {
-				if (!ruleSelectorMatches(element, rule, rule.selector, candidate)) {
+				if (!ruleSelectorMatches(element, rule, candidate)) {
 					continue;
 				}
 				// The nearest root the rule reaches the element from.
@@ -13422,19 +13455,18 @@ function ruleMatches(
 		}
 	}
 	if (rule.scope) {
-		return matchesRule(element, rule, rule.selector);
+		return matchesRule(element, rule);
 	}
 	// UA document rules apply in EVERY tree scope, as a browser's own
 	// UA sheet styles shadow trees.
 	if (rule.uaOrigin) {
-		return matchesRule(element, rule, rule.selector);
+		return matchesRule(element, rule);
 	}
 	// AUTHOR document rules match everything OUTSIDE shadow trees --
 	// including detached elements (styles resolve before insertion,
 	// and always have here); the boundary they must not cross is the
 	// shadow root.
-	return asShadowRoot(root) === null &&
-		matchesRule(element, rule, rule.selector);
+	return asShadowRoot(root) === null && matchesRule(element, rule);
 }
 
 /**
@@ -13611,7 +13643,7 @@ function pseudoRuleCouldMatch(
 		return false;
 	}
 	for (const rule of rules) {
-		if (ruleSelectorMatches(element, rule, rule.selector)) {
+		if (ruleSelectorMatches(element, rule)) {
 			return true;
 		}
 	}

@@ -26,7 +26,6 @@
 
 import {parseFragment, parse as parse5Parse} from "parse5";
 import {
-	type MatchNode,
 	type SelectorResolver,
 	SelectorError,
 	closestSelector,
@@ -9204,11 +9203,7 @@ function elementMatches(this: Element, selectors: string): boolean {
 		throw new TypeError("matches needs a selector");
 	}
 	try {
-		return matchesSelector(
-			this as unknown as MatchNode,
-			String(selectors),
-			queryOptions(this),
-		);
+		return matchesSelector(this, String(selectors), queryOptions(this));
 	} catch (error) {
 		throw asSyntaxError(error);
 	}
@@ -9235,11 +9230,7 @@ Object.defineProperties(Element.prototype, {
 			try {
 				// `:scope` names the element closest() was called on, for every
 				// ancestor it then tries.
-				return closestSelector(
-					this as unknown as MatchNode,
-					String(selectors),
-					queryOptions(this),
-				) as unknown as Element | null;
+				return closestSelector(this, String(selectors), queryOptions(this));
 			} catch (error) {
 				throw asSyntaxError(error);
 			}
@@ -22542,11 +22533,7 @@ const parentNodeMembers = {
 				throw new TypeError("querySelector needs a selector");
 			}
 			try {
-				return selectFirst(
-					this as unknown as MatchNode,
-					String(selectors),
-					queryOptions(this),
-				) as unknown as Element | null;
+				return selectFirst(this, String(selectors), queryOptions(this));
 			} catch (error) {
 				throw asSyntaxError(error);
 			}
@@ -22562,11 +22549,7 @@ const parentNodeMembers = {
 			}
 			try {
 				return createStaticNodeList(
-					selectAll(
-						this as unknown as MatchNode,
-						String(selectors),
-						queryOptions(this),
-					) as unknown as Node[],
+					selectAll(this, String(selectors), queryOptions(this)),
 				);
 			} catch (error) {
 				throw asSyntaxError(error);
@@ -25816,43 +25799,36 @@ function isOpenElement(element: Element): boolean {
  * -- the states simply answer no.
  */
 export const selectorResolver: SelectorResolver = {
-	root(node: MatchNode): MatchNode {
-		return getRoot(node as unknown as Node) as unknown as MatchNode;
+	root(node: Node): Node {
+		return getRoot(node);
 	},
-	shadowHost(root: MatchNode): MatchNode | null {
-		const node = root as unknown as Node;
-		return isShadowRoot(node) ?
-				((node as ShadowRoot)[kHost]! as unknown as MatchNode) :
-			null;
+	shadowHost(root: Node): Element | null {
+		return isShadowRoot(root) ? (root as ShadowRoot)[kHost]! : null;
 	},
-	flatParent(element: MatchNode): MatchNode | null {
-		return flatParentElement<MatchNode>(element);
+	flatParent(element: Element): Element | null {
+		return flatParentElement<Element>(element);
 	},
-	assignedSlot(element: MatchNode): MatchNode | null {
-		return (
-			((element as unknown as Element).assignedSlot as unknown as MatchNode) ??
-			null
-		);
+	assignedSlot(element: Element): Element | null {
+		return (element.assignedSlot as Element | null) ?? null;
 	},
-	parts(element: MatchNode): readonly string[] {
-		return partNames(element as unknown as Element);
+	parts(element: Element): readonly string[] {
+		return partNames(element);
 	},
-	html(node: MatchNode): boolean {
-		return isHTMLDocument((node as unknown as Node)[kDocument]!);
+	html(node: Node): boolean {
+		return isHTMLDocument(node[kDocument]!);
 	},
-	quirks(node: MatchNode): boolean {
-		return (node as unknown as Node)[kDocument]![kMode] === "quirks";
+	quirks(node: Node): boolean {
+		return node[kDocument]![kMode] === "quirks";
 	},
-	hovered(element: MatchNode): boolean {
+	hovered(element: Element): boolean {
 		// An element is hovered when the pointer is over it or over anything it
 		// contains in the FLAT tree, which slot projection reorders past what
 		// the node tree records.
-		const document = (element as unknown as Node)[kDocument]!;
+		const document = element[kDocument]!;
 		for (
-			let node: MatchNode | null =
-				(hoveredElements.get(document) as unknown as MatchNode) ?? null;
+			let node: Element | null = hoveredElements.get(document) ?? null;
 			node !== null;
-			node = flatParentElement<MatchNode>(node)
+			node = flatParentElement<Element>(node)
 		) {
 			if (node === element) {
 				return true;
@@ -25865,23 +25841,19 @@ export const selectorResolver: SelectorResolver = {
 		// a terminal reports the key or the click, not the half of it.
 		return false;
 	},
-	focused(element: MatchNode): boolean {
-		return hasFocus(element as unknown as Element);
+	focused(element: Element): boolean {
+		return hasFocus(element);
 	},
-	focusVisible(element: MatchNode): boolean {
-		const document = (element as unknown as Node)[kDocument]!;
-		return (
-			(focusVisibleDocuments.get(document) ?? true) &&
-			hasFocus(element as unknown as Element)
-		);
+	focusVisible(element: Element): boolean {
+		const document = element[kDocument]!;
+		return (focusVisibleDocuments.get(document) ?? true) && hasFocus(element);
 	},
-	focusWithin(element: MatchNode): boolean {
+	focusWithin(element: Element): boolean {
 		// The climb keeps going past every shadow host above the focused
 		// element, which is where the node tree's parent chain runs out.
-		let node: Element | null =
-			(element as unknown as Node)[kDocument]![kActiveElement]!;
+		let node: Element | null = element[kDocument]![kActiveElement]!;
 		while (node !== null) {
-			if ((node as unknown as MatchNode) === element) {
+			if (node === element) {
 				return true;
 			}
 			const parent = node.parentElement as unknown as Element | null;
@@ -25889,78 +25861,74 @@ export const selectorResolver: SelectorResolver = {
 				node = parent;
 				continue;
 			}
-			const root = getRoot(node as unknown as Node);
-			node = isShadowRoot(root) ?
-					((root as ShadowRoot)[kHost]! as unknown as Element) :
-				null;
+			const root = getRoot(node);
+			node = isShadowRoot(root) ? (root as ShadowRoot)[kHost]! : null;
 		}
 		return false;
 	},
-	target(element: MatchNode): boolean {
-		return isTargetElement(element as unknown as Element);
+	target(element: Element): boolean {
+		return isTargetElement(element);
 	},
-	modal(element: MatchNode): boolean {
-		return isModalDialog(element as object);
+	modal(element: Element): boolean {
+		return isModalDialog(element);
 	},
-	popoverOpen(element: MatchNode): boolean {
-		return isShowingPopover(element as object);
+	popoverOpen(element: Element): boolean {
+		return isShowingPopover(element);
 	},
 	fullscreen(): boolean {
 		// A terminal has one surface and everything is already on it.
 		return false;
 	},
-	defined(element: MatchNode): boolean {
-		return (element as unknown as Element)[kCustomState] !== "undefined";
+	defined(element: Element): boolean {
+		return element[kCustomState] !== "undefined";
 	},
-	state(element: MatchNode, name: string): boolean {
-		const internals = (element as unknown as Element)[kInternals] ?? null;
+	state(element: Element, name: string): boolean {
+		const internals = element[kInternals] ?? null;
 		const states = internals === null ? null : (internals[kStates] ?? null);
 		return states !== null && states[kStates]!.has(name);
 	},
-	checked(element: MatchNode): boolean {
-		const node = element as unknown as Element;
-		if (node.namespaceURI !== HTML_NAMESPACE) {
+	checked(element: Element): boolean {
+		if (element.namespaceURI !== HTML_NAMESPACE) {
 			return false;
 		}
-		if (node.localName === "option") {
-			return (node as unknown as HTMLOptionElement).selected;
+		if (element.localName === "option") {
+			return (element as unknown as HTMLOptionElement).selected;
 		}
-		if (node.localName !== "input") {
+		if (element.localName !== "input") {
 			return false;
 		}
-		const type = inputType(node);
+		const type = inputType(element);
 		return (
 			(type === "checkbox" || type === "radio") &&
-			(node as unknown as HTMLInputElement).checked
+			(element as unknown as HTMLInputElement).checked
 		);
 	},
-	indeterminate(element: MatchNode): boolean {
-		const node = element as unknown as Element;
-		if (node.namespaceURI !== HTML_NAMESPACE || node.localName !== "input") {
+	indeterminate(element: Element): boolean {
+		if (
+			element.namespaceURI !== HTML_NAMESPACE ||
+			element.localName !== "input"
+		) {
 			return false;
 		}
 		return (
-			inputType(node) === "checkbox" &&
-			(node as unknown as HTMLInputElement).indeterminate
+			inputType(element) === "checkbox" &&
+			(element as unknown as HTMLInputElement).indeterminate
 		);
 	},
-	placeholderShown(element: MatchNode): boolean {
-		return isPlaceholderShown(element as unknown as Element);
+	placeholderShown(element: Element): boolean {
+		return isPlaceholderShown(element);
 	},
-	defaulted(element: MatchNode): boolean {
-		return isDefaultControl(element as unknown as Element);
+	defaulted(element: Element): boolean {
+		return isDefaultControl(element);
 	},
-	open(element: MatchNode): boolean {
-		return isOpenElement(element as unknown as Element);
+	open(element: Element): boolean {
+		return isOpenElement(element);
 	},
 };
 
 /** What a query over a tree is answered with, and the errors it throws. */
-function queryOptions(scope: Node): {
-	resolver: SelectorResolver;
-	scope: MatchNode;
-} {
-	return {resolver: selectorResolver, scope: scope as unknown as MatchNode};
+function queryOptions(scope: Node): {resolver: SelectorResolver; scope: Node} {
+	return {resolver: selectorResolver, scope};
 }
 
 /** A selector the matcher will not read is a SyntaxError, per the DOM. */

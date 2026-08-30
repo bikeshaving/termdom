@@ -8,10 +8,14 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {parseHTMLDocument} from "../src/internal/dom.js";
+import {
+	type Document,
+	type Element,
+	type Node,
+	parseHTMLDocument,
+} from "../src/internal/dom.js";
 import {
 	INERT_RESOLVER,
-	type MatchNode,
 	type SelectorResolver,
 	SelectorError,
 	closestSelector,
@@ -21,8 +25,8 @@ import {
 	selectFirst,
 } from "../src/internal/selectors.js";
 
-function tree(html: string, url = "about:blank"): MatchNode {
-	return parseHTMLDocument(html, url) as unknown as MatchNode;
+function tree(html: string, url = "about:blank"): Document {
+	return parseHTMLDocument(html, url);
 }
 
 function ids(
@@ -36,7 +40,7 @@ function ids(
 	);
 }
 
-function find(root: MatchNode, id: string): MatchNode {
+function find(root: Node, id: string): Element {
 	const found = selectFirst(root, `#${id}`);
 	if (found === null) {
 		throw new Error(`no #${id} in the fixture`);
@@ -118,13 +122,11 @@ test("a selector is compiled once and answers the same twice", () => {
 test("a type selector folds case for HTML and keeps it for everything else", () => {
 	expect(ids("<p id=a>", "P")).toEqual(["a"]);
 	const document = tree("<div id=host></div>");
-	const svg = (
-		document as unknown as {
-			createElementNS(ns: string, name: string): MatchNode;
-		}
-	).createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-	(find(document, "host") as unknown as {appendChild(n: MatchNode): void})
-		.appendChild(svg);
+	const svg = document.createElementNS(
+		"http://www.w3.org/2000/svg",
+		"feGaussianBlur",
+	) as unknown as Element;
+	find(document, "host").appendChild(svg);
 	expect(matchesSelector(svg, "feGaussianBlur")).toBe(true);
 	expect(matchesSelector(svg, "fegaussianblur")).toBe(false);
 });
@@ -135,13 +137,11 @@ test("a namespace prefix is only as good as its declaration", () => {
 		prefixes: new Map([["svg", "http://www.w3.org/2000/svg"]]),
 	};
 	const document = tree("<div id=a></div>");
-	const svg = (
-		document as unknown as {
-			createElementNS(ns: string, name: string): MatchNode;
-		}
-	).createElementNS("http://www.w3.org/2000/svg", "circle");
-	(find(document, "a") as unknown as {appendChild(n: MatchNode): void})
-		.appendChild(svg);
+	const svg = document.createElementNS(
+		"http://www.w3.org/2000/svg",
+		"circle",
+	) as unknown as Element;
+	find(document, "a").appendChild(svg);
 	expect(matchesSelector(svg, "svg|circle", {namespaces})).toBe(true);
 	expect(matchesSelector(svg, "*|circle", {namespaces})).toBe(true);
 	expect(matchesSelector(svg, "|circle", {namespaces})).toBe(false);
@@ -462,7 +462,7 @@ test("the states an engine holds are the resolver's to answer", () => {
 	const html = "<div id=a></div><div id=b></div>";
 	const document = tree(html);
 	const a = find(document, "a");
-	const only = (element: MatchNode): boolean => element === a;
+	const only = (element: Element): boolean => element === a;
 	const resolver: SelectorResolver = {
 		...INERT_RESOLVER,
 		hovered: only,
@@ -548,7 +548,7 @@ test(":host names the host of the tree the selector was written in", () => {
 		childNodes: [],
 		attributes: [],
 		getAttribute: () => null,
-	} as unknown as MatchNode;
+	} as unknown as Node;
 	const resolver: SelectorResolver = {
 		...INERT_RESOLVER,
 		shadowHost: (root) => (root === shadow ? host : null),
@@ -569,7 +569,7 @@ test("::part and ::slotted select through the boundary, and only for the cascade
 	const document = tree("<div id=host><span id=light></span></div>");
 	const host = find(document, "host");
 	const light = find(document, "light");
-	const slot = tree("<slot></slot>");
+	const slot = find(tree("<slot id=slot></slot>"), "slot");
 	const resolver: SelectorResolver = {
 		...INERT_RESOLVER,
 		parts: (element) => (element === light ? ["knob"] : []),

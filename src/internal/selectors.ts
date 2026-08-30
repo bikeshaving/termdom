@@ -9,9 +9,10 @@
  * element the pointer is over, which one has focus, what a shadow root's host
  * is, whether a dialog is modal.
  *
- * Nothing here imports the engine. The resolver is the whole of what a matcher
- * knows about the document around it, so a headless tree matches through the
- * same code as one being painted, and a bug in a pseudo-class is a bug in one
+ * Nothing of the engine is here at run time: the DOM's node types are imported
+ * for their shape alone. The resolver is the whole of what a matcher knows
+ * about the document around it, so a headless tree matches through the same
+ * code as one being painted, and a bug in a pseudo-class is a bug in one
  * function rather than in a string of generated source. The two libraries it
  * does import are the ones that read text: css-tree for the selector, and
  * bidi-js for the first strong character `:dir(auto)` turns on.
@@ -23,6 +24,9 @@
 
 import * as CSSTree from "css-tree";
 import bidiFactory from "bidi-js";
+// Types only, so nothing of the DOM is here at run time and the import that
+// reads this module back is the only one either file makes.
+import type {Element, Node} from "./dom.js";
 
 /* ------------------------------------------------------------- the grammar */
 
@@ -285,35 +289,6 @@ const DOCUMENT_NODE = 9;
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 /**
- * A node, as the matcher reads it.
- *
- * One interface stands for every node a match walks over -- elements, the text
- * a `:dir(auto)` scan reads, the document or fragment a tree hangs from --
- * because what the matcher reads off one is always gated on its `nodeType`
- * first. The members are the DOM's own, so the engine hands its nodes straight
- * over.
- */
-export interface MatchNode {
-	readonly nodeType: number;
-	readonly localName: string;
-	readonly namespaceURI: string | null;
-	readonly nodeValue: string | null;
-	readonly parentNode: MatchNode | null;
-	readonly previousSibling: MatchNode | null;
-	readonly nextSibling: MatchNode | null;
-	readonly firstChild: MatchNode | null;
-	readonly attributes: ArrayLike<MatchAttribute>;
-	getAttribute(name: string): string | null;
-}
-
-/** An attribute, as the matcher reads it. */
-export interface MatchAttribute {
-	readonly namespaceURI: string | null;
-	readonly localName: string;
-	readonly value: string;
-}
-
-/**
  * Everything a match asks of the engine around the tree.
  *
  * Each of these is a question the node itself cannot answer: a state the user
@@ -324,58 +299,62 @@ export interface MatchAttribute {
  */
 export interface SelectorResolver {
 	/** The root of the tree a node is in: a document, a fragment, a shadow root. */
-	root(node: MatchNode): MatchNode;
+	root(node: Node): Node;
 	/** The host of a shadow root, or null for any other root. */
-	shadowHost(root: MatchNode): MatchNode | null;
+	shadowHost(root: Node): Element | null;
 	/** The parent an element has in the flat tree, which slots reorder. */
-	flatParent(element: MatchNode): MatchNode | null;
+	flatParent(element: Element): Element | null;
 	/** The slot an element is assigned to, or null when it is not slotted. */
-	assignedSlot(element: MatchNode): MatchNode | null;
+	assignedSlot(element: Element): Element | null;
 	/** The part names an element carries, for `::part()`. */
-	parts(element: MatchNode): readonly string[];
+	parts(element: Element): readonly string[];
 	/** Whether the node's document is an HTML document rather than an XML one. */
-	html(node: MatchNode): boolean;
+	html(node: Node): boolean;
 	/** Whether the node's document is in quirks mode. */
-	quirks(node: MatchNode): boolean;
-	hovered(element: MatchNode): boolean;
-	active(element: MatchNode): boolean;
-	focused(element: MatchNode): boolean;
-	focusVisible(element: MatchNode): boolean;
-	focusWithin(element: MatchNode): boolean;
+	quirks(node: Node): boolean;
+	hovered(element: Element): boolean;
+	active(element: Element): boolean;
+	focused(element: Element): boolean;
+	focusVisible(element: Element): boolean;
+	focusWithin(element: Element): boolean;
 	/** Whether the element is the one the document's URL fragment names. */
-	target(element: MatchNode): boolean;
-	modal(element: MatchNode): boolean;
-	popoverOpen(element: MatchNode): boolean;
-	fullscreen(element: MatchNode): boolean;
+	target(element: Element): boolean;
+	modal(element: Element): boolean;
+	popoverOpen(element: Element): boolean;
+	fullscreen(element: Element): boolean;
 	/** Whether a custom element name is defined, and the element upgraded. */
-	defined(element: MatchNode): boolean;
+	defined(element: Element): boolean;
 	/** Whether a custom element declares a state of this name. */
-	state(element: MatchNode, name: string): boolean;
-	checked(element: MatchNode): boolean;
-	indeterminate(element: MatchNode): boolean;
-	placeholderShown(element: MatchNode): boolean;
+	state(element: Element, name: string): boolean;
+	checked(element: Element): boolean;
+	indeterminate(element: Element): boolean;
+	placeholderShown(element: Element): boolean;
 	/** Whether a control is its form's default, per `:default`. */
-	defaulted(element: MatchNode): boolean;
+	defaulted(element: Element): boolean;
 	/** Whether the element is showing what it can open, per `:open`. */
-	open(element: MatchNode): boolean;
+	open(element: Element): boolean;
 }
 
 /** A resolver for a tree no engine is holding: every state is off. */
 export const INERT_RESOLVER: SelectorResolver = {
-	root(node: MatchNode): MatchNode {
+	root(node: Node): Node {
 		let root = node;
-		while (root.parentNode !== null) {
-			root = root.parentNode;
+		for (
+			let parent = parentOf(root);
+			parent !== null;
+			parent = parentOf(root)
+		) {
+			root = parent;
 		}
 		return root;
 	},
-	shadowHost(): MatchNode | null {
+	shadowHost(): Element | null {
 		return null;
 	},
-	flatParent(element: MatchNode): MatchNode | null {
+	flatParent(element: Element): Element | null {
 		return parentElement(element);
 	},
-	assignedSlot(): MatchNode | null {
+	assignedSlot(): Element | null {
 		return null;
 	},
 	parts(): readonly string[] {
@@ -414,17 +393,17 @@ function no(): boolean {
 /** What a match knows beyond the element it starts from. */
 interface MatchState {
 	resolver: SelectorResolver;
-	/** The element `:scope` names, or null when the selector names none. */
-	scope: MatchNode | null;
+	/** The node `:scope` names, or null when the selector names none. */
+	scope: Node | null;
 	/** The shadow root a selector was written inside, for `:host`. */
-	shadow: MatchNode | null;
-	/** The element a relative selector inside `:has()` is anchored to. */
-	anchor: MatchNode | null;
+	shadow: Node | null;
+	/** The node a relative selector inside `:has()` is anchored to. */
+	anchor: Node | null;
 }
 
 /* --------------------------------------------------------- compiled shapes */
 
-type Predicate = (element: MatchNode, state: MatchState) => boolean;
+type Predicate = (element: Element, state: MatchState) => boolean;
 
 type Combinator = " " | ">" | "+" | "~";
 
@@ -437,7 +416,7 @@ interface CompiledCompound {
 	 * the slot, `host::part(x)` selects the part and describes the host. The
 	 * combinator to the left steps from what this answers.
 	 */
-	origin: ((element: MatchNode, state: MatchState) => MatchNode | null) | null;
+	origin: ((element: Element, state: MatchState) => Element | null) | null;
 	/** The tests that origin must pass. */
 	originTests: Predicate[];
 	/** Whether this compound may match a featureless shadow host. */
@@ -718,7 +697,7 @@ function compileComplex(
 /** The compound a relative selector hangs from: the element `:has()` asked. */
 const ANCHOR_COMPOUND: CompiledCompound = {
 	tests: [
-		(element: MatchNode, state: MatchState): boolean =>
+		(element: Element, state: MatchState): boolean =>
 			element === state.anchor,
 	],
 	origin: null,
@@ -982,7 +961,7 @@ function compileAttribute(
 	}
 	// The attribute the element carries, read the way HTML reads a name: an
 	// HTML element in an HTML document folds its attribute names to lower case.
-	const read = (element: MatchNode, state: MatchState): string | null => {
+	const read = (element: Element, state: MatchState): string | null => {
 		const fold =
 			element.namespaceURI === HTML_NAMESPACE && state.resolver.html(element);
 		const attributes = element.attributes;
@@ -1121,7 +1100,7 @@ function compilePseudoClass(
 					);
 				}
 				for (
-					let node: MatchNode | null = element;
+					let node: Element | null = element;
 					node !== null;
 					node = parentElement(node)
 				) {
@@ -1140,12 +1119,8 @@ function compilePseudoClass(
 			return;
 		case "root":
 			compound.tests.push((element) => {
-				const parent = element.parentNode;
-				return (
-					element.nodeType === ELEMENT_NODE &&
-					parent !== null &&
-					parent.nodeType === DOCUMENT_NODE
-				);
+				const parent = parentOf(element);
+				return parent !== null && parent.nodeType === DOCUMENT_NODE;
 			});
 			return;
 		case "empty":
@@ -1541,7 +1516,7 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
  * A hyperlink, which is what `:link` and `:any-link` name: an `a` or an `area`
  * with an href. A `link` element points somewhere too, and HTML leaves it out.
  */
-function isHyperlink(element: MatchNode): boolean {
+function isHyperlink(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}
@@ -1562,7 +1537,7 @@ const DISABLEABLE = new Set([
 	"textarea",
 ]);
 
-function isDisableable(element: MatchNode): boolean {
+function isDisableable(element: Element): boolean {
 	return (
 		element.namespaceURI === HTML_NAMESPACE &&
 		DISABLEABLE.has(element.localName)
@@ -1576,7 +1551,7 @@ function isDisableable(element: MatchNode): boolean {
  * A fieldset disables its descendants except the ones inside its first legend,
  * which is how a disabled fieldset still lets its caption's controls work.
  */
-function isDisabled(element: MatchNode, _state: MatchState): boolean {
+function isDisabled(element: Element, _state: MatchState): boolean {
 	if (!isDisableable(element)) {
 		return false;
 	}
@@ -1615,8 +1590,8 @@ function isDisabled(element: MatchNode, _state: MatchState): boolean {
 	return false;
 }
 
-function insideFirstLegend(element: MatchNode, fieldset: MatchNode): boolean {
-	let legend: MatchNode | null = null;
+function insideFirstLegend(element: Element, fieldset: Element): boolean {
+	let legend: Element | null = null;
 	for (const child of elementChildren(fieldset)) {
 		if (child.namespaceURI === HTML_NAMESPACE && child.localName === "legend") {
 			legend = child;
@@ -1627,7 +1602,7 @@ function insideFirstLegend(element: MatchNode, fieldset: MatchNode): boolean {
 		return false;
 	}
 	for (
-		let node: MatchNode | null = element;
+		let node: Element | null = element;
 		node !== null;
 		node = parentElement(node)
 	) {
@@ -1650,7 +1625,7 @@ const UNREQUIRABLE_INPUT_TYPES = new Set([
 	"submit",
 ]);
 
-function isRequirable(element: MatchNode): boolean {
+function isRequirable(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}
@@ -1683,7 +1658,7 @@ const IMMUTABLE_INPUT_TYPES = new Set([
  * Whether an element is `:read-write`: a text control the user may type into,
  * or anything an editing host contains.
  */
-function isMutable(element: MatchNode, state: MatchState): boolean {
+function isMutable(element: Element, state: MatchState): boolean {
 	if (element.namespaceURI === HTML_NAMESPACE) {
 		const name = element.localName;
 		if (name === "input" || name === "textarea") {
@@ -1700,7 +1675,7 @@ function isMutable(element: MatchNode, state: MatchState): boolean {
 		}
 	}
 	for (
-		let node: MatchNode | null = element;
+		let node: Element | null = element;
 		node !== null;
 		node = parentElement(node)
 	) {
@@ -1720,7 +1695,7 @@ function isMutable(element: MatchNode, state: MatchState): boolean {
 }
 
 /** The elements `:open` and `:closed` say anything about. */
-function canOpen(element: MatchNode): boolean {
+function canOpen(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}
@@ -1733,11 +1708,11 @@ function canOpen(element: MatchNode): boolean {
 	);
 }
 
-function isEmpty(element: MatchNode): boolean {
+function isEmpty(element: Element): boolean {
 	for (
-		let child = element.firstChild;
+		let child = firstChildOf(element);
 		child !== null;
-		child = child.nextSibling
+		child = nextOf(child)
 	) {
 		if (child.nodeType === ELEMENT_NODE) {
 			return false;
@@ -1797,9 +1772,9 @@ function compileLang(args: SelectorNode[]): Predicate {
 }
 
 /** The language an element is in: the nearest declaration above it. */
-function elementLanguage(element: MatchNode): string | null {
+function elementLanguage(element: Element): string | null {
 	for (
-		let node: MatchNode | null = element;
+		let node: Element | null = element;
 		node !== null;
 		node = parentElement(node)
 	) {
@@ -1881,9 +1856,9 @@ function compileDir(args: SelectorNode[]): Predicate {
  * so a run of spaces, digits or punctuation before the first letter decides
  * nothing -- which is the whole point of writing `dir=auto`.
  */
-function directionality(element: MatchNode): "ltr" | "rtl" {
+function directionality(element: Element): "ltr" | "rtl" {
 	for (
-		let node: MatchNode | null = element;
+		let node: Element | null = element;
 		node !== null;
 		node = parentElement(node)
 	) {
@@ -1900,7 +1875,7 @@ function directionality(element: MatchNode): "ltr" | "rtl" {
 
 /** What an element's own `dir` attribute states, `bdi`'s default included. */
 function declaredDirection(
-	element: MatchNode,
+	element: Element,
 ): "ltr" | "rtl" | "auto" | null {
 	if (element.nodeType !== ELEMENT_NODE) {
 		return null;
@@ -1915,7 +1890,7 @@ function declaredDirection(
 	return html && element.localName === "bdi" ? "auto" : null;
 }
 
-function autoDirection(element: MatchNode): "ltr" | "rtl" {
+function autoDirection(element: Element): "ltr" | "rtl" {
 	if (element.namespaceURI === HTML_NAMESPACE) {
 		const name = element.localName;
 		if (name === "input") {
@@ -1936,29 +1911,30 @@ function autoDirection(element: MatchNode): "ltr" | "rtl" {
 }
 
 /** The text a `dir=auto` scan reads under an element, in tree order. */
-function textUnder(element: MatchNode, all: boolean): string {
+function textUnder(element: Element, all: boolean): string {
 	let text = "";
 	for (
-		let child = element.firstChild;
+		let child = firstChildOf(element);
 		child !== null;
-		child = child.nextSibling
+		child = nextOf(child)
 	) {
 		if (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE) {
 			text += child.nodeValue ?? "";
 			continue;
 		}
-		if (child.nodeType !== ELEMENT_NODE || all) {
+		const descendant = asElement(child);
+		if (descendant === null || all) {
 			continue;
 		}
 		// A descendant that states its own direction, and one that isolates
 		// what it holds, both keep their text out of the scan above them.
 		if (
-			OPAQUE_TO_AUTO.has(child.localName) ||
-			declaredDirection(child) !== null
+			OPAQUE_TO_AUTO.has(descendant.localName) ||
+			declaredDirection(descendant) !== null
 		) {
 			continue;
 		}
-		text += textUnder(child, false);
+		text += textUnder(descendant, false);
 	}
 	return text;
 }
@@ -1977,7 +1953,7 @@ function firstStrong(text: string): "ltr" | "rtl" {
 /** Whether an element matches one complex selector, read right to left. */
 function matchComplex(
 	complex: CompiledComplex,
-	element: MatchNode,
+	element: Element,
 	state: MatchState,
 	featureless: boolean,
 ): boolean {
@@ -1993,7 +1969,7 @@ function matchComplex(
 function matchFrom(
 	complex: CompiledComplex,
 	index: number,
-	element: MatchNode,
+	element: Element,
 	state: MatchState,
 	featureless: boolean,
 ): boolean {
@@ -2072,15 +2048,16 @@ function matchFrom(
 
 /** One step up the tree, which for a shadow tree ends at its featureless host. */
 function parentStep(
-	element: MatchNode,
+	element: Element,
 	state: MatchState,
-): {element: MatchNode; featureless: boolean} | null {
-	const parent = element.parentNode;
+): {element: Element; featureless: boolean} | null {
+	const parent = parentOf(element);
 	if (parent === null) {
 		return null;
 	}
-	if (parent.nodeType === ELEMENT_NODE) {
-		return {element: parent, featureless: false};
+	const above = asElement(parent);
+	if (above !== null) {
+		return {element: above, featureless: false};
 	}
 	// A selector written in a shadow tree reaches the host it hangs under, and
 	// the host is featureless: only `:host` and its two functional forms name
@@ -2101,14 +2078,14 @@ function parentStep(
  */
 function hasMatch(
 	inner: CompiledComplex[],
-	element: MatchNode,
+	element: Element,
 	state: MatchState,
 ): boolean {
 	// The anchor is what a leading combinator hangs from. `:scope` is not
 	// touched: inside `:has()` it still names whatever the query scoped to.
 	const inside: MatchState = {...state, anchor: element};
 	for (const complex of inner) {
-		const selects = (node: MatchNode): boolean =>
+		const selects = (node: Element): boolean =>
 			matchComplex(complex, node, inside, false);
 		const leading = complex.combinators[0] ?? " ";
 		if (leading === "+" || leading === "~") {
@@ -2130,50 +2107,79 @@ function hasMatch(
 
 /* ------------------------------------------------------------ tree helpers */
 
-function parentElement(node: MatchNode): MatchNode | null {
-	const parent = node.parentNode;
-	return parent !== null && parent.nodeType === ELEMENT_NODE ? parent : null;
+/*
+ * The DOM types the links between nodes as the platform does, where a parent is
+ * a ParentNode and a sibling a ChildNode -- mixins that describe what may stand
+ * in each position rather than what a node is. The matcher walks nodes, so it
+ * reads each link back as the node on the other end of it, and these four
+ * readers are the whole of where it does that.
+ */
+
+function parentOf(node: Node): Node | null {
+	return node.parentNode as Node | null;
 }
 
-function elementChildren(node: MatchNode): MatchNode[] {
-	const found: MatchNode[] = [];
-	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
-		if (child.nodeType === ELEMENT_NODE) {
-			found.push(child);
+function firstChildOf(node: Node): Node | null {
+	return node.firstChild as Node | null;
+}
+
+function previousOf(node: Node): Node | null {
+	return node.previousSibling as Node | null;
+}
+
+function nextOf(node: Node): Node | null {
+	return node.nextSibling as Node | null;
+}
+
+/** The node, if it is an element, which is what most of a selector reads. */
+function asElement(node: Node | null): Element | null {
+	return node !== null && node.nodeType === ELEMENT_NODE ?
+			(node as Element) :
+		null;
+}
+
+function parentElement(node: Node): Element | null {
+	return asElement(parentOf(node));
+}
+
+function elementChildren(node: Node): Element[] {
+	const found: Element[] = [];
+	for (let child = firstChildOf(node); child !== null; child = nextOf(child)) {
+		const element = asElement(child);
+		if (element !== null) {
+			found.push(element);
 		}
 	}
 	return found;
 }
 
-function elementSiblings(element: MatchNode): MatchNode[] {
-	const parent = element.parentNode;
+function elementSiblings(element: Element): Element[] {
+	const parent = parentOf(element);
 	return parent === null ? [element] : elementChildren(parent);
 }
 
-function previousElement(element: MatchNode): MatchNode | null {
-	for (
-		let node = element.previousSibling;
-		node !== null;
-		node = node.previousSibling
-	) {
-		if (node.nodeType === ELEMENT_NODE) {
-			return node;
+function previousElement(element: Element): Element | null {
+	for (let node = previousOf(element); node !== null; node = previousOf(node)) {
+		const found = asElement(node);
+		if (found !== null) {
+			return found;
 		}
 	}
 	return null;
 }
 
-function nextElement(element: MatchNode): MatchNode | null {
-	for (let node = element.nextSibling; node !== null; node = node.nextSibling) {
-		if (node.nodeType === ELEMENT_NODE) {
-			return node;
+function nextElement(element: Element): Element | null {
+	for (let node = nextOf(element); node !== null; node = nextOf(node)) {
+		const found = asElement(node);
+		if (found !== null) {
+			return found;
 		}
 	}
 	return null;
 }
 
 /** How far an element is from one end of its siblings of the same type. */
-function ofTypeIndex(element: MatchNode, fromEnd: boolean): number {
+function ofTypeIndex(element: Element, fromEnd: boolean): number {
 	const siblings = elementSiblings(element).filter(
 		(sibling) =>
 			sibling.localName === element.localName &&
@@ -2254,16 +2260,19 @@ export function compileSelector(
 
 /* -------------------------------------------------------------- entry points */
 
-/** What a query knows beyond the tree: the resolver, and what `:scope` names. */
-export interface QueryOptions extends CompileOptions {
+/** What a match knows beyond the element: the resolver, and what `:scope` names. */
+export interface MatchOptions {
 	resolver?: SelectorResolver;
-	/** The element `:scope` stands for. */
-	scope?: MatchNode | null;
+	/** The node `:scope` stands for. */
+	scope?: Node | null;
 	/** The shadow root the selector was written in, for `:host`. */
-	shadow?: MatchNode | null;
+	shadow?: Node | null;
 }
 
-function stateFor(options: QueryOptions): MatchState {
+/** What a query over selector text knows: how to read it, and what to read it against. */
+export interface QueryOptions extends CompileOptions, MatchOptions {}
+
+function stateFor(options: MatchOptions): MatchState {
 	return {
 		resolver: options.resolver ?? INERT_RESOLVER,
 		scope: options.scope ?? null,
@@ -2274,34 +2283,35 @@ function stateFor(options: QueryOptions): MatchState {
 	};
 }
 
-/** Whether an element matches a selector, which is what `matches()` asks. */
-export function matchesSelector(
-	element: MatchNode,
-	text: string,
-	options: QueryOptions = {},
+function matchesAny(
+	selector: CompiledSelector,
+	element: Element,
+	state: MatchState,
 ): boolean {
-	const selector = compileSelector(text, options);
-	const state = stateFor(options);
 	return selector.list.some((complex) =>
 		matchComplex(complex, element, state, false),
 	);
 }
 
-/** Every element under a root that a selector selects, in tree order. */
-export function selectAll(
-	root: MatchNode,
-	text: string,
-	options: QueryOptions = {},
-): MatchNode[] {
-	const selector = compileSelector(text, options);
+/** Whether an element matches a selector compiled already. */
+export function matchesCompiled(
+	element: Element,
+	selector: CompiledSelector,
+	options: MatchOptions = {},
+): boolean {
+	return matchesAny(selector, element, stateFor(options));
+}
+
+/** Every element under a root that a compiled selector selects, in tree order. */
+export function selectAllCompiled(
+	root: Node,
+	selector: CompiledSelector,
+	options: MatchOptions = {},
+): Element[] {
 	const state = stateFor(options);
-	const found: MatchNode[] = [];
+	const found: Element[] = [];
 	walk(root, (element) => {
-		if (
-			selector.list.some((complex) =>
-				matchComplex(complex, element, state, false),
-			)
-		) {
+		if (matchesAny(selector, element, state)) {
 			found.push(element);
 		}
 		return false;
@@ -2309,21 +2319,35 @@ export function selectAll(
 	return found;
 }
 
-/** The first element under a root that a selector selects, in tree order. */
-export function selectFirst(
-	root: MatchNode,
+/** Whether an element matches a selector, which is what `matches()` asks. */
+export function matchesSelector(
+	element: Element,
 	text: string,
 	options: QueryOptions = {},
-): MatchNode | null {
+): boolean {
+	return matchesCompiled(element, compileSelector(text, options), options);
+}
+
+/** Every element under a root that a selector selects, in tree order. */
+export function selectAll(
+	root: Node,
+	text: string,
+	options: QueryOptions = {},
+): Element[] {
+	return selectAllCompiled(root, compileSelector(text, options), options);
+}
+
+/** The first element under a root that a selector selects, in tree order. */
+export function selectFirst(
+	root: Node,
+	text: string,
+	options: QueryOptions = {},
+): Element | null {
 	const selector = compileSelector(text, options);
 	const state = stateFor(options);
-	let first: MatchNode | null = null;
+	let first: Element | null = null;
 	walk(root, (element) => {
-		if (
-			selector.list.some((complex) =>
-				matchComplex(complex, element, state, false),
-			)
-		) {
+		if (matchesAny(selector, element, state)) {
 			first = element;
 			return true;
 		}
@@ -2334,22 +2358,18 @@ export function selectFirst(
 
 /** The nearest inclusive ancestor of an element that a selector selects. */
 export function closestSelector(
-	element: MatchNode,
+	element: Element,
 	text: string,
 	options: QueryOptions = {},
-): MatchNode | null {
+): Element | null {
 	const selector = compileSelector(text, options);
 	const state = stateFor(options);
 	for (
-		let node: MatchNode | null = element;
-		node !== null && node.nodeType === ELEMENT_NODE;
-		node = node.parentNode
+		let node: Element | null = element;
+		node !== null;
+		node = parentElement(node)
 	) {
-		if (
-			selector.list.some((complex) =>
-				matchComplex(complex, node!, state, false),
-			)
-		) {
+		if (matchesAny(selector, node, state)) {
 			return node;
 		}
 	}
@@ -2360,17 +2380,19 @@ export function closestSelector(
  * The node after this one in tree order, stopping at a root: its first child,
  * or else the next sibling of the nearest ancestor that has one.
  */
-function nextInTree(node: MatchNode, root: MatchNode): MatchNode | null {
-	if (node.firstChild !== null) {
-		return node.firstChild;
+function nextInTree(node: Node, root: Node): Node | null {
+	const child = firstChildOf(node);
+	if (child !== null) {
+		return child;
 	}
 	for (
-		let current: MatchNode | null = node;
+		let current: Node | null = node;
 		current !== null && current !== root;
-		current = current.parentNode
+		current = parentOf(current)
 	) {
-		if (current.nextSibling !== null) {
-			return current.nextSibling;
+		const sibling = nextOf(current);
+		if (sibling !== null) {
+			return sibling;
 		}
 	}
 	return null;
@@ -2382,16 +2404,14 @@ function nextInTree(node: MatchNode, root: MatchNode): MatchNode | null {
  * The walk steps along the links a node already has rather than recursing, so
  * a deep tree costs no stack and a wide one allocates nothing.
  */
-function walk(
-	root: MatchNode,
-	visit: (element: MatchNode) => boolean,
-): boolean {
+function walk(root: Node, visit: (element: Element) => boolean): boolean {
 	for (
 		let node = nextInTree(root, root);
 		node !== null;
 		node = nextInTree(node, root)
 	) {
-		if (node.nodeType === ELEMENT_NODE && visit(node)) {
+		const element = asElement(node);
+		if (element !== null && visit(element)) {
 			return true;
 		}
 	}
