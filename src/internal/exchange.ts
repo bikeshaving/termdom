@@ -4,9 +4,14 @@
  *
  * Everything above this file works in cells and events. The exchange asks the
  * terminal what it supports, keeps the ledger of every mode it put the
- * terminal into so they can all be undone on the way out, writes the wire
- * text, and sorts what comes back into input for the engine and answers for
+ * terminal into so they can all be undone on the way out, spells what it has
+ * to say, and sorts what comes back into input for the engine and answers for
  * the queries it is still waiting on. Start at TerminalExchange.
+ *
+ * The sections in front of it are the conversation as text: the spellings
+ * this side writes, and the reader that says what a chunk from the other side
+ * meant. A sequence can be spelled with no session and read with none
+ * running.
  *
  * The one terminal this engine ships a wrapper for -- a Node process -- is
  * written as an ordinary TerminalTransport at the end of the module, where
@@ -15,15 +20,11 @@
  */
 
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
-import {
-	type ColorDepth,
-	Wire,
-	type WireItem,
-	type WireKey,
-	type WireProbe,
-} from "./wire.js";
 
 /* -------------------------------------------------- the transport contract */
+
+/** How many colors the terminal is believed to speak. */
+export type ColorDepth = "ansi" | "rgb" | "256";
 
 /** The terminal's dimensions, in cells. */
 export interface TerminalSize {
@@ -102,46 +103,175 @@ export interface TerminalTransport {
 	close(info?: TerminalCloseInfo): void;
 }
 
+/* -------------------------------------------------------------- the base64 */
+
+const BASE64_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_CODES = new Int8Array(128).fill(-1);
+for (let i = 0; i < BASE64_ALPHABET.length; i++) {
+	BASE64_CODES[BASE64_ALPHABET.charCodeAt(i)] = i;
+}
+
+/** Padded base64, as OSC 52 carries a clipboard payload. */
+function encode64(bytes: Uint8Array): string {
+	let out = "";
+	let i = 0;
+	for (; i + 2 < bytes.length; i += 3) {
+		const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+		out +=
+			BASE64_ALPHABET[n >> 18] +
+			BASE64_ALPHABET[(n >> 12) & 63] +
+			BASE64_ALPHABET[(n >> 6) & 63] +
+			BASE64_ALPHABET[n & 63];
+	}
+	const rest = bytes.length - i;
+	if (rest === 1) {
+		const n = bytes[i] << 16;
+		out += BASE64_ALPHABET[n >> 18] + BASE64_ALPHABET[(n >> 12) & 63] + "==";
+	} else if (rest === 2) {
+		const n = (bytes[i] << 16) | (bytes[i + 1] << 8);
+		out +=
+			BASE64_ALPHABET[n >> 18] +
+			BASE64_ALPHABET[(n >> 12) & 63] +
+			BASE64_ALPHABET[(n >> 6) & 63] +
+			"=";
+	}
+	return out;
+}
+
+/**
+ * Tolerant base64, as terminals answer OSC 52: bytes outside the alphabet
+ * are skipped and an unpadded tail still decodes, since terminals differ on
+ * both. Null for a payload no reading rescues -- a digit count of one past
+ * a four-digit boundary carries no byte.
+ */
+function decode64(text: string): Uint8Array | null {
+	const bytes = new Uint8Array((text.length * 3) >> 2);
+	let held = 0;
+	let bits = 0;
+	let length = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const value = code < 128 ? BASE64_CODES[code] : -1;
+		if (value < 0) {
+			continue;
+		}
+		held = (held << 6) | value;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[length++] = (held >> bits) & 0xff;
+		}
+	}
+	if (bits >= 6) {
+		return null;
+	}
+	return bytes.subarray(0, length);
+}
+
+/* ----------------------------------------------------------- the spellings */
+
+/** DSR 6: where is the cursor? Answered by a cursor report, one-based. */
+const CURSOR_QUERY = "\x1b[6n";
+/** OSC 52 with "?": what is on the clipboard? */
+const CLIPBOARD_QUERY = "\x1b]52;c;?\x07";
+/** BDSM reset: the application decides the order of bidirectional text. */
+const BIDI_EXPLICIT = "\x1b[8l";
+/** BDSM set: the terminal reorders bidirectional text itself. */
+const BIDI_IMPLICIT = "\x1b[8h";
+/** EL 0: from the cursor to the end of its row. */
+const LINE_ERASE = "\x1b[K";
+/** ED 0: from the cursor to the end of the screen. */
+const BELOW_ERASE = "\x1b[J";
+/** ED 2 then CUP with no parameters: the screen blank, the cursor home. */
+const SCREEN_CLEAR = "\x1b[2J\x1b[H";
+/** IND: down one row, scrolling the screen when the cursor is at the end. */
+const SCROLL_STEP = "\x1bD";
+
+/** CUP: the cursor to the first column of a one-based row. */
+function rowStart(row: number): string {
+	return `\x1b[${row};1H`;
+}
+
+/**
+ * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers it,
+ * a private mode keeping its "?" ("8", "?2027").
+ */
+function modeQuery(mode: string): string {
+	return mode.startsWith("?") ?
+		`\x1b[?${parseInt(mode.slice(1), 10)}$p` :
+		`\x1b[${parseInt(mode, 10)}$p`;
+}
+
+/**
+ * The characters no payload may put on the wire: C0, DEL, and the C1 range
+ * whose single bytes are CSI, OSC and DCS. One of these in untrusted text
+ * would end the sequence around it or start one of its own.
+ */
+function isControlByte(code: number): boolean {
+	return code < 0x20 || (code >= 0x7f && code < 0xa0);
+}
+
+/**
+ * OSC 2: the window title. Untrusted text going somewhere the cell grid never
+ * sees, so it is refused the same characters a cell is -- dropped, since the
+ * rest of the title is still the title.
+ */
+export function titleEscape(text: string): string {
+	let safe = "";
+	for (const char of text) {
+		if (isControlByte(char.codePointAt(0)!)) {
+			continue;
+		}
+		safe += char;
+	}
+	return `\x1b]2;${safe}\x07`;
+}
+
+/**
+ * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
+ * beyond refusing -- there is nothing in the alphabet to refuse.
+ */
+export function clipboardEscape(text: string): string {
+	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
+}
+
 /* --------------------------------------------------------- the mode ledger */
 
 /**
- * A wire of its own for the ledger below, which is a constant and spelled
- * before any session exists.
- */
-const spelling = new Wire();
-
-/**
  * The private modes and stack controls this engine sets, named once. `set`
- * engages, `reset` hands the terminal back; wire spells both. An orderly
- * teardown resets what was engaged, in this declaration order; the
- * transport's panic paths blanket-reset the union. A mode written anywhere
- * else is a restore leak waiting -- new modes are added here, and set
- * through TerminalExchange.setMode.
+ * engages, `reset` hands the terminal back. An orderly teardown resets what
+ * was engaged, in this declaration order; the transport's panic paths
+ * blanket-reset the union. A mode written anywhere else is a restore leak
+ * waiting -- new modes are added here, and set through
+ * TerminalExchange.setMode.
  */
 const MODE_SPELLINGS = {
 	motionReporting: {
-		set: spelling.privateMode(1003, true).take(),
-		reset: spelling.privateMode(1003, false).take(),
+		set: "\x1b[?1003h",
+		reset: "\x1b[?1003l",
 		panic: true,
 	},
 	mouseCapture: {
-		set: spelling.privateMode(1002, true).privateMode(1006, true).take(),
-		reset: spelling.privateMode(1006, false).privateMode(1002, false).take(),
+		set: "\x1b[?1002h\x1b[?1006h",
+		reset: "\x1b[?1006l\x1b[?1002l",
 		panic: true,
 	},
 	cursorHidden: {
-		set: spelling.privateMode(25, false).take(),
-		reset: spelling.privateMode(25, true).take(),
+		set: "\x1b[?25l",
+		reset: "\x1b[?25h",
 		panic: true,
 	},
 	bracketedPaste: {
-		set: spelling.privateMode(2004, true).take(),
-		reset: spelling.privateMode(2004, false).take(),
+		set: "\x1b[?2004h",
+		reset: "\x1b[?2004l",
 		panic: true,
 	},
+	// XTWINOPS 22 and 23: the window title onto the terminal's own stack, and
+	// back off it.
 	titleStack: {
-		set: spelling.pushTitle().take(),
-		reset: spelling.popTitle().take(),
+		set: "\x1b[22;0t",
+		reset: "\x1b[23;0t",
 		panic: true,
 	},
 	// The Fullscreen API's screen switch. The panic spelling is ?1047, the
@@ -151,15 +281,15 @@ const MODE_SPELLINGS = {
 	// blanket restore cuts ahead of the queued payout, so a cursor-moving
 	// reset there teleports the payout onto rows the app never owned.
 	altScreen: {
-		set: spelling.privateMode(1049, true).take(),
-		reset: spelling.privateMode(1049, false).take(),
-		panic: spelling.privateMode(1047, false).take(),
+		set: "\x1b[?1049h",
+		reset: "\x1b[?1049l",
+		panic: "\x1b[?1047l",
 	},
 	// Negotiated, not imposed: a terminal that ignored the offer must not
 	// see the reset, so only the engaged-tracking restore may write it.
 	clusterWidths: {
-		set: spelling.privateMode(2027, true).take(),
-		reset: spelling.privateMode(2027, false).take(),
+		set: "\x1b[?2027h",
+		reset: "\x1b[?2027l",
 		panic: false,
 	},
 } as const;
@@ -180,6 +310,404 @@ export const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	const {panic, reset} = MODE_SPELLINGS[name];
 	return typeof panic === "string" ? panic : reset;
 }).join("");
+
+/* --------------------------------------------------------- what comes back */
+
+/** The numbers an SGR mouse escape carries. */
+interface MouseEscape {
+	button: number;
+	col: number;
+	row: number;
+	release: boolean;
+}
+
+/** One SGR mouse escape, whole, or null when the token is something else. */
+function decodeMouseEscape(token: string): MouseEscape | null {
+	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+	if (!match) {
+		return null;
+	}
+	return {
+		button: parseInt(match[1], 10),
+		col: parseInt(match[2], 10),
+		row: parseInt(match[3], 10),
+		release: match[4] === "m",
+	};
+}
+
+/** The fences a terminal wraps pasted text in, DEC private mode 2004. */
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
+const CLIPBOARD_START = "\x1b]52;";
+
+/**
+ * The length of an incomplete escape sequence at the end of `chunk`, or 0.
+ * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
+ * arrived, an SS3 (ESC O) missing its one final character, or as much of the
+ * clipboard reply's opening as has come -- past that opening the reply holds
+ * itself, since its own terminator is what ends it. A bare trailing ESC
+ * reports 0 -- it may be the Escape key itself, and holding it for a
+ * continuation that never comes would swallow the keystroke.
+ */
+function splitTrailingEscape(chunk: string): number {
+	const esc = chunk.lastIndexOf("\x1b");
+	if (esc === -1 || esc === chunk.length - 1) {
+		return 0;
+	}
+	const kind = chunk[esc + 1];
+	if (kind === "[") {
+		for (let i = esc + 2; i < chunk.length; i++) {
+			const code = chunk.charCodeAt(i);
+			if (code >= 0x40 && code <= 0x7e) {
+				return 0;
+			} // finished
+		}
+		return chunk.length - esc;
+	}
+	if (kind === "O" && esc + 2 >= chunk.length) {
+		return chunk.length - esc;
+	}
+	const tail = chunk.slice(esc);
+	if (
+		tail.length < CLIPBOARD_START.length &&
+		CLIPBOARD_START.startsWith(tail)
+	) {
+		return tail.length;
+	}
+	return 0;
+}
+
+/**
+ * A whole OSC 52 reply: the selection field, then a base64 payload, then BEL
+ * or ST. The payload stops at ESC so a reply ended by ST still bounds it.
+ */
+const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
+
+/**
+ * One keystroke, read: the key its spelling names and the modifiers that
+ * spelling carries. `key` is a name for the keys a terminal spells out
+ * ("ArrowUp", "Enter") and the character itself for the rest; `char` is the
+ * character the keystroke produces, empty when it produces none.
+ */
+export interface WireKey {
+	kind: "key";
+	key: string;
+	char: string;
+	shiftKey: boolean;
+	ctrlKey: boolean;
+	altKey: boolean;
+	metaKey: boolean;
+}
+
+/**
+ * One utterance off the wire: a keystroke, an SGR mouse escape, a whole paste
+ * body, or a reply to one of the queries. A clipboard reply's text is null
+ * when the reply outgrew the held-reply limit before its terminator arrived.
+ */
+export type WireItem =
+	WireKey |
+	{kind: "mouse"; button: number; col: number; row: number; release: boolean} |
+	{kind: "paste"; text: string} |
+	{kind: "cursor-report"; row: number; col: number} |
+	{kind: "mode-report"; mode: string; value: number} |
+	{kind: "clipboard"; text: string | null};
+
+/** Shift+Tab: CSI Z, the one named spelling carrying a modifier of its own. */
+const SHIFT_TAB = "\x1b[Z";
+
+/**
+ * The key each spelled-out token names. Enter is carriage return; line feed is
+ * the Ctrl+J chord, which a terminal sends as its control byte like any other
+ * letter's, and which an application binds if it wants a soft newline where
+ * Enter already means something else. A lone ESC is the Escape key -- not the
+ * start of a CSI or SS3 sequence, since the reader peels those off whole.
+ *
+ * F1-F4 arrive in the SS3 encoding, the modern xterm default. F5-F12 arrive as
+ * CSI-tilde -- note the historical gap (no ~16), a quirk of the original xterm
+ * numbering every terminal descended from it still follows.
+ */
+const KEY_BY_TOKEN: Record<string, string> = {
+	"\r": "Enter",
+	"\t": "Tab",
+	[SHIFT_TAB]: "Tab",
+	"\x7f": "Backspace",
+	"\x1b": "Escape",
+	"\x1b[A": "ArrowUp",
+	"\x1b[B": "ArrowDown",
+	"\x1b[C": "ArrowRight",
+	"\x1b[D": "ArrowLeft",
+	"\x1b[H": "Home",
+	"\x1b[1~": "Home",
+	"\x1b[F": "End",
+	"\x1b[4~": "End",
+	"\x1b[2~": "Insert",
+	"\x1b[3~": "Delete",
+	"\x1b[5~": "PageUp",
+	"\x1b[6~": "PageDown",
+	"\x1bOP": "F1",
+	"\x1bOQ": "F2",
+	"\x1bOR": "F3",
+	"\x1bOS": "F4",
+	"\x1b[15~": "F5",
+	"\x1b[17~": "F6",
+	"\x1b[18~": "F7",
+	"\x1b[19~": "F8",
+	"\x1b[20~": "F9",
+	"\x1b[21~": "F10",
+	"\x1b[23~": "F11",
+	"\x1b[24~": "F12",
+};
+
+/** The cursor keys xterm's modified spelling names, by its final letter. */
+const MODIFIED_CURSOR_KEYS: Record<string, string> = {
+	A: "ArrowUp",
+	B: "ArrowDown",
+	C: "ArrowRight",
+	D: "ArrowLeft",
+	F: "End",
+	H: "Home",
+};
+
+/**
+ * xterm's extended CSI encoding for a modified cursor key: CSI 1 ; <mod>
+ * <letter>, e.g. Alt+Up = CSI 1;3A, Shift+Home = CSI 1;2H. The reader yields
+ * the whole sequence as one token -- it scans for the CSI final byte whatever
+ * parameters precede it -- so this is pure decoding, no parsing changes.
+ */
+const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHF])$/;
+
+/** What one key token means: the key it names, and its modifiers. */
+function decodeKeyToken(token: string): WireKey {
+	const code = token.charCodeAt(0);
+
+	// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
+	// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
+	// it with Shift (the terminal only ever sends the one byte). Tab(0x09) and
+	// Enter(0x0D) are excluded even though they fall in this range: those bytes
+	// are what the physical Tab and Enter keys send, indistinguishable from
+	// Ctrl+I and Ctrl+M, so the named key wins. Line feed(0x0A) collides with
+	// no key and stays the Ctrl+J chord.
+	if (code >= 1 && code <= 26 && code !== 9 && code !== 13) {
+		return {
+			kind: "key",
+			key: String.fromCharCode(code + 96), // 0x01 -> 'a' ... 0x1A -> 'z'
+			char: "",
+			shiftKey: false,
+			ctrlKey: true,
+			altKey: false,
+			metaKey: false,
+		};
+	}
+
+	const modified = token.match(MODIFIED_CURSOR_KEY);
+	if (modified) {
+		// mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta (meta included for
+		// spec-completeness; nothing on macOS actually sends it, since Cmd+key
+		// never reaches the PTY at all).
+		const bits = parseInt(modified[1], 10) - 1;
+		return {
+			kind: "key",
+			key: MODIFIED_CURSOR_KEYS[modified[2]],
+			char: "",
+			shiftKey: (bits & 1) !== 0,
+			altKey: (bits & 2) !== 0,
+			ctrlKey: (bits & 4) !== 0,
+			metaKey: (bits & 8) !== 0,
+		};
+	}
+
+	// A token this table does not name is passed along as it arrived. What is
+	// left produces a character when it is one character wide and neither a
+	// control byte nor DEL -- every printable character, not only the ASCII
+	// ones, and a character outside the basic plane is one character across
+	// the two code units that spell it.
+	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
+	const printable =
+		astral || (token.length === 1 && code >= 32 && code !== 127);
+	return {
+		kind: "key",
+		key: KEY_BY_TOKEN[token] ?? token,
+		char: printable ? token : "",
+		shiftKey: token === SHIFT_TAB,
+		ctrlKey: false,
+		altKey: false,
+		metaKey: false,
+	};
+}
+
+/** What one CSI token means: a mouse escape, a reply, or a keystroke. */
+function decodeControlToken(token: string): WireItem {
+	const mouse = decodeMouseEscape(token);
+	if (mouse) {
+		return {kind: "mouse", ...mouse};
+	}
+	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
+	if (cursor) {
+		return {
+			kind: "cursor-report",
+			row: parseInt(cursor[1], 10),
+			col: parseInt(cursor[2], 10),
+		};
+	}
+	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
+	if (mode) {
+		return {
+			kind: "mode-report",
+			mode: (mode[1] ? "?" : "") + mode[2],
+			value: parseInt(mode[3], 10),
+		};
+	}
+	return decodeKeyToken(token);
+}
+
+const kTail = Symbol("tail");
+const kPasteBody = Symbol("pasteBody");
+const kReplyBody = Symbol("replyBody");
+const kReplyLimit = Symbol("replyLimit");
+
+/**
+ * The reader: one chunk in, what it meant out.
+ *
+ * It holds syntactic state and nothing else, and owns every cut a chunk
+ * boundary can make. An escape sequence split before its final byte is held
+ * for the next chunk -- but never a bare trailing ESC, which may be the
+ * Escape key itself, and holding it would swallow the keystroke. An open
+ * paste body is buffered until its end fence and returned as one item; the
+ * body is literal text, and nothing inside it is read except that fence. An
+ * open clipboard reply is buffered until its terminator, and recognized
+ * whether or not anyone asked: its base64 would otherwise type as keystrokes,
+ * and dropping an unasked-for answer is the session's decision to make, not a
+ * syntax accident.
+ *
+ * State survives everything except construction -- there is no reset --
+ * because a held tail or an open paste must never be droppable mid-stream.
+ * One is built bare, with no session behind it, wherever a chunk needs
+ * reading on its own.
+ */
+export class WireReader {
+	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
+	declare [kTail]: string;
+	// The body of an open paste; null when no paste is in flight.
+	declare [kPasteBody]: string | null;
+	// An open clipboard reply, from its ESC ] 52 on; null when none is.
+	declare [kReplyBody]: string | null;
+
+	/**
+	 * The most of a clipboard reply held while its terminator is awaited. A
+	 * larger payload is not a clipboard a terminal is answering with, and the
+	 * reader gives the reply up as null rather than buffer the wire.
+	 */
+	static readonly [kReplyLimit] = 1 << 16;
+
+	constructor() {
+		this[kTail] = "";
+		this[kPasteBody] = null;
+		this[kReplyBody] = null;
+	}
+
+	/** Read one chunk, and say what arrived. */
+	feed(chunk: string): WireItem[] {
+		let data = this[kTail] + chunk;
+		this[kTail] = "";
+		// Hold a split escape for its continuation -- but only a short one:
+		// what outgrows a real sequence is not going to finish, and holding
+		// it would swallow input for good.
+		const held = splitTrailingEscape(data);
+		if (held > 0 && held <= 32) {
+			this[kTail] = data.slice(-held);
+			data = data.slice(0, -held);
+		}
+
+		const items: WireItem[] = [];
+		let i = 0;
+		while (i < data.length) {
+			// Inside a paste only the end fence means anything; a start fence
+			// in the body must not restart one.
+			if (this[kPasteBody] !== null) {
+				const end = data.indexOf(PASTE_END, i);
+				if (end === -1) {
+					this[kPasteBody] += data.slice(i);
+					return items;
+				}
+				items.push({
+					kind: "paste",
+					text: this[kPasteBody] + data.slice(i, end),
+				});
+				this[kPasteBody] = null;
+				i = end + PASTE_END.length;
+				continue;
+			}
+			// Inside a clipboard reply everything belongs to it until BEL or
+			// ST closes it. A payload no reading rescues answers as an empty
+			// clipboard: OSC 52 has no channel for saying more.
+			if (this[kReplyBody] !== null) {
+				const reply = this[kReplyBody] + data.slice(i);
+				this[kReplyBody] = null;
+				const match = reply.match(CLIPBOARD_REPLY);
+				if (!match) {
+					if (reply.length <= WireReader[kReplyLimit]) {
+						this[kReplyBody] = reply;
+					} else {
+						items.push({kind: "clipboard", text: null});
+					}
+					return items;
+				}
+				const decoded = decode64(match[1]);
+				items.push({
+					kind: "clipboard",
+					text: decoded === null ? "" : new TextDecoder().decode(decoded),
+				});
+				data = reply;
+				i = match[0].length;
+				continue;
+			}
+			if (data.startsWith(PASTE_START, i)) {
+				this[kPasteBody] = "";
+				i += PASTE_START.length;
+				continue;
+			}
+			if (data.startsWith(CLIPBOARD_START, i)) {
+				this[kReplyBody] = "";
+				continue;
+			}
+			if (data[i] === "\x1b" && i + 1 < data.length) {
+				if (data[i + 1] === "[") {
+					// CSI: parameter/intermediate bytes end at a final byte
+					// 0x40-0x7e.
+					let end = i + 2;
+					while (
+						end < data.length &&
+						!(data.charCodeAt(end) >= 0x40 && data.charCodeAt(end) <= 0x7e)
+					) {
+						end++;
+					}
+					items.push(
+						decodeControlToken(data.slice(i, Math.min(end + 1, data.length))),
+					);
+					i = end + 1;
+					continue;
+				}
+				if (data[i + 1] === "O" && i + 2 < data.length) {
+					items.push(decodeKeyToken(data.slice(i, i + 3)));
+					i += 3;
+					continue;
+				}
+			}
+			// A character outside the basic plane arrives as two code units,
+			// and it is one keystroke: split, its halves are lone surrogates,
+			// which name no key and spell no character.
+			const code = data.charCodeAt(i);
+			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ?
+				2 :
+				1;
+			items.push(decodeKeyToken(data.slice(i, i + width)));
+			i += width;
+		}
+		return items;
+	}
+}
 
 /* ------------------------------------------------------------ the exchange */
 
@@ -221,22 +749,25 @@ interface ExchangeHandlers {
 }
 
 /**
- * One question awaiting its answer. The probe itself comes from wire, which
- * pairs the request with the rule matching its reply; the session adds what
- * only it knows -- the deadline, and for cursor probes the DSR send order
- * that keeps them and the width probes from taking each other's replies.
- * Oldest first: the first pending probe an item matches is the one it
- * answers, and an item matching none is a late or duplicate reply, dropped.
+ * One question awaiting its answer: the kind of item that carries the reply,
+ * the deadline, and for cursor questions the DSR send order that keeps them
+ * and the width probes from taking each other's replies. Oldest first: the
+ * first pending question an item fits is the one it answers, and an item
+ * fitting none is a late or duplicate reply, dropped.
  */
-interface PendingProbe {
-	matches(item: WireItem): unknown;
-	/** Resolve the asker with the matched answer, clearing the deadline. */
-	settle(answer: unknown): void;
-	/** The deadline; expiring removes the probe and tells the asker. */
+interface PendingReply {
+	/** The item kind that answers this question. */
+	kind: WireItem["kind"];
+	/** The mode a DECRPM answer must name; mode questions only. */
+	mode?: string;
+	/** Answer the asker with the item that fit, clearing the deadline. */
+	settle(item: WireItem): void;
+	/** Answer the asker with silence: the deadline, a replacement, dispose. */
+	giveUp(): void;
 	timer: ReturnType<typeof setTimeout>;
-	/** DSR send order, cursor probes only. */
+	/** DSR send order, cursor questions only. */
 	sequence?: number;
-	/** The clipboard probe: one at a time, and dispose answers it null. */
+	/** The clipboard question: one at a time, and dispose answers it null. */
 	clipboard?: boolean;
 }
 
@@ -254,12 +785,12 @@ const kDisposed = Symbol("disposed");
 const kLastWrite = Symbol("lastWrite");
 const kWriteBatch = Symbol("writeBatch");
 
-const kWire = Symbol("wire");
+const kWireReader = Symbol("wireReader");
 
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kDsrSequence = Symbol("dsrSequence");
-const kPendingProbes = Symbol("pendingProbes");
+const kPendingReplies = Symbol("pendingReplies");
 
 const kPriorBidiMode = Symbol("priorBidiMode");
 const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
@@ -290,7 +821,7 @@ const kWidthRunLost = Symbol("widthRunLost");
  * demultiplexer between them.
  *
  * Everything the wire carries arrives interleaved on one byte stream -- that
- * is the terminal protocol's nature. The wire's reader says what each chunk
+ * is the terminal protocol's nature. The reader above says what each chunk
  * meant, and this is where the items fan out: pastes, DECRPM mode replies and
  * DSR cursor replies to whichever query waits, mouse reports, keystrokes. The
  * engine sees typed callbacks and dispatches DOM events; no other layer
@@ -321,11 +852,11 @@ export class TerminalExchange {
 	// The last queued write, so flush() can await everything before it.
 	declare [kLastWrite]: Promise<void>;
 
-	// The session's wire, both ways: every sequence this exchange writes is
-	// spelled through it, and its read-side syntax and cross-chunk state --
-	// split escapes, an open paste body, an open clipboard reply -- live
-	// there too; this class only dispatches the items it returns.
-	declare [kWire]: Wire;
+	// The session's reader, one per session: the syntax and cross-chunk state
+	// of what comes back -- split escapes, an open paste body, an open
+	// clipboard reply -- live there, and this class only dispatches the items
+	// it returns.
+	declare [kWireReader]: WireReader;
 
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
@@ -338,12 +869,11 @@ export class TerminalExchange {
 	 * Every question written and not yet answered or given up on, oldest
 	 * first: the anchor and re-anchor cursor queries, the DECRQM
 	 * negotiations, the clipboard read. Each item off the wire answers the
-	 * first probe here that matches it. Two mode negotiations run
+	 * first question here that it fits. Two mode negotiations run
 	 * concurrently at startup and their answers can arrive in either order --
-	 * each probe matches on its own mode number, so neither takes the
-	 * other's.
+	 * each names its own mode number, so neither takes the other's.
 	 */
-	declare [kPendingProbes]: PendingProbe[];
+	declare [kPendingReplies]: PendingReply[];
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	declare [kPriorBidiMode]: number | null;
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
@@ -448,15 +978,6 @@ export class TerminalExchange {
 		return this[kWidthMeasurer];
 	}
 
-	/**
-	 * The session's wire, for the engine's own few spellings. One per session,
-	 * so what the engine writes and what the exchange writes are spelled by
-	 * the same object -- and every one of them goes out through write().
-	 */
-	get wire(): Wire {
-		return this[kWire];
-	}
-
 	constructor(deps: {
 		transport: TerminalTransport;
 		handlers: ExchangeHandlers;
@@ -468,10 +989,10 @@ export class TerminalExchange {
 		this[kStarted] = false;
 		this[kDisposed] = false;
 		this[kLastWrite] = Promise.resolve();
-		this[kWire] = new Wire(deps.transport.colorDepth);
+		this[kWireReader] = new WireReader();
 		this[kHasDetectedCommandStart] = false;
 		this[kCursorDetectionPromise] = null;
-		this[kPendingProbes] = [];
+		this[kPendingReplies] = [];
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
@@ -528,13 +1049,12 @@ export class TerminalExchange {
 					sentAt: Date.now(),
 				});
 				armWidthProbeTimer(this);
-				// Ask through the wire like anything else, then hand the bytes
-				// back rather than write them: this ask rides the frame that
-				// paints the cluster. The matcher is dropped -- a width reply
-				// is claimed by the queue above, in the DSR send order the
-				// sequence number keeps, never by the pending table.
-				this[kWire].cursorPositionProbe();
-				return this[kWire].take();
+				// The bytes go back to the caller rather than out: this ask
+				// rides the frame that paints the cluster. Nothing joins the
+				// pending table for it -- a width reply is claimed by the
+				// queue above, in the DSR send order the sequence number
+				// keeps.
+				return CURSOR_QUERY;
 			},
 		};
 		this[kTransport] = deps.transport;
@@ -725,11 +1245,7 @@ export class TerminalExchange {
 		}
 
 		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await probeMode(
-			this,
-			"8",
-			this[kWire].mode(8, false).take(),
-		);
+		const answer = await queryMode(this, "8", BIDI_EXPLICIT);
 
 		// No bidi at all: cells land as written, which is the contract we want.
 		if (answer === null || answer === 0) {
@@ -753,7 +1269,7 @@ export class TerminalExchange {
 		if (!this[kInteractive]) {
 			return;
 		}
-		void this.write("\r" + this[kWire].eraseToLineEnd().take());
+		void this.write("\r" + LINE_ERASE);
 	}
 
 	/**
@@ -779,7 +1295,7 @@ export class TerminalExchange {
 			return;
 		}
 
-		const answer = await probeMode(
+		const answer = await queryMode(
 			this,
 			"?2027",
 			MODE_SPELLINGS.clusterWidths.set,
@@ -796,28 +1312,23 @@ export class TerminalExchange {
 	 * anchor. Sends DSR (`ESC[6n`) and waits for the `ESC[row;colR` reply.
 	 */
 	detectCommandStart(): Promise<number> {
-		return new Promise<number>((resolve, reject) => {
-			if (!this[kInteractive]) {
-				reject(new Error("Cannot detect cursor position: not interactive"));
-				return;
-			}
-
-			const probe = this[kWire].cursorPositionProbe();
-			enrollProbe(
-				this,
-				probe,
-				({row}) => {
-					// Convert 1-based terminal row to the 0-based anchor.
-					this[kHandlers].onCommandStart(row - 1);
-
-					this[kHasDetectedCommandStart] = true;
-					resolve(row);
-				},
-				() => reject(new Error("Timeout waiting for cursor position response")),
-				1000,
-				{sequence: this[kDsrSequence]++},
+		if (!this[kInteractive]) {
+			return Promise.reject(
+				new Error("Cannot detect cursor position: not interactive"),
 			);
-			void this.write(this[kWire].take());
+		}
+		// The same second the mode queries allow: a cold start or a slow SSH
+		// link can outlast a tighter window, and answering late is answering.
+		return nextReply(this, "cursor-report", {
+			ask: CURSOR_QUERY,
+			timeoutMs: 1000,
+			sequence: this[kDsrSequence]++,
+			read: ({row}) => {
+				// Convert 1-based terminal row to the 0-based anchor.
+				this[kHandlers].onCommandStart(row - 1);
+				this[kHasDetectedCommandStart] = true;
+				return row;
+			},
 		});
 	}
 
@@ -831,63 +1342,85 @@ export class TerminalExchange {
 	 * back to a computed anchor.
 	 */
 	queryCursorRow(): Promise<number> {
-		return new Promise<number>((resolve, reject) => {
-			if (!this[kInteractive]) {
-				reject(new Error("not interactive"));
-				return;
-			}
-
-			// Queries can overlap: a drag fires resizes faster than the
-			// terminal answers, and each handleResize issues its own query.
-			// Each is its own pending probe, and DSR answers arrive in ask
-			// order, so every query gets its own reply.
-			//
-			// Short timeout: the redraw should feel immediate, and a terminal
-			// that does not answer promptly falls back to the computed
-			// re-anchor.
-			const probe = this[kWire].cursorPositionProbe();
-			enrollProbe(
-				this,
-				probe,
-				({row}) => resolve(row - 1),
-				() => reject(new Error("Timeout waiting for cursor position response")),
-				200,
-				{sequence: this[kDsrSequence]++},
-			);
-			void this.write(this[kWire].take());
+		if (!this[kInteractive]) {
+			return Promise.reject(new Error("not interactive"));
+		}
+		// Queries can overlap: a drag fires resizes faster than the terminal
+		// answers, and each handleResize issues its own. Each is its own
+		// pending question, and DSR answers arrive in ask order, so every
+		// query gets its own reply.
+		//
+		// Short timeout: the redraw should feel immediate, and a terminal
+		// that does not answer promptly falls back to the computed re-anchor.
+		return nextReply(this, "cursor-report", {
+			ask: CURSOR_QUERY,
+			timeoutMs: 200,
+			sequence: this[kDsrSequence]++,
+			read: ({row}) => row - 1,
 		});
 	}
 
 	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
-		return this.write(this[kWire].clipboardWrite(text).take());
+		return this.write(clipboardEscape(text));
 	}
 
 	/** OSC 2: set the terminal's title (the stack holds the prior one). */
 	setTitle(text: string): Promise<void> {
-		return this.write(this[kWire].title(text).take());
+		return this.write(titleEscape(text));
 	}
 
+	/** OSC 52 with "?": what is on the terminal's clipboard? */
 	queryClipboard(): Promise<string | null> {
 		if (!this[kInteractive] || this[kDisposed]) {
 			return Promise.resolve(null);
 		}
-		return new Promise<string | null>((resolve) => {
-			// One query at a time -- the reply carries no sequence, so a
-			// second would have nothing to be told apart by. Asking again
-			// answers the first asker with silence.
-			abandonClipboardProbe(this);
-			const probe = this[kWire].clipboardProbe();
-			enrollProbe(
-				this,
-				probe,
-				resolve,
-				() => resolve(null),
-				TerminalExchange[kClipboardQueryTimeout],
-				{clipboard: true},
-			);
-			void this.write(this[kWire].take());
+		// One query at a time -- the reply carries no sequence, so a second
+		// would have nothing to be told apart by. Asking again answers the
+		// first asker with silence.
+		abandonClipboardQuery(this);
+		return nextReply(this, "clipboard", {
+			ask: CLIPBOARD_QUERY,
+			timeoutMs: TerminalExchange[kClipboardQueryTimeout],
+			absent: null,
+			clipboard: true,
+			read: ({text}) => text,
 		});
+	}
+
+	/** ED 2 then CUP: the screen blank, the cursor at its top-left cell. */
+	clearScreen(): Promise<void> {
+		return this.write(SCREEN_CLEAR);
+	}
+
+	/** CUP: the cursor to the first column of a one-based row. */
+	cursorToRow(row: number): Promise<void> {
+		return this.write(rowStart(row));
+	}
+
+	/** ED 0: from the cursor to the end of the screen. */
+	eraseBelow(): Promise<void> {
+		return this.write(BELOW_ERASE);
+	}
+
+	/**
+	 * Lines that clear themselves: each opens by erasing the rest of its row,
+	 * so nothing an older frame left beside it survives. The text's own last
+	 * ending is left alone -- it ends the last line rather than opening
+	 * another.
+	 */
+	writeLines(text: string): Promise<void> {
+		return this.write(
+			LINE_ERASE + text.replace(/\r\n(?!$)/g, "\r\n" + LINE_ERASE),
+		);
+	}
+
+	/**
+	 * Push the screen up by `rows`: from the bottom row a step down scrolls,
+	 * one row at a time, and what leaves the top goes to the scrollback.
+	 */
+	scrollUp(bottomRow: number, rows: number): Promise<void> {
+		return this.write(rowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
 
 	/**
@@ -905,7 +1438,7 @@ export class TerminalExchange {
 		}
 		const settled = () =>
 			this[kWidthProbes].length === 0 &&
-			!this[kPendingProbes].some((probe) => probe.sequence !== undefined);
+			!this[kPendingReplies].some((entry) => entry.sequence !== undefined);
 		if (settled()) {
 			return Promise.resolve();
 		}
@@ -934,7 +1467,7 @@ export class TerminalExchange {
 		// mode it reported, so the next command inherits its own settings rather
 		// than ours. Only when it was SET -- reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
-			void this.write(this[kWire].mode(8, true).take());
+			void this.write(BIDI_IMPLICIT);
 			this[kPriorBidiMode] = null;
 		}
 		// The engaged modes go back too -- 2027 among them, for a terminal
@@ -943,13 +1476,13 @@ export class TerminalExchange {
 		this.restoreEngagedModes();
 		this[kGraphemeClustersNegotiated] = false;
 		// The clipboard read is answered with silence; the rest of the pending
-		// probes are simply dropped, their timers cleared so nothing keeps the
-		// event loop alive.
-		abandonClipboardProbe(this);
-		for (const probe of this[kPendingProbes]) {
-			clearTimeout(probe.timer);
+		// questions are simply dropped, their timers cleared so nothing keeps
+		// the event loop alive.
+		abandonClipboardQuery(this);
+		for (const entry of this[kPendingReplies]) {
+			clearTimeout(entry.timer);
 		}
-		this[kPendingProbes].length = 0;
+		this[kPendingReplies].length = 0;
 		if (this[kWidthProbeTimer] !== null) {
 			clearTimeout(this[kWidthProbeTimer]);
 			this[kWidthProbeTimer] = null;
@@ -1182,7 +1715,7 @@ function route(session: TerminalExchange, chunk: string): void {
 			keys = [];
 		}
 	};
-	for (const item of session[kWire].feed(chunk)) {
+	for (const item of session[kWireReader].feed(chunk)) {
 		switch (item.kind) {
 			case "key":
 				// Ctrl-C: raw mode delivers it as data, and its default action
@@ -1220,55 +1753,81 @@ function route(session: TerminalExchange, chunk: string): void {
 
 /* ------------------------------------------------------- query correlation */
 
+/** The item of a given kind, for the reader that takes the answer out of it. */
+type ReplyOf<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
+
 /**
- * Put a probe in the pending table, bounded by a deadline: `settle` gets the
- * matched answer, `expire` runs when the deadline passes unanswered. Asking
- * is the caller's: the wire method it took the probe from has already put the
- * request in the buffer, and the caller flushes it -- some ride other bytes.
+ * Ask, and answer with the reply.
+ *
+ * The question joins the pending table, the request goes out, and `read`
+ * takes the answer out of whichever item comes back for it -- running where
+ * the item is dispatched, so what it does besides reading happens in stream
+ * order. The deadline is what ends a question no reply comes for: `absent`
+ * names what silence answers with, and the only questions with no such answer
+ * are the cursor ones, which reject instead.
  */
-function enrollProbe<T>(
+function nextReply<K extends WireItem["kind"], T>(
 	session: TerminalExchange,
-	probe: WireProbe<T>,
-	settle: (answer: T) => void,
-	expire: () => void,
-	timeoutMs: number,
-	extras?: {sequence?: number; clipboard?: boolean},
-): void {
-	const entry: PendingProbe = {
-		matches: probe.matches,
-		settle: (answer: unknown) => {
-			clearTimeout(entry.timer);
-			settle(answer as T);
-		},
-		timer: setTimeout(() => {
-			const index = session[kPendingProbes].indexOf(entry);
-			if (index !== -1) {
-				session[kPendingProbes].splice(index, 1);
-			}
-			expire();
-		}, timeoutMs),
-		...extras,
-	};
-	session[kPendingProbes].push(entry);
+	kind: K,
+	options: {
+		/** The bytes that ask, whatever they ride behind. */
+		ask: string;
+		timeoutMs: number;
+		read: (item: ReplyOf<K>) => T;
+		absent?: T;
+		mode?: string;
+		sequence?: number;
+		clipboard?: boolean;
+	},
+): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const entry: PendingReply = {
+			kind,
+			mode: options.mode,
+			sequence: options.sequence,
+			clipboard: options.clipboard,
+			settle: (item) => {
+				clearTimeout(entry.timer);
+				resolve(options.read(item as ReplyOf<K>));
+			},
+			giveUp: () => {
+				clearTimeout(entry.timer);
+				if (options.absent !== undefined) {
+					resolve(options.absent);
+				} else {
+					reject(new Error("Timeout waiting for cursor position response"));
+				}
+			},
+			timer: setTimeout(() => {
+				const index = session[kPendingReplies].indexOf(entry);
+				if (index !== -1) {
+					session[kPendingReplies].splice(index, 1);
+				}
+				entry.giveUp();
+			}, options.timeoutMs),
+		};
+		session[kPendingReplies].push(entry);
+		void session.write(options.ask);
+	});
 }
 
 /**
  * Answer the outstanding clipboard query with silence and forget it. Called
  * wherever the query ends without a reply: a replacement query, dispose.
  */
-function abandonClipboardProbe(session: TerminalExchange): void {
-	const pending = session[kPendingProbes];
-	const index = pending.findIndex((probe) => probe.clipboard);
+function abandonClipboardQuery(session: TerminalExchange): void {
+	const pending = session[kPendingReplies];
+	const index = pending.findIndex((entry) => entry.clipboard);
 	if (index !== -1) {
-		const [probe] = pending.splice(index, 1);
-		probe.settle(null);
+		const [entry] = pending.splice(index, 1);
+		entry.giveUp();
 	}
 }
 
 /**
  * Route one reply item to whichever question it answers: the first pending
- * probe that matches it, and one matching none is dropped as a late,
- * duplicate or unasked-for answer.
+ * one it fits, and an item fitting none is dropped as a late, duplicate or
+ * unasked-for answer.
  *
  * Cursor reports need one more rule. Two kinds of query share that reply
  * shape -- the anchor queries here and the width probes a frame appends
@@ -1277,15 +1836,22 @@ function abandonClipboardProbe(session: TerminalExchange): void {
  * the other's.
  */
 function dispatchReply(session: TerminalExchange, item: WireItem): void {
-	const pending = session[kPendingProbes];
+	const pending = session[kPendingReplies];
 	let index = -1;
-	let answer: unknown;
 	for (let i = 0; i < pending.length; i++) {
-		answer = pending[i].matches(item);
-		if (answer !== undefined) {
-			index = i;
-			break;
+		if (pending[i].kind !== item.kind) {
+			continue;
 		}
+		// Two mode negotiations can be outstanding at once, so a DECRPM answer
+		// belongs to the one that asked about that mode.
+		if (
+			item.kind === "mode-report" &&
+			pending[i].mode !== item.mode
+		) {
+			continue;
+		}
+		index = i;
+		break;
 	}
 	if (item.kind === "cursor-report") {
 		const width = session[kWidthProbes][0];
@@ -1301,8 +1867,8 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
 	if (index === -1) {
 		return;
 	}
-	const [probe] = pending.splice(index, 1);
-	probe.settle(answer);
+	const [entry] = pending.splice(index, 1);
+	entry.settle(item);
 }
 
 /**
@@ -1316,17 +1882,19 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
  * permanently set, 4 permanently reset. 0 and silence mean the same thing
  * to every caller here -- the terminal has no opinion, so ours stands.
  */
-function probeMode(
+function queryMode(
 	session: TerminalExchange,
 	mode: string,
 	prelude: string,
 ): Promise<number | null> {
-	return new Promise<number | null>((resolve) => {
-		// The same second the cursor probe allows: a cold start or a slow SSH
-		// link can outlast a tighter window, and answering late is answering.
-		const probe = session[kWire].modeProbe(mode);
-		enrollProbe(session, probe, resolve, () => resolve(null), 1000);
-		void session.write(prelude + session[kWire].take());
+	// The same second the cursor query allows: a cold start or a slow SSH
+	// link can outlast a tighter window, and answering late is answering.
+	return nextReply<"mode-report", number | null>(session, "mode-report", {
+		ask: prelude + modeQuery(mode),
+		timeoutMs: 1000,
+		absent: null,
+		mode,
+		read: ({value}) => value,
 	});
 }
 
