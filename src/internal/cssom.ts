@@ -13230,7 +13230,7 @@ function getMatchingRules(
 				return (
 					shadowHost !== null &&
 					partNames.includes(partArg[1].trim()) &&
-					ruleMatches(manager, shadowHost, rule)
+					ruleMatches(shadowHost, rule)
 				);
 			}
 			// ::placeholder / ::selection: UA-part pseudo aliases.
@@ -13238,10 +13238,10 @@ function getMatchingRules(
 				partPseudo !== null &&
 				shadowHost !== null &&
 				rule.pseudoElement === partPseudo &&
-				ruleMatches(manager, shadowHost, rule)
+				ruleMatches(shadowHost, rule)
 			);
 		}
-		return ruleMatches(manager, element, rule, rootNode);
+		return ruleMatches(element, rule, rootNode);
 	});
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
@@ -13423,7 +13423,6 @@ function partPseudoFor(element: Element): string | null {
  * lets a shadow stylesheet style its own host.
  */
 function ruleMatches(
-	manager: StyleManager,
 	element: Element,
 	rule: ParsedCSSRule,
 	elementRoot?: Node,
@@ -13483,7 +13482,7 @@ function computePseudoElementStyle(
 		if (rule.pseudoElement !== pseudoElement) {
 			return false;
 		}
-		return ruleMatches(manager, element, rule, pseudoRoot);
+		return ruleMatches(element, rule, pseudoRoot);
 	});
 
 	// Apply rules in cascade order. A pseudo-element's declarations are a
