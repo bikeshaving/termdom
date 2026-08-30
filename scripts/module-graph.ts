@@ -34,11 +34,16 @@ interface ExportSite {
 
 const imports = new Map<string, Set<string>>();
 const exportSites = new Map<string, ExportSite[]>();
+const escapeWriters = new Set<string>();
 for (const file of walk(ROOT)) {
 	const name = relative(ROOT, file).replace(/\.d\.ts$|\.ts$|\.js$/, "");
 	const deps = new Set<string>();
 	const sites: ExportSite[] = [];
-	const lines = readFileSync(file, "utf8").split("\n");
+	const source = readFileSync(file, "utf8");
+	if (/\\x1b|\\u001b|\x1b/i.test(source)) {
+		escapeWriters.add(name);
+	}
+	const lines = source.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		const imported = IMPORT.exec(line);
@@ -118,7 +123,26 @@ if (process.argv.includes("--check")) {
 			);
 		}
 	}
-	const LEAVES = ["internal/text", "internal/wire"];
+	/**
+	 * The modules that spell escape sequences. exchange.ts writes them to the
+	 * terminal and reads them back; screen.ts spells the frames. inspector.ts
+	 * is the third because its SGR literals color a debugger's stdout through
+	 * util.inspect, never the terminal transport.
+	 */
+	const ESCAPE_WRITERS = [
+		"internal/exchange",
+		"internal/screen",
+		"internal/inspector",
+	];
+	for (const name of escapeWriters) {
+		if (name.startsWith("internal/") && !ESCAPE_WRITERS.includes(name)) {
+			failures.push(
+				`${name} spells an escape sequence, which only ` +
+				`${ESCAPE_WRITERS.join(", ")} may`,
+			);
+		}
+	}
+	const LEAVES = ["internal/text"];
 	const isLeaf = (name: string): boolean =>
 		name.startsWith("generated/") || LEAVES.includes(name);
 	for (const [name, deps] of imports) {

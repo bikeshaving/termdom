@@ -8,8 +8,11 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {Wire} from "../src/internal/wire.js";
-import {transportFromProcess} from "../src/internal/exchange.js";
+import {
+	clipboardEscape,
+	transportFromProcess,
+	WireReader,
+} from "../src/internal/exchange.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -659,16 +662,15 @@ test("permissions.query refuses a name that is not one", async () => {
 });
 
 test("the wire's base64 tolerates what terminals send", () => {
-	const write = (text: string) => new Wire().clipboardWrite(text).take();
 	const replyText = (reply: string) => {
-		const [item] = new Wire().feed(reply);
+		const [item] = new WireReader().feed(reply);
 		if (item?.kind !== "clipboard") {
 			throw new Error(`${JSON.stringify(reply)} did not read as a clipboard`);
 		}
 		return item.text;
 	};
 	const read = (payload: string) => replyText(`\x1b]52;c;${payload}\x07`);
-	expect(write("hi")).toBe("\x1b]52;c;aGk=\x07");
+	expect(clipboardEscape("hi")).toBe("\x1b]52;c;aGk=\x07");
 	expect(read("aGk=")).toBe("hi");
 	expect(read("aGk")).toBe("hi");
 	expect(read("aG\r\nk=")).toBe("hi");
@@ -679,17 +681,19 @@ test("the wire's base64 tolerates what terminals send", () => {
 	expect(read("A")).toBe("");
 	expect(read("aGkAB")).toBe("");
 	const long = "x".repeat(300);
-	expect(replyText(write(long))).toBe(long);
+	expect(replyText(clipboardEscape(long))).toBe(long);
 });
 
 test("a reply cut inside its own opening still reads as a reply", () => {
-	const wire = new Wire();
-	expect(wire.feed("\x1b]5")).toEqual([]);
-	expect(wire.feed("2;c;aGk=\x07")).toEqual([{kind: "clipboard", text: "hi"}]);
+	const reader = new WireReader();
+	expect(reader.feed("\x1b]5")).toEqual([]);
+	expect(reader.feed("2;c;aGk=\x07")).toEqual([
+		{kind: "clipboard", text: "hi"},
+	]);
 	// Every cut past the escape itself, and one opening that only looks like
 	// this one.
 	for (const at of [2, 3, 4, 5, 6, 7, 8]) {
-		const split = new Wire();
+		const split = new WireReader();
 		const reply = "\x1b]52;c;aGk=\x07";
 		const items = [
 			...split.feed(reply.slice(0, at)),
@@ -697,14 +701,14 @@ test("a reply cut inside its own opening still reads as a reply", () => {
 		];
 		expect(items).toEqual([{kind: "clipboard", text: "hi"}]);
 	}
-	const other = new Wire();
+	const other = new WireReader();
 	expect(other.feed("\x1b]2").map((item) => item.kind)).toEqual([
 		"key",
 		"key",
 		"key",
 	]);
 	// A bare trailing ESC is the Escape key, held for nothing.
-	expect(new Wire().feed("\x1b")).toEqual([
+	expect(new WireReader().feed("\x1b")).toEqual([
 		{
 			kind: "key",
 			key: "Escape",

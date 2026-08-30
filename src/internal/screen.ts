@@ -22,7 +22,7 @@ import {
 	widthIsUncertain,
 	type WidthMeasurer,
 } from "./text.js";
-import type {ColorDepth} from "./wire.js";
+import type {ColorDepth} from "./exchange.js";
 
 export type {ColorDepth};
 

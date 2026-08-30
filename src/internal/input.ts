@@ -43,7 +43,7 @@ import {
 	topmostClickedPopover,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
-import type {WireKey} from "./wire.js";
+import type {WireKey} from "./exchange.js";
 import {type StyleManager, getComputedValues} from "./cssom.js";
 
 /* -------------------------------------------------- what a wire item means */
