@@ -5,14 +5,14 @@
  * A cell holds a grapheme cluster and its style, packed. A frame is the whole
  * grid; committing one compares it against the grid the terminal is already
  * holding and emits only what differs -- cursor moves, style runs, scroll
- * shifts for a band that moved -- spelled through the wire, which owns every
- * escape sequence the bytes are made of.
+ * shifts for a band that moved -- spelled through the frame writer at the top
+ * of this file, which owns every escape sequence the bytes are made of.
  *
  * Start at beginFrame: it checks out a grid, hands back the CellContext every
  * draw call goes through, and arms the endFrame that diffs and emits. The
  * sections above it are what a frame is made of, in the order it uses them --
- * the cell encoding, the box-drawing glyphs, the grid, the draw calls, and the
- * emission.
+ * the writer, the cell encoding, the box-drawing glyphs, the grid, the draw
+ * calls, and the emission.
  */
 import {
 	graphemeSegmenter,
@@ -22,18 +22,350 @@ import {
 	widthIsUncertain,
 	type WidthMeasurer,
 } from "./text.js";
-import {
-	type ColorDepth,
-	type StyleAttribute,
-	type StyleAttributes,
-	type StyleRun,
-	type UnderlineStyle,
-	Wire,
-} from "./wire.js";
-
-/* ------------------------------------------------------------------- cells */
+import type {ColorDepth} from "./wire.js";
 
 export type {ColorDepth};
+
+/* -------------------------------------------------------- the frame writer */
+
+/**
+ * The characters no frame may put on the wire: C0, DEL, and the C1 range
+ * whose single bytes are CSI, OSC and DCS. One of these in a document's own
+ * text would end the sequence around it or start one of its own, so both
+ * doors text takes into a frame -- a cell, and the writer below -- turn them
+ * away.
+ */
+function isControlByte(code: number): boolean {
+	return code < 0x20 || (code >= 0x7f && code < 0xa0);
+}
+
+/** Quantize 24-bit RGB onto the 256-color cube and grayscale ramp. */
+function rgbTo256(color: number): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+
+	if (r === g && g === b) {
+		if (r < 8) {
+			return 0;
+		}
+		if (r > 248) {
+			return 15;
+		}
+		return Math.round(((r - 8) / 247) * 23) + 232;
+	}
+
+	const r6 = Math.round((r / 255) * 5);
+	const g6 = Math.round((g / 255) * 5);
+	const b6 = Math.round((b / 255) * 5);
+	return 16 + 36 * r6 + 6 * g6 + b6;
+}
+
+/** Round 24-bit RGB to the nearest of the basic eight. */
+function rgbToBasic8(color: number): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+
+	let ansiColor = 0;
+	if (r > 127) {
+		ansiColor |= 1;
+	}
+	if (g > 127) {
+		ansiColor |= 2;
+	}
+	if (b > 127) {
+		ansiColor |= 4;
+	}
+	return ansiColor;
+}
+
+/**
+ * The SGR parameters naming a 24-bit color at the depth the terminal speaks:
+ * stated outright, quantized to the 256-color cube, or rounded to one of the
+ * eight the oldest terminals have. Parameters, not a whole SGR -- a run of
+ * them shares one escape.
+ */
+function colorParameters(
+	color: number,
+	isFg: boolean,
+	colorDepth: ColorDepth,
+): string {
+	switch (colorDepth) {
+		case "rgb": {
+			const r = (color >> 16) & 0xff;
+			const g = (color >> 8) & 0xff;
+			const b = color & 0xff;
+			return `${isFg ? 38 : 48};2;${r};${g};${b}`;
+		}
+		case "256":
+			return `${isFg ? 38 : 48};5;${rgbTo256(color)}`;
+		case "ansi":
+			return String((isFg ? 30 : 40) + rgbToBasic8(color));
+	}
+}
+
+/** The attributes an SGR run states by name, apart from the underline. */
+type StyleAttribute =
+	"bold" |
+	"dim" |
+	"italic" |
+	"blink" |
+	"inverse" |
+	"strikethrough" |
+	"overline";
+
+/** Wanted states by name; an absent name is left as the terminal has it. */
+type StyleAttributes = {[K in StyleAttribute]?: boolean};
+
+/** No underline, one line, or the styled double line of SGR 4:2. */
+type UnderlineStyle = "none" | "single" | "double";
+
+/**
+ * What a run of SGR parameters says. A color is a 24-bit value, `null` for
+ * the terminal's own default, absent to leave standing. The underline is a
+ * move from one style to another, because which codes spell the move depends
+ * on where it starts.
+ */
+interface StyleRun {
+	fg?: number | null;
+	bg?: number | null;
+	attributes?: StyleAttributes;
+	underline?: {from: UnderlineStyle; to: UnderlineStyle};
+}
+
+/**
+ * The codes taking the underline from one style to another. A plain 4 comes
+ * before 4:2 so a terminal that ignores the styled underline still draws a
+ * line, and a plain 4 on its own downgrades a double to a single (ECMA-48,
+ * and what tmux tracks).
+ */
+function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
+	if (from === to) {
+		return [];
+	}
+	if (to === "none") {
+		return ["24"];
+	}
+	if (to === "double") {
+		return from === "none" ? ["4", "4:2"] : ["4:2"];
+	}
+	return ["4"];
+}
+
+/**
+ * The SGR spelling a run, parameters in the order a terminal wants to hear
+ * them: colors, then attributes. "" when the run says nothing -- no escape
+ * is ever emitted empty, since an empty SGR is the terminal's reset.
+ */
+function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
+	const codes: string[] = [];
+	if (run.fg !== undefined) {
+		codes.push(
+			run.fg === null ? "39" : colorParameters(run.fg, true, colorDepth),
+		);
+	}
+	if (run.bg !== undefined) {
+		codes.push(
+			run.bg === null ? "49" : colorParameters(run.bg, false, colorDepth),
+		);
+	}
+
+	const wanted = run.attributes;
+	const state = (name: StyleAttribute, on: string, off: string) => {
+		const want = wanted?.[name];
+		if (want !== undefined) {
+			codes.push(want ? on : off);
+		}
+	};
+
+	state("bold", "1", "22");
+	state("dim", "2", "22");
+	state("italic", "3", "23");
+	if (run.underline) {
+		codes.push(...underlineCodes(run.underline.from, run.underline.to));
+	}
+	state("blink", "5", "25");
+	state("inverse", "7", "27");
+	state("strikethrough", "9", "29");
+	state("overline", "53", "55");
+
+	return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
+}
+
+const kOut = Symbol("out");
+const kColorDepth = Symbol("colorDepth");
+
+/**
+ * A frame's bytes, spelled rather than concatenated.
+ *
+ * Every method returns the writer, so a row is said aloud --
+ * `writer.cursorTo(row, 1).style(run).text(glyphs).eraseToLineEnd()` -- and
+ * take() hands back everything spelled since the last one. Where a caller
+ * wants a single spelling as a string, `writer.carriageReturn().take()` is
+ * the idiom.
+ *
+ * text() is the one door a document's own characters come through, and it
+ * drops the bytes a terminal would read as commands. Nothing else here
+ * carries anything but numbers this file chose.
+ */
+class FrameWriter {
+	/** Everything spelled since the last take(), in order. */
+	declare [kOut]: string[];
+	/** What the terminal can display; style() spells colors at this depth. */
+	declare [kColorDepth]: ColorDepth;
+
+	constructor(colorDepth: ColorDepth) {
+		this[kOut] = [];
+		this[kColorDepth] = colorDepth;
+	}
+
+	/** Everything spelled since the last take, and the buffer is empty again. */
+	take(): string {
+		const out = this[kOut].join("");
+		this[kOut].length = 0;
+		return out;
+	}
+
+	/* ---------------------------------------------------------- the cursor */
+
+	/** CR: back to the first column, the row unchanged. */
+	carriageReturn(): this {
+		this[kOut].push("\r");
+		return this;
+	}
+
+	/**
+	 * CR LF, `rows` times: down that many rows and back to the first column.
+	 * A lone line feed moves the cursor down without returning it, so the
+	 * rows would staircase away across the screen.
+	 */
+	newLine(rows = 1): this {
+		this[kOut].push("\r\n".repeat(rows));
+		return this;
+	}
+
+	/** CUP: the cursor to a one-based row and column. */
+	cursorTo(row: number, col: number): this {
+		this[kOut].push(`\x1b[${row};${col}H`);
+		return this;
+	}
+
+	/** CUF: the cursor forward by columns. */
+	cursorForward(columns: number): this {
+		this[kOut].push(`\x1b[${columns}C`);
+		return this;
+	}
+
+	/** CUD: the cursor down by rows, stopping at the bottom margin. */
+	cursorDown(rows: number): this {
+		this[kOut].push(`\x1b[${rows}B`);
+		return this;
+	}
+
+	/** DECSC: remember where the cursor is. */
+	saveCursor(): this {
+		this[kOut].push("\x1b7");
+		return this;
+	}
+
+	/** DECRC: the cursor back to where DECSC left it. */
+	restoreCursor(): this {
+		this[kOut].push("\x1b8");
+		return this;
+	}
+
+	/* ---------------------------------------------------------- the eraser */
+
+	/** EL 0: from the cursor to the end of its row. */
+	eraseToLineEnd(): this {
+		this[kOut].push("\x1b[K");
+		return this;
+	}
+
+	/** ED 0: from the cursor to the end of the screen. */
+	eraseBelow(): this {
+		this[kOut].push("\x1b[J");
+		return this;
+	}
+
+	/* --------------------------------------------------- the scroll region */
+
+	/** DECSTBM: the scrolling region, one-based rows. Homes the cursor. */
+	setScrollRegion(top: number, bottom: number): this {
+		this[kOut].push(`\x1b[${top};${bottom}r`);
+		return this;
+	}
+
+	/** DECSTBM with no parameters: the region is the whole screen again. */
+	resetScrollRegion(): this {
+		this[kOut].push("\x1b[r");
+		return this;
+	}
+
+	/** DL: delete rows at the cursor, pulling the region up. */
+	deleteLines(count: number): this {
+		this[kOut].push(`\x1b[${count}M`);
+		return this;
+	}
+
+	/** IL: insert blank rows at the cursor, pushing the region down. */
+	insertLines(count: number): this {
+		this[kOut].push(`\x1b[${count}L`);
+		return this;
+	}
+
+	/* ----------------------------------------------------------- the style */
+
+	/** SGR 0: back to the terminal's own defaults. */
+	resetStyle(): this {
+		this[kOut].push("\x1b[0m");
+		return this;
+	}
+
+	/**
+	 * SGR: the escape a run of style spells, at the writer's own color depth.
+	 * A run that says nothing writes nothing -- no escape is ever emitted
+	 * empty, since an empty SGR is the terminal's reset.
+	 */
+	style(run: StyleRun): this {
+		const escape = styleEscape(run, this[kColorDepth]);
+		if (escape !== "") {
+			this[kOut].push(escape);
+		}
+		return this;
+	}
+
+	/* ----------------------------------------------------------- the modes */
+
+	/** DECSET/DECRST: engage or release a private mode by number. */
+	privateMode(code: number, on: boolean): this {
+		this[kOut].push(`\x1b[?${code}${on ? "h" : "l"}`);
+		return this;
+	}
+
+	/* --------------------------------------------------------- the payload */
+
+	/**
+	 * Glyphs, as themselves. The bytes the writer refuses are dropped: text
+	 * is a document's, so a control character in it would end whatever
+	 * sequence surrounds it and leave the rest of the string to the terminal
+	 * as its own commands.
+	 */
+	text(glyphs: string): this {
+		let safe = "";
+		for (const char of glyphs) {
+			if (isControlByte(char.codePointAt(0)!)) {
+				continue;
+			}
+			safe += char;
+		}
+		this[kOut].push(safe);
+		return this;
+	}
+}
+
+/* ------------------------------------------------------------------- cells */
 
 export interface CellStyle {
 	fg?: number | null;
@@ -810,7 +1142,7 @@ function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
  * a space. This is how the static frame reads a grid, having no cursor to
  * move and no previous frame to diff against.
  */
-function gridLine(grid: CellGrid, row: number, wire: Wire): string {
+function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 	const rowStart = row * grid.cols;
 	// A file should not be padded out to the terminal width, so stop at the
 	// last cell that actually holds something.
@@ -826,14 +1158,14 @@ function gridLine(grid: CellGrid, row: number, wire: Wire): string {
 	for (let col = 0; col <= lastCol; col++) {
 		const index = rowStart + col;
 		if (grid.char[index] === 0) {
-			wire.text(" ");
+			writer.text(" ");
 			continue;
 		}
 
-		styleDiff(grid, index, previous, wire);
+		styleDiff(grid, index, previous, writer);
 
 		const encoding = grid.border[index];
-		wire.text(
+		writer.text(
 			encoding > 0 ?
 					getBorderChar(encoding) :
 					decodeGrapheme(grid.char[index]),
@@ -849,9 +1181,9 @@ function gridLine(grid: CellGrid, row: number, wire: Wire): string {
 	}
 
 	if (previous !== -1) {
-		wire.resetStyle();
+		writer.resetStyle();
 	}
-	return wire.take();
+	return writer.take();
 }
 
 /** The columns a row occupies, out to the right edge of its last glyph. */
@@ -978,8 +1310,7 @@ export class CellContext {
 			// control byte must be turned away before it takes one, or it
 			// survives to the output as a raw escape byte (injection from
 			// untrusted text).
-			const code = char.codePointAt(0)!;
-			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+			if (isControlByte(char.codePointAt(0)!)) {
 				continue;
 			}
 
@@ -1277,14 +1608,14 @@ function styleDiff(
 	grid: CellGrid,
 	index: number,
 	prev: number,
-	wire: Wire,
+	writer: FrameWriter,
 ): void {
 	const fg = grid.fg[index];
 	const bg = grid.bg[index];
 	const attrs = grid.attrs[index] & Attr.StyleMask;
 
 	if (prev < 0) {
-		wire.style({
+		writer.style({
 			fg: fg === 0 ? undefined : fg,
 			bg: bg === 0 ? undefined : bg,
 			attributes: attrsChanged(attrs, 0),
@@ -1312,7 +1643,7 @@ function styleDiff(
 	const wasDefault = prevFg === 0 && prevBg === 0 && prevAttrs === 0;
 	if (fg === 0 && bg === 0 && attrs === 0) {
 		if (!wasDefault) {
-			wire.resetStyle();
+			writer.resetStyle();
 		}
 		return;
 	}
@@ -1334,7 +1665,7 @@ function styleDiff(
 		run.underline = {from: getUnderline(prevAttrs), to: getUnderline(attrs)};
 	}
 
-	wire.style(run);
+	writer.style(run);
 }
 
 /** The underline the bits ask for. DoubleUnderline needs Underline with it. */
@@ -1370,7 +1701,7 @@ function attrsChanged(attrs: number, prevAttrs: number): StyleAttributes {
  * step rightward within it.
  */
 function moveCursor(
-	wire: Wire,
+	writer: FrameWriter,
 	currentRow: number,
 	currentCol: number,
 	targetRow: number,
@@ -1390,19 +1721,19 @@ function moveCursor(
 	}
 
 	if (rowDiff > 0) {
-		const down = "\r\n".repeat(rowDiff);
-		if (targetCol === 0) {
-			return down;
+		writer.newLine(rowDiff);
+		if (targetCol > 0) {
+			writer.cursorForward(targetCol);
 		}
-		return down + wire.cursorForward(targetCol).take();
+		return writer.take();
 	}
 	if (targetCol === currentCol) {
 		return "";
 	}
 	if (targetCol === 0) {
-		return "\r";
+		return writer.carriageReturn().take();
 	}
-	return wire.cursorForward(targetCol - currentCol).take();
+	return writer.cursorForward(targetCol - currentCol).take();
 }
 
 /**
@@ -1477,7 +1808,7 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
  */
 function generateANSI(
 	grid: CellGrid,
-	wire: Wire,
+	writer: FrameWriter,
 	renderedLines: Set<number>,
 	measurer?: WidthMeasurer,
 ): string {
@@ -1508,23 +1839,23 @@ function generateANSI(
 		if (starving.size > 0) {
 			const cell = safeProbeCell(grid);
 			if (cell !== null) {
-				output += moveCursor(wire, 0, 0, cell.row, 0);
+				output += moveCursor(writer, 0, 0, cell.row, 0);
 				cursorRow = cell.row;
 				cursorCol = 0;
 				// probe() takes the cluster out of the set being iterated.
 				for (const cluster of [...starving]) {
-					output += "\r";
+					writer.carriageReturn();
 					if (cell.col > 0) {
-						output += wire.cursorForward(cell.col).take();
+						writer.cursorForward(cell.col);
 					}
 					// Each probe is reached by naming its column outright, so
 					// no train glyph's advance carries into the next.
 					run++;
 					output +=
-						wire.text(cluster).take() +
+						writer.text(cluster).take() +
 						measurer.probe(cluster, run, cell.col, stringWidth(cluster));
 				}
-				output += "\r";
+				output += writer.carriageReturn().take();
 				run++;
 			}
 		}
@@ -1566,7 +1897,7 @@ function generateANSI(
 			skipNextCol = -1;
 
 			if (row !== cursorRow || col !== cursorCol) {
-				const moveSeq = moveCursor(wire, cursorRow, cursorCol, row, col);
+				const moveSeq = moveCursor(writer, cursorRow, cursorCol, row, col);
 				output += moveSeq;
 				cursorRow = row;
 				cursorCol = col;
@@ -1581,9 +1912,9 @@ function generateANSI(
 			}
 
 			if (isFirstRenderOfLine) {
-				output += "\r" + wire.eraseToLineEnd().take();
+				output += writer.carriageReturn().eraseToLineEnd().take();
 				if (col > 0) {
-					output += wire.cursorForward(col).take();
+					output += writer.cursorForward(col).take();
 				}
 				cursorCol = col;
 				isFirstRenderOfLine = false;
@@ -1592,8 +1923,8 @@ function generateANSI(
 				}
 			}
 
-			styleDiff(grid, index, prevIndex, wire);
-			const styleSeq = wire.take();
+			styleDiff(grid, index, prevIndex, writer);
+			const styleSeq = writer.take();
 			if (styleSeq !== "") {
 				output += styleSeq;
 				rowHasANSI = true;
@@ -1602,7 +1933,7 @@ function generateANSI(
 			const encoding = border[index];
 			const glyph =
 				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
-			output += wire.text(glyph).take();
+			output += writer.text(glyph).take();
 
 			const width = grid.widthAt(index);
 
@@ -1650,7 +1981,7 @@ function generateANSI(
 		if (rowHasContent) {
 			prevIndex = -1;
 			if (rowHasANSI) {
-				output += wire.resetStyle().take();
+				output += writer.resetStyle().take();
 			}
 		}
 	}
@@ -1662,7 +1993,7 @@ function generateANSI(
 
 const kRows = Symbol("rows");
 const kCols = Symbol("cols");
-const kWire = Symbol("wire");
+const kWriter = Symbol("writer");
 const kPrev = Symbol("prev");
 const kPrevContentHeight = Symbol("prevContentHeight");
 const kParkRow = Symbol("parkRow");
@@ -1681,7 +2012,7 @@ const kLastCaretVisible = Symbol("lastCaretVisible");
 
 /**
  * One terminal's screen: the grid the last frame left on it, what is still
- * known to be true of that, and the wire the next frame is spelled with.
+ * known to be true of that, and the writer the next frame is spelled with.
  * Frames come one at a time -- begin, draw, end -- and each ends by parking
  * the cursor where the next resize can find it again.
  */
@@ -1716,8 +2047,9 @@ export class Screen {
 	declare [kRows]: number;
 	declare [kCols]: number;
 	// The writer every frame is spelled with, at the depth this terminal
-	// speaks. Nothing reads through it: a screen has no input side.
-	declare [kWire]: Wire;
+	// speaks. One per screen, and nothing reads back through it: a screen
+	// has no input side.
+	declare [kWriter]: FrameWriter;
 
 	/**
 	 * A screen measures widths through the channel it is built with, for as
@@ -1748,7 +2080,7 @@ export class Screen {
 		this[kResetAtRow] = 0;
 		this[kRows] = rows;
 		this[kCols] = cols;
-		this[kWire] = new Wire(colorDepth);
+		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
 	resize(rows: number, cols: number): void {
@@ -1877,7 +2209,7 @@ export class Screen {
 		this[kEndFrame] = (): string => {
 			const lines: string[] = [];
 			for (let row = 0; row < rows; row++) {
-				lines.push(gridLine(grid, row, this[kWire]));
+				lines.push(gridLine(grid, row, this[kWriter]));
 			}
 
 			// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
@@ -1992,14 +2324,14 @@ export class Screen {
 			// this caller afterward.
 			const count = Math.abs(delta);
 			const bandRow = regionTop + bandTop + 1;
-			const wire = this[kWire];
-			wire.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
+			const writer = this[kWriter];
+			writer.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
 			if (delta > 0) {
-				wire.deleteLines(count);
+				writer.deleteLines(count);
 			} else {
-				wire.insertLines(count);
+				writer.insertLines(count);
 			}
-			scrollPrefix = wire.resetScrollRegion().take();
+			scrollPrefix = writer.resetScrollRegion().take();
 		}
 
 		const context = new CellContext(next, frameRows, cols, offset);
@@ -2183,7 +2515,7 @@ export class Screen {
 				hasContent = true;
 			}
 
-			const wire = this[kWire];
+			const writer = this[kWriter];
 			let prefix = scrollPrefix;
 			let suffix = "";
 			// The frame's on-screen start row, when a positioning branch names one
@@ -2191,7 +2523,7 @@ export class Screen {
 			let frameStartRow: number | undefined;
 			if (hasContent) {
 				// DECTCEM off, hiding the cursor; then synchronized output, start.
-				prefix += wire.privateMode(25, false).privateMode(2026, true).take();
+				prefix += writer.privateMode(25, false).privateMode(2026, true).take();
 
 				if (this[kNeedsScreenReset]) {
 					// After a resize the terminal has rewrapped everything on screen,
@@ -2206,7 +2538,8 @@ export class Screen {
 					// and the rows below the content get one PARTIAL erase after the
 					// paint -- a full-screen ED from the home row is exactly what tmux
 					// archives into the scrollback.
-					prefix += wire.cursorTo(this[kResetAtRow] + 1, 1).saveCursor().take();
+					prefix +=
+						writer.cursorTo(this[kResetAtRow] + 1, 1).saveCursor().take();
 					this[kHasSavedCursor] = true;
 					this[kNeedsScreenReset] = false;
 					this[kNeedsFullClear] = false;
@@ -2214,17 +2547,17 @@ export class Screen {
 				} else if (cursorPosition !== undefined) {
 					// The frame names its own start row, and saves it: the stale-row
 					// erase and the park below both step down from there.
-					prefix += wire.cursorTo(cursorPosition + 1, 1).saveCursor().take();
+					prefix += writer.cursorTo(cursorPosition + 1, 1).saveCursor().take();
 					this[kHasSavedCursor] = true;
 					frameStartRow = cursorPosition;
 				} else if (offset > 0) {
-					prefix += wire.cursorTo(offset + 1, 1).take();
+					prefix += writer.cursorTo(offset + 1, 1).take();
 					frameStartRow = offset;
 				} else if (this[kHasSavedCursor]) {
-					prefix += wire.restoreCursor().saveCursor().take();
+					prefix += writer.restoreCursor().saveCursor().take();
 				} else {
 					// The first render starts wherever the cursor already is.
-					prefix += wire.saveCursor().take();
+					prefix += writer.saveCursor().take();
 					this[kHasSavedCursor] = true;
 				}
 
@@ -2232,7 +2565,7 @@ export class Screen {
 				// Terminal reflow makes it impossible to know where old content ended up,
 				// so we erase the entire area before redrawing.
 				if (this[kNeedsFullClear]) {
-					prefix += wire.eraseBelow().take();
+					prefix += writer.eraseBelow().take();
 					this[kNeedsFullClear] = false;
 				}
 
@@ -2240,10 +2573,10 @@ export class Screen {
 				// bottom-left for resize bookkeeping, and a blinking cursor squatting
 				// there is not UI. Focused inputs paint their own caret as an inverse
 				// cell. dispose() shows the real cursor again on the way out.
-				suffix = wire.privateMode(2026, false).take(); // synchronized, end
+				suffix = writer.privateMode(2026, false).take(); // synchronized, end
 			}
 
-			const output = generateANSI(diff, wire, this[kRenderedLines], measurer);
+			const output = generateANSI(diff, writer, this[kRenderedLines], measurer);
 
 			let contentHeight = 0;
 			for (const row of this[kRenderedLines]) {
@@ -2258,11 +2591,14 @@ export class Screen {
 			if (this[kHasSavedCursor] && this[kPrevContentHeight] > contentHeight) {
 				// Back to content start, past what the frame does paint, and
 				// erase from there down.
-				wire.restoreCursor();
+				writer.restoreCursor();
 				if (contentHeight > 0) {
-					wire.cursorDown(contentHeight);
+					writer.cursorDown(contentHeight);
 				}
-				staleOutput = wire.take() + "\r" + wire.eraseBelow().take();
+				staleOutput = writer
+					.carriageReturn()
+					.eraseBelow()
+					.take();
 			} else if (
 				resetFrame &&
 				frameStartRow !== undefined &&
@@ -2272,7 +2608,7 @@ export class Screen {
 				// old frame may have been taller. Erase from the first row past the
 				// content: a PARTIAL erase, which no terminal treats as a screen
 				// clear worth archiving.
-				staleOutput = wire
+				staleOutput = writer
 					.cursorTo(frameStartRow + contentHeight + 1, 1)
 					.eraseBelow()
 					.take();
@@ -2312,21 +2648,22 @@ export class Screen {
 					this[kParkRow] = caretBufferRow;
 					this[kParkCol] = caret.col;
 					if (frameStartRow !== undefined) {
-						parkOutput = wire
+						parkOutput = writer
 							.cursorTo(frameStartRow + caretBufferRow + 1, caret.col + 1)
 							.take();
 					} else if (this[kHasSavedCursor]) {
-						wire.restoreCursor().saveCursor();
+						writer.restoreCursor().saveCursor();
 						if (caretBufferRow > 0) {
-							wire.cursorDown(caretBufferRow);
+							writer.cursorDown(caretBufferRow);
 						}
-						parkOutput = wire.take() + "\r";
+						writer.carriageReturn();
 						if (caret.col > 0) {
-							parkOutput += wire.cursorForward(caret.col).take();
+							writer.cursorForward(caret.col);
 						}
+						parkOutput = writer.take();
 					}
 					// The caret is the real cursor, so it is shown.
-					parkOutput += wire.privateMode(25, true).take();
+					parkOutput += writer.privateMode(25, true).take();
 				} else {
 					this[kParkRow] = Math.min(contentHeight, this[kRows]) - 1;
 					this[kParkCol] = 0;
@@ -2337,16 +2674,16 @@ export class Screen {
 							frameStartRow + contentHeight,
 							this[kRows],
 						);
-						parkOutput = wire.cursorTo(lastRow, 1).take();
+						parkOutput = writer.cursorTo(lastRow, 1).take();
 					} else if (this[kHasSavedCursor]) {
 						// No absolute row to name: restore the saved content start, re-save
 						// it, and step down. CUD stops at the bottom margin, which is the
 						// content's visible bottom when it overflows.
-						wire.restoreCursor().saveCursor();
+						writer.restoreCursor().saveCursor();
 						if (contentHeight > 1) {
-							wire.cursorDown(contentHeight - 1);
+							writer.cursorDown(contentHeight - 1);
 						}
-						parkOutput = wire.take() + "\r";
+						parkOutput = writer.carriageReturn().take();
 					}
 				}
 			}
