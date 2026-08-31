@@ -28280,8 +28280,6 @@ export interface Mount {
 	requestFrame(callback: (time: number) => void): number;
 	/** Drop a frame callback that has not fired. */
 	cancelFrame(handle: number): void;
-	/** Re-ask a live media query list whenever the viewport moves. */
-	watchMedia(update: () => void): void;
 	/** The window was closed, and the beforeunload gate let it through. */
 	closeRequested(): void;
 	/** The document was closed: seal what it painted into the scrollback. */
@@ -28307,6 +28305,33 @@ export interface Mount {
  * The state feeds a mounted document accepts only from its engine: what the
  * handle writes, no one else can.
  */
+/**
+ * The live media query lists of each document, as re-evaluators poked when
+ * the viewport moves. The lists are this module's; the resize path is the
+ * one place a terminal viewport changes, so the engine says when.
+ */
+const mediaQueryUpdaters = new WeakMap<Document, Set<() => void>>();
+
+function watchMediaQuery(document: Document, update: () => void): void {
+	let updaters = mediaQueryUpdaters.get(document);
+	if (updaters === undefined) {
+		updaters = new Set();
+		mediaQueryUpdaters.set(document, updaters);
+	}
+	updaters.add(update);
+}
+
+/** Re-ask every live media query list, firing "change" where one flipped. */
+export function refreshMediaQueries(document: globalThis.Document): void {
+	const updaters = mediaQueryUpdaters.get(document as Document);
+	if (updaters === undefined) {
+		return;
+	}
+	for (const update of updaters) {
+		update();
+	}
+}
+
 const kMount = Symbol("mount");
 
 /**
@@ -29028,7 +29053,7 @@ export class Window extends EventTarget {
 				configurable: true,
 			},
 		});
-		mount?.watchMedia(() => {
+		watchMediaQuery(this.document, () => {
 			const now = matches();
 			if (now === notified) {
 				return;

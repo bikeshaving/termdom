@@ -83,7 +83,6 @@ const kIsRendering = Symbol("isRendering");
 const kFrameCallbacks = Symbol("frameCallbacks");
 const kNextRafId = Symbol("nextRafId");
 
-const kMediaQueryUpdaters = Symbol("mediaQueryUpdaters");
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
 const kScreenSwitching = Symbol("screenSwitching");
@@ -162,7 +161,6 @@ export class TermDOM {
 	// One updater per live MediaQueryList: re-evaluates its query and fires
 	// "change" if the answer flipped. Run by handleResize -- SIGWINCH is
 	// this screen's window resize.
-	declare [kMediaQueryUpdaters]: Set<() => void>;
 	// document.close() sealed the current document into scrollback; the next
 	// mutation starts a fresh document below it.
 	declare [kSealed]: boolean;
@@ -289,7 +287,6 @@ export class TermDOM {
 		this[kIsRendering] = false;
 		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
 		this[kNextRafId] = 1;
-		this[kMediaQueryUpdaters] = new Set<() => void>();
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -747,9 +744,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 		cancelFrame(handle) {
 			termDOM[kFrameCallbacks].delete(handle);
 		},
-		watchMedia(update) {
-			termDOM[kMediaQueryUpdaters].add(update);
-		},
 		closeRequested() {
 			const wasAttached = isAttached(termDOM);
 			// An immediate close must not tear down mid-establishment: wait
@@ -1095,9 +1089,7 @@ function applyTerminalSize(
 	if (sizeChanged) {
 		DOM.dispatchAsUserAgent(termdom.window, new termdom.window.Event("resize"));
 	}
-	for (const update of termdom[kMediaQueryUpdaters]) {
-		update();
-	}
+	DOM.refreshMediaQueries(termdom.document);
 }
 
 /**

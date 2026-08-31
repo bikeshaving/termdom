@@ -122,6 +122,7 @@ const DOM_DOORS = [
 	"parseHTMLDocument",
 	"pseudoElement",
 	"pseudoElementCount",
+	"refreshMediaQueries",
 	"renderedTopLayer",
 	"revealFieldCaret",
 	"selectionFocusOf",
