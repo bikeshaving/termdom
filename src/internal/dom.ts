@@ -9293,14 +9293,80 @@ Object.defineProperties(Element.prototype, {
 	},
 });
 
-// The geometry surface: the APIs are the DOM's, what they measure is the
-// engine's. Writable so a test can stub a measurement, as on the platform.
+/** The list form the client-rect members answer with. */
+function rectList(
+	rects: readonly globalThis.DOMRect[],
+): globalThis.DOMRectList {
+	const list = new DOMRectList();
+	list.push(...rects);
+	return list;
+}
+
+/**
+ * The smallest rect enclosing a set of fragments -- the bounding box a broken
+ * inline reports for itself, and the one a Range reports over the runs it
+ * covers. An empty set encloses nothing and gives a zero rect at the origin,
+ * which is what both public APIs answer for no geometry.
+ */
+function unionRect(
+	rects: readonly globalThis.DOMRect[],
+): globalThis.DOMRect {
+	if (rects.length === 0) {
+		return new DOMRect();
+	}
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.x);
+		top = Math.min(top, rect.y);
+		right = Math.max(right, rect.x + rect.width);
+		bottom = Math.max(bottom, rect.y + rect.height);
+	}
+	return new DOMRect(left, top, right - left, bottom - top);
+}
+
+/**
+ * A laid-out rect as CSSOM View reports one: relative to the viewport, so a
+ * box the camera has scrolled past reports a negative top rather than the
+ * document row it goes on sitting at. The layout answers in document space --
+ * the renderer applies the camera once, at paint -- so the camera comes off
+ * here, in the one place every client rect passes through. A box inside a
+ * position:fixed subtree is laid out in viewport space already, and per spec
+ * its client rect is scroll-invariant.
+ */
+function toViewportRect(
+	mount: Mount,
+	rect: globalThis.DOMRect,
+	element: Element | null,
+): globalThis.DOMRect {
+	if (element !== null && mount.layout.isInFixedSpace(element)) {
+		return rect;
+	}
+	return new DOMRect(
+		rect.x,
+		rect.y - mount.scrollTop(),
+		rect.width,
+		rect.height,
+	);
+}
+
+// The geometry surface: the APIs are the DOM's, the measurements the layout
+// engine's, and the space between them the camera's. Writable so a test can
+// stub a measurement, as on the platform.
 Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
-			return (
-				getMount(this)?.boundingClientRect(this) ??
-				new DOMRect(0, 0, 0, 0)
+			const mount = getMount(this);
+			if (mount === undefined || !this.isConnected) {
+				return new DOMRect(0, 0, 0, 0);
+			}
+			mount.flushLayout();
+			return toViewportRect(
+				mount,
+				mount.layout.getRect(this) ?? new DOMRect(),
+				this,
 			);
 		},
 		writable: true,
@@ -9308,7 +9374,16 @@ Object.defineProperties(Element.prototype, {
 	},
 	getClientRects: {
 		value(this: Element): globalThis.DOMRectList {
-			return getMount(this)?.clientRects(this) ?? new DOMRectList();
+			const mount = getMount(this);
+			if (mount === undefined || !this.isConnected) {
+				return new DOMRectList();
+			}
+			mount.flushLayout();
+			return rectList(
+				mount.layout
+					.getRects(this)
+					.map((rect) => toViewportRect(mount, rect, this)),
+			);
 		},
 		writable: true,
 		configurable: true,
@@ -24256,12 +24331,33 @@ Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/**
+ * The element a range's rects convert through: its start container, or the
+ * element holding that container when it is a text node. Whether the camera
+ * comes off is a fact about the box the range sits in, not about the range.
+ */
+function rangeAnchor(range: Range): Element | null {
+	const container = range.startContainer;
+	return container.nodeType === ELEMENT_NODE ?
+			(container as unknown as Element) :
+			((container as unknown as Node).parentElement as Element | null);
+}
+
+// Range geometry answers from the same layout the element members read, and
+// converts identically. The caret and selection painters read the layout's
+// document-relative rects directly, the way scrollIntoView does.
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
-			return (
-				getMount(this.startContainer)?.rangeBoundingClientRect(this) ??
-				new DOMRect(0, 0, 0, 0)
+			const mount = getMount(this.startContainer);
+			if (mount === undefined) {
+				return new DOMRect(0, 0, 0, 0);
+			}
+			mount.flushLayout();
+			return toViewportRect(
+				mount,
+				unionRect(mount.layout.getRangeRects(this)),
+				rangeAnchor(this),
 			);
 		},
 		writable: true,
@@ -24269,9 +24365,16 @@ Object.defineProperties(Range.prototype, {
 	},
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
-			return (
-				getMount(this.startContainer)?.rangeClientRects(this) ??
-				new DOMRectList()
+			const mount = getMount(this.startContainer);
+			if (mount === undefined) {
+				return new DOMRectList();
+			}
+			mount.flushLayout();
+			const anchor = rangeAnchor(this);
+			return rectList(
+				mount.layout
+					.getRangeRects(this)
+					.map((rect) => toViewportRect(mount, rect, anchor)),
 			);
 		},
 		writable: true,
@@ -27543,10 +27646,11 @@ export interface Mount {
 	 * that shows what changed is asked for by hand.
 	 */
 	repaint(): void;
-	boundingClientRect(element: object): globalThis.DOMRect;
-	clientRects(element: object): globalThis.DOMRectList;
-	rangeBoundingClientRect(range: object): globalThis.DOMRect;
-	rangeClientRects(range: object): globalThis.DOMRectList;
+	/**
+	 * Settle what a geometry read must see first: the mutations the observer
+	 * has not delivered yet, and the layout they invalidated.
+	 */
+	flushLayout(): void;
 	/** The border-box size offsetWidth/offsetHeight report, rounded. */
 	offsetSize(element: object): {width: number; height: number};
 	/** The offsetParent-relative position offsetTop/offsetLeft report. */

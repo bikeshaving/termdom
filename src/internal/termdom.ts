@@ -12,7 +12,6 @@ import * as DOM from "./dom.js";
 import "./inspector.js";
 import {
 	createDocumentWindow,
-	DOMRectList,
 	disconnectObservers,
 	flushObservers,
 	type EngineWindow,
@@ -778,28 +777,6 @@ const elementScrollOffsets = new WeakMap<
  * prototype carries engine state for these.
  */
 function createMount(termDOM: TermDOM): EngineMount {
-	// getBoundingClientRect/getClientRects are a *public* API, and CSSOM
-	// View defines them relative to the viewport: rect.top for a
-	// scrolled-past element should be negative, not the same ever-growing
-	// document row regardless of scroll. getRect()/getRects() (the layout
-	// engine's own primitives) are document-relative -- the renderer
-	// applies the camera offset once at paint time -- so toViewportRect is
-	// the one place the conversion happens, applied identically by both.
-	// Internal callers that need the document-relative rect
-	// (scrollIntoView, hit-testing) read getRect()/getRects() directly.
-	// A box inside a position:fixed subtree is laid out in viewport space
-	// already -- subtracting the camera would double-convert it. Per spec
-	// its client rect is scroll-invariant.
-	const toViewportRect = (rect: DOMRect, element?: Element): DOMRect =>
-		element && termDOM[kLayoutEngine].isInFixedSpace(element) ?
-			rect :
-				new termDOM.window.DOMRect(
-					rect.x,
-					rect.y - termDOM[kScrollTop],
-					rect.width,
-					rect.height,
-				);
-
 	// The single place that decides "is this element connected, has layout
 	// settled, what is its border-box rect" -- so offsetWidth and
 	// clientWidth can never quietly disagree about which rect they mean.
@@ -881,58 +858,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		repaint() {
 			void render(termDOM);
 		},
-		boundingClientRect(target) {
-			const element = target as Element;
-			if (!element.isConnected) {
-				return new termDOM.window.DOMRect(0, 0, 0, 0);
-			}
+		flushLayout() {
 			processPendingMutationsAndRender(termDOM);
-			const rect = termDOM[kLayoutEngine].getRect(element);
-			return toViewportRect(
-				rect || new termDOM.window.DOMRect(),
-				element,
-			);
-		},
-		clientRects(target) {
-			const element = target as Element;
-			if (!element.isConnected) {
-				return new DOMRectList();
-			}
-			processPendingMutationsAndRender(termDOM);
-			const rects = termDOM[kLayoutEngine]
-				.getRects(element)
-				.map((rect) => toViewportRect(rect, element));
-			return rectList(rects);
-		},
-		// Range geometry answers from the same layout the element members
-		// use, viewport-converted identically. The caret and selection
-		// painters read the document-relative getRangeRects() directly, the
-		// way scrollIntoView reads getRect().
-		rangeBoundingClientRect(target) {
-			const range = target as Range;
-			processPendingMutationsAndRender(termDOM);
-			const container = range.startContainer;
-			const anchor =
-				container.nodeType === container.ELEMENT_NODE ?
-						(container as Element) :
-						(container.parentElement ?? undefined);
-			return toViewportRect(
-				unionRect(termDOM, termDOM[kLayoutEngine].getRangeRects(range)),
-				anchor,
-			);
-		},
-		rangeClientRects(target) {
-			const range = target as Range;
-			processPendingMutationsAndRender(termDOM);
-			const container = range.startContainer;
-			const anchor =
-				container.nodeType === container.ELEMENT_NODE ?
-						(container as Element) :
-						(container.parentElement ?? undefined);
-			const rects = termDOM[kLayoutEngine]
-				.getRangeRects(range)
-				.map((rect) => toViewportRect(rect, anchor));
-			return rectList(rects);
 		},
 		offsetSize(target) {
 			const element = target as Element;
@@ -1413,41 +1340,6 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 			return;
 		}
 	}
-}
-
-/** A DOMRectList of this window's, holding the rects given. */
-function rectList(
-	rects: readonly globalThis.DOMRect[],
-): globalThis.DOMRectList {
-	const list = new DOMRectList();
-	list.push(...rects);
-	return list;
-}
-
-/**
- * The smallest rect enclosing a set of fragments -- the bounding box a broken
- * inline reports for itself, and the one a Range reports over the runs it
- * covers. An empty set encloses nothing and gives a zero rect at the origin,
- * which is what both public APIs answer for no geometry.
- */
-function unionRect(
-	termdom: TermDOM,
-	rects: readonly globalThis.DOMRect[],
-): globalThis.DOMRect {
-	if (rects.length === 0) {
-		return new termdom.window.DOMRect();
-	}
-	let left = Infinity;
-	let top = Infinity;
-	let right = -Infinity;
-	let bottom = -Infinity;
-	for (const rect of rects) {
-		left = Math.min(left, rect.x);
-		top = Math.min(top, rect.y);
-		right = Math.max(right, rect.x + rect.width);
-		bottom = Math.max(bottom, rect.y + rect.height);
-	}
-	return new termdom.window.DOMRect(left, top, right - left, bottom - top);
 }
 
 /**
