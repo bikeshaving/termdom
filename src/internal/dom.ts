@@ -9767,7 +9767,11 @@ export class HTMLElement extends Element {
 		if (mount === undefined) {
 			return;
 		}
-		mount.focusChanged(previous, this);
+		// :focus rules match live and a focus move is not a mutation, so both
+		// elements' resolved styles go stale whether or not a listener
+		// touches anything.
+		mount.styles.handleFocusChange(previous, this);
+		mount.repaint();
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -9801,7 +9805,8 @@ export class HTMLElement extends Element {
 		if (mount === undefined) {
 			return;
 		}
-		mount.focusChanged(this, null);
+		mount.styles.handleFocusChange(this, null);
+		mount.repaint();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -24441,9 +24446,9 @@ function rangeBoundaryPointsChanged(
 /** Schedule a selectionchange event at a document, at most one per task. */
 function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
-	// covers, so the engine hears it here -- before the coalescing guard
-	// below, which drops the second move of a task but not its repaint.
-	getMount(document)?.selectionMoved();
+	// covers, so the repaint is asked for here -- before the coalescing
+	// guard below, which drops the second move of a task but not its paint.
+	getMount(document)?.repaint();
 	if (document[kSelectionChangeScheduled]!) {
 		return;
 	}
@@ -27687,8 +27692,8 @@ export interface Mount {
 	observer: MutationObserver;
 	/**
 	 * Paint again. Nothing here is a mutation the observer would deliver --
-	 * a popover shown, a shadow tree attached, a focus moved -- so the frame
-	 * that shows what changed is asked for by hand.
+	 * a popover shown, a shadow tree attached, a focus or selection moved --
+	 * so the frame is marked stale and asked for by hand.
 	 */
 	repaint(): void;
 	/**
@@ -27709,15 +27714,6 @@ export interface Mount {
 	): void;
 	elementFromPoint(document: object, x: number, y: number): object | null;
 	/**
-	 * The focus state has moved between these two, either of which may be
-	 * nothing. :focus rules match live and a focus move is not a mutation,
-	 * so both elements' resolved styles go stale and the frame is repainted
-	 * whether or not a listener touches anything.
-	 */
-	focusChanged(previous: object | null, element: object | null): void;
-	/** The document's selection has moved, so the highlight has too. */
-	selectionMoved(): void;
-	/**
 	 * Reveal the element on screen: the scroll boxes around it are the
 	 * layout's to move, and the camera over them is this engine's.
 	 */
@@ -27734,8 +27730,6 @@ export interface Mount {
 	scrollTop(): number;
 	/** Move the document camera to an offset and repaint. */
 	scrollDocumentTo(top: number): void;
-	/** Move the document camera by a delta and repaint. */
-	scrollDocumentBy(top: number): void;
 	/** Schedule a frame, and fire the callback once it has been painted. */
 	requestFrame(callback: (time: number) => void): number;
 	/** Drop a frame callback that has not fired. */
@@ -28395,11 +28389,15 @@ export class Window extends EventTarget {
 	}
 
 	scrollBy(xOrOptions?: number | ScrollToOptions, y?: number): void {
+		const mount = getMount(this.document);
+		if (mount === undefined) {
+			return;
+		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? 0) :
 					(y ?? 0);
-		getMount(this.document)?.scrollDocumentBy(top);
+		mount.scrollDocumentTo(mount.scrollTop() + top);
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it

@@ -790,6 +790,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		styles: termDOM[kStyleManager],
 		observer: termDOM[kObserver],
 		repaint() {
+			termDOM[kFrameDirty] = true;
 			void render(termDOM);
 		},
 		flushLayout() {
@@ -859,18 +860,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				x,
 				y + termDOM[kScrollTop],
 			);
-		},
-		focusChanged(previousTarget, target) {
-			termDOM[kStyleManager].handleFocusChange(
-				previousTarget as Element | null,
-				target as Element | null,
-			);
-			termDOM[kFrameDirty] = true;
-			void render(termDOM);
-		},
-		selectionMoved() {
-			termDOM[kFrameDirty] = true;
-			void render(termDOM);
 		},
 		// The scroll boxes around the element have already revealed it within
 		// themselves; what remains is the camera's, which shows
@@ -970,9 +959,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 		scrollDocumentTo(top) {
 			scrollDocumentTo(termDOM, top);
 			void render(termDOM);
-		},
-		scrollDocumentBy(top) {
-			scrollCamera(termDOM, top);
 		},
 		// A frame callback fires after the render it scheduled has been
 		// painted: a bare timer would be decoupled from the (async) paint,
