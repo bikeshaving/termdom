@@ -2101,6 +2101,11 @@ export class Screen {
 		this[kCols] = cols;
 	}
 
+	/** Adopt a rebound transport's color depth: the writer is its one holder. */
+	rebind(colorDepth: ColorDepth): void {
+		this[kWriter] = new FrameWriter(colorDepth);
+	}
+
 	get rows(): number {
 		return this[kRows];
 	}

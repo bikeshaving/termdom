@@ -1168,6 +1168,22 @@ export class TerminalExchange {
 	}
 
 	/**
+	 * Adopt a different transport, in place. Only before the conversation
+	 * begins: a rebind re-derives what the terminal decides -- whether it
+	 * takes input, whether an anchor is findable -- and a live session
+	 * cannot change terminals under its readers.
+	 */
+	rebind(transport: TerminalTransport): void {
+		if (this[kStarted]) {
+			throw new Error("rebind(): the session has already started");
+		}
+		this[kTransport] = transport;
+		this[kInteractive] = transport.interactive;
+		this[kAnchorDetectionEnabled] =
+			transport.sharesScreen && transport.interactive;
+	}
+
+	/**
 	 * Begin the conversation: acquire the readers and route input, resizes and
 	 * closure to the engine's handlers. Idempotent.
 	 */

@@ -420,6 +420,16 @@ export class TermDOM {
 
 		this[kObserver] = observer;
 
+		// The session first: the screen measures widths over the session's
+		// probe channel, and takes it for its lifetime.
+		this[kExchange] = buildExchange(this);
+		this[kScreen] = new Screen(
+			this[kTransport].rows,
+			this[kTransport].cols,
+			this[kTransport].colorDepth,
+			this[kExchange].widthMeasurer,
+		);
+
 		// The engine the document stands on. From here a control builds and
 		// keeps its own shadow tree; the shell only says when a newly
 		// connected one should be upgraded.
@@ -434,16 +444,6 @@ export class TermDOM {
 			scrollTop: () => this[kScreen].scrollTop,
 			topLayer: DOM.getTopLayer(this.document) as unknown as Set<Element>,
 		});
-
-		// The session first: the screen measures widths over the session's
-		// probe channel, and takes it for its lifetime.
-		this[kExchange] = buildExchange(this);
-		this[kScreen] = new Screen(
-			this[kTransport].rows,
-			this[kTransport].cols,
-			this[kTransport].colorDepth,
-			this[kExchange].widthMeasurer,
-		);
 
 		// A field edit -- text (input), a caret or selection move
 		// (select/selectionchange), or a checkbox/radio toggle (change) --
@@ -678,10 +678,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		layout: termDOM[kLayoutEngine],
 		styles: termDOM[kStyleManager],
 		observer: termDOM[kObserver],
-		// Live: rebindTransport replaces the exchange before the first attach.
-		get exchange() {
-			return termDOM[kExchange];
-		},
+		exchange: termDOM[kExchange],
+		screen: termDOM[kScreen],
 		repaint() {
 			termDOM[kFrameDirty] = true;
 			void render(termDOM);
@@ -780,19 +778,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				termDOM[kScreenSwitching] = false;
 			}
 			void render(termDOM);
-		},
-		// The terminal is the window and the screen both, so the inner and
-		// outer pairs are one size, and the root elements report the height
-		// as the height of what they scroll in.
-		viewportSize() {
-			const screen = termDOM[kScreen];
-			return {width: screen.cols, height: screen.rows};
-		},
-		screenTop() {
-			return termDOM[kScreen].documentTop;
-		},
-		scrollTop() {
-			return termDOM[kScreen].scrollTop;
 		},
 		scrollDocumentTo(top) {
 			scrollDocumentTo(termDOM, top);
@@ -1099,26 +1084,18 @@ function buildExchange(
 
 /**
  * Adopt `transport` and re-derive everything that comes from the terminal:
- * color depth, the viewport size, and the session. The collaborators that
- * hold the transport -- the screen and the exchange -- are rebuilt rather
- * than mutated: the screen has no color-depth setter, and a rebind always
- * precedes the first frame. The transport-independent collaborators
- * (layout, style, painter, viewport) are untouched; only the layout is
- * resized to the new terminal.
+ * the session's input facts, the screen's color depth, and the sizes. In
+ * place -- the mount holds the session and the screen by reference, and a
+ * rebind always precedes the first frame.
  */
 function rebindTransport(
 	termdom: TermDOM,
 	transport: TerminalTransport,
 ): void {
 	termdom[kTransport] = transport;
+	termdom[kExchange].rebind(transport);
+	termdom[kScreen].rebind(transport.colorDepth);
 	applyTerminalSize(termdom, transport.cols, transport.rows);
-	termdom[kExchange] = buildExchange(termdom);
-	termdom[kScreen] = new Screen(
-		transport.rows,
-		transport.cols,
-		transport.colorDepth,
-		termdom[kExchange].widthMeasurer,
-	);
 }
 
 /**

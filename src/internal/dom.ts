@@ -64,6 +64,7 @@ import {
 import type {LayoutEngine} from "./layout.js";
 import type {StyleManager} from "./cssom.js";
 import type {TerminalExchange} from "./exchange.js";
+import type {Screen} from "./screen.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -9540,7 +9541,7 @@ function toViewportRect(
 	}
 	return new DOMRect(
 		rect.x,
-		rect.y - mount.scrollTop(),
+		rect.y - mount.screen.scrollTop,
 		rect.width,
 		rect.height,
 	);
@@ -22718,7 +22719,7 @@ export function elementAtDocumentPoint(
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		mount.scrollTop(),
+		mount.screen.scrollTop,
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -22766,7 +22767,7 @@ Object.defineProperties(Document.prototype, {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same
 			// conversion getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + mount.scrollTop());
+			return elementAtDocumentPoint(this, x, y + mount.screen.scrollTop);
 		},
 		writable: true,
 		configurable: true,
@@ -22783,7 +22784,7 @@ Object.defineProperties(Document.prototype, {
 			let hit =
 				mount === undefined ?
 					null :
-						elementAtDocumentPoint(this, x, y + mount.scrollTop());
+						elementAtDocumentPoint(this, x, y + mount.screen.scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -28149,10 +28150,15 @@ export interface Mount {
 	observer: MutationObserver;
 	/**
 	 * The terminal session the document speaks through: OSC 2 for its title,
-	 * OSC 52 for its clipboard. Live -- a rebind before the first attach
-	 * replaces it.
+	 * OSC 52 for its clipboard. Rebound in place before the first attach
+	 * when the transport changes.
 	 */
 	exchange: TerminalExchange;
+	/**
+	 * The terminal surface: its size in cells -- the window's size and the
+	 * screen's both -- and where the document sits on it.
+	 */
+	screen: Screen;
 	/**
 	 * Paint again. Nothing here is a mutation the observer would deliver --
 	 * a popover shown, a shadow tree attached, a focus or selection moved --
@@ -28180,16 +28186,6 @@ export interface Mount {
 	 * layout's to move, and the camera over them is this engine's.
 	 */
 	revealOnScreen(element: globalThis.Element): void;
-	/**
-	 * The terminal's size in cells, which is the window's size and the
-	 * screen's both, and the height the root elements report as their
-	 * client height.
-	 */
-	viewportSize(): {width: number; height: number};
-	/** The screen row the document's first row is anchored to. */
-	screenTop(): number;
-	/** How far down the document the camera has moved, in cells. */
-	scrollTop(): number;
 	/** Move the document camera to an offset and repaint. */
 	scrollDocumentTo(top: number): void;
 	/** Schedule a frame, and fire the callback once it has been painted. */
@@ -28783,7 +28779,7 @@ export class Window extends EventTarget {
 	// moves them, and a value frozen at construction would have reported the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
-		return getMount(this.document)?.viewportSize().width ?? 0;
+		return getMount(this.document)?.screen.cols ?? 0;
 	}
 
 	get outerWidth(): number {
@@ -28791,7 +28787,7 @@ export class Window extends EventTarget {
 	}
 
 	get innerHeight(): number {
-		return getMount(this.document)?.viewportSize().height ?? 0;
+		return getMount(this.document)?.screen.rows ?? 0;
 	}
 
 	get outerHeight(): number {
@@ -28801,14 +28797,14 @@ export class Window extends EventTarget {
 	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
 	// the anchor after the window is built.
 	get screenTop(): number {
-		return getMount(this.document)?.screenTop() ?? 0;
+		return getMount(this.document)?.screen.documentTop ?? 0;
 	}
 
 	// Standard window scrolling, mapped onto the camera: scrollY is how far
 	// the camera has moved down the document, scrollBy moves it. A terminal
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		return getMount(this.document)?.scrollTop() ?? 0;
+		return getMount(this.document)?.screen.scrollTop ?? 0;
 	}
 
 	get pageYOffset(): number {
@@ -28832,7 +28828,7 @@ export class Window extends EventTarget {
 		const mount = getMount(this.document);
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null ?
-					(xOrOptions.top ?? mount?.scrollTop() ?? 0) :
+					(xOrOptions.top ?? mount?.screen.scrollTop ?? 0) :
 					(y ?? 0);
 		mount?.scrollDocumentTo(top);
 	}
@@ -28850,7 +28846,7 @@ export class Window extends EventTarget {
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? 0) :
 					(y ?? 0);
-		mount.scrollDocumentTo(mount.scrollTop() + top);
+		mount.scrollDocumentTo(mount.screen.scrollTop + top);
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it

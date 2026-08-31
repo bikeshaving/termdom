@@ -10436,7 +10436,11 @@ export class StyleManager {
 	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
 	viewportSize(): {width: number; height: number} | null {
-		return getMount(this[kDocument])?.viewportSize() ?? null;
+		const mount = getMount(this[kDocument]);
+		if (mount === undefined) {
+			return null;
+		}
+		return {width: mount.screen.cols, height: mount.screen.rows};
 	}
 
 	/** The element's border-box rect, measured after that flush. */
