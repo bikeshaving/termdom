@@ -23,6 +23,13 @@ import {
 // global itself rather than a flag, so its absence narrows the call away.
 const bun = globalThis.Bun;
 
+/** ASCII-only lowercasing: what HTML and CSS case-fold with, never locale. */
+export function asciiLowercase(value: string): string {
+	return value.replace(/[A-Z]/g, (character) =>
+		String.fromCharCode(character.charCodeAt(0) + 32),
+	);
+}
+
 /**
  * One shared grapheme segmenter: what the terminal treats as one character.
  * Constructing one is expensive, so the whole engine reads through this.

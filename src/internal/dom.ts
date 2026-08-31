@@ -49,6 +49,7 @@ import {
 	type ReflectSpec,
 } from "./htmltables.js";
 import {
+	asciiLowercase,
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
 	stringWidth,
@@ -105,7 +106,7 @@ const UPGRADEABLE_CONTROLS = new Set([
  * query: every insertion pays this, and a document of ordinary markup must pay
  * as little as a tag comparison per element.
  */
-export function upgradeUAWidgetsIn(root: globalThis.Node): void {
+function upgradeUAWidgetsIn(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
@@ -7443,12 +7444,6 @@ function splitOnASCIIWhitespace(value: string): string[] {
 		return [];
 	}
 	return trimmed.split(ASCII_WHITESPACE);
-}
-
-function asciiLowercase(value: string): string {
-	return value.replace(/[A-Z]/g, (character) =>
-		String.fromCharCode(character.charCodeAt(0) + 32),
-	);
 }
 
 function asciiUppercase(value: string): string {
@@ -26727,9 +26722,6 @@ export const selectorResolver: SelectorResolver = {
 	},
 	shadowHost(root: Node): Element | null {
 		return isShadowRoot(root) ? (root as ShadowRoot)[kHost]! : null;
-	},
-	flatParent(element: Element): Element | null {
-		return flatParentElement<Element>(element);
 	},
 	assignedSlot(element: Element): Element | null {
 		return (element.assignedSlot as Element | null) ?? null;

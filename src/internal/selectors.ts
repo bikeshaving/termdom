@@ -27,6 +27,7 @@ import bidiFactory from "bidi-js";
 // Types only, so nothing of the DOM is here at run time and the import that
 // reads this module back is the only one either file makes.
 import type {Element, Node} from "./dom.js";
+import {asciiLowercase} from "./text.js";
 
 /* ------------------------------------------------------------- the grammar */
 
@@ -302,8 +303,6 @@ export interface SelectorResolver {
 	root(node: Node): Node;
 	/** The host of a shadow root, or null for any other root. */
 	shadowHost(root: Node): Element | null;
-	/** The parent an element has in the flat tree, which slots reorder. */
-	flatParent(element: Element): Element | null;
 	/** The slot an element is assigned to, or null when it is not slotted. */
 	assignedSlot(element: Element): Element | null;
 	/** The part names an element carries, for `::part()`. */
@@ -350,9 +349,6 @@ export const INERT_RESOLVER: SelectorResolver = {
 	},
 	shadowHost(): Element | null {
 		return null;
-	},
-	flatParent(element: Element): Element | null {
-		return parentElement(element);
 	},
 	assignedSlot(): Element | null {
 		return null;
@@ -590,7 +586,7 @@ export function parseSelectorList(text: string): SelectorNode | null {
 /* -------------------------------------------------------------- compilation */
 
 /** How a selector is read: what its prefixes mean, and what may match. */
-export interface CompileOptions {
+interface CompileOptions {
 	/**
 	 * The namespaces the selector's prefixes name. Null leaves them unresolved:
 	 * the selector is checked for shape and every prefix is accepted, which is
@@ -2192,12 +2188,6 @@ function ofTypeIndex(element: Element, fromEnd: boolean): number {
 	return fromEnd ? siblings.length - index : index + 1;
 }
 
-function asciiLowercase(text: string): string {
-	return text.replace(/[A-Z]/g, (char) =>
-		String.fromCharCode(char.charCodeAt(0) + 32),
-	);
-}
-
 function splitOnWhitespace(text: string): string[] {
 	return text.split(/[\t\n\f\r ]+/).filter((token) => token !== "");
 }
@@ -2261,7 +2251,7 @@ export function compileSelector(
 /* -------------------------------------------------------------- entry points */
 
 /** What a match knows beyond the element: the resolver, and what `:scope` names. */
-export interface MatchOptions {
+interface MatchOptions {
 	resolver?: SelectorResolver;
 	/** The node `:scope` stands for. */
 	scope?: Node | null;
@@ -2270,7 +2260,7 @@ export interface MatchOptions {
 }
 
 /** What a query over selector text knows: how to read it, and what to read it against. */
-export interface QueryOptions extends CompileOptions, MatchOptions {}
+interface QueryOptions extends CompileOptions, MatchOptions {}
 
 function stateFor(options: MatchOptions): MatchState {
 	return {

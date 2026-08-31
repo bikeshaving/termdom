@@ -406,7 +406,7 @@ export interface WireKey {
  * body, or a reply to one of the queries. A clipboard reply's text is null
  * when the reply outgrew the held-reply limit before its terminator arrived.
  */
-export type WireItem =
+type WireItem =
 	WireKey |
 	{kind: "mouse"; button: number; col: number; row: number; release: boolean} |
 	{kind: "paste"; text: string} |

@@ -139,7 +139,6 @@ const DOM_DOORS = [
 	"takeScrollBand",
 	"topmostModalDialog",
 	"upgradeUAWidget",
-	"upgradeUAWidgetsIn",
 ];
 
 if (process.argv.includes("--check")) {
