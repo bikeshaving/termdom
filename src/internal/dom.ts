@@ -27523,8 +27523,8 @@ export interface Mount {
 	viewportSize(): {width: number; height: number};
 	/** The screen row the document's first row is anchored to. */
 	screenTop(): number;
-	/** How far the document camera has moved, in cells. */
-	documentScrollOffset(): {left: number; top: number};
+	/** How far down the document the camera has moved, in cells. */
+	scrollTop(): number;
 	/** Move the document camera to an offset and repaint. */
 	scrollDocumentTo(top: number): void;
 	/** Move the document camera by a delta and repaint. */
@@ -28173,7 +28173,7 @@ export class Window extends EventTarget {
 	// the camera has moved down the document, scrollBy moves it. A terminal
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		return getMount(this.document)?.documentScrollOffset().top ?? 0;
+		return getMount(this.document)?.scrollTop() ?? 0;
 	}
 
 	get pageYOffset(): number {
@@ -28181,7 +28181,7 @@ export class Window extends EventTarget {
 	}
 
 	get scrollX(): number {
-		return getMount(this.document)?.documentScrollOffset().left ?? 0;
+		return 0;
 	}
 
 	get pageXOffset(): number {
@@ -28197,7 +28197,7 @@ export class Window extends EventTarget {
 		const mount = getMount(this.document);
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null ?
-					(xOrOptions.top ?? mount?.documentScrollOffset().top ?? 0) :
+					(xOrOptions.top ?? mount?.scrollTop() ?? 0) :
 					(y ?? 0);
 		mount?.scrollDocumentTo(top);
 	}

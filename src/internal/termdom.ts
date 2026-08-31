@@ -1313,9 +1313,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		screenTop() {
 			return termDOM[kScreenTop];
 		},
-		// A terminal document never scrolls sideways, so the camera's X is 0.
-		documentScrollOffset() {
-			return {left: 0, top: termDOM[kScrollTop]};
+		scrollTop() {
+			return termDOM[kScrollTop];
 		},
 		scrollDocumentTo(top) {
 			scrollDocumentTo(termDOM, top);
