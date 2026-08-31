@@ -9997,38 +9997,56 @@ export interface HTMLElement
 		"style"
 	> {}
 
+/**
+ * The layout engine that measures an element, with everything a geometry read
+ * must see first settled: the mutations the observer has not delivered yet,
+ * and the layout they invalidated. Undefined where there is nothing to
+ * measure -- a headless document, or an element outside one -- and every
+ * reader below falls back to the zero the spec gives an element with no box.
+ */
+function settledLayout(element: Element): LayoutEngine | undefined {
+	const mount = getMount(element);
+	if (mount === undefined || !element.isConnected) {
+		return undefined;
+	}
+	mount.flushLayout();
+	return mount.layout;
+}
+
 Object.defineProperties(HTMLElement.prototype, {
 	offsetWidth: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.offsetSize(this).width ?? 0;
+			return settledLayout(this)?.offsetSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetHeight: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.offsetSize(this).height ?? 0;
+			return settledLayout(this)?.offsetSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetTop: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.offsetPosition(this).top ?? 0;
+			return settledLayout(this)?.offsetPosition(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	offsetLeft: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.offsetPosition(this).left ?? 0;
+			return settledLayout(this)?.offsetPosition(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
+	// The tree walk this one makes reads style, not geometry, so it takes no
+	// layout flush -- unlike every other member around it.
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			return (getMount(this)?.offsetParent(this) ?? null) as
+			return (getMount(this)?.layout.offsetParent(this) ?? null) as
 				Element |
 				null;
 		},
@@ -10037,42 +10055,43 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 	clientWidth: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.clientSize(this).width ?? 0;
+			return settledLayout(this)?.clientSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientHeight: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.clientSize(this).height ?? 0;
+			return settledLayout(this)?.clientSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
+	// The border widths, which the cascade alone decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.clientEdge(this).left ?? 0;
+			return getMount(this)?.styles.borderEdge(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.clientEdge(this).top ?? 0;
+			return getMount(this)?.styles.borderEdge(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollWidth: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.scrollSize(this).width ?? 0;
+			return settledLayout(this)?.scrollSize(this).width ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollHeight: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.scrollSize(this).height ?? 0;
+			return settledLayout(this)?.scrollSize(this).height ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
@@ -10083,7 +10102,13 @@ Object.defineProperties(HTMLElement.prototype, {
 	// all moves are the minimal ones, block "nearest".
 	scrollIntoView: {
 		value(this: HTMLElement): void {
-			getMount(this)?.scrollIntoView(this);
+			const mount = getMount(this);
+			if (mount === undefined || !this.isConnected) {
+				return;
+			}
+			mount.flushLayout();
+			mount.layout.revealInScrollPorts(this);
+			mount.revealOnScreen(this);
 		},
 		configurable: true,
 		enumerable: true,
@@ -27621,13 +27646,15 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 
 /**
  * The engine standing behind a document: the collaborators it lays out,
- * cascades and observes through, and its answers for the APIs a document
- * alone cannot give -- what the boxes measure, what a move of focus fires,
- * when a frame lands, what the viewport is, and what the terminal behind it
- * can do. A mounting engine installs one per document, and a node reaches it
- * through its ownerDocument, one hop. A headless document has none: it is the
- * spec's no-browsing-context document, and the members consulting a mount
- * degrade to that -- zero rects, empty lists, null parents.
+ * cascades and observes through, and the few facts only the shell around them
+ * knows -- what a move of focus fires, when a frame lands, where the camera
+ * is, what the viewport is, and what the terminal behind it can do. A
+ * measurement is not among them: a box is measured by asking `layout` and
+ * `styles` directly, which is where the ingredients live. A mounting engine
+ * installs one mount per document, and a node reaches it through its
+ * ownerDocument, one hop. A headless document has none: it is the spec's
+ * no-browsing-context document, and the members consulting a mount degrade to
+ * that -- zero rects, empty lists, null parents.
  */
 export interface Mount {
 	/**
@@ -27652,14 +27679,6 @@ export interface Mount {
 	 * has not delivered yet, and the layout they invalidated.
 	 */
 	flushLayout(): void;
-	/** The border-box size offsetWidth/offsetHeight report, rounded. */
-	offsetSize(element: object): {width: number; height: number};
-	/** The offsetParent-relative position offsetTop/offsetLeft report. */
-	offsetPosition(element: object): {top: number; left: number};
-	offsetParent(element: object): object | null;
-	clientSize(element: object): {width: number; height: number};
-	clientEdge(element: object): {left: number; top: number};
-	scrollSize(element: object): {width: number; height: number};
 	/** How far a box is scrolled from its content's origin, in cells. */
 	scrollOffset(element: object): {left: number; top: number};
 	/**
@@ -27681,8 +27700,11 @@ export interface Mount {
 	focusChanged(previous: object | null, element: object | null): void;
 	/** The document's selection has moved, so the highlight has too. */
 	selectionMoved(): void;
-	/** Reveal the element in every scroll port between it and the screen. */
-	scrollIntoView(element: object): void;
+	/**
+	 * Reveal the element on screen: the scroll boxes around it are the
+	 * layout's to move, and the camera over them is this engine's.
+	 */
+	revealOnScreen(element: object): void;
 	/**
 	 * The terminal's size in cells, which is the window's size and the
 	 * screen's both, and the height the root elements report as their

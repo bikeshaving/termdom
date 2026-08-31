@@ -10549,6 +10549,16 @@ export class StyleManager {
 	}
 
 	/**
+	 * The border widths clientLeft/clientTop report: the distance from the
+	 * border box's edge to the padding box's. Style alone decides them, so
+	 * there is no layout to stand behind and nothing to flush.
+	 */
+	borderEdge(element: Element): {left: number; top: number} {
+		const box = getBoxModel(element);
+		return {left: box.borderLeftWidth, top: box.borderTopWidth};
+	}
+
+	/**
 	 * A grid container's used track sizes, measured behind the same flush a
 	 * rect read takes. Null for a box that is not one -- the resolved value
 	 * then stays the computed track list, as CSSOM says of a grid property on

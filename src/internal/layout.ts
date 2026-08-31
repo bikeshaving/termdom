@@ -12593,6 +12593,83 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 	return rectTexts;
 }
 
+/**
+ * The single place that decides "is this element in the document, and what is
+ * its border-box rect" -- so offsetWidth and clientWidth can never quietly
+ * disagree about which rect they mean. Unrounded: each reader rounds for its
+ * own purpose (offsetTop rounds the *difference* of two rects; rounding here
+ * first would double-round and drift by a cell).
+ */
+function layoutRect(engine: LayoutEngine, element: Element): DOMRect | null {
+	return element.isConnected ? engine.getRect(element) : null;
+}
+
+/**
+ * The content+padding box: the border-box rect minus the border widths, which
+ * both clientWidth/Height and scrollWidth/Height report.
+ */
+function contentBoxSize(
+	engine: LayoutEngine,
+	element: Element,
+): {width: number; height: number} | null {
+	const rect = layoutRect(engine, element);
+	if (!rect) {
+		return null;
+	}
+	const box = getBoxModel(element);
+	return {
+		width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+		height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+	};
+}
+
+/**
+ * html and body scroll the document itself: their scroll height is the
+ * document's and their client height the terminal's. One viewport, however it
+ * is reached.
+ */
+function isRootBox(engine: LayoutEngine, element: Element): boolean {
+	const document = engine[kEngineWindow].document;
+	return element === document.documentElement || element === document.body;
+}
+
+/**
+ * Move one scroll box so the element sits inside it. Document-relative rects
+ * on both sides: the element wherever its current offsets put it, against the
+ * scroller's padding box -- what the scroller actually shows.
+ */
+function revealInPort(
+	engine: LayoutEngine,
+	element: Element,
+	scroller: Element,
+): void {
+	const rect = engine.getRect(element);
+	const scrollerRect = engine.getRect(scroller);
+	if (!rect || !scrollerRect) {
+		return;
+	}
+	const box = getBoxModel(scroller);
+	const portTop = scrollerRect.top + (box.borderTopWidth || 0);
+	const portBottom = scrollerRect.bottom - (box.borderBottomWidth || 0);
+	const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
+	const portRight = scrollerRect.right - (box.borderRightWidth || 0);
+	if (rect.top < portTop) {
+		scroller.scrollTop -= Math.round(portTop - rect.top);
+	} else if (rect.bottom > portBottom) {
+		scroller.scrollTop += Math.round(rect.bottom - portBottom);
+	}
+	if (rect.left < portLeft) {
+		scroller.scrollLeft -= Math.round(portLeft - rect.left);
+	} else if (rect.right > portRight) {
+		scroller.scrollLeft += Math.round(rect.right - portRight);
+	}
+}
+
+/** Whether an overflow value scrolls, programmatically or by hand. */
+function scrollsAt(overflow: string): boolean {
+	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
+}
+
 // ---------------------------------------------------------------------------
 // LayoutEngine
 // ---------------------------------------------------------------------------
@@ -13132,6 +13209,137 @@ export class LayoutEngine {
 				),
 			),
 		};
+	}
+
+	/** The border-box size offsetWidth/offsetHeight report, rounded. */
+	offsetSize(element: Element): {width: number; height: number} {
+		const rect = layoutRect(this, element);
+		return {
+			width: Math.round(rect?.width ?? 0),
+			height: Math.round(rect?.height ?? 0),
+		};
+	}
+
+	/** The offsetParent-relative position offsetTop/offsetLeft report. */
+	offsetPosition(element: Element): {top: number; left: number} {
+		const rect = layoutRect(this, element);
+		if (!rect) {
+			return {top: 0, left: 0};
+		}
+		const parent = this.offsetParent(element);
+		const parentRect = parent ? layoutRect(this, parent) : null;
+		return {
+			top: Math.round(rect.top - (parentRect?.top ?? 0)),
+			left: Math.round(rect.left - (parentRect?.left ?? 0)),
+		};
+	}
+
+	/**
+	 * What offsetTop and offsetLeft are measured from: the nearest positioned
+	 * ancestor, else the body. Walks the live DOM tree, not the box tree -- a
+	 * separate concern from where the boxes ended up.
+	 */
+	offsetParent(element: Element): Element | null {
+		if (!element.isConnected) {
+			return null;
+		}
+		for (
+			let ancestor = element.parentElement;
+			ancestor;
+			ancestor = ancestor.parentElement
+		) {
+			const position = getComputedValues(ancestor).getComputedValue(
+				"position",
+			);
+			if (position && position !== "static") {
+				return ancestor;
+			}
+		}
+		const body = this[kEngineWindow].document.body ?? null;
+		return body === element ? null : body;
+	}
+
+	/** The content+padding size clientWidth/clientHeight report. */
+	clientSize(element: Element): {width: number; height: number} {
+		const box = contentBoxSize(this, element);
+		return {
+			width: Math.round(box?.width ?? 0),
+			height:
+				isRootBox(this, element) ?
+					// The terminal is the viewport, and the root it was laid
+					// out at is where that size is held.
+					this[kViewportRoot].style.height.value :
+						Math.round(box?.height ?? 0),
+		};
+	}
+
+	/**
+	 * The size scrollWidth/scrollHeight report: the content's laid-out
+	 * extent. A box whose content the tree does not decompose into child
+	 * boxes (an inline, a run member) has no readable extent and falls back
+	 * to its client size, exact for the no-overflow case.
+	 */
+	scrollSize(element: Element): {width: number; height: number} {
+		const extent = element.isConnected ? this.scrollExtentOf(element) : null;
+		const box = contentBoxSize(this, element);
+		return {
+			width: extent?.width ?? Math.round(box?.width ?? 0),
+			height:
+				isRootBox(this, element) ?
+						this.getContentHeight() :
+						(extent?.height ?? Math.round(box?.height ?? 0)),
+		};
+	}
+
+	/**
+	 * How far a box may be scrolled along an axis: how much its content
+	 * overflows the port it shows through, floored at zero. An axis whose
+	 * overflow is visible does not scroll and pins to 0; hidden scrolls
+	 * programmatically, as in a browser. Null where the layout cannot name
+	 * the extent (a box whose content is one opaque measured run), which is
+	 * not an answer to clamp against.
+	 */
+	scrollRange(element: Element, axis: "left" | "top"): number | null {
+		const extent = this.scrollExtentOf(element);
+		const port = this.contentRect(element);
+		const size =
+			extent === null ?
+				null :
+				axis === "top" ?
+					extent.height :
+					extent.width;
+		if (size === null || !port) {
+			return null;
+		}
+		const style = getComputedValues(element);
+		const overflow =
+			style.getComputedValue(`overflow-${axis === "top" ? "y" : "x"}`) ||
+			style.getComputedValue("overflow");
+		const room = size - Math.round(axis === "top" ? port.height : port.width);
+		return scrollsAt(overflow) ? Math.max(0, room) : 0;
+	}
+
+	/**
+	 * Reveal an element in every scroll box between it and the document,
+	 * innermost first -- each scroll moves the element in every outer port's
+	 * coordinates, so the rect is re-read per level. What remains is the
+	 * screen's, which the engine behind the document reveals.
+	 */
+	revealInScrollPorts(element: Element): void {
+		for (
+			let ancestor = flatParentElement<Element>(element);
+			ancestor && !isRootBox(this, ancestor);
+			ancestor = flatParentElement<Element>(ancestor)
+		) {
+			const style = getComputedValues(ancestor);
+			const overflow = style.getComputedValue("overflow");
+			if (
+				scrollsAt(style.getComputedValue("overflow-y") || overflow) ||
+				scrollsAt(style.getComputedValue("overflow-x") || overflow)
+			) {
+				revealInPort(this, element, ancestor);
+			}
+		}
 	}
 
 	/**

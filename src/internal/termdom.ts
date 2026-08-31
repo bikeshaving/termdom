@@ -778,75 +778,8 @@ const elementScrollOffsets = new WeakMap<
  * Reached through the document -- no prototype carries engine state for these.
  */
 function createMount(termDOM: TermDOM): EngineMount {
-	// The single place that decides "is this element connected, has layout
-	// settled, what is its border-box rect" -- so offsetWidth and
-	// clientWidth can never quietly disagree about which rect they mean.
-	// Unrounded: each reader rounds for its own purpose (offsetTop rounds
-	// the *difference* of two rects; rounding here first would double-round
-	// and drift by a cell).
-	const layoutRectOf = (element: Element): DOMRect | null => {
-		if (!element.isConnected) {
-			return null;
-		}
-		processPendingMutationsAndRender(termDOM);
-		return termDOM[kLayoutEngine].getRect(element);
-	};
-
-	// offsetParent walks the live DOM tree, not layout -- a separate concern
-	// from layoutRectOf, reused by offsetParent itself and by offsetTop/Left
-	// to find what they're relative to.
-	const offsetParentOf = (element: Element): HTMLElement | null => {
-		for (
-			let ancestor = element.parentElement;
-			ancestor;
-			ancestor = ancestor.parentElement
-		) {
-			const position = getComputedValues(ancestor).getComputedValue("position");
-			if (position && position !== "static") {
-				return ancestor as HTMLElement;
-			}
-		}
-		const body = termDOM.document.body ?? null;
-		return body === element ? null : body;
-	};
-
-	// The content+padding box (border-box rect minus border widths), which
-	// both clientWidth/Height and scrollWidth/Height report -- see
-	// scrollSize for why scroll* falls back to client* rather than the
-	// element's true unclamped content size.
-	const getContentBox = (
-		element: Element,
-	): {width: number; height: number} | null => {
-		const rect = layoutRectOf(element);
-		if (!rect) {
-			return null;
-		}
-		const box = getBoxModel(element);
-		return {
-			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-		};
-	};
-
-	// scroll* is the content's laid-out extent -- how far the box could
-	// scroll, and what its offsets clamp against -- read off the layout
-	// tree, whose children keep their natural sizes when they overflow a
-	// fixed box. A box whose content the tree does not decompose into
-	// child boxes (an inline, a run member) has no readable extent and
-	// falls back to its client size, exact for the no-overflow case.
-	const scrollExtentOf = (
-		element: Element,
-	): {width: number | null; height: number} | null => {
-		if (!element.isConnected) {
-			return null;
-		}
-		processPendingMutationsAndRender(termDOM);
-		return termDOM[kLayoutEngine].scrollExtentOf(element);
-	};
-
 	// html and body scroll the document itself: their scroll offset is the
-	// camera's, their scroll height the document's, and their client height
-	// the terminal's. One camera, however it is reached.
+	// camera's. One camera, however it is reached.
 	const isRoot = (element: Element): boolean =>
 		element === termDOM.document.documentElement ||
 		element === termDOM.document.body;
@@ -862,58 +795,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 		flushLayout() {
 			processPendingMutationsAndRender(termDOM);
 		},
-		offsetSize(target) {
-			const element = target as Element;
-			const rect = layoutRectOf(element);
-			return {
-				width: Math.round(rect?.width ?? 0),
-				height: Math.round(rect?.height ?? 0),
-			};
-		},
-		offsetPosition(target) {
-			const element = target as Element;
-			const rect = layoutRectOf(element);
-			if (!rect) {
-				return {top: 0, left: 0};
-			}
-			const parent = offsetParentOf(element);
-			const parentRect = parent ? layoutRectOf(parent) : null;
-			return {
-				top: Math.round(rect.top - (parentRect?.top ?? 0)),
-				left: Math.round(rect.left - (parentRect?.left ?? 0)),
-			};
-		},
-		offsetParent(target) {
-			const element = target as Element;
-			return element.isConnected ? offsetParentOf(element) : null;
-		},
-		clientSize(target) {
-			const element = target as Element;
-			const box = getContentBox(element);
-			return {
-				width: Math.round(box?.width ?? 0),
-				height: isRoot(element) ?
-					termDOM[kViewport].height :
-						Math.round(box?.height ?? 0),
-			};
-		},
-		// The border widths: what clientLeft/clientTop report, being the
-		// distance from the border box's edge to the padding box's.
-		clientEdge(target) {
-			const box = getBoxModel(target as Element);
-			return {left: box.borderLeftWidth, top: box.borderTopWidth};
-		},
-		scrollSize(target) {
-			const element = target as Element;
-			const extent = scrollExtentOf(element);
-			const box = getContentBox(element);
-			return {
-				width: extent?.width ?? Math.round(box?.width ?? 0),
-				height: isRoot(element) ?
-						termDOM[kLayoutEngine].getContentHeight() :
-						(extent?.height ?? Math.round(box?.height ?? 0)),
-			};
-		},
 		scrollOffset(target) {
 			const element = target as Element;
 			if (isRoot(element)) {
@@ -922,15 +803,13 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		},
 		// A write rounds to whole cells (everything paints on the cell grid,
-		// like the document camera), clamps into the scrollable range, and
-		// schedules the repaint that shows it. The value lands in the
-		// engine's store, which scrollOffset above and the layout's geometry
-		// funnel (element.scrollTop) both read. An axis whose overflow is
-		// visible is not scrollable and pins to 0; hidden scrolls
-		// programmatically, as in a browser. A box whose extent the layout
-		// cannot name (a field's value span, whose content is an opaque
-		// measured run) stores the write unclamped -- the caret-reveal
-		// machinery owns those offsets and keeps them sane.
+		// like the document camera), clamps into the range the layout says
+		// the box has, and schedules the repaint that shows it. The value
+		// lands in the engine's store, which scrollOffset above and the
+		// layout's geometry funnel (element.scrollTop) both read. A box whose
+		// extent the layout cannot name (a field's value span, whose content
+		// is an opaque measured run) stores the write unclamped -- the
+		// caret-reveal machinery owns those offsets and keeps them sane.
 		scrollOffsetTo(target, axis, value) {
 			const element = target as Element;
 			if (isRoot(element)) {
@@ -945,28 +824,9 @@ function createMount(termDOM: TermDOM): EngineMount {
 				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 			if (element.isConnected) {
 				processPendingMutationsAndRender(termDOM);
-				const engine = termDOM[kLayoutEngine];
-				const extent = engine.scrollExtentOf(element);
-				const port = engine.contentRect(element);
-				const size =
-					extent === null ?
-						null :
-						axis === "top" ?
-							extent.height :
-							extent.width;
-				if (size !== null && port) {
-					const style = getComputedValues(element);
-					const overflow =
-						style.getComputedValue(
-							`overflow-${axis === "top" ? "y" : "x"}`,
-						) || style.getComputedValue("overflow");
-					const scrollable =
-						overflow === "auto" ||
-						overflow === "scroll" ||
-						overflow === "hidden";
-					const room =
-						size - Math.round(axis === "top" ? port.height : port.width);
-					next = Math.min(next, scrollable ? Math.max(0, room) : 0);
+				const room = termDOM[kLayoutEngine].scrollRange(element, axis);
+				if (room !== null) {
+					next = Math.min(next, room);
 				}
 			}
 			const previous = elementScrollOffsets.get(element)?.[axis] ?? 0;
@@ -1012,75 +872,19 @@ function createMount(termDOM: TermDOM): EngineMount {
 			termDOM[kFrameDirty] = true;
 			void render(termDOM);
 		},
-		// Every scroll box between the element and the document reveals it
-		// within its own port, innermost first -- each scroll moves the
-		// element in every outer port's coordinates, so the rect is re-read
-		// per level -- and the camera reveals what remains.
-		scrollIntoView(target) {
-			const element = target as Element;
-			if (!element.isConnected) {
-				return;
-			}
-			processPendingMutationsAndRender(termDOM);
-			const engine = termDOM[kLayoutEngine];
-
-			const revealIn = (scroller: Element): void => {
-				// Document-relative rects on both sides: the element wherever
-				// its current offsets put it, against the scroller's padding
-				// box -- what the scroller actually shows.
-				const rect = engine.getRect(element);
-				const scrollerRect = engine.getRect(scroller);
-				if (!rect || !scrollerRect) {
-					return;
-				}
-				const box = getBoxModel(scroller);
-				const portTop = scrollerRect.top + (box.borderTopWidth || 0);
-				const portBottom =
-					scrollerRect.bottom - (box.borderBottomWidth || 0);
-				const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
-				const portRight = scrollerRect.right - (box.borderRightWidth || 0);
-				if (rect.top < portTop) {
-					scroller.scrollTop -= Math.round(portTop - rect.top);
-				} else if (rect.bottom > portBottom) {
-					scroller.scrollTop += Math.round(rect.bottom - portBottom);
-				}
-				if (rect.left < portLeft) {
-					scroller.scrollLeft -= Math.round(portLeft - rect.left);
-				} else if (rect.right > portRight) {
-					scroller.scrollLeft += Math.round(rect.right - portRight);
-				}
-			};
-
-			for (
-				let ancestor = DOM.flatParentElement<Element>(element);
-				ancestor &&
-				ancestor !== termDOM.document.body &&
-				ancestor !== termDOM.document.documentElement;
-				ancestor = DOM.flatParentElement<Element>(ancestor)
-			) {
-				const style = getComputedValues(ancestor);
-				const overflow = style.getComputedValue("overflow");
-				const scrollable = (value: string) =>
-					value === "auto" || value === "scroll" || value === "hidden";
-				if (
-					scrollable(style.getComputedValue("overflow-y") || overflow) ||
-					scrollable(style.getComputedValue("overflow-x") || overflow)
-				) {
-					revealIn(ancestor);
-				}
-			}
-
+		// The scroll boxes around the element have already revealed it within
+		// themselves; what remains is the camera's, which shows
+		// [scrollTop, scrollTop + region). Move it the minimal amount that
+		// brings the element into that -- the standard block: "nearest"
+		// behavior.
+		revealOnScreen(target) {
 			// Document-relative, not getBoundingClientRect's viewport-relative
-			// -- this compares directly against the camera's scrollTop below,
-			// so it needs the space getRect() already provides.
-			const rect = engine.getRect(element);
+			// -- this compares directly against the camera's scrollTop, so it
+			// needs the space getRect() already provides.
+			const rect = termDOM[kLayoutEngine].getRect(target as Element);
 			if (!rect) {
 				return;
 			}
-
-			// The camera shows [scrollTop, scrollTop + region).
-			// Move it the minimal amount that brings the element into it --
-			// the standard block: "nearest" behavior.
 			const regionHeight = cameraRegionHeight(termDOM);
 			const top = termDOM[kScrollTop];
 			if (rect.top < top) {
