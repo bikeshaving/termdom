@@ -878,13 +878,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		layout: termDOM[kLayoutEngine],
 		styles: termDOM[kStyleManager],
 		observer: termDOM[kObserver],
-		invalidateStructure: () => termDOM[kLayoutEngine].invalidate(),
-		// A popover shows and hides without touching the tree, so the rules
-		// that test `:popover-open` -- the UA sheet's own display among them
-		// -- are told here, and the frame that paints what they reveal is
-		// asked for here.
-		stateChanged(element) {
-			termDOM[kStyleManager].handleStateChange(element as Element);
+		repaint() {
 			void render(termDOM);
 		},
 		boundingClientRect(target) {
@@ -1165,38 +1159,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				scrollCamera(termDOM, rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
 				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
-			}
-		},
-		// The document-rooted MutationObserver never sees inside a shadow
-		// root -- per spec, shadow trees are separate observation scopes.
-		// Each author-attached root gets enrolled in the same observer, so
-		// shadow mutations invalidate styles/layout and repaint like light
-		// ones.
-		shadowAttached(hostTarget, rootTarget) {
-			const host = hostTarget as Element;
-			const root = rootTarget as ShadowRoot;
-			termDOM[kObserver].observe(root, {
-				childList: true,
-				subtree: true,
-				attributes: true,
-				attributeOldValue: true,
-				characterData: true,
-			});
-			// The root's <style> elements join the cascade, scoped to this
-			// tree; the refresh rides on the STYLE mutation records the
-			// observer enrollment above will deliver.
-			// A shadow attachment recomposes the host's subtree with no
-			// mutation record, so no box enumeration still stands.
-			termDOM[kLayoutEngine].invalidate();
-			termDOM[kStyleManager].registerShadowRoot(root);
-			// attachShadow is not a DOM mutation -- no observer record will
-			// ever fire for it -- but on a CONNECTED host the composed tree
-			// just changed wholesale: light children stop rendering the moment
-			// the root exists, even while it is still empty. Rebuild the
-			// host's composed subtree and repaint.
-			if (host.isConnected) {
-				termDOM[kLayoutEngine].invalidate(host);
-				void render(termDOM);
 			}
 		},
 		requestFullscreen(target) {

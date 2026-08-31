@@ -547,6 +547,23 @@ function addPart(
 }
 
 /**
+ * Enroll a shadow root in the document's mutation observer.
+ *
+ * A document-rooted observer never sees inside a shadow root -- per spec,
+ * shadow trees are separate observation scopes -- so each root is observed on
+ * its own, and mutations in it invalidate styles and layout like light ones.
+ */
+function observeShadowRoot(engine: Mount, root: object): void {
+	engine.observer.observe(root as Node, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
+}
+
+/**
  * Give a control the closed shadow tree it renders through, enrolled in the
  * document's mutation observer and its cascade.
  *
@@ -560,14 +577,8 @@ function buildUARoot(
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
-	engine.invalidateStructure();
-	engine.observer.observe(root as unknown as Node, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
+	engine.layout.invalidate();
+	observeShadowRoot(engine, root);
 	// The sheet is in the root BEFORE the cascade hears about it, so the
 	// registration's incremental parse sees it: registered-then-populated
 	// left the cascade to notice the sheet by count drift, which ordered a
@@ -8522,7 +8533,26 @@ export class Element extends Node implements globalThis.Element {
 			registry === undefined ? globalCustomElements : registry,
 		);
 		const root = this[kShadowRoot]! as ShadowRoot;
-		getMount(this)?.shadowAttached(this, root);
+		const mount = getMount(this);
+		if (mount !== undefined) {
+			observeShadowRoot(mount, root);
+			// A shadow attachment recomposes the host's subtree with no
+			// mutation record, so no box enumeration still stands.
+			mount.layout.invalidate();
+			// The root's <style> elements join the cascade, scoped to this
+			// tree; the refresh rides on the STYLE mutation records the
+			// enrollment above will deliver.
+			mount.styles.registerShadowRoot(root as unknown as globalThis.ShadowRoot);
+			// attachShadow is not a DOM mutation -- no observer record will
+			// ever fire for it -- but on a CONNECTED host the composed tree
+			// just changed wholesale: light children stop rendering the moment
+			// the root exists, even while it is still empty. Rebuild the
+			// host's composed subtree and repaint.
+			if (this.isConnected) {
+				mount.layout.invalidate(this as unknown as Node);
+				mount.repaint();
+			}
+		}
 		return root as unknown as globalThis.ShadowRoot;
 	}
 
@@ -14488,7 +14518,7 @@ function build(
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		engine.invalidateStructure();
+		engine.layout.invalidate();
 		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
 	input[kRoot] = root;
@@ -17871,7 +17901,12 @@ export function topmostAutoPopover(document: object): Element | null {
  * reveal, have nothing else to hear it from.
  */
 function popoverStateChanged(element: Element): void {
-	getMount(element)?.stateChanged(element);
+	const mount = getMount(element);
+	if (mount === undefined) {
+		return;
+	}
+	mount.styles.handleStateChange(element as unknown as globalThis.Element);
+	mount.repaint();
 }
 
 /**
@@ -27503,14 +27538,11 @@ export interface Mount {
 	styles: StyleManager;
 	observer: MutationObserver;
 	/**
-	 * Note that a state no attribute records moved -- a popover shown or
-	 * hidden. Nothing about it is a mutation, so the rules that test it and
-	 * the frame that paints what they reveal have nothing else to hear it
-	 * from.
+	 * Paint again. Nothing here is a mutation the observer would deliver --
+	 * a popover shown, a shadow tree attached, a focus moved -- so the frame
+	 * that shows what changed is asked for by hand.
 	 */
-	stateChanged(element: object): void;
-	/** Note the unbounded change attaching a shadow tree is. */
-	invalidateStructure(): void;
+	repaint(): void;
 	boundingClientRect(element: object): globalThis.DOMRect;
 	clientRects(element: object): globalThis.DOMRectList;
 	rangeBoundingClientRect(range: object): globalThis.DOMRect;
@@ -27546,8 +27578,6 @@ export interface Mount {
 	selectionMoved(): void;
 	/** Reveal the element in every scroll port between it and the screen. */
 	scrollIntoView(element: object): void;
-	/** An author attached a shadow root to the host. */
-	shadowAttached(host: object, root: object): void;
 	/**
 	 * The terminal's size in cells, which is the window's size and the
 	 * screen's both, and the height the root elements report as their
