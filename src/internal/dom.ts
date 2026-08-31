@@ -11030,7 +11030,6 @@ const kDefinitions = Symbol("definitions");
 const kDefinitionIsRunning = Symbol("definitionIsRunning");
 const kWhenDefined = Symbol("whenDefined");
 const kScoped = Symbol("scoped");
-const kIsScopedRegistry = Symbol("whether an author built this registry");
 
 class CustomElementRegistry {
 	/**
@@ -11274,10 +11273,6 @@ class CustomElementRegistry {
 		for (const element of upgrades) {
 			tryToUpgrade(element);
 		}
-	}
-
-	get [kIsScopedRegistry](): boolean {
-		return this[kScoped]!;
 	}
 }
 
