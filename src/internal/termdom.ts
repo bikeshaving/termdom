@@ -772,9 +772,10 @@ const elementScrollOffsets = new WeakMap<
 >();
 
 /**
- * The document's Mount: the geometry half of the public DOM surface,
- * answered from this engine's layout. Reached through the document -- no
- * prototype carries engine state for these.
+ * The document's Mount: this engine's collaborators, and its answers for what
+ * the DOM cannot work out from the tree -- the box measurements that need the
+ * cascade's box model, the camera, the frame loop and the terminal itself.
+ * Reached through the document -- no prototype carries engine state for these.
  */
 function createMount(termDOM: TermDOM): EngineMount {
 	// The single place that decides "is this element connected, has layout

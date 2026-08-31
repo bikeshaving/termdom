@@ -16,12 +16,13 @@
  * standards describe, and the flat tree a renderer draws, which the section
  * of that name builds out of shadow roots, slots and pseudo-element nodes.
  *
- * It knows nothing about layout or the terminal. The geometry it answers with,
- * the events a focus move fires and the frames it schedules come from the Mount
- * an engine installs on a document; a document with no mount answers the way
- * the standards say a document with no browsing context does. The widgets it
- * upgrades render through the same Mount, which carries the cascade and the
- * layout engine whole -- and they are below this file, not above.
+ * It knows nothing about the terminal. It reads layout and the cascade only
+ * through the Mount an engine installs on a document, which carries those two
+ * engines whole and answers besides for what only a shell can know: what the
+ * viewport is, when a frame lands, how far the camera has moved. A document
+ * with no mount answers the way the standards say a document with no browsing
+ * context does. The widgets it upgrades render through that same Mount, and
+ * the cascade and the layout engine are below this file, not above.
  */
 
 import {parseFragment, parse as parse5Parse} from "parse5";
