@@ -29,18 +29,16 @@
 
 import {
 	type EngineWindow,
-	closePopover,
+	closeTopmost,
 	fieldValueText,
 	flatParentElement,
 	getShadowRoot,
-	hidePopoversUntil,
-	isShowingPopover,
 	isTextField,
 	keyboardActivation,
+	lightDismissPress,
+	lightDismissRelease,
 	lockDataTransfer,
 	setUASelection,
-	topmostAutoPopover,
-	topmostClickedPopover,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import type {WireKey} from "./exchange.js";
@@ -478,8 +476,6 @@ interface UADefaultActions {
 	hoverMoved(target: Element | null): void;
 	/** The showing modal dialog Tab is confined to, if one is up. */
 	modalScope(): Element | null;
-	/** What Escape closes: the topmost modal dialog or auto popover. */
-	closeRequestTarget(): Element | null;
 	/** The fullscreen element, which keystrokes fall back to. */
 	fullscreenTarget(): Element | null;
 }
@@ -1028,7 +1024,7 @@ function press(
 	// The popover a press belongs to, which the release compares
 	// against: light dismiss is a press and a release in the same
 	// place, so a drag out of a popover does not close it.
-	handler[kPopoverPressTarget] = topmostClickedPopover(target);
+	handler[kPopoverPressTarget] = lightDismissPress(target);
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
 	if (handler[kStyleManager].setFocusVisible(false)) {
@@ -1131,17 +1127,10 @@ function release(
 		target,
 		new view.window.MouseEvent("mouseup", eventInit),
 	);
-	// LIGHT DISMISS: a release closes every auto popover the released
-	// point is not inside of and did not open -- the invoker of a popover
-	// counts as part of it, so the click that follows toggles rather than
-	// reopens what this closed. It runs before the click, where a browser
-	// runs it, and no listener can prevent it.
-	const dismissAncestor = topmostClickedPopover(target);
-	const samePopoverPress = dismissAncestor === handler[kPopoverPressTarget];
+	// LIGHT DISMISS runs before the click, as in a browser; the gesture
+	// state is the press target remembered at mousedown.
+	lightDismissRelease(target, handler[kPopoverPressTarget]);
 	handler[kPopoverPressTarget] = null;
-	if (samePopoverPress && topmostAutoPopover(view.document) !== null) {
-		hidePopoversUntil(view.document, dismissAncestor, false, true);
-	}
 	// A selection is only a selection: writing the clipboard is a
 	// deliberate act, through navigator.clipboard. The terminal's own
 	// select-to-copy remains available as Shift+drag, which bypasses
@@ -1284,13 +1273,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// modal editor or a cancel affordance spends it. A fullscreen app exits
 	// by its own affordance or document.exitFullscreen().
 	if (keyName === "Escape") {
-		const target = handler[kDefaults].closeRequestTarget();
-		if (target !== null) {
-			if (isShowingPopover(target)) {
-				closePopover(target);
-			} else {
-				(target as HTMLDialogElement).requestClose();
-			}
+		if (closeTopmost(view.document)) {
 			view.requestRender();
 			return;
 		}

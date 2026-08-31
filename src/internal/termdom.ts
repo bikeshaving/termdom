@@ -1040,7 +1040,6 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 				termdom[kMountHandle].hoveredElement(target);
 			},
 			modalScope: () => DOM.topmostModalDialog(termdom.document),
-			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
 			fullscreenTarget: () => termdom.document.fullscreenElement,
 		},
 		styleManager: termdom[kStyleManager],
@@ -1930,27 +1929,6 @@ function afterRender(
 	// The frame's stylesheets have parsed, so "does any rule test :hover"
 	// is current: re-answer whether the terminal should report motion.
 	updateHoverReporting(termdom);
-}
-
-/**
- * What a close request closes: the modal dialog or auto popover last into
- * the top layer, which is the one the user sees on top. A manual popover
- * is not one -- it responds to neither Escape nor a click outside -- and
- * neither is anything else riding the layer.
- */
-function topmostCloseRequestTarget(
-	termdom: TermDOM,
-): Element | null {
-	const popover = DOM.topmostAutoPopover(termdom.document) as Element | null;
-	let target: Element | null = null;
-	const rendered =
-		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
-	for (const element of rendered) {
-		if (DOM.isModalDialog(element) || element === popover) {
-			target = element;
-		}
-	}
-	return target;
 }
 
 /**

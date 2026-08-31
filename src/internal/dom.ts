@@ -18018,7 +18018,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 }
 
 /** Whether an element is a popover in the showing state -- `:popover-open`. */
-export function isShowingPopover(node: globalThis.Node): boolean {
+function isShowingPopover(node: globalThis.Node): boolean {
 	return (
 		node instanceof HTMLElement &&
 		popoverStates.get(node)?.visibility === "showing"
@@ -18041,7 +18041,7 @@ function showingAutoPopovers(document: Document): Element[] {
 }
 
 /** The auto popover on top of a document's stack, or null while none is up. */
-export function topmostAutoPopover(
+function topmostAutoPopover(
 	document: globalThis.Document,
 ): globalThis.Element | null {
 	const popovers = showingAutoPopovers(document as Document);
@@ -18299,7 +18299,7 @@ function hidePopover(
  * Close a popover the way a close request does -- Escape on the topmost auto
  * popover -- which is a hide that gives focus back and fires its events.
  */
-export function closePopover(element: globalThis.Element): void {
+function closePopover(element: globalThis.Element): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
@@ -18337,7 +18337,7 @@ function hidePopoverStackUntil(
  * HTML's hide popovers until, which is the stack unwind light dismiss and an
  * opening popover both run. With no hint stack, it is the auto stack's.
  */
-export function hidePopoversUntil(
+function hidePopoversUntil(
 	document: globalThis.Document,
 	endpoint: globalThis.Element | null,
 	focusPreviousElement: boolean,
@@ -18432,7 +18432,7 @@ function popoverStackPosition(popover: Element | null): number {
  * which is the deeper of the popover the node is in and the popover the node
  * invokes. Light dismiss closes everything stacked above it.
  */
-export function topmostClickedPopover(
+function topmostClickedPopover(
 	node: globalThis.Node,
 ): globalThis.Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
@@ -18774,6 +18774,63 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 		attribute,
 		kind: "nullable-string",
 	});
+}
+
+/**
+ * HTML's light dismiss, the press half: the popover the pressed point is
+ * inside of or invokes, remembered so the release can tell a click from a
+ * press that wandered. The gesture state is the caller's; the stack is not.
+ */
+export function lightDismissPress(
+	target: globalThis.Element,
+): globalThis.Element | null {
+	return topmostClickedPopover(target);
+}
+
+/**
+ * The release half: a release closes every auto popover the released point
+ * is not inside of and did not open -- the invoker of a popover counts as
+ * part of it, so the click that follows toggles rather than reopens what
+ * this closed. Runs before the click, where a browser runs it, and no
+ * listener can prevent it.
+ */
+export function lightDismissRelease(
+	target: globalThis.Element,
+	pressed: globalThis.Element | null,
+): void {
+	const dismissAncestor = topmostClickedPopover(target);
+	if (dismissAncestor !== pressed) {
+		return;
+	}
+	const document = (target as Element)[kDocument]!;
+	if (topmostAutoPopover(document) !== null) {
+		hidePopoversUntil(document, dismissAncestor, false, true);
+	}
+}
+
+/**
+ * A close request's default action: the modal dialog or auto popover last
+ * into the top layer takes it -- a popover closes, a dialog is asked to. A
+ * manual popover responds to neither Escape nor a click outside, and
+ * neither does anything else riding the layer. False when nothing takes it.
+ */
+export function closeTopmost(document: globalThis.Document): boolean {
+	const popover = topmostAutoPopover(document);
+	let target: globalThis.Element | null = null;
+	for (const element of renderedTopLayer(document)) {
+		if (isModalDialog(element) || element === popover) {
+			target = element;
+		}
+	}
+	if (target === null) {
+		return false;
+	}
+	if (isShowingPopover(target)) {
+		closePopover(target);
+	} else {
+		(target as HTMLDialogElement).requestClose();
+	}
+	return true;
 }
 
 /* ------------------------------------------------------------ fullscreen */
