@@ -29,10 +29,8 @@ import {
 	parseTrackList,
 	parseTrackSizeList,
 	type BoxModel,
-	getComputedValues,
-	getPropertyValue,
+	getComputedValue,
 	parseUnitValue,
-	type ComputedValues,
 	type Unit,
 } from "./cssom.js";
 import {
@@ -6799,7 +6797,7 @@ const POSITIONS = new Set<string>([
 
 /** An element's computed position. */
 function getPosition(element: Element): Position {
-	const value = getPropertyValue(element, "position");
+	const value = getComputedValue(element, "position");
 	return POSITIONS.has(value) ? (value as Position) : "static";
 }
 
@@ -6818,7 +6816,7 @@ export function isPositioned(element: Element): boolean {
  * -- auto paints in the same layer but does NOT form a context.
  */
 function getZIndexValue(element: Element): number | "auto" {
-	const zIndex = getComputedValues(element).getComputedValue("z-index");
+	const zIndex = getComputedValue(element, "z-index");
 	if (!zIndex || zIndex === "auto") {
 		return "auto";
 	}
@@ -6942,7 +6940,7 @@ const TABLE_DISPLAYS = new Set<string>([
  * blockification has nothing to change and they stand as they compute.
  */
 function computedDisplay(element: Element): Display {
-	const value = getPropertyValue(element, "display");
+	const value = getComputedValue(element, "display");
 	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
@@ -7294,7 +7292,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// spaces still collapse, but a newline is a forced break and keeps its
 	// line. A card's blank middle row is three spaces, and this is what
 	// makes it a row.
-	const whiteSpace = getPropertyValue(parent, "white-space");
+	const whiteSpace = getComputedValue(parent, "white-space");
 	if (preservesSpaces(whiteSpace)) {
 		return false;
 	}
@@ -7368,7 +7366,7 @@ function isSuppressedFlexWhitespace(text: Text): boolean {
 	if (!laysOutItems(computedDisplay(parent))) {
 		return false;
 	}
-	if (preservesSpaces(getPropertyValue(parent, "white-space"))) {
+	if (preservesSpaces(getComputedValue(parent, "white-space"))) {
 		return false;
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
@@ -7434,10 +7432,7 @@ function asWrap(value: string): Wrap {
  * pinning it to 0 lets the item shrink to nothing while its text stays as wide
  * as its longest word, and paint straight over whatever is next to it.
  */
-function applyMinMax(
-	flexNode: LayoutNode,
-	computedStyle: ComputedValues,
-): void {
+function applyMinMax(flexNode: LayoutNode, element: Element): void {
 	const constraints = [
 		["min-width", flexNode.setMinWidth, flexNode.setMinWidthPercent],
 		["min-height", flexNode.setMinHeight, flexNode.setMinHeightPercent],
@@ -7445,7 +7440,7 @@ function applyMinMax(
 		["max-height", flexNode.setMaxHeight, flexNode.setMaxHeightPercent],
 	] as const;
 	for (const [property, setLength, setPercent] of constraints) {
-		const value = parseUnitValue(computedStyle.getComputedValue(property));
+		const value = parseUnitValue(getComputedValue(element, property));
 		if (typeof value === "number") {
 			setLength.call(flexNode, value);
 		} else if (value && "percentage" in value) {
@@ -7468,19 +7463,19 @@ const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
  */
 function applyInsets(
 	flexNode: LayoutNode,
-	computedStyle: ComputedValues,
+	element: Element,
 	edges: readonly Edge[],
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
 		const property = edge;
-		const value = parseUnitValue(computedStyle.getComputedValue(property));
+		const value = parseUnitValue(getComputedValue(element, property));
 		if (typeof value === "number") {
 			flexNode.setPosition(edge, value);
 		} else if (value && "percentage" in value) {
 			flexNode.setPositionPercent(edge, value.percentage);
 		} else if (autoWhenUnset) {
-			const declared = computedStyle.getComputedValue(property);
+			const declared = getComputedValue(element, property);
 			if (declared === "auto" || !declared) {
 				flexNode.setPositionAuto(edge);
 			}
@@ -7559,51 +7554,47 @@ function justifyContentConstant(value: string): Justify {
 }
 
 /** The grid container properties, from the cascade to the layout node. */
-function applyGridContainer(
-	flexNode: LayoutNode,
-	computedStyle: ComputedValues,
-): void {
+function applyGridContainer(flexNode: LayoutNode, element: Element): void {
 	flexNode.setGridTemplateColumns(
-		parseTrackList(computedStyle.getComputedValue("grid-template-columns")),
+		parseTrackList(getComputedValue(element, "grid-template-columns")),
 	);
 	flexNode.setGridTemplateRows(
-		parseTrackList(computedStyle.getComputedValue("grid-template-rows")),
+		parseTrackList(getComputedValue(element, "grid-template-rows")),
 	);
 	flexNode.setGridTemplateAreas(
-		parseGridAreas(computedStyle.getComputedValue("grid-template-areas")),
+		parseGridAreas(getComputedValue(element, "grid-template-areas")),
 	);
 	flexNode.setGridAutoColumns(
-		parseTrackSizeList(computedStyle.getComputedValue("grid-auto-columns")),
+		parseTrackSizeList(getComputedValue(element, "grid-auto-columns")),
 	);
 	flexNode.setGridAutoRows(
-		parseTrackSizeList(computedStyle.getComputedValue("grid-auto-rows")),
+		parseTrackSizeList(getComputedValue(element, "grid-auto-rows")),
 	);
 
-	const flow = computedStyle
-		.getComputedValue("grid-auto-flow")
+	const flow = getComputedValue(element, "grid-auto-flow")
 		.toLowerCase()
 		.split(/\s+/)
 		.filter(Boolean);
 	flexNode.setGridAutoFlow(flow.includes("column"), flow.includes("dense"));
 
 	flexNode.setJustifyContent(
-		justifyContentConstant(computedStyle.getComputedValue("justify-content")),
+		justifyContentConstant(getComputedValue(element, "justify-content")),
 	);
 	flexNode.setAlignContent(
 		alignmentConstant(
-			computedStyle.getComputedValue("align-content"),
+			getComputedValue(element, "align-content"),
 			"normal",
 		),
 	);
 	flexNode.setAlignItems(
 		alignmentConstant(
-			computedStyle.getComputedValue("align-items"),
+			getComputedValue(element, "align-items"),
 			"normal",
 		),
 	);
 	flexNode.setJustifyItems(
 		alignmentConstant(
-			computedStyle.getComputedValue("justify-items"),
+			getComputedValue(element, "justify-items"),
 			"normal",
 		),
 	);
@@ -7635,12 +7626,8 @@ function widthSizingConstant(value: string): Sizing {
  * which resolves against a containing block this pass has not decided -- takes
  * nothing rather than carrying the edges beside it away with it.
  */
-function contentBoxEdges(
-	element: Element,
-	computedStyle: ComputedValues,
-	vertical: boolean,
-): number {
-	if (computedStyle.getComputedValue("box-sizing") !== "content-box") {
+function contentBoxEdges(element: Element, vertical: boolean): number {
+	if (getComputedValue(element, "box-sizing") !== "content-box") {
 		return 0;
 	}
 	const box = getBoxModel(element);
@@ -7684,7 +7671,6 @@ function styleFlexNodeProperties(
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
-	const computedStyle = getComputedValues(element);
 
 	const display = computedDisplay(element);
 	// A flex item is BLOCKIFIED (css-display-3 §2.7): `display: inline` on a
@@ -7706,12 +7692,12 @@ function styleFlexNodeProperties(
 		flexNode.setWidthSizing("none");
 		flexNode.setHeightAuto();
 
-		applyMinMax(flexNode, computedStyle);
+		applyMinMax(flexNode, element);
 	} else {
-		const widthValue = computedStyle.getComputedValue("width");
+		const widthValue = getComputedValue(element, "width");
 		const width = parseUnitValue(widthValue);
 		if (typeof width === "number") {
-			flexNode.setWidth(width + contentBoxEdges(element, computedStyle, false));
+			flexNode.setWidth(width + contentBoxEdges(element, false));
 		} else if (width && "percentage" in width) {
 			flexNode.setWidthPercent(width.percentage);
 		} else {
@@ -7719,10 +7705,10 @@ function styleFlexNodeProperties(
 		}
 		flexNode.setWidthSizing(widthSizingConstant(widthValue));
 
-		const height = parseUnitValue(computedStyle.getComputedValue("height"));
+		const height = parseUnitValue(getComputedValue(element, "height"));
 		if (typeof height === "number") {
 			flexNode.setHeight(
-				height + contentBoxEdges(element, computedStyle, true),
+				height + contentBoxEdges(element, true),
 			);
 		} else if (height && "percentage" in height) {
 			flexNode.setHeightPercent(height.percentage);
@@ -7730,7 +7716,7 @@ function styleFlexNodeProperties(
 			flexNode.setHeightAuto();
 		}
 
-		applyMinMax(flexNode, computedStyle);
+		applyMinMax(flexNode, element);
 	}
 
 	// An aspect ratio sizes a box, which an inline box is not; everything
@@ -7739,7 +7725,7 @@ function styleFlexNodeProperties(
 		flexNode.setAspectRatio(undefined);
 	} else {
 		flexNode.setAspectRatio(
-			parseAspectRatio(computedStyle.getComputedValue("aspect-ratio")),
+			parseAspectRatio(getComputedValue(element, "aspect-ratio")),
 		);
 	}
 
@@ -7765,14 +7751,14 @@ function styleFlexNodeProperties(
 		flexNode.setBorder("left", 0);
 	} else {
 		const marginTop = parseSignedUnitValue(
-			computedStyle.getComputedValue("margin-top"),
+			getComputedValue(element, "margin-top"),
 		);
 		if (typeof marginTop === "number") {
 			flexNode.setMargin("top", marginTop);
 		} else if (marginTop && "percentage" in marginTop) {
 			flexNode.setMarginPercent("top", marginTop.percentage);
 		} else {
-			const originalValue = computedStyle.getComputedValue("margin-top");
+			const originalValue = getComputedValue(element, "margin-top");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("top");
 			} else {
@@ -7781,14 +7767,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginRight = parseSignedUnitValue(
-			computedStyle.getComputedValue("margin-right"),
+			getComputedValue(element, "margin-right"),
 		);
 		if (typeof marginRight === "number") {
 			flexNode.setMargin("right", marginRight);
 		} else if (marginRight && "percentage" in marginRight) {
 			flexNode.setMarginPercent("right", marginRight.percentage);
 		} else {
-			const originalValue = computedStyle.getComputedValue("margin-right");
+			const originalValue = getComputedValue(element, "margin-right");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("right");
 			} else {
@@ -7797,14 +7783,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginBottom = parseSignedUnitValue(
-			computedStyle.getComputedValue("margin-bottom"),
+			getComputedValue(element, "margin-bottom"),
 		);
 		if (typeof marginBottom === "number") {
 			flexNode.setMargin("bottom", marginBottom);
 		} else if (marginBottom && "percentage" in marginBottom) {
 			flexNode.setMarginPercent("bottom", marginBottom.percentage);
 		} else {
-			const originalValue = computedStyle.getComputedValue("margin-bottom");
+			const originalValue = getComputedValue(element, "margin-bottom");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("bottom");
 			} else {
@@ -7813,14 +7799,14 @@ function styleFlexNodeProperties(
 		}
 
 		const marginLeft = parseSignedUnitValue(
-			computedStyle.getComputedValue("margin-left"),
+			getComputedValue(element, "margin-left"),
 		);
 		if (typeof marginLeft === "number") {
 			flexNode.setMargin("left", marginLeft);
 		} else if (marginLeft && "percentage" in marginLeft) {
 			flexNode.setMarginPercent("left", marginLeft.percentage);
 		} else {
-			const originalValue = computedStyle.getComputedValue("margin-left");
+			const originalValue = getComputedValue(element, "margin-left");
 			if (originalValue === "auto") {
 				flexNode.setMarginAuto("left");
 			} else {
@@ -7829,7 +7815,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingTop = parseUnitValue(
-			computedStyle.getComputedValue("padding-top"),
+			getComputedValue(element, "padding-top"),
 		);
 		if (typeof paddingTop === "number") {
 			flexNode.setPadding("top", paddingTop);
@@ -7840,7 +7826,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingRight = parseUnitValue(
-			computedStyle.getComputedValue("padding-right"),
+			getComputedValue(element, "padding-right"),
 		);
 		if (typeof paddingRight === "number") {
 			flexNode.setPadding("right", paddingRight);
@@ -7851,7 +7837,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingBottom = parseUnitValue(
-			computedStyle.getComputedValue("padding-bottom"),
+			getComputedValue(element, "padding-bottom"),
 		);
 		if (typeof paddingBottom === "number") {
 			flexNode.setPadding("bottom", paddingBottom);
@@ -7862,7 +7848,7 @@ function styleFlexNodeProperties(
 		}
 
 		const paddingLeft = parseUnitValue(
-			computedStyle.getComputedValue("padding-left"),
+			getComputedValue(element, "padding-left"),
 		);
 		if (typeof paddingLeft === "number") {
 			flexNode.setPadding("left", paddingLeft);
@@ -7876,12 +7862,12 @@ function styleFlexNodeProperties(
 		// hidden (css-backgrounds §3.3) -- same gate as getBoxModel, or the
 		// two box models disagree about the same element.
 		const usedBorderWidth = (side: string) => {
-			const style = computedStyle.getComputedValue(`border-${side}-style`);
+			const style = getComputedValue(element, `border-${side}-style`);
 			if (!style || style === "none" || style === "hidden") {
 				return null;
 			}
 			return parseBorderWidthValue(
-				computedStyle.getComputedValue(`border-${side}-width`),
+				getComputedValue(element, `border-${side}-width`),
 			);
 		};
 		const borderTopWidth = usedBorderWidth("top");
@@ -7918,7 +7904,7 @@ function styleFlexNodeProperties(
 	// double-counts, e.g. a bordered textarea in a flex row is too tall). Zero the
 	// cross-axis edges only -- the main axis is masked by flex sizing.
 	if (display === "inline-block" && hasFlexParent(element)) {
-		const direction = getPropertyValue(
+		const direction = getComputedValue(
 			element.parentElement!,
 			"flex-direction",
 		);
@@ -7935,7 +7921,7 @@ function styleFlexNodeProperties(
 	// Solver item properties. A block container reads none of them -- they are
 	// applied whatever the parent is, and simply go unasked outside a flex
 	// container, which is what CSS says of them.
-	const flexGrow = computedStyle.getComputedValue("flex-grow");
+	const flexGrow = getComputedValue(element, "flex-grow");
 	const growValue = parseFloat(flexGrow);
 	if (!isNaN(growValue) && growValue >= 0) {
 		flexNode.setFlexGrow(growValue);
@@ -7943,10 +7929,10 @@ function styleFlexNodeProperties(
 		flexNode.setFlexGrow(undefined);
 	}
 
-	const orderValue = parseInt(computedStyle.getComputedValue("order"), 10);
+	const orderValue = parseInt(getComputedValue(element, "order"), 10);
 	flexNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
 
-	const flexShrink = computedStyle.getComputedValue("flex-shrink");
+	const flexShrink = getComputedValue(element, "flex-shrink");
 	const shrinkValue = parseFloat(flexShrink);
 	if (!isNaN(shrinkValue) && shrinkValue >= 0) {
 		flexNode.setFlexShrink(shrinkValue);
@@ -7955,14 +7941,14 @@ function styleFlexNodeProperties(
 	}
 
 	const flexBasis = parseUnitValue(
-		computedStyle.getComputedValue("flex-basis"),
+		getComputedValue(element, "flex-basis"),
 	);
 	if (typeof flexBasis === "number") {
 		flexNode.setFlexBasis(flexBasis);
 	} else if (flexBasis && "percentage" in flexBasis) {
 		flexNode.setFlexBasisPercent(flexBasis.percentage);
 	} else {
-		const originalValue = computedStyle.getComputedValue("flex-basis");
+		const originalValue = getComputedValue(element, "flex-basis");
 		if (originalValue === "auto") {
 			flexNode.setFlexBasisAuto();
 		} else {
@@ -7970,11 +7956,11 @@ function styleFlexNodeProperties(
 		}
 	}
 
-	const alignSelf = computedStyle.getComputedValue("align-self");
+	const alignSelf = getComputedValue(element, "align-self");
 	flexNode.setAlignSelf(alignmentConstant(alignSelf, "auto"));
 	flexNode.setJustifySelf(
 		alignmentConstant(
-			computedStyle.getComputedValue("justify-self"),
+			getComputedValue(element, "justify-self"),
 			"auto",
 		),
 	);
@@ -7983,27 +7969,27 @@ function styleFlexNodeProperties(
 	// properties above: outside a grid container nothing asks for them, which
 	// is exactly what CSS says of them.
 	flexNode.setGridRowStart(
-		parseGridPlacement(computedStyle.getComputedValue("grid-row-start")),
+		parseGridPlacement(getComputedValue(element, "grid-row-start")),
 	);
 	flexNode.setGridRowEnd(
-		parseGridPlacement(computedStyle.getComputedValue("grid-row-end")),
+		parseGridPlacement(getComputedValue(element, "grid-row-end")),
 	);
 	flexNode.setGridColumnStart(
-		parseGridPlacement(computedStyle.getComputedValue("grid-column-start")),
+		parseGridPlacement(getComputedValue(element, "grid-column-start")),
 	);
 	flexNode.setGridColumnEnd(
-		parseGridPlacement(computedStyle.getComputedValue("grid-column-end")),
+		parseGridPlacement(getComputedValue(element, "grid-column-end")),
 	);
 
 	// gap. The `gap` shorthand is expanded in the cascade, so reading the
 	// longhands here is enough and gets the precedence right.
-	const rowGap = parseUnitValue(computedStyle.getComputedValue("row-gap"));
+	const rowGap = parseUnitValue(getComputedValue(element, "row-gap"));
 	if (typeof rowGap === "number") {
 		flexNode.setGap("row", rowGap);
 	}
 
 	const columnGap = parseUnitValue(
-		computedStyle.getComputedValue("column-gap"),
+		getComputedValue(element, "column-gap"),
 	);
 	if (typeof columnGap === "number") {
 		flexNode.setGap("column", columnGap);
@@ -8013,7 +7999,7 @@ function styleFlexNodeProperties(
 		flexNode.setMode("none");
 	} else if (display === "grid" || display === "inline-grid") {
 		flexNode.setMode("grid");
-		applyGridContainer(flexNode, computedStyle);
+		applyGridContainer(flexNode, element);
 	} else if (display === "flex") {
 		flexNode.setMode("flex");
 	} else if (display === "table") {
@@ -8021,7 +8007,7 @@ function styleFlexNodeProperties(
 		// per <tr> stacked on its own structurally cannot express.
 		flexNode.setMode("table");
 		flexNode.setBorderCollapse(
-			computedStyle.getComputedValue("border-collapse") === "collapse",
+			getComputedValue(element, "border-collapse") === "collapse",
 		);
 	} else if (display === "table-header-group") {
 		flexNode.setMode("table-header-group");
@@ -8053,8 +8039,8 @@ function styleFlexNodeProperties(
 
 		// A cell with no horizontal padding of its own takes one cell either
 		// side, so neighbouring columns' text does not run together.
-		const paddingLeft = computedStyle.getComputedValue("padding-left");
-		const paddingRight = computedStyle.getComputedValue("padding-right");
+		const paddingLeft = getComputedValue(element, "padding-left");
+		const paddingRight = getComputedValue(element, "padding-right");
 		if (!paddingLeft || paddingLeft === "0px") {
 			flexNode.setPadding("left", 1);
 		}
@@ -8067,25 +8053,25 @@ function styleFlexNodeProperties(
 	// lays its cells out on a grid with a direction of its own.
 	if (display === "flex") {
 		flexNode.setFlexDirection(
-			asFlexDirection(computedStyle.getComputedValue("flex-direction")),
+			asFlexDirection(getComputedValue(element, "flex-direction")),
 		);
 		flexNode.setFlexWrap(
-			asWrap(computedStyle.getComputedValue("flex-wrap")),
+			asWrap(getComputedValue(element, "flex-wrap")),
 		);
 		flexNode.setJustifyContent(
 			justifyContentConstant(
-				computedStyle.getComputedValue("justify-content"),
+				getComputedValue(element, "justify-content"),
 			),
 		);
 		flexNode.setAlignItems(
 			alignmentConstant(
-				computedStyle.getComputedValue("align-items"),
+				getComputedValue(element, "align-items"),
 				"stretch",
 			),
 		);
 		flexNode.setAlignContent(
 			alignmentConstant(
-				computedStyle.getComputedValue("align-content"),
+				getComputedValue(element, "align-content"),
 				"flex-start",
 			),
 		);
@@ -8114,7 +8100,7 @@ function styleFlexNodeProperties(
 		element === element.ownerDocument?.documentElement ||
 		element.tagName === "BODY" ||
 		(display !== "block" && display !== "list-item") ||
-		computedStyle.getComputedValue("overflow") !== "visible" ||
+		getComputedValue(element, "overflow") !== "visible" ||
 		isOutOfFlow(element) ||
 		parentIsFlex,
 	);
@@ -8133,18 +8119,18 @@ function styleFlexNodeProperties(
 	}
 	if (position === "absolute") {
 		flexNode.setPositionType("absolute");
-		applyInsets(flexNode, computedStyle, INSET_EDGES, true);
+		applyInsets(flexNode, element, INSET_EDGES, true);
 	} else if (position === "relative") {
 		flexNode.setPositionType("relative");
 		// A relative box is offset from where it would have sat, and the offset
 		// this engine applies is the start-edge one: `right`/`bottom` alone do
 		// not move it.
-		applyInsets(flexNode, computedStyle, INSET_EDGES.slice(0, 2), false);
+		applyInsets(flexNode, element, INSET_EDGES.slice(0, 2), false);
 	} else if (position === "fixed") {
 		// The viewport is the containing block, whatever it sits inside, and
 		// the camera is what keeps it still.
 		flexNode.setPositionType("fixed");
-		applyInsets(flexNode, computedStyle, INSET_EDGES, false);
+		applyInsets(flexNode, element, INSET_EDGES, false);
 	} else {
 		flexNode.setPositionType("static");
 	}
@@ -9290,14 +9276,14 @@ function syncContentRoot(
 	// the element's own layout node is the one the run measures.
 	root.setMode(grid ? "grid" : "block");
 	if (grid) {
-		applyGridContainer(root, getComputedValues(element));
+		applyGridContainer(root, element);
 		const gaps: Array<[string, Gutter]> = [
 			["row-gap", "row"],
 			["column-gap", "column"],
 		];
 		for (const [property, gutter] of gaps) {
 			const gap = parseUnitValue(
-				getComputedValues(element).getComputedValue(property),
+				getComputedValue(element, property),
 			);
 			root.setGap(gutter, typeof gap === "number" ? gap : 0);
 		}
@@ -9704,7 +9690,7 @@ function isRowFlexItem(element: Element): boolean {
 	if (!isFlexContainer(parent)) {
 		return false;
 	}
-	const direction = getPropertyValue(parent, "flex-direction") || "row";
+	const direction = getComputedValue(parent, "flex-direction") || "row";
 	return direction === "row" || direction === "row-reverse";
 }
 
@@ -10325,7 +10311,7 @@ function* textNodesUnder(root: Node): Generator<Text> {
 /** The `white-space` a text node renders under: its flat-tree parent's. */
 function getWhiteSpace(textNode: Text): string {
 	const parent = flatParentElement<Element>(textNode);
-	return parent ? getPropertyValue(parent, "white-space") : "normal";
+	return parent ? getComputedValue(parent, "white-space") : "normal";
 }
 
 /** An inline-block's margin box: what a line has to reserve for it. */
@@ -10573,7 +10559,7 @@ function collectLeavesUnder(
 				// through as before, per CSS.
 				if (boxModel.width === undefined) {
 					const widthValue = parseUnitValue(
-						getPropertyValue(element, "width"),
+						getComputedValue(element, "width"),
 					);
 					if (
 						widthValue !== null &&
@@ -10608,7 +10594,7 @@ function collectLeavesUnder(
 				// picks the probe the content is measured under instead.
 				const widthSizing =
 					boxModel.width === undefined ?
-							widthSizingConstant(getPropertyValue(element, "width")) :
+							widthSizingConstant(getComputedValue(element, "width")) :
 						"none";
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
@@ -10674,7 +10660,7 @@ function collectLeavesUnder(
 				// reported box size the later clamp covers -- otherwise the
 				// content wraps at its natural width and overflows the capped box.
 				const maxWidthValue = parseUnitValue(
-					getPropertyValue(element, "max-width"),
+					getComputedValue(element, "max-width"),
 				);
 				// A percentage resolves against the containing block's content
 				// width -- the run's available width -- as `width` does above.
@@ -10799,7 +10785,7 @@ function collectLeavesUnder(
 				// textarea -- or any author inline-block -- lands here.
 				// Values are border-box, like width; convert to content-box.
 				const minWidthValue = parseUnitValue(
-					getPropertyValue(element, "min-width"),
+					getComputedValue(element, "min-width"),
 				);
 				if (typeof minWidthValue === "number") {
 					finalContentWidth = Math.max(
@@ -10808,7 +10794,7 @@ function collectLeavesUnder(
 					);
 				}
 				const minHeightValue = parseUnitValue(
-					getPropertyValue(element, "min-height"),
+					getComputedValue(element, "min-height"),
 				);
 				if (typeof minHeightValue === "number") {
 					finalContentHeight = Math.max(
@@ -10823,7 +10809,7 @@ function collectLeavesUnder(
 					);
 				}
 				const maxHeightValue = parseUnitValue(
-					getPropertyValue(element, "max-height"),
+					getComputedValue(element, "max-height"),
 				);
 				if (typeof maxHeightValue === "number") {
 					finalContentHeight = Math.min(
@@ -10909,9 +10895,9 @@ function breakNodes(
 			flatParentElement<Element>(opener)! :
 				(opener as Element);
 
-	const whiteSpace = getPropertyValue(styleElement, "white-space");
-	const wordBreak = getPropertyValue(styleElement, "word-break");
-	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
+	const whiteSpace = getComputedValue(styleElement, "white-space");
+	const wordBreak = getComputedValue(styleElement, "word-break");
+	const overflowWrap = getComputedValue(styleElement, "overflow-wrap");
 
 	// An offered width of 0 is a real constraint, not "unlimited": it asks for
 	// the narrowest the content can be, which is its min-content size -- the
@@ -10954,7 +10940,7 @@ function breakNodes(
 	// strong character wins. That second half is what makes an Arabic string
 	// dropped into an undeclared <div> come out right, which is how such a
 	// string usually arrives.
-	const declared = getPropertyValue(styleElement, "direction");
+	const declared = getComputedValue(styleElement, "direction");
 	const base: "ltr" | "rtl" =
 		declared === "rtl" ?
 			"rtl" :
@@ -11418,7 +11404,7 @@ function lineAlignOffset(
 	if (!container || containerWidth === undefined) {
 		return 0;
 	}
-	const align = getPropertyValue(container, "text-align");
+	const align = getComputedValue(container, "text-align");
 	if (align === "center") {
 		return Math.max(0, (containerWidth - lineWidth) / 2);
 	}
@@ -11431,7 +11417,7 @@ function lineAlignOffset(
 	// `start` and `end` name the READING direction's ends, so they trade sides
 	// in an RTL paragraph: an undeclared alignment is `start`, which puts an
 	// RTL line at the right edge, and `end` puts it at the left.
-	const rtl = getPropertyValue(container, "direction") === "rtl";
+	const rtl = getComputedValue(container, "direction") === "rtl";
 	const atRightEdge = align === "end" ? !rtl : rtl;
 	return atRightEdge ? Math.max(0, containerWidth - lineWidth) : 0;
 }
@@ -11452,7 +11438,7 @@ function lineIndent(
 	if (!isFirstLine || !container) {
 		return 0;
 	}
-	const parsed = parseUnitValue(getPropertyValue(container, "text-indent"));
+	const parsed = parseUnitValue(getComputedValue(container, "text-indent"));
 	if (parsed === null) {
 		return 0;
 	}
@@ -11941,7 +11927,7 @@ function hitTestInFlow(
 	if (element.nodeType !== 1) {
 		return null;
 	}
-	if (getComputedValues(element).getComputedValue("display") === "none") {
+	if (getComputedValue(element, "display") === "none") {
 		return null;
 	}
 	// A display:contents element generates no box, so there is nothing to
@@ -12497,8 +12483,8 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
 		if (getPosition(ancestor) === "relative") {
-			const left = parseUnitValue(getPropertyValue(ancestor, "left"));
-			const top = parseUnitValue(getPropertyValue(ancestor, "top"));
+			const left = parseUnitValue(getComputedValue(ancestor, "left"));
+			const top = parseUnitValue(getComputedValue(ancestor, "top"));
 			if (typeof left === "number") {
 				containerX += left;
 			}
@@ -13248,9 +13234,7 @@ export class LayoutEngine {
 			ancestor;
 			ancestor = ancestor.parentElement
 		) {
-			const position = getComputedValues(ancestor).getComputedValue(
-				"position",
-			);
+			const position = getComputedValue(ancestor, "position");
 			if (position && position !== "static") {
 				return ancestor;
 			}
@@ -13311,10 +13295,9 @@ export class LayoutEngine {
 		if (size === null || !port) {
 			return null;
 		}
-		const style = getComputedValues(element);
 		const overflow =
-			style.getComputedValue(`overflow-${axis === "top" ? "y" : "x"}`) ||
-			style.getComputedValue("overflow");
+			getComputedValue(element, `overflow-${axis === "top" ? "y" : "x"}`) ||
+			getComputedValue(element, "overflow");
 		const room = size - Math.round(axis === "top" ? port.height : port.width);
 		return scrollsAt(overflow) ? Math.max(0, room) : 0;
 	}
@@ -13331,11 +13314,10 @@ export class LayoutEngine {
 			ancestor && !isRootBox(this, ancestor);
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			const style = getComputedValues(ancestor);
-			const overflow = style.getComputedValue("overflow");
+			const overflow = getComputedValue(ancestor, "overflow");
 			if (
-				scrollsAt(style.getComputedValue("overflow-y") || overflow) ||
-				scrollsAt(style.getComputedValue("overflow-x") || overflow)
+				scrollsAt(getComputedValue(ancestor, "overflow-y") || overflow) ||
+				scrollsAt(getComputedValue(ancestor, "overflow-x") || overflow)
 			) {
 				revealInPort(this, element, ancestor);
 			}
@@ -13678,7 +13660,7 @@ export class LayoutEngine {
 			return true;
 		}
 		if (
-			getComputedValues(element).getComputedValue("isolation") === "isolate"
+			getComputedValue(element, "isolation") === "isolate"
 		) {
 			return true;
 		}

@@ -8,7 +8,7 @@
  * Start at StyleManager, which holds one document's cascade: it parses the
  * sheets into rules, matches them against elements, and hands out the
  * declarations everything else reads. There are two ways to ask it. The
- * engine's own read is getComputedValues, which answers the COMPUTED value --
+ * engine's own read is getComputedValue, which answers the COMPUTED value --
  * what the cascade said, before any box exists. An author's is
  * getComputedStyle, which answers the RESOLVED value, and so measures the
  * properties layout decides.
@@ -2173,16 +2173,6 @@ function getInitialStyle(
 	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
-export function getPropertyValue(element: Element, property: string): string {
-	// The COMPUTED value, not the resolved one: layout and paint decide
-	// geometry from this, and a used value here would feed layout its own
-	// output. It is the internal path by construction -- getComputedValues
-	// reaches the cascade's declaration directly -- so there is no branch to
-	// guard, nothing to unwind, and nothing between here and the value but
-	// two map lookups.
-	return getComputedValues(element).getComputedValue(property);
-}
-
 /**
  * The number a value leads with, read off its Dimension, Number or
  * Percentage node. The unit collapses to the count -- px and ch both
@@ -2305,46 +2295,45 @@ export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
 	// the author path's resolved-value work between here and the values layout
 	// is about to decide geometry from.
-	const computedStyle = getComputedValues(element);
-	const widthValue = parseUnitValue(computedStyle.getComputedValue("width"));
-	const heightValue = parseUnitValue(computedStyle.getComputedValue("height"));
+	const widthValue = parseUnitValue(getComputedValue(element, "width"));
+	const heightValue = parseUnitValue(getComputedValue(element, "height"));
 
 	const paddingTop = parseUnitValue(
-		computedStyle.getComputedValue("padding-top"),
+		getComputedValue(element, "padding-top"),
 	);
 	const paddingRight = parseUnitValue(
-		computedStyle.getComputedValue("padding-right"),
+		getComputedValue(element, "padding-right"),
 	);
 	const paddingBottom = parseUnitValue(
-		computedStyle.getComputedValue("padding-bottom"),
+		getComputedValue(element, "padding-bottom"),
 	);
 	const paddingLeft = parseUnitValue(
-		computedStyle.getComputedValue("padding-left"),
+		getComputedValue(element, "padding-left"),
 	);
 
 	const marginTop = parseSignedUnitValue(
-		computedStyle.getComputedValue("margin-top"),
+		getComputedValue(element, "margin-top"),
 	);
 	const marginRight = parseSignedUnitValue(
-		computedStyle.getComputedValue("margin-right"),
+		getComputedValue(element, "margin-right"),
 	);
 	const marginBottom = parseSignedUnitValue(
-		computedStyle.getComputedValue("margin-bottom"),
+		getComputedValue(element, "margin-bottom"),
 	);
 	const marginLeft = parseSignedUnitValue(
-		computedStyle.getComputedValue("margin-left"),
+		getComputedValue(element, "margin-left"),
 	);
 
 	// The USED width is 0 when the side's style is none or hidden
 	// (css-backgrounds §3.3), however wide the width property says --
 	// `border-style: none` must release the space, not just the glyphs.
 	const borderWidthFor = (side: string) => {
-		const style = computedStyle.getComputedValue(`border-${side}-style`);
+		const style = getComputedValue(element, `border-${side}-style`);
 		if (!style || style === "none" || style === "hidden") {
 			return null;
 		}
 		return parseBorderWidthValue(
-			computedStyle.getComputedValue(`border-${side}-width`),
+			getComputedValue(element, `border-${side}-width`),
 		);
 	};
 	const borderTopWidth = borderWidthFor("top");
@@ -2899,8 +2888,8 @@ interface LengthContext {
  */
 const INITIAL_FONT_SIZE = 1;
 
-function getFontSize(style: ComputedValues): number {
-	const size = parseFloat(style.getComputedValue("font-size"));
+function getFontSize(fontSize: string): number {
+	const size = parseFloat(fontSize);
 	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
 }
 
@@ -8183,33 +8172,29 @@ function insetLength(computed: string, basis: number): number | null {
 }
 
 /**
- * A computed style as the engine reads it: `getComputedValue` alone, answering
- * the cascade's value with no resolved-value branch and no author-facing
- * bookkeeping. Computed-only by construction, not by flag.
- */
-export interface ComputedValues {
-	getComputedValue(property: string): string;
-}
-
-/** What a read answers before a document has a cascade behind it. */
-const EMPTY_COMPUTED_VALUES: ComputedValues = {
-	getComputedValue(): string {
-		return "";
-	},
-};
-
-/**
- * An element's COMPUTED values, which is the stage before layout: relative
- * units resolved, percentages and `auto` still standing. Not what
- * getComputedStyle returns -- that one resolves the properties layout decides,
- * and getResolvedStyle below is the function for it.
+ * The COMPUTED value of one property on one element, or on one of its
+ * pseudo-elements: what the cascade says, before any box exists. Relative
+ * units are resolved, percentages and `auto` still stand. Not what
+ * getComputedStyle returns -- that one resolves the properties layout
+ * decides, and getResolvedStyle below is the function for it. Layout and
+ * paint decide geometry from this, and a used value here would feed layout
+ * its own output.
  *
- * Straight to the declaration the cascade caches: no getComputedStyle call, no
- * pseudo-element parsing, no flat-tree walk, no used-value branch. This is the
- * read layout and paint make thousands of times a frame, and it must never
- * take a branch that needs layout, because layout is what calls it.
+ * This is the read layout and paint make thousands of times a frame, and it
+ * must never take a branch that needs layout, because layout is what calls
+ * it. Asked of a pseudo-element by name, it answers what the cascade declared
+ * and nothing else: an empty answer means no rule reached it, which is what
+ * the ::selection and ::marker painters decide on. Asked of a pseudo-element's
+ * NODE, it answers those declarations completed by initial values, so a box
+ * has a `display` to be laid out from. A bare document -- one no cascade of
+ * this engine's stands behind -- answers through whatever getComputedStyle
+ * its window has, or with nothing.
  */
-export function getComputedValues(element: Element): ComputedValues {
+export function getComputedValue(
+	element: Element,
+	property: string,
+	pseudoElement = "",
+): string {
 	// A pseudo-element node's style is its host's declaration for the
 	// pseudo-element it fills; it matches no selector of its own.
 	const host = getPseudoHost<Element>(element);
@@ -8219,53 +8204,27 @@ export function getComputedValues(element: Element): ComputedValues {
 				documentManagers.get(host.ownerDocument) :
 			undefined;
 		return manager ?
-				manager.pseudoNodeStyleFor(element, host, name) :
-				getPseudoStyle(host, name);
+				manager.pseudoDeclarationFor(host, name).nodeValue(property) :
+				getComputedValue(host, property, name);
 	}
 	const document = element.ownerDocument;
 	if (!document) {
-		return EMPTY_COMPUTED_VALUES;
+		return "";
 	}
 	const manager = documentManagers.get(document);
 	if (manager) {
-		return manager.declarationFor(element);
-	}
-	// A document with no cascade of this engine's behind it -- a bare
-	// document -- still answers, through whatever getComputedStyle its
-	// window has; a window an engine never dressed has none, and answers
-	// with initial values like a window-less document.
-	const window = document.defaultView;
-	return window && typeof window.getComputedStyle === "function" ?
-			foreignComputedStyle(window.getComputedStyle(element)) :
-		EMPTY_COMPUTED_VALUES;
-}
-
-function foreignComputedStyle(
-	declaration: globalThis.CSSStyleDeclaration,
-): ComputedValues {
-	return {
-		getComputedValue: (property: string): string =>
-			declaration.getPropertyValue(property),
-	};
-}
-
-/** A pseudo-element's computed style, on the same internal read path. */
-export function getPseudoStyle(
-	element: Element,
-	pseudoElement: string,
-): ComputedValues {
-	const document = element.ownerDocument;
-	if (!document) {
-		return EMPTY_COMPUTED_VALUES;
-	}
-	const manager = documentManagers.get(document);
-	if (manager) {
-		return manager.pseudoDeclarationFor(element, pseudoElement);
+		const declaration = pseudoElement ?
+				manager.pseudoDeclarationFor(element, pseudoElement) :
+				manager.declarationFor(element);
+		return declaration.getComputedValue(property);
 	}
 	const window = document.defaultView;
-	return window ?
-			foreignComputedStyle(window.getComputedStyle(element, pseudoElement)) :
-		EMPTY_COMPUTED_VALUES;
+	if (!window || typeof window.getComputedStyle !== "function") {
+		return "";
+	}
+	return window
+		.getComputedStyle(element, pseudoElement || null)
+		.getPropertyValue(property);
 }
 
 /**
@@ -8590,9 +8549,9 @@ function lengthContext(
 		null;
 	const font = own ?
 		parent ?
-				getFontSize(getComputedValues(parent)) :
+				getFontSize(getComputedValue(parent, "font-size")) :
 			INITIAL_FONT_SIZE :
-			getFontSize(declaration);
+			getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
 	const viewport = declaration[kManager]?.viewportSize();
 	return {
@@ -8620,8 +8579,8 @@ function rootFontSize(
 		return INITIAL_FONT_SIZE;
 	}
 	return root === declaration[kElement]! ?
-			getFontSize(declaration) :
-			getFontSize(getComputedValues(root));
+			getFontSize(declaration.getComputedValue("font-size")) :
+			getFontSize(getComputedValue(root, "font-size"));
 }
 
 /**
@@ -8821,7 +8780,7 @@ function containingBlockBox(
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const ancestorPosition =
-				getComputedValues(ancestor).getComputedValue("position");
+				getComputedValue(ancestor, "position");
 			if (ancestorPosition && ancestorPosition !== "static") {
 				return getBox(declaration, ancestor, false);
 			}
@@ -8834,7 +8793,7 @@ function containingBlockBox(
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			const overflow = getComputedValues(ancestor).getComputedValue("overflow");
+			const overflow = getComputedValue(ancestor, "overflow");
 			if (overflow && overflow !== "visible") {
 				return getBox(declaration, ancestor, true);
 			}
@@ -8854,9 +8813,8 @@ function getBox(
 	if (!rect) {
 		return null;
 	}
-	const style = getComputedValues(element);
 	const edge = (name: string): number =>
-		parseFloat(style.getComputedValue(name)) || 0;
+		parseFloat(getComputedValue(element, name)) || 0;
 	let top = edge("border-top-width");
 	let left = edge("border-left-width");
 	let bottom = edge("border-bottom-width");
@@ -8917,7 +8875,7 @@ function resolvedMinSize(
 		element;
 		element = flatParentElement<Element>(element)
 	) {
-		if (getComputedValues(element).getComputedValue("display") === "none") {
+		if (getComputedValue(element, "display") === "none") {
 			return "0px";
 		}
 	}
@@ -8926,7 +8884,7 @@ function resolvedMinSize(
 	}
 	const parent = flatParentElement<Element>(declaration[kElement]!);
 	const display = parent ?
-			getComputedValues(parent).getComputedValue("display") :
+			getComputedValue(parent, "display") :
 		"";
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
@@ -8950,9 +8908,8 @@ function autoMargin(
 	if (!parent || !parentRect) {
 		return 0;
 	}
-	const parentStyle = getComputedValues(parent);
 	const edge = (name: string): number =>
-		parseFloat(parentStyle.getComputedValue(name)) || 0;
+		parseFloat(getComputedValue(parent, name)) || 0;
 	const left =
 		parentRect.x + edge("border-left-width") + edge("padding-left");
 	const top = parentRect.y + edge("border-top-width") + edge("padding-top");
@@ -9015,7 +8972,7 @@ function resolveFromParent(
 	if (!parent) {
 		return null;
 	}
-	return getComputedValues(parent).getComputedValue(property) || null;
+	return getComputedValue(parent, property) || null;
 }
 
 /**
@@ -9264,9 +9221,7 @@ function resolvePropertyValueRaw(
 				parent !== null;
 				parent = flatParentElement<Element>(parent)
 			) {
-				const parentValue = getComputedValues(parent).getComputedValue(
-					property,
-				);
+				const parentValue = getComputedValue(parent, property);
 				if (parentValue) {
 					return parentValue;
 				}
@@ -9352,7 +9307,6 @@ function isBeingRendered(element: Element): boolean {
 const kPseudoDeclarations = Symbol("pseudo declarations");
 const kPseudoElement = Symbol("pseudoElement");
 const kNodeResolved = Symbol("nodeResolved");
-const kNodeStyle = Symbol("nodeStyle");
 const kBoxView = Symbol("boxView");
 
 /**
@@ -9387,7 +9341,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		this[kResolved] = new Map<string, string>();
-		this[kNodeStyle] = null;
 		this[kNodeResolved] = new Map<string, string>();
 		this[kBoxView] = null;
 		this[kPseudoDeclarations] = declarations;
@@ -9475,37 +9428,26 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * inheritance gave a value. A box is laid out and painted from this -- an
 	 * empty answer would leave it with no `display` at all -- while the
 	 * cascade read above stays the bare declarations the ::selection and
-	 * ::marker painters decide on.
+	 * ::marker painters decide on. The memo behind it is a field kRefresh
+	 * clears, so a read sees the current cascade rather than the one it was
+	 * first read under.
 	 */
-	get nodeStyle(): ComputedValues {
-		let style = this[kNodeStyle];
-		if (style === null) {
-			// One object for the declaration's life: the memo behind it is a
-			// field kRefresh clears, so a holder of this view sees the current
-			// cascade rather than the one it was first read under.
-			style = {
-				getComputedValue: (property: string): string => {
-					const current = this[kManager]?.[kCurrentDeclarations];
-					if (current !== undefined && !current.has(this)) {
-						this[kRefresh]();
-					}
-					let value = this[kNodeResolved].get(property);
-					if (value === undefined) {
-						value =
-							this[kBaseValue](property) ||
-							computedValue(property, getInitialStyle(null, property));
-						this[kNodeResolved].set(property, value);
-					}
-					const transitional = pseudoTransitionValue(this, property);
-					return transitional ?? value;
-				},
-			};
-			this[kNodeStyle] = style;
+	nodeValue(property: string): string {
+		const current = this[kManager]?.[kCurrentDeclarations];
+		if (current !== undefined && !current.has(this)) {
+			this[kRefresh]();
 		}
-		return style;
+		let value = this[kNodeResolved].get(property);
+		if (value === undefined) {
+			value =
+				this[kBaseValue](property) ||
+				computedValue(property, getInitialStyle(null, property));
+			this[kNodeResolved].set(property, value);
+		}
+		const transitional = pseudoTransitionValue(this, property);
+		return transitional ?? value;
 	}
 
-	declare [kNodeStyle]: ComputedValues | null;
 	declare [kNodeResolved]: Map<string, string>;
 	declare [kBoxView]: MeasuredDeclaration | null;
 
@@ -9561,7 +9503,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		let host: Element | null = this[kElement]!;
 		while (
 			host &&
-			getComputedValues(host).getComputedValue("display") === "contents"
+			getComputedValue(host, "display") === "contents"
 		) {
 			host = flatParentElement<Element>(host);
 		}
@@ -9649,7 +9591,7 @@ function getBoxView(
 			[kElement]: node,
 			[kManager]: declaration[kManager],
 			getComputedValue: (property: string): string =>
-				declaration.nodeStyle.getComputedValue(property),
+				declaration.nodeValue(property),
 			getPropertyValue: (property: string): string =>
 				declaration.getPropertyValue(property),
 		};
@@ -9816,8 +9758,6 @@ interface BorderSides {
 const LINE_KEYWORDS = new Set<string>(LINE_STYLES);
 
 export function resolveBorderSides(element: Element): BorderSides {
-	const computedStyle = getComputedValues(element);
-
 	const sideOf = (
 		width: string,
 		style: string,
@@ -9837,8 +9777,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 	// a browser squares off a corner whose ellipse has collapsed. A cell grid
 	// has one size of curve, so how large the radius is says nothing further.
 	const roundedCorner = (corner: string): "round" | undefined => {
-		const radii = computedStyle
-			.getComputedValue(`border-${corner}-radius`)
+		const radii = getComputedValue(element, `border-${corner}-radius`)
 			.split(/\s+/)
 			.filter(Boolean);
 		if (radii.length === 0) {
@@ -9851,10 +9790,10 @@ export function resolveBorderSides(element: Element): BorderSides {
 
 	const of = (side: string): LineStyle["style"] | undefined =>
 		sideOf(
-			computedStyle.getComputedValue(`border-${side}-width`) ||
-			computedStyle.getComputedValue("border-width"),
-			computedStyle.getComputedValue(`border-${side}-style`) ||
-			computedStyle.getComputedValue("border-style"),
+			getComputedValue(element, `border-${side}-width`) ||
+			getComputedValue(element, "border-width"),
+			getComputedValue(element, `border-${side}-style`) ||
+			getComputedValue(element, "border-style"),
 		);
 
 	return {
@@ -10006,7 +9945,7 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
  */
 function getListMarker(listItem: Element, listParent: Element): string {
 	const listStyleType =
-		getComputedValues(listItem).getComputedValue("list-style-type");
+		getComputedValue(listItem, "list-style-type");
 
 	if (!listStyleType || listStyleType === "none") {
 		return "";
@@ -10237,7 +10176,6 @@ const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
 const kComputedStyleCache = Symbol("computedStyleCache");
 const kPseudoElementStyleCache = Symbol("pseudoElementStyleCache");
-const kPseudoNodeStyles = Symbol("pseudoNodeStyles");
 const kCounterScopes = Symbol("counterScopes");
 const kParsedRules = Symbol("parsedRules");
 const kReachingClasses = Symbol("reachingClasses");
@@ -10429,7 +10367,6 @@ export class StyleManager {
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
 		this[kUsedGeneration] = -1;
-		this[kPseudoNodeStyles] = new WeakMap<Element, ComputedValues>();
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
 		this[kUnlayeredRank] = 0;
@@ -10816,7 +10753,7 @@ export class StyleManager {
 	isSelectable(element: object): boolean {
 		let current = element as Element | null;
 		while (current) {
-			const value = getComputedValues(current).getComputedValue("user-select");
+			const value = getComputedValue(current, "user-select");
 			if (value === "none") {
 				return false;
 			}
@@ -10971,27 +10908,6 @@ export class StyleManager {
 		}
 		return declaration;
 	}
-
-	/**
-	 * The style a pseudo-element's own node is laid out and painted from, on
-	 * the same one-lookup read path an element's style takes: layout and paint
-	 * ask per property per frame, and rebuilding the view from the host's
-	 * declaration each time would put four map hops in front of every read.
-	 */
-	pseudoNodeStyleFor(
-		node: Element,
-		host: Element,
-		name: string,
-	): ComputedValues {
-		let style = this[kPseudoNodeStyles].get(node);
-		if (style === undefined) {
-			style = this.pseudoDeclarationFor(host, name).nodeStyle;
-			this[kPseudoNodeStyles].set(node, style);
-		}
-		return style;
-	}
-
-	declare [kPseudoNodeStyles]: WeakMap<Element, ComputedValues>;
 
 	/** A pseudo-element's declaration, on the same internal read path. */
 	pseudoDeclarationFor(
@@ -11348,7 +11264,6 @@ export class StyleManager {
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
-		this[kPseudoNodeStyles] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 	}
 
@@ -11446,7 +11361,6 @@ export class StyleManager {
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
-		this[kPseudoNodeStyles] = new WeakMap();
 		this[kCounterScopes] = new WeakMap();
 		if (this[kTransitionTimer] !== null) {
 			clearTimeout(this[kTransitionTimer]);
@@ -12484,15 +12398,6 @@ function invalidateElementCaches(
 		}
 	}
 	manager[kPseudoElementStyleCache].delete(element);
-	// The pseudo-element nodes read through the declarations just dropped.
-	if (pseudoElementCount(element) > 0) {
-		for (const name of PSEUDO_ELEMENT_NAMES) {
-			const node = pseudoElement<Element>(element, name);
-			if (node) {
-				manager[kPseudoNodeStyles].delete(node);
-			}
-		}
-	}
 	manager[kCounterScopes].delete(element);
 }
 

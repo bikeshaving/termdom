@@ -44,7 +44,7 @@ import {
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import type {WireKey} from "./exchange.js";
-import {type StyleManager, getComputedValues} from "./cssom.js";
+import {type StyleManager, getComputedValue} from "./cssom.js";
 
 /* -------------------------------------------------- what a wire item means */
 
@@ -236,7 +236,7 @@ function sequentialFocusEntries(
 			ancestor;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			if (getComputedValues(ancestor).getComputedValue("display") === "none") {
+			if (getComputedValue(ancestor, "display") === "none") {
 				return false;
 			}
 		}

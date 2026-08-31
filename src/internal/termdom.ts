@@ -26,7 +26,7 @@ import {
 	transportFromProcess,
 } from "./exchange.js";
 import {Screen} from "./screen.js";
-import {StyleManager, getComputedValues, getBoxModel} from "./cssom.js";
+import {StyleManager, getComputedValue, getBoxModel} from "./cssom.js";
 import {stringWidth} from "./text.js";
 import {
 	EventHandler,
@@ -1139,7 +1139,7 @@ function dropUnfocusableFocus(termdom: TermDOM): void {
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			getComputedValues(node).getComputedValue("display") === "none"
+			getComputedValue(node, "display") === "none"
 		) {
 			(active as HTMLElement).blur();
 			return;
@@ -2214,10 +2214,9 @@ function wheelScrollerFor(
 		element && element !== body && element !== root;
 		element = DOM.flatParentElement<Element>(element)
 	) {
-		const style = getComputedValues(element);
 		const overflowY =
-			style.getComputedValue("overflow-y") ||
-			style.getComputedValue("overflow");
+			getComputedValue(element, "overflow-y") ||
+			getComputedValue(element, "overflow");
 		if (overflowY !== "auto" && overflowY !== "scroll") {
 			continue;
 		}
