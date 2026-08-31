@@ -7854,7 +7854,7 @@ function sheetFor(element: Element): CSSStyleSheet {
 			// sheet's change rebuilds the document cascade.
 			const root = asShadowRoot(element.getRootNode());
 			if (root) {
-				manager.refreshShadowRoot(root);
+				manager[kRefreshShadowRoot](root);
 			} else {
 				manager.refreshStylesheets();
 			}
@@ -8204,7 +8204,7 @@ export function getComputedValue(
 				documentManagers.get(host.ownerDocument) :
 			undefined;
 		return manager ?
-				manager.pseudoDeclarationFor(host, name).nodeValue(property) :
+				manager[kPseudoDeclarationFor](host, name).nodeValue(property) :
 				getComputedValue(host, property, name);
 	}
 	const document = element.ownerDocument;
@@ -8216,7 +8216,7 @@ export function getComputedValue(
 		return "";
 	}
 	const declaration = pseudoElement ?
-			manager.pseudoDeclarationFor(element, pseudoElement) :
+			manager[kPseudoDeclarationFor](element, pseudoElement) :
 			manager.declarationFor(element);
 	return declaration.getComputedValue(property);
 }
@@ -8363,7 +8363,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		// Before the work: resolving below reads back through this declaration.
 		this[kManager][kCurrentDeclarations].add(this);
-		this[kCSSRules] = this[kManager].matchingRules(this[kElement]!);
+		this[kCSSRules] = this[kManager][kMatchingRules](this[kElement]!);
 		this[kCustom] = null;
 		storeTransitionFallback(
 			this[kManager],
@@ -8395,7 +8395,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		// a style object held across a class flip answers for the flip. The
 		// engine reads through getComputedValue, which takes no flush -- style
 		// is resolved from inside layout, which this would re-enter.
-		this[kManager]?.flushStyle();
+		this[kManager]?.[kFlushStyle]();
 		const current = this[kManager]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
 			this[kRefresh]();
@@ -8410,7 +8410,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return resolvedMinSize(this, this.getComputedValue(property));
 		}
 		if (this[kManager] && USED_TRACK_PROPERTIES.has(property)) {
-			const tracks = this[kManager].usedGridTracks(
+			const tracks = this[kManager][kUsedGridTracks](
 				this[kElement]!,
 				property === "grid-template-rows",
 			);
@@ -8547,7 +8547,7 @@ function lengthContext(
 			INITIAL_FONT_SIZE :
 			getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
-	const viewport = declaration[kManager]?.viewportSize();
+	const viewport = declaration[kManager]?.[kViewportSize]();
 	return {
 		font,
 		root,
@@ -8831,7 +8831,7 @@ function getBox(
 function viewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const viewport = declaration[kManager]!.viewportSize();
+	const viewport = declaration[kManager]![kViewportSize]();
 	if (!viewport) {
 		return null;
 	}
@@ -9351,7 +9351,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		// Before the work: resolving below reads back through this declaration.
 		this[kManager]?.[kCurrentDeclarations].add(this);
 		if (this[kManager] && this[kElement] && this[kPseudoElement]) {
-			this[kPseudoDeclarations] = this[kManager].pseudoDeclarations(
+			this[kPseudoDeclarations] = this[kManager][kPseudoDeclarationsFor](
 				this[kElement]!,
 				this[kPseudoElement],
 			);
@@ -9446,7 +9446,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kBoxView]: MeasuredDeclaration | null;
 
 	override getPropertyValue(property: string): string {
-		this[kManager]?.flushStyle();
+		this[kManager]?.[kFlushStyle]();
 		const computed =
 			this.getComputedValue(property) ||
 			computedValue(property, getInitialStyle(null, property));
@@ -9501,7 +9501,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		) {
 			host = flatParentElement<Element>(host);
 		}
-		const box = host && this[kManager]!.contentBox(host);
+		const box = host && this[kManager]![kContentBox](host);
 		if (!box) {
 			return computed;
 		}
@@ -10124,6 +10124,57 @@ function selects(
 	});
 }
 
+/** Whether a rule or style gives the element this pseudo-element. */
+export function shouldCreatePseudoElement(
+	manager: StyleManager,
+	element: Element,
+	pseudoType: string,
+): boolean {
+	if (pseudoType === "::marker") {
+		const computedStyle = manager.declarationFor(element);
+		const display = computedStyle.getComputedValue("display");
+		const listStylePosition =
+			computedStyle.getComputedValue("list-style-position") || "outside";
+
+		if (display === "list-item" && listStylePosition !== "outside") {
+			return true;
+		}
+	}
+
+	const styles = computePseudoElementStyle(manager, element, pseudoType);
+	const content = styles.content;
+	return !!(content && content !== "none" && content !== "normal");
+}
+
+/**
+ * Give one element the pseudo-element nodes its rules reach: the door a
+ * mutation comes back through.
+ */
+export function attachPseudoElementsToElement(
+	manager: StyleManager,
+	element: Element,
+): void {
+	// No pseudo rule names this element's type, no counter scope reaches
+	// it, and it carries no pseudo of its own to reconsider: everything
+	// below would answer no, one matches() call per rule at a time. This is
+	// the whole cost of the walk over a subtree that just arrived.
+	const tags = pseudoSubjects(manager);
+	if (
+		tags !== null &&
+		!tags.has(element.tagName) &&
+		pseudoElementCount(element) === 0 &&
+		!manager[kCounterScopes].has(element.parentElement!) &&
+		!(element.getAttribute("style") ?? "").includes("list-item")
+	) {
+		return;
+	}
+	manager[kInitializeCounters](element);
+
+	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
+		attachPseudoElementToElementForType(manager, element, pseudoType);
+	}
+}
+
 /**
  * The selectors of a list a stylesheet declared, compiled once. One this
  * engine cannot read selects nothing and is dropped, which is what an
@@ -10158,6 +10209,22 @@ interface CounterScope {
 const kWindow = Symbol("window");
 const kLayoutEngine = Symbol("layoutEngine");
 const kDocument = Symbol("document");
+const kMatchingRules = Symbol("matchingRules");
+const kFlushStyle = Symbol("flushStyle");
+const kViewportSize = Symbol("viewportSize");
+const kContentBox = Symbol("contentBox");
+const kUsedGridTracks = Symbol("usedGridTracks");
+const kRefreshShadowRoot = Symbol("refreshShadowRoot");
+const kPseudoDeclarationFor = Symbol("pseudoDeclarationFor");
+const kPseudoDeclarationsFor = Symbol("pseudoDeclarationsFor");
+const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
+const kAttachPseudoElementsToDocument = Symbol(
+	"attachPseudoElementsToDocument",
+);
+const kClearCache = Symbol("clearCache");
+const kInitializeCounters = Symbol("initializeCounters");
+const kResolveCounterFunction = Symbol("resolveCounterFunction");
+const kInvalidateElement = Symbol("invalidateElement");
 const kCurrentDeclarations = Symbol("currentDeclarations");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -10386,7 +10453,7 @@ export class StyleManager {
 	}
 
 	/** The rules matching an element, in cascade order. */
-	matchingRules(element: Element): ParsedCSSRule[] {
+	[kMatchingRules](element: Element): ParsedCSSRule[] {
 		parseStylesheetsIfStale(this);
 		return getMatchingRules(this, element);
 	}
@@ -10397,7 +10464,7 @@ export class StyleManager {
 	 * through it, so a value read straight after a DOM change describes that
 	 * change; the engine's own reads (getComputedValue) never do.
 	 */
-	flushStyle(): void {
+	[kFlushStyle](): void {
 		// Not re-entrant: layout and paint resolve styles as they run, and a
 		// read taken from inside the flush sees the layout being computed --
 		// asking for it again would compute it inside itself.
@@ -10422,7 +10489,7 @@ export class StyleManager {
 	 * a few hundred lines below. Null when the window is mounted on no
 	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
-	viewportSize(): {width: number; height: number} | null {
+	[kViewportSize](): {width: number; height: number} | null {
 		const mount = getMount(this[kDocument]);
 		if (mount === undefined) {
 			return null;
@@ -10460,7 +10527,7 @@ export class StyleManager {
 	 * An element's content box, measured behind the same flush: the box a
 	 * child's -- or a pseudo-element's -- percentage resolves against.
 	 */
-	contentBox(element: Element): DOMRect | null {
+	[kContentBox](element: Element): DOMRect | null {
 		// The flush first, since the engine's own derivation reads the layout
 		// and this read has to stand behind the same one.
 		if (!this.usedRect(element)) {
@@ -10485,7 +10552,7 @@ export class StyleManager {
 	 * then stays the computed track list, as CSSOM says of a grid property on
 	 * a box that generated no grid.
 	 */
-	usedGridTracks(element: Element, rows: boolean): number[] | null {
+	[kUsedGridTracks](element: Element, rows: boolean): number[] | null {
 		if (!this.usedRect(element)) {
 			return null;
 		}
@@ -10525,7 +10592,7 @@ export class StyleManager {
 		// sort, and only the root's own tree -- and its host, for :host
 		// rules -- restyles. A rebuild already pending covers this root,
 		// since it is in kShadowRoots now.
-		this.refreshShadowRoot(root);
+		this[kRefreshShadowRoot](root);
 	}
 
 	/**
@@ -10534,7 +10601,7 @@ export class StyleManager {
 	 * root's rules can reach restyle. The full rebuild handles everything
 	 * else; a pending one covers this root already.
 	 */
-	refreshShadowRoot(root: ShadowRoot): void {
+	[kRefreshShadowRoot](root: ShadowRoot): void {
 		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
 			this[kStylesheetsDirty] = true;
 			return;
@@ -10623,7 +10690,7 @@ export class StyleManager {
 					reparseOwnerText(sheetFor(mutation.target as Element));
 					const styleRoot = asShadowRoot(mutation.target.getRootNode());
 					if (styleRoot) {
-						this.refreshShadowRoot(styleRoot);
+						this[kRefreshShadowRoot](styleRoot);
 					} else {
 						shouldRefreshStylesheets = true;
 					}
@@ -10644,18 +10711,18 @@ export class StyleManager {
 										asShadowRoot(element.getRootNode()) :
 									null;
 							if (addedRoot) {
-								this.refreshShadowRoot(addedRoot);
+								this[kRefreshShadowRoot](addedRoot);
 							} else {
 								shouldRefreshStylesheets = true;
 							}
 						} else {
 							invalidateElementCaches(this, element);
-							this.attachPseudoElementsToElement(element);
+							attachPseudoElementsToElement(this, element);
 
 							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
 								invalidateElementCaches(this, childElement);
-								this.attachPseudoElementsToElement(childElement);
+								attachPseudoElementsToElement(this, childElement);
 							}
 						}
 					}
@@ -10679,7 +10746,7 @@ export class StyleManager {
 				// that test it declares an inherited property, the descendants'
 				// styles stand exactly as they were.
 				if (
-					this.attributeReachesDescendants(
+					this[kAttributeReachesDescendants](
 						element,
 						mutation.attributeName!,
 						mutation.oldValue,
@@ -10688,7 +10755,7 @@ export class StyleManager {
 					invalidateSubtree(this, element);
 				} else {
 					invalidateElementCaches(this, element);
-					this.attachPseudoElementsToElement(element);
+					attachPseudoElementsToElement(this, element);
 				}
 				// Sibling combinators reach right: `.on ~ .light` matches (or
 				// stops matching) a FOLLOWING sibling when this element's
@@ -10696,7 +10763,7 @@ export class StyleManager {
 				// nothing of it. :has() reaches ancestors, for which only
 				// dropping every cached style is honest.
 				if (this[kSelectorsReachAncestors]) {
-					this.clearCache();
+					this[kClearCache]();
 				} else if (this[kSelectorsReachSiblings]) {
 					for (
 						let sibling = element.nextElementSibling;
@@ -10714,7 +10781,7 @@ export class StyleManager {
 					reparseOwnerText(sheetFor(owner));
 					const ownerRoot = asShadowRoot(owner.getRootNode());
 					if (ownerRoot) {
-						this.refreshShadowRoot(ownerRoot);
+						this[kRefreshShadowRoot](ownerRoot);
 					} else {
 						shouldRefreshStylesheets = true;
 					}
@@ -10894,7 +10961,7 @@ export class StyleManager {
 	}
 
 	/** A pseudo-element's declaration, on the same internal read path. */
-	pseudoDeclarationFor(
+	[kPseudoDeclarationFor](
 		element: Element,
 		pseudoElement: string,
 	): PseudoStyleDeclaration {
@@ -10904,7 +10971,7 @@ export class StyleManager {
 		if (cached) {
 			return cached;
 		}
-		const declarations = this.pseudoDeclarations(element, pseudoElement);
+		const declarations = this[kPseudoDeclarationsFor](element, pseudoElement);
 		const declaration = new PseudoStyleDeclaration(
 			declarations,
 			element,
@@ -10936,7 +11003,7 @@ export class StyleManager {
 	 * completed by what it inherits from its originating element. A live
 	 * declaration re-asks this when the cascade moves under it.
 	 */
-	pseudoDeclarations(
+	[kPseudoDeclarationsFor](
 		element: Element,
 		pseudoElement: string,
 	): Record<string, string> {
@@ -11011,7 +11078,7 @@ export class StyleManager {
 	 * known until it is parsed, and it is written where a value is meant to
 	 * change.
 	 */
-	attributeReachesDescendants(
+	[kAttributeReachesDescendants](
 		element: Element,
 		name: string,
 		oldValue: string | null,
@@ -11092,29 +11159,12 @@ export class StyleManager {
 
 		let textContent = unquoteContent(content);
 
-		textContent = this.resolveCounterFunction(hostElement, textContent);
+		textContent = this[kResolveCounterFunction](hostElement, textContent);
 
 		return textContent;
 	}
 
 	/** Whether any rule gives this element a pseudo-element of this type. */
-	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
-		if (pseudoType === "::marker") {
-			const computedStyle = this.declarationFor(element);
-			const display = computedStyle.getComputedValue("display");
-			const listStylePosition =
-				computedStyle.getComputedValue("list-style-position") || "outside";
-
-			if (display === "list-item" && listStylePosition !== "outside") {
-				return true;
-			}
-		}
-
-		const styles = computePseudoElementStyle(this, element, pseudoType);
-		const content = styles.content;
-		return !!(content && content !== "none" && content !== "normal");
-	}
-
 	/** Read the sheets again, and rebuild what was laid out under the old ones. */
 	refreshStylesheets(): void {
 		parseStylesheets(this);
@@ -11137,7 +11187,7 @@ export class StyleManager {
 	 * elements it matches, so the walk costs what the sheets ask for and not
 	 * what the document holds.
 	 */
-	attachPseudoElementsToDocument(): void {
+	[kAttachPseudoElementsToDocument](): void {
 		const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
 		for (const rule of this[kParsedRules]) {
@@ -11202,30 +11252,7 @@ export class StyleManager {
 	 */
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
-	/** The same, for one element: the door a mutation comes back through. */
-	attachPseudoElementsToElement(element: Element): void {
-		// No pseudo rule names this element's type, no counter scope reaches
-		// it, and it carries no pseudo of its own to reconsider: everything
-		// below would answer no, one matches() call per rule at a time. This is
-		// the whole cost of the walk over a subtree that just arrived.
-		const tags = pseudoSubjects(this);
-		if (
-			tags !== null &&
-			!tags.has(element.tagName) &&
-			pseudoElementCount(element) === 0 &&
-			!this[kCounterScopes].has(element.parentElement!) &&
-			!(element.getAttribute("style") ?? "").includes("list-item")
-		) {
-			return;
-		}
-		this.initializeCounters(element);
-
-		for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
-			attachPseudoElementToElementForType(this, element, pseudoType);
-		}
-	}
-
-	invalidateElement(element: Element): void {
+	[kInvalidateElement](element: Element): void {
 		// A computed style an author still holds is the one this cache handed
 		// out, so it is told the cascade moved on rather than merely dropped.
 		const dropped = this[kComputedStyleCache].get(element);
@@ -11241,7 +11268,7 @@ export class StyleManager {
 	}
 
 	/** Drop every cached style, whatever it was cached from. */
-	clearCache(): void {
+	[kClearCache](): void {
 		// Every computed style ever handed out re-resolves on its next read:
 		// this manager vouches for none of them any more.
 		this[kCurrentDeclarations] = new WeakSet<object>();
@@ -11260,7 +11287,7 @@ export class StyleManager {
 	 * scope yet gets none as its parent, and building it recursively up a deep
 	 * tree is what this avoids.
 	 */
-	initializeCounters(element: Element): void {
+	[kInitializeCounters](element: Element): void {
 		if (this[kCounterScopes].has(element)) {
 			return;
 		}
@@ -11326,7 +11353,7 @@ export class StyleManager {
 	 * A content value with each `counter(name)` or `counter(name, style)`
 	 * replaced by the number the counter stands at for this element.
 	 */
-	resolveCounterFunction(element: Element, content: string): string {
+	[kResolveCounterFunction](element: Element, content: string): string {
 		const scope = this[kCounterScopes].get(element);
 		return content.replace(
 			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
@@ -11387,7 +11414,7 @@ function getResolvedStyle(
 ): globalThis.CSSStyleDeclaration {
 	// A computed style describes the DOM as it stands, so an author read
 	// goes through the flush a geometry read does.
-	manager.flushStyle();
+	manager[kFlushStyle]();
 	parseStylesheetsIfStale(manager);
 	// An element that is not being rendered has no style to report: it is
 	// out of the document, or out of the flat tree its document composes.
@@ -11415,7 +11442,7 @@ function getResolvedStyle(
 
 	if (pseudoElement) {
 		return indexedDeclaration(
-			manager.pseudoDeclarationFor(element, pseudoElement),
+			manager[kPseudoDeclarationFor](element, pseudoElement),
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
@@ -12344,10 +12371,10 @@ function invalidateSubtree(
 	element: Element,
 ): void {
 	invalidateElementCaches(manager, element);
-	manager.attachPseudoElementsToElement(element);
+	attachPseudoElementsToElement(manager, element);
 	for (const descendant of element.querySelectorAll("*")) {
 		invalidateElementCaches(manager, descendant);
-		manager.attachPseudoElementsToElement(descendant);
+		attachPseudoElementsToElement(manager, descendant);
 	}
 	const root = element.shadowRoot;
 	if (root) {
@@ -12479,7 +12506,7 @@ function parseStylesheets(
 	}
 
 	sortRulesForCascade(manager);
-	manager.clearCache();
+	manager[kClearCache]();
 	attachPseudoElements(manager);
 }
 
@@ -13452,7 +13479,7 @@ function pseudoContentFor(
 
 	const textContent = unquoteContent(content);
 
-	return manager.resolveCounterFunction(hostElement, textContent);
+	return manager[kResolveCounterFunction](hostElement, textContent);
 }
 
 /**
@@ -13479,12 +13506,12 @@ function attachPseudoElements(
 	let element = walker.nextNode() as Element;
 	while (element) {
 		if (pseudoElementCount(element) > 0) {
-			manager.attachPseudoElementsToElement(element);
+			attachPseudoElementsToElement(manager, element);
 		}
 		element = walker.nextNode() as Element;
 	}
 
-	manager.attachPseudoElementsToDocument();
+	manager[kAttachPseudoElementsToDocument]();
 }
 
 function pseudoSubjects(
@@ -13568,7 +13595,7 @@ function attachPseudoElementToElementForType(
 	}
 
 	// counter() in a content value reads these, so they must exist first.
-	manager.initializeCounters(element);
+	manager[kInitializeCounters](element);
 
 	if (pseudoType === "::marker") {
 		const computedStyle = manager.declarationFor(element);
@@ -13587,7 +13614,7 @@ function attachPseudoElementToElementForType(
 	}
 
 	// Compute what the pseudo should hold now; null means "none".
-	const content = manager.shouldCreatePseudoElement(element, pseudoType) ?
+	const content = shouldCreatePseudoElement(manager, element, pseudoType) ?
 			pseudoContentFor(manager, element, pseudoType) :
 		null;
 	const existing = pseudoElement<Element>(element, pseudoType);
@@ -13877,7 +13904,7 @@ observeTree({
 		) {
 			documentManagers
 				.get(element.ownerDocument as object)
-				?.invalidateElement(element as unknown as Element);
+				?.[kInvalidateElement](element as unknown as Element);
 		}
 	},
 	shadowAttached(root) {

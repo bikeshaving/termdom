@@ -2,6 +2,7 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {flowWalker} from "../src/internal/layout.js";
+import {shouldCreatePseudoElement} from "../src/internal/cssom.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -237,16 +238,16 @@ test.todo(
 		// Verify empty/none/normal don't create pseudo-elements
 		const styleManager = styleManagerFor(termdom);
 
-		expect(styleManager.shouldCreatePseudoElement(emptyEl, "::before")).toBe(
+		expect(shouldCreatePseudoElement(styleManager, emptyEl, "::before")).toBe(
 			false,
 		);
-		expect(styleManager.shouldCreatePseudoElement(noneEl, "::before")).toBe(
+		expect(shouldCreatePseudoElement(styleManager, noneEl, "::before")).toBe(
 			false,
 		);
 
 		const normalEl = document.createElement("div");
 		normalEl.className = "normal";
-		expect(styleManager.shouldCreatePseudoElement(normalEl, "::before")).toBe(
+		expect(shouldCreatePseudoElement(styleManager, normalEl, "::before")).toBe(
 			false,
 		);
 	},

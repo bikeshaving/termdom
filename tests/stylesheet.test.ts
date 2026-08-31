@@ -2,6 +2,10 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, styleManagerFor} from "./test-utils.js";
 import {
+	attachPseudoElementsToElement,
+	shouldCreatePseudoElement,
+} from "../src/internal/cssom.js";
+import {
 	createDocumentWindow,
 	getPseudoHost,
 	getPseudoName,
@@ -314,7 +318,7 @@ test("StyleManager createPseudoElementNode", async () => {
 	const testDiv = document.createElement("div");
 	testDiv.className = "test";
 
-	styleManager.attachPseudoElementsToElement(testDiv);
+	attachPseudoElementsToElement(styleManager, testDiv);
 	const pseudoNode = pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
@@ -325,24 +329,24 @@ test("StyleManager createPseudoElementNode", async () => {
 	const emptyDiv = document.createElement("div");
 	emptyDiv.className = "empty";
 
-	styleManager.attachPseudoElementsToElement(emptyDiv);
+	attachPseudoElementsToElement(styleManager, emptyDiv);
 	expect(pseudoElement(emptyDiv, "::before")).toBeNull();
 
 	// Test element with content: normal
 	const normalDiv = document.createElement("div");
 	normalDiv.className = "normal";
 
-	styleManager.attachPseudoElementsToElement(normalDiv);
+	attachPseudoElementsToElement(styleManager, normalDiv);
 	expect(pseudoElement(normalDiv, "::before")).toBeNull();
 
 	// Test shouldCreatePseudoElement
-	expect(styleManager.shouldCreatePseudoElement(testDiv, "::before")).toBe(
+	expect(shouldCreatePseudoElement(styleManager, testDiv, "::before")).toBe(
 		true,
 	);
-	expect(styleManager.shouldCreatePseudoElement(emptyDiv, "::before")).toBe(
+	expect(shouldCreatePseudoElement(styleManager, emptyDiv, "::before")).toBe(
 		false,
 	);
-	expect(styleManager.shouldCreatePseudoElement(normalDiv, "::before")).toBe(
+	expect(shouldCreatePseudoElement(styleManager, normalDiv, "::before")).toBe(
 		false,
 	);
 });
