@@ -1360,9 +1360,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 		cancelFrame(handle) {
 			termDOM[kFrameCallbacks].delete(handle);
 		},
-		mediaMatches(query) {
-			return termDOM[kStyleManager].mediaQueryMatches(query);
-		},
 		watchMedia(update) {
 			termDOM[kMediaQueryUpdaters].add(update);
 		},

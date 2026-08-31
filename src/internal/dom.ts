@@ -27510,8 +27510,6 @@ export interface Mount {
 	requestFrame(callback: (time: number) => void): number;
 	/** Drop a frame callback that has not fired. */
 	cancelFrame(handle: number): void;
-	/** Whether a media query matches, on the evaluator @media rules use. */
-	mediaMatches(query: string): boolean;
 	/** Re-ask a live media query list whenever the viewport moves. */
 	watchMedia(update: () => void): void;
 	/** The window was closed, and the beforeunload gate let it through. */
@@ -28259,7 +28257,8 @@ export class Window extends EventTarget {
 	matchMedia(query: string): MediaQueryList {
 		const media = String(query);
 		const mount = getMount(this.document);
-		const matches = (): boolean => mount?.mediaMatches(media) ?? false;
+		const matches = (): boolean =>
+			mount?.styles.mediaQueryMatches(media) ?? false;
 		const list = new EventTarget();
 		// `matches` reads live; this holds the value the last "change" event
 		// reported.
