@@ -313,9 +313,9 @@ function mountEngine(window: EngineWindow): StyleManager {
 		styles: styleManager,
 		exchange: {interactive: false} as never,
 		screen: {cols: 800, rows: 600, invalidate() {}, scrollTo() {}} as never,
-		frameRequested() {},
-		closeRequested() {},
-		documentClosed() {},
+		render() {},
+		close() {},
+		seal() {},
 		attached: false,
 	});
 	// The suite is written against a browser viewport in CSS pixels; this

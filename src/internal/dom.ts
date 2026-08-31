@@ -8817,7 +8817,7 @@ export class Element extends Node implements globalThis.Element {
 			if (this.isConnected) {
 				mount.layout.invalidate(this);
 				mount.screen.invalidate();
-				mount.frameRequested();
+				mount.render();
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -10050,7 +10050,7 @@ export class HTMLElement extends Element {
 		// touches anything.
 		mount.styles.handleFocusChange(previous, this);
 		mount.screen.invalidate();
-		mount.frameRequested();
+		mount.render();
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -10086,7 +10086,7 @@ export class HTMLElement extends Element {
 		}
 		mount.styles.handleFocusChange(this, null);
 		mount.screen.invalidate();
-		mount.frameRequested();
+		mount.render();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -10414,10 +10414,10 @@ Object.defineProperties(HTMLElement.prototype, {
 			const top = mount.screen.scrollTop;
 			if (rect.top < top) {
 				mount.screen.scrollTo(rect.top);
-				mount.frameRequested();
+				mount.render();
 			} else if (rect.bottom > top + regionHeight) {
 				mount.screen.scrollTo(rect.bottom - regionHeight);
-				mount.frameRequested();
+				mount.render();
 			}
 		},
 		configurable: true,
@@ -18317,7 +18317,7 @@ function popoverStateChanged(element: Element): void {
 	}
 	mount.styles.handleStateChange(element);
 	mount.screen.invalidate();
-	mount.frameRequested();
+	mount.render();
 }
 
 /**
@@ -21648,7 +21648,7 @@ export class Document extends Node implements globalThis.Document {
 	 * document below the sealed block.
 	 */
 	close(): void {
-		getMount(this)?.documentClosed();
+		getMount(this)?.seal();
 	}
 
 	get customElementRegistry(): CustomElementRegistry | null {
@@ -23514,7 +23514,7 @@ function setScrollOffset(
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
 			mount.screen.scrollTo(Number(value));
-			mount.frameRequested();
+			mount.render();
 		}
 		return;
 	}
@@ -23548,7 +23548,7 @@ function setScrollOffset(
 	} else {
 		mount.screen.invalidate();
 	}
-	mount.frameRequested();
+	mount.render();
 }
 
 /**
@@ -23597,7 +23597,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	if (changed) {
 		scrollBands.delete(document as Document);
 		mount.screen.invalidate();
-		mount.frameRequested();
+		mount.render();
 	}
 }
 
@@ -25168,7 +25168,7 @@ function scheduleSelectionChange(document: Document): void {
 	const mount = getMount(document);
 	if (mount !== undefined) {
 		mount.screen.invalidate();
-		mount.frameRequested();
+		mount.render();
 	}
 	if (document[kSelectionChangeScheduled]!) {
 		return;
@@ -28420,12 +28420,12 @@ export interface Mount {
 	 * screen's both -- and where the document sits on it.
 	 */
 	screen: Screen;
-	/** A frame was asked for: schedule a render, and drain us after it. */
-	frameRequested(): void;
-	/** The window was closed, and the beforeunload gate let it through. */
-	closeRequested(): void;
-	/** The document was closed: seal what it painted into the scrollback. */
-	documentClosed(): void;
+	/** Schedule a frame, and drain what awaited it once it is written. */
+	render(): void;
+	/** End the session: the window closed and the beforeunload gate agreed. */
+	close(): void;
+	/** Seal what the document painted into the terminal's scrollback. */
+	seal(): void;
 	/** Whether attach() has taken the terminal and dispose() has not. */
 	readonly attached: boolean;
 }
@@ -28477,14 +28477,14 @@ export function mount(document: globalThis.Document, engine: Mount): void {
 	const mounted = document as Document;
 	hoverListenerCounts.set(
 		mounted,
-		watchHoverListeners(mounted, () => engine.frameRequested()),
+		watchHoverListeners(mounted, () => engine.render()),
 	);
 	// Observation is the document's own: mutations fan out to the cascade,
 	// the layout tree and the UA default actions here, and the engine is
 	// only asked for the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
 		handleMutationRecords(mounted, mutations);
-		engine.frameRequested();
+		engine.render();
 	});
 	observer.observe(document.documentElement as unknown as Node, {
 		childList: true,
@@ -28655,7 +28655,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		mount.frameRequested();
+		mount.render();
 	}
 	mount.layout.calculateLayout();
 	clampScrollOffsets(document);
@@ -29202,7 +29202,7 @@ function frameSettled(document: Document, mount: Mount): Promise<void> {
 		holdFrameCallback(document, () => {
 			resolve();
 		});
-		mount.frameRequested();
+		mount.render();
 	});
 }
 
@@ -29311,7 +29311,7 @@ export class Window extends EventTarget {
 					(xOrOptions.top ?? mount.screen.scrollTop) :
 					(y ?? 0);
 		mount.screen.scrollTo(top);
-		mount.frameRequested();
+		mount.render();
 	}
 
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
@@ -29328,7 +29328,7 @@ export class Window extends EventTarget {
 					(xOrOptions.top ?? 0) :
 					(y ?? 0);
 		mount.screen.scrollTo(mount.screen.scrollTop + top);
-		mount.frameRequested();
+		mount.render();
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it
@@ -29341,7 +29341,7 @@ export class Window extends EventTarget {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		mount.frameRequested();
+		mount.render();
 		return handle;
 	}
 
@@ -29469,7 +29469,7 @@ export class Window extends EventTarget {
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
 		}
-		mount.closeRequested();
+		mount.close();
 	}
 }
 

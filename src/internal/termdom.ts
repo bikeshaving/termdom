@@ -539,10 +539,10 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 		// so a callback could fire before the frame is written. No dirty
 		// bit: the nothing-moved gate may skip the paint, but the render
 		// still drains the callbacks that awaited it.
-		frameRequested() {
+		render() {
 			void render(termDOM);
 		},
-		closeRequested() {
+		close() {
 			const wasAttached = isAttached(termDOM);
 			// An immediate close must not tear down mid-establishment: wait
 			// for attach to finish (anchor found, first frame painted) so the
@@ -571,7 +571,7 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 		// dispose() has already set attached=false by the time it reaches
 		// here, so the seal is skipped. A real seal is a close() from a live,
 		// painted session.
-		documentClosed() {
+		seal() {
 			if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
 				flushDocument(termDOM);
 				termDOM[kSealed] = true;
