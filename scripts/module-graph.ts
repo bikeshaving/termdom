@@ -91,6 +91,7 @@ for (const [name, deps] of imports) {
  */
 const DOM_DOORS = [
 	"clearPseudoElement",
+	"clampScrollOffsets",
 	"closeTopmost",
 	"createDocumentWindow",
 	"disconnectObservers",

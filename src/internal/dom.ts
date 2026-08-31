@@ -9500,42 +9500,30 @@ Object.defineProperties(Element.prototype, {
 		enumerable: true,
 		writable: true,
 	},
-	// How far a box is scrolled from its content's origin. A mounted
-	// document answers from the engine, which holds the offsets it clamped
-	// against laid-out content. The storage below is what a headless
-	// document answers with: writes land and read back, and nothing moves.
+	// How far a box is scrolled from its content's origin. html and body
+	// scroll the document itself, so their offset is the camera's; on a
+	// headless document writes land, read back, and move nothing.
 	scrollLeft: {
 		get(this: Element): number {
-			const engine = getMount(this);
-			return engine ?
-				engine.scrollOffset(this).left :
+			return isDocumentScroller(this) ?
+				0 :
 					(scrollOffsets.get(this)?.left ?? 0);
 		},
 		set(this: Element, value: number) {
-			const engine = getMount(this);
-			if (engine === undefined) {
-				writeScrollOffset(this, "left", toDouble(value));
-				return;
-			}
-			engine.scrollOffsetTo(this, "left", value);
+			setScrollOffset(this, "left", value);
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	scrollTop: {
 		get(this: Element): number {
-			const engine = getMount(this);
-			return engine ?
-				engine.scrollOffset(this).top :
+			const mount = isDocumentScroller(this) ? getMount(this) : undefined;
+			return mount ?
+				mount.screen.scrollTop :
 					(scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
-			const engine = getMount(this);
-			if (engine === undefined) {
-				writeScrollOffset(this, "top", toDouble(value));
-				return;
-			}
-			engine.scrollOffsetTo(this, "top", value);
+			setScrollOffset(this, "top", value);
 		},
 		configurable: true,
 		enumerable: true,
@@ -10395,7 +10383,30 @@ Object.defineProperties(HTMLElement.prototype, {
 			}
 			mount.flushLayout();
 			mount.layout.revealInScrollPorts(this);
-			mount.revealOnScreen(this);
+			// The scroll boxes around the element have revealed it within
+			// themselves; what remains is the camera's, which shows
+			// [scrollTop, scrollTop + region). Move it the minimal amount --
+			// the standard block: "nearest" behavior. Document-relative, so
+			// it compares directly against the camera's own offset.
+			const rect = mount.layout.getRect(this);
+			if (!rect) {
+				return;
+			}
+			const document = this[kDocument]!;
+			const flow = mount.layout.getRect(document.documentElement);
+			const regionHeight =
+				fullscreenElementOf(document) !== null ?
+					mount.screen.rows :
+						Math.min(
+							mount.screen.rows,
+							flow ? Math.ceil(flow.height) : 0,
+						);
+			const top = mount.screen.scrollTop;
+			if (rect.top < top) {
+				mount.scrollDocumentTo(rect.top);
+			} else if (rect.bottom > top + regionHeight) {
+				mount.scrollDocumentTo(top + rect.bottom - (top + regionHeight));
+			}
 		},
 		configurable: true,
 		enumerable: true,
@@ -23467,6 +23478,115 @@ function writeScrollOffset(
 	offsets[axis] = value;
 }
 
+/** Whether an element's scroll is the document camera's: html and body. */
+function isDocumentScroller(element: Element): boolean {
+	const document = element[kDocument];
+	return (
+		document != null &&
+		(element === (document.documentElement as unknown) ||
+			element === (document.body as unknown))
+	);
+}
+
+/** The boxes each document holds a nonzero scroll offset for. */
+const scrolledElements = new WeakMap<Document, Set<Element>>();
+
+/**
+ * A scroll write, whichever accessor spelled it. A mounted write rounds to
+ * whole cells (everything paints on the cell grid, like the document
+ * camera), clamps into the range the layout says the box has, stores, and
+ * tells the engine what moved so the frame journal prices it. A box whose
+ * extent the layout cannot name (a field's value span, whose content is an
+ * opaque measured run) stores the write unclamped -- the caret-reveal
+ * machinery owns those offsets and keeps them sane. A headless write lands
+ * and reads back, and nothing moves.
+ */
+function setScrollOffset(
+	element: Element,
+	axis: "left" | "top",
+	value: number,
+): void {
+	const mount = getMount(element);
+	if (mount === undefined) {
+		writeScrollOffset(element, axis, toDouble(value));
+		return;
+	}
+	if (isDocumentScroller(element)) {
+		if (axis === "top") {
+			mount.scrollDocumentTo(Number(value));
+		}
+		return;
+	}
+	const numeric = Number(value);
+	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+	if (element.isConnected) {
+		mount.flushLayout();
+		const room = mount.layout.scrollRange(element, axis);
+		if (room !== null) {
+			next = Math.min(next, room);
+		}
+	}
+	const previous = scrollOffsets.get(element)?.[axis] ?? 0;
+	if (previous === next) {
+		return;
+	}
+	writeScrollOffset(element, axis, next);
+	if (next !== 0) {
+		const document = element[kDocument]!;
+		let held = scrolledElements.get(document);
+		if (held === undefined) {
+			held = new Set();
+			scrolledElements.set(document, held);
+		}
+		held.add(element);
+	}
+	mount.scrolled(element, axis, next - previous);
+}
+
+/**
+ * Pull every held scroll offset back into its box's scrollable range
+ * against fresh layout: a mutation that shrinks a box's content must not
+ * leave the box scrolled past what remains. Offsets are written to the
+ * store directly -- the accessor's own clamp would re-enter the engine's
+ * flush -- and the caller repaints when anything moved.
+ */
+export function clampScrollOffsets(document: globalThis.Document): boolean {
+	const mount = getMount(document);
+	const held = scrolledElements.get(document as Document);
+	if (mount === undefined || held === undefined) {
+		return false;
+	}
+	let changed = false;
+	for (const element of held) {
+		const offsets = scrollOffsets.get(element) ?? {left: 0, top: 0};
+		if (offsets.left === 0 && offsets.top === 0) {
+			held.delete(element);
+			continue;
+		}
+		if (!element.isConnected) {
+			continue;
+		}
+		const extent = mount.layout.scrollExtentOf(element);
+		const port = mount.layout.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		// An unknowable horizontal extent leaves that axis unclamped.
+		const maxLeft =
+			extent.width === null ?
+				offsets.left :
+					Math.max(0, extent.width - Math.round(port.width));
+		const maxTop = Math.max(0, extent.height - Math.round(port.height));
+		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
+			continue;
+		}
+		writeScrollOffset(element, "left", Math.min(offsets.left, maxLeft));
+		writeScrollOffset(element, "top", Math.min(offsets.top, maxTop));
+		changed = true;
+	}
+	return changed;
+}
+
 /** The spec's "insert adjacent" algorithm, shared by element and text. */
 function insertAdjacent(
 	element: Element,
@@ -28258,22 +28378,13 @@ export interface Mount {
 	 * has not delivered yet, and the layout they invalidated.
 	 */
 	flushLayout(): void;
-	/** How far a box is scrolled from its content's origin, in cells. */
-	scrollOffset(element: globalThis.Element): {left: number; top: number};
 	/**
-	 * Round the write to whole cells, clamp it into the scrollable range,
-	 * store it and schedule the repaint that shows it.
+	 * A box's scroll offset changed by `delta` on `axis`: frame state no
+	 * MutationObserver sees, so the journal is told here -- without it the
+	 * "nothing moved" gate would skip the paint.
 	 */
-	scrollOffsetTo(
-		element: globalThis.Element,
-		axis: "left" | "top",
-		value: number,
-	): void;
-	/**
-	 * Reveal the element on screen: the scroll boxes around it are the
-	 * layout's to move, and the camera over them is this engine's.
-	 */
-	revealOnScreen(element: globalThis.Element): void;
+	scrolled(element: globalThis.Element, axis: "left" |
+		"top", delta: number): void;
 	/** Move the document camera to an offset and repaint. */
 	scrollDocumentTo(top: number): void;
 	/** Schedule a frame, and fire the callback once it has been painted. */

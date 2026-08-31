@@ -118,8 +118,6 @@ const kPaintedGeneration = Symbol("paintedGeneration");
  * no-op it is.
  */
 
-const kScrolledElements = Symbol("scrolledElements");
-
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
@@ -223,7 +221,6 @@ export class TermDOM {
 	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
 	// box's content out from under its offset; each layout flush pulls
 	// these back into range (see clampScrolledOffsets).
-	declare [kScrolledElements]: Set<Element>;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
@@ -296,7 +293,6 @@ export class TermDOM {
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
 		this[kLifecycle] = "detached";
-		this[kScrolledElements] = new Set();
 
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
@@ -600,28 +596,12 @@ export class TermDOM {
 }
 
 /**
- * The engine's element scroll offsets, in cells: what the mount's
- * scrollOffset answers with and what its scrollOffsetTo clamps and writes.
- * A box nothing scrolled is absent and reads zero.
- */
-const elementScrollOffsets = new WeakMap<
-	Element,
-	{left: number; top: number}
->();
-
-/**
  * The document's Mount: this engine's collaborators, and its answers for what
  * the DOM cannot work out from the tree -- the box measurements that need the
  * cascade's box model, the camera, the frame loop and the terminal itself.
  * Reached through the document -- no prototype carries engine state for these.
  */
 function createMount(termDOM: TermDOM): EngineMount {
-	// html and body scroll the document itself: their scroll offset is the
-	// camera's. One camera, however it is reached.
-	const isRoot = (element: Element): boolean =>
-		element === termDOM.document.documentElement ||
-		element === termDOM.document.body;
-
 	return {
 		engine: termDOM,
 		layout: termDOM[kLayoutEngine],
@@ -636,78 +616,16 @@ function createMount(termDOM: TermDOM): EngineMount {
 		flushLayout() {
 			processPendingMutationsAndRender(termDOM);
 		},
-		scrollOffset(element) {
-			if (isRoot(element)) {
-				return {left: 0, top: termDOM[kScreen].scrollTop};
-			}
-			return elementScrollOffsets.get(element) ?? {left: 0, top: 0};
-		},
-		// A write rounds to whole cells (everything paints on the cell grid,
-		// like the document camera), clamps into the range the layout says
-		// the box has, and schedules the repaint that shows it. The value
-		// lands in the engine's store, which scrollOffset above and the
-		// layout's geometry funnel (element.scrollTop) both read. A box whose
-		// extent the layout cannot name (a field's value span, whose content
-		// is an opaque measured run) stores the write unclamped -- the
-		// caret-reveal machinery owns those offsets and keeps them sane.
-		scrollOffsetTo(element, axis, value) {
-			if (isRoot(element)) {
-				if (axis === "top") {
-					scrollDocumentTo(termDOM, Number(value));
-					void render(termDOM);
-				}
-				return;
-			}
-			const numeric = Number(value);
-			let next =
-				Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
-			if (element.isConnected) {
-				processPendingMutationsAndRender(termDOM);
-				const room = termDOM[kLayoutEngine].scrollRange(element, axis);
-				if (room !== null) {
-					next = Math.min(next, room);
-				}
-			}
-			const previous = elementScrollOffsets.get(element)?.[axis] ?? 0;
-			if (previous === next) {
-				return;
-			}
-			writeElementScroll(element, axis, next);
-			if (next !== 0) {
-				termDOM[kScrolledElements].add(element);
-			}
-			// A scroll offset is frame state no MutationObserver sees, so
-			// the frame journal is told here: without it the "nothing moved"
-			// gate would skip the paint. A vertical move is a band the
-			// terminal may be able to shift for us; a horizontal one is not,
-			// and dirties the frame like anything else.
+		// A vertical element scroll is a band the terminal may be able to
+		// shift for us; a horizontal one is not, and dirties the frame like
+		// anything else.
+		scrolled(element, axis, delta) {
 			if (axis === "top") {
-				recordElementScroll(termDOM, element, next - previous);
+				recordElementScroll(termDOM, element, delta);
 			} else {
 				termDOM[kFrameDirty] = true;
 			}
 			void render(termDOM);
-		},
-		// The scroll boxes around the element have already revealed it within
-		// themselves; what remains is the camera's, which shows
-		// [scrollTop, scrollTop + region). Move it the minimal amount that
-		// brings the element into that -- the standard block: "nearest"
-		// behavior.
-		revealOnScreen(target) {
-			// Document-relative, not getBoundingClientRect's viewport-relative
-			// -- this compares directly against the camera's scrollTop, so it
-			// needs the space getRect() already provides.
-			const rect = termDOM[kLayoutEngine].getRect(target);
-			if (!rect) {
-				return;
-			}
-			const regionHeight = cameraRegionHeight(termDOM);
-			const top = termDOM[kScreen].scrollTop;
-			if (rect.top < top) {
-				scrollCamera(termDOM, rect.top - top);
-			} else if (rect.bottom > top + regionHeight) {
-				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
-			}
 		},
 		async switchScreens(action) {
 			// No frame may straddle the screen switch: an in-flight render
@@ -1446,19 +1364,6 @@ function processPendingMutationsAndRender(
 	return hadMutations;
 }
 
-function writeElementScroll(
-	element: Element,
-	axis: "left" | "top",
-	value: number,
-): void {
-	let offsets = elementScrollOffsets.get(element);
-	if (offsets === undefined) {
-		offsets = {left: 0, top: 0};
-		elementScrollOffsets.set(element, offsets);
-	}
-	offsets[axis] = value;
-}
-
 /**
  * Journal a box's vertical scroll: the rows it moved, against the box that
  * moved them. Repeats on one box add up, since the frame shifts once by
@@ -1553,53 +1458,20 @@ function resolveScrollBand(
 }
 
 /**
- * Pull every held scroll offset back into its box's scrollable range
- * against fresh layout: a mutation that shrinks a box's content must not
- * leave the box scrolled past what remains. Offsets are written to the
- * store directly -- the accessor's own clamp would re-enter this flush --
- * and a change repaints the box's rows like any other scroll.
+ * Ask the DOM to pull held scroll offsets back into range against the fresh
+ * layout, and journal the result: a clamp is not a band -- it moves offsets
+ * the journal already priced, and can move several boxes at once -- so it
+ * takes the dirty bit and drops whatever band was standing.
  */
 function clampScrolledOffsets(
 	termdom: TermDOM,
 ): void {
-	let changed = false;
-	for (const element of termdom[kScrolledElements]) {
-		const offsets = elementScrollOffsets.get(element) ?? {left: 0, top: 0};
-		if (offsets.left === 0 && offsets.top === 0) {
-			termdom[kScrolledElements].delete(element);
-			continue;
-		}
-		if (!element.isConnected) {
-			continue;
-		}
-		const engine = termdom[kLayoutEngine];
-		const extent = engine.scrollExtentOf(element);
-		const port = engine.contentRect(element);
-		if (!extent || !port) {
-			continue;
-		}
-		// An unknowable horizontal extent leaves that axis unclamped.
-		const maxLeft =
-			extent.width === null ?
-				offsets.left :
-					Math.max(0, extent.width - Math.round(port.width));
-		const maxTop = Math.max(0, extent.height - Math.round(port.height));
-		if (offsets.left <= maxLeft && offsets.top <= maxTop) {
-			continue;
-		}
-		writeElementScroll(element, "left", Math.min(offsets.left, maxLeft));
-		writeElementScroll(element, "top", Math.min(offsets.top, maxTop));
-		changed = true;
+	if (!DOM.clampScrollOffsets(termdom.document)) {
+		return;
 	}
-	if (changed) {
-		// See scrollOffsetTo: offsets are frame state no observer sees. A
-		// clamp is not a band -- it moves offsets the journal already priced,
-		// and can move several boxes at once -- so it takes the dirty bit and
-		// drops whatever band was standing.
-		termdom[kFrameBand] = null;
-		termdom[kFrameDirty] = true;
-		void render(termdom);
-	}
+	termdom[kFrameBand] = null;
+	termdom[kFrameDirty] = true;
+	void render(termdom);
 }
 
 const RESIZE_DEBOUNCE_MS = 40;
