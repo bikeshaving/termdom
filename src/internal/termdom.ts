@@ -1078,23 +1078,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				y + termDOM[kScrollTop],
 			);
 		},
-		// The stack CSSOM View asks for, approximated as the hit element and
-		// its flat-tree ancestors: content that overlaps without containing
-		// (an absolutely placed box over a sibling) reports only the winner's
-		// chain. The divergence is declared here rather than hidden.
-		elementsFromPoint(_target, x, y) {
-			const stack: Element[] = [];
-			let current = findElementAtDocumentPoint(
-				termDOM,
-				x,
-				y + termDOM[kScrollTop],
-			);
-			while (current !== null) {
-				stack.push(current);
-				current = DOM.flatParentElement<Element>(current);
-			}
-			return stack;
-		},
 		checkVisibility(target, options) {
 			const element = target as Element;
 			if (!element.isConnected) {

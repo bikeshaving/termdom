@@ -22105,10 +22105,19 @@ Object.defineProperties(Document.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
+	// The stack CSSOM View asks for, approximated as the hit element and its
+	// flat-tree ancestors: content that overlaps without containing (an
+	// absolutely placed box over a sibling) reports only the winner's chain.
+	// The divergence is declared here rather than hidden.
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
-			return (getMount(this)?.elementsFromPoint(this, x, y) ??
-				[]) as globalThis.Element[];
+			const stack: globalThis.Element[] = [];
+			let hit = getMount(this)?.elementFromPoint(this, x, y) ?? null;
+			while (hit !== null) {
+				stack.push(hit as globalThis.Element);
+				hit = flatParentElement(hit);
+			}
+			return stack;
 		},
 		writable: true,
 		configurable: true,
@@ -27467,7 +27476,6 @@ export interface Mount {
 		value: number,
 	): void;
 	elementFromPoint(document: object, x: number, y: number): object | null;
-	elementsFromPoint(document: object, x: number, y: number): object[];
 	/** Whether the element is rendered, on the options' definition. */
 	checkVisibility(element: object, options?: object): boolean;
 	/**
