@@ -36,11 +36,10 @@ import {
 import type {CellStyle, CellContext, LineStyle} from "./screen.js";
 
 /**
- * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
- * an axis that nothing clips is unbounded, and the only honest spelling of
- * that is -Infinity to +Infinity. A DOMRect would have to store it as
- * `x: -Infinity, width: Infinity`, whose `right` is then `NaN` -- which every
- * intersection downstream would silently propagate.
+ * A clip as edges, stored rather than derived: an axis nothing clips runs
+ * -Infinity to +Infinity, and an edge computed from an infinite origin and
+ * size is NaN (-Infinity + Infinity), which every intersection downstream
+ * would silently propagate.
  */
 type ClipRect = {left: number; top: number; right: number; bottom: number};
 
