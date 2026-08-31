@@ -8149,7 +8149,7 @@ function styleNode(
 	flexNode: LayoutNode,
 ): void {
 	const wasHidden = flexNode.getMode() === "none";
-	styleFlexNode(element, flexNode, layout.positionedElements);
+	styleFlexNode(element, flexNode, layout[kPositionedElements]);
 	// Turning display:none is what makes the whole subtree box-less, and
 	// this is the one place every path that restyles a box passes through.
 	if (!wasHidden && flexNode.getMode() === "none") {
@@ -8663,6 +8663,9 @@ function runBreakResult(
 const kDirtyRunContainers = Symbol("dirtyRunContainers");
 const kDOMRect = Symbol("DOMRect");
 const kRootElement = Symbol("rootElement");
+const kPositionedElements = Symbol("positionedElements");
+const kGeneration = Symbol("generation");
+const kInvalidations = Symbol("invalidations");
 const kViewportRoot = Symbol("viewportRootNode");
 const kEngineWindow = Symbol("window");
 const kNodeMap = Symbol("nodeMap");
@@ -8736,7 +8739,7 @@ function syncContainerRuns(
 				entry.layoutNode = flexNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
-					styleFlexNode(styledFrom, flexNode, layout.positionedElements);
+					styleFlexNode(styledFrom, flexNode, layout[kPositionedElements]);
 				}
 				flexNode.setMeasureFunc(
 					(width, widthMode, _height, _heightMode, placing) =>
@@ -9624,7 +9627,7 @@ function untrackNode(
 	}
 	layout[kNodeMap].delete(domNode);
 	if (domNode.nodeType === domNode.ELEMENT_NODE) {
-		layout.positionedElements.delete(domNode as Element);
+		layout[kPositionedElements].delete(domNode as Element);
 	}
 }
 
@@ -12586,6 +12589,12 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
  * own purpose (offsetTop rounds the *difference* of two rects; rounding here
  * first would double-round and drift by a cell).
  */
+/** The document content's laid-out height: the body's border-box, whole. */
+function documentContentHeight(engine: LayoutEngine): number {
+	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
+	return bodyRect ? Math.ceil(bodyRect.height) : 0;
+}
+
 function layoutRect(engine: LayoutEngine, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
@@ -12688,7 +12697,7 @@ export class LayoutEngine {
 	 * enumeration it saves. Positioned boxes are rare, so the paint side's
 	 * per-frame grouping is O(positioned), never O(document).
 	 */
-	positionedElements: Set<Element>;
+	declare [kPositionedElements]: Set<Element>;
 
 	/** Re-measured on resize: what they answered was for another width. */
 	declare [kMeasureNodes]: Set<LayoutNode>;
@@ -12788,19 +12797,26 @@ export class LayoutEngine {
 	 * shifts rows the last frame painted, and may only do so when nothing
 	 * those rows were derived from has moved.
 	 */
-	declare generation: number;
-	declare invalidations: number;
-	setTerminalReordersText(value: boolean): void {
+	declare [kGeneration]: number;
+	declare [kInvalidations]: number;
+
+	get generation(): number {
+		return this[kGeneration];
+	}
+
+	get invalidations(): number {
+		return this[kInvalidations];
+	}
+
+	adoptTerminalReordering(): void {
 		// Flips the visual order of every RTL run without a mutation.
-		this.invalidate();
-		if (this[kTerminalReordersText] === value) {
+		if (this[kTerminalReordersText]) {
+			this.invalidate();
 			return;
 		}
-		this[kTerminalReordersText] = value;
+		this[kTerminalReordersText] = true;
 		// Every measured line was built for the other contract.
-		for (const flexNode of this[kMeasureNodes]) {
-			flexNode.markDirty();
-		}
+		this.invalidateTextMeasurement();
 	}
 
 	invalidateTextMeasurement(): void {
@@ -12811,7 +12827,7 @@ export class LayoutEngine {
 	}
 
 	constructor(window: EngineWindow) {
-		this.positionedElements = new Set<Element>();
+		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
 			object,
@@ -12819,8 +12835,8 @@ export class LayoutEngine {
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
 		this[kDerivedContainers] = new WeakSet<Element>();
-		this.generation = 0;
-		this.invalidations = 0;
+		this[kGeneration] = 0;
+		this[kInvalidations] = 0;
 		this[kAnonymousBoxes] = new Map<LayoutNode, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
@@ -12865,7 +12881,7 @@ export class LayoutEngine {
 	calculateLayout(): void {
 		// Geometry moves with the pass, so anything memoized behind a flush --
 		// a resolved value, a rect -- re-measures after it.
-		this.generation++;
+		this[kGeneration]++;
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be named against the styles that stand rather than the ones that
 		// were on their way out.
@@ -12967,14 +12983,6 @@ export class LayoutEngine {
 	}
 
 	/** The laid-out height of the document, which is the root's scrollHeight. */
-	getContentHeight(): number {
-		const bodyRect = this.getRect(this[kRootElement].ownerDocument?.body);
-		if (bodyRect) {
-			return Math.ceil(bodyRect.height);
-		}
-		return 0;
-	}
-
 	/**
 	 * True when nothing in the element's subtree can paint inside the document
 	 * rows [top, bottom) -- its cached paint extent (own box unioned with every
@@ -12984,6 +12992,16 @@ export class LayoutEngine {
 	 * a stale answer is impossible because extents are recomputed with layout
 	 * and layout is recomputed whenever the tree is dirty.
 	 */
+	/**
+	 * Whether the element paints as its own stacking layer, hoisted out of
+	 * its container's flow walk. Registry membership is the gate: a
+	 * positioned INLINE run member owns no box of its own -- no layer would
+	 * ever paint it, so it stays with its run.
+	 */
+	hoistedToLayer(element: Element): boolean {
+		return isPositioned(element) && this[kPositionedElements].has(element);
+	}
+
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
 		// An element with no box of its own is culled by the anonymous box that
 		// lays its content out, whose extent covers the whole run it opens.
@@ -13270,7 +13288,7 @@ export class LayoutEngine {
 			width: extent?.width ?? Math.round(box?.width ?? 0),
 			height:
 				isRootBox(this, element) ?
-						this.getContentHeight() :
+						documentContentHeight(this) :
 						(extent?.height ?? Math.round(box?.height ?? 0)),
 		};
 	}
@@ -13688,7 +13706,7 @@ export class LayoutEngine {
 		if (!body) {
 			return layers;
 		}
-		for (const element of this.positionedElements) {
+		for (const element of this[kPositionedElements]) {
 			if (!element.isConnected || element === body) {
 				continue;
 			}
@@ -13790,8 +13808,8 @@ export class LayoutEngine {
 	 * record describes.
 	 */
 	invalidateFrame(): void {
-		this.generation++;
-		this.invalidations++;
+		this[kGeneration]++;
+		this[kInvalidations]++;
 	}
 
 	/**

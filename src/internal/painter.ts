@@ -622,13 +622,8 @@ function renderElement(
 			}
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				isPositioned(childNode as Element) &&
-				painter[kLayout].positionedElements.has(childNode as Element)
+				painter[kLayout].hoistedToLayer(childNode as Element)
 			) {
-				// Hoisted to its stacking context. Registry membership is
-				// the gate: a positioned INLINE run member owns no box of
-				// its own -- no layer would ever paint it, so it stays with
-				// its run (offsets on run members are an unsupported edge).
 				continue;
 			}
 			children.push(childNode);

@@ -693,7 +693,7 @@ function buildExchange(
 				termdom[kScreen].anchorScrollTop = -screenTop;
 			},
 			onTerminalReordersText: () => {
-				termdom[kLayoutEngine].setTerminalReordersText(true);
+				termdom[kLayoutEngine].adoptTerminalReordering();
 			},
 			// A cluster is wider or narrower on this terminal than the
 			// tables said, so every column after one on a painted row is
