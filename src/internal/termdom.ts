@@ -1078,60 +1078,17 @@ function createMount(termDOM: TermDOM): EngineMount {
 				y + termDOM[kScrollTop],
 			);
 		},
-		focusMoved(previousTarget, target) {
-			const previous = previousTarget as Element | null;
-			const element = target as Element;
-			const {FocusEvent} = termDOM.window;
-			// :focus rules match live, but computed styles are cached and
-			// focus is not a mutation -- both moved elements must drop their
-			// caches, and the repaint must happen even when no listener
-			// mutates anything.
-			termDOM[kStyleManager].handleFocusChange(previous, element);
+		focusChanged(previousTarget, target) {
+			termDOM[kStyleManager].handleFocusChange(
+				previousTarget as Element | null,
+				target as Element | null,
+			);
 			termDOM[kFrameDirty] = true;
 			void render(termDOM);
-			if (previous && previous !== termDOM.document.body) {
-				fireAsUserAgent(
-					previous,
-					new FocusEvent("blur", {
-						relatedTarget: element,
-						bubbles: false,
-					}),
-				);
-				fireAsUserAgent(
-					previous,
-					new FocusEvent("focusout", {
-						relatedTarget: element,
-						bubbles: true,
-					}),
-				);
-			}
-			fireAsUserAgent(
-				element,
-				new FocusEvent("focus", {relatedTarget: previous, bubbles: false}),
-			);
-			fireAsUserAgent(
-				element,
-				new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
-			);
 		},
 		selectionMoved() {
 			termDOM[kFrameDirty] = true;
 			void render(termDOM);
-		},
-		blurred(target) {
-			const element = target as Element;
-			const {FocusEvent} = termDOM.window;
-			termDOM[kStyleManager].handleFocusChange(element);
-			termDOM[kFrameDirty] = true;
-			void render(termDOM);
-			fireAsUserAgent(
-				element,
-				new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
-			);
-			fireAsUserAgent(
-				element,
-				new FocusEvent("focusout", {relatedTarget: null, bubbles: true}),
-			);
 		},
 		// Every scroll box between the element and the document reveals it
 		// within its own port, innermost first -- each scroll moves the

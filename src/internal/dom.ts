@@ -9641,10 +9641,9 @@ export class HTMLElement extends Element {
 	/**
 	 * Make the element the document's focused area.
 	 *
-	 * The focus STATE moves here. The focus/blur/focusin/focusout events
-	 * are the mount's to fire, because their order interleaves with
-	 * whatever else a move of focus does -- a repaint, a caret reveal. A
-	 * headless document moves the state and stops.
+	 * The focus STATE moves here, and so do the four events HTML's focus
+	 * update steps fire. A headless document paints nothing and shows
+	 * nothing, so it moves the state and stops.
 	 */
 	focus(): void {
 		const document = this[kDocument]!;
@@ -9655,9 +9654,34 @@ export class HTMLElement extends Element {
 		if (isFocusableArea(this) && this.isConnected) {
 			document[kActiveElement] = this;
 		}
-		if (previous !== this && innermostActive(document) === this) {
-			getMount(this)?.focusMoved(previous, this);
+		if (previous === this || innermostActive(document) !== this) {
+			return;
 		}
+		const mount = getMount(this);
+		if (mount === undefined) {
+			return;
+		}
+		mount.focusChanged(previous, this);
+		// The body holds the focus whenever nothing else does, and a move off
+		// it is a move off nothing.
+		if (previous !== null && previous !== (document.body as unknown)) {
+			dispatchAsUserAgent(
+				previous,
+				new FocusEvent("blur", {relatedTarget: this, bubbles: false}),
+			);
+			dispatchAsUserAgent(
+				previous,
+				new FocusEvent("focusout", {relatedTarget: this, bubbles: true}),
+			);
+		}
+		dispatchAsUserAgent(
+			this,
+			new FocusEvent("focus", {relatedTarget: previous, bubbles: false}),
+		);
+		dispatchAsUserAgent(
+			this,
+			new FocusEvent("focusin", {relatedTarget: previous, bubbles: true}),
+		);
 	}
 
 	/** Give up focus, which returns it to the document's body. */
@@ -9667,9 +9691,19 @@ export class HTMLElement extends Element {
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
-		if (wasFocused) {
-			getMount(this)?.blurred(this);
+		const mount = wasFocused ? getMount(this) : undefined;
+		if (mount === undefined) {
+			return;
 		}
+		mount.focusChanged(this, null);
+		dispatchAsUserAgent(
+			this,
+			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
+		);
+		dispatchAsUserAgent(
+			this,
+			new FocusEvent("focusout", {relatedTarget: null, bubbles: true}),
+		);
 	}
 
 	/**
@@ -27502,13 +27536,12 @@ export interface Mount {
 	): void;
 	elementFromPoint(document: object, x: number, y: number): object | null;
 	/**
-	 * The focus state has moved to the element from the previous focus.
-	 * Fire the events the move fires and repaint for the :focus rules it
-	 * brings in.
+	 * The focus state has moved between these two, either of which may be
+	 * nothing. :focus rules match live and a focus move is not a mutation,
+	 * so both elements' resolved styles go stale and the frame is repainted
+	 * whether or not a listener touches anything.
 	 */
-	focusMoved(previous: object | null, element: object): void;
-	/** The element has given up the focus state. */
-	blurred(element: object): void;
+	focusChanged(previous: object | null, element: object | null): void;
 	/** The document's selection has moved, so the highlight has too. */
 	selectionMoved(): void;
 	/** Reveal the element in every scroll port between it and the screen. */
