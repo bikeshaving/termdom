@@ -442,10 +442,7 @@ interface EventView {
 	 * Dispatch as the user agent: trusted, and counted as a user activation
 	 * where the event is one of the gestures that grants it.
 	 */
-	fireAsUserAgent(
-		target: object,
-		event: {type: string; key?: string; inputType?: string},
-	): boolean;
+	fireAsUserAgent(target: EventTarget, event: Event): boolean;
 	/**
 	 * Ask for a frame. Reactive pseudo-state, the document selection and the
 	 * caret all move without a mutation record, so interpretation says when

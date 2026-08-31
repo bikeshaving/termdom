@@ -82,8 +82,10 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  * and a control that left the tree and came back only catches up the state it
  * drifted from.
  */
-export function upgradeUAWidget(element: object): void {
-	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
+export function upgradeUAWidget(element: globalThis.Element): void {
+	(element as unknown as Record<symbol, (() => void) | undefined>)[
+		kUAUpgrade
+	]?.();
 }
 
 // The built-in tags that upgrade to a UA widget on connect.
@@ -102,7 +104,7 @@ const UPGRADEABLE_CONTROLS = new Set([
  * query: every insertion pays this, and a document of ordinary markup must pay
  * as little as a tag comparison per element.
  */
-export function upgradeUAWidgetsIn(root: object): void {
+export function upgradeUAWidgetsIn(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
@@ -122,12 +124,16 @@ type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
 /** A text control's selection, read past the type gate the author meets. */
-function getUASelection(control: object): {
+function getUASelection(control: globalThis.Element): {
 	start: number;
 	end: number;
 	direction: string;
 } {
-	return (control as {[kUASelection](): ReturnType<typeof getUASelection>})[
+	return (
+		control as unknown as {
+			[kUASelection](): ReturnType<typeof getUASelection>;
+		}
+	)[
 		kUASelection
 	]();
 }
@@ -138,10 +144,12 @@ function getUASelection(control: object): {
  * caret to draw. Null for a control with no selection.
  */
 export function selectionRecordOf(
-	control: object,
+	control: globalThis.Element,
 ): {start: number; end: number; direction: string} | null {
 	const record = (
-		control as {[kUASelection]?: () => ReturnType<typeof getUASelection>}
+		control as unknown as {
+			[kUASelection]?: () => ReturnType<typeof getUASelection>;
+		}
 	)[kUASelection];
 	return record ? record.call(control) : null;
 }
@@ -150,14 +158,18 @@ const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Move a text control's selection, past the type gate the author meets. */
 export function setUASelection(
-	control: object,
+	control: globalThis.Element,
 	start: number,
 	end: number,
 	direction?: string,
 ): void {
 	(
-		control as {
-			[kSetUASelection](start: number, end: number, direction?: string): void;
+		control as unknown as {
+			[kSetUASelection](
+				start: number,
+				end: number,
+				direction?: string,
+			): void;
 		}
 	)[kSetUASelection]!(start, end, direction);
 }
@@ -165,8 +177,10 @@ export function setUASelection(
 const kUAReconcile = Symbol("bring a control's UA tree back into step");
 
 /** Tell a control that its own state moved, so its UA tree follows. */
-function widgetChanged(element: object): void {
-	(element as Record<symbol, (() => void) | undefined>)[kUAReconcile]?.();
+function widgetChanged(element: Element): void {
+	(element as unknown as Record<symbol, (() => void) | undefined>)[
+		kUAReconcile
+	]?.();
 }
 
 /* ------------------------------------------- the text controls' UA editing */
@@ -205,9 +219,10 @@ const kUAValueText = Symbol(
  * editing internals reach it: the renderer reads it to place the caret, the
  * editing path to hit-test a point.
  */
-export function fieldValueText(field: object): globalThis.Text | null {
+export function fieldValueText(field: globalThis.Element): globalThis.Text |
+	null {
 	return (
-		(field as Record<
+		(field as unknown as Record<
 			symbol,
 			globalThis.Text | null | undefined
 		>)[kUAValueText] ??
@@ -228,9 +243,14 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-export function getSelectionRange(element: object): globalThis.Range | null {
+export function getSelectionRange(
+	element: globalThis.Element,
+): globalThis.Range | null {
 	return (
-		(element as Record<symbol, (() => globalThis.Range | null) | undefined>)[
+		(element as unknown as Record<
+			symbol,
+			(() => globalThis.Range | null) | undefined
+		>)[
 			kUASelectionRange
 		]?.() ?? null
 	);
@@ -271,7 +291,7 @@ function textSelectionRange(
 }
 
 /** A node's own document, as the tree-building code below reads it. */
-function getUADocument(node: object): globalThis.Document {
+function getUADocument(node: globalThis.Node): globalThis.Document {
 	return (node as Node).ownerDocument as unknown as globalThis.Document;
 }
 
@@ -555,8 +575,11 @@ function addPart(
  * shadow trees are separate observation scopes -- so each root is observed on
  * its own, and mutations in it invalidate styles and layout like light ones.
  */
-function observeShadowRoot(engine: Mount, root: object): void {
-	engine.observer.observe(root as Node, {
+function observeShadowRoot(
+	engine: Mount,
+	root: globalThis.ShadowRoot,
+): void {
+	engine.observer.observe(root as unknown as Node, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -3870,7 +3893,10 @@ function dispatchFromOutside(
  * focus move becomes a DOM event -- everything a user or the terminal itself
  * caused, as opposed to what an application constructs and dispatches.
  */
-export function dispatchAsUserAgent(target: object, event: object): boolean {
+export function dispatchAsUserAgent(
+	target: globalThis.EventTarget,
+	event: globalThis.Event,
+): boolean {
 	return dispatchFromOutside(target as EventTarget, event as Event, true);
 }
 
@@ -4083,7 +4109,7 @@ const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
  * they mean anything to is this file's.
  */
 export function keyboardActivation(
-	target: object,
+	target: globalThis.Element,
 ): {enter: boolean; space: boolean} | null {
 	const element = target as Element;
 	const tag = element.tagName;
@@ -9136,7 +9162,10 @@ export class Element extends Node implements globalThis.Element {
 }
 
 /** The scroll offsets of the boxes that have been scrolled at all. */
-const scrollOffsets = new WeakMap<object, {left: number; top: number}>();
+const scrollOffsets = new WeakMap<
+	globalThis.Element,
+	{left: number; top: number}
+>();
 
 /**
  * What the tables and the mount give an element, which installing says nothing
@@ -11551,7 +11580,7 @@ function attachShadowRoot(
  * `cloneNode` copies nothing, and serialization never names it: the tree is
  * reachable only through {@link getShadowRoot} and the control that built it.
  */
-function attachUAShadowRoot<T>(target: object): T {
+function attachUAShadowRoot<T>(target: Element): T {
 	const host = target as Element;
 	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = host[kDocument]!;
@@ -11568,7 +11597,7 @@ function attachUAShadowRoot<T>(target: object): T {
  * stylesheet of such a tree is a UA rule, which every author rule outranks
  * whatever its specificity.
  */
-export function isUAShadowRoot(node: object): boolean {
+export function isUAShadowRoot(node: globalThis.Node): boolean {
 	return node instanceof ShadowRoot && node[kUAInternal]!;
 }
 
@@ -11578,7 +11607,7 @@ export function isUAShadowRoot(node: object): boolean {
  * this; `Element.shadowRoot` is the author-facing view, which shows an open
  * tree and nothing else.
  */
-export function getShadowRoot<T>(element: object): T | null {
+export function getShadowRoot<T>(element: globalThis.Element): T | null {
 	return ((element as Element)[kShadowRoot]! as T) ?? null;
 }
 
@@ -13044,7 +13073,7 @@ const kTopLayer = Symbol("the document's top layer");
  * context of the document, in the order they entered it. Membership is what
  * `showModal` grants and `close` revokes, and what the renderer paints last.
  */
-export function getTopLayer(document: object): Set<Element> {
+export function getTopLayer(document: globalThis.Document): Set<Element> {
 	return (document as Document)[kTopLayer]!;
 }
 
@@ -13053,7 +13082,9 @@ export function getTopLayer(document: object): Set<Element> {
  * A member off the flat tree is passed over rather than dropped: it is
  * the tree's business whether it comes back, not the reader's.
  */
-export function renderedTopLayer(document: object): Element[] {
+export function renderedTopLayer(
+	document: globalThis.Document,
+): globalThis.Element[] {
 	const rendered: Element[] = [];
 	for (const element of getTopLayer(document)) {
 		// COMPOSITION-connected: a UA part (the select's picker) lives
@@ -13072,7 +13103,7 @@ export function renderedTopLayer(document: object): Element[] {
  * never puts one there and `close()` takes it out, so there is no second
  * flag to keep in step with the first.
  */
-export function isModalDialog(node: object): boolean {
+export function isModalDialog(node: globalThis.Node): boolean {
 	return (
 		node instanceof HTMLDialogElement &&
 		getTopLayer(node[kDocument]!).has(node as Element)
@@ -17973,7 +18004,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 }
 
 /** Whether an element is a popover in the showing state -- `:popover-open`. */
-export function isShowingPopover(node: object): boolean {
+export function isShowingPopover(node: globalThis.Node): boolean {
 	return (
 		node instanceof HTMLElement &&
 		popoverStates.get(node)?.visibility === "showing"
@@ -17996,7 +18027,9 @@ function showingAutoPopovers(document: Document): Element[] {
 }
 
 /** The auto popover on top of a document's stack, or null while none is up. */
-export function topmostAutoPopover(document: object): Element | null {
+export function topmostAutoPopover(
+	document: globalThis.Document,
+): globalThis.Element | null {
 	const popovers = showingAutoPopovers(document as Document);
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
@@ -18252,7 +18285,7 @@ function hidePopover(
  * Close a popover the way a close request does -- Escape on the topmost auto
  * popover -- which is a hide that gives focus back and fires its events.
  */
-export function closePopover(element: object): void {
+export function closePopover(element: globalThis.Element): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
@@ -18291,8 +18324,8 @@ function hidePopoverStackUntil(
  * opening popover both run. With no hint stack, it is the auto stack's.
  */
 export function hidePopoversUntil(
-	document: object,
-	endpoint: object | null,
+	document: globalThis.Document,
+	endpoint: globalThis.Element | null,
 	focusPreviousElement: boolean,
 	fireEvents: boolean,
 ): void {
@@ -18385,7 +18418,9 @@ function popoverStackPosition(popover: Element | null): number {
  * which is the deeper of the popover the node is in and the popover the node
  * invokes. Light dismiss closes everything stacked above it.
  */
-export function topmostClickedPopover(node: object): Element | null {
+export function topmostClickedPopover(
+	node: globalThis.Node,
+): globalThis.Element | null {
 	const clicked = nearestInclusiveOpenPopover(node as Node);
 	const target = nearestInclusiveTargetPopover(node as Node);
 	return popoverStackPosition(clicked) > popoverStackPosition(target) ?
@@ -19713,7 +19748,10 @@ function checkValidity(element: Element): boolean {
  * everything the engine already does with an element -- computed style, a box,
  * text children -- works on it unchanged.
  */
-export function pseudoElement<T>(host: object, name: string): T | null {
+export function pseudoElement<T>(
+	host: globalThis.Element,
+	name: string,
+): T | null {
 	const slots = (host as Element)[kPseudoElements]!;
 	return slots === null || slots === undefined ?
 		null :
@@ -19721,7 +19759,7 @@ export function pseudoElement<T>(host: object, name: string): T | null {
 }
 
 /** How many pseudo-element nodes an element carries. */
-export function pseudoElementCount(host: object): number {
+export function pseudoElementCount(host: globalThis.Element): number {
 	const slots = (host as Element)[kPseudoElements]!;
 	return slots === null || slots === undefined ? 0 : slots.size;
 }
@@ -19731,12 +19769,12 @@ export function pseudoElementCount(host: object): number {
  * every other node: this is what tells a pseudo-element node apart, and where
  * the flat tree finds the parent a node with no parent renders inside.
  */
-export function getPseudoHost<T>(node: object): T | null {
+export function getPseudoHost<T>(node: globalThis.Node): T | null {
 	return ((node as Element)[kPseudoHost]! as T) ?? null;
 }
 
 /** The pseudo-element name a slot node fills, such as "::before". */
-export function getPseudoName(node: object): string | null {
+export function getPseudoName(node: globalThis.Node): string | null {
 	return (node as Element)[kPseudoName]!;
 }
 
@@ -19745,7 +19783,10 @@ export function getPseudoName(node: object): string | null {
  * time it is asked for. The node is an element named after the pseudo-element
  * so a debugger's dump reads plainly; it is never serialized.
  */
-export function ensurePseudoElement<T>(target: object, name: string): T {
+export function ensurePseudoElement<T>(
+	target: globalThis.Element,
+	name: string,
+): T {
 	const host = target as Element;
 	let slots = host[kPseudoElements]!;
 	if (slots === null) {
@@ -19763,7 +19804,10 @@ export function ensurePseudoElement<T>(target: object, name: string): T {
 }
 
 /** Drop an element's pseudo-element node for a name. */
-export function clearPseudoElement(host: object, name: string): void {
+export function clearPseudoElement(
+	host: globalThis.Element,
+	name: string,
+): void {
 	(host as Element)[kPseudoElements]?.delete(name);
 }
 
@@ -19801,7 +19845,7 @@ function getAssignedSlot(node: Node): HTMLSlotElement | null {
  * child resolves to the HOST, and a pseudo-element node's is the element it
  * originates from -- and everything else is parentElement.
  */
-export function flatParentElement<T>(target: object): T | null {
+export function flatParentElement<T>(target: globalThis.Node): T | null {
 	const node = target as Node;
 	const slot = getAssignedSlot(node);
 	if (slot !== null) {
@@ -19824,7 +19868,7 @@ export function flatParentElement<T>(target: object): T | null {
  * reaches one. A pseudo-element node and a UA shadow tree's contents are both
  * outside the node tree that answers `isConnected` and both render.
  */
-export function flatIsConnected(target: object): boolean {
+export function flatIsConnected(target: globalThis.Node): boolean {
 	let node: Node | null = target as Node;
 	while (node !== null) {
 		if (isConnectedNode(node)) {
@@ -20489,7 +20533,7 @@ const kObserverCallback = Symbol("observer callback");
  */
 const documentObservers = new WeakMap<object, Set<AnyObserver>>();
 
-function getObservers(document: object): Set<AnyObserver> {
+function getObservers(document: globalThis.Document): Set<AnyObserver> {
 	let observers = documentObservers.get(document);
 	if (observers === undefined) {
 		observers = new Set<AnyObserver>();
@@ -20504,7 +20548,7 @@ function getObservers(document: object): Set<AnyObserver> {
  * against and what a ResizeObserver reports the time of.
  */
 export function flushObservers(
-	document: object,
+	document: globalThis.Document,
 	layoutEngine: LayoutEngine,
 	viewport: globalThis.DOMRect,
 	frame: number,
@@ -20522,7 +20566,7 @@ export function flushObservers(
 }
 
 /** Drop a document's observers, so a torn-down document delivers nothing. */
-export function disconnectObservers(document: object): void {
+export function disconnectObservers(document: globalThis.Document): void {
 	documentObservers.get(document)?.clear();
 }
 
@@ -21157,8 +21201,7 @@ export class Document extends Node implements globalThis.Document {
 
 	/** The element filling the viewport, or null when none is. */
 	get fullscreenElement(): globalThis.Element | null {
-		return (getMount(this)?.fullscreenElement(this) ??
-			null) as globalThis.Element | null;
+		return getMount(this)?.fullscreenElement() ?? null;
 	}
 
 	/** Return the fullscreen element to the flow it came from. */
@@ -21169,7 +21212,7 @@ export class Document extends Node implements globalThis.Document {
 				new TypeError("The document is not displayed"),
 			);
 		}
-		return engine.exitFullscreen(this);
+		return engine.exitFullscreen();
 	}
 
 	/**
@@ -22318,9 +22361,8 @@ export interface Document
  * by way of `showModal`.
  */
 export function topmostModalDialog(
-	target: object,
+	document: globalThis.Document,
 ): HTMLDialogElement | null {
-	const document = target as Document;
 	let modal: HTMLDialogElement | null = null;
 	for (const element of renderedTopLayer(document)) {
 		if (isModalDialog(element)) {
@@ -22338,11 +22380,10 @@ export function topmostModalDialog(
  * fresh layout whichever way it arrived.
  */
 export function elementAtDocumentPoint(
-	target: object,
+	document: globalThis.Document,
 	x: number,
 	y: number,
-): Element | null {
-	const document = target as Document;
+): globalThis.Element | null {
 	const mount = getMount(document);
 	if (mount === undefined) {
 		return null;
@@ -22354,7 +22395,7 @@ export function elementAtDocumentPoint(
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
 		mount.scrollTop(),
-	) as unknown as Element | null;
+	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
 	for (
@@ -22384,7 +22425,7 @@ export function elementAtDocumentPoint(
 	// up.
 	const modal = topmostModalDialog(document);
 	if (modal !== null && (element === null || !modal.contains(element))) {
-		return modal as unknown as Element;
+		return modal;
 	}
 	return element;
 }
@@ -22401,11 +22442,7 @@ Object.defineProperties(Document.prototype, {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same
 			// conversion getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(
-				this,
-				x,
-				y + mount.scrollTop(),
-			) as unknown as globalThis.Element | null;
+			return elementAtDocumentPoint(this, x, y + mount.scrollTop());
 		},
 		writable: true,
 		configurable: true,
@@ -23005,7 +23042,7 @@ function scrollElementTo(
 }
 
 function writeScrollOffset(
-	element: object,
+	element: globalThis.Element,
 	axis: "left" | "top",
 	value: number,
 ): void {
@@ -25917,7 +25954,7 @@ const focusVisibleDocuments = new WeakMap<Document, boolean>();
  * moves.
  */
 export function setDocumentFocusVisible(
-	document: object,
+	document: globalThis.Document,
 	active: boolean,
 ): boolean {
 	const node = document as Document;
@@ -27804,13 +27841,13 @@ export interface Mount {
 	 */
 	flushLayout(): void;
 	/** How far a box is scrolled from its content's origin, in cells. */
-	scrollOffset(element: object): {left: number; top: number};
+	scrollOffset(element: globalThis.Element): {left: number; top: number};
 	/**
 	 * Round the write to whole cells, clamp it into the scrollable range,
 	 * store it and schedule the repaint that shows it.
 	 */
 	scrollOffsetTo(
-		element: object,
+		element: globalThis.Element,
 		axis: "left" | "top",
 		value: number,
 	): void;
@@ -27818,7 +27855,7 @@ export interface Mount {
 	 * Reveal the element on screen: the scroll boxes around it are the
 	 * layout's to move, and the camera over them is this engine's.
 	 */
-	revealOnScreen(element: object): void;
+	revealOnScreen(element: globalThis.Element): void;
 	/**
 	 * The terminal's size in cells, which is the window's size and the
 	 * screen's both, and the height the root elements report as their
@@ -27847,9 +27884,12 @@ export interface Mount {
 	userActive(): boolean;
 	/** Whether the user has ever acted on this document. */
 	everActivated(): boolean;
-	requestFullscreen(element: object, options?: object): Promise<void>;
-	exitFullscreen(document: object): Promise<void>;
-	fullscreenElement(document: object): object | null;
+	requestFullscreen(
+		element: globalThis.Element,
+		options?: FullscreenOptions,
+	): Promise<void>;
+	exitFullscreen(): Promise<void>;
+	fullscreenElement(): globalThis.Element | null;
 	/**
 	 * The document's hover-listener count moved. The handle's reader
 	 * answers the new count; the engine decides whether motion reporting
@@ -27864,7 +27904,7 @@ export interface Mount {
  */
 export interface MountHandle {
 	/** The element the pointer is over, which `:hover` matches from. */
-	hoveredElement(element: object | null): void;
+	hoveredElement(element: globalThis.Element | null): void;
 	/** How many hover-sensitive listeners the document holds now. */
 	hoverListenerCount(): number;
 }
@@ -27876,8 +27916,11 @@ const kMount = Symbol("mount");
  * build every widget a second time, and the two would disagree about what is
  * on screen.
  */
-export function mount(document: object, engine: Mount): MountHandle {
-	const doc = document as Record<symbol, Mount | undefined>;
+export function mount(
+	document: globalThis.Document,
+	engine: Mount,
+): MountHandle {
+	const doc = document as unknown as Record<symbol, Mount | undefined>;
 	if (doc[kMount] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
@@ -27887,7 +27930,7 @@ export function mount(document: object, engine: Mount): MountHandle {
 		engine.hoverListenersChanged(),
 	);
 	return {
-		hoveredElement(element: object | null): void {
+		hoveredElement(element: globalThis.Element | null): void {
 			setHoveredElement(mounted, element as Element | null);
 		},
 		hoverListenerCount: readCount,
@@ -27895,7 +27938,7 @@ export function mount(document: object, engine: Mount): MountHandle {
 }
 
 /** The mount of a node's document, or undefined when it is headless. */
-export function getMount(node: object): Mount | undefined {
+export function getMount(node: globalThis.Node): Mount | undefined {
 	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
 	const document =
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument;

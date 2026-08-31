@@ -10743,7 +10743,7 @@ export class StyleManager {
 	 * selectable -- `all` and `contain` change selection's shape, and
 	 * nothing implements that shape yet.
 	 */
-	isSelectable(element: object): boolean {
+	isSelectable(element: Node): boolean {
 		let current = element as Element | null;
 		while (current) {
 			const value = getComputedValue(current, "user-select");

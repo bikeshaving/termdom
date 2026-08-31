@@ -51,7 +51,8 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
 	if (from === undefined) {
 		return undefined;
 	}
-	return (DOM.getMount(from) as EngineMount | undefined)?.engine;
+	return (DOM.getMount(from as globalThis.Node) as EngineMount | undefined)
+		?.engine;
 }
 
 /**
@@ -66,10 +67,7 @@ function engineOfTarget(target: unknown): TermDOM | undefined {
  * An activation-triggering event also holds user activation open for as long
  * as its dispatch runs, which is what the clipboard asks about.
  */
-function fireAsUserAgent(
-	target: object,
-	event: {type: string; key?: string; inputType?: string},
-): boolean {
+function fireAsUserAgent(target: EventTarget, event: Event): boolean {
 	const engine = engineOfTarget(target);
 	if (engine === undefined || !isActivationTriggering(event)) {
 		return DOM.dispatchAsUserAgent(target, event);
@@ -800,8 +798,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		flushLayout() {
 			processPendingMutationsAndRender(termDOM);
 		},
-		scrollOffset(target) {
-			const element = target as Element;
+		scrollOffset(element) {
 			if (isRoot(element)) {
 				return {left: 0, top: termDOM[kScrollTop]};
 			}
@@ -815,8 +812,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// extent the layout cannot name (a field's value span, whose content
 		// is an opaque measured run) stores the write unclamped -- the
 		// caret-reveal machinery owns those offsets and keeps them sane.
-		scrollOffsetTo(target, axis, value) {
-			const element = target as Element;
+		scrollOffsetTo(element, axis, value) {
 			if (isRoot(element)) {
 				if (axis === "top") {
 					scrollDocumentTo(termDOM, Number(value));
@@ -863,7 +859,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 			// Document-relative, not getBoundingClientRect's viewport-relative
 			// -- this compares directly against the camera's scrollTop, so it
 			// needs the space getRect() already provides.
-			const rect = termDOM[kLayoutEngine].getRect(target as Element);
+			const rect = termDOM[kLayoutEngine].getRect(target);
 			if (!rect) {
 				return;
 			}
@@ -875,8 +871,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
 			}
 		},
-		requestFullscreen(target) {
-			const element = target as Element;
+		requestFullscreen(element) {
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
 			// and this is the terminal's equivalent precondition.
