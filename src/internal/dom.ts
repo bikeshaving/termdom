@@ -8816,7 +8816,8 @@ export class Element extends Node implements globalThis.Element {
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
 				mount.layout.invalidate(this);
-				mount.repaint();
+				mount.screen.invalidate();
+				mount.frameRequested();
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -8837,7 +8838,7 @@ export class Element extends Node implements globalThis.Element {
 		// Fullscreen writes the alternate-screen switch; attach() is the
 		// only consent for that. A browser rejects without a user gesture,
 		// and this is the terminal's equivalent precondition.
-		if (!engine.attached()) {
+		if (!engine.attached) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -10041,7 +10042,8 @@ export class HTMLElement extends Element {
 		// elements' resolved styles go stale whether or not a listener
 		// touches anything.
 		mount.styles.handleFocusChange(previous, this);
-		mount.repaint();
+		mount.screen.invalidate();
+		mount.frameRequested();
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -10076,7 +10078,8 @@ export class HTMLElement extends Element {
 			return;
 		}
 		mount.styles.handleFocusChange(this, null);
-		mount.repaint();
+		mount.screen.invalidate();
+		mount.frameRequested();
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -10403,9 +10406,11 @@ Object.defineProperties(HTMLElement.prototype, {
 						);
 			const top = mount.screen.scrollTop;
 			if (rect.top < top) {
-				mount.scrollDocumentTo(rect.top);
+				mount.screen.scrollTo(rect.top);
+				mount.frameRequested();
 			} else if (rect.bottom > top + regionHeight) {
-				mount.scrollDocumentTo(top + rect.bottom - (top + regionHeight));
+				mount.screen.scrollTo(rect.bottom - regionHeight);
+				mount.frameRequested();
 			}
 		},
 		configurable: true,
@@ -18304,7 +18309,8 @@ function popoverStateChanged(element: Element): void {
 		return;
 	}
 	mount.styles.handleStateChange(element);
-	mount.repaint();
+	mount.screen.invalidate();
+	mount.frameRequested();
 }
 
 /**
@@ -21793,7 +21799,7 @@ export class Document extends Node implements globalThis.Document {
 		// A terminal's window title is the document's, set in-band -- while
 		// the terminal is attached and taking input, and not otherwise.
 		const mount = getMount(this);
-		if (mount !== undefined && mount.attached() && mount.exchange.interactive) {
+		if (mount !== undefined && mount.attached && mount.exchange.interactive) {
 			void mount.exchange.setTitle(String(value));
 		}
 	}
@@ -23508,7 +23514,8 @@ function setScrollOffset(
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			mount.scrollDocumentTo(Number(value));
+			mount.screen.scrollTo(Number(value));
+			mount.frameRequested();
 		}
 		return;
 	}
@@ -23526,8 +23533,8 @@ function setScrollOffset(
 		return;
 	}
 	writeScrollOffset(element, axis, next);
+	const document = element[kDocument]!;
 	if (next !== 0) {
-		const document = element[kDocument]!;
 		let held = scrolledElements.get(document);
 		if (held === undefined) {
 			held = new Set();
@@ -23535,7 +23542,14 @@ function setScrollOffset(
 		}
 		held.add(element);
 	}
-	mount.scrolled(element, axis, next - previous);
+	// A vertical scroll is a band the terminal may be able to shift for us;
+	// a horizontal one is not, and dirties the frame like anything else.
+	if (axis === "top") {
+		recordScrollBand(mount, document, element, next - previous);
+	} else {
+		mount.screen.invalidate();
+	}
+	mount.frameRequested();
 }
 
 /**
@@ -23543,13 +23557,15 @@ function setScrollOffset(
  * against fresh layout: a mutation that shrinks a box's content must not
  * leave the box scrolled past what remains. Offsets are written to the
  * store directly -- the accessor's own clamp would re-enter the engine's
- * flush -- and the caller repaints when anything moved.
+ * flush -- and a change takes the dirty bit, drops whatever band was
+ * standing, and asks for the repaint: a clamp is not a band, since it moves
+ * offsets the journal already priced, and can move several boxes at once.
  */
-export function clampScrollOffsets(document: globalThis.Document): boolean {
+export function clampScrollOffsets(document: globalThis.Document): void {
 	const mount = getMount(document);
 	const held = scrolledElements.get(document as Document);
 	if (mount === undefined || held === undefined) {
-		return false;
+		return;
 	}
 	let changed = false;
 	for (const element of held) {
@@ -23579,7 +23595,48 @@ export function clampScrollOffsets(document: globalThis.Document): boolean {
 		writeScrollOffset(element, "top", Math.min(offsets.top, maxTop));
 		changed = true;
 	}
-	return changed;
+	if (changed) {
+		scrollBands.delete(document as Document);
+		mount.screen.invalidate();
+		mount.frameRequested();
+	}
+}
+
+/**
+ * The one box whose vertical scroll this frame can name as a band: rows the
+ * terminal may shift instead of repainting. Repeats on one box add up. A
+ * second box arriving means no single band describes the frame, so the
+ * record gives way to the screen's dirty bit.
+ */
+const scrollBands = new WeakMap<Document, {element: Element; delta: number}>();
+
+function recordScrollBand(
+	mount: Mount,
+	document: Document,
+	element: Element,
+	delta: number,
+): void {
+	const band = scrollBands.get(document);
+	if (band === undefined) {
+		scrollBands.set(document, {element, delta});
+	} else if (band.element === element) {
+		band.delta += delta;
+	} else {
+		scrollBands.delete(document);
+		mount.screen.invalidate();
+	}
+}
+
+/** Consume the frame's scroll band, if one survived to the paint. */
+export function takeScrollBand(
+	document: globalThis.Document,
+): {element: globalThis.Element; delta: number} | null {
+	const band = scrollBands.get(document as Document);
+	if (band === undefined) {
+		return null;
+	}
+	scrollBands.delete(document as Document);
+	return band as unknown as {element: globalThis.Element; delta: number};
 }
 
 /** The spec's "insert adjacent" algorithm, shared by element and text. */
@@ -25109,7 +25166,11 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the repaint is asked for here -- before the coalescing
 	// guard below, which drops the second move of a task but not its paint.
-	getMount(document)?.repaint();
+	const mount = getMount(document);
+	if (mount !== undefined) {
+		mount.screen.invalidate();
+		mount.frameRequested();
+	}
 	if (document[kSelectionChangeScheduled]!) {
 		return;
 	}
@@ -28363,25 +28424,10 @@ export interface Mount {
 	 */
 	screen: Screen;
 	/**
-	 * Paint again. Nothing here is a mutation the observer would deliver --
-	 * a popover shown, a shadow tree attached, a focus or selection moved --
-	 * so the frame is marked stale and asked for by hand.
-	 */
-	repaint(): void;
-	/**
 	 * Settle what a geometry read must see first: the mutations the observer
 	 * has not delivered yet, and the layout they invalidated.
 	 */
 	flushLayout(): void;
-	/**
-	 * A box's scroll offset changed by `delta` on `axis`: frame state no
-	 * MutationObserver sees, so the journal is told here -- without it the
-	 * "nothing moved" gate would skip the paint.
-	 */
-	scrolled(element: globalThis.Element, axis: "left" |
-		"top", delta: number): void;
-	/** Move the document camera to an offset and repaint. */
-	scrollDocumentTo(top: number): void;
 	/** A frame was asked for: schedule a render, and drain us after it. */
 	frameRequested(): void;
 	/** The window was closed, and the beforeunload gate let it through. */
@@ -28389,7 +28435,7 @@ export interface Mount {
 	/** The document was closed: seal what it painted into the scrollback. */
 	documentClosed(): void;
 	/** Whether attach() has taken the terminal and dispose() has not. */
-	attached(): boolean;
+	readonly attached: boolean;
 	/**
 	 * Bracket a wholesale screen swap: no frame may straddle it, and the
 	 * diff model still describes the screen it leaves. The engine holds new
@@ -28397,12 +28443,6 @@ export interface Mount {
 	 * scratch and re-decides mouse reporting.
 	 */
 	switchScreens(action: () => Promise<void> | void): Promise<void>;
-	/**
-	 * The document's hover-listener count moved. The handle's reader
-	 * answers the new count; the engine decides whether motion reporting
-	 * is worth its cost on the wire.
-	 */
-	hoverListenersChanged(): void;
 }
 
 /**
@@ -28452,7 +28492,7 @@ export function mount(document: globalThis.Document, engine: Mount): void {
 	const mounted = document as Document;
 	hoverListenerCounts.set(
 		mounted,
-		watchHoverListeners(mounted, () => engine.hoverListenersChanged()),
+		watchHoverListeners(mounted, () => engine.frameRequested()),
 	);
 }
 
@@ -28565,7 +28605,7 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
  */
 function reachClipboard(document: Document, what: string): TerminalExchange {
 	const mount = getMount(document);
-	if (mount === undefined || !mount.attached() || !mount.exchange.interactive) {
+	if (mount === undefined || !mount.attached || !mount.exchange.interactive) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
 		);
@@ -28719,7 +28759,7 @@ class PermissionStatus extends EventTarget {
 			return "denied";
 		}
 		const mount = getMount(document);
-		if (!mount || !mount.attached() || !mount.exchange.interactive) {
+		if (!mount || !mount.attached || !mount.exchange.interactive) {
 			return "denied";
 		}
 		return userActive(document) ? "granted" : "prompt";
@@ -29069,11 +29109,15 @@ export class Window extends EventTarget {
 	// read or move it.
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		const mount = getMount(this.document);
+		if (mount === undefined) {
+			return;
+		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null ?
-					(xOrOptions.top ?? mount?.screen.scrollTop ?? 0) :
+					(xOrOptions.top ?? mount.screen.scrollTop) :
 					(y ?? 0);
-		mount?.scrollDocumentTo(top);
+		mount.screen.scrollTo(top);
+		mount.frameRequested();
 	}
 
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
@@ -29089,7 +29133,8 @@ export class Window extends EventTarget {
 			typeof xOrOptions === "object" && xOrOptions !== null ?
 					(xOrOptions.top ?? 0) :
 					(y ?? 0);
-		mount.scrollDocumentTo(mount.screen.scrollTop + top);
+		mount.screen.scrollTo(mount.screen.scrollTop + top);
+		mount.frameRequested();
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it

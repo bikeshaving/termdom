@@ -96,10 +96,6 @@ const kLifecycle = Symbol("lifecycle");
 const kAttachBegun = Symbol("attachBegun");
 const kAttachReady = Symbol("attachReady");
 
-const kFrameScroll = Symbol("frameScroll");
-const kFrameBand = Symbol("frameBand");
-const kFrameDirty = Symbol("frameDirty");
-
 /** The engine invalidation count the last painted frame was built from. */
 const kPaintedGeneration = Symbol("paintedGeneration");
 
@@ -184,35 +180,7 @@ export class TermDOM {
 	// touches the process -- attach() does, lazily on the first render or
 	// explicitly -- and dispose() ends the instance for good.
 	declare [kLifecycle]: Lifecycle;
-	/**
-	 * How many activation-triggering events are being dispatched right now,
-	 * and whether one ever has been. What only a user may ask for is asked of
-	 * these, and nothing else writes them.
-	 */
-
-	/**
-	 * The frame journal: how far the camera moved since the last painted
-	 * frame, which box scrolled under it, and whether anything else did. A
-	 * frame with none of the three paints nothing a diff would keep, so it is
-	 * skipped; a frame with any of them repaints the region, hands the screen
-	 * the rows to shift and the band to shift them in, and resets the lot.
-	 *
-	 * One box's scroll is a band the terminal can move for us. A second box
-	 * scrolling before the frame lands has no single band to name, so the
-	 * record degrades to the dirty bit and the frame repaints.
-	 */
-	declare [kFrameScroll]: number;
-	declare [kFrameBand]: {element: Element; delta: number} | null;
-	declare [kFrameDirty]: boolean;
 	declare [kPaintedGeneration]: number;
-
-	/** How far into the document the painted region looks (window.scrollY). */
-	/** The terminal row the painted region starts at (the command start). */
-	/** The fullscreen anchor: the alternate screen's row-zero scroll origin. */
-
-	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
-	// box's content out from under its offset; each layout flush pulls
-	// these back into range (see clampScrolledOffsets).
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
@@ -268,10 +236,6 @@ export class TermDOM {
 	declare [kStaticSibling]: TermDOM | null;
 
 	constructor(options: TermDOMOptions = {}) {
-		this[kFrameScroll] = 0;
-		this[kFrameBand] = null;
-
-		this[kFrameDirty] = true;
 		this[kPaintedGeneration] = -1;
 		this[kIsRendering] = false;
 		this[kSealed] = false;
@@ -599,23 +563,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		observer: termDOM[kObserver],
 		exchange: termDOM[kExchange],
 		screen: termDOM[kScreen],
-		repaint() {
-			termDOM[kFrameDirty] = true;
-			void render(termDOM);
-		},
 		flushLayout() {
 			processPendingMutationsAndRender(termDOM);
-		},
-		// A vertical element scroll is a band the terminal may be able to
-		// shift for us; a horizontal one is not, and dirties the frame like
-		// anything else.
-		scrolled(element, axis, delta) {
-			if (axis === "top") {
-				recordElementScroll(termDOM, element, delta);
-			} else {
-				termDOM[kFrameDirty] = true;
-			}
-			void render(termDOM);
 		},
 		async switchScreens(action) {
 			// No frame may straddle the screen switch: an in-flight render
@@ -634,10 +583,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 			} finally {
 				termDOM[kScreenSwitching] = false;
 			}
-			void render(termDOM);
-		},
-		scrollDocumentTo(top) {
-			scrollDocumentTo(termDOM, top);
 			void render(termDOM);
 		},
 		// A frame callback fires after the render it scheduled has been
@@ -683,14 +628,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				termDOM[kSealed] = true;
 			}
 		},
-		// A hover listener appearing or vanishing moves the "does anything
-		// observe hover" answer between frames, so it pokes the mode update
-		// directly; the stylesheet half is re-read after each frame instead,
-		// where the sheets have already parsed.
-		hoverListenersChanged() {
-			updateHoverReporting(termDOM);
-		},
-		attached() {
+		get attached(): boolean {
 			return isAttached(termDOM);
 		},
 	};
@@ -873,15 +811,15 @@ function buildExchange(
 			// exists. A keystroke that changes nothing costs one culled paint
 			// and an empty diff, which is what it is worth.
 			onKeys: (keys) => {
-				termdom[kFrameDirty] = true;
+				termdom[kScreen].invalidate();
 				termdom[kEventHandler].handleKeys(keys);
 			},
 			onMouse: (button, x, y, release) => {
-				termdom[kFrameDirty] = true;
+				termdom[kScreen].invalidate();
 				termdom[kEventHandler].handleMouseReport(button, x, y, release);
 			},
 			onPaste: (text) => {
-				termdom[kFrameDirty] = true;
+				termdom[kScreen].invalidate();
 				termdom[kEventHandler].handlePaste(text);
 			},
 			onResize: () => {
@@ -1224,7 +1162,7 @@ function queueCaretReveal(
 	termdom[kPendingCaretReveal] = element;
 	// The reveal is a camera decision and a caret move, neither of which a
 	// mutation record describes.
-	termdom[kFrameDirty] = true;
+	termdom[kScreen].invalidate();
 }
 
 /**
@@ -1332,31 +1270,8 @@ function processPendingMutationsAndRender(
 		void render(termdom);
 	}
 	termdom[kLayoutEngine].calculateLayout();
-	clampScrolledOffsets(termdom);
+	DOM.clampScrollOffsets(termdom.document);
 	return hadMutations;
-}
-
-/**
- * Journal a box's vertical scroll: the rows it moved, against the box that
- * moved them. Repeats on one box add up, since the frame shifts once by
- * whatever the burst came to. A second box arriving means no single band
- * describes the frame, so the record gives way to the dirty bit and the
- * frame repaints its region as it did before.
- */
-function recordElementScroll(
-	termdom: TermDOM,
-	element: Element,
-	delta: number,
-): void {
-	const band = termdom[kFrameBand];
-	if (band === null) {
-		termdom[kFrameBand] = {element, delta};
-	} else if (band.element === element) {
-		band.delta += delta;
-	} else {
-		termdom[kFrameBand] = null;
-		termdom[kFrameDirty] = true;
-	}
 }
 
 /**
@@ -1378,14 +1293,14 @@ function recordElementScroll(
 function resolveScrollBand(
 	termdom: TermDOM,
 	regionHeight: number,
+	record: {element: Element; delta: number} | null,
 ): {delta: number; top: number; end: number} | null {
-	const record = termdom[kFrameBand];
 	if (
 		record === null ||
 		record.delta === 0 ||
 		// The camera owns the frame it moved in: one band per frame, and the
 		// region it shifts already contains this box.
-		termdom[kFrameScroll] !== 0 ||
+		termdom[kScreen].frameScroll !== 0 ||
 		// Anything the layout derives a frame from has moved, so the rows the
 		// terminal would shift are not the rows the last frame painted.
 		termdom[kLayoutEngine].invalidations !== termdom[kPaintedGeneration] ||
@@ -1427,23 +1342,6 @@ function resolveScrollBand(
 		return null;
 	}
 	return {delta: record.delta, top, end};
-}
-
-/**
- * Ask the DOM to pull held scroll offsets back into range against the fresh
- * layout, and journal the result: a clamp is not a band -- it moves offsets
- * the journal already priced, and can move several boxes at once -- so it
- * takes the dirty bit and drops whatever band was standing.
- */
-function clampScrolledOffsets(
-	termdom: TermDOM,
-): void {
-	if (!DOM.clampScrollOffsets(termdom.document)) {
-		return;
-	}
-	termdom[kFrameBand] = null;
-	termdom[kFrameDirty] = true;
-	void render(termdom);
 }
 
 const RESIZE_DEBOUNCE_MS = 40;
@@ -1763,7 +1661,7 @@ async function renderInteractive(
 	// nothing composites over the frozen block.
 	if (termdom[kSealed]) {
 		termdom[kSealed] = false;
-		scrollDocumentTo(termdom, 0);
+		termdom[kScreen].scrollTo(0);
 		termdom[kScreen].repaintAll();
 		// detectCommandStart waits for a reply on stdin, so the listener must
 		// be attached first (idempotent -- normally already done by now).
@@ -1796,7 +1694,7 @@ async function renderInteractive(
 	}
 
 	termdom[kLayoutEngine].calculateLayout();
-	clampScrolledOffsets(termdom);
+	DOM.clampScrollOffsets(termdom.document);
 
 	// The caret reveal an edit queued runs here, against the layout this
 	// frame just flushed -- one camera decision per frame, however many
@@ -1813,11 +1711,15 @@ async function renderInteractive(
 	// The journal is empty and the camera stands where it painted: nothing
 	// this frame could paint differs from what the screen already shows.
 	// Don't pay to discover that.
+	const journalled = DOM.takeScrollBand(termdom.document) as {
+		element: Element;
+		delta: number;
+	} | null;
 	if (
-		!termdom[kFrameDirty] &&
+		!termdom[kScreen].dirty &&
 		termdom[kLayoutEngine].invalidations === termdom[kPaintedGeneration] &&
-		termdom[kFrameScroll] === 0 &&
-		termdom[kFrameBand] === null &&
+		termdom[kScreen].frameScroll === 0 &&
+		journalled === null &&
 		!termdom[kScreen].needsRepaint
 	) {
 		// Skip the paint, not the frame: observers still run, so a fresh
@@ -1852,50 +1754,29 @@ async function renderInteractive(
 		// about to be shifted by -- there is no memory of where the last
 		// frame painted for it to disagree with.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		scrollDocumentTo(termdom, Math.min(termdom[kScreen].scrollTop, maxScroll));
+		termdom[kScreen].scrollTo(Math.min(termdom[kScreen].scrollTop, maxScroll));
 	}
 
 	// The camera has no alternate screen to move: fullscreen owns row zero
 	// and paints the whole of it. A scroll box inside it does move, though,
 	// and DECSTBM margins hold there like anywhere else -- a full-width pane
 	// scrolls under fixed chrome the terminal never touches.
-	const band = resolveScrollBand(termdom, regionHeight);
+	const band = resolveScrollBand(termdom, regionHeight, journalled);
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kScreen].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		delta: band ? band.delta : fullscreen ? 0 : termdom[kFrameScroll],
+		delta: band ? band.delta : fullscreen ? 0 : termdom[kScreen].frameScroll,
 		band: band ?? undefined,
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
-	termdom[kFrameScroll] = 0;
-	termdom[kFrameBand] = null;
-	termdom[kFrameDirty] = false;
 	termdom[kPaintedGeneration] = termdom[kLayoutEngine].invalidations;
 
 	if (ansi) {
 		await termdom[kExchange].write(ansi);
 	}
 	afterRender(termdom);
-}
-
-/**
- * Move the camera to a document row, clamped at the top.
- *
- * The one writer: the journal's scroll delta is the sum of what comes
- * through here since the last painted frame, so the camera and the rows the
- * terminal is about to be shifted by can never disagree. The frame-time
- * clamp comes through here too, which is why nothing remembers where the
- * last frame painted.
- */
-function scrollDocumentTo(
-	termdom: TermDOM,
-	row: number,
-): void {
-	const next = Math.max(0, row);
-	termdom[kFrameScroll] += next - termdom[kScreen].scrollTop;
-	termdom[kScreen].scrollTop = next;
 }
 
 /**
@@ -1924,7 +1805,7 @@ function scrollCamera(
 	termdom: TermDOM,
 	rows: number,
 ): void {
-	scrollDocumentTo(termdom, termdom[kScreen].scrollTop + rows);
+	termdom[kScreen].scrollTo(termdom[kScreen].scrollTop + rows);
 	// A camera move is invisible to the MutationObserver; schedule the frame
 	// it needs, the same way a DOM mutation would.
 	void render(termdom);

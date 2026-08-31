@@ -2010,6 +2010,8 @@ const kMeasurer = Symbol("measurer");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
 const kScrollTop = Symbol("scrollTop");
+const kFrameScroll = Symbol("frameScroll");
+const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 
@@ -2060,6 +2062,8 @@ export class Screen {
 	// speaks. One per screen, and nothing reads back through it: a screen
 	// has no input side.
 	declare [kWriter]: FrameWriter;
+	declare [kFrameScroll]: number;
+	declare [kDirty]: boolean;
 
 	/**
 	 * A screen measures widths through the channel it is built with, for as
@@ -2093,6 +2097,8 @@ export class Screen {
 		this[kScrollTop] = 0;
 		this[kDocumentTop] = 0;
 		this[kAnchorScrollTop] = 0;
+		this[kFrameScroll] = 0;
+		this[kDirty] = true;
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
@@ -2121,6 +2127,37 @@ export class Screen {
 
 	set scrollTop(rows: number) {
 		this[kScrollTop] = rows;
+	}
+
+	/**
+	 * Move the camera to a document row, clamped at the top.
+	 *
+	 * The one writer: the frame journal's scroll delta is the sum of what
+	 * comes through here since the last painted frame, so the camera and
+	 * the rows the terminal is about to be shifted by can never disagree.
+	 */
+	scrollTo(row: number): void {
+		const next = Math.max(0, row);
+		this[kFrameScroll] += next - this[kScrollTop];
+		this[kScrollTop] = next;
+	}
+
+	/** Camera rows moved since the last painted frame. */
+	get frameScroll(): number {
+		return this[kFrameScroll];
+	}
+
+	/**
+	 * Mark the frame stale by hand: for state no mutation record names --
+	 * a focus move, a selection, a popover shown -- the paint is asked for
+	 * here.
+	 */
+	invalidate(): void {
+		this[kDirty] = true;
+	}
+
+	get dirty(): boolean {
+		return this[kDirty];
 	}
 
 	/** The screen row the document's first row is anchored to. */
@@ -2756,6 +2793,9 @@ export class Screen {
 			throw new Error("endFrame without a begun frame");
 		}
 		this[kEndFrame] = null;
-		return end();
+		const ansi = end();
+		this[kFrameScroll] = 0;
+		this[kDirty] = false;
+		return ansi;
 	}
 }

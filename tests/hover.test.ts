@@ -145,9 +145,11 @@ test("a hover-family listener turns motion reporting on; removal turns it off", 
 
 	const listener = () => {};
 	document.addEventListener("mousemove", listener);
+	await nextFrame(termdom);
 	expect(proc.written).toContain(MOTION_ON);
 
 	document.removeEventListener("mousemove", listener);
+	await nextFrame(termdom);
 	// The disable rides the session's write queue; let it flush.
 	await new Promise((r) => setTimeout(r, 0));
 	expect(proc.written).toContain(MOTION_OFF);
@@ -161,10 +163,12 @@ test("a window mouseover listener counts as observing hover", async () => {
 
 	const listener = () => {};
 	(termdom.window as any).addEventListener("mouseover", listener);
+	await nextFrame(termdom);
 	// The enable rides the session's write queue; let it flush.
 	await new Promise((r) => setTimeout(r, 0));
 	expect(proc.written).toContain(MOTION_ON);
 	(termdom.window as any).removeEventListener("mouseover", listener);
+	await nextFrame(termdom);
 	await new Promise((r) => setTimeout(r, 0));
 	expect(proc.written).toContain(MOTION_OFF);
 	termdom.dispose();

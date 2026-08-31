@@ -134,6 +134,7 @@ const DOM_DOORS = [
 	"setHoveredElement",
 	"setUASelection",
 	"styleElementCount",
+	"takeScrollBand",
 	"topmostModalDialog",
 	"upgradeUAWidget",
 	"upgradeUAWidgetsIn",
