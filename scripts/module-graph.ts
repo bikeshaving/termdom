@@ -107,7 +107,6 @@ const DOM_DOORS = [
 	"getShadowRoot",
 	"getTopLayer",
 	"hidePopoversUntil",
-	"installUAEngine",
 	"isModalDialog",
 	"isShowingPopover",
 	"isTextField",

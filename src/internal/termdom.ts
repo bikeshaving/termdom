@@ -537,21 +537,6 @@ export class TermDOM {
 		// connected one should be upgraded.
 		this[kMountHandle] = DOM.mount(document, createMount(this));
 
-		DOM.installUAEngine(this.document, {
-			layout: this[kLayoutEngine],
-			styles: this[kStyleManager],
-			observer: this[kObserver],
-			invalidateStructure: () => this[kLayoutEngine].invalidate(),
-			// A popover shows and hides without touching the tree, so the
-			// rules that test `:popover-open` -- the UA sheet's own display
-			// among them -- are told here, and the frame that paints what
-			// they reveal is asked for here.
-			stateChanged: (element: object) => {
-				this[kStyleManager].handleStateChange(element as Element);
-				void render(this);
-			},
-		});
-
 		this[kEventHandler] = buildEventHandler(this);
 		this[kPainter] = new Painter({
 			window: this.window,

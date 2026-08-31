@@ -20,8 +20,8 @@
  * the events a focus move fires and the frames it schedules come from the Mount
  * an engine installs on a document; a document with no mount answers the way
  * the standards say a document with no browsing context does. The widgets it
- * upgrades render through the UAEngine at the top of this file, and the cascade
- * and the layout engine are below it, not above.
+ * upgrades render through the same Mount, which carries the cascade and the
+ * layout engine whole -- and they are below this file, not above.
  */
 
 import {parseFragment, parse as parse5Parse} from "parse5";
@@ -71,45 +71,6 @@ const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
 const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 /* ------------------------------------------------------ user-agent widgets */
-
-/**
- * The engine collaborators a user-agent widget renders through.
- *
- * A control's rendered content model is not its children -- an input has none
- * -- but a shadow tree the user agent owns, built from the control's own value,
- * placeholder and selection. That tree lays out, cascades and paints like any
- * other, so the control needs the same collaborators the document does. They
- * are installed on a document once, at setup, and reached from there.
- */
-interface UAEngine {
-	layout: LayoutEngine;
-	styles: StyleManager;
-	/**
-	 * Note that a state no attribute records moved -- a popover shown or
-	 * hidden. Nothing about it is a mutation, so the rules that test it and
-	 * the frame that paints what they reveal have nothing else to hear it
-	 * from.
-	 */
-	stateChanged(element: object): void;
-	observer: MutationObserver;
-	/** Note the unbounded change attaching a shadow tree is. */
-	invalidateStructure(): void;
-}
-
-const kUAEngine = Symbol("the engine a document's UA widgets render through");
-
-/**
- * Give a document the collaborators its controls' shadow trees render
- * through. Once per document: a second engine would build every widget a
- * second time, and the two would disagree about what is on screen.
- */
-export function installUAEngine(document: object, engine: UAEngine): void {
-	const doc = document as Record<symbol, UAEngine | undefined>;
-	if (doc[kUAEngine] !== undefined) {
-		throw new Error("This document already has its user agent.");
-	}
-	doc[kUAEngine] = engine;
-}
 
 const kUAUpgrade = Symbol("build a control's UA widget");
 
@@ -595,7 +556,7 @@ function addPart(
  */
 function buildUARoot(
 	host: Element,
-	engine: UAEngine,
+	engine: Mount,
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
@@ -621,19 +582,6 @@ function uaStyleElement(host: Element, styles: string): globalThis.HTMLElement {
 	const style = getUADocument(host).createElement("style");
 	style.textContent = styles;
 	return style;
-}
-
-/**
- * The engine a document's controls render through, if it has been installed.
- * A document has no ownerDocument, so it stands for itself: the selection
- * asks about a whole document where a control asks about a node.
- */
-function getUAEngine(node: object): UAEngine | undefined {
-	const document = ((node as Node).ownerDocument ?? node) as unknown as Record<
-		symbol,
-		UAEngine
-	> | null;
-	return document?.[kUAEngine];
 }
 
 /**
@@ -12591,7 +12539,7 @@ class HTMLDetailsElement extends HTMLElement {
 	declare [kToggleQueued]?: boolean;
 	declare [kStateAtQueue]?: string;
 
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kContent]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
@@ -12599,7 +12547,7 @@ class HTMLDetailsElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -13902,7 +13850,7 @@ class HTMLInputElement extends HTMLElement {
 	// The rendered tree and what it was built for. "field" for a text-ish
 	// input, "toggle" for checkbox/radio; null until built. The two are
 	// different trees, so a type flip rebuilds.
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kKind]?: "field" | "toggle" | null;
 	declare [kRoot]?: globalThis.ShadowRoot | null;
 	declare [kValueText]?: globalThis.Text | null;
@@ -14270,7 +14218,7 @@ class HTMLInputElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -15165,7 +15113,7 @@ function gaugeRun(host: Element, glyph: string): string {
  */
 function buildGaugeRoot(
 	host: Element,
-	engine: UAEngine,
+	engine: Mount,
 	styles: string,
 ): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
@@ -15225,7 +15173,7 @@ class HTMLMeterElement extends HTMLElement {
 		this[kBar] = null;
 	}
 
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kBar]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
@@ -15233,7 +15181,7 @@ class HTMLMeterElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -15793,7 +15741,7 @@ class HTMLProgressElement extends HTMLElement {
 		this[kBar] = null;
 	}
 
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kBar]?: globalThis.HTMLElement | null;
 
 	[kUAUpgrade]?(): void {
@@ -15801,7 +15749,7 @@ class HTMLProgressElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -16070,7 +16018,7 @@ class HTMLSelectElement extends HTMLElement {
 	declare [kOptions]?: HTMLOptionsCollection | null;
 	declare [kSelectedOptions]?: HTMLCollection | null;
 
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPicker]?: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN; null = closed.
@@ -16212,7 +16160,7 @@ class HTMLSelectElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -17324,7 +17272,7 @@ class HTMLTextAreaElement extends HTMLElement {
 	declare [kSelectionEnd]?: number;
 	declare [kSelectionDirection]?: string;
 
-	declare [kEngine]?: UAEngine | null;
+	declare [kEngine]?: Mount | null;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPlaceholderText]?: globalThis.Text | null;
 	declare [kPlaceholderSpan]?: globalThis.HTMLElement | null;
@@ -17517,7 +17465,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getUAEngine(this);
+		const engine = getMount(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -17680,7 +17628,7 @@ function textareaLineAt(
  */
 function textareaVisualLines(
 	field: HTMLTextAreaElement,
-	layout: UAEngine["layout"],
+	layout: LayoutEngine,
 ): {value: string; lines: TextareaVisualLine[]} | null {
 	const valueText = fieldValueText(field);
 	if (!valueText) {
@@ -17864,7 +17812,7 @@ export function topmostAutoPopover(document: object): Element | null {
  * reveal, have nothing else to hear it from.
  */
 function popoverStateChanged(element: Element): void {
-	getUAEngine(element)?.stateChanged(element);
+	getMount(element)?.stateChanged(element);
 }
 
 /**
@@ -24851,7 +24799,7 @@ interface SelectionLine {
 /** Whether a text node puts anything on the screen. */
 function paintsText(
 	node: Text,
-	layout: UAEngine["layout"] | null,
+	layout: LayoutEngine | null,
 ): boolean {
 	if (node[kData]!.length === 0) {
 		return false;
@@ -24875,7 +24823,7 @@ function paintsText(
  */
 function selectionTextNodes(
 	document: Document,
-	engine: UAEngine | undefined,
+	engine: Mount | undefined,
 ): Text[] {
 	const layout = engine?.layout ?? null;
 	const nodes: Text[] = [];
@@ -24980,7 +24928,7 @@ function selectionPointAt(
  */
 function selectionLines(
 	run: SelectionText,
-	layout: UAEngine["layout"],
+	layout: LayoutEngine,
 ): SelectionLine[] {
 	const rows = new Map<number, SelectionLine>();
 	for (const part of run.parts) {
@@ -25024,7 +24972,7 @@ function selectionLineAt(lines: SelectionLine[], index: number): number {
 /** The column a caret paints at, asked of the layout. */
 function getCaretColumn(
 	document: Document,
-	layout: UAEngine["layout"],
+	layout: LayoutEngine,
 	point: [Node, number],
 ): number | null {
 	const range = document.createRange();
@@ -25046,7 +24994,7 @@ function getCaretColumn(
 function selectionLineMove(
 	document: Document,
 	run: SelectionText,
-	layout: UAEngine["layout"],
+	layout: LayoutEngine,
 	index: number,
 	forward: boolean,
 ): [Node, number] | null {
@@ -25088,7 +25036,7 @@ function modifiedPoint(
 	granularity: string,
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
-	const engine = getUAEngine(document);
+	const engine = getMount(document);
 	const layout = engine?.layout ?? null;
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
@@ -27594,7 +27542,11 @@ export interface MountHandle {
 
 const kMount = Symbol("mount");
 
-/** Mount a document on its engine. Once per document. */
+/**
+ * Mount a document on its engine. Once per document: a second engine would
+ * build every widget a second time, and the two would disagree about what is
+ * on screen.
+ */
 export function mount(document: object, engine: Mount): MountHandle {
 	const doc = document as Record<symbol, Mount | undefined>;
 	if (doc[kMount] !== undefined) {

@@ -6,7 +6,7 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
 	getShadowRoot,
-	installUAEngine,
+	mount,
 	selectionRecordOf,
 	type Document,
 	parseHTMLDocument,
@@ -29,7 +29,7 @@ test("a document takes one engine and refuses a second", async () => {
 	// what is on screen.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	expect(() => installUAEngine(dom.document, {} as never)).toThrow();
+	expect(() => mount(dom.document, {} as never)).toThrow();
 	dom.dispose();
 });
 
