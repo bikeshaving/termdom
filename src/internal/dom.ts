@@ -22307,13 +22307,100 @@ export interface Document
 	get textContent(): null;
 }
 
+/**
+ * The modal dialog on top of the document, or null while none is showing.
+ * Last in the top layer is topmost, and only a modal dialog is ever in it
+ * by way of `showModal`.
+ */
+export function topmostModalDialog(
+	target: object,
+): HTMLDialogElement | null {
+	const document = target as Document;
+	let modal: HTMLDialogElement | null = null;
+	for (const element of renderedTopLayer(document)) {
+		if (isModalDialog(element)) {
+			modal = element as HTMLDialogElement;
+		}
+	}
+	return modal;
+}
+
+/**
+ * Hit-test a document-relative point against fresh layout. The one place
+ * document.elementFromPoint (which converts its public, viewport-relative
+ * x/y into this space) and the engine's mouse hit-testing (whose points are
+ * already document-relative) go through, so a click always tests against
+ * fresh layout whichever way it arrived.
+ */
+export function elementAtDocumentPoint(
+	target: object,
+	x: number,
+	y: number,
+): Element | null {
+	const document = target as Document;
+	const mount = getMount(document);
+	if (mount === undefined) {
+		return null;
+	}
+	mount.flushLayout();
+	let element = mount.layout.hitTest(
+		document.documentElement,
+		x,
+		y,
+		getTopLayer(document) as unknown as Set<globalThis.Element>,
+		mount.scrollTop(),
+	) as unknown as Element | null;
+	// A pseudo-element is not an element the DOM can hand out: the hit on
+	// the content it generates is a hit on the element it originates from.
+	for (
+		let host = element && getPseudoHost<Element>(element);
+		host;
+		host = getPseudoHost<Element>(element!)
+	) {
+		element = host;
+	}
+	// RETARGET out of shadow trees, per spec: from outside a shadow tree
+	// (and the document is always outside), the hit is the HOST -- a
+	// click on an input's internal value span is a click on the input.
+	// Without this, closest()/focus logic dead-ends inside the UA
+	// fragment, whose parts have no parentElement chain to climb.
+	while (element) {
+		const root = element.getRootNode();
+		if (root.nodeType === 11 && (root as unknown as ShadowRoot).host) {
+			element = (root as unknown as ShadowRoot).host as unknown as Element;
+		} else {
+			break;
+		}
+	}
+	// A modal dialog makes the rest of the document inert: a point outside
+	// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
+	// the target a browser reports for a click on the dim area, and the
+	// reason nothing behind a modal can be clicked or focused while it is
+	// up.
+	const modal = topmostModalDialog(document);
+	if (modal !== null && (element === null || !modal.contains(element))) {
+		return modal as unknown as Element;
+	}
+	return element;
+}
+
 // Hit testing: the point is the viewport's, the answer the engine's. A
 // headless document renders nothing, so nothing is under any point.
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element | null {
-			return (getMount(this)?.elementFromPoint(this, x, y) ??
-				null) as globalThis.Element | null;
+			const mount = getMount(this);
+			if (mount === undefined) {
+				return null;
+			}
+			// Per CSSOM View, x/y are viewport-relative -- convert to the
+			// document-relative space hit-testing works in, the same
+			// conversion getBoundingClientRect makes in the other direction.
+			return elementAtDocumentPoint(
+				this,
+				x,
+				y + mount.scrollTop(),
+			) as unknown as globalThis.Element | null;
 		},
 		writable: true,
 		configurable: true,
@@ -22326,7 +22413,11 @@ Object.defineProperties(Document.prototype, {
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
-			let hit = getMount(this)?.elementFromPoint(this, x, y) ?? null;
+			const mount = getMount(this);
+			let hit =
+				mount === undefined ?
+					null :
+						elementAtDocumentPoint(this, x, y + mount.scrollTop());
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -27712,7 +27803,6 @@ export interface Mount {
 		axis: "left" | "top",
 		value: number,
 	): void;
-	elementFromPoint(document: object, x: number, y: number): object | null;
 	/**
 	 * Reveal the element on screen: the scroll boxes around it are the
 	 * layout's to move, and the camera over them is this engine's.

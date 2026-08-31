@@ -850,17 +850,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 			}
 			void render(termDOM);
 		},
-		elementFromPoint(_target, x, y) {
-			// Per CSSOM View, x/y are viewport-relative -- convert to the
-			// document-relative space hit-testing works in, the same conversion
-			// getBoundingClientRect's toViewportRect makes in the other
-			// direction.
-			return findElementAtDocumentPoint(
-				termDOM,
-				x,
-				y + termDOM[kScrollTop],
-			);
-		},
 		// The scroll boxes around the element have already revealed it within
 		// themselves; what remains is the camera's, which shows
 		// [scrollTop, scrollTop + region). Move it the minimal amount that
@@ -1164,7 +1153,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 				const inDocument = documentRow >= 0;
 				return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
 			},
-			elementAt: (x, y) => findElementAtDocumentPoint(termdom, x, y),
+			elementAt: (x, y) => DOM.elementAtDocumentPoint(termdom.document, x, y),
 		},
 		defaults: {
 			scrollByWheel: (target, deltaY) => {
@@ -1193,7 +1182,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			hoverMoved: (target) => {
 				termdom[kMountHandle].hoveredElement(target);
 			},
-			modalScope: () => topmostModalDialog(termdom),
+			modalScope: () => DOM.topmostModalDialog(termdom.document),
 			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
 			fullscreenTarget: () => getFullscreenElement(termdom),
 		},
@@ -2087,25 +2076,6 @@ function afterRender(
 }
 
 /**
- * The modal dialog on top of the document, or null while none is showing.
- * Last in the top layer is topmost, and only a modal dialog is ever in it
- * by way of `showModal`.
- */
-function topmostModalDialog(
-	termdom: TermDOM,
-): HTMLDialogElement | null {
-	let modal: HTMLDialogElement | null = null;
-	const rendered =
-		DOM.renderedTopLayer(termdom.document) as unknown as Element[];
-	for (const element of rendered) {
-		if (DOM.isModalDialog(element)) {
-			modal = element as HTMLDialogElement;
-		}
-	}
-	return modal;
-}
-
-/**
  * What a close request closes: the modal dialog or auto popover last into
  * the top layer, which is the one the user sees on top. A manual popover
  * is not one -- it responds to neither Escape nor a click outside -- and
@@ -2124,60 +2094,6 @@ function topmostCloseRequestTarget(
 		}
 	}
 	return target;
-}
-
-/**
- * Hit-test a document-relative point (flushing pending layout first). The
- * one place both document.elementFromPoint (which converts its public,
- * viewport-relative x/y into this space) and mouse hit-testing (whose
- * points are already document-relative, from documentPointAt) go through,
- * so a click always tests against fresh layout whichever way it arrived.
- */
-function findElementAtDocumentPoint(
-	termdom: TermDOM,
-	x: number,
-	y: number,
-): Element | null {
-	processPendingMutationsAndRender(termdom);
-	let element = termdom[kLayoutEngine].hitTest(
-		termdom.document.documentElement,
-		x,
-		y,
-		DOM.getTopLayer(termdom.document) as unknown as Set<Element>,
-		termdom[kScrollTop],
-	);
-	// A pseudo-element is not an element the DOM can hand out: the hit on
-	// the content it generates is a hit on the element it originates from.
-	for (
-		let host = element && DOM.getPseudoHost<Element>(element);
-		host;
-		host = DOM.getPseudoHost<Element>(element!)
-	) {
-		element = host;
-	}
-	// RETARGET out of shadow trees, per spec: from outside a shadow tree
-	// (and the document is always outside), the hit is the HOST -- a
-	// click on an input's internal value span is a click on the input.
-	// Without this, closest()/focus logic dead-ends inside the UA
-	// fragment, whose parts have no parentElement chain to climb.
-	while (element) {
-		const root = element.getRootNode();
-		if (root.nodeType === 11 && (root as ShadowRoot).host) {
-			element = (root as ShadowRoot).host;
-		} else {
-			break;
-		}
-	}
-	// A modal dialog makes the rest of the document inert: a point outside
-	// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
-	// the target a browser reports for a click on the dim area, and the
-	// reason nothing behind a modal can be clicked or focused while it is
-	// up.
-	const modal = topmostModalDialog(termdom);
-	if (modal !== null && (element === null || !modal.contains(element))) {
-		return modal as unknown as Element;
-	}
-	return element;
 }
 
 /**

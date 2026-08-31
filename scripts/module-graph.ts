@@ -95,6 +95,7 @@ const DOM_DOORS = [
 	"createDocumentWindow",
 	"disconnectObservers",
 	"dispatchAsUserAgent",
+	"elementAtDocumentPoint",
 	"ensurePseudoElement",
 	"fieldValueText",
 	"flatIsConnected",
@@ -126,6 +127,7 @@ const DOM_DOORS = [
 	"styleElementCount",
 	"topmostAutoPopover",
 	"topmostClickedPopover",
+	"topmostModalDialog",
 	"upgradeUAWidget",
 	"upgradeUAWidgetsIn",
 ];
