@@ -789,6 +789,10 @@ function createMount(termDOM: TermDOM): EngineMount {
 		layout: termDOM[kLayoutEngine],
 		styles: termDOM[kStyleManager],
 		observer: termDOM[kObserver],
+		// Live: rebindTransport replaces the exchange before the first attach.
+		get exchange() {
+			return termDOM[kExchange];
+		},
 		repaint() {
 			termDOM[kFrameDirty] = true;
 			void render(termDOM);
@@ -986,13 +990,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				}
 			})();
 		},
-		// document.title sets the terminal's window title in-band (OSC 2).
-		// attach() pushes the previous title; dispose() pops it.
-		titleChanged(title) {
-			if (isAttached(termDOM) && termDOM[kTransport].interactive) {
-				void termDOM[kExchange].setTitle(title);
-			}
-		},
 		// Closing the document flushes the live region into the terminal's
 		// scrollback and seals it -- the SSR res.end() of the terminal. This
 		// is the "print rich output and stop" seam: write(), then close().
@@ -1013,12 +1010,8 @@ function createMount(termDOM: TermDOM): EngineMount {
 		hoverListenersChanged() {
 			updateHoverReporting(termDOM);
 		},
-		// The clipboard travels over OSC 52, so it is reachable while a
-		// terminal is attached and taking input, and not otherwise.
-		clipboardTerminal() {
-			return isAttached(termDOM) && termDOM[kTransport].interactive ?
-				termDOM[kExchange] :
-				null;
+		attached() {
+			return isAttached(termDOM);
 		},
 		userActive() {
 			return termDOM[kActivationDepth] > 0;

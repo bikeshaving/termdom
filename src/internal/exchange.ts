@@ -1162,6 +1162,11 @@ export class TerminalExchange {
 		return this[kLastWrite];
 	}
 
+	/** Whether the transport takes input -- a pipe does not. */
+	get interactive(): boolean {
+		return this[kInteractive];
+	}
+
 	/**
 	 * Begin the conversation: acquire the readers and route input, resizes and
 	 * closure to the engine's handlers. Idempotent.

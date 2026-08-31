@@ -63,6 +63,7 @@ import {
 } from "./useragent.js";
 import type {LayoutEngine} from "./layout.js";
 import type {StyleManager} from "./cssom.js";
+import type {TerminalExchange} from "./exchange.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -21327,8 +21328,12 @@ export class Document extends Node implements globalThis.Document {
 			appendNode(element, head);
 		}
 		setDescendantText(element, String(value));
-		// A terminal's window title is the document's, set in-band.
-		getMount(this)?.titleChanged(String(value));
+		// A terminal's window title is the document's, set in-band -- while
+		// the terminal is attached and taking input, and not otherwise.
+		const mount = getMount(this);
+		if (mount !== undefined && mount.attached() && mount.exchange.interactive) {
+			void mount.exchange.setTitle(String(value));
+		}
 	}
 
 	get documentElement(): globalThis.HTMLElement {
@@ -27782,6 +27787,12 @@ export interface Mount {
 	styles: StyleManager;
 	observer: MutationObserver;
 	/**
+	 * The terminal session the document speaks through: OSC 2 for its title,
+	 * OSC 52 for its clipboard. Live -- a rebind before the first attach
+	 * replaces it.
+	 */
+	exchange: TerminalExchange;
+	/**
 	 * Paint again. Nothing here is a mutation the observer would deliver --
 	 * a popover shown, a shadow tree attached, a focus or selection moved --
 	 * so the frame is marked stale and asked for by hand.
@@ -27828,12 +27839,10 @@ export interface Mount {
 	watchMedia(update: () => void): void;
 	/** The window was closed, and the beforeunload gate let it through. */
 	closeRequested(): void;
-	/** The document's title changed, which is the terminal's title. */
-	titleChanged(title: string): void;
 	/** The document was closed: seal what it painted into the scrollback. */
 	documentClosed(): void;
-	/** The terminal the clipboard moves text over, when one is attached. */
-	clipboardTerminal(): ClipboardTerminal | null;
+	/** Whether attach() has taken the terminal and dispose() has not. */
+	attached(): boolean;
 	/** Whether an activation-triggering event is being dispatched right now. */
 	userActive(): boolean;
 	/** Whether the user has ever acted on this document. */
@@ -27894,12 +27903,6 @@ export function getMount(node: object): Mount | undefined {
 }
 
 /* ------------------------------------------------- clipboard and permissions */
-
-/** The two clipboard round trips a terminal session answers. */
-interface ClipboardTerminal {
-	writeClipboard(text: string): Promise<void>;
-	queryClipboard(): Promise<string | null>;
-}
 
 /** The payload OSC 52 carries, which is text and only text. */
 const CLIPBOARD_TEXT_TYPE = "text/plain";
@@ -27990,18 +27993,17 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
  * dispatched itself are all outside. Every caller is async, so the throw
  * reaches the page as the rejection the Clipboard API promises.
  */
-function reachClipboard(document: Document, what: string): ClipboardTerminal {
+function reachClipboard(document: Document, what: string): TerminalExchange {
 	const mount = getMount(document);
-	const terminal = mount?.clipboardTerminal() ?? null;
-	if (terminal === null) {
+	if (mount === undefined || !mount.attached() || !mount.exchange.interactive) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
 		);
 	}
-	if (!mount!.userActive()) {
+	if (!mount.userActive()) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return terminal;
+	return mount.exchange;
 }
 
 const kClipboardDocument = Symbol("the document whose clipboard this is");
@@ -28147,7 +28149,7 @@ class PermissionStatus extends EventTarget {
 			return "denied";
 		}
 		const mount = getMount(document);
-		if (!mount || mount.clipboardTerminal() === null) {
+		if (!mount || !mount.attached() || !mount.exchange.interactive) {
 			return "denied";
 		}
 		return mount.userActive() ? "granted" : "prompt";
