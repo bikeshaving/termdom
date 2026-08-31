@@ -8543,14 +8543,14 @@ export class Element extends Node implements globalThis.Element {
 			// The root's <style> elements join the cascade, scoped to this
 			// tree; the refresh rides on the STYLE mutation records the
 			// enrollment above will deliver.
-			mount.styles.registerShadowRoot(root as unknown as globalThis.ShadowRoot);
+			mount.styles.registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
 			// just changed wholesale: light children stop rendering the moment
 			// the root exists, even while it is still empty. Rebuild the
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
-				mount.layout.invalidate(this as unknown as Node);
+				mount.layout.invalidate(this);
 				mount.repaint();
 			}
 		}
@@ -10109,7 +10109,7 @@ Object.defineProperties(HTMLElement.prototype, {
 				};
 			};
 			for (
-				let ancestor: Element | null = this as unknown as Element;
+				let ancestor: Element | null = this;
 				ancestor !== null;
 				ancestor = flatParentElement<Element>(ancestor)
 			) {
@@ -10123,7 +10123,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return mount.layout.getRects(this as unknown as Node).length > 0;
+			return mount.layout.getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -17981,7 +17981,7 @@ function popoverStateChanged(element: Element): void {
 	if (mount === undefined) {
 		return;
 	}
-	mount.styles.handleStateChange(element as unknown as globalThis.Element);
+	mount.styles.handleStateChange(element);
 	mount.repaint();
 }
 
