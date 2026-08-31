@@ -30,6 +30,7 @@ import {
 	SVGElement as DOMSVGElement,
 	ShadowRoot as DOMShadowRoot,
 	getMount,
+	flushLayout,
 	observeTree,
 	type Document as DOMDocument,
 	flatParentElement,
@@ -10160,7 +10161,6 @@ const kDocument = Symbol("document");
 const kCurrentDeclarations = Symbol("currentDeclarations");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
-const kLayoutFlush = Symbol("layoutFlush");
 const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
 const kUsedGeneration = Symbol("used values generation");
@@ -10356,7 +10356,6 @@ export class StyleManager {
 		this[kHoverRulesExist] = false;
 		this[kParsedStyleSheetCount] = -1;
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
-		this[kLayoutFlush] = null;
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
 		this[kUsedGeneration] = -1;
@@ -10393,18 +10392,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * The flush a geometry read takes before measuring: pending mutations
-	 * drained and layout brought up to date, synchronously. A resolved value
-	 * is a measurement, so it goes through the same door -- there is exactly
-	 * one place that decides what "laid out now" means.
-	 */
-	declare [kLayoutFlush]: (() => boolean) | null;
-
-	setLayoutFlush(flush: () => boolean): void {
-		this[kLayoutFlush] = flush;
-	}
-
-	/**
 	 * Take that flush: pending mutations drained into the cascade and layout,
 	 * then layout brought up to date. Every author-facing style read goes
 	 * through it, so a value read straight after a DOM change describes that
@@ -10414,12 +10401,12 @@ export class StyleManager {
 		// Not re-entrant: layout and paint resolve styles as they run, and a
 		// read taken from inside the flush sees the layout being computed --
 		// asking for it again would compute it inside itself.
-		if (this[kFlushing] || !this[kLayoutFlush]) {
+		if (this[kFlushing]) {
 			return;
 		}
 		this[kFlushing] = true;
 		try {
-			if (this[kLayoutFlush]()) {
+			if (flushLayout(this[kDocument])) {
 				this[kUsedValues] = new WeakMap();
 			}
 		} finally {
@@ -10448,7 +10435,7 @@ export class StyleManager {
 		// Without a renderer there is no layout pass, and so no used value to
 		// report: the computed value is the answer, as it is for any element
 		// with no box.
-		if (!this[kLayoutEngine] || !this[kLayoutFlush]) {
+		if (!this[kLayoutEngine] || getMount(this[kDocument]) === undefined) {
 			return null;
 		}
 		// The flush is taken once per layout, not once per read: an
@@ -10462,7 +10449,7 @@ export class StyleManager {
 		// The generation is read back AFTER the flush, because the pass the
 		// flush runs moves it on again.
 		if (this[kUsedGeneration] !== this[kLayoutEngine].generation) {
-			this[kLayoutFlush]();
+			flushLayout(this[kDocument]);
 			this[kUsedGeneration] = this[kLayoutEngine].generation;
 			this[kUsedValues] = new WeakMap();
 		}

@@ -342,32 +342,6 @@ function sequentialFocusEntries(
 	return buildScope(roots, null);
 }
 
-/**
- * The `autofocus` default action: an element with the attribute set gets
- * focused as soon as it's connected, the same as a browser does at initial
- * page load -- generalized here to any insertion, which is what lets a
- * dynamically-created element (e.g. an edit input that only exists while
- * editing) still autofocus itself. Scoped to newly added nodes only, not
- * later attribute changes, matching the spec's "insertion" trigger. If a
- * batch inserts more than one autofocus element, the later mutation wins
- * (processed in order, each call simply moves focus again) -- same
- * ambiguity a real page with more than one autofocus element already has.
- */
-export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
-	for (const record of mutations) {
-		for (const node of record.addedNodes) {
-			if (node.nodeType !== node.ELEMENT_NODE) {
-				continue;
-			}
-			const element = node as Element;
-			const candidate = (element as any).autofocus ?
-				element :
-					element.querySelector("[autofocus]");
-			(candidate as HTMLElement | null)?.focus();
-		}
-	}
-}
-
 /* ----------------------------------------------------------- collaborators */
 
 /** A point in document space, and whether the cell it came from is in one. */

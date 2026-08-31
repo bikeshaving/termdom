@@ -91,6 +91,7 @@ for (const [name, deps] of imports) {
  */
 const DOM_DOORS = [
 	"clearPseudoElement",
+	"applyMutations",
 	"clampScrollOffsets",
 	"closeTopmost",
 	"createDocumentWindow",
@@ -110,6 +111,7 @@ const DOM_DOORS = [
 	"getPseudoName",
 	"getShadowRoot",
 	"getTopLayer",
+	"flushLayout",
 	"hoverListenerCount",
 	"isModalDialog",
 	"isUAShadowRoot",

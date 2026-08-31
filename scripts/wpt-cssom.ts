@@ -20,7 +20,11 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {getBoxModel, MediaList, StyleManager} from "../src/internal/cssom.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
-import {createDocumentWindow, type EngineWindow} from "../src/internal/dom.ts";
+import {
+	createDocumentWindow,
+	mount,
+	type EngineWindow,
+} from "../src/internal/dom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
@@ -300,27 +304,22 @@ function mountEngine(window: EngineWindow): StyleManager {
 	const styleManager = new StyleManager(window);
 	const layoutEngine = new LayoutEngine(window);
 	styleManager.setLayoutEngine(layoutEngine);
-	// The flush a resolved value takes. TermDOM's own is
-	// #processPendingMutationsAndRender: pending mutations drained into the
-	// style and layout engines, then a synchronous layout. Here, with no
-	// render loop, it is the same seam without the paint -- and the drain is
-	// what makes a value read straight after a DOM build measure that build.
-	const observer = new window.MutationObserver(() => {});
-	observer.observe(document, {
-		childList: true,
-		subtree: true,
-		attributes: true,
-		attributeOldValue: true,
-		characterData: true,
-	});
-	styleManager.setLayoutFlush(() => {
-		const pending = observer.takeRecords();
-		if (pending.length > 0) {
-			styleManager.handleMutations(pending);
-			layoutEngine.handleMutations(pending);
-		}
-		layoutEngine.calculateLayout();
-		return pending.length > 0;
+	// Mounting is what arms the flush a resolved value takes: the DOM wires
+	// its own mutation observer at mount and drains it into the style and
+	// layout engines before each measurement. There is no render loop here,
+	// so everything the mount would ask of one is a stub.
+	mount(document, {
+		layout: layoutEngine,
+		styles: styleManager,
+		exchange: {interactive: false} as never,
+		screen: {cols: 800, rows: 600, invalidate() {}, scrollTo() {}} as never,
+		frameRequested() {},
+		closeRequested() {},
+		documentClosed() {},
+		attached: false,
+		async switchScreens(action) {
+			await action();
+		},
 	});
 	// The suite is written against a browser viewport in CSS pixels; this
 	// engine's pixel is a cell, so the harness gives it a grid the same size

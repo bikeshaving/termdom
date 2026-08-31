@@ -29,14 +29,8 @@ import {Screen} from "./screen.js";
 import {StyleManager, getComputedValue, getBoxModel} from "./cssom.js";
 import {
 	EventHandler,
-	focusAutofocusedNodes,
 	type DocumentPoint,
 } from "./input.js";
-
-/** The mount this engine installs, which is how a node finds it back. */
-interface EngineMount extends DOM.Mount {
-	readonly engine: TermDOM;
-}
 
 export interface TermDOMOptions {
 	/**
@@ -75,7 +69,6 @@ function isAttached(termdom: TermDOM): boolean {
 
 const kScreen = Symbol("screen");
 const kLayoutEngine = Symbol("layoutEngine");
-const kObserver = Symbol("observer");
 const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
@@ -136,7 +129,6 @@ export class TermDOM {
 
 	declare [kScreen]: Screen;
 	declare [kLayoutEngine]: LayoutEngine;
-	declare [kObserver]: MutationObserver;
 	declare [kStyleManager]: StyleManager;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling.
@@ -297,27 +289,7 @@ export class TermDOM {
 		this[kStyleManager] = new StyleManager(this.window);
 		this[kLayoutEngine] = new LayoutEngine(this.window);
 		this[kStyleManager].setLayoutEngine(this[kLayoutEngine]);
-		// A resolved value is a measurement, so it takes the same flush every
-		// other geometry read takes -- one door, not two.
-		this[kStyleManager].setLayoutFlush(() =>
-			processPendingMutationsAndRender(this),
-		);
 		adoptTerminalSize(this, this[kTransport].cols, this[kTransport].rows);
-
-		const observer = new this.window.MutationObserver((mutations) => {
-			handlePendingMutations(this, mutations);
-			render(this);
-		});
-
-		observer.observe(this.document.documentElement, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-
-		this[kObserver] = observer;
 
 		// The session first: the screen measures widths over the session's
 		// probe channel, and takes it for its lifetime.
@@ -541,7 +513,6 @@ export class TermDOM {
 			void this[kStaticSibling].dispose();
 			this[kStaticSibling] = null;
 		}
-		this[kObserver].disconnect();
 		this[kStyleManager].dispose();
 		this[kLayoutEngine].dispose();
 		disconnectObservers(this.document);
@@ -555,17 +526,12 @@ export class TermDOM {
  * cascade's box model, the camera, the frame loop and the terminal itself.
  * Reached through the document -- no prototype carries engine state for these.
  */
-function createMount(termDOM: TermDOM): EngineMount {
+function createMount(termDOM: TermDOM): DOM.Mount {
 	return {
-		engine: termDOM,
 		layout: termDOM[kLayoutEngine],
 		styles: termDOM[kStyleManager],
-		observer: termDOM[kObserver],
 		exchange: termDOM[kExchange],
 		screen: termDOM[kScreen],
-		flushLayout() {
-			processPendingMutationsAndRender(termDOM);
-		},
 		async switchScreens(action) {
 			// No frame may straddle the screen switch: an in-flight render
 			// finishing its stdout write AFTER the switch paints one
@@ -632,99 +598,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 			return isAttached(termDOM);
 		},
 	};
-}
-
-/**
- * Apply a batch of mutation records to everything that isn't painting:
- * pseudo-elements/caches, the layout tree, and the autofocus default
- * action. In the same order everywhere it's called, since mutations reach
- * this from two different places -- the observer's own async callback
- * below, and processPendingMutationsAndRender/renderStatic/
- * renderInteractive's synchronous `takeRecords()` drain (a geometry read
- * or a scheduled render needs fresh layout NOW, not whenever the next
- * microtask checkpoint happens to land) -- and whichever one runs first
- * empties the queue for the other.
- */
-function handlePendingMutations(
-	termdom: TermDOM,
-	mutations: MutationRecord[],
-): void {
-	// Any observed mutation can move a node in the flat tree; drop the
-	// memoized composition links before anything reads through them.
-	termdom[kLayoutEngine].invalidateFrame();
-	// Attribute records whose value did not actually change are dropped
-	// before any handler sees them. Frameworks (and this repo's own
-	// examples) re-assign className/style with identical values on every
-	// update; per spec each assignment fires a record, and a class
-	// record rebuilds the whole layout tree from body -- the difference
-	// between a keystroke costing a counter re-measure and costing the
-	// document. A->B->A inside one unpainted batch also nets out: the
-	// intermediate value never rendered, so skipping is correct, and a
-	// same-batch pair still processes via the B->A record.
-	const relevant = mutations.filter((record) => {
-		if (record.type !== "attributes" || !record.attributeName) {
-			return true;
-		}
-		const target = record.target as Element;
-		return record.oldValue !== target.getAttribute(record.attributeName);
-	});
-	if (relevant.length === 0) {
-		return;
-	}
-	// Upgrade UA form controls the moment they connect -- before layout reads
-	// their shadow and before the painter walks it -- the way a browser
-	// upgrades a custom element on connect, not lazily at first paint. The
-	// shell drives it here, the one place every insert -- observer-driven or
-	// drained from a synchronous render -- passes through.
-	for (const record of relevant) {
-		if (record.type !== "childList") {
-			continue;
-		}
-		for (const added of record.addedNodes) {
-			if (added.nodeType !== added.ELEMENT_NODE) {
-				continue;
-			}
-			DOM.upgradeUAWidgetsIn(added);
-		}
-	}
-	termdom[kStyleManager].handleMutations(relevant);
-	termdom[kLayoutEngine].handleMutations(relevant);
-	focusAutofocusedNodes(relevant);
-	dropUnfocusableFocus(termdom);
-}
-
-/**
- * The focus fixup: a mutation that made the focused element unfocusable --
- * an inert ancestor appearing above it, a move into an inert parent, a
- * display:none anywhere on its flat chain -- unfocuses it, blur events
- * and restyle included.
- */
-function dropUnfocusableFocus(termdom: TermDOM): void {
-	let active = termdom.document.activeElement;
-	while (active !== null) {
-		const shadow = DOM.getShadowRoot<ShadowRoot>(active);
-		const inner = shadow?.activeElement ?? null;
-		if (inner === null) {
-			break;
-		}
-		active = inner;
-	}
-	if (active === null || active === termdom.document.body) {
-		return;
-	}
-	for (
-		let node: Element | null = active;
-		node !== null;
-		node = DOM.flatParentElement<Element>(node)
-	) {
-		if (
-			node.hasAttribute("inert") ||
-			getComputedValue(node, "display") === "none"
-		) {
-			(active as HTMLElement).blur();
-			return;
-		}
-	}
 }
 
 /**
@@ -1205,7 +1078,7 @@ function scrollCaretIntoView(
 	termdom: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
-	processPendingMutationsAndRender(termdom);
+	DOM.flushLayout(termdom.document);
 	const rect = termdom[kLayoutEngine].getRect(element);
 	if (!rect) {
 		return;
@@ -1241,37 +1114,6 @@ function scrollCaretIntoView(
 	if (delta) {
 		scrollCamera(termdom, delta);
 	}
-}
-
-function processPendingMutationsAndRender(
-	termdom: TermDOM,
-): boolean {
-	// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
-	// *layout*, not fresh pixels. A full render() here would make every
-	// rect read with pending mutations paint a frame -- an app calling
-	// scrollIntoView on each keystroke pays two paints per key, and the
-	// rect could still be stale unless the render were awaited. Flushing
-	// mutations and laying out synchronously gives an exact rect; painting
-	// stays with the caller's own render. The dirty-skip makes this free when
-	// nothing changed.
-	const pendingMutations = termdom[kObserver].takeRecords();
-	const hadMutations = pendingMutations.length > 0;
-	if (hadMutations) {
-		handlePendingMutations(termdom, pendingMutations);
-		// takeRecords() stole these from the observer callback that would
-		// have painted them. When the caller's own follow-up (a camera
-		// move, an input's render) never comes -- scrollIntoView on an
-		// already-visible row is the canonical case -- the mutation would
-		// otherwise never reach the screen. Schedule the paint the drain
-		// consumed, UNCONDITIONALLY: render() itself queues a trailing
-		// frame when one is in flight, and skipping "because a render is
-		// running" leaves the screen one interaction behind the DOM when
-		// keystrokes arrive faster than frames.
-		void render(termdom);
-	}
-	termdom[kLayoutEngine].calculateLayout();
-	DOM.clampScrollOffsets(termdom.document);
-	return hadMutations;
 }
 
 /**
@@ -1554,10 +1396,7 @@ function wheelScrollerFor(
 async function printStatic(
 	termdom: TermDOM,
 ): Promise<void> {
-	const pending = termdom[kObserver].takeRecords();
-	if (pending.length > 0) {
-		handlePendingMutations(termdom, pending);
-	}
+	DOM.applyMutations(termdom.document);
 
 	termdom[kLayoutEngine].calculateLayout();
 
@@ -1627,7 +1466,7 @@ function renderStatic(
 	termdom: TermDOM,
 	lineEnding: "\n" | "\r\n",
 ): string {
-	processPendingMutationsAndRender(termdom);
+	DOM.flushLayout(termdom.document);
 	const contentHeight = documentPaintHeight(termdom);
 	if (contentHeight === 0) {
 		return "";
@@ -1688,10 +1527,7 @@ async function renderInteractive(
 	// chain's invalidation precedes this frame's style resolution.
 	termdom[kEventHandler].resolvePendingHover();
 
-	const pending = termdom[kObserver].takeRecords();
-	if (pending.length > 0) {
-		handlePendingMutations(termdom, pending);
-	}
+	DOM.applyMutations(termdom.document);
 
 	termdom[kLayoutEngine].calculateLayout();
 	DOM.clampScrollOffsets(termdom.document);

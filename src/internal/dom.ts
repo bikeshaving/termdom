@@ -726,10 +726,10 @@ function addPart(
  * its own, and mutations in it invalidate styles and layout like light ones.
  */
 function observeShadowRoot(
-	engine: Mount,
+	document: Document,
 	root: globalThis.ShadowRoot,
 ): void {
-	engine.observer.observe(root as unknown as Node, {
+	engineObservers.get(document)?.observe(root as unknown as Node, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -753,7 +753,7 @@ function buildUARoot(
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
 	engine.layout.invalidate();
-	observeShadowRoot(engine, root);
+	observeShadowRoot(host[kDocument]!, root);
 	// The sheet is in the root BEFORE the cascade hears about it, so the
 	// registration's incremental parse sees it: registered-then-populated
 	// left the cascade to notice the sheet by count drift, which ordered a
@@ -8801,7 +8801,7 @@ export class Element extends Node implements globalThis.Element {
 		const root = this[kShadowRoot]! as ShadowRoot;
 		const mount = getMount(this);
 		if (mount !== undefined) {
-			observeShadowRoot(mount, root);
+			observeShadowRoot(this[kDocument]!, root);
 			// A shadow attachment recomposes the host's subtree with no
 			// mutation record, so no box enumeration still stands.
 			mount.layout.invalidate();
@@ -9634,7 +9634,7 @@ Object.defineProperties(Element.prototype, {
 			if (mount === undefined || !this.isConnected) {
 				return new DOMRect(0, 0, 0, 0);
 			}
-			mount.flushLayout();
+			flushLayout(this);
 			return toViewportRect(
 				mount,
 				mount.layout.getRect(this) ?? new DOMRect(),
@@ -9650,7 +9650,7 @@ Object.defineProperties(Element.prototype, {
 			if (mount === undefined || !this.isConnected) {
 				return new DOMRectList();
 			}
-			mount.flushLayout();
+			flushLayout(this);
 			return rectList(
 				mount.layout
 					.getRects(this)
@@ -10287,7 +10287,7 @@ function settledLayout(element: Element): LayoutEngine | undefined {
 	if (mount === undefined || !element.isConnected) {
 		return undefined;
 	}
-	mount.flushLayout();
+	flushLayout(element);
 	return mount.layout;
 }
 
@@ -10384,7 +10384,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			if (mount === undefined || !this.isConnected) {
 				return;
 			}
-			mount.flushLayout();
+			flushLayout(this);
 			mount.layout.revealInScrollPorts(this);
 			// The scroll boxes around the element have revealed it within
 			// themselves; what remains is the camera's, which shows
@@ -16674,7 +16674,7 @@ class HTMLSelectElement extends HTMLElement {
 		// The displayed label and picker rows track the option list; a framework
 		// mutating the options must re-reconcile. (Selection changes reach the
 		// tree through the control's own setters.)
-		engine.observer.observe(this, {
+		engineObservers.get(this[kDocument]!)?.observe(this, {
 			childList: true,
 			subtree: true,
 			attributes: true,
@@ -20987,6 +20987,7 @@ export function flushObservers(
 /** Drop a document's observers, so a torn-down document delivers nothing. */
 export function disconnectObservers(document: globalThis.Document): void {
 	documentObservers.get(document)?.clear();
+	engineObservers.get(document as Document)?.disconnect();
 }
 
 /**
@@ -22813,7 +22814,7 @@ export function elementAtDocumentPoint(
 	if (mount === undefined) {
 		return null;
 	}
-	mount.flushLayout();
+	flushLayout(document);
 	let element = mount.layout.hitTest(
 		document.documentElement,
 		x,
@@ -23522,7 +23523,7 @@ function setScrollOffset(
 	const numeric = Number(value);
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
-		mount.flushLayout();
+		flushLayout(element);
 		const room = mount.layout.scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
@@ -25116,7 +25117,7 @@ Object.defineProperties(Range.prototype, {
 			if (mount === undefined) {
 				return new DOMRect(0, 0, 0, 0);
 			}
-			mount.flushLayout();
+			flushLayout(this.startContainer);
 			return toViewportRect(
 				mount,
 				unionRect(mount.layout.getRangeRects(this)),
@@ -25132,7 +25133,7 @@ Object.defineProperties(Range.prototype, {
 			if (mount === undefined) {
 				return new DOMRectList();
 			}
-			mount.flushLayout();
+			flushLayout(this.startContainer);
 			const anchor = rangeAnchor(this);
 			return rectList(
 				mount.layout
@@ -28402,16 +28403,14 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
  */
 export interface Mount {
 	/**
-	 * The three engines a document renders through, whole. A user-agent
-	 * widget needs every one of them: a control's rendered content model is
-	 * not its children -- an input has none -- but a shadow tree the user
-	 * agent owns, built from the control's own value, placeholder and
-	 * selection, and that tree lays out, cascades and is observed like any
-	 * other.
+	 * The two engines a document renders through, whole. A user-agent
+	 * widget needs both: a control's rendered content model is not its
+	 * children -- an input has none -- but a shadow tree the user agent
+	 * owns, built from the control's own value, placeholder and selection,
+	 * and that tree lays out and cascades like any other.
 	 */
 	layout: LayoutEngine;
 	styles: StyleManager;
-	observer: MutationObserver;
 	/**
 	 * The terminal session the document speaks through: OSC 2 for its title,
 	 * OSC 52 for its clipboard. Rebound in place before the first attach
@@ -28423,11 +28422,6 @@ export interface Mount {
 	 * screen's both -- and where the document sits on it.
 	 */
 	screen: Screen;
-	/**
-	 * Settle what a geometry read must see first: the mutations the observer
-	 * has not delivered yet, and the layout they invalidated.
-	 */
-	flushLayout(): void;
 	/** A frame was asked for: schedule a render, and drain us after it. */
 	frameRequested(): void;
 	/** The window was closed, and the beforeunload gate let it through. */
@@ -28494,6 +28488,187 @@ export function mount(document: globalThis.Document, engine: Mount): void {
 		mounted,
 		watchHoverListeners(mounted, () => engine.frameRequested()),
 	);
+	// Observation is the document's own: mutations fan out to the cascade,
+	// the layout tree and the UA default actions here, and the engine is
+	// only asked for the frame that shows the result.
+	const observer = new MutationObserver((mutations) => {
+		handleMutationRecords(mounted, mutations);
+		engine.frameRequested();
+	});
+	observer.observe(document.documentElement as unknown as Node, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
+	engineObservers.set(mounted, observer);
+}
+
+/** Each mounted document's mutation observer, wired at mount. */
+const engineObservers = new WeakMap<Document, MutationObserver>();
+
+/**
+ * Apply a batch of mutation records to everything that isn't painting: the
+ * flat-tree memo, UA widget upgrades, the cascade, the layout tree and the
+ * focus default actions -- in the same order everywhere, since mutations
+ * reach here from the observer and from synchronous drains alike.
+ */
+function handleMutationRecords(
+	document: Document,
+	mutations: MutationRecord[],
+): void {
+	const mount = getMount(document);
+	if (mount === undefined) {
+		return;
+	}
+	// Any observed mutation can move a node in the flat tree; drop the
+	// memoized composition links before anything reads through them.
+	mount.layout.invalidateFrame();
+	// Attribute records whose value did not actually change are dropped
+	// before any handler sees them. Frameworks (and this repo's own
+	// examples) re-assign className/style with identical values on every
+	// update; per spec each assignment fires a record, and a class
+	// record rebuilds the whole layout tree from body -- the difference
+	// between a keystroke costing a counter re-measure and costing the
+	// document. A->B->A inside one unpainted batch also nets out: the
+	// intermediate value never rendered, so skipping is correct, and a
+	// same-batch pair still processes via the B->A record.
+	const relevant = mutations.filter((record) => {
+		if (record.type !== "attributes" || !record.attributeName) {
+			return true;
+		}
+		const target = record.target as Element;
+		return record.oldValue !== target.getAttribute(record.attributeName);
+	});
+	if (relevant.length === 0) {
+		return;
+	}
+	// Upgrade UA form controls the moment they connect -- before layout
+	// reads their shadow and before the painter walks it -- the way a
+	// browser upgrades a custom element on connect, not lazily at first
+	// paint. Every insert -- observer-driven or drained from a synchronous
+	// flush -- passes through here.
+	for (const record of relevant) {
+		if (record.type !== "childList") {
+			continue;
+		}
+		for (const added of record.addedNodes) {
+			if (added.nodeType !== added.ELEMENT_NODE) {
+				continue;
+			}
+			upgradeUAWidgetsIn(added);
+		}
+	}
+	mount.styles.handleMutations(relevant);
+	mount.layout.handleMutations(relevant);
+	focusAutofocusedNodes(relevant);
+	dropUnfocusableFocus(document, mount);
+}
+
+/**
+ * The `autofocus` default action: an element with the attribute set gets
+ * focused as soon as it's connected, the same as a browser does at initial
+ * page load -- generalized here to any insertion, which is what lets a
+ * dynamically-created element (e.g. an edit input that only exists while
+ * editing) still autofocus itself. Scoped to newly added nodes only, not
+ * later attribute changes, matching the spec's "insertion" trigger. If a
+ * batch inserts more than one autofocus element, the later mutation wins
+ * (processed in order, each call simply moves focus again) -- same
+ * ambiguity a real page with more than one autofocus element already has.
+ */
+function focusAutofocusedNodes(mutations: MutationRecord[]): void {
+	for (const record of mutations) {
+		for (const node of record.addedNodes) {
+			if (node.nodeType !== node.ELEMENT_NODE) {
+				continue;
+			}
+			const element = node as Element;
+			const candidate = (element as {autofocus?: boolean}).autofocus ?
+				element :
+					element.querySelector("[autofocus]");
+			(candidate as globalThis.HTMLElement | null)?.focus();
+		}
+	}
+}
+
+/**
+ * The focus fixup: a mutation that made the focused element unfocusable --
+ * an inert ancestor appearing above it, a move into an inert parent, a
+ * display:none anywhere on its flat chain -- unfocuses it, blur events
+ * and restyle included.
+ */
+function dropUnfocusableFocus(document: Document, mount: Mount): void {
+	let active = document.activeElement;
+	while (active !== null) {
+		const shadow = getShadowRoot<ShadowRoot>(active);
+		const inner = shadow?.activeElement ?? null;
+		if (inner === null) {
+			break;
+		}
+		active = inner;
+	}
+	if (active === null || active === document.body) {
+		return;
+	}
+	for (
+		let node: globalThis.Element | null = active;
+		node !== null;
+		node = flatParentElement<globalThis.Element>(node)
+	) {
+		if (
+			node.hasAttribute("inert") ||
+			mount.styles
+				.declarationFor(node as Element)
+				.getComputedValue("display") === "none"
+		) {
+			(active as globalThis.HTMLElement).blur();
+			return;
+		}
+	}
+}
+
+/**
+ * Drain the document's pending mutation records into the engines, without
+ * laying out or painting. The takeRecords() steals them from the observer
+ * callback, so a caller that never paints must ask for the frame itself.
+ */
+export function applyMutations(document: globalThis.Document): boolean {
+	const observer = engineObservers.get(document as Document);
+	if (observer === undefined) {
+		return false;
+	}
+	const records = observer.takeRecords();
+	if (records.length === 0) {
+		return false;
+	}
+	handleMutationRecords(document as Document, records);
+	return true;
+}
+
+/**
+ * Settle what a geometry read must see: pending mutations drained and
+ * layout brought up to date, synchronously. A geometry read needs fresh
+ * *layout*, not fresh pixels -- painting stays with the frame loop, but the
+ * drain steals records from the observer callback that would have painted
+ * them, so the frame is asked for on the caller's behalf.
+ */
+export function flushLayout(node: globalThis.Node): boolean {
+	const mount = getMount(node);
+	if (mount === undefined) {
+		return false;
+	}
+	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
+	const document = (
+		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
+	) as globalThis.Document;
+	const had = applyMutations(document);
+	if (had) {
+		mount.frameRequested();
+	}
+	mount.layout.calculateLayout();
+	clampScrollOffsets(document);
+	return had;
 }
 
 /** Each mounted document's live hover-listener reader, wired at mount. */
