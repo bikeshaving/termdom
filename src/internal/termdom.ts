@@ -1078,30 +1078,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				y + termDOM[kScrollTop],
 			);
 		},
-		checkVisibility(target, options) {
-			const element = target as Element;
-			if (!element.isConnected) {
-				return false;
-			}
-			const asked = options as globalThis.CheckVisibilityOptions | undefined;
-			const styleOf = (of: Element) => termDOM.window.getComputedStyle(of);
-			for (
-				let ancestor: Element | null = element;
-				ancestor;
-				ancestor = DOM.flatParentElement<Element>(ancestor)
-			) {
-				if (styleOf(ancestor).display === "none") {
-					return false;
-				}
-			}
-			if (
-				(asked?.checkVisibilityCSS || asked?.visibilityProperty) &&
-				styleOf(element).visibility !== "visible"
-			) {
-				return false;
-			}
-			return termDOM[kLayoutEngine].getRects(element).length > 0;
-		},
 		focusMoved(previousTarget, target) {
 			const previous = previousTarget as Element | null;
 			const element = target as Element;

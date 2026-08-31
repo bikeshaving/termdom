@@ -9958,7 +9958,32 @@ Object.defineProperties(HTMLElement.prototype, {
 			this: HTMLElement,
 			options?: globalThis.CheckVisibilityOptions,
 		): boolean {
-			return getMount(this)?.checkVisibility(this, options) ?? false;
+			const mount = getMount(this);
+			if (mount === undefined || !this.isConnected) {
+				return false;
+			}
+			const view = this.ownerDocument!.defaultView as unknown as {
+				getComputedStyle(element: object): {
+					display: string;
+					visibility: string;
+				};
+			};
+			for (
+				let ancestor: Element | null = this as unknown as Element;
+				ancestor !== null;
+				ancestor = flatParentElement<Element>(ancestor)
+			) {
+				if (view.getComputedStyle(ancestor).display === "none") {
+					return false;
+				}
+			}
+			if (
+				(options?.checkVisibilityCSS || options?.visibilityProperty) &&
+				view.getComputedStyle(this).visibility !== "visible"
+			) {
+				return false;
+			}
+			return mount.layout.getRects(this as unknown as Node).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -27476,8 +27501,6 @@ export interface Mount {
 		value: number,
 	): void;
 	elementFromPoint(document: object, x: number, y: number): object | null;
-	/** Whether the element is rendered, on the options' definition. */
-	checkVisibility(element: object, options?: object): boolean;
 	/**
 	 * The focus state has moved to the element from the previous focus.
 	 * Fire the events the move fires and repaint for the :focus rules it
