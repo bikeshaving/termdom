@@ -30,54 +30,12 @@ import {StyleManager, getComputedValue, getBoxModel} from "./cssom.js";
 import {
 	EventHandler,
 	focusAutofocusedNodes,
-	isActivationTriggering,
 	type DocumentPoint,
 } from "./input.js";
 
 /** The mount this engine installs, which is how a node finds it back. */
 interface EngineMount extends DOM.Mount {
 	readonly engine: TermDOM;
-}
-
-/** The engine an event target belongs to, if it is mounted in one. */
-function engineOfTarget(target: unknown): TermDOM | undefined {
-	const node = target as (Node & {document?: object}) | null;
-	if (!node) {
-		return undefined;
-	}
-	// A window carries the document it shows; a node carries its owner.
-	const from = typeof node.nodeType === "number" ? node : node.document;
-	if (from === undefined) {
-		return undefined;
-	}
-	return (DOM.getMount(from as globalThis.Node) as EngineMount | undefined)
-		?.engine;
-}
-
-/**
- * Fire an event as the user agent.
- *
- * Every event this file dispatches comes from outside the document -- decoded
- * terminal input, a terminal that resized, a focus move the engine itself
- * made -- so it is the user agent's, and reads isTrusted true. Provenance is
- * decided here, once, for all of them: an event an application constructs and
- * hands to dispatchEvent() is script's, and is never trusted.
- *
- * An activation-triggering event also holds user activation open for as long
- * as its dispatch runs, which is what the clipboard asks about.
- */
-function fireAsUserAgent(target: EventTarget, event: Event): boolean {
-	const engine = engineOfTarget(target);
-	if (engine === undefined || !isActivationTriggering(event)) {
-		return DOM.dispatchAsUserAgent(target, event);
-	}
-	engine[kActivationDepth]++;
-	engine[kEverActivated] = true;
-	try {
-		return DOM.dispatchAsUserAgent(target, event);
-	} finally {
-		engine[kActivationDepth]--;
-	}
 }
 
 export interface TermDOMOptions {
@@ -140,8 +98,6 @@ const kSettlingResize = Symbol("settlingResize");
 const kLifecycle = Symbol("lifecycle");
 const kAttachBegun = Symbol("attachBegun");
 const kAttachReady = Symbol("attachReady");
-const kActivationDepth = Symbol("activationDepth");
-const kEverActivated = Symbol("everActivated");
 
 const kFrameScroll = Symbol("frameScroll");
 const kFrameBand = Symbol("frameBand");
@@ -245,8 +201,6 @@ export class TermDOM {
 	 * and whether one ever has been. What only a user may ask for is asked of
 	 * these, and nothing else writes them.
 	 */
-	declare [kActivationDepth]: number;
-	declare [kEverActivated]: boolean;
 
 	/**
 	 * The frame journal: how far the camera moved since the last painted
@@ -345,8 +299,6 @@ export class TermDOM {
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
 		this[kLifecycle] = "detached";
-		this[kActivationDepth] = 0;
-		this[kEverActivated] = false;
 		this[kScrolledElements] = new Set();
 
 		this[kMouseReportingEnabled] = false;
@@ -843,12 +795,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 		attached() {
 			return isAttached(termDOM);
 		},
-		userActive() {
-			return termDOM[kActivationDepth] > 0;
-		},
-		everActivated() {
-			return termDOM[kEverActivated];
-		},
 	};
 }
 
@@ -959,7 +905,6 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			get window(): EngineWindow {
 				return termdom.window;
 			},
-			fireAsUserAgent,
 			requestRender: () => {
 				void render(termdom);
 			},
@@ -1148,7 +1093,7 @@ function applyTerminalSize(
 	// Per the rendering steps, resize fires before media query "change"
 	// events, and everything a listener reads already has the new size.
 	if (sizeChanged) {
-		fireAsUserAgent(termdom.window, new termdom.window.Event("resize"));
+		DOM.dispatchAsUserAgent(termdom.window, new termdom.window.Event("resize"));
 	}
 	for (const update of termdom[kMediaQueryUpdaters]) {
 		update();

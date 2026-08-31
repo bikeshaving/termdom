@@ -30,6 +30,7 @@
 import {
 	type EngineWindow,
 	closeTopmost,
+	dispatchAsUserAgent,
 	fieldCaretOffset,
 	flatParentElement,
 	getShadowRoot,
@@ -367,58 +368,6 @@ export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	}
 }
 
-/**
- * The keys that are a modifier and nothing else, which a user pressing them
- * has not yet asked for anything with.
- */
-const BARE_MODIFIER_KEYS = new Set([
-	"Alt",
-	"AltGraph",
-	"CapsLock",
-	"Control",
-	"Fn",
-	"FnLock",
-	"Hyper",
-	"Meta",
-	"NumLock",
-	"ScrollLock",
-	"Shift",
-	"Super",
-	"Symbol",
-	"SymbolLock",
-]);
-
-/**
- * Whether an event is activation-triggering: the user asking for something,
- * rather than something happening to them.
- *
- * These are the spec's -- a key that is neither Escape nor a bare modifier, a
- * mouse press, release or click, a paste. A paste's default action carries
- * the text on to a field as a beforeinput, which is activation-triggering
- * too: a listener that sees the gesture only there still has the gate open.
- * A resize, a focus move, pointer motion and a wheel tick are the user
- * agent's events too, and none of them is a request.
- */
-export function isActivationTriggering(event: {
-	type: string;
-	key?: string;
-	inputType?: string;
-}): boolean {
-	switch (event.type) {
-		case "keydown":
-			return event.key !== "Escape" && !BARE_MODIFIER_KEYS.has(event.key!);
-		case "mousedown":
-		case "mouseup":
-		case "click":
-		case "paste":
-			return true;
-		case "beforeinput":
-			return event.inputType === "insertFromPaste";
-		default:
-			return false;
-	}
-}
-
 /* ----------------------------------------------------------- collaborators */
 
 /** A point in document space, and whether the cell it came from is in one. */
@@ -436,11 +385,6 @@ export interface DocumentPoint {
 interface EventView {
 	readonly document: Document;
 	readonly window: EngineWindow;
-	/**
-	 * Dispatch as the user agent: trusted, and counted as a user activation
-	 * where the event is one of the gestures that grants it.
-	 */
-	fireAsUserAgent(target: EventTarget, event: Event): boolean;
 	/**
 	 * Ask for a frame. Reactive pseudo-state, the document selection and the
 	 * caret all move without a mutation record, so interpretation says when
@@ -678,7 +622,7 @@ export class EventHandler {
 			(inDocument && this[kHitTest].elementAt(x, y)) || view.document.body;
 
 		if (wheelDeltaY !== null) {
-			const notCanceled = view.fireAsUserAgent(
+			const notCanceled = dispatchAsUserAgent(
 				target,
 				new view.window.WheelEvent("wheel", {
 					deltaY: wheelDeltaY,
@@ -740,7 +684,7 @@ export class EventHandler {
 		this[kLastMouse] = {x, y};
 
 		if (isMotion) {
-			view.fireAsUserAgent(
+			dispatchAsUserAgent(
 				target,
 				new view.window.MouseEvent("mousemove", eventInit),
 			);
@@ -807,7 +751,7 @@ export class EventHandler {
 			// up, then over, then enter from the outermost entered ancestor
 			// down; the mousemove in the entered element follows them.
 			if (previous !== null) {
-				view.fireAsUserAgent(
+				dispatchAsUserAgent(
 					previous,
 					new view.window.MouseEvent("mouseout", {
 						...boundaryInit,
@@ -818,7 +762,7 @@ export class EventHandler {
 				);
 				for (const node of previousChain) {
 					if (!targetSet.has(node)) {
-						view.fireAsUserAgent(
+						dispatchAsUserAgent(
 							node,
 							new view.window.MouseEvent("mouseleave", {
 								...boundaryInit,
@@ -828,7 +772,7 @@ export class EventHandler {
 					}
 				}
 			}
-			view.fireAsUserAgent(
+			dispatchAsUserAgent(
 				target,
 				new view.window.MouseEvent("mouseover", {
 					...boundaryInit,
@@ -839,7 +783,7 @@ export class EventHandler {
 			);
 			const entering = targetChain.filter((node) => !previousSet.has(node));
 			for (let i = entering.length - 1; i >= 0; i--) {
-				view.fireAsUserAgent(
+				dispatchAsUserAgent(
 					entering[i],
 					new view.window.MouseEvent("mouseenter", {
 						...boundaryInit,
@@ -852,7 +796,7 @@ export class EventHandler {
 		// report; only buttonless motion owes one here.
 		if (!pending.quiet) {
 			const last = this[kLastMouse];
-			view.fireAsUserAgent(
+			dispatchAsUserAgent(
 				target,
 				new view.window.MouseEvent("mousemove", {
 					button: 0,
@@ -896,7 +840,7 @@ export class EventHandler {
 		const clipboardData = new view.window.DataTransfer();
 		clipboardData.setData("text/plain", text);
 		lockDataTransfer(clipboardData);
-		const proceed = view.fireAsUserAgent(
+		const proceed = dispatchAsUserAgent(
 			target,
 			new view.window.ClipboardEvent("paste", {
 				clipboardData,
@@ -906,7 +850,7 @@ export class EventHandler {
 		);
 		const tag = target.tagName;
 		if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
-			view.fireAsUserAgent(
+			dispatchAsUserAgent(
 				target,
 				new view.window.InputEvent("beforeinput", {
 					inputType: "insertFromPaste",
@@ -1031,7 +975,7 @@ function press(
 		handler[kStyleManager].handleFocusChange(view.document.activeElement);
 		view.requestRender();
 	}
-	const notCanceled = view.fireAsUserAgent(
+	const notCanceled = dispatchAsUserAgent(
 		target,
 		new view.window.MouseEvent("mousedown", eventInit),
 	);
@@ -1120,7 +1064,7 @@ function release(
 	eventInit: object,
 ): void {
 	const view = handler[kView];
-	view.fireAsUserAgent(
+	dispatchAsUserAgent(
 		target,
 		new view.window.MouseEvent("mouseup", eventInit),
 	);
@@ -1151,7 +1095,7 @@ function release(
 		return;
 	}
 	if (handler[kMouseDownTarget] === target) {
-		view.fireAsUserAgent(
+		dispatchAsUserAgent(
 			target,
 			new view.window.MouseEvent("click", {...eventInit, buttons: 0}),
 		);
@@ -1190,7 +1134,7 @@ function release(
 			handler[kLastClickTarget] === target &&
 			now - handler[kLastClickTime] <= EventHandler[kDblclickIntervalMs]
 		) {
-			view.fireAsUserAgent(
+			dispatchAsUserAgent(
 				target,
 				new view.window.MouseEvent("dblclick", {
 					...eventInit,
@@ -1253,7 +1197,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 		cancelable: true,
 	});
 
-	const notCanceled = view.fireAsUserAgent(targetElement, keydownEvent);
+	const notCanceled = dispatchAsUserAgent(targetElement, keydownEvent);
 
 	// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
 	// answers one: a modal dialog fires cancel and closes unless a
@@ -1298,7 +1242,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 				// activation is, and dispatching it runs the element's full
 				// activation behavior, so a submit button submits its form and
 				// a link follows its href, exactly as a mouse click would.
-				view.fireAsUserAgent(
+				dispatchAsUserAgent(
 					targetElement,
 					new view.window.PointerEvent("click", {
 						bubbles: true,
@@ -1333,7 +1277,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 			bubbles: true,
 			cancelable: true,
 		});
-		if (view.fireAsUserAgent(targetElement, keypressEvent)) {
+		if (dispatchAsUserAgent(targetElement, keypressEvent)) {
 			insertText(handler, targetElement, char);
 		}
 	}
@@ -1351,7 +1295,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 		bubbles: true,
 		cancelable: true,
 	});
-	view.fireAsUserAgent(targetElement, keyupEvent);
+	dispatchAsUserAgent(targetElement, keyupEvent);
 }
 
 /**
@@ -1373,7 +1317,7 @@ function insertText(
 		return;
 	}
 	const view = handler[kView];
-	view.fireAsUserAgent(
+	dispatchAsUserAgent(
 		target,
 		new view.window.InputEvent("beforeinput", {
 			inputType: "insertText",

@@ -4037,17 +4037,105 @@ function dispatchFromOutside(
 }
 
 /**
+ * The keys that are a modifier and nothing else, which a user pressing them
+ * has not yet asked for anything with.
+ */
+const BARE_MODIFIER_KEYS = new Set([
+	"Alt",
+	"AltGraph",
+	"CapsLock",
+	"Control",
+	"Fn",
+	"FnLock",
+	"Hyper",
+	"Meta",
+	"NumLock",
+	"ScrollLock",
+	"Shift",
+	"Super",
+	"Symbol",
+	"SymbolLock",
+]);
+
+/**
+ * Whether an event is activation-triggering: the user asking for something,
+ * rather than something happening to them.
+ *
+ * These are the spec's -- a key that is neither Escape nor a bare modifier, a
+ * mouse press, release or click, a paste. A paste's default action carries
+ * the text on to a field as a beforeinput, which is activation-triggering
+ * too: a listener that sees the gesture only there still has the gate open.
+ * A resize, a focus move, pointer motion and a wheel tick are the user
+ * agent's events too, and none of them is a request.
+ */
+function isActivationTriggering(event: {
+	type: string;
+	key?: string;
+	inputType?: string;
+}): boolean {
+	switch (event.type) {
+		case "keydown":
+			return event.key !== "Escape" && !BARE_MODIFIER_KEYS.has(event.key!);
+		case "mousedown":
+		case "mouseup":
+		case "click":
+		case "paste":
+			return true;
+		case "beforeinput":
+			return event.inputType === "insertFromPaste";
+		default:
+			return false;
+	}
+}
+
+/** How many activation-triggering dispatches are running, per document. */
+const activationDepths = new WeakMap<Document, number>();
+
+/** The documents the user has ever acted on. */
+const everActivatedDocuments = new WeakSet<Document>();
+
+/** The document a user-agent dispatch counts its activation in. */
+function activationDocument(target: EventTarget): Document | null {
+	const shaped = target as {
+		nodeType?: number;
+		ownerDocument?: Document | null;
+		document?: Document;
+	};
+	if (shaped.nodeType === DOCUMENT_NODE) {
+		return target as unknown as Document;
+	}
+	return shaped.ownerDocument ?? shaped.document ?? null;
+}
+
+/** Whether an activation-triggering event is being dispatched right now. */
+function userActive(document: Document): boolean {
+	return (activationDepths.get(document) ?? 0) > 0;
+}
+
+/**
  * Dispatch an event as the user agent: the event is trusted.
  *
  * The engine calls this where decoded terminal input, a viewport change or a
  * focus move becomes a DOM event -- everything a user or the terminal itself
- * caused, as opposed to what an application constructs and dispatches.
+ * caused, as opposed to what an application constructs and dispatches. An
+ * activation-triggering event holds user activation open for as long as its
+ * dispatch runs, which is what the clipboard asks about.
  */
 export function dispatchAsUserAgent(
 	target: globalThis.EventTarget,
 	event: globalThis.Event,
 ): boolean {
-	return dispatchFromOutside(target as EventTarget, event as Event, true);
+	const document = activationDocument(target as EventTarget);
+	if (document === null || !isActivationTriggering(event)) {
+		return dispatchFromOutside(target as EventTarget, event as Event, true);
+	}
+	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
+	everActivatedDocuments.add(document);
+	try {
+		return dispatchFromOutside(target as EventTarget, event as Event, true);
+	} finally {
+		activationDepths.set(document, activationDepths.get(document)! - 1);
+	}
 }
 
 /**
@@ -28200,10 +28288,6 @@ export interface Mount {
 	documentClosed(): void;
 	/** Whether attach() has taken the terminal and dispose() has not. */
 	attached(): boolean;
-	/** Whether an activation-triggering event is being dispatched right now. */
-	userActive(): boolean;
-	/** Whether the user has ever acted on this document. */
-	everActivated(): boolean;
 	/**
 	 * Bracket a wholesale screen swap: no frame may straddle it, and the
 	 * diff model still describes the screen it leaves. The engine holds new
@@ -28357,7 +28441,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 			"clipboard requires an attached interactive terminal",
 		);
 	}
-	if (!mount.userActive()) {
+	if (!userActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
 	return mount.exchange;
@@ -28509,7 +28593,7 @@ class PermissionStatus extends EventTarget {
 		if (!mount || !mount.attached() || !mount.exchange.interactive) {
 			return "denied";
 		}
-		return mount.userActive() ? "granted" : "prompt";
+		return userActive(document) ? "granted" : "prompt";
 	}
 }
 
@@ -28882,10 +28966,10 @@ export class Window extends EventTarget {
 				permissions: constructInternal(() => new Permissions(document)),
 				userActivation: {
 					get hasBeenActive(): boolean {
-						return getMount(document)?.everActivated() ?? false;
+						return everActivatedDocuments.has(document);
 					},
 					get isActive(): boolean {
-						return getMount(document)?.userActive() ?? false;
+						return userActive(document);
 					},
 				},
 			} as unknown as Navigator;
