@@ -19,10 +19,10 @@ import {LayoutNode} from "../src/internal/layout.js";
 // termdom drives the engine with web defaults, which are also the CSS initial
 // values: flex-direction row, flex-shrink 1, align-content stretch.
 function node(): LayoutNode {
-	return LayoutNode.create();
+	return new LayoutNode();
 }
 
-function box(parent: LayoutNode, index = parent.getChildCount()): LayoutNode {
+function box(parent: LayoutNode, index = parent.children.length): LayoutNode {
 	const child = node();
 	parent.insertChild(child, index);
 	return child;
@@ -35,8 +35,8 @@ function rect(n: LayoutNode): {
 	height: number;
 } {
 	return {
-		left: n.getComputedLeft(),
-		top: n.getComputedTop(),
+		left: n.layout.left,
+		top: n.layout.top,
 		width: n.getComputedWidth(),
 		height: n.getComputedHeight(),
 	};
@@ -54,7 +54,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		const item = box(root);
 		item.setWidth(30);
 		item.setHeight(10);
-		item.setFlexBasisAuto();
+		item.setFlexBasis("auto");
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
@@ -90,8 +90,8 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		root.setHeight(20);
 
 		const item = box(root);
-		item.setFlexBasisAuto();
-		item.setWidthAuto();
+		item.setFlexBasis("auto");
+		item.setWidth("auto");
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
@@ -332,7 +332,7 @@ describe("percentage margins and padding resolve against the containing block wi
 		root.setFlexDirection("column");
 
 		const child = box(root);
-		child.setPaddingPercent("all", 10);
+		child.setPadding("all", "10%");
 
 		const grandchild = box(child);
 		grandchild.setWidth(10);
@@ -356,8 +356,8 @@ describe("percentage margins and padding resolve against the containing block wi
 
 		const child = box(root);
 		child.setHeight(10);
-		child.setMarginPercent("top", 10);
-		child.setMarginPercent("left", 10);
+		child.setMargin("top", "10%");
+		child.setMargin("left", "10%");
 
 		root.calculateLayout(200, 100);
 
@@ -381,8 +381,8 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto("left");
-		item.setMarginAuto("right");
+		item.setMargin("left", "auto");
+		item.setMargin("right", "auto");
 
 		root.calculateLayout(100, 20);
 
@@ -399,7 +399,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto("left");
+		item.setMargin("left", "auto");
 
 		root.calculateLayout(100, 20);
 
@@ -415,8 +415,8 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		const item = box(root);
 		item.setWidth(20);
 		item.setHeight(10);
-		item.setMarginAuto("top");
-		item.setMarginAuto("bottom");
+		item.setMargin("top", "auto");
+		item.setMargin("bottom", "auto");
 
 		root.calculateLayout(100, 20);
 
@@ -436,7 +436,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setWidth(20);
 		item.setHeight(10);
 		item.setFlexShrink(0);
-		item.setMarginAuto("right");
+		item.setMargin("right", "auto");
 
 		root.calculateLayout(100, 20);
 
@@ -592,8 +592,7 @@ describe("gap (css-align-3)", () => {
 	test("a gap set on 'all' sets both axes", () => {
 		const root = node();
 		root.setGap("all", 4);
-		expect(root.getGap("row")).toBe(4);
-		expect(root.getGap("column")).toBe(4);
+		expect(root.style.gap).toEqual({column: 4, row: 4});
 	});
 });
 

@@ -204,12 +204,18 @@ const UNDEFINED_VALUE: Value = {unit: "undefined", value: NaN};
 const AUTO_VALUE: Value = {unit: "auto", value: NaN};
 
 /**
- * Coerce a setter argument into a Value. Accepts numbers (cells), percent
- * strings like "50%" or "0%", undefined/NaN (undefined), and "auto".
+ * A length as a setter takes it: cells, a parsed percentage (the shape the
+ * cascade's parseUnitValue hands over), a percent string like "50%",
+ * "auto", or nothing.
  */
-function toValue(input: number | string | undefined | null): Value {
+type Length = number | string | {percentage: number} | undefined | null;
+
+function toValue(input: Length): Value {
 	if (input === undefined || input === null) {
 		return UNDEFINED_VALUE;
+	}
+	if (typeof input === "object") {
+		return {unit: "percent", value: input.percentage};
 	}
 	if (typeof input === "number") {
 		return Number.isNaN(input) ?
@@ -827,10 +833,6 @@ export class LayoutNode {
 		this.layout = createLayout();
 	}
 
-	static create(): LayoutNode {
-		return new LayoutNode();
-	}
-
 	// -- tree ---------------------------------------------------------------
 
 	insertChild(child: LayoutNode, index: number): void {
@@ -846,14 +848,6 @@ export class LayoutNode {
 			child.parent = null;
 			markDirtyUpward(this);
 		}
-	}
-
-	getParent(): LayoutNode | null {
-		return this.parent;
-	}
-
-	getChildCount(): number {
-		return this.children.length;
 	}
 
 	/**
@@ -1086,10 +1080,6 @@ export class LayoutNode {
 		this.markDirty();
 	}
 
-	getMode(): LayoutMode {
-		return this.style.mode;
-	}
-
 	setMode(v: LayoutMode): void {
 		this.style.mode = v;
 		this.markDirty();
@@ -1110,34 +1100,13 @@ export class LayoutNode {
 		this.markDirty();
 	}
 
-	setFlexBasis(v: number | string | undefined): void {
+	setFlexBasis(v: Length): void {
 		this.style.flexBasis = toValue(v);
 		this.markDirty();
 	}
 
-	setFlexBasisPercent(v: number | undefined): void {
-		this.style.flexBasis =
-			v === undefined ? UNDEFINED_VALUE : {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setFlexBasisAuto(): void {
-		this.style.flexBasis = AUTO_VALUE;
-		this.markDirty();
-	}
-
-	setWidth(v: number | string | undefined): void {
+	setWidth(v: Length): void {
 		this.style.width = toValue(v);
-		this.markDirty();
-	}
-
-	setWidthPercent(v: number): void {
-		this.style.width = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setWidthAuto(): void {
-		this.style.width = AUTO_VALUE;
 		this.markDirty();
 	}
 
@@ -1148,18 +1117,8 @@ export class LayoutNode {
 		}
 	}
 
-	setHeight(v: number | string | undefined): void {
+	setHeight(v: Length): void {
 		this.style.height = toValue(v);
-		this.markDirty();
-	}
-
-	setHeightPercent(v: number): void {
-		this.style.height = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setHeightAuto(): void {
-		this.style.height = AUTO_VALUE;
 		this.markDirty();
 	}
 
@@ -1174,68 +1133,33 @@ export class LayoutNode {
 		this.markDirty();
 	}
 
-	setMinWidth(v: number | undefined): void {
+	setMinWidth(v: Length): void {
 		this.style.minWidth = toValue(v);
 		this.markDirty();
 	}
 
-	setMinWidthPercent(v: number): void {
-		this.style.minWidth = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setMinHeight(v: number | undefined): void {
+	setMinHeight(v: Length): void {
 		this.style.minHeight = toValue(v);
 		this.markDirty();
 	}
 
-	setMinHeightPercent(v: number): void {
-		this.style.minHeight = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setMaxWidth(v: number | undefined): void {
+	setMaxWidth(v: Length): void {
 		this.style.maxWidth = toValue(v);
 		this.markDirty();
 	}
 
-	setMaxWidthPercent(v: number): void {
-		this.style.maxWidth = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setMaxHeight(v: number | undefined): void {
+	setMaxHeight(v: Length): void {
 		this.style.maxHeight = toValue(v);
 		this.markDirty();
 	}
 
-	setMaxHeightPercent(v: number): void {
-		this.style.maxHeight = {unit: "percent", value: v};
-		this.markDirty();
-	}
-
-	setMargin(edge: EdgeShorthand, v: number | undefined): void {
+	setMargin(edge: EdgeShorthand, v: Length): void {
 		setEdges(this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 
-	setMarginPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.margin, edge, {unit: "percent", value: v});
-		this.markDirty();
-	}
-
-	setMarginAuto(edge: EdgeShorthand): void {
-		setEdges(this.style.margin, edge, AUTO_VALUE);
-		this.markDirty();
-	}
-
-	setPadding(edge: EdgeShorthand, v: number | undefined): void {
+	setPadding(edge: EdgeShorthand, v: Length): void {
 		setEdges(this.style.padding, edge, toValue(v));
-		this.markDirty();
-	}
-
-	setPaddingPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.padding, edge, {unit: "percent", value: v});
 		this.markDirty();
 	}
 
@@ -1247,30 +1171,12 @@ export class LayoutNode {
 		this.markDirty();
 	}
 
-	setPosition(edge: EdgeShorthand, v: number | undefined): void {
+	setPosition(edge: EdgeShorthand, v: Length): void {
 		setEdges(this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 
-	setPositionPercent(edge: EdgeShorthand, v: number): void {
-		setEdges(this.style.position, edge, {unit: "percent", value: v});
-		this.markDirty();
-	}
-
-	setPositionAuto(edge: EdgeShorthand): void {
-		setEdges(this.style.position, edge, AUTO_VALUE);
-		this.markDirty();
-	}
-
 	// -- computed getters ---------------------------------------------------
-
-	getComputedLeft(): number {
-		return this.layout.left;
-	}
-
-	getComputedTop(): number {
-		return this.layout.top;
-	}
 
 	getComputedWidth(): number {
 		return isDefined(this.layout.width) ? this.layout.width : 0;
@@ -1278,12 +1184,6 @@ export class LayoutNode {
 
 	getComputedHeight(): number {
 		return isDefined(this.layout.height) ? this.layout.height : 0;
-	}
-
-	getGap(gutter: Gutter): number {
-		return gutter === "row" ?
-			this.style.gap["row"] :
-			this.style.gap["column"];
 	}
 
 	// -- entry point --------------------------------------------------------
@@ -7433,22 +7333,14 @@ function asWrap(value: string): Wrap {
  * as its longest word, and paint straight over whatever is next to it.
  */
 function applyMinMax(flexNode: LayoutNode, element: Element): void {
-	const constraints = [
-		["min-width", flexNode.setMinWidth, flexNode.setMinWidthPercent],
-		["min-height", flexNode.setMinHeight, flexNode.setMinHeightPercent],
-		["max-width", flexNode.setMaxWidth, flexNode.setMaxWidthPercent],
-		["max-height", flexNode.setMaxHeight, flexNode.setMaxHeightPercent],
-	] as const;
-	for (const [property, setLength, setPercent] of constraints) {
-		const value = parseUnitValue(getComputedValue(element, property));
-		if (typeof value === "number") {
-			setLength.call(flexNode, value);
-		} else if (value && "percentage" in value) {
-			setPercent.call(flexNode, value.percentage);
-		} else {
-			setLength.call(flexNode, undefined);
-		}
-	}
+	flexNode.setMinWidth(parseUnitValue(getComputedValue(element, "min-width")));
+	flexNode.setMinHeight(
+		parseUnitValue(getComputedValue(element, "min-height")),
+	);
+	flexNode.setMaxWidth(parseUnitValue(getComputedValue(element, "max-width")));
+	flexNode.setMaxHeight(
+		parseUnitValue(getComputedValue(element, "max-height")),
+	);
 }
 
 /** The four insets, each with the edge it names. */
@@ -7468,16 +7360,13 @@ function applyInsets(
 	autoWhenUnset: boolean,
 ): void {
 	for (const edge of edges) {
-		const property = edge;
-		const value = parseUnitValue(getComputedValue(element, property));
-		if (typeof value === "number") {
+		const value = parseUnitValue(getComputedValue(element, edge));
+		if (value !== null) {
 			flexNode.setPosition(edge, value);
-		} else if (value && "percentage" in value) {
-			flexNode.setPositionPercent(edge, value.percentage);
 		} else if (autoWhenUnset) {
-			const declared = getComputedValue(element, property);
+			const declared = getComputedValue(element, edge);
 			if (declared === "auto" || !declared) {
-				flexNode.setPositionAuto(edge);
+				flexNode.setPosition(edge, "auto");
 			}
 		}
 	}
@@ -7680,41 +7569,35 @@ function styleFlexNodeProperties(
 	// flex row came out as wide as its text.
 	const parentIsFlex = hasItemParent(element);
 	if (display === "inline" && !parentIsFlex) {
-		flexNode.setWidthAuto();
+		flexNode.setWidth("auto");
 		flexNode.setWidthSizing("none");
-		flexNode.setHeightAuto();
+		flexNode.setHeight("auto");
 		flexNode.setMinWidth(undefined);
 		flexNode.setMinHeight(undefined);
 		flexNode.setMaxWidth(undefined);
 		flexNode.setMaxHeight(undefined);
 	} else if (isAtomicInline(display)) {
-		flexNode.setWidthAuto();
+		flexNode.setWidth("auto");
 		flexNode.setWidthSizing("none");
-		flexNode.setHeightAuto();
+		flexNode.setHeight("auto");
 
 		applyMinMax(flexNode, element);
 	} else {
 		const widthValue = getComputedValue(element, "width");
 		const width = parseUnitValue(widthValue);
-		if (typeof width === "number") {
-			flexNode.setWidth(width + contentBoxEdges(element, false));
-		} else if (width && "percentage" in width) {
-			flexNode.setWidthPercent(width.percentage);
-		} else {
-			flexNode.setWidthAuto();
-		}
+		flexNode.setWidth(
+			typeof width === "number" ?
+				width + contentBoxEdges(element, false) :
+					(width ?? "auto"),
+		);
 		flexNode.setWidthSizing(widthSizingConstant(widthValue));
 
 		const height = parseUnitValue(getComputedValue(element, "height"));
-		if (typeof height === "number") {
-			flexNode.setHeight(
-				height + contentBoxEdges(element, true),
-			);
-		} else if (height && "percentage" in height) {
-			flexNode.setHeightPercent(height.percentage);
-		} else {
-			flexNode.setHeightAuto();
-		}
+		flexNode.setHeight(
+			typeof height === "number" ?
+				height + contentBoxEdges(element, true) :
+					(height ?? "auto"),
+		);
 
 		applyMinMax(flexNode, element);
 	}
@@ -7750,112 +7633,20 @@ function styleFlexNodeProperties(
 		flexNode.setBorder("bottom", 0);
 		flexNode.setBorder("left", 0);
 	} else {
-		const marginTop = parseSignedUnitValue(
-			getComputedValue(element, "margin-top"),
-		);
-		if (typeof marginTop === "number") {
-			flexNode.setMargin("top", marginTop);
-		} else if (marginTop && "percentage" in marginTop) {
-			flexNode.setMarginPercent("top", marginTop.percentage);
-		} else {
-			const originalValue = getComputedValue(element, "margin-top");
-			if (originalValue === "auto") {
-				flexNode.setMarginAuto("top");
-			} else {
-				flexNode.setMargin("top", undefined);
-			}
-		}
-
-		const marginRight = parseSignedUnitValue(
-			getComputedValue(element, "margin-right"),
-		);
-		if (typeof marginRight === "number") {
-			flexNode.setMargin("right", marginRight);
-		} else if (marginRight && "percentage" in marginRight) {
-			flexNode.setMarginPercent("right", marginRight.percentage);
-		} else {
-			const originalValue = getComputedValue(element, "margin-right");
-			if (originalValue === "auto") {
-				flexNode.setMarginAuto("right");
-			} else {
-				flexNode.setMargin("right", undefined);
-			}
-		}
-
-		const marginBottom = parseSignedUnitValue(
-			getComputedValue(element, "margin-bottom"),
-		);
-		if (typeof marginBottom === "number") {
-			flexNode.setMargin("bottom", marginBottom);
-		} else if (marginBottom && "percentage" in marginBottom) {
-			flexNode.setMarginPercent("bottom", marginBottom.percentage);
-		} else {
-			const originalValue = getComputedValue(element, "margin-bottom");
-			if (originalValue === "auto") {
-				flexNode.setMarginAuto("bottom");
-			} else {
-				flexNode.setMargin("bottom", undefined);
-			}
-		}
-
-		const marginLeft = parseSignedUnitValue(
-			getComputedValue(element, "margin-left"),
-		);
-		if (typeof marginLeft === "number") {
-			flexNode.setMargin("left", marginLeft);
-		} else if (marginLeft && "percentage" in marginLeft) {
-			flexNode.setMarginPercent("left", marginLeft.percentage);
-		} else {
-			const originalValue = getComputedValue(element, "margin-left");
-			if (originalValue === "auto") {
-				flexNode.setMarginAuto("left");
-			} else {
-				flexNode.setMargin("left", undefined);
-			}
-		}
-
-		const paddingTop = parseUnitValue(
-			getComputedValue(element, "padding-top"),
-		);
-		if (typeof paddingTop === "number") {
-			flexNode.setPadding("top", paddingTop);
-		} else if (paddingTop && "percentage" in paddingTop) {
-			flexNode.setPaddingPercent("top", paddingTop.percentage);
-		} else {
-			flexNode.setPadding("top", undefined);
-		}
-
-		const paddingRight = parseUnitValue(
-			getComputedValue(element, "padding-right"),
-		);
-		if (typeof paddingRight === "number") {
-			flexNode.setPadding("right", paddingRight);
-		} else if (paddingRight && "percentage" in paddingRight) {
-			flexNode.setPaddingPercent("right", paddingRight.percentage);
-		} else {
-			flexNode.setPadding("right", undefined);
-		}
-
-		const paddingBottom = parseUnitValue(
-			getComputedValue(element, "padding-bottom"),
-		);
-		if (typeof paddingBottom === "number") {
-			flexNode.setPadding("bottom", paddingBottom);
-		} else if (paddingBottom && "percentage" in paddingBottom) {
-			flexNode.setPaddingPercent("bottom", paddingBottom.percentage);
-		} else {
-			flexNode.setPadding("bottom", undefined);
-		}
-
-		const paddingLeft = parseUnitValue(
-			getComputedValue(element, "padding-left"),
-		);
-		if (typeof paddingLeft === "number") {
-			flexNode.setPadding("left", paddingLeft);
-		} else if (paddingLeft && "percentage" in paddingLeft) {
-			flexNode.setPaddingPercent("left", paddingLeft.percentage);
-		} else {
-			flexNode.setPadding("left", undefined);
+		for (const edge of ["top", "right", "bottom", "left"] as const) {
+			const property = `margin-${edge}`;
+			const margin = parseSignedUnitValue(getComputedValue(element, property));
+			flexNode.setMargin(
+				edge,
+				margin ??
+				(getComputedValue(element, property) === "auto" ?
+					"auto" :
+					undefined),
+			);
+			flexNode.setPadding(
+				edge,
+				parseUnitValue(getComputedValue(element, `padding-${edge}`)),
+			);
 		}
 
 		// Border widths. The USED width is 0 when the side's style is none or
@@ -7943,18 +7734,12 @@ function styleFlexNodeProperties(
 	const flexBasis = parseUnitValue(
 		getComputedValue(element, "flex-basis"),
 	);
-	if (typeof flexBasis === "number") {
-		flexNode.setFlexBasis(flexBasis);
-	} else if (flexBasis && "percentage" in flexBasis) {
-		flexNode.setFlexBasisPercent(flexBasis.percentage);
-	} else {
-		const originalValue = getComputedValue(element, "flex-basis");
-		if (originalValue === "auto") {
-			flexNode.setFlexBasisAuto();
-		} else {
-			flexNode.setFlexBasis(undefined);
-		}
-	}
+	flexNode.setFlexBasis(
+		flexBasis ??
+		(getComputedValue(element, "flex-basis") === "auto" ?
+			"auto" :
+			undefined),
+	);
 
 	const alignSelf = getComputedValue(element, "align-self");
 	flexNode.setAlignSelf(alignmentConstant(alignSelf, "auto"));
@@ -8148,11 +7933,11 @@ function styleNode(
 	element: Element,
 	flexNode: LayoutNode,
 ): void {
-	const wasHidden = flexNode.getMode() === "none";
+	const wasHidden = flexNode.style.mode === "none";
 	styleFlexNode(element, flexNode, layout[kPositionedElements]);
 	// Turning display:none is what makes the whole subtree box-less, and
 	// this is the one place every path that restyles a box passes through.
-	if (!wasHidden && flexNode.getMode() === "none") {
+	if (!wasHidden && flexNode.style.mode === "none") {
 		retireHiddenContent(layout, element);
 	}
 	if (isOutOfFlow(element)) {
@@ -8503,7 +8288,7 @@ function retireFlexNode(
 	if (!flexNode) {
 		return;
 	}
-	flexNode.getParent()?.removeChild(flexNode);
+	flexNode.parent?.removeChild(flexNode);
 	while (flexNode.children.length > 0) {
 		flexNode.removeChild(flexNode.children[0]);
 	}
@@ -8529,7 +8314,7 @@ function boxKindMatches(
 	}
 	return (
 		(computedDisplay(element) === "none") ===
-		(flexNode.getMode() === "none")
+		(flexNode.style.mode === "none")
 	);
 }
 
@@ -8546,7 +8331,7 @@ function retireAnonymousBox(
 	if (!flexNode) {
 		return;
 	}
-	flexNode.getParent()?.removeChild(flexNode);
+	flexNode.parent?.removeChild(flexNode);
 	layout[kMeasureNodes].delete(flexNode);
 	layout[kAnonymousBoxes].delete(flexNode);
 	flexNode.owner = null;
@@ -8735,7 +8520,7 @@ function syncContainerRuns(
 				flexNode = null;
 			}
 			if (!flexNode) {
-				flexNode = LayoutNode.create();
+				flexNode = new LayoutNode();
 				entry.layoutNode = flexNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
@@ -8753,7 +8538,7 @@ function syncContainerRuns(
 				flexNode.owner = entry.head;
 			}
 			if (containerFlex.getChildIndex(flexNode) !== index) {
-				flexNode.getParent()?.removeChild(flexNode);
+				flexNode.parent?.removeChild(flexNode);
 				containerFlex.insertChild(flexNode, index);
 			}
 			index++;
@@ -8775,7 +8560,7 @@ function syncContainerRuns(
 			continue;
 		}
 		const flexNode = layout[kNodeMap].get(node);
-		if (flexNode && flexNode.getParent() === containerFlex) {
+		if (flexNode && flexNode.parent === containerFlex) {
 			// The box list is the order. A box placed among its DOM
 			// siblings knows nothing of the anonymous boxes between them --
 			// text between two blocks opens one, and the block after it was
@@ -8914,7 +8699,7 @@ function climbsTo(
 	from: LayoutNode | null,
 	target: LayoutNode,
 ): boolean {
-	for (let node = from; node !== null; node = node.getParent()) {
+	for (let node = from; node !== null; node = node.parent) {
 		if (node === target) {
 			return true;
 		}
@@ -8984,7 +8769,7 @@ function addNode(
 	// beside a single letter of text paints fine.
 	if (parentFlexNode?.measureFunc) {
 		const stale = layout[kNodeMap].get(node);
-		if (stale && stale.getParent() === parentFlexNode) {
+		if (stale && stale.parent === parentFlexNode) {
 			parentFlexNode.removeChild(stale);
 			layout[kMeasureNodes].delete(stale);
 			stale.freeRecursive();
@@ -9034,7 +8819,7 @@ function addNode(
 			}
 		}
 		if (existingFlexNode && parentFlexNode) {
-			const currentParent = existingFlexNode.getParent();
+			const currentParent = existingFlexNode.parent;
 			if (currentParent !== parentFlexNode) {
 				if (currentParent) {
 					currentParent.removeChild(existingFlexNode);
@@ -9093,7 +8878,7 @@ function addElementNode(
 
 	let flexNode = layout[kNodeMap].get(element);
 	if (!flexNode) {
-		flexNode = LayoutNode.create();
+		flexNode = new LayoutNode();
 		trackNode(layout, element, flexNode);
 	}
 
@@ -9185,7 +8970,7 @@ function addTextNode(
 
 	let flexNode = layout[kNodeMap].get(text);
 	if (!flexNode) {
-		flexNode = LayoutNode.create();
+		flexNode = new LayoutNode();
 		trackNode(layout, text, flexNode);
 	}
 
@@ -9195,7 +8980,7 @@ function addTextNode(
 	);
 	layout[kMeasureNodes].add(flexNode);
 
-	parentFlexNode.insertChild(flexNode, parentFlexNode.getChildCount());
+	parentFlexNode.insertChild(flexNode, parentFlexNode.children.length);
 }
 
 /**
@@ -9270,7 +9055,7 @@ function syncContentRoot(
 
 	let root = box.contentRoot;
 	if (!root) {
-		root = LayoutNode.create();
+		root = new LayoutNode();
 		root.setBlockFormattingContext(true);
 		box.contentRoot = root;
 	}
@@ -9512,7 +9297,7 @@ function documentPosition(
 ): {x: number; y: number} {
 	const position = absolutePosition(layout, flexNode);
 	let root = flexNode;
-	for (let parent = root.getParent(); parent; parent = root.getParent()) {
+	for (let parent = root.parent; parent; parent = root.parent) {
 		root = parent;
 	}
 	if (root === layout[kViewportRoot]) {
@@ -9556,7 +9341,7 @@ function placeChild(
 	child: LayoutNode,
 	index: number,
 ): void {
-	if (child.getParent() === parent) {
+	if (child.parent === parent) {
 		if (parent.getChildIndex(child) === index) {
 			return;
 		}
@@ -9647,7 +9432,7 @@ function pruneDisconnectedNodes(
 			continue;
 		}
 
-		const parent = flexNode.getParent();
+		const parent = flexNode.parent;
 		if (parent) {
 			parent.removeChild(flexNode);
 		}
@@ -9823,7 +9608,7 @@ function invalidateNode(
 	} else if (node.nodeType === node.ELEMENT_NODE) {
 		const flexNode = layout[kNodeMap].get(node);
 		if (flexNode) {
-			const parent = flexNode.getParent();
+			const parent = flexNode.parent;
 			if (parent) {
 				parent.removeChild(flexNode);
 			}
@@ -11634,10 +11419,10 @@ function absolutePosition(
 	for (
 		let current: LayoutNode | null = flexNode;
 		current;
-		current = current.getParent()
+		current = current.parent
 	) {
-		x += current.getComputedLeft();
-		y += current.getComputedTop();
+		x += current.layout.left;
+		y += current.layout.top;
 		if (current !== flexNode) {
 			const node = current.owner as Node | undefined;
 			if (
@@ -12061,7 +11846,7 @@ function staticPosition(
 		// IN-FLOW box left off.
 		if (
 			!previousNode ||
-			previousNode.getParent() !== containerNode ||
+			previousNode.parent !== containerNode ||
 			(previous.node !== null && isOutOfFlow(previous.node))
 		) {
 			continue;
@@ -12070,7 +11855,7 @@ function staticPosition(
 			left: offsetLeft + contentLeft,
 			top:
 				offsetTop +
-				previousNode.getComputedTop() +
+				previousNode.layout.top +
 				previousNode.getComputedHeight() +
 				previousNode.layout.margin.bottom,
 		};
@@ -12855,7 +12640,7 @@ export class LayoutEngine {
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<LayoutNode>();
 
-		this[kViewportRoot] = LayoutNode.create();
+		this[kViewportRoot] = new LayoutNode();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
 	}
@@ -13052,7 +12837,7 @@ export class LayoutEngine {
 			// children (e.g. the run head's own text) still need the walker below.
 			flexNode.measureFunc !== null ||
 			flexNode.unstackedChildCount !== 0 ||
-			flexNode.getMode() !== "block" ||
+			flexNode.style.mode !== "block" ||
 			// A non-run-head member of an inline run (a plain <span> inside
 			// running text, but also -- unlike that span -- an inline-block
 			// sibling, which paints its own box independently rather than
@@ -13175,7 +12960,7 @@ export class LayoutEngine {
 		let bottom = 0;
 		for (const child of flexNode.children) {
 			// A display:none placeholder holds its slot with a stale layout.
-			if (child.getMode() === "none") {
+			if (child.style.mode === "none") {
 				continue;
 			}
 			if (right !== null) {
@@ -13184,12 +12969,12 @@ export class LayoutEngine {
 						null :
 							Math.max(
 								right,
-								child.getComputedLeft() + child.getComputedWidth(),
+								child.layout.left + child.getComputedWidth(),
 							);
 			}
 			bottom = Math.max(
 				bottom,
-				child.getComputedTop() + child.getComputedHeight(),
+				child.layout.top + child.getComputedHeight(),
 			);
 		}
 		const clientWidth =
@@ -13363,9 +13148,9 @@ export class LayoutEngine {
 		const body = document.body;
 		let rows = 0;
 		for (
-			let current = flexNode.getParent();
+			let current = flexNode.parent;
 			current;
-			current = current.getParent()
+			current = current.parent
 		) {
 			const node = current.owner as Node | undefined;
 			if (
