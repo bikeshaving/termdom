@@ -80,8 +80,6 @@ const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
 const kIsRendering = Symbol("isRendering");
-const kFrameCallbacks = Symbol("frameCallbacks");
-const kNextRafId = Symbol("nextRafId");
 
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
@@ -150,12 +148,6 @@ export class TermDOM {
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	declare [kIsRendering]: boolean;
-	// Callbacks registered via window.requestAnimationFrame, fired once the frame
-	// that includes their pending mutations has actually been written. Keyed
-	// by the handle requestAnimationFrame returned, so cancelAnimationFrame
-	// can actually cancel.
-	declare [kFrameCallbacks]: Map<number, FrameRequestCallback>;
-	declare [kNextRafId]: number;
 	// One updater per live MediaQueryList: re-evaluates its query and fires
 	// "change" if the answer flipped. Run by handleResize -- SIGWINCH is
 	// this screen's window resize.
@@ -282,8 +274,6 @@ export class TermDOM {
 		this[kFrameDirty] = true;
 		this[kPaintedGeneration] = -1;
 		this[kIsRendering] = false;
-		this[kFrameCallbacks] = new Map<number, FrameRequestCallback>();
-		this[kNextRafId] = 1;
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -652,15 +642,11 @@ function createMount(termDOM: TermDOM): EngineMount {
 		},
 		// A frame callback fires after the render it scheduled has been
 		// painted: a bare timer would be decoupled from the (async) paint,
-		// so a callback could fire before the frame is written.
-		requestFrame(callback) {
-			const id = termDOM[kNextRafId]++;
-			termDOM[kFrameCallbacks].set(id, callback as FrameRequestCallback);
+		// so a callback could fire before the frame is written. No dirty
+		// bit: the nothing-moved gate may skip the paint, but the render
+		// still drains the callbacks that awaited it.
+		frameRequested() {
 			void render(termDOM);
-			return id;
-		},
-		cancelFrame(handle) {
-			termDOM[kFrameCallbacks].delete(handle);
 		},
 		closeRequested() {
 			const wasAttached = isAttached(termDOM);
@@ -1109,6 +1095,7 @@ async function render(
 	}
 
 	termdom[kIsRendering] = true;
+	let framesAwaiting = false;
 	termdom[kRenderInFlight] = (async () => {
 		try {
 			do {
@@ -1120,29 +1107,14 @@ async function render(
 				// A callback that schedules another frame re-queues the
 				// outer loop, so a chain of requestAnimationFrame calls
 				// ticks frame by frame instead of stalling after the first.
-				drainFrameCallbacks(termdom);
-			} while (
-				termdom[kRenderQueued] ||
-				termdom[kFrameCallbacks].size > 0
-			);
+				framesAwaiting = DOM.runFrameCallbacks(termdom.document);
+			} while (termdom[kRenderQueued] || framesAwaiting);
 		} finally {
 			termdom[kIsRendering] = false;
 			termdom[kRenderInFlight] = null;
 		}
 	})();
 	return termdom[kRenderInFlight];
-}
-
-function drainFrameCallbacks(termdom: TermDOM): void {
-	if (termdom[kFrameCallbacks].size === 0) {
-		return;
-	}
-	const callbacks = [...termdom[kFrameCallbacks].values()];
-	termdom[kFrameCallbacks].clear();
-	const now = performance.now();
-	for (const cb of callbacks) {
-		cb(now);
-	}
 }
 
 /**

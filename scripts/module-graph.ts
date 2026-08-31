@@ -126,6 +126,7 @@ const DOM_DOORS = [
 	"refreshMediaQueries",
 	"renderedTopLayer",
 	"revealFieldCaret",
+	"runFrameCallbacks",
 	"selectionFocusOf",
 	"selectionRecordOf",
 	"selectorResolver",

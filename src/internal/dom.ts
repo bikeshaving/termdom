@@ -28387,10 +28387,8 @@ export interface Mount {
 		"top", delta: number): void;
 	/** Move the document camera to an offset and repaint. */
 	scrollDocumentTo(top: number): void;
-	/** Schedule a frame, and fire the callback once it has been painted. */
-	requestFrame(callback: (time: number) => void): number;
-	/** Drop a frame callback that has not fired. */
-	cancelFrame(handle: number): void;
+	/** A frame was asked for: schedule a render, and drain us after it. */
+	frameRequested(): void;
 	/** The window was closed, and the beforeunload gate let it through. */
 	closeRequested(): void;
 	/** The document was closed: seal what it painted into the scrollback. */
@@ -28963,6 +28961,36 @@ function noNavigation(): DOMException {
  * one is absent: a viewport of no size, a camera at the origin, a query that
  * matches nothing.
  */
+/**
+ * The callbacks each document's requestAnimationFrame holds, keyed by the
+ * handle it returned so cancelAnimationFrame can actually cancel. Fired by
+ * the engine once the frame that includes their pending mutations has been
+ * written.
+ */
+const frameCallbacks = new WeakMap<
+	Document,
+	{next: number; held: Map<number, FrameRequestCallback>}
+>();
+
+/**
+ * Fire the frame callbacks awaiting this document's just-painted frame.
+ * Returns whether new callbacks arrived while they ran: a callback that
+ * schedules another frame must tick the engine's render loop again.
+ */
+export function runFrameCallbacks(document: globalThis.Document): boolean {
+	const state = frameCallbacks.get(document as Document);
+	if (state === undefined || state.held.size === 0) {
+		return false;
+	}
+	const callbacks = [...state.held.values()];
+	state.held.clear();
+	const now = performance.now();
+	for (const callback of callbacks) {
+		callback(now);
+	}
+	return state.held.size > 0;
+}
+
 export class Window extends EventTarget {
 	readonly document: Document;
 	declare [kNavigator]?: Navigator | undefined;
@@ -29074,11 +29102,23 @@ export class Window extends EventTarget {
 	// so "await a frame" always means the frame carrying the pending
 	// mutations has landed.
 	requestAnimationFrame(callback: FrameRequestCallback): number {
-		return getMount(this.document)?.requestFrame(callback) ?? 0;
+		const mount = getMount(this.document);
+		if (mount === undefined) {
+			return 0;
+		}
+		let state = frameCallbacks.get(this.document);
+		if (state === undefined) {
+			state = {next: 1, held: new Map()};
+			frameCallbacks.set(this.document, state);
+		}
+		const handle = state.next++;
+		state.held.set(handle, callback);
+		mount.frameRequested();
+		return handle;
 	}
 
 	cancelAnimationFrame(handle: number): void {
-		getMount(this.document)?.cancelFrame(handle);
+		frameCallbacks.get(this.document)?.held.delete(handle);
 	}
 
 	/**
