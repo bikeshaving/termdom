@@ -2009,6 +2009,9 @@ const kRideProbeTrain = Symbol("rideProbeTrain");
 const kMeasurer = Symbol("measurer");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
+const kScrollTop = Symbol("scrollTop");
+const kDocumentTop = Symbol("documentTop");
+const kAnchorScrollTop = Symbol("anchorScrollTop");
 
 /**
  * One terminal's screen: the grid the last frame left on it, what is still
@@ -2046,6 +2049,13 @@ export class Screen {
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
+	// The camera over the document, and where the document sits on the
+	// terminal: how far down the document the view has moved, the screen row
+	// the document's first row is anchored to, and the fullscreen anchor --
+	// the alternate screen's row-zero scroll origin.
+	declare [kScrollTop]: number;
+	declare [kDocumentTop]: number;
+	declare [kAnchorScrollTop]: number;
 	// The writer every frame is spelled with, at the depth this terminal
 	// speaks. One per screen, and nothing reads back through it: a screen
 	// has no input side.
@@ -2080,12 +2090,50 @@ export class Screen {
 		this[kResetAtRow] = 0;
 		this[kRows] = rows;
 		this[kCols] = cols;
+		this[kScrollTop] = 0;
+		this[kDocumentTop] = 0;
+		this[kAnchorScrollTop] = 0;
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
 	resize(rows: number, cols: number): void {
 		this[kRows] = rows;
 		this[kCols] = cols;
+	}
+
+	get rows(): number {
+		return this[kRows];
+	}
+
+	get cols(): number {
+		return this[kCols];
+	}
+
+	/** How far down the document the camera has moved, in cells. */
+	get scrollTop(): number {
+		return this[kScrollTop];
+	}
+
+	set scrollTop(rows: number) {
+		this[kScrollTop] = rows;
+	}
+
+	/** The screen row the document's first row is anchored to. */
+	get documentTop(): number {
+		return this[kDocumentTop];
+	}
+
+	set documentTop(row: number) {
+		this[kDocumentTop] = row;
+	}
+
+	/** The fullscreen anchor: the alternate screen's row-zero scroll origin. */
+	get anchorScrollTop(): number {
+		return this[kAnchorScrollTop];
+	}
+
+	set anchorScrollTop(row: number) {
+		this[kAnchorScrollTop] = row;
 	}
 
 	/**

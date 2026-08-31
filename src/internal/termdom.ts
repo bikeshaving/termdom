@@ -163,11 +163,7 @@ const kPaintedGeneration = Symbol("paintedGeneration");
  * a signal reporting a size the document already has is recognised as the
  * no-op it is.
  */
-const kViewport = Symbol("viewport");
 
-const kScrollTop = Symbol("scrollTop");
-const kScreenTop = Symbol("screenTop");
-const kAnchorScrollTop = Symbol("anchorScrollTop");
 const kScrolledElements = Symbol("scrolledElements");
 
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
@@ -270,14 +266,9 @@ export class TermDOM {
 	declare [kFrameDirty]: boolean;
 	declare [kPaintedGeneration]: number;
 
-	declare [kViewport]: {width: number; height: number};
-
 	/** How far into the document the painted region looks (window.scrollY). */
-	declare [kScrollTop]: number;
 	/** The terminal row the painted region starts at (the command start). */
-	declare [kScreenTop]: number;
 	/** The fullscreen anchor: the alternate screen's row-zero scroll origin. */
-	declare [kAnchorScrollTop]: number;
 
 	// Boxes holding a nonzero scroll offset. Layout changes can shrink a
 	// box's content out from under its offset; each layout flush pulls
@@ -342,9 +333,6 @@ export class TermDOM {
 	declare [kStaticSibling]: TermDOM | null;
 
 	constructor(options: TermDOMOptions = {}) {
-		this[kScrollTop] = 0;
-		this[kScreenTop] = 0;
-		this[kAnchorScrollTop] = 0;
 		this[kFrameScroll] = 0;
 		this[kFrameBand] = null;
 
@@ -449,7 +437,7 @@ export class TermDOM {
 			document: this.document,
 			layout: this[kLayoutEngine],
 			styleManager: this[kStyleManager],
-			scrollTop: () => this[kScrollTop],
+			scrollTop: () => this[kScreen].scrollTop,
 			topLayer: DOM.getTopLayer(this.document) as unknown as Set<Element>,
 		});
 
@@ -457,8 +445,8 @@ export class TermDOM {
 		// probe channel, and takes it for its lifetime.
 		this[kExchange] = buildExchange(this);
 		this[kScreen] = new Screen(
-			this[kViewport].height,
-			this[kViewport].width,
+			this[kTransport].rows,
+			this[kTransport].cols,
 			this[kTransport].colorDepth,
 			this[kExchange].widthMeasurer,
 		);
@@ -709,7 +697,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 		},
 		scrollOffset(element) {
 			if (isRoot(element)) {
-				return {left: 0, top: termDOM[kScrollTop]};
+				return {left: 0, top: termDOM[kScreen].scrollTop};
 			}
 			return elementScrollOffsets.get(element) ?? {left: 0, top: 0};
 		},
@@ -773,7 +761,7 @@ function createMount(termDOM: TermDOM): EngineMount {
 				return;
 			}
 			const regionHeight = cameraRegionHeight(termDOM);
-			const top = termDOM[kScrollTop];
+			const top = termDOM[kScreen].scrollTop;
 			if (rect.top < top) {
 				scrollCamera(termDOM, rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
@@ -805,13 +793,14 @@ function createMount(termDOM: TermDOM): EngineMount {
 		// outer pairs are one size, and the root elements report the height
 		// as the height of what they scroll in.
 		viewportSize() {
-			return {...termDOM[kViewport]};
+			const screen = termDOM[kScreen];
+			return {width: screen.cols, height: screen.rows};
 		},
 		screenTop() {
-			return termDOM[kScreenTop];
+			return termDOM[kScreen].documentTop;
 		},
 		scrollTop() {
-			return termDOM[kScrollTop];
+			return termDOM[kScreen].scrollTop;
 		},
 		scrollDocumentTo(top) {
 			scrollDocumentTo(termDOM, top);
@@ -1005,8 +994,8 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			documentPointAt: (col, row): DocumentPoint => {
 				const documentRow =
 					isFullscreen(termdom) ?
-						row - 1 + termdom[kAnchorScrollTop] :
-						row - 1 - termdom[kScreenTop] + termdom[kScrollTop];
+						row - 1 + termdom[kScreen].anchorScrollTop :
+						row - 1 - termdom[kScreen].documentTop + termdom[kScreen].scrollTop;
 				const inDocument = documentRow >= 0;
 				return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
 			},
@@ -1025,7 +1014,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 				}
 				if (
 					deltaY < 0 &&
-					termdom[kScrollTop] === 0 &&
+					termdom[kScreen].scrollTop === 0 &&
 					!isFullscreen(termdom)
 				) {
 					return true;
@@ -1085,9 +1074,9 @@ function buildExchange(
 				termdom.window.close();
 			},
 			onCommandStart: (screenTop) => {
-				termdom[kScreenTop] = screenTop;
+				termdom[kScreen].documentTop = screenTop;
 				// Content shifts up to the terminal top from the command start.
-				termdom[kAnchorScrollTop] = -screenTop;
+				termdom[kScreen].anchorScrollTop = -screenTop;
 			},
 			onTerminalReordersText: () => {
 				termdom[kLayoutEngine].setTerminalReordersText(true);
@@ -1133,8 +1122,8 @@ function rebindTransport(
 	applyTerminalSize(termdom, transport.cols, transport.rows);
 	termdom[kExchange] = buildExchange(termdom);
 	termdom[kScreen] = new Screen(
-		termdom[kViewport].height,
-		termdom[kViewport].width,
+		transport.rows,
+		transport.cols,
 		transport.colorDepth,
 		termdom[kExchange].widthMeasurer,
 	);
@@ -1151,7 +1140,9 @@ function adoptTerminalSize(
 	width: number,
 	height: number,
 ): void {
-	termdom[kViewport] = {width, height};
+	// The screen is the size's owner; the constructor adopts before the
+	// screen exists and builds it at this size right after.
+	termdom[kScreen]?.resize(height, width);
 	termdom[kLayoutEngine].resize(width, height);
 }
 
@@ -1169,9 +1160,8 @@ function applyTerminalSize(
 	// A SIGWINCH reporting an unchanged size still redraws but fires no
 	// resize event, so the comparison is against the size the document holds,
 	// not the one the transport is reporting.
-	const viewport = termdom[kViewport];
-	const sizeChanged =
-		newWidth !== viewport.width || newHeight !== viewport.height;
+	const screen = termdom[kScreen];
+	const sizeChanged = newWidth !== screen.cols || newHeight !== screen.rows;
 
 	// Before any style is resolved: `vw` and `@media` are answered from here
 	// through the window, and the layout engine is handed the same size to
@@ -1385,7 +1375,7 @@ function documentPaintHeight(
 		// a physical scroll no bookkeeping records -- and from then on
 		// the anchor lies by that many rows.
 		if (DOM.isModalDialog(element)) {
-			return termdom[kViewport].height;
+			return termdom[kScreen].rows;
 		}
 		const rect = termdom[kLayoutEngine].getRect(element);
 		if (rect) {
@@ -1417,9 +1407,9 @@ function cameraRegionHeight(
 	termdom: TermDOM,
 ): number {
 	return isFullscreen(termdom) ?
-		termdom[kViewport].height :
+		termdom[kScreen].rows :
 			Math.min(
-				termdom[kViewport].height,
+				termdom[kScreen].rows,
 				documentFlowHeight(termdom),
 			);
 }
@@ -1519,7 +1509,7 @@ function scrollCaretIntoView(
 		revealBottom = Math.round(rect.bottom);
 	}
 	const regionHeight = cameraRegionHeight(termdom);
-	const top = termdom[kScrollTop];
+	const top = termdom[kScreen].scrollTop;
 	const delta =
 		revealTop < top ?
 			revealTop - top :
@@ -1701,7 +1691,7 @@ function resolveScrollBand(
 	const box = getBoxModel(record.element);
 	const left = rect.left + (box.borderLeftWidth || 0);
 	const right = rect.left + rect.width - (box.borderRightWidth || 0);
-	if (left > 0 || right < termdom[kViewport].width) {
+	if (left > 0 || right < termdom[kScreen].cols) {
 		return null;
 	}
 
@@ -1709,7 +1699,9 @@ function resolveScrollBand(
 	// off what a scrolled ancestor lifts the box by -- and the buffer's are
 	// the camera's. A box in fixed space is laid out in viewport rows
 	// instead, and the paint cancels the camera for it.
-	const lift = engine.isInFixedSpace(record.element) ? 0 : termdom[kScrollTop];
+	const lift = engine.isInFixedSpace(record.element) ?
+		0 :
+		termdom[kScreen].scrollTop;
 	const top = Math.max(
 		0,
 		Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
@@ -1808,7 +1800,6 @@ function handleResize(
 	const newHeight = termdom[kTransport].rows;
 
 	applyTerminalSize(termdom, newWidth, newHeight);
-	termdom[kScreen].resize(newHeight, newWidth);
 
 	// Re-anchor and redraw. The terminal has already rewrapped everything on
 	// screen -- including our old frame -- and how far our content moved depends
@@ -1843,8 +1834,8 @@ function handleResize(
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		termdom[kScreenTop] = startRow;
-		termdom[kAnchorScrollTop] = -startRow;
+		termdom[kScreen].documentTop = startRow;
+		termdom[kScreen].anchorScrollTop = -startRow;
 		termdom[kScreen].replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
@@ -1858,7 +1849,7 @@ function handleResize(
 	};
 
 	const computedReanchor = () => {
-		const previousStart = termdom[kScreenTop];
+		const previousStart = termdom[kScreen].documentTop;
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};
@@ -1916,9 +1907,9 @@ function afterRender(
 	// high. IntersectionObserver measures targets against it.
 	const viewport = new termdom.window.DOMRect(
 		0,
-		termdom[kScrollTop],
-		termdom[kViewport].width,
-		termdom[kViewport].height,
+		termdom[kScreen].scrollTop,
+		termdom[kScreen].cols,
+		termdom[kScreen].rows,
 	);
 	flushObservers(
 		termdom.document,
@@ -2031,7 +2022,7 @@ function flushDocument(
 		return;
 	}
 
-	const top = termdom[kScreenTop];
+	const top = termdom[kScreen].documentTop;
 	const output = renderStatic(termdom, "\r\n");
 	if (!output) {
 		return;
@@ -2171,11 +2162,11 @@ async function renderInteractive(
 	// fixed, Canvas-backed fullscreen element covers it regardless.
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen ?
-		termdom[kViewport].height :
+		termdom[kScreen].rows :
 			documentPaintHeight(termdom);
 	const regionHeight = Math.min(
 		contentHeight,
-		termdom[kViewport].height,
+		termdom[kScreen].rows,
 	);
 
 	// Take the room we need by pushing earlier output up, never over it.
@@ -2187,7 +2178,7 @@ async function renderInteractive(
 		// about to be shifted by -- there is no memory of where the last
 		// frame painted for it to disagree with.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		scrollDocumentTo(termdom, Math.min(termdom[kScrollTop], maxScroll));
+		scrollDocumentTo(termdom, Math.min(termdom[kScreen].scrollTop, maxScroll));
 	}
 
 	// The camera has no alternate screen to move: fullscreen owns row zero
@@ -2196,7 +2187,7 @@ async function renderInteractive(
 	// scrolls under fixed chrome the terminal never touches.
 	const band = resolveScrollBand(termdom, regionHeight);
 	const context = termdom[kScreen].beginFrame({
-		offset: -termdom[kScrollTop],
+		offset: -termdom[kScreen].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		delta: band ? band.delta : fullscreen ? 0 : termdom[kFrameScroll],
@@ -2229,8 +2220,8 @@ function scrollDocumentTo(
 	row: number,
 ): void {
 	const next = Math.max(0, row);
-	termdom[kFrameScroll] += next - termdom[kScrollTop];
-	termdom[kScrollTop] = next;
+	termdom[kFrameScroll] += next - termdom[kScreen].scrollTop;
+	termdom[kScreen].scrollTop = next;
 }
 
 /**
@@ -2243,14 +2234,14 @@ function pushRowsUp(
 	termdom: TermDOM,
 	rows: number,
 ): number {
-	const overflow = termdom[kScreenTop] +
+	const overflow = termdom[kScreen].documentTop +
 		rows -
-		termdom[kViewport].height;
+		termdom[kScreen].rows;
 	if (overflow <= 0) {
 		return 0;
 	}
-	const push = Math.min(overflow, termdom[kScreenTop]);
-	termdom[kScreenTop] -= push;
+	const push = Math.min(overflow, termdom[kScreen].documentTop);
+	termdom[kScreen].documentTop -= push;
 	return push;
 }
 
@@ -2259,7 +2250,7 @@ function scrollCamera(
 	termdom: TermDOM,
 	rows: number,
 ): void {
-	scrollDocumentTo(termdom, termdom[kScrollTop] + rows);
+	scrollDocumentTo(termdom, termdom[kScreen].scrollTop + rows);
 	// A camera move is invisible to the MutationObserver; schedule the frame
 	// it needs, the same way a DOM mutation would.
 	void render(termdom);
@@ -2300,7 +2291,7 @@ function reserveRows(
 ): number {
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
-		void termdom[kExchange].scrollUp(termdom[kViewport].height, push);
+		void termdom[kExchange].scrollUp(termdom[kScreen].rows, push);
 		// Do NOT shift the screen's previous buffer. Its rows are relative to
 		// the region top, and the top moves up by exactly the amount the screen
 		// scrolled -- the two cancel, so buffer coordinates are unchanged.
@@ -2314,7 +2305,7 @@ function reserveRows(
 		termdom[kScreen].scrolled(push);
 	}
 
-	return termdom[kScreenTop];
+	return termdom[kScreen].documentTop;
 }
 
 function staticRenderer(
@@ -2323,7 +2314,7 @@ function staticRenderer(
 	const cols = termdom[kTransport].cols;
 	if (
 		termdom[kStaticSibling] &&
-		termdom[kStaticSibling][kViewport].width !== cols
+		termdom[kStaticSibling][kScreen].cols !== cols
 	) {
 		void termdom[kStaticSibling].dispose();
 		termdom[kStaticSibling] = null;
