@@ -194,7 +194,7 @@ function widgetChanged(element: Element): void {
  * The one spelling of the question: the paint, the caret scroll and the
  * press-to-park default action all have to agree on which elements are fields.
  */
-export function isTextField(element: {
+function isTextField(element: {
 	tagName: string;
 	type?: string;
 }): boolean {
@@ -230,6 +230,155 @@ export function fieldValueText(field: globalThis.Element): globalThis.Text |
 	);
 }
 
+/**
+ * The focus of a control's selection record, or null for an element with
+ * no record: the caret, in the value text's own offsets.
+ */
+export function selectionFocusOf(element: globalThis.Element): number | null {
+	const record = selectionRecordOf(element);
+	if (record === null) {
+		return null;
+	}
+	return record.direction === "backward" ? record.start : record.end;
+}
+
+/**
+ * The value offset under a document-space point in a text field --
+ * cell-width aware, clamped to the nearest offset so a drag that leaves
+ * the field still resolves (the browser's capture model: a selection begun
+ * in a field is the field's until release).
+ */
+export function fieldCaretOffset(
+	element: globalThis.Element,
+	x: number,
+	y: number,
+): number | null {
+	// The value's own text: a field's selection is measured in ITS offsets,
+	// and for a password that text is the bullets, which is what was
+	// painted and so what the point lands on.
+	const valueText = fieldValueText(element);
+	if (!valueText) {
+		return null;
+	}
+	const mount = getMount(element);
+	if (mount === undefined) {
+		return null;
+	}
+	const found = mount.layout.caretPositionFromPoint(x, y, valueText, true);
+	if (!found) {
+		return null;
+	}
+	return Math.min(found.offset, valueText.data.length);
+}
+
+/**
+ * A press's default action in a text field: park the caret at the pressed
+ * character. Answers the field and the parked offset for the caller's drag
+ * anchor, or null off a field -- checkbox, radio and hidden render no text
+ * a caret can sit in, and a press on one is a press on no field.
+ */
+export function parkFieldCaret(
+	target: globalThis.Element,
+	x: number,
+	y: number,
+): {field: globalThis.Element; offset: number} | null {
+	if (!isTextField(target)) {
+		return null;
+	}
+	const offset = fieldCaretOffset(target, x, y);
+	if (offset === null) {
+		return null;
+	}
+	setUASelection(target, offset, offset);
+	return {field: target, offset};
+}
+
+/**
+ * The focused text field's own selection over this text node, or null. A
+ * control's selection is invisible to getSelection() per spec, so this is
+ * the one way a highlight learns of it; the range names the text the
+ * control renders its value through, so node identity is the whole test.
+ */
+export function fieldSelectionRange(
+	document: globalThis.Document,
+	textNode: globalThis.Text,
+): {range: globalThis.Range; field: globalThis.Element} | null {
+	const active = document.activeElement;
+	if (!active || !isTextField(active)) {
+		return null;
+	}
+	const range = getSelectionRange(active);
+	if (!range || range.startContainer !== textNode) {
+		return null;
+	}
+	return {range, field: active};
+}
+
+/**
+ * Keep the focused single-line input's caret in its box by setting the
+ * value part's scrollLeft (the layout reads it live, no relayout).
+ * Measured in cells; a frame recomputes this as derived state.
+ */
+export function revealFieldCaret(document: globalThis.Document): void {
+	const active = document.activeElement;
+	if (!active || active.localName !== "input" || !isTextField(active)) {
+		return;
+	}
+	const valueText = fieldValueText(active);
+	const valueSpan = valueText?.parentElement;
+	if (!valueText || !valueSpan) {
+		return;
+	}
+	const mount = getMount(active);
+	if (mount === undefined) {
+		return;
+	}
+	const content = mount.layout.contentRect(active);
+	if (!content) {
+		return;
+	}
+	const contentWidth = Math.round(content.width);
+	if (contentWidth <= 0) {
+		return;
+	}
+
+	const shown = valueText.data;
+	// Seed from the current scrollLeft so a settled window doesn't jitter.
+	const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
+	let scrollOffset = 0;
+	for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
+		acc += stringWidth(shown[scrollOffset]);
+		scrollOffset++;
+	}
+	// The caret is wherever the input renders it, in the value text's own
+	// offsets -- the same text `shown` is read from.
+	const cursor = selectionFocusOf(active);
+	if (cursor === null) {
+		return;
+	}
+	// Keep the caret's cell in the box, then pull back when a deletion left
+	// slack.
+	if (cursor < scrollOffset) {
+		scrollOffset = cursor;
+	}
+	while (
+		scrollOffset < cursor &&
+		stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
+	) {
+		scrollOffset++;
+	}
+	while (
+		scrollOffset > 0 &&
+		stringWidth(shown.slice(scrollOffset - 1)) < contentWidth
+	) {
+		scrollOffset--;
+	}
+	const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
+	if (scrollLeft !== currentScroll) {
+		valueSpan.scrollLeft = scrollLeft;
+	}
+}
+
 const kUASelectionRange = Symbol("what an element's own selection covers");
 
 /**
@@ -243,7 +392,7 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
  *
  * The range is the document's own, valid until the next selection read.
  */
-export function getSelectionRange(
+function getSelectionRange(
 	element: globalThis.Element,
 ): globalThis.Range | null {
 	return (

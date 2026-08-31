@@ -27,7 +27,6 @@ import {
 } from "./exchange.js";
 import {Screen} from "./screen.js";
 import {StyleManager, getComputedValue, getBoxModel} from "./cssom.js";
-import {stringWidth} from "./text.js";
 import {
 	EventHandler,
 	focusAutofocusedNodes,
@@ -1427,18 +1426,6 @@ function queueCaretReveal(
 }
 
 /**
- * The focus of a control's selection record, or null for an element with
- * no record: the caret, in the value text's own offsets.
- */
-function getSelectionFocus(element: Element): number | null {
-	const record = DOM.selectionRecordOf(element);
-	if (record === null) {
-		return null;
-	}
-	return record.direction === "backward" ? record.start : record.end;
-}
-
-/**
  * Where a control's caret sits on screen, derived as the painter derives
  * it: the focus of the selection record, measured through the text the
  * control renders. Null when there is no record, no text, or no box --
@@ -1448,7 +1435,7 @@ function caretRectFor(
 	termdom: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
-	const focus = getSelectionFocus(element);
+	const focus = DOM.selectionFocusOf(element);
 	if (focus === null) {
 		return null;
 	}
@@ -1513,64 +1500,6 @@ function scrollCaretIntoView(
 				0;
 	if (delta) {
 		scrollCamera(termdom, delta);
-	}
-}
-
-/**
- * Keep a single-line input's caret in its box by setting the value part's
- * scrollLeft (the layout reads it live, no relayout). Measured in cells.
- */
-function scrollFieldCaretIntoView(
-	termdom: TermDOM,
-	input: HTMLInputElement,
-): void {
-	const valueText = DOM.fieldValueText(input);
-	const valueSpan = valueText?.parentElement as HTMLElement | null;
-	if (!valueText || !valueSpan) {
-		return;
-	}
-	const content = termdom[kLayoutEngine].contentRect(input);
-	if (!content) {
-		return;
-	}
-	const contentWidth = Math.round(content.width);
-	if (contentWidth <= 0) {
-		return;
-	}
-
-	const shown = valueText.data;
-	// Seed from the current scrollLeft so a settled window doesn't jitter.
-	const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
-	let scrollOffset = 0;
-	for (let acc = 0; scrollOffset < shown.length && acc < currentScroll;) {
-		acc += stringWidth(shown[scrollOffset]);
-		scrollOffset++;
-	}
-	// The caret is wherever the input renders it, in the value text's own
-	// offsets -- the same text `shown` is read from.
-	const cursor = getSelectionFocus(input);
-	if (cursor === null) {
-		return;
-	}
-	// Keep the caret's cell in the box, then pull back when a deletion left slack.
-	if (cursor < scrollOffset) {
-		scrollOffset = cursor;
-	}
-	while (
-		scrollOffset < cursor &&
-		stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
-	) {
-		scrollOffset++;
-	}
-	while (
-		scrollOffset > 0 &&
-		stringWidth(shown.slice(scrollOffset - 1)) < contentWidth
-	) {
-		scrollOffset--;
-	}
-	const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
-	if (scrollLeft !== currentScroll) {
-		valueSpan.scrollLeft = scrollLeft;
 	}
 }
 
@@ -2142,13 +2071,7 @@ async function renderInteractive(
 	}
 
 	// Recompute the focused input's scroll window every frame (derived state).
-	const activeField = termdom.document.activeElement;
-	if (
-		activeField instanceof (termdom.window as any).HTMLInputElement &&
-		DOM.isTextField(activeField as HTMLInputElement)
-	) {
-		scrollFieldCaretIntoView(termdom, activeField as HTMLInputElement);
-	}
+	DOM.revealFieldCaret(termdom.document);
 
 	// Fullscreen owns the WHOLE alternate screen from row zero: the
 	// main screen's command anchor means nothing there, and reserveRows'

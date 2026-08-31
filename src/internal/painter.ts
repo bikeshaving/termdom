@@ -11,9 +11,8 @@ import {
 	type EngineWindow,
 	fieldValueText,
 	flatParentElement,
-	getSelectionRange,
+	fieldSelectionRange,
 	getShadowRoot,
-	isTextField,
 	renderedTopLayer,
 	selectionRecordOf,
 } from "./dom.js";
@@ -982,16 +981,11 @@ function selectionRangeFor(
 	painter: Painter,
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
-	const active = painter[kDocument].activeElement;
-	if (active && isTextField(active)) {
-		const fieldRange = getSelectionRange(active);
-		// The control's range names the text it renders its value through, so
-		// node identity is the whole test -- no widget anatomy to know.
-		if (fieldRange && fieldRange.startContainer === textNode) {
-			// ::selection resolves on the field host (`input::selection`), not
-			// the shadow value span.
-			return {range: fieldRange, selectionParent: active};
-		}
+	const field = fieldSelectionRange(painter[kDocument], textNode);
+	if (field) {
+		// ::selection resolves on the field host (`input::selection`), not
+		// the shadow value span.
+		return {range: field.range, selectionParent: field.field};
 	}
 
 	const selection = painter[kWindow].getSelection();

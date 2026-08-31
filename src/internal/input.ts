@@ -30,11 +30,11 @@
 import {
 	type EngineWindow,
 	closeTopmost,
-	fieldValueText,
+	fieldCaretOffset,
 	flatParentElement,
 	getShadowRoot,
-	isTextField,
 	keyboardActivation,
+	parkFieldCaret,
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
@@ -970,7 +970,7 @@ function dragTo(
 	// the pointer is over now (the field holds the capture).
 	if (handler[kFieldDragAnchor] && inDocument) {
 		const {element: fieldElement, offset: anchor} = handler[kFieldDragAnchor];
-		const focus = fieldOffsetAt(handler, fieldElement, x, y);
+		const focus = fieldCaretOffset(fieldElement, x, y);
 		if (focus !== null) {
 			setUASelection(
 				fieldElement,
@@ -1060,25 +1060,22 @@ function press(
 	// the pressed character and anchors a FIELD drag there -- the
 	// field's own bounded selectionStart/End world, never the
 	// document selection: the same split a browser makes.
-	const field =
-		base === 0 && inDocument && isTextField(target) ?
-				(target as HTMLInputElement | HTMLTextAreaElement) :
-			null;
-	if (field) {
-		const offset = fieldOffsetAt(handler, field, x, y);
-		if (offset !== null) {
-			setUASelection(field, offset, offset);
-			handler[kFieldDragAnchor] = {element: field, offset};
-			// The DOCUMENT selection still clears on entry -- a page
-			// selection doesn't stay highlighted behind a field click
-			// in a browser either. The two worlds just never merge:
-			// getSelection() cannot see inside the field, per spec.
-			const docSelection = view.window.getSelection();
-			if (docSelection && !docSelection.isCollapsed) {
-				docSelection.removeAllRanges();
-			}
-			view.requestRender();
+	const parked =
+		base === 0 && inDocument ? parkFieldCaret(target, x, y) : null;
+	if (parked) {
+		handler[kFieldDragAnchor] = {
+			element: parked.field as HTMLInputElement | HTMLTextAreaElement,
+			offset: parked.offset,
+		};
+		// The DOCUMENT selection still clears on entry -- a page
+		// selection doesn't stay highlighted behind a field click
+		// in a browser either. The two worlds just never merge:
+		// getSelection() cannot see inside the field, per spec.
+		const docSelection = view.window.getSelection();
+		if (docSelection && !docSelection.isCollapsed) {
+			docSelection.removeAllRanges();
 		}
+		view.requestRender();
 	}
 
 	// Default action: mousedown collapses the document selection at
@@ -1570,30 +1567,4 @@ function selectable(
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
 	return parent === null || handler[kStyleManager].isSelectable(parent);
-}
-
-/**
- * The value offset under a document-space point in a text field --
- * cell-width aware, clamped to the nearest offset so a drag that
- * leaves the field still resolves (the browser's capture model:
- * a selection begun in a field is the field's until release).
- */
-function fieldOffsetAt(
-	handler: EventHandler,
-	element: HTMLInputElement | HTMLTextAreaElement,
-	x: number,
-	y: number,
-): number | null {
-	// The value's own text: a field's selection is measured in ITS offsets,
-	// and for a password that text is the bullets, which is what was
-	// painted and so what the point lands on.
-	const valueText = fieldValueText(element);
-	if (!valueText) {
-		return null;
-	}
-	const found = handler[kLayout].caretPositionFromPoint(x, y, valueText, true);
-	if (!found) {
-		return null;
-	}
-	return Math.min(found.offset, valueText.data.length);
 }
