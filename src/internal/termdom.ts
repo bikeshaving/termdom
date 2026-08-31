@@ -505,10 +505,6 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
-		// The mount is built here, before the fields it reads exist: nothing
-		// reaches through it until a DOM member is actually called.
-		this[kMountHandle] = DOM.mount(document, createMount(this));
-
 		// Order matters: the style manager takes over getComputedStyle, and the
 		// layout engine reads styles through it from the moment it is built.
 		this[kStyleManager] = new StyleManager(this.window);
@@ -536,9 +532,11 @@ export class TermDOM {
 
 		this[kObserver] = observer;
 
-		// The collaborators a control's own shadow tree renders through. From
-		// here a control builds and keeps its tree itself; the shell only says
-		// when a newly connected one should be upgraded.
+		// The engine the document stands on. From here a control builds and
+		// keeps its own shadow tree; the shell only says when a newly
+		// connected one should be upgraded.
+		this[kMountHandle] = DOM.mount(document, createMount(this));
+
 		DOM.installUAEngine(this.document, {
 			layout: this[kLayoutEngine],
 			styles: this[kStyleManager],
@@ -892,6 +890,18 @@ function createMount(termDOM: TermDOM): EngineMount {
 
 	return {
 		engine: termDOM,
+		layout: termDOM[kLayoutEngine],
+		styles: termDOM[kStyleManager],
+		observer: termDOM[kObserver],
+		invalidateStructure: () => termDOM[kLayoutEngine].invalidate(),
+		// A popover shows and hides without touching the tree, so the rules
+		// that test `:popover-open` -- the UA sheet's own display among them
+		// -- are told here, and the frame that paints what they reveal is
+		// asked for here.
+		stateChanged(element) {
+			termDOM[kStyleManager].handleStateChange(element as Element);
+			void render(termDOM);
+		},
 		boundingClientRect(target) {
 			const element = target as Element;
 			if (!element.isConnected) {

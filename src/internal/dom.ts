@@ -27465,15 +27465,36 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 /* -------------------------------------------------------------- mounting */
 
 /**
- * The engine's answers for the APIs a document alone cannot give: what the
- * boxes measure, what a move of focus fires, when a frame lands, what the
- * viewport is, and what the terminal behind it can do. A mounting engine
- * installs one per document, and a node reaches it through its ownerDocument,
- * one hop. A headless document has none: it is the spec's
- * no-browsing-context document, and the members consulting a mount degrade to
- * that -- zero rects, empty lists, null parents.
+ * The engine standing behind a document: the collaborators it lays out,
+ * cascades and observes through, and its answers for the APIs a document
+ * alone cannot give -- what the boxes measure, what a move of focus fires,
+ * when a frame lands, what the viewport is, and what the terminal behind it
+ * can do. A mounting engine installs one per document, and a node reaches it
+ * through its ownerDocument, one hop. A headless document has none: it is the
+ * spec's no-browsing-context document, and the members consulting a mount
+ * degrade to that -- zero rects, empty lists, null parents.
  */
 export interface Mount {
+	/**
+	 * The three engines a document renders through, whole. A user-agent
+	 * widget needs every one of them: a control's rendered content model is
+	 * not its children -- an input has none -- but a shadow tree the user
+	 * agent owns, built from the control's own value, placeholder and
+	 * selection, and that tree lays out, cascades and is observed like any
+	 * other.
+	 */
+	layout: LayoutEngine;
+	styles: StyleManager;
+	observer: MutationObserver;
+	/**
+	 * Note that a state no attribute records moved -- a popover shown or
+	 * hidden. Nothing about it is a mutation, so the rules that test it and
+	 * the frame that paints what they reveal have nothing else to hear it
+	 * from.
+	 */
+	stateChanged(element: object): void;
+	/** Note the unbounded change attaching a shadow tree is. */
+	invalidateStructure(): void;
 	boundingClientRect(element: object): globalThis.DOMRect;
 	clientRects(element: object): globalThis.DOMRectList;
 	rangeBoundingClientRect(range: object): globalThis.DOMRect;
