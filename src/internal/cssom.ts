@@ -10394,9 +10394,9 @@ export class StyleManager {
 	// than reaching through window.document on every access.
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
-	declare [kLayoutEngine]?: LayoutEngine;
+	declare [kLayoutEngine]: LayoutEngine;
 
-	constructor(window: EngineWindow, layoutEngine?: LayoutEngine) {
+	constructor(window: EngineWindow, layoutEngine: LayoutEngine) {
 		this[kComputedStyleCache] = new WeakMap<
 			Element,
 			ComputedStyleDeclaration
@@ -10450,6 +10450,8 @@ export class StyleManager {
 			getResolvedStyle(this, element, pseudoElt);
 
 		setupInvalidationHooks(this);
+
+		parseStylesheets(this);
 	}
 
 	/** The rules matching an element, in cascade order. */
@@ -10502,7 +10504,7 @@ export class StyleManager {
 		// Without a renderer there is no layout pass, and so no used value to
 		// report: the computed value is the answer, as it is for any element
 		// with no box.
-		if (!this[kLayoutEngine] || getMount(this[kDocument]) === undefined) {
+		if (getMount(this[kDocument]) === undefined) {
 			return null;
 		}
 		// The flush is taken once per layout, not once per read: an
@@ -10533,7 +10535,7 @@ export class StyleManager {
 		if (!this.usedRect(element)) {
 			return null;
 		}
-		return this[kLayoutEngine]!.contentRect(element);
+		return this[kLayoutEngine].contentRect(element);
 	}
 
 	/**
@@ -10556,7 +10558,7 @@ export class StyleManager {
 		if (!this.usedRect(element)) {
 			return null;
 		}
-		return this[kLayoutEngine]!.gridTracks(element, rows);
+		return this[kLayoutEngine].gridTracks(element, rows);
 	}
 
 	/**
@@ -10568,12 +10570,6 @@ export class StyleManager {
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
 	/** The engine generation the used values above were measured under. */
 	declare [kUsedGeneration]: number;
-
-	setLayoutEngine(layoutEngine: LayoutEngine): void {
-		this[kLayoutEngine] = layoutEngine;
-
-		parseStylesheets(this);
-	}
 
 	/**
 	 * Enroll a shadow root's stylesheets in the cascade. Called for every
@@ -10860,7 +10856,7 @@ export class StyleManager {
 		invalidateSubtree(this, element);
 		// No mutation record describes the move, so the frame that decides
 		// whether anything is worth painting is told here.
-		this[kLayoutEngine]?.invalidateFrame();
+		this[kLayoutEngine].invalidateFrame();
 	}
 
 	/**
@@ -11176,7 +11172,7 @@ export class StyleManager {
 		// root; stylesheet changes are rare.
 		const body = this[kDocument].body;
 		if (body) {
-			this[kLayoutEngine]?.invalidate(body);
+			this[kLayoutEngine].invalidate(body);
 		}
 	}
 
@@ -11264,7 +11260,7 @@ export class StyleManager {
 		this[kPseudoElementStyleCache].delete(element);
 		// A style change can flip display: contents, which moves the node's
 		// flat-tree BOX parent, so no box enumeration still stands.
-		this[kLayoutEngine]?.invalidateFrame();
+		this[kLayoutEngine].invalidateFrame();
 	}
 
 	/** Drop every cached style, whatever it was cached from. */
@@ -12317,7 +12313,7 @@ function tickTransitions(manager: StyleManager): void {
 		}
 		invalidateElementCaches(manager, element);
 	}
-	manager[kLayoutEngine]?.invalidateFrame();
+	manager[kLayoutEngine].invalidateFrame();
 	flushTransitionEvents(manager);
 	// The engine's requestAnimationFrame schedules a render; a window no
 	// engine dressed has none, and its reads interpolate on their own.
@@ -12392,7 +12388,7 @@ function invalidateElementCaches(
 	// the one place an element's computed style goes stale -- attribute
 	// flips, inline styles, subtree and sibling reach, focus all arrive
 	// here -- so it is the one place layout has to be told.
-	manager[kLayoutEngine]?.styleInvalidated(element);
+	manager[kLayoutEngine].styleInvalidated(element);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade moved on rather than merely dropped.
 	const dropped = manager[kComputedStyleCache].get(element);
@@ -12439,7 +12435,7 @@ function invalidateEnclosingList(
 		}
 
 		invalidateElementCaches(manager, element);
-		manager[kLayoutEngine]?.invalidate(element);
+		manager[kLayoutEngine].invalidate(element);
 		for (const item of Array.from(element.children)) {
 			invalidateElementCaches(manager, item);
 		}
@@ -12459,7 +12455,7 @@ function invalidateEnclosingList(
 function parseStylesheets(
 	manager: StyleManager,
 ): void {
-	manager[kLayoutEngine]?.invalidate();
+	manager[kLayoutEngine].invalidate();
 	const document = manager[kDocument];
 	manager[kParsedRules] = [];
 	manager[kSelectorsReachSiblings] = false;
@@ -13634,14 +13630,14 @@ function attachPseudoElementToElementForType(
 		const text = existing.firstChild as Text;
 		if (text.data !== content) {
 			text.data = content;
-			manager[kLayoutEngine]?.invalidate(element);
+			manager[kLayoutEngine].invalidate(element);
 		}
 		return;
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	node.appendChild(element.ownerDocument.createTextNode(content));
-	manager[kLayoutEngine]?.invalidate();
-	manager[kLayoutEngine]?.invalidate(element);
+	manager[kLayoutEngine].invalidate();
+	manager[kLayoutEngine].invalidate(element);
 }
 
 /** Drop an element's pseudo-element node, and the boxes it held. */
@@ -13654,8 +13650,8 @@ function removePseudoElement(
 		return;
 	}
 	clearPseudoElement(element, pseudoType);
-	manager[kLayoutEngine]?.invalidate();
-	manager[kLayoutEngine]?.invalidate(element);
+	manager[kLayoutEngine].invalidate();
+	manager[kLayoutEngine].invalidate(element);
 }
 
 /** The CSSOM interfaces a window exposes as globals. */

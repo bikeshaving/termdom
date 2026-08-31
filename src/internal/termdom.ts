@@ -286,11 +286,11 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
-		// Order matters: the style manager takes over getComputedStyle, and the
-		// layout engine reads styles through it from the moment it is built.
-		this[kStyleManager] = new StyleManager(this.window);
+		// The cascade measures through the layout engine, so it is built with
+		// it; the engine reads styles lazily, through the getComputedStyle the
+		// cascade installs on the window.
 		this[kLayoutEngine] = new LayoutEngine(this.window);
-		this[kStyleManager].setLayoutEngine(this[kLayoutEngine]);
+		this[kStyleManager] = new StyleManager(this.window, this[kLayoutEngine]);
 		adoptTerminalSize(this, this[kTransport].cols, this[kTransport].rows);
 
 		// The session first: the screen measures widths over the session's

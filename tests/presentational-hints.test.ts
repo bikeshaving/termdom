@@ -24,8 +24,7 @@ function computed(html: string, id: string, property: string): string {
 	const window = createDocumentWindow(
 		`<!DOCTYPE html><html><body>${html}</body></html>`,
 	);
-	const styleManager = new StyleManager(window);
-	styleManager.setLayoutEngine(new LayoutEngine(window));
+	new StyleManager(window, new LayoutEngine(window));
 	const element = window.document.getElementById(id)!;
 	return window.getComputedStyle(element).getPropertyValue(property);
 }

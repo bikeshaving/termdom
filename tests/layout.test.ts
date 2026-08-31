@@ -63,9 +63,8 @@ function createLayoutEngine(html = "<div></div>"): {
 		body { min-height: 100%; }
 	</style></head><body>${html}</body></html>`);
 	// Setup terminal-specific getComputedStyle
-	const styleManager = new StyleManager(dom.window);
 	const layoutEngine = new LayoutEngine(dom.window);
-	styleManager.setLayoutEngine(layoutEngine);
+	const styleManager = new StyleManager(dom.window, layoutEngine);
 
 	// Setup MutationObserver to simulate TermDOM behavior
 	const observer = new dom.window.MutationObserver((mutations) => {

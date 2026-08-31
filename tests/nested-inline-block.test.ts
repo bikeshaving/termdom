@@ -16,9 +16,8 @@ import {createDocumentWindow} from "../src/internal/dom.js";
  * two public classes the real engine wires together.
  */
 function layOut(window: ReturnType<typeof createDocumentWindow>): LayoutEngine {
-	const styleManager = new StyleManager(window);
 	const layoutEngine = new LayoutEngine(window);
-	styleManager.setLayoutEngine(layoutEngine);
+	const styleManager = new StyleManager(window, layoutEngine);
 	styleManager.refreshStylesheets();
 	layoutEngine.calculateLayout();
 	return layoutEngine;

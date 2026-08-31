@@ -301,9 +301,8 @@ function mountEngine(window: EngineWindow): StyleManager {
 		configurable: true,
 	});
 
-	const styleManager = new StyleManager(window);
 	const layoutEngine = new LayoutEngine(window);
-	styleManager.setLayoutEngine(layoutEngine);
+	const styleManager = new StyleManager(window, layoutEngine);
 	// Mounting is what arms the flush a resolved value takes: the DOM wires
 	// its own mutation observer at mount and drains it into the style and
 	// layout engines before each measurement. There is no render loop here,

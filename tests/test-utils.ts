@@ -430,8 +430,7 @@ export function nextFrame(dom: {
  * resolves the same rules.
  */
 export function styleManagerFor(dom: {window: any}): StyleManager {
-	const sm = new StyleManager(dom.window);
-	sm.setLayoutEngine(new LayoutEngine(dom.window));
+	const sm = new StyleManager(dom.window, new LayoutEngine(dom.window));
 	sm.refreshStylesheets();
 	return sm;
 }

@@ -12858,8 +12858,6 @@ export class LayoutEngine {
 		this[kViewportRoot] = LayoutNode.create();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
-
-		addNode(this, this[kRootElement], this[kViewportRoot]);
 	}
 
 	/**
@@ -12879,6 +12877,12 @@ export class LayoutEngine {
 	}
 
 	calculateLayout(): void {
+		// The tree is built on the first pass, not at construction: building
+		// it reads every element's display through the cascade, and the
+		// engine is constructed before the cascade that answers exists.
+		if (!this[kNodeMap].has(this[kRootElement])) {
+			addNode(this, this[kRootElement], this[kViewportRoot]);
+		}
 		// Geometry moves with the pass, so anything memoized behind a flush --
 		// a resolved value, a rect -- re-measures after it.
 		this[kGeneration]++;
