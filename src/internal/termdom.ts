@@ -76,7 +76,7 @@ const kIsRendering = Symbol("isRendering");
 
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
-const kScreenSwitching = Symbol("screenSwitching");
+const kOnAltScreen = Symbol("onAltScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 
@@ -143,7 +143,9 @@ export class TermDOM {
 	// mutation starts a fresh document below it.
 	declare [kSealed]: boolean;
 	declare [kRenderQueued]: boolean;
-	declare [kScreenSwitching]: boolean;
+	// Which screen the frames land on; flipped by the render loop when the
+	// document's fullscreen state disagrees.
+	declare [kOnAltScreen]: boolean;
 	declare [kRenderInFlight]: Promise<void> | null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
@@ -233,7 +235,7 @@ export class TermDOM {
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
-		this[kScreenSwitching] = false;
+		this[kOnAltScreen] = false;
 		this[kRenderInFlight] = null;
 		this[kRenderCount] = 0;
 		this[kResizeTimer] = null;
@@ -532,25 +534,6 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 		styles: termDOM[kStyleManager],
 		exchange: termDOM[kExchange],
 		screen: termDOM[kScreen],
-		async switchScreens(action) {
-			// No frame may straddle the screen switch: an in-flight render
-			// finishing its stdout write AFTER the switch paints one
-			// screen's geometry onto the other. Hold new frames, drain the
-			// running one, then switch.
-			termDOM[kScreenSwitching] = true;
-			try {
-				await termDOM[kRenderInFlight];
-				await action();
-				// The screen under the renderer changed wholesale: drop the
-				// diff model, or the next frame patches one screen against
-				// the other's content.
-				termDOM[kScreen].repaintAll();
-				updateMouseReporting(termDOM);
-			} finally {
-				termDOM[kScreenSwitching] = false;
-			}
-			void render(termDOM);
-		},
 		// A frame callback fires after the render it scheduled has been
 		// painted: a bare timer would be decoupled from the (async) paint,
 		// so a callback could fire before the frame is written. No dirty
@@ -884,13 +867,6 @@ async function render(
 	// A resize is settling: suppress every render until handleResize issues the
 	// single re-anchored redraw. See settlingResize.
 	if (termdom[kSettlingResize] !== null) {
-		return;
-	}
-
-	// A screen switch (fullscreen enter/exit) is in progress: no frame
-	// may straddle it -- a frame computed for one screen landing on the
-	// other paints the wrong geometry onto the wrong buffer.
-	if (termdom[kScreenSwitching]) {
 		return;
 	}
 
@@ -1520,6 +1496,27 @@ async function renderInteractive(
 	const detectionPending = termdom[kExchange].cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
+	}
+
+	// The screen under this frame must match the document's fullscreen
+	// state before anything composes: the switch is written here, at the
+	// head of a frame, so no frame can straddle it -- the previous frame's
+	// bytes are already on the wire, and this frame paints the screen it
+	// just took. Entry is switch, hide, clear: a cursor the entry left
+	// visible would sit blinking on the screen it just took, and a frame's
+	// own hide arrives no earlier than the frame does.
+	const wantAlt = isFullscreen(termdom);
+	if (wantAlt !== termdom[kOnAltScreen]) {
+		termdom[kOnAltScreen] = wantAlt;
+		termdom[kExchange].setMode("altScreen", wantAlt);
+		if (wantAlt) {
+			termdom[kExchange].engageMode("cursorHidden");
+			void termdom[kExchange].clearScreen();
+		}
+		// The screen changed wholesale: drop the diff model, or this frame
+		// patches one screen against the other's content.
+		termdom[kScreen].repaintAll();
+		updateMouseReporting(termdom);
 	}
 
 	// Coalesced pointer motion resolves first: a hover listener's

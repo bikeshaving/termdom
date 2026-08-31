@@ -317,9 +317,6 @@ function mountEngine(window: EngineWindow): StyleManager {
 		closeRequested() {},
 		documentClosed() {},
 		attached: false,
-		async switchScreens(action) {
-			await action();
-		},
 	});
 	// The suite is written against a browser viewport in CSS pixels; this
 	// engine's pixel is a cell, so the harness gives it a grid the same size

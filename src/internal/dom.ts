@@ -8843,13 +8843,20 @@ export class Element extends Node implements globalThis.Element {
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
 		}
-		return engine.switchScreens(() => {
-			enterFullscreen(engine, this);
-			// The element's UA styles changed (it now fills the viewport)
-			// and neither a mutation nor a focus move fired.
-			engine.styles.handleFocusChange(this);
-			engine.layout.invalidate(this);
-		});
+		try {
+			enterFullscreen(this);
+		} catch (error) {
+			return Promise.reject(
+				error instanceof Error ? error : new Error(String(error)),
+			);
+		}
+		// The element's UA styles changed (it now fills the viewport)
+		// and neither a mutation nor a focus move fired.
+		engine.styles.handleFocusChange(this);
+		engine.layout.invalidate(this);
+		// The screen switch rides the next frame, where no frame can
+		// straddle it; the promise resolves once that frame is written.
+		return frameSettled(this[kDocument]!, engine);
 	}
 
 	get shadowRoot(): globalThis.ShadowRoot | null {
@@ -19143,7 +19150,7 @@ function fireFullscreenEvent(
  * cursor goes before the screen is touched, so it never sits blinking on
  * the clear.
  */
-function enterFullscreen(engine: Mount, element: Element): void {
+function enterFullscreen(element: Element): void {
 	const stack = fullscreenStackOf(element[kDocument]!);
 	try {
 		if (!element.isConnected) {
@@ -19152,11 +19159,6 @@ function enterFullscreen(engine: Mount, element: Element): void {
 			throw error;
 		}
 		stack.push(element);
-		if (stack.length === 1) {
-			engine.exchange.setMode("altScreen", true);
-			engine.exchange.engageMode("cursorHidden");
-			void engine.exchange.clearScreen();
-		}
 		fireFullscreenEvent("fullscreenchange", element);
 	} catch (error) {
 		if (stack[stack.length - 1] === element) {
@@ -19167,16 +19169,13 @@ function enterFullscreen(engine: Mount, element: Element): void {
 	}
 }
 
-/** The exit's steps: pop, hand the main screen back on the last one. */
-function leaveFullscreen(engine: Mount, document: Document): Element | null {
+/** The exit's steps: pop, and the next frame hands the main screen back. */
+function leaveFullscreen(document: Document): Element | null {
 	const stack = fullscreenStackOf(document);
 	if (stack.length === 0) {
 		return null;
 	}
 	const exiting = stack.pop()!;
-	if (stack.length === 0) {
-		engine.exchange.setMode("altScreen", false);
-	}
 	fireFullscreenEvent("fullscreenchange", exiting);
 	return exiting;
 }
@@ -21632,13 +21631,12 @@ export class Document extends Node implements globalThis.Document {
 				new TypeError("The document is not displayed"),
 			);
 		}
-		return engine.switchScreens(() => {
-			const exiting = leaveFullscreen(engine, this);
-			if (exiting) {
-				engine.styles.handleFocusChange(exiting);
-				engine.layout.invalidate(exiting);
-			}
-		});
+		const exiting = leaveFullscreen(this);
+		if (exiting) {
+			engine.styles.handleFocusChange(exiting);
+			engine.layout.invalidate(exiting);
+		}
+		return frameSettled(this, engine);
 	}
 
 	/**
@@ -28430,13 +28428,6 @@ export interface Mount {
 	documentClosed(): void;
 	/** Whether attach() has taken the terminal and dispose() has not. */
 	readonly attached: boolean;
-	/**
-	 * Bracket a wholesale screen swap: no frame may straddle it, and the
-	 * diff model still describes the screen it leaves. The engine holds new
-	 * frames, drains the running one, runs the action, then repaints from
-	 * scratch and re-decides mouse reporting.
-	 */
-	switchScreens(action: () => Promise<void> | void): Promise<void>;
 }
 
 /**
@@ -29187,6 +29178,34 @@ const frameCallbacks = new WeakMap<
  * Returns whether new callbacks arrived while they ran: a callback that
  * schedules another frame must tick the engine's render loop again.
  */
+function holdFrameCallback(
+	document: Document,
+	callback: FrameRequestCallback,
+): number {
+	let state = frameCallbacks.get(document);
+	if (state === undefined) {
+		state = {next: 1, held: new Map()};
+		frameCallbacks.set(document, state);
+	}
+	const handle = state.next++;
+	state.held.set(handle, callback);
+	return handle;
+}
+
+/**
+ * The frame the document's pending state rides: a fullscreen transition
+ * resolves its promise here, once the render that carries the switch has
+ * been written.
+ */
+function frameSettled(document: Document, mount: Mount): Promise<void> {
+	return new Promise((resolve) => {
+		holdFrameCallback(document, () => {
+			resolve();
+		});
+		mount.frameRequested();
+	});
+}
+
 export function runFrameCallbacks(document: globalThis.Document): boolean {
 	const state = frameCallbacks.get(document as Document);
 	if (state === undefined || state.held.size === 0) {
@@ -29321,13 +29340,7 @@ export class Window extends EventTarget {
 		if (mount === undefined) {
 			return 0;
 		}
-		let state = frameCallbacks.get(this.document);
-		if (state === undefined) {
-			state = {next: 1, held: new Map()};
-			frameCallbacks.set(this.document, state);
-		}
-		const handle = state.next++;
-		state.held.set(handle, callback);
+		const handle = holdFrameCallback(this.document, callback);
 		mount.frameRequested();
 		return handle;
 	}
