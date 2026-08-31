@@ -8589,14 +8589,28 @@ export class Element extends Node implements globalThis.Element {
 	 * document has no viewport to fill: the spec's no-browsing-context
 	 * document rejects.
 	 */
-	requestFullscreen(options?: globalThis.FullscreenOptions): Promise<void> {
+	requestFullscreen(_options?: globalThis.FullscreenOptions): Promise<void> {
 		const engine = getMount(this);
 		if (engine === undefined) {
 			return Promise.reject(
 				new TypeError("The element's document is not displayed"),
 			);
 		}
-		return engine.requestFullscreen(this, options);
+		// Fullscreen writes the alternate-screen switch; attach() is the
+		// only consent for that. A browser rejects without a user gesture,
+		// and this is the terminal's equivalent precondition.
+		if (!engine.attached()) {
+			return Promise.reject(
+				new Error("requestFullscreen(): attach() the terminal first"),
+			);
+		}
+		return engine.switchScreens(() => {
+			enterFullscreen(engine, this);
+			// The element's UA styles changed (it now fills the viewport)
+			// and neither a mutation nor a focus move fired.
+			engine.styles.handleFocusChange(this);
+			engine.layout.invalidate(this);
+		});
 	}
 
 	get shadowRoot(): globalThis.ShadowRoot | null {
@@ -18762,6 +18776,104 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 	});
 }
 
+/* ------------------------------------------------------------ fullscreen */
+
+/**
+ * The Fullscreen API over the engine's alternate screen. The element stack,
+ * the spec steps and the two events are user-agent state and live here; the
+ * screen swap itself is the engine's, bracketed through the mount so no
+ * frame straddles it.
+ */
+const fullscreenStacks = new WeakMap<Document, Element[]>();
+
+function fullscreenStackOf(document: Document): Element[] {
+	let stack = fullscreenStacks.get(document);
+	if (stack === undefined) {
+		stack = [];
+		fullscreenStacks.set(document, stack);
+	}
+	return stack;
+}
+
+/** The stack's top, which is the element the viewport shows alone. */
+function fullscreenElementOf(document: Document): Element | null {
+	const stack = fullscreenStacks.get(document);
+	return stack?.length ? stack[stack.length - 1] : null;
+}
+
+/** Abandon fullscreen without events: the engine is tearing down. */
+export function dropFullscreen(document: globalThis.Document): void {
+	fullscreenStacks.delete(document as Document);
+}
+
+/**
+ * Fire one of the two fullscreen events. ONE target, per the Fullscreen
+ * Standard: the element while it is still in the document, otherwise the
+ * document itself. Both events bubble, so a document listener hears them
+ * either way -- and firing at the document as well as the element would
+ * deliver every one of them twice.
+ */
+function fireFullscreenEvent(
+	type: "fullscreenchange" | "fullscreenerror",
+	element: Element,
+	detail?: {error: Error},
+): void {
+	const target = element.isConnected ? element : element[kDocument]!;
+	dispatchAsUserAgent(
+		target,
+		new CustomEvent(type, {
+			bubbles: true,
+			cancelable: false,
+			...(detail ? {detail} : {}),
+		}),
+	);
+}
+
+/**
+ * The request's steps: push, switch the screen mode on the first entry, and
+ * tell the document. The alternate screen comes up holding whatever the
+ * terminal left in it, so the entry clears it and homes the cursor; the
+ * cursor goes before the screen is touched, so it never sits blinking on
+ * the clear.
+ */
+function enterFullscreen(engine: Mount, element: Element): void {
+	const stack = fullscreenStackOf(element[kDocument]!);
+	try {
+		if (!element.isConnected) {
+			const error = new Error("The element is not contained by a document.");
+			error.name = "InvalidStateError";
+			throw error;
+		}
+		stack.push(element);
+		if (stack.length === 1) {
+			engine.exchange.setMode("altScreen", true);
+			engine.exchange.engageMode("cursorHidden");
+			void engine.exchange.clearScreen();
+		}
+		fireFullscreenEvent("fullscreenchange", element);
+	} catch (error) {
+		if (stack[stack.length - 1] === element) {
+			stack.pop();
+		}
+		fireFullscreenEvent("fullscreenerror", element, {error: error as Error});
+		throw error;
+	}
+}
+
+/** The exit's steps: pop, hand the main screen back on the last one. */
+function leaveFullscreen(engine: Mount, document: Document): Element | null {
+	const stack = fullscreenStackOf(document);
+	if (stack.length === 0) {
+		return null;
+	}
+	const exiting = stack.pop()!;
+	if (stack.length === 0) {
+		engine.exchange.setMode("altScreen", false);
+	}
+	fireFullscreenEvent("fullscreenchange", exiting);
+	return exiting;
+}
+
 /* ------------------------------------------------------------- data-* map */
 
 /** The data-* attribute a property name of the map stands for. */
@@ -21201,7 +21313,7 @@ export class Document extends Node implements globalThis.Document {
 
 	/** The element filling the viewport, or null when none is. */
 	get fullscreenElement(): globalThis.Element | null {
-		return getMount(this)?.fullscreenElement() ?? null;
+		return fullscreenElementOf(this);
 	}
 
 	/** Return the fullscreen element to the flow it came from. */
@@ -21212,7 +21324,13 @@ export class Document extends Node implements globalThis.Document {
 				new TypeError("The document is not displayed"),
 			);
 		}
-		return engine.exitFullscreen();
+		return engine.switchScreens(() => {
+			const exiting = leaveFullscreen(engine, this);
+			if (exiting) {
+				engine.styles.handleFocusChange(exiting);
+				engine.layout.invalidate(exiting);
+			}
+		});
 	}
 
 	/**
@@ -26210,9 +26328,9 @@ export const selectorResolver: SelectorResolver = {
 	popoverOpen(element: Element): boolean {
 		return isShowingPopover(element);
 	},
-	fullscreen(): boolean {
-		// A terminal has one surface and everything is already on it.
-		return false;
+	fullscreen(element: Element): boolean {
+		const stack = fullscreenStacks.get(element[kDocument]!);
+		return stack !== undefined && stack.includes(element);
 	},
 	defined(element: Element): boolean {
 		return element[kCustomState] !== "undefined";
@@ -27884,12 +28002,13 @@ export interface Mount {
 	userActive(): boolean;
 	/** Whether the user has ever acted on this document. */
 	everActivated(): boolean;
-	requestFullscreen(
-		element: globalThis.Element,
-		options?: FullscreenOptions,
-	): Promise<void>;
-	exitFullscreen(): Promise<void>;
-	fullscreenElement(): globalThis.Element | null;
+	/**
+	 * Bracket a wholesale screen swap: no frame may straddle it, and the
+	 * diff model still describes the screen it leaves. The engine holds new
+	 * frames, drains the running one, runs the action, then repaints from
+	 * scratch and re-decides mouse reporting.
+	 */
+	switchScreens(action: () => Promise<void> | void): Promise<void>;
 	/**
 	 * The document's hover-listener count moved. The handle's reader
 	 * answers the new count; the engine decides whether motion reporting

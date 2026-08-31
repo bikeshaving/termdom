@@ -95,6 +95,7 @@ const DOM_DOORS = [
 	"createDocumentWindow",
 	"disconnectObservers",
 	"dispatchAsUserAgent",
+	"dropFullscreen",
 	"elementAtDocumentPoint",
 	"ensurePseudoElement",
 	"fieldValueText",

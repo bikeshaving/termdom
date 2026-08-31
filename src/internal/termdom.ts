@@ -93,96 +93,9 @@ export interface TermDOMOptions {
 	url?: string;
 }
 
-/**
- * The Fullscreen API over the terminal's alternate screen. The element stack
- * and its events are user-agent state; the screen switch itself is a session
- * mode, so a panic restore hands the main screen back. Fullscreen is on while
- * the stack holds an element -- the switch engages with the first push and
- * resets with the last pop.
- */
+/** Whether the alternate screen is engaged: an element is fullscreen. */
 function isFullscreen(termdom: TermDOM): boolean {
-	return termdom[kFullscreenStack].length > 0;
-}
-
-function getFullscreenElement(termdom: TermDOM): Element | null {
-	const stack = termdom[kFullscreenStack];
-	// Style computation consults this during construction, before the field
-	// is assigned.
-	return stack?.length ? stack[stack.length - 1] : null;
-}
-
-async function requestFullscreenElement(
-	termdom: TermDOM,
-	element: Element,
-): Promise<void> {
-	if (!element.isConnected) {
-		const error = new Error("The element is not contained by a document.");
-		error.name = "InvalidStateError";
-		throw error;
-	}
-
-	try {
-		termdom[kFullscreenStack].push(element);
-		if (termdom[kFullscreenStack].length === 1) {
-			termdom[kExchange].setMode("altScreen", true);
-			// The cursor goes before the screen is touched, so it never sits
-			// blinking on the clear. Frames hide it as they paint and an
-			// interactive session records that before its first frame, so the
-			// hide is written whatever the record says.
-			termdom[kExchange].engageMode("cursorHidden");
-			// The alternate screen comes up holding whatever the terminal left
-			// in it, so the entry clears it and homes the cursor.
-			void termdom[kExchange].clearScreen();
-		}
-
-		fireFullscreenEvent("fullscreenchange", element);
-	} catch (error) {
-		termdom[kFullscreenStack].pop();
-		fireFullscreenEvent("fullscreenerror", element, {error: error as Error});
-		throw error;
-	}
-}
-
-async function exitFullscreenElement(termdom: TermDOM): Promise<void> {
-	if (termdom[kFullscreenStack].length === 0) {
-		return;
-	}
-
-	const exitingElement = termdom[kFullscreenStack].pop()!;
-	if (termdom[kFullscreenStack].length === 0) {
-		termdom[kExchange].setMode("altScreen", false);
-	}
-
-	fireFullscreenEvent("fullscreenchange", exitingElement);
-}
-
-/**
- * Fire one of the two fullscreen events.
- *
- * ONE target, per the Fullscreen Standard: the element while it is still in
- * the document, otherwise the document itself. Both events bubble, so a
- * document listener hears them either way -- and firing at the document as
- * well as the element would deliver every one of them twice.
- */
-function fireFullscreenEvent(
-	type: "fullscreenchange" | "fullscreenerror",
-	element: Element,
-	detail?: {error: Error},
-): void {
-	const document = element.ownerDocument;
-	const window = document.defaultView as unknown as EngineWindow | null;
-	if (!window) {
-		return;
-	}
-	const target = element.isConnected ? element : document;
-	fireAsUserAgent(
-		target,
-		new window.CustomEvent(type, {
-			bubbles: true,
-			cancelable: false,
-			...(detail ? {detail} : {}),
-		}),
-	);
+	return termdom.document.fullscreenElement !== null;
 }
 
 /**
@@ -206,7 +119,6 @@ function isAttached(termdom: TermDOM): boolean {
 const kScreen = Symbol("screen");
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-const kFullscreenStack = Symbol("fullscreenStack");
 const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
@@ -284,8 +196,6 @@ export class TermDOM {
 	declare [kScreen]: Screen;
 	declare [kLayoutEngine]: LayoutEngine;
 	declare [kObserver]: MutationObserver;
-	// The elements that asked for the alternate screen, innermost last.
-	declare [kFullscreenStack]: Element[];
 	declare [kStyleManager]: StyleManager;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling.
@@ -448,7 +358,6 @@ export class TermDOM {
 
 		this[kRenderQueued] = false;
 		this[kScreenSwitching] = false;
-		this[kFullscreenStack] = [];
 		this[kRenderInFlight] = null;
 		this[kRenderCount] = 0;
 		this[kResizeTimer] = null;
@@ -725,7 +634,7 @@ export class TermDOM {
 		// bottom row -- so step below the content, or the shell's next line
 		// lands on top of ours.
 		this[kExchange].restoreEngagedModes();
-		this[kFullscreenStack] = [];
+		DOM.dropFullscreen(this.document);
 		this[kHoverReportingEnabled] = false;
 		this[kMouseReportingEnabled] = false;
 		if (closingFullscreen && this[kTransport].interactive) {
@@ -871,33 +780,19 @@ function createMount(termDOM: TermDOM): EngineMount {
 				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
 			}
 		},
-		requestFullscreen(element) {
-			// Fullscreen writes the alternate-screen switch; attach() is the
-			// only consent for that. A browser rejects without a user gesture,
-			// and this is the terminal's equivalent precondition.
-			if (!isAttached(termDOM)) {
-				return Promise.reject(
-					new Error("requestFullscreen(): attach() the terminal first"),
-				);
-			}
+		switchScreens(action) {
 			return (async () => {
 				// No frame may straddle the screen switch: an in-flight render
 				// finishing its stdout write AFTER the switch paints one
-				// screen's geometry onto the other (the demo's animation made
-				// this a near-certainty on exit). Hold new frames, drain the
+				// screen's geometry onto the other. Hold new frames, drain the
 				// running one, then switch.
 				termDOM[kScreenSwitching] = true;
 				try {
 					await termDOM[kRenderInFlight];
-					await requestFullscreenElement(termDOM, element);
-					// The element's UA styles changed (it now fills the
-					// viewport) and neither a mutation nor a focus move fired.
-					termDOM[kStyleManager].handleFocusChange(element);
-					termDOM[kLayoutEngine].invalidate(element);
-					// The screen under the renderer changed wholesale (the
-					// alternate screen starts cleared): drop the diff model or
-					// the first fullscreen frame patches against the main
-					// screen's content.
+					await action();
+					// The screen under the renderer changed wholesale: drop
+					// the diff model, or the next frame patches one screen
+					// against the other's content.
 					termDOM[kScreen].repaintAll();
 					updateMouseReporting(termDOM);
 				} finally {
@@ -905,32 +800,6 @@ function createMount(termDOM: TermDOM): EngineMount {
 				}
 				void render(termDOM);
 			})();
-		},
-		exitFullscreen() {
-			return (async () => {
-				const element = getFullscreenElement(termDOM);
-				termDOM[kScreenSwitching] = true;
-				try {
-					await termDOM[kRenderInFlight];
-					await exitFullscreenElement(termDOM);
-					if (element) {
-						termDOM[kStyleManager].handleFocusChange(element);
-						termDOM[kLayoutEngine].invalidate(element);
-					}
-					// Same wholesale swap in reverse: the terminal restored the
-					// main screen, but the diff model still describes the last
-					// ALTERNATE-screen frame -- patching against it garbles the
-					// restored document.
-					termDOM[kScreen].repaintAll();
-					updateMouseReporting(termDOM);
-				} finally {
-					termDOM[kScreenSwitching] = false;
-				}
-				void render(termDOM);
-			})();
-		},
-		fullscreenElement() {
-			return getFullscreenElement(termDOM);
 		},
 		// The terminal is the window and the screen both, so the inner and
 		// outer pairs are one size, and the root elements report the height
@@ -1172,7 +1041,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 			},
 			modalScope: () => DOM.topmostModalDialog(termdom.document),
 			closeRequestTarget: () => topmostCloseRequestTarget(termdom),
-			fullscreenTarget: () => getFullscreenElement(termdom),
+			fullscreenTarget: () => termdom.document.fullscreenElement,
 		},
 		styleManager: termdom[kStyleManager],
 		layout: termdom[kLayoutEngine],

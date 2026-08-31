@@ -372,6 +372,24 @@ test("[Symbol.dispose] tears down, so `using` works", () => {
 	expect(() => dom.dispose()).not.toThrow();
 });
 
+test(":fullscreen matches the element the stack holds", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = "<div id=\"stage\">x</div>";
+	await nextFrame(dom);
+
+	const stage = dom.document.getElementById("stage")!;
+	expect(stage.matches(":fullscreen")).toBe(false);
+
+	await stage.requestFullscreen();
+	expect(stage.matches(":fullscreen")).toBe(true);
+	expect(dom.document.body.matches(":fullscreen")).toBe(false);
+
+	await dom.document.exitFullscreen();
+	expect(stage.matches(":fullscreen")).toBe(false);
+	dom.dispose();
+});
+
 test("a fullscreen transition reaches a document listener once", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
