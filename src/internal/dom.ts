@@ -27614,8 +27614,8 @@ interface ClipboardTerminal {
 const CLIPBOARD_TEXT_TYPE = "text/plain";
 
 /** Refuse a clipboard request the user has not asked for. */
-function clipboardDenied(why: string): Promise<never> {
-	return Promise.reject(domError("NotAllowedError", why));
+function clipboardDenied(why: string): DOMException {
+	return domError("NotAllowedError", why);
 }
 
 /** A media type, lowercased with the surrounding whitespace dropped. */
@@ -27685,13 +27685,8 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** The terminal to move bytes over, or the refusal standing in its way. */
-type Reached =
-	{terminal: ClipboardTerminal; refusal: null} |
-	{terminal: null; refusal: Promise<never>};
-
 /**
- * The terminal a document's clipboard reaches, or why it may not.
+ * The terminal a document's clipboard reaches, throwing where it may not.
  *
  * The clipboard is the user's to grant, so it is reachable only from a
  * trusted activation-triggering event while it is being dispatched -- a
@@ -27701,26 +27696,21 @@ type Reached =
  * handler there may await and still write the clipboard. Here the gate is the
  * dispatch itself, and the clipboard is reachable only synchronously within
  * it. A timer, a microtask, a resolved fetch and an event an application
- * dispatched itself are all outside.
+ * dispatched itself are all outside. Every caller is async, so the throw
+ * reaches the page as the rejection the Clipboard API promises.
  */
-function reachClipboard(document: Document, what: string): Reached {
+function reachClipboard(document: Document, what: string): ClipboardTerminal {
 	const mount = getMount(document);
 	const terminal = mount?.clipboardTerminal() ?? null;
 	if (terminal === null) {
-		return {
-			terminal: null,
-			refusal: clipboardDenied(
-				"clipboard requires an attached interactive terminal",
-			),
-		};
+		throw clipboardDenied(
+			"clipboard requires an attached interactive terminal",
+		);
 	}
 	if (!mount!.userActive()) {
-		return {
-			terminal: null,
-			refusal: clipboardDenied(`clipboard ${what} need a user gesture`),
-		};
+		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return {terminal, refusal: null};
+	return terminal;
 }
 
 const kClipboardDocument = Symbol("the document whose clipboard this is");
@@ -27749,33 +27739,24 @@ class Clipboard extends EventTarget {
 		this[kClipboardDocument] = document as Document;
 	}
 
-	writeText(text: string): Promise<void> {
-		const reached = reachClipboard(this[kClipboardDocument]!, "writes");
-		if (reached.refusal !== null) {
-			return reached.refusal;
-		}
-		return reached.terminal.writeClipboard(String(text));
+	async writeText(text: string): Promise<void> {
+		const terminal = reachClipboard(this[kClipboardDocument]!, "writes");
+		return terminal.writeClipboard(String(text));
 	}
 
 	async readText(): Promise<string> {
-		const reached = reachClipboard(this[kClipboardDocument]!, "reads");
-		if (reached.refusal !== null) {
-			return reached.refusal;
-		}
-		const text = await reached.terminal.queryClipboard();
+		const terminal = reachClipboard(this[kClipboardDocument]!, "reads");
+		const text = await terminal.queryClipboard();
 		if (text === null) {
 			// Silence is a refusal: most terminals gate clipboard reads on
 			// their own configuration and answer nothing when they are off.
-			return clipboardDenied("the terminal did not answer the clipboard query");
+			throw clipboardDenied("the terminal did not answer the clipboard query");
 		}
 		return text;
 	}
 
 	async write(items: Iterable<ClipboardItem>): Promise<void> {
-		const reached = reachClipboard(this[kClipboardDocument]!, "writes");
-		if (reached.refusal !== null) {
-			return reached.refusal;
-		}
+		const terminal = reachClipboard(this[kClipboardDocument]!, "writes");
 		let carrier: ClipboardItem | null = null;
 		for (const item of items) {
 			if (item.types.includes(CLIPBOARD_TEXT_TYPE)) {
@@ -27784,12 +27765,12 @@ class Clipboard extends EventTarget {
 			}
 		}
 		if (carrier === null) {
-			return clipboardDenied(
+			throw clipboardDenied(
 				`a clipboard write needs a ${CLIPBOARD_TEXT_TYPE} entry`,
 			);
 		}
 		const text = await (await carrier.getType(CLIPBOARD_TEXT_TYPE)).text();
-		return reached.terminal.writeClipboard(text);
+		return terminal.writeClipboard(text);
 	}
 
 	async read(): Promise<ClipboardItem[]> {
