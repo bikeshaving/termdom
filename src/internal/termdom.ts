@@ -762,26 +762,24 @@ function createMount(termDOM: TermDOM): EngineMount {
 				scrollCamera(termDOM, rect.bottom - (top + regionHeight));
 			}
 		},
-		switchScreens(action) {
-			return (async () => {
-				// No frame may straddle the screen switch: an in-flight render
-				// finishing its stdout write AFTER the switch paints one
-				// screen's geometry onto the other. Hold new frames, drain the
-				// running one, then switch.
-				termDOM[kScreenSwitching] = true;
-				try {
-					await termDOM[kRenderInFlight];
-					await action();
-					// The screen under the renderer changed wholesale: drop
-					// the diff model, or the next frame patches one screen
-					// against the other's content.
-					termDOM[kScreen].repaintAll();
-					updateMouseReporting(termDOM);
-				} finally {
-					termDOM[kScreenSwitching] = false;
-				}
-				void render(termDOM);
-			})();
+		async switchScreens(action) {
+			// No frame may straddle the screen switch: an in-flight render
+			// finishing its stdout write AFTER the switch paints one
+			// screen's geometry onto the other. Hold new frames, drain the
+			// running one, then switch.
+			termDOM[kScreenSwitching] = true;
+			try {
+				await termDOM[kRenderInFlight];
+				await action();
+				// The screen under the renderer changed wholesale: drop the
+				// diff model, or the next frame patches one screen against
+				// the other's content.
+				termDOM[kScreen].repaintAll();
+				updateMouseReporting(termDOM);
+			} finally {
+				termDOM[kScreenSwitching] = false;
+			}
+			void render(termDOM);
 		},
 		// The terminal is the window and the screen both, so the inner and
 		// outer pairs are one size, and the root elements report the height
