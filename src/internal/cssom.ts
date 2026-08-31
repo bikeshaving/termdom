@@ -8186,9 +8186,8 @@ function insetLength(computed: string, basis: number): number | null {
  * and nothing else: an empty answer means no rule reached it, which is what
  * the ::selection and ::marker painters decide on. Asked of a pseudo-element's
  * NODE, it answers those declarations completed by initial values, so a box
- * has a `display` to be laid out from. A bare document -- one no cascade of
- * this engine's stands behind -- answers through whatever getComputedStyle
- * its window has, or with nothing.
+ * has a `display` to be laid out from. A document with no cascade behind it
+ * answers with nothing, which every reader takes as the initial value.
  */
 export function getComputedValue(
 	element: Element,
@@ -8212,19 +8211,13 @@ export function getComputedValue(
 		return "";
 	}
 	const manager = documentManagers.get(document);
-	if (manager) {
-		const declaration = pseudoElement ?
-				manager.pseudoDeclarationFor(element, pseudoElement) :
-				manager.declarationFor(element);
-		return declaration.getComputedValue(property);
-	}
-	const window = document.defaultView;
-	if (!window || typeof window.getComputedStyle !== "function") {
+	if (!manager) {
 		return "";
 	}
-	return window
-		.getComputedStyle(element, pseudoElement || null)
-		.getPropertyValue(property);
+	const declaration = pseudoElement ?
+			manager.pseudoDeclarationFor(element, pseudoElement) :
+			manager.declarationFor(element);
+	return declaration.getComputedValue(property);
 }
 
 /**

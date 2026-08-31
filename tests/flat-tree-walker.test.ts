@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	createDocumentWindow,
 	ensurePseudoElement,
@@ -11,25 +11,20 @@ import {
 import {flowWalker} from "../src/internal/layout.js";
 
 /**
- * A document of this DOM, from markup, displayed in a window of its own.
- *
- * The walkers here come from layout, which dissolves `display: contents`, so
- * the window answers computed-style reads with the initial value of every
- * property. The pseudo-elements are the test's own, put straight in their
- * slots; a cascade would own them instead.
+ * A document of this DOM, from markup, displayed in a window of its own, with
+ * a cascade over it that knows only what a list item is. The walkers here
+ * come from layout, which dissolves `display: contents`. The pseudo-elements
+ * are the test's own, put straight in their slots; a cascade would own them
+ * instead.
  */
 function documentWindow(html: string): {
 	window: ReturnType<typeof createDocumentWindow>;
 } {
 	const window = createDocumentWindow(html);
-	window.getComputedStyle = ((element: Element) =>
-		({
-			getPropertyValue: (property: string) =>
-				property === "display" &&
-				(element.tagName === "LI" || element.hasAttribute("data-list-item")) ?
-					"list-item" :
-					"",
-		}) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle;
+	const style = window.document.createElement("style");
+	style.textContent = "li, [data-list-item] { display: list-item; }";
+	window.document.head.appendChild(style);
+	styleManagerFor({window});
 	return {window};
 }
 
@@ -193,10 +188,9 @@ test("A bare document - flat-tree walker slot content traversal", () => {
 	// Should find the host element
 	expect(nodes.some((n) => n.name === "DIV" && !n.className)).toBe(true);
 
-	// Should find the slot element
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
-
-	// Should find slotted content
+	// A slot is display: contents, so it is never stopped on; its assigned
+	// content is walked in its place.
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 	expect(nodes.some((n) => n.className === "light-content")).toBe(true);
 	expect(nodes.some((n) => n.content === "Light DOM content")).toBe(true);
 });
@@ -392,8 +386,8 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 	// Should find the slot host
 	expect(nodes.some((n) => n.className === "slot-host")).toBe(true);
 
-	// Should find the slot element
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
+	// The slot itself is display: contents and never stopped on.
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 
 	// Should find the assigned element
 	expect(nodes.some((n) => n.className === "assigned-with-shadow")).toBe(true);
@@ -404,9 +398,8 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 		nodes.some((n) => n.content === "Shadow content in assigned node"),
 	).toBe(true);
 
-	// Verify traversal order: host → slot → assigned element → assigned element's shadow content
+	// Verify traversal order: host → assigned element → assigned element's shadow content
 	const hostIndex = nodes.findIndex((n) => n.className === "slot-host");
-	const slotIndex = nodes.findIndex((n) => n.name === "SLOT");
 	const assignedIndex = nodes.findIndex(
 		(n) => n.className === "assigned-with-shadow",
 	);
@@ -414,8 +407,7 @@ test("A bare document - flat-tree walker shadow roots in slot assigned nodes", (
 		(n) => n.className === "shadow-in-assigned",
 	);
 
-	expect(hostIndex).toBeLessThan(slotIndex);
-	expect(slotIndex).toBeLessThan(assignedIndex);
+	expect(hostIndex).toBeLessThan(assignedIndex);
 	expect(assignedIndex).toBeLessThan(shadowInAssignedIndex);
 });
 
@@ -483,7 +475,7 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 	expect(nodes.some((n) => n.pseudoType === "::marker")).toBe(true);
 	expect(nodes.some((n) => n.pseudoType === "::before")).toBe(true);
 	expect(nodes.some((n) => n.pseudoType === "::after")).toBe(true);
-	expect(nodes.some((n) => n.name === "SLOT")).toBe(true);
+	expect(nodes.some((n) => n.name === "SLOT")).toBe(false);
 	expect(nodes.some((n) => n.className === "assigned-content")).toBe(true);
 	expect(nodes.some((n) => n.className === "deep-shadow")).toBe(true);
 
@@ -491,18 +483,16 @@ test("A bare document - flat-tree walker complex nested scenario with pseudo-ele
 	const liIndex = nodes.findIndex((n) => n.className === "complex-list-item");
 	const markerIndex = nodes.findIndex((n) => n.pseudoType === "::marker");
 	const beforeIndex = nodes.findIndex((n) => n.pseudoType === "::before");
-	const slotIndex = nodes.findIndex((n) => n.name === "SLOT");
 	const assignedIndex = nodes.findIndex(
 		(n) => n.className === "assigned-content",
 	);
 	const deepShadowIndex = nodes.findIndex((n) => n.className === "deep-shadow");
 	const afterIndex = nodes.findIndex((n) => n.pseudoType === "::after");
 
-	// Verify the complex order: LI → ::marker → ::before → SLOT → assigned content → deep shadow → ::after
+	// Verify the complex order: LI → ::marker → ::before → assigned content → deep shadow → ::after
 	expect(liIndex).toBeLessThan(markerIndex);
 	expect(markerIndex).toBeLessThan(beforeIndex);
-	expect(beforeIndex).toBeLessThan(slotIndex);
-	expect(slotIndex).toBeLessThan(assignedIndex);
+	expect(beforeIndex).toBeLessThan(assignedIndex);
 	expect(assignedIndex).toBeLessThan(deepShadowIndex);
 	expect(deepShadowIndex).toBeLessThan(afterIndex);
 });
