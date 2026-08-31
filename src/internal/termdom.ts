@@ -168,7 +168,6 @@ const kScrolledElements = Symbol("scrolledElements");
 
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
-const kMountHandle = Symbol("mountHandle");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 const kTransport = Symbol("transport");
@@ -281,10 +280,6 @@ export class TermDOM {
 	// Whether the terminal is currently reporting pointer MOTION (SGR 1003)
 	// on top of button/drag reporting. See updateHoverReporting.
 	declare [kHoverReportingEnabled]: boolean;
-	// Reads the document's live count of hover-family listeners, half of
-	// what "the document observes hover" means (the other half is a sheet
-	// with a :hover rule).
-	declare [kMountHandle]: DOM.MountHandle;
 	// The field whose caret the NEXT frame must reveal -- set by edits,
 	// consumed inside renderInteractive after its layout flush. Last
 	// edit before the frame wins.
@@ -429,7 +424,7 @@ export class TermDOM {
 		// The engine the document stands on. From here a control builds and
 		// keeps its own shadow tree; the shell only says when a newly
 		// connected one should be upgraded.
-		this[kMountHandle] = DOM.mount(document, createMount(this));
+		DOM.mount(document, createMount(this));
 
 		this[kEventHandler] = buildEventHandler(this);
 		this[kPainter] = new Painter({
@@ -1026,7 +1021,7 @@ function buildEventHandler(termdom: TermDOM): EventHandler {
 				updateMouseReporting(termdom);
 			},
 			hoverMoved: (target) => {
-				termdom[kMountHandle].hoveredElement(target);
+				DOM.setHoveredElement(termdom.document, target);
 			},
 			modalScope: () => DOM.topmostModalDialog(termdom.document),
 			fullscreenTarget: () => termdom.document.fullscreenElement,
@@ -1221,7 +1216,7 @@ function hoverObserved(
 	termdom: TermDOM,
 ): boolean {
 	return (
-		termdom[kMountHandle].hoverListenerCount() > 0 ||
+		DOM.hoverListenerCount(termdom.document) > 0 ||
 		termdom[kStyleManager].hoverRulesExist()
 	);
 }

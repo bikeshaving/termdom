@@ -26106,14 +26106,14 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 const hoveredElements = new WeakMap<Document, Element>();
 
 /** Record the element the pointer is over, which `:hover` matches from. */
-function setHoveredElement(
-	document: Document,
-	element: Element | null,
+export function setHoveredElement(
+	document: globalThis.Document,
+	element: globalThis.Element | null,
 ): void {
 	if (element === null) {
-		hoveredElements.delete(document);
+		hoveredElements.delete(document as Document);
 	} else {
-		hoveredElements.set(document, element);
+		hoveredElements.set(document as Document, element as Element);
 	}
 }
 
@@ -28078,13 +28078,6 @@ export interface Mount {
  * The state feeds a mounted document accepts only from its engine: what the
  * handle writes, no one else can.
  */
-export interface MountHandle {
-	/** The element the pointer is over, which `:hover` matches from. */
-	hoveredElement(element: globalThis.Element | null): void;
-	/** How many hover-sensitive listeners the document holds now. */
-	hoverListenerCount(): number;
-}
-
 const kMount = Symbol("mount");
 
 /**
@@ -28092,25 +28085,25 @@ const kMount = Symbol("mount");
  * build every widget a second time, and the two would disagree about what is
  * on screen.
  */
-export function mount(
-	document: globalThis.Document,
-	engine: Mount,
-): MountHandle {
+export function mount(document: globalThis.Document, engine: Mount): void {
 	const doc = document as unknown as Record<symbol, Mount | undefined>;
 	if (doc[kMount] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
 	doc[kMount] = engine;
 	const mounted = document as Document;
-	const readCount = watchHoverListeners(mounted, () =>
-		engine.hoverListenersChanged(),
+	hoverListenerCounts.set(
+		mounted,
+		watchHoverListeners(mounted, () => engine.hoverListenersChanged()),
 	);
-	return {
-		hoveredElement(element: globalThis.Element | null): void {
-			setHoveredElement(mounted, element as Element | null);
-		},
-		hoverListenerCount: readCount,
-	};
+}
+
+/** Each mounted document's live hover-listener reader, wired at mount. */
+const hoverListenerCounts = new WeakMap<Document, () => number>();
+
+/** How many hover-sensitive listeners a mounted document holds now. */
+export function hoverListenerCount(document: globalThis.Document): number {
+	return hoverListenerCounts.get(document as Document)?.() ?? 0;
 }
 
 /** The mount of a node's document, or undefined when it is headless. */
