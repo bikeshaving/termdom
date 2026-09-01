@@ -1,26 +1,3 @@
-/**
- * The cascade and the CSSOM: stylesheets, the values an element computes to,
- * and the object model an author writes through.
- *
- * Nothing below this file decides what an element's style is. Layout and the
- * painter read what it resolved.
- *
- * Start at StyleManager, which holds one document's cascade: it parses the
- * sheets into rules, matches them against elements, and hands out the
- * declarations everything else reads. There are two ways to ask it. The
- * engine's own read is getComputedValue, which answers the COMPUTED value --
- * what the cascade said, before any box exists. An author's is
- * getComputedStyle, which answers the RESOLVED value, and so measures the
- * properties layout decides.
- *
- * Above the manager: the value-text boundary, where CSS text becomes parsed
- * nodes and canonical strings; the shorthand expansion and default tables a
- * declaration resolves against; the CSSOM classes a sheet, a rule and a
- * declaration block are; and the selector reading that drives matching. Below
- * it: transitions, the counters a marker and a content value count with, and
- * the grid values the solver takes already parsed.
- */
-
 import * as CSSTree from "css-tree";
 
 import {
@@ -66,43 +43,17 @@ import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
-// ---------------------------------------------------------------------------
-// The value-text boundary
-//
-// Raw CSS value text in, parsed nodes or canonical text out. css-tree does
-// the reading; the CSSOM spelling rules do the writing, and the tokenizer
-// here is what writes them -- css-tree generates its own spellings, which
-// are not the ones the object model answers with. Nothing in this section
-// knows what a property means; the cascade below decides that from what it
-// hands back.
-//
-// Colors read the same way, at the foot of the section. One private parser
-// takes every spelling -- a named color, #hex, rgb()/rgba(), hsl()/hsla() --
-// and answers packed 24-bit RGB with an alpha, or null for a string that
-// names no color. The four functions around it are the questions the rest of
-// the engine asks: whether a color paints anything, its channels, its
-// canonical spelling, and the packed number a painter fills a cell with.
-// ---------------------------------------------------------------------------
-
-/**
- * What the number in a length carries: cells, a percentage of something, the
- * `auto` that is a value of its own, or nothing at all. A length is a number
- * and one of these, and both the cascade that parses one and the solver that
- * resolves it name them from here. Yoga numbered these and called a cell a
- * point; they are words now, and a wrong one is a type error.
- */
 export type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /**
- * A length as the solver holds it: a unit and a number. NaN is the number
- * of `undefined` and `auto`, whose unit is the whole of what they say.
+ * A length as the solver holds it. NaN is the number of `undefined` and
+ * `auto`, whose unit is the whole of what they say.
  */
 export interface Value {
 	unit: Unit;
 	value: number;
 }
 
-/** The keywords every property accepts, whatever its own grammar. */
 const CSS_WIDE_KEYWORDS = new Set([
 	"inherit",
 	"initial",
@@ -111,13 +62,8 @@ const CSS_WIDE_KEYWORDS = new Set([
 	"unset",
 ]);
 
-/** The characters CSS counts as whitespace. */
 const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
 
-/**
- * The node shapes css-tree parses a declaration value into: the form raw
- * value text takes before the engine interprets it.
- */
 type CSSNode = {
 	type: string;
 	name?: string;
@@ -126,11 +72,8 @@ type CSSNode = {
 	children?: {toArray(): CSSNode[]};
 };
 
-/**
- * Parsed value ASTs by their source text. Value parsing runs inside style
- * computation, and a document re-reads its handful of spellings, so the
- * bounded cache holds one parse per spelling.
- */
+// Value parsing runs inside style computation, and a document re-reads its
+// handful of spellings: one parse per spelling.
 const valueNodes = new Map<string, CSSNode[] | null>();
 
 /** A value's top-level nodes, or null for text css-tree refuses. */
@@ -153,11 +96,8 @@ function cssValueChildren(value: string): CSSNode[] | null {
 	return nodes;
 }
 
-/**
- * Keep value nodes a sheet parse already built. Only a value whose canonical
- * spelling is the authored spelling may seed the cache: for it, the sheet's
- * parse is the parse cssValueChildren would run on the cached key.
- */
+// Only a value whose canonical spelling is the authored one may seed: for
+// it, the sheet's parse is the parse cssValueChildren would run on the key.
 function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	if (valueNodes.has(value)) {
 		return;
@@ -168,20 +108,17 @@ function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	valueNodes.set(value, nodes);
 }
 
-/** The one node a value holds, or undefined for none or several. */
 function singleValueNode(value: string): CSSNode | undefined {
 	const nodes = cssValueChildren(value);
 	return nodes && nodes.length === 1 ? nodes[0] : undefined;
 }
 
-/** The arguments of a function node, with the comma operators dropped. */
 function functionArguments(node: CSSNode): CSSNode[] {
 	return (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
 }
 
-/** The milliseconds a `<time>` token spells, or null for anything else. */
 function cssTimeMs(token: string): number | null {
 	const node = singleValueNode(token.trim());
 	if (!node || node.type !== "Dimension") {
@@ -198,11 +135,8 @@ function cssTimeMs(token: string): number | null {
 	return unit === "ms" ? number : number * 1000;
 }
 
-/**
- * A value's top-level components. Whitespace INSIDE parentheses separates a
- * function's own arguments, not components: `rgb(95, 175, 255)` is one color,
- * however many spaces it carries.
- */
+// Whitespace inside parentheses separates a function's own arguments, not
+// components.
 function splitComponents(value: string): string[] {
 	const components: string[] = [];
 	let depth = 0;
@@ -224,7 +158,6 @@ function splitComponents(value: string): string[] {
 	return components;
 }
 
-/** Split a comma-separated value list, leaving function arguments whole. */
 function splitCommaList(value: string): string[] {
 	const items: string[] = [];
 	let depth = 0;
@@ -246,17 +179,10 @@ function splitCommaList(value: string): string[] {
 	return items;
 }
 
-/**
- * A declared value in its CSSOM spelling: comments removed, runs of whitespace
- * collapsed to one space, no space inside a function's parentheses except the
- * single space that follows each comma. Strings pass through as authored.
- *
- * `property` names the property the value is declared on, and its grammar
- * decides the rest: a custom property is a stream of tokens and keeps every
- * number as it was written, a family name that spells a run of identifiers
- * drops its quotes, and a counter() naming the style every counter already
- * has drops the argument.
- */
+// A declared value in its CSSOM spelling. The property's grammar decides the
+// rest: a custom property keeps every number as written, a family name spelt
+// as identifiers drops its quotes, a counter() naming the default style
+// drops the argument.
 function serializeCSSValue(input: string, property = ""): string {
 	const custom = property.startsWith("--");
 	let out = "";
@@ -341,24 +267,15 @@ function serializeCSSValue(input: string, property = ""): string {
 	return custom ? out : canonicalizeValue(property, out);
 }
 
-/**
- * A family name is a sequence of identifiers or a string, and the two spell
- * one name: `"Twisty Tie"` and `Twisty Tie` are the same family. The
- * identifier spelling is the canonical one, so a string that spells a valid
- * sequence loses its quotes.
- */
+// "Twisty Tie" and Twisty Tie are the same family; the identifier spelling
+// is canonical, so a string that spells a valid sequence loses its quotes.
 const FAMILY_IDENTIFIERS =
 	/^[a-zA-Z_\u0080-\uffff-][\w\u0080-\uffff-]*(?: [a-zA-Z_\u0080-\uffff-][\w\u0080-\uffff-]*)*$/;
 
-/** The properties whose value may name a font family. */
 const FAMILY_PROPERTIES = new Set(["font", "font-family", "voice-family"]);
 
-/**
- * The family names that name no family: the generic families and the reserved
- * words a font-family list may not spell as identifiers. Quoted, each names a
- * family of that name, so the quotes are what distinguishes it and it keeps
- * them.
- */
+// Quoted, each names a family of that name: the quotes are what
+// distinguishes it, so it keeps them.
 const RESERVED_FAMILY_NAMES = new Set([
 	"cursive",
 	"default",
@@ -376,14 +293,8 @@ const RESERVED_FAMILY_NAMES = new Set([
 	"ui-serif",
 ]);
 
-/** The counter style a `counter()` or `counters()` takes when told none. */
 const DEFAULT_COUNTER_STYLE = "decimal";
 
-/**
- * The property-specific half of value serialization: what a value's own
- * grammar says its canonical spelling is, once tokenization has given every
- * value a uniform one.
- */
 function canonicalizeValue(property: string, value: string): string {
 	let out = value;
 	if (FAMILY_PROPERTIES.has(property)) {
@@ -432,21 +343,16 @@ function unescapeCSSString(text: string): string {
 	return text.replace(/\\(.)/g, "$1");
 }
 
-/** Whether a number token begins at `index`. */
 function startsNumber(input: string, index: number): boolean {
 	const rest = input.slice(index, index + 3);
 	return /^[+-]?(\d|\.\d)/.test(rest);
 }
 
-/** Whether an identifier begins at `index`. */
 function startsIdentifier(input: string, index: number): boolean {
 	return /^[a-zA-Z_\u0080-\uFFFF\\-]/.test(input[index]);
 }
 
-/**
- * Serialize a number as CSSOM says: the shortest form that round-trips, with
- * no leading `+`, no bare leading `.`, and no negative zero.
- */
+// CSSOM: the shortest form that round-trips, no leading +, no negative zero.
 function serializeCSSNumber(text: string): string {
 	const value = Number(text);
 	if (!Number.isFinite(value)) {
@@ -459,10 +365,7 @@ function serializeCSSNumber(text: string): string {
 	return out.includes("e") ? expandExponential(out) : out;
 }
 
-/**
- * A number written in base ten, however large or small: CSS has no scientific
- * notation, so `1e24` is written with its twenty-four zeros.
- */
+// CSS has no scientific notation: 1e24 is written with its zeros.
 function expandExponential(text: string): string {
 	const parts = /^([+-]?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(text);
 	if (!parts) {
@@ -481,16 +384,11 @@ function expandExponential(text: string): string {
 	return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
-/** Serialize a string: double-quoted, with quotes and backslashes escaped. */
 function serializeCSSString(text: string): string {
 	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
 }
 
-/**
- * Serialize an identifier: what `CSS.escape` answers. A code point that could
- * not stand in an identifier is written as a hex escape, and one that merely
- * needs quoting takes a backslash.
- */
+// What CSS.escape answers.
 function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
 	let out = "";
@@ -524,12 +422,7 @@ function serializeCSSIdentifier(value: string): string {
 	return out;
 }
 
-// ---- Colors ----
-
-/**
- * The named CSS colors, as 24-bit RGB. Generated from Bun.color(name,
- * "number"), so this path and Bun's agree exactly.
- */
+// Generated from Bun.color(name, "number"), so this path and Bun's agree.
 const NAMED_COLORS: Record<string, number> = {
 	aliceblue: 0xf0f8ff,
 	antiquewhite: 0xfaebd7,
@@ -682,19 +575,11 @@ const NAMED_COLORS: Record<string, number> = {
 	yellowgreen: 0x9acd32,
 };
 
-/**
- * The CSS system colors, mapped onto what a terminal already has: its default
- * colors and the theme-resolved ANSI palette. A system color names whatever
- * the user's environment says, which is the same contract the palette keeps,
- * so the mapping invents no colors. 0 is the cell grid's "no SGR color"
- * sentinel -- the terminal's own default foreground or background -- and a
- * nonzero value is packed RGB that the emitter renders at any color depth.
- *
- * Canvas and the Highlight pair -- with SelectedItem, its non-text twin --
- * keep their special painter translations: clear to the terminal's own
- * background, and swap the cell's colors. The values here only answer for the
- * paths those guards do not intercept, such as a border or outline color.
- */
+// The system colors mapped onto what a terminal already has: 0 is the cell
+// grid's "no SGR color" sentinel -- the terminal's own default -- and a
+// nonzero value is packed RGB. Canvas and the Highlight/SelectedItem pairs
+// keep their special painter translations; these values answer only the
+// paths those guards do not intercept, such as a border or outline color.
 const SYSTEM_COLORS: Record<string, number> = {
 	accentcolor: 0x0000ff, // the accent: blue
 	accentcolortext: 0, // text on the accent: the terminal's default background
@@ -739,7 +624,6 @@ const SYSTEM_COLORS: Record<string, number> = {
 	windowtext: 0, // deprecated -> CanvasText
 };
 
-/** A parsed CSS color: packed 24-bit RGB, and its alpha in [0, 1]. */
 function parseColor(text: string): {color: number; alpha: number} | null {
 	const color = text.trim().toLowerCase();
 
@@ -812,7 +696,6 @@ function parseColor(text: string): {color: number; alpha: number} | null {
 	return null;
 }
 
-/** An alpha component: a number or a percentage, absent meaning opaque. */
 function parseAlpha(raw: string | undefined): number {
 	if (raw === undefined) {
 		return 1;
@@ -823,10 +706,7 @@ function parseAlpha(raw: string | undefined): number {
 	return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
 }
 
-/**
- * Whether a color paints nothing: the `transparent` keyword, `none`, an empty
- * value, or any color whose alpha has reached zero.
- */
+/** Whether a color paints nothing: transparent, none, empty, or zero alpha. */
 export function isTransparentColor(color: string): boolean {
 	const text = color.trim().toLowerCase();
 	if (!text || text === "transparent" || text === "none") {
@@ -835,14 +715,9 @@ export function isTransparentColor(color: string): boolean {
 	return parseColor(text)?.alpha === 0;
 }
 
-/**
- * A color's computed spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
- * is not opaque. Null for a value that names no color -- `currentcolor`
- * before it resolves, a keyword the color table does not carry. A system
- * color is deliberately null: it computes as its keyword, since the value it
- * stands for belongs to the terminal's theme and this process cannot state it
- * as an rgb().
- */
+// Null for a value that names no color. A system color is deliberately
+// null: it computes as its keyword, since the value it stands for belongs to
+// the terminal's theme and this process cannot state it as an rgb().
 function serializeCSSColor(value: string): string | null {
 	const components = parseCSSColorComponents(value);
 	if (components === null) {
@@ -856,11 +731,6 @@ function serializeCSSColor(value: string): string | null {
 	return `rgb(${red}, ${green}, ${blue})`;
 }
 
-/**
- * A color's channels: [red, green, blue, alpha]. Null for a value this
- * process cannot state channels for -- `currentcolor` before it resolves,
- * a system color, an unknown keyword.
- */
 function parseCSSColorComponents(
 	value: string,
 ): [number, number, number, number] | null {
@@ -884,10 +754,8 @@ function parseCSSColorComponents(
 }
 
 /**
- * Parse a CSS color to packed 24-bit RGB (0xRRGGBB). A system color answers
- * through the palette mapping, where 0 is the terminal's own default color.
- * Empty, `transparent`, and `none` -- and anything unrecognized -- resolve to
- * 0: a painter has no null to carry into a cell.
+ * Packed 24-bit RGB. Unrecognized, transparent and system-default colors all
+ * resolve to 0: a painter has no null to carry into a cell.
  */
 export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
@@ -900,18 +768,8 @@ export function cssColorToNumber(cssColor: string): number {
 	return parseColor(cssColor)?.color ?? 0;
 }
 
-// ---------------------------------------------------------------------------
-// User-agent element defaults and shorthand expansion
-//
-// Cascade machinery, not stylesheet text: the per-element defaults the
-// cascade resolves against, the shorthand expansion every origin's
-// declarations pass through, and the inheritance and initial-value
-// tables. The UA stylesheet strings stay in useragent.ts.
-// ---------------------------------------------------------------------------
-
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
-// ---- Shorthand expansion ----
 const BORDER_STYLE_KEYWORDS = new Set([
 	"none",
 	"hidden",
@@ -927,7 +785,6 @@ const BORDER_STYLE_KEYWORDS = new Set([
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
-/** The two ends of a flow-relative axis, in the order a pair shorthand states them. */
 const AXIS_ENDS = ["start", "end"] as const;
 
 const CORNERS = [
@@ -938,30 +795,20 @@ const CORNERS = [
 ] as const;
 const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
-/**
- * CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. The four corners
- * fill by the same rule, running top-left, top-right, bottom-right,
- * bottom-left.
- */
+// CSS 1-4 expansion: [all], [v h], [t h b], [t r b l]; corners the same way.
 function perEdge(values: string[]): [string, string, string, string] {
 	const [a, b = a, c = a, d = b] = values;
 	return [a, b, c, d];
 }
 
-/** A flow-relative pair's two values: [both] or [start end]. */
 function perEnd(values: string[]): [string, string] {
 	const [a, b = a] = values;
 	return [a, b];
 }
 
-/**
- * The grammars a value is matched against: the property index's, with the
- * entries it states from an older level of the specs brought up to date.
- * `generic()` family names, the SVG baseline keywords and `outline-color:
- * invert` are all in the current specs and missing from the index. The
- * deprecated system colors still parse per CSS Color 4 -- each is an alias of
- * a modern one -- but the index's `<color>` leaves them out.
- */
+// The property index's grammars, with entries it states from an older level
+// of the specs brought up to date; the deprecated system colors still parse
+// per CSS Color 4.
 const grammarLexer = CSSTree.fork({
 	properties: {
 		"alignment-baseline": "| text-bottom | text-top",
@@ -975,22 +822,15 @@ const grammarLexer = CSSTree.fork({
 	},
 }).lexer;
 
-/** One top-level component of a value, and the grammar terms it satisfied. */
 interface ValueTerm {
 	text: string;
 	terms: string[];
 }
 
-/**
- * Each top-level component of a value paired with the grammar terms it
- * satisfied, outermost first: the longhands and types the property index
- * names on the way to the component. Null when the grammar refuses the value
- * -- one carrying a substitution, or a spelling the index does not describe
- * -- which is where a caller falls back to reading the value by shape.
- *
- * The text is the component as the declaration spells it: the grammar says
- * which term a component fills, not how it is written.
- */
+// Each component paired with the grammar terms it satisfied, outermost
+// first. Null when the grammar refuses the value (a substitution, a spelling
+// the index does not describe): callers fall back to reading by shape. The
+// text is the component as the declaration spells it.
 function grammarTerms(property: string, value: string): ValueTerm[] | null {
 	let ast: {children?: {toArray(): CSSNode[]} | null};
 	// getTrace answers one step of the match per term the node satisfied.
@@ -1027,17 +867,12 @@ function grammarTerms(property: string, value: string): ValueTerm[] | null {
 	return out;
 }
 
-/** The `<line-width> || <line-style> || <color>` grammar's three terms. */
 interface LineValue {
 	width: string | null;
 	lineStyle: string | null;
 	color: string | null;
 }
 
-/**
- * The grammar term each component of a line value satisfied, keyed by the
- * term's name in the property index.
- */
 const LINE_VALUE_TERMS = new Map<string, keyof LineValue>([
 	["line-width", "width"],
 	["line-style", "lineStyle"],
@@ -1045,19 +880,11 @@ const LINE_VALUE_TERMS = new Map<string, keyof LineValue>([
 	["color", "color"],
 ]);
 
-/** The node types a number is parsed into, whatever unit it carries. */
 const NUMERIC_NODES = new Set(["Number", "Dimension", "Percentage"]);
 
-/**
- * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
- * the per-side border shorthands and `outline`. Components may appear in any
- * order and any may be omitted, so which term a component fills is read off
- * the grammar it matched rather than guessed from its spelling.
- *
- * A value the grammar refuses -- one carrying a substitution, or a spelling
- * the index does not describe -- is read by shape instead: the cascade takes
- * such a value as declared, and what it means is decided downstream.
- */
+// border/outline's <line-width> || <line-style> || <color>: components come
+// in any order, so which term one fills is read off the grammar it matched.
+// A refused value is read by shape instead.
 function splitLineValue(property: string, value: string): LineValue {
 	const out: LineValue = {width: null, lineStyle: null, color: null};
 	const traced = grammarTerms(property, value);
@@ -1088,7 +915,6 @@ function splitLineValue(property: string, value: string): LineValue {
 	return out;
 }
 
-/** The values `flex-direction` takes, which is how `flex-flow` knows one. */
 const FLEX_DIRECTIONS = new Set([
 	"row",
 	"row-reverse",
@@ -1096,19 +922,12 @@ const FLEX_DIRECTIONS = new Set([
 	"column-reverse",
 ]);
 
-/** The values `flex-wrap` takes. */
 const FLEX_WRAPS = new Set(["nowrap", "wrap", "wrap-reverse"]);
 
-/**
- * The keywords that qualify the alignment keyword after them rather than
- * standing as a value of their own: `safe center`, `first baseline`.
- */
+// `safe center`, `first baseline`: the first word qualifies the second.
 const ALIGNMENT_QUALIFIERS = new Set(["safe", "unsafe", "first", "last"]);
 
-/**
- * Expand `flex-flow` (css-flexbox-1 §7.1): a direction and a wrap in either
- * order, either one omitted and left at its initial value.
- */
+// css-flexbox-1 §7.1.
 function expandFlexFlow(value: string): Record<string, string> {
 	const out: Record<string, string> = {
 		"flex-direction": "row",
@@ -1125,11 +944,7 @@ function expandFlexFlow(value: string): Record<string, string> {
 	return out;
 }
 
-/**
- * Expand a `place-*` shorthand (css-align-3 §10): the block axis first, then
- * the inline axis, and one value stated for both when only one is written.
- * A value is one keyword, or two where the first only qualifies the second.
- */
+// css-align-3 §10: block axis first, one value stated for both.
 function expandPlace(
 	value: string,
 	block: string,
@@ -1153,13 +968,8 @@ function expandPlace(
 	return {[block]: values[0], [inline]: values[1] ?? values[0]};
 }
 
-/**
- * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
- * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
- * a second number is shrink, anything else is the basis -- and a one-value
- * numeric form (`flex: 1`) sets the basis to 0%, which is what makes it the
- * everyday grow-to-fill declaration.
- */
+// css-flexbox-1 §7.1.1. A one-value numeric form (`flex: 1`) sets the basis
+// to 0%, which is what makes it the everyday grow-to-fill declaration.
 function expandFlex(value: string): Record<string, string> | null {
 	const v = value.trim();
 	if (v === "none") {
@@ -1212,19 +1022,14 @@ function expandFlex(value: string): Record<string, string> | null {
 	};
 }
 
-/** The longhands `list-style` states, and the terms its grammar names. */
 const LIST_STYLE_LONGHANDS = [
 	"list-style-position",
 	"list-style-image",
 	"list-style-type",
 ];
 
-/**
- * Expand the `list-style` shorthand, whose components may appear in any order.
- *
- * `none` is ambiguous -- it sets whichever of type/image has not been given --
- * but for a terminal there are no images, so it always means "no marker".
- */
+// `none` sets whichever of type/image has not been given; a terminal has no
+// images, so it always means "no marker".
 function expandListStyle(value: string): Record<string, string> {
 	const parts: Record<string, string> = {};
 	const traced = grammarTerms("list-style", value);
@@ -1251,12 +1056,8 @@ function expandListStyle(value: string): Record<string, string> {
 	return parts;
 }
 
-/**
- * Expand the `background` shorthand down to the two components a terminal can
- * render. Positions, repeats and attachments mean nothing on a cell grid and
- * are dropped; `none` is the IMAGE component, never a color, so the color a
- * bare `background: none` declares is its initial, transparent.
- */
+// Down to the two components a terminal renders. `none` is the IMAGE
+// component, so a bare `background: none` leaves the color transparent.
 function expandBackground(value: string): Record<string, string> {
 	const traced = grammarTerms("background", value);
 	if (traced) {
@@ -1286,10 +1087,8 @@ function expandBackground(value: string): Record<string, string> {
 	};
 }
 
-/** The four ways a border image tiles, which name the repeat component. */
 const BORDER_IMAGE_REPEATS = new Set(["stretch", "repeat", "round", "space"]);
 
-/** The functions that produce an image, beside the gradients. */
 const IMAGE_FUNCTIONS = new Set([
 	"url",
 	"image",
@@ -1299,7 +1098,6 @@ const IMAGE_FUNCTIONS = new Set([
 	"paint",
 ]);
 
-/** Whether a component names an image: a function producing one, or `none`. */
 function isImageValue(token: string): boolean {
 	const node = singleValueNode(token);
 	if (!node) {
@@ -1318,7 +1116,6 @@ function isImageValue(token: string): boolean {
 	);
 }
 
-/** The longhands `border-image` states, and the terms its grammar names. */
 const BORDER_IMAGE_LONGHANDS = [
 	"border-image-source",
 	"border-image-slice",
@@ -1327,16 +1124,9 @@ const BORDER_IMAGE_LONGHANDS = [
 	"border-image-repeat",
 ];
 
-/**
- * Expand the `border-image` shorthand, whose slash-separated groups are the
- * slice, the width and the outset, and whose first group holds the source,
- * the slice and the repeat in any order.
- *
- * A terminal draws no border image, so nothing here reaches the painter. The
- * `border` shorthand resets these five longhands and serializes only while
- * they stand at their initial values, so a declaration block has to know what
- * they hold.
- */
+// Nothing here reaches the painter; the `border` shorthand resets these five
+// longhands and serializes only while they stand initial, so a block has to
+// know what they hold.
 function expandBorderImage(value: string): Record<string, string> {
 	const traced = grammarTerms("border-image", value);
 	if (traced) {
@@ -1382,12 +1172,8 @@ function expandBorderImage(value: string): Record<string, string> {
 	return out;
 }
 
-/**
- * Expand the `border-radius` shorthand: up to four horizontal radii and,
- * after a slash, up to four vertical ones, each list filled out by the CSS
- * 1-4 rule. A corner is elliptical, so its longhand holds both radii -- and
- * states one value where the two agree, which is how a radius serializes.
- */
+// A corner is elliptical: its longhand holds both radii, and states one
+// value where the two agree.
 function expandBorderRadius(value: string): Record<string, string> {
 	const [across, down] = value.split("/");
 	const horizontal = splitComponents(across ?? "");
@@ -1408,12 +1194,8 @@ function expandBorderRadius(value: string): Record<string, string> {
 	return out;
 }
 
-/**
- * A value's top-level components, split on `/` rather than on whitespace, with
- * strings, brackets and parentheses kept whole. The grid shorthands are the
- * only ones whose parts are slash-separated and whose components can contain
- * a slash-free quoted string.
- */
+// The grid shorthands are the only ones slash-separated whose components can
+// contain a slash-free quoted string.
 function splitSlashGroups(value: string): string[] {
 	const groups: string[] = [];
 	let depth = 0;
@@ -1442,7 +1224,6 @@ function splitSlashGroups(value: string): string[] {
 	return groups;
 }
 
-/** A value's top-level components, with strings and bracketed names kept whole. */
 function splitGridComponents(value: string): string[] {
 	const components: string[] = [];
 	let depth = 0;
@@ -1475,19 +1256,14 @@ function splitGridComponents(value: string): string[] {
 	return components;
 }
 
-/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
 function isCustomIdent(value: string): boolean {
 	return (
 		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
 	);
 }
 
-/**
- * `grid-row` / `grid-column` (css-grid-2 §8.3.2): a start line and an end
- * line. An omitted end repeats the start only when the start is a name --
- * `grid-column: main` means the whole area called main, while
- * `grid-column: 2` means one track starting at line 2.
- */
+// css-grid-2 §8.3.2: an omitted end repeats the start only when the start is
+// a name -- `grid-column: main` is the whole area, `grid-column: 2` one track.
 function expandGridPlacementPair(
 	value: string,
 	start: string,
@@ -1504,11 +1280,8 @@ function expandGridPlacementPair(
 	return {[start]: first, [end]: second};
 }
 
-/**
- * `grid-area` (css-grid-2 §8.4): row-start / column-start / row-end /
- * column-end, each omitted value falling back to the one across from it by the
- * same custom-ident rule the pair shorthands use.
- */
+// css-grid-2 §8.4: each omitted value falls back to the one across from it
+// by the same custom-ident rule.
 function expandGridArea(value: string): Record<string, string> {
 	const groups = splitSlashGroups(value);
 	const rowStart = groups[0] || "auto";
@@ -1529,11 +1302,7 @@ function expandGridArea(value: string): Record<string, string> {
 	};
 }
 
-/**
- * `grid-template` (css-grid-2 §7.4). Two forms: rows `/` columns, and the
- * visual one whose rows are written as strings of area names with each row's
- * track size and line names around them.
- */
+// css-grid-2 §7.4: rows / columns, or the visual form of area-name strings.
 function expandGridTemplate(value: string): Record<string, string> {
 	const text = value.trim();
 	if (!text || text === "none") {
@@ -1594,12 +1363,8 @@ function expandGridTemplate(value: string): Record<string, string> {
 	};
 }
 
-/**
- * `grid` (css-grid-2 §7.4): the whole explicit grid, or one axis of it
- * against an `auto-flow` that sizes the other's implicit tracks. Either way
- * the shorthand resets every longhand it stands for, which is what makes it
- * safe to write once at the top of a rule.
- */
+// css-grid-2 §7.4: the explicit grid, or one axis against an `auto-flow`
+// sizing the other's implicit tracks. Resets every longhand it stands for.
 function expandGrid(value: string): Record<string, string> {
 	const text = value.trim();
 	const reset = {
@@ -1645,7 +1410,6 @@ function expandGrid(value: string): Record<string, string> {
 		};
 }
 
-/** The easing keywords css-easing-1 defines. */
 const EASING_KEYWORDS = new Set([
 	"linear",
 	"ease",
@@ -1656,10 +1420,8 @@ const EASING_KEYWORDS = new Set([
 	"step-end",
 ]);
 
-/** The easing function names; their arguments are judged at build time. */
 const EASING_FUNCTION_NAMES = new Set(["linear", "cubic-bezier", "steps"]);
 
-/** Whether a component spells an `<easing-function>`. */
 function isEasingValue(token: string): boolean {
 	const node = singleValueNode(token);
 	if (!node) {
@@ -1674,11 +1436,7 @@ function isEasingValue(token: string): boolean {
 	);
 }
 
-/**
- * `transition: <single-transition>#`, each item `<property> || <duration> ||
- * <easing> || <delay> || <behavior>`. The first time is the duration and the
- * second the delay; each longhand collects one slot per item.
- */
+// The first time is the duration and the second the delay.
 function expandTransition(value: string): Record<string, string> {
 	const properties: string[] = [];
 	const durations: string[] = [];
@@ -1723,11 +1481,8 @@ function expandTransition(value: string): Record<string, string> {
 	};
 }
 
-/**
- * The lines `text-decoration-line` names, for a value whose grammar the index
- * refuses -- one carrying a substitution, which still declares the lines it
- * spells outright.
- */
+// For a value whose grammar the index refuses (a substitution), which still
+// declares the lines it spells outright.
 const DECORATION_LINE_KEYWORDS = new Set([
 	"none",
 	"underline",
@@ -1738,19 +1493,12 @@ const DECORATION_LINE_KEYWORDS = new Set([
 	"grammar-error",
 ]);
 
-/**
- * Expand CSS SHORTHANDS into the longhands everything downstream reads.
- * Declarations are consulted per-property, so a `border: 1px solid` that
- * never becomes border-top-width etc. simply doesn't exist to the box model
- * or the border painter. Declaration order is preserved, so an explicit
- * longhand after a shorthand still overrides it.
- *
- * A shorthand keeps its own entry alongside the longhands it declares, so
- * `getPropertyValue("border")` still answers what was authored. `margin`,
- * `padding` and `border-radius` are the exception: their computed answers are
- * serialized from the four longhands, so keeping the shorthand would shadow
- * that.
- */
+// Declarations are consulted per-property, so a shorthand that never becomes
+// longhands does not exist downstream; order is preserved, so an explicit
+// longhand after a shorthand still overrides it. A shorthand keeps its own
+// entry so `getPropertyValue("border")` answers what was authored -- except
+// margin, padding and border-radius, whose computed answers are serialized
+// from the longhands the kept shorthand would shadow.
 function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
@@ -1985,12 +1733,9 @@ function expandShorthands(
 	return out;
 }
 
-// ---- CSS spec defaults ----
-/**
- * The initial values this engine states for itself. They stand ahead of the
- * property index's, which is what lets a cell grid answer `font-size` with one
- * cell where the index says `medium`, and `box-sizing` with `border-box`.
- */
+// Ahead of the property index's initial values: a cell grid answers
+// `font-size` with one cell where the index says medium, and `box-sizing`
+// with border-box.
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	display: "inline",
 	"margin-top": "0",
@@ -2049,16 +1794,10 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	order: "0",
 };
 
-// ---- Element defaults the stylesheet cannot express ----
-
-/**
- * The per-element defaults that are STATE, not stylesheet: the fullscreen
- * element's viewport block (explicit cells -- the alternate screen IS the
- * containing geometry), a select sized to its widest option label so the
- * field never jumps as the selection changes, and the size attribute
- * driving a text input's width. Everything expressible as CSS lives in
- * UA_ELEMENT_STYLES; these resolve at the initial-value layer, below it.
- */
+// Per-element defaults that are STATE, not stylesheet: the fullscreen
+// element's viewport block, a select sized to its widest option label so the
+// field never jumps, the size attribute driving an input's width. Everything
+// expressible as CSS lives in UA_ELEMENT_STYLES.
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
@@ -2105,12 +1844,8 @@ function getElementDefaults(
 	return undefined;
 }
 
-// ---- Inheritance / initial-value tables ----
-/**
- * The properties an element takes from its flat-tree parent where no
- * declaration reaches it. A custom property inherits too, and is in no list:
- * there is no fixed set of names for one to be in.
- */
+// A custom property inherits too, and is in no list: there is no fixed set
+// of names for one to be in.
 const INHERITED_PROPERTIES = new Set([
 	"color",
 	"cursor",
@@ -2149,11 +1884,6 @@ const INITIAL_KEYWORDS = new Set([
 	"unset",
 ]);
 
-/**
- * A property's initial value on an element, or -- with no element, as for a
- * pseudo-element -- the initial value alone, which no element default has a
- * say in.
- */
 function getInitialStyle(
 	element: Element | null,
 	property: string,
@@ -2163,18 +1893,12 @@ function getInitialStyle(
 		return elementDefaults[property];
 	}
 
-	// Fall back to CSS spec default, and past it to the property index --
-	// every longhand has an initial value, and a property this engine does not
-	// lay out still resolves to one.
+	// A property this engine does not lay out still resolves to an initial.
 	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
-/**
- * The number a value leads with, read off its Dimension, Number or
- * Percentage node. The unit collapses to the count -- px and ch both
- * measure one cell here -- and a percentage keeps its mark for the caller
- * to resolve against a basis.
- */
+// The unit collapses to the count -- px and ch both measure one cell -- and
+// a percentage keeps its mark for the caller to resolve against a basis.
 function leadingUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
@@ -2197,10 +1921,8 @@ function leadingUnitValue(
 }
 
 /**
- * A nonnegative length or percentage, or null. Negative lengths are
- * refused here -- a negative width, padding or border is invalid CSS and
- * must not reach layout -- and parseSignedUnitValue carries the sign for
- * the paths that take one.
+ * A nonnegative length or percentage: a negative width or padding is invalid
+ * CSS and must not reach layout. parseSignedUnitValue carries the sign.
  */
 export function parseUnitValue(
 	value: string,
@@ -2256,14 +1978,8 @@ export function parseBorderWidthValue(
 }
 
 /**
- * A `<ratio>`, as the width/height quotient the solver sizes a box by.
- *
- * The ratio counts cells: one cell is one cell, vertical or horizontal. `1px`
- * and `1ch` are both one cell here, so `aspect-ratio: 1` on a box 10 cells
- * wide makes it 10 rows tall -- there is no compensation for a glyph being
- * visually taller than it is wide. Undefined for `auto`, for a value with an
- * `auto` component, and for a zero or negative component, all of which leave
- * the box to size itself.
+ * width / height, counting cells on both axes: `aspect-ratio: 1` on a box 10
+ * cells wide makes it 10 rows tall. Undefined leaves the box to size itself.
  */
 export function parseAspectRatio(value: string): number | undefined {
 	if (!value || value.includes("auto")) {
@@ -2289,8 +2005,7 @@ export function parseAspectRatio(value: string): number | undefined {
 /** An element's margins, borders and padding, in cells. */
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
-	// the author path's resolved-value work between here and the values layout
-	// is about to decide geometry from.
+	// the author path's resolved-value work.
 	const widthValue = parseUnitValue(getComputedValue(element, "width"));
 	const heightValue = parseUnitValue(getComputedValue(element, "height"));
 
@@ -2320,9 +2035,8 @@ export function getBoxModel(element: Element): BoxModel {
 		getComputedValue(element, "margin-left"),
 	);
 
-	// The USED width is 0 when the side's style is none or hidden
-	// (css-backgrounds §3.3), however wide the width property says --
-	// `border-style: none` must release the space, not just the glyphs.
+	// The used width is 0 when the side's style is none or hidden
+	// (css-backgrounds §3.3): `border-style: none` must release the space.
 	const borderWidthFor = (side: string) => {
 		const style = getComputedValue(element, `border-${side}-style`);
 		if (!style || style === "none" || style === "hidden") {
@@ -2357,12 +2071,9 @@ export function getBoxModel(element: Element): BoxModel {
 	};
 }
 
-/**
- * Properties whose every numeric component must carry a unit. CSS accepts
- * a bare `0` for any length, and accepts bare numbers for the properties
- * that are typed as numbers (line-height, z-index, flex-grow, order,
- * opacity, font-weight) -- those are NOT listed here.
- */
+// CSS accepts a bare 0 for any length, and bare numbers for the properties
+// typed as numbers (line-height, z-index, opacity, ...) -- those are NOT
+// listed here.
 const LENGTH_PROPERTIES = new Set([
 	"border-bottom-left-radius",
 	"border-bottom-right-radius",
@@ -2407,15 +2118,9 @@ const LENGTH_PROPERTIES = new Set([
 	"word-spacing",
 ]);
 
-/**
- * A nonzero length written without a unit (`padding-top: 1`) is invalid
- * CSS. Browsers reject the declaration at PARSE time, so it never enters
- * the cascade and a lower-priority rule still wins -- coercing it to 0
- * instead would let the bad declaration beat the good one. Terminal
- * authoring makes this an easy slip to write, since 1px is exactly one
- * cell here, so the check earns its keep: `padding-top: 1` means nothing,
- * `padding-top: 1px` means one cell.
- */
+// A nonzero length without a unit is invalid CSS, rejected at parse time so
+// a lower-priority rule still wins. Terminal authoring makes it an easy
+// slip: `padding-top: 1` means nothing, `padding-top: 1px` one cell.
 function isValidDeclaration(
 	property: string,
 	value: string,
@@ -2439,25 +2144,14 @@ function isValidDeclaration(
 	);
 }
 
-/**
- * Whether a value fits its property's grammar, memoized: a declaration is
- * parsed once for every element that declares it, and the same handful of
- * values recur across a whole document.
- */
+// A declaration is parsed once for every element that declares it, and the
+// same handful of values recur across a whole document.
 const grammarMatches = new Map<string, boolean>();
 
-/** Every property CSSOM exposes, shorthands included. */
 const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
-/**
- * Whether a declared value matches the property's grammar, as the property
- * index states it. A value that does not is not a declaration at all: it
- * leaves whatever stood there standing, which is what makes `color: notacolor`
- * a no-op rather than a value.
- *
- * A value carrying a substitution is not judged: what it means depends on what
- * the custom property holds, which is not known here.
- */
+// A value off its grammar is not a declaration at all: `color: notacolor` is
+// a no-op, not a value. One carrying a substitution is not judged.
 function matchesGrammar(property: string, value: string, atRule = ""): boolean {
 	if (property.startsWith("--")) {
 		return true;
@@ -2503,27 +2197,17 @@ const DEFAULT_LIST_GUTTER = 4;
 /** Lists currently having their gutter measured, to stop re-entrant computation. */
 const listGutterInProgress = new WeakSet<Element>();
 
-/**
- * The active StyleManager for a document.
- *
- * A node holds its document rather than its window, so this is the door every
- * read of the cascade from a node takes -- including the ones taken deep
- * inside the cascade itself, which have no StyleManager in hand: the list
- * gutter measures the *resolved* ::marker content, the same string the
- * renderer will draw, and only the StyleManager can produce that.
- */
+// The door every read of the cascade from a node takes, including reads deep
+// inside the cascade itself, which have no StyleManager in hand.
 const documentManagers = new WeakMap<object, StyleManager>();
 
-/** A marker is separated from its item's text by one cell. */
+// A marker is separated from its item's text by one cell.
 function withMarkerSeparator(marker: string): string {
 	return marker ? `${marker} ` : "";
 }
 
-/**
- * The `content` a list item's marker falls back to when no rule declared one:
- * what its list-style-type spells, quoted the way a content value is written.
- * Null for an item outside a list, which has no marker to spell.
- */
+// What list-style-type spells, quoted the way a content value is written;
+// null outside a list.
 function defaultMarkerContent(hostElement: Element): string | null {
 	const listParent = hostElement.parentElement;
 	if (
@@ -2536,15 +2220,9 @@ function defaultMarkerContent(hostElement: Element): string | null {
 	return marker ? `"${withMarkerSeparator(marker)}"` : null;
 }
 
-/**
- * Strip the quotes from a CSS `content` value.
- *
- * A content value is a *sequence* of components -- quoted strings, and functions
- * like counter() -- so `counter(list-item) ") "` has to yield
- * `counter(list-item)) ` for the counter pass to expand, not keep its literal
- * quote characters. Only stripping when the whole value is one quoted string
- * left `"` and `'` in the rendered marker.
- */
+// A content value is a SEQUENCE of components -- strings and functions --
+// and stripping only when the whole value is one quoted string left `"` in
+// the rendered marker.
 function unquoteContent(content: string): string {
 	let out = "";
 	let index = 0;
@@ -2588,19 +2266,10 @@ function unquoteContent(content: string): string {
 	return out;
 }
 
-/**
- * Width of the gutter a list reserves for `list-style-position: outside` markers.
- *
- * Markers are right-aligned against the content edge, so the gutter must fit the
- * widest marker in the list. A fixed gutter silently collides with wide markers:
- * "iii. Third" renders as "iii.Third" once the marker fills all four cells.
- *
- * This must measure exactly what renderOutsideMarker() will draw -- the resolved
- * ::marker content, in terminal cells. Measuring the *default* marker instead
- * lets `::marker { content: ">>>>>> " }` overrun the gutter, and measuring with
- * String#length instead of stringWidth() lets a wide-character marker like
- * "日本 " do the same: .length is 3 where the cells occupied are 5.
- */
+// Markers are right-aligned against the content edge, so the gutter must fit
+// the widest one -- measured off the resolved ::marker content, in cells:
+// the default marker misses `::marker { content: ">>>>>> " }`, and .length
+// undercounts a wide-character marker.
 function getListGutterWidth(listElement: Element): number {
 	if (listGutterInProgress.has(listElement)) {
 		return DEFAULT_LIST_GUTTER;
@@ -2628,7 +2297,6 @@ function getListGutterWidth(listElement: Element): number {
 	}
 }
 
-/** Properties whose value is a `<color>`. */
 const COLOR_PROPERTIES = new Set([
 	"accent-color",
 	"background-color",
@@ -2648,10 +2316,7 @@ const COLOR_PROPERTIES = new Set([
 	"text-emphasis-color",
 ]);
 
-/**
- * Properties whose value carries author text -- strings, family names,
- * function bodies -- and so is never case-folded.
- */
+// Author text -- strings, family names, custom idents -- never case-folded.
 const VERBATIM_PROPERTIES = new Set([
 	"background-image",
 	"content",
@@ -2659,8 +2324,6 @@ const VERBATIM_PROPERTIES = new Set([
 	"counter-reset",
 	"font",
 	"font-family",
-	// A grid value carries custom idents -- line names and area names, which
-	// are case-sensitive -- alongside its keywords, so it cannot be folded.
 	"grid-area",
 	"grid-auto-columns",
 	"grid-auto-rows",
@@ -2678,14 +2341,11 @@ const VERBATIM_PROPERTIES = new Set([
 	"quotes",
 ]);
 
-/** A value that is one bare CSS identifier, which computes case-folded. */
+// One bare identifier computes case-folded.
 const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
-/**
- * A numeric component in its computed spelling: the sign and any trailing
- * zeros dropped, the unit case-folded, and a unitless zero given the `px` a
- * length always computes to.
- */
+// Sign and trailing zeros dropped, unit folded, and a unitless zero given
+// the px a length computes to.
 function computedNumber(token: string): string {
 	const node = singleValueNode(token);
 	if (!node) {
@@ -2706,7 +2366,6 @@ function computedNumber(token: string): string {
 	return token;
 }
 
-/** The corner radii, whose value is a horizontal radius and a vertical one. */
 const RADIUS_LONGHANDS = new Set([
 	"border-top-left-radius",
 	"border-top-right-radius",
@@ -2714,22 +2373,14 @@ const RADIUS_LONGHANDS = new Set([
 	"border-bottom-left-radius",
 ]);
 
-/**
- * A corner radius with its second component dropped where the two agree: a
- * circular corner states one radius, an elliptical one states both.
- */
+// A circular corner states one radius, an elliptical one both.
 function collapseRadius(value: string): string {
 	const parts = value.split(/\s+/).filter(Boolean);
 	return parts.length === 2 && parts[0] === parts[1] ? parts[0] : value;
 }
 
-/**
- * `grid-template-areas` computes to a list of rows, each a list of cell names
- * (css-grid-2 §7.3), so the spacing an author lines a picture of the grid up
- * with is not part of the value: every row writes its cells one space apart.
- * A value that is not a run of strings -- `none`, a var() still to substitute
- * -- is left as it is written.
- */
+// The spacing an author lines a picture of the grid up with is not part of
+// the value: every row writes its cells one space apart (css-grid-2 §7.3).
 function normalizeGridAreas(value: string): string {
 	const children = cssValueChildren(value);
 	if (
@@ -2744,10 +2395,7 @@ function normalizeGridAreas(value: string): string {
 		.join(" ");
 }
 
-/**
- * The computed spelling of a declared value: the one place a struct becomes
- * a string, at the getPropertyValue boundary.
- */
+// The one place a declared value becomes its computed spelling.
 function normalizeValue(property: string, declared: string): string {
 	const value = declared.trim();
 	if (!value || property.startsWith("--")) {
@@ -2769,12 +2417,8 @@ function normalizeValue(property: string, declared: string): string {
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
 }
 
-/**
- * The properties whose value absolutizes against the element it is computed
- * on: every property that takes a length, plus the two whose percentage is
- * font-relative. A value on any other property is the same string on every
- * element, and interning is the whole of its computation.
- */
+// A value on any other property is the same string on every element, and
+// interning is the whole of its computation.
 const ABSOLUTIZED_PROPERTIES = new Set([
 	...LENGTH_PROPERTIES,
 	"border-spacing",
@@ -2791,23 +2435,15 @@ const ABSOLUTIZED_PROPERTIES = new Set([
 	"vertical-align",
 ]);
 
-/**
- * The properties whose percentage resolves at computed-value time, against
- * the font size: `font-size` against the parent's, `line-height` against the
- * element's own. Every other percentage stays a percentage until it is used.
- */
+// font-size resolves against the parent's font size, line-height against
+// the element's own; every other percentage stays until used.
 const FONT_RELATIVE_PERCENTAGES = new Set(["font-size", "line-height"]);
 
-/** A number carrying a unit that only an element can measure. */
 const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|vw|vh|vmin|vmax)\b/i;
 
-/**
- * One interned computed value: the string, and whether answering it needs
- * the element -- a relative length to absolutize, a calc() to reduce, a
- * font-relative percentage to resolve. The flag is decided once per declared
- * text, so the common value (a keyword, an integer, a px or ch length) is
- * still nothing but two map lookups.
- */
+// `contextual` says answering needs the element -- a relative length, a
+// calc(), a font-relative percentage -- decided once per declared text, so
+// the common value is still nothing but two map lookups.
 interface ComputedEntry {
 	value: string;
 	contextual: boolean;
@@ -2815,12 +2451,8 @@ interface ComputedEntry {
 
 const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
 
-/**
- * Computed strings interned by property and declared text. A document draws
- * its declared values from a small vocabulary -- a handful of colors, a
- * handful of lengths, the same keywords on every element -- so the same pair
- * recurs across thousands of elements, and again after each re-resolution.
- */
+// A document draws its declared values from a small vocabulary, so the same
+// property/text pair recurs across thousands of elements.
 const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
 function computedEntry(property: string, declared: string): ComputedEntry {
@@ -2855,27 +2487,20 @@ function computedValue(property: string, declared: string): string {
 	return computedEntry(property, declared).value;
 }
 
-/** The unit a length measures in, and the px each one of it is worth. */
 interface LengthContext {
-
-	/** The font size relative units measure against, in px. */
 	font: number;
 
-	/** The root element's font size, for `rem`. */
+	// For `rem`.
 	root: number;
 	viewportWidth: number;
 	viewportHeight: number;
 
-	/** What a percentage is worth, or null where percentages stay. */
+	// What a percentage is worth, or null where percentages stay.
 	percent: number | null;
 }
 
-/**
- * The font size a terminal draws with: one cell. It is the initial value
- * `font-size` computes to, so `1em` is one cell in a document that declares
- * no font size -- and a document that declares one still gets the spec's
- * arithmetic, which the grid then rounds to cells.
- */
+// One cell: `1em` is one cell in a document that declares no font size, and
+// one that declares a size still gets the spec's arithmetic.
 const INITIAL_FONT_SIZE = 1;
 
 function getFontSize(fontSize: string): number {
@@ -2912,20 +2537,14 @@ function unitFactor(unit: string, context: LengthContext): number | null {
 	}
 }
 
-/** A length in the spelling a computed value carries: px, six decimals at most. */
 function absoluteLength(px: number): string {
 	return `${Math.round(px * 1e6) / 1e6}px`;
 }
 
-/** A number token followed by its unit, anywhere in a value. */
 const LENGTH_TOKEN = /([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)/g;
 
-/**
- * A computed value with every relative length replaced by the absolute one it
- * computes to, and every calc() reduced. What is left is px, the percentages
- * a property keeps until it is used, and whatever this engine does not
- * measure -- which passes through untouched.
- */
+// What is left is px, the percentages a property keeps until used, and
+// whatever this engine does not measure, untouched.
 function absolutizeLengths(value: string, context: LengthContext): string {
 	const reduced = value.includes("calc(") ? replaceCalc(value, context) : value;
 	return reduced.replace(
@@ -2939,7 +2558,6 @@ function absolutizeLengths(value: string, context: LengthContext): string {
 	);
 }
 
-/** Each calc() in a value, replaced by the value it reduces to. */
 function replaceCalc(value: string, context: LengthContext): string {
 	let out = "";
 	let index = 0;
@@ -2967,22 +2585,14 @@ function replaceCalc(value: string, context: LengthContext): string {
 	return out;
 }
 
-/**
- * What a math function reduces to: a length in px, a percentage, and a plain
- * number, at most one of which a valid calc() leaves nonzero alongside the
- * others.
- */
 interface CalcTerms {
 	px: number;
 	percent: number;
 	number: number;
 }
 
-/**
- * The reduced form of a sum, per css-values: a lone term serializes as
- * itself, and a length that still carries a percentage keeps the calc() it
- * needs to hold the two together.
- */
+// A lone term serializes as itself; a length still carrying a percentage
+// keeps the calc() that holds the two together.
 function serializeCalc(terms: CalcTerms): string {
 	const round = (value: number): number => Math.round(value * 1e6) / 1e6;
 	const px = round(terms.px);
@@ -3000,11 +2610,8 @@ function serializeCalc(terms: CalcTerms): string {
 	return `calc(${px}px ${percent < 0 ? "-" : "+"} ${Math.abs(percent)}%)`;
 }
 
-/**
- * A calc() body reduced to its terms. Null for anything this cannot reduce --
- * a nested min()/max()/clamp(), a unit with no cell length, an unsubstituted
- * var() -- which leaves the value as the author wrote it.
- */
+// Null for anything this cannot reduce -- a nested min()/max()/clamp(), an
+// unsubstituted var() -- which leaves the value as written.
 function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 	const tokens = body.match(
 		/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g,
@@ -3109,12 +2716,9 @@ interface DeclarationBlock {
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
 
-	/**
-	 * Each declaration's position in the block, counting from the first. A
-	 * logical property and the physical property it maps to are two names for
-	 * one cascade slot, so which of them a block declares LAST decides the
-	 * value -- and only this says which that is.
-	 */
+	// A logical property and its physical twin are two names for one cascade
+	// slot, so which a block declares LAST decides the value -- and only this
+	// says which that is.
 	order: Record<string, number>;
 }
 
@@ -3124,12 +2728,8 @@ const EMPTY_DECLARATIONS: DeclarationBlock = {
 	order: {},
 };
 
-/**
- * Which of a cascade slot's names a block declares LAST at the given
- * importance -- the declaration whose value the slot takes -- or null when it
- * declares none of them. `accepts` rejects a flow-relative name that maps to
- * the opposite physical edge under the element's direction.
- */
+// The slot name a block declares LAST at this importance, or null.
+// `accepts` rejects a flow-relative name that maps to the opposite edge.
 function declaredName(
 	block: DeclarationBlock,
 	names: readonly string[],
@@ -3155,36 +2755,25 @@ function declaredName(
 	return winner;
 }
 
-/** One declaration of a block: a longhand, or a shorthand kept undecomposed. */
 interface CSSDeclaration {
 	name: string;
 	value: string;
 	important: boolean;
 }
 
-/** The components of a line shorthand, in the order its grammar writes them. */
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
 
-/**
- * Every flow-relative longhand and the physical longhand it maps to, one table
- * per inline direction (css-logical-1 §2).
- *
- * This engine renders one writing mode -- `horizontal-tb`, the only one a
- * terminal's row-major grid has -- so the block axis is always vertical and
- * the inline axis always horizontal: block-start is the top edge, block-end
- * the bottom, and `direction` alone decides which side the inline edges name.
- * A `writing-mode` implementation would replace these two tables with four
- * more; nothing else here would move.
- */
+// One table per inline direction (css-logical-1 §2). This engine renders
+// horizontal-tb only -- a terminal's grid is row-major -- so block-start is
+// always the top edge and `direction` alone decides the inline edges. A
+// writing-mode implementation would replace these two tables with four more;
+// nothing else here would move.
 const LOGICAL_TO_PHYSICAL: Readonly<
 	Record<"ltr" | "rtl", Map<string, string>>
 > = {ltr: new Map(), rtl: new Map()};
 
-/**
- * Each physical longhand and the flow-relative longhands that can name it --
- * its block counterpart, or both inline ones, since which of those maps here
- * is not known until an element states its direction.
- */
+// Both inline longhands can name a physical edge: which one does is not
+// known until an element states its direction.
 const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 
 {
@@ -3236,7 +2825,6 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 	map("grid-column-gap", "column-gap");
 }
 
-/** The physical longhand a flow-relative one names under `direction`, if it is one. */
 function physicalProperty(
 	property: string,
 	direction: string,
@@ -3244,11 +2832,8 @@ function physicalProperty(
 	return LOGICAL_TO_PHYSICAL[direction === "rtl" ? "rtl" : "ltr"].get(property);
 }
 
-/**
- * The OTHER names of the cascade slot a longhand belongs to under `direction`:
- * a flow-relative longhand's physical counterpart, or a physical longhand's
- * flow-relative ones. Empty for a longhand that stands alone.
- */
+// The OTHER names of the cascade slot a longhand belongs to under
+// `direction`; empty for a longhand that stands alone.
 function slotNames(property: string, direction: string): readonly string[] {
 	const physical = physicalProperty(property, direction);
 	if (physical) {
@@ -3263,13 +2848,7 @@ function slotNames(property: string, direction: string): readonly string[] {
 	);
 }
 
-/**
- * The shape of a shorthand's grammar, and so how its value serializes: a box
- * of four sides or corners collapsed to one to four values, a radius box
- * whose corners each carry two values, a pair collapsed when both agree, a
- * line's width/style/color, `border`'s three uniform boxes, or a plain
- * sequence of components.
- */
+// How a shorthand's value serializes, classified once.
 type ShorthandShape =
 	"box" |
 	"radius" |
@@ -3280,25 +2859,16 @@ type ShorthandShape =
 	"grid-template" |
 	"sequence";
 
-/**
- * Each shorthand's longhands, in the order its grammar names them: the
- * property index lists a box's sides alphabetically, where the grammar --
- * and so the order the longhands are stored and serialized in -- runs
- * top, right, bottom, left.
- */
+// In grammar order: the property index lists a box's sides alphabetically
+// where the grammar runs top, right, bottom, left.
 const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
-/** Each shorthand's shape, classified once rather than per serialization. */
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 
-/** The placement shorthands, whose components are separated by slashes. */
 const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
 
-/**
- * The longhands a shorthand resets but whose values its own grammar cannot
- * state: a block missing them cannot serialize as the shorthand, and they
- * take no place in the value it writes.
- */
+// Longhands a shorthand resets but whose values its grammar cannot state: a
+// block missing them cannot serialize as the shorthand.
 const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
 	Object.entries(CSS_RESET_ONLY_LONGHANDS).map(([shorthand, longhands]) => [
 		shorthand,
@@ -3351,16 +2921,9 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	);
 }
 
-/**
- * Whether a two-longhand shorthand states ONE property on two axes -- `gap`,
- * `overflow`, `place-content`, `margin-inline` -- rather than two properties
- * side by side. An axis pair writes one value where its two agree, and copies
- * a single stated value to both; a shorthand like `flex-flow` writes each
- * component it has and drops the ones left at their initial value.
- *
- * The two longhands of an axis pair name the shorthand's own property: they
- * are built on it as a stem, or they end in the segment it ends in.
- */
+// ONE property on two axes (`gap`, `overflow`) rather than two side by
+// side: an axis pair writes one value where its two agree, where `flex-flow`
+// drops components left at their initial value.
 function axisPair(shorthand: string, longhands: readonly string[]): boolean {
 	if (longhands.every((longhand) => longhand.startsWith(shorthand))) {
 		return true;
@@ -3369,13 +2932,8 @@ function axisPair(shorthand: string, longhands: readonly string[]): boolean {
 	return longhands.every((longhand) => longhand.endsWith(`-${segment}`));
 }
 
-/**
- * The shorthands a longhand belongs to, widest first: block serialization
- * prefers the shorthand covering the most declarations, and `all` -- covering
- * every longhand there is -- comes first of all. A vendor-prefixed shorthand
- * comes last however wide it is: `-webkit-border-start` covers exactly the
- * longhands `border-inline-start` does, and is not the name to write them as.
- */
+// Widest first, `all` first of all; a vendor-prefixed shorthand last however
+// wide, since it is not the name to write its longhands as.
 const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 {
 	const byLonghand = new Map<string, string[]>();
@@ -3400,7 +2958,6 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 	}
 }
 
-/** A node a `<supports-condition>` parses into. */
 interface SupportsNode {
 	type: string;
 	name?: string;
@@ -3412,11 +2969,6 @@ interface SupportsNode {
 	value?: SupportsNode | null;
 }
 
-/**
- * A `<supports-condition>` against this engine, on the nodes css-tree parses
- * it into. Text css-tree refuses, and a word standing where an operand
- * belongs, are conditions nothing supports.
- */
 function supportsCondition(text: string): boolean {
 	let nodes: SupportsNode[];
 	try {
@@ -3435,13 +2987,9 @@ function supportsCondition(text: string): boolean {
 	return supportsConditionMatches(nodes[0], text);
 }
 
-/**
- * The operands one joiner stands between, in source order. The grammar
- * css-conditional-3 writes is narrow: a `not` opens a condition of its own,
- * a joined condition holds `and` throughout or `or` throughout, and an
- * operand and a joiner take turns. A condition off that grammar supports
- * nothing.
- */
+// css-conditional-3's grammar is narrow: `not` opens a condition of its own,
+// a joined condition holds `and` throughout or `or` throughout, and an
+// operand and a joiner take turns. A condition off it supports nothing.
 function supportsConditionMatches(
 	condition: SupportsNode,
 	source: string,
@@ -3492,12 +3040,8 @@ function supportsConditionMatches(
 	return matches;
 }
 
-/**
- * One `<supports-in-parens>`: a nested condition, a declaration this engine
- * would honour, or a `selector()` this engine's own selector parser reads.
- * A condition of any other shape -- `font-format()`, `font-tech()` -- is one
- * nothing here supports.
- */
+// A condition of any other shape -- font-format(), font-tech() -- is one
+// nothing here supports.
 function supportsOperandMatches(part: SupportsNode, source: string): boolean {
 	const sliceOf = (node: SupportsNode | null | undefined): string | null =>
 		node?.loc ? source.slice(node.loc.start.offset, node.loc.end.offset) : null;
@@ -3519,13 +3063,8 @@ function supportsOperandMatches(part: SupportsNode, source: string): boolean {
 	return false;
 }
 
-/**
- * Whether a declaration would be honoured: `CSS.supports(property, value)`, and
- * the one-argument form that takes a `@supports` condition. The one-argument
- * form reads its text as a condition, and failing that as a condition the
- * parentheses were left off of, which is the pair of steps css-conditional-3
- * gives it.
- */
+// The one-argument form reads its text as a condition, and failing that as
+// one the parentheses were left off of (css-conditional-3's pair of steps).
 function cssSupports(conditionOrProperty: string, value?: string): boolean {
 	if (value === undefined) {
 		const condition = String(conditionOrProperty).trim();
@@ -3542,7 +3081,6 @@ function cssSupports(conditionOrProperty: string, value?: string): boolean {
 	return text !== "" && isValidDeclaration(property, text);
 }
 
-/** The `CSS` namespace object: identifier escaping and support queries. */
 const CSSNamespace = {
 	escape(ident: string): string {
 		if (arguments.length === 0) {
@@ -3560,12 +3098,9 @@ Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/**
- * A shorthand's value as its longhands, every longhand the shorthand covers
- * given a value -- the ones its grammar leaves out reset to their initial
- * value, as a browser's shorthand write does. Null for a shorthand whose
- * grammar this engine does not decompose, which stays a declaration of its own.
- */
+// Longhands the grammar leaves out reset to their initial value, as a
+// browser's shorthand write does. Null for a grammar this engine does not
+// decompose, which stays a declaration of its own.
 function expandShorthandValue(
 	property: string,
 	value: string,
@@ -3613,10 +3148,6 @@ function expandShorthandValue(
 	return ordered;
 }
 
-/**
- * A corner radius as its two axes, the vertical one taken from the horizontal
- * where the value states a single radius.
- */
 function radiusAxes(value: string): [string, string] {
 	const [horizontal, vertical = horizontal] = value
 		.split(/\s+/)
@@ -3624,7 +3155,6 @@ function radiusAxes(value: string): [string, string] {
 	return [horizontal ?? "0px", vertical ?? "0px"];
 }
 
-/** The four values of a box shorthand, collapsed to the shortest equivalent. */
 function collapseSides(values: string[]): string {
 	const [top, right, bottom, left] = values;
 	if (left !== right) {
@@ -3639,11 +3169,8 @@ function collapseSides(values: string[]): string {
 	return top;
 }
 
-/**
- * The longhands of `shorthand` grouped by the side or corner each names, in
- * the order the shorthand's grammar writes them, or null when the longhands
- * are not a box.
- */
+// The longhands grouped by the side or corner each names, in grammar order;
+// null when they are not a box.
 function boxOrder(
 	longhands: readonly string[],
 	parts: readonly string[],
@@ -3684,7 +3211,6 @@ function boxOrder(
 		: null;
 }
 
-/** A shorthand's value, reconstructed from its longhands' values. */
 function serializeShorthandValue(
 	shorthand: string,
 	longhands: readonly string[],
@@ -3803,10 +3329,7 @@ function serializeShorthandValue(
 	}
 }
 
-/**
- * A shorthand's components with the ones left at their initial value omitted,
- * which is what makes `border-top: 1px solid` serialize without its color.
- */
+// What makes `border-top: 1px solid` serialize without its color.
 function dropInitials(
 	components: ReadonlyArray<readonly [string, string]>,
 ): string {
@@ -3822,12 +3345,7 @@ function dropInitials(
 	return components.length > 0 ? components[0][1] : "";
 }
 
-/**
- * The CSSOM algorithm turning a property name into the IDL attribute that
- * reflects it: `font-size` to `fontSize`, and -- with the lowercase-first flag
- * a `-webkit-` property also carries -- `-webkit-mask` to `webkitMask` as well
- * as `WebkitMask`.
- */
+// font-size to fontSize; with lowercaseFirst, -webkit-mask to webkitMask.
 function camelCaseProperty(property: string, lowercaseFirst = false): string {
 	const source = lowercaseFirst ? property.slice(1) : property;
 	return source.replace(/-([a-z])/g, (_, letter: string) =>
@@ -3835,9 +3353,6 @@ function camelCaseProperty(property: string, lowercaseFirst = false): string {
 	);
 }
 
-/**
- * The inline style objects, one per element, that `element.style` hands out.
- */
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
 const kElement = Symbol("element");
@@ -3852,53 +3367,36 @@ const kBlock = Symbol("block");
 const kIndexed = Symbol("indexed");
 const kSync = Symbol("sync");
 
-/**
- * A CSS declaration block: what `element.style`, a style rule's `style`, and
- * every other CSSOM block are.
- *
- * Declarations are stored as longhands, so a shorthand write expands and a
- * shorthand read reconstructs -- `style.margin = "1px"` answers
- * `style.marginTop === "1px"`, and `style.marginTop = "2px"` answers
- * `style.margin === "1px 1px 1px 2px"`.
- *
- * An element-owned block and the element's `style` attribute are one store
- * seen from two sides. A write serializes through setAttribute, so the
- * attribute mutation record invalidation listens to fires for a property write
- * exactly as for an attribute write; a write to the attribute (or its removal)
- * reparses into the object on the next read, recognized by the text differing
- * from what this object last serialized.
- */
+// Declarations are stored as longhands: a shorthand write expands and a
+// shorthand read reconstructs. An element-owned block and the `style`
+// attribute are one store seen from two sides: a property write serializes
+// through setAttribute, so attribute invalidation fires either way, and an
+// attribute write reparses on the next read, recognized by the text
+// differing from what this object last serialized.
 class CSSStyleDeclaration {
 	[index: number]: string;
 	declare [kElement]?: Element | null;
 	declare [kParentRule]?: CSSRule | null;
 	declare [kOnChange]?: (() => void) | null;
 
-	/**
-	 * The at-rule whose descriptors this block holds, empty for a block of CSS
-	 * properties. A descriptor is named only inside its own at-rule, and only
-	 * its own at-rule's grammar can judge its value.
-	 */
+	// The at-rule whose descriptors this block holds, empty for a block of
+	// CSS properties: only an at-rule's own grammar can judge its descriptors.
 	declare [kDescriptors]?: string;
 
-	/** Whether this block is one keyframe of an animation. */
 	declare [kKeyframe]?: boolean;
 	declare [kDeclarations]?: CSSDeclaration[];
 
-	/**
-	 * The declarations by name. A block holds one declaration per property, so
-	 * a lookup is a map read; `all` expands to every longhand there is, and a
-	 * scan per lookup would make serializing such a block cubic in its size.
-	 */
+	// `all` expands to every longhand there is, and a scan per lookup would
+	// make serializing such a block cubic in its size.
 	declare [kByName]?: Map<string, CSSDeclaration>;
 
-	/** The `style` attribute text this object last serialized or parsed. */
+	// The `style` attribute text this object last serialized or parsed.
 	declare [kAttributeText]?: string | null;
 
-	/** The declarations expanded to longhands for the cascade. */
+	// The declarations expanded to longhands for the cascade.
 	declare [kBlock]?: DeclarationBlock | null;
 
-	/** How many numeric index properties currently name a declaration. */
+	// How many numeric index properties currently name a declaration.
 	declare [kIndexed]?: number;
 
 	constructor(
@@ -4055,7 +3553,6 @@ class CSSStyleDeclaration {
 	}
 }
 
-/** The declarations of a `style` attribute, a `cssText`, or a rule's block. */
 function parseDeclarationText(text: string): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
 	let depth = 0;
@@ -4112,7 +3609,6 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 
 const kTransitionsExist = Symbol("transitionsExist");
 
-/** The declarations as the cascade consumes them: longhands, importance included. */
 function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	style[kSync]!();
 	if (style[kDeclarations]!.length === 0) {
@@ -4144,9 +3640,8 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 		}
 	});
 
-	// An inline `transition` opens the sticky gate a rule opens; the
-	// block parse is the one door both the attribute and setProperty
-	// spellings come through.
+	// The block parse is the one door both the attribute and setProperty
+	// spellings of an inline transition come through.
 	if (
 		style[kElement] &&
 		(declarations["transition"] !== undefined ||
@@ -4160,11 +3655,8 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 		}
 	}
 
-	// The block holds longhands, which is what the cascade consults --
-	// except for a shorthand whose grammar this engine does not decompose,
-	// which reaches the cascade as whatever longhands it can name, its
-	// importance covering each of them. A longhand a shorthand states
-	// stands where the shorthand does.
+	// A shorthand this engine does not decompose reaches the cascade as
+	// whatever longhands it can name, its importance covering each of them.
 	if (undecomposed) {
 		for (const property of Object.keys(expandShorthands(importantValues))) {
 			important[property] = true;
@@ -4184,7 +3676,7 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 	return (style[kBlock] = {declarations, important, order});
 }
 
-/** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
+// Shorthands reconstructed, priority kept.
 function serialize(
 	block: CSSStyleDeclaration,
 ): string {
@@ -4232,7 +3724,7 @@ function serialize(
 	return parts.join(" ");
 }
 
-/** Serialize to the `style` attribute, which is what invalidation observes. */
+// Serialized to the `style` attribute, which is what invalidation observes.
 function flush(
 	declaration: CSSStyleDeclaration,
 ): void {
@@ -4264,20 +3756,10 @@ function find(
 	return declaration[kByName]!.get(property);
 }
 
-/** The descriptor names each at-rule's block may hold, and no others. */
 const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
 
-/**
- * The properties a keyframe cannot declare: an animation's own, which describe
- * the animation rather than a step of it.
- */
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
-/**
- * Whether this block may hold `name`: a supported CSS property or a custom
- * property, or -- in an at-rule's block -- any descriptor it names, since
- * the property index does not describe descriptors.
- */
 function supports(
 	declaration: CSSStyleDeclaration,
 	name: string,
@@ -4298,14 +3780,8 @@ function supports(
 	return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
 }
 
-/**
- * Store one declaration; returns whether anything changed.
- *
- * A declaration that says something new is the LAST declaration in the
- * block: it was written after the ones already there, and the order the
- * block serializes in is the order its declarations were made. Restating
- * a declaration unchanged leaves it where it stands.
- */
+// A declaration that says something new is the LAST in the block; restating
+// one unchanged leaves it where it stands.
 function store(
 	declaration: CSSStyleDeclaration,
 	name: string,
@@ -4346,7 +3822,6 @@ function remove(
 	return true;
 }
 
-/** Store a property as its longhands, or as itself; returns whether it changed. */
 function apply(
 	declaration: CSSStyleDeclaration,
 	name: string,
@@ -4382,7 +3857,7 @@ function apply(
 	return changed;
 }
 
-/** The shorthand's value, or "" when its longhands do not agree on one. */
+// "" when the longhands do not agree on one value.
 function shorthandValue(
 	declaration: CSSStyleDeclaration,
 	shorthand: string,
@@ -4407,25 +3882,19 @@ function shorthandValue(
 	);
 }
 
-/**
- * The declaration block of CSS PROPERTIES: an element's inline style, a style
- * rule's block, a keyframe's. It reflects every property in the index as an
- * IDL attribute, which is what separates it from the descriptor blocks an
- * at-rule holds -- `cssFloat` reaches a style rule's block and no @page's.
- */
+// Reflects every property in the index as an IDL attribute, which is what
+// separates it from an at-rule's descriptor blocks: `cssFloat` reaches a
+// style rule's block and no @page's.
 class CSSStyleProperties extends CSSStyleDeclaration {}
 
-/** Custom properties keep their case; everything else is ASCII-lowercased. */
+// Custom properties keep their case; everything else is ASCII-lowercased.
 function normalizePropertyName(property: string): string {
 	const name = String(property).trim();
 	return name.startsWith("--") ? name : name.toLowerCase();
 }
 
-/**
- * A property name as CSS source spells it. A custom property's name is an
- * identifier, so the escapes in it spell characters that could not otherwise
- * stand there: the source `--a\;b` names the property `--a;b`.
- */
+// Escapes in a custom property's name spell characters that could not
+// otherwise stand there: the source `--a\;b` names the property `--a;b`.
 function parsePropertyName(source: string): string {
 	const name = String(source).trim();
 	if (!name.startsWith("--")) {
@@ -4436,11 +3905,7 @@ function parsePropertyName(source: string): string {
 		: name;
 }
 
-/**
- * A property name as a declaration block writes it: a custom property's name
- * escaped so that reparsing the block names the same property, every other
- * name already an identifier.
- */
+// A custom property's name is escaped so reparsing names the same property.
 function serializePropertyName(property: string): string {
 	return property.startsWith("--")
 		? `--${serializeCSSIdentifier(property.slice(2))}`
@@ -4476,21 +3941,11 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The CSSOM: stylesheets and the rules in them
-// ---------------------------------------------------------------------------
-
-/**
- * The window whose CSSOM was installed last.
- *
- * An error thrown out of a stylesheet has to be the document's own
- * DOMException -- one from another global is not the error an author catches.
- * A sheet reaches its document through its owner node; a constructed one has
- * none, and takes the window its constructor came from.
- */
+// An error thrown out of a stylesheet has to be the document's own
+// DOMException. A sheet reaches its document through its owner node; a
+// constructed one has none, and takes the window its constructor came from.
 let cssomWindow: EngineWindow | null = null;
 
-/** The window of the document a sheet's owner node lives in, if any. */
 function sheetView(
 	sheet: CSSStyleSheet | null | undefined,
 ): object | undefined {
@@ -4519,7 +3974,6 @@ function domException(
 	return new Exception(message, name);
 }
 
-/** The rule types CSSRule's legacy constants name. */
 const RULE_TYPES = {
 	STYLE_RULE: 1,
 	CHARSET_RULE: 2,
@@ -4535,12 +3989,8 @@ const RULE_TYPES = {
 	FONT_FEATURE_VALUES_RULE: 14,
 } as const;
 
-/**
- * What a sheet does when its rules -- or a declaration inside one of them --
- * change: tell whoever consumes it. Registered per sheet rather than exposed
- * on it, so a rule can reach its sheet's consumer without the sheet carrying
- * a method no author should see.
- */
+// Registered per sheet rather than exposed on it, so a rule can reach its
+// sheet's consumer without the sheet carrying a method no author should see.
 const sheetNotifiers = new WeakMap<CSSStyleSheet, () => void>();
 
 function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
@@ -4558,14 +4008,9 @@ interface IndexedCollection {
 	[index: number]: unknown;
 }
 
-/**
- * Define the collection's own index accessors, `list[0]` alongside
- * `list.item(0)`. Each accessor reads through item(), so the values are as
- * live as the collection; only the count is maintained, re-synchronized here
- * by whatever grows or shrinks the collection. Accessors beat a Proxy: every
- * non-index read of a proxied list pays the get trap, and each method read
- * pays a bind.
- */
+// `list[0]` alongside `list.item(0)`, reading through item() so the values
+// stay live. Accessors beat a Proxy: every non-index read of a proxied list
+// pays the get trap, and each method read a bind.
 function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	const list = collection as IndexedCollection;
 	const previous = list[kIndexCount] ?? 0;
@@ -4585,13 +4030,9 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	list[kIndexCount] = length;
 }
 
-/**
- * `text` with its comments replaced by a space. A comment stands where
- * whitespace may, so it separates the tokens around it, and one that never
- * closes runs to the end of the text as the tokenizer says. Media text is
- * split and sliced by hand here, and a comment left in would be carried into
- * a feature's parentheses and unbalance them.
- */
+// A comment stands where whitespace may, so it becomes a space. Media text
+// is sliced by hand here, and a comment left in would be carried into a
+// feature's parentheses and unbalance them.
 function stripCSSComments(text: string): string {
 	if (!text.includes("/*")) {
 		return text;
@@ -4625,10 +4066,6 @@ function stripCSSComments(text: string): string {
 	return out + text.slice(start);
 }
 
-/**
- * The top-level `and`-separated conditions of one media query. Whitespace
- * inside a feature's parentheses belongs to the feature.
- */
 function splitMediaConditions(text: string): string[] {
 	const parts: string[] = [];
 	let depth = 0;
@@ -4653,7 +4090,6 @@ function splitMediaConditions(text: string): string[] {
 	return parts.map((part) => part.trim()).filter(Boolean);
 }
 
-/** One media feature, in its canonical spelling: `(min-width: 480px)`. */
 function serializeMediaFeature(feature: string): string {
 	const body = feature.slice(1, -1).trim();
 	const colon = body.indexOf(":");
@@ -4664,11 +4100,8 @@ function serializeMediaFeature(feature: string): string {
 	return `(${name}: ${serializeCSSValue(body.slice(colon + 1))})`;
 }
 
-/**
- * A query serialized by splitting its text, for the text css-tree refuses:
- * an unrecognized query passes through as authored, case-folded, which is
- * how a list keeps carrying queries this engine cannot judge.
- */
+// For text css-tree refuses: it passes through as authored, case-folded,
+// which is how a list keeps carrying queries this engine cannot judge.
 function serializeMediaQueryText(text: string): string {
 	const parts = splitMediaConditions(text);
 	if (parts.length === 0) {
@@ -4698,18 +4131,12 @@ function serializeMediaQueryText(text: string): string {
 	return modifier + [type, ...conditions].join(" and ");
 }
 
-/** The nodes css-tree parses one media query into. */
 interface MediaQueryNode {
 	modifier?: string | null;
 	mediaType?: string | null;
 	condition?: MediaConditionNode | null;
 }
 
-/**
- * One part of a parsed media condition: a nested condition, a `<mf-plain>`
- * feature and its value, a `<mf-range>` comparison, or the identifier
- * `and`, `or` or `not` standing between them.
- */
 interface MediaConditionNode {
 	type: string;
 	name?: string;
@@ -4723,23 +4150,16 @@ interface MediaConditionNode {
 	right?: CSSNode | null;
 }
 
-/**
- * Parsed media query lists by their source text. A media list is asked
- * whether it matches on every sheet parse, and a document re-asks its
- * handful of spellings, so the bounded cache holds one parse per spelling.
- * The parse carries positions: serialization slices the authored text at
- * them.
- */
+// One parse per spelling, with positions: serialization slices the authored
+// text at them.
 const mediaQueryNodes = new Map<string, MediaQueryNode[] | null>();
 
-/** The operands and joiners a media condition holds, in source order. */
 function mediaConditionParts(
 	condition: MediaConditionNode | null | undefined,
 ): MediaConditionNode[] {
 	return condition?.children ? condition.children.toArray() : [];
 }
 
-/** A media query list's queries as nodes, or null for text css-tree refuses. */
 function parseMediaQueryList(text: string): MediaQueryNode[] | null {
 	let queries = mediaQueryNodes.get(text);
 	if (queries === undefined) {
@@ -4760,19 +4180,10 @@ function parseMediaQueryList(text: string): MediaQueryNode[] | null {
 	return queries;
 }
 
-/**
- * One media query, in the spelling CSSOM writes: the type and the feature
- * names case-folded, one space after each colon, and the media type dropped
- * where it says nothing -- `all and (color)` is the query `(color)` is, while
- * `not all and (color)` negates the pair and keeps it.
- *
- * The query's structure -- modifier, type, the conditions `and` joins -- is
- * read off css-tree's media query nodes, parsed once here; each condition's
- * TEXT still serializes from the authored source, sliced at the node's
- * position. Comments come out first -- a slice would carry one inside a
- * feature's parentheses -- and text css-tree refuses, or spells with escapes
- * the slices would drop, keeps the splitter above.
- */
+// The spelling CSSOM writes: names case-folded, the media type dropped where
+// it says nothing (`all and (color)` is `(color)`). Structure is read off
+// the parsed nodes; each condition's TEXT still slices from the authored
+// source, and text css-tree refuses keeps the splitter above.
 function serializeMediaQuery(query: string): string {
 	const text = stripCSSComments(String(query ?? "")).trim();
 	if (!text) {
@@ -4878,7 +4289,6 @@ function serializeMediaQuery(query: string): string {
 	return modifier + [type, ...conditions].join(" and ");
 }
 
-/** A media query list's queries: split on the commas no parenthesis encloses. */
 function splitMediaQueryList(text: string): string[] {
 	const queries: string[] = [];
 	let depth = 0;
@@ -4902,13 +4312,9 @@ const kMedia = Symbol("media");
 
 /** The media queries a sheet or an `@media` rule applies under. */
 export class MediaList implements globalThis.MediaList {
-	/** The queries by position, which syncIndexed materialises on each change. */
 	[index: number]: string;
 
-	/**
-	 * The queries, in their canonical spelling. Mutated in place: the indexed
-	 * getter reads this array, and a list an author holds keeps answering.
-	 */
+	// Mutated in place: a list an author holds keeps answering.
 	declare [kMedia]?: string[];
 	declare [kOnChange]?: (() => void) | null;
 
@@ -4935,11 +4341,8 @@ export class MediaList implements globalThis.MediaList {
 		return this[kMedia]![index] ?? null;
 	}
 
-	/**
-	 * Append one query. The argument is parsed as a SINGLE media query, so a
-	 * comma-separated list parses to nothing and the call does nothing; a
-	 * query the list already holds is not held twice.
-	 */
+	// Parsed as a SINGLE media query: a comma-separated list parses to
+	// nothing and the call does nothing.
 	appendMedium(medium: string): void {
 		if (arguments.length === 0) {
 			throw typeError("appendMedium requires a medium");
@@ -4957,7 +4360,6 @@ export class MediaList implements globalThis.MediaList {
 		this[kOnChange]?.();
 	}
 
-	/** Delete every query equal to this one, or throw when the list holds none. */
 	deleteMedium(medium: string): void {
 		if (arguments.length === 0) {
 			throw typeError("deleteMedium requires a medium");
@@ -5000,13 +4402,10 @@ function parse(
 	syncIndexed(list);
 }
 
-/**
- * A rule's owning sheet, held beside the rule so that deleting a rule can cut
- * the link -- a removed rule belongs to no stylesheet, and says so.
- */
+// Held beside the rule so deleting one can cut the link: a removed rule
+// belongs to no stylesheet, and says so.
 const ruleSheets = new WeakMap<CSSRule, CSSStyleSheet | null>();
 
-/** Cut a removed rule, and everything under it, loose from its sheet. */
 function detachRule(rule: CSSRule): void {
 	ruleSheets.set(rule, null);
 	const group = rule as {cssRules?: CSSRuleList};
@@ -5017,7 +4416,6 @@ function detachRule(rule: CSSRule): void {
 	}
 }
 
-/** A rule of a stylesheet: the base every rule type shares. */
 abstract class CSSRule {
 	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
 	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
@@ -5062,7 +4460,6 @@ for (const [name, value] of Object.entries(RULE_TYPES)) {
 	});
 }
 
-/** Tell the sheet -- and so the cascade -- that a rule changed. */
 function notifyRule(rule: CSSRule): void {
 	sheetChanged(rule.parentStyleSheet);
 }
@@ -5070,7 +4467,6 @@ function notifyRule(rule: CSSRule): void {
 const kRuleList = Symbol("ruleList");
 const kRules = Symbol("rules");
 
-/** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
 abstract class CSSGroupingRule extends CSSRule {
 	declare [kRules]?: CSSRule[];
 	declare [kRuleList]?: CSSRuleList;
@@ -5145,14 +4541,12 @@ abstract class CSSGroupingRule extends CSSRule {
 	}
 }
 
-/** A group's rules, serialized one per line and indented one level. */
 function serializeGroupRules(group: CSSGroupingRule): string {
 	return Array.from(group.cssRules)
 		.map((rule) => `\n  ${rule.cssText.replace(/\n/g, "\n  ")}`)
 		.join("");
 }
 
-/** A grouping rule gated on a condition: `@media`, `@supports`. */
 abstract class CSSConditionRule extends CSSGroupingRule {
 	abstract get conditionText(): string;
 }
@@ -5161,12 +4555,8 @@ const kSelectors = Symbol("selectors");
 const kStyle = Symbol("style");
 const kSelectorText = Symbol("selectorText");
 
-/**
- * Load a block from declarations the sheet parser already holds, sparing the
- * serialize-and-reparse a cssText assignment would run. The filters are the
- * cssText setter's: a name the block may not hold is skipped, and each entry
- * cascades against the ones before it.
- */
+// Spares the serialize-and-reparse a cssText assignment would run; the
+// filters are the cssText setter's.
 function assignDeclarations(
 	block: CSSStyleDeclaration,
 	declarations: readonly CSSDeclaration[],
@@ -5181,7 +4571,6 @@ function assignDeclarations(
 	flush(block);
 }
 
-/** A style rule: a selector and the declaration block it applies. */
 class CSSStyleRule extends CSSGroupingRule {
 	declare [kSelectors]?: SelectorNode;
 	declare [kSelectorText]?: string | null;
@@ -5212,11 +4601,8 @@ class CSSStyleRule extends CSSGroupingRule {
 		return RULE_TYPES.STYLE_RULE;
 	}
 
-	/**
-	 * Serialized on first read rather than at construction: whether `*|E` keeps
-	 * its prefix depends on the sheet declaring a default namespace, and the
-	 * sheet's `@namespace` rules are only in place once parsing finishes.
-	 */
+	// Serialized on first read: whether `*|E` keeps its prefix depends on
+	// `@namespace` rules only in place once parsing finishes.
 	get selectorText(): string {
 		return (this[kSelectorText]! ??= serializeSelectorList(
 			this[kSelectors]!,
@@ -5255,15 +4641,9 @@ class CSSStyleRule extends CSSGroupingRule {
 	}
 }
 
-/**
- * Whether every namespace prefix in a selector is one the sheet declared.
- *
- * A prefix no `@namespace` declared names no namespace, and a selector naming
- * one does not parse. The prefixes themselves stay in the selector: the
- * matcher is handed the sheet's map and reads them against it, which is also
- * how a compound with no type selector at all comes to be qualified by the
- * default namespace.
- */
+// A prefix no `@namespace` declared names no namespace, and a selector
+// naming one does not parse. The prefixes stay in the selector: the matcher
+// reads them against the sheet's map.
 function namespacePrefixesDeclared(
 	selector: string,
 	namespaces: SelectorNamespaces,
@@ -5276,7 +4656,6 @@ function namespacePrefixesDeclared(
 	}
 }
 
-/** The namespaces a sheet's `@namespace` rules declare. */
 function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	if (!sheet) {
 		return NO_NAMESPACES;
@@ -5298,13 +4677,9 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	return namespaces;
 }
 
-/**
- * The declaration blocks at-rules hold: one class per at-rule that declares
- * descriptors, each reflecting its own descriptors as IDL attributes and
- * naming itself as the interface it is. A descriptor is not a property -- it
- * is named only inside its own at-rule -- so `src` reaches
- * `CSSFontFaceDescriptors` and nothing else.
- */
+// One class per at-rule that declares descriptors: a descriptor is named
+// only inside its own at-rule, so `src` reaches CSSFontFaceDescriptors and
+// nothing else.
 const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
 
 for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
@@ -5341,7 +4716,6 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 	DESCRIPTOR_BLOCKS.set(atRule, block);
 }
 
-/** A rule whose body is a declaration block rather than a rule list. */
 abstract class CSSDeclarationBlockRule extends CSSRule {
 	declare [kStyle]: CSSStyleDeclaration;
 
@@ -5599,7 +4973,7 @@ class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	}
 }
 
-/** A keyframe's selector, as percentages: `from` is 0%, `to` is 100%. */
+// `from` is 0%, `to` is 100%.
 function serializeKeyText(text: string): string {
 	const source = String(text).trim();
 	let list: {loc?: ParsedSpan | null; children: {toArray(): CSSNode[]}};
@@ -5770,14 +5144,8 @@ class CSSContainerRule extends CSSTextConditionRule {
 	}
 }
 
-/**
- * The container a `@container` prelude names and the query it asks, split at
- * the Identifier node css-tree parses the name into. The name keeps its
- * authored spelling, escapes and all, and the query is the condition text
- * standing after it. `none`, `and`, `or` and `not` name no container, so a
- * prelude opening with one of those words is query alone, as is a prelude
- * off the grammar.
- */
+// `none`, `and`, `or` and `not` name no container, so a prelude opening with
+// one of those words is query alone, as is a prelude off the grammar.
 function containerParts(prelude: string): {name: string; query: string} {
 	let nodes: ContainerPreludeNode[] = [];
 	try {
@@ -5800,7 +5168,6 @@ function containerParts(prelude: string): {name: string; query: string} {
 	};
 }
 
-/** The node an `@scope` prelude parses into, and the selector lists it holds. */
 interface ScopePreludeNode {
 	type: string;
 	loc?: ParsedSpan | null;
@@ -5851,11 +5218,8 @@ class CSSScopeRule extends CSSGroupingRule {
 	}
 }
 
-/**
- * The selectors an `@scope` prelude bounds its rules with, sliced at the
- * root and limit nodes css-tree parses it into. Both are null for a prelude
- * off the grammar, and the limit alone for the implicit `@scope to (...)`.
- */
+// Both null for a prelude off the grammar; the limit alone for the implicit
+// `@scope to (...)`.
 function scopeLimits(prelude: string): {
 	start: string | null;
 	end: string | null;
@@ -5988,11 +5352,8 @@ const kHref = Symbol("href");
 const kLayerName = Symbol("layerName");
 const kSupportsText = Symbol("supportsText");
 
-/**
- * `@import`: parsed into an object with its href, layer, supports condition
- * and media, whose styleSheet is null. There is no network behind a terminal
- * document, so nothing is fetched and the rule declares nothing.
- */
+// There is no network behind a terminal document: nothing is fetched and the
+// rule declares nothing; its styleSheet is null.
 class CSSImportRule extends CSSRule {
 	declare [kHref]?: string;
 	declare [kMedia]?: MediaList;
@@ -6138,7 +5499,6 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 }
 
-/** One feature block's values, or an empty block when it was not written. */
 function featureBlock(
 	rule: CSSFontFeatureValuesRule,
 	name: string,
@@ -6312,15 +5672,9 @@ const kOwnerRule = Symbol("ownerRule");
 /** Whether a sheet may be adopted: only a constructed one, per spec. */
 const constructedSheets = new WeakSet<CSSStyleSheet>();
 
-/**
- * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
- * document adopts.
- *
- * The rules are this object's own -- the cascade reads them rather than
- * re-parsing text -- so insertRule, deleteRule, replaceSync and a write to any
- * rule's declaration block all reach the render through the same invalidation
- * a `<style>` text change does.
- */
+// The rules are this object's own -- the cascade reads them rather than
+// re-parsing text -- so every mutation path reaches the render through the
+// same invalidation a `<style>` text change does.
 class CSSStyleSheet {
 	declare [kRules]?: CSSRule[];
 	declare [kRuleList]?: CSSRuleList;
@@ -6332,15 +5686,13 @@ class CSSStyleSheet {
 	declare [kHref]?: string | null;
 	declare [kTitle]?: string | null;
 
-	/** The owner node's text this sheet last parsed. */
+	// The owner node's text this sheet last parsed.
 	declare [kText]?: string | null;
 
-	/**
-	 * A sheet with an owner element is one the document parsed: replace and
-	 * replaceSync are refused on it, and its rules follow the element's text.
-	 * The exposed constructor takes options alone, so author code only ever
-	 * makes the constructed kind.
-	 */
+	// A sheet with an owner element is one the document parsed: replace(Sync)
+	// is refused on it, and its rules follow the element's text. The exposed
+	// constructor takes options alone, so authors only make the constructed
+	// kind.
 	constructor(
 		options: {media?: string; title?: string; disabled?: boolean} = {},
 		ownerNode: Element | null = null,
@@ -6368,7 +5720,7 @@ class CSSStyleSheet {
 		return this[kRuleList]!;
 	}
 
-	/** The legacy alias every engine still answers to. */
+	// The legacy alias every engine still answers to.
 	get rules(): CSSRuleList {
 		return this.cssRules;
 	}
@@ -6485,7 +5837,7 @@ class CSSStyleSheet {
 		sheetChanged(this);
 	}
 
-	/** The legacy IE spellings, defined in terms of the modern pair. */
+	// The legacy IE spellings, defined in terms of the modern pair.
 	addRule(selector = "undefined", block = "", index?: number): number {
 		this.insertRule(`${selector} { ${block} }`, index ?? this.cssRules.length);
 		return -1;
@@ -6532,7 +5884,7 @@ class CSSStyleSheet {
 		return Promise.resolve(this);
 	}
 
-	/** Reparse the owner element's text when it says something new. */
+	// Reparse the owner element's text when it says something new.
 	[kSync]?(): void {
 		const node = this[kOwnerNode]!;
 		if (!node || node.tagName !== "STYLE") {
@@ -6549,15 +5901,9 @@ class CSSStyleSheet {
 	}
 }
 
-/**
- * Whether a rule may stand at `index`.
- *
- * `@import` precedes every rule but another `@import`, and `@namespace`
- * every rule but those two -- which is as much a constraint on the rule
- * being inserted as on the ones already there. A `@namespace` additionally
- * needs a sheet that holds nothing else: a namespace declared after a
- * selector has been parsed cannot reach it.
- */
+// `@import` precedes every rule but another `@import`, and `@namespace`
+// every rule but those two; a `@namespace` also needs a sheet holding
+// nothing else, since one declared after a selector parsed cannot reach it.
 function checkRuleOrder(
 	sheet: CSSStyleSheet,
 	rule: CSSRule,
@@ -6601,12 +5947,6 @@ function checkRuleOrder(
 	}
 }
 
-// ---- Selectors -------------------------------------------------------------
-
-/**
- * A qualified name -- `ns|local`, `*|local`, `local` -- with each part
- * serialized as an identifier and `*` left as itself.
- */
 function serializeQualifiedName(
 	name: string,
 	namespaces: SelectorNamespaces,
@@ -6642,20 +5982,11 @@ function serializeQualifiedName(
 	return `${serializeCSSIdentifier(decoded)}|${localText}`;
 }
 
-/**
- * The namespaces a selector is read against: the sheet's default namespace, if
- * it declared one, and the prefixes it bound.
- */
-/**
- * A selector's weight, as the three counts selectors-4 §17 keeps: ids,
- * then classes/attributes/pseudo-classes, then types/pseudo-elements.
- */
+// selectors-4 §17: ids, then classes/attributes/pseudo-classes, then
+// types/pseudo-elements.
 type Specificity = [number, number, number];
 
-/**
- * The pseudo-classes whose weight is the weight of their most specific
- * argument, their own name counting for nothing.
- */
+// Their weight is their most specific argument's, the name counting nothing.
 const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"has",
 	"is",
@@ -6665,11 +5996,7 @@ const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"-webkit-any",
 ]);
 
-/**
- * The pseudo-classes that weigh as a class AND take the weight of their most
- * specific argument on top: `:host(.a)` is a pseudo-class testing a compound,
- * and `:nth-child(2n of .a)` an index testing one.
- */
+// Weigh as a class AND take their most specific argument's weight on top.
 const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"host",
 	"host-context",
@@ -6677,7 +6004,6 @@ const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"nth-last-child",
 ]);
 
-/** The weight of the heaviest selector in a list; zero for an empty one. */
 function listSpecificity(list: SelectorNode): Specificity {
 	let most: Specificity = [0, 0, 0];
 	for (const selector of getChildren(list)) {
@@ -6693,7 +6019,6 @@ function listSpecificity(list: SelectorNode): Specificity {
 	return most;
 }
 
-/** The weight of one complex selector: every simple selector in it, summed. */
 function getSelectorSpecificity(selector: SelectorNode): Specificity {
 	const total: Specificity = [0, 0, 0];
 	const add = (weight: Specificity): void => {
@@ -6765,11 +6090,9 @@ function getSelectorSpecificity(selector: SelectorNode): Specificity {
 	return total;
 }
 
-/**
- * The pseudo-classes an attribute can start or stop matching. A selector that
- * tests one of these on an ancestor reaches the ancestor's descendants when the
- * attribute behind it changes, and no attribute NAME in the selector says so.
- */
+// A selector testing one of these on an ancestor reaches the ancestor's
+// descendants when the attribute behind it changes, and no attribute NAME in
+// the selector says so.
 const STATE_PSEUDO_CLASSES = new Set([
 	"any-link",
 	"checked",
@@ -6795,7 +6118,7 @@ const STATE_PSEUDO_CLASSES = new Set([
 	"visited",
 ]);
 
-/** The attributes those state pseudo-classes are driven by. */
+// The attributes those state pseudo-classes are driven by.
 const STATE_ATTRIBUTES = new Set([
 	"checked",
 	"disabled",
@@ -6815,10 +6138,7 @@ const STATE_ATTRIBUTES = new Set([
 	"value",
 ]);
 
-/**
- * The invalidation keys one compound tests: a change to a key a compound
- * names can flip what the compound matches.
- */
+// A change to a key a compound names can flip what the compound matches.
 interface CompoundKeys {
 	classes: string[];
 	ids: string[];
@@ -6826,22 +6146,15 @@ interface CompoundKeys {
 	states: boolean;
 }
 
-/**
- * One reading of a selector: the weight the cascade sorts rules by, the
- * element type its subject is anchored to, and the keys each of its compounds
- * tests, in source order. The subject is the last compound.
- */
+// The subject is the last compound.
 interface SelectorReading {
 	specificity: string;
 	subjectTag: string | undefined;
 	compounds: CompoundKeys[];
 }
 
-/**
- * The keys a compound names, the arguments of its pseudo-classes included: a
- * class inside `:not()` or `:is()` is tested on the compound around it, so a
- * change to it reaches whatever that compound reaches.
- */
+// Pseudo-class arguments included: a class inside :not() or :is() is tested
+// on the compound around it.
 function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
 	for (const node of nodes) {
 		switch (node.type) {
@@ -6881,15 +6194,9 @@ function harvestKeys(nodes: SelectorNode[], keys: CompoundKeys): void {
 	}
 }
 
-/**
- * Read a selector once, for everything the cascade asks of its structure.
- *
- * A selector the parser cannot read weighs nothing: the matcher may still
- * accept it -- it reads a wider selector grammar than this parser does -- and
- * a rule whose weight cannot be counted is the one that should lose a tie.
- * Its subject is anchored to no type and it names no keys, so it is indexed
- * where anything can find it.
- */
+// A selector this parser cannot read weighs nothing -- the matcher reads a
+// wider grammar and may still accept it, and a rule whose weight cannot be
+// counted should lose a tie. It anchors to no type and names no keys.
 function readSelector(selector: string): SelectorReading {
 	let failed = false;
 	let list: SelectorNode | null = null;
@@ -6935,12 +6242,8 @@ function readSelector(selector: string): SelectorReading {
 	return {specificity, subjectTag: getSubjectTag(complex), compounds};
 }
 
-/**
- * The element type a selector's subject is anchored to, lowercased, or
- * undefined when the subject names none -- a universal, a class, an id, an
- * attribute or a bare pseudo-class can be any element, and so can a type in a
- * namespace, which the matcher reads against the namespaces the sheet bound.
- */
+// Undefined when the subject names no type -- including a type in a
+// namespace, which the matcher reads against the namespaces the sheet bound.
 function getSubjectTag(complex: SelectorNode | undefined): string | undefined {
 	if (!complex) {
 		return undefined;
@@ -6960,25 +6263,16 @@ function getSubjectTag(complex: SelectorNode | undefined): string | undefined {
 	return CSSTree.ident.decode(name).toLowerCase();
 }
 
-/**
- * An attribute selector's name is never read against the default namespace: an
- * unprefixed attribute is always in no namespace.
- */
+// An unprefixed attribute is always in no namespace, whatever the default.
 const ATTRIBUTE_NAMESPACES: SelectorNamespaces = {
 	default: "",
 	prefixes: new Map(),
 };
 
-/** An identifier as the selector source spelled it, re-escaped canonically. */
 function serializeIdentifierSource(name: string): string {
 	return serializeCSSIdentifier(CSSTree.ident.decode(name));
 }
 
-/**
- * Serialize a group of selectors, per CSSOM: the selectors joined by ", ",
- * each simple selector in its canonical spelling -- identifiers escaped,
- * attribute values quoted, combinators spaced, An+B reduced.
- */
 function serializeSelectorList(
 	list: SelectorNode,
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
@@ -7115,7 +6409,7 @@ function serializeSelectorArgument(
 	}
 }
 
-/** `An+B` in the one spelling CSSOM writes: `2n`, `2n+1`, `-n+5`, `10`. */
+// The one spelling CSSOM writes: `2n`, `2n+1`, `-n+5`, `10`.
 function serializeAnPlusB(a: string | null, b: string | null): string {
 	if (a === null) {
 		return String(Number(b ?? 0));
@@ -7131,15 +6425,9 @@ function serializeAnPlusB(a: string | null, b: string | null): string {
 	return out;
 }
 
-/**
- * A `getComputedStyle` pseudo-element argument, in its canonical spelling.
- *
- * "" means the argument names no pseudo-element and is ignored -- an argument
- * without a leading colon always is, which is how `getComputedStyle(el,
- * "before")` answers with the element's own style. Null means the argument
- * names something that is not a pseudo-element, for which an empty
- * declaration is the answer.
- */
+// "" means the argument names no pseudo-element and is ignored -- how
+// getComputedStyle(el, "before") answers the element's own style. Null means
+// it names something that is not one: an empty declaration is the answer.
 function parsePseudoElementArgument(text: string): string | null {
 	if (!text.startsWith(":")) {
 		return "";
@@ -7196,10 +6484,6 @@ function parsePseudoElementArgument(text: string): string | null {
 	return serializeSimpleSelector(pseudo, NO_NAMESPACES);
 }
 
-/**
- * A selector list's selectors: split on the commas that separate them, which
- * are the ones no bracket, paren or string encloses.
- */
 function splitSelectorList(text: string): string[] {
 	const selectors: string[] = [];
 	let depth = 0;
@@ -7228,15 +6512,11 @@ function splitSelectorList(text: string): string[] {
 	return selectors.filter(Boolean);
 }
 
-// ---- The text parser -------------------------------------------------------
-
-/** The span of source text a parsed node covers. */
 interface ParsedSpan {
 	start: {offset: number};
 	end: {offset: number};
 }
 
-/** A parsed rule, as the CSS parser hands it over. */
 interface ParsedNode {
 	type: string;
 	name?: string;
@@ -7259,13 +6539,9 @@ function getNodes(container: {
 	return container.children ? container.children.toArray() : [];
 }
 
-/**
- * The declarations of a rule's block, in source order. The value nodes the
- * sheet parse built are kept where the canonical spelling is the authored
- * one, so reading such a value later costs no second parse; the value TEXT
- * is always serialized from the authored source, which the parsed spelling
- * cannot stand in for.
- */
+// Value nodes the sheet parse built are kept where the canonical spelling is
+// the authored one; the value TEXT always serializes from the source, which
+// the parsed spelling cannot stand in for.
 function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
 	if (!node.block) {
@@ -7301,7 +6577,6 @@ function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 	return declarations;
 }
 
-/** Parse a rule list, as a sheet's text or a grouping rule's body. */
 function parseRules(
 	text: string,
 	sheet: CSSStyleSheet | null,
@@ -7327,7 +6602,6 @@ function parseRules(
 	return convertRules(ast.children.toArray(), text, sheet, parentRule);
 }
 
-/** One rule's text, as insertRule takes it. */
 function parseRuleText(
 	text: string,
 	sheet: CSSStyleSheet | null,
@@ -7365,14 +6639,8 @@ function parseRuleText(
 	return rule;
 }
 
-/**
- * A sheet's rules, in source order.
- *
- * The namespaces a selector resolves against are the ones declared BEFORE it:
- * a sheet is read top to bottom, and an @namespace reaches only the rules that
- * follow it. The map is therefore built as the walk goes rather than read back
- * off a sheet that is still being built.
- */
+// An @namespace reaches only the rules that follow it, so the namespace map
+// is built as the walk goes rather than read off a sheet still being built.
 function convertRules(
 	nodes: readonly ParsedNode[],
 	source: string,
@@ -7401,7 +6669,6 @@ function convertRules(
 	return rules;
 }
 
-/** An at-rule's prelude, as written. */
 function preludeText(node: ParsedNode): string {
 	return (node.prelude?.value ?? "").trim();
 }
@@ -7581,29 +6848,20 @@ function convertRule(
 	}
 }
 
-/** The style rules nested inside a style rule's own block. */
 function nestedRules(node: ParsedNode): ParsedNode[] {
 	return getNodes(node.block ?? {}).filter(
 		(child) => child.type === "Rule" || child.type === "Atrule",
 	);
 }
 
-/** A node a `@namespace` prelude parse yields at its top level. */
 interface NamespacePreludeNode {
 	type: string;
 	name?: string;
 	value?: string;
 }
 
-/**
- * `@namespace [prefix] <url>`, read off css-tree's prelude nodes: an
- * optional Identifier naming the prefix, then the Url or String carrying the
- * namespace URI, unescaped. A prefix keeps its authored spelling, which is
- * the spelling it serializes back as and the spelling a selector's prefix is
- * decoded against.
- *
- * Null for a prelude off the grammar, which is an at-rule a sheet drops.
- */
+// A prefix keeps its authored spelling: what it serializes back as, and
+// what a selector's prefix is decoded against. Null drops the at-rule.
 function convertNamespaceRule(
 	prelude: string,
 	sheet: CSSStyleSheet | null,
@@ -7636,19 +6894,14 @@ function convertNamespaceRule(
 	return new CSSNamespaceRule(prefix, uri.value ?? "", sheet);
 }
 
-/** A node an `@layer` prelude parse yields. */
 interface LayerPreludeNode {
 	type: string;
 	name?: string;
 	children?: {toArray(): LayerPreludeNode[]} | null;
 }
 
-/**
- * The layer names an `@layer` prelude lists, read off its Layer nodes: the
- * empty list for the anonymous block, and null for a prelude off the
- * grammar, which is an at-rule a sheet drops. A name keeps its authored
- * spelling, escapes and all, which is the spelling it serializes back as.
- */
+// The empty list for the anonymous block; null for a prelude off the
+// grammar, which drops the at-rule.
 function layerNames(prelude: string): string[] | null {
 	let nodes: LayerPreludeNode[];
 	try {
@@ -7669,7 +6922,6 @@ function layerNames(prelude: string): string[] | null {
 	return (nodes[0].children?.toArray() ?? []).map((node) => node.name ?? "");
 }
 
-/** A node an @import prelude parse yields at its top level. */
 interface ImportPreludeNode {
 	type: string;
 	name?: string;
@@ -7678,15 +6930,8 @@ interface ImportPreludeNode {
 	children?: {toArray(): ImportPreludeNode[]} | null;
 }
 
-/**
- * `@import <url> [layer] [supports()] [media]`, read off css-tree's prelude
- * nodes: the url or string node carries the href it spells, unescaped; a
- * `layer()` carries the layer it names; and the supports condition and the
- * media list keep their authored text, sliced at their nodes' positions.
- *
- * Null for a prelude off the grammar, which is an at-rule a sheet drops and
- * insertRule refuses.
- */
+// The supports condition and the media list keep their authored text, sliced
+// at their nodes' positions. Null for a prelude off the grammar.
 function convertImportRule(
 	prelude: string,
 	sheet: CSSStyleSheet | null,
@@ -7806,17 +7051,12 @@ for (const type of [
 	});
 }
 
-/** The one sheet a `<style>` (or `<link>`) element owns. */
 const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 
-/** The sheets a document or shadow root has adopted. */
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
-/**
- * A node's root as a shadow root, or null when it is not one. A bare fragment
- * is a document fragment too and hosts nothing, which is what separates it
- * from a tree some element composes.
- */
+// A bare fragment is a document fragment too and hosts nothing, which is
+// what separates it from a tree some element composes.
 function asShadowRoot(root: Node): ShadowRoot | null {
 	return root.nodeType === 11 && (root as ShadowRoot).host
 		? (root as ShadowRoot)
@@ -7848,19 +7088,14 @@ function sheetFor(element: Element): CSSStyleSheet {
 	return sheet;
 }
 
-/**
- * The sheets a tree's own elements declare, which is what `styleSheets`
- * lists. An adopted sheet belongs to no element and is not one of them.
- */
+// What `styleSheets` lists; an adopted sheet belongs to no element and is
+// not one of them.
 function declaredStyleSheets(root: Document | ShadowRoot): CSSStyleSheet[] {
 	return Array.from(root.querySelectorAll("style"), sheetFor);
 }
 
-/**
- * A document's stylesheets: one per `<style>` element in tree order, followed
- * by what the document adopted. A `<link>` never resolves to a sheet -- there
- * is no network behind a terminal document.
- */
+// A `<link>` never resolves to a sheet: no network behind a terminal
+// document.
 function documentStyleSheets(document: Document): CSSStyleSheet[] {
 	return [
 		...declaredStyleSheets(document),
@@ -7868,12 +7103,10 @@ function documentStyleSheets(document: Document): CSSStyleSheet[] {
 	];
 }
 
-/** A shadow root's stylesheets: its own `<style>` elements, then what it adopted. */
 function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
-/** The cascade a tree's sheets belong to. */
 function managerForTree(tree: Node): StyleManager | undefined {
 	const document =
 		tree.nodeType === tree.DOCUMENT_NODE
@@ -7882,7 +7115,6 @@ function managerForTree(tree: Node): StyleManager | undefined {
 	return document ? documentManagers.get(document) : undefined;
 }
 
-/** A sheet a tree may adopt: one an author constructed, and nothing else. */
 function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 	if (!(sheet instanceof CSSStyleSheet)) {
 		throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
@@ -7898,10 +7130,7 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 	return sheet;
 }
 
-/**
- * Adopt a list of constructed sheets, and wire each one's later mutations to
- * the cascade -- a constructed sheet has no consumer until something adopts it.
- */
+// A constructed sheet has no consumer until something adopts it.
 function adopt(target: Node, sheets: unknown): void {
 	const adopted = Array.from(sheets as Iterable<unknown>).map((sheet) =>
 		checkAdoptable(target, sheet),
@@ -7918,16 +7147,10 @@ function adopt(target: Node, sheets: unknown): void {
 	}
 }
 
-/**
- * Write one index of a backing list.
- *
- * An ObservableArray's backing list is not a JavaScript object: it has no
- * prototype behind it, and an index write to it consults nothing. A plain
- * assignment to an array does consult the prototype chain, so an accessor
- * installed at `Array.prototype[1]` would run with the backing list as its
- * receiver -- handing an author the list itself and swallowing the write.
- * Defining the property is the write with no chain behind it.
- */
+// A plain assignment consults the prototype chain, so an accessor installed
+// at Array.prototype[1] would run with the backing list as its receiver --
+// handing an author the list and swallowing the write. Defining the property
+// is the write with no chain behind it.
 function defineIndex(
 	list: CSSStyleSheet[],
 	index: number | string,
@@ -7941,14 +7164,10 @@ function defineIndex(
 	});
 }
 
-/** The observable array behind one tree's `adoptedStyleSheets`. */
 const adoptedProxies = new WeakMap<Node, CSSStyleSheet[]>();
 
-/**
- * `adoptedStyleSheets` as an ObservableArray: the list an author holds is the
- * list the cascade reads, so `push`, `splice` and an indexed write all take
- * effect where a whole reassignment would -- and each is checked as one.
- */
+// The list an author holds is the list the cascade reads: push, splice and
+// an indexed write all take effect where a whole reassignment would.
 function observableAdopted(
 	target: Node,
 	list: CSSStyleSheet[],
@@ -7989,10 +7208,7 @@ function observableAdopted(
 	return proxy;
 }
 
-/**
- * Every CSSOM interface names itself: `Object.prototype.toString` on one of
- * its objects gives the interface name, as it does for any platform object.
- */
+// Every CSSOM interface names itself, as any platform object does.
 for (const [name, type] of Object.entries({
 	CSSStyleSheet,
 	StyleSheetList,
@@ -8029,7 +7245,7 @@ for (const [name, type] of Object.entries({
 	);
 }
 
-/** The UA document sheet, parsed once: its rules never change. */
+// Parsed once: its rules never change.
 let uaDocumentSheet: CSSStyleSheet | null = null;
 
 function uaStyleSheet(): CSSStyleSheet {
@@ -8040,11 +7256,8 @@ function uaStyleSheet(): CSSStyleSheet {
 	return uaDocumentSheet;
 }
 
-/**
- * The properties whose resolved value is the used value, per CSSOM: the box's
- * own dimensions, its edges, and the offsets that place it. Everything else
- * resolves to its computed value.
- */
+// The properties whose resolved value is the used value, per CSSOM;
+// everything else resolves to its computed value.
 const USED_VALUE_PROPERTIES = new Set([
 	"border-bottom-width",
 	"border-left-width",
@@ -8066,7 +7279,7 @@ const USED_VALUE_PROPERTIES = new Set([
 	"width",
 ]);
 
-/** A used length in the one unit a terminal has: a cell, spelled `px`. */
+// A used length in the one unit a terminal has: a cell, spelled `px`.
 function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
@@ -8074,13 +7287,8 @@ function usedLength(cells: number): string {
 const kManager = Symbol("manager");
 const kLayoutEngine = Symbol("layoutEngine");
 
-/**
- * The reads a used-value measurement takes, from whichever declaration owns
- * the box. An element's computed declaration is one directly; a
- * pseudo-element's declaration answers through a view whose [kElement] is the
- * pseudo-element's own node, which is where its box lives -- the measurement
- * arithmetic is the same either way, so there is one copy of it.
- */
+// A pseudo-element's declaration answers through a view whose [kElement] is
+// the pseudo's own node, so there is one copy of the measurement arithmetic.
 interface MeasuredDeclaration {
 	[kElement]: Element;
 	[kManager]: StyleManager | null;
@@ -8088,33 +7296,25 @@ interface MeasuredDeclaration {
 	getPropertyValue(property: string): string;
 }
 
-/**
- * The colors whose `auto` names the element's own color: a caret is drawn in
- * the text's color, and an outline whose color was left to the UA takes it
- * too. The resolved value CSSOM reports is that used color.
- */
+// `auto` on these names the element's own color, and the resolved value
+// CSSOM reports is that used color.
 const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
 
-/** The two sizes whose `auto` names a minimum only some boxes have. */
+// `auto` here names a minimum only some boxes have.
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
-/**
- * The two track lists whose resolved value is the USED track sizes: what the
- * grid came to, one length per track of the implicit grid, rather than the
- * sizing functions the author wrote (css-grid-2 §7.2).
- */
+// Resolve to the USED track sizes, not the sizing functions the author
+// wrote (css-grid-2 §7.2).
 const USED_TRACK_PROPERTIES = new Set([
 	"grid-template-columns",
 	"grid-template-rows",
 ]);
 
-/** The pseudo-elements this engine gives a node of their own. */
+// The pseudo-elements this engine gives a node of their own.
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
-/** The containers whose children have an automatic minimum size. */
 const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
 
-/** The block-level display an inline-level box takes as a flex or grid item. */
 const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	inline: "block",
 	"inline-block": "block",
@@ -8123,7 +7323,6 @@ const BLOCKIFIED_DISPLAYS: Record<string, string> = {
 	"inline-table": "table",
 };
 
-/** The four properties that place a positioned box against its containing block. */
 const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
 
 const OPPOSITE_INSET: Record<string, string> = {
@@ -8133,12 +7332,7 @@ const OPPOSITE_INSET: Record<string, string> = {
 	right: "left",
 };
 
-/**
- * A computed inset as a length in cells, with percentages -- and the one
- * percentage a calc() can still carry -- resolved against the containing
- * block. Null for `auto`, which is not a length but an instruction to
- * measure.
- */
+// Null for `auto`, which is not a length but an instruction to measure.
 function insetLength(computed: string, basis: number): number | null {
 	if (!computed || computed === "auto") {
 		return null;
@@ -8156,22 +7350,13 @@ function insetLength(computed: string, basis: number): number | null {
 }
 
 /**
- * The COMPUTED value of one property on one element, or on one of its
- * pseudo-elements: what the cascade says, before any box exists. Relative
- * units are resolved, percentages and `auto` still stand. Not what
- * getComputedStyle returns -- that one resolves the properties layout
- * decides, and getResolvedStyle below is the function for it. Layout and
- * paint decide geometry from this, and a used value here would feed layout
- * its own output.
- *
- * This is the read layout and paint make thousands of times a frame, and it
- * must never take a branch that needs layout, because layout is what calls
- * it. Asked of a pseudo-element by name, it answers what the cascade declared
- * and nothing else: an empty answer means no rule reached it, which is what
- * the ::selection and ::marker painters decide on. Asked of a pseudo-element's
- * NODE, it answers those declarations completed by initial values, so a box
- * has a `display` to be laid out from. A document with no cascade behind it
- * answers with nothing, which every reader takes as the initial value.
+ * The COMPUTED value: what the cascade says, before any box exists -- not
+ * what getComputedStyle returns (getResolvedStyle is that). A used value
+ * here would feed layout its own output, and this read is made thousands of
+ * times a frame, so it must never take a branch that needs layout. Asked of
+ * a pseudo-element by name it answers bare declarations (empty means no
+ * rule reached it); asked of a pseudo-element's NODE, declarations
+ * completed by initial values, so a box has a `display` to lay out from.
  */
 export function getComputedValue(
 	element: Element,
@@ -8204,14 +7389,8 @@ export function getComputedValue(
 	return declaration.getComputedValue(property);
 }
 
-/**
- * Expose a computed style's indices to an author.
- *
- * The index accessors read through item(), so they answer the live list; the
- * count re-synchronizes on refresh, but only for declarations that have been
- * handed out here -- the engine's own computed styles never materialize an
- * item list.
- */
+// Only declarations handed to an author materialize an item list; the
+// engine's own computed styles never do.
 function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
 	syncIndexed(declaration);
 	return declaration;
@@ -8229,31 +7408,19 @@ const kUsedGridTracks = Symbol("usedGridTracks");
 const kFlushStyle = Symbol("flushStyle");
 const kMatchingRules = Symbol("matchingRules");
 
-/**
- * An element's computed style, read through the computed-value boundary an
- * author's `getComputedStyle` sits behind.
- *
- * LIVE: the object an author holds keeps answering the element's current
- * values across class flips, rule insertions and sheet replacements, so it
- * re-resolves rather than being replaced.
- */
+// LIVE: the object an author holds keeps answering across class flips and
+// sheet replacements, so it re-resolves rather than being replaced.
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
 
-	/**
-	 * The manager to re-ask for matching rules, and the one that says whether
-	 * this declaration still stands for the cascade.
-	 */
 	declare [kManager]: StyleManager | null;
-	// Lazily resolved properties -- INCLUDING ones that resolved to "".
-	// Values here are COMPUTED strings, materialized once per property per
-	// resolution; an initial-valued property (word-break, visibility, ...)
-	// that re-resolved on every read would re-walk the whole ancestor chain
-	// for an inherited property, and each ancestor's own read does the same
-	// -- thousands of full cascade resolutions per keystroke. The
-	// declaration is discarded wholesale on invalidation, so memoizing here
-	// needs no invalidation of its own.
+
+	// Computed strings, memoized once per property per resolution, "" results
+	// included: an inherited property re-resolved on every read re-walks the
+	// whole ancestor chain -- thousands of resolutions per keystroke. The
+	// declaration is discarded wholesale on invalidation, so the memo needs no
+	// invalidation of its own.
 	declare [kResolved]: Map<string, string>;
 
 	declare [kCustom]: string[] | null;
@@ -8291,11 +7458,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return null;
 	}
 
-	/**
-	 * The computed value: what the cascade says, before any box exists. This
-	 * is what the engine's own geometry decisions read -- a used value there
-	 * would feed layout its own output.
-	 */
 	getComputedValue(property: string): string {
 		const current = this[kManager]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
@@ -8317,15 +7479,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
-	// Resolution is fully lazy: construction populates nothing, and each
-	// property resolves on first read, then answers from the memo. Most
-	// elements are only ever asked a handful of properties -- the
-	// composition walker asks each element `display` alone.
+	// Fully lazy: most elements are only ever asked a handful of properties
+	// -- the composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
-		// The author's read, and the DOM it describes is the DOM as it stands:
-		// a style object held across a class flip answers for the flip. The
-		// engine reads through getComputedValue, which takes no flush -- style
-		// is resolved from inside layout, which this would re-enter.
+		// The author's read describes the DOM as it stands. The engine reads
+		// through getComputedValue, which takes no flush: style is resolved
+		// from inside layout, which this would re-enter.
 		this[kManager]?.[kFlushStyle]();
 		const current = this[kManager]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
@@ -8362,7 +7521,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return this.getComputedValue(property);
 	}
 
-	/** Computed styles are read-only; writing one is an error, not a no-op. */
 	override setProperty(): void {
 		throw readOnlyDeclaration(this[kElement]!);
 	}
@@ -8375,12 +7533,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return "";
 	}
 
-	/**
-	 * A computed style declares every supported longhand, so its indices name
-	 * them in the property index's order rather than the order reads happened
-	 * to resolve them in -- followed by the custom properties in effect on the
-	 * element, which are declarations too and have no place in that index.
-	 */
+	// Every supported longhand in the property index's order, then the custom
+	// properties in effect, which have no place in that index.
 	override item(index: number): string {
 		return (
 			CSS_LONGHANDS[index] ??
@@ -8393,7 +7547,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return [...CSS_LONGHANDS, ...customNames(this)][Symbol.iterator]();
 	}
 
-	/** The names of the custom properties declared for this element. */
 	declaredCustomProperties(): string[] {
 		const names: string[] = [];
 		for (const rule of this[kCSSRules]) {
@@ -8411,12 +7564,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return names;
 	}
 
-	/**
-	 * A resolved value that is the used value: measured through the same flush
-	 * a geometry read takes, and memoized behind that flush so a
-	 * property-heavy caller measures once per layout rather than once per read.
-	 * The memo is the manager's, which is what lets a flush drop every one.
-	 */
+	// Measured through the same flush a geometry read takes and memoized
+	// behind it, so a property-heavy caller measures once per layout. The
+	// memo is the manager's, which is what lets a flush drop every one.
 	[kUsedValue](property: string): string {
 		const manager = this[kManager]!;
 		const used = getUsedValues(manager, this);
@@ -8431,11 +7581,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
-	/**
-	 * The cascade's own answer, before any running transition overrides it:
-	 * what the transition machinery calls the after-change style. Memoized --
-	 * an interpolated value moves per frame and must never enter the memo.
-	 */
+	// The cascade's answer before a running transition overrides it -- the
+	// after-change style. An interpolated value moves per frame and must
+	// never enter the memo.
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
@@ -8443,20 +7591,15 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			value = longhands
 				? shorthand(property, longhands, (longhand) =>
 					this[kBaseValue](longhand),
-				) // A flow-relative longhand shares its computed value with the
-			// physical longhand it maps to, so it is answered as that one.
+				)
 				: computed(this, toPhysicalProperty(this, property));
 			this[kResolved].set(property, value);
 		}
 		return value;
 	}
 
-	/**
-	 * Re-resolve against the current cascade. Reads ask the manager whether
-	 * this declaration is one it still resolves for and call this only when it
-	 * is not -- this sits on the hottest path in the engine, under every
-	 * property read of every element.
-	 */
+	// Reads call this only when the manager no longer vouches for this
+	// declaration: it sits under every property read of every element.
 	[kRefresh](): void {
 		if (!this[kManager]) {
 			return;
@@ -8487,12 +7630,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 }
 
-/**
- * One property's computed value: the cascade's declaration, interned, and
- * absolutized against this element when the interned entry says only an
- * element can answer it. The memo both callers write into is the
- * per-element cache one re-resolution's absolutization is paid into once.
- */
+// The cascade's declaration, interned, and absolutized against this element
+// when the interned entry says only an element can answer it.
 function computed(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -8513,14 +7652,8 @@ function computed(
 	return RADIUS_LONGHANDS.has(property) ? collapseRadius(absolute) : absolute;
 }
 
-/**
- * What a relative length on this element is worth.
- *
- * `font-size` measures against the PARENT's font size, so it is the one
- * property whose own computed value is not in its own context; every other
- * property measures against this element's font size, which therefore
- * computes first.
- */
+// `font-size` measures against the PARENT's font size, so it is the one
+// property whose own computed value is not in its own context.
 function lengthContext(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -8550,7 +7683,6 @@ function lengthContext(
 	};
 }
 
-/** The font size `rem` measures against: the root element's. */
 function rootFontSize(
 	declaration: ComputedStyleDeclaration,
 	ownFontSize: boolean,
@@ -8566,10 +7698,6 @@ function rootFontSize(
 		: getFontSize(getComputedValue(root, "font-size"));
 }
 
-/**
- * The name a longhand computes under: itself, or -- for a flow-relative
- * longhand -- the physical longhand this element's `direction` maps it to.
- */
 function toPhysicalProperty(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -8583,13 +7711,9 @@ function toPhysicalProperty(
 	);
 }
 
-/**
- * A shorthand answers as its longhands, each in the spelling `read` gives
- * it, collapsed: `margin: 10px 10px 10px 10px` is "10px". The reader is the
- * caller's, because the computed and resolved value paths ask their
- * longhands different questions -- and their answers must not meet, which
- * is why only the computed one is memoized.
- */
+// The reader is the caller's: the computed and resolved paths ask their
+// longhands different questions, and their answers must not meet -- which is
+// why only the computed one is memoized.
 function shorthand(
 	property: string,
 	longhands: readonly string[],
@@ -8672,14 +7796,8 @@ function measure(
 	return computed || "0px";
 }
 
-/**
- * A positioned box's inset, as used.
- *
- * A declared inset resolves where it stands -- a percentage against the
- * containing block, everything else as written -- which is also what CSSOM
- * asks for when the four insets over-constrain the box. `auto` is the one
- * that has to be measured: it is whatever distance the box ended up at.
- */
+// A declared inset resolves where it stands; `auto` is the one that has to
+// be measured -- whatever distance the box ended up at.
 function usedInset(
 	declaration: MeasuredDeclaration,
 	property: string,
@@ -8743,12 +7861,9 @@ function usedInset(
 	}
 }
 
-/**
- * The box this element's insets are measured against: the padding box of
- * the containing block an out-of-flow box hangs from, the scrollport a
- * sticky box is constrained by, and otherwise the content box of the box
- * this one flows in.
- */
+// The padding box of the block an out-of-flow box hangs from, the
+// scrollport a sticky box is constrained by, and otherwise the content box
+// of the box this one flows in.
 function containingBlockBox(
 	declaration: MeasuredDeclaration,
 	position: string,
@@ -8786,7 +7901,6 @@ function containingBlockBox(
 	return parent ? getBox(declaration, parent, true) : viewportBox(declaration);
 }
 
-/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
 function getBox(
 	declaration: MeasuredDeclaration,
 	element: Element,
@@ -8816,7 +7930,7 @@ function getBox(
 	);
 }
 
-/** The initial containing block: the grid itself. */
+// The initial containing block: the grid itself.
 function viewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
@@ -8833,14 +7947,8 @@ function viewportBox(
 	);
 }
 
-/**
- * `min-width: auto` and `min-height: auto` as resolved.
- *
- * The keyword means "the box's automatic minimum size", which only a flex
- * or grid item, or a box with an aspect ratio, actually has; anywhere else
- * -- and for a box that was never generated -- it is zero, which is the
- * value CSSOM reports.
- */
+// `auto` means the automatic minimum only a flex or grid item, or an
+// aspect-ratio box, actually has; anywhere else it resolves to 0px.
 function resolvedMinSize(
 	declaration: ComputedStyleDeclaration,
 	computed: string,
@@ -8869,7 +7977,6 @@ function resolvedMinSize(
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
-/** One edge length in cells, for the arithmetic above. */
 function edge(
 	declaration: MeasuredDeclaration,
 	property: string,
@@ -8877,7 +7984,7 @@ function edge(
 	return parseFloat(declaration.getPropertyValue(property)) || 0;
 }
 
-/** The space an `auto` margin actually took, measured off the two boxes. */
+// The space an `auto` margin actually took, measured off the two boxes.
 function autoMargin(
 	declaration: MeasuredDeclaration,
 	property: string,
@@ -8915,7 +8022,6 @@ function autoMargin(
 	}
 }
 
-/** The width a percentage on this element resolves against. */
 function containingWidth(
 	declaration: MeasuredDeclaration,
 ): number | null {
@@ -8927,13 +8033,8 @@ function containingWidth(
 	return rect ? rect.width : null;
 }
 
-/**
- * The element's inline declarations, expanded to longhands.
- *
- * The store behind `element.style` is this engine's own CSSOM, which keeps
- * a declaration as authored and hands the cascade the expanded block --
- * so a shorthand's `!important` covers every longhand it declares.
- */
+// The cascade gets the expanded block, so a shorthand's `!important` covers
+// every longhand it declares.
 function inlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): DeclarationBlock {
@@ -8943,7 +8044,6 @@ function inlineDeclarations(
 		: EMPTY_DECLARATIONS;
 }
 
-/** This element's flat-tree parent's computed value for `property`, or null at the root. */
 function resolveFromParent(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -8955,14 +8055,8 @@ function resolveFromParent(
 	return getComputedValue(parent, property) || null;
 }
 
-/**
- * Resolve `var(--name[, fallback])` references in a declared value.
- *
- * A reference is replaced by whatever the cascade holds for the custom
- * property, and that value is substituted in turn, so a custom property whose
- * own value references another resolves too. A depth guard stops a property
- * that (invalidly) refers to itself.
- */
+// Substituted values substitute in turn; the depth guard stops a property
+// that (invalidly) refers to itself.
 function substituteVar(
 	declaration: ComputedStyleDeclaration,
 	value: string,
@@ -9015,11 +8109,8 @@ function substituteVar(
 	return out;
 }
 
-/**
- * What the cascade leaves standing for a property, with `var()` references
- * substituted in it and `currentcolor` answered as the color it names. The
- * cascade itself is the function below.
- */
+// What the cascade leaves standing, with var() substituted and
+// `currentcolor` answered as the color it names.
 function resolvePropertyValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -9039,11 +8130,8 @@ function resolvePropertyValue(
 		value.toLowerCase() === "currentcolor" &&
 		COLOR_PROPERTIES.has(property)
 	) {
-		// The COMPUTED color, on the engine's own read path: this is the
-		// cascade resolving a value, and the author path flushes -- which
-		// drains mutations and lays the document out, from inside the
-		// resolution of a style that layout is waiting on. `color` has no
-		// used value to wait for, so the two answer alike.
+		// The COMPUTED color, on the engine's own read path: the author path
+		// flushes, from inside the resolution of a style layout is waiting on.
 		return property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
 			: declaration.getComputedValue("color");
@@ -9055,13 +8143,9 @@ function resolvePropertyValueRaw(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	// A physical property and the flow-relative properties that map to it
-	// are ONE cascade slot (css-logical-1 §2.1): every name in the slot
-	// computes to the value of the declaration that comes last in the
-	// cascade, whichever name that declaration used. Which flow-relative
-	// name maps here depends on the element's `direction`, so the slot's
-	// names are widened to both inline edges and narrowed by direction
-	// only once a block actually declares one of them.
+	// A physical property and its flow-relative names are ONE cascade slot
+	// (css-logical-1 §2.1). The slot widens to both inline edges and narrows
+	// by `direction` only once a block actually declares one of them.
 	const logical = PHYSICAL_TO_LOGICAL.get(property);
 	const names = logical ? [property, ...logical] : [property];
 	let direction: string | null = null;
@@ -9213,11 +8297,7 @@ function resolvePropertyValueRaw(
 	return getInitialStyle(declaration[kElement]!, property);
 }
 
-/**
- * The custom properties in effect here: this element's own, and every one
- * an ancestor declared -- a custom property inherits, so it is part of
- * this element's computed style whichever element declared it.
- */
+// This element's own, and every ancestor's: a custom property inherits.
 function customNames(
 	computed: ComputedStyleDeclaration,
 ): string[] {
@@ -9243,11 +8323,8 @@ function customNames(
 	return computed[kCustom];
 }
 
-/**
- * Whether an element takes part in rendering: it is in a document, and the
- * flat tree that document composes reaches it. A light-DOM child its host
- * never slots is in neither, and has no computed style to report.
- */
+// In a document, and reached by the flat tree it composes: a light-DOM
+// child its host never slots has no computed style to report.
 function isBeingRendered(element: Element): boolean {
 	// Walk out through every shadow root the element sits under: a tree whose
 	// outermost root is the document is composed into the rendering, and one
@@ -9291,28 +8368,17 @@ const kBoxView = Symbol("boxView");
 const kPseudoDeclarationsFor = Symbol("pseudoDeclarationsFor");
 const kContentBox = Symbol("contentBox");
 
-/**
- * A pseudo-element's computed style: a flat declaration set -- the matched
- * rules plus what it inherits from its originating element -- read through
- * the same computed-value boundary as an element's.
- *
- * LIVE, for the same reason an element's is: the object an author holds keeps
- * answering the pseudo-element's current values across class flips and sheet
- * replacements. The manager says when what it holds no longer stands.
- */
+// A flat declaration set: the matched rules plus what the pseudo-element
+// inherits from its originating element. LIVE, for the same reason an
+// element's declaration is.
 class PseudoStyleDeclaration extends CSSStyleProperties {
 	declare [kPseudoDeclarations]: Record<string, string>;
-	// Lazily resolved properties, cleared by kRefresh -- the same one-per
-	// -resolution memo an element's declaration keeps, for the same reason.
 	declare [kResolved]: Map<string, string>;
 
-	/**
-	 * The element the pseudo-element originates from, which pseudo-element it
-	 * is, and the manager whose flush a resolved value is measured behind.
-	 * Absent on the engine's own reads (the ::selection and ::marker painters),
-	 * which want the cascade's declarations and never a used value -- and whose
-	 * declarations, handed in whole, are not the manager's to recompute.
-	 */
+	// Absent on the engine's own reads (the ::selection and ::marker
+	// painters), which want the cascade's declarations and never a used value
+	// -- and whose declarations, handed in whole, are not the manager's to
+	// recompute.
 	declare [kElement]: Element | null;
 	declare [kPseudoElement]: string;
 	declare [kManager]: StyleManager | null;
@@ -9350,14 +8416,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		throw readOnlyDeclaration(this[kElement] ?? undefined);
 	}
 
-	/**
-	 * What the cascade declared for this pseudo-element, and nothing else.
-	 *
-	 * This is the engine's read: an empty answer means no rule reached the
-	 * pseudo-element, which is what the ::selection painter and the ::marker
-	 * painter decide on. The author read below completes the same declarations
-	 * with the initial values a computed style carries.
-	 */
+	// The engine's read: an empty answer means no rule reached the
+	// pseudo-element, which is what the ::selection and ::marker painters
+	// decide on.
 	getComputedValue(property: string): string {
 		const current = this[kManager]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
@@ -9368,16 +8429,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return transitional ?? value;
 	}
 
-	/**
-	 * The style of the NODE a pseudo-element generates: the same declarations,
-	 * completed with the initial value of everything no rule and no
-	 * inheritance gave a value. A box is laid out and painted from this -- an
-	 * empty answer would leave it with no `display` at all -- while the
-	 * cascade read above stays the bare declarations the ::selection and
-	 * ::marker painters decide on. The memo behind it is a field kRefresh
-	 * clears, so a read sees the current cascade rather than the one it was
-	 * first read under.
-	 */
+	// The style of the NODE a pseudo-element generates: the declarations
+	// completed with initial values, so a box is never laid out with no
+	// `display` at all.
 	nodeValue(property: string): string {
 		const current = this[kManager]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
@@ -9417,15 +8471,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return "";
 	}
 
-	/**
-	 * A pseudo-element's computed style declares every supported longhand,
-	 * exactly as an element's does.
-	 */
 	override item(index: number): string {
 		return CSS_LONGHANDS[index] ?? "";
 	}
 
-	/** Re-resolve against the current cascade, declarations and all. */
 	[kRefresh](): void {
 		// Before the work: resolving below reads back through this declaration.
 		this[kManager]?.[kCurrentDeclarations].add(this);
@@ -9456,7 +8505,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		}
 	}
 
-	/** The cascade's declarations alone, with no transition standing over them. */
+	// The cascade's declarations alone, no transition standing over them.
 	[kBaseValue](property: string): string {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
@@ -9480,18 +8529,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
-	/**
-	 * A pseudo-element's resolved value, measured behind the same flush an
-	 * element's is.
-	 *
-	 * A pseudo-element's box belongs to the node the composition pass gave it,
-	 * so its metrics are measured off that node's rect through the same
-	 * arithmetic an element's are: a stretched block pseudo answers its used
-	 * width, an inline one the union of its fragments. A pseudo the
-	 * composition never gave a node -- one whose selector generates no
-	 * content, or a ::selection -- keeps the percentage resolution below,
-	 * against the box it would hang in.
-	 */
+	// Measured off the node the composition pass gave the pseudo, through the
+	// same arithmetic an element's metrics are. A pseudo never given a node
+	// keeps the percentage resolution below, against the box it would hang in.
 	[kUsedValue](property: string, computed: string): string {
 		const originating = this[kElement]!;
 		const manager = this[kManager];
@@ -9538,7 +8578,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 }
 
-/** A running transition's value for this pseudo-element, or null. */
 function pseudoTransitionValue(
 	declaration: PseudoStyleDeclaration,
 	property: string,
@@ -9559,14 +8598,9 @@ function pseudoTransitionValue(
 	);
 }
 
-/**
- * A declaration as the measurement arithmetic reads it: the same cascade
- * answers, with the pseudo-element's own node standing where the element
- * stands -- its rect is the box being measured, and its flat-tree parent is
- * the originating element percentages resolve against. One view per node:
- * composition may retire a node and make another, and a view naming the old
- * one would measure a rect no layout holds.
- */
+// The same cascade answers with the pseudo's own node standing where the
+// element stands. One view per node: composition may retire a node and make
+// another, and a view naming the old one measures a rect no layout holds.
 function getBoxView(
 	declaration: PseudoStyleDeclaration,
 	node: Element,
@@ -9586,10 +8620,7 @@ function getBoxView(
 	return view;
 }
 
-/**
- * The answer to a `getComputedStyle` pseudo-element argument that names no
- * pseudo-element: a declaration of nothing, as CSSOM says.
- */
+// A declaration of nothing, as CSSOM says a bad pseudo argument gets.
 class EmptyStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element | null;
 
@@ -9631,11 +8662,8 @@ class EmptyStyleDeclaration extends CSSStyleProperties {
 	}
 }
 
-/**
- * A computed style is read-only; writing one is an error, not a no-op. The
- * error is the document's own DOMException where one is reachable -- an error
- * from another global is not the one an author catches.
- */
+// Writing a computed style is an error, not a no-op -- the document's own
+// DOMException, since one from another global is not what an author catches.
 function readOnlyDeclaration(element?: Element): DOMException {
 	const document = element ? element.ownerDocument : null;
 	const view = document ? document.defaultView : null;
@@ -9648,10 +8676,8 @@ function readOnlyDeclaration(element?: Element): DOMException {
 	);
 }
 
-/**
- * The property accessors (`style.fontWeight`) callers reach for alongside
- * getPropertyValue, installed once for the properties this engine resolves.
- */
+// The accessors (style.fontWeight) callers reach for alongside
+// getPropertyValue.
 const ACCESSOR_PROPERTIES = new Set<string>([
 	...LENGTH_PROPERTIES,
 	...COLOR_PROPERTIES,
@@ -9729,7 +8755,6 @@ for (const property of ACCESSOR_PROPERTIES) {
 	}
 }
 
-/** An element's border sides, in `drawBox`'s own vocabulary. */
 interface BorderSides {
 	top?: LineStyle["style"];
 	right?: LineStyle["style"];
@@ -9759,9 +8784,8 @@ export function resolveBorderSides(element: Element): BorderSides {
 			: "solid";
 	};
 
-	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
-	// a browser squares off a corner whose ellipse has collapsed. A cell grid
-	// has one size of curve, so how large the radius is says nothing further.
+	// Rounded when the radius is nonzero on BOTH axes, as a browser squares
+	// off a collapsed ellipse. A cell grid has one size of curve.
 	const roundedCorner = (corner: string): "round" | undefined => {
 		const radii = getComputedValue(element, `border-${corner}-radius`)
 			.split(/\s+/)
@@ -9823,7 +8847,6 @@ function toRoman(num: number): string {
 	return result;
 }
 
-/** How many lists this element is nested inside, not counting itself. */
 function listNestingDepth(element: Element): number {
 	let depth = 0;
 	for (
@@ -9869,12 +8892,8 @@ function toAlpha(value: number): string {
 	return out;
 }
 
-/**
- * The ordinal of a list item, honouring the HTML list attributes.
- *
- * `<ol start>` sets where counting begins, `<ol reversed>` counts down, and a
- * `<li value>` resets the counter mid-list and carries forward from there.
- */
+// `<ol start>` sets where counting begins, `<ol reversed>` counts down, and
+// a `<li value>` resets the counter mid-list and carries forward.
 function listItemOrdinal(listItem: Element, listParent: Element): number {
 	const items = Array.from(listParent.children).filter(
 		(child) => child.tagName === "LI",
@@ -9899,7 +8918,7 @@ function listItemOrdinal(listItem: Element, listParent: Element): number {
 	return counter;
 }
 
-/** Render an ordinal in a counter style, falling back to decimal out of range. */
+// Falls back to decimal out of a style's range.
 function formatOrdinal(ordinal: number, listStyleType: string): string {
 	switch (listStyleType) {
 		case "decimal-leading-zero":
@@ -9922,13 +8941,8 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
 	}
 }
 
-/**
- * The default marker text for a list item, e.g. "\u2022" or "iii.".
- *
- * Keyed off the *computed* list-style-type, not the parent's tag name: a `ul`
- * can be `list-style-type: decimal` and an `ol` can be `disc`, either can be
- * `none`, and the type can be declared on the `li` itself.
- */
+// Keyed off the COMPUTED list-style-type, not the parent's tag name: a ul
+// can be decimal, an ol disc, either none.
 function getListMarker(listItem: Element, listParent: Element): string {
 	const listStyleType =
 		getComputedValue(listItem, "list-style-type");
@@ -9958,123 +8972,81 @@ function getListMarker(listItem: Element, listParent: Element): string {
 // TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
 
-	/**
-	 * The rule's selector, compiled against the namespaces its sheet declared.
-	 * A rule is matched through this and never through its text: the selector
-	 * is read once, when the sheet is parsed. Null for a selector this engine
-	 * cannot read, which styles nothing.
-	 */
+	// Compiled against the namespaces the sheet declared, once, at parse: a
+	// rule is matched through this and never through its text. Null for a
+	// selector this engine cannot read, which styles nothing.
 	matcher: CompiledSelector | null;
 
-	/**
-	 * The same selector read relative to a scoping root, which is what
-	 * `@scope { > .a { } }` writes. Only a rule inside an `@scope` has one.
-	 */
+	// The same selector read relative to a scoping root, which is what
+	// `@scope { > .a { } }` writes; only a rule inside an @scope has one.
 	relativeMatcher: CompiledSelector | null;
 
-	/**
-	 * The element type the selector's subject is anchored to, lowercased --
-	 * absent when the subject names no type and any element could be it. Every
-	 * rule is tried against every element, so this is the reject that keeps a
-	 * document of divs from running the selector engine over a sheet's worth of
-	 * rules about summaries and legends.
-	 */
+	// Every rule is tried against every element: this reject keeps a document
+	// of divs from running the selector engine over a sheet's worth of rules
+	// about summaries and legends. Absent when any element could be it.
 	subjectTag?: string;
 	declarations: Record<string, string>;
-
-	/** Properties declared `!important` in this rule. */
 	important: Record<string, boolean>;
 
-	/** Each declaration's position in the rule's block. See DeclarationBlock. */
+	// Each declaration's position in the rule's block. See DeclarationBlock.
 	order: Record<string, number>;
-	specificity: string; // Zero-padded string for lexicographic comparison
+
+	// Zero-padded for lexicographic comparison.
+	specificity: string;
 	pseudoElement?: string;
 
-	/**
-	 * The tree scope whose stylesheet declared this rule: a ShadowRoot for
-	 * rules from a shadow tree's <style>, undefined for document rules. A
-	 * rule only ever matches elements of its own tree -- the cascade's
-	 * encapsulation boundary in both directions.
-	 */
+	// The tree scope whose stylesheet declared this rule; undefined for
+	// document rules. A rule only ever matches elements of its own tree --
+	// the cascade's encapsulation boundary in both directions.
 	scope?: Node;
 
-	/**
-	 * Whether the selector names `:host`, which is the one thing that reaches
-	 * out of the tree its stylesheet belongs to. Only meaningful with a
-	 * shadow `scope`.
-	 */
+	// `:host` is the one thing that reaches out of the tree its stylesheet
+	// belongs to.
 	reachesHost?: boolean;
 
-	/**
-	 * True for rules declared by a UA-internal shadow tree's stylesheet.
-	 * Cascade ORIGIN, the tier above specificity: every author rule beats
-	 * every UA rule, which is what lets `input::placeholder { color }`
-	 * override the UA sheet's gray despite the UA attribute selector's
-	 * higher specificity -- exactly the browser's origin ordering.
-	 */
+	// Cascade ORIGIN, the tier above specificity: every author rule beats
+	// every UA rule, which is what lets `input::placeholder { color }` beat
+	// the UA sheet's gray despite that selector's higher specificity.
 	uaOrigin?: boolean;
 
-	/**
-	 * The cascade layer this rule was declared in, dot-joined through every
-	 * enclosing `@layer`, or null for a rule in no layer.
-	 */
+	// Dot-joined through every enclosing @layer; null for a rule in no layer.
 	layer: string | null;
 
-	/**
-	 * Where the rule's layer sorts, smallest first: layers in the order their
-	 * names were declared, then -- last, and so winning the normal cascade --
-	 * every unlayered rule. Filled in once the whole layer order is known.
-	 */
+	// Layers in declaration order, then -- last, and so winning the normal
+	// cascade -- every unlayered rule. Filled once the whole order is known.
 	layerRank: number;
 
-	/**
-	 * The `@scope` conditions the rule was declared inside, outermost first.
-	 * Absent for a rule no `@scope` encloses, which is in scope everywhere.
-	 */
+	// The @scope conditions the rule was declared inside, outermost first;
+	// absent for a rule no @scope encloses, which is in scope everywhere.
 	scopes?: readonly ScopeCondition[];
 }
 
-/**
- * One `@scope (start) to (end)` prelude, compiled: the selectors naming the
- * scoping roots and the scoping limits. `roots` is null for `@scope` written
- * without a root, whose root is the element the stylesheet's owner node sits
- * in.
- */
 interface ScopeCondition {
+	// Null for @scope written without a root, whose root is the element the
+	// stylesheet's owner node sits in.
 	roots: readonly CompiledSelector[] | null;
 
-	/**
-	 * The same roots read relative to the scope an enclosing `@scope` opened,
-	 * which is what lets `@scope (.a) { @scope (> .b) }` say what it says.
-	 */
+	// The same roots read relative to the enclosing scope, which is what lets
+	// `@scope (.a) { @scope (> .b) }` say what it says.
 	rootsInOuter: readonly CompiledSelector[];
 
-	/** The scoping limits, read relative to the root they close. */
+	// The scoping limits, read relative to the root they close.
 	limits: readonly CompiledSelector[];
 
-	/** The implicit scoping root, for a condition that names none. */
+	// The implicit scoping root, for a condition that names none.
 	owner: Element | null;
 }
 
-/** The conditional rules a style rule was found inside, as the cascade reads them. */
 interface RuleContext {
 	layer: string | null;
 	scopes: readonly ScopeCondition[];
 }
 
-/** The context of a rule at the top level of a stylesheet. */
 const UNCONDITIONAL: RuleContext = {layer: null, scopes: []};
 
-/**
- * The proximity of a declaration in no scope: farther from any element than
- * any scoping root can be, and the same distance for every one of them.
- */
+// Farther from any element than any scoping root can be.
 const UNSCOPED = Number.MAX_SAFE_INTEGER;
 
-/**
- * Whether an element is a scoping root of this condition. A condition naming
- * no root has one all the same: the element the stylesheet was written in.
- */
 function scopeRootMatches(
 	element: Element,
 	condition: ScopeCondition,
@@ -10083,18 +9055,14 @@ function scopeRootMatches(
 	if (condition.roots === null) {
 		return element === condition.owner;
 	}
-	// Inside an enclosing scope the roots are read relative to the root that
-	// scope found, which is also what `:scope` names for them.
+	// Relative to the enclosing scope's root, which is what `:scope` names.
 	return outer
 		? condition.rootsInOuter.some((root) => selects(element, root, outer))
 		: condition.roots.some((root) => selects(element, root, element));
 }
 
-/**
- * Whether an element is in the scope a root opens: inside it, and with no
- * scoping limit between the two. The root is always in its own scope, limit
- * or no limit.
- */
+// Inside the root with no scoping limit between the two; the root is always
+// in its own scope.
 function isInScope(
 	element: Element,
 	root: Element,
@@ -10109,14 +9077,9 @@ function isInScope(
 	return node === root;
 }
 
-/**
- * Whether a compiled selector selects an element, with `:scope` naming the
- * given node and the engine answering everything the tree cannot.
- *
- * The cascade types its nodes as the platform's interfaces and the matcher
- * types them as this DOM's own classes. They are the same objects under two
- * names, and this is where either is written as the other.
- */
+// The cascade types its nodes as the platform's interfaces and the matcher
+// as this DOM's own classes: the same objects under two names, written as
+// each other here.
 function selects(
 	element: Element,
 	selector: CompiledSelector,
@@ -10129,7 +9092,6 @@ function selects(
 	});
 }
 
-/** Whether a rule or style gives the element this pseudo-element. */
 function shouldCreatePseudoElement(
 	manager: StyleManager,
 	element: Element,
@@ -10153,18 +9115,14 @@ function shouldCreatePseudoElement(
 
 const kCounterScopes = Symbol("counterScopes");
 
-/**
- * Give one element the pseudo-element nodes its rules reach: the door a
- * mutation comes back through.
- */
+// The door a mutation comes back through.
 function attachPseudoElementsToElement(
 	manager: StyleManager,
 	element: Element,
 ): void {
-	// No pseudo rule names this element's type, no counter scope reaches
-	// it, and it carries no pseudo of its own to reconsider: everything
-	// below would answer no, one matches() call per rule at a time. This is
-	// the whole cost of the walk over a subtree that just arrived.
+	// No pseudo rule names this element's type, no counter scope reaches it,
+	// and it carries no pseudo to reconsider: everything below would answer
+	// no, one matches() call per rule at a time.
 	const tags = pseudoSubjects(manager);
 	if (
 		tags !== null &&
@@ -10182,11 +9140,7 @@ function attachPseudoElementsToElement(
 	}
 }
 
-/**
- * The selectors of a list a stylesheet declared, compiled once. One this
- * engine cannot read selects nothing and is dropped, which is what an
- * unreadable selector did at every match before.
- */
+// A selector this engine cannot read selects nothing and is dropped.
 function compileSelectors(
 	text: string,
 	options: {namespaces: SelectorNamespaces; relative?: boolean},
@@ -10196,8 +9150,7 @@ function compileSelectors(
 		try {
 			compiled.push(compileSelector(selector, options));
 		} catch (_err) {
-			// A prelude is sliced out of its at-rule's text, so what arrives here
-			// has passed no grammar check of its own.
+			// A prelude sliced out of its at-rule has passed no grammar check.
 		}
 	}
 	return compiled;
@@ -10249,20 +9202,12 @@ const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
-	/**
-	 * Every declaration this manager has resolved against the cascade as it
-	 * stands. A declaration reads this to know whether its values are still
-	 * the cascade's answer: dropping one, or replacing the set, is what sends
-	 * it back through kRefresh on its next read. Membership is weak, so a
-	 * declaration nobody holds costs nothing to have handed out.
-	 */
+	// Every declaration resolved against the cascade as it stands: dropping
+	// one, or replacing the set, sends it back through kRefresh on its next
+	// read. Weak, so a declaration nobody holds costs nothing.
 	declare [kCurrentDeclarations]: WeakSet<object>;
 
-	/**
-	 * Every shadow root whose <style> elements participate in the cascade.
-	 * Nothing else names a shadow tree's sheets, so a parse walks these and
-	 * reads each root's own sheets the way it reads the document's.
-	 */
+	// Nothing else names a shadow tree's sheets, so a parse walks these.
 	declare [kShadowRoots]: Set<ShadowRoot>;
 	declare [kPseudoElementStyleCache]: WeakMap<
 		Element,
@@ -10272,99 +9217,65 @@ export class StyleManager {
 	declare [kParsedRules]: ParsedCSSRule[];
 	declare [kStylesheetsDirty]: boolean;
 
-	/**
-	 * Whether any parsed selector can reach OUTSIDE the mutated element's
-	 * subtree: sibling combinators reach following siblings, :has() reaches
-	 * ancestors. Set during parsing, read when an attribute flips to decide
-	 * how far its invalidation must reach. String tests are deliberately
-	 * loose (`~=` in an attribute selector counts as a sibling combinator): a
-	 * false positive only widens the rebuild.
-	 */
+	// Whether any parsed selector can reach OUTSIDE a mutated element's
+	// subtree: sibling combinators reach following siblings, :has() reaches
+	// ancestors. String tests are deliberately loose: a false positive only
+	// widens the rebuild.
 	declare [kSelectorsReachSiblings]: boolean;
 	declare [kSelectorsReachAncestors]: boolean;
 
-	/**
-	 * The keys a change to which can reach an element's DESCENDANTS: those a
-	 * selector tests left of a combinator (`.editing .view` is TodoMVC's edit
-	 * row), and those on rules declaring an inherited property, which the
-	 * descendants take their own value from. A class the sheets only ever
-	 * test on the subject of rules declaring `background` and `display`
-	 * (`.row.selected`) reaches nothing below.
-	 *
-	 * Collected loosely, by scanning compounds for `.name`, `#name` and
-	 * `[name`: keys inside :not()/:is() are read the same way, and a false
-	 * positive only widens the invalidation.
-	 */
+	// The keys a change to which can reach an element's DESCENDANTS: those a
+	// selector tests left of a combinator (`.editing .view`), and those on
+	// rules declaring an inherited property. Collected loosely; a false
+	// positive only widens the invalidation.
 	declare [kReachingClasses]: Set<string>;
 	declare [kReachingIds]: Set<string>;
 	declare [kReachingAttributes]: Set<string>;
 
-	/**
-	 * Whether any of those keys is a STATE pseudo-class (`:checked ~`,
-	 * `details[open] :not(summary)`) rather than a name. State pseudos are
-	 * driven by attributes whose names are not in the sets above, so a change
-	 * to any of {@link STATE_ATTRIBUTES} goes wide while this holds.
-	 */
+	// Whether any of those keys is a STATE pseudo-class (`:checked ~`), which
+	// is driven by attributes not in the sets above: a change to any of
+	// STATE_ATTRIBUTES goes wide while this holds.
 	declare [kReachingStates]: boolean;
 
-	/**
-	 * Rule-existence gates, also set during parsing. Attaching pseudos and
-	 * initializing counters both start by building full computed-style
-	 * declarations -- per element, on every insertion and attribute change.
-	 * A document whose sheets declare no ::before for divs and no counters
-	 * anywhere must not pay that; these let the hot paths answer "could any
-	 * rule possibly apply here" with a few matches() calls instead.
-	 */
+	// Rule-existence gates. Attaching pseudos and initializing counters both
+	// build full computed-style declarations per element per mutation; a
+	// document with no such rules must not pay that, and these let the hot
+	// paths answer "could any rule apply" with a few matches() calls.
 	declare [kPseudoRulesByType]: Map<string, ParsedCSSRule[]>;
 	declare [kCounterRulesExist]: boolean;
 	declare [kListItemRulesExist]: boolean;
 
-	/** Whether any rule is scoped, which is what puts proximity in the sort. */
+	// Whether any rule is scoped, which is what puts proximity in the sort.
 	declare [kScopedRulesExist]: boolean;
 	declare [kHasRulesExist]: boolean;
 
-	/**
-	 * Whether any parsed selector mentions `:hover`. The engine reads this to
-	 * decide whether the terminal must report pointer motion: a sheet that
-	 * never tests hover is a document that cannot show it, and motion
-	 * reporting has a per-cell cost the document should not pay for nothing.
-	 */
+	// The engine reads this to decide whether the terminal must report
+	// pointer motion: a sheet that never tests :hover is a document that
+	// cannot show it, and motion reporting has a per-cell cost.
 	declare [kHoverRulesExist]: boolean;
-	// The `:focus-visible` state, driven by TermDOM from the last input modality
-	// (keyboard true, pointer false). ruleMatches gates such rules on it.
-	/**
-	 * How many document.styleSheets the last parse consumed; -1 = never
-	 * parsed. A changed count re-parses on the next style computation --
-	 * which is what lets a sheet appended right before the first paint
-	 * apply even when no MutationObserver is attached.
-	 */
+
+	// -1 = never parsed. A changed count re-parses on the next style
+	// computation, which is what lets a sheet appended right before the first
+	// paint apply with no MutationObserver attached.
 	declare [kParsedStyleSheetCount]: number;
 
 	declare [kCounterScopes]: WeakMap<Element, CounterScope>;
 
-	/**
-	 * The transition machinery's state. The gate is STICKY: it opens the
-	 * first time any rule or inline block declares a transition and never
-	 * closes, so a document with none pays two checks per style change
-	 * event and nothing else. Snapshots (the after-change values of the
-	 * last style change event, per element per pseudo) live in a WeakMap;
-	 * only elements with RUNNING transitions sit in the strong map the
-	 * per-frame tick iterates.
-	 */
+	// The transition gate is STICKY: it opens the first time anything
+	// declares a transition and never closes, so a document with none pays
+	// two checks per style change event. Snapshots live in a WeakMap; only
+	// elements with RUNNING transitions sit in the strong map the tick
+	// iterates.
 	declare [kTransitionsExist]: boolean;
 	declare [kTransitionSnapshots]: WeakMap<
 		Element,
 		Map<string, Map<string, string>>
 	>;
 
-	/**
-	 * The resolved values a dropped declaration had computed, kept as the
-	 * before-change style for an element whose transitions are declared in
-	 * one style change with the retarget of a property -- the case the
-	 * snapshot above cannot cover, since no transition was matched when it
-	 * was last written. Stolen maps, not copies: the declaration replacing
-	 * its memo is what makes the old map safe to hold.
-	 */
+	// A dropped declaration's resolved values, kept as the before-change
+	// style for a transition declared and retargeted in one style change --
+	// the case the snapshot cannot cover. Stolen maps, not copies: the
+	// declaration replacing its memo is what makes the old map safe to hold.
 	declare [kTransitionFallback]: WeakMap<
 		Element,
 		Map<string, Map<string, string>>
@@ -10375,49 +9286,36 @@ export class StyleManager {
 		Map<string, Map<string, RunningTransition>>
 	>;
 
-	/** The timeline instant a frame's reads interpolate against. */
+	// The timeline instant a frame's reads interpolate against.
 	declare [kTransitionClock]: number;
 	declare [kTransitionTimer]: ReturnType<typeof setTimeout> | null;
 	declare [kTransitionEvents]: QueuedTransitionEvent[];
 	declare [kTransitionFlushQueued]: boolean;
 
-	// The document is fixed for the window's lifetime, so hold it directly rather
-	// than reaching through window.document on every access.
+	// Fixed for the window's lifetime, so held directly.
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
 	declare [kLayoutEngine]: LayoutEngine;
 
 	declare [kFlushing]: boolean;
 
-	/**
-	 * The used values measured behind the last flush, per declaration. Held
-	 * here rather than on the declarations so that a cascade rebuild, or a
-	 * flush that found work, drops every one of them at once -- a fresh map
-	 * says nothing has been measured, which costs nothing to say.
-	 */
+	// The used values measured behind the last flush, held here rather than
+	// on the declarations so a cascade rebuild drops every one at once.
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
 
-	/** Set by the layout engine when geometry moved under the used values. */
+	// Set by the layout engine when geometry moved under the used values.
 	declare [kUsedStale]: boolean;
 
-	/**
-	 * Every cascade layer, in the order its name was first declared: a
-	 * `@layer a, b;` statement, a `@layer a { }` block, or the anonymous layer
-	 * an unnamed block opens. A nested layer's path is dot-joined through its
-	 * ancestors, which is the name `@layer a.b` writes for itself.
-	 */
+	// Every cascade layer, in the order its name was first declared; a nested
+	// layer's path is dot-joined, the name `@layer a.b` writes for itself.
 	declare [kLayerPaths]: string[];
 	declare [kAnonymousLayers]: number;
 
-	/** Where an unlayered rule sorts: after every layer, and so above them. */
+	// Where an unlayered rule sorts: after every layer, and so above them.
 	declare [kUnlayeredRank]: number;
 
-	/**
-	 * The element types a pseudo-element rule originates on, uppercased -- or
-	 * null where a rule reaches an element of any type, which is also what a
-	 * counter rule does through the scope chain. Built on demand, from the
-	 * subject each pseudo rule was parsed with.
-	 */
+	// The element types a pseudo rule originates on, uppercased -- null where
+	// a rule reaches any type, as a counter rule does through the scope chain.
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
 	constructor(window: EngineWindow, layoutEngine: LayoutEngine) {
@@ -10477,30 +9375,16 @@ export class StyleManager {
 		parseStylesheets(this);
 	}
 
-	/**
-	 * Enroll a shadow root's stylesheets in the cascade. Called for every
-	 * attached root (author and UA alike); rules parse lazily on the next
-	 * stylesheet refresh, which the root's own <style> mutations trigger
-	 * through the shared observer.
-	 */
 	registerShadowRoot(root: ShadowRoot): void {
 		if (this[kShadowRoots].has(root)) {
 			return;
 		}
 		this[kShadowRoots].add(root);
-		// A new root's sheets parse INCREMENTALLY: rebuilding every sheet
-		// for each widget upgrade made a document of n widgets reparse the
-		// world n times. The new rules join the cascade order by the same
-		// sort, and only the root's own tree -- and its host, for :host
-		// rules -- restyles. A rebuild already pending covers this root,
-		// since it is in kShadowRoots now.
+		// Incrementally: rebuilding every sheet per widget upgrade made a
+		// document of n widgets reparse the world n times.
 		this[kRefreshShadowRoot](root);
 	}
 
-	/**
-	 * Take a batch of mutations: drop what they invalidated, and re-parse the
-	 * stylesheets if the batch added or removed one.
-	 */
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
 		let shouldRefreshStylesheets = false;
@@ -10525,10 +9409,8 @@ export class StyleManager {
 
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
-				// A <style> element's children ARE its stylesheet text, so
-				// adding or removing one reparses the sheet. Inside a shadow
-				// root the refresh stays inside it: a widget's sheet must not
-				// rebuild the document's cascade.
+				// A <style>'s children ARE its stylesheet text. A shadow sheet's
+				// refresh stays inside its root.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					reparseOwnerText(sheetFor(mutation.target as Element));
 					const styleRoot = asShadowRoot(mutation.target.getRootNode());
@@ -10538,11 +9420,9 @@ export class StyleManager {
 						shouldRefreshStylesheets = true;
 					}
 				}
-				// A list's marker gutter is derived from its children, so adding or
-				// removing an item invalidates the *list*, not just the item that
-				// moved. Without this the gutter stays at whatever the original items
-				// needed, and a wider marker added later overruns it -- the "iii.Third"
-				// collision, on any mutation.
+				// A list's gutter is derived from its children, so a mutation
+				// invalidates the LIST: a wider marker added later overran the
+				// gutter the original items set.
 				invalidateEnclosingList(this, mutation.target);
 
 				for (const node of mutation.addedNodes) {
@@ -10581,13 +9461,9 @@ export class StyleManager {
 				}
 			} else if (mutation.type === "attributes") {
 				const element = mutation.target as Element;
-				// A class flip on an ancestor changes which rules match its
-				// descendants -- `.editing .view {display:none}` is exactly the
-				// TodoMVC edit row -- and moves what they inherit. But only a
-				// flip the sheets USE that way does: when no rule tests the
-				// flipped class outside its own subject and none of the rules
-				// that test it declares an inherited property, the descendants'
-				// styles stand exactly as they were.
+				// Only a flip the sheets USE that way reaches descendants: when no
+				// rule tests the class outside its own subject and none declares
+				// an inherited property, their styles stand as they were.
 				if (
 					this[kAttributeReachesDescendants](
 						element,
@@ -10600,11 +9476,9 @@ export class StyleManager {
 					invalidateElementCaches(this, element);
 					attachPseudoElementsToElement(this, element);
 				}
-				// Sibling combinators reach right: `.on ~ .light` matches (or
-				// stops matching) a FOLLOWING sibling when this element's
-				// attributes change, and that sibling's cached styles know
-				// nothing of it. :has() reaches ancestors, for which only
-				// dropping every cached style is honest.
+				// `.on ~ .light` matches a FOLLOWING sibling whose cached styles
+				// know nothing of this change; :has() reaches ancestors, for
+				// which only dropping every cached style is honest.
 				if (this[kSelectorsReachAncestors]) {
 					this[kClearCache]();
 				} else if (this[kSelectorsReachSiblings]) {
@@ -10617,8 +9491,6 @@ export class StyleManager {
 					}
 				}
 			} else if (mutation.type === "characterData") {
-				// A <style>'s text changed: reparse the sheet, and keep a
-				// shadow sheet's refresh inside its root.
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
 					reparseOwnerText(sheetFor(owner));
@@ -10637,13 +9509,9 @@ export class StyleManager {
 		}
 	}
 
-	/**
-	 * Whether an element's text can enter a selection: the used value of
-	 * user-select, with `auto` resolved through the parent per css-ui-4.
-	 * Divergence: `text`, `all` and `contain` all behave as plain
-	 * selectable -- `all` and `contain` change selection's shape, and
-	 * nothing implements that shape yet.
-	 */
+	// user-select, with `auto` resolved through the parent per css-ui-4.
+	// `text`, `all` and `contain` all behave as plain selectable: nothing
+	// implements the shapes `all` and `contain` ask for yet.
 	isSelectable(element: Node): boolean {
 		let current = element as Element | null;
 		while (current) {
@@ -10659,23 +9527,13 @@ export class StyleManager {
 		return true;
 	}
 
-	/**
-	 * Focus moved: the cached ComputedStyleDeclarations of the elements that
-	 * gained and lost focus hold rule sets matched BEFORE the move, so a
-	 * `:focus` rule would never apply (or, symmetrically, never stop
-	 * applying) -- focus is not a mutation, and nothing else invalidates.
-	 * Selector matching itself is live (matches(":focus") follows
-	 * activeElement); only these caches go stale. Scoped to the two moved
-	 * elements: `:focus-within` on ancestors would need chain invalidation,
-	 * which nothing supports or tests yet.
-	 */
+	// Focus is not a mutation, and nothing else invalidates: the cached
+	// declarations of the two moved elements hold rule sets matched BEFORE
+	// the move, so a :focus rule would never apply or stop applying.
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
-			// The whole flat-tree chain above can observe a focus state:
-			// each ancestor through :focus-within, each shadow host through
-			// :focus, and a host's focus state reaches into its shadow tree
-			// through :host(:focus) rules (and inheritance from whatever
-			// they set), so every stop's caches go stale together.
+			// The whole flat-tree chain can observe focus (:focus-within,
+			// :host(:focus)), so every stop's caches go stale together.
 			for (
 				let node: Element | null = element;
 				node;
@@ -10692,13 +9550,8 @@ export class StyleManager {
 		}
 	}
 
-	/**
-	 * A state no attribute records moved: a popover was shown or hidden. The
-	 * rules that test it (`:popover-open`, and the UA sheet's display among
-	 * them) matched before the move, and a popover that stops being displayed
-	 * takes its subtree's styles with it -- so the element and everything
-	 * whose style comes through it re-resolve.
-	 */
+	// A state no attribute records moved: a popover was shown or hidden, and
+	// the rules that test it (:popover-open) matched before the move.
 	handleStateChange(element: Element): void {
 		invalidateSubtree(this, element);
 		// No mutation record describes the move, so the frame that decides
@@ -10706,15 +9559,9 @@ export class StyleManager {
 		this[kLayoutEngine].invalidateFrame();
 	}
 
-	/**
-	 * The pointer moved to a new element: the cached declarations of both
-	 * hover chains hold rule sets matched under the OLD hover state, the
-	 * same staleness a focus move leaves. Scoped to the symmetric
-	 * difference of the two flat-tree chains -- the part of the tree whose
-	 * `:hover` answer moved; the shared ancestors above the fork answered
-	 * hovered before and answer hovered still. Hover is not a mutation, so
-	 * the frame the pointer report schedules is what shows it.
-	 */
+	// The same staleness a focus move leaves, scoped to the symmetric
+	// difference of the two flat-tree chains: the shared ancestors above the
+	// fork answered hovered before and answer hovered still.
 	handleHoverChange(
 		previous: Element | null,
 		next: Element | null,
@@ -10734,9 +9581,7 @@ export class StyleManager {
 		const nextChain = chainOf(next);
 		const invalidate = (node: Element): void => {
 			invalidateElementCaches(this, node);
-			// A host's hover reaches into its shadow tree through
-			// :host(:hover) rules and inheritance, the same reach a focus
-			// move has.
+			// A host's hover reaches its shadow tree through :host(:hover).
 			const shadowRoot = getShadowRoot<ShadowRoot>(node);
 			if (shadowRoot) {
 				for (const descendant of shadowRoot.querySelectorAll("*")) {
@@ -10756,24 +9601,16 @@ export class StyleManager {
 		}
 	}
 
-	/**
-	 * Whether any active rule tests `:hover`, against the sheets as they
-	 * stand -- a dirty sheet list parses first, so an answer read between
-	 * frames still describes the current document.
-	 */
+	// A dirty sheet list parses first, so an answer read between frames
+	// still describes the current document.
 	hoverRulesExist(): boolean {
 		parseStylesheetsIfStale(this);
 		return this[kHoverRulesExist];
 	}
 
-	/**
-	 * The declaration behind an element, for the engine itself.
-	 *
-	 * This is the internal read path: no pseudo-element parsing, no
-	 * being-rendered gate, no resolved-value branch -- the cascade's own answer,
-	 * which is what layout and paint decide geometry from. It is reached
-	 * thousands of times per frame, so it does the least it can.
-	 */
+	// The internal read path: no pseudo parsing, no being-rendered gate, no
+	// resolved-value branch. Reached thousands of times per frame, so it does
+	// the least it can.
 	declarationFor(element: Element): ComputedStyleDeclaration {
 		let declaration = this[kComputedStyleCache].get(element);
 		if (!declaration) {
@@ -10784,9 +9621,8 @@ export class StyleManager {
 				this,
 			);
 			this[kComputedStyleCache].set(element, declaration);
-			// A fresh declaration is how a style change reaches an element
-			// whose old one was dropped by invalidation, so building one is
-			// the other face of the style change event kRefresh sees.
+			// Building a fresh declaration is the other face of the style
+			// change event kRefresh sees.
 			const fresh = declaration;
 			processTransitionStyle(
 				this,
@@ -10798,16 +9634,10 @@ export class StyleManager {
 		return declaration;
 	}
 
-	/**
-	 * Whether a media query currently matches, judged on the nodes css-tree
-	 * parses the query list into. There is exactly one "screen" -- the
-	 * terminal viewport -- so only width/height features are meaningful;
-	 * every other feature (scripting, color-gamut, pointer, ...) matches
-	 * rather than silently dropping an author's rules, as does text css-tree
-	 * refuses. Public: it answers window.matchMedia through the SAME
-	 * evaluator @media uses, so a stylesheet and a script can never disagree
-	 * about the viewport.
-	 */
+	// Only width/height features are meaningful on the one screen a terminal
+	// has; every other feature matches rather than silently dropping rules.
+	// Public: window.matchMedia answers through the SAME evaluator @media
+	// uses, so a stylesheet and a script can never disagree.
 	mediaQueryMatches(mediaText: string): boolean {
 		const text = mediaText.trim();
 		if (!text) {
@@ -10850,13 +9680,10 @@ export class StyleManager {
 		return textContent;
 	}
 
-	/** Whether any rule gives this element a pseudo-element of this type. */
-	/** Read the sheets again, and rebuild what was laid out under the old ones. */
 	refreshStylesheets(): void {
 		parseStylesheets(this);
 
-		// Rules can change LAYOUT (a display flip, new dimensions), and boxes
-		// may already have been built under the pre-parse styles -- a
+		// Boxes may have been built under the pre-parse styles: a
 		// .view{display:none} arriving with the same batch as its markup left
 		// the hidden subtree's stale boxes ghosting about. Rebuild from the
 		// root; stylesheet changes are rare.
@@ -10866,7 +9693,7 @@ export class StyleManager {
 		}
 	}
 
-	/** Drop every cache and stop the transition tick: the document is going. */
+	// The document is going.
 	dispose(): void {
 		this[kComputedStyleCache] = new WeakMap();
 		this[kPseudoElementStyleCache] = new WeakMap();
@@ -10879,22 +9706,16 @@ export class StyleManager {
 		this[kTransitionEvents] = [];
 	}
 
-	/** The rules matching an element, in cascade order. */
 	[kMatchingRules](element: Element): ParsedCSSRule[] {
 		parseStylesheetsIfStale(this);
 		return getMatchingRules(this, element);
 	}
 
-	/**
-	 * Take that flush: pending mutations drained into the cascade and layout,
-	 * then layout brought up to date. Every author-facing style read goes
-	 * through it, so a value read straight after a DOM change describes that
-	 * change; the engine's own reads (getComputedValue) never do.
-	 */
+	// Every author-facing style read goes through this flush, so a value
+	// read straight after a DOM change describes it; the engine's own reads
+	// never do. Not re-entrant: layout and paint resolve styles as they run,
+	// and asking for the flush from inside it would compute it inside itself.
 	[kFlushStyle](): void {
-		// Not re-entrant: layout and paint resolve styles as they run, and a
-		// read taken from inside the flush sees the layout being computed --
-		// asking for it again would compute it inside itself.
 		if (this[kFlushing]) {
 			return;
 		}
@@ -10908,25 +9729,17 @@ export class StyleManager {
 		}
 	}
 
-	/**
-	 * An element's content box, measured behind the same flush: the box a
-	 * child's -- or a pseudo-element's -- percentage resolves against.
-	 */
+	// The box a child's, or a pseudo-element's, percentage resolves against,
+	// measured behind the same flush a rect read takes.
 	[kContentBox](element: Element): DOMRect | null {
-		// The flush first, since the engine's own derivation reads the layout
-		// and this read has to stand behind the same one.
 		if (!usedRect(this, element)) {
 			return null;
 		}
 		return this[kLayoutEngine].contentRect(element);
 	}
 
-	/**
-	 * A grid container's used track sizes, measured behind the same flush a
-	 * rect read takes. Null for a box that is not one -- the resolved value
-	 * then stays the computed track list, as CSSOM says of a grid property on
-	 * a box that generated no grid.
-	 */
+	// Null for a box that generated no grid: the resolved value then stays
+	// the computed track list, as CSSOM says.
 	[kUsedGridTracks](element: Element, rows: boolean): number[] | null {
 		if (!usedRect(this, element)) {
 			return null;
@@ -10934,12 +9747,8 @@ export class StyleManager {
 		return this[kLayoutEngine].gridTracks(element, rows);
 	}
 
-	/**
-	 * Re-parse ONE shadow root's sheets in place: its old rules leave, the
-	 * current sheets parse in, the cascade re-sorts, and only trees the
-	 * root's rules can reach restyle. The full rebuild handles everything
-	 * else; a pending one covers this root already.
-	 */
+	// Re-parse ONE shadow root's sheets in place; only trees the root's
+	// rules can reach restyle. A pending full rebuild covers this root.
 	[kRefreshShadowRoot](root: ShadowRoot): void {
 		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
 			this[kStylesheetsDirty] = true;
@@ -10952,10 +9761,8 @@ export class StyleManager {
 		for (const sheet of shadowStyleSheets(root)) {
 			parseStyleSheet(this, sheet, root);
 		}
-		// The refresh accounted for every sheet the counter has seen; a
-		// document-level sheet arriving in the same batch re-dirties on its
-		// own record. Without the sync, the drift check orders the full
-		// rebuild this path exists to avoid -- once per widget.
+		// Without this sync the drift check orders the full rebuild this path
+		// exists to avoid -- once per widget.
 		this[kParsedStyleSheetCount] = styleSheetCount(this);
 		const fresh = this[kParsedRules].slice(before);
 		if (fresh.length === 0) {
@@ -10977,9 +9784,8 @@ export class StyleManager {
 				invalidateSubtree(this, child);
 			}
 		}
-		// A scoped rule that generates pseudo-element boxes needs the attach
-		// sweep; the widgets' sheets carry none, so the sweep runs only for
-		// the author shadow that does.
+		// The widgets' sheets carry no pseudo-generating rules, so the attach
+		// sweep runs only for the author shadow that does.
 		if (
 			fresh.some(
 				(rule) =>
@@ -10993,11 +9799,6 @@ export class StyleManager {
 		}
 	}
 
-	/**
-	 * What the cascade declares for a pseudo-element: its matched rules,
-	 * completed by what it inherits from its originating element. A live
-	 * declaration re-asks this when the cascade moves under it.
-	 */
 	[kPseudoDeclarationsFor](
 		element: Element,
 		pseudoElement: string,
@@ -11005,10 +9806,8 @@ export class StyleManager {
 		const declarations: Record<string, string> = {
 			...computePseudoElementStyle(this, element, pseudoElement),
 		};
-		// Per CSS, a pseudo-element INHERITS from its originating element: a
-		// button's focus underline runs through its UA brackets, a .destroy's
-		// color reaches its ::after glyph. Rule declarations above win;
-		// inherited values only fill the gaps.
+		// A pseudo-element INHERITS from its originating element; rule
+		// declarations win and inherited values only fill the gaps.
 		const hostStyle = this.declarationFor(element);
 		for (const property of INHERITED_PROPERTIES) {
 			if (!declarations[property]) {
@@ -11018,9 +9817,8 @@ export class StyleManager {
 				}
 			}
 		}
-		// A pseudo-element of a flex or grid container is one of its items, and
-		// an item's display blockifies -- including the `inline` it would
-		// otherwise take from the initial value.
+		// A pseudo-element of a flex or grid container is one of its items,
+		// and an item's display blockifies -- the initial `inline` included.
 		if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
 			declarations.display = blockified(
 				declarations.display || getInitialStyle(null, "display"),
@@ -11029,16 +9827,9 @@ export class StyleManager {
 		return declarations;
 	}
 
-	/**
-	 * Whether changing this attribute on this element can change the style of
-	 * its DESCENDANTS -- by starting or stopping a rule that matches one of
-	 * them, or by moving a value they inherit. When it can do neither, the
-	 * element's own cached style is the only one the cascade renders stale.
-	 *
-	 * An inline style is always taken to reach them: what it declares is not
-	 * known until it is parsed, and it is written where a value is meant to
-	 * change.
-	 */
+	// Whether this attribute flip can change a DESCENDANT's style -- by a
+	// rule that matches one, or a value they inherit. An inline style always
+	// reaches them: what it declares is not known until parsed.
 	[kAttributeReachesDescendants](
 		element: Element,
 		name: string,
@@ -11054,9 +9845,7 @@ export class StyleManager {
 			if (this[kReachingClasses].size === 0) {
 				return false;
 			}
-			// A record with no old value can be one for an attribute that did
-			// not exist, or one from an observer that records none; the classes
-			// that LEFT are unknowable either way.
+			// With no old value the classes that LEFT are unknowable.
 			if (oldValue === null) {
 				return element.hasAttribute("class");
 			}
@@ -11095,10 +9884,8 @@ export class StyleManager {
 		return this[kReachingStates] && STATE_ATTRIBUTES.has(name);
 	}
 
-	/** Drop every cached style, whatever it was cached from. */
 	[kClearCache](): void {
-		// Every computed style ever handed out re-resolves on its next read:
-		// this manager vouches for none of them any more.
+		// Every computed style ever handed out re-resolves on its next read.
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
 		this[kComputedStyleCache] = new WeakMap();
@@ -11106,10 +9893,7 @@ export class StyleManager {
 		this[kCounterScopes] = new WeakMap();
 	}
 
-	/**
-	 * A content value with each `counter(name)` or `counter(name, style)`
-	 * replaced by the number the counter stands at for this element.
-	 */
+	// Each counter(name[, style]) replaced by the number it stands at here.
 	[kResolveCounterFunction](element: Element, content: string): string {
 		const scope = this[kCounterScopes].get(element);
 		return content.replace(
@@ -11126,14 +9910,10 @@ export class StyleManager {
 	}
 }
 
-/** The element's border-box rect, measured behind the layout flush. */
+// The flush is taken once per change, not once per read: a caller reading
+// four properties off two hundred elements pays one flush, not eight
+// hundred. Nothing under the flush can reach back here.
 function usedRect(manager: StyleManager, element: Element): DOMRect | null {
-	// The flush is taken once per change, not once per read: until the
-	// layout engine says geometry moved, the layout standing behind the
-	// last flush is still the answer. A caller reading four properties
-	// off two hundred elements pays one flush, not eight hundred. Nothing
-	// under the flush can reach back here -- layout reads the cascade
-	// through getComputedValue, which has no used value to ask for.
 	if (manager[kUsedStale]) {
 		flushLayout(manager[kDocument]);
 		manager[kUsedStale] = false;
@@ -11142,14 +9922,7 @@ function usedRect(manager: StyleManager, element: Element): DOMRect | null {
 	return manager[kLayoutEngine].getRect(element);
 }
 
-/**
- * The grid a viewport unit measures against, in cells: the size the document
- * has adopted, which is the same one `@media` is answered against. Null when
- * the window is mounted on no terminal, where `1vw` has nothing to be a
- * hundredth of.
- */
-
-/** A pseudo-element's declaration, on the same internal read path. */
+// A pseudo-element's declaration, on the same internal read path.
 function pseudoDeclarationFor(
 	manager: StyleManager,
 	element: Element,
@@ -11169,10 +9942,8 @@ function pseudoDeclarationFor(
 		pseudoElement,
 	);
 	// The cache is reached HERE, not before the work: resolving the host's
-	// style above can reparse the stylesheets, and a reparse replaces every
-	// cache on this manager. A map taken before that is an orphan, and
-	// storing into it caches nothing -- every read recomputes the
-	// declaration, and with it the host's inherited properties.
+	// style can reparse the stylesheets, which replaces every cache on this
+	// manager, and a map taken before that is an orphan.
 	let elementCache = manager[kPseudoElementStyleCache].get(element);
 	if (!elementCache) {
 		elementCache = new Map();
@@ -11188,13 +9959,8 @@ function pseudoDeclarationFor(
 	return declaration;
 }
 
-/**
- * Give every element a rule reaches its pseudo-element nodes.
- *
- * Driven from the rules rather than the tree: each pseudo rule names the
- * elements it matches, so the walk costs what the sheets ask for and not
- * what the document holds.
- */
+// Driven from the rules rather than the tree: the walk costs what the
+// sheets ask for, not what the document holds.
 function attachPseudoElementsToDocument(manager: StyleManager): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
@@ -11215,9 +9981,8 @@ function attachPseudoElementsToDocument(manager: StyleManager): void {
 		const matchingElements = new Set<Element>();
 
 		for (const rule of rules) {
-			// Within the rule's own tree scope: a document query cannot see
-			// shadow elements, and a shadow rule must never claim document
-			// ones. A `:host` rule reaches the one element outside it.
+			// Within the rule's own tree scope; a :host rule reaches the one
+			// element outside it.
 			const scope = (rule.scope ?? manager[kDocument]) as Node;
 			for (const element of selectForRule(scope, rule)) {
 				matchingElements.add(element);
@@ -11235,8 +10000,8 @@ function attachPseudoElementsToDocument(manager: StyleManager): void {
 		}
 	}
 
-	// A list item's ::marker needs no rule to exist: list-style-type gives
-	// it content on its own, so the items are found by tag as well.
+	// A ::marker needs no rule to exist: list-style-type gives it content on
+	// its own, so the items are found by tag as well.
 	const listItems = manager[kDocument].querySelectorAll(
 		'[style*="list-item"], li',
 	);
@@ -11267,23 +10032,15 @@ function invalidateElement(manager: StyleManager, element: Element): void {
 	manager[kLayoutEngine].invalidateFrame();
 }
 
-/**
- * Give an element its counter scope: what counter-reset starts here, what
- * counter-increment moves, and the automatic list-item counter a list and
- * its items carry.
- *
- * The parent's scope is read, never built: an element whose parent has no
- * scope yet gets none as its parent, and building it recursively up a deep
- * tree is what this avoids.
- */
+// The parent's scope is read, never built: building it recursively up a
+// deep tree is what this avoids.
 function initializeCounters(manager: StyleManager, element: Element): void {
 	if (manager[kCounterScopes].has(element)) {
 		return;
 	}
 
-	// With no counter-bearing rules anywhere, only lists carry counters
-	// (the automatic list-item one). Skip everything else -- UNLESS the
-	// element sits under a scope-holding parent, so a chain like
+	// With no counter rules anywhere, only lists carry counters -- but an
+	// element under a scope-holding parent still joins, so a chain like
 	// ol > li > div > ol keeps its inheritance path unbroken.
 	const tag = element.tagName;
 	if (
@@ -11327,7 +10084,8 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 			element.tagName === "OL"
 				? parseInt(element.getAttribute("start") || "1", 10)
 				: 0;
-		scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
+		// start - 1, so the first increment gives start.
+		scope.counters["list-item"] = startValue - 1;
 	}
 
 	if (counterIncrement && counterIncrement !== "none") {
@@ -11339,7 +10097,6 @@ function initializeCounters(manager: StyleManager, element: Element): void {
 	}
 }
 
-/** Whether an element brings a stylesheet with it: a style, or a rel=stylesheet link. */
 function isStyleElement(element: Element): boolean {
 	return (
 		element.tagName === "STYLE" ||
@@ -11348,11 +10105,8 @@ function isStyleElement(element: Element): boolean {
 	);
 }
 
-/**
- * Forget what the owner element last said, so the next read reparses it. A
- * <style> element's child list IS its stylesheet: changing it replaces the
- * sheet's rules even when the text it spells out is the same.
- */
+// A <style>'s child list IS its stylesheet: changing it replaces the rules
+// even when the text it spells out is the same.
 function reparseOwnerText(sheet: CSSStyleSheet): void {
 	sheet[kText] = null;
 }
@@ -11361,7 +10115,6 @@ function blockified(display: string): string {
 	return BLOCKIFIED_DISPLAYS[display] ?? display;
 }
 
-/** The used values a declaration has measured behind the last flush. */
 function getUsedValues(
 	manager: StyleManager,
 	declaration: object,
@@ -11374,39 +10127,28 @@ function getUsedValues(
 	return values;
 }
 
-/** Drop one declaration's used values: its cascade moved under them. */
 function dropUsedValues(manager: StyleManager, declaration: object): void {
 	manager[kUsedValues].delete(declaration);
 }
 
-/**
- * What window.getComputedStyle returns, which CSSOM calls a RESOLVED value:
- * the computed value for most properties, the used value for the ones that
- * need layout. The platform method is misnamed -- it does not return computed
- * values -- and this is the one place the engine has to wear that name.
- */
+// What window.getComputedStyle returns -- CSSOM's RESOLVED value: computed
+// for most properties, used for the ones that need layout. The platform
+// method is misnamed, and this is the one place the engine wears that name.
 function getResolvedStyle(
 	manager: StyleManager,
 	element: Element,
 	pseudoElt?: string | null,
 ): globalThis.CSSStyleDeclaration {
-	// A computed style describes the DOM as it stands, so an author read
-	// goes through the flush a geometry read does.
 	manager[kFlushStyle]();
 	parseStylesheetsIfStale(manager);
-	// An element that is not being rendered has no style to report: it is
-	// out of the document, or out of the flat tree its document composes.
-	// Only an author read comes through here -- the engine reads through
-	// declarationFor, which asks nothing of the flat tree.
+	// An element out of the document, or out of the flat tree it composes,
+	// has no style to report. Only an author read comes through here.
 	if (!isBeingRendered(element)) {
 		return new EmptyStyleDeclaration(
 			element,
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
-	// The pseudo-element argument names a pseudo-element, names nothing
-	// (and is ignored), or names something that is not one -- for which an
-	// empty declaration is the answer.
 	let pseudoElement = "";
 	if (pseudoElt) {
 		const parsed = parsePseudoElementArgument(String(pseudoElt));
@@ -11429,12 +10171,8 @@ function getResolvedStyle(
 	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
-// ---------------------------------------------------------------------------
 // CSS transitions (css-transitions-1): started at style change events,
 // advanced by a per-frame tick, read through the computed-value override.
-// ---------------------------------------------------------------------------
-
-/** The timing a transition-property item matched: milliseconds and an easing. */
 interface TransitionTiming {
 	duration: number;
 	delay: number;
@@ -11446,13 +10184,13 @@ interface RunningTransition {
 	from: string;
 	to: string;
 
-	/** Timeline ms of the style change event that started it. */
+	// Timeline ms of the style change event that started it.
 	start: number;
 	delay: number;
 	duration: number;
 	easing: (input: number) => number;
 
-	/** Whether transitionstart has fired -- the delay has elapsed. */
+	// Whether transitionstart has fired -- the delay has elapsed.
 	started: boolean;
 	reversingAdjustedStartValue: string;
 	reversingShorteningFactor: number;
@@ -11466,13 +10204,9 @@ interface QueuedTransitionEvent {
 	pseudoElement: string;
 }
 
-/**
- * The properties `transition-property: all` covers here: the longhands whose
- * values this engine can interpolate, or flip, with a visible result. A
- * bounded list -- `all` literally means anything animatable, and an
- * unbounded snapshot per style change would put the whole property index in
- * front of each restyle.
- */
+// A bounded list: `all` literally means anything animatable, and an
+// unbounded snapshot per style change would put the whole property index in
+// front of each restyle.
 const TRANSITIONABLE_ALL = [
 	"background-color",
 	"border-bottom-color",
@@ -11518,14 +10252,10 @@ const TRANSITIONABLE_ALL = [
 	"z-index",
 ];
 
-/**
- * Keep a dropped declaration's resolved values as before-change style. Only
- * properties something read are here -- which is what makes it affordable,
- * and enough: a value nothing ever computed has nothing to transition from.
- * The caller stops holding the map, so it is stored as-is. Unconditional on
- * the sticky gate: the write that declares an element's first transition
- * lands AFTER the invalidation that drops the values it transitions from.
- */
+// Only properties something read are here, which is enough: a value nothing
+// computed has nothing to transition from. Unconditional on the sticky gate,
+// because the write declaring an element's first transition lands AFTER the
+// invalidation that drops the values it transitions from.
 function storeTransitionFallback(
 	manager: StyleManager,
 	element: Element,
@@ -11543,7 +10273,6 @@ function storeTransitionFallback(
 	byPseudo.set(pseudo, resolved);
 }
 
-/** A computed value, with the initial value standing in for an empty answer. */
 function transitionBase(
 	read: (property: string) => string,
 	property: string,
@@ -11558,12 +10287,8 @@ function parseCSSTime(token: string): number {
 	return cssTimeMs(token) ?? 0;
 }
 
-/**
- * The transitions the current style matches: each covered longhand mapped to
- * its timing. The duration, delay and easing lists repeat to the property
- * list's length (css-transitions-1 §2.1); a later item naming a property a
- * prior one covered wins.
- */
+// The timing lists repeat to the property list's length (css-transitions-1
+// §2.1); a later item naming a property a prior one covered wins.
 function matchedTransitions(
 	read: (property: string) => string,
 ): Map<string, TransitionTiming> | null {
@@ -11607,13 +10332,9 @@ function matchedTransitions(
 	return out.size > 0 ? out : null;
 }
 
-/**
- * One style change event for an element (or one of its pseudo-elements):
- * compare the new base values against the last event's snapshot, start,
- * retarget or cancel transitions accordingly, and store the new snapshot.
- * The cheap early-outs are what each style change in a transition-free
- * document pays.
- */
+// One style change event: compare the new base values against the last
+// snapshot; start, retarget or cancel; store the new snapshot. The early
+// outs are what each style change in a transition-free document pays.
 function processTransitionStyle(
 	manager: StyleManager,
 	element: Element,
@@ -11622,8 +10343,7 @@ function processTransitionStyle(
 ): void {
 	const active = manager[kActiveTransitions].get(element)?.get(pseudo);
 	if (!manager[kTransitionsExist] && !active) {
-		// The sticky gate opens as stylesheets and inline blocks PARSE, and
-		// an inline transition written right before this event may not have
+		// An inline transition written right before this event may not have
 		// parsed yet: the attribute text is the one place it already shows.
 		const attribute = element.getAttribute("style");
 		if (!attribute || !attribute.includes("transition")) {
@@ -11667,8 +10387,7 @@ function processTransitionStyle(
 				continue;
 			}
 			// A change back toward where an unfinished transition came from
-			// plays in the portion already covered, not the full duration
-			// (css-transitions-1 §3, the reversing-adjusted start value).
+			// plays in the portion already covered (css-transitions-1 §3).
 			let duration = timing.duration;
 			let factor = 1;
 			if (after === running.reversingAdjustedStartValue) {
@@ -11693,11 +10412,9 @@ function processTransitionStyle(
 			});
 			continue;
 		}
-		// No before-change value means the element had no style before this
-		// event, and an element styled for the first time transitions
-		// nothing. The fallback covers a transition declared and retargeted
-		// in one event; its raw entries spell "no declaration" as the empty
-		// string, which is the initial value the snapshot spells out.
+		// An element styled for the first time transitions nothing. The
+		// fallback's raw entries spell "no declaration" as the empty string,
+		// the initial value the snapshot spells out.
 		const raw = previous?.get(property) ?? fallback?.get(property);
 		const before =
 			raw === ""
@@ -11831,7 +10548,6 @@ function cancelTransition(
 	);
 }
 
-/** The eased progress at `now`, for the reversing arithmetic. */
 function transitionProgress(
 	transition: RunningTransition,
 	now: number,
@@ -11868,12 +10584,9 @@ function currentTransitionValue(
 	);
 }
 
-/**
- * The value a computed-style read answers while a transition runs, or null
- * where none does. Interpolates against the manager's clock rather than the
- * wall: the clock moves once per tick, so a frame's reads agree with each
- * other and with what the painter draws.
- */
+// Interpolates against the manager's clock rather than the wall: the clock
+// moves once per tick, so a frame's reads agree with each other and with
+// what the painter draws.
 function getTransitionValue(
 	manager: StyleManager,
 	element: Element,
@@ -11888,12 +10601,8 @@ function getTransitionValue(
 	return currentTransitionValue(transition, manager[kTransitionClock]);
 }
 
-/**
- * Interpolate two computed values: numbers with a shared unit numerically,
- * colors by channel, and anything else -- per the spec's discrete type --
- * as a flip at the midpoint. The painter quantizes to cells and palette
- * entries downstream, so precision here costs nothing.
- */
+// Numbers with a shared unit numerically, colors by channel, anything else
+// as a flip at the midpoint (the spec's discrete type).
 function interpolateValue(from: string, to: string, progress: number): string {
 	if (progress <= 0) {
 		return from;
@@ -11924,7 +10633,6 @@ function interpolateValue(from: string, to: string, progress: number): string {
 	return progress < 0.5 ? from : to;
 }
 
-/** A value that is one number, dimension or percentage, taken apart. */
 function scalarComponents(
 	value: string,
 ): {number: number; unit: string} | null {
@@ -11947,7 +10655,6 @@ function scalarComponents(
 	return null;
 }
 
-/** Easing functions, memoized by their computed spelling. */
 const easingFunctions = new Map<string, (input: number) => number>();
 
 function parseEasing(text: string): (input: number) => number {
@@ -12014,15 +10721,8 @@ function buildEasing(key: string): (input: number) => number {
 	return (input) => input;
 }
 
-/**
- * A `linear()` easing (css-easing-1 §2.6). Stops give outputs; a
- * percentage on a stop gives its input, clamped so inputs never run
- * backwards, and a second percentage writes the stop twice. Missing
- * inputs spread evenly between their stated neighbors, and evaluation
- * interpolates within the segment the input lands in, riding the end
- * segments beyond the range. Null for an argument list off the grammar,
- * which then plays as `linear`.
- */
+// css-easing-1 §2.6. Null for an argument list off the grammar, which then
+// plays as `linear`.
 function linearEasing(node: CSSNode): ((input: number) => number) | null {
 	const stops: CSSNode[][] = [[]];
 	for (const child of node.children?.toArray() ?? []) {
@@ -12106,11 +10806,7 @@ function linearEasing(node: CSSNode): ((input: number) => number) | null {
 	};
 }
 
-/**
- * A step easing (css-easing-1 §2.3). At the input boundaries the before-flag
- * subtleties collapse: 1 answers 1, and 0 answers the first jump's landing --
- * which for the jump-start family is already up a step.
- */
+// css-easing-1 §2.3. At 0 the jump-start family is already up a step.
 function stepsEasing(
 	count: number,
 	position: string,
@@ -12137,7 +10833,7 @@ function stepsEasing(
 	};
 }
 
-/** A cubic Bezier easing, solved by Newton's method with a bisection net. */
+// Newton's method with a bisection net.
 function cubicBezierEasing(
 	x1: number,
 	y1: number,
@@ -12204,8 +10900,8 @@ function queueTransitionEvent(
 		return;
 	}
 	manager[kTransitionFlushQueued] = true;
-	// Style change events run under layout; a listener can mutate the DOM, so
-	// dispatch waits for the stack that queued it to unwind.
+	// Style change events run under layout, and a listener can mutate the
+	// DOM: dispatch waits for the stack that queued it to unwind.
 	queueMicrotask(() => flushTransitionEvents(manager));
 }
 
@@ -12241,12 +10937,9 @@ function scheduleTransitionTick(manager: StyleManager): void {
 	}, 16);
 }
 
-/**
- * Advance the clock one frame: promote delayed transitions, finish elapsed
- * ones, cancel those whose element left the document, then invalidate the
- * transitioning elements so the next read -- and the frame the tick requests
- * -- answers the new interpolated values.
- */
+// Promote delayed transitions, finish elapsed ones, cancel those whose
+// element left the document, then invalidate so the next read answers the
+// new interpolated values.
 function tickTransitions(manager: StyleManager): void {
 	const now = performance.now();
 	manager[kTransitionClock] = now;
@@ -12299,8 +10992,8 @@ function tickTransitions(manager: StyleManager): void {
 	}
 	manager[kLayoutEngine].invalidateFrame();
 	flushTransitionEvents(manager);
-	// The engine's requestAnimationFrame schedules a render; a window no
-	// engine dressed has none, and its reads interpolate on their own.
+	// A window no engine dressed has no requestAnimationFrame, and its reads
+	// interpolate on their own.
 	const raf = (
 		manager[kWindow] as {
 			requestAnimationFrame?: (cb: () => void) => number;
@@ -12312,26 +11005,15 @@ function tickTransitions(manager: StyleManager): void {
 	scheduleTransitionTick(manager);
 }
 
-/**
- * How many `<style>` elements the document holds.
- *
- * The document counts them as they join and leave its trees, so this answers
- * "has a sheet appeared" without walking for one -- cheap enough to poll on
- * every computed-style read, which is what catches a sheet appended in the
- * same tick, before the mutation observer delivers. Adopted sheets and a
- * sheet's own mutations reach the cascade through refreshStylesheets instead.
- */
+// The document counts <style> elements as they join and leave, so this is
+// cheap enough to poll on every computed-style read -- what catches a sheet
+// appended in the same tick, before the mutation observer delivers.
 function styleSheetCount(
 	manager: StyleManager,
 ): number {
 	return styleElementCount(manager[kDocument] as unknown as DOMDocument);
 }
 
-/**
- * Read the sheets again when what the cascade holds no longer describes them:
- * a mutation marked them dirty, or a `<style>` joined or left the document
- * since the last parse.
- */
 function parseStylesheetsIfStale(manager: StyleManager): void {
 	if (
 		manager[kStylesheetsDirty] ||
@@ -12341,11 +11023,8 @@ function parseStylesheetsIfStale(manager: StyleManager): void {
 	}
 }
 
-/**
- * Invalidate an element and everything whose style it reaches: its
- * descendants, and the shadow tree it hosts -- inheritance crosses that
- * boundary, so a color set on a host reaches the tree it composes.
- */
+// Descendants and the hosted shadow tree too: inheritance crosses that
+// boundary.
 function invalidateSubtree(
 	manager: StyleManager,
 	element: Element,
@@ -12368,10 +11047,8 @@ function invalidateElementCaches(
 	manager: StyleManager,
 	element: Element,
 ): void {
-	// Layout measured this element under the style being dropped. This is
-	// the one place an element's computed style goes stale -- attribute
-	// flips, inline styles, subtree and sibling reach, focus all arrive
-	// here -- so it is the one place layout has to be told.
+	// The one place an element's computed style goes stale, so the one place
+	// layout -- which measured it under the style being dropped -- is told.
 	manager[kLayoutEngine].styleInvalidated(element);
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade moved on rather than merely dropped.
@@ -12392,18 +11069,10 @@ function invalidateElementCaches(
 	manager[kCounterScopes].delete(element);
 }
 
-/**
- * Invalidate the nearest enclosing list, and its items, after a child changed.
- *
- * The list's padding-left is a function of its items' markers, and the items'
- * ordinals are a function of their position, so both go stale when the child
- * list changes. Only the *nearest* list is affected: a deeper list's items do
- * not contribute to an outer list's gutter.
- */
-// TODO(box-tree): a list's gutter is a layout question -- the widest
-// marker its items generate -- answered here in the cascade, which is why
-// the cascade must watch child lists and reach into the layout engine.
-// Phase C computes the gutter during block layout and deletes this.
+// The list's padding-left is a function of its items' markers and their
+// ordinals of their position; only the NEAREST list is affected.
+// TODO(box-tree): the gutter is a layout question answered here in the
+// cascade; computing it during block layout deletes this.
 function invalidateEnclosingList(
 	manager: StyleManager,
 	target: Node,
@@ -12427,15 +11096,9 @@ function invalidateEnclosingList(
 	}
 }
 
-/**
- * Walk the document's stylesheets -- this engine's own CSSOM objects, the
- * same ones an author reaches through `styleEl.sheet` -- and collect the
- * rules the cascade matches against.
- *
- * Every style cached against the previous rule set is dropped: a
- * declaration built before this parse was resolved against rules that no
- * longer describe the cascade, and nothing else would ever tell it so.
- */
+// Every style cached against the previous rule set drops: a declaration
+// built before this parse was resolved against rules that no longer describe
+// the cascade, and nothing else would ever tell it so.
 function parseStylesheets(
 	manager: StyleManager,
 ): void {
@@ -12459,17 +11122,16 @@ function parseStylesheets(
 	manager[kAnonymousLayers] = 0;
 	manager[kParsedStyleSheetCount] = styleSheetCount(manager);
 
-	// The UA document sheet parses first; origin ordering (not source
-	// order) is what keeps it beneath every author rule.
+	// Origin ordering, not source order, keeps the UA sheet beneath every
+	// author rule.
 	parseStyleSheet(manager, uaStyleSheet(), undefined, true);
 
 	for (const sheet of documentStyleSheets(document)) {
 		parseStyleSheet(manager, sheet);
 	}
 
-	// Shadow-tree stylesheets, scoped to their root. Disconnected roots
-	// parse too: attach-populate-connect is the standard order, and a
-	// scope-gated rule matches nothing until its tree renders anyway.
+	// Disconnected roots parse too: attach-populate-connect is the standard
+	// order, and a scope-gated rule matches nothing until its tree renders.
 	for (const root of manager[kShadowRoots]) {
 		for (const sheet of shadowStyleSheets(root)) {
 			parseStyleSheet(manager, sheet, root);
@@ -12486,18 +11148,14 @@ function parseStylesheets(
 
 	sortRulesForCascade(manager);
 	manager[kClearCache]();
-	// Only now: the layout tree re-derives its boxes as it is invalidated,
-	// asking the cascade what each element's display is, and the answer has
-	// to come from the rules just parsed, not the ones they replace.
+	// Only now: invalidated layout re-derives boxes by asking the cascade for
+	// display, and the answer must come from the rules just parsed.
 	manager[kLayoutEngine].invalidate();
 	attachPseudoElements(manager);
 }
 
-/**
- * Sort rules for cascade resolution: origin first (UA rules sort below
- * every author rule -- later wins), then cascade layer, then specificity,
- * then the order the rules were read in.
- */
+// Origin first (UA below every author rule -- later wins), then layer, then
+// specificity, then the order the rules were read in.
 function sortRulesForCascade(manager: StyleManager): void {
 	const sourceOrder = new Map(
 		manager[kParsedRules].map((rule, index) => [rule, index] as const),
@@ -12516,7 +11174,7 @@ function sortRulesForCascade(manager: StyleManager): void {
 	});
 }
 
-/** Name a layer, and every layer its path nests inside, in declaration order. */
+// Name a layer, and every layer its path nests inside.
 function declareLayer(
 	manager: StyleManager,
 	outer: string | null,
@@ -12533,14 +11191,9 @@ function declareLayer(
 	return path;
 }
 
-/**
- * Where each layer sorts. Layers sort in the order their names were
- * declared, and a layer's OWN rules sort after the rules of every layer
- * nested inside it -- the same relation unlayered rules have to layers,
- * one level down. Smallest first, so the last layer, and then the
- * unlayered rules above it, win the normal cascade; the important cascade
- * reads the same order backwards.
- */
+// A layer's OWN rules sort after every layer nested inside it -- the
+// relation unlayered rules have to layers, one level down. The important
+// cascade reads the same order backwards.
 function rankLayers(
 	manager: StyleManager,
 ): Map<string, number> {
@@ -12570,21 +11223,11 @@ function rankLayers(
 	return ranks;
 }
 
-/**
- * Collect the style rules of a stylesheet, or of a grouping rule's own
- * rule list. A disabled sheet, and a sheet or `@media` whose condition the
- * terminal viewport does not match, contribute nothing; `@supports`
- * contributes its rules, since what this engine supports is what it
- * renders. `@font-face`, `@keyframes` and `@import` have no terminal
- * rendering and declare nothing to the cascade.
- *
- * A grouping rule this walk has no branch for is walked THROUGH: its rules
- * cascade without whatever its prelude says about them. For a conditional
- * rule that is the wrong answer where the condition is false -- a
- * `@container` query the box does not satisfy still paints -- and it is
- * the better wrong answer: a rule that applies too widely is one an author
- * can see, and one that vanishes with the whole at-rule is not.
- */
+// A disabled sheet and an unmatched @media contribute nothing; @supports
+// contributes, since what this engine supports it renders. A grouping rule
+// this walk has no branch for is walked THROUGH: a rule that applies too
+// widely is one an author can see, and one that vanishes with the whole
+// at-rule is not.
 function parseStyleSheet(
 	manager: StyleManager,
 	container: CSSStyleSheet | CSSGroupingRule,
@@ -12610,14 +11253,12 @@ function parseStyleSheet(
 		} else if (rule instanceof CSSSupportsRule) {
 			parseStyleSheet(manager, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSLayerStatementRule) {
-			// `@layer a, b;` declares the order of layers whose rules come
-			// later, and declares nothing else.
+			// `@layer a, b;` declares layer order and nothing else.
 			for (const name of rule.nameList) {
 				declareLayer(manager, context.layer, name);
 			}
 		} else if (rule instanceof CSSLayerBlockRule) {
-			// An unnamed block opens a layer nothing else can name or reach,
-			// which is a layer of its own wherever it stands.
+			// An unnamed block opens a layer nothing else can name or reach.
 			const layer = rule.name
 				? declareLayer(manager, context.layer, rule.name)
 				: declareLayer(
@@ -12633,10 +11274,9 @@ function parseStyleSheet(
 			});
 		} else if (rule instanceof CSSStartingStyleRule) {
 			// `@starting-style` declares the style a box starts a transition
-			// FROM, which is a moment nothing here hands a rule: one inside it
+			// FROM -- a moment nothing here hands a rule. A rule inside it
 			// would have no moment to stop applying in and would style the box
-			// for good, so it parses into the CSSOM and reaches the cascade
-			// never.
+			// for good, so it reaches the cascade never.
 			continue;
 		} else if (rule instanceof CSSGroupingRule) {
 			parseStyleSheet(manager, rule, scope, uaOrigin, context);
@@ -12644,12 +11284,8 @@ function parseStyleSheet(
 	}
 }
 
-/**
- * One media query: the type it names, `and`-ed with its condition and
- * negated by a `not` modifier. Only `all` and `screen` name this screen --
- * the terminal viewport -- so `print`, `speech` and the media types
- * mediaqueries-4 deprecated match nothing.
- */
+// Only `all` and `screen` name this screen, so `print`, `speech` and the
+// deprecated types match nothing.
 function mediaQueryNodeMatches(
 	manager: StyleManager,
 	query: MediaQueryNode,
@@ -12662,11 +11298,8 @@ function mediaQueryNodeMatches(
 	return (query.modifier ?? "").toLowerCase() === "not" ? !matches : matches;
 }
 
-/**
- * A media condition: the operands `and` or `or` joins, each of which a `not`
- * may negate. A word standing where neither a joiner nor a negation belongs
- * leaves the condition unjudged, and so matching.
- */
+// A word standing where neither a joiner nor a negation belongs leaves the
+// condition unjudged, and so matching.
 function mediaConditionMatches(
 	manager: StyleManager,
 	condition: MediaConditionNode,
@@ -12701,7 +11334,6 @@ function mediaConditionMatches(
 	return matches ?? true;
 }
 
-/** One `<media-in-parens>`: a nested condition, a feature, or a range. */
 function mediaOperandMatches(
 	manager: StyleManager,
 	part: MediaConditionNode,
@@ -12718,7 +11350,6 @@ function mediaOperandMatches(
 	return true;
 }
 
-/** The window length a media feature name asks about, or null for the rest. */
 function viewportLength(
 	manager: StyleManager,
 	dimension: string,
@@ -12732,11 +11363,7 @@ function viewportLength(
 	return null;
 }
 
-/**
- * A length a media feature compares against, in the cell lengths px and ch
- * both spell here. Null for a value off the grammar, which leaves the
- * feature unjudged.
- */
+// Null for a value off the grammar, which leaves the feature unjudged.
 function mediaLength(node: CSSNode | null | undefined): number | null {
 	let length: number | null = null;
 	if (node?.type === "Number") {
@@ -12753,7 +11380,6 @@ function mediaLength(node: CSSNode | null | undefined): number | null {
 	return length;
 }
 
-/** The comparison a `<mf-range>` writes between two lengths. */
 function mediaComparison(
 	left: number,
 	comparison: string | null | undefined,
@@ -12775,22 +11401,16 @@ function mediaComparison(
 	}
 }
 
-/**
- * A `<mf-plain>` or `<mf-boolean>` feature against the terminal: the width
- * and height features, judged against the window. A feature this engine does
- * not track answers true -- the permissive default -- as does a value off
- * the grammar.
- */
+// A feature this engine does not track answers true, the permissive
+// default, as does a value off the grammar.
 function mediaFeatureMatches(
 	manager: StyleManager,
 	feature: MediaConditionNode,
 ): boolean {
 	const name = (feature.name ?? "").toLowerCase();
 	const value = feature.value ?? null;
-	// mediaqueries-4's hover feature: `hover` when the primary pointer can
-	// hover. Motion reporting turns on whenever the document observes
-	// hover, so the answer is unconditional; a bare `(hover)` is the
-	// boolean context.
+	// Motion reporting turns on whenever the document observes hover, so the
+	// answer is unconditional; a bare `(hover)` is the boolean context.
 	if (name === "hover" || name === "any-hover") {
 		return (
 			value === null ||
@@ -12824,12 +11444,8 @@ function mediaFeatureMatches(
 	return actual === length;
 }
 
-/**
- * A `<mf-range>` feature: the one-sided `(width >= 40px)` and `(40px <=
- * width)`, and the two-sided `(20px <= width < 80px)`. The feature name
- * stands in the middle of a two-sided range, and opposite the value in a
- * one-sided one.
- */
+// The feature name stands in the middle of a two-sided range, and opposite
+// the value in a one-sided one.
 function mediaFeatureRangeMatches(
 	manager: StyleManager,
 	range: MediaConditionNode,
@@ -12859,10 +11475,6 @@ function mediaFeatureRangeMatches(
 		: mediaComparison(length, range.leftComparison, actual);
 }
 
-/**
- * One `@scope` prelude as the cascade holds it, read against the namespaces
- * the sheet that wrote it declared.
- */
 function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 	const namespaces = sheetNamespaces(rule.parentStyleSheet);
 	const start = rule.start;
@@ -12881,7 +11493,6 @@ function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 	};
 }
 
-/** One style rule as the cascade holds it: selector, declarations, scope. */
 function parseStyleRule(
 	manager: StyleManager,
 	styleRule: CSSStyleRule,
@@ -12889,9 +11500,8 @@ function parseStyleRule(
 	uaOriginSheet?: boolean,
 	context: RuleContext = UNCONDITIONAL,
 ): void {
-	// A rule's selector list is a set of selectors that share a block, and
-	// each is matched -- and weighed -- on its own. `#a::before, #b` is one
-	// pseudo-element rule and one ordinary rule, not one of either.
+	// Each selector of the list is matched and weighed on its own:
+	// `#a::before, #b` is one pseudo rule and one ordinary rule.
 	const block = getDeclarationBlock(styleRule.style);
 	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 	for (const selector of splitSelectorList(styleRule.selectorText)) {
@@ -12907,15 +11517,9 @@ function parseStyleRule(
 	}
 }
 
-/**
- * Record the keys a change to which can reach an element's descendants.
- *
- * Two ways it can: the key is tested on a NON-SUBJECT compound, so the
- * rule matches something below the element it names; or the rule declares
- * an INHERITED property, so starting or stopping it moves a value the
- * descendants take from the element. A key in neither position changes
- * nothing but the element's own box.
- */
+// A key reaches descendants two ways: tested on a NON-SUBJECT compound, or
+// on a rule declaring an INHERITED property. In neither position it changes
+// nothing but the element's own box.
 function indexReachingKeys(
 	manager: StyleManager,
 	reading: SelectorReading,
@@ -12923,11 +11527,8 @@ function indexReachingKeys(
 ): void {
 	let inherits = false;
 	for (const property in declarations) {
-		// A shorthand is stored as its longhands, so this reads longhands --
-		// except `all`, which stands for every property there is.
-		// `display` is not inherited and reaches them anyway: a flex
-		// container blockifies its children (css-display-3 §2.7), which
-		// changes what KIND of box each of them is.
+		// `display` is not inherited and reaches descendants anyway: a flex
+		// container blockifies its children (css-display-3 §2.7).
 		if (
 			property === "all" ||
 			property === "display" ||
@@ -12957,12 +11558,8 @@ function indexReachingKeys(
 	}
 }
 
-/**
- * A rule's selector, read once and kept: the plain reading every rule is
- * matched by, and the relative one a rule inside an `@scope` is also read
- * with. A selector this engine cannot read compiles to neither, and the rule
- * styles nothing.
- */
+// A selector this engine cannot read compiles to neither reading, and the
+// rule styles nothing.
 function compileRuleSelector(
 	selector: string,
 	namespaces: SelectorNamespaces | undefined,
@@ -12990,22 +11587,18 @@ function parseSelector(
 	context: RuleContext = UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
-	// Opens the sticky transition gate: only a duration or delay can ever
-	// make a transition run, so the property list alone does not open it.
+	// Only a duration or delay can ever make a transition run, so the
+	// property list alone does not open the sticky gate.
 	if (
 		declarations["transition-duration"] ||
 		declarations["transition-delay"]
 	) {
 		manager[kTransitionsExist] = true;
 	}
-	// A rule's layer decides where it sorts, and the whole layer order is
-	// only known once every sheet has been read: the rank is filled in
-	// then, and this is the value it is filled in from.
 	const layer = context.layer;
-	// A :has() rule reads DOWN the tree, so a mutation anywhere below its
-	// subject can flip it -- the one relational direction the per-target
-	// invalidation cannot see. The flag buys the ancestor sweep only for
-	// documents that actually pay for it.
+	// A :has() rule reads DOWN the tree -- the one relational direction the
+	// per-target invalidation cannot see -- so the flag buys the ancestor
+	// sweep only for documents that pay for it.
 	if (selector.includes(":has(")) {
 		manager[kHasRulesExist] = true;
 	}
@@ -13017,8 +11610,6 @@ function parseSelector(
 		scopes = context.scopes;
 		manager[kScopedRulesExist] = true;
 	}
-	// The sheet's namespaces travel with the rule: a prefix it never declared
-	// makes the selector invalid, and the rest the matcher reads for itself.
 	let namespaces: SelectorNamespaces | undefined;
 	if (sheetNamespaces !== NO_NAMESPACES) {
 		namespaces = sheetNamespaces;
@@ -13053,17 +11644,11 @@ function parseSelector(
 	);
 
 	const subjectTag = reading.subjectTag;
-	// `:host` reaches OUT of the tree its stylesheet belongs to, and it is the
-	// only thing that does: a rule that names it is tried against the host as
-	// well as against the tree's own elements.
+	// A :host rule is tried against the host as well as the tree's elements.
 	const reachesHost = scope !== undefined && selector.includes(":host");
 
-	// ::placeholder and ::selection are widget-part pseudos: no content node
-	// ever attaches for them -- they resolve onto the UA shadow tree's [part]
-	// elements (see getMatchingRules) or the selection painter.
-	// Any pseudo-element, not just the ones this engine gives a box: a
-	// rule for `::highlight(x)` still has to answer through
-	// getComputedStyle, which is the whole of what CSSOM asks of it.
+	// Any pseudo-element, not just the ones this engine gives a box: a rule
+	// for `::highlight(x)` still has to answer through getComputedStyle.
 	const pseudoMatch = selector.match(
 		/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
 	);
@@ -13112,15 +11697,12 @@ function parseSelector(
 	}
 }
 
-/** Every rule whose selector reaches this element, in cascade order. */
 function getMatchingRules(
 	manager: StyleManager,
 	element: Element,
 ): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles: the host's
-	// ::placeholder rules cascade directly onto the [part="placeholder"]
-	// span, the way a browser resolves ::placeholder onto its input's
-	// internal placeholder element.
+	// ::placeholder rules cascade onto the [part="placeholder"] span.
 	const partPseudo = partPseudoFor(element);
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
@@ -13130,10 +11712,8 @@ function getMatchingRules(
 		.filter(Boolean);
 	const matched = manager[kParsedRules].filter((rule) => {
 		if (rule.pseudoElement) {
-			// ::part(name): an author styling an exposed shadow part from
-			// outside. The rule matches the shadow's HOST; its declarations
-			// cascade onto the part element -- any shadow, not just the UA's,
-			// which is the standard CSS Shadow Parts crossing.
+			// ::part(name) matches the shadow's HOST; its declarations cascade
+			// onto the part element -- the standard CSS Shadow Parts crossing.
 			const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
 			if (partArg) {
 				return (
@@ -13142,7 +11722,6 @@ function getMatchingRules(
 					ruleMatches(shadowHost, rule)
 				);
 			}
-			// ::placeholder / ::selection: UA-part pseudo aliases.
 			return (
 				partPseudo !== null &&
 				shadowHost !== null &&
@@ -13154,10 +11733,8 @@ function getMatchingRules(
 	});
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
-	// element: the closer scoping root wins, and a rule in no scope at all
-	// is infinitely far from one. The rules arrive in cascade order and
-	// the sort is stable, so a comparison that only answers for proximity
-	// leaves every other tier as it found it.
+	// element. The sort is stable, so a comparison answering only for
+	// proximity leaves every other tier as it found it.
 	if (!manager[kScopedRulesExist]) {
 		return matched;
 	}
@@ -13184,18 +11761,12 @@ function getMatchingRules(
 	});
 }
 
-/**
- * Whether a rule's selector matches an element, read against the namespaces
- * its sheet declared and inside the tree it was written in.
- */
 function ruleSelectorMatches(
 	element: Element,
 	rule: ParsedCSSRule,
 	root?: Element,
 ): boolean {
-	// A rule read from a scoping root is the relative reading of its selector;
-	// anywhere else it is the plain one. A rule whose selector this engine
-	// cannot read has neither, and styles nothing.
+	// From a scoping root, the relative reading; anywhere else the plain one.
 	const matcher = root === undefined ? rule.matcher : rule.relativeMatcher;
 	if (matcher === null) {
 		return false;
@@ -13203,7 +11774,6 @@ function ruleSelectorMatches(
 	return selects(element, matcher, root ?? element, ruleShadow(rule));
 }
 
-/** Every element under a root that a rule's selector reaches. */
 function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
 	if (rule.matcher === null) {
 		return [];
@@ -13214,16 +11784,10 @@ function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
 	}) as unknown as Element[];
 }
 
-/** The shadow root a `:host` rule was written in, which is all `:host` reads. */
 function ruleShadow(rule: ParsedCSSRule): Node | null {
 	return (rule.reachesHost ? rule.scope : null) ?? null;
 }
 
-/**
- * Whether an element matches a rule's selector. A scoped rule's selector is
- * written relative to a scoping root and reaches only the elements that root
- * has in scope; every other rule's is matched by the DOM outright.
- */
 function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	if (!rule.scopes) {
 		return ruleSelectorMatches(element, rule);
@@ -13231,12 +11795,8 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	return scopingRoot(element, rule) !== null;
 }
 
-/**
- * How many generations lie between an element and the nearest scoping root
- * its rule applies from, or Infinity when the rule names no scope. Only
- * ever asked of a rule that matches, so a rule out of scope everywhere has
- * already been filtered out.
- */
+// Only ever asked of a rule that matches: one out of scope everywhere has
+// already been filtered out.
 function scopeProximity(
 	element: Element,
 	rule: ParsedCSSRule,
@@ -13256,17 +11816,9 @@ function scopeProximity(
 	return generations;
 }
 
-/**
- * The scoping root a scoped rule reaches this element from, or null when
- * no chain of roots puts the element in the rule's scope and matches its
- * selector.
- *
- * Every root is an inclusive ancestor of the element -- that is what being
- * in scope means -- so the chain is read outermost first, each condition
- * taking the HIGHEST root it can (which constrains the roots inside it
- * least), and the innermost taking the NEAREST, which is the one the
- * element's selector and its proximity are measured from.
- */
+// Read outermost first, each condition taking the HIGHEST root it can
+// (which constrains the roots inside it least); the innermost takes the
+// NEAREST, which the selector and proximity are measured from.
 function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 	const conditions = rule.scopes!;
 	let outer: Element | null = null;
@@ -13306,12 +11858,8 @@ function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 	return outer;
 }
 
-/**
- * The part pseudo-element a UA shadow part element answers to, if any:
- * "::placeholder" for the [part="placeholder"] span of an input's
- * UA-internal tree. Author shadow trees are not eligible -- their parts
- * are theirs to style from inside.
- */
+// Author shadow trees are not eligible: their parts are theirs to style
+// from inside.
 function partPseudoFor(element: Element): string | null {
 	const root = element.getRootNode();
 	if (isUAShadowRoot(root)) {
@@ -13323,26 +11871,18 @@ function partPseudoFor(element: Element): string | null {
 	return null;
 }
 
-/**
- * Whether a rule applies to an element, honoring tree scopes: a rule
- * matches only elements of the tree its stylesheet belongs to --
- * document rules stop at every shadow boundary, shadow rules never
- * escape their root -- plus the one deliberate crossing, :host, which
- * lets a shadow stylesheet style its own host.
- */
+// A rule matches only elements of the tree its stylesheet belongs to, plus
+// the one deliberate crossing: :host.
 function ruleMatches(
 	element: Element,
 	rule: ParsedCSSRule,
 	elementRoot?: Node,
 ): boolean {
-	// Every rule is tried against every element, so the rejects that cost a
-	// comparison come first. A scoped rule from another tree can never
-	// match: one identity check retires a widget's whole sheet for every
-	// element outside it.
+	// The rejects that cost a comparison come first: one identity check
+	// retires a widget's whole sheet for every element outside it.
 	const root = elementRoot ?? element.getRootNode();
 	if (rule.scope !== undefined && rule.scope !== root) {
-		// A `:host` rule is the exception: its subject is the host, which
-		// stands outside the tree the rule was written in.
+		// A :host rule's subject stands outside the tree it was written in.
 		if (
 			!rule.reachesHost ||
 			element !== (rule.scope as ShadowRoot).host
@@ -13350,13 +11890,10 @@ function ruleMatches(
 			return false;
 		}
 	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
-		// The subject's type, when the selector names one: this reject costs a
-		// string comparison instead of a selector match.
 		const local = element.localName;
-		// A foreign element's local name keeps its case (feGaussianBlur), and
-		// the tag here is lowercased, so the reject only fires when neither
-		// reading matches -- the case-sensitivity a selector really has is
-		// then the matcher's to decide.
+		// A foreign element's local name keeps its case (feGaussianBlur), so
+		// the reject fires only when neither reading matches; the
+		// case-sensitivity a selector really has is the matcher's to decide.
 		if (local !== rule.subjectTag && local.toLowerCase() !== rule.subjectTag) {
 			return false;
 		}
@@ -13364,22 +11901,16 @@ function ruleMatches(
 	if (rule.scope) {
 		return matchesRule(element, rule);
 	}
-	// UA document rules apply in EVERY tree scope, as a browser's own
-	// UA sheet styles shadow trees.
+	// UA document rules apply in EVERY tree scope, as a browser's own UA
+	// sheet styles shadow trees.
 	if (rule.uaOrigin) {
 		return matchesRule(element, rule);
 	}
-	// AUTHOR document rules match everything OUTSIDE shadow trees --
-	// including detached elements (styles resolve before insertion,
-	// and always have here); the boundary they must not cross is the
-	// shadow root.
+	// Author document rules match everything outside shadow trees, detached
+	// elements included: styles resolve before insertion.
 	return asShadowRoot(root) === null && matchesRule(element, rule);
 }
 
-/**
- * What a pseudo-element's matched rules leave declared: each slot holds what
- * the last rule to name it said, under whichever of the slot's names it used.
- */
 function computePseudoElementStyle(
 	manager: StyleManager,
 	element: Element,
@@ -13393,11 +11924,9 @@ function computePseudoElementStyle(
 		return ruleMatches(element, rule, pseudoRoot);
 	});
 
-	// Apply rules in cascade order. A pseudo-element's declarations are a
-	// flat record rather than a per-property cascade, so a flow-relative
-	// declaration fills BOTH names of its slot as it lands: the physical
-	// one everything downstream reads, and its own, which a later rule
-	// declaring either name overwrites in turn.
+	// A pseudo's declarations are a flat record, not a per-property cascade,
+	// so a flow-relative declaration fills BOTH names of its slot as it
+	// lands; a later rule declaring either name overwrites in turn.
 	const computedStyle: Record<string, string> = {};
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
@@ -13425,10 +11954,6 @@ function computePseudoElementStyle(
 	return computedStyle;
 }
 
-/**
- * The text a pseudo-element holds, or null when it holds none -- no rule
- * declared `content`, or the one that did declared `none`.
- */
 function pseudoContentFor(
 	manager: StyleManager,
 	hostElement: Element,
@@ -13464,19 +11989,12 @@ function pseudoContentFor(
 	return manager[kResolveCounterFunction](hostElement, textContent);
 }
 
-/**
- * Bring the document's pseudo-element nodes into line with the rules just
- * parsed: the ones a rule now reaches gain a node, the ones no rule
- * reaches lose theirs.
- */
 function attachPseudoElements(
 	manager: StyleManager,
 ): void {
-	// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
-	// wholesale: layout keys a pseudo's boxes by node instance, and a
-	// fresh node per refresh strands every mapped one. Attach handles
-	// content updates in place and removal when a pseudo stops matching.
-	// Walks every element on stylesheet change.
+	// Identity-preservingly, never a wholesale clear: layout keys a pseudo's
+	// boxes by node instance, and a fresh node per refresh strands every
+	// mapped one.
 	if (!manager[kDocument].documentElement) {
 		return;
 	}
@@ -13522,23 +12040,17 @@ function pseudoSubjects(
 	return (manager[kPseudoSubjectTags] = tags);
 }
 
-/**
- * Could any parsed rule give this element a pseudo of this type? A few
- * matches() calls against only the rules that declare the pseudo --
- * instead of building the full pseudo style declaration per element per
- * type just to discover `content` is "none". Over-matching is safe (the
- * full path still decides); the win is the early false for the common
- * document with no pseudo rules beyond the UA button brackets.
- */
+// A few matches() calls instead of building the full pseudo declaration
+// just to discover `content` is "none". Over-matching is safe; the win is
+// the early false for a document with no pseudo rules beyond the UA button
+// brackets.
 function pseudoRuleCouldMatch(
 	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
 ): boolean {
 	if (pseudoType === "::marker") {
-		// Markers exist only on display:list-item boxes: an <li>, a rule
-		// declaring it, or an inline style. Nothing else needs the
-		// computed-display check below.
+		// Markers exist only on display:list-item boxes.
 		return (
 			element.tagName === "LI" ||
 			manager[kListItemRulesExist] ||
@@ -13557,18 +12069,13 @@ function pseudoRuleCouldMatch(
 	return false;
 }
 
-/**
- * Bring one of an element's pseudo-elements into line with the rules: the node
- * it has, or has no longer, and the text that node holds.
- */
 function attachPseudoElementToElementForType(
 	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
 ): void {
-	// No rule can apply and none is attached: skip the counter and style
-	// computations wholesale. (An attached pseudo still takes the full
-	// path so a rule that STOPPED matching removes it.)
+	// An attached pseudo still takes the full path, so a rule that STOPPED
+	// matching removes it.
 	if (
 		!pseudoRuleCouldMatch(manager, element, pseudoType) &&
 		!pseudoElement(element, pseudoType)
@@ -13595,17 +12102,14 @@ function attachPseudoElementToElementForType(
 		}
 	}
 
-	// Compute what the pseudo should hold now; null means "none".
 	const content = shouldCreatePseudoElement(manager, element, pseudoType)
 		? pseudoContentFor(manager, element, pseudoType)
 		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
-	// Pseudo NODE IDENTITY is stable: attaches re-run on every element
-	// addition and attribute invalidation, and layout keys the pseudo's
-	// boxes by instance -- a fresh node per attach strands the mapped one
-	// (an absolutely positioned button's ::after glyph simply vanished).
-	// The slot keeps the node; only its text changes.
+	// Node identity is stable: layout keys the pseudo's boxes by instance,
+	// and a fresh node per attach strands the mapped one (a positioned
+	// button's ::after glyph simply vanished). Only the text changes.
 	if (content === null) {
 		if (existing) {
 			removePseudoElement(manager, element, pseudoType);
@@ -13626,7 +12130,6 @@ function attachPseudoElementToElementForType(
 	manager[kLayoutEngine].invalidate(element);
 }
 
-/** Drop an element's pseudo-element node, and the boxes it held. */
 function removePseudoElement(
 	manager: StyleManager,
 	element: Element,
@@ -13640,7 +12143,6 @@ function removePseudoElement(
 	manager[kLayoutEngine].invalidate(element);
 }
 
-/** The CSSOM interfaces a window exposes as globals. */
 const CSSOM_WINDOW_GLOBALS = {
 	CSSStyleSheet,
 	StyleSheetList,
@@ -13680,11 +12182,8 @@ function setupInvalidationHooks(
 	Object.assign(manager[kWindow], CSSOM_WINDOW_GLOBALS);
 }
 
-/**
- * `[ <custom-ident> <integer>? ]+`: each identifier opens a pair, a number
- * that follows it sets the count, and a counter written without one takes
- * `fallback` -- 0 for a reset, 1 for an increment.
- */
+// Each identifier opens a pair; a counter written without a number takes
+// `fallback` -- 0 for a reset, 1 for an increment.
 function counterPairs(
 	value: string,
 	fallback: number,
@@ -13707,14 +12206,12 @@ function counterPairs(
 	return pairs;
 }
 
-/** Start each counter `counter-reset` names at the value it gives. */
 function parseCounterReset(scope: CounterScope, counterReset: string): void {
 	for (const [name, value] of counterPairs(counterReset, 0)) {
 		scope.counters[name] = value;
 	}
 }
 
-/** Move each counter `counter-increment` names by the step it gives. */
 function parseCounterIncrement(
 	manager: StyleManager,
 	scope: CounterScope,
@@ -13725,7 +12222,6 @@ function parseCounterIncrement(
 	}
 }
 
-/** Move a counter by `increment`, from wherever its current value lives. */
 function incrementCounter(
 	manager: StyleManager,
 	scope: CounterScope,
@@ -13743,11 +12239,8 @@ function incrementCounter(
 	}
 }
 
-/**
- * What the list-item counter stands at for this item: its list's start value
- * plus the items before it, since siblings share one counter and each scope
- * holds only its own element's value.
- */
+// The list's start value plus the items before this one: siblings share one
+// counter, and each scope holds only its own element's value.
 function getListItemCounterValue(
 	manager: StyleManager,
 	element: Element,
@@ -13777,7 +12270,6 @@ function getListItemCounterValue(
 	return currentValue;
 }
 
-/** A counter's value in this scope, or the nearest ancestor scope holding it. */
 function counterValueInScope(
 	scope: CounterScope | undefined,
 	counterName: string,
@@ -13792,21 +12284,11 @@ function counterValueInScope(
 	return 0;
 }
 
-/**
- * A counter's value in the counter style `counter()` named. A bullet style
- * names a glyph and ignores the value; everything else is the ordinal a list
- * marker of the same style would show, so `counter(x, lower-alpha)` and
- * `list-style-type: lower-alpha` agree at every value.
- */
+// A bullet style names a glyph and ignores the value; everything else is
+// the ordinal a list marker of the same style would show.
 function formatCounterValue(value: number, style: string): string {
 	return BULLET_MARKERS[style] ?? formatOrdinal(value, style);
 }
-
-// ---------------------------------------------------------------------------
-// The cascade's half of the DOM interfaces. The DOM's own classes carry the
-// accessors -- element.style, document.styleSheets, adoptedStyleSheets, a
-// style element's sheet -- and answer them through these.
-// ---------------------------------------------------------------------------
 
 /** The element's inline style declaration, one per element for its lifetime. */
 export function inlineStyleOf(
@@ -13882,25 +12364,6 @@ export function styleShadowAttached(root: ShadowRoot): void {
 		.get((root.host as Element).ownerDocument as object)
 		?.registerShadowRoot(root);
 }
-
-// ---------------------------------------------------------------------------
-// Grid values (css-grid-2 §7, §8)
-//
-// The shapes a track list, an area map and a placement take once parsed, and
-// the parsing that produces them from CSS text; the solver takes these and
-// never the text. Lengths keep the Value shape everything else uses, so a
-// percentage track resolves against the grid container the same way a
-// percentage width does. css-tree does the tokenizing: a track list nests
-// functions, bracketed line names and strings, and a hand-rolled splitter
-// gets one of those wrong sooner or later.
-//
-// Two values are REFUSED rather than approximated. `subgrid` (css-grid-2 §9.5)
-// takes its tracks from an ancestor grid, which means a grid's own sizing can
-// no longer be decided from its own box; `masonry` (css-grid-3) is not a grid
-// in its second axis at all. A track list naming either is invalid here, and
-// the property falls back to `none` -- the same answer a browser that does not
-// implement them gives.
-// ---------------------------------------------------------------------------
 
 /**
  * A `<track-breadth>`: one end of a track's sizing function. `flex` is the
@@ -13989,10 +12452,14 @@ export const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
 
 export const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
-/** The refused grid values, kept together so the refusal is one list. */
+// Refused rather than approximated: `subgrid` takes its tracks from an
+// ancestor grid, so a grid's sizing could no longer be decided from its own
+// box, and `masonry` is not a grid in its second axis. A track list naming
+// either falls back to `none`, the answer a browser that does not implement
+// them gives.
 const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
 
-/** A length token in cells: px and ch both measure one cell, and nothing else does. */
+// px and ch both measure one cell, and nothing else does.
 function trackCells(node: CSSNode): number | null {
 	if (node.type !== "Dimension") {
 		return null;
@@ -14009,7 +12476,6 @@ function cellBreadth(cells: number): TrackBreadth {
 	return {kind: "length", value: {unit: "cell", value: cells}};
 }
 
-/** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
 function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
@@ -14043,7 +12509,6 @@ function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 	return null;
 }
 
-/** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
 function parseTrackSize(node: CSSNode): TrackSize | null {
 	if (node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
@@ -14090,23 +12555,15 @@ function parseTrackSize(node: CSSNode): TrackSize | null {
 	return {min: breadth, max: breadth};
 }
 
-/** The identifiers inside a `[a b]` line-name group. */
 function bracketNames(node: CSSNode): string[] {
 	return (node.children?.toArray() ?? [])
 		.filter((child) => child.type === "Identifier")
 		.map((child) => child.name ?? "");
 }
 
-/**
- * The grid values already parsed, by the text they were parsed from.
- *
- * Same argument as the grammar memo above: a track list is written once in a
- * stylesheet and computed onto every element the rule matches, so layout asks
- * for the same handful of strings over and over. The parsers are pure, and
- * what they return is read and never written -- the solver already shares one
- * EMPTY_TRACK_LIST and one AUTO_TRACK across every node it lays out -- so one
- * parse can answer every element that declares it.
- */
+// A track list is written once and computed onto every element the rule
+// matches; the parsers are pure and their results read-only, so one parse
+// answers every element that declares it.
 const parsedGridValues = new Map<string, unknown>();
 
 function memoizeGridValue<T>(
