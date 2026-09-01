@@ -23,15 +23,8 @@
 
 import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {
-	Document as DOMDocumentClass,
-	HTMLElement as DOMHTMLElement,
-	HTMLLinkElement as DOMHTMLLinkElement,
-	HTMLStyleElement as DOMHTMLStyleElement,
-	SVGElement as DOMSVGElement,
-	ShadowRoot as DOMShadowRoot,
 	getMount,
 	flushLayout,
-	observeTree,
 	type Document as DOMDocument,
 	flatParentElement,
 	getShadowRoot,
@@ -13812,98 +13805,76 @@ function formatCounterValue(value: number, style: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The cascade's half of the DOM interfaces, defined on the DOM's own
-// prototypes once, at load: `element.style`, `document.styleSheets`,
-// `adoptedStyleSheets`, and the `sheet` accessors.
+// The cascade's half of the DOM interfaces. The DOM's own classes carry the
+// accessors -- element.style, document.styleSheets, adoptedStyleSheets, a
+// style element's sheet -- and answer them through these.
 // ---------------------------------------------------------------------------
 
-for (const prototype of [DOMHTMLElement.prototype, DOMSVGElement.prototype]) {
-	Object.defineProperty(prototype, "style", {
-		get(this: Element) {
-			let style = inlineStyles.get(this);
-			if (!style) {
-				style = new CSSStyleProperties({element: this});
-				inlineStyles.set(this, style);
-			}
-			return style;
-		},
-		set(this: Element, value: unknown) {
-			(this as HTMLElement).style.cssText = value == null ? "" : `${value}`;
-		},
-		configurable: true,
-		enumerable: true,
-	});
+/** The element's inline style declaration, one per element for its lifetime. */
+export function inlineStyleOf(
+	element: Element,
+): globalThis.CSSStyleDeclaration {
+	let style = inlineStyles.get(element);
+	if (!style) {
+		style = new CSSStyleProperties({element});
+		inlineStyles.set(element, style);
+	}
+	return style as unknown as globalThis.CSSStyleDeclaration;
 }
 
-for (const prototype of [DOMDocumentClass.prototype, DOMShadowRoot.prototype]) {
-	Object.defineProperty(prototype, "styleSheets", {
-		get(this: Document | ShadowRoot) {
-			const sheets = declaredStyleSheets(this);
-			const list = new StyleSheetList(sheets);
-			syncIndexed(list);
-			return list;
-		},
-		configurable: true,
-		enumerable: true,
-	});
-	Object.defineProperty(prototype, "adoptedStyleSheets", {
-		get(this: Node) {
-			let list = adoptedSheets.get(this);
-			if (!list) {
-				adoptedSheets.set(this, (list = []));
-			}
-			return observableAdopted(this, list);
-		},
-		set(this: Node, sheets: unknown) {
-			adopt(this, sheets);
-			managerForTree(this)?.refreshStylesheets();
-		},
-		configurable: true,
-		enumerable: true,
-	});
+/** The sheets a tree declares, as the list document.styleSheets answers. */
+export function styleSheetsOf(
+	tree: Document | ShadowRoot,
+): globalThis.StyleSheetList {
+	const list = new StyleSheetList(declaredStyleSheets(tree));
+	syncIndexed(list);
+	return list as unknown as globalThis.StyleSheetList;
 }
 
-Object.defineProperty(DOMHTMLStyleElement.prototype, "sheet", {
-	get(this: Element) {
-		// A style element outside a tree has no sheet, as in a browser.
-		return this.parentNode ? sheetFor(this) : null;
-	},
-	configurable: true,
-	enumerable: true,
-});
+/** The tree's adopted sheets, as the observable array the setter replaces. */
+export function adoptedStyleSheetsOf(tree: Node): globalThis.CSSStyleSheet[] {
+	let list = adoptedSheets.get(tree);
+	if (!list) {
+		adoptedSheets.set(tree, (list = []));
+	}
+	return observableAdopted(tree, list) as unknown as globalThis.CSSStyleSheet[];
+}
 
-// Nothing is fetched over a terminal's document, so a link never resolves to
-// a sheet.
-Object.defineProperty(DOMHTMLLinkElement.prototype, "sheet", {
-	get() {
-		return null;
-	},
-	configurable: true,
-	enumerable: true,
-});
+export function adoptStyleSheets(tree: Node, sheets: unknown): void {
+	adopt(tree, sheets);
+	managerForTree(tree)?.refreshStylesheets();
+}
 
-// The cascade is the realm's style engine: it hears the DOM's own change
-// algorithms, so classList, className and the parser invalidate as
-// setAttribute does, and a declarative shadow root registers the moment the
-// parser attaches it.
-observeTree({
-	attributeChanged(element, localName) {
-		if (
-			localName === "style" ||
-			localName === "class" ||
-			localName === "id"
-		) {
-			documentManagers
-				.get(element.ownerDocument as object)
-				?.[kInvalidateElement](element as unknown as Element);
-		}
-	},
-	shadowAttached(root) {
+/** A style element's sheet: none outside a tree, as in a browser. */
+export function styleElementSheet(
+	element: Element,
+): globalThis.CSSStyleSheet | null {
+	return element.parentNode ?
+			(sheetFor(element) as unknown as globalThis.CSSStyleSheet) :
+		null;
+}
+
+/**
+ * The cascade hears the DOM's own change algorithms, so classList,
+ * className and the parser invalidate as setAttribute does.
+ */
+export function styleAttributeChanged(
+	element: Element,
+	localName: string,
+): void {
+	if (localName === "style" || localName === "class" || localName === "id") {
 		documentManagers
-			.get((root.host as unknown as Element).ownerDocument as object)
-			?.registerShadowRoot(root as unknown as ShadowRoot);
-	},
-});
+			.get(element.ownerDocument as object)
+			?.[kInvalidateElement](element);
+	}
+}
+
+/** A shadow root registers with the cascade the moment it attaches. */
+export function styleShadowAttached(root: ShadowRoot): void {
+	documentManagers
+		.get((root.host as Element).ownerDocument as object)
+		?.registerShadowRoot(root);
+}
 
 // ---------------------------------------------------------------------------
 // Grid values (css-grid-2 §7, §8)

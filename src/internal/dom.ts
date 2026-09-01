@@ -57,7 +57,16 @@ import {
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
 import type {LayoutEngine} from "./layout.js";
-import type {StyleManager} from "./cssom.js";
+import {
+	type StyleManager,
+	adoptStyleSheets,
+	adoptedStyleSheetsOf,
+	inlineStyleOf,
+	styleAttributeChanged,
+	styleElementSheet,
+	styleShadowAttached,
+	styleSheetsOf,
+} from "./cssom.js";
 import type {TerminalExchange} from "./exchange.js";
 import type {Screen} from "./screen.js";
 
@@ -8329,36 +8338,8 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
  * orders them: an element's own steps read the element, and what they must read
  * is the tree the rest of the world will see.
  */
-type AttributeChangeListener = (element: Element, localName: string) => void;
-const attributeChangeListeners: AttributeChangeListener[] = [];
-
 function notifyAttributeChange(element: Element, localName: string): void {
-	for (const listener of attributeChangeListeners) {
-		listener(element, localName);
-	}
-}
-
-const shadowAttachedListeners: Array<(root: ShadowRoot) => void> = [];
-
-/**
- * What a style engine must hear from the tree, realm-wide and synchronous:
- * the callbacks fire at the change algorithms themselves, so a read that
- * follows a write sees a world the observer has already seen. Attribute
- * changes arrive from any writer -- setAttribute, classList, className,
- * toggleAttribute, the parser -- and shadow roots the moment they attach,
- * declarative ones included.
- */
-interface TreeObserver {
-	attributeChanged(element: Element, localName: string): void;
-	shadowAttached(root: ShadowRoot): void;
-}
-
-/** Register the realm's style engine on the tree's change algorithms. */
-export function observeTree(observer: TreeObserver): void {
-	attributeChangeListeners.push((element, localName) =>
-		observer.attributeChanged(element, localName),
-	);
-	shadowAttachedListeners.push((root) => observer.shadowAttached(root));
+	styleAttributeChanged(element, localName);
 }
 
 const kAttributeChanged = Symbol("attribute change steps");
@@ -9758,6 +9739,15 @@ function innermostActive(document: Document): Element | null {
 const alreadyConstructed = Symbol("already constructed");
 
 export class HTMLElement extends Element {
+	/** The element's inline style, which the cascade keeps per element. */
+	get style(): globalThis.CSSStyleDeclaration {
+		return inlineStyleOf(this);
+	}
+
+	set style(value: unknown) {
+		inlineStyleOf(this).cssText = value == null ? "" : `${value}`;
+	}
+
 	// Installed on the prototype, where the mount that measures them is.
 	declare readonly offsetWidth: number;
 	declare readonly offsetHeight: number;
@@ -10616,7 +10606,16 @@ Object.defineProperty(HTMLUnknownElement.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class SVGElement extends Element {}
+export class SVGElement extends Element {
+	/** The element's inline style, which the cascade keeps per element. */
+	get style(): globalThis.CSSStyleDeclaration {
+		return inlineStyleOf(this);
+	}
+
+	set style(value: unknown) {
+		inlineStyleOf(this).cssText = value == null ? "" : `${value}`;
+	}
+}
 
 Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
 	value: "SVGElement",
@@ -11654,6 +11653,18 @@ const kAvailableToInternals = Symbol("available to element internals");
  * retargeting, the composed path -- work across it without a second concept.
  */
 export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
+	get styleSheets(): globalThis.StyleSheetList {
+		return styleSheetsOf(this);
+	}
+
+	get adoptedStyleSheets(): globalThis.CSSStyleSheet[] {
+		return adoptedStyleSheetsOf(this);
+	}
+
+	set adoptedStyleSheets(value: globalThis.CSSStyleSheet[]) {
+		adoptStyleSheets(this, value);
+	}
+
 	[kShadowMode]?: "open" | "closed";
 	[kUAInternal]?: boolean;
 	[kDelegatesFocus]?: boolean;
@@ -11822,11 +11833,7 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 
 /** The ParentNode mixin and onslotchange, installed below. */
 export interface ShadowRoot
-	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {
-	/** Installed by the cascade, which is what holds a root's sheets. */
-	readonly styleSheets: globalThis.StyleSheetList;
-	adoptedStyleSheets: globalThis.CSSStyleSheet[];
-}
+	extends Pick<globalThis.ShadowRoot, ParentNodeMixin | "onslotchange"> {}
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -11904,9 +11911,7 @@ function attachShadowRoot(
 	shadow[kSerializable] = serializable;
 	shadow[kRegistry] = registry;
 	element[kShadowRoot] = shadow;
-	for (const listener of shadowAttachedListeners) {
-		listener(shadow);
-	}
+	styleShadowAttached(shadow);
 }
 
 /**
@@ -17145,14 +17150,9 @@ export interface HTMLStyleElement
 	> {}
 
 export class HTMLStyleElement extends HTMLElement {
-	/**
-	 * A document with no cascade behind it parses no CSS, and so holds no
-	 * sheet. The cascade replaces this accessor with one that answers the
-	 * element's real CSSStyleSheet, which is what an author reaches through
-	 * `styleEl.sheet`.
-	 */
+	/** The sheet the element's text parses to; none outside a tree. */
 	get sheet(): CSSStyleSheet | null {
-		return null;
+		return styleElementSheet(this);
 	}
 
 	get disabled(): boolean {
@@ -22654,30 +22654,16 @@ export class Document extends Node implements globalThis.Document {
 		);
 	}
 
-	/*
-	 * The cascade holds a document's sheets and this module cannot reach it,
-	 * so these throw rather than answer an empty list a caller would believe.
-	 */
-
 	get styleSheets(): globalThis.StyleSheetList {
-		throw domError(
-			"NotSupportedError",
-			"Read the sheets through the style manager",
-		);
+		return styleSheetsOf(this);
 	}
 
 	get adoptedStyleSheets(): globalThis.CSSStyleSheet[] {
-		throw domError(
-			"NotSupportedError",
-			"Read the sheets through the style manager",
-		);
+		return adoptedStyleSheetsOf(this);
 	}
 
-	set adoptedStyleSheets(_value: globalThis.CSSStyleSheet[]) {
-		throw domError(
-			"NotSupportedError",
-			"Read the sheets through the style manager",
-		);
+	set adoptedStyleSheets(value: globalThis.CSSStyleSheet[]) {
+		adoptStyleSheets(this, value);
 	}
 
 	/*

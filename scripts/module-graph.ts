@@ -125,7 +125,6 @@ const DOM_DOORS = [
 	"matchesCompiled",
 	"matchesSelector",
 	"mount",
-	"observeTree",
 	"parkFieldCaret",
 	"parseHTMLDocument",
 	"parseSelectorList",
