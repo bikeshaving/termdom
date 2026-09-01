@@ -51,7 +51,6 @@ const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
 const kAttachBegun = Symbol("attachBegun");
-
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 const kLifecycle = Symbol("lifecycle");
 

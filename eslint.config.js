@@ -32,10 +32,8 @@ export default [
 				},
 			],
 			// Inside each group, statics first and public before symbol-keyed; a
-			// helper one class uses sits below it; a symbol is declared before
-			// its first use.
+			// symbol is declared before its first use.
 			"termdom/member-visibility-order": "error",
-			"termdom/helper-below-class": "error",
 			"termdom/symbol-before-use": "error",
 			"termdom/import-order": "error",
 			// The names inside one import's braces read in a fixed order; the

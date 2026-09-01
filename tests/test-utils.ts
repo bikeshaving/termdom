@@ -4,9 +4,7 @@
  */
 
 import {EventEmitter} from "events";
-
 import xtermPkg from "@xterm/headless";
-
 import {
 	type ProcessLike,
 	type TerminalTransport,
@@ -14,13 +12,14 @@ import {
 	type TTYReadStream,
 	type TTYWriteStream,
 } from "../src/index.js";
-const {Terminal} = xtermPkg;
-type Terminal = InstanceType<typeof Terminal>;
-import {type ColorDepth, Screen} from "../src/internal/screen.js";
+import {type ColorDepth} from "../src/internal/exchange.js";
+import {Screen} from "../src/internal/screen.js";
 import {stringWidth} from "../src/internal/text.js";
 import {existsSync, mkdirSync, writeFileSync} from "fs";
 import {join} from "path";
 
+const {Terminal} = xtermPkg;
+type Terminal = InstanceType<typeof Terminal>;
 /**
  * The width tables, as the mock terminal's own measure.
  *

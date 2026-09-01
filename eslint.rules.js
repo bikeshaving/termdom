@@ -78,62 +78,6 @@ const memberVisibilityOrder = {
 	},
 };
 
-function enclosingTopLevel(source, node) {
-	let statement = node;
-	while (statement.parent && statement.parent.type !== "Program") {
-		statement = statement.parent;
-	}
-	return statement;
-}
-
-const helperBelowClass = {
-	meta: {
-		type: "layout",
-		schema: [],
-		messages: {
-			below: "Only {{className}} uses {{name}}: define it after the class, not before.",
-		},
-	},
-	create(context) {
-		const source = context.sourceCode;
-		return {
-			"Program > FunctionDeclaration"(node) {
-				if (!node.id) {
-					return;
-				}
-				const [variable] = source.getDeclaredVariables(node);
-				if (!variable) {
-					return;
-				}
-				let owner = null;
-				for (const reference of variable.references) {
-					const statement = enclosingTopLevel(source, reference.identifier);
-					if (statement === node) {
-						continue;
-					}
-					if (statement.type !== "ClassDeclaration") {
-						return;
-					}
-					if (owner !== null && owner !== statement) {
-						return;
-					}
-					owner = statement;
-				}
-				if (owner !== null && node.range[0] < owner.range[0]) {
-					context.report({
-						node: node.id,
-						messageId: "below",
-						data: {
-							name: node.id.name,
-							className: owner.id?.name ?? "the class",
-						},
-					});
-				}
-			},
-		};
-	},
-};
-
 const symbolBeforeUse = {
 	meta: {
 		type: "layout",
@@ -296,7 +240,6 @@ export default {
 	rules: {
 		"import-order": importOrder,
 		"member-visibility-order": memberVisibilityOrder,
-		"helper-below-class": helperBelowClass,
 		"symbol-before-use": symbolBeforeUse,
 	},
 };
