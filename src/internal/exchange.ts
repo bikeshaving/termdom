@@ -20,6 +20,8 @@
  */
 
 import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
+import {getMount} from "./dom.js";
+import type {EventHandler} from "./input.js";
 
 /* -------------------------------------------------- the transport contract */
 
@@ -711,40 +713,13 @@ export class WireReader {
 
 /* ------------------------------------------------------------ the exchange */
 
-/** What the exchange tells the engine, as it works out what arrived. */
+/**
+ * What only the engine can answer about the terminal's side of the
+ * conversation: a resize, which it debounces into a reflow, and the
+ * transport closing, which ends it.
+ */
 interface ExchangeHandlers {
-	/** One chunk's contiguous keystrokes, as the reader decoded them. */
-	onKeys(keys: WireKey[]): void;
-	onMouse(button: number, x: number, y: number, release: boolean): void;
-	onPaste(text: string): void;
-	/**
-	 * The terminal resized. A notification and nothing more: the transport's
-	 * `cols`/`rows` are the value, and by the time this runs they answer with
-	 * the new one.
-	 */
 	onResize(): void;
-	/** Ctrl-C with no listener claiming it: the default action is window.close(). */
-	onCloseRequest(): void;
-	/** Where the region's start row is, once cursor detection lands. */
-	onCommandStart(screenTop: number): void;
-	/**
-	 * The terminal answered that it reorders bidirectional text itself, so the
-	 * renderer must hand it logical order.
-	 */
-	onTerminalReordersText(): void;
-	/**
-	 * The terminal reported an advance the width tables did not predict. Every
-	 * width answered so far may have been answered wrongly, so the rows holding
-	 * that cluster need repainting against the corrected measurement.
-	 */
-	onWidthCorrection(): void;
-	/**
-	 * A cluster the margin keeps turning away needs a frame to carry its probe
-	 * train, and the document is not producing one. Repaint the least that
-	 * gives the train a row to stand on.
-	 */
-	onWidthStarvation(): void;
-	/** The transport's `closed` settled: the terminal is gone. */
 	onClosed(info: TerminalCloseInfo): void;
 }
 
@@ -776,6 +751,8 @@ const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kHandlers = Symbol("handlers");
+const kDocument = Symbol("document");
+const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
 const kReader = Symbol("reader");
@@ -843,6 +820,8 @@ export class TerminalExchange {
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kHandlers]: ExchangeHandlers;
+	declare [kDocument]: Document;
+	declare [kInput]: EventHandler | null;
 
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
 	declare [kReader]: ReadableStreamDefaultReader<string> | null;
@@ -980,6 +959,7 @@ export class TerminalExchange {
 
 	constructor(deps: {
 		transport: TerminalTransport;
+		document: Document;
 		handlers: ExchangeHandlers;
 	}) {
 		const interactive = deps.transport.interactive;
@@ -1064,6 +1044,8 @@ export class TerminalExchange {
 		// there is an anchor to find; a terminal that answers nothing has none.
 		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
 		this[kHandlers] = deps.handlers;
+		this[kDocument] = deps.document;
+		this[kInput] = null;
 	}
 
 	/**
@@ -1184,14 +1166,15 @@ export class TerminalExchange {
 	}
 
 	/**
-	 * Begin the conversation: acquire the readers and route input, resizes and
-	 * closure to the engine's handlers. Idempotent.
+	 * Begin the conversation: acquire the readers, and route what arrives --
+	 * input to its interpreter, resizes and closure to the engine. Idempotent.
 	 */
-	start(): void {
+	start(input: EventHandler): void {
 		if (this[kStarted]) {
 			return;
 		}
 		this[kStarted] = true;
+		this[kInput] = input;
 
 		this[kReader] = this[kTransport].readable.getReader();
 		void readLoop(this, this[kReader]);
@@ -1277,7 +1260,7 @@ export class TerminalExchange {
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			this[kHandlers].onTerminalReordersText();
+			getMount(this[kDocument])?.layout.adoptTerminalReordering();
 		}
 	}
 
@@ -1345,8 +1328,13 @@ export class TerminalExchange {
 			timeoutMs: 1000,
 			sequence: this[kDsrSequence]++,
 			read: ({row}) => {
-				// Convert 1-based terminal row to the 0-based anchor.
-				this[kHandlers].onCommandStart(row - 1);
+				// The 1-based terminal row is the 0-based anchor: content
+				// shifts up to the terminal top from the command start.
+				const screen = getMount(this[kDocument])?.screen;
+				if (screen !== undefined) {
+					screen.documentTop = row - 1;
+					screen.anchorScrollTop = 1 - row;
+				}
 				this[kHasDetectedCommandStart] = true;
 				return row;
 			},
@@ -1556,7 +1544,11 @@ function requestStarvationFrame(session: TerminalExchange): void {
 		if (session[kDisposed] || session[kWidthStarved].size === 0) {
 			return;
 		}
-		session[kHandlers].onWidthStarvation();
+		const mount = getMount(session[kDocument]);
+		if (mount !== undefined) {
+			mount.screen.rideProbeTrain();
+			mount.render();
+		}
 	}, TerminalExchange[kWidthStarvationWait]);
 }
 
@@ -1665,7 +1657,17 @@ function settleWidthProbe(
 	session[kWidthSettled].add(probe.cluster);
 	session[kWidthDrift] += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		session[kHandlers].onWidthCorrection();
+		// A cluster is wider or narrower on this terminal than the tables
+		// said, so every column after one on a painted row is off by the
+		// difference. The previous frame described a screen that was never
+		// drawn: drop it and paint the region again from the corrected
+		// measurements.
+		const mount = getMount(session[kDocument]);
+		if (mount !== undefined) {
+			mount.layout.invalidateTextMeasurement();
+			mount.screen.repaintAll();
+			mount.render();
+		}
 	}
 }
 
@@ -1730,9 +1732,15 @@ async function resizeLoop(
  */
 function route(session: TerminalExchange, chunk: string): void {
 	let keys: WireKey[] = [];
+	// Input dirties the frame wholesale: reactive pseudo-state and the
+	// selection move without a mutation record, and no cheaper answer than
+	// the paint exists.
+	const mount = getMount(session[kDocument]);
+	const input = session[kInput]!;
 	const flushKeys = () => {
 		if (keys.length > 0) {
-			session[kHandlers].onKeys(keys);
+			mount?.screen.invalidate();
+			input.handleKeys(keys);
 			keys = [];
 		}
 	};
@@ -1745,23 +1753,20 @@ function route(session: TerminalExchange, chunk: string): void {
 				// decodes to the letter with the control modifier.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
-					session[kHandlers].onCloseRequest();
+					session[kDocument].defaultView!.close();
 					break;
 				}
 				keys.push(item);
 				break;
 			case "mouse":
 				flushKeys();
-				session[kHandlers].onMouse(
-					item.button,
-					item.col,
-					item.row,
-					item.release,
-				);
+				mount?.screen.invalidate();
+				input.handleMouseReport(item.button, item.col, item.row, item.release);
 				break;
 			case "paste":
 				flushKeys();
-				session[kHandlers].onPaste(item.text);
+				mount?.screen.invalidate();
+				input.handlePaste(item.text);
 				break;
 			default:
 				flushKeys();

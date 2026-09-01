@@ -384,7 +384,7 @@ export class TermDOM {
 				return;
 			}
 
-			this[kExchange].start();
+			this[kExchange].start(this[kEventHandler]);
 			if (this[kTransport].interactive) {
 				// Bracketed paste on: pasted text arrives fenced, one insertion.
 				this[kExchange].setMode("bracketedPaste", true);
@@ -590,58 +590,11 @@ function buildExchange(
 ): TerminalExchange {
 	return new TerminalExchange({
 		transport: termdom[kTransport],
+		document: termdom.document,
 		handlers: {
-			// Input dirties the journal wholesale. Reactive pseudo-state
-			// (:focus, :hover, :active) and the document selection move
-			// without a mutation record, and no cheaper answer than the paint
-			// exists. A keystroke that changes nothing costs one culled paint
-			// and an empty diff, which is what it is worth.
-			onKeys: (keys) => {
-				termdom[kScreen].invalidate();
-				termdom[kEventHandler].handleKeys(keys);
-			},
-			onMouse: (button, x, y, release) => {
-				termdom[kScreen].invalidate();
-				termdom[kEventHandler].handleMouseReport(button, x, y, release);
-			},
-			onPaste: (text) => {
-				termdom[kScreen].invalidate();
-				termdom[kEventHandler].handlePaste(text);
-			},
 			onResize: () => {
 				scheduleResize(termdom);
 			},
-			// Ctrl-C's default action is the DOM's own way out: close the
-			// window. An app that wants different behavior handles the
-			// keydown; this is what happens when nobody does.
-			onCloseRequest: () => {
-				termdom.window.close();
-			},
-			onCommandStart: (screenTop) => {
-				termdom[kScreen].documentTop = screenTop;
-				// Content shifts up to the terminal top from the command start.
-				termdom[kScreen].anchorScrollTop = -screenTop;
-			},
-			onTerminalReordersText: () => {
-				termdom[kLayoutEngine].adoptTerminalReordering();
-			},
-			// A cluster is wider or narrower on this terminal than the
-			// tables said, so every column after one on a painted row is
-			// off by the difference. The previous frame described a screen
-			// that was never drawn: drop it and paint the region again from
-			// the corrected measurements.
-			onWidthCorrection: () => {
-				termdom[kLayoutEngine].invalidateTextMeasurement();
-				termdom[kScreen].repaintAll();
-				void render(termdom);
-			},
-			onWidthStarvation: () => {
-				termdom[kScreen].rideProbeTrain();
-				void render(termdom);
-			},
-			// The terminal went away (hangup, disconnect, process exit):
-			// clean up this side. The transport is already closing; there
-			// is nothing to close back.
 			onClosed: () => {
 				termdom.dispose();
 			},
