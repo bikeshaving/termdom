@@ -4598,7 +4598,16 @@ const kLiveLists = Symbol("live collections this node is the root of");
 
 const kWideLists = Symbol("live collections over a whole document");
 
+/**
+ * The documents in which some node holds a live collection. A collection is
+ * registered for its owner's lifetime, so this only ever grows -- and a
+ * change in a document that never registered one skips the climb to the root
+ * that would find nothing.
+ */
+const heldListDocuments = new WeakSet<Document>();
+
 function registerMaterialized(collection: Materializable, owner: Node): void {
+	heldListDocuments.add(owner[kDocument]!);
 	const held = owner[kLiveLists]!;
 	if (held === null) {
 		owner[kLiveLists] = new Set([collection]);
@@ -4617,6 +4626,21 @@ function registerWide(collection: Materializable, document: Document): void {
 }
 
 const kParent = Symbol("parent");
+/**
+ * Whether the node's shadow-including root is a document. Kept as a flag
+ * because the answer is asked constantly and the climb that derives it is
+ * memory-bound on a deep tree: insertion sets it over the inserted subtree
+ * from the parent's, removal clears it, and a move never changes it.
+ */
+const kConnected = Symbol("connected");
+/**
+ * The root of the tree the node is in: the node itself until it is inserted
+ * somewhere, then the parent's root, back to itself when removed. Kept for
+ * the same reason as the flag above: the climb is asked for on every
+ * insertion, and the walks insertion and removal already make over the
+ * subtree are where it is kept true.
+ */
+const kTreeRoot = Symbol("tree root");
 
 /**
  * Record a change to a tree's shape at `point`, and resynchronize what it
@@ -4648,13 +4672,15 @@ function shapeChanged(
 	changed: readonly Node[] | null,
 	added: boolean,
 ): void {
-	for (let node: Node | null = point; node !== null; node = node[kParent]!) {
-		const held = node[kLiveLists]!;
-		if (held === null) {
-			continue;
-		}
-		for (const collection of held) {
-			shapeSyncMethod.call(collection, point, changed, added);
+	if (heldListDocuments.has(point[kDocument]!)) {
+		for (let node: Node | null = point; node !== null; node = node[kParent]!) {
+			const held = node[kLiveLists]!;
+			if (held === null) {
+				continue;
+			}
+			for (const collection of held) {
+				shapeSyncMethod.call(collection, point, changed, added);
+			}
 		}
 	}
 	const wide = point[kDocument]![kWideLists]!;
@@ -4694,13 +4720,17 @@ function syncAttributeCollections(element: Element, localName: string): void {
 			syncMethod.call(list);
 		}
 	}
-	for (let node: Node | null = element; node !== null; node = node[kParent]!) {
-		const held = node[kLiveLists]!;
-		if (held === null) {
-			continue;
-		}
-		for (const collection of held) {
-			collection[kAttributeSync]!(element, localName);
+	if (heldListDocuments.has(element[kDocument]!)) {
+		for (let node: Node | null = element;
+			node !== null;
+			node = node[kParent]!) {
+			const held = node[kLiveLists]!;
+			if (held === null) {
+				continue;
+			}
+			for (const collection of held) {
+				collection[kAttributeSync]!(element, localName);
+			}
 		}
 	}
 	const wide = element[kDocument]![kWideLists]!;
@@ -4755,6 +4785,8 @@ const kDocumentURL = Symbol("document URL");
 export class Node extends EventTarget implements globalThis.Node {
 	[kRegistry]?: CustomElementRegistry | null;
 	[kParent]?: Node | null;
+	[kConnected]?: boolean;
+	[kTreeRoot]?: Node;
 	[kFirstChild]?: Node | null;
 	[kLastChild]?: Node | null;
 	[kPrevious]?: Node | null;
@@ -4793,6 +4825,8 @@ export class Node extends EventTarget implements globalThis.Node {
 		super();
 		this[kRegistry] = null;
 		this[kParent] = null;
+		this[kConnected] = false;
+		this[kTreeRoot] = this;
 		this[kFirstChild] = null;
 		this[kLastChild] = null;
 		this[kPrevious] = null;
@@ -4831,7 +4865,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	}
 
 	get isConnected(): boolean {
-		return shadowIncludingRoot(this).nodeType === DOCUMENT_NODE;
+		return this[kConnected]!;
 	}
 
 	get ownerDocument(): Document | null {
@@ -5174,11 +5208,7 @@ Object.defineProperty(Node.prototype, Symbol.toStringTag, {
 /* --------------------------------------------------------- tree primitives */
 
 function getRoot(node: Node): Node {
-	let current = node;
-	while (current[kParent] !== null) {
-		current = current[kParent]! as Node;
-	}
-	return current;
+	return node[kTreeRoot]!;
 }
 
 function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
@@ -5197,10 +5227,17 @@ function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
  * fragment to its host where one exists.
  */
 function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
-	if (isInclusiveAncestor(ancestor, node)) {
-		return true;
+	let root = node;
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = current[kParent]!
+	) {
+		if (current === ancestor) {
+			return true;
+		}
+		root = current;
 	}
-	const root = getRoot(node);
 	if (root.nodeType === DOCUMENT_FRAGMENT_NODE) {
 		const host = (root as DocumentFragment)[kHost]!;
 		if (host != null) {
@@ -5208,6 +5245,20 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 		}
 	}
 	return false;
+}
+
+/**
+ * Whether a node could sit above another at all: it has children, or hosts
+ * a tree -- a shadow root, or a template's content. A node that does neither
+ * is an ancestor of nothing, and the climb that would prove it is skipped.
+ */
+function canBeAncestor(node: Node): boolean {
+	return (
+		node[kFirstChild] !== null ||
+		(node.nodeType === ELEMENT_NODE &&
+			((node as Element)[kShadowRoot] !== null ||
+				node instanceof HTMLTemplateElement))
+	);
 }
 
 /**
@@ -5388,7 +5439,11 @@ function validateInsertion(
 	) {
 		throw hierarchyRequestError("That parent cannot have children");
 	}
-	if (isHostIncludingInclusiveAncestor(node, parent)) {
+	if (
+		canBeAncestor(node) ?
+				isHostIncludingInclusiveAncestor(node, parent) :
+			node === parent
+	) {
 		throw hierarchyRequestError("A node cannot be inserted into itself");
 	}
 	if (child !== null && child[kParent] !== parent) {
@@ -5649,31 +5704,44 @@ function insertNode(
 	const previousSibling =
 		child !== null ? child[kPrevious]! : parent[kLastChild]!;
 	const document = parent[kDocument]!;
-	const newRoot = getRoot(parent);
+	const connected = parent[kConnected]!;
 	for (const inserted of nodes) {
 		// The inserted node was its own tree's root; whatever was registered
 		// under it belongs to the tree it is joining.
 		const carriedRanges = liveRangesByRoot.get(inserted);
-		if (carriedRanges !== undefined && inserted !== newRoot) {
-			liveRangesByRoot.delete(inserted);
-			const set = liveRangesByRoot.get(newRoot);
-			if (set === undefined) {
-				liveRangesByRoot.set(newRoot, carriedRanges);
-			} else {
-				for (const range of carriedRanges) {
-					set.add(range);
+		const carriedIterators = nodeIteratorsByRoot.get(inserted);
+		if (carriedRanges !== undefined || carriedIterators !== undefined) {
+			const newRoot = getRoot(parent);
+			if (carriedRanges !== undefined && inserted !== newRoot) {
+				liveRangesByRoot.delete(inserted);
+				const set = liveRangesByRoot.get(newRoot);
+				if (set === undefined) {
+					liveRangesByRoot.set(newRoot, carriedRanges);
+				} else {
+					for (const range of carriedRanges) {
+						set.add(range);
+					}
 				}
 			}
-		}
-		const carriedIterators = nodeIteratorsByRoot.get(inserted);
-		if (carriedIterators !== undefined && inserted !== newRoot) {
-			nodeIteratorsByRoot.delete(inserted);
-			for (const iterator of carriedIterators) {
-				registerNodeIterator(newRoot, iterator);
+			if (carriedIterators !== undefined && inserted !== newRoot) {
+				nodeIteratorsByRoot.delete(inserted);
+				for (const iterator of carriedIterators) {
+					registerNodeIterator(newRoot, iterator);
+				}
 			}
 		}
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
+		// The inserted tree's root is the parent's now. The walk follows the
+		// light tree only: a shadow tree under it keeps its own root.
+		const treeRoot = parent[kTreeRoot]!;
+		for (
+			let joined: Node | null = inserted;
+			joined !== null;
+			joined = nextInTree(joined, inserted)
+		) {
+			joined[kTreeRoot] = treeRoot;
+		}
 		const shadow =
 			parent.nodeType === ELEMENT_NODE ?
 					(parent as Element)[kShadowRoot]! :
@@ -5691,9 +5759,9 @@ function insertNode(
 			}
 		}
 		if (
-			isShadowRoot(getRoot(parent)) &&
 			parent instanceof HTMLSlotElement &&
-			parent[kAssignedNodes]!.length === 0
+			parent[kAssignedNodes]!.length === 0 &&
+			isShadowRoot(getRoot(parent))
 		) {
 			signalASlotChange(parent);
 		}
@@ -5704,8 +5772,9 @@ function insertNode(
 			assignSlottablesForTree(getRoot(inserted));
 		}
 		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
+			descendant[kConnected] = connected;
 			descendant[kInsertionSteps]!();
-			if (!descendant.isConnected) {
+			if (!connected) {
 				continue;
 			}
 			if (descendant.nodeType !== ELEMENT_NODE) {
@@ -5929,6 +5998,13 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const oldPreviousSibling = node[kPrevious]!;
 	const oldNextSibling = node[kNext]!;
 	unlinkChild(node);
+	for (
+		let removed: Node | null = node;
+		removed !== null;
+		removed = nextInTree(removed, node)
+	) {
+		removed[kTreeRoot] = node;
+	}
 	const assignedSlot = isSlottable(node) ?
 			(node as Slottable)[kAssignedSlot]! :
 		null;
@@ -5964,8 +6040,9 @@ function removeNode(node: Node, suppressObservers = false): void {
 			}
 		}
 	}
-	const parentWasConnected = parent.isConnected;
+	const parentWasConnected = parent[kConnected]!;
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+		descendant[kConnected] = false;
 		descendant[kRemovingSteps]!(parent);
 		if (
 			parentWasConnected &&
@@ -11490,12 +11567,16 @@ function definitionRegistry(
 function upgradeDefinitionFor(
 	element: Element,
 ): CustomElementDefinition | null {
-	const root = getRoot(element);
-	if (
-		root.nodeType === DOCUMENT_FRAGMENT_NODE &&
-		(root as DocumentFragment)[kHost]! instanceof HTMLTemplateElement
-	) {
-		return null;
+	// A template's contents never upgrade. A connected element's root is a
+	// document, so only a detached one has to climb to find out.
+	if (!element[kConnected]) {
+		const root = getRoot(element);
+		if (
+			root.nodeType === DOCUMENT_FRAGMENT_NODE &&
+			(root as DocumentFragment)[kHost]! instanceof HTMLTemplateElement
+		) {
+			return null;
+		}
 	}
 	return lookUpCustomElementDefinition(
 		element[kRegistry]!,
@@ -11811,6 +11892,7 @@ function attachShadowRoot(
 	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = element[kDocument]!;
 	shadow[kHost] = element;
+	shadow[kConnected] = element[kConnected]!;
 	shadow[kShadowMode] = mode;
 	shadow[kDelegatesFocus] = delegatesFocus;
 	const state = element[kCustomState]!;
@@ -11844,6 +11926,7 @@ function attachUAShadowRoot<T>(target: Element): T {
 	const shadow = constructInternal(() => new ShadowRoot());
 	shadow[kDocument] = host[kDocument]!;
 	shadow[kHost] = host;
+	shadow[kConnected] = host[kConnected]!;
 	shadow[kShadowMode] = "closed";
 	shadow[kUAInternal] = true;
 	shadow[kRegistry] = globalCustomElements;
@@ -13371,7 +13454,7 @@ export function isModalDialog(node: globalThis.Node): boolean {
 
 /** Whether a node's root is a document, which is what connected means. */
 function isConnectedNode(node: Node): boolean {
-	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
+	return node[kConnected]!;
 }
 
 interface HTMLDirectoryElement
@@ -21456,6 +21539,7 @@ export class Document extends Node implements globalThis.Document {
 
 	constructor(...args: ConstructorParameters<typeof Node>) {
 		super(...args);
+		this[kConnected] = true;
 		this[kDocumentURL] = "about:blank";
 		this[kMode] = "no-quirks";
 		this[kType] = "xml";
