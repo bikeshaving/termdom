@@ -4216,7 +4216,7 @@ const kStructureSync = Symbol(
 );
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
-interface Materializable {
+interface LiveCollection {
 	[kSync]?(): void;
 	[kStructureSync]?(
 		point: Node,
@@ -4243,7 +4243,7 @@ const kLiveLists = Symbol("live collections this node is the root of");
 // the ancestor climb.
 const heldListDocuments = new WeakSet<Document>();
 
-function registerMaterialized(collection: Materializable, owner: Node): void {
+function registerLiveCollection(collection: LiveCollection, owner: Node): void {
 	heldListDocuments.add(owner[kDocument]!);
 	const held = owner[kLiveLists]!;
 	if (held === null) {
@@ -4254,7 +4254,7 @@ function registerMaterialized(collection: Materializable, owner: Node): void {
 }
 
 function registerDocumentWide(
-	collection: Materializable,
+	collection: LiveCollection,
 	document: Document,
 ): void {
 	const held = document[kDocumentWideLists]!;
@@ -4427,7 +4427,7 @@ export class Node extends EventTarget implements globalThis.Node {
 	[kNext]?: Node | null;
 	[kDocument]?: Document;
 	[kChildNodes]?: NodeList | null;
-	[kLiveLists]?: Set<Materializable> | null;
+	[kLiveLists]?: Set<LiveCollection> | null;
 	[kSerial]?: number;
 	[kRegisteredObservers]?: RegisteredObserver[] | null;
 
@@ -6197,7 +6197,7 @@ const anyAttribute = Symbol("any attribute");
 // collection. The own properties themselves (which indices and names are
 // defined) are what a change resynchronizes, because they are observable
 // without a read.
-abstract class LiveList implements Materializable {
+abstract class LiveList implements LiveCollection {
 	declare [kItems]?: Node[];
 	declare [kDefined]?: number;
 	declare [kRegistered]?: Node | null;
@@ -6474,7 +6474,7 @@ function ensureList(list: LiveList): Node[] {
 		}
 	} else if (list[kRegistered] === null) {
 		list[kRegistered] = owner;
-		registerMaterialized(list, owner);
+		registerLiveCollection(list, owner);
 	}
 	if (!list[kExact]!) {
 		recomputeList(list);
@@ -20118,7 +20118,7 @@ export class Document extends Node implements globalThis.Document {
 	[kContentType]?: string;
 	[kEncoding]?: string;
 	[kIdMap]?: Map<string, Element[]>;
-	[kDocumentWideLists]?: Set<Materializable> | null;
+	[kDocumentWideLists]?: Set<LiveCollection> | null;
 
 	[kSelection]?: Selection | null;
 	[kSelectionChangeScheduled]?: boolean;
