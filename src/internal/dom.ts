@@ -16801,7 +16801,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				attached[kLayout].calculateLayout();
+				attached[kLayout].performLayout();
 				const target = getVerticalTarget(
 					this,
 					caret,
@@ -16813,7 +16813,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				attached[kLayout].calculateLayout();
+				attached[kLayout].performLayout();
 				const visual = getTextareaVisualLines(this, attached[kLayout]);
 				const line = visual
 					? visual.lines[getTextareaLine(visual.lines, caret)]
@@ -24568,7 +24568,7 @@ function getModifiedPoint(
 	} else {
 		// Lines are read from the layout in the same turn, so whatever the page
 		// just mutated has to be laid out first.
-		layout.calculateLayout();
+		layout.performLayout();
 	}
 	const run = flattenSelectionText(getSelectionTextNodes(document, attached));
 	if (run.parts.length === 0) {
@@ -27226,7 +27226,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	if (had) {
 		void render(attached[kTermDOM]);
 	}
-	attached[kLayout].calculateLayout();
+	attached[kLayout].performLayout();
 	clampScrollOffsets(document);
 	return had;
 }

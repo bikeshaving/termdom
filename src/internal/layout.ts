@@ -75,7 +75,7 @@ type FlexDirection = "column" | "column-reverse" | "row" | "row-reverse";
 
 type Gutter = "column" | "row";
 
-type LayoutMode =
+type DisplayType =
 	"flex" |
 	"none" |
 	"block" |
@@ -100,7 +100,7 @@ function isContainingBlockType(positionType: PositionType): boolean {
 	return positionType !== "static";
 }
 
-type MeasureMode = "unconstrained" | "exactly" | "at-most";
+type AvailableSpace = "indefinite" | "definite" | "fit-content";
 
 type Edges<T> = {left: T; top: T; right: T; bottom: T};
 
@@ -119,9 +119,9 @@ interface Size {
 // `performLayout` is true for the measurement that places the box and
 // false for the sizing probes before it. Only the placing one may keep
 // its line breaks.
-type MeasureFunction = (
+type ContentMeasure = (
 	width: number,
-	widthMode: MeasureMode,
+	widthSpace: AvailableSpace,
 	performLayout: boolean,
 ) => Size;
 
@@ -216,7 +216,7 @@ interface Style {
 	alignSelf: Align;
 	positionType: PositionType;
 	flexWrap: Wrap;
-	mode: LayoutMode;
+	displayType: DisplayType;
 
 	gap: {column: number; row: number};
 
@@ -280,7 +280,7 @@ interface LayoutResult {
 	computedFlexBasis: number;
 
 	// css-flexbox-1 §4.5, along the parent's main axis.
-	autoMinMain: number;
+	automaticMinimumSize: number;
 
 	// Used track sizes in the implicit grid's order, which is what
 	// getComputedStyle reports for grid-template-*. Null when not a grid
@@ -305,11 +305,11 @@ interface LayoutResult {
 	selfCollapsing: boolean;
 }
 
-interface CachedLayout {
+interface CachedSize {
 	availableWidth: number;
 	availableHeight: number;
-	widthMode: MeasureMode;
-	heightMode: MeasureMode;
+	widthSpace: AvailableSpace;
+	heightSpace: AvailableSpace;
 	ownerWidth: number;
 	ownerHeight: number;
 	width: number;
@@ -322,17 +322,17 @@ function isSameConstraint(a: number, b: number): boolean {
 }
 
 function isMatchingConstraints(
-	cache: CachedLayout,
+	cache: CachedSize,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 ): boolean {
 	return (
-		cache.widthMode === widthMode &&
-		cache.heightMode === heightMode &&
+		cache.widthSpace === widthSpace &&
+		cache.heightSpace === heightSpace &&
 		isSameConstraint(cache.availableWidth, availableWidth) &&
 		isSameConstraint(cache.availableHeight, availableHeight) &&
 		isSameConstraint(cache.ownerWidth, ownerWidth) &&
@@ -340,65 +340,65 @@ function isMatchingConstraints(
 	);
 }
 
-// Yoga's canUseCachedMeasurement rules. Beyond an identical request, a
-// cached size satisfies an `exactly` request of that same size, an
-// `at-most` bound over an unbounded result that fits it, and a tighter
-// `at-most` bound the result still fits. Sizing only. A full layout
+// The cache reuse rules, after Yoga. Beyond an identical request, a
+// cached size satisfies an `definite` request of that same size, an
+// `fit-content` bound over an unbounded result that fits it, and a tighter
+// `fit-content` bound the result still fits. Sizing only. A full layout
 // placed children against its request.
 function isCachedSizeValid(
-	cachedMode: MeasureMode,
+	cachedSpace: AvailableSpace,
 	cachedAvailable: number,
 	cachedComputed: number,
-	mode: MeasureMode,
+	mode: AvailableSpace,
 	available: number,
 ): boolean {
-	if (cachedMode === mode && isSameConstraint(cachedAvailable, available)) {
+	if (cachedSpace === mode && isSameConstraint(cachedAvailable, available)) {
 		return true;
 	}
-	if (mode === "exactly" && available === cachedComputed) {
+	if (mode === "definite" && available === cachedComputed) {
 		return true;
 	}
-	if (mode === "at-most") {
-		if (cachedMode === "unconstrained") {
+	if (mode === "fit-content") {
+		if (cachedSpace === "indefinite") {
 			return cachedComputed <= available;
 		}
-		if (cachedMode === "at-most") {
+		if (cachedSpace === "fit-content") {
 			return cachedAvailable > available && cachedComputed <= available;
 		}
 	}
 	return false;
 }
 
-function isMinContent(mode: MeasureMode, available: number): boolean {
-	return mode === "at-most" && available === 0;
+function isMinContent(mode: AvailableSpace, available: number): boolean {
+	return mode === "fit-content" && available === 0;
 }
 
 const CACHE_SLOT_COUNT = 9;
 
-// Taffy's compute_cache_slot: one slot per query shape, so the probes
+// One cache slot per query shape, after Taffy: one slot per query shape, so the probes
 // one pass makes of a child (min-content, max-content, fixed) never evict
 // each other.
 function getCacheSlot(
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 ): number {
-	const knownWidth = widthMode === "exactly";
-	const knownHeight = heightMode === "exactly";
+	const knownWidth = widthSpace === "definite";
+	const knownHeight = heightSpace === "definite";
 	if (knownWidth && knownHeight) {
 		return 0;
 	}
 	if (knownWidth) {
-		return 1 + (isMinContent(heightMode, availableHeight) ? 1 : 0);
+		return 1 + (isMinContent(heightSpace, availableHeight) ? 1 : 0);
 	}
 	if (knownHeight) {
-		return 3 + (isMinContent(widthMode, availableWidth) ? 1 : 0);
+		return 3 + (isMinContent(widthSpace, availableWidth) ? 1 : 0);
 	}
 	return (
 		5 +
-		(isMinContent(widthMode, availableWidth) ? 2 : 0) +
-		(isMinContent(heightMode, availableHeight) ? 1 : 0)
+		(isMinContent(widthSpace, availableWidth) ? 2 : 0) +
+		(isMinContent(heightSpace, availableHeight) ? 1 : 0)
 	);
 }
 
@@ -407,7 +407,7 @@ export class LayoutNode {
 	layout: LayoutResult;
 	children: LayoutNode[];
 	parent: LayoutNode | null;
-	measureFunc: MeasureFunction | null;
+	measureContent: ContentMeasure | null;
 	staticPositionFunc: StaticPositionFunction | null;
 	dirty: boolean;
 
@@ -425,8 +425,8 @@ export class LayoutNode {
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. The dirty flag invalidates
 	// both.
-	cachedMeasures: Array<CachedLayout | null>;
-	cachedLayout: CachedLayout | null;
+	cachedSizes: Array<CachedSize | null>;
+	cachedLayout: CachedSize | null;
 	styling: boolean;
 
 	// Null for a node no DOM node owns: an anonymous run's, a independent
@@ -438,13 +438,13 @@ export class LayoutNode {
 	constructor() {
 		this.children = [];
 		this.parent = null;
-		this.measureFunc = null;
+		this.measureContent = null;
 		this.staticPositionFunc = null;
 		this.dirty = true;
 		this.extentTop = 0;
 		this.extentBottom = 0;
 		this.unstackedChildCount = 0;
-		this.cachedMeasures = new Array(CACHE_SLOT_COUNT).fill(
+		this.cachedSizes = new Array(CACHE_SLOT_COUNT).fill(
 			null,
 		);
 		this.cachedLayout = null;
@@ -457,7 +457,7 @@ export class LayoutNode {
 	insertChild(child: LayoutNode, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		markDirtyUpward(this);
+		invalidateAncestors(this);
 	}
 
 	removeChild(child: LayoutNode): void {
@@ -465,7 +465,7 @@ export class LayoutNode {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			markDirtyUpward(this);
+			invalidateAncestors(this);
 		}
 	}
 
@@ -481,21 +481,21 @@ export class LayoutNode {
 		}
 		this.children = [];
 		this.parent = null;
-		this.measureFunc = null;
+		this.measureContent = null;
 		this.staticPositionFunc = null;
 	}
 
-	markDirty(): void {
+	invalidate(): void {
 		this.dirty = true;
 		if (this.styling) {
 			return;
 		}
-		markDirtyUpward(this);
+		invalidateAncestors(this);
 	}
 
 	// A computed style sets scores of properties on one node. The ancestor
 	// walk happens once at the end instead of once per setter.
-	styleAll(assign: () => void): void {
+	setStyles(assign: () => void): void {
 		const outer = this.styling;
 		this.styling = true;
 		try {
@@ -503,7 +503,7 @@ export class LayoutNode {
 		} finally {
 			this.styling = outer;
 		}
-		this.markDirty();
+		this.invalidate();
 	}
 
 	computePaintExtents(originTop: number): void {
@@ -528,115 +528,115 @@ export class LayoutNode {
 		this.unstackedChildCount = unstacked;
 	}
 
-	setMeasureFunc(fn: MeasureFunction | null): void {
-		this.measureFunc = fn;
-		this.markDirty();
+	setMeasureContent(fn: ContentMeasure | null): void {
+		this.measureContent = fn;
+		this.invalidate();
 	}
 
 	setStaticPositionFunc(fn: StaticPositionFunction | null): void {
 		this.staticPositionFunc = fn;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setFlexDirection(v: FlexDirection): void {
 		this.style.flexDirection = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setJustifyContent(v: Justify): void {
 		this.style.justifyContent = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setAlignContent(v: Align): void {
 		this.style.alignContent = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setAlignItems(v: Align): void {
 		this.style.alignItems = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setAlignSelf(v: Align): void {
 		this.style.alignSelf = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setPositionType(v: PositionType): void {
 		this.style.positionType = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setFlexWrap(v: Wrap): void {
 		this.style.flexWrap = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGap(gutter: Gutter, value: number): void {
 		this.style.gap[gutter] = Number.isFinite(value) ? Math.max(0, value) : 0;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setJustifyItems(v: Align): void {
 		this.style.justifyItems = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setJustifySelf(v: Align): void {
 		this.style.justifySelf = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridTemplateColumns(v: TrackList | null): void {
 		this.style.gridTemplateColumns = v ?? EMPTY_TRACK_LIST;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridTemplateRows(v: TrackList | null): void {
 		this.style.gridTemplateRows = v ?? EMPTY_TRACK_LIST;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridTemplateAreas(v: GridAreaMap | null): void {
 		this.style.gridTemplateAreas = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridAutoColumns(v: TrackSize[] | null): void {
 		this.style.gridAutoColumns = v && v.length > 0 ? v : [AUTO_TRACK];
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridAutoRows(v: TrackSize[] | null): void {
 		this.style.gridAutoRows = v && v.length > 0 ? v : [AUTO_TRACK];
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridAutoFlow(column: boolean, dense: boolean): void {
 		this.style.gridAutoFlowColumn = column;
 		this.style.gridAutoFlowDense = dense;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridRowStart(v: GridPlacement | null): void {
 		this.style.gridRowStart = v ?? AUTO_PLACEMENT;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridRowEnd(v: GridPlacement | null): void {
 		this.style.gridRowEnd = v ?? AUTO_PLACEMENT;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridColumnStart(v: GridPlacement | null): void {
 		this.style.gridColumnStart = v ?? AUTO_PLACEMENT;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setGridColumnEnd(v: GridPlacement | null): void {
 		this.style.gridColumnEnd = v ?? AUTO_PLACEMENT;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	getComputedGridTracks(
@@ -654,111 +654,111 @@ export class LayoutNode {
 
 	setColSpan(v: number): void {
 		this.style.colSpan = Math.max(1, Math.floor(v) || 1);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setRowSpan(v: number): void {
 		this.style.rowSpan = Math.max(1, Math.floor(v) || 1);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setBlockFormattingContext(v: boolean): void {
 		this.style.blockFormattingContext = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setBorderCollapse(v: boolean): void {
 		this.style.borderCollapse = v;
-		this.markDirty();
+		this.invalidate();
 	}
 
-	setMode(v: LayoutMode): void {
-		this.style.mode = v;
-		this.markDirty();
+	setDisplayType(v: DisplayType): void {
+		this.style.displayType = v;
+		this.invalidate();
 	}
 
 	setOrder(v: number | undefined): void {
 		this.style.order = v ?? 0;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setFlexGrow(v: number | undefined): void {
 		this.style.flexGrow = v === undefined ? NaN : v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setFlexShrink(v: number | undefined): void {
 		this.style.flexShrink = v === undefined ? NaN : v;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setFlexBasis(v: Length): void {
 		this.style.flexBasis = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setWidth(v: Length): void {
 		this.style.width = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setWidthSizing(v: Sizing): void {
 		if (this.style.widthSizing !== v) {
 			this.style.widthSizing = v;
-			this.markDirty();
+			this.invalidate();
 		}
 	}
 
 	setHeight(v: Length): void {
 		this.style.height = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setAspectRatio(v: number | undefined): void {
 		this.style.aspectRatio =
 			v !== undefined && Number.isFinite(v) && v > 0 ? v : NaN;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setMinWidth(v: Length): void {
 		this.style.minWidth = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setMinHeight(v: Length): void {
 		this.style.minHeight = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setMaxWidth(v: Length): void {
 		this.style.maxWidth = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setMaxHeight(v: Length): void {
 		this.style.maxHeight = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setMargin(edge: Edge, v: Length): void {
 		this.style.margin[edge] = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setPadding(edge: Edge, v: Length): void {
 		this.style.padding[edge] = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setBorder(edge: Edge, v: number | undefined): void {
 		const width = v === undefined || Number.isNaN(v) ? 0 : v;
 		this.style.border[edge] = width;
-		this.markDirty();
+		this.invalidate();
 	}
 
 	setPosition(edge: Edge, v: Length): void {
 		this.style.position[edge] = toValue(v);
-		this.markDirty();
+		this.invalidate();
 	}
 
 	getComputedWidth(): number {
@@ -769,26 +769,26 @@ export class LayoutNode {
 		return isDefined(this.layout.height) ? this.layout.height : 0;
 	}
 
-	calculateLayout(ownerWidth: number, ownerHeight: number): void {
+	performLayout(ownerWidth: number, ownerHeight: number): void {
 		const width = resolveValue(this.style.width, ownerWidth);
 		const height = resolveValue(this.style.height, ownerHeight);
 
 		let availableWidth = isDefined(width) ? width : ownerWidth;
-		let widthMode: MeasureMode = isDefined(availableWidth)
-			? "exactly"
-			: "unconstrained";
+		let widthSpace: AvailableSpace = isDefined(availableWidth)
+			? "definite"
+			: "indefinite";
 		// A sizing keyword on a root turns the owner's width from the used
 		// width into a probe: zero for min-content, a ceiling for fit-content,
 		// and no request at all for max-content.
 		if (!isDefined(width) && this.style.widthSizing !== "none") {
 			if (this.style.widthSizing === "min-content") {
 				availableWidth = 0;
-				widthMode = "at-most";
+				widthSpace = "fit-content";
 			} else if (this.style.widthSizing === "max-content") {
 				availableWidth = NaN;
-				widthMode = "unconstrained";
+				widthSpace = "indefinite";
 			} else if (isDefined(availableWidth)) {
-				widthMode = "at-most";
+				widthSpace = "fit-content";
 			}
 		}
 		const availableHeight = isDefined(height) ? height : ownerHeight;
@@ -797,10 +797,10 @@ export class LayoutNode {
 			this,
 			availableWidth,
 			availableHeight,
-			widthMode,
+			widthSpace,
 			isDefined(availableHeight)
-				? "exactly"
-				: "unconstrained",
+				? "definite"
+				: "indefinite",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -838,7 +838,7 @@ function createStyle(): Style {
 		alignSelf: "auto",
 		positionType: "relative",
 		flexWrap: "nowrap",
-		mode: "flex",
+		displayType: "flex",
 
 		gap: {column: 0, row: 0},
 
@@ -908,7 +908,7 @@ function createLayout(): LayoutResult {
 		margin: {left: 0, top: 0, right: 0, bottom: 0},
 		padding: {left: 0, top: 0, right: 0, bottom: 0},
 		computedFlexBasis: NaN,
-		autoMinMain: NaN,
+		automaticMinimumSize: NaN,
 		gridColumns: null,
 		gridRows: null,
 		gridColumnOffset: 0,
@@ -924,11 +924,11 @@ function createLayout(): LayoutResult {
 function isUnstacked(node: LayoutNode): boolean {
 	return (
 		node.style.positionType !== "static" ||
-		node.style.mode === "none"
+		node.style.displayType === "none"
 	);
 }
 
-function markDirtyUpward(
+function invalidateAncestors(
 	start: LayoutNode,
 ): void {
 	for (let node: LayoutNode | null = start; node; node = node.parent) {
@@ -982,7 +982,7 @@ function getBaselineWithinBorderBox(
 	const contentTop = getEdgePaddingAndBorder(node, "top", ownerWidth);
 
 	for (const child of node.children) {
-		if (child.style.mode === "none") {
+		if (child.style.displayType === "none") {
 			continue;
 		}
 		if (isOutOfFlowType(child.style.positionType)) {
@@ -1099,7 +1099,7 @@ function constrainMaxSizeForMode(
 	node: LayoutNode,
 	axis: FlexDirection,
 	ownerAxisSize: number,
-	mode: {value: number; mode: MeasureMode},
+	mode: {value: number; mode: AvailableSpace},
 ): void {
 	const max = resolveValue(
 		isRow(axis) ? node.style.maxWidth : node.style.maxHeight,
@@ -1110,17 +1110,17 @@ function constrainMaxSizeForMode(
 	}
 
 	if (
-		mode.mode === "exactly" ||
-		mode.mode === "at-most"
+		mode.mode === "definite" ||
+		mode.mode === "fit-content"
 	) {
 		// A max caps the size without making it indefinite. Downgrading
-		// `exactly` to `at-most` tells an empty box it is shrink-wrapped, and
+		// `definite` to `fit-content` tells an empty box it is shrink-wrapped, and
 		// it collapses to zero instead of taking the size flex just resolved
 		// for it.
 		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
 	} else {
 		mode.value = max;
-		mode.mode = "at-most";
+		mode.mode = "fit-content";
 	}
 }
 
@@ -1143,7 +1143,7 @@ function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
 	);
 }
 
-function setMeasuredDimensions(
+function setMeasuredSize(
 	node: LayoutNode,
 	width: number,
 	height: number,
@@ -1166,12 +1166,12 @@ function setMeasuredDimensions(
 	);
 }
 
-function layoutMeasureNode(
+function layoutMeasuredContent(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -1194,15 +1194,15 @@ function layoutMeasureNode(
 		: NaN;
 
 	if (
-		widthMode === "exactly" &&
-		heightMode === "exactly" &&
+		widthSpace === "definite" &&
+		heightSpace === "definite" &&
 		// Only on a sizing pass. The measure also breaks the text into the
 		// lines that get painted, and skipping it on the placing pass left a
 		// stretched item painting the lines of its last probe, the min-content
 		// one.
 		!performLayout
 	) {
-		setMeasuredDimensions(
+		setMeasuredSize(
 			node,
 			availableWidth - marginRow,
 			availableHeight - marginColumn,
@@ -1212,29 +1212,29 @@ function layoutMeasureNode(
 		return;
 	}
 
-	const measured = node.measureFunc!(innerWidth, widthMode, performLayout);
+	const measured = node.measureContent!(innerWidth, widthSpace, performLayout);
 
 	const width =
-		widthMode === "exactly"
+		widthSpace === "definite"
 			? availableWidth - marginRow
 			: measured.width + paddingBorderRow;
 	const height =
-		heightMode === "exactly"
+		heightSpace === "definite"
 			? availableHeight - marginColumn
 			: measured.height + paddingBorderColumn;
 
-	// Not clamped to an `at-most` request. An unbreakable word overflows,
+	// Not clamped to an `fit-content` request. An unbreakable word overflows,
 	// and a box claiming less than it occupies made min-content zero and let
 	// a long word paint over its neighbour.
-	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 }
 
 function layoutEmptyContainer(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 ): void {
@@ -1252,16 +1252,16 @@ function layoutEmptyContainer(
 	const marginColumn = getAxisMargin(node, "column", ownerWidth);
 
 	const width =
-		widthMode === "unconstrained" || widthMode === "at-most"
+		widthSpace === "indefinite" || widthSpace === "fit-content"
 			? paddingBorderRow
 			: availableWidth - marginRow;
 	const height =
-		heightMode === "unconstrained" ||
-		heightMode === "at-most"
+		heightSpace === "indefinite" ||
+		heightSpace === "fit-content"
 			? paddingBorderColumn
 			: availableHeight - marginColumn;
 
-	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 }
 
 // css-flexbox-1 §9.2.
@@ -1269,9 +1269,9 @@ function computeFlexBasisForChild(
 	node: LayoutNode,
 	child: LayoutNode,
 	width: number,
-	widthMode: MeasureMode,
+	widthSpace: AvailableSpace,
 	height: number,
-	heightMode: MeasureMode,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 ): void {
@@ -1318,51 +1318,51 @@ function computeFlexBasisForChild(
 		return;
 	}
 
-	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
-	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
+	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
 
 	const marginRow = getAxisMargin(child, "row", ownerWidth);
 	const marginColumn = getAxisMargin(child, "column", ownerWidth);
 
 	if (rowDimDefined) {
 		childWidth.value = resolveValue(child.style.width, ownerWidth) + marginRow;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	}
 	if (columnDimDefined) {
 		childHeight.value =
 			resolveValue(child.style.height, ownerHeight) + marginColumn;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	}
 
 	if (!isDefined(childWidth.value) && isDefined(width)) {
 		childWidth.value = width;
-		childWidth.mode = "at-most";
+		childWidth.mode = "fit-content";
 	}
 	if (!isDefined(childHeight.value) && isDefined(height)) {
 		childHeight.value = height;
-		childHeight.mode = "at-most";
+		childHeight.mode = "fit-content";
 	}
 
 	const stretch = getAlignSelf(node, child) === "stretch";
 	if (
 		!mainIsRow &&
 		isDefined(width) &&
-		widthMode === "exactly" &&
+		widthSpace === "definite" &&
 		stretch &&
-		childWidth.mode !== "exactly"
+		childWidth.mode !== "definite"
 	) {
 		childWidth.value = width;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	}
 	if (
 		mainIsRow &&
 		isDefined(height) &&
-		heightMode === "exactly" &&
+		heightSpace === "definite" &&
 		stretch &&
-		childHeight.mode !== "exactly"
+		childHeight.mode !== "definite"
 	) {
 		childHeight.value = height;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	}
 
 	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
@@ -1402,8 +1402,8 @@ function layoutFlexbox(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -1449,15 +1449,15 @@ function layoutFlexbox(
 
 	const innerMain = mainIsRow ? innerWidth : innerHeight;
 	const innerCross = mainIsRow ? innerHeight : innerWidth;
-	const crossMode = mainIsRow ? heightMode : widthMode;
-	const mainMode = mainIsRow ? widthMode : heightMode;
+	const crossSpace = mainIsRow ? heightSpace : widthSpace;
+	const mainSpace = mainIsRow ? widthSpace : heightSpace;
 
 	const mainGap = getAxisGap(node, mainAxis);
 	const crossGap = getAxisGap(node, cross);
 
 	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === "none") {
+		if (child.style.displayType === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -1469,11 +1469,11 @@ function layoutFlexbox(
 
 		// Before the basis, because this lays the child out and would clobber a
 		// basis computed first.
-		child.layout.autoMinMain = getAutoMinimumMainSize(
+		child.layout.automaticMinimumSize = getAutoMinimumMainSize(
 			node,
 			child,
 			innerCross,
-			crossMode,
+			crossSpace,
 			ownerWidth,
 			ownerHeight,
 		);
@@ -1482,9 +1482,9 @@ function layoutFlexbox(
 			node,
 			child,
 			innerWidth,
-			widthMode,
+			widthSpace,
 			innerHeight,
-			heightMode,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 		);
@@ -1550,7 +1550,7 @@ function layoutFlexbox(
 			line,
 			node,
 			mainForItems,
-			mainMode,
+			mainSpace,
 			ownerWidth,
 			ownerHeight,
 		);
@@ -1562,7 +1562,7 @@ function layoutFlexbox(
 				innerWidth,
 				innerHeight,
 				innerCross,
-				crossMode,
+				crossSpace,
 				ownerWidth,
 				ownerHeight,
 				performLayout,
@@ -1586,10 +1586,10 @@ function layoutFlexbox(
 				getAxisMargin(child, cross, ownerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
-		// Only a definite cross size fills the line. An `at-most` bound treated
+		// Only a definite cross size fills the line. An `fit-content` bound treated
 		// as definite becomes the container's content size, then its basis
 		// above.
-		if (!wrap && isDefined(innerCross) && crossMode === "exactly") {
+		if (!wrap && isDefined(innerCross) && crossSpace === "definite") {
 			lineCross = Math.max(lineCross, innerCross);
 		}
 		line.crossDim = lineCross;
@@ -1601,7 +1601,7 @@ function layoutFlexbox(
 	totalCrossDim += crossGap * Math.max(0, lines.length - 1);
 
 	const measuredMain = mainIsRow
-		? widthMode === "exactly"
+		? widthSpace === "definite"
 			? availableWidth - marginRow
 			: boundAxis(
 				node,
@@ -1610,7 +1610,7 @@ function layoutFlexbox(
 				ownerWidth,
 				ownerWidth,
 			)
-		: heightMode === "exactly"
+		: heightSpace === "definite"
 			? availableHeight - marginColumn
 			: boundAxis(
 				node,
@@ -1622,8 +1622,8 @@ function layoutFlexbox(
 
 	const crossIsRow = isRow(cross);
 	const crossExactly = crossIsRow
-		? widthMode === "exactly"
-		: heightMode === "exactly";
+		? widthSpace === "definite"
+		: heightSpace === "definite";
 	const crossAvailable = crossIsRow
 		? availableWidth - marginRow
 		: availableHeight - marginColumn;
@@ -1726,7 +1726,7 @@ function getOutOfFlowDescendants(
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
 		for (const child of parent.children) {
-			if (child.style.mode === "none") {
+			if (child.style.displayType === "none") {
 				continue;
 			}
 			const type = child.style.positionType;
@@ -1777,7 +1777,7 @@ function resolveFlexibleLengths(
 	line: FlexLine,
 	node: LayoutNode,
 	innerMain: number,
-	mainMode: MeasureMode,
+	mainSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 ): void {
@@ -1800,7 +1800,7 @@ function resolveFlexibleLengths(
 			value,
 			mainOwnerSize,
 		);
-		const floor = child.layout.autoMinMain;
+		const floor = child.layout.automaticMinimumSize;
 		return isDefined(floor) ? Math.max(bounded, floor) : bounded;
 	};
 
@@ -1832,9 +1832,9 @@ function resolveFlexibleLengths(
 	}
 	const growing = innerMain - hypotheticalTotal > 0;
 
-	// Growing needs a definite main size. Under `at-most` the container
+	// Growing needs a definite main size. Under `fit-content` the container
 	// shrink-wraps. Shrinking still applies.
-	if (growing && mainMode !== "exactly") {
+	if (growing && mainSpace !== "definite") {
 		commit();
 		return;
 	}
@@ -1930,7 +1930,7 @@ function getAutoMinimumMainSize(
 	node: LayoutNode,
 	child: LayoutNode,
 	innerCross: number,
-	crossMode: MeasureMode,
+	crossSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 ): number {
@@ -1951,16 +1951,16 @@ function getAutoMinimumMainSize(
 	// height depends on its width, and unlimited width puts its text on one
 	// line.
 	const crossAvailable = isDefined(innerCross) ? innerCross : NaN;
-	const crossMeasureMode = isDefined(innerCross)
-		? crossMode
-		: "unconstrained";
+	const crossAvailableSpace = isDefined(innerCross)
+		? crossSpace
+		: "indefinite";
 
 	layoutNode(
 		child,
 		mainIsRow ? 0 : crossAvailable,
 		mainIsRow ? crossAvailable : 0,
-		mainIsRow ? "at-most" : crossMeasureMode,
-		mainIsRow ? crossMeasureMode : "at-most",
+		mainIsRow ? "fit-content" : crossAvailableSpace,
+		mainIsRow ? crossAvailableSpace : "fit-content",
 		ownerWidth,
 		ownerHeight,
 		false,
@@ -1990,7 +1990,7 @@ function layoutFlexItem(
 	innerWidth: number,
 	innerHeight: number,
 	innerCross: number,
-	crossMode: MeasureMode,
+	crossSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -2008,18 +2008,18 @@ function layoutFlexItem(
 		isRow(cross) ? ownerWidth : ownerHeight,
 	);
 
-	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
-	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
+	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
 
 	const marginMainForChild = getAxisMargin(child, mainAxis, ownerWidth);
 	const marginCrossForChild = getAxisMargin(child, cross, ownerWidth);
 
 	if (mainIsRow) {
 		childWidth.value = mainSize + marginMainForChild;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else {
 		childHeight.value = mainSize + marginMainForChild;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	}
 
 	const crossTarget = crossDimDefined
@@ -2039,35 +2039,35 @@ function layoutFlexItem(
 		);
 		if (isRow(cross)) {
 			childWidth.value = bounded + marginCrossForChild;
-			childWidth.mode = "exactly";
+			childWidth.mode = "definite";
 		} else {
 			childHeight.value = bounded + marginCrossForChild;
-			childHeight.mode = "exactly";
+			childHeight.mode = "definite";
 		}
 	} else if (
 		align === "stretch" &&
 		isDefined(innerCross) &&
-		crossMode === "exactly"
+		crossSpace === "definite"
 	) {
 		// Only against a definite cross size. Stretching to a bound makes every
 		// item's basis the whole container. positionCrossAxis stretches the
 		// rest.
 		if (isRow(cross)) {
 			childWidth.value = innerCross;
-			childWidth.mode = "exactly";
+			childWidth.mode = "definite";
 		} else {
 			childHeight.value = innerCross;
-			childHeight.mode = "exactly";
+			childHeight.mode = "definite";
 		}
 	} else {
 		const available = isRow(cross) ? innerWidth : innerHeight;
 		if (isDefined(available)) {
 			if (isRow(cross)) {
 				childWidth.value = available;
-				childWidth.mode = "at-most";
+				childWidth.mode = "fit-content";
 			} else {
 				childHeight.value = available;
-				childHeight.mode = "at-most";
+				childHeight.mode = "fit-content";
 			}
 		}
 	}
@@ -2114,8 +2114,8 @@ function stretchFlexItem(
 		child,
 		width,
 		height,
-		"exactly",
-		"exactly",
+		"definite",
+		"definite",
 		ownerWidth,
 		ownerHeight,
 		true,
@@ -2483,45 +2483,45 @@ function layoutAbsoluteChild(
 	const shrinkDown =
 		isDefined(top) && isDefined(bottom) && autoTop && autoBottom;
 
-	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
-	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
+	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
 
 	if (isStyleDimensionDefined(child, "row", basisWidth)) {
 		childWidth.value =
 			resolveValue(child.style.width, basisWidth) + marginLeft + marginRight;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else if (shrinkAcross) {
 		childWidth.value = blockWidth - left - right;
-		childWidth.mode = "at-most";
+		childWidth.mode = "fit-content";
 	} else if (isDefined(left) && isDefined(right)) {
 		childWidth.value = blockWidth - left - right - marginLeft - marginRight;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else if (isDefined(blockWidth)) {
 		childWidth.value = blockWidth;
 		// `stretch` fills the alignment container when size and both insets are
 		// auto (css-align-3 §5.2). Only a grid area has one.
 		childWidth.mode =
 			area && getGridSelfAlign(node, child, true) === "stretch"
-				? "exactly"
-				: "at-most";
+				? "definite"
+				: "fit-content";
 	}
 
 	if (isStyleDimensionDefined(child, "column", basisHeight)) {
 		childHeight.value =
 			resolveValue(child.style.height, basisHeight) + marginTop + marginBottom;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	} else if (shrinkDown) {
 		childHeight.value = blockHeight - top - bottom;
-		childHeight.mode = "at-most";
+		childHeight.mode = "fit-content";
 	} else if (isDefined(top) && isDefined(bottom)) {
 		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	} else if (isDefined(blockHeight)) {
 		childHeight.value = blockHeight;
 		childHeight.mode =
 			area && getGridSelfAlign(node, child, false) === "stretch"
-				? "exactly"
-				: "at-most";
+				? "definite"
+				: "fit-content";
 	}
 
 	layoutNode(
@@ -2541,7 +2541,7 @@ function layoutAbsoluteChild(
 			? (child.staticPositionFunc?.(node) ?? null)
 			: null;
 
-	const isGrid = node.style.mode === "grid";
+	const isGrid = node.style.displayType === "grid";
 
 	if (shrinkAcross) {
 		const free = blockWidth - left - right - child.layout.width;
@@ -2670,7 +2670,7 @@ function collectTableRows(table: LayoutNode): {
 	const collectGroup = (group: LayoutNode, into: TableRow[]) => {
 		groups.push(group);
 		for (const child of group.children) {
-			if (child.style.mode === "table-row") {
+			if (child.style.displayType === "table-row") {
 				into.push({node: child, group});
 			} else {
 				zeroLayout(child);
@@ -2680,14 +2680,14 @@ function collectTableRows(table: LayoutNode): {
 
 	for (const child of table.children) {
 		if (
-			child.style.mode === "none" ||
+			child.style.displayType === "none" ||
 			isOutOfFlowType(child.style.positionType)
 		) {
 			zeroLayout(child);
 			continue;
 		}
 
-		switch (child.style.mode) {
+		switch (child.style.displayType) {
 			case "table-caption":
 				captions.push(child);
 				break;
@@ -2725,7 +2725,7 @@ function buildTableGrid(rows: TableRow[]): {
 		let column = 0;
 
 		for (const node of row.node.children) {
-			if (node.style.mode !== "table-cell") {
+			if (node.style.displayType !== "table-cell") {
 				zeroLayout(node);
 				continue;
 			}
@@ -2771,8 +2771,8 @@ function getIntrinsicCellWidth(
 		cell,
 		minContent ? 0 : NaN,
 		NaN,
-		minContent ? "at-most" : "unconstrained",
-		"unconstrained",
+		minContent ? "fit-content" : "indefinite",
+		"indefinite",
 		ownerWidth,
 		ownerHeight,
 		false,
@@ -2938,8 +2938,8 @@ function layoutTable(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -2976,7 +2976,7 @@ function layoutTable(
 		: NaN;
 
 	const widthIsDefinite =
-		widthMode === "exactly" && isDefined(innerWidth);
+		widthSpace === "definite" && isDefined(innerWidth);
 
 	const columnWidths = resolveColumnWidths(
 		cells,
@@ -3005,8 +3005,8 @@ function layoutTable(
 			caption,
 			contentWidth,
 			NaN,
-			"exactly",
-			"unconstrained",
+			"definite",
+			"indefinite",
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -3024,8 +3024,8 @@ function layoutTable(
 			cell.node,
 			width,
 			NaN,
-			"exactly",
-			"unconstrained",
+			"definite",
+			"indefinite",
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -3085,15 +3085,15 @@ function layoutTable(
 	const contentHeight = captionHeight + gridHeight;
 
 	const width =
-		widthMode === "exactly"
+		widthSpace === "definite"
 			? availableWidth - marginRow
 			: contentWidth + paddingBorderRow;
 	const height =
-		heightMode === "exactly"
+		heightSpace === "definite"
 			? availableHeight - marginColumn
 			: contentHeight + paddingBorderColumn;
 
-	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
 	if (!performLayout) {
 		return;
@@ -3129,8 +3129,8 @@ function layoutTable(
 			cell.node,
 			cellWidth,
 			cellHeight,
-			"exactly",
-			"exactly",
+			"definite",
+			"definite",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -3751,8 +3751,8 @@ function getGridItemContribution(
 			child,
 			minContent ? 0 : NaN,
 			NaN,
-			minContent ? "at-most" : "unconstrained",
-			"unconstrained",
+			minContent ? "fit-content" : "indefinite",
+			"indefinite",
 			sizing.ownerWidth,
 			sizing.ownerHeight,
 			false,
@@ -3772,8 +3772,8 @@ function getGridItemContribution(
 		child,
 		width,
 		NaN,
-		"exactly",
-		"unconstrained",
+		"definite",
+		"indefinite",
 		sizing.ownerWidth,
 		sizing.ownerHeight,
 		false,
@@ -3819,8 +3819,8 @@ function measureBaselineShims(
 				item.node,
 				getTrackSpan(columnSizes, columnGap, item.columnStart, item.columnEnd),
 				NaN,
-				"exactly",
-				"unconstrained",
+				"definite",
+				"indefinite",
 				ownerWidth,
 				ownerHeight,
 				false,
@@ -4457,8 +4457,8 @@ function layoutGridItem(
 	const marginRow = getAxisMargin(child, "row", ownerWidth);
 	const marginColumn = getAxisMargin(child, "column", ownerWidth);
 
-	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
-	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
+	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
 
 	if (isStyleDimensionDefined(child, "row", ownerWidth)) {
 		childWidth.value =
@@ -4468,15 +4468,15 @@ function layoutGridItem(
 				resolveValue(child.style.width, ownerWidth),
 				areaWidth,
 			) + marginRow;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else if (justify === "stretch" && !autoLeft && !autoRight) {
 		// The request includes the item's margins, which the box subtracts
 		// itself.
 		childWidth.value = Math.max(0, areaWidth);
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else {
 		childWidth.value = Math.max(0, areaWidth);
-		childWidth.mode = "at-most";
+		childWidth.mode = "fit-content";
 	}
 
 	if (isStyleDimensionDefined(child, "column", ownerHeight)) {
@@ -4487,13 +4487,13 @@ function layoutGridItem(
 				resolveValue(child.style.height, ownerHeight),
 				areaHeight,
 			) + marginColumn;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	} else if (align === "stretch" && !autoTop && !autoBottom) {
 		childHeight.value = Math.max(0, areaHeight);
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	} else {
 		childHeight.value = Math.max(0, areaHeight);
-		childHeight.mode = "at-most";
+		childHeight.mode = "fit-content";
 	}
 
 	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
@@ -4611,8 +4611,8 @@ function layoutGrid(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -4643,13 +4643,13 @@ function layoutGrid(
 	const rowGap = node.style.gap["row"];
 
 	const definiteWidth =
-		widthMode === "exactly" && isDefined(innerWidth);
+		widthSpace === "definite" && isDefined(innerWidth);
 	const definiteHeight =
-		heightMode === "exactly" && isDefined(innerHeight);
+		heightSpace === "definite" && isDefined(innerHeight);
 
 	const children: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === "none") {
+		if (child.style.displayType === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -4860,7 +4860,7 @@ function layoutGrid(
 	let columnsTotal = totalOf(columnTracks, columnGap);
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
-		widthMode === "at-most" &&
+		widthSpace === "fit-content" &&
 		isDefined(innerWidth) &&
 		columnsTotal > innerWidth + EPSILON
 	) {
@@ -4908,7 +4908,7 @@ function layoutGrid(
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
 	let rowsTotal = totalOf(rowTracks, rowGap);
 	if (
-		heightMode === "at-most" &&
+		heightSpace === "fit-content" &&
 		isDefined(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
@@ -4917,7 +4917,7 @@ function layoutGrid(
 	}
 
 	const width =
-		widthMode === "exactly"
+		widthSpace === "definite"
 			? availableWidth - marginRow
 			: boundAxis(
 				node,
@@ -4927,7 +4927,7 @@ function layoutGrid(
 				ownerWidth,
 			);
 	const height =
-		heightMode === "exactly"
+		heightSpace === "definite"
 			? availableHeight - marginColumn
 			: boundAxis(
 				node,
@@ -4937,7 +4937,7 @@ function layoutGrid(
 				ownerWidth,
 			);
 
-	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+	setMeasuredSize(node, width, height, ownerWidth, ownerHeight);
 
 	if (!performLayout) {
 		return;
@@ -5211,7 +5211,7 @@ function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 
 function isShrinkToFitWidth(node: LayoutNode): boolean {
 	return (
-		node.style.mode === "table" ||
+		node.style.displayType === "table" ||
 		node.style.widthSizing !== "none"
 	);
 }
@@ -5227,8 +5227,8 @@ function layoutBlockChild(
 	const marginRow = getAxisMargin(child, "row", ownerWidth);
 	const marginColumn = getAxisMargin(child, "column", ownerWidth);
 
-	const childWidth = {value: NaN, mode: "unconstrained" as MeasureMode};
-	const childHeight = {value: NaN, mode: "unconstrained" as MeasureMode};
+	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
+	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
 
 	if (isStyleDimensionDefined(child, "row", ownerWidth)) {
 		childWidth.value =
@@ -5238,7 +5238,7 @@ function layoutBlockChild(
 				resolveValue(child.style.width, ownerWidth),
 				contentWidth,
 			) + marginRow;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else if (
 		isDefined(child.style.aspectRatio) &&
 		child.style.aspectRatio > 0 &&
@@ -5256,22 +5256,22 @@ function layoutBlockChild(
 				transferred,
 				contentWidth,
 			) + marginRow;
-		childWidth.mode = "exactly";
+		childWidth.mode = "definite";
 	} else if (child.style.widthSizing === "min-content") {
 		childWidth.value = 0;
-		childWidth.mode = "at-most";
+		childWidth.mode = "fit-content";
 	} else if (child.style.widthSizing === "max-content") {
 		// An undefined request measures the content unbroken.
 	} else if (isDefined(contentWidth)) {
-		// A non-filling child's `at-most` request is already fit-content.
+		// A non-filling child's `fit-content` request is already fit-content.
 		childWidth.value = contentWidth;
-		childWidth.mode = fill ? "exactly" : "at-most";
+		childWidth.mode = fill ? "definite" : "fit-content";
 	}
 
 	if (isStyleDimensionDefined(child, "column", ownerHeight)) {
 		childHeight.value =
 			resolveValue(child.style.height, ownerHeight) + marginColumn;
-		childHeight.mode = "exactly";
+		childHeight.mode = "definite";
 	}
 
 	constrainMaxSizeForMode(child, "row", ownerWidth, childWidth);
@@ -5297,7 +5297,7 @@ function layoutBlockChild(
 // Collapsible white space between two blocks produces no line, so the
 // margins on either side of it keep adjoining (css2 §9.4.2, §8.3.1).
 function hasNoLineBox(child: LayoutNode): boolean {
-	return child.measureFunc !== null && child.layout.height === 0;
+	return child.measureContent !== null && child.layout.height === 0;
 }
 
 function isFillingBlockChild(child: LayoutNode): boolean {
@@ -5317,8 +5317,8 @@ function layoutBlock(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -5344,7 +5344,7 @@ function layoutBlock(
 
 	const inFlow: LayoutNode[] = [];
 	for (const child of node.children) {
-		if (child.style.mode === "none") {
+		if (child.style.displayType === "none") {
 			zeroLayout(child);
 			continue;
 		}
@@ -5362,7 +5362,7 @@ function layoutBlock(
 	// The width is resolved before the children lay out, min/max included,
 	// so each is measured once at the width it keeps.
 	let borderBoxWidth: number;
-	if (widthMode === "exactly") {
+	if (widthSpace === "definite") {
 		borderBoxWidth = availableWidth - marginRow;
 	} else {
 		let widest = 0;
@@ -5398,7 +5398,7 @@ function layoutBlock(
 	const openBottom =
 		!node.style.blockFormattingContext &&
 		getEdgePaddingAndBorder(node, "bottom", ownerWidth) === 0 &&
-		heightMode !== "exactly" &&
+		heightSpace !== "definite" &&
 		!isStyleDimensionDefined(node, "column", ownerHeight);
 
 	const escapingTop = marginSet();
@@ -5461,11 +5461,11 @@ function layoutBlock(
 	}
 
 	const height =
-		heightMode === "exactly"
+		heightSpace === "definite"
 			? availableHeight - marginColumn
 			: Math.max(0, contentHeight) + paddingBorderColumn;
 
-	setMeasuredDimensions(node, borderBoxWidth, height, ownerWidth, ownerHeight);
+	setMeasuredSize(node, borderBoxWidth, height, ownerWidth, ownerHeight);
 
 	// Nothing at either edge and nothing between. The box is a gap its
 	// neighbours' margins pass through, and its two escaping sets are one.
@@ -5537,16 +5537,16 @@ function layoutNode(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
 ): void {
-	// css-sizing-4 §5: the open axis follows a settled (`exactly`) one
+	// css-sizing-4 §5: the open axis follows a settled (`definite`) one
 	// through the ratio. With both settled the ratio yields. Margins come
 	// off the settled request and back onto the derived one. min/max on the
-	// derived axis still clamp in setMeasuredDimensions.
+	// derived axis still clamp in setMeasuredSize.
 	const ratio = node.style.aspectRatio;
 	if (isDefined(ratio) && ratio > 0) {
 		const marginRow = getAxisMargin(node, "row", ownerWidth);
@@ -5556,19 +5556,19 @@ function layoutNode(
 			ownerWidth,
 		);
 		if (
-			widthMode === "exactly" &&
-			heightMode !== "exactly" &&
+			widthSpace === "definite" &&
+			heightSpace !== "definite" &&
 			isDefined(availableWidth)
 		) {
 			availableHeight = (availableWidth - marginRow) / ratio + marginColumn;
-			heightMode = "exactly";
+			heightSpace = "definite";
 		} else if (
-			heightMode === "exactly" &&
-			widthMode !== "exactly" &&
+			heightSpace === "definite" &&
+			widthSpace !== "definite" &&
 			isDefined(availableHeight)
 		) {
 			availableWidth = (availableHeight - marginColumn) * ratio + marginRow;
-			widthMode = "exactly";
+			widthSpace = "definite";
 		}
 	}
 
@@ -5577,15 +5577,15 @@ function layoutNode(
 	// query. A sizing result never satisfies a layout query, since it
 	// placed no children.
 	if (!node.dirty) {
-		let hit: CachedLayout | null = null;
+		let hit: CachedSize | null = null;
 		if (
 			node.cachedLayout &&
 			isMatchingConstraints(
 				node.cachedLayout,
 				availableWidth,
 				availableHeight,
-				widthMode,
-				heightMode,
+				widthSpace,
+				heightSpace,
 				ownerWidth,
 				ownerHeight,
 			)
@@ -5600,7 +5600,7 @@ function layoutNode(
 				"column",
 				ownerWidth,
 			);
-			for (const cached of node.cachedMeasures) {
+			for (const cached of node.cachedSizes) {
 				if (
 					cached !== null &&
 					isSameConstraint(cached.ownerWidth, ownerWidth) &&
@@ -5608,17 +5608,17 @@ function layoutNode(
 					cached.width >= 0 &&
 					cached.height >= 0 &&
 					isCachedSizeValid(
-						cached.widthMode,
+						cached.widthSpace,
 						cached.availableWidth - marginRow,
 						cached.width,
-						widthMode,
+						widthSpace,
 						availableWidth - marginRow,
 					) &&
 					isCachedSizeValid(
-						cached.heightMode,
+						cached.heightSpace,
 						cached.availableHeight - marginColumn,
 						cached.height,
-						heightMode,
+						heightSpace,
 						availableHeight - marginColumn,
 					)
 				) {
@@ -5637,25 +5637,25 @@ function layoutNode(
 	// Whatever dirtied the node invalidated every cached result.
 	if (node.dirty) {
 		node.cachedLayout = null;
-		node.cachedMeasures.fill(null);
+		node.cachedSizes.fill(null);
 	}
 
 	layoutNodeImpl(
 		node,
 		availableWidth,
 		availableHeight,
-		widthMode,
-		heightMode,
+		widthSpace,
+		heightSpace,
 		ownerWidth,
 		ownerHeight,
 		performLayout,
 	);
 
-	const entry: CachedLayout = {
+	const entry: CachedSize = {
 		availableWidth,
 		availableHeight,
-		widthMode,
-		heightMode,
+		widthSpace,
+		heightSpace,
 		ownerWidth,
 		ownerHeight,
 		width: node.layout.width,
@@ -5664,8 +5664,8 @@ function layoutNode(
 	if (performLayout) {
 		node.cachedLayout = entry;
 	} else {
-		node.cachedMeasures[
-			getCacheSlot(availableWidth, availableHeight, widthMode, heightMode)
+		node.cachedSizes[
+			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace)
 		] = entry;
 	}
 	node.dirty = false;
@@ -5675,8 +5675,8 @@ function layoutNodeImpl(
 	node: LayoutNode,
 	availableWidth: number,
 	availableHeight: number,
-	widthMode: MeasureMode,
-	heightMode: MeasureMode,
+	widthSpace: AvailableSpace,
+	heightSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
 	performLayout: boolean,
@@ -5696,23 +5696,23 @@ function layoutNodeImpl(
 	node.layout.selfCollapsing = false;
 
 	// A box that stopped being a grid container must stop reporting them.
-	if (node.style.mode !== "grid") {
+	if (node.style.displayType !== "grid") {
 		node.layout.gridColumns = null;
 		node.layout.gridRows = null;
 	}
 
-	if (node.style.mode === "none") {
+	if (node.style.displayType === "none") {
 		zeroLayout(node);
 		return;
 	}
 
-	if (node.measureFunc) {
-		layoutMeasureNode(
+	if (node.measureContent) {
+		layoutMeasuredContent(
 			node,
 			availableWidth,
 			availableHeight,
-			widthMode,
-			heightMode,
+			widthSpace,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -5720,13 +5720,13 @@ function layoutNodeImpl(
 		return;
 	}
 
-	if (node.style.mode === "grid") {
+	if (node.style.displayType === "grid") {
 		layoutGrid(
 			node,
 			availableWidth,
 			availableHeight,
-			widthMode,
-			heightMode,
+			widthSpace,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -5734,13 +5734,13 @@ function layoutNodeImpl(
 		return;
 	}
 
-	if (node.style.mode === "table") {
+	if (node.style.displayType === "table") {
 		layoutTable(
 			node,
 			availableWidth,
 			availableHeight,
-			widthMode,
-			heightMode,
+			widthSpace,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -5750,16 +5750,16 @@ function layoutNodeImpl(
 
 	// A cell and a caption are block containers for their own content.
 	if (
-		node.style.mode === "block" ||
-		node.style.mode === "table-cell" ||
-		node.style.mode === "table-caption"
+		node.style.displayType === "block" ||
+		node.style.displayType === "table-cell" ||
+		node.style.displayType === "table-caption"
 	) {
 		layoutBlock(
 			node,
 			availableWidth,
 			availableHeight,
-			widthMode,
-			heightMode,
+			widthSpace,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 			performLayout,
@@ -5769,7 +5769,7 @@ function layoutNodeImpl(
 
 	const hasInFlowChild = node.children.some(
 		(child) =>
-			child.style.mode !== "none" &&
+			child.style.displayType !== "none" &&
 			!isOutOfFlowType(child.style.positionType),
 	);
 
@@ -5778,8 +5778,8 @@ function layoutNodeImpl(
 			node,
 			availableWidth,
 			availableHeight,
-			widthMode,
-			heightMode,
+			widthSpace,
+			heightSpace,
 			ownerWidth,
 			ownerHeight,
 		);
@@ -5790,8 +5790,8 @@ function layoutNodeImpl(
 		node,
 		availableWidth,
 		availableHeight,
-		widthMode,
-		heightMode,
+		widthSpace,
+		heightSpace,
 		ownerWidth,
 		ownerHeight,
 		performLayout,
@@ -5822,7 +5822,7 @@ function roundToGrid(
 	const absRight = absLeft + nodeWidth;
 	const absBottom = absTop + nodeHeight;
 
-	const isText = node.measureFunc !== null;
+	const isText = node.measureContent !== null;
 
 	node.layout.left = roundValue(nodeLeft, false, isText);
 	node.layout.top = roundValue(nodeTop, false, isText);
@@ -6552,7 +6552,7 @@ function styleLayoutNode(
 	layoutNode: LayoutNode,
 	positionedElements?: Set<Element>,
 ): void {
-	layoutNode.styleAll(() => {
+	layoutNode.setStyles(() => {
 		styleLayoutNodeProperties(element, layoutNode, positionedElements);
 	});
 }
@@ -6779,34 +6779,34 @@ function styleLayoutNodeProperties(
 	}
 
 	if (display === "none") {
-		layoutNode.setMode("none");
+		layoutNode.setDisplayType("none");
 	} else if (display === "grid" || display === "inline-grid") {
-		layoutNode.setMode("grid");
+		layoutNode.setDisplayType("grid");
 		applyGridContainer(layoutNode, element);
 	} else if (display === "flex") {
-		layoutNode.setMode("flex");
+		layoutNode.setDisplayType("flex");
 	} else if (display === "table") {
-		layoutNode.setMode("table");
+		layoutNode.setDisplayType("table");
 		layoutNode.setBorderCollapse(
 			getComputedValue(element, "border-collapse") === "collapse",
 		);
 	} else if (display === "table-header-group") {
-		layoutNode.setMode("table-header-group");
+		layoutNode.setDisplayType("table-header-group");
 	} else if (display === "table-footer-group") {
-		layoutNode.setMode("table-footer-group");
+		layoutNode.setDisplayType("table-footer-group");
 	} else if (display === "table-row-group") {
-		layoutNode.setMode("table-row-group");
+		layoutNode.setDisplayType("table-row-group");
 	} else if (display === "table-caption") {
-		layoutNode.setMode("table-caption");
+		layoutNode.setDisplayType("table-caption");
 	} else if (
 		display === "table-column" || display === "table-column-group"
 	) {
 		// Columns carry style, not a box of their own.
-		layoutNode.setMode("none");
+		layoutNode.setDisplayType("none");
 	} else if (display === "table-row") {
-		layoutNode.setMode("table-row");
+		layoutNode.setDisplayType("table-row");
 	} else if (display === "table-cell") {
-		layoutNode.setMode("table-cell");
+		layoutNode.setDisplayType("table-cell");
 		// The reflected properties carry HTML's ranges. rowspan 0 ("to the end
 		// of the row group") is not implemented. Such a cell covers one row.
 		const cell = element as {colSpan?: number; rowSpan?: number};
@@ -6857,7 +6857,7 @@ function styleLayoutNodeProperties(
 	) {
 		// Displays decided above must not be reset. A caption reset to block
 		// is lost to its table, and a hidden element reset keeps painting.
-		layoutNode.setMode("block");
+		layoutNode.setDisplayType("block");
 	}
 
 	// Only block and list-item join the formatting context around them
@@ -6909,11 +6909,11 @@ function styleNode(
 	element: Element,
 	layoutNode: LayoutNode,
 ): void {
-	const wasHidden = layoutNode.style.mode === "none";
+	const wasHidden = layoutNode.style.displayType === "none";
 	styleLayoutNode(element, layoutNode, layout[kPositionedElements]);
 	// Turning on display:none makes the whole subtree box-less, and every
 	// path that restyles a box passes through here.
-	if (!wasHidden && layoutNode.style.mode === "none") {
+	if (!wasHidden && layoutNode.style.displayType === "none") {
 		dropHiddenContent(layout, element);
 	}
 	if (isOutOfFlow(element)) {
@@ -7084,7 +7084,7 @@ function getContainerBox(
 			before.length !== now.length ||
 			before.some((node, index) => node !== now[index])
 		) {
-			reused.layoutNode?.markDirty();
+			reused.layoutNode?.invalidate();
 		}
 	}
 
@@ -7168,7 +7168,7 @@ function isBoxKindMatch(
 	}
 	return (
 		(getComputedDisplay(element) === "none") ===
-		(layoutNode.style.mode === "none")
+		(layoutNode.style.displayType === "none")
 	);
 }
 
@@ -7303,7 +7303,7 @@ function syncContainerRuns(
 	}
 
 	const containerFlex = getContainerLayoutNode(layout, container);
-	if (!containerFlex || containerFlex.measureFunc) {
+	if (!containerFlex || containerFlex.measureContent) {
 		// One box holds all of it, except an out-of-flow box, which no box
 		// list names and no run walk finds. This is the derivation that reaches
 		// it.
@@ -7335,8 +7335,8 @@ function syncContainerRuns(
 				if (styledFrom) {
 					styleLayoutNode(styledFrom, layoutNode, layout[kPositionedElements]);
 				}
-				layoutNode.setMeasureFunc((width, widthMode, placing) =>
-					measureInlineRun(layout, entry, width, widthMode, placing),
+				layoutNode.setMeasureContent((width, widthSpace, placing) =>
+					measureInlineRun(layout, entry, width, widthSpace, placing),
 				);
 				layout[kMeasureNodes].add(layoutNode);
 				layout[kAnonymousBoxes].set(layoutNode, entry);
@@ -7532,7 +7532,7 @@ function addNode(
 	// paint culling reads as nothing to draw. An <input> alone inside an
 	// inline-block painted nothing while the same input beside a letter of
 	// text painted fine.
-	if (parentLayoutNode?.measureFunc) {
+	if (parentLayoutNode?.measureContent) {
 		const stale = layout[kNodeMap].get(node);
 		if (stale && stale.parent === parentLayoutNode) {
 			parentLayoutNode.removeChild(stale);
@@ -7634,15 +7634,15 @@ function addElementNode(
 	styleNode(layout, element, layoutNode);
 
 	if (display === "none") {
-		layoutNode.setMode("none");
+		layoutNode.setDisplayType("none");
 		if (layoutNode && parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
 	} else if (asRun) {
 		const box = getPrincipalBox(layout, element);
-		layoutNode.setMeasureFunc((width, widthMode, placing) =>
-			measureInlineRun(layout, box, width, widthMode, placing),
+		layoutNode.setMeasureContent((width, widthSpace, placing) =>
+			measureInlineRun(layout, box, width, widthSpace, placing),
 		);
 		layout[kMeasureNodes].add(layoutNode);
 
@@ -7671,7 +7671,7 @@ function addElementNode(
 		}
 	}
 
-	// Here rather than in calculateLayout's drain. A container built from
+	// Here rather than in performLayout's drain. A container built from
 	// inside a measure is laid out the moment the measure returns, with no
 	// drain in between.
 	if (layout[kDirtyRunContainers].has(element)) {
@@ -7716,8 +7716,8 @@ function addTextNode(
 	}
 
 	const own = getPrincipalBox(layout, text);
-	layoutNode.setMeasureFunc((width, widthMode, placing) =>
-		measureInlineRun(layout, own, width, widthMode, placing),
+	layoutNode.setMeasureContent((width, widthSpace, placing) =>
+		measureInlineRun(layout, own, width, widthSpace, placing),
 	);
 	layout[kMeasureNodes].add(layoutNode);
 
@@ -7784,7 +7784,7 @@ function syncIndependentFormattingContext(
 	}
 	// The root IS the box's formatting context, so it gets the display and
 	// the grid container properties. The element's own node is the run's.
-	root.setMode(grid ? "grid" : "block");
+	root.setDisplayType(grid ? "grid" : "block");
 	if (grid) {
 		applyGridContainer(root, element);
 		const gaps: Array<[string, Gutter]> = [
@@ -7947,7 +7947,7 @@ function getContainingBlockLayoutNode(
 			// A measure-function node cannot take flex children, so a
 			// positioned inline-block cannot serve, and the hoist keeps
 			// climbing.
-			if (layoutNode && !layoutNode.measureFunc) {
+			if (layoutNode && !layoutNode.measureContent) {
 				return layoutNode;
 			}
 		}
@@ -8198,7 +8198,7 @@ function invalidateInlineRun(layout: Layout, node: Node): void {
 	if (container) {
 		invalidateContainerBoxes(layout, container);
 	}
-	layout[kNodeMap].get(entry.node!)?.markDirty();
+	layout[kNodeMap].get(entry.node!)?.invalidate();
 }
 
 function invalidateNode(
@@ -8222,7 +8222,7 @@ function invalidateNode(
 				layoutNode.freeRecursive();
 				untrackNode(layout, node);
 			} else {
-				// Kept for calculateLayout's re-add sweep, but restyled. A
+				// Kept for performLayout's re-add sweep, but restyled. A
 				// list's padding-left is derived from its items' markers, and
 				// reusing the node as-is kept the stale gutter.
 				styleNode(layout, node as Element, layoutNode);
@@ -8281,7 +8281,7 @@ function invalidateBox(
 	layout: Layout,
 	box: Box,
 ): void {
-	box.layoutNode?.markDirty();
+	box.layoutNode?.invalidate();
 	const host = getEnclosingIndependentFormattingContext(layout, box.container);
 	if (host) {
 		invalidateEnclosingMeasure(layout, host);
@@ -8358,8 +8358,8 @@ function invalidateEnclosingMeasure(
 		}
 	} else if (entry) {
 		const headLayoutNode = layout[kNodeMap].get(entry.node!);
-		if (headLayoutNode && headLayoutNode.measureFunc) {
-			headLayoutNode.markDirty();
+		if (headLayoutNode && headLayoutNode.measureContent) {
+			headLayoutNode.invalidate();
 			// Out of any independent formatting context too. Only its owner
 			// runs that layout.
 			const host = getEnclosingIndependentFormattingContext(
@@ -8383,8 +8383,8 @@ function invalidateEnclosingMeasure(
 		}
 		const layoutNode = layout[kNodeMap].get(current);
 		if (layoutNode) {
-			if (layoutNode.measureFunc) {
-				layoutNode.markDirty();
+			if (layoutNode.measureContent) {
+				layoutNode.invalidate();
 			}
 			const host = getEnclosingIndependentFormattingContext(
 				layout,
@@ -8412,8 +8412,8 @@ function markRunMeasureDirty(
 	if (!layoutNode) {
 		return;
 	}
-	if (layoutNode.measureFunc) {
-		layoutNode.markDirty();
+	if (layoutNode.measureContent) {
+		layoutNode.invalidate();
 	}
 	const host = getEnclosingIndependentFormattingContext(
 		layout,
@@ -8583,10 +8583,10 @@ function measureInlineRun(
 	layout: Layout,
 	box: Box,
 	width: number,
-	widthMode: MeasureMode,
+	widthSpace: AvailableSpace,
 	placing: boolean,
 ): Size {
-	const breakResult = breakNodes(layout, box, width, widthMode);
+	const breakResult = breakNodes(layout, box, width, widthSpace);
 	if (Number.isFinite(width)) {
 		breakResult.containerWidth = width;
 	}
@@ -8606,7 +8606,7 @@ function collectLeafNodes(
 	layout: Layout,
 	source: Box,
 	availableWidth: number,
-	availableWidthMode: MeasureMode = "unconstrained",
+	availableWidthMode: AvailableSpace = "indefinite",
 ): Leaf[] {
 	const leafNodes: Leaf[] = [];
 	if (source.kind === "anonymous") {
@@ -8676,7 +8676,7 @@ function collectLeaves(
 	stopsAtFlexItems: boolean,
 	leafNodes: Leaf[],
 	availableWidth: number,
-	availableWidthMode: MeasureMode,
+	availableWidthMode: AvailableSpace,
 ): void {
 	const walker = flowWalker(root);
 	walker.currentNode = start;
@@ -8779,8 +8779,8 @@ function collectLeaves(
 
 				let contentWidth = Number.MAX_SAFE_INTEGER;
 				let contentHeight = Number.MAX_SAFE_INTEGER;
-				let contentWidthMode: MeasureMode = "unconstrained";
-				let contentHeightMode: MeasureMode = "unconstrained";
+				let contentWidthMode: AvailableSpace = "indefinite";
+				let contentHeightMode: AvailableSpace = "indefinite";
 
 				// A sizing keyword picks the probe the content is measured under.
 				const widthSizing =
@@ -8789,17 +8789,17 @@ function collectLeaves(
 						: "none";
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
-					contentWidthMode = "exactly";
+					contentWidthMode = "definite";
 				} else if (widthSizing === "min-content") {
 					contentWidth = 0;
-					contentWidthMode = "at-most";
+					contentWidthMode = "fit-content";
 				} else if (
 					widthSizing === "fit-content" &&
 					Number.isFinite(availableWidth) &&
 					availableWidth < Number.MAX_SAFE_INTEGER
 				) {
 					contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
-					contentWidthMode = "at-most";
+					contentWidthMode = "fit-content";
 				} else if (element.tagName === "TEXTAREA") {
 					// cols sizes the CONTENT box (spec default 20). The UA
 					// sheet carries no width for it. A constant that pre-baked
@@ -8807,15 +8807,15 @@ function collectLeaves(
 					// none`.
 					const cols = parseInt(element.getAttribute("cols") ?? "", 10);
 					contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
-					contentWidthMode = "exactly";
+					contentWidthMode = "definite";
 				}
 
 				// On a row flex item's main axis the flex engine owns the used
-				// width, and the requests carry that authority: an `exactly`
-				// request is the resolved width, and an `at-most` request below
+				// width, and the requests carry that authority: an `definite`
+				// request is the resolved width, and an `fit-content` request below
 				// the CSS width is an intrinsic probe wanting the CONTENT's
 				// minimum, not the basis. Row flex items only. Elsewhere an
-				// `exactly` request describes the container, and a
+				// `definite` request describes the container, and a
 				// definite-width inline-block in a narrow block overflows
 				// rather than re-wrapping.
 				let offerOwnsWidth = false;
@@ -8823,16 +8823,16 @@ function collectLeaves(
 					Number.isFinite(availableWidth) && isRowFlexItem(element)
 				) {
 					const offered = Math.max(0, availableWidth - horizontalBoxSpace);
-					if (availableWidthMode === "exactly") {
+					if (availableWidthMode === "definite") {
 						contentWidth = offered;
-						contentWidthMode = "exactly";
+						contentWidthMode = "definite";
 						offerOwnsWidth = true;
 					} else if (
-						availableWidthMode === "at-most" &&
+						availableWidthMode === "fit-content" &&
 						offered < contentWidth
 					) {
 						contentWidth = offered;
-						contentWidthMode = "at-most";
+						contentWidthMode = "fit-content";
 						offerOwnsWidth = true;
 					}
 				}
@@ -8861,15 +8861,15 @@ function collectLeaves(
 					const cap = Math.max(0, maxWidthCap - horizontalBoxSpace);
 					if (cap < contentWidth) {
 						contentWidth = cap;
-						if (contentWidthMode === "unconstrained") {
-							contentWidthMode = "at-most";
+						if (contentWidthMode === "indefinite") {
+							contentWidthMode = "fit-content";
 						}
 					}
 				}
 
 				if (boxModel.height !== undefined) {
 					contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
-					contentHeightMode = "exactly";
+					contentHeightMode = "definite";
 				}
 
 				// The COMPOSED first child. A shadow host renders its shadow
@@ -8885,13 +8885,13 @@ function collectLeaves(
 					// shrinks the axis to fit. A sizing keyword on the root
 					// turns a passed width into the matching probe.
 					independentFormattingContext.setWidthSizing(widthSizing);
-					independentFormattingContext.calculateLayout(
-						contentWidthMode === "exactly" ||
+					independentFormattingContext.performLayout(
+						contentWidthMode === "definite" ||
 						(widthSizing !== "none" &&
-							contentWidthMode === "at-most")
+							contentWidthMode === "fit-content")
 							? contentWidth
 							: Number.NaN,
-						contentHeightMode === "exactly"
+						contentHeightMode === "definite"
 							? contentHeight
 							: Number.NaN,
 					);
@@ -9029,16 +9029,16 @@ function breakNodes(
 	layout: Layout,
 	source: Box,
 	width: number,
-	widthMode: MeasureMode,
+	widthSpace: AvailableSpace,
 ): BreakResult {
-	// An `unconstrained` request is indefinite (NaN), so percentages in
-	// the content cannot resolve. Any definite request, an `at-most` 0
+	// An `indefinite` request is indefinite (NaN), so percentages in
+	// the content cannot resolve. Any definite request, an `fit-content` 0
 	// included, resolves them.
 	const leafNodes = collectLeafNodes(
 		layout,
 		source,
-		widthMode === "unconstrained" ? NaN : width,
-		widthMode,
+		widthSpace === "indefinite" ? NaN : width,
+		widthSpace,
 	);
 
 	if (leafNodes.length === 0) {
@@ -9061,7 +9061,7 @@ function breakNodes(
 	// unlimited it returned max-content, making min-content zero
 	// everywhere.
 	const maxWidth =
-		widthMode === "unconstrained"
+		widthSpace === "indefinite"
 			? Number.MAX_SAFE_INTEGER
 			: width;
 
@@ -9079,7 +9079,7 @@ function breakNodes(
 		nowrap,
 	);
 	// break-word does NOT shrink min-content (the word still measures whole
-	// at the `at-most` 0 probe), while anywhere and break-all do.
+	// at the `fit-content` 0 probe), while anywhere and break-all do.
 	const breakAnywhere =
 		!nowrap &&
 		(wordBreak === "break-all" ||
@@ -10077,7 +10077,7 @@ export class Layout {
 	invalidateTextMeasurement(): void {
 		this.invalidate();
 		for (const layoutNode of this[kMeasureNodes]) {
-			layoutNode.markDirty();
+			layoutNode.invalidate();
 		}
 	}
 
@@ -10088,18 +10088,18 @@ export class Layout {
 		this[kInitialContainingBlock].setHeight(height);
 
 		for (const layoutNode of this[kMeasureNodes]) {
-			layoutNode.markDirty();
+			layoutNode.invalidate();
 		}
 		markChanged(this);
 
-		this.calculateLayout();
+		this.performLayout();
 	}
 
 	framePainted(): void {
 		this[kMoved] = false;
 	}
 
-	calculateLayout(): void {
+	performLayout(): void {
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
 		if (!this[kNodeMap].has(this[kRootElement])) {
@@ -10175,7 +10175,7 @@ export class Layout {
 		// html can size to its content and still resolve percentages and
 		// viewport units against it.
 		const root = this[kInitialContainingBlock];
-		root.calculateLayout(root.style.width.value, root.style.height.value);
+		root.performLayout(root.style.width.value, root.style.height.value);
 	}
 
 	dispose(): void {
@@ -10229,9 +10229,9 @@ export class Layout {
 			!layoutNode ||
 			// A measure-function leaf never decomposes into layout children, so
 			// empty children[] means "not decomposed," not "nothing to paint."
-			layoutNode.measureFunc !== null ||
+			layoutNode.measureContent !== null ||
 			layoutNode.unstackedChildCount !== 0 ||
-			layoutNode.style.mode !== "block" ||
+			layoutNode.style.displayType !== "block" ||
 			// Cheap proxy for "every DOM child has exactly one children[]
 			// entry". A run member owns no layout node, and a pseudo-element is a
 			// box-tree child with no childNodes entry. Uncounted, an element
@@ -10339,7 +10339,7 @@ export class Layout {
 		element: Element,
 	): {width: number | null; height: number} | null {
 		const layoutNode = this[kNodeMap].get(element);
-		if (!layoutNode || layoutNode.measureFunc !== null) {
+		if (!layoutNode || layoutNode.measureContent !== null) {
 			return null;
 		}
 		const box = getBoxModel(element);
@@ -10347,12 +10347,12 @@ export class Layout {
 		let bottom = 0;
 		for (const child of layoutNode.children) {
 			// A display:none placeholder holds a stale layout.
-			if (child.style.mode === "none") {
+			if (child.style.displayType === "none") {
 				continue;
 			}
 			if (right !== null) {
 				right =
-					child.measureFunc !== null
+					child.measureContent !== null
 						? null
 						: Math.max(
 							right,

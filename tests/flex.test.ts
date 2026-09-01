@@ -59,7 +59,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(30);
 	});
@@ -77,7 +77,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		item.setFlexGrow(0);
 		item.setFlexShrink(0);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(50);
 	});
@@ -100,7 +100,7 @@ describe("flex-basis auto vs content sizing (css-flexbox-1 §7.2.3)", () => {
 		content.setWidth(25);
 		content.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).width).toBe(25);
 	});
@@ -131,7 +131,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexBasis(0);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(30);
 		expect(rect(b).width).toBe(70);
@@ -160,7 +160,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexBasis(0);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(80);
 		expect(rect(b).width).toBe(20);
@@ -193,7 +193,7 @@ describe("min/max clamping against grow and shrink (css-flexbox-1 §9.7)", () =>
 		b.setFlexShrink(1);
 		b.setHeight(10);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(a).width).toBe(60);
 		expect(rect(b).width).toBe(40);
@@ -233,7 +233,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(100, 40);
+		root.performLayout(100, 40);
 		return items;
 	}
 
@@ -302,7 +302,7 @@ describe("flex-wrap with align-content (css-flexbox-1 §9.6)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(100, 50);
+		root.performLayout(100, 50);
 
 		expect(rect(items[0]).top).toBe(10);
 		expect(rect(items[2]).top).toBe(30);
@@ -342,7 +342,7 @@ describe("percentage margins and padding resolve against the containing block wi
 		grandchild.setWidth(10);
 		grandchild.setHeight(5);
 
-		root.calculateLayout(200, 100);
+		root.performLayout(200, 100);
 
 		// Padding is 10% of 200 = 20 on every edge, so the content box of the
 		// child starts at (20, 20) within it.
@@ -363,7 +363,7 @@ describe("percentage margins and padding resolve against the containing block wi
 		child.setMargin("top", {percentage: 10});
 		child.setMargin("left", {percentage: 10});
 
-		root.calculateLayout(200, 100);
+		root.performLayout(200, 100);
 
 		// Both margins are 10% of the containing block's width (200) = 20.
 		// A margin-top of 10 would mean it had been resolved against the height.
@@ -388,7 +388,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setMargin("left", "auto");
 		item.setMargin("right", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(40);
 	});
@@ -405,7 +405,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setFlexShrink(0);
 		item.setMargin("left", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(80);
 	});
@@ -422,7 +422,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setMargin("top", "auto");
 		item.setMargin("bottom", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).top).toBe(5);
 	});
@@ -442,7 +442,7 @@ describe("auto margins (css-flexbox-1 §9.5)", () => {
 		item.setFlexShrink(0);
 		item.setMargin("right", "auto");
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 
 		expect(rect(item).left).toBe(0);
 	});
@@ -481,7 +481,7 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		bText.setWidth(10);
 		bText.setHeight(1);
 
-		root.calculateLayout(100, 20);
+		root.performLayout(100, 20);
 		return {a, b, aText, bText};
 	}
 
@@ -532,7 +532,7 @@ describe("gap (css-align-3)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(40, 3);
+		root.performLayout(40, 3);
 
 		expect(rect(items[0]).left).toBe(0);
 		expect(rect(items[1]).left).toBe(9);
@@ -556,7 +556,7 @@ describe("gap (css-align-3)", () => {
 			item.setHeight(1);
 		}
 
-		root.calculateLayout(32, 3);
+		root.performLayout(32, 3);
 
 		const widths = items.map((item) => rect(item).width);
 		expect(widths.reduce((sum, w) => sum + w, 0)).toBe(28);
@@ -584,7 +584,7 @@ describe("gap (css-align-3)", () => {
 			item.setFlexShrink(0);
 		}
 
-		root.calculateLayout(20, 10);
+		root.performLayout(20, 10);
 
 		expect(rect(items[1]).left).toBe(10);
 		expect(rect(items[1]).top).toBe(0);
@@ -609,8 +609,8 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		full: number,
 	): LayoutNode {
 		const item = box(parent);
-		item.setMeasureFunc((width, widthMode) => {
-			if (widthMode === "unconstrained") {
+		item.setMeasureContent((width, widthSpace) => {
+			if (widthSpace === "indefinite") {
 				return {width: full, height: 1};
 			}
 			// Wrap into the offered width, but never below the longest single word.
@@ -630,7 +630,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wide = textItem(root, 15, 15); // one unbreakable 15-cell word
 		const narrow = textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBe(15);
 		expect(rect(narrow).width).toBe(4);
@@ -648,7 +648,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wrappable = textItem(root, 5, 16); // longest word 5, full string 16
 		const fixed = textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wrappable).width).toBeLessThan(16);
 		expect(rect(wrappable).width).toBeGreaterThanOrEqual(5);
@@ -665,7 +665,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		wide.setMinWidth(0);
 		textItem(root, 4, 4);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBeLessThan(15);
 	});
@@ -678,7 +678,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		const wide = textItem(root, 15, 15);
 		wide.setFlexShrink(0);
 
-		root.calculateLayout(12, 3);
+		root.performLayout(12, 3);
 
 		expect(rect(wide).width).toBe(15);
 	});
@@ -716,9 +716,9 @@ describe("what a measurement produced, not only how big it was", () => {
 		placed: {lines: string[] | null},
 	): LayoutNode {
 		const item = box(parent);
-		item.setMeasureFunc((width, widthMode, placing) => {
+		item.setMeasureContent((width, widthSpace, placing) => {
 			const limit =
-				widthMode === "unconstrained"
+				widthSpace === "indefinite"
 					? Number.MAX_SAFE_INTEGER
 					: width;
 			const lines = breakWords(limit);
@@ -750,12 +750,12 @@ describe("what a measurement produced, not only how big it was", () => {
 		const fixed = textItem(root, {lines: null});
 		fixed.setFlexShrink(0);
 
-		root.calculateLayout(NaN, NaN);
+		root.performLayout(NaN, NaN);
 		expect(rect(shrinking).width).toBe(4);
 		expect(placed.lines).toEqual(breakWords(4));
 
 		root.setWidth(17);
-		root.calculateLayout(NaN, NaN);
+		root.performLayout(NaN, NaN);
 
 		// Four cells wide: one word per line, and that is what it holds.
 		expect(rect(shrinking).width).toBe(4);

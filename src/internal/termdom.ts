@@ -243,9 +243,9 @@ export class TermDOM {
 
 			this[kExchange].start(this[kInput]);
 			if (this[kTransport].interactive) {
-				this[kExchange].setMode("bracketedPaste", true);
+				this[kExchange].setDisplayType("bracketedPaste", true);
 				// So dispose can restore the title.
-				this[kExchange].setMode("titleStack", true);
+				this[kExchange].setDisplayType("titleStack", true);
 				if (this.document.title) {
 					void this[kExchange].setTitle(this.document.title);
 				}
@@ -414,7 +414,7 @@ export function frameStanding(
 	documentTop: number;
 } {
 	const layout = termDOM[kLayout];
-	layout.calculateLayout();
+	layout.performLayout();
 	return {
 		contentHeight: layout.documentPaintHeight(),
 		wrappedRowsAbove: termDOM[kScreen].wrappedRowsAbovePark(cols),
@@ -507,7 +507,7 @@ function syncMouseReporting(
 		return;
 	}
 	termdom[kMouseReportingEnabled] = wanted;
-	termdom[kExchange].setMode("mouseCapture", wanted);
+	termdom[kExchange].setDisplayType("mouseCapture", wanted);
 	// Motion reporting depends on capture. A yield hands the whole mouse
 	// back.
 	syncHoverReporting(termdom);
@@ -535,7 +535,7 @@ function syncHoverReporting(
 		return;
 	}
 	termdom[kHoverReportingEnabled] = wanted;
-	termdom[kExchange].setMode("motionReporting", wanted);
+	termdom[kExchange].setDisplayType("motionReporting", wanted);
 }
 
 export async function render(termdom: TermDOM): Promise<void> {
@@ -807,7 +807,7 @@ async function printStatic(
 ): Promise<void> {
 	DOM.applyMutations(termdom.document);
 
-	termdom[kLayout].calculateLayout();
+	termdom[kLayout].performLayout();
 
 	const context = termdom[kScreen].beginStatic({
 		rows: termdom[kLayout].documentPaintHeight(),
@@ -901,9 +901,9 @@ async function renderInteractive(
 	const wantAlt = isFullscreen(termdom);
 	if (wantAlt !== termdom[kOnAlternateScreen]) {
 		termdom[kOnAlternateScreen] = wantAlt;
-		termdom[kExchange].setMode("altScreen", wantAlt);
+		termdom[kExchange].setDisplayType("altScreen", wantAlt);
 		if (wantAlt) {
-			termdom[kExchange].setMode("cursorHidden", true);
+			termdom[kExchange].setDisplayType("cursorHidden", true);
 			void termdom[kExchange].clearScreen();
 		}
 		// Drop the diff model, or this frame patches one screen against the
@@ -917,7 +917,7 @@ async function renderInteractive(
 
 	DOM.applyMutations(termdom.document);
 
-	termdom[kLayout].calculateLayout();
+	termdom[kLayout].performLayout();
 	DOM.clampScrollOffsets(termdom.document);
 
 	// Skipped if focus has moved on. Revealing a field the user left would
@@ -992,10 +992,13 @@ async function renderInteractive(
 	// UI. A focused field shows it on its caret, where IME composition
 	// anchors.
 	if (ansi) {
-		termdom[kExchange].setMode("cursorHidden", true);
+		termdom[kExchange].setDisplayType("cursorHidden", true);
 		await termdom[kExchange].write(ansi);
 	}
-	termdom[kExchange].setMode("cursorHidden", !termdom[kScreen].caretVisible);
+	termdom[kExchange].setDisplayType(
+		"cursorHidden",
+		!termdom[kScreen].caretVisible,
+	);
 	afterRender(termdom);
 }
 

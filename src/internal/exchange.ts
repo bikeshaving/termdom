@@ -767,7 +767,7 @@ export class Exchange {
 	}
 
 	/** Writes on change only. Teardown restores what was engaged. */
-	setMode(name: ModeName, on: boolean): void {
+	setDisplayType(name: ModeName, on: boolean): void {
 		if (on === this[kEngagedModes].has(name)) {
 			return;
 		}
