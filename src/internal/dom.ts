@@ -61,15 +61,16 @@ const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 const kUAUpgrade = Symbol("build a control's UA widget");
 
-// Idempotent and synchronous: the shadow tree exists by the time this
-// returns, and a control that left the tree and came back only catches up.
+// Safe to call more than once, and synchronous: the shadow tree exists
+// when this returns. A control that was removed and re-inserted keeps its
+// tree and only updates the state it missed.
 function upgradeUAWidget(element: globalThis.Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kUAUpgrade
 	]?.();
 }
 
-// The built-in tags that upgrade to a UA widget on connect.
+// Built-in tags that get a UA widget when they connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"DETAILS",
 	"INPUT",
@@ -81,9 +82,9 @@ const UPGRADEABLE_CONTROLS = new Set([
 const kNext = Symbol("next sibling");
 const kFirstChild = Symbol("first child");
 
-// A walk over the subtree's own child links rather than a selector query:
-// every insertion pays this, and ordinary markup must pay as little as a tag
-// comparison per element.
+// Walks the child links directly instead of running a selector query.
+// This runs on every insertion, so ordinary markup should cost no more
+// than one tag comparison per element.
 function upgradeUAWidgetsIn(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
@@ -99,11 +100,11 @@ function upgradeUAWidgetsIn(root: globalThis.Node): void {
 	}
 }
 
-/** A listener as this file's own dispatch takes one. */
+/** A listener as this file's dispatch calls it. */
 type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
 
-/** A text control's selection, read past the type gate the author meets. */
+/** A text control's selection, without the type check authors get. */
 function getUASelection(control: globalThis.Element): {
 	start: number;
 	end: number;
@@ -119,9 +120,9 @@ function getUASelection(control: globalThis.Element): {
 }
 
 /**
- * A text control's selection record, past the type gate the author meets --
- * selectionStart is null on a number input per spec, and the UA still has a
- * caret to draw. Null for a control with no selection.
+ * A text control's selection record, without the type check authors get.
+ * Per spec selectionStart is null on a number input, but the UA still needs
+ * to draw a caret there. Returns null for a control with no selection.
  */
 export function selectionRecordOf(
 	control: globalThis.Element,
@@ -136,7 +137,7 @@ export function selectionRecordOf(
 
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
-/** Move a text control's selection, past the type gate the author meets. */
+/** Set a text control's selection, without the type check authors get. */
 export function setUASelection(
 	control: globalThis.Element,
 	start: number,
@@ -156,16 +157,16 @@ export function setUASelection(
 
 const kUAReconcile = Symbol("bring a control's UA tree back into step");
 
-/** Tell a control that its own state moved, so its UA tree follows. */
+/** Notify a control that its state changed so its UA tree can update. */
 function widgetChanged(element: Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kUAReconcile
 	]?.();
 }
 
-// The one spelling of which elements are fields: the paint, the caret scroll
-// and the press-to-park default action must agree. checkbox and radio render
-// a toggle, and hidden renders nothing at all.
+// The single definition of which elements are fields. Painting, caret
+// scrolling and the mousedown default action all use it, so they agree.
+// checkbox and radio render a toggle, and hidden renders nothing.
 function isTextField(element: {
 	tagName: string;
 	type?: string;
@@ -185,11 +186,10 @@ const kUAValueText = Symbol(
 );
 
 /**
- * The value part's text node inside a form control's user-agent shadow tree,
- * or null before the tree is built. The control's editable text lives at its
- * `[part="value"]`, reached through the closed tree the way a browser's own
- * editing internals reach it: the renderer reads it to place the caret, the
- * editing path to hit-test a point.
+ * The text node holding a form control's value inside its UA shadow tree,
+ * or null before the tree is built. The editable text lives at
+ * `[part="value"]` in the closed tree. The renderer reads it to place the
+ * caret, and the editing code reads it to hit-test a point.
  */
 export function fieldValueText(field: globalThis.Element): globalThis.Text |
 	null {
@@ -209,8 +209,8 @@ const kExchange = Symbol("exchange");
 const kScreen = Symbol("screen");
 
 /**
- * The focus of a control's selection record, or null for an element with
- * no record: the caret, in the value text's own offsets.
+ * The focus offset of a control's selection record, in offsets of the
+ * value text. Null for an element with no selection record.
  */
 export function selectionFocusOf(element: globalThis.Element): number | null {
 	const record = selectionRecordOf(element);
@@ -221,19 +221,19 @@ export function selectionFocusOf(element: globalThis.Element): number | null {
 }
 
 /**
- * The value offset under a document-space point in a text field --
- * cell-width aware, clamped to the nearest offset so a drag that leaves
- * the field still resolves (the browser's capture model: a selection begun
- * in a field is the field's until release).
+ * The value offset under a document-space point in a text field. Accounts
+ * for cell widths and clamps to the nearest offset, so a drag that leaves
+ * the field still resolves. That matches browsers: a selection started in
+ * a field belongs to the field until release.
  */
 export function fieldCaretOffset(
 	element: globalThis.Element,
 	x: number,
 	y: number,
 ): number | null {
-	// The value's own text: a field's selection is measured in ITS offsets,
-	// and for a password that text is the bullets, which is what was
-	// painted and so what the point lands on.
+	// Measure against the value's own text. For a password field that text
+	// is the bullets, which is what was painted, so that is what the point
+	// lands on.
 	const valueText = fieldValueText(element);
 	if (!valueText) {
 		return null;
@@ -255,10 +255,11 @@ export function fieldCaretOffset(
 }
 
 /**
- * A press's default action in a text field: park the caret at the pressed
- * character. Answers the field and the parked offset for the caller's drag
- * anchor, or null off a field -- checkbox, radio and hidden render no text
- * a caret can sit in, and a press on one is a press on no field.
+ * The mousedown default action in a text field: put the caret at the
+ * pressed character. Returns the field and the offset so the caller can
+ * use them as a drag anchor, or null if the press was not on a field.
+ * checkbox, radio and hidden render no text, so a press on them returns
+ * null.
  */
 export function parkFieldCaret(
 	target: globalThis.Element,
@@ -277,10 +278,11 @@ export function parkFieldCaret(
 }
 
 /**
- * The focused text field's own selection over this text node, or null. A
- * control's selection is invisible to getSelection() per spec, so this is
- * the one way a highlight learns of it; the range names the text the
- * control renders its value through, so node identity is the whole test.
+ * The focused text field's selection over this text node, or null. Per
+ * spec a control's selection is invisible to getSelection(), so this is
+ * the only way the highlight can find it. The range refers to the text
+ * node the control renders its value through, so a node identity check is
+ * enough.
  */
 export function fieldSelectionRange(
 	document: globalThis.Document,
@@ -298,9 +300,10 @@ export function fieldSelectionRange(
 }
 
 /**
- * Keep the focused single-line input's caret in its box by setting the
- * value part's scrollLeft (the layout reads it live, no relayout).
- * Measured in cells; a frame recomputes this as derived state.
+ * Keep the focused single-line input's caret inside its box by setting
+ * scrollLeft on the value part. Layout reads scrollLeft live, so this
+ * causes no relayout. Measured in cells. Recomputed every frame as derived
+ * state.
  */
 export function revealFieldCaret(document: globalThis.Document): void {
 	const active = document.activeElement;
@@ -333,8 +336,8 @@ export function revealFieldCaret(document: globalThis.Document): void {
 		acc += stringWidth(shown[scrollOffset]);
 		scrollOffset++;
 	}
-	// The caret is wherever the input renders it, in the value text's own
-	// offsets -- the same text `shown` is read from.
+	// The caret offset is in the value text's own offsets, the same text
+	// `shown` was read from.
 	const cursor = selectionFocusOf(active);
 	if (cursor === null) {
 		return;
@@ -364,9 +367,9 @@ export function revealFieldCaret(document: globalThis.Document): void {
 
 const kUASelectionRange = Symbol("what an element's own selection covers");
 
-// A form control's selection is invisible to getSelection() per spec, so
-// this is the only way to measure it. The range is the document's own,
-// valid until the next selection read.
+// Per spec a form control's selection is invisible to getSelection(), so
+// this is the only way to measure it. The range belongs to the document
+// and is valid until the next selection read.
 function getSelectionRange(
 	element: globalThis.Element,
 ): globalThis.Range | null {
@@ -380,12 +383,12 @@ function getSelectionRange(
 	);
 }
 
-/** The range a document answers control-selection queries with. */
+/** The range each document reuses for control-selection queries. */
 const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
 
-// Null when the selection is collapsed -- nothing to highlight. Offsets are
-// clamped into the text, so a selection recorded against a longer value
-// still measures.
+// Null when the selection is collapsed, since there is nothing to
+// highlight. Offsets are clamped into the text, so a selection recorded
+// against a longer value still measures.
 function textSelectionRange(
 	control: HTMLInputElement | HTMLTextAreaElement,
 	valueText: globalThis.Text | null,
@@ -411,12 +414,12 @@ function textSelectionRange(
 	return range;
 }
 
-/** A node's own document, as the tree-building code below reads it. */
+/** A node's document, as the tree-building code below needs it. */
 function getUADocument(node: globalThis.Node): globalThis.Document {
 	return (node as Node).ownerDocument as unknown as globalThis.Document;
 }
 
-/** A field's value and selection after an editing key -- what to apply. */
+/** A field's value and selection after an editing key. */
 interface FieldEditResult {
 	value: string;
 	start: number;
@@ -424,8 +427,9 @@ interface FieldEditResult {
 	direction: "forward" | "backward" | "none";
 }
 
-// Shift extends from the fixed anchor (the browser's anchor/focus model); a
-// plain move collapses there. A move never edits text.
+// With Shift the selection extends from the fixed anchor, like the
+// browser's anchor/focus model. Without Shift the selection collapses at
+// the target. A move never edits text.
 function fieldSelectionMove(
 	value: string,
 	anchor: number,
@@ -446,10 +450,10 @@ function fieldSelectionMove(
 
 const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
 
-// Backspace/Delete, the horizontal arrows and the readline chords,
-// grapheme-aware. Null for a key that is not one of these: Enter, vertical
-// motion and Home/End belong to the control, which knows where its lines
-// end, and printable insertion is a keypress action.
+// Handles Backspace, Delete, the horizontal arrows and the readline chords,
+// grapheme-aware. Returns null for any other key. Enter, vertical motion
+// and Home/End are left to the control, which knows where its lines end,
+// and printable insertion is a keypress action.
 function applySharedFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	key: string,
@@ -463,10 +467,9 @@ function applySharedFieldEdit(
 	const anchor = backward ? end : start;
 	const hasSelection = start !== end;
 
-	// The chords a terminal user's hands expect, from readline: a caret motion
-	// or a deletion, never a browser shortcut. The ones a line bounds --
-	// Ctrl+A, Ctrl+E, Ctrl+K, Ctrl+U -- belong to the control, which knows where
-	// its lines end; these are the rest.
+	// The readline chords a terminal user expects: caret motion or deletion,
+	// never a browser shortcut. Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U depend on
+	// line bounds, so the control handles those. These are the rest.
 	if (ctrlKey && key === "b") {
 		return fieldSelectionMove(
 			value,
@@ -529,8 +532,8 @@ function applySharedFieldEdit(
 				true,
 			);
 		}
-		// A plain arrow with a selection collapses to its matching edge, not one
-		// past it -- the browser behavior.
+		// An arrow with a selection collapses to that edge, not one past it,
+		// which is what browsers do.
 		const target = hasSelection ? start : prevGraphemeBoundary(value, caret);
 		return fieldSelectionMove(value, anchor, target, false);
 	}
@@ -549,8 +552,8 @@ function applySharedFieldEdit(
 	return null;
 }
 
-// Reached from beforeinput, where a browser reaches it: the insertion is
-// the keypress default action, and the field's input follows.
+// Called from beforeinput, as in a browser: insertion is the keypress
+// default action, and the field's input event follows.
 function printableFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
@@ -563,7 +566,7 @@ function printableFieldEdit(
 	);
 }
 
-// The whitespace before the caret is consumed with the word, so a chord at
+// Whitespace before the caret is consumed with the word, so a chord at
 // the end of "one two " lands where "two" began.
 function wordStartBefore(value: string, caret: number): number {
 	let at = caret;
@@ -576,7 +579,7 @@ function wordStartBefore(value: string, caret: number): number {
 	return at;
 }
 
-/** The mirror of wordStartBefore: where a word-wise forward move lands. */
+/** The mirror of wordStartBefore: where a forward word move lands. */
 function wordEndAfter(value: string, caret: number): number {
 	let at = caret;
 	while (at < value.length && /\s/.test(value[at])) {
@@ -588,7 +591,7 @@ function wordEndAfter(value: string, caret: number): number {
 	return at;
 }
 
-/** An edit result whose selection is a caret collapsed at `pos`. */
+/** An edit result with the caret collapsed at `pos`. */
 function collapsedEdit(value: string, pos: number): FieldEditResult {
 	const clamped = Math.max(0, Math.min(pos, value.length));
 	return {value, start: clamped, end: clamped, direction: "none"};
@@ -596,11 +599,11 @@ function collapsedEdit(value: string, pos: number): FieldEditResult {
 
 const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 
-// Fires input on a real value change and select on a selection the user
-// moved. The write lands on the control's value itself, never the value IDL
-// setter: a user edit in a browser changes the value without the setter
-// running, which is how a framework tells user input from the page's own
-// writes.
+// Fires input when the value actually changed and select when the user
+// moved the selection. Writes to the control's value directly, never
+// through the value IDL setter. In a browser a user edit changes the value
+// without running the setter, and frameworks rely on that to tell user
+// input from the page's own writes.
 function applyFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	result: FieldEditResult,
@@ -621,7 +624,7 @@ function applyFieldEdit(
 	}
 }
 
-/** Add a `part`-attributed span (holding one empty text node) to a UA root. */
+/** Add a span with a `part` attribute and one empty text node to a UA root. */
 function addPart(
 	root: globalThis.ShadowRoot,
 	part: string,
@@ -651,8 +654,8 @@ function observeShadowRoot(
 
 const kDocument = Symbol("node document");
 
-// The root is enrolled BEFORE it is populated, so the population itself is
-// the invalidation that swaps the composed tree in.
+// The root is registered with the cascade BEFORE it is populated, so
+// populating it is the invalidation that swaps in the new composed tree.
 function buildUARoot(
 	host: Element,
 	displayed: DisplayedDocument,
@@ -661,25 +664,25 @@ function buildUARoot(
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
 	displayed[kLayout].invalidate();
 	observeShadowRoot(host[kDocument]!, root);
-	// The sheet is in the root BEFORE the cascade hears about it, so the
-	// registration's incremental parse sees it: registered-then-populated
-	// left the cascade to notice the sheet by count drift, which ordered a
-	// full rebuild of every sheet per widget.
+	// The sheet has to be in the root BEFORE the cascade is told about the
+	// root, so the registration's incremental parse picks it up. Registering
+	// first and populating after left the cascade to notice the sheet by count
+	// drift, which forced a full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
 	displayed[kStyles].registerShadowRoot(root);
 	return root;
 }
 
-/** The `<style>` element carrying a widget's UA stylesheet. */
+/** The `<style>` element that carries a widget's UA stylesheet. */
 function uaStyleElement(host: Element, styles: string): globalThis.HTMLElement {
 	const style = getUADocument(host).createElement("style");
 	style.textContent = styles;
 	return style;
 }
 
-// The text selection API's clamping and direction rules. The event is
-// queued rather than fired: a run of writes inside one turn reports once,
-// at the selection they settled on.
+// Applies the text selection API's clamping and direction rules. The
+// event is queued rather than fired, so several writes in one turn report
+// once with the final selection.
 function setTextSelection(
 	control: Element,
 	start: number,
@@ -714,7 +717,7 @@ function scheduleTextSelectionChange(control: Element): void {
 	});
 }
 
-/** The setRangeText algorithm over a raw value. */
+/** The setRangeText algorithm applied to a raw value. */
 function replaceTextRange(
 	value: string,
 	replacement: string,
@@ -760,8 +763,8 @@ function replaceTextRange(
 	}
 }
 
-// The platform's, so a caller's `instanceof DOMException` and `error.code`
-// are the platform's own.
+// Use the platform's DOMException so a caller's `instanceof DOMException`
+// and `error.code` checks work.
 const PlatformDOMException: typeof DOMException = (
 	globalThis as unknown as {DOMException: typeof DOMException}
 ).DOMException;
@@ -782,8 +785,8 @@ function indexSizeError(message: string): DOMException {
 	return domError("IndexSizeError", message);
 }
 
-// The DOM Standard's name productions, loosest last: a doctype name may
-// even be empty.
+// The DOM Standard's name productions, from strictest to loosest. A
+// doctype name may even be empty.
 const VALID_ELEMENT_LOCAL_NAME =
 	/^(?:[A-Za-z][^\0\t\n\f\r />]*|[:_\u0080-\u{10FFFF}][A-Za-z0-9\-.:_\u0080-\u{10FFFF}]*)$/u;
 const VALID_ATTRIBUTE_LOCAL_NAME = /^[^\0\t\n\f\r /=>]+$/u;
@@ -797,8 +800,8 @@ const NAME_START =
 	"\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF" +
 	"\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD:";
 const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
-// The combining-mark ranges are the production's own, and are meant to match
-// a combining mark on its own rather than as part of a grapheme.
+// The combining-mark ranges come from the production itself and are meant
+// to match a combining mark on its own, not as part of a grapheme.
 
 /* eslint-disable no-misleading-character-class -- the XML Name production
    matches lone combining marks by definition */
@@ -823,8 +826,8 @@ function validateAttributeLocalName(name: string): void {
 }
 
 /**
- * Split a qualified name against a namespace, throwing the errors the spec's
- * name and namespace constraints call for.
+ * Split a qualified name against a namespace, throwing the errors the
+ * spec's name and namespace constraints require.
  */
 function validateAndExtract(
 	namespace: string | null,
@@ -897,9 +900,9 @@ const CAPTURING_PHASE = 1;
 const AT_TARGET = 2;
 const BUBBLING_PHASE = 3;
 
-// The shadow members -- the adjusted target and the two closed-tree flags --
-// are what composedPath() reads to decide how much of a path a listener may
-// see; retargeting fills them in as the path is built.
+// The shadow members (the adjusted target and the two closed-tree flags)
+// are what composedPath() uses to decide how much of the path a listener
+// may see. Retargeting fills them in while the path is built.
 interface PathItem {
 	invocationTarget: EventTarget;
 	invocationTargetInShadowTree: boolean;
@@ -909,9 +912,9 @@ interface PathItem {
 	slotInClosedTree: boolean;
 }
 
-// The spec's internal slots and flags, in one object behind a module
-// symbol: dispatch is a module function that reads and writes them across
-// every target in a path.
+// The spec's internal slots and flags, kept in one object behind a module
+// symbol because dispatch is a module function that reads and writes them
+// for every target in the path.
 interface DispatchState {
 	target: EventTarget | null;
 	relatedTarget: EventTarget | null;
@@ -926,16 +929,15 @@ interface DispatchState {
 	inPassiveListener: boolean;
 	trusted: boolean;
 
-	/**
-	 * Whether the event this belongs to is a platform event rather than one of
-	 * this DOM's, whose flags a listener sets on the platform half: dispatch
-	 * reads them back off the event after every listener it calls.
-	 */
+	// True when the event is a platform event rather than one of ours. A
+	// listener sets flags on the platform object, so dispatch reads them back
+	// from the event after every listener call.
 	foreign: boolean;
 }
 
-// A trusted animation or transition event whose modern type found no
-// listener at a target is offered again there under the prefixed name.
+// If a trusted animation or transition event finds no listener for its
+// modern type at a target, it is dispatched again there under the
+// prefixed name.
 const LEGACY_EVENT_TYPES = new Map([
 	["animationend", "webkitAnimationEnd"],
 	["animationiteration", "webkitAnimationIteration"],
@@ -943,7 +945,7 @@ const LEGACY_EVENT_TYPES = new Map([
 	["transitionend", "webkitTransitionEnd"],
 ]);
 
-/** A dictionary argument, per Web IDL: absent, null, or an object. */
+/** A dictionary argument per Web IDL: absent, null, or an object. */
 function toDictionary<T extends object>(value: unknown, what: string): T {
 	if (value === undefined || value === null) {
 		return {} as T;
@@ -954,16 +956,16 @@ function toDictionary<T extends object>(value: unknown, what: string): T {
 	return value as T;
 }
 
-// An event constructed here is an instance of the global Event, and one
-// constructed from the global dispatches through this DOM: both sides
-// accept the same object.
+// Events constructed here are instances of the global Event, and events
+// constructed with the global Event dispatch through this DOM. Either
+// kind works on both sides.
 const HostEvent = globalThis.Event as unknown as {
 	new (type: string, eventInitDict?: EventInit): HostEventInstance;
 	prototype: HostEventInstance;
 };
 
-// The members a dispatch owns are dropped: they are typed against the
-// platform's own event target, and the event targets here are this DOM's.
+// The members that dispatch owns are omitted because they are typed
+// against the platform's EventTarget, and the targets here are this DOM's.
 interface HostEventInstance
 	extends Omit<
 		globalThis.Event,
@@ -983,9 +985,9 @@ interface HostEventInstance
 }
 const kState = Symbol("state");
 
-// One accessor shared by every event, installed as an own property of each:
-// the interface declares isTrusted unforgeable, so it is not on the
-// prototype and cannot be redefined away.
+// One accessor shared by every event and installed as an own property on
+// each. The interface declares isTrusted unforgeable, so it cannot live on
+// the prototype or be redefined.
 function isTrustedGetter(this: Event): boolean {
 	return this[kState]!.trusted;
 }
@@ -997,9 +999,9 @@ const isTrustedProperty: PropertyDescriptor = {
 };
 
 // The prototype chain reaches the platform's Event, but the platform
-// constructor never runs: some platforms install isTrusted as an unforgeable
-// own property that always reads false, and a user-agent dispatch here must
-// answer true.
+// constructor never runs. Some platforms install isTrusted as an
+// unforgeable own property that always reads false, and a user-agent
+// dispatch here needs it to read true.
 const EventBase = function EventBase(): void {} as unknown as {
 	new (): HostEventInstance;
 	prototype: HostEventInstance;
@@ -1014,7 +1016,7 @@ const kTimeStamp = Symbol("timeStamp");
 const kIsMouseEvent = Symbol("is a mouse event");
 const kType = Symbol("document type");
 
-/** An event, and the flags a listener sets on it while it is dispatched. */
+/** An event, plus the flags listeners set on it during dispatch. */
 export class Event extends EventBase implements globalThis.Event {
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
@@ -1031,8 +1033,8 @@ export class Event extends EventBase implements globalThis.Event {
 		if (arguments.length < 1) {
 			throw new TypeError("Event constructor needs a type");
 		}
-		// The dictionary is converted once, here: a member that is an accessor
-		// is read the one time the conversion reads it.
+		// Convert the dictionary once, here. An accessor member is read exactly
+		// once, by this conversion.
 		const name = String(type);
 		const init = toDictionary<EventInit>(eventInitDict, "An event init");
 		const bubbles = Boolean(init.bubbles);
@@ -1067,10 +1069,10 @@ export class Event extends EventBase implements globalThis.Event {
 		return this[kType]!;
 	}
 
-	// The members a dispatch owns -- the path and the flags a listener sets --
-	// are read off the state this DOM keeps, and the platform base is told of
-	// the flags as well, so an event handed back to platform code answers the
-	// same way through either half of its interface.
+	// The members that dispatch owns (the path and the flags listeners set)
+	// come from the state this DOM keeps. The flags are also written to the
+	// platform base, so an event handed back to platform code reads the same
+	// through either half of its interface.
 
 	get target(): EventTarget | null {
 		return this[kState]!.target;
@@ -1128,8 +1130,8 @@ export class Event extends EventBase implements globalThis.Event {
 		}
 	}
 
-	// What makes a "click" the event that runs activation behavior;
-	// MouseEvent overrides it.
+	// Decides whether a "click" runs activation behavior. MouseEvent
+	// overrides it.
 	get [kIsMouseEvent](): boolean {
 		return false;
 	}
@@ -1170,7 +1172,7 @@ export class Event extends EventBase implements globalThis.Event {
 	}
 }
 
-/** Swap the type a dispatch invokes listeners under, for the legacy pass. */
+/** Change the type dispatch uses for listener lookup, for the legacy pass. */
 function setEventType(event: Event, type: string): void {
 	event[kType] = type;
 }
@@ -1183,21 +1185,25 @@ Object.defineProperties(Event.prototype, {
 	[Symbol.toStringTag]: {value: "Event", configurable: true},
 });
 
-/** An event is canceled only where it is cancelable and nothing is passive. */
+/**
+ * An event is canceled only if it is cancelable and no passive listener is
+ * running.
+ */
 function setCanceledFlag(event: Event): void {
 	const state = event[kState]!;
 	if (event.cancelable && !state.inPassiveListener) {
 		state.canceled = true;
-		// A platform event keeps its canceled flag on the platform half, which
-		// is where whoever handed it over will read it back.
+		// A platform event keeps its canceled flag on the platform object,
+		// because that is where whoever passed it in will read it.
 		if (state.foreign) {
 			HostEvent.prototype.preventDefault.call(event);
 		}
 	}
 }
 
-// The walk out from the current target stops crossing into a closed tree it
-// did not start inside, counting the closed roots and slots it passes.
+// Walks outward from the current target. It stops crossing into a closed
+// tree it did not start inside, and counts the closed roots and slots it
+// passes.
 function getComposedPath(state: DispatchState): EventTarget[] {
 	const path = state.path;
 	if (path.length === 0) {
@@ -1257,7 +1263,7 @@ function getComposedPath(state: DispatchState): EventTarget[] {
 const kDetail = Symbol("detail");
 
 // Extends this DOM's Event (which carries the dispatch state) rather than
-// the platform's CustomEvent: an instance is a platform Event, though not a
+// the platform's CustomEvent. An instance is a platform Event but not a
 // platform CustomEvent.
 export class CustomEvent<T = unknown>
 	extends Event
@@ -1273,8 +1279,8 @@ export class CustomEvent<T = unknown>
 		this[kDetail] = init.detail ?? null;
 	}
 
-	// lib.dom types this T though it is null until an init gives it one --
-	// the same lie every browser's types tell.
+	// lib.dom types this as T even though it is null until an init sets it.
+	// Every browser's types have the same problem.
 	get detail(): T {
 		return this[kDetail]! as T;
 	}
@@ -1303,9 +1309,9 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 
 const kReturnValue = Symbol("returnValue");
 
-// The interface declares no constructor, so an author's `new` throws.
-// Cancellation has two spellings the teardown honors: preventDefault(), and
-// a returnValue set to anything but the empty string.
+// The interface declares no constructor, so `new` throws for authors.
+// Teardown treats two things as cancellation: preventDefault(), and a
+// returnValue set to anything but the empty string.
 class BeforeUnloadEvent extends Event {
 	declare [kReturnValue]?: string;
 
@@ -1320,9 +1326,9 @@ class BeforeUnloadEvent extends Event {
 		}
 	}
 
-	// Shadows Event's boolean returnValue with a DOMString; typed `any`
-	// because a narrower type is not assignable over the boolean it
-	// shadows -- the platform's own resolution.
+	// Shadows Event's boolean returnValue with a DOMString. Typed `any`
+	// because a narrower type is not assignable over the boolean it shadows.
+	// The platform's own types do the same.
 	override get returnValue(): any {
 		return this[kReturnValue]!;
 	}
@@ -1337,7 +1343,7 @@ Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Build one of this file's own objects, whose constructor an author cannot. */
+/** Build one of this file's objects whose constructor authors cannot call. */
 function constructInternal<T>(build: () => T): T {
 	const previous = internalConstruction;
 	internalConstruction = true;
@@ -1363,7 +1369,7 @@ const kMessageSource = Symbol("message source");
 const kPorts = Symbol("ports");
 
 // Nothing in a terminal posts one yet, but the interface is a constructor
-// authors call and createEvent names, so it is here whole.
+// authors can call and createEvent can name, so it is implemented fully.
 class MessageEvent<T = unknown> extends Event {
 	declare [kMessageData]?: T;
 	declare [kOrigin]?: string;
@@ -1442,7 +1448,7 @@ interface HashChangeEventInit extends EventInit {
 const kOldURL = Symbol("old URL");
 const kNewURL = Symbol("new URL");
 
-/** The event of a document's fragment identifier changing. */
+/** Fired when a document's fragment identifier changes. */
 class HashChangeEvent extends Event {
 	declare [kOldURL]?: string;
 	declare [kNewURL]?: string;
@@ -1485,8 +1491,8 @@ const kStorageNewValue = Symbol("storage new value");
 const kStorageURL = Symbol("storage url");
 const kStorageArea = Symbol("storage area");
 
-// There is no storage area in a terminal to change, but the interface is a
-// constructor authors call and createEvent names.
+// There is no storage area in a terminal, but the interface is a
+// constructor authors can call and createEvent can name.
 class StorageEvent extends Event {
 	declare [kStorageKey]?: string | null;
 	declare [kStorageOldValue]?: string | null;
@@ -1625,7 +1631,7 @@ interface WheelEventInit extends MouseEventInit {
 	deltaMode?: number;
 }
 
-/** A WebIDL long: the number truncated and wrapped into 32 signed bits. */
+/** Convert to a WebIDL long: truncate and wrap into 32 signed bits. */
 function toLong(value: unknown): number {
 	const number = Number(value);
 	if (!Number.isFinite(number)) {
@@ -1634,7 +1640,7 @@ function toLong(value: unknown): number {
 	return Math.trunc(number) | 0;
 }
 
-/** A WebIDL double: any finite number, and a throw for the rest. */
+/** Convert to a WebIDL double: any finite number; throw for the rest. */
 function toDouble(value: unknown): number {
 	const number = Number(value);
 	if (!Number.isFinite(number)) {
@@ -1643,7 +1649,7 @@ function toDouble(value: unknown): number {
 	return number;
 }
 
-/** An EventTarget? argument, per Web IDL: null, or an event target. */
+/** Convert an EventTarget? argument per Web IDL: null or an event target. */
 function toEventTarget(value: unknown): EventTarget | null {
 	if (value === undefined || value === null) {
 		return null;
@@ -1654,7 +1660,7 @@ function toEventTarget(value: unknown): EventTarget | null {
 	return value;
 }
 
-/** The modifiers an event's init dictionary sets, as a set of key names. */
+/** The modifier key names an event's init dictionary sets. */
 function initModifiers(init: EventModifierInit): Set<string> {
 	const modifiers = new Set<string>();
 	if (init.ctrlKey) {
@@ -1704,8 +1710,8 @@ function initModifiers(init: EventModifierInit): Set<string> {
 
 const kWhich = Symbol("which");
 
-// `view` is always null here -- a window is not the global object -- and an
-// init that names one is a type error rather than a value quietly dropped.
+// `view` is always null here because a window is not the global object.
+// An init that passes one is a type error, not a value silently dropped.
 class UIEvent extends Event {
 	declare [kDetail]?: number;
 	declare [kWhich]?: number;
@@ -1772,8 +1778,8 @@ const kModifiers = Symbol("modifiers");
 
 const kDefaultView = Symbol("the window this document is displayed in");
 
-// A click that is one of these is what dispatch runs an activation behavior
-// for, which is what [kIsMouseEvent] answers.
+// Dispatch runs activation behavior for a click that is a MouseEvent.
+// [kIsMouseEvent] is how it checks.
 class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	declare [kScreenX]?: number;
 	declare [kScreenY]?: number;
@@ -1816,7 +1822,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		return this[kClientY]!;
 	}
 
-	/** The alias pair CSSOM View gives clientX/clientY. */
+	/** Aliases of clientX/clientY, per CSSOM View. */
 	get x(): number {
 		return this[kClientX]!;
 	}
@@ -1825,8 +1831,8 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		return this[kClientY]!;
 	}
 
-	// Client plus the document scroll, read live: dispatch is synchronous
-	// here, so a listener sees the scroll the event was made under.
+	// Client coordinates plus the document scroll, read live. Dispatch is
+	// synchronous, so a listener sees the scroll the event was created under.
 	get pageX(): number {
 		return this[kClientX]! + (this[kEventView]?.scrollX ?? 0);
 	}
@@ -1835,8 +1841,8 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		return this[kClientY]! + (this[kEventView]?.scrollY ?? 0);
 	}
 
-	// Client relative to the target's box. The border edge stands in for
-	// the spec's padding edge -- a one-cell divergence declared here.
+	// Client coordinates relative to the target's box. Uses the border edge
+	// where the spec says padding edge, a one-cell difference.
 	get offsetX(): number {
 		const rect = this[kTargetRect]!;
 		return rect === null ? this[kClientX]! : this[kClientX]! - rect.left;
@@ -1849,7 +1855,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 
 	// Pre-standard, no spec. Browsers report the offset from the nearest
 	// positioned ancestor, which for an unpositioned target is what
-	// offsetX/offsetY already say.
+	// offsetX/offsetY already return.
 	get layerX(): number {
 		return this.offsetX;
 	}
@@ -1902,7 +1908,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		return true;
 	}
 
-	/** The window the event's target renders in, if it is in one. */
+	/** The scroll offsets of the window the target renders in, or null. */
 	get [kEventView](): {scrollX: number; scrollY: number} | null {
 		const target = this[kState]!.target as Node | null;
 		if (target === null || target.ownerDocument === null) {
@@ -1912,7 +1918,9 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 		return (view ?? null) as {scrollX: number; scrollY: number} | null;
 	}
 
-	/** The target's viewport-space rect, when an engine can answer. */
+	/**
+	 * The target's viewport-space rect, or null if no engine can measure it.
+	 */
 	get [kTargetRect](): {left: number; top: number} | null {
 		const target = this[kState]!.target as Element | null;
 		if (
@@ -1966,7 +1974,7 @@ class MouseEvent extends UIEvent implements globalThis.MouseEvent {
 	}
 }
 
-/** A WebIDL short: the long, wrapped into 16 signed bits. */
+/** Convert to a WebIDL short: the long, wrapped into 16 signed bits. */
 function toShort(value: unknown): number {
 	return (toLong(value) << 16) >> 16;
 }
@@ -1976,7 +1984,7 @@ Object.defineProperty(MouseEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** An event of the focus moving, which names the target on the other side. */
+/** Fired when focus moves. relatedTarget is the element on the other side. */
 export class FocusEvent extends UIEvent {
 	constructor(type: string, eventInitDict: FocusEventInit = {}) {
 		super(type, eventInitDict);
@@ -2007,7 +2015,7 @@ const kIsComposing = Symbol("isComposing");
 const kCharCode = Symbol("charCode");
 const kKeyCode = Symbol("keyCode");
 
-/** An event of a key, named by the character it types and the key it is. */
+/** A key event, identified by the character it types and the physical key. */
 class KeyboardEvent extends UIEvent implements globalThis.KeyboardEvent {
 	static readonly DOM_KEY_LOCATION_STANDARD = DOM_KEY_LOCATION_STANDARD;
 	static readonly DOM_KEY_LOCATION_LEFT = DOM_KEY_LOCATION_LEFT;
@@ -2141,7 +2149,7 @@ Object.defineProperties(KeyboardEvent.prototype, {
 
 const kData = Symbol("data");
 
-/** An event of text being composed by an input method. */
+/** Fired while an input method composes text. */
 class CompositionEvent extends UIEvent {
 	declare [kData]?: string;
 
@@ -2181,8 +2189,8 @@ Object.defineProperty(CompositionEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// DOM Level 3's legacy text-input event; createEvent("TextEvent") is the
-// one door, since the interface declares no constructor.
+// DOM Level 3's legacy text-input event. The interface declares no
+// constructor, so createEvent("TextEvent") is the only way to make one.
 class TextEvent extends UIEvent {
 	declare [kData]?: string;
 
@@ -2223,7 +2231,7 @@ Object.defineProperty(TextEvent.prototype, Symbol.toStringTag, {
 
 const kInputType = Symbol("inputType");
 
-/** An event of an editing host's text changing, and how it changed. */
+/** Fired when an editing host's text changes, with the kind of change. */
 class InputEvent extends UIEvent {
 	declare [kData]?: string | null;
 	declare [kIsComposing]?: boolean;
@@ -2256,13 +2264,13 @@ Object.defineProperty(InputEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// A transfer here carries text under format names and nothing else. There is
-// no drag and drop in a terminal and no file to hand over, so `dropEffect`,
-// `effectAllowed`, `setDragImage()` and `files` are present, answer what the
-// interface says they answer, and do nothing.
+// A transfer here carries text under format names and nothing else. There
+// is no drag and drop in a terminal and no files to hand over, so
+// `dropEffect`, `effectAllowed`, `setDragImage()` and `files` exist,
+// return what the interface specifies, and do nothing.
 
-// The two shorthands the platform keeps fold into the media types they
-// stand for, so `"TEXT/Plain "` and `"text"` name one entry.
+// The platform's two shorthands map to the media types they stand for,
+// so `"TEXT/Plain "` and `"text"` name the same entry.
 function normalizeTransferFormat(format: unknown): string {
 	const name = String(format).trim().toLowerCase();
 	if (name === "text") {
@@ -2274,10 +2282,10 @@ function normalizeTransferFormat(format: unknown): string {
 	return name;
 }
 
-/** The brand an interface with no constructor is built through internally. */
+/** The brand used to construct an interface that declares no constructor. */
 const kInternalConstruction = Symbol("internal construction");
 
-/** A list of files, empty here because nothing in a terminal produces one. */
+/** A list of files. Always empty, since nothing in a terminal produces one. */
 class FileList {
 	get length(): number {
 		return 0;
@@ -2348,7 +2356,7 @@ const kTransferMode = Symbol("mode");
 
 const kTransferEntries = Symbol("entries");
 
-/** The entries of a transfer, as a list that indexes and mutates them. */
+/** The entries of a transfer, as an indexed, mutable list. */
 class DataTransferItemList {
 	declare [kListOwner]?: DataTransfer;
 	declare [kListIndices]?: number;
@@ -2420,7 +2428,7 @@ Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
 });
 const kTransferItems = Symbol("items");
 
-/** Bring a list's indexed properties back in line with the entries behind it. */
+/** Update a list's indexed properties to match the entries behind it. */
 function syncTransferItems(transfer: DataTransfer): void {
 	const list = transfer[kTransferItems]! as unknown as Record<number, unknown>;
 	const formats = Array.from(transfer[kTransferEntries]!.keys());
@@ -2536,17 +2544,17 @@ Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, {
 });
 
 /**
- * Put a transfer into the read-only mode a `paste` hands its listeners: the
- * text is theirs to read, and the clipboard is not theirs to rewrite through
- * the event.
+ * Put a transfer into the read-only mode `paste` gives its listeners.
+ * Listeners can read the text but cannot change the clipboard through the
+ * event.
  */
 export function lockDataTransfer(transfer: DataTransfer): void {
 	transfer[kTransferMode] = "readonly";
 }
 
-// A clipboard event's payload is the listener's to read while the event
-// runs and nothing afterward, as in a browser. Conformance, not a boundary:
-// an app could ask again through navigator.clipboard.
+// Listeners can read a clipboard event's payload only while the event is
+// dispatching, as in a browser. This is for conformance, not security: an
+// app can still read the clipboard through navigator.clipboard.
 function protectClipboardData(event: Event): void {
 	if (!(event instanceof ClipboardEvent)) {
 		return;
@@ -2563,7 +2571,7 @@ interface ClipboardEventInit extends EventInit {
 
 const kClipboardData = Symbol("clipboardData");
 
-/** An event of a clipboard gesture, carrying the payload it moves. */
+/** Fired for a clipboard gesture, carrying the data it moves. */
 class ClipboardEvent extends Event {
 	declare [kClipboardData]?: DataTransfer | null;
 
@@ -2599,7 +2607,7 @@ const kPropertyName = Symbol("propertyName");
 const kElapsedTime = Symbol("elapsedTime");
 const kEventPseudoElement = Symbol("pseudoElement");
 
-/** An event of a CSS transition changing phase (css-transitions-1 §6). */
+/** Fired when a CSS transition changes phase (css-transitions-1 §6). */
 export class TransitionEvent extends Event {
 	declare [kPropertyName]?: string;
 	declare [kElapsedTime]?: number;
@@ -2645,8 +2653,8 @@ interface AnimationEventInit extends EventInit {
 
 const kAnimationName = Symbol("animationName");
 
-// css-animations-1 §4. The engine runs no @keyframes animations yet; the
-// interface exists because the platform names it.
+// css-animations-1 §4. The engine does not run @keyframes animations
+// yet. The interface exists because the platform defines it.
 class AnimationEvent extends Event {
 	declare [kAnimationName]?: string;
 	declare [kElapsedTime]?: number;
@@ -2693,7 +2701,7 @@ const kDeltaY = Symbol("deltaY");
 const kDeltaZ = Symbol("deltaZ");
 const kDeltaMode = Symbol("deltaMode");
 
-/** An event of a wheel turning over a target. */
+/** Fired when the wheel turns over a target. */
 class WheelEvent extends MouseEvent {
 	static readonly DOM_DELTA_PIXEL = DOM_DELTA_PIXEL;
 	static readonly DOM_DELTA_LINE = DOM_DELTA_LINE;
@@ -2768,8 +2776,8 @@ const kIsPrimary = Symbol("isPrimary");
 const kCoalesced = Symbol("coalesced");
 const kPredicted = Symbol("predicted");
 
-// `element.click()` fires one of these, and it is a mouse event, so
-// dispatch runs the activation behavior it reaches.
+// `element.click()` fires one of these. It is a MouseEvent, so dispatch
+// runs any activation behavior it reaches.
 class PointerEvent extends MouseEvent {
 	declare [kPointerId]?: number;
 	declare [kWidth]?: number;
@@ -2827,9 +2835,9 @@ class PointerEvent extends MouseEvent {
 		return this[kTangentialPressure]!;
 	}
 
-	// The tilt and altitude/azimuth pairs describe the same angle two ways:
-	// an init that gives one has the other computed from it, and an init
-	// that gives neither leaves a pen upright.
+	// The tilt pair and the altitude/azimuth pair describe the same angle two
+	// ways. If an init gives one, the other is computed from it. If it gives
+	// neither, the pen is upright.
 	get tiltX(): number {
 		if (this[kTiltX] !== null) {
 			return this[kTiltX]!;
@@ -2908,7 +2916,7 @@ interface DragEventInit extends MouseEventInit {
 
 const kEventDataTransfer = Symbol("event data transfer");
 
-/** A drag-and-drop event, carrying the data transfer of its drag session. */
+/** A drag-and-drop event, carrying its drag session's data transfer. */
 class DragEvent extends MouseEvent {
 	declare [kEventDataTransfer]?: DataTransfer | null;
 
@@ -2928,7 +2936,7 @@ Object.defineProperty(DragEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** The tilt angles a pen's altitude and azimuth describe, in degrees. */
+/** Convert a pen's altitude and azimuth to tilt angles in degrees. */
 function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 	if (altitude === 0) {
 		if (azimuth === 0 || azimuth === 2 * Math.PI) {
@@ -2953,7 +2961,7 @@ function sphericalToTilt(altitude: number, azimuth: number): [number, number] {
 	return [tiltX, tiltY];
 }
 
-/** The altitude and azimuth a pen's tilt angles describe, in radians. */
+/** Convert a pen's tilt angles to altitude and azimuth in radians. */
 function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
 	const radiansX = (tiltX * Math.PI) / 180;
 	const radiansY = (tiltY * Math.PI) / 180;
@@ -2970,9 +2978,9 @@ function tiltToSpherical(tiltX: number, tiltY: number): [number, number] {
 	];
 }
 
-// The legacy interface table createEvent builds from. The sensor and touch
-// names are absent on purpose: they name hardware a terminal does not have,
-// so createEvent throws for them.
+// The legacy interface table createEvent builds from. Sensor and touch
+// names are left out on purpose: they describe hardware a terminal does
+// not have, so createEvent throws for them.
 const LEGACY_EVENT_INTERFACES = new Map<string, () => Event>([
 	["beforeunloadevent", () => new BeforeUnloadEvent("", {})],
 	["compositionevent", () => new CompositionEvent("")],
@@ -3002,7 +3010,7 @@ interface EventListenerObject {
 
 type EventListenerOrEventListenerObject = EventListener | EventListenerObject;
 
-/** What an AbortSignal has to be for a listener to hang off it. */
+/** What an AbortSignal must provide for a listener to use it. */
 interface ListenerSignal {
 	aborted: boolean;
 	addEventListener(type: string, callback: () => void): void;
@@ -3019,7 +3027,7 @@ interface EventListenerOptions {
 	capture?: boolean;
 }
 
-/** The event types whose listeners mean a document observes pointer hover. */
+/** Event types whose listeners mean the document observes pointer hover. */
 const HOVER_EVENT_TYPES = new Set([
 	"mousemove",
 	"mouseover",
@@ -3028,9 +3036,9 @@ const HOVER_EVENT_TYPES = new Set([
 	"mouseleave",
 ]);
 
-// The engine watches this count to decide whether the terminal should
-// report pointer motion at all: motion reporting floods stdin, so it stays
-// off until something can actually see the events.
+// The engine checks this count to decide whether the terminal should
+// report pointer motion. Motion reporting floods stdin, so it stays off
+// until a listener can actually use the events.
 interface HoverListenerTally {
 	count: number;
 	onChange: (() => void) | null;
@@ -3047,8 +3055,8 @@ function getHoverTally(document: Document): HoverListenerTally {
 	return tally;
 }
 
-// Null when the type is not a hover type or the target belongs to no
-// document.
+// Returns null when the type is not a hover type or the target belongs to
+// no document.
 function hoverTallyFor(
 	target: EventTarget,
 	type: string,
@@ -3059,8 +3067,8 @@ function hoverTallyFor(
 	if (target instanceof Node) {
 		return getHoverTally(target[kDocument]!);
 	}
-	// A window is an EventTarget with a document; anything else counts
-	// nowhere.
+	// A window is an EventTarget with a document. Anything else is not
+	// counted.
 	const document = (target as {document?: unknown}).document;
 	return document instanceof Document ? getHoverTally(document) : null;
 }
@@ -3074,8 +3082,8 @@ function tallyHoverListener(target: EventTarget, listener: Listener): void {
 	}
 }
 
-// One watcher per document -- the engine that displays it. The returned
-// reader answers the current count.
+// One watcher per document, which is the engine displaying it. The
+// returned function reads the current count.
 function watchHoverListeners(
 	document: Document,
 	onChange: () => void,
@@ -3093,11 +3101,13 @@ interface Listener {
 	passive: boolean;
 	removed: boolean;
 
-	/** The hover tally this listener counts into, where it counts at all. */
+	/** The hover tally this listener is counted in, if any. */
 	hoverTally?: HoverListenerTally;
 }
 
-/** The AbortSignal the platform supplies, which a listener's signal must be. */
+/**
+ * The platform's AbortSignal, which a listener's signal must be an instance of.
+ */
 const PlatformAbortSignal = (
 	globalThis as unknown as {AbortSignal?: new () => ListenerSignal}
 ).AbortSignal;
@@ -3106,11 +3116,11 @@ const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
 
-/** An event target: a listener list, and the parent a dispatch walks to. */
+/** An event target: a listener list, and the parent dispatch walks to. */
 class EventTarget implements globalThis.EventTarget {
 	declare [kListeners]?: Listener[];
 
-	/** Null until this target is given an event handler, which most never are. */
+	/** Null until this target is given an event handler. Most never are. */
 	declare [kHandlers]?: Map<string, EventHandlerRecord> | null;
 	constructor() {
 		this[kListeners] = [];
@@ -3212,8 +3222,7 @@ class EventTarget implements globalThis.EventTarget {
 		return dispatchFromOutside(this, event, false);
 	}
 
-	// A bare event target is the end of a path; a node hands back its
-	// parent.
+	// A bare event target ends the path. A node returns its parent.
 	[kGetTheParent]?(_event: Event): EventTarget | null {
 		return null;
 	}
@@ -3225,7 +3234,7 @@ function flattenMore(
 	capture: boolean;
 	once: boolean;
 
-	/** Null until the type and target decide, which is what the spec defers. */
+	/** Null until the type and target decide it, which the spec defers. */
 	passive: boolean | null;
 	signal: ListenerSignal | null;
 } {
@@ -3282,7 +3291,7 @@ function flattenCapture(
 	);
 }
 
-/** A listener callback, per Web IDL: null, or an object that may be called. */
+/** Convert a listener callback per Web IDL: null, or a callable object. */
 function toEventListener(
 	callback: unknown,
 ): EventListenerOrEventListenerObject | null {
@@ -3295,9 +3304,9 @@ function toEventListener(
 	throw new TypeError("An event listener must be an object or a function");
 }
 
-// The scroll-blocking types are passive by default at the roots a page
-// scrolls through, so a listener there cannot cancel a scroll it was only
-// meant to watch.
+// Scroll-blocking event types are passive by default at the roots a page
+// scrolls through, so a listener there cannot cancel a scroll it only
+// meant to observe.
 function defaultPassiveValue(type: string, target: EventTarget): boolean {
 	if (
 		type !== "touchstart" &&
@@ -3318,7 +3327,7 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 	);
 }
 
-// Created only when a handler is being set: reading a handler off a target
+// Created only when a handler is set. Reading a handler from a target
 // that has none allocates nothing.
 function eventHandlerMap(
 	target: EventTarget,
@@ -3335,7 +3344,10 @@ Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Take a listener out of a list, marking it so a live dispatch skips it. */
+/**
+ * Remove a listener from a list and mark it so an in-progress dispatch skips
+ * it.
+ */
 function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
@@ -3348,21 +3360,20 @@ function removeListener(listeners: Listener[], listener: Listener): void {
 	}
 }
 
-// LegacyTreatNonObjectAsNull: anything that is not an object is stored as
-// null, and an object that is not callable is stored and throws when the
-// event arrives.
+// LegacyTreatNonObjectAsNull: a non-object is stored as null. A
+// non-callable object is stored and throws when the event arrives.
 type EventHandlerValue = ((event: Event) => unknown) | object;
 
-// The listener is registered at the first non-null assignment and stays,
-// which fixes a handler's place among the listeners added around it:
-// reassigning `onclick` changes what runs, never when. A null assignment
-// removes it, so a later assignment takes a new place at the end.
+// The listener is registered on the first non-null assignment and stays
+// registered, which fixes the handler's position among listeners added
+// around it. Reassigning `onclick` changes what runs, never when. A null
+// assignment removes it, so a later assignment goes to the end.
 interface EventHandlerRecord {
 	value: EventHandlerValue | null;
 	listener: Listener | null;
 }
 
-/** The value an event handler attribute holds, or null where it holds none. */
+/** The value an event handler attribute holds, or null. */
 function eventHandlerValue(
 	target: EventTarget,
 	type: string,
@@ -3374,7 +3385,7 @@ function eventHandlerValue(
 	return handlers.get(type)?.value ?? null;
 }
 
-// Activate the handler on a value, deactivate it on null.
+// Activate the handler on a value. Deactivate it on null.
 function setEventHandler(
 	target: EventTarget,
 	type: string,
@@ -3413,8 +3424,9 @@ function setEventHandler(
 	created.listener = registerHandlerListener(target, type, created);
 }
 
-// The list is written directly, as the spec's "add an event listener" is: a
-// handler is not an addEventListener call, and does not go through one.
+// Writes the list directly, as the spec's "add an event listener" does.
+// Setting a handler is not an addEventListener call and does not go
+// through one.
 function registerHandlerListener(
 	target: EventTarget,
 	type: string,
@@ -3435,8 +3447,8 @@ function registerHandlerListener(
 	return listener;
 }
 
-// This DOM defines no ErrorEvent interface, so the test is the shape an
-// ErrorEvent dispatched from outside carries.
+// This DOM defines no ErrorEvent interface, so this tests for the shape
+// of an ErrorEvent dispatched from outside.
 function isErrorEvent(event: Event): boolean {
 	return (
 		"message" in event &&
@@ -3447,8 +3459,8 @@ function isErrorEvent(event: Event): boolean {
 	);
 }
 
-// The event handler processing algorithm. A handler that throws reports its
-// exception rather than letting it out into the dispatch that called it.
+// The event handler processing algorithm. If a handler throws, the
+// exception is reported instead of propagating into the dispatch.
 function invokeEventHandler(
 	target: EventTarget,
 	type: string,
@@ -3459,9 +3471,9 @@ function invokeEventHandler(
 	if (callback === null) {
 		return;
 	}
-	// A window's error handler takes an ErrorEvent apart into arguments and
-	// answers a cancellation with true, the inverse of every other handler. A
-	// document's or an element's error handler is an ordinary one.
+	// A window's error handler receives the ErrorEvent's fields as separate
+	// arguments and returns true to cancel, the inverse of every other
+	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
 		type === "error" && !(target instanceof Node) && isErrorEvent(event);
 	let result: unknown;
@@ -3495,7 +3507,7 @@ const PREFIXED_HANDLER_TYPES = new Map([
 	["onwebkittransitionend", "webkitTransitionEnd"],
 ]);
 
-// A handler IS a listener, per spec: it routes through the same listener
+// Per spec a handler IS a listener. It goes through the same listener
 // list as any other, so dispatch order and dedup are the same.
 function installEventHandler(prototype: object, name: string): void {
 	const type = PREFIXED_HANDLER_TYPES.get(name) ?? name.slice(2);
@@ -3520,8 +3532,8 @@ function installEventHandlers(
 	}
 }
 
-// The set a `body` and a `frameset` forward to the window. With no window
-// the write drops and the read answers null.
+// The handlers `body` and `frameset` forward to the window. With no
+// window, writes are dropped and reads return null.
 function installForwardedEventHandler(prototype: object, name: string): void {
 	Object.defineProperty(prototype, name, {
 		get(this: Element): unknown {
@@ -3548,7 +3560,7 @@ function installForwardedEventHandler(prototype: object, name: string): void {
 
 const kHost = Symbol("host");
 
-// Walk out of the shadow trees the other object cannot see into.
+// Walk out of any shadow trees the other object cannot see into.
 function retarget(
 	object: EventTarget | null,
 	against: EventTarget,
@@ -3562,9 +3574,10 @@ function retarget(
 		if (!isShadowRoot(root)) {
 			return current;
 		}
-		// Shadow-including ancestry, so a tree the other object reaches through
-		// a host of its own is a tree it can see into: a related target inside
-		// a nested shadow tree stays itself for a listener in the tree above it.
+		// Uses shadow-including ancestry. A tree the other object reaches
+		// through its own host is one it can see into, so a related target
+		// inside a nested shadow tree is not retargeted for a listener in the
+		// tree above.
 		if (
 			against instanceof Node &&
 			isShadowIncludingInclusiveAncestor(root, against)
@@ -3575,7 +3588,7 @@ function retarget(
 	}
 }
 
-/** Whether a root is a shadow root: a fragment a host holds. */
+/** Whether a root is a shadow root, meaning a fragment with a host. */
 function isShadowRoot(root: Node): boolean {
 	return root instanceof ShadowRoot;
 }
@@ -3604,9 +3617,9 @@ function appendToPath(
 	});
 }
 
-// A platform event's prototype getters know nothing of a tree; an own
-// property shadows each member a dispatch owns. The properties stay on the
-// event afterwards, reading the cleared state.
+// A platform event's prototype getters know nothing about a tree, so an
+// own property shadows each member that dispatch controls. The properties
+// stay on the event afterwards and read the cleared state.
 function adoptForeignEvent(event: Event): void {
 	if (Object.prototype.hasOwnProperty.call(event, kState)) {
 		return;
@@ -3645,10 +3658,10 @@ function defineDispatchAccessor(
 	Object.defineProperty(event, name, {get, configurable: true});
 }
 
-// Read back the flags a listener set on the platform half.
-// stopImmediatePropagation is not visible apart from stopPropagation there,
-// so it stops the targets past this one, and the listeners remaining at
-// this one still run.
+// Read back the flags a listener set on the platform object.
+// stopImmediatePropagation is not distinguishable from stopPropagation
+// there, so it stops the targets after this one while the remaining
+// listeners at this target still run.
 function syncForeignFlags(event: Event, state: DispatchState): void {
 	if (event.defaultPrevented) {
 		setCanceledFlag(event);
@@ -3658,9 +3671,9 @@ function syncForeignFlags(event: Event, state: DispatchState): void {
 	}
 }
 
-// The one place an event's provenance is decided: dispatchEvent() is never
-// trusted, dispatchAsUserAgent() always is, and dispatch() below is the
-// spec's "fire an event", trusted too.
+// The one place an event's trust is decided. dispatchEvent() is never
+// trusted. dispatchAsUserAgent() and dispatch() below (the spec's "fire an
+// event") are always trusted.
 function dispatchFromOutside(
 	target: EventTarget,
 	event: Event,
@@ -3682,7 +3695,7 @@ function dispatchFromOutside(
 	return dispatch(target, event, trusted);
 }
 
-// A user pressing a bare modifier has not yet asked for anything.
+// Pressing a bare modifier key is not a request for anything.
 const BARE_MODIFIER_KEYS = new Set([
 	"Alt",
 	"AltGraph",
@@ -3700,9 +3713,9 @@ const BARE_MODIFIER_KEYS = new Set([
 	"SymbolLock",
 ]);
 
-// The user asking for something, rather than something happening to them.
-// The list is the spec's; a paste's default action carries the text on as a
-// beforeinput, so that is activation-triggering too.
+// Events that represent the user asking for something, as opposed to
+// something happening to them. The list is the spec's. A paste's default
+// action forwards the text as a beforeinput, so that counts too.
 function isActivationTriggering(event: {
 	type: string;
 	key?: string;
@@ -3726,7 +3739,7 @@ function isActivationTriggering(event: {
 /** How many activation-triggering dispatches are running, per document. */
 const activationDepths = new WeakMap<Document, number>();
 
-/** The documents the user has ever acted on. */
+/** Documents the user has ever acted on. */
 const everActivatedDocuments = new WeakSet<Document>();
 
 /** The document a user-agent dispatch counts its activation in. */
@@ -3748,13 +3761,13 @@ function userActive(document: Document): boolean {
 }
 
 /**
- * Dispatch an event as the user agent: the event is trusted.
+ * Dispatch a trusted event, as the user agent.
  *
- * The engine calls this where decoded terminal input, a viewport change or a
- * focus move becomes a DOM event -- everything a user or the terminal itself
- * caused, as opposed to what an application constructs and dispatches. An
- * activation-triggering event holds user activation open for as long as its
- * dispatch runs, which is what the clipboard asks about.
+ * The engine calls this when decoded terminal input, a viewport change or
+ * a focus move becomes a DOM event. That covers everything the user or the
+ * terminal caused, as opposed to events an application constructs and
+ * dispatches itself. An activation-triggering event keeps user activation
+ * open for as long as its dispatch runs, which the clipboard checks.
  */
 export function dispatchAsUserAgent(
 	target: globalThis.EventTarget,
@@ -3773,11 +3786,11 @@ export function dispatchAsUserAgent(
 	}
 }
 
-// The path is built once, from the target outward, then walked twice:
-// capture in, bubble out. A struct carrying a shadow-adjusted target is a
-// target of this dispatch and is walked both ways whether or not the event
-// bubbles. The spec's legacy target override flag (HTML's load event) has
-// nothing to carry here. Trusted unless the caller says otherwise --
+// Builds the path once, from the target outward, then walks it twice:
+// capture in, bubble out. A struct with a shadow-adjusted target is a
+// target of this dispatch and is walked both ways whether or not the
+// event bubbles. The spec's legacy target override flag (HTML's load
+// event) has no use here. Trusted unless the caller says otherwise;
 // click() fires a synthetic, untrusted pointer event.
 function dispatch(
 	target: EventTarget,
@@ -3795,9 +3808,9 @@ function dispatch(
 		const isActivationEvent =
 			event[kIsMouseEvent] && event.type === "click";
 		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
-		// A slottable that is assigned reaches its slot next, and the slot's
-		// tree may be closed to the tree the event started in: the struct for
-		// the slot carries that, so composedPath can count the boundary.
+		// An assigned slottable's next target is its slot, and the slot's tree
+		// may be closed to the tree the event started in. The slot's struct
+		// records that so composedPath can count the boundary.
 		let slottable: Node | null = isAssigned(eventTarget)
 			? (eventTarget as Node)
 			: null;
@@ -3914,13 +3927,13 @@ function dispatch(
 	return !state.canceled;
 }
 
-/** Whether a target is a node sitting inside a shadow tree. */
+/** Whether a target is a node inside a shadow tree. */
 function isShadowRootTarget(target: EventTarget | null): boolean {
 	return target instanceof Node && isShadowRoot(getRoot(target));
 }
 
-// What dispatch walks the path to find, and runs the behavior on once the
-// path is walked.
+// Dispatch walks the path looking for a target with activation
+// behavior, then runs it after the walk.
 function hasActivationBehavior(target: EventTarget): boolean {
 	return (
 		target instanceof HTMLAnchorElement ||
@@ -3932,8 +3945,9 @@ function hasActivationBehavior(target: EventTarget): boolean {
 	);
 }
 
-// A hyperlink's activation behavior is following it, which this engine
-// never does: an anchor and an area are activation targets that do nothing.
+// A hyperlink's activation behavior is to follow it, which this engine
+// never does. An anchor or area is an activation target that does
+// nothing.
 function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (target instanceof HTMLButtonElement) {
 		activateButton(target, event);
@@ -3950,19 +3964,19 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
 
 /**
- * Which keys activate an element, the way a click does, or null for an element
- * a keystroke does not activate at all.
+ * Which keys activate an element the way a click does, or null for an
+ * element no keystroke activates.
  *
- * Buttons take Enter and Space. Links take Enter only -- Space scrolls the
- * page in a browser rather than following the link, and the difference is
- * observable enough to be worth keeping. A summary takes both, and whether
- * this summary is its details' summary is the activation behavior's own
- * question above.
+ * Buttons take Enter and Space. Links take Enter only, because in a
+ * browser Space scrolls the page instead of following the link, and the
+ * difference is observable enough to keep. A summary takes both; whether
+ * it is its details' first summary is checked by the activation behavior
+ * above.
  *
- * The elements are the ones hasActivationBehavior lists, minus the label,
- * whose behavior is a click forwarded to its control rather than a key of its
- * own. Which keys a terminal sends is the input interpreter's; which elements
- * they mean anything to is this file's.
+ * The elements are the ones hasActivationBehavior lists, minus label,
+ * whose behavior is a click forwarded to its control rather than a key of
+ * its own. The input interpreter decides which keys a terminal sends. This
+ * file decides which elements they apply to.
  */
 export function keyboardActivation(
 	target: globalThis.Element,
@@ -3991,8 +4005,8 @@ const kLocalName = Symbol("local name");
 
 const kParent = Symbol("parent");
 
-// HTML gives summary no interface of its own, and only the first summary of
-// a details opens and closes that details.
+// HTML gives summary no interface of its own, and only the first summary
+// of a details toggles that details.
 function isDetailsSummary(target: EventTarget): target is HTMLElement {
 	if (!(target instanceof HTMLElement)) {
 		return false;
@@ -4036,9 +4050,9 @@ function activateInput(input: HTMLInputElement, event: Event): void {
 	}
 	const type = input.type;
 	if (type === "checkbox" || type === "radio") {
-		// A control outside a document reports nothing: the checkedness the
-		// legacy-pre-activation behavior already flipped stands, and the
-		// events that would announce it are not fired.
+		// A control outside a document reports nothing. The checkedness the
+		// legacy-pre-activation behavior already flipped stays, and the events
+		// that would announce it are not fired.
 		if (!input.isConnected) {
 			return;
 		}
@@ -4059,8 +4073,8 @@ function activateInput(input: HTMLInputElement, event: Event): void {
 
 const kClickInProgress = Symbol("click in progress");
 
-// A click on a label is a click on its control, unless the click already
-// came from inside that control.
+// A click on a label is a click on its control, unless the click
+// originated inside that control.
 function activateLabel(label: HTMLLabelElement, event: Event): void {
 	const control = label.control;
 	if (control === null) {
@@ -4077,8 +4091,8 @@ function activateLabel(label: HTMLLabelElement, event: Event): void {
 	control.click();
 }
 
-// The event's target is the nearest target at or before this struct, so a
-// listener on an ancestor sees the node the event was dispatched at.
+// The event's target is the nearest target at or before this struct, so
+// a listener on an ancestor sees the node the event was dispatched at.
 function invoke(event: Event, index: number, capturing: boolean): void {
 	const state = event[kState]!;
 	const struct = state.path[index];
@@ -4107,9 +4121,9 @@ function invoke(event: Event, index: number, capturing: boolean): void {
 	}
 }
 
-// Reports whether anything was listening for this type at all -- a target
-// that heard nothing is where a trusted event is offered again under its
-// legacy type.
+// Returns whether anything was listening for this type at all. If a
+// target had no listener, a trusted event is dispatched to it again under
+// its legacy type.
 function innerInvoke(
 	event: Event,
 	listeners: Listener[],
@@ -4154,7 +4168,7 @@ function innerInvoke(
 	return found;
 }
 
-// An object callback's handleEvent is looked up at the moment of the call.
+// For an object callback, handleEvent is looked up at call time.
 function callListener(
 	callback: EventListenerOrEventListenerObject,
 	thisArg: EventTarget | null,
@@ -4198,16 +4212,18 @@ interface Materializable {
 const kWideLists = Symbol("live collections over a whole document");
 
 // A collection's indexed and named properties are own properties rather
-// than proxy traps, so they are observable without reading the collection.
-// A collection that has ever been read is therefore told of a change and
-// answers it however cheaply it can: one listing what a node contains
-// registers on that node, under kLiveLists; one whose members can be
-// anywhere in a document -- a form's controls -- registers on the document,
-// under kWideLists.
+// than proxy traps, so they are observable without reading the
+// collection. So once a collection has been read, every relevant change
+// must notify it, and each collection updates as cheaply as it can. A
+// collection listing what one node contains registers on that node under
+// kLiveLists. A collection whose members can be anywhere in the document
+// (a form's controls, for example) registers on the document under
+// kWideLists.
 const kLiveLists = Symbol("live collections this node is the root of");
 
-// A collection is registered for its owner's lifetime, so this only grows;
-// a change in a document that never registered one skips the climb.
+// A collection stays registered for its owner's lifetime, so this only
+// grows. A change in a document that never registered a collection skips
+// the ancestor climb.
 const heldListDocuments = new WeakSet<Document>();
 
 function registerMaterialized(collection: Materializable, owner: Node): void {
@@ -4229,27 +4245,28 @@ function registerWide(collection: Materializable, document: Document): void {
 	}
 }
 
-// A flag because the answer is asked constantly and the climb is
-// memory-bound on a deep tree: insertion sets it over the subtree, removal
-// clears it, and a move never changes it.
+// Stored as a flag because it is checked constantly and computing it
+// means a climb that is memory-bound on a deep tree. Insertion sets it
+// over the inserted subtree, removal clears it, and a move never changes
+// it.
 const kConnected = Symbol("connected");
 
-// Kept for the same reason as the flag above: the walks insertion and
-// removal already make over the subtree are where it is kept true.
+// Stored for the same reason as the flag above. Insertion and removal
+// already walk the subtree, and they update this as they go.
 const kTreeRoot = Symbol("tree root");
 
-// Walking the change's inclusive ancestors reaches exactly the collections
-// whose node contains it, which keeps the document's collections out of the
-// trees a document composes but does not contain -- a subtree being built,
-// a shadow tree, a pseudo-element's source -- and keeps a discarded tree
-// from costing anything.
+// Walking the change's inclusive ancestors reaches exactly the
+// collections whose node contains the change. That keeps the document's
+// collections out of trees the document composes but does not contain (a
+// subtree under construction, a shadow tree, a pseudo-element's source)
+// and makes a discarded tree cost nothing.
 //
-// `changed` is the nodes `point` gained or lost, empty where nothing moved;
-// null says only that something moved, and every collection reached
-// recomputes. A collection given the nodes asks what they hold rather than
-// walking the tree again. A collection over a whole document is reached
-// through the document of the change's point, since a tree being built
-// outside the document can hold the members of one.
+// `changed` is the nodes `point` gained or lost, empty when nothing
+// moved. Null means only that something moved, and every collection
+// reached recomputes. A collection given the nodes inspects them instead
+// of walking the tree again. A document-wide collection is reached through
+// the document of the change's point, because a tree under construction
+// outside the document can still contain its members.
 function shapeChanged(
 	point: Node,
 	changed: readonly Node[] | null,
@@ -4278,10 +4295,10 @@ const kClassList = Symbol("classList");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
 
-// An attribute is an input to three kinds of collection: the element's own
+// An attribute is an input to three kinds of collection: the element's
 // attribute map, the token lists over its attributes, and the collections
-// registered over the trees it sits in, which are asked about the one
-// element rather than walked.
+// registered over the trees it sits in. The last kind is asked about the
+// one element instead of being walked.
 function syncAttributeCollections(element: Element, localName: string): void {
 	const map = element[kAttributesMap]!;
 	if (map !== null) {
@@ -4411,7 +4428,7 @@ export class Node extends EventTarget implements globalThis.Node {
 		if (new.target === Node) {
 			throw new TypeError("Illegal constructor");
 		}
-		// A Document is its own node document; every other node is given one by
+		// A Document is its own node document. Every other node gets one from
 		// the algorithm that creates it.
 		this[kDocument] = this as unknown as Document;
 	}
@@ -4438,15 +4455,14 @@ export class Node extends EventTarget implements globalThis.Node {
 			: (this[kDocument]! as Document);
 	}
 
-	/** lib.dom names this ParentNode, the mixin a parent carries. */
+	/** lib.dom types this as ParentNode, the mixin a parent carries. */
 	get parentNode(): globalThis.ParentNode | null {
 		return this[kParent]! as unknown as globalThis.ParentNode | null;
 	}
 
-	// lib.dom types this HTMLElement where the spec says Element -- an SVG or
-	// MathML parent is not an HTMLElement. The platform's types are wrong the
-	// way every browser's are, and this follows them rather than being right
-	// alone.
+	// lib.dom types this as HTMLElement where the spec says Element. An SVG
+	// or MathML parent is not an HTMLElement. Every browser's types have the
+	// same problem, and this follows them rather than being right alone.
 	get parentElement(): globalThis.HTMLElement | null {
 		const parent = this[kParent]!;
 		return parent !== null && parent.nodeType === ELEMENT_NODE
@@ -4718,13 +4734,14 @@ export class Node extends EventTarget implements globalThis.Node {
 		return preRemove(child as unknown as Node, this) as unknown as T;
 	}
 
-	// A slottable that is assigned overrides this to reach its slot, where the
+	// An assigned slottable overrides this to return its slot, where the
 	// composed tree continues.
 	override [kGetTheParent]?(_event: Event): EventTarget | null {
 		return this[kParent]!;
 	}
 
-	/* The spec's per-node steps. Subclasses override; the algorithms call. */
+	// The spec's per-node steps. Subclasses override them; the algorithms
+	// call them.
 
 	[kInsertionSteps]?(): void {}
 
@@ -4811,8 +4828,8 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 
 const kShadowRoot = Symbol("shadow root");
 
-// A node that neither has children nor hosts a tree is an ancestor of
-// nothing, and the climb that would prove it is skipped.
+// A node with no children and no hosted tree is an ancestor of nothing,
+// so the climb that would prove it is skipped.
 function canBeAncestor(node: Node): boolean {
 	return (
 		node[kFirstChild] !== null ||
@@ -4846,8 +4863,8 @@ function isShadowIncludingInclusiveAncestor(
 	return false;
 }
 
-// Shadow-including tree order: a node, then its shadow root's tree, then
-// its children's.
+// Shadow-including tree order: the node, then its shadow root's tree,
+// then its children's.
 function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 	yield node;
 	if (node.nodeType === ELEMENT_NODE) {
@@ -4861,7 +4878,7 @@ function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 	}
 }
 
-/** The next node in tree order, stopping once the walk leaves the root. */
+/** The next node in tree order, or null once the walk leaves the root. */
 function nextInTree(node: Node, root: Node): Node | null {
 	if (node[kFirstChild] !== null) {
 		return node[kFirstChild]!;
@@ -4892,7 +4909,7 @@ function* descendants(node: Node): Generator<Node> {
 	}
 }
 
-/** Whether node1 precedes node2 in tree order; both share a root. */
+/** Whether node1 precedes node2 in tree order. Both must share a root. */
 function precedesInTree(node1: Node, node2: Node): boolean {
 	const root = getRoot(node1);
 	for (const node of inclusiveDescendants(root)) {
@@ -4952,9 +4969,10 @@ function hasPreceding(child: Node | null, type: number): boolean {
 }
 
 // Steps 1-5 of both "ensure pre-insertion validity" and "replace" (DOM
-// §4.2.3), which the standard writes out twice. The two part company at
-// step 6, where a document's one-element rule counts the replaced child
-// differently. `absentChild` is the one wording the two share nothing of.
+// §4.2.3), which the standard writes out twice. They diverge at step 6,
+// where a document's one-element rule counts the replaced child
+// differently. `absentChild` is the one error message the two do not
+// share.
 function validateInsertion(
 	node: Node,
 	parent: Node,
@@ -5074,12 +5092,12 @@ const kDefinition = Symbol("element definition");
 // Held the same way as the ranges below and re-homed by the same moves.
 const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
 
-// The tree ends up where remove-then-insert would leave it, but as one
-// primitive: no removing or insertion steps run, no disconnected or
-// connected callbacks fire, and everything the node carries -- shadow
-// trees, selection, focus, live ranges and iterators -- rides along. A
-// custom element hears connectedMoveCallback instead, or the
-// disconnected/connected pair where it declares no move callback.
+// Leaves the tree as remove-then-insert would, but as one primitive: no
+// removing or insertion steps run, no disconnected or connected callbacks
+// fire, and everything the node carries (shadow trees, selection, focus,
+// live ranges, iterators) moves with it. A custom element gets
+// connectedMoveCallback instead, or the disconnected/connected pair if it
+// declares no move callback.
 function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	if (shadowIncludingRoot(newParent) !== shadowIncludingRoot(node)) {
 		throw hierarchyRequestError(
@@ -5188,11 +5206,11 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
 }
 
-// Both boundaries always share one root: the boundary setters collapse the
-// other point on a root change, as the spec says. The root is held weakly,
-// so an unreachable tree takes its ranges with it; the ranges are held
-// strongly, which keeps collection unobservable where a WeakRef would
-// expose it.
+// Both boundaries always share one root, because the boundary setters
+// collapse the other point on a root change, as the spec says. The root
+// is held weakly, so an unreachable tree takes its ranges with it. The
+// ranges are held strongly, which keeps garbage collection unobservable
+// where a WeakRef would expose it.
 const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
 
 function insertNode(
@@ -5221,8 +5239,8 @@ function insertNode(
 	const document = parent[kDocument]!;
 	const connected = parent[kConnected]!;
 	for (const inserted of nodes) {
-		// The inserted node was its own tree's root; whatever was registered
-		// under it belongs to the tree it is joining.
+		// The inserted node was its own tree's root. Everything registered
+		// under it now belongs to the tree it is joining.
 		const carriedRanges = liveRangesByRoot.get(inserted);
 		const carriedIterators = nodeIteratorsByRoot.get(inserted);
 		if (carriedRanges !== undefined || carriedIterators !== undefined) {
@@ -5247,8 +5265,8 @@ function insertNode(
 		}
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
-		// The inserted tree's root is the parent's now. The walk follows the
-		// light tree only: a shadow tree under it keeps its own root.
+		// The inserted tree's root is now the parent's. The walk follows the
+		// light tree only. A shadow tree under it keeps its own root.
 		const treeRoot = parent[kTreeRoot]!;
 		for (
 			let joined: Node | null = inserted;
@@ -5268,8 +5286,9 @@ function insertNode(
 				}
 			} else {
 				// A manual assignment names nodes rather than finding them, and
-				// only a node the host still has counts: the host's child list
-				// changing is what makes an assignment appear or disappear.
+				// only a node the host still has counts. So a change to the
+				// host's child list is what makes an assignment appear or
+				// disappear.
 				assignSlottablesForTree(shadow);
 			}
 		}
@@ -5280,9 +5299,9 @@ function insertNode(
 		) {
 			signalASlotChange(parent);
 		}
-		// A slot assigns the host's children, which this insertion left alone
-		// unless it brought slots of its own into the tree: those are the only
-		// assignments in the root that the insertion can have changed.
+		// A slot assigns the host's children, which this insertion did not
+		// change unless it brought slots of its own into the tree. Those are
+		// the only assignments in the root the insertion can have changed.
 		if (hasInclusiveDescendantSlot(inserted)) {
 			assignSlottablesForTree(getRoot(inserted));
 		}
@@ -5412,9 +5431,9 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 	}
 	const previousSibling = child[kPrevious]!;
 	const removedNodes: Node[] = [];
-	// Adopting takes the replacement out of the tree it is in now, which is a
+	// Adopting removes the replacement from its current tree, which is a
 	// removal of its own and is reported as one. It happens before the
-	// replaced child leaves, so that removal's siblings are the ones an
+	// replaced child is removed, so that removal reports the siblings an
 	// observer saw before any of this began.
 	adoptNode(node, parent[kDocument]!);
 	if (child[kParent] !== null) {
@@ -5496,8 +5515,8 @@ function removeNode(node: Node, suppressObservers = false): void {
 	if (iterators !== undefined) {
 		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
-			// The removal makes `node` a root; an iterator rooted inside the
-			// leaving subtree belongs to that new tree.
+			// The removal makes `node` a root. An iterator rooted inside the
+			// removed subtree now belongs to that new tree.
 			if (isInclusiveAncestor(node, iterator[kRoot]!)) {
 				iterators.delete(iterator);
 				registerNodeIterator(node, iterator);
@@ -5536,9 +5555,9 @@ function removeNode(node: Node, suppressObservers = false): void {
 		assignSlottablesForTree(getRoot(parent));
 		assignSlottablesForTree(node);
 	}
-	// The focus fixup a removal runs: focus does not survive leaving the
-	// tree, and no blur fires for an element that is already gone -- the
-	// state resets, silently, so the next focus() is a fresh one.
+	// The focus fixup for a removal. Focus does not survive leaving the tree,
+	// and no blur fires for an element that is already gone. The state resets
+	// silently so the next focus() starts fresh.
 	const document = node[kDocument]!;
 	const active = document[kActiveElement]!;
 	if (active !== null) {
@@ -5623,9 +5642,9 @@ type MutationCallback = (
 	observer: MutationObserver,
 ) => void;
 
-// attributes, characterData and their old-value members stay tri-state: a
-// member never given is not one given as false, and both the defaulting
-// rules and the record filter read the difference.
+// attributes, characterData and their old-value members stay tri-state.
+// A member never given is different from one given as false, and both the
+// defaulting rules and the record filter depend on the difference.
 interface ObserverOptions {
 	childList: boolean;
 	attributes: boolean | undefined;
@@ -5636,25 +5655,26 @@ interface ObserverOptions {
 	attributeFilter: string[] | undefined;
 }
 
-// An entry with a source is transient: copied onto a node as it was removed
-// from a tree an observer was watching with subtree, so mutations inside
-// the removed subtree still reach that observer until it is next notified.
+// An entry with a source is transient. It was copied onto the node when
+// the node was removed from a tree an observer was watching with subtree,
+// so mutations inside the removed subtree still reach that observer until
+// it is next notified.
 interface RegisteredObserver {
 	observer: MutationObserver;
 	options: ObserverOptions;
 	source: RegisteredObserver | null;
 }
 
-// While zero, the three queueing call sites return before walking any
-// ancestors, so a tree nobody observes pays nothing.
+// While this is zero, the three queueing call sites return before
+// walking any ancestors, so an unobserved tree pays nothing.
 let registeredObserverCount = 0;
 
 let mutationObserverMicrotaskQueued = false;
 
 const pendingMutationObservers = new Set<MutationObserver>();
 
-// Held until the observers that would report on them have been notified;
-// they turn over every checkpoint.
+// Held until the observers that would report on them have been notified.
+// The list turns over every checkpoint.
 const transientNodes: Node[] = [];
 
 function queueMutationObserverMicrotask(): void {
@@ -5667,8 +5687,8 @@ function queueMutationObserverMicrotask(): void {
 
 const kNodes = Symbol("nodes");
 
-// A microtask, so a script sees the records of everything it did before it
-// yields, in one callback per observer.
+// Runs as a microtask, so a script sees the records for everything it
+// did before yielding, in one callback per observer.
 function notifyMutationObservers(): void {
 	mutationObserverMicrotaskQueued = false;
 	const notifySet = [...pendingMutationObservers];
@@ -5677,10 +5697,10 @@ function notifyMutationObservers(): void {
 	for (const observer of notifySet) {
 		notifyObserver(observer);
 	}
-	// What is left carries transient registrations of observers this checkpoint
-	// had nothing to deliver to. Those last until their observer is next
-	// notified: a node whose observer is already queued again waits here for
-	// that, and the rest go back to their observer's own node list.
+	// What remains carries transient registrations for observers this
+	// checkpoint had nothing to deliver to. Those last until their observer
+	// is next notified. A node whose observer is already queued again stays
+	// here; the rest go back to their observer's own node list.
 	let write = 0;
 	for (const node of transientNodes) {
 		const list = node[kRegisteredObservers]!;
@@ -5718,9 +5738,9 @@ function registeredObserverList(node: Node): RegisteredObserver[] {
 	return list;
 }
 
-// One transient entry per source is enough: two with the same source would
-// report the same mutation to the same observer, which the record queue
-// collapses anyway.
+// One transient entry per source is enough. Two with the same source
+// would report the same mutation to the same observer, and the record
+// queue collapses that anyway.
 function addTransientObservers(node: Node, parent: Node): void {
 	if (registeredObserverCount === 0) {
 		return;
@@ -5752,8 +5772,9 @@ function appendTransientObserver(node: Node, source: RegisteredObserver): void {
 	}
 	list.push({observer: source.observer, options: source.options, source});
 	registeredObserverCount++;
-	// The ancestor walk adds every source of one node in a row, so the node is
-	// already last here whenever it carries more than one transient entry.
+	// The ancestor walk adds every source of one node consecutively, so the
+	// node is already last here whenever it has more than one transient
+	// entry.
 	if (transientNodes[transientNodes.length - 1] !== node) {
 		transientNodes.push(node);
 	}
@@ -5862,7 +5883,7 @@ Object.defineProperty(MutationRecord.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** A sequence<DOMString> argument, per Web IDL: anything iterable. */
+/** Convert a sequence<DOMString> argument per Web IDL: anything iterable. */
 function toStringSequence(value: Iterable<string>): string[] {
 	if (
 		value === null ||
@@ -5878,12 +5899,12 @@ function toStringSequence(value: Iterable<string>): string[] {
 const kCallback = Symbol("callback");
 const kRecords = Symbol("records");
 
-/** An observer of a tree: what it watches, and the records it has to deliver. */
+/** Observes a tree and delivers mutation records. */
 export class MutationObserver implements globalThis.MutationObserver {
 	declare [kCallback]?: MutationCallback;
 
-	// Held strongly: each node's registered observer list holds this observer
-	// right back, and a cycle collects together once both sides are
+	// Held strongly. Each node's registered observer list holds this
+	// observer too, and the cycle is collected once both sides are
 	// unreachable.
 	declare [kNodes]?: Set<Node>;
 	declare [kRecords]?: MutationRecord[];
@@ -5949,9 +5970,9 @@ export class MutationObserver implements globalThis.MutationObserver {
 	}
 }
 
-// Giving an old value or a filter is a way of asking for the mutations it
-// describes, so it turns its own kind of observation on; asking for an old
-// value of something explicitly not observed is a contradiction and throws.
+// Asking for an old value or a filter implies observing that kind of
+// mutation, so it turns that observation on. Asking for an old value of
+// something explicitly not observed is a contradiction and throws.
 function normalizeObserverOptions(
 	options: MutationObserverInit,
 ): ObserverOptions {
@@ -6029,10 +6050,10 @@ Object.defineProperty(MutationObserver.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// A registration on the node itself always matches, and one further up
-// only if it was made with subtree. An observer that matches more than
-// once still gets one record, carrying an old value if any of its matching
-// registrations asked for one.
+// A registration on the node itself always matches. One further up
+// matches only if it was made with subtree. An observer that matches more
+// than once still gets one record, with an old value if any matching
+// registration asked for one.
 function queueMutationRecord(
 	type: string,
 	target: Node,
@@ -6148,13 +6169,13 @@ const kNames = Symbol("names");
 
 const anyAttribute = Symbol("any attribute");
 
-// The list is computed once and stands until a change says otherwise: a
-// collection registers where the changes that can move it are announced,
-// and drops or mends what it holds when one arrives. Indexed access is an
-// own accessor rather than a proxy trap, and the accessors compute the list
-// where it is not standing, so the collection is as live as reading it can
-// tell. The own properties themselves -- which indices and names are
-// defined -- are what a change resynchronizes, since those can be observed
+// The list is computed once and kept until a change invalidates it. A
+// collection registers wherever the changes that can affect it are
+// announced, and drops or patches its list when one arrives. Indexed
+// access is an own accessor rather than a proxy trap, and the accessors
+// recompute the list if it was dropped, so reads always see a live
+// collection. The own properties themselves (which indices and names are
+// defined) are what a change resynchronizes, because they are observable
 // without a read.
 abstract class LiveList implements Materializable {
 	declare [kItems]?: Node[];
@@ -6168,12 +6189,12 @@ abstract class LiveList implements Materializable {
 	declare [kWatched]?: string | symbol | null;
 	declare [kNames]?: string[];
 
-	// childMember: the list draws from the owner's children and nothing deeper,
-	// so a change anywhere else in the owner's tree leaves it untouched, and
-	// the children a change carries are the members it carries. watched: the
-	// attribute the list reads, `anyAttribute` for whatever an element carries,
-	// null for none. wide: the members come from anywhere in a document rather
-	// than from what the owner contains.
+	// childMember: the list draws only from the owner's direct children, so
+	// a change anywhere deeper in the owner's tree leaves it untouched, and
+	// the children a change carries are exactly the members it carries.
+	// watched: the attribute the list reads, `anyAttribute` if it reads any,
+	// null if none. wide: the members come from anywhere in the document
+	// rather than from under the owner.
 	constructor(
 		live: boolean,
 		owner: Node | null = null,
@@ -6199,9 +6220,9 @@ abstract class LiveList implements Materializable {
 		return null;
 	}
 
-	// The members the changed nodes carry, where the collection can answer
-	// from those nodes alone and can say its named properties are unmoved;
-	// null where the list has to be computed again to find out.
+	// The members the changed nodes carry, if the collection can determine
+	// that from those nodes alone and knows its named properties did not
+	// move. Null if the list has to be recomputed to find out.
 	shapeMembers(changed: readonly Node[]): Node[] | null {
 		const member = this[kChildMember]!;
 		if (member === null) {
@@ -6216,8 +6237,8 @@ abstract class LiveList implements Materializable {
 		return members;
 	}
 
-	// The list itself cannot say the members moved: a splice moves them within
-	// the one array the collection holds.
+	// The list cannot tell its members moved, because a splice moves them
+	// within the one array the collection holds.
 	[kMembersMoved]?(): void {}
 
 	[kSync]?(): void {
@@ -6231,15 +6252,15 @@ abstract class LiveList implements Materializable {
 		recompute(this);
 	}
 
-	// A collection over one node's children holds what it held when the change
-	// was to some other node's, and one that can say what the changed nodes
-	// carry holds what it held when they carry none of its members: either way
-	// the list stands. Members the change carried are spliced in or out where
-	// the collection can place them, which costs what moved rather than what
-	// the tree holds. Everything else computes the list again, except a list
-	// over a whole document, which drops what it holds and computes on its
-	// next read: a document has more changes to hear than reads of one of
-	// these.
+	// A collection over one node's children is unaffected by a change to
+	// some other node's children. A collection that can tell what the changed
+	// nodes carry is unaffected if they carry none of its members. In both
+	// cases the list stays. Members the change carried are spliced in or out
+	// if the collection can place them, which costs proportional to what
+	// moved rather than the tree size. Otherwise the list is recomputed,
+	// except for a document-wide list, which is dropped and recomputed on the
+	// next read, because a document sees far more changes than reads of such
+	// a list.
 	[kShapeSync]?(
 		point: Node,
 		changed: readonly Node[] | null,
@@ -6266,7 +6287,7 @@ abstract class LiveList implements Materializable {
 		recompute(this);
 	}
 
-	// A list that reads none of the element's attributes holds what it held.
+	// A list that reads none of the element's attributes is unaffected.
 	[kAttributeSync]?(_element: Element, localName: string): void {
 		const watched = this[kWatched]!;
 		if (watched === localName || watched === anyAttribute) {
@@ -6275,8 +6296,8 @@ abstract class LiveList implements Materializable {
 	}
 }
 
-// The own properties stand: an index reads through to the list the next
-// read computes, and the count of them is settled by that read.
+// The own properties stay defined. An index reads through to the list
+// the next read computes, and that read fixes the count.
 function drop(list: LiveList): void {
 	if (!list[kExact]!) {
 		return;
@@ -6292,12 +6313,12 @@ function recompute(list: LiveList): void {
 	materialize(list);
 }
 
-// Answers whether the members' place followed from the change alone.
-// Members arriving sit where the sibling they were placed before sits;
-// placed last of their parent's children they sit past every member the
-// list holds, as long as the last of those is under that parent. Anywhere
-// else asks the tree. Members leaving sit together, so the first of them
-// finds the run.
+// Returns whether the members' position could be determined from the
+// change alone. Arriving members go where the sibling they were placed
+// before is. Members placed last among their parent's children go after
+// every member the list holds, as long as the last of those is under that
+// parent. Any other case requires asking the tree. Leaving members are
+// contiguous, so finding the first locates the run.
 function splice(
 	list: LiveList,
 	point: Node,
@@ -6316,8 +6337,8 @@ function splice(
 			if (at === -1) {
 				return false;
 			}
-			// A member at a time: what a change carries has no bound, and a
-			// spread is an argument list.
+			// One member at a time. A change can carry any number of nodes, and
+			// a spread would put them all in an argument list.
 			const rest = items.splice(at);
 			for (const member of members) {
 				items.push(member);
@@ -6356,9 +6377,9 @@ function defineIndices(list: LiveList, length: number): void {
 	for (let index = list[kDefined]!; index < length; index++) {
 		const at = index;
 		Object.defineProperty(indexed, at, {
-			// The recompute is reached through the captured method, not
-			// through the prototype: a caller may replace the prototype,
-			// and an indexed property is meant to survive that.
+			// Calls the recompute through the captured method, not through the
+			// prototype. A caller may replace the prototype, and an indexed
+			// property must survive that.
 			get(): unknown {
 				return ensure(list)[at] ?? undefined;
 			},
@@ -6403,8 +6424,8 @@ function materialize(list: LiveList): void {
 	}
 }
 
-// The indices a collection defines are observable without reading it, so a
-// collection is put through this as it is made rather than on first read.
+// The indices a collection defines are observable without reading it, so
+// this runs when the collection is created rather than on first read.
 function ensure(list: LiveList): Node[] {
 	if (!list[kLive]!) {
 		if (!list[kExact]!) {
@@ -6414,14 +6435,14 @@ function ensure(list: LiveList): Node[] {
 	}
 	const owner = list[kOwner]!;
 	if (owner === null) {
-		// A list with nowhere to register is told of nothing, so it holds
-		// what it computes for this read alone.
+		// A list with nowhere to register is never notified of changes, so it
+		// keeps only what it computes for this read.
 		recompute(list);
 		return list[kItems]!;
 	}
 	if (list[kWide]!) {
-		// The document a list is over is the one its owner belongs to, and
-		// adopting the owner hands the list to another document.
+		// A list's document is the one its owner belongs to. Adopting the owner
+		// moves the list to the other document.
 		const document = owner[kDocument]!;
 		const registered = list[kRegistered]! as Document | null;
 		if (registered !== document) {
@@ -6504,7 +6525,7 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// lib.dom's NodeListOf: the members are known, so `item` answers without a
+// lib.dom's NodeListOf: the members are known, so `item` never returns
 // null. The engine's own NodeList is the general one.
 interface NodeListOf<T extends globalThis.Node> extends NodeList {
 	item(index: number): T;
@@ -6597,10 +6618,10 @@ class HTMLCollection extends LiveList {
 		return null;
 	}
 
-	// A collection answers to the id and the name of what it holds, so a
-	// change to either moves its named properties. No collection here draws a
-	// member from an id or a name, so the members stand and the names are made
-	// again from them.
+	// A collection is addressable by the id and name of its members, so a
+	// change to either moves its named properties. No collection here selects
+	// members by id or name, so the members stay and only the names are
+	// rebuilt.
 	override [kAttributeSync]?(element: Element, localName: string): void {
 		if (localName !== "id" && localName !== "name") {
 			super[kAttributeSync]!(element, localName);
@@ -6639,7 +6660,9 @@ function toUnsignedLong(value: unknown): number {
 	return ((truncated % 4294967296) + 4294967296) % 4294967296;
 }
 
-/** A WebIDL unsigned short: the unsigned long, wrapped into 16 bits. */
+/**
+ * Convert to a WebIDL unsigned short: the unsigned long, wrapped into 16 bits.
+ */
 function toUnsignedShort(value: unknown): number {
 	return toUnsignedLong(value) % 65536;
 }
@@ -6663,7 +6686,7 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 
 const kCollectionCaches = Symbol("collection caches");
 
-// Keyed by kind and name, so identity is stable.
+// Keyed by kind and name, so identity is stable across calls.
 function collectionCache(node: Node): Map<string, HTMLCollection> {
 	const owner = node as unknown as Record<symbol, unknown>;
 	let cache = owner[kCollectionCaches]! as
@@ -6686,9 +6709,9 @@ function elementChildren(parent: Node): Element[] {
 	return elements;
 }
 
-// A name belongs to the first member carrying it in tree order, which the
-// whole list answers, so a collection splices members in and out only where
-// no name is at stake.
+// A name belongs to the first member in tree order that carries it,
+// which depends on the whole list. So a collection splices members in and
+// out only when no name is affected.
 function areNameless(members: readonly Node[]): boolean {
 	for (const member of members) {
 		if (member.nodeType !== ELEMENT_NODE) {
@@ -6707,14 +6730,14 @@ function areNameless(members: readonly Node[]): boolean {
 const kMatches = Symbol("matches");
 const kMembers = Symbol("members");
 
-// The test answers for one element, so an attribute change asks about the
-// one element that changed rather than walking the tree again.
+// The test is per element, so an attribute change checks the one element
+// that changed instead of walking the tree again.
 class MatchingCollection extends HTMLCollection {
 	declare [kRoot]?: Node;
 	declare [kMatches]?: (element: Element) => boolean;
 	declare [kMembers]?: Set<Node> | null;
 
-	// watched: the attribute the test reads, if it reads one.
+	// watched: the attribute the test reads, if any.
 	constructor(
 		root: Node,
 		watched: string | null,
@@ -6739,7 +6762,7 @@ class MatchingCollection extends HTMLCollection {
 		this[kMatches] = matches;
 	}
 
-	// Found by asking the test about the subtree rather than about the tree it
+	// Runs the test over the changed subtree rather than over the tree it
 	// moved in or out of.
 	override shapeMembers(changed: readonly Node[]): Node[] | null {
 		const members: Node[] = [];
@@ -6795,7 +6818,7 @@ function descendantElements(root: Node, into: Element[]): Element[] {
 	return into;
 }
 
-// Null where the tree has moved on from the last computed list.
+// Null if the tree has changed since the list was last computed.
 function computed(list: LiveList): Node[] | null {
 	return list[kExact]! ? list[kItems]! : null;
 }
@@ -6851,9 +6874,9 @@ function elementsByTagNameNS(
 
 const kClassTokens = Symbol("the parsed class attribute");
 
-// The parse is kept on the element and thrown away by the class attribute's
-// change steps, so a walk asking every element for its classes pays for the
-// attributes that changed rather than the ones it passes.
+// The parsed set is cached on the element and discarded by the class
+// attribute's change steps, so a walk asking every element for its
+// classes pays only for attributes that changed.
 function classTokens(element: Element): ReadonlySet<string> {
 	let tokens = element[kClassTokens]!;
 	if (tokens === null) {
@@ -6963,7 +6986,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 		return ensure(this) as unknown as string[];
 	}
 
-	// An attribute's tokens are no part of the shape of a tree.
+	// An attribute's tokens are not part of the tree's shape.
 	override shapeMembers(): Node[] {
 		return [];
 	}
@@ -7038,8 +7061,9 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 		if (!current.includes(name)) {
 			return false;
 		}
-		// The ordered set replacement: the first of either token becomes the
-		// replacement, and every other instance of either is dropped.
+		// The ordered set replacement: the first occurrence of either token
+		// becomes the replacement, and every other occurrence of either is
+		// removed.
 		const first = Math.min(
 			...[current.indexOf(name), current.indexOf(replacement)].filter(
 				(index) => index !== -1,
@@ -7088,10 +7112,10 @@ interface DOMTokenList {
 	[index: number]: string;
 }
 
-// An interface with an indexed property getter and a length takes
-// %Array.prototype%'s own functions -- the same function objects, not
-// lookalikes -- so a caller comparing them finds them equal, and iteration
-// reads length and index on each step, which keeps it live.
+// An interface with an indexed property getter and a length gets
+// %Array.prototype%'s own functions, the same function objects rather
+// than copies, so comparing them finds them equal. Iteration reads length
+// and index on each step, which keeps it live.
 function installArrayIteration(
 	prototype: object,
 	valueIterator: boolean,
@@ -7698,9 +7722,9 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
 	changeAttribute(attribute, value);
 }
 
-// The steps run AFTER the change lands, as the DOM Standard orders them: an
-// element's own steps read the element, and what they must read is the tree
-// the rest of the world will see.
+// The steps run AFTER the change is applied, as the DOM Standard orders
+// them. An element's own steps read the element, and they must see the
+// tree the rest of the world will see.
 function notifyAttributeChange(element: Element, localName: string): void {
 	styleAttributeChanged(element, localName);
 }
@@ -7868,7 +7892,7 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 		return ensure(this).length;
 	}
 
-	// An element's attributes are no part of the shape of a tree.
+	// An element's attributes are not part of the tree's shape.
 	override shapeMembers(): Node[] {
 		return [];
 	}
@@ -7970,10 +7994,10 @@ type CustomElementState =
 
 const kByName = Symbol("byName");
 
-// A name the DOM Standard gives behavior of its own -- slot, and the
-// template whose content the parser fills -- is created through the class
-// carrying that behavior; every other name lands on one of the four
-// namespace interfaces. An author's definitions live in a
+// A name the DOM Standard gives its own behavior (slot, and template,
+// whose content the parser fills) is created through the class that
+// implements that behavior. Every other name maps to one of the four
+// namespace interfaces. Author definitions live in a
 // CustomElementRegistry, a separate table with a separate lifetime.
 class ElementRegistry {
 	declare [kByName]?: Map<string, new () => Element>;
@@ -7999,10 +8023,11 @@ class ElementRegistry {
 
 const builtinRegistry = new ElementRegistry();
 
-// The HTML element constructor is an author-facing algorithm: it asks which
-// custom element definition `new.target` names and throws when there is
-// none. The tree's own creation path needs the same classes with none of
-// that, and this flag is how the constructor tells the two apart.
+// The HTML element constructor is an author-facing algorithm: it looks
+// up which custom element definition `new.target` names and throws if
+// there is none. The tree's own creation path needs the same classes
+// without that check, and this flag tells the constructor which case it
+// is in.
 let internalConstruction = false;
 
 const kChildren = Symbol("children");
@@ -8022,7 +8047,7 @@ type ScrollMethod = (
 ) => void;
 
 export class Element extends Node implements globalThis.Element {
-	// Installed on the prototype, where the mount that answers them is.
+	// Installed on the prototype, where the engine that implements them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
 	declare scrollLeft: number;
@@ -8184,8 +8209,8 @@ export class Element extends Node implements globalThis.Element {
 		setDescendantText(this, value);
 	}
 
-	// A template's markup is its content fragment's: the parser never put its
-	// children in the tree, and neither does a write.
+	// A template's markup is its content fragment's. The parser never puts
+	// its children in the tree, and neither does a write.
 	get innerHTML(): string {
 		return serializeFragment(markupHost(this), false);
 	}
@@ -8218,7 +8243,7 @@ export class Element extends Node implements globalThis.Element {
 		replaceChild(this, fragment, parent);
 	}
 
-	/** A terminal has no zoom, and 1 is what no zoom is. */
+	/** A terminal has no zoom, so this is always 1. */
 	get currentCSSZoom(): number {
 		return 1;
 	}
@@ -8256,18 +8281,18 @@ export class Element extends Node implements globalThis.Element {
 		const displayed = displayedDocument(this);
 		if (displayed !== undefined) {
 			observeShadowRoot(this[kDocument]!, root);
-			// A shadow attachment recomposes the host's subtree with no
-			// mutation record, so no box enumeration still stands.
+			// Attaching a shadow root recomposes the host's subtree without a
+			// mutation record, so every cached box enumeration is stale.
 			displayed[kLayout].invalidate();
 			// The root's <style> elements join the cascade, scoped to this
-			// tree; the refresh rides on the STYLE mutation records the
-			// enrollment above will deliver.
+			// tree. The refresh happens on the STYLE mutation records the
+			// observer registration above will deliver.
 			displayed[kStyles].registerShadowRoot(root);
-			// attachShadow is not a DOM mutation -- no observer record will
-			// ever fire for it -- but on a CONNECTED host the composed tree
-			// just changed wholesale: light children stop rendering the moment
-			// the root exists, even while it is still empty. Rebuild the
-			// host's composed subtree and repaint.
+			// attachShadow is not a DOM mutation, so no observer record fires
+			// for it. But on a CONNECTED host the composed tree just changed
+			// wholesale: light children stop rendering as soon as the root
+			// exists, even while it is empty. Rebuild the host's composed
+			// subtree and repaint.
 			if (this.isConnected) {
 				displayed[kLayout].invalidate(this);
 				displayed[kScreen].invalidate();
@@ -8277,8 +8302,8 @@ export class Element extends Node implements globalThis.Element {
 		return root as unknown as globalThis.ShadowRoot;
 	}
 
-	// A headless document has no viewport to fill: the spec's
-	// no-browsing-context document rejects.
+	// A headless document has no viewport to fill, so this rejects the way
+	// the spec's no-browsing-context document does.
 	requestFullscreen(_options?: globalThis.FullscreenOptions): Promise<void> {
 		const displayed = displayedDocument(this);
 		if (displayed === undefined) {
@@ -8286,9 +8311,9 @@ export class Element extends Node implements globalThis.Element {
 				new TypeError("The element's document is not displayed"),
 			);
 		}
-		// Fullscreen writes the alternate-screen switch; attach() is the
-		// only consent for that. A browser rejects without a user gesture,
-		// and this is the terminal's equivalent precondition.
+		// Fullscreen switches to the alternate screen, and attach() is the only
+		// consent for that. A browser rejects without a user gesture; this is
+		// the terminal equivalent.
 		if (!isAttached(displayed[kTermDOM])) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
@@ -8301,12 +8326,12 @@ export class Element extends Node implements globalThis.Element {
 				error instanceof Error ? error : new Error(String(error)),
 			);
 		}
-		// The element's UA styles changed (it now fills the viewport)
-		// and neither a mutation nor a focus move fired.
+		// The element's UA styles changed (it now fills the viewport) and
+		// neither a mutation nor a focus move fired to notify the cascade.
 		displayed[kStyles].handleFocusChange(this);
 		displayed[kLayout].invalidate(this);
-		// The screen switch rides the next frame, where no frame can
-		// straddle it; the promise resolves once that frame is written.
+		// The screen switch happens on the next frame so no frame straddles it.
+		// The promise resolves once that frame is written.
 		return frameSettled(this[kDocument]!, displayed);
 	}
 
@@ -8635,9 +8660,9 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	// The Typed OM is not implemented: every computed value here is a string,
-	// and a CSSStyleValue would mean parsing one into a type nothing else here
-	// speaks.
+	// The Typed OM is not implemented. Every computed value here is a
+	// string, and returning a CSSStyleValue would mean parsing into a type
+	// nothing else here uses.
 	computedStyleMap(): never {
 		throw domError(
 			"NotSupportedError",
@@ -8645,9 +8670,9 @@ export class Element extends Node implements globalThis.Element {
 		);
 	}
 
-	// Web Animations needs a timeline this engine has none of: frames come from
-	// terminal input and layout invalidation, not from a clock a running
-	// animation could be sampled against.
+	// Web Animations needs a timeline, and this engine has none. Frames come
+	// from terminal input and layout invalidation, not from a clock a running
+	// animation could sample.
 	animate(): never {
 		throw domError(
 			"NotSupportedError",
@@ -8663,10 +8688,10 @@ export class Element extends Node implements globalThis.Element {
 		return false;
 	}
 
-	// Pointer capture and pointer lock both need a pointer that keeps sending
-	// after it leaves a box. A terminal reports the cell the mouse is over and
-	// stops at the edge of the screen, so there is nothing to capture and
-	// nowhere to lock it to.
+	// Pointer capture and pointer lock both need a pointer that keeps
+	// reporting after it leaves a box. A terminal reports the cell the mouse
+	// is over and stops at the screen edge, so there is nothing to capture
+	// and nowhere to lock to.
 	setPointerCapture(_pointerId: number): never {
 		throw domError("NotSupportedError", "Pointer capture is not implemented");
 	}
@@ -8679,7 +8704,7 @@ export class Element extends Node implements globalThis.Element {
 		throw domError("NotSupportedError", "Pointer lock is not implemented");
 	}
 
-	/** A slottable that is assigned reaches its slot before its parent. */
+	/** An assigned slottable returns its slot instead of its parent. */
 	override [kGetTheParent]?(_event: Event): EventTarget | null {
 		return this[kAssignedSlot] ?? this[kParent]!;
 	}
@@ -8690,7 +8715,7 @@ export class Element extends Node implements globalThis.Element {
 			addToIdMap(root as Document, this);
 		}
 		// The steps run once for every element of an inserted tree, so this
-		// element is the only one to claim here.
+		// element only claims itself.
 		if (this[kRegistry] === null && root[kRegistry] !== null) {
 			this[kRegistry] = root[kRegistry]!;
 			tryToUpgrade(this);
@@ -8698,7 +8723,8 @@ export class Element extends Node implements globalThis.Element {
 		refreshFormOwner(this);
 		refreshFormDisabled(this);
 		// A form that joins a tree becomes the owner of everything already in
-		// it that names the form, and a fieldset brings its disabling with it.
+		// the tree that names it, and a fieldset applies its disabling to what
+		// it contains.
 		if (
 			this instanceof HTMLFormElement ||
 			this instanceof HTMLFieldSetElement
@@ -8800,25 +8826,26 @@ export class Element extends Node implements globalThis.Element {
 	}
 }
 
-/** The scroll offsets of the boxes that have been scrolled at all. */
+/** The scroll offsets of every box that has been scrolled. */
 const scrollOffsets = new WeakMap<
 	globalThis.Element,
 	{left: number; top: number}
 >();
 
 /**
- * What the tables and the mount give an element, which installing says
- * nothing about: the mixins, the reflected members, and the geometry a mount
- * answers. Taken through Pick so a declaration cannot drift from the member
- * it stands for -- except the two written out, which a Pick would make
- * properties, and a subclass declares each as a method of its own.
+ * The members the tables and the engine give an element, which installing
+ * them says nothing about: the mixins, the reflected members, and the
+ * geometry the engine measures. Declared with Pick so a declaration
+ * cannot drift from the member it stands for. The two written out are
+ * exceptions: a Pick would make them properties, and subclasses declare
+ * each as a method.
  */
 export interface Element
 	extends Pick<
 		globalThis.Element,
 		// `remove` and `scrollIntoView` are written out below rather than
-		// Picked: a Pick yields a property, and a subclass declares each of
-		// them as a method, which may not override one.
+		// Picked. A Pick yields a property, and subclasses declare each of them
+		// as a method, which cannot override a property.
 		Exclude<ChildNodeMixin, "remove"> |
 		ParentNodeMixin |
 		SelectorSurface |
@@ -8874,8 +8901,8 @@ Object.defineProperties(Element.prototype, {
 				throw new TypeError("closest needs a selector");
 			}
 			try {
-				// `:scope` names the element closest() was called on, for every
-				// ancestor it then tries.
+				// `:scope` refers to the element closest() was called on, for
+				// every ancestor it tries.
 				return closestSelector(this, String(selectors), {scope: this});
 			} catch (error) {
 				throw asSyntaxError(error);
@@ -8885,9 +8912,9 @@ Object.defineProperties(Element.prototype, {
 		enumerable: true,
 		writable: true,
 	},
-	// How far a box is scrolled from its content's origin. html and body
-	// scroll the document itself, so their offset is the camera's; on a
-	// headless document writes land, read back, and move nothing.
+	// How far a box is scrolled from its content origin. html and body
+	// scroll the document itself, so their offset is the camera's. On a
+	// headless document a write is stored and read back but moves nothing.
 	scrollLeft: {
 		get(this: Element): number {
 			return isDocumentScroller(this)
@@ -8915,10 +8942,10 @@ Object.defineProperties(Element.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
-	// scrollTo/scroll/scrollBy, in both their forms; assignment through the
-	// accessors above is what rounds, clamps and repaints. html and body's
-	// own scrollTop accessors map to the terminal's camera, so scrolling
-	// them scrolls the document, as everywhere else.
+	// scrollTo/scroll/scrollBy, in both argument forms. Assignment through
+	// the accessors above does the rounding, clamping and repainting. html
+	// and body's scrollTop maps to the terminal's camera, so scrolling them
+	// scrolls the document.
 	scrollTo: {
 		value: scrollElementTo,
 		configurable: true,
@@ -8959,8 +8986,8 @@ function rectList(
 	return list;
 }
 
-// An empty set encloses nothing and gives a zero rect at the origin, which
-// is what both public APIs answer for no geometry.
+// An empty set gives a zero rect at the origin, which is what both public
+// APIs return for no geometry.
 function unionRect(
 	rects: readonly globalThis.DOMRect[],
 ): globalThis.DOMRect {
@@ -8980,12 +9007,12 @@ function unionRect(
 	return new DOMRect(left, top, right - left, bottom - top);
 }
 
-// Relative to the viewport, as CSSOM View reports: a box the camera has
-// scrolled past reports a negative top. The layout answers in document
-// space -- the renderer applies the camera once, at paint -- so the camera
-// comes off here, in the one place every client rect passes through. A
-// position:fixed subtree is laid out in viewport space already, and per
-// spec its client rect is scroll-invariant.
+// Viewport-relative, as CSSOM View specifies: a box the camera has
+// scrolled past reports a negative top. Layout works in document space
+// and the renderer applies the camera once at paint, so this function
+// subtracts the camera. It is the one place every client rect goes
+// through. A position:fixed subtree is already laid out in viewport
+// space, and per spec its client rect does not change with scroll.
 function toViewportRect(
 	displayed: DisplayedDocument,
 	rect: globalThis.DOMRect,
@@ -9002,9 +9029,9 @@ function toViewportRect(
 	);
 }
 
-// The geometry surface: the APIs are the DOM's, the measurements the layout
-// engine's, and the space between them the camera's. Writable so a test can
-// stub a measurement, as on the platform.
+// The geometry surface. The APIs are the DOM's, the measurements come
+// from the layout engine, and the camera converts between them. Writable
+// so a test can stub a measurement, as on the platform.
 Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
@@ -9043,7 +9070,7 @@ Object.defineProperties(Element.prototype, {
 const alreadyConstructed = Symbol("already constructed");
 
 export class HTMLElement extends Element {
-	// Installed on the prototype, where the mount that measures them is.
+	// Installed on the prototype, where the engine that measures them is.
 	declare readonly offsetWidth: number;
 	declare readonly offsetHeight: number;
 	declare readonly offsetTop: number;
@@ -9062,10 +9089,10 @@ export class HTMLElement extends Element {
 			super();
 			return;
 		}
-		// The checks come before the object. A constructor that names no
-		// definition throws without anything having been allocated, and an
-		// upgrade never allocates at all: it hands back the element already in
-		// the tree, so super() runs only on the branch that builds one.
+		// The checks run before allocation. A constructor that names no
+		// definition throws without allocating anything, and an upgrade never
+		// allocates: it returns the element already in the tree. So super()
+		// runs only on the branch that builds a new element.
 		const target = new.target as unknown as CustomElementConstructor;
 		if (target === (HTMLElement as unknown as CustomElementConstructor)) {
 			throw new TypeError("Illegal constructor");
@@ -9081,8 +9108,9 @@ export class HTMLElement extends Element {
 		}
 		const stack = definition.constructionStack;
 		if (stack.length > 0) {
-			// A prototype that is not an object is the interface's own, which is
-			// what allocating from this constructor would have given the element.
+			// A prototype that is not an object means the interface's own
+			// prototype, which is what allocating from this constructor would
+			// have given the element anyway.
 			const named = (target as unknown as {prototype: unknown}).prototype;
 			const prototype =
 				named !== null && typeof named === "object"
@@ -9118,8 +9146,8 @@ export class HTMLElement extends Element {
 		inlineStyleOf(this).cssText = value == null ? "" : `${value}`;
 	}
 
-	// Inherited: an element that does not name a mode takes its parent's, and
-	// the root of a tree that names none is translated.
+	// Inherited. An element that sets no mode takes its parent's, and the
+	// root of a tree that sets none is translated.
 	get translate(): boolean {
 		const value = this.getAttribute("translate");
 		if (value !== null) {
@@ -9142,8 +9170,8 @@ export class HTMLElement extends Element {
 		this.setAttribute("translate", value ? "yes" : "no");
 	}
 
-	// An element that names neither state falls back to the two elements HTML
-	// drags by default.
+	// An element that sets neither state falls back to the two elements HTML
+	// makes draggable by default.
 	get draggable(): boolean {
 		const value = this.getAttribute("draggable");
 		if (value !== null) {
@@ -9168,7 +9196,7 @@ export class HTMLElement extends Element {
 		this.setAttribute("draggable", value ? "true" : "false");
 	}
 
-	/** Inherited like translate. */
+	/** Inherited, like translate. */
 	get spellcheck(): boolean {
 		const value = this.getAttribute("spellcheck");
 		if (value !== null) {
@@ -9213,7 +9241,7 @@ export class HTMLElement extends Element {
 		this.setAttribute("autocapitalize", String(value));
 	}
 
-	/** Every value but "off" is on. */
+	/** Every value except "off" means on. */
 	get autocorrect(): boolean {
 		const value = this.getAttribute("autocorrect");
 		return value === null || asciiLowercase(value) !== "off";
@@ -9235,9 +9263,9 @@ export class HTMLElement extends Element {
 		}
 	}
 
-	// Typed boolean, as lib.dom types it, though the third state answers
-	// "until-found" -- which a browser does too: it implements the state and
-	// its own types call it a boolean.
+	// Typed boolean, as lib.dom types it, even though the third state
+	// returns "until-found". Browsers do the same: they implement the state
+	// and their types still say boolean.
 	get hidden(): boolean {
 		const value = this.getAttribute("hidden");
 		if (value === null) {
@@ -9305,8 +9333,9 @@ export class HTMLElement extends Element {
 		return false;
 	}
 
-	// The default is the one the attribute's definition names: zero for the
-	// elements that are in the order without saying so, minus one for the rest.
+	// The default comes from the attribute's definition: zero for elements
+	// that are in the tab order without an attribute, minus one for the
+	// rest.
 	get tabIndex(): number {
 		const value = this.getAttribute("tabindex");
 		const parsed = value === null ? null : parseInteger(value);
@@ -9330,16 +9359,16 @@ export class HTMLElement extends Element {
 		return map;
 	}
 
-	// A terminal has no modifier convention to name the key by. Empty is what
-	// a browser reports when it has nothing to say either.
+	// A terminal has no modifier convention to name the key with. A browser
+	// also returns empty when it has nothing to report.
 	get accessKeyLabel(): string {
 		return "";
 	}
 
-	// The RENDERED text, a different question from textContent: it respects
-	// display, collapses white space and inserts the breaks layout decided on.
-	// This engine has all of that, but reading it back through this property
-	// is not wired up.
+	// The RENDERED text, which differs from textContent: it respects
+	// display, collapses white space and inserts the line breaks layout
+	// chose. This engine computes all of that, but reading it back through
+	// this property is not wired up.
 	get innerText(): string {
 		throw domError("NotSupportedError", "innerText is not implemented");
 	}
@@ -9389,15 +9418,15 @@ export class HTMLElement extends Element {
 		) as unknown as globalThis.ElementInternals;
 	}
 
-	// The focus STATE moves here, and so do the four events HTML's focus update
-	// steps fire. A headless document paints nothing, so it moves the state and
-	// stops.
+	// Moves the focus STATE and fires the four events HTML's focus update
+	// steps fire. A headless document paints nothing, so it only moves the
+	// state.
 	focus(): void {
 		const document = this[kDocument]!;
 		const previous = innermostActive(document);
-		// Shadow-including connectedness: a node whose tree root is a shadow
-		// root is focusable when its host chain reaches the document -- the
-		// node-tree root test refused every element in a shadow tree.
+		// Uses shadow-including connectedness. A node whose tree root is a
+		// shadow root is focusable when its host chain reaches the document.
+		// The node-tree root test rejected every element in a shadow tree.
 		if (isFocusableArea(this) && this.isConnected) {
 			document[kActiveElement] = this;
 		}
@@ -9409,13 +9438,13 @@ export class HTMLElement extends Element {
 			return;
 		}
 		// :focus rules match live and a focus move is not a mutation, so both
-		// elements' resolved styles go stale whether or not a listener
-		// touches anything.
+		// elements' resolved styles are stale whether or not a listener changes
+		// anything.
 		displayed[kStyles].handleFocusChange(previous, this);
 		displayed[kScreen].invalidate();
 		void render(displayed[kTermDOM]);
-		// The body holds the focus whenever nothing else does, and a move off
-		// it is a move off nothing.
+		// The body holds focus whenever nothing else does, so moving focus off
+		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
 			dispatchAsUserAgent(
 				previous,
@@ -9459,8 +9488,8 @@ export class HTMLElement extends Element {
 		);
 	}
 
-	// It joins the top layer, over everything the document paints, and the UA
-	// sheet stops hiding it.
+	// Adds the element to the top layer, above everything else the document
+	// paints, and the UA sheet stops hiding it.
 	showPopover(options?: {source?: Element | null}): void {
 		const init =
 			options === undefined
@@ -9473,8 +9502,8 @@ export class HTMLElement extends Element {
 		hidePopover(this, true, true, true, null);
 	}
 
-	// A force of true only ever shows and one of false only ever hides, so a
-	// caller that knows the state it wants says it.
+	// force: true only ever shows and force: false only ever hides, so a
+	// caller that knows the state it wants can say so.
 	togglePopover(
 		options?: boolean | {force?: boolean; source?: Element | null},
 	): boolean {
@@ -9498,8 +9527,8 @@ export class HTMLElement extends Element {
 		} else if (!showing && force !== false) {
 			showPopover(this, true, source);
 		} else {
-			// Neither half runs, and the state still has to be a legal one:
-			// toggling something that is not a popover throws either way.
+			// Neither half runs, but the state still has to be legal. Toggling
+			// something that is not a popover throws either way.
 			const validity = popoverValidity(this, showing, null);
 			if (isPopoverException(validity)) {
 				throw validity;
@@ -9508,9 +9537,10 @@ export class HTMLElement extends Element {
 		return isShowingPopover(this);
 	}
 
-	// A popover whose attribute changes state stops being the popover it was
-	// showing as, so it closes -- silently, since the author who changed the
-	// attribute is not asking to be told about the popover it used to be.
+	// A popover whose attribute changes state is no longer the popover it
+	// was showing as, so it closes. It closes silently, because the author
+	// who changed the attribute is not asking to be told about the old
+	// popover.
 	override [kAttributeChanged]?(
 		localName: string,
 		oldValue: string | null,
@@ -9530,8 +9560,8 @@ export class HTMLElement extends Element {
 		hidePopover(this, true, true, false, null);
 	}
 
-	// The top layer holds nothing off the tree, and there is no page left for
-	// the popover to be over.
+	// The top layer holds nothing that is off the tree, and there is no page
+	// for the popover to be above anymore.
 	override [kRemovingSteps]?(oldParent: Node): void {
 		super[kRemovingSteps]!(oldParent);
 		if (!isShowingPopover(this)) {
@@ -9547,9 +9577,9 @@ export class HTMLElement extends Element {
 	}
 }
 
-// document.activeElement retargets to the host chain, so a focus move
-// inside a shadow tree is invisible through it; the raw state is at the
-// bottom of each root's own activeElement chain.
+// document.activeElement retargets through the host chain, so a focus
+// move inside a shadow tree is invisible through it. The raw state is at
+// the bottom of each root's own activeElement chain.
 function innermostActive(document: Document): Element | null {
 	let current = document.activeElement as unknown as Element | null;
 	while (current !== null) {
@@ -9563,10 +9593,11 @@ function innermostActive(document: Document): Element | null {
 	return current;
 }
 
-// A tabindex attribute makes any element focusable whatever its value -- a
-// negative one only takes the element out of sequential navigation, not out
-// of focus() -- and the elements focusable without one say so through their
-// default tabindex. A disabled control is focusable by neither route.
+// A tabindex attribute makes any element focusable whatever its value.
+// A negative value only removes the element from sequential navigation,
+// not from focus(). Elements focusable without an attribute say so
+// through their default tabindex. A disabled control is focusable by
+// neither route.
 function isFocusableArea(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
@@ -9589,9 +9620,9 @@ Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 });
 
 /**
- * What the tables and the cascade give an HTML element: the event handler
- * attributes, the attributes it reflects, and `style`, which the cascade
- * installs when it loads.
+ * The members the tables and the cascade give an HTML element: the event
+ * handler attributes, the reflected attributes, and `style`, which the
+ * cascade installs when it loads.
  */
 export interface HTMLElement
 	extends Pick<
@@ -9610,10 +9641,10 @@ export interface HTMLElement
 		"style"
 	> {}
 
-// Everything a geometry read must see is settled first: the mutations the
-// observer has not delivered yet, and the layout they invalidated.
-// Undefined where there is nothing to measure -- a headless document, or
-// an element outside one -- and every reader falls back to the zero the
+// Settles everything a geometry read must see: pending mutation records
+// are delivered and the layout they invalidated is recomputed. Returns
+// undefined when there is nothing to measure (a headless document, or an
+// element outside one), and every caller then falls back to the zero the
 // spec gives an element with no box.
 function settledLayout(element: Element): LayoutEngine | undefined {
 	const displayed = displayedDocument(element);
@@ -9653,8 +9684,8 @@ Object.defineProperties(HTMLElement.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
-	// The tree walk this one makes reads style, not geometry, so it takes no
-	// layout flush -- unlike every other member around it.
+	// This walk reads style, not geometry, so it does not flush layout,
+	// unlike every other member around it.
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
 			const displayed = displayedDocument(this);
@@ -9680,7 +9711,7 @@ Object.defineProperties(HTMLElement.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
-	// The border widths, which the cascade alone decides.
+	// The border widths, which only the cascade decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
 			return getBoxModel(this).borderLeftWidth;
@@ -9709,10 +9740,10 @@ Object.defineProperties(HTMLElement.prototype, {
 		configurable: true,
 		enumerable: true,
 	},
-	// Reveal the element: every scroll box between it and the document
+	// Reveals the element: every scroll box between it and the document
 	// scrolls it into view, and so does the screen. A headless document shows
-	// nothing, so there is nothing to reveal into. The options are not read:
-	// all moves are the minimal ones, block "nearest".
+	// nothing, so there is nothing to reveal. The options are ignored; every
+	// move is the minimal one, block "nearest".
 	scrollIntoView: {
 		value(this: HTMLElement): void {
 			const displayed = displayedDocument(this);
@@ -9721,11 +9752,12 @@ Object.defineProperties(HTMLElement.prototype, {
 			}
 			flushLayout(this);
 			displayed[kLayout].revealInScrollPorts(this);
-			// The scroll boxes around the element have revealed it within
-			// themselves; what remains is the camera's, which shows
-			// [scrollTop, scrollTop + region). Move it the minimal amount --
-			// the standard block: "nearest" behavior. Document-relative, so
-			// it compares directly against the camera's own offset.
+			// The scroll boxes around the element have already revealed it
+			// within themselves. What remains is the camera, which shows
+			// [scrollTop, scrollTop + region). Move it the minimal amount, the
+			// standard block: "nearest" behavior. The rect is
+			// document-relative, so it compares directly against the camera
+			// offset.
 			const rect = displayed[kLayout].getRect(this);
 			if (!rect) {
 				return;
@@ -9752,10 +9784,10 @@ Object.defineProperties(HTMLElement.prototype, {
 		enumerable: true,
 		writable: true,
 	},
-	// On the definition the focus walk already uses: a rendered element --
-	// nothing on its flat chain display:none, and it produced boxes -- with
-	// the visibility check the options ask for. Nothing a headless document
-	// holds is rendered.
+	// Uses the same definition as the focus walk: a rendered element
+	// (nothing on its flat chain is display:none, and it produced boxes),
+	// plus the visibility check the options ask for. Nothing in a headless
+	// document is rendered.
 	checkVisibility: {
 		value(
 			this: HTMLElement,
@@ -9794,8 +9826,8 @@ Object.defineProperties(HTMLElement.prototype, {
 	},
 });
 
-// Inert takes an element out of every focusable area, so focus() refuses
-// it and the focus walk skips it, wherever in a shadow tree it stands.
+// Inert removes an element from every focusable area, so focus() refuses
+// it and the focus walk skips it, wherever in a shadow tree it is.
 function isInertTree(element: Element): boolean {
 	let node: Element | null = element;
 	while (node !== null) {
@@ -9815,8 +9847,8 @@ function isInertTree(element: Element): boolean {
 	return false;
 }
 
-// Zero for the elements in the sequential focus navigation order without
-// an attribute, minus one for every other element.
+// Zero for elements that are in the sequential focus navigation order
+// without an attribute, minus one for every other element.
 function defaultTabIndex(element: Element): number {
 	if (element[kNamespace] !== HTML_NAMESPACE) {
 		return -1;
@@ -9962,10 +9994,10 @@ function buildElement(
 	return element;
 }
 
-// With the synchronous flag set -- createElement and its kin -- an author's
-// constructor runs here and its result is checked to be a bare element of
-// the right name. Without it -- the parser -- the element is created
-// undefined and an upgrade reaction is enqueued, so the parser never
+// With the synchronous flag (createElement and its kin), the author's
+// constructor runs here and the result is checked to be a bare element of
+// the right name. Without it (the parser), the element is created
+// undefined and an upgrade reaction is queued, so the parser never
 // re-enters script.
 function createElementInternal(
 	document: Document,
@@ -10093,8 +10125,9 @@ const RESERVED_CUSTOM_NAMES = new Set([
 	"missing-glyph",
 ]);
 
-// Begins with a lower-case letter, carries a hyphen and no upper-case
-// letter, and is not one of the hyphenated names SVG and MathML own.
+// Must start with a lower-case letter, contain a hyphen, contain no
+// upper-case letter, and not be one of the hyphenated names SVG and
+// MathML define.
 function isValidCustomElementName(name: string): boolean {
 	return (
 		VALID_ELEMENT_LOCAL_NAME.test(name) &&
@@ -10125,17 +10158,17 @@ type Reaction =
 	{upgrade: CustomElementDefinition} |
 	{callback: (...args: unknown[]) => void; args: unknown[]};
 
-// Author code must see a lifecycle callback after the mutation that caused
-// it has finished, never in the middle of one: a queue is pushed when an
-// API the IDL marks [CEReactions] is entered and drained when it returns,
-// so a script that appends a subtree gets one connectedCallback per
-// element, in tree order, after the whole subtree is in place.
+// Author code must see a lifecycle callback after the mutation that
+// caused it finishes, never in the middle of it. A queue is pushed when
+// an API marked [CEReactions] in the IDL is entered and drained when it
+// returns, so a script that appends a subtree gets one connectedCallback
+// per element, in tree order, after the whole subtree is in place.
 const reactionsStack: Element[][] = [];
 
-// Where a reaction goes when nothing on the stack claims it -- a mutation
-// the tree makes on its own behalf. The queue drains on a microtask, and
-// the flag keeps a reaction enqueued by that drain from starting a second
-// one.
+// Where a reaction goes when nothing on the stack claims it, meaning a
+// mutation the tree makes on its own. The queue drains on a microtask,
+// and the flag stops a reaction queued by that drain from starting a
+// second one.
 const backupElementQueue: Element[] = [];
 let processingBackupElementQueue = false;
 
@@ -10226,8 +10259,9 @@ function withReactions<T>(steps: () => T): T {
 	}
 }
 
-// A getter is never a reactions boundary -- the extended attribute cannot
-// appear on a readonly attribute -- so only values and setters are wrapped.
+// A getter is never a reactions boundary, because the extended attribute
+// cannot appear on a readonly attribute. So only values and setters are
+// wrapped.
 function ceReactions(prototype: object, names: string[]): void {
 	for (const name of names) {
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
@@ -10290,8 +10324,8 @@ const kWhenDefined = Symbol("whenDefined");
 const kScoped = Symbol("scoped");
 
 class CustomElementRegistry {
-	// The registry a realm hands every document is not scoped, and is the only
-	// one a document may hold.
+	// The registry the realm gives every document is not scoped, and it is
+	// the only one a document may hold.
 	declare [kScoped]?: boolean;
 	declare [kDefinitions]?: CustomElementDefinition[];
 	declare [kDefinitionIsRunning]?: boolean;
@@ -10507,7 +10541,7 @@ class CustomElementRegistry {
 		}
 	}
 
-	// The registry a realm hands its documents cannot claim a document: a
+	// The realm's document registry cannot claim a document, because a
 	// document holds that registry from the moment it exists.
 	initialize(root: Node): void {
 		if (!(root instanceof Node)) {
@@ -10527,19 +10561,19 @@ class CustomElementRegistry {
 	}
 }
 
-// The construction runs against a proxy of the value whose own trap
-// answers, so nothing on the value is read: a proxy is constructible
-// exactly when its target is, and the trap returns before the object it
-// would build needs a prototype. Constructing with the value as the new
-// target would read its `prototype`, which the caller can see.
+// Constructs a proxy of the value with a construct trap, so
+// nothing on the value itself is read. A proxy is constructible exactly
+// when its target is, and the trap returns before the object it would
+// build needs a prototype. Constructing with the value as new.target
+// would read its `prototype`, which the caller could observe.
 function isConstructor(value: unknown): boolean {
 	if (typeof value !== "function") {
 		return false;
 	}
 	try {
 		Reflect.construct(
-			// Probing whether a registered constructor is constructible has no
-			// other spelling.
+			// There is no other way to test whether a registered constructor is
+			// constructible.
 			// eslint-disable-next-line no-restricted-globals
 			new Proxy(value as new () => unknown, {construct: () => ({})}),
 			[],
@@ -10619,10 +10653,10 @@ Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// A constructor can be defined in more than one registry, and the one a
-// `super()` call means is the one whose upgrade is in flight; with none in
-// flight the realm's own registry answers first, and a scoped registry
-// only where it is the sole one that knows the constructor.
+// A constructor can be defined in more than one registry. A `super()`
+// call means the registry whose upgrade is in flight. With none in
+// flight, the realm's own registry is checked first, and a scoped
+// registry only if it is the only one that knows the constructor.
 function definitionForConstructor(
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
@@ -10645,19 +10679,19 @@ function definitionForConstructor(
 	return null;
 }
 
-// Definitions are per-realm because the classes that carry them are, so
+// Definitions are per realm because the classes that carry them are, so
 // one registry serves every document. A document reaches it through the
-// algorithms below rather than through a global, so a tree with no window
-// behind it still resolves its definitions.
+// algorithms below rather than a global, so a tree with no window behind
+// it still resolves its definitions.
 const globalCustomElements = constructInternal(
 	() => new CustomElementRegistry(),
 );
 
-// Every node carries a registry: an element takes its document's when
-// created and the tree's when inserted, a shadow root takes its host's
-// unless the caller named another, and a node created for a registry not
-// yet given one carries null, which matches no definition until a registry
-// claims it.
+// Every node has a registry. An element takes its document's when
+// created and the tree's when inserted. A shadow root takes its host's
+// unless the caller named another. A node created for a registry that
+// has not been assigned one yet has null, which matches no definition
+// until a registry claims it.
 function lookUpCustomElementDefinition(
 	registry: CustomElementRegistry | null,
 	namespace: string | null,
@@ -10670,9 +10704,8 @@ function lookUpCustomElementDefinition(
 	return lookUp(registry, namespace, localName, is);
 }
 
-// The walk is over the node tree: a shadow tree hanging off an element in
-// it keeps whatever registry it was given, which is the point of scoping
-// one.
+// Walks the node tree only. A shadow tree under an element keeps
+// whatever registry it was given, which is the point of scoping one.
 function associateRegistry(
 	node: Node,
 	registry: CustomElementRegistry,
@@ -10698,10 +10731,10 @@ function constructCustomElement(definition: CustomElementDefinition): Element {
 	) as Element;
 }
 
-// The element is already in the tree; what changes is its prototype, its
+// The element is already in the tree. What changes is its prototype, its
 // state, and the callbacks it owes. The reactions for the attributes it
-// already carries and for being connected are enqueued before the
-// constructor runs, so an author's constructor sees them arrive afterwards.
+// already has and for being connected are queued before the constructor
+// runs, so the author's constructor sees them arrive afterwards.
 function upgradeElement(
 	element: Element,
 	definition: CustomElementDefinition,
@@ -10737,10 +10770,10 @@ function upgradeElement(
 			throw new TypeError("That constructor built a different element");
 		}
 	} catch (error) {
-		// A constructor that threw leaves the element failed, with the callbacks
-		// it had not run yet dropped. The definition stays: the element is that
-		// definition's, and failed is a state of it rather than the absence of
-		// one. The exception is reported by whoever runs the reaction.
+		// If the constructor threw, the element is failed and the callbacks it
+		// had not run yet are dropped. The definition stays, because the
+		// element belongs to that definition and failed is a state of it, not
+		// the absence of one. Whoever runs the reaction reports the exception.
 		definition.constructionStack.pop();
 		element[kCustomState] = "failed";
 		element[kReactionQueue] = null;
@@ -10748,8 +10781,8 @@ function upgradeElement(
 	}
 	definition.constructionStack.pop();
 	element[kCustomState] = "custom";
-	// A form-associated element learns its owner and its disabling as it
-	// becomes one, which is the first moment it has an internals to be told.
+	// A form-associated element learns its owner and its disabled state as
+	// it becomes one, which is the first moment it has internals to notify.
 	if (definition.formAssociated) {
 		refreshFormOwner(element);
 		refreshFormDisabled(element);
@@ -10762,9 +10795,9 @@ function definitionRegistry(
 	return definition.registry;
 }
 
-// A template's content belongs to a document with no browsing context, and
-// such a document looks nothing up: an element sitting in one never
-// upgrades, however it got there.
+// A template's content belongs to a document with no browsing context,
+// and such a document looks nothing up. An element in one never upgrades,
+// however it got there.
 function upgradeDefinitionFor(
 	element: Element,
 ): CustomElementDefinition | null {
@@ -10815,12 +10848,12 @@ const SHADOW_HOST_NAMES = new Set([
 	"span",
 ]);
 
-// Named slots sort children by their `slot` attribute, which author content
-// does not carry and the UA must not write onto the author's nodes; a UA
-// tree that sorts children by what they are -- details sends its first
-// summary to one slot and everything else to the other -- carries this
-// function instead. findSlottables consults it on every assignment pass, so
-// it always answers from the current child list.
+// Named slots sort children by their `slot` attribute, but author content
+// does not carry that attribute and the UA must not write onto author
+// nodes. A UA tree that sorts children by what they are (details sends
+// its first summary to one slot and everything else to the other) uses
+// this function instead. findSlottables calls it on every assignment
+// pass, so it always reads the current child list.
 const kUASlotting = Symbol("UA slot distribution");
 
 interface ShadowRootInit {
@@ -10840,9 +10873,9 @@ const kUAInternal = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 
 /**
- * A document fragment with a host, which is what makes every algorithm that
- * already steps from a fragment to its host -- pre-insertion validity,
- * retargeting, the composed path -- work across it without a second concept.
+ * A document fragment with a host. Every algorithm that already steps
+ * from a fragment to its host (pre-insertion validity, retargeting, the
+ * composed path) works across it without a second concept.
  */
 export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoot {
 	[kShadowMode]?: "open" | "closed";
@@ -10883,13 +10916,13 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		adoptStyleSheets(this, value);
 	}
 
-	// Retargeted into this tree: the shadow-including ancestor of the focus
-	// that is one of THIS root's descendants, or null when the focus is
-	// elsewhere entirely.
+	// Retargeted into this tree: the shadow-including ancestor of the
+	// focused element that is a descendant of THIS root, or null when the
+	// focus is elsewhere entirely.
 	get activeElement(): globalThis.Element | null {
 		const document = this.ownerDocument as Document | null;
-		// The RAW focus, not the document's retargeted answer -- that one
-		// already collapsed shadow content to its host.
+		// Start from the RAW focus, not the document's retargeted result, which
+		// has already collapsed shadow content to its host.
 		let current: Node | null = ((document ? document[kActiveElement]! : null) ??
 			null) as Node | null;
 		while (current !== null) {
@@ -10946,10 +10979,10 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		replaceAll(fragment, this);
 	}
 
-	// The DocumentOrShadowRoot surface, SCOPED to this root: nothing in this
-	// engine ever puts these inside a shadow root -- fullscreen, pointer lock
-	// and picture-in-picture are the document's, and hit testing is answered
-	// against the document because that is where the boxes were painted from.
+	// The DocumentOrShadowRoot surface, SCOPED to this root. Nothing in this
+	// engine ever puts these inside a shadow root. Fullscreen, pointer lock
+	// and picture-in-picture belong to the document, and hit testing runs
+	// against the document because that is where the boxes were painted.
 	get fullscreenElement(): globalThis.Element | null {
 		return null;
 	}
@@ -10995,8 +11028,8 @@ export class ShadowRoot extends DocumentFragment implements globalThis.ShadowRoo
 		return [];
 	}
 
-	// A dispatch leaves a shadow tree through the host, unless the event was
-	// dispatched inside this very tree and is not composed.
+	// Dispatch leaves a shadow tree through the host, unless the event was
+	// dispatched inside this tree and is not composed.
 	override [kGetTheParent]?(event: Event): EventTarget | null {
 		const path = event[kState]!.path;
 		if (
@@ -11096,14 +11129,14 @@ function attachShadowRoot(
 	styleShadowAttached(shadow);
 }
 
-// The same ShadowRoot an author's attachShadow builds -- slot assignment,
-// retargeting, `isConnected`, the selector engine's tree scoping all work
-// across it -- attached past the check that stops an author from hosting a
-// tree on an `<input>`. Closed and unmarked as declarative or clonable, so
-// `element.shadowRoot` stays null, `attachShadow` still throws the
-// NotSupportedError the spec demands, `cloneNode` copies nothing, and
-// serialization never names it: reachable only through getShadowRoot and
-// the control that built it.
+// The same ShadowRoot an author's attachShadow builds, so slot
+// assignment, retargeting, `isConnected` and the selector engine's tree
+// scoping all work across it. Attached past the check that stops authors
+// from hosting a tree on an `<input>`. Closed and not marked declarative
+// or clonable, so `element.shadowRoot` stays null, `attachShadow` still
+// throws the NotSupportedError the spec requires, `cloneNode` copies
+// nothing, and serialization never includes it. Reachable only through
+// getShadowRoot and the control that built it.
 function attachUAShadowRoot<T>(target: Element): T {
 	const host = target as Element;
 	const shadow = constructInternal(() => new ShadowRoot());
@@ -11118,17 +11151,17 @@ function attachUAShadowRoot<T>(target: Element): T {
 }
 
 /**
- * The cascade asks: a rule from a stylesheet of a UA shadow tree is a UA
- * rule, which every author rule outranks whatever its specificity.
+ * The cascade checks this: a rule from a UA shadow tree's stylesheet is a
+ * UA rule, which every author rule outranks whatever its specificity.
  */
 export function isUAShadowRoot(node: globalThis.Node): boolean {
 	return node instanceof ShadowRoot && node[kUAInternal]!;
 }
 
 /**
- * The shadow tree an element renders, closed ones included. The engine
- * composes through this; `Element.shadowRoot` is the author-facing view,
- * which shows an open tree and nothing else.
+ * The shadow tree an element renders, including closed ones. The engine
+ * composes through this. `Element.shadowRoot` is the author-facing view
+ * and shows only an open tree.
  */
 export function getShadowRoot<T>(element: globalThis.Element): T | null {
 	return ((element as Element)[kShadowRoot]! as T) ?? null;
@@ -11269,9 +11302,9 @@ function assignASlot(slottable: Slottable): void {
 	}
 }
 
-// slotchange is signalled here rather than fired: the spec fires it from
-// the same microtask that delivers mutation records, and after them, so a
-// script that observes both sees the records first.
+// slotchange is signalled here rather than fired. The spec fires it from
+// the same microtask that delivers mutation records, after them, so a
+// script observing both sees the records first.
 const signalSlots: HTMLSlotElement[] = [];
 
 function signalASlotChange(slot: HTMLSlotElement): void {
@@ -11321,11 +11354,11 @@ function updateSlotName(
 	assignSlottablesForTree(getRoot(slot));
 }
 
-// Assignment is recomputed rather than incrementally patched, because
-// every input to it -- the host's children, their slot attributes, the
-// slot names in the tree -- can change from any of a dozen mutation entry
-// points, and one recomputation per changed tree is both the spec's shape
-// and the only one that cannot drift.
+// Assignment is recomputed rather than patched incrementally. Every
+// input to it (the host's children, their slot attributes, the slot names
+// in the tree) can change from any of a dozen mutation entry points. One
+// recomputation per changed tree is both the spec's shape and the only
+// one that cannot drift.
 class HTMLSlotElement extends HTMLElement {
 	[kSlotName]?: string;
 	[kAssignedNodes]?: Slottable[];
@@ -11364,10 +11397,10 @@ class HTMLSlotElement extends HTMLElement {
 		) as globalThis.Element[];
 	}
 
-	// Recomputed over every tree a slot in it lost or gained a node: the
-	// spec's own step covers this slot's tree, and a node taken from a slot in
-	// another shadow tree leaves that tree's assignment stale until its slots
-	// are recomputed too.
+	// Recomputes every tree in which a slot lost or gained a node. The
+	// spec's own step covers this slot's tree, but a node taken from a slot
+	// in another shadow tree leaves that tree's assignment stale until its
+	// slots are recomputed too.
 	assign(...nodes: Array<globalThis.Element | globalThis.Text>): void {
 		for (const node of nodes) {
 			if (!(node instanceof Node) || !isSlottable(node)) {
@@ -11442,10 +11475,10 @@ const kTemplateContent = Symbol("template content");
 
 const kTemplateDocument = Symbol("templateDocument");
 
-// The fragment is the shape a shadow tree is written in -- a declarative
-// shadow root is a template -- so the element that owns that fragment
-// belongs beside the slot. Its host is the template, which is what stops a
-// template from being appended into its own contents.
+// The fragment is the form a shadow tree is written in (a declarative
+// shadow root is a template), so the element that owns the fragment
+// belongs next to the slot. The fragment's host is the template, which is
+// what stops a template from being appended into its own contents.
 class HTMLTemplateElement extends HTMLElement {
 	[kTemplateContent]?: DocumentFragment | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
@@ -11528,10 +11561,10 @@ class HTMLTemplateElement extends HTMLElement {
 	}
 }
 
-// An inert document of its own, one per document, holding every template's
-// content fragment -- which is why a template's content answers a different
-// ownerDocument than its element. A contents owner owns its own templates'
-// contents itself.
+// An inert document, one per document, that holds every template's
+// content fragment. That is why a template's content has a different
+// ownerDocument than the element. A contents owner owns its own
+// templates' contents itself.
 function getTemplateContentsOwner(document: Document): Document {
 	if (document[kTemplateDocument] === document) {
 		return document;
@@ -11561,8 +11594,8 @@ function parseURL(value: string, base: string): string | null {
 }
 
 // The href of the first base element that has one, resolved against the
-// document's own URL; the document's URL where there is no such element or
-// its href does not parse.
+// document's URL. Falls back to the document's URL when there is no such
+// element or its href does not parse.
 function documentBaseURL(document: Document): string {
 	const fallback = document[kDocumentURL]!;
 	for (const node of descendants(document)) {
@@ -11594,7 +11627,7 @@ function parseInteger(value: string): number | null {
 	return Number.isSafeInteger(number) ? number : null;
 }
 
-/** A sign is not a non-negative integer. */
+/** A sign is not allowed in a non-negative integer. */
 function parseNonNegativeInteger(value: string): number | null {
 	const match = /^[\t\n\f\r ]*([0-9]+)/.exec(value);
 	if (match === null) {
@@ -11630,10 +11663,10 @@ function reflectedTokenList(
 	return list;
 }
 
-// Every setter writes through setAttribute, which is where the attribute
-// change steps, the mutation records and the custom element reactions
-// already are, so a reflected write is indistinguishable from the attribute
-// write it stands for.
+// Every setter writes through setAttribute, which already runs the
+// attribute change steps, mutation records and custom element reactions.
+// So a reflected write is indistinguishable from the attribute write it
+// stands for.
 function installReflection(prototype: object, spec: ReflectSpec): void {
 	const attribute = spec.attribute;
 	let get: () => unknown;
@@ -11751,8 +11784,8 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				if (value === null) {
 					return spec.nullable ? null : missing;
 				}
-				// An attribute whose empty string is one of its own keywords
-				// answers with the state that keyword names.
+				// If the empty string is one of the attribute's own keywords,
+				// it maps to the state that keyword names.
 				if (value === "" && spec.empty !== undefined) {
 					return spec.empty;
 				}
@@ -11794,10 +11827,10 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 	});
 }
 
-// The HTML Standard's element interfaces, each filled in from the table:
-// the reflecting members come from `HTML_INTERFACES`, and the members that
-// are not reflections are written in the class body. A class with an empty
-// body reflects and does nothing else, which is all its interface is.
+// The HTML Standard's element interfaces, each filled in from the table.
+// The reflecting members come from `HTML_INTERFACES`. Members that are
+// not reflections are written in the class body. A class with an empty
+// body only reflects, which is all its interface does.
 class HTMLAnchorElement extends HTMLElement {
 	get text(): string {
 		return descendantText(this);
@@ -11808,8 +11841,8 @@ class HTMLAnchorElement extends HTMLElement {
 	}
 }
 
-// Written out rather than picked: a computed projection satisfies keyof
-// and does not satisfy assignability, which is the thing this is for.
+// Written out rather than picked. A computed projection satisfies keyof
+// but not assignability, and assignability is what this is for.
 interface HTMLAnchorElement {
 	hash: string;
 	host: string;
@@ -12018,8 +12051,8 @@ interface HTMLAreaElement
 	> {}
 Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 
-// Its own href is the odd one out: it resolves against the document's URL
-// rather than against the base, because it is the base.
+// Its own href is the exception: it resolves against the document's URL
+// rather than the base, because it is the base.
 interface HTMLBaseElement
 	extends Pick<
 		globalThis.HTMLBaseElement,
@@ -12107,7 +12140,7 @@ interface HTMLButtonElement
 	> {}
 
 class HTMLButtonElement extends HTMLElement {
-	// Installed from the element table, and read by the algorithms below.
+	// Installed from the element table and read by the algorithms below.
 	declare type: string;
 
 	get form(): HTMLFormElement | null {
@@ -12127,9 +12160,8 @@ class HTMLButtonElement extends HTMLElement {
 	}
 }
 
-// A rendering context is a bitmap, and there is none, so getContext
-// answers null exactly as it does for a context type an implementation
-// does not support.
+// A rendering context is a bitmap, and there is none. getContext
+// returns null exactly as it does for an unsupported context type.
 interface HTMLCanvasElement
 	extends Pick<
 		globalThis.HTMLCanvasElement,
@@ -12189,13 +12221,14 @@ const kContent = Symbol("content");
 
 const kUpgraded = Symbol("upgraded");
 
-// The toggle event is queued rather than fired where the attribute
-// changes, so a run of changes inside one turn reports the state it
-// settled on. It renders a closed shadow tree it owns, as the form controls
-// do: a slot the first summary child projects through, and a content
-// container (part=details-content) whose slot takes every other child --
-// text nodes included, which no light-tree selector could reach. Hiding a
-// closed details' body is then one display flip on that container.
+// The toggle event is queued rather than fired when the attribute
+// changes, so several changes in one turn report only the final state.
+// The element renders a closed shadow tree it owns, like the form
+// controls: a slot the first summary child projects through, and a
+// content container (part=details-content) whose slot takes every other
+// child, including text nodes, which no light-tree selector could reach.
+// Hiding a closed details' body is then one display flip on that
+// container.
 interface HTMLDetailsElement
 	extends Pick<
 		globalThis.HTMLDetailsElement,
@@ -12234,8 +12267,9 @@ class HTMLDetailsElement extends HTMLElement {
 		const content = document.createElement("div");
 		content.setAttribute("part", "details-content");
 		content.appendChild(document.createElement("slot"));
-		// The distribution must be in place before the slots enter the tree:
-		// inserting each one runs the assignment pass that fills it.
+		// The distribution function must be in place before the slots enter the
+		// tree, because inserting each slot runs the assignment pass that fills
+		// it.
 		shadow[kSlotAssignment] = "manual";
 		shadow[kUASlotting] = (slot) =>
 			detailsSlottables(this, slot === summarySlot);
@@ -12290,9 +12324,9 @@ class HTMLDetailsElement extends HTMLElement {
 	}
 }
 
-// The first summary element child goes to the summary slot, every other
-// slottable child to the content slot; recomputed from the child list on
-// each assignment pass.
+// The first summary element child goes to the summary slot and every
+// other slottable child to the content slot. Recomputed from the child
+// list on each assignment pass.
 function detailsSlottables(
 	host: HTMLDetailsElement,
 	toSummary: boolean,
@@ -12350,10 +12384,10 @@ Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
 
 const kPreviouslyFocused = Symbol("previouslyFocused");
 
-// Showing one modally puts it in the document's top layer, above every
+// showModal() puts the dialog in the document's top layer, above every
 // stacking context and outside the flow it was written in, and makes the
-// rest of the document unreachable until it closes; `show()` leaves it
-// exactly where it is, an ordinary box that happens to be visible.
+// rest of the document unreachable until it closes. show() leaves it
+// where it is, as an ordinary visible box.
 interface HTMLDialogElement
 	extends Pick<
 		globalThis.HTMLDialogElement,
@@ -12362,7 +12396,7 @@ interface HTMLDialogElement
 
 class HTMLDialogElement extends HTMLElement {
 	declare [kReturnValue]?: string;
-	// Where focus was when the dialog took it, so closing can give it back.
+	// Where focus was when the dialog took it, so closing can restore it.
 	declare [kPreviouslyFocused]?: Element | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -12402,9 +12436,9 @@ class HTMLDialogElement extends HTMLElement {
 				"A dialog must be connected to show modally",
 			);
 		}
-		// The top layer is the modality: everything else -- `:modal`, the
-		// backdrop, the hit-testing that stops clicks reaching the page --
-		// reads membership rather than a flag of its own.
+		// Top layer membership IS the modality. Everything else (`:modal`, the
+		// backdrop, the hit testing that stops clicks reaching the page) reads
+		// membership rather than a separate flag.
 		getTopLayer(this[kDocument]!).add(this);
 		this.setAttribute("open", "");
 		focusDialog(this);
@@ -12433,10 +12467,10 @@ class HTMLDialogElement extends HTMLElement {
 	}
 }
 
-// HTML's dialog focusing steps: the descendant asking with `autofocus`,
-// else the first that can take focus, else the dialog itself -- which is
-// focusable for exactly as long as it is the modal one, so a dialog of
-// plain text still takes keys off the page.
+// HTML's dialog focusing steps: the descendant with `autofocus`, else
+// the first descendant that can take focus, else the dialog itself. The
+// dialog is focusable exactly while it is the modal one, so a dialog of
+// plain text still takes keys away from the page.
 function focusDialog(
 	dialog: HTMLDialogElement,
 ): void {
@@ -12479,8 +12513,8 @@ function close(
 	const wasModal = isModalDialog(dialog);
 	dialog.removeAttribute("open");
 	getTopLayer(document).delete(dialog);
-	// The page gets its focus back where the dialog took it from -- when the
-	// dialog holds focus, or held the whole page inert as the modal one.
+	// Restore focus to where the dialog took it from, if the dialog holds
+	// focus or held the whole page inert as the modal one.
 	const previous = dialog[kPreviouslyFocused]!;
 	dialog[kPreviouslyFocused] = null;
 	const active = document[kActiveElement]!;
@@ -12490,7 +12524,7 @@ function close(
 		(previous as HTMLElement).focus();
 	}
 	// focus() refuses a target that left the tree or stopped being
-	// focusable; focus still in the closed dialog falls back to the body.
+	// focusable. Focus still inside the closed dialog falls back to the body.
 	const after = document[kActiveElement]!;
 	if (after !== null && isShadowIncludingInclusiveAncestor(dialog, after)) {
 		(after as HTMLElement).blur();
@@ -12504,9 +12538,9 @@ function close(
 const kTopLayer = Symbol("the document's top layer");
 
 /**
- * The elements that render above every stacking context of the document, in
- * the order they entered it. Membership is what `showModal` grants and
- * `close` revokes, and what the renderer paints last.
+ * The elements that render above every stacking context of the document,
+ * in the order they entered. `showModal` adds to it, `close` removes from
+ * it, and the renderer paints it last.
  */
 export function getTopLayer(document: globalThis.Document): Set<Element> {
 	return (document as Document)[kTopLayer]!;
@@ -12514,17 +12548,16 @@ export function getTopLayer(document: globalThis.Document): Set<Element> {
 
 /**
  * The top layer's members that are on screen, in the order they joined. A
- * member off the flat tree is passed over rather than dropped: it is the
- * tree's business whether it comes back, not the reader's.
+ * member not in the flat tree is skipped rather than removed. Whether it
+ * comes back is the tree's decision, not the reader's.
  */
 export function renderedTopLayer(
 	document: globalThis.Document,
 ): globalThis.Element[] {
 	const rendered: Element[] = [];
 	for (const element of getTopLayer(document)) {
-		// COMPOSITION-connected: a UA part (the select's picker) lives
-		// in a fragment and is never DOM-connected while very much on
-		// screen.
+		// Uses flat-tree connectedness. A UA part (the select's picker) lives
+		// in a fragment and is never DOM-connected while very much on screen.
 		if (flatIsConnected(element)) {
 			rendered.push(element);
 		}
@@ -12534,8 +12567,8 @@ export function renderedTopLayer(
 
 /**
  * The state `:modal` matches. A dialog is modal exactly while it is in its
- * document's top layer: `show()` never puts one there and `close()` takes
- * it out, so there is no second flag to keep in step with the first.
+ * document's top layer. `show()` never adds it and `close()` removes it,
+ * so no second flag needs to be kept in sync.
  */
 export function isModalDialog(node: globalThis.Node): boolean {
 	return (
@@ -12648,10 +12681,10 @@ class HTMLFontElement extends HTMLElement {}
 
 const kFiringReset = Symbol("firingReset");
 
-// Submission navigates, and this DOM does not navigate: `submit()` runs
-// the steps up to the navigation and stops, `requestSubmit()` fires the
-// submit event those steps fire first, and `reset()` fires its event and
-// restores every control it owns to its default.
+// Submission navigates, and this DOM does not navigate. `submit()` runs
+// the steps up to the navigation and stops. `requestSubmit()` fires the
+// submit event those steps fire first. `reset()` fires its event and
+// restores every control the form owns to its default.
 class HTMLFormElement extends HTMLElement {
 	declare [kElements]?: HTMLFormControlsCollection | null;
 	declare [kFiringReset]?: boolean;
@@ -12677,7 +12710,7 @@ class HTMLFormElement extends HTMLElement {
 		return this.elements.length;
 	}
 
-	/** An alias of enctype, which is what the spec makes it. */
+	/** An alias of enctype, per spec. */
 	get encoding(): string {
 		return this.enctype;
 	}
@@ -12735,7 +12768,7 @@ class HTMLFormElement extends HTMLElement {
 		return true;
 	}
 
-	// A terminal has no validation bubble to raise, so there is nothing to do
+	// A terminal has no validation bubble to show, so there is nothing to do
 	// beyond the check.
 	reportValidity(): boolean {
 		return this.checkValidity();
@@ -12801,17 +12834,17 @@ function isSubmitButton(element: Element): boolean {
 	return false;
 }
 
-// The submit event fires unless the caller was `submit()`, which the spec
-// defines as skipping it. The navigation itself is the one step this DOM
-// does not have.
+// Fires the submit event unless the caller was `submit()`, which the
+// spec defines as skipping it. The navigation itself is the one step this
+// DOM does not have.
 function submitForm(
 	form: HTMLFormElement,
 	submitter: Element | null,
 	skipEvent: boolean,
 ): void {
-	// A form that cannot navigate does not submit, and a form outside a
-	// document cannot: submission ends in a navigation, and there is nothing
-	// there to navigate. The submit event does not fire either.
+	// A form outside a document cannot submit, because submission ends in a
+	// navigation and there is nothing to navigate. The submit event does not
+	// fire either.
 	if (!form.isConnected) {
 		return;
 	}
@@ -12862,18 +12895,18 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// WebIDL has this inherit HTMLCollection, so it does. What it answers for
-// a shared name is wider than what it inherits, which a subclass may not
-// say in TypeScript, so the merged interface below says it instead.
-// lib.dom reaches the same place by splitting the base in two, which no
-// engine does.
+// WebIDL has this inherit HTMLCollection, so it does. What it returns
+// for a shared name is wider than the inherited return type, which a
+// subclass cannot declare in TypeScript, so the merged interface below
+// declares it instead. lib.dom gets the same result by splitting the base
+// in two, which no engine does.
 class HTMLFormControlsCollection extends HTMLCollection {
 	declare [kOwner]?: Node | null;
 
 	constructor(compute: () => Element[], owner: Node | null = null) {
-		// The form attribute associates a control with a form anywhere in the
-		// tree, and what a control is depends on what it carries, so the list
-		// is over the whole document and any attribute is an input to it.
+		// The form attribute can associate a control anywhere in the tree, and
+		// what counts as a control depends on its attributes, so the list is
+		// document-wide and any attribute is an input to it.
 		super(compute, owner, null, anyAttribute, true);
 		this[kOwner] = owner;
 	}
@@ -12890,7 +12923,7 @@ class HTMLFormControlsCollection extends HTMLCollection {
 		if (matches.length === 1) {
 			return matches[0] as Element;
 		}
-		// A shared name answers with the list of everything that shares it.
+		// A shared name returns the list of everything that shares it.
 		return new RadioNodeList(
 			() => matching(this, key),
 			this[kOwner]!,
@@ -13000,7 +13033,7 @@ Object.defineProperty(RadioNodeList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Names no browsing context here either. */
+/** Has no browsing context here either. */
 interface HTMLFrameElement
 	extends Pick<
 		globalThis.HTMLFrameElement,
@@ -13099,13 +13132,13 @@ interface FrameWindowLike {
 	HTMLElement: typeof HTMLElement;
 }
 
-// A nested document without a browsing context around it. On insertion
-// the iframe gets a content document -- its srcdoc parsed, or about:blank
-// -- with a registry of its own, and fires load; removal discards it, as
-// removal discards a browsing context. The src attribute stays inert: this
-// engine performs no fetches, so a src iframe holds about:blank, the same
-// document a browser shows before any navigation. There is no second
-// realm: the frame's constructors are this realm's own.
+// A nested document without a browsing context. On insertion the iframe
+// gets a content document (its srcdoc parsed, or about:blank) with its
+// own registry, and fires load. Removal discards it, as removal discards a
+// browsing context. The src attribute does nothing, because this engine
+// performs no fetches, so a src iframe holds about:blank, the same
+// document a browser shows before navigation. There is no second realm;
+// the frame's constructors are this realm's.
 interface HTMLIFrameElement
 	extends Pick<
 		globalThis.HTMLIFrameElement,
@@ -13135,9 +13168,9 @@ interface HTMLIFrameElement
 class HTMLIFrameElement extends HTMLElement {
 	declare [kContentDocument]?: Document | null;
 	declare [kContentWindow]?: FrameWindowLike | null;
-	// The stretch of connectedness the current content document belongs to. A
-	// removal, and each insertion, starts another one, so the load task fires
-	// only for the insertion that scheduled it.
+	// Identifies the stretch of connectedness the current content document
+	// belongs to. Each removal and insertion starts a new one, so the load
+	// task fires only for the insertion that scheduled it.
 	declare [kFrameDocumentRun]?: object;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13165,10 +13198,10 @@ class HTMLIFrameElement extends HTMLElement {
 		if (!this.isConnected) {
 			return;
 		}
-		// The document itself is built lazily on first access: building it
-		// here would re-enter the parser while a parse that contains this
-		// iframe is still running. The load fires from a task, after the
-		// insertion has finished and its listeners are attached.
+		// The document is built lazily on first access. Building it here would
+		// re-enter the parser while a parse containing this iframe is still
+		// running. The load event fires from a task, after the insertion has
+		// finished and its listeners are attached.
 		const run = (this[kFrameDocumentRun] = {});
 		setTimeout(() => {
 			if (this.isConnected && this[kFrameDocumentRun] === run) {
@@ -13206,10 +13239,10 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	};
 }
 
-// Nothing is fetched, so the image data is never available: the natural
-// dimensions are zero, the current source is empty, and decoding rejects.
-// The width and height an author reads are the attributes, which is what
-// the spec answers with for an image that is not being rendered.
+// Nothing is fetched, so image data is never available. The natural
+// dimensions are zero, the current source is empty, and decoding
+// rejects. The width and height an author reads are the attributes,
+// which is what the spec returns for an image that is not rendered.
 class HTMLImageElement extends HTMLElement {
 	get naturalWidth(): number {
 		return 0;
@@ -13227,8 +13260,8 @@ class HTMLImageElement extends HTMLElement {
 		return !this.hasAttribute("src") && !this.hasAttribute("srcset");
 	}
 
-	// Deprecated members that report the rendered position, which this engine
-	// answers through the geometry surface instead.
+	// Deprecated members that report the rendered position. This engine
+	// implements them through the geometry surface instead.
 	get x(): number {
 		return 0;
 	}
@@ -13294,13 +13327,13 @@ const kPlaceholderText = Symbol("placeholderText");
 const kGlyphText = Symbol("glyphText");
 
 // The value model is the spec's: an attribute holds the default, a
-// separate value holds what was written, and a dirty flag says which the
-// control answers with. Checkedness works the same way beside it. What it
-// RENDERS is a closed shadow tree it owns: a value part and a placeholder
-// part for a text-ish input, a single glyph part for a checkbox or a radio.
-// The tree is derived -- the value is the only state -- and the editing
-// keys are the control's own default action, a keydown listener like a
-// browser's editing internals.
+// separate value holds what was written, and a dirty flag decides which
+// one the control reports. Checkedness works the same way. What the
+// control RENDERS is a closed shadow tree it owns: a value part and a
+// placeholder part for a text-like input, or a single glyph part for a
+// checkbox or radio. The tree is derived from the value, which is the
+// only state. The editing keys are the control's own default action,
+// implemented as a keydown listener like a browser's editing internals.
 interface HTMLInputElement
 	extends Pick<
 		globalThis.HTMLInputElement,
@@ -13350,7 +13383,7 @@ const SELECTABLE_INPUT_TYPES = new Set([
 ]);
 
 class HTMLInputElement extends HTMLElement {
-	// Installed from the element table, and read by the algorithms below.
+	// Installed from the element table and read by the algorithms below.
 	declare type: string;
 
 	declare [kValue]?: string;
@@ -13365,9 +13398,9 @@ class HTMLInputElement extends HTMLElement {
 	declare [kPreviouslyIndeterminate]?: boolean;
 	declare [kPreviousRadio]?: HTMLInputElement | null;
 
-	// The rendered tree and what it was built for. "field" for a text-ish
-	// input, "toggle" for checkbox/radio; null until built. The two are
-	// different trees, so a type flip rebuilds.
+	// The rendered tree and what it was built for: "field" for a text-like
+	// input, "toggle" for checkbox/radio, null until built. The two are
+	// different trees, so a type change rebuilds.
 	declare [kUpgraded]?: boolean;
 	declare [kKind]?: "field" | "toggle" | null;
 	declare [kRoot]?: globalThis.ShadowRoot | null;
@@ -13375,14 +13408,14 @@ class HTMLInputElement extends HTMLElement {
 	declare [kPlaceholderText]?: globalThis.Text | null;
 	declare [kGlyphText]?: globalThis.Text | null;
 
-	// A typed character arrives as an insertText; a paste as an
-	// insertFromPaste, whose line breaks a single-line input strips (HTML value
-	// sanitization). A toggle takes neither: it holds no text.
+	// A typed character arrives as insertText. A paste arrives as
+	// insertFromPaste, and a single-line input strips its line breaks (HTML
+	// value sanitization). A toggle accepts neither, since it holds no text.
 	declare [kOnBeforeInput]?: (event: InputEvent) => void;
 
-	// A checkbox/radio activates on Space or Enter and never accepts typed
-	// text; Home/End go to the whole value's ends, since an input has no visual
-	// lines; everything else is the shared field logic.
+	// A checkbox or radio activates on Space or Enter and never accepts
+	// typed text. Home and End move to the ends of the whole value, since an
+	// input has no visual lines. Everything else is the shared field logic.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13428,27 +13461,26 @@ class HTMLInputElement extends HTMLElement {
 			const {key, shiftKey, ctrlKey} = event;
 
 			if (this.type === "checkbox" || this.type === "radio") {
-			// Either key activates the control, and activation is what toggles it:
-			// the pre-activation behavior flips the checkedness, the activation
-			// behavior fires input then change, and a canceled click puts the
-			// checkedness back.
+			// Either key activates the control, and activation is what toggles
+			// it: the pre-activation behavior flips checkedness, the activation
+			// behavior fires input then change, and a canceled click restores
+			// checkedness.
 			//
-			// Enter toggles here where a browser leaves it dead. In a browser
+			// Enter toggles here, where a browser does nothing. In a browser
 			// Enter on a checkbox submits the form the control belongs to, and
-			// does nothing at all outside one; a terminal has no implicit
-			// submission to inherit, so the key would simply be inert on a focused
-			// control. It toggles, for the same reason the readline chords edit.
+			// does nothing outside a form. A terminal has no implicit
+			// submission, so the key would be inert on a focused control. It
+			// toggles for the same reason the readline chords edit.
 				if (key === " " || key === "Enter") {
 					this.click();
 				}
 				return;
 			}
 
-			// ArrowUp and ArrowDown step a number input, standing in for
-			// the up/down buttons a browser draws on one -- a terminal has
-			// none, and every hand is already on the keyboard. Stepping is
-			// a user edit, so it fires input and then change, as pressing
-			// those buttons does.
+			// ArrowUp and ArrowDown step a number input, replacing the up/down
+			// buttons a browser draws. A terminal has none, and every hand is
+			// already on the keyboard. Stepping is a user edit, so it fires
+			// input then change, as pressing those buttons does.
 			if (
 				this.type === "number" &&
 				(key === "ArrowUp" || key === "ArrowDown")
@@ -13515,9 +13547,9 @@ class HTMLInputElement extends HTMLElement {
 		switch (inputValueMode(this.type)) {
 			case "value":
 				// A number input mid-edit holds text on its way to being a
-				// number -- "4.", "4e-" -- which the control keeps and renders;
-				// the IDL attribute reports the empty string until the text
-				// arrives at a number, as a browser's does.
+				// number ("4.", "4e-"), which the control keeps and renders.
+				// The IDL attribute reports the empty string until the text is
+				// a number, as a browser's does.
 				if (
 					this.type === "number" &&
 					parseFloatingPoint(this[kValue]!) === null
@@ -13562,9 +13594,9 @@ class HTMLInputElement extends HTMLElement {
 		widgetChanged(this);
 	}
 
-	// NaN when the value does not parse, and only the numeric types answer.
-	// Assigning NaN empties the field; assigning a non-finite number is the
-	// TypeError the spec makes it.
+	// NaN when the value does not parse. Only the numeric types return a
+	// number. Assigning NaN empties the field. Assigning a non-finite number
+	// throws the TypeError the spec requires.
 	get valueAsNumber(): number {
 		if (this.type !== "number" && this.type !== "range") {
 			return NaN;
@@ -13656,7 +13688,7 @@ class HTMLInputElement extends HTMLElement {
 		);
 	}
 
-	// Only the types that render as a button invoke one.
+	// Only the types that render as a button can invoke a popover.
 	get popoverTargetElement(): Element | null {
 		return popoverTargetAttributeElement(this);
 	}
@@ -13665,9 +13697,9 @@ class HTMLInputElement extends HTMLElement {
 		setPopoverTargetAttributeElement(this, value);
 	}
 
-	// What the widget renders and edits through. The IDL attribute above it
-	// answers with an attribute for the types that have no value of their own;
-	// those types render no field, so their value here is the empty string a
+	// The value the widget renders and edits. The IDL attribute above
+	// returns an attribute for the types that have no value of their own.
+	// Those types render no field, so their value here is the empty string a
 	// caret would sit in.
 	get [kUAValue](): string {
 		return inputValueMode(this.type) === "value" ? this[kValue]! : "";
@@ -13677,9 +13709,9 @@ class HTMLInputElement extends HTMLElement {
 		return this[kValueText]!;
 	}
 
-	// The programmatic siblings of the arrow keys: move along the step grid
-	// without events. A step of "any" names no grid to move on, which is the
-	// InvalidStateError the spec makes it.
+	// The programmatic equivalents of the arrow keys: move along the step
+	// grid without firing events. A step of "any" defines no grid, which is
+	// the InvalidStateError the spec requires.
 	stepUp(n = 1): void {
 		stepInputBy(this, Math.trunc(Number(n)));
 	}
@@ -13731,21 +13763,21 @@ class HTMLInputElement extends HTMLElement {
 		scheduleTextSelectionChange(this);
 	}
 
-	// A user edit: the value changes and the dirty value flag is set, and
-	// nothing else -- the selection is the edit's to place, where the IDL
-	// setter would collapse it to the end. A control with no value of its own
-	// (a file input's filename list) has nothing a keystroke can write, as in a
-	// browser, where its UI accepts no typing at all.
+	// A user edit: sets the value and the dirty value flag, and nothing
+	// else. The edit places the selection itself, where the IDL setter would
+	// collapse it to the end. A control with no value of its own (a file
+	// input's filename list) has nothing a keystroke can write, as in a
+	// browser, where its UI accepts no typing.
 	[kSetUAValue]?(value: string): void {
 		if (inputValueMode(this.type) !== "value") {
 			return;
 		}
-		// A user edit passes through the states a number passes through on
-		// its way to being one -- "4.", "4e-" -- which full sanitization
-		// would empty on every keystroke. The edit keeps its text (the
-		// insertion filter has already limited the characters); the value
-		// getter is what reports the empty string until the text is a
-		// number. Programmatic writes keep the full sanitization.
+		// A user edit passes through the states a number passes through on its
+		// way to being one ("4.", "4e-"), which full sanitization would empty
+		// on every keystroke. So the edit keeps its text (the insertion filter
+		// has already limited the characters), and the value getter reports the
+		// empty string until the text is a number. Programmatic writes get full
+		// sanitization.
 		this[kValue] = this.type === "number"
 			? value.replace(/[\r\n]/g, "")
 			: sanitizeInputValue(this, value);
@@ -13753,10 +13785,10 @@ class HTMLInputElement extends HTMLElement {
 		widgetChanged(this);
 	}
 
-	// The selection APIs answer for the five types the HTML Standard lists and
-	// throw for the rest -- but the caret in an email or a number field is
-	// real, and the widget behind the control edits through it. This is that
-	// door: the same algorithm, without the type gate an author meets.
+	// The selection APIs work for the five types the HTML Standard lists and
+	// throw for the rest. But the caret in an email or number field is real,
+	// and the widget behind the control edits through it. This is the same
+	// algorithm without the type check an author gets.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {
 			start: this[kSelectionStart]!,
@@ -13822,8 +13854,8 @@ class HTMLInputElement extends HTMLElement {
 
 	[kUAUpgrade]?(): void {
 		if (this[kUpgraded]) {
-			// A control that left the tree and came back keeps its tree; only the
-			// state it drifted from needs catching up.
+			// A control that left the tree and came back keeps its tree. Only
+			// the state it missed needs updating.
 			this[kUAReconcile]!();
 			return;
 		}
@@ -13833,25 +13865,25 @@ class HTMLInputElement extends HTMLElement {
 		}
 		this[kUpgraded] = true;
 		build(this);
-		// Editing is the control's own default action, like a browser input's --
-		// a keydown listener; typed characters and pastes arrive as beforeinput,
-		// which is the default action of the keypress and of the paste that
-		// produced them.
+		// Editing is the control's own default action, like a browser input's,
+		// implemented as a keydown listener. Typed characters and pastes arrive
+		// as beforeinput, which is the default action of the keypress or paste
+		// that produced them.
 		this.addEventListener("keydown", this[kOnKeydown]! as UAListener);
 		this.addEventListener("beforeinput", this[kOnBeforeInput]! as UAListener);
 	}
 
-	// The rendered content model a width:auto input measures against. The
-	// value text paints through the normal walk; the placeholder shows only
-	// when the value is empty. A toggle's glyph says whether it is checked,
-	// which is state like any other: written here, where the state moves, so
-	// the frame that shows it is scheduled by the same mutation every other
-	// change is.
+	// Updates the rendered content model a width:auto input measures
+	// against. The value text paints through the normal walk. The
+	// placeholder shows only when the value is empty. A toggle's glyph shows
+	// whether it is checked, which is state like any other: it is written
+	// here, where the state changes, so the frame that shows it is scheduled
+	// by the same mutation as every other change.
 	[kUAReconcile]?(): void {
 		if (!this[kUpgraded]) {
 			return;
 		}
-		// A type flip is a different tree, not a different value.
+		// A type change means a different tree, not a different value.
 		if (kindFor(this) !== this[kKind]!) {
 			build(this);
 			return;
@@ -13877,10 +13909,10 @@ class HTMLInputElement extends HTMLElement {
 		}
 		const value = this[kUAValue]!;
 		const placeholder = this.getAttribute("placeholder") ?? "";
-		// A password puts one bullet per code unit into the shadow, never the
-		// real value -- so what lays out, paints, and can be selected is only the
-		// mask; the value stays in .value alone. Offsets stay 1:1 with .value on
-		// the BMP, keeping caret and scroll window aligned.
+		// A password puts one bullet per code unit into the shadow tree, never
+		// the real value. So what lays out, paints and can be selected is only
+		// the mask, and the value stays in .value alone. Offsets stay 1:1 with
+		// .value on the BMP, which keeps caret and scroll window aligned.
 		const shown = this.type === "password" ? "•".repeat(value.length) : value;
 		let changed = false;
 		if (this[kValueText]!.data !== shown) {
@@ -13891,7 +13923,8 @@ class HTMLInputElement extends HTMLElement {
 			this[kPlaceholderText]!.data = placeholder;
 			changed = true;
 		}
-		// Exactly one occupies the slot: value when present, else placeholder.
+		// Exactly one occupies the slot: the value when present, else the
+		// placeholder.
 		const valueDisplay = value ? "inline-block" : "none";
 		const placeholderDisplay = value ? "none" : "inline-block";
 		const valueSpan = this[kValueText]!.parentElement!;
@@ -13904,8 +13937,8 @@ class HTMLInputElement extends HTMLElement {
 			placeholderSpan.style.display = placeholderDisplay;
 			changed = true;
 		}
-		// A width:auto input sizes to its composed content; nothing else
-		// invalidates the measure, and the observer would only hear it on a
+		// A width:auto input sizes to its composed content. Nothing else
+		// invalidates the measure, and the observer would only see it on a
 		// microtask.
 		if (changed) {
 			displayedDocument(this)![kLayout].invalidate(this);
@@ -13913,11 +13946,11 @@ class HTMLInputElement extends HTMLElement {
 	}
 }
 
-// A number input's text can be any prefix of a valid floating-point number
-// and nothing else: an insertion that would take it outside the grammar is
-// refused whole, the way a browser's number field refuses a second decimal
-// point. Deletions are never gated, so text a deletion strands outside the
-// grammar can always be cleared.
+// A number input's text can be any prefix of a valid floating-point
+// number and nothing else. An insertion that would break the grammar is
+// refused whole, the way a browser's number field refuses a second
+// decimal point. Deletions are never blocked, so text a deletion leaves
+// outside the grammar can always be cleared.
 function insertFieldText(field: HTMLInputElement, text: string): void {
 	if (!text) {
 		return;
@@ -13931,13 +13964,14 @@ function insertFieldText(field: HTMLInputElement, text: string): void {
 	applyFieldEdit(field, collapsedEdit(next, start + text.length));
 }
 
-// A checkbox and a radio button change before the click is dispatched, so
-// a listener sees the new state, and change back if the click is canceled.
+// A checkbox or radio button changes before the click is dispatched, so
+// a listener sees the new state, and changes back if the click is
+// canceled.
 function legacyPreActivationBehavior(
 	input: HTMLInputElement,
 ): void {
-	// The reference the canceled half puts back is this click's, so a run
-	// that takes none leaves none behind.
+	// The canceled half restores this click's reference, so a click that
+	// records none leaves none behind.
 	input[kPreviousRadio] = null;
 	if (input.type === "checkbox") {
 		input[kPreviouslyChecked] = input[kChecked]!;
@@ -13952,11 +13986,11 @@ function legacyPreActivationBehavior(
 	}
 }
 
-// The type is read again rather than remembered: a listener may have
+// Reads the type again rather than remembering it. A listener may have
 // changed it during the click, and the state to restore is the state the
-// type it has now keeps. A radio button's reference is this click's and is
-// honored only while the button it names is still in the group this
-// element has now.
+// current type keeps. A radio button's reference belongs to this click
+// and is honored only while the button it names is still in the group
+// this element has now.
 function legacyCanceledActivationBehavior(
 	input: HTMLInputElement,
 ): void {
@@ -14011,9 +14045,10 @@ function kindFor(
 	return type === "checkbox" || type === "radio" ? "toggle" : "field";
 }
 
-// The field tree carries value / placeholder parts; the toggle tree a
-// single glyph part the painter fills from live `.checked` (a radio's group
-// exclusivity unchecks siblings with no hook to reconcile on).
+// The field tree has value and placeholder parts. The toggle tree has a
+// single glyph part the painter fills from live `.checked`, because a
+// radio's group exclusivity unchecks siblings with no hook to reconcile
+// on.
 function build(
 	input: HTMLInputElement,
 ): void {
@@ -14022,8 +14057,8 @@ function build(
 	if (root === null) {
 		root = buildUARoot(input, displayed, FIELD_UA_STYLES);
 	} else {
-		// A rebuild keeps the root -- and its enrollment -- and replaces only
-		// what hangs under it, the stylesheet included.
+		// A rebuild keeps the root and its observer registration and replaces
+		// only what is under it, including the stylesheet.
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
@@ -14083,18 +14118,18 @@ function parseFloatingPoint(value: string): number | null {
 	return Number.isFinite(number) ? number : null;
 }
 
-// The states a number input's text passes through on the way to a number
-// -- "-", "4.", "1e-" among them. Every state of the grammar either
-// accepts already or accepts after one more digit, so the prefix test is
-// the grammar itself, twice, rather than a second grammar that could drift
-// from it.
+// The states a number input's text passes through on the way to a
+// number, such as "-", "4." and "1e-". Every state of the grammar
+// either already accepts or accepts after one more digit, so the prefix
+// test reuses the grammar instead of adding a second one that could
+// drift.
 function isFloatPrefix(value: string): boolean {
 	return VALID_FLOAT.test(value) || VALID_FLOAT.test(value + "0");
 }
 
-// What toFixed needs to write a step-grid value without binary dust:
-// stepping 0.1 at a time must produce "0.3", never "0.30000000000000004".
-// An exponent literal names no place count and answers zero.
+// What toFixed needs to write a step-grid value without binary noise.
+// Stepping by 0.1 must produce "0.3", never "0.30000000000000004". An
+// exponent literal has no place count and returns zero.
 function getDecimalPlaces(text: string | null | undefined): number {
 	if (!text) {
 		return 0;
@@ -14129,13 +14164,13 @@ function stepInputBy(input: HTMLInputElement, steps: number): void {
 	}
 }
 
-// `steps` grid points away, on the grid `step` spaces and `min` anchors
-// (zero anchors it when there is no min), clamped to [min, max]. A value
-// between grid points moves to the nearest point in the direction of
-// travel. Null when there is nowhere to go, so a caller can leave the field
-// untouched. An out-of-range value steps to the nearest bound whichever
-// way it was pushed, which is how a browser's up/down buttons pull a field
-// into range.
+// The value `steps` grid points away, on the grid `step` spaces and
+// `min` anchors (zero when there is no min), clamped to [min, max]. A
+// value between grid points moves to the nearest point in the direction
+// of travel. Returns null when there is nowhere to go, so the caller can
+// leave the field untouched. An out-of-range value steps to the nearest
+// bound whichever way it was pushed, which is how a browser's up/down
+// buttons pull a field into range.
 function steppedValue(input: HTMLInputElement, steps: number): string | null {
 	const stepAttribute = input.getAttribute("step")?.trim();
 	const step =
@@ -14173,9 +14208,9 @@ function steppedValue(input: HTMLInputElement, steps: number): string | null {
 	return String(Number(next.toFixed(Math.min(places, 20))));
 }
 
-// Each type names one sanitization algorithm, and every one of them is
-// here: a value the type cannot hold becomes the empty string, or the
-// nearest value the type can hold.
+// Each type names one sanitization algorithm, and every one is here. A
+// value the type cannot hold becomes the empty string or the nearest
+// value the type can hold.
 function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 	const stripped = value.replace(/[\r\n]/g, "");
 	switch (input.type) {
@@ -14234,7 +14269,7 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 	return number;
 }
 
-/** The group is the input's name, form and tree. */
+/** The group is defined by the input's name, form and tree. */
 function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	const name = input.getAttribute("name");
 	if (name === null || name === "") {
@@ -14277,8 +14312,8 @@ class HTMLLabelElement extends HTMLElement {
 		return control === null ? null : formOwner(control);
 	}
 
-	// The one its `for` attribute names, or the first labelable element among
-	// its descendants.
+	// The element the `for` attribute names, or the first labelable
+	// descendant.
 	get control(): HTMLElement | null {
 		const id = this.getAttribute("for");
 		if (id !== null) {
@@ -14404,7 +14439,7 @@ class HTMLMapElement extends HTMLElement {
 	}
 }
 
-/** Its scrolling is a rendering the tree does not do. */
+/** Its scrolling is a rendering effect the tree does not implement. */
 interface HTMLMarqueeElement
 	extends Pick<
 		globalThis.HTMLMarqueeElement,
@@ -14449,10 +14484,10 @@ const kDefaultPlaybackRate = Symbol("defaultPlaybackRate");
 const kPreservesPitch = Symbol("preservesPitch");
 
 // No resource is ever fetched, so the element stays in the state a media
-// element is in before one is: no network activity, nothing loaded,
-// paused, and a duration that is not a number. The members that answer
-// with a resource's own objects -- buffered ranges, tracks, error -- are
-// absent rather than answering with an empty stand-in.
+// element is in before loading: no network activity, nothing loaded,
+// paused, and a NaN duration. The members that return a resource's own
+// objects (buffered ranges, tracks, error) are absent rather than
+// returning an empty stand-in.
 interface HTMLMediaElement
 	extends Pick<
 		globalThis.HTMLMediaElement,
@@ -14612,7 +14647,9 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 
 class HTMLAudioElement extends HTMLMediaElement {}
 
-/** Intrinsic dimensions are zero until a video is decoded. */
+/**
+ * Intrinsic dimensions are zero until a video is decoded, which never happens.
+ */
 interface HTMLVideoElement
 	extends Pick<
 		globalThis.HTMLVideoElement,
@@ -14657,13 +14694,13 @@ interface HTMLMetaElement
 
 class HTMLMetaElement extends HTMLElement {}
 
-// A run of full blocks for the filled bar, a run of light shade for the
-// groove behind it: ordinary text in the shadow tree, clipped to the
-// fraction CSS gives the bar.
+// A run of full blocks for the filled bar and a run of light shade for
+// the groove behind it. Both are ordinary text in the shadow tree,
+// clipped to the fraction CSS gives the bar.
 const GAUGE_BAR_GLYPH = "█";
 const GAUGE_GROOVE_GLYPH = "░";
 
-// Long enough that no bar on this screen can outrun it.
+// Long enough that no bar on this screen can exceed it.
 function gaugeRun(host: Element, glyph: string): string {
 	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
 		.defaultView;
@@ -14673,8 +14710,8 @@ function gaugeRun(host: Element, glyph: string): string {
 	);
 }
 
-// A full-width track that clips, holding a bar whose width is the fraction
-// filled and the groove that shows past it.
+// A full-width track that clips, holding a bar whose width is the
+// fraction filled and the groove that shows past it.
 function buildGaugeRoot(
 	host: Element,
 	displayed: DisplayedDocument,
@@ -14720,11 +14757,11 @@ const METER_ATTRIBUTES = new Set([
 	"optimum",
 ]);
 
-// Six numbers, each read inside the ones around them. It renders a closed
-// shadow tree it owns: a run of block glyphs filled to where `value` sits
-// between `min` and `max`, carrying the level that reading against the
-// low/high/optimum ranges produces -- which is what the UA sheet colors the
-// bar from.
+// Six numbers, each parsed relative to the ones around it. The element
+// renders a closed shadow tree it owns: a run of block glyphs filled to
+// where `value` sits between `min` and `max`, with a level attribute
+// computed from the low/high/optimum ranges, which the UA sheet uses to
+// color the bar.
 class HTMLMeterElement extends HTMLElement {
 	declare [kUpgraded]?: boolean;
 	declare [kBar]?: globalThis.HTMLElement | null;
@@ -14841,9 +14878,10 @@ class HTMLMeterElement extends HTMLElement {
 	}
 }
 
-// By HTML's rendering rules: the optimum region is measured from where
-// `optimum` sits relative to `low` and `high`, and a value in it is
-// optimum, one region away suboptimum, two away even less good.
+// Follows HTML's rendering rules. The optimum region is determined by
+// where `optimum` sits relative to `low` and `high`. A value in that
+// region is optimum, one region away is suboptimum, and two away is even
+// less good.
 function level(
 	meter: HTMLMeterElement,
 ): string {
@@ -14873,8 +14911,8 @@ interface HTMLModElement
 class HTMLModElement extends HTMLElement {}
 
 // Nothing is ever fetched, so the object never gets a nested browsing
-// context: its document, its window and its SVG document are all null,
-// which is what they are for an object that loaded nothing.
+// context. Its document, window and SVG document are all null, which is
+// what they are for an object that loaded nothing.
 interface HTMLObjectElement
 	extends Pick<
 		globalThis.HTMLObjectElement,
@@ -14931,7 +14969,7 @@ interface HTMLOListElement
 class HTMLOListElement extends HTMLElement {}
 
 class HTMLOptGroupElement extends HTMLElement {
-	// Installed from the element table, and read by the select's own tree.
+	// Installed from the element table and read by the select's own tree.
 	declare disabled: boolean;
 	declare label: string;
 }
@@ -14949,7 +14987,7 @@ interface HTMLOptionElement
 const kSelectedOptions = Symbol("selectedOptions");
 
 class HTMLOptionElement extends HTMLElement {
-	// Installed from the element table, and read by the select's own tree.
+	// Installed from the element table and read by the select's own tree.
 	declare disabled: boolean;
 
 	declare [kSelectednessValue]?: boolean;
@@ -15025,8 +15063,9 @@ class HTMLOptionElement extends HTMLElement {
 		widgetChanged(select);
 	}
 
-	// Selectedness is no attribute and no part of a tree: the one live list
-	// drawing on it is the select's `selectedOptions`, and it is told here.
+	// Selectedness is not an attribute and not part of the tree. The one
+	// live list that depends on it is the select's `selectedOptions`, which
+	// is notified here.
 	get [kSelectedness](): boolean {
 		return this[kSelectednessValue]!;
 	}
@@ -15269,10 +15308,10 @@ interface HTMLPreElement
 
 class HTMLPreElement extends HTMLElement {}
 
-// It renders a closed shadow tree it owns: a run of block glyphs filled to
-// `value`/`max`. A progress with no value attribute is indeterminate, which
-// here is an empty bar over the full groove -- there is no animation to
-// make the difference the way a browser does.
+// Renders a closed shadow tree it owns: a run of block glyphs filled to
+// `value`/`max`. A progress with no value attribute is indeterminate,
+// which here is an empty bar over the full groove. There is no animation
+// to show the difference the way a browser does.
 class HTMLProgressElement extends HTMLElement {
 	declare [kUpgraded]?: boolean;
 	declare [kBar]?: globalThis.HTMLElement | null;
@@ -15355,7 +15394,7 @@ interface HTMLQuoteElement
 class HTMLQuoteElement extends HTMLElement {}
 
 // The element is the one the spec defines and its text is the text it
-// holds; executing it is the step this DOM does not have.
+// holds. Executing it is the step this DOM does not have.
 class HTMLScriptElement extends HTMLElement {
 	get text(): string {
 		return childText(this);
@@ -15403,12 +15442,12 @@ const kOnMousedown = Symbol("onMousedown");
 const kOnBlur = Symbol("onBlur");
 const kHighlight = Symbol("highlight");
 
-// Selectedness lives on the options; the select's own members read it, and
-// every read first runs the selectedness setting algorithm, which is what
-// keeps a single-selection select showing exactly one option. It renders a
-// closed shadow tree it owns: the selected option's label, the ▾ indicator,
-// and a picker popover of option rows. The tree is derived from the
-// selectedness above and the highlight below; the keyboard and mouse
+// Selectedness lives on the options. The select's members read it, and
+// every read first runs the selectedness setting algorithm, which keeps a
+// single-selection select showing exactly one option. The element renders
+// a closed shadow tree it owns: the selected option's label, the ▾
+// indicator, and a picker popover of option rows. The tree is derived
+// from the selectedness and the highlight below. The keyboard and mouse
 // behavior is the control's own default action.
 interface HTMLSelectElement
 	extends Pick<
@@ -15433,19 +15472,20 @@ class HTMLSelectElement extends HTMLElement {
 	declare [kUpgraded]?: boolean;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPicker]?: globalThis.HTMLElement | null;
-	// The highlighted option index while the picker is OPEN; null = closed.
+	// The highlighted option index while the picker is OPEN. Null means
+	// closed.
 	declare [kHighlight]?: number | null;
 
-	// OPEN: arrows move the highlight without committing, Enter/Space commit,
-	// Escape dismisses. CLOSED: Enter/Space open the picker; arrows change the
-	// selection in place -- the browser's closed-select keyboard model, no
-	// popup to degrade.
+	// OPEN: arrows move the highlight without committing, Enter/Space
+	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
+	// arrows change the selection in place. This is the browser's
+	// closed-select keyboard model.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 
-	// A press opens a closed picker; with the picker open, a press on an option
-	// row commits it (a disabled row is inert) and a press on the closed face
-	// dismisses. The row under the point is found from the rows' own document
-	// rects -- no renderer hit-test.
+	// A press opens a closed picker. With the picker open, a press on an
+	// option row commits it (a disabled row does nothing), and a press on the
+	// closed face dismisses. The row under the point is found from the rows'
+	// document rects, not a renderer hit test.
 	declare [kOnMousedown]?: (event: MouseEvent) => void;
 
 	declare [kOnBlur]?: () => void;
@@ -15495,7 +15535,7 @@ class HTMLSelectElement extends HTMLElement {
 				return;
 			}
 
-			// CLOSED: Space or Enter opens; arrows change the value in place.
+			// CLOSED: Space or Enter opens. Arrows change the value in place.
 			if (key === "Enter" || key === " ") {
 				openPicker(this);
 				return;
@@ -15536,7 +15576,8 @@ class HTMLSelectElement extends HTMLElement {
 			});
 			if (row) {
 				const index = optionIndexOfRow(picker, row);
-				// A disabled row is inert: the sheet stays up, nothing commits.
+				// A disabled row does nothing. The picker stays open and
+				// nothing commits.
 				const option = optionList(this)[index];
 				if (option && !optionIsDisabled(option)) {
 					this[kHighlight] = null;
@@ -15548,8 +15589,8 @@ class HTMLSelectElement extends HTMLElement {
 				}
 				return;
 			}
-			// Off every row: a press inside the picker's own padding does nothing; a
-			// press outside it (the closed face) dismisses.
+			// Not on any row. A press inside the picker's own padding does
+			// nothing. A press outside it (on the closed face) dismisses.
 			const pickerRect = displayed[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kHighlight] = null;
@@ -15677,9 +15718,9 @@ class HTMLSelectElement extends HTMLElement {
 		this.options.remove(toLong(index));
 	}
 
-	// A select's selection record is degenerate -- always collapsed at the
-	// label's start -- so the cursor-parking path reads a select the way it
-	// reads a field: the caret is the focus of the selection.
+	// A select's selection record is always collapsed at the label's start,
+	// so the caret placement path can treat a select like a field. The caret
+	// is the focus of the selection.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {start: 0, end: 0, direction: "none"};
 	}
@@ -15705,8 +15746,8 @@ class HTMLSelectElement extends HTMLElement {
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
 		// The tree: the selected option's label (part=value), the ▾ indicator
-		// (part=indicator), and the picker popover (part=picker, holding one row
-		// per option). Composition hides the light option list.
+		// (part=indicator), and the picker popover (part=picker, one row per
+		// option). Composition hides the light option list.
 		const root = buildUARoot(this, displayed, SELECT_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
@@ -15717,11 +15758,11 @@ class HTMLSelectElement extends HTMLElement {
 
 		this.addEventListener("keydown", this[kOnKeydown]! as UAListener);
 		this.addEventListener("mousedown", this[kOnMousedown]! as UAListener);
-		// Losing focus closes the picker, as everywhere.
+		// Losing focus closes the picker.
 		this.addEventListener("blur", this[kOnBlur]!);
-		// The displayed label and picker rows track the option list; a framework
-		// mutating the options must re-reconcile. (Selection changes reach the
-		// tree through the control's own setters.)
+		// The displayed label and picker rows track the option list, so a
+		// framework mutating the options must trigger a reconcile. Selection
+		// changes reach the tree through the control's own setters.
 		engineObservers.get(this[kDocument]!)?.observe(this, {
 			childList: true,
 			subtree: true,
@@ -15732,9 +15773,9 @@ class HTMLSelectElement extends HTMLElement {
 		this[kUAReconcile]!();
 	}
 
-	// The dropdown is transient interaction state, and leaving the tree ends
-	// the interaction as surely as losing focus does -- which removal also
-	// causes, since focus cannot rest on an element off the tree.
+	// The dropdown is transient interaction state. Leaving the tree ends the
+	// interaction, the same as losing focus does. Removal also causes a focus
+	// loss, since focus cannot rest on an element off the tree.
 	override [kRemovingSteps]?(oldParent: Node): void {
 		super[kRemovingSteps]!(oldParent);
 		if (this[kHighlight] !== null) {
@@ -15768,8 +15809,8 @@ class HTMLSelectElement extends HTMLElement {
 
 		reconcileRows(this, picker);
 
-		// Anchor below the field in DOCUMENT coordinates (the picker's containing
-		// block is the ICB), matching the field's width.
+		// Anchor below the field in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the field's width.
 		const rect = displayed[kLayout].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
@@ -15789,19 +15830,20 @@ class HTMLSelectElement extends HTMLElement {
 			picker.style.display = "block";
 		}
 		// An open picker paints in the top layer, over following content. The
-		// widget owns the membership with the display flip, as one intent.
+		// widget owns the membership together with the display flip, as one
+		// intent.
 		getTopLayer(this[kDocument]!).add(picker as unknown as Element);
 	}
 }
 
-// `options`, without building a collection.
+// Same as `options` but without building a collection.
 function optionList(select: HTMLSelectElement): HTMLOptionElement[] {
 	askForAReset(select);
 	return getOptions(select);
 }
 
 // A heading for each option group, and every option under the group it
-// belongs to. A heading is not an option, so it takes no index and cannot
+// belongs to. A heading is not an option, so it has no index and cannot
 // be picked.
 function pickerRows(
 	select: HTMLSelectElement,
@@ -15844,8 +15886,9 @@ function pickerRows(
 	return rows;
 }
 
-// Rows are updated in place rather than rebuilt: this root is observed,
-// and a rebuild every reconcile is a frame that schedules the next one.
+// Rows are updated in place rather than rebuilt. This root is observed,
+// and a rebuild on every reconcile would produce a frame that schedules
+// the next one.
 function reconcileRows(
 	select: HTMLSelectElement,
 	picker: globalThis.HTMLElement,
@@ -15860,9 +15903,9 @@ function reconcileRows(
 	}
 	rows.forEach((row, index) => {
 		const node = picker.childNodes[index] as globalThis.HTMLElement;
-		// Attribute writes are guarded: setAttribute queues a mutation record
-		// even when unchanged, and this root is observed -- an unconditional
-		// write is an infinite render loop.
+		// Attribute writes are guarded because setAttribute queues a mutation
+		// record even when the value is unchanged, and this root is observed.
+		// An unconditional write is an infinite render loop.
 		if (node.getAttribute("part") !== row.part) {
 			node.setAttribute("part", row.part);
 		}
@@ -15923,13 +15966,13 @@ interface PickerRow {
 	label: string;
 	disabled: boolean;
 
-	// Sits under a group heading, which indents it.
+	// Under a group heading, which indents it.
 	grouped: boolean;
 	highlighted: boolean;
 }
 
-// Its own attribute, or the group it belongs to carrying one -- the two
-// the HTML Standard reads together.
+// Disabled by its own attribute or by its group's. The HTML Standard
+// reads both together.
 function optionIsDisabled(option: HTMLOptionElement): boolean {
 	if (option.disabled) {
 		return true;
@@ -15962,7 +16005,7 @@ function setRowFlag(
 	}
 }
 
-// The rows that are options, counted in tree order.
+// Counts only the rows that are options, in tree order.
 function optionIndexOfRow(
 	picker: globalThis.HTMLElement,
 	row: globalThis.HTMLElement,
@@ -16008,9 +16051,9 @@ function displaySize(select: HTMLSelectElement): number {
 	return parsed === null || parsed === 0 ? 1 : parsed;
 }
 
-// The selectedness setting algorithm: a select that shows one row and has
-// nothing selected selects its first enabled option, and a select with
-// more than one selected keeps only the last.
+// The selectedness setting algorithm. A select that shows one row and
+// has nothing selected selects its first enabled option. A select with
+// more than one option selected keeps only the last.
 function askForAReset(select: HTMLSelectElement): void {
 	const options = getOptions(select);
 	const selected = options.filter((option) => option[kSelectedness]!);
@@ -16056,8 +16099,8 @@ class HTMLSpanElement extends HTMLElement {}
 const kStyleElements = Symbol("how many style elements the tree holds");
 
 /**
- * The sheet itself belongs to the engine's cascade, not to the tree: there
- * is none here, which is what makes `sheet` null and `disabled` false.
+ * The sheet belongs to the engine's cascade, not to the tree. There is
+ * none here, which is why `sheet` is null and `disabled` is false.
  */
 export interface HTMLStyleElement
 	extends Pick<
@@ -16068,7 +16111,7 @@ export interface HTMLStyleElement
 	> {}
 
 export class HTMLStyleElement extends HTMLElement {
-	/** None outside a tree. */
+	/** Null outside a tree. */
 	get sheet(): CSSStyleSheet | null {
 		return styleElementSheet(this);
 	}
@@ -16093,9 +16136,9 @@ export class HTMLStyleElement extends HTMLElement {
 }
 
 /**
- * A number that changes whenever a style element joins or leaves a
- * document's trees. A cascade polls this to notice a sheet that appeared
- * since it last parsed, which is cheaper than walking for one.
+ * A counter that changes whenever a style element joins or leaves a
+ * document's trees. The cascade polls it to notice a sheet that appeared
+ * since it last parsed, which is cheaper than walking the tree.
  */
 export function styleElementCount(document: Document): number {
 	return document[kStyleElements]!;
@@ -16414,8 +16457,8 @@ function childElementsNamed(parent: Node, localName: string): Element[] {
 	return found;
 }
 
-// The head's, then the ones the table holds itself and its bodies hold,
-// then the foot's.
+// The head's rows, then the rows directly in the table and in its
+// bodies, then the foot's rows.
 function tableRows(table: Element): Element[] {
 	const head: Element[] = [];
 	const middle: Element[] = [];
@@ -16605,10 +16648,10 @@ class HTMLTableSectionElement extends HTMLElement {
 const kPlaceholderSpan = Symbol("placeholderSpan");
 const kGoalColumn = Symbol("goalColumn");
 
-// It renders a closed shadow tree it owns: a value part -- laid out,
-// wrapped and painted like any document text -- a placeholder part, and a
-// trailing line-break anchor. The tree is derived from the value, and the
-// editing keys are the control's own default action.
+// Renders a closed shadow tree it owns: a value part, laid out, wrapped
+// and painted like any document text; a placeholder part; and a trailing
+// line-break anchor. The tree is derived from the value, and the editing
+// keys are the control's own default action.
 interface HTMLTextAreaElement
 	extends Pick<
 		globalThis.HTMLTextAreaElement,
@@ -16644,13 +16687,13 @@ class HTMLTextAreaElement extends HTMLElement {
 	declare [kPlaceholderSpan]?: globalThis.HTMLElement | null;
 	declare [kGoalColumn]?: number | null;
 
-	// A typed character arrives as an insertText; a paste keeps its newlines.
+	// A typed character arrives as insertText. A paste keeps its newlines.
 	declare [kOnBeforeInput]?: (event: InputEvent) => void;
 
-	// Enter inserts a newline, the vertical arrows and Home/End move by VISUAL
-	// line (soft wraps count, as in a browser), and every other editing key is
-	// the shared field logic. Reads back laid-out geometry, so it flushes
-	// layout first.
+	// Enter inserts a newline. The vertical arrows and Home/End move by
+	// VISUAL line (soft wraps count, as in a browser). Every other editing
+	// key is the shared field logic. This reads laid-out geometry, so it
+	// flushes layout first.
 	declare [kOnKeydown]?: (event: KeyboardEvent) => void;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -16680,7 +16723,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			insertPaste(this, event.data);
 		};
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
-		// Editing is a default action: an author's keydown preventDefault
+		// Editing is a default action. An author's keydown preventDefault
 		// suppresses it, exactly as it suppresses a browser textarea's edit.
 			if (event.defaultPrevented) {
 				return;
@@ -16703,9 +16746,10 @@ class HTMLTextAreaElement extends HTMLElement {
 
 			let result: FieldEditResult | null;
 			if (key === "Enter" || (ctrlKey && key === "j")) {
-			// A newline, inserted like any typed character, replacing the
-			// selection. A terminal sends line feed for Ctrl+J, which is the chord
-			// that reaches a field whose Enter an application has taken.
+			// Insert a newline like any typed character, replacing the
+			// selection. A terminal sends line feed for Ctrl+J, which is the
+			// chord that reaches a field whose Enter an application has taken
+			// over.
 				const next = value.slice(0, start) + "\n" + value.slice(end);
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
@@ -16834,7 +16878,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	// What the widget renders and edits through: the raw value once the dirty
+	// The value the widget renders and edits: the raw value once the dirty
 	// flag is set, the child text until then.
 	get [kUAValue](): string {
 		return this[kDirty]!
@@ -16884,15 +16928,15 @@ class HTMLTextAreaElement extends HTMLElement {
 		scheduleTextSelectionChange(this);
 	}
 
-	// A user edit: the raw value changes and the dirty value flag is set,
-	// leaving the selection to the edit that made it.
+	// A user edit: sets the raw value and the dirty value flag, and leaves
+	// the selection to the edit that made it.
 	[kSetUAValue]?(value: string): void {
 		this[kValue] = normalizeNewlines(value);
 		this[kDirty] = true;
 		widgetChanged(this);
 	}
 
-	// A textarea's selection is always its own; see the input's door.
+	// A textarea's selection is always its own. See the input's version.
 	[kUASelection]?(): {start: number; end: number; direction: string} {
 		return {
 			start: this[kSelectionStart]!,
@@ -16948,23 +16992,24 @@ class HTMLTextAreaElement extends HTMLElement {
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
 		this[kPlaceholderText] =
 			this[kPlaceholderSpan]!.firstChild as globalThis.Text;
-		// The trailing <br> anchor, the same trick a browser's editor uses: it
+		// The trailing <br> anchor, the same trick a browser's editor uses. It
 		// makes the run's content always end in exactly one line break, so the
-		// line count equals the LOGICAL line count -- the breaker never emits a
+		// line count equals the LOGICAL line count. The breaker never emits a
 		// line after a final newline, and without the anchor a value ending in
-		// "\n" measures one row short, parking the caret on the bottom border.
+		// "\n" measures one row short, which puts the caret on the bottom
+		// border.
 		root.appendChild(document.createElement("br"));
 
-		// Editing is the control's own default action, the same as a browser
-		// textarea's: its keydown listener does the edit.
+		// Editing is the control's own default action, like a browser
+		// textarea's. Its keydown listener does the edit.
 		this.addEventListener("keydown", this[kOnKeydown]! as UAListener);
 		this.addEventListener("beforeinput", this[kOnBeforeInput]! as UAListener);
 
 		this[kUAReconcile]!();
 	}
 
-	// Placeholder visibility is real CSS (an inline display:none), not painter
-	// logic: the normal pipeline then simply never sees it.
+	// Placeholder visibility is real CSS (an inline display:none), not
+	// painter logic, so the normal pipeline never sees a hidden placeholder.
 	[kUAReconcile]?(): void {
 		if (!this[kUpgraded]) {
 			return;
@@ -16990,9 +17035,9 @@ class HTMLTextAreaElement extends HTMLElement {
 			return;
 		}
 		// The value text lays out through the normal pipeline. The observer
-		// hears its characterData change too, but only on a microtask -- an edit
-		// that reads the fresh geometry back the same tick (vertical motion,
-		// Home/End) needs the engine dirtied synchronously now.
+		// sees its characterData change too, but only on a microtask. An edit
+		// that reads the fresh geometry back in the same tick (vertical motion,
+		// Home/End) needs the engine invalidated synchronously now.
 		displayed[kLayout].invalidate(this);
 	}
 }
@@ -17008,9 +17053,10 @@ function insertPaste(
 	applyFieldEdit(field, printableFieldEdit(field, text));
 }
 
-// Keeps the column (in cells) where the target line allows -- soft wraps
-// count as lines, exactly as in a browser. First line up collapses to 0,
-// last line down to the end.
+// Keeps the column (in cells) where the target line allows. Soft wraps
+// count as lines, as in a browser. Moving up from the first line
+// collapses to 0, and moving down from the last line collapses to the
+// end.
 function verticalTarget(
 	textarea: HTMLTextAreaElement,
 	caret: number,
@@ -17036,8 +17082,9 @@ function verticalTarget(
 	const currentColumn = stringWidth(
 		lineText.slice(0, Math.max(0, caret - line.startOffset)),
 	);
-	// Consecutive vertical moves aim for the column travel STARTED at, even
-	// across shorter lines that clamp the caret -- the browser's goal column.
+	// Consecutive vertical moves aim for the column the travel STARTED at,
+	// even across shorter lines that clamp the caret. This is the browser's
+	// goal column.
 	const column = textarea[kGoalColumn] ?? currentColumn;
 	textarea[kGoalColumn] = column;
 	const target = visual.lines[targetIndex];
@@ -17053,8 +17100,8 @@ function verticalTarget(
 	return target.endOffset;
 }
 
-// A value renders as pre-wrap, so a visual line's characters are that
-// range of the value verbatim.
+// A value renders as pre-wrap, so a visual line's characters are exactly
+// that range of the value.
 type TextareaVisualLine = {
 
 	// The line's first character / caret slot.
@@ -17069,9 +17116,9 @@ function textareaLineAt(
 	caret: number,
 ): number {
 	for (let i = 0; i < lines.length; i++) {
-		// endOffset is a valid caret slot on this line; a caret exactly at a
-		// soft-wrap boundary belongs to the NEXT line's start (both lines claim
-		// the offset; later line wins), matching browsers.
+		// endOffset is a valid caret slot on this line. A caret exactly at a
+		// soft-wrap boundary belongs to the NEXT line's start: both lines claim
+		// the offset and the later one wins, matching browsers.
 		if (caret <= lines[i].endOffset) {
 			const next = lines[i + 1];
 			if (next && next.startOffset <= caret) {
@@ -17083,10 +17130,10 @@ function textareaLineAt(
 	return lines.length - 1;
 }
 
-// A thin field view over the shared `lineFragments` primitive (the empty
-// and trailing-newline lines included). Internal to the control's own
-// Home/End and vertical-motion editing; geometry consumers read
-// `lineFragments` or a `Range` directly.
+// A thin field-specific view over the shared `lineFragments` primitive,
+// including the empty and trailing-newline lines. Used only by the
+// control's own Home/End and vertical-motion editing. Geometry consumers
+// read `lineFragments` or a `Range` directly.
 function textareaVisualLines(
 	field: HTMLTextAreaElement,
 	layout: LayoutEngine,
@@ -17095,10 +17142,10 @@ function textareaVisualLines(
 	if (!valueText) {
 		return null;
 	}
-	// The laid-out lines with their data ranges, including the empty lines no
-	// fragment represents (an empty value, a trailing newline) -- the same
-	// annotation range geometry reads, so the caret, a Range, and vertical
-	// navigation all agree on where an offset sits.
+	// The laid-out lines with their data ranges, including the empty lines
+	// no fragment represents (an empty value, a trailing newline). This is
+	// the same annotation range geometry uses, so the caret, a Range and
+	// vertical navigation all agree on where an offset sits.
 	const lines = layout.lineFragments(valueText);
 	if (lines.length === 0) {
 		return null;
@@ -17106,7 +17153,7 @@ function textareaVisualLines(
 	return {value: valueText.data, lines};
 }
 
-// A raw value holds line breaks as single line feeds.
+// A raw value stores line breaks as single line feeds.
 function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
 }
@@ -17129,7 +17176,7 @@ class HTMLTitleElement extends HTMLElement {
 	}
 }
 
-// The Text children only, not the descendants'.
+// The text of the Text children only, not all descendants.
 function childText(element: Element): string {
 	let text = "";
 	for (let node = element[kFirstChild]!; node !== null; node = node[kNext]!) {
@@ -17166,11 +17213,11 @@ interface HTMLUListElement
 
 class HTMLUListElement extends HTMLElement {}
 
-// `mode` is the state the popover was OPENED in rather than the one its
-// attribute names now: the attribute can change under a showing popover,
-// and the stack it belongs to is the one it entered. `previouslyFocused`
-// is set only for the popover that opened a stack, so closing the stack
-// gives focus back once rather than once per popover.
+// `mode` is the state the popover was OPENED in, not the one its
+// attribute names now. The attribute can change under a showing popover,
+// and the popover belongs to the stack it entered. `previouslyFocused` is
+// set only for the popover that opened a stack, so closing the stack
+// restores focus once rather than once per popover.
 interface PopoverState {
 	visibility: "hidden" | "showing";
 	mode: "auto" | null;
@@ -17180,9 +17227,9 @@ interface PopoverState {
 	toggleTask: {oldState: string; canceled: boolean} | null;
 }
 
-// HTML gives the slots to every HTML element; an element that was never a
-// popover has no state to hold, and the state it would hold is the initial
-// one.
+// HTML gives these slots to every HTML element. An element that was
+// never a popover has no state to store, and the state it would have is
+// the initial one.
 const popoverStates = new WeakMap<Element, PopoverState>();
 
 function getPopoverState(element: Element): PopoverState {
@@ -17201,14 +17248,14 @@ function getPopoverState(element: Element): PopoverState {
 	return state;
 }
 
-// auto for the empty string and `auto`, manual for `manual` and for every
-// value the attribute does not know, null when the attribute is absent.
+// Returns auto for the empty string and `auto`, manual for `manual` and
+// every unknown value, and null when the attribute is absent.
 //
-// HTML's third state, Hint, is NOT implemented: a hint popover keeps a
+// HTML's third state, Hint, is NOT implemented. A hint popover keeps a
 // second stack that auto popovers close and that closes with the auto
-// popover it hangs from, and every algorithm here would carry that second
-// stack through it. `popover=hint` therefore takes the route the attribute
-// defines for a value it does not know, the Manual state, and reflects as
+// popover it hangs from, and every algorithm here would have to carry
+// that second stack. So `popover=hint` takes the path the attribute
+// defines for an unknown value, the Manual state, and reflects as
 // "manual".
 function popoverAttributeState(element: Element): "auto" | "manual" | null {
 	if (element[kNamespace] !== HTML_NAMESPACE) {
@@ -17225,7 +17272,7 @@ function popoverValueState(value: string | null): "auto" | "manual" | null {
 	return keyword === "" || keyword === "auto" ? "auto" : "manual";
 }
 
-/** `:popover-open`. */
+/** Whether `:popover-open` matches. */
 function isShowingPopover(node: globalThis.Node): boolean {
 	return (
 		node instanceof HTMLElement &&
@@ -17233,7 +17280,7 @@ function isShowingPopover(node: globalThis.Node): boolean {
 	);
 }
 
-// The auto popovers in the top layer, in the order they entered it, which
+// The auto popovers in the top layer, in the order they entered, which
 // is the order they close in.
 function showingAutoPopovers(document: Document): Element[] {
 	const popovers: Element[] = [];
@@ -17253,10 +17300,9 @@ function topmostAutoPopover(
 	return popovers.length === 0 ? null : popovers[popovers.length - 1];
 }
 
-// Nothing about showing a popover is a mutation -- the attribute stands,
-// the tree stands -- so the rules that test `:popover-open`, and the frame
-// that would paint what they hide or reveal, have nothing else to hear it
-// from.
+// Showing a popover is not a mutation. The attribute and the tree are
+// unchanged. So the rules that test `:popover-open`, and the frame that
+// would paint what they hide or reveal, have to be notified from here.
 function popoverStateChanged(element: Element): void {
 	const displayed = displayedDocument(element);
 	if (displayed === undefined) {
@@ -17267,12 +17313,12 @@ function popoverStateChanged(element: Element): void {
 	void render(displayed[kTermDOM]);
 }
 
-// True, false for a call that is simply not to happen, or the exception
-// the check threw, which a caller rethrows only where the spec says it
-// does. HTML also refuses a popover whose fullscreen flag is set.
-// Fullscreen is the renderer's, not the tree's, and the element that is
-// fullscreen paints over the whole screen either way, so the check is the
-// environment's if it ever wants one.
+// Returns true, false for a call that should silently do nothing, or the
+// exception the check threw, which the caller rethrows only where the
+// spec says to. HTML also rejects a popover whose fullscreen flag is
+// set. Fullscreen belongs to the renderer, not the tree, and the
+// fullscreen element paints over the whole screen either way, so that
+// check is left to the environment if it ever wants one.
 function popoverValidity(
 	element: Element,
 	expectedToBeShowing: boolean,
@@ -17308,7 +17354,8 @@ const kPopoverShowing = Symbol("a popover is opening");
 const kPopoverHidingCount = Symbol("how many popovers are closing");
 
 // An auto popover first closes every open auto popover it is not nested
-// inside -- through the node tree or through the element that invoked it.
+// inside, either through the node tree or through the element that
+// invoked it.
 function showPopover(
 	element: Element,
 	throwExceptions: boolean,
@@ -17349,7 +17396,7 @@ function showPopover(
 		return;
 	}
 	// A beforetoggle listener can have disconnected the element or changed
-	// its popover attribute, so what was checked above is checked again.
+	// its popover attribute, so the checks run again.
 	validity = popoverValidity(element, false, document);
 	if (validity !== true) {
 		cleanup();
@@ -17381,8 +17428,8 @@ function showPopover(
 			}
 			return;
 		}
-		// Focus goes back to the page only for the popover that OPENED the
-		// stack, so unwinding one returns it once.
+		// Focus returns to the page only for the popover that OPENED the stack,
+		// so unwinding a stack returns it once.
 		if (topmostAutoPopover(document) === null) {
 			shouldRestoreFocus = true;
 		}
@@ -17434,7 +17481,7 @@ function hidePopover(
 	if (state.mode === "auto") {
 		hidePopoverStackUntil(document, element, focusPreviousElement, fireEvents);
 		// Closing the popovers above this one can have disconnected it or
-		// changed its attribute, so validity is asked again.
+		// changed its attribute, so the checks run again.
 		validity = popoverValidity(element, true, null);
 		if (validity !== true) {
 			cleanup();
@@ -17472,8 +17519,8 @@ function hidePopover(
 	const previouslyFocused = state.previouslyFocused;
 	if (previouslyFocused !== null) {
 		state.previouslyFocused = null;
-		// Focus goes back only if the popover still holds it: an author who
-		// moved focus elsewhere while it was up keeps it there.
+		// Focus returns only if the popover still holds it. An author who moved
+		// focus elsewhere while it was open keeps it there.
 		const active = document[kActiveElement]!;
 		if (
 			focusPreviousElement &&
@@ -17488,17 +17535,17 @@ function hidePopover(
 	popoverStateChanged(element);
 }
 
-// A close request -- Escape on the topmost auto popover -- is a hide that
-// gives focus back and fires its events.
+// A close request (Escape on the topmost auto popover) is a hide that
+// restores focus and fires its events.
 function closePopover(element: globalThis.Element): void {
 	hidePopover(element as Element, true, true, false, null);
 }
 
 // Closes the auto popovers stacked above an endpoint, topmost first,
-// leaving the endpoint and everything under it; a null endpoint closes the
-// whole stack. The second pass catches the popovers a beforetoggle listener
-// showed while the stack was unwinding, which would otherwise be left over
-// the endpoint.
+// leaving the endpoint and everything under it. A null endpoint closes
+// the whole stack. The second pass catches popovers a beforetoggle
+// listener showed while the stack was unwinding, which would otherwise
+// remain above the endpoint.
 function hidePopoverStackUntil(
 	document: Document,
 	endpoint: Element | null,
@@ -17521,8 +17568,8 @@ function hidePopoverStackUntil(
 	}
 }
 
-// What light dismiss and an opening popover both run. With no hint stack,
-// it is the auto stack's.
+// Run by both light dismiss and an opening popover. With no hint stack,
+// this is just the auto stack's version.
 function hidePopoversUntil(
 	document: globalThis.Document,
 	endpoint: globalThis.Element | null,
@@ -17537,9 +17584,9 @@ function hidePopoversUntil(
 	);
 }
 
-// The open auto popover a node hangs from, by sitting inside it in the flat
-// tree or by being invoked from inside it. The ancestor is the LAST such
-// popover in the stack, so what closes above it is exactly what is
+// The open auto popover a node belongs to, either by sitting inside it
+// in the flat tree or by being invoked from inside it. Returns the LAST
+// such popover in the stack, so everything above it is exactly what is
 // unrelated to the node.
 function topmostPopoverAncestor(
 	node: Element,
@@ -17577,9 +17624,9 @@ function nearestInclusiveOpenPopover(node: Node): Element | null {
 	return null;
 }
 
-// The open auto popover the node, or an element it sits in, INVOKES. It is
-// what keeps a click on a popover's own button from light-dismissing the
-// popover it opened.
+// The open auto popover that the node, or an element containing it,
+// INVOKES. This is what stops a click on a popover's own button from
+// light-dismissing the popover it opened.
 function nearestInclusiveTargetPopover(node: Node): Element | null {
 	for (
 		let current: Node | null = node;
@@ -17619,8 +17666,8 @@ function topmostClickedPopover(
 		: target;
 }
 
-// Unlike a dialog, a popover does not take focus off the page by opening:
-// focus moves only where the content asks for it with autofocus.
+// Unlike a dialog, a popover does not take focus from the page when it
+// opens. Focus moves only if the content asks for it with autofocus.
 function popoverFocusingSteps(element: Element): void {
 	if (element instanceof HTMLDialogElement) {
 		// A dialog shown as a popover focuses like a dialog, not like a popover.
@@ -17647,10 +17694,10 @@ function popoverFocusingSteps(element: Element): void {
 	}
 }
 
-// A popover shown and hidden inside one turn reports the state it settled
-// on: the pending task is dropped and its old state carried into the one
-// that replaces it, so an author sees one toggle describing the whole run
-// rather than a pair that cancel out.
+// A popover shown and hidden within one turn reports only the final
+// state. The pending task is dropped and its old state is carried into
+// the replacement, so the author sees one toggle event describing the
+// whole run rather than a pair that cancel out.
 function queuePopoverToggleEventTask(
 	element: Element,
 	oldState: string,
@@ -17673,10 +17720,10 @@ function queuePopoverToggleEventTask(
 	});
 }
 
-// A popovertarget set to an ELEMENT rather than named by id. The attribute
-// cannot hold one, so the reference is held beside it, and the getter
-// answers with it only while the element it names is in a tree the invoker
-// composes into.
+// A popovertarget set to an ELEMENT rather than named by id. The
+// attribute cannot hold an element, so the reference is stored
+// separately. The getter returns it only while the element is in a tree
+// the invoker composes into.
 const explicitPopoverTargets = new WeakMap<Element, Element>();
 
 // The explicitly set element if it is still reachable, otherwise the
@@ -17688,9 +17735,9 @@ function popoverTargetAttributeElement(node: Node): Element | null {
 	const element = node as Element;
 	const explicit = explicitPopoverTargets.get(element);
 	if (explicit !== undefined) {
-		// The reference stands while the target is in the invoker's own tree
-		// or in one that tree composes into; it goes stale, rather than
-		// dangling, when the target is moved out from under it.
+		// The reference is valid while the target is in the invoker's own tree
+		// or in one that tree composes into. It goes stale rather than dangling
+		// when the target is moved out from under it.
 		for (let root: Node = getRoot(element); ;) {
 			if (root.contains(explicit as unknown as globalThis.Node)) {
 				return explicit;
@@ -17731,8 +17778,8 @@ function setPopoverTargetAttributeElement(
 	element.setAttribute("popovertarget", "");
 }
 
-// A BUTTON as the popover target attributes mean it: the button element,
-// and the input types that render as buttons.
+// A BUTTON as the popover target attributes define it: the button
+// element, and the input types that render as buttons.
 function isPopoverInvokerButton(node: Node): boolean {
 	if (node instanceof HTMLButtonElement) {
 		return true;
@@ -17749,7 +17796,7 @@ function isPopoverInvokerButton(node: Node): boolean {
 	);
 }
 
-// A button that submits a form is not an invoker -- its activation is the
+// A button that submits a form is not an invoker. Its activation is the
 // submission, and the attribute on it does nothing.
 function getPopoverTargetElement(node: Node): Element | null {
 	if (!isPopoverInvokerButton(node)) {
@@ -17769,9 +17816,9 @@ function getPopoverTargetElement(node: Node): Element | null {
 	return popoverAttributeState(popover) === null ? null : popover;
 }
 
-// `popovertargetaction` names which half of the toggle to run, and a
-// button inside the popover it targets does nothing -- the click that
-// reaches it is the popover's own.
+// `popovertargetaction` names which half of the toggle to run. A button
+// inside the popover it targets does nothing, because the click that
+// reaches it belongs to the popover.
 function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 	const popover = getPopoverTargetElement(node);
 	if (popover === null) {
@@ -17804,8 +17851,7 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 	}
 }
 
-// The flat tree's answer, where isShadowIncludingInclusiveAncestor is the
-// node tree's.
+// The flat tree version of isShadowIncludingInclusiveAncestor.
 function isFlatInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	for (
 		let current: Node | null = node;
@@ -17889,8 +17935,8 @@ const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 	HTMLVideoElement,
 };
 
-// The members each interface reflects, the name it stringifies as, and the
-// tags an element of it is created for.
+// Installs the members each interface reflects, the name it stringifies
+// as, and the tags an element of it is created for.
 for (const spec of HTML_INTERFACES) {
 	const constructor = HTML_INTERFACE_CLASSES[spec.name];
 	for (const reflection of spec.reflect ?? []) {
@@ -17928,9 +17974,10 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 }
 
 /**
- * HTML's light dismiss, the press half: the popover the pressed point is
- * inside of or invokes, remembered so the release can tell a click from a
- * press that wandered. The gesture state is the caller's; the stack is not.
+ * HTML's light dismiss, the press half. Records the popover the pressed
+ * point is inside of or invokes, so the release can tell a click from a
+ * press that moved. The caller keeps the gesture state; this file keeps
+ * the stack.
  */
 export function lightDismissPress(
 	target: globalThis.Element,
@@ -17939,11 +17986,11 @@ export function lightDismissPress(
 }
 
 /**
- * The release half: a release closes every auto popover the released point
- * is not inside of and did not open -- the invoker of a popover counts as
+ * The release half. A release closes every auto popover the released
+ * point is not inside of and did not open. A popover's invoker counts as
  * part of it, so the click that follows toggles rather than reopens what
- * this closed. Runs before the click, where a browser runs it, and no
- * listener can prevent it.
+ * this closed. Runs before the click, as in a browser, and no listener can
+ * prevent it.
  */
 export function lightDismissRelease(
 	target: globalThis.Element,
@@ -17960,10 +18007,11 @@ export function lightDismissRelease(
 }
 
 /**
- * A close request's default action: the modal dialog or auto popover last
- * into the top layer takes it -- a popover closes, a dialog is asked to. A
- * manual popover responds to neither Escape nor a click outside, and
- * neither does anything else riding the layer. False when nothing takes it.
+ * A close request's default action. The modal dialog or auto popover that
+ * most recently entered the top layer takes it: a popover closes, a dialog
+ * is asked to close. A manual popover responds to neither Escape nor a
+ * click outside, and neither does anything else in the layer. Returns
+ * false when nothing takes it.
  */
 export function closeTopmost(document: globalThis.Document): boolean {
 	const popover = topmostAutoPopover(document);
@@ -17986,8 +18034,8 @@ export function closeTopmost(document: globalThis.Document): boolean {
 
 // The Fullscreen API over the engine's alternate screen. The element
 // stack, the spec steps and the two events are user-agent state and live
-// here; the screen swap itself is the engine's, bracketed through the
-// mount so no frame straddles it.
+// here. The screen swap itself belongs to the engine and is bracketed
+// through the frame so no frame straddles it.
 const fullscreenStacks = new WeakMap<Document, Element[]>();
 
 function fullscreenStackOf(document: Document): Element[] {
@@ -17999,21 +18047,21 @@ function fullscreenStackOf(document: Document): Element[] {
 	return stack;
 }
 
-// The stack's top is the element the viewport shows alone.
+// The top of the stack is the element the viewport shows alone.
 function fullscreenElementOf(document: Document): Element | null {
 	const stack = fullscreenStacks.get(document);
 	return stack?.length ? stack[stack.length - 1] : null;
 }
 
-/** Abandon fullscreen without events: the engine is tearing down. */
+/** Abandon fullscreen without events. Used when the engine is tearing down. */
 export function dropFullscreen(document: globalThis.Document): void {
 	fullscreenStacks.delete(document as Document);
 }
 
 // ONE target, per the Fullscreen Standard: the element while it is still
-// in the document, otherwise the document itself. Both events bubble, so a
-// document listener hears them either way -- and firing at the document as
-// well as the element would deliver every one of them twice.
+// in the document, otherwise the document. Both events bubble, so a
+// document listener sees them either way. Firing at both would deliver
+// every event twice.
 function fireFullscreenEvent(
 	type: "fullscreenchange" | "fullscreenerror",
 	element: Element,
@@ -18030,9 +18078,9 @@ function fireFullscreenEvent(
 	);
 }
 
-// The alternate screen comes up holding whatever the terminal left in it,
-// so the entry clears it and homes the cursor; the cursor goes before the
-// screen is touched, so it never sits blinking on the clear.
+// The alternate screen comes up holding whatever the terminal left in
+// it, so entering clears it and homes the cursor. The cursor is hidden
+// before the screen is touched, so it never blinks on the clear.
 function enterFullscreen(element: Element): void {
 	const stack = fullscreenStackOf(element[kDocument]!);
 	try {
@@ -18095,9 +18143,9 @@ function datasetPropertyName(attribute: string): string | null {
 const kDatasetElement = Symbol("the element a data map belongs to");
 const kDatasetNames = Symbol("the names a data map has materialized");
 
-// Every attribute is an own accessor of the map, materialized when the map
-// is asked for and refreshed on each ask, so a read or a write of a name
-// the element carries goes straight through to the attribute.
+// Every attribute is an own accessor of the map, created when the map is
+// requested and refreshed on each request, so a read or write of a name
+// the element has goes straight through to the attribute.
 class DOMStringMap {
 	[name: string]: string | undefined;
 
@@ -18249,8 +18297,8 @@ function isLabelable(element: Element): boolean {
 
 const kFormDisabled = Symbol("disabled by a fieldset or its own attribute");
 
-// By its own attribute, or by a fieldset above it whose first legend does
-// not contain the control.
+// Disabled by its own attribute, or by a fieldset above it whose first
+// legend does not contain the control.
 function isActuallyDisabled(element: Element): boolean {
 	if (isFormAssociatedCustom(element)) {
 		return element[kInternals]?.[kFormDisabled] === true;
@@ -18303,11 +18351,12 @@ function isDisabledByFieldSet(element: Element): boolean {
 	return false;
 }
 
-// Computed from the tree each time rather than stored: a listed element
-// with a form attribute is owned by the form of that id in its tree, and
-// every other form-associated element by its nearest form ancestor. Both
-// answers change only when the tree or the attribute does, so reading them
-// is the same as resetting the owner at every point the spec does.
+// Computed from the tree each time rather than stored. A listed element
+// with a form attribute is owned by the form with that id in its tree.
+// Every other form-associated element is owned by its nearest form
+// ancestor. Both results change only when the tree or the attribute
+// changes, so reading them is equivalent to resetting the owner at every
+// point the spec does.
 function formOwner(element: Element): HTMLFormElement | null {
 	if (!isFormAssociated(element)) {
 		return null;
@@ -18347,8 +18396,8 @@ function formOwner(element: Element): HTMLFormElement | null {
 
 const kFormOwner = Symbol("the form an internals last reported");
 
-// The callback is the one place the owner has to be remembered, because it
-// is the change that is reported rather than the value.
+// The callback is the one place the owner has to be remembered, because
+// the callback reports the change rather than the value.
 function refreshFormOwner(element: Element): void {
 	if (!isFormAssociatedCustom(element)) {
 		return;
@@ -18375,9 +18424,9 @@ function refreshFormOwnersUnder(node: Node): void {
 	}
 }
 
-// The state is its own disabled attribute, or a fieldset above it that
-// has one; both are read from the tree, and the flag beside them is what
-// makes a change reportable rather than a value.
+// The state comes from the element's own disabled attribute or from a
+// fieldset above it with one. Both are read from the tree. The stored
+// flag exists only so a change can be reported.
 function refreshFormDisabled(element: Element): void {
 	if (!isFormAssociatedCustom(element)) {
 		return;
@@ -18476,8 +18525,8 @@ Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, {
 
 const kStates = Symbol("custom state set");
 
-// The set is the author's; a selector engine that knows `:state()` reads
-// it, and nothing else in this DOM does.
+// The set belongs to the author. A selector engine that supports
+// `:state()` reads it, and nothing else in this DOM does.
 class CustomStateSet {
 	declare [kStates]?: Set<string>;
 
@@ -18681,8 +18730,8 @@ class ElementInternals {
 		return checkValidity(this[kElementInternalsTarget]!);
 	}
 
-	// Reporting is a browser showing the validation message in chrome of its
-	// own, and a terminal has none to show it in.
+	// Reporting means a browser showing the validation message in its own
+	// chrome, and a terminal has none to show it in.
 	reportValidity(): boolean {
 		requireFormAssociated(this);
 		return checkValidity(this[kElementInternalsTarget]!);
@@ -18726,7 +18775,7 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 	});
 }
 
-// The target has to sit in this element's tree, or in a tree above it.
+// The target must be in this element's tree or in a tree above it.
 function isReachableARIATarget(from: Element, target: Element): boolean {
 	const fromRoot = getRoot(from);
 	for (
@@ -18748,8 +18797,8 @@ function ariaTargetsFromAttribute(
 	attribute: string,
 ): Element[] | null {
 	const value = element.getAttribute(attribute);
-	// No attribute and no elements handed over is no reflected target at all,
-	// which reads back as null rather than as an empty list.
+	// No attribute and no elements passed means no reflected target at all,
+	// which reads back as null rather than an empty list.
 	if (value === null) {
 		return null;
 	}
@@ -18770,7 +18819,7 @@ function ariaTargetsFromAttribute(
 	return found;
 }
 
-/** Explicit ones first. */
+/** Explicitly set elements first. */
 function ariaTargets(
 	element: Element,
 	property: string,
@@ -18803,9 +18852,9 @@ function setARIATargets(
 	element.setAttribute(attribute, "");
 }
 
-// A member answers with the elements a caller last handed it, or with the
-// ones the attribute's identifiers name where none were handed over; an
-// element that has drifted out of reach drops out of the answer.
+// A member returns the elements the caller last passed in, or if none
+// were passed, the elements the attribute's identifiers name. An element
+// that has moved out of reach is dropped from the result.
 for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 	const descriptor: PropertyDescriptor = {
 		get(this: Element): Element | readonly Element[] | null {
@@ -18961,16 +19010,16 @@ function checkValidity(element: Element): boolean {
 
 /**
  * A ::before, ::after or ::marker box needs a node to hang style and
- * children off, and the engine's paint walk needs to reach it; the DOM
- * Standard has no such node, and an author must never find one. These live
- * in a map keyed by the pseudo-element's name, reachable only through the
- * functions below, which the engine's composition pass is the sole caller
- * of. Nothing links them into the tree: their parent stays null, so
+ * children off, and the engine's paint walk needs to reach it. The DOM
+ * Standard has no such node, and an author must never find one. These
+ * nodes live in a map keyed by pseudo-element name, reachable only through
+ * the functions below, which only the engine's composition pass calls.
+ * Nothing links them into the tree. Their parent stays null, so
  * childNodes, the tree walkers, the collections and the selector engine
  * cannot reach them, and no mutation record or slot assignment ever names
- * one. The element a slot holds is an ordinary Element of the host's
- * document, so everything the engine already does with an element works on
- * it unchanged.
+ * one. The node itself is an ordinary Element of the host's document, so
+ * everything the engine already does with an element works on it
+ * unchanged.
  */
 export function pseudoElement<T>(
 	host: globalThis.Element,
@@ -18988,22 +19037,22 @@ export function pseudoElementCount(host: globalThis.Element): number {
 }
 
 /**
- * Null for every node but a pseudo-element slot: this is what tells such a
- * node apart, and where the flat tree finds the parent a node with no
- * parent renders inside.
+ * Null for every node except a pseudo-element node. This is how a
+ * pseudo-element node is identified, and how the flat tree finds the
+ * parent that a node with no parent renders inside.
  */
 export function getPseudoHost<T>(node: globalThis.Node): T | null {
 	return ((node as Element)[kPseudoHost]! as T) ?? null;
 }
 
-/** Such as "::before". */
+/** For example "::before". */
 export function getPseudoName(node: globalThis.Node): string | null {
 	return (node as Element)[kPseudoName]!;
 }
 
 /**
  * The node is an element named after the pseudo-element so a debugger's
- * dump reads plainly; it is never serialized.
+ * dump reads plainly. It is never serialized.
  */
 export function ensurePseudoElement<T>(
 	target: globalThis.Element,
@@ -19032,24 +19081,24 @@ export function clearPseudoElement(
 	(host as Element)[kPseudoElements]?.delete(name);
 }
 
-// The flat tree: the tree a renderer draws, which the DOM Standard's node
-// tree is only one input to. Four things separate it from the node tree,
-// and all four are answered here rather than by any caller:
+// The flat tree: the tree the renderer draws, of which the DOM
+// Standard's node tree is only one input. Four things separate it from
+// the node tree, and all four are handled here rather than by callers:
 //
 // - a host's children are its shadow tree's, and only those;
 // - a slot's children are the nodes assigned to it, and its own children
-//   only as the fallback shown when nothing is;
-// - a pseudo-element slot's node stands between an element and its
-//   children, ::marker first, then ::before, with ::after after the last;
+//   only as the fallback shown when nothing is assigned;
+// - a pseudo-element node sits between an element and its children,
+//   ::marker first, then ::before, with ::after after the last child;
 // - a node the box tree DISSOLVES contributes its children in its own
 //   place.
 //
 // Nothing is memoized. Every hop reads the same links the mutation
-// algorithms maintain -- the stored slot assignment, not the recomputed one
-// an author's `assignedSlot` reports -- so a walk cannot answer from a tree
-// that has moved.
+// algorithms maintain (the stored slot assignment, not the recomputed one
+// an author's `assignedSlot` reports), so a walk never reads a tree that
+// has changed.
 
-// The stored assignment, closed trees too.
+// The stored assignment, including closed trees.
 function getAssignedSlot(node: Node): HTMLSlotElement | null {
 	const type = node.nodeType;
 	return type === ELEMENT_NODE || type === TEXT_NODE
@@ -19059,10 +19108,10 @@ function getAssignedSlot(node: Node): HTMLSlotElement | null {
 
 /**
  * The element a node renders inside, which is also the element style
- * inheritance flows from. Three cases diverge from parentElement -- a
+ * inheritance flows from. Three cases differ from parentElement: a
  * projected node's flat parent is its SLOT, a shadow root's child resolves
  * to the HOST, and a pseudo-element node's is the element it originates
- * from -- and everything else is parentElement.
+ * from. Everything else is parentElement.
  */
 export function flatParentElement<T>(target: globalThis.Node): T | null {
 	const node = target as Node;
@@ -19084,8 +19133,9 @@ export function flatParentElement<T>(target: globalThis.Node): T | null {
 
 /**
  * Whether a node renders: it is in the document, or the flat tree above it
- * reaches one. A pseudo-element node and a UA shadow tree's contents are
- * both outside the node tree that answers `isConnected` and both render.
+ * reaches the document. A pseudo-element node and a UA shadow tree's
+ * contents are both outside the node tree `isConnected` checks, and both
+ * render.
  */
 export function flatIsConnected(target: globalThis.Node): boolean {
 	let node: Node | null = target as Node;
@@ -19114,9 +19164,9 @@ const NODE_LINKS: TreeLinks = Object.freeze({
 	previousSibling: (node: Node) => node[kPrevious]!,
 });
 
-// Shadow content in its slot's place, and pseudo-element slots among the
-// children they belong beside, neither of which is a link a node carries,
-// so each hop is worked out.
+// Shadow content in its slot's place, and pseudo-element nodes among
+// the children they belong beside. Neither is a link a node stores, so
+// each hop computes its result.
 const FLAT_LINKS: TreeLinks = Object.freeze({
 	parent: composedParentNode,
 	firstChild: composedFirstChild,
@@ -19127,8 +19177,8 @@ const FLAT_LINKS: TreeLinks = Object.freeze({
 
 const kLinks = Symbol("links");
 
-// The composed hops: the flat tree, pseudo-element slots among the children
-// they belong beside.
+// The composed hops: the flat tree, with pseudo-element nodes among the
+// children they belong beside.
 
 function pseudoSlot(element: Element, name: string): Element | null {
 	const slots = element[kPseudoElements]!;
@@ -19156,17 +19206,17 @@ function composedFirstChild(node: Node): Node | null {
 	if (composed !== null) {
 		return composed;
 	}
-	// A CHILDLESS element still renders its ::after: the sibling transition
-	// only reaches ::after from a last child, which there is none of here, so
-	// for an empty element the pseudo-element IS the content.
+	// A CHILDLESS element still renders its ::after. The sibling transition
+	// only reaches ::after from a last child, and there is none here, so for
+	// an empty element the pseudo-element IS the content.
 	return slots === null ? null : (slots.get("::after") ?? null);
 }
 
-// Pseudo-elements aside: the shadow tree's children when the element hosts
-// one -- and ONLY those, an empty tree meaning an empty element, since
-// light children render solely through slots -- a slot's assigned nodes
-// when it has any, and its own children otherwise (which for a slot is the
-// fallback content).
+// Ignoring pseudo-elements: the shadow tree's children if the element
+// hosts one, and ONLY those (an empty shadow tree means an empty element,
+// because light children render only through slots); a slot's assigned
+// nodes if it has any; otherwise its own children, which for a slot is
+// the fallback content.
 function composedContentFirstChild(element: Element): Node | null {
 	const shadow = element[kShadowRoot]!;
 	if (shadow !== null) {
@@ -19191,14 +19241,14 @@ function composedLastChild(node: Node): Node | null {
 }
 
 // The last child an element renders, or the ::before or ::marker it
-// renders instead when it has no content of its own. Separate from
-// composedLastChild, whose answer IS the ::after when there is one.
+// renders instead when it has no content of its own. Different from
+// composedLastChild, which returns the ::after when there is one.
 function composedLastContent(element: Element): Node | null {
 	const child = lastRenderedChild(element);
 	if (child !== null) {
 		return child;
 	}
-	// An element with no content of its own still renders its ::before and its
+	// An element with no content of its own still renders its ::before and
 	// ::marker, so the last of its content is whichever of those it has.
 	const slots = element[kPseudoElements]!;
 	if (slots !== null) {
@@ -19248,7 +19298,7 @@ function composedNextSibling(node: Node): Node | null {
 	}
 
 	// A projected node's composed siblings are its neighbours in the slot's
-	// assigned-node list, NOT its light-tree siblings: the light nextSibling
+	// assigned-node list, NOT its light-tree siblings. The light nextSibling
 	// may be assigned to a different slot, or to none.
 	const slot = getAssignedSlot(node);
 	if (slot !== null) {
@@ -19269,10 +19319,11 @@ function composedNextSibling(node: Node): Node | null {
 		return next;
 	}
 
-	// The last of an element's content is followed by its ::after -- the
-	// COMPOSED parent's, so that climbing out of a shadow root reaches the
-	// host's. A shadowed element's ::after follows its shadow content, and
-	// the node tree cannot say so: it puts the shadow root between them.
+	// The last of an element's content is followed by its ::after. This
+	// uses the COMPOSED parent, so climbing out of a shadow root reaches the
+	// host's ::after. A shadowed element's ::after follows its shadow
+	// content, which the node tree cannot express because it puts the shadow
+	// root between them.
 	const parent = composedParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		return pseudoSlot(parent as Element, "::after");
@@ -19314,8 +19365,9 @@ function composedPreviousSibling(node: Node): Node | null {
 		return previous;
 	}
 
-	// Mirror of the ::after hop: the composed parent, so walking backwards out
-	// of a shadow root reaches the host's ::before and ::marker.
+	// Mirror of the ::after hop. Uses the composed parent, so walking
+	// backwards out of a shadow root reaches the host's ::before and
+	// ::marker.
 	const parent = composedParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		const before = pseudoSlot(parent as Element, "::before");
@@ -19345,8 +19397,8 @@ function composedParentNode(node: Node): Node | null {
 
 const kRectValues = Symbol("rectangle origin and size");
 
-// A negative width or height puts left right of right, so the edges take
-// the minimum and the maximum rather than assuming an order.
+// A negative width or height puts left to the right of right, so the
+// edges take the minimum and maximum rather than assuming an order.
 class DOMRectReadOnly {
 	[kRectValues]?: {x: number; y: number; width: number; height: number};
 
@@ -19483,12 +19535,12 @@ Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
 });
 
 // The content box's size, plus the offset of its top-left corner INSIDE
-// the border box. Deliberately not a rect: `top`/`left` are a distance from
-// the border edge, not a position in the document, and calling it a
-// DOMRect would invite exactly the arithmetic (comparing it against a
-// border box, intersecting it with the viewport) that its coordinates
-// cannot support. ResizeObserver reports these four numbers as
-// contentRect, which is where the confusion comes from in the first place.
+// the border box. Deliberately not a rect. `top` and `left` are
+// distances from the border edge, not positions in the document, and
+// calling it a DOMRect would invite exactly the arithmetic (comparing it
+// against a border box, intersecting it with the viewport) that its
+// coordinates cannot support. ResizeObserver reports these four numbers
+// as contentRect, which is where the confusion comes from.
 interface ContentBox {
 	width: number;
 	height: number;
@@ -19496,16 +19548,16 @@ interface ContentBox {
 	left: number;
 }
 
-// Symbol-keyed rather than named: these are subclass hooks and shared state,
-// and author code must never see any of them on an observer it holds.
+// Symbol-keyed rather than named. These are subclass hooks and shared
+// state, and author code must never see them on an observer it holds.
 const kTargets = Symbol("targets");
 const kHomes = Symbol("homes");
 const kMeasure = Symbol("measure");
 const kObserverCallback = Symbol("observer callback");
 
-// A document, not a registry object, is what an observer can reach from
-// the target it was handed, which is why `new ResizeObserver(callback)`
-// needs nothing but its callback.
+// Keyed by document, not by a registry object, because the document is
+// what an observer can reach from the target it was given. That is why
+// `new ResizeObserver(callback)` needs only its callback.
 const documentObservers = new WeakMap<object, Set<AnyObserver>>();
 
 /**
@@ -19523,9 +19575,9 @@ export function flushObservers(
 	if (observers === undefined || observers.size === 0) {
 		return;
 	}
-	// A copy: a callback may observe or disconnect, and mutating the set
-	// mid-iteration would visit the new observer against a layout it has not
-	// been measured for, or skip one that is still live.
+	// Iterate a copy. A callback may observe or disconnect, and mutating the
+	// set mid-iteration would visit a new observer against a layout it has
+	// not been measured for, or skip one that is still live.
 	for (const observer of [...observers]) {
 		checkObserver(observer, layoutEngine, viewport, frame);
 	}
@@ -19537,19 +19589,19 @@ export function disconnectObservers(document: globalThis.Document): void {
 	engineObservers.get(document as Document)?.disconnect();
 }
 
-// The half identical between the two observers: which elements are
-// watched, what was last reported for each, and registration with the
-// manager. Subclasses supply only how to measure one target (kMeasure) and
-// how to build an entry from that measurement.
+// The part shared by both observer kinds: which elements are watched,
+// what was last reported for each, and registration with the manager.
+// Subclasses supply only how to measure one target (kMeasure) and how to
+// build an entry from that measurement.
 abstract class LayoutObserver<TState, TEntry, TOptions = void> {
-	// One entry per target, as the DOM says: a second observe() of the same
+	// One entry per target, as the DOM says. A second observe() of the same
 	// target replaces the first's options.
 	[kTargets]: Map<
 		globalThis.Element,
 		{options: TOptions | undefined; last: TState | null}
 	>;
 
-	// One per document the observer has a target in.
+	// One entry per document the observer has a target in.
 	[kHomes]: Set<object>;
 
 	declare [kObserverCallback]: (entries: TEntry[], observer: this) => void;
@@ -19563,8 +19615,8 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	}
 
 	observe(target: globalThis.Element, options?: TOptions): void {
-		// A fresh target has no last state, so its first measurement always counts
-		// as a change -- which is what fires the initial callback the DOM promises.
+		// A fresh target has no last state, so its first measurement always
+		// counts as a change. That fires the initial callback the DOM promises.
 		this[kTargets].set(target, {
 			options,
 			last: this[kTargets].get(target)?.last ?? null,
@@ -19592,9 +19644,9 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		this[kHomes].clear();
 	}
 
-	// Records are computed and delivered in the same pass (see the manager's
-	// flush), so nothing is ever queued undelivered and this is always empty.
-	// Present because the DOM has it and code checks for it.
+	// Records are computed and delivered in the same pass (see the
+	// manager's flush), so nothing is ever queued undelivered and this is
+	// always empty. It exists because the DOM has it and code checks for it.
 	takeRecords(): TEntry[] {
 		return [];
 	}
@@ -19690,10 +19742,10 @@ class ResizeObserver extends LayoutObserver<
 		this[kObserverCallback] = callback;
 	}
 
-	// `box` names which box's size change is worth reporting; every entry
-	// still carries all of them, as the DOM says. An unrecognized value is not
-	// a box this DOM quietly ignores -- the enumeration rejects it, as WebIDL
-	// does.
+	// `box` names which box's size change is worth reporting. Every entry
+	// still carries all of them, as the DOM says. An unrecognized value is
+	// rejected by the enumeration, as WebIDL requires, rather than quietly
+	// ignored.
 	override observe(
 		target: globalThis.Element,
 		options?: ResizeObserverOptions,
@@ -19715,9 +19767,10 @@ class ResizeObserver extends LayoutObserver<
 		_frame: number,
 		options: ResizeObserverOptions | undefined,
 	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
-		// An element with no box -- display:none, or detached -- has a size, and
-		// that size is zero. Reporting it is how the DOM lets a component notice
-		// it has been hidden; skipping it stranded the last size it ever had.
+		// An element with no box (display:none, or detached) has a size, and
+		// that size is zero. Reporting it is how the DOM lets a component
+		// notice it has been hidden. Skipping it left the last size it ever had
+		// stuck.
 		const content = getContentBox(target, layoutEngine) ?? {
 			width: 0,
 			height: 0,
@@ -19726,8 +19779,8 @@ class ResizeObserver extends LayoutObserver<
 		};
 
 		const border = layoutEngine.getRect(target);
-		// device-pixel-content-box is the content box: a cell is the device
-		// pixel here, so the two can never diverge.
+		// device-pixel-content-box is the content box. A cell is the device
+		// pixel here, so the two can never differ.
 		const watched =
 			options?.box === "border-box"
 				? {
@@ -19750,8 +19803,8 @@ class ResizeObserver extends LayoutObserver<
 			state: watched,
 			entry: {
 				target,
-				// Origin is the content box's offset inside the border box -- the
-				// padding and border that precede it -- not zero.
+				// The origin is the content box's offset inside the border box
+				// (the padding and border before it), not zero.
 				contentRect: new DOMRect(
 					content.left,
 					content.top,
@@ -19772,9 +19825,8 @@ class ResizeObserver extends LayoutObserver<
 	}
 }
 
-// Null when the element generates no box at all (display:none or
-// detached) -- reported as "nothing", which the observer turns into an
-// all-zero rect.
+// Returns null when the element generates no box at all (display:none
+// or detached). The observer turns that into an all-zero rect.
 function getContentBox(
 	element: globalThis.Element,
 	layoutEngine: LayoutEngine,
@@ -19784,7 +19836,8 @@ function getContentBox(
 	if (!border || !content) {
 		return null;
 	}
-	// Origin relative to the border box: what precedes the content on each axis.
+	// Origin relative to the border box: what precedes the content on each
+	// axis.
 	return {
 		width: content.width,
 		height: content.height,
@@ -19833,7 +19886,8 @@ class IntersectionObserver extends LayoutObserver<
 		this[kIntersectionRoot] = init.root ?? null;
 		this.rootMargin = init.rootMargin ?? "0px";
 
-		// A single number, an array, or the default of "any intersection at all".
+		// A single number, an array, or the default of "any intersection at
+		// all".
 		const t = init.threshold ?? 0;
 		this.thresholds = Object.freeze(
 			(Array.isArray(t) ? [...t] : [t]).sort((a, b) => a - b),
@@ -19856,9 +19910,9 @@ class IntersectionObserver extends LayoutObserver<
 			return null;
 		}
 
-		// The root: an explicit element's border box, or the viewport. Either way
-		// grown by rootMargin, which is the whole point of that option -- it is
-		// what lets a list start loading a row before it scrolls into view.
+		// The root is an explicit element's border box or the viewport. Either
+		// way it is grown by rootMargin, which is the point of that option: it
+		// lets a list start loading a row before it scrolls into view.
 		const rootBox =
 			this[kIntersectionRoot]!
 				? layoutEngine.getRect(this[kIntersectionRoot]!)
@@ -19911,10 +19965,10 @@ function intersectionRatio(
 }
 
 // The root-margin rules: one to four lengths, in the order top, right,
-// bottom, left. Lengths are cells whichever unit is written: a row
-// vertically, a column horizontally, so `px` and `ch` mean the same thing
-// here, the equivalence the rest of the box model makes. Percentages are
-// resolved against the root's own size, as the spec requires.
+// bottom, left. Lengths are cells whatever unit is written (a row
+// vertically, a column horizontally), so `px` and `ch` mean the same
+// thing here, as everywhere in the box model. Percentages are resolved
+// against the root's own size, as the spec requires.
 function applyRootMargin(
 	rect: globalThis.DOMRect,
 	margin: string,
@@ -19950,10 +20004,10 @@ function applyRootMargin(
 	);
 }
 
-// What the spec actually watches: an observation fires when this CHANGES,
-// so a target scrolling through `[0, 0.5, 1]` reports at each step.
-// Tracking only the boolean "is it intersecting" collapsed all of those
-// into one callback and made threshold arrays decorative.
+// This is what the spec actually watches. An observation fires when
+// this CHANGES, so a target scrolling through `[0, 0.5, 1]` reports at
+// each step. Tracking only the boolean "is it intersecting" collapsed
+// all of those into one callback and made threshold arrays decorative.
 function thresholdIndex(observer: IntersectionObserver, ratio: number): number {
 	let index = 0;
 	while (
@@ -19972,9 +20026,10 @@ function thresholdIndex(observer: IntersectionObserver, ratio: number): number {
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
 
-// A window here is not the global object, so there is no "current global
-// object" to ask: a bare `new Text()` belongs to whichever document was
-// last displayed in a window, or to one made here when none has been.
+// A window here is not the global object, so there is no "current
+// global object" to consult. A bare `new Text()` belongs to whichever
+// document was last displayed in a window, or to one created here if
+// none has been.
 function currentDocument(): Document {
 	if (currentDocumentForConstruction !== null) {
 		return currentDocumentForConstruction;
@@ -19999,7 +20054,7 @@ const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 
 export class Document extends Node implements globalThis.Document {
-	// Installed on the prototype, where the mount that answers them is.
+	// Installed on the prototype, where the engine that implements them is.
 	declare elementFromPoint: (
 		x: number,
 		y: number,
@@ -20023,14 +20078,15 @@ export class Document extends Node implements globalThis.Document {
 	[kStyleElements]?: number;
 	[kChildren]?: HTMLCollection | null;
 	[kTopLayer]?: Set<Element>;
-	// The reentrancy guards the popover algorithms hold on the document: one
-	// popover opening at a time, and a count of the ones closing under it.
+	// The reentrancy guards the popover algorithms keep on the document:
+	// one popover opening at a time, and a count of the ones closing under
+	// it.
 	[kPopoverShowing]?: boolean;
 	[kPopoverHidingCount]?: number;
 
-	// What a displayed document renders through, from adoptDocument on; a
-	// headless document has none and answers as a document with no browsing
-	// context does.
+	// What a displayed document renders through, set by adoptDocument. A
+	// headless document has none and behaves as a document with no browsing
+	// context.
 	[kTermDOM]?: TermDOM;
 	[kLayout]?: LayoutEngine;
 	[kStyles]?: StyleManager;
@@ -20116,28 +20172,28 @@ export class Document extends Node implements globalThis.Document {
 		return null;
 	}
 
-	// Null until a Window is built over the document; a document nothing
-	// displays answers the way the standards say a document with no browsing
-	// context does. lib.dom intersects Window with typeof globalThis, because
-	// in a browser the window IS the global. Here it is not, and a caller who
-	// reaches through this for a global only a browser has finds nothing.
+	// Null until a Window is built over the document. A document nothing
+	// displays behaves as the standards say a document with no browsing
+	// context does. lib.dom intersects Window with typeof globalThis because
+	// in a browser the window IS the global. Here it is not, so a caller who
+	// reaches through this for a browser-only global finds nothing.
 	get defaultView(): (globalThis.Window & typeof globalThis) | null {
 		return this[kDefaultView]! as
 			(globalThis.Window & typeof globalThis) |
 			null;
 	}
 
-	// The body whenever nothing else holds focus. An element that leaves the
-	// tree takes focus with it and hands it back to the body.
+	// The body whenever nothing else has focus. An element that leaves the
+	// tree loses focus, and focus returns to the body.
 	get activeElement(): globalThis.Element | null {
 		const active = this[kActiveElement]!;
 		if (active === null || !active.isConnected) {
 			this[kActiveElement] = null;
 			return this.body;
 		}
-		// RETARGET to this scope, per HTML: focus inside a shadow tree reads
-		// as the host from the document; the tree's own root answers with
-		// the real element through ShadowRoot.activeElement.
+		// RETARGET to this scope, per HTML. Focus inside a shadow tree reads as
+		// the host from the document. The shadow tree's own root returns the
+		// real element through ShadowRoot.activeElement.
 		let current: Node = active;
 		for (;;) {
 			const root = getRoot(current);
@@ -20161,9 +20217,9 @@ export class Document extends Node implements globalThis.Document {
 		return this[kRegistry]!;
 	}
 
-	// A document with no browsing context has no location, and lib.dom types
-	// this non-null anyway, so an unmounted document answers null under a type
-	// that says otherwise.
+	// A document with no browsing context has no location, but lib.dom
+	// types this non-null, so an unmounted document returns null under a
+	// type that says otherwise.
 	get location(): globalThis.Location {
 		const view = this[kDefaultView]! as Window | null;
 		return (view === null
@@ -20171,9 +20227,9 @@ export class Document extends Node implements globalThis.Document {
 			: view.location) as unknown as globalThis.Location;
 	}
 
-	// head, body and title come from the HTML Standard, not the DOM Standard.
-	// A document with no way to name its body is not a document any DOM test
-	// can be written against.
+	// head, body and title come from the HTML Standard, not the DOM
+	// Standard. They are here because a document with no way to name its
+	// body cannot be used by any DOM test.
 	get head(): globalThis.HTMLHeadElement {
 		const root = this.documentElement as unknown as Element | null;
 		if (root === null) {
@@ -20295,8 +20351,8 @@ export class Document extends Node implements globalThis.Document {
 			appendNode(element, head);
 		}
 		setDescendantText(element, String(value));
-		// A terminal's window title is the document's, set in-band -- while
-		// the terminal is attached and taking input, and not otherwise.
+		// The terminal's window title is the document's, set in-band. This
+		// happens only while the terminal is attached and taking input.
 		const displayed = displayedDocument(this);
 		if (
 			displayed !== undefined &&
@@ -20316,10 +20372,10 @@ export class Document extends Node implements globalThis.Document {
 		return null as unknown as globalThis.HTMLElement;
 	}
 
-	// The legacy HTML document surface. Most of it is answerable rather than
-	// stubbed: the collections are live and filtered the way the spec filters
-	// them, and the colour attributes reflect the body's, which is what they
-	// are defined to do.
+	// The legacy HTML document surface. Most of it is implemented rather
+	// than stubbed. The collections are live and filtered the way the spec
+	// filters them, and the colour attributes reflect the body's, as
+	// specified.
 
 	get anchors(): HTMLCollectionOf<globalThis.HTMLAnchorElement> {
 		return documentCollection(this,
@@ -20355,7 +20411,7 @@ export class Document extends Node implements globalThis.Document {
 		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
 
-	/** An alias of embeds, per the spec. */
+	/** An alias of embeds, per spec. */
 	get plugins(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return this.embeds;
 	}
@@ -20372,15 +20428,15 @@ export class Document extends Node implements globalThis.Document {
 		>;
 	}
 
-	/** Always empty: the applet element was removed from HTML. */
+	/** Always empty. The applet element was removed from HTML. */
 	get applets(): HTMLCollectionOf<globalThis.Element> {
 		return documentCollection(this, () => false) as unknown as HTMLCollectionOf<
 			globalThis.Element
 		>;
 	}
 
-	// The presentational attributes of body, which these are defined to
-	// reflect. A document with no body reads them as the empty string and
+	// The presentational attributes of body, which these reflect by
+	// definition. A document with no body reads them as the empty string and
 	// drops writes, which is what reflecting nothing does.
 
 	get bgColor(): string {
@@ -20423,7 +20479,7 @@ export class Document extends Node implements globalThis.Document {
 		this.body?.setAttribute("vlink", value);
 	}
 
-	/** A terminal shows what it renders, and shows it now. */
+	/** A terminal shows what it renders, immediately. */
 	get hidden(): boolean {
 		return false;
 	}
@@ -20444,15 +20500,15 @@ export class Document extends Node implements globalThis.Document {
 		return false;
 	}
 
-	/** SVG's root, which an HTML document has none of. */
+	/** SVG's root element, which an HTML document does not have. */
 	get rootElement(): globalThis.SVGSVGElement | null {
 		return null;
 	}
 
-	// The rest of lib.dom's Document. What a terminal document can answer, it
-	// answers; the rest throws, so a caller reaching for an API this engine
-	// does not have finds out at the call rather than from a value that looks
-	// plausible.
+	// The rest of lib.dom's Document. What a terminal document can
+	// implement, it implements. The rest throws, so a caller reaching for an
+	// API this engine lacks finds out at the call rather than from a
+	// plausible-looking value.
 
 	get dir(): string {
 		return this.documentElement?.getAttribute("dir") ?? "";
@@ -20462,12 +20518,12 @@ export class Document extends Node implements globalThis.Document {
 		this.documentElement?.setAttribute("dir", value);
 	}
 
-	/** No network fetched this, so nothing referred to it. */
+	/** Nothing fetched this document, so nothing referred to it. */
 	get referrer(): string {
 		return "";
 	}
 
-	/** Not fetched over HTTP, so there is no origin to name. */
+	/** Not fetched over HTTP, so there is no origin. */
 	get domain(): string {
 		return "";
 	}
@@ -20501,11 +20557,11 @@ export class Document extends Node implements globalThis.Document {
 		return null;
 	}
 
-	// CSSOM View §7. Outside quirks mode the root element scrolls the
-	// viewport, always. In quirks mode the body scrolls instead -- unless the
-	// body is itself potentially scrollable, in which case nothing does,
-	// because the scrolling the caller means is happening inside the body
-	// rather than to it.
+	// CSSOM View §7. Outside quirks mode the root element always scrolls
+	// the viewport. In quirks mode the body scrolls instead, unless the body
+	// is itself potentially scrollable, in which case nothing does, because
+	// the scrolling the caller means happens inside the body rather than to
+	// it.
 	get scrollingElement(): globalThis.Element | null {
 		if (this[kMode] !== "quirks") {
 			return this.documentElement;
@@ -20555,7 +20611,7 @@ export class Document extends Node implements globalThis.Document {
 		adoptStyleSheets(this, value);
 	}
 
-	/** Declarative shadow roots included. */
+	/** Parses declarative shadow roots too. */
 	static parseHTMLUnsafe(html: string): Document {
 		return parseHTMLDocument(String(html), "about:blank", true, null);
 	}
@@ -20581,9 +20637,9 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	// There is no document.open() here, so there is never a parse to flush.
-	// A displayed document finalizes as it closes: what it painted is sealed
-	// into the terminal's scrollback, and a later mutation starts a fresh
-	// document below the sealed block.
+	// A displayed document finalizes when it closes: what it painted is
+	// sealed into the terminal's scrollback, and a later mutation starts a
+	// fresh document below the sealed block.
 	close(): void {
 		const displayed = displayedDocument(this);
 		if (displayed !== undefined) {
@@ -20659,10 +20715,10 @@ export class Document extends Node implements globalThis.Document {
 		const name = String(elementName);
 		return new NodeList(
 			() => {
-				// The tree is walked here rather than read out of the collection
-				// of every element: a list built on another live list holds what
-				// that one held, and the two are resynchronized in the order they
-				// were first read.
+				// Walks the tree instead of reading the all-elements
+				// collection. A list built on another live list would see that
+				// list's stale contents, because the two are resynchronized in
+				// the order they were first read.
 				const matches: Node[] = [];
 				const visit = (node: Node): void => {
 					for (
@@ -20930,13 +20986,13 @@ export class Document extends Node implements globalThis.Document {
 		return attribute as unknown as globalThis.Attr;
 	}
 
-	// The event comes back with an empty type and its initialized flag unset,
-	// so it cannot be dispatched until initEvent gives it one.
-	// lib.dom lists every name a browser answers, most of them for interfaces
-	// no terminal has -- an RTCTrackEvent, a WebGLContextEvent -- and the list
-	// below is that one. Which names work is up to the user agent: the DOM
-	// Standard has createEvent throw NotSupportedError for a name its caller's
-	// user agent does not build, and this one builds eighteen.
+	// The event comes back with an empty type and its initialized flag
+	// unset, so it cannot be dispatched until initEvent gives it a type.
+	// lib.dom lists every name a browser supports, most of them for
+	// interfaces no terminal has (RTCTrackEvent, WebGLContextEvent), and the
+	// list below is that one. Which names work is up to the user agent: the
+	// DOM Standard has createEvent throw NotSupportedError for a name the
+	// user agent does not support, and this one supports eighteen.
 	createEvent(eventInterface: "AnimationEvent"): globalThis.AnimationEvent;
 	createEvent(eventInterface: "AnimationPlaybackEvent"): globalThis.AnimationPlaybackEvent;
 	createEvent(eventInterface: "AudioProcessingEvent"): globalThis.AudioProcessingEvent;
@@ -21026,10 +21082,10 @@ export class Document extends Node implements globalThis.Document {
 		return range as unknown as globalThis.Range;
 	}
 
-	// The Selection API hangs this off the Window as well, and returns null
-	// for a document with no browsing context. There is none here to have: the
-	// selection is the document's own, a window's getSelection is a call to
-	// this one, and a document nothing displays still has a selection.
+	// The Selection API also exposes this on the Window, and returns null
+	// for a document with no browsing context. There is no browsing context
+	// here. The selection belongs to the document, a window's getSelection
+	// calls this one, and a document nothing displays still has a selection.
 	getSelection(): globalThis.Selection | null {
 		let selection = this[kSelection]!;
 		if (selection === null) {
@@ -21067,7 +21123,7 @@ export class Document extends Node implements globalThis.Document {
 			throw new TypeError("That is not a node");
 		}
 		// The flat bit is private to the engine, and the default whatToShow is
-		// every bit there is: without this mask, `createTreeWalker(root)` would
+		// every bit there is. Without this mask, `createTreeWalker(root)` would
 		// walk the box tree's view of the document instead of the page's.
 		return new TreeWalker(
 			root as Node,
@@ -21076,7 +21132,7 @@ export class Document extends Node implements globalThis.Document {
 		) as unknown as globalThis.TreeWalker;
 	}
 
-	/** Specified to do nothing at all. */
+	/** Specified to do nothing. */
 	clear(): void {}
 
 	captureEvents(): void {}
@@ -21087,9 +21143,8 @@ export class Document extends Node implements globalThis.Document {
 		return [];
 	}
 
-	// XPath, which this engine does not implement: the selector engine is
-	// what it matches with, and an XPath expression is a language it does
-	// not speak.
+	// XPath is not implemented. The selector engine is the only matcher
+	// this engine has.
 
 	evaluate(): never {
 		throw domError("NotSupportedError", "XPath is not implemented");
@@ -21103,9 +21158,9 @@ export class Document extends Node implements globalThis.Document {
 		throw domError("NotSupportedError", "XPath is not implemented");
 	}
 
-	// Markup arrives whole, so there is no open document to stream into. The
-	// parser builds a tree from a string; document.write appends to a stream
-	// that this engine never opens.
+	// Markup arrives whole, so there is no open document to stream into.
+	// The parser builds a tree from a string. document.write appends to a
+	// stream that this engine never opens.
 
 	open(): never {
 		throw domError("InvalidStateError", "This document is not a stream");
@@ -21119,7 +21174,7 @@ export class Document extends Node implements globalThis.Document {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
 
-	/* Editing commands, which this engine has no editing host for. */
+	// Editing commands. This engine has no editing host for them.
 
 	execCommand(): never {
 		throw domError("NotSupportedError", "execCommand is not implemented");
@@ -21145,7 +21200,7 @@ export class Document extends Node implements globalThis.Document {
 		throw domError("NotSupportedError", "execCommand is not implemented");
 	}
 
-	/* Surfaces that need a window manager, a network, or a compositor. */
+	// APIs that need a window manager, a network, or a compositor.
 
 	caretPositionFromPoint(): never {
 		throw domError(
@@ -21213,7 +21268,7 @@ function validateElementLocalName(name: string): void {
 	}
 }
 
-// The next frame hands the main screen back.
+// The next frame switches back to the main screen.
 function leaveFullscreen(document: Document): Element | null {
 	const stack = fullscreenStackOf(document);
 	if (stack.length === 0) {
@@ -21226,7 +21281,7 @@ function leaveFullscreen(document: Document): Element | null {
 
 // CSSOM View's "potentially scrollable": the element has a box, and
 // neither it nor its parent leaves overflow visible on both axes. A body
-// that scrolls its own content is not the thing that scrolls the viewport.
+// that scrolls its own content is not what scrolls the viewport.
 function isPotentiallyScrollable(body: Element): boolean {
 	const view = body.ownerDocument?.defaultView as
 		{
@@ -21239,7 +21294,8 @@ function isPotentiallyScrollable(body: Element): boolean {
 	if (view?.getComputedStyle === undefined) {
 		return false;
 	}
-	// An absent computed value is the initial one, and overflow's is visible.
+	// An absent computed value is the initial one, and overflow's initial
+	// value is visible.
 	const hidden = (value: string): boolean =>
 		value !== "" && value !== "visible";
 	const scrolls = (element: Element): boolean => {
@@ -21288,12 +21344,12 @@ export interface Document
 		globalThis.Document,
 		Extract<keyof globalThis.Document, `on${string}`> |
 		ParentNodeMixin |
-		// DECLARED, never installed, and the difference matters. document.all
-		// is specified to be a FALSY object, which JavaScript cannot make --
-		// browsers give it an internal slot no script can reach. The selector
-		// engine tests `"all" in context` and then reads `context.all[id]`, so
-		// a property holding undefined throws where an absent one sends it
-		// down the path that works.
+		// DECLARED but never installed, and the difference matters.
+		// document.all is specified to be a FALSY object, which JavaScript
+		// cannot express; browsers give it an internal slot no script can
+		// reach. The selector engine tests `"all" in context` and then reads
+		// `context.all[id]`, so a property holding undefined would throw, while
+		// an absent one takes the path that works.
 		"all"
 	> {
 
@@ -21303,8 +21359,8 @@ export interface Document
 }
 
 /**
- * Last in the top layer is topmost, and only a modal dialog is ever in it
- * by way of `showModal`.
+ * The last entry in the top layer is topmost, and only `showModal` ever
+ * puts a dialog there.
  */
 export function topmostModalDialog(
 	document: globalThis.Document,
@@ -21319,11 +21375,11 @@ export function topmostModalDialog(
 }
 
 /**
- * Hit-test a document-relative point against fresh layout. The one place
+ * Hit-test a document-relative point against fresh layout. Both
  * document.elementFromPoint (which converts its viewport-relative x/y into
- * this space) and the engine's mouse hit-testing (whose points are already
- * document-relative) go through, so a click always tests against fresh
- * layout whichever way it arrived.
+ * this space) and the engine's mouse hit testing (whose points are already
+ * document-relative) go through here, so a click always tests against
+ * fresh layout whichever way it arrived.
  */
 export function elementAtDocumentPoint(
 	document: globalThis.Document,
@@ -21342,8 +21398,8 @@ export function elementAtDocumentPoint(
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
 		displayed[kScreen].scrollTop,
 	);
-	// A pseudo-element is not an element the DOM can hand out: the hit on
-	// the content it generates is a hit on the element it originates from.
+	// The DOM cannot hand out a pseudo-element, so a hit on the content it
+	// generates is a hit on the element it originates from.
 	for (
 		let host = element && getPseudoHost<Element>(element);
 		host;
@@ -21351,11 +21407,11 @@ export function elementAtDocumentPoint(
 	) {
 		element = host;
 	}
-	// RETARGET out of shadow trees, per spec: from outside a shadow tree
-	// (and the document is always outside), the hit is the HOST -- a
-	// click on an input's internal value span is a click on the input.
-	// Without this, closest()/focus logic dead-ends inside the UA
-	// fragment, whose parts have no parentElement chain to climb.
+	// RETARGET out of shadow trees, per spec. From outside a shadow tree
+	// (and the document is always outside), the hit is the HOST, so a click
+	// on an input's internal value span is a click on the input. Without
+	// this, closest() and focus logic dead-end inside the UA fragment, whose
+	// parts have no parentElement chain to climb.
 	while (element) {
 		const root = element.getRootNode();
 		if (root.nodeType === 11 && (root as unknown as ShadowRoot).host) {
@@ -21364,11 +21420,11 @@ export function elementAtDocumentPoint(
 			break;
 		}
 	}
-	// A modal dialog makes the rest of the document inert: a point outside
-	// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
-	// the target a browser reports for a click on the dim area, and the
-	// reason nothing behind a modal can be clicked or focused while it is
-	// up.
+	// A modal dialog makes the rest of the document inert. A point outside
+	// it lands on its backdrop, and a backdrop hit counts as a hit on the
+	// DIALOG. That is the target a browser reports for a click on the dim
+	// area, and why nothing behind a modal can be clicked or focused while
+	// it is open.
 	const modal = topmostModalDialog(document);
 	if (modal !== null && (element === null || !modal.contains(element))) {
 		return modal;
@@ -21376,8 +21432,8 @@ export function elementAtDocumentPoint(
 	return element;
 }
 
-// Hit testing: the point is the viewport's, the answer the engine's. A
-// headless document renders nothing, so nothing is under any point.
+// Hit testing. The point is viewport-relative, and the engine tests it.
+// A headless document renders nothing, so nothing is under any point.
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element | null {
@@ -21385,19 +21441,19 @@ Object.defineProperties(Document.prototype, {
 			if (displayed === undefined) {
 				return null;
 			}
-			// Per CSSOM View, x/y are viewport-relative -- convert to the
-			// document-relative space hit-testing works in, the same
-			// conversion getBoundingClientRect makes in the other direction.
+			// Per CSSOM View, x/y are viewport-relative. Convert to the
+			// document-relative space hit testing works in, the same conversion
+			// getBoundingClientRect makes in the other direction.
 			return elementAtDocumentPoint(this, x, y + displayed[kScreen].scrollTop);
 		},
 		writable: true,
 		configurable: true,
 		enumerable: true,
 	},
-	// The stack CSSOM View asks for, approximated as the hit element and its
-	// flat-tree ancestors: content that overlaps without containing (an
-	// absolutely placed box over a sibling) reports only the winner's chain.
-	// The divergence is declared here rather than hidden.
+	// CSSOM View asks for the full stack. This approximates it as the hit
+	// element and its flat-tree ancestors. Content that overlaps without
+	// containing (an absolutely placed box over a sibling) reports only the
+	// winner's chain. The divergence is declared here rather than hidden.
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
@@ -21443,8 +21499,8 @@ function copyDocumentState(from: Document, to: Document): void {
 	to[kMode] = from[kMode]!;
 }
 
-// The one given, null where the caller asked for no registry, undefined
-// where it did not ask.
+// The registry given, null if the caller asked for no registry,
+// undefined if it did not ask.
 function extractRegistry(
 	options: {customElementRegistry?: unknown} | string | undefined,
 ): CustomElementRegistry | null | undefined {
@@ -21598,9 +21654,9 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// The one document of a realm that has no parser to build one: it carries
-// the realm's registry, exactly as a parsed document does. The
-// DOMImplementation method of the same name does not -- a document an
+// The one document of a realm that no parser builds. It carries the
+// realm's registry, exactly as a parsed document does. The
+// DOMImplementation method of the same name does not: a document an
 // author builds through the DOM has no browsing context, and no registry
 // until one claims it.
 function createHTMLDocument(
@@ -22009,13 +22065,14 @@ function isDocumentScroller(element: Element): boolean {
 
 const scrolledElements = new WeakMap<Document, Set<Element>>();
 
-// A mounted write rounds to whole cells (everything paints on the cell
-// grid, like the document camera), clamps into the range the layout says
-// the box has, stores, and tells the engine what moved so the frame
-// journal prices it. A box whose extent the layout cannot name (a field's
-// value span, an opaque measured run) stores the write unclamped -- the
-// caret-reveal machinery owns those offsets and keeps them sane. A
-// headless write lands and reads back, and nothing moves.
+// A write on a mounted document rounds to whole cells (everything
+// paints on the cell grid, like the document camera), clamps into the
+// range layout reports for the box, stores the value, and tells the
+// engine what moved so the frame journal can price it. A box whose
+// extent layout cannot report (a field's value span, an opaque measured
+// run) stores the write unclamped; the caret-reveal code owns those
+// offsets and keeps them sane. On a headless document the write is
+// stored and read back, and nothing moves.
 function setScrollOffset(
 	element: Element,
 	axis: "left" | "top",
@@ -22056,8 +22113,8 @@ function setScrollOffset(
 		}
 		held.add(element);
 	}
-	// A vertical scroll is a band the terminal may be able to shift for us;
-	// a horizontal one is not, and dirties the frame like anything else.
+	// A vertical scroll is a band the terminal may be able to shift for us.
+	// A horizontal one is not, and dirties the frame like anything else.
 	if (axis === "top") {
 		recordScrollBand(displayed, document, element, next - previous);
 	} else {
@@ -22067,13 +22124,13 @@ function setScrollOffset(
 }
 
 /**
- * Pull every held scroll offset back into its box's scrollable range
- * against fresh layout: a mutation that shrinks a box's content must not
+ * Pull every stored scroll offset back into its box's scrollable range
+ * against fresh layout. A mutation that shrinks a box's content must not
  * leave the box scrolled past what remains. Offsets are written to the
- * store directly -- the accessor's own clamp would re-enter the engine's
- * flush -- and a change takes the dirty bit, drops whatever band was
- * standing, and asks for the repaint: a clamp is not a band, since it moves
- * offsets the journal already priced, and can move several boxes at once.
+ * store directly, because the accessor's own clamp would re-enter the
+ * engine's flush. A change sets the dirty bit, drops any pending band,
+ * and requests a repaint. A clamp is not a band: it moves offsets the
+ * journal already priced, and can move several boxes at once.
  */
 export function clampScrollOffsets(document: globalThis.Document): void {
 	const displayed = displayedDocument(document);
@@ -22116,10 +22173,11 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 }
 
-// The one box whose vertical scroll this frame can name as a band: rows
-// the terminal may shift instead of repainting. Repeats on one box add up.
-// A second box arriving means no single band describes the frame, so the
-// record gives way to the screen's dirty bit.
+// The one box whose vertical scroll this frame can express as a band,
+// meaning rows the terminal may shift instead of repainting. Repeated
+// scrolls on one box add up. A second box scrolling means no single band
+// describes the frame, so the record is dropped in favor of the screen's
+// dirty bit.
 const scrollBands = new WeakMap<Document, {element: Element; delta: number}>();
 
 function recordScrollBand(
@@ -22139,7 +22197,7 @@ function recordScrollBand(
 	}
 }
 
-/** Consume the frame's scroll band, if one survived to the paint. */
+/** Take the frame's scroll band, if one survived until paint. */
 export function takeScrollBand(
 	document: globalThis.Document,
 ): {element: globalThis.Element; delta: number} | null {
@@ -22334,7 +22392,7 @@ function locateNamespacePrefix(
 function locateNamespace(node: Node, prefix: string | null): string | null {
 	switch (node.nodeType) {
 		case ELEMENT_NODE: {
-			// The two prefixes the XML specifications bind for good.
+			// The two prefixes the XML specifications bind permanently.
 			if (prefix === "xml") {
 				return XML_NAMESPACE;
 			}
@@ -22404,8 +22462,8 @@ function nodeIndex(node: Node): number {
 	return index;
 }
 
-// Zero for a doctype, the length of the data for character data, the
-// number of children for everything else.
+// Zero for a doctype, the data length for character data, and the
+// child count for everything else.
 function nodeLength(node: Node): number {
 	if (node.nodeType === DOCUMENT_TYPE_NODE) {
 		return 0;
@@ -22442,7 +22500,7 @@ function precedesSibling(node: Node, other: Node): boolean {
 	return false;
 }
 
-// The two nodes have the same root.
+// Both nodes must have the same root.
 function comparePoints(
 	nodeA: Node,
 	offsetA: number,
@@ -22465,8 +22523,8 @@ function comparePoints(
 	) {
 		depth++;
 	}
-	// One node is an ancestor of the other: the ancestor's offset is compared
-	// against the index of the child it holds the other node under.
+	// One node is an ancestor of the other. Compare the ancestor's offset
+	// against the index of the child that contains the other node.
 	if (depth === chainA.length) {
 		return nodeIndex(chainB[depth]) < offsetA ? AFTER : BEFORE;
 	}
@@ -22521,8 +22579,8 @@ const kStartOffset = Symbol("range start offset");
 const kEndNode = Symbol("range end node");
 const kEndOffset = Symbol("range end offset");
 
-// A node inserted before a child pushes along every boundary point in the
-// parent past that child.
+// A node inserted before a child shifts every boundary point in the
+// parent that is past that child.
 function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
 	const index = nodeIndex(child);
 	forEachLiveRange(parent, (range) => {
@@ -22535,8 +22593,8 @@ function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
 	});
 }
 
-// A boundary point inside the removed node collapses onto the node's own
-// position, and one after it in the parent moves back by one.
+// A boundary point inside the removed node collapses to the node's own
+// position. A point after it in the parent moves back by one.
 function liveRangePreRemoveSteps(node: Node): void {
 	const parent = node[kParent]! as Node;
 	const index = nodeIndex(node);
@@ -22558,7 +22616,7 @@ function liveRangePreRemoveSteps(node: Node): void {
 	});
 }
 
-// A point inside the replaced run collapses to its start, and one after
+// A point inside the replaced run collapses to its start. A point after
 // the run moves by the difference in length.
 function liveRangeReplaceDataSteps(
 	node: CharacterData,
@@ -22590,8 +22648,8 @@ function liveRangeReplaceDataSteps(
 	});
 }
 
-// A point past the split moves into the new node, and one that sat just
-// after the node in its parent moves past the new node as well.
+// A point past the split moves into the new node. A point that sat just
+// after the node in its parent moves past the new node too.
 function liveRangeSplitSteps(
 	node: Text,
 	newNode: Text,
@@ -22617,9 +22675,9 @@ function liveRangeSplitSteps(
 	});
 }
 
-// For each text node normalize folds into the one before it: a point in
-// the folded node, or one that named it in its parent, moves to where its
-// data landed.
+// Runs for each text node that normalize merges into the one before it.
+// A point in the merged node, or one that referenced it in its parent,
+// moves to where its data ended up.
 function liveRangeNormalizeSteps(
 	node: Text,
 	currentNode: Text,
@@ -22810,7 +22868,7 @@ function setRangePoints(
 	rangeBoundaryPointsChanged(range, "both");
 }
 
-/** Any node but a doctype. */
+/** Any node except a doctype. */
 function assertBoundaryNode(node: unknown): asserts node is Node {
 	if (!(node instanceof Node)) {
 		throw new TypeError("That is not a node");
@@ -22881,8 +22939,8 @@ function createFragment(document: Document): DocumentFragment {
 	return fragment;
 }
 
-// The one the range starts inside of, the ones it holds whole, and the
-// one it ends inside of.
+// The child the range starts inside, the children it contains whole,
+// and the child it ends inside.
 function extractionShape(range: Range): {
 	commonAncestor: Node;
 	firstPartiallyContained: Node | null;
@@ -22973,7 +23031,7 @@ class Range extends AbstractRange implements globalThis.Range {
 	static readonly END_TO_END = END_TO_END;
 	static readonly END_TO_START = END_TO_START;
 
-	// Installed on the prototype, where the mount that measures them is.
+	// Installed on the prototype, where the engine that measures them is.
 	declare getBoundingClientRect: () => globalThis.DOMRect;
 	declare getClientRects: () => globalThis.DOMRectList;
 	[kRangeSelection]?: Selection | null;
@@ -23162,9 +23220,9 @@ class Range extends AbstractRange implements globalThis.Range {
 		insertIntoRange(this, node);
 	}
 
-	// The context is the start node's element (a text node's parent; the body
-	// when the start is the document), exactly the context innerHTML would
-	// give the same markup.
+	// The context is the start node's element (a text node's parent, or
+	// the body when the start is the document), exactly the context
+	// innerHTML would use for the same markup.
 	createContextualFragment(markup: string): DocumentFragment {
 		const start = this[kStartNode]!;
 		let context: Element | null =
@@ -23240,7 +23298,7 @@ class Range extends AbstractRange implements globalThis.Range {
 	}
 
 	detach(): void {
-		// The spec keeps this as a no-op.
+		// The spec makes this a no-op.
 	}
 
 	isPointInRange(node: Node, offset: number): boolean {
@@ -23551,9 +23609,9 @@ Object.defineProperty(Range.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// The start container, or the element holding it when it is a text node.
-// Whether the camera comes off is a fact about the box the range sits in,
-// not about the range.
+// The start container, or the element containing it when it is a text
+// node. Whether to subtract the camera depends on the box the range is
+// in, not on the range.
 function rangeAnchor(range: Range): Element | null {
 	const container = range.startContainer;
 	return container.nodeType === ELEMENT_NODE
@@ -23561,9 +23619,9 @@ function rangeAnchor(range: Range): Element | null {
 		: ((container as unknown as Node).parentElement as Element | null);
 }
 
-// Range geometry answers from the same layout the element members read, and
-// converts identically. The caret and selection painters read the layout's
-// document-relative rects directly, the way scrollIntoView does.
+// Range geometry reads the same layout the element members read, and
+// converts the same way. The caret and selection painters read the
+// layout's document-relative rects directly, as scrollIntoView does.
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
@@ -23600,8 +23658,8 @@ Object.defineProperties(Range.prototype, {
 	},
 });
 
-// The selection whose range this is takes a selectionchange event from
-// every change the Range API makes to the boundary points.
+// Every change the Range API makes to the boundary points fires a
+// selectionchange event on the selection this range belongs to.
 function rangeBoundaryPointsChanged(
 	range: Range,
 	which: "start" | "end" | "both",
@@ -23615,8 +23673,8 @@ function rangeBoundaryPointsChanged(
 /** At most one per task. */
 function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
-	// covers, so the repaint is asked for here -- before the coalescing
-	// guard below, which drops the second move of a task but not its paint.
+	// covers, so the repaint is requested here, before the coalescing guard
+	// below. That guard drops the second move in a task but not its paint.
 	const displayed = displayedDocument(document);
 	if (displayed !== undefined) {
 		displayed[kScreen].invalidate();
@@ -23632,8 +23690,9 @@ function scheduleSelectionChange(document: Document): void {
 	}, 0);
 }
 
-// A shadow root sits at its host, before the host's children, so that a
-// boundary point in a shadow tree orders against one in the light tree.
+// A shadow root sits at its host, before the host's children, so a
+// boundary point in a shadow tree can be ordered against one in the
+// light tree.
 function composedParent(node: Node): Node | null {
 	const parent = node[kParent]!;
 	if (parent !== null) {
@@ -23660,7 +23719,7 @@ function composedIndex(node: Node): number {
 	return node[kParent] === null && isShadowRoot(node) ? -1 : nodeIndex(node);
 }
 
-// Counts a shadow tree as part of the tree its host is in.
+// Treats a shadow tree as part of the tree its host is in.
 function compareComposedPoints(
 	nodeA: Node,
 	offsetA: number,
@@ -23694,7 +23753,7 @@ function compareComposedPoints(
 		: AFTER;
 }
 
-// A collapsed live range is how a selection holds a boundary point.
+// A selection stores each boundary point as a collapsed live range.
 function livePoint(node: Node, offset: number): Range {
 	const point = new Range();
 	setRangePoints(point, node, offset, node, offset);
@@ -23723,9 +23782,10 @@ class Selection implements globalThis.Selection {
 	// The range the Range API sees, which lives in a single tree.
 	declare [kRange]?: Range | null;
 
-	// The composed boundary points, in tree order and each held as a
-	// collapsed live range so that a tree mutation moves it. A selection that
-	// crosses a shadow boundary keeps both of these while its range collapses.
+	// The composed boundary points, in tree order, each stored as a
+	// collapsed live range so tree mutations move it. A selection that
+	// crosses a shadow boundary keeps both of these while its range
+	// collapses.
 	declare [kStart]?: Range | null;
 	declare [kEnd]?: Range | null;
 	declare [kDirection]?: "forwards" | "backwards" | "directionless";
@@ -24127,21 +24187,21 @@ class Selection implements globalThis.Selection {
 		);
 	}
 
-	// The motion a keyboard makes, in the one place a page can ask for it.
-	// `alter` is "move" (collapse where the motion lands) or "extend" (take
-	// the focus there and leave the anchor). A "move" over a range starts from
-	// the edge it is heading for, so a forward character move over a selection
-	// collapses to its end without going further -- what browsers do. "left"
-	// and "right" mean "backward" and "forward": a right-to-left run's visual
-	// order is not followed.
+	// Keyboard-style motion, in the one place a page can request it.
+	// `alter` is "move" (collapse where the motion lands) or "extend" (move
+	// the focus there and leave the anchor). A "move" over a range starts
+	// from the edge it is heading toward, so a forward character move over a
+	// selection collapses to its end without going further, as browsers do.
+	// "left" and "right" mean "backward" and "forward"; a right-to-left
+	// run's visual order is not followed.
 	//
-	// "character" and "word" are answerable from the text. "line" and
-	// "lineboundary" are laid-out lines rather than a property of the string,
-	// so they need a document mounted in a terminal and do nothing without
-	// one; a line's ends are its first and last text in tree order, which is
-	// its visual order only where the text runs left to right. "sentence",
-	// "paragraph" and their boundaries are not implemented. Anything
-	// unrecognized does nothing, as in a browser.
+	// "character" and "word" are computed from the text. "line" and
+	// "lineboundary" depend on laid-out lines rather than the string, so
+	// they need a document mounted in a terminal and do nothing without one.
+	// A line's ends are its first and last text in tree order, which is its
+	// visual order only for left-to-right text. "sentence", "paragraph" and
+	// their boundaries are not implemented. Anything unrecognized does
+	// nothing, as in a browser.
 	modify(alter?: string, direction?: string, granularity?: string): void {
 		const how = String(alter ?? "move").toLowerCase();
 		const where = String(direction ?? "forward").toLowerCase();
@@ -24164,7 +24224,7 @@ class Selection implements globalThis.Selection {
 				: forward
 					? ([range[kEndNode]!, range[kEndOffset]!] as [Node, number])
 					: ([range[kStartNode]!, range[kStartOffset]!] as [Node, number]);
-		// Collapsing a range by a character is the whole motion: the caret
+		// Collapsing a range by a character is the whole motion. The caret
 		// lands on the edge the direction points at, not one character past it.
 		const to =
 			!extending && !range.collapsed && unit === "character"
@@ -24186,12 +24246,11 @@ class Selection implements globalThis.Selection {
 	}
 }
 
-// Character and word motion are string questions, and a caret crosses
-// from one text node into the next without noticing, so both are asked of
-// the document's painted text as one string rather than of a node at a
-// time. Built per call: a selection moves at the speed of a keystroke, and
-// a cache of the document's text would have every mutation to invalidate
-// it.
+// Character and word motion are string operations, and a caret crosses
+// from one text node into the next without noticing, so both work on the
+// document's painted text as one string rather than one node at a time.
+// Built per call. A selection moves at keystroke speed, and a cache of
+// the document's text would need invalidating on every mutation.
 interface SelectionText {
 	text: string;
 	parts: Array<{node: Text; start: number}>;
@@ -24222,9 +24281,9 @@ function paintsText(
 	return false;
 }
 
-// The selectable filter asks per text node's parent rather than pruning
-// the subtree, because user-select: none does not inherit -- a `text`
-// descendant inside a `none` ancestor selects again.
+// The selectable filter checks each text node's parent rather than
+// pruning the subtree, because user-select: none does not inherit. A
+// `text` descendant inside a `none` ancestor is selectable again.
 function selectionTextNodes(
 	document: Document,
 	displayed: DisplayedDocument | undefined,
@@ -24267,10 +24326,10 @@ function flattenSelectionText(nodes: Text[]): SelectionText {
 	return {text, parts};
 }
 
-// Null for a point in nothing painted. An element boundary point sits
-// before the child at its offset, so it lands on the first painted text at
-// or after that child -- and past the last child, at the end of the
-// element's own text.
+// Null for a point in unpainted content. An element boundary point sits
+// before the child at its offset, so it maps to the first painted text
+// at or after that child, or past the last child, to the end of the
+// element's text.
 function getSelectionIndex(
 	run: SelectionText,
 	node: Node,
@@ -24304,8 +24363,8 @@ function getSelectionIndex(
 	return last;
 }
 
-// An offset on the seam between two nodes belongs to the earlier one's
-// end, which is the same position as the later one's start.
+// An offset on the seam between two nodes maps to the earlier node's
+// end, which is the same position as the later node's start.
 function selectionPointAt(
 	run: SelectionText,
 	index: number,
@@ -24320,8 +24379,8 @@ function selectionPointAt(
 	return last === undefined ? null : [last.node, last.node[kData]!.length];
 }
 
-// Two fragments on the same row are the same line however many nodes
-// they came from, so a row is keyed by where it sits.
+// Two fragments on the same row are the same line no matter how many
+// nodes they came from, so lines are keyed by row.
 function selectionLines(
 	run: SelectionText,
 	layout: LayoutEngine,
@@ -24347,9 +24406,9 @@ function selectionLines(
 	return [...rows.values()].sort((a, b) => a.y - b.y);
 }
 
-// A caret exactly at a soft wrap belongs to the next line's start -- both
-// lines claim the offset, and the later one wins, the same rule the
-// textarea's vertical motion follows.
+// A caret exactly at a soft wrap belongs to the next line's start. Both
+// lines claim the offset and the later one wins, the same rule the
+// textarea's vertical motion uses.
 function selectionLineAt(lines: SelectionLine[], index: number): number {
 	for (let i = 0; i < lines.length; i++) {
 		if (index <= lines[i].end) {
@@ -24375,10 +24434,10 @@ function getCaretColumn(
 	return rect === undefined ? null : rect.x;
 }
 
-// Past the first or last line the motion spends itself on that line's own
-// end, as a browser's arrow key does. The column is a screen column and
-// the target is a screen row, so the landing offset is the layout's own
-// hit test -- the same answer a click there would give.
+// Moving up from the first line or down from the last line goes to that
+// line's end, as a browser's arrow key does. The column is a screen
+// column and the target is a screen row, so the landing offset comes
+// from the layout's hit test, the same result a click there would give.
 function selectionLineMove(
 	document: Document,
 	run: SelectionText,
@@ -24430,8 +24489,8 @@ function modifiedPoint(
 			return null;
 		}
 	} else {
-		// Lines are read back off the layout in the same turn, so whatever the
-		// page just mutated has to be laid out before they are asked for.
+		// Lines are read from the layout in the same turn, so whatever the page
+		// just mutated has to be laid out first.
 		layout.calculateLayout();
 	}
 	const run = flattenSelectionText(selectionTextNodes(document, displayed));
@@ -24482,9 +24541,9 @@ function inDocument(selection: Selection, node: Node): boolean {
 	return shadowIncludingRoot(node) === selection[kDocument]!;
 }
 
-// The selection has a range while its range is in the document, a shadow
-// tree of the document included. A range that has left the document is
-// not one the selection answers with.
+// The selection has a range while its range is in the document,
+// including a shadow tree of the document. A range that has left the
+// document is not returned.
 function documentRange(selection: Selection): Range | null {
 	const range = selection[kRange]!;
 	if (range === null) {
@@ -24543,8 +24602,8 @@ function associate(
 	scheduleSelectionChange(selection[kDocument]!);
 }
 
-// The composed point the change moved follows it, and a range that leaves
-// the document takes the selection with it.
+// The composed point that the change moved follows it. A range that
+// leaves the document takes the selection with it.
 function selectionChanged(
 	selection: Selection,
 	which: "start" | "end" | "both",
@@ -24626,18 +24685,18 @@ export const NodeFilter = {
 Object.freeze(NodeFilter);
 
 /**
- * A private `whatToShow` bit asking for the FLAT tree rather than the node
- * tree: shadow content in its slot's place, and pseudo-element slots among
- * the children they belong beside.
+ * A private `whatToShow` bit that requests the FLAT tree rather than the
+ * node tree: shadow content in its slot's place, and pseudo-element nodes
+ * among the children they belong beside.
  *
- * It rides in `whatToShow` because that is already the argument saying
- * what a walk is interested in, and because the bit is inert in the only
- * test that reads it: acceptance asks `1 << (nodeType - 1)`, and the
- * highest node type there is (NOTATION, 12) reaches 0x800, so nothing
- * below can ever produce this one. It is private because the flat tree is
- * the box tree's view, not a thing a page should be able to ask for --
- * `Document.createTreeWalker` masks it off, which also stops the SHOW_ALL
- * default from turning every walk flat.
+ * It lives in `whatToShow` because that argument already says what a walk
+ * is interested in, and because the bit is inert in the only test that
+ * reads it: acceptance computes `1 << (nodeType - 1)`, and the highest
+ * node type (NOTATION, 12) reaches 0x800, so no node type can produce this
+ * bit. It is private because the flat tree is the box tree's view, not
+ * something a page should be able to request. `Document.createTreeWalker`
+ * masks it off, which also stops the SHOW_ALL default from making every
+ * walk flat.
  */
 export const SHOW_FLAT = 0x1000;
 
@@ -24738,7 +24797,7 @@ class NodeIterator {
 	}
 
 	detach(): void {
-		// The spec keeps this as a no-op.
+		// The spec makes this a no-op.
 	}
 }
 
@@ -24771,9 +24830,9 @@ function traverse(iterator: NodeIterator, forward: boolean): Node | null {
 			}
 		}
 		if (filterNode(state, node as Node) === FILTER_ACCEPT) {
-			// A filter that removed the very node it was filtering leaves
-			// the reference where the pre-removing steps put it: a node
-			// outside the root can never be the reference.
+			// A filter that removed the node it was filtering leaves the
+			// reference where the pre-removing steps put it. A node outside the
+			// root can never be the reference.
 			if (isInclusiveAncestor(iterator[kRoot]!, node as Node)) {
 				iterator[kReference] = node as Node;
 				iterator[kPointerBefore] = before;
@@ -24907,7 +24966,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 	}
 }
 
-// A walk's whatToShow never changes after it is constructed, so the choice
+// A walk's whatToShow never changes after construction, so the choice
 // is made once, there, and every hop below is a field read.
 function linksFor(whatToShow: number): TreeLinks {
 	return (whatToShow & SHOW_FLAT) !== 0 ? FLAT_LINKS : NODE_LINKS;
@@ -24956,10 +25015,10 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 	return null;
 }
 
-// DOM Standard, "traverse siblings". A walk rooted at a node never visits
-// that node's siblings: returning one escapes the subtree the walk was
-// scoped to, which is how an empty inline element came to measure the
-// width of the sibling after it.
+// DOM Standard, "traverse siblings". A walk rooted at a node never
+// visits that node's siblings. Returning one would escape the subtree
+// the walk was scoped to, which is how an empty inline element once
+// measured the width of the sibling after it.
 function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 	let node = walk[kCurrent]!;
 	if (node === walk[kRoot]!) {
@@ -25009,11 +25068,11 @@ function walkParent(walk: TreeWalker): Node | null {
 	return null;
 }
 
-// Down to the first child, else on to the next sibling, else up until
-// some level has one. The climb asks each level for its OWN next sibling,
-// starting at the node itself, which is what lets a hop answer for the
-// level it is asked about -- an element's ::after follows the last of its
-// content, and the flat hops hand it back at that step.
+// Down to the first child, else to the next sibling, else up until some level
+// has one. The climb asks each level for its OWN next sibling, starting at the
+// node itself. That lets a hop return the result for the level it is asked
+// about: an element's ::after follows the last of its content, and the flat
+// hops return it at that step.
 function walkNext(walk: TreeWalker): Node | null {
 	let node = walk[kCurrent]!;
 	let result = FILTER_ACCEPT;
@@ -25096,13 +25155,13 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// Hover is not a mutation and no attribute records it: the engine writes
-// it here as motion reports arrive, and the `:hover` resolver reads it.
-// Absent means nothing is hovered -- a document without motion reporting,
-// or a pointer that left.
+// Hover is not a mutation and no attribute records it. The engine
+// writes it here as motion reports arrive, and the `:hover` resolver
+// reads it. Absent means nothing is hovered, because the document has no
+// motion reporting or the pointer left.
 const hoveredElements = new WeakMap<Document, Element>();
 
-/** What `:hover` matches from. */
+/** Record what `:hover` should match. */
 export function setHoveredElement(
 	document: globalThis.Document,
 	element: globalThis.Element | null,
@@ -25117,9 +25176,9 @@ export function setHoveredElement(
 const focusVisibleDocuments = new WeakMap<Document, boolean>();
 
 /**
- * A focus ring belongs to how the focus was moved -- a key shows one, a
- * click does not -- so the input handler sets this, and the cascade
- * repaints when it moves. Answers whether it changed.
+ * A focus ring depends on how focus was moved: a key shows one, a click
+ * does not. The input handler sets this, and the cascade repaints when it
+ * changes. Returns whether it changed.
  */
 export function setDocumentFocusVisible(
 	document: globalThis.Document,
@@ -25133,7 +25192,7 @@ export function setDocumentFocusVisible(
 	return true;
 }
 
-/** Or a host above the focused area. */
+/** Also true for a host above the focused element. */
 function hasFocus(element: Element): boolean {
 	const active = element[kDocument]![kActiveElement]!;
 	if (active === null) {
@@ -25161,7 +25220,7 @@ function partNames(element: Element): string[] {
 	return value === null ? [] : splitOnASCIIWhitespace(value);
 }
 
-/** What `:target` matches. */
+/** Whether `:target` matches. */
 function isTargetElement(element: Element): boolean {
 	const document = element[kDocument]!;
 	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
@@ -25180,13 +25239,13 @@ function isTargetElement(element: Element): boolean {
 	try {
 		decoded = decodeURIComponent(fragment);
 	} catch (_err) {
-		// A fragment that is not valid percent-encoding names itself.
+		// A fragment that is not valid percent-encoding is used as-is.
 	}
 	const id = element.getAttribute("id");
 	if (id === decoded || id === fragment) {
 		return true;
 	}
-	// The `a` element's name attribute is the old spelling of an anchor.
+	// The `a` element's name attribute is the old way to write an anchor.
 	return (
 		element.namespaceURI === HTML_NAMESPACE &&
 		element.localName === "a" &&
@@ -25270,7 +25329,7 @@ function isDefaultControl(element: Element): boolean {
 	return false;
 }
 
-/** What `:open` matches. */
+/** Whether `:open` matches. */
 function isOpenElement(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
@@ -25288,10 +25347,10 @@ function isOpenElement(element: Element): boolean {
 	}
 }
 
-// What a selector cannot read off a node: a state the user agent holds, a
-// link the flat tree draws that the node tree does not, or a fact about
-// the document an element belongs to. A headless tree answers through the
-// same functions -- the states simply say no.
+// State a selector cannot read from the node itself: state the user
+// agent keeps, a flat-tree link the node tree lacks, or a fact about the
+// element's document. A headless tree uses the same functions, and the
+// states simply return false.
 function shadowHostOf(root: Node): Element | null {
 	return isShadowRoot(root) ? (root as ShadowRoot)[kHost]! : null;
 }
@@ -25308,8 +25367,8 @@ function inQuirksMode(node: Node): boolean {
 	return node[kDocument]![kMode] === "quirks";
 }
 
-// Over the element or anything it contains in the FLAT tree, which slot
-// projection reorders past what the node tree records.
+// True for the element and anything it contains in the FLAT tree, which
+// slot projection reorders relative to the node tree.
 function isHovered(element: Element): boolean {
 	const document = element[kDocument]!;
 	for (
@@ -25329,8 +25388,8 @@ function isFocusVisible(element: Element): boolean {
 	return (focusVisibleDocuments.get(document) ?? true) && hasFocus(element);
 }
 
-// The climb keeps going past every shadow host above the focused element,
-// which is where the node tree's parent chain runs out.
+// The climb continues past every shadow host above the focused element,
+// which is where the node tree's parent chain ends.
 function hasFocusWithin(element: Element): boolean {
 	let node: Element | null = element[kDocument]![kActiveElement]!;
 	while (node !== null) {
@@ -25393,7 +25452,7 @@ function isIndeterminateControl(element: Element): boolean {
 	);
 }
 
-/** A selector the matcher will not read is a SyntaxError, per the DOM. */
+/** A selector the matcher rejects becomes a SyntaxError, per the DOM. */
 function asSyntaxError(error: unknown): unknown {
 	return error instanceof SelectorError
 		? domError("SyntaxError", error.message)
@@ -25407,14 +25466,14 @@ interface ParseAttribute {
 	prefix?: string;
 }
 
-// A fragment parsed into an element belongs to that element's registry,
-// and a document's own markup to the document's; the variable holds
-// whichever parse is running.
+// A fragment parsed into an element uses that element's registry, and a
+// document's own markup uses the document's. This holds whichever parse
+// is running.
 let parseRegistry: CustomElementRegistry | null | undefined = undefined;
 
-// Every node the adapter creates belongs to the document it was made for,
-// and every insertion runs the same algorithm a script's appendChild runs,
-// so a parsed tree and a scripted tree are the same tree.
+// Every node the adapter creates belongs to the document it was made
+// for, and every insertion runs the same algorithm appendChild runs, so a
+// parsed tree and a scripted tree are the same tree.
 // The return type is parse5's structural TreeAdapter, spelled by the object.
 // eslint-disable-next-line @b9g/explicit-declaration-return-type
 function treeAdapterFor(document: Document | null) {
@@ -25604,8 +25663,8 @@ function treeAdapterFor(document: Document | null) {
 }
 
 // A declarative shadow root that asks to be scoped has no registry until
-// one claims it, and neither does anything the parser wrote inside it. A
-// shadow tree further down keeps whatever it was given.
+// one claims it, and neither does anything the parser put inside it. A
+// shadow tree further down keeps whatever registry it was given.
 function clearRegistry(node: Node): void {
 	node[kRegistry] = null;
 	for (let child = node[kFirstChild]!; child !== null; child = child[kNext]!) {
@@ -25613,13 +25672,13 @@ function clearRegistry(node: Node): void {
 	}
 }
 
-// The HTML parser attaches a shadow root the moment it sees a template
-// whose shadowrootmode names a mode; parse5 has no such step, so the
-// templates land as templates and this walk converts them afterwards.
-// Depth-first over the tree it is given and then over each shadow tree it
-// creates, which reaches a nested declarative root inside one. A template
-// whose parent cannot host a shadow tree, or already hosts one, stays a
-// template -- the parser's own error handling.
+// The HTML parser attaches a shadow root as soon as it sees a template
+// whose shadowrootmode names a mode. parse5 has no such step, so the
+// templates land as templates and this walk converts them afterwards. It
+// goes depth-first over the given tree and then over each shadow tree it
+// creates, which reaches a nested declarative root. A template whose
+// parent cannot host a shadow tree, or already hosts one, stays a
+// template, which is the parser's own error handling.
 function attachDeclarativeShadowRoots(root: Node): void {
 	for (const child of childNodeArray(root)) {
 		if (child.nodeType !== ELEMENT_NODE) {
@@ -25661,7 +25720,8 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			template.hasAttribute("shadowrootdelegatesfocus"),
 			"named",
 			// A declarative shadow root that names a registry attribute is
-			// scoped to one it has not been given yet, so it starts with none.
+			// scoped to a registry it has not been given yet, so it starts with
+			// none.
 			template.hasAttribute("shadowrootcustomelementregistry")
 				? null
 				: globalCustomElements,
@@ -25685,9 +25745,9 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	return true;
 }
 
-// The one document of this realm: it carries the realm's registry, and
-// every document an author builds carries none until a registry claims
-// it, exactly as a document with no browsing context does.
+// Builds the one document of this realm. It carries the realm's
+// registry. Every document an author builds carries none until a
+// registry claims it, exactly like a document with no browsing context.
 function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
@@ -25713,8 +25773,8 @@ function parseHTMLDocument(
 	return document;
 }
 
-// A declarative shadow root only becomes one where the caller allowed it:
-// innerHTML does not, and setHTMLUnsafe and parseHTMLUnsafe do.
+// A declarative shadow root becomes one only if the caller allowed it.
+// innerHTML does not; setHTMLUnsafe and parseHTMLUnsafe do.
 function parseFragmentHTML(
 	markup: string,
 	context: Element,
@@ -25751,8 +25811,9 @@ class XMLWellFormednessError extends Error {}
 const PARSERERROR_NAMESPACE =
 	"http://www.mozilla.org/newlayout/xml/parsererror.xml";
 
-// Characters the XML Char production excludes: most C0 controls, the two
-// permanent non-characters, and a surrogate half without its partner.
+// Characters the XML Char production excludes: most C0 controls, the
+// two permanent non-characters, and a surrogate half without its
+// partner.
 const XML_FORBIDDEN_CHAR =
 	/[\0-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
@@ -25785,7 +25846,7 @@ function isXMLChar(code: number): boolean {
 	);
 }
 
-// Chained to the bindings above. The root scope binds the two prefixes
+// Chained to the enclosing scope. The root scope binds the two prefixes
 // XML reserves.
 interface XMLNamescope {
 	parent: XMLNamescope | null;
@@ -25809,14 +25870,14 @@ function lookupXMLPrefix(
 	return undefined;
 }
 
-// A recursive-descent parser over the whole source string, building the
-// tree with the internal constructors the HTML tree adapter uses. It
-// enforces well-formedness -- one root, matching tags, bound prefixes,
-// defined entities -- and throws XMLWellFormednessError where the XML or
-// Namespaces recommendations call a document not well-formed. A DTD
-// internal subset is skipped rather than processed, so an entity it
-// declares is still reported as undefined, as a non-validating processor
-// may.
+// A recursive-descent parser over the whole source string. It builds
+// the tree with the same internal constructors the HTML tree adapter
+// uses. It enforces well-formedness (one root, matching tags, bound
+// prefixes, defined entities) and throws XMLWellFormednessError where
+// the XML or Namespaces recommendations say a document is not
+// well-formed. A DTD internal subset is skipped rather than processed, so
+// an entity it declares is still reported as undefined, as a
+// non-validating processor may do.
 function parseXMLIntoDocument(source: string, document: Document): void {
 	const input = source.replace(/\r\n?/g, "\n");
 	let pos = 0;
@@ -25940,7 +26001,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		fail("An attribute value is missing its closing quote");
 	}
 
-	// An element takes the default namespace; an unprefixed attribute takes
+	// An element takes the default namespace. An unprefixed attribute takes
 	// none.
 	function resolveQualifiedName(
 		qualifiedName: string,
@@ -26057,7 +26118,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		}
 	}
 
-	// Honors the subset's quotes and comments.
+	// Respects quotes and comments inside the subset.
 	function skipInternalSubset(): void {
 		while (pos < input.length) {
 			const char = input[pos];
@@ -26095,7 +26156,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 		fail("The doctype's internal subset is missing its closing ]");
 	}
 
-	// Quoted, and taken as-is with no references.
+	// Quoted, and taken as-is with no reference expansion.
 	function parseDoctypeLiteral(): string {
 		const quote = input[pos];
 		if (quote !== '"' && quote !== "'") {
@@ -26413,7 +26474,7 @@ export class DOMParser {
 	}
 }
 
-// A well-formed document becomes the tree it describes, and anything else
+// A well-formed document becomes the tree it describes. Anything else
 // becomes the spec's error document, whose root is a parsererror element
 // holding the failure.
 function parseXMLDocument(source: string, contentType: string): Document {
@@ -26515,10 +26576,10 @@ function attributeSerializedName(attribute: Attr): string {
 	return attribute[kQualifiedName]!;
 }
 
-// A shadow root is written out as the template the parser reads back, but
-// only where the caller asked for it: getHTML's options say whether a
-// serializable root counts and name the closed roots to include.
-// innerHTML asks for none, so a shadow tree stays invisible to it.
+// A shadow root is written out as the template the parser reads back,
+// but only where the caller asked for it. getHTML's options say whether
+// a serializable root counts and name the closed roots to include.
+// innerHTML asks for none, so shadow trees are invisible to it.
 function serializeFragment(
 	node: Node,
 	serializableShadowRoots: boolean,
@@ -26603,8 +26664,8 @@ function serializeNode(
 				return html;
 			}
 			// The parser drops a newline that opens a pre, textarea or listing,
-			// so serializing one writes a second newline for the parser to eat
-			// and the first to survive the round trip.
+			// so serializing one writes a second newline for the parser to eat,
+			// and the first survives the round trip.
 			if (
 				namespace === HTML_NAMESPACE &&
 				NEWLINE_EATING_ELEMENTS.has(tagName)
@@ -26658,11 +26719,11 @@ function serializeNode(
 	}
 }
 
-// The list is the [CEReactions] extended attribute's, read off the
-// interfaces this DOM has: anything that can insert, remove, rename or
-// restyle a node is here, and nothing else is. A member missing from it
-// would run an author's callback in the middle of the mutation that caused
-// it instead of after it.
+// The list comes from the [CEReactions] extended attribute on the
+// interfaces this DOM has. Anything that can insert, remove, rename or
+// restyle a node is here, and nothing else. A member missing from this
+// list would run an author's callback in the middle of the mutation that
+// caused it instead of after it.
 ceReactions(Node.prototype, [
 	"appendChild",
 	"insertBefore",
@@ -26837,13 +26898,12 @@ ceReactions(HTMLDialogElement.prototype, [
 	"showModal",
 ]);
 
-// GlobalEventHandlers and DocumentAndElementEventHandlers are included by
-// the three element interfaces HTML, SVG and MathML define and by
-// Document; the WindowEventHandlers set belongs to the window, which the
-// engine builds, and is forwarded from `body` and `frameset` to it. Only
-// the content-attribute half of the feature is missing: `onclick="..."`
-// in markup is a function compiled from source, and this DOM never
-// executes script.
+// GlobalEventHandlers and DocumentAndElementEventHandlers are included
+// by the three element interfaces (HTML, SVG, MathML) and by Document.
+// WindowEventHandlers belongs to the window, which the engine builds, and
+// `body` and `frameset` forward to it. Only the content-attribute half of
+// the feature is missing: `onclick="..."` in markup is a function
+// compiled from source, and this DOM never executes script.
 for (const prototype of [
 	HTMLElement.prototype,
 	SVGElement.prototype,
@@ -26862,14 +26922,15 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-// The state feeds a mounted document accepts only from its engine: what
-// the handle writes, no one else can.
-// Re-evaluators poked when the viewport moves. The lists are this
-// module's; the resize path is the one place a terminal viewport changes,
-// so the engine says when.
+// State a mounted document accepts only from its engine.
+// Re-evaluators called when the viewport changes. The lists belong to
+// this module. The resize path is the one place a terminal viewport
+// changes, so the engine decides when to call them.
 const mediaQueryUpdaters = new WeakMap<Document, Set<() => void>>();
 
-/** Re-ask every live media query list, firing "change" where one flipped. */
+/**
+ * Re-evaluate every live media query list, firing "change" where one flipped.
+ */
 export function refreshMediaQueries(document: globalThis.Document): void {
 	const updaters = mediaQueryUpdaters.get(document as Document);
 	if (updaters === undefined) {
@@ -26881,7 +26942,7 @@ export function refreshMediaQueries(document: globalThis.Document): void {
 }
 
 /**
- * Once per document: a second engine would build every widget a second
+ * Once per document. A second engine would build every widget a second
  * time, and the two would disagree about what is on screen.
  */
 export function adoptDocument(
@@ -26905,9 +26966,9 @@ export function adoptDocument(
 		mounted,
 		watchHoverListeners(mounted, () => render(termDOM)),
 	);
-	// Observation is the document's own: mutations fan out to the cascade,
-	// the layout tree and the UA default actions here, and the engine is
-	// only asked for the frame that shows the result.
+	// The document owns the observer. Mutations fan out to the cascade, the
+	// layout tree and the UA default actions here, and the engine is only
+	// asked to render the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
 		handleMutationRecords(mounted, mutations);
 		void render(termDOM);
@@ -26924,10 +26985,10 @@ export function adoptDocument(
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
 
-// Everything that isn't painting: the flat-tree memo, UA widget upgrades,
-// the cascade, the layout tree and the focus default actions -- in the
-// same order everywhere, since mutations reach here from the observer and
-// from synchronous drains alike.
+// Everything except painting: the flat-tree memo, UA widget upgrades,
+// the cascade, the layout tree and the focus default actions, always in
+// the same order, because mutations reach here both from the observer
+// and from synchronous drains.
 function handleMutationRecords(
 	document: Document,
 	mutations: MutationRecord[],
@@ -26936,14 +26997,14 @@ function handleMutationRecords(
 	if (displayed === undefined) {
 		return;
 	}
-	// Any observed mutation can move a node in the flat tree; drop the
+	// Any observed mutation can move a node in the flat tree. Drop the
 	// memoized composition links before anything reads through them.
 	displayed[kLayout].invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
-	// examples) re-assign className/style with identical values on every
-	// update; per spec each assignment fires a record, and a class
-	// record rebuilds the whole layout tree from body -- the difference
+	// examples) reassign className/style with identical values on every
+	// update. Per spec each assignment fires a record, and a class record
+	// rebuilds the whole layout tree from body. That is the difference
 	// between a keystroke costing a counter re-measure and costing the
 	// document. A->B->A inside one unpainted batch also nets out: the
 	// intermediate value never rendered, so skipping is correct, and a
@@ -26958,11 +27019,11 @@ function handleMutationRecords(
 	if (relevant.length === 0) {
 		return;
 	}
-	// Upgrade UA form controls the moment they connect -- before layout
-	// reads their shadow and before the painter walks it -- the way a
+	// Upgrade UA form controls the moment they connect, before layout reads
+	// their shadow tree and before the painter walks it. That is how a
 	// browser upgrades a custom element on connect, not lazily at first
-	// paint. Every insert -- observer-driven or drained from a synchronous
-	// flush -- passes through here.
+	// paint. Every insert, whether observer-driven or drained from a
+	// synchronous flush, passes through here.
 	for (const record of relevant) {
 		if (record.type !== "childList") {
 			continue;
@@ -26980,14 +27041,14 @@ function handleMutationRecords(
 	dropUnfocusableFocus(document, displayed);
 }
 
-// An element with `autofocus` gets focused as soon as it's connected, the
-// same as a browser does at initial page load -- generalized to any
-// insertion, which is what lets a dynamically-created element (an edit
-// input that only exists while editing) still autofocus itself. Scoped to
-// newly added nodes, not later attribute changes, matching the spec's
-// "insertion" trigger. If a batch inserts more than one autofocus element
-// the later wins -- the same ambiguity a real page with more than one
-// already has.
+// An element with `autofocus` gets focused as soon as it connects, as a
+// browser does at initial page load. This generalizes it to any
+// insertion, so a dynamically created element (an edit input that only
+// exists while editing) can autofocus itself. Scoped to newly added
+// nodes, not later attribute changes, matching the spec's "insertion"
+// trigger. If a batch inserts more than one autofocus element, the later
+// one wins, the same ambiguity a real page with more than one already
+// has.
 function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	for (const record of mutations) {
 		for (const node of record.addedNodes) {
@@ -27003,10 +27064,10 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	}
 }
 
-// A mutation that made the focused element unfocusable -- an inert
-// ancestor appearing above it, a move into an inert parent, a display:none
-// anywhere on its flat chain -- unfocuses it, blur events and restyle
-// included.
+// A mutation that made the focused element unfocusable (an inert
+// ancestor appearing above it, a move into an inert parent, display:none
+// anywhere on its flat chain) unfocuses it, including blur events and
+// restyle.
 function dropUnfocusableFocus(
 	document: Document,
 	displayed: DisplayedDocument,
@@ -27041,9 +27102,9 @@ function dropUnfocusableFocus(
 }
 
 /**
- * Drain the document's pending mutation records into the engines, without
- * laying out or painting. The takeRecords() steals them from the observer
- * callback, so a caller that never paints must ask for the frame itself.
+ * Deliver the document's pending mutation records to the engines without
+ * laying out or painting. takeRecords() takes them from the observer
+ * callback, so a caller that never paints must request the frame itself.
  */
 export function applyMutations(document: globalThis.Document): boolean {
 	const observer = engineObservers.get(document as Document);
@@ -27059,11 +27120,11 @@ export function applyMutations(document: globalThis.Document): boolean {
 }
 
 /**
- * Settle what a geometry read must see: pending mutations drained and
- * layout brought up to date, synchronously. A geometry read needs fresh
- * layout, not fresh pixels -- painting stays with the frame loop, but the
- * drain steals records from the observer callback that would have painted
- * them, so the frame is asked for on the caller's behalf.
+ * Synchronously settle what a geometry read must see: pending mutations
+ * delivered and layout brought up to date. A geometry read needs fresh
+ * layout, not fresh pixels. Painting stays with the frame loop, but the
+ * drain takes records from the observer callback that would have painted
+ * them, so this requests the frame on the caller's behalf.
  */
 export function flushLayout(node: globalThis.Node): boolean {
 	const displayed = displayedDocument(node);
@@ -27089,7 +27150,8 @@ export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounts.get(document as Document)?.() ?? 0;
 }
 
-// A document that has been adopted: it renders, and knows through what.
+// A document that has been adopted. It renders, and knows what it
+// renders through.
 type DisplayedDocument = Document & {
 	[kTermDOM]: TermDOM;
 	[kLayout]: LayoutEngine;
@@ -27119,10 +27181,10 @@ function clipboardDenied(why: string): DOMException {
 
 const kItemEntries = Symbol("entries");
 
-// Blob is the platform's, which Node and Bun both have as a global. OSC 52
-// carries one payload a terminal treats as text, so text/plain is the only
-// type a write sends and the only type a read answers with; an item may
-// hold others, and the clipboard passes over them.
+// Blob is the platform's, which Node and Bun both provide as a global.
+// OSC 52 carries one payload the terminal treats as text, so text/plain
+// is the only type a write sends and the only type a read returns. An
+// item may hold other types, and the clipboard skips them.
 class ClipboardItem {
 	declare [kItemEntries]?: Map<string, Promise<Blob>>;
 
@@ -27181,13 +27243,13 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
 
 const kClipboardDocument = Symbol("the document whose clipboard this is");
 
-// writeText() carries the text to the system clipboard over OSC 52, which
-// travels in-band -- across SSH too. Terminals without OSC 52 ignore it;
-// there is no way to know, so the promise resolves when the transport has
-// the bytes. readText() asks the same way (OSC 52 with `?` for the
-// payload) and resolves with what comes back. write() and read() are the
-// same two round trips over a ClipboardItem. An EventTarget because the
-// interface says so; the user agent fires nothing at it.
+// writeText() sends the text to the system clipboard over OSC 52, which
+// travels in-band, including across SSH. Terminals without OSC 52 ignore
+// it, and there is no way to detect that, so the promise resolves when
+// the transport has the bytes. readText() queries the same way (OSC 52
+// with `?` as the payload) and resolves with the reply. write() and
+// read() are the same two round trips over a ClipboardItem. This is an
+// EventTarget because the interface says so; nothing fires events at it.
 class Clipboard extends EventTarget {
 	declare [kClipboardDocument]?: Document;
 
@@ -27208,8 +27270,9 @@ class Clipboard extends EventTarget {
 		const terminal = reachClipboard(this[kClipboardDocument]!, "reads");
 		const text = await terminal.queryClipboard();
 		if (text === null) {
-			// Silence is a refusal: most terminals gate clipboard reads on
-			// their own configuration and answer nothing when they are off.
+			// Silence means refusal. Most terminals gate clipboard reads on
+			// their own configuration and reply with nothing when reads are
+			// off.
 			throw clipboardDenied("the terminal did not answer the clipboard query");
 		}
 		return text;
@@ -27244,15 +27307,15 @@ class Clipboard extends EventTarget {
 }
 
 // The clipboard is the user's to grant, so it is reachable only from a
-// trusted activation-triggering event while it is being dispatched -- a
-// keystroke, a mouse press or release, a click, a paste. Stricter than a
-// browser on purpose: a browser's transient activation outlives the
-// dispatch that granted it, because its window is a span of time, so a
-// handler there may await and still write the clipboard. Here the gate is
-// the dispatch itself. A timer, a microtask, a resolved fetch and an event
-// an application dispatched itself are all outside. Every caller is async,
-// so the throw reaches the page as the rejection the Clipboard API
-// promises.
+// trusted activation-triggering event while it is being dispatched: a
+// keystroke, a mouse press or release, a click, a paste. This is
+// stricter than a browser on purpose. A browser's transient activation
+// outlives the dispatch that granted it because its window is a span of
+// time, so a handler there may await and still write the clipboard. Here
+// the gate is the dispatch itself. A timer, a microtask, a resolved fetch
+// and an event the application dispatched itself are all outside it.
+// Every caller is async, so the throw reaches the page as the rejection
+// the Clipboard API specifies.
 function reachClipboard(document: Document, what: string): TerminalExchange {
 	const displayed = displayedDocument(document);
 	if (
@@ -27275,10 +27338,10 @@ Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// The permission names the clipboard here answers for, and the ones the
-// Permissions API defines that a terminal has nothing behind: no camera, no
-// microphone, no location, no notification surface, so the answer is denied
-// rather than a prompt nobody could ever answer.
+// The permission names the clipboard handles. The other names the
+// Permissions API defines have nothing behind them in a terminal (no
+// camera, microphone, location or notification surface), so they are
+// denied rather than left at a prompt nobody could respond to.
 const CLIPBOARD_PERMISSIONS = new Set(["clipboard-read", "clipboard-write"]);
 const UNBACKED_PERMISSIONS = new Set([
 	"accelerometer",
@@ -27309,11 +27372,10 @@ const UNBACKED_PERMISSIONS = new Set([
 const kPermissionName = Symbol("name");
 const kPermissionDocument = Symbol("the document this permission stands over");
 
-// `state` is read at the moment it is asked, and for the clipboard that
-// answer is granted while a gesture is being dispatched and prompt outside
-// one. Nothing fires `change`: the gesture opens and closes inside a
-// single dispatch, and a listener would be told about a state that had
-// already passed.
+// `state` is read when asked. For the clipboard it is granted while a
+// gesture is being dispatched and prompt otherwise. Nothing fires
+// `change`, because the gesture opens and closes inside one dispatch,
+// and a listener would be told about a state that had already passed.
 class PermissionStatus extends EventTarget {
 	declare [kPermissionName]?: string;
 	declare [kPermissionDocument]?: Document | null;
@@ -27350,7 +27412,7 @@ class PermissionStatus extends EventTarget {
 	}
 }
 
-// The one event handler attribute a permission status carries.
+// The one event handler attribute a permission status has.
 installEventHandler(PermissionStatus.prototype, "onchange");
 
 Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
@@ -27358,7 +27420,7 @@ Object.defineProperty(PermissionStatus.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// What the gate above answers, asked by name.
+// Exposes the gate above by permission name.
 class Permissions extends EventTarget {
 	declare [kPermissionDocument]?: Document;
 
@@ -27400,8 +27462,8 @@ const kWindowLocation = Symbol("the window's location");
 const kLocationWindow = Symbol("the window a location belongs to");
 const kStrings = Symbol("the strings a list holds");
 
-// The only one here is Location.ancestorOrigins, which is empty because a
-// terminal document is nobody's frame.
+// The only one here is Location.ancestorOrigins, which is empty because
+// a terminal document is not in a frame.
 class DOMStringList {
 	[index: number]: string;
 	declare [kStrings]?: readonly string[];
@@ -27432,11 +27494,12 @@ Object.defineProperty(DOMStringList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// Every reading member is live: it re-reads the document's URL rather
-// than caching what it was built with, because that URL is the truth and a
-// copy would go stale. Every WRITING member navigates, and there is
-// nowhere to navigate to -- one document per window and no way to fetch
-// another -- so each throws rather than pretending it moved.
+// Every reading member is live. It re-reads the document's URL instead
+// of caching the value it was built with, because the document's URL is
+// the source of truth and a copy would go stale. Every WRITING member
+// navigates, and there is nowhere to navigate to (one document per
+// window, no way to fetch another), so each throws rather than
+// pretending it moved.
 class Location {
 	declare [kLocationWindow]?: Window;
 
@@ -27515,7 +27578,7 @@ class Location {
 		throw noNavigation();
 	}
 
-	/** A terminal document is nobody's frame, so it has no ancestors. */
+	/** A terminal document is not in a frame, so it has no ancestors. */
 	get ancestorOrigins(): DOMStringList {
 		return constructInternal(() => new DOMStringList([]));
 	}
@@ -27542,10 +27605,9 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// A caller can hand a document any string for its URL, so this answers
-// null where that string is not one the URL Standard can take apart, and
-// each member above falls back to what a browser answers for an opaque
-// location.
+// A caller can give a document any string as its URL, so this returns
+// null when the URL Standard cannot parse it, and each member above falls
+// back to what a browser returns for an opaque location.
 function locationURL(location: Location): URL | null {
 	return URL.parse(location.href);
 }
@@ -27557,21 +27619,21 @@ function noNavigation(): DOMException {
 	);
 }
 
-// The window a document is displayed in: an EventTarget whose members are
-// the browsing context's, answered by the engine the document is mounted
-// on. A window exists mounted -- a headless document has none -- so the
-// members below may expect a mount, and degrade the way the document's
-// own do when one is absent: a viewport of no size, a camera at the
-// origin, a query that matches nothing.
-// Keyed by the handle requestAnimationFrame returned so
-// cancelAnimationFrame can actually cancel. Fired by the engine once the
-// frame that includes their pending mutations has been written.
+// The window a document is displayed in: an EventTarget whose members
+// are the browsing context's, implemented by the engine the document is
+// mounted on. A window exists only when mounted (a headless document has
+// none), so the members below may expect a mount, and degrade the way
+// the document's own do without one: a viewport of no size, a camera at
+// the origin, a query that matches nothing.
+// Keyed by the handle requestAnimationFrame returned, so
+// cancelAnimationFrame can cancel. The engine fires them once the frame
+// containing their pending mutations has been written.
 const frameCallbacks = new WeakMap<
 	Document,
 	{next: number; held: Map<number, FrameRequestCallback>}
 >();
 
-// Returns whether new callbacks arrived while they ran: a callback that
+// Returns whether new callbacks arrived while these ran. A callback that
 // schedules another frame must tick the engine's render loop again.
 function holdFrameCallback(
 	document: Document,
@@ -27587,8 +27649,8 @@ function holdFrameCallback(
 	return handle;
 }
 
-// A fullscreen transition resolves its promise here, once the render that
-// carries the switch has been written.
+// A fullscreen transition resolves its promise here, once the render
+// that carries the switch has been written.
 function frameSettled(
 	document: Document,
 	displayed: DisplayedDocument,
@@ -27623,14 +27685,14 @@ export class Window extends EventTarget {
 	constructor(document: Document) {
 		super();
 		this.document = document;
-		// Displaying a document is what gives it a defaultView, and the
-		// displayed document is the one bare node constructors belong to.
+		// Displaying a document gives it a defaultView, and the displayed
+		// document is the one bare node constructors use.
 		document[kDefaultView] = this;
 		ambientDocument = document;
 	}
 
-	// One object per window, as the HTML Standard has it: the document's own
-	// location is this one, and a caller who holds on to it holds on to the
+	// One object per window, as the HTML Standard says. The document's
+	// location is this same object, so a caller who holds on to it holds the
 	// same one.
 	get location(): Location {
 		let location = this[kWindowLocation]!;
@@ -27645,9 +27707,9 @@ export class Window extends EventTarget {
 		return globalCustomElements;
 	}
 
-	// The terminal is the window and the screen both, so the inner and outer
-	// pairs are one size. Readonly like a browser's, and LIVE: a SIGWINCH
-	// moves them, and a value frozen at construction would have reported the
+	// The terminal is both the window and the screen, so the inner and
+	// outer pairs report one size. Readonly like a browser's, and LIVE: a
+	// SIGWINCH changes them. A value frozen at construction would report the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
 		const displayed = displayedDocument(this.document);
@@ -27667,16 +27729,16 @@ export class Window extends EventTarget {
 		return this.innerHeight;
 	}
 
-	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
-	// the anchor after the window is built.
+	// screenTop is readonly like a browser's, and LIVE. Cursor detection
+	// moves the anchor after the window is built.
 	get screenTop(): number {
 		const displayed = displayedDocument(this.document);
 		return displayed === undefined ? 0 : displayed[kScreen].documentTop;
 	}
 
-	// Standard window scrolling, mapped onto the camera: scrollY is how far
-	// the camera has moved down the document, scrollBy moves it. A terminal
-	// document never scrolls sideways, so the X pair reads 0.
+	// Standard window scrolling, mapped onto the camera. scrollY is how far
+	// the camera has moved down the document, and scrollBy moves it. A
+	// terminal document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
 		const displayed = displayedDocument(this.document);
 		return displayed === undefined ? 0 : displayed[kScreen].scrollTop;
@@ -27694,8 +27756,8 @@ export class Window extends EventTarget {
 		return this.scrollX;
 	}
 
-	// Built on first read and kept, so the clipboard a page holds on to is
-	// the clipboard it keeps holding.
+	// Built on first read and kept, so the clipboard a page holds on to
+	// stays the same object.
 	get navigator(): Navigator {
 		let navigator = this[kNavigator]!;
 		if (navigator === undefined) {
@@ -27721,11 +27783,11 @@ export class Window extends EventTarget {
 		return navigator;
 	}
 
-	// scrollTo/scroll set the camera to an absolute position -- the state
-	// scrollY reads and scrollBy moves relatively. documentElement/body's
-	// scrollTop is that value again, standard DOM (window.scrollY ===
-	// document.documentElement.scrollTop always): one camera, four ways to
-	// read or move it.
+	// scrollTo/scroll set the camera to an absolute position, the same
+	// state scrollY reads and scrollBy moves relatively. documentElement and
+	// body's scrollTop expose the same value, as in standard DOM
+	// (window.scrollY === document.documentElement.scrollTop always). One
+	// camera, four ways to read or move it.
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
 		const displayed = displayedDocument(this.document);
 		if (displayed === undefined) {
@@ -27756,7 +27818,7 @@ export class Window extends EventTarget {
 		void render(displayed[kTermDOM]);
 	}
 
-	// requestAnimationFrame is the only way to await a painted frame: it
+	// requestAnimationFrame is the only way to await a painted frame. It
 	// schedules a render and fires the callback once that render completes,
 	// so "await a frame" always means the frame carrying the pending
 	// mutations has landed.
@@ -27780,12 +27842,13 @@ export class Window extends EventTarget {
 		return this.document.getSelection();
 	}
 
-	// The terminal is the one screen, and queries answer through the SAME
-	// evaluator @media stylesheet rules use, so a script and a stylesheet can
-	// never disagree about the viewport. The list is live: a resize (SIGWINCH
-	// is this screen's window resize) re-asks and fires "change" when the
-	// answer flips -- the browser contract, which is what makes responsive
-	// terminal layouts a matchMedia listener instead of a bespoke resize hook.
+	// The terminal is the one screen, and queries use the SAME evaluator
+	// @media stylesheet rules use, so a script and a stylesheet can never
+	// disagree about the viewport. The list is live: a resize (SIGWINCH is
+	// this screen's window resize) re-evaluates and fires "change" when the
+	// answer flips. That is the browser contract, and it is what makes
+	// responsive terminal layouts a matchMedia listener instead of a custom
+	// resize hook.
 	matchMedia(query: string): MediaQueryList {
 		const media = String(query);
 		const displayed = displayedDocument(this.document);
@@ -27793,14 +27856,14 @@ export class Window extends EventTarget {
 			displayed !== undefined &&
 			displayed[kStyles].mediaQueryMatches(media);
 		const list = new EventTarget();
-		// `matches` reads live; this holds the value the last "change" event
+		// `matches` reads live. This holds the value the last "change" event
 		// reported.
 		let notified = matches();
 		installEventHandler(list, "onchange");
 		Object.defineProperties(list, {
 			media: {get: () => media, enumerable: true, configurable: true},
 			matches: {get: matches, enumerable: true, configurable: true},
-			// The pre-2020 MediaQueryList API, still what much deployed code
+			// The pre-2020 MediaQueryList API, which much deployed code still
 			// calls: plain aliases for the EventTarget pair.
 			addListener: {
 				value: (callback: ((event: Event) => void) | null) => {
@@ -27835,13 +27898,13 @@ export class Window extends EventTarget {
 		return list as unknown as MediaQueryList;
 	}
 
-	// Closes the terminal session as it would close a browser tab.
-	// beforeunload is the door out, and a listener that cancels keeps the
-	// session. A browser answers a canceled beforeunload with a prompt of its
-	// own; a terminal has no UA chrome to prompt with, so cancellation stops
-	// the teardown, leaving the app to ask "are you sure?" however it likes
-	// and to close again once the user says yes. Every close asks: the event
-	// carries nothing from the last one.
+	// Closes the terminal session the way closing a browser tab would.
+	// beforeunload runs first, and a listener that cancels keeps the
+	// session. A browser answers a canceled beforeunload with its own prompt.
+	// A terminal has no UA chrome to prompt with, so cancellation stops the
+	// teardown and leaves the app to ask "are you sure?" however it likes
+	// and to call close() again once the user confirms. Every close asks
+	// again; the event carries nothing from the last one.
 	close(): void {
 		const displayed = displayedDocument(this.document);
 		if (displayed === undefined) {
@@ -27869,10 +27932,10 @@ function watchMediaQuery(document: Document, update: () => void): void {
 	updaters.add(update);
 }
 
-// A window carries both event handler mixins the HTML Standard gives it:
-// GlobalEventHandlers, which it shares with elements and documents, and
-// WindowEventHandlers, whose members exist as attributes whether or not this
-// engine has anything that fires them.
+// A window has both event handler mixins the HTML Standard gives it:
+// GlobalEventHandlers, shared with elements and documents, and
+// WindowEventHandlers, whose members exist as attributes whether or not
+// this engine fires them.
 installEventHandlers(Window.prototype, GLOBAL_EVENT_HANDLERS);
 installEventHandlers(Window.prototype, WINDOW_EVENT_HANDLERS);
 
@@ -27929,8 +27992,8 @@ type SelectorSurface = "closest" | "matches" | "webkitMatchesSelector";
 // RUNTIME: installed from the tables.
 type FullscreenSurface = "onfullscreenchange" | "onfullscreenerror";
 
-// The one place an interface joins the window: a class that is not listed
-// here is not visible to script, whatever this module exports.
+// The one place an interface joins the window. A class not listed here
+// is not visible to script, whatever this module exports.
 const platform = {
 	AbstractRange,
 	AnimationEvent,
@@ -28090,10 +28153,10 @@ type WindowEventHandlerAttributes = Omit<
 
 /**
  * A terminal has one screen and no browsing context, so the window is a
- * plain object rather than a global: this file's interfaces, the scrolling
- * and sizing a display answers, and the handful of APIs an author reaches
- * for through `window`. The member types are the host's, which is what a
- * caller outside this file holds them as.
+ * plain object rather than a global. It exposes this file's interfaces,
+ * the scrolling and sizing the display implements, and the handful of
+ * APIs an author reaches for through `window`. The member types are the
+ * host's, which is how a caller outside this file sees them.
  */
 export interface EngineWindow
 	extends globalThis.EventTarget,
@@ -28215,15 +28278,15 @@ export interface EngineWindow
 	IntersectionObserver: typeof globalThis.IntersectionObserver;
 }
 
-// What a window is born with is its interfaces and the timers any script
-// expects to find; a display fills in the rest -- sizing, scrolling,
-// animation frames, the clipboard -- as it mounts the document.
+// A window starts with its interfaces and the timers any script expects
+// to find. The display fills in the rest (sizing, scrolling, animation
+// frames, the clipboard) as it mounts the document.
 function buildWindow(document: Document): EngineWindow {
 	const window = new Window(document) as unknown as Record<string, unknown>;
 	Object.assign(window, platform, {
-		// The platform's, which is the one the DOM and the CSSOM throw: a
-		// caller's `instanceof DOMException` has to name the same class the
-		// engine builds its errors out of.
+		// The platform's DOMException, which is the one the DOM and the CSSOM
+		// throw. A caller's `instanceof DOMException` has to match the class
+		// the engine builds its errors from.
 		DOMException: PlatformDOMException,
 		setTimeout: globalThis.setTimeout.bind(globalThis),
 		clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -28236,24 +28299,24 @@ function buildWindow(document: Document): EngineWindow {
 	return window as unknown as EngineWindow;
 }
 
-/** A document parsed from markup, displayed in a window of its own. */
+/** Parse a document from markup and display it in a window of its own. */
 export function createDocumentWindow(html: string, url?: string): EngineWindow {
 	return buildWindow(parseHTMLDocument(html, url));
 }
 
-// CSS Selectors: the language, and the matcher a selector compiles into.
-// A selector is parsed by css-tree, checked against the pseudo-classes and
-// pseudo-elements this engine knows, and compiled into one closure per
-// compound selector. The closures read a node's own structure and the
-// state the document holds around it: which element the pointer is over,
-// which one has focus, what a shadow root's host is, whether a dialog is
-// modal. A bug in a pseudo-class is a bug in one function rather than in a
-// string of generated source. bidi-js reads the first strong character
-// `:dir(auto)` turns on. Matching runs right to left, from the subject
-// compound outwards, which is what makes a long descendant selector cheap:
-// the first compound that fails ends the walk.
+// CSS Selectors: the language, and the matcher a selector compiles to.
+// css-tree parses the selector. It is checked against the pseudo-classes
+// and pseudo-elements this engine knows and compiled into one closure per
+// compound selector. The closures read the node's structure and the
+// document state around it: which element the pointer is over, which has
+// focus, what a shadow root's host is, whether a dialog is modal. A bug
+// in a pseudo-class is a bug in one function rather than in generated
+// source. bidi-js finds the first strong character for `:dir(auto)`.
+// Matching runs right to left, from the subject compound outwards, which
+// makes a long descendant selector cheap: the first compound that fails
+// ends the walk.
 
-// A selector naming anything else does not parse, which is what makes
+// A selector naming anything else does not parse, which makes
 // `:gibberish` invalid rather than merely unmatched.
 const PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"active",
@@ -28366,7 +28429,7 @@ const PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"view-transition-old",
 ]);
 
-// Written only in functional form -- `::part(name)`, never a bare
+// Written only in functional form: `::part(name)`, never a bare
 // `::part`.
 const FUNCTIONAL_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"highlight",
@@ -28380,7 +28443,7 @@ const FUNCTIONAL_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"view-transition-old",
 ]);
 
-/** May also be written with one colon, from CSS 2. */
+/** May also be written with one colon, per CSS 2. */
 export const LEGACY_PSEUDO_ELEMENTS: ReadonlySet<string> = new Set([
 	"after",
 	"before",
@@ -28451,7 +28514,7 @@ const ARGUMENTLESS_PSEUDO_CLASSES: ReadonlySet<string> = new Set([
 	"window-inactive",
 ]);
 
-/** A selector AST node, as the CSS parser hands it over. */
+/** A selector AST node, as the CSS parser produces it. */
 export interface SelectorNode {
 	type: string;
 	name?: string | {type: string; name: string};
@@ -28474,15 +28537,15 @@ export function getChildren(node: SelectorNode): SelectorNode[] {
 }
 
 /**
- * The identifier the source escapes spell, ASCII-lowercased:
- * `::\000041fter` and `::AFTER` are both `::after`, and an escape is part
- * of the spelling, not of the name.
+ * The identifier the source escapes spell, ASCII-lowercased.
+ * `::\000041fter` and `::AFTER` are both `::after`. An escape is part of
+ * the spelling, not of the name.
  */
 export function pseudoName(name: string): string {
 	return CSSTree.ident.decode(name).toLowerCase();
 }
 
-/** The namespaces a selector's prefixes are read against. */
+/** The namespaces a selector's prefixes resolve against. */
 export interface SelectorNamespaces {
 	default: string | null;
 	prefixes: Map<string, string>;
@@ -28493,7 +28556,7 @@ export const NO_NAMESPACES: SelectorNamespaces = {
 	prefixes: new Map(),
 };
 
-/** A selector this engine will not accept, thrown out of compilation. */
+/** A selector this engine rejects, thrown from compilation. */
 export class SelectorError extends Error {}
 
 function no(): boolean {
@@ -28502,10 +28565,10 @@ function no(): boolean {
 
 interface MatchState {
 
-	// The node `:scope` names, or null when the selector names none.
+	// The node `:scope` refers to, or null when the selector uses none.
 	scope: Node | null;
 
-	// The shadow root a selector was written inside, for `:host`.
+	// The shadow root the selector was written inside, for `:host`.
 	shadow: Node | null;
 
 	// The node a relative selector inside `:has()` is anchored to.
@@ -28520,10 +28583,10 @@ interface CompiledCompound {
 
 	tests: Predicate[];
 
-	// The element the compound is really written about, when a pseudo-element
-	// moves the subject: `slot::slotted(span)` selects the span and describes
-	// the slot, `host::part(x)` selects the part and describes the host. The
-	// combinator to the left steps from what this answers.
+	// The element the compound really describes, when a pseudo-element
+	// moves the subject. `slot::slotted(span)` selects the span and
+	// describes the slot. `host::part(x)` selects the part and describes the
+	// host. The combinator to the left steps from what this returns.
 	origin: ((element: Element, state: MatchState) => Element | null) | null;
 
 	originTests: Predicate[];
@@ -28539,14 +28602,14 @@ interface CompiledComplex {
 	combinators: Combinator[];
 }
 
-/** A selector list, ready to be asked about an element. */
+/** A compiled selector list, ready to match against an element. */
 export interface CompiledSelector {
 	list: CompiledComplex[];
 }
 
-// CSS Syntax ends an unterminated string, function or block at end of
-// file rather than throwing it away, so `[align="center"` and
-// `::slotted(foo` are both selectors. css-tree wants them closed.
+// CSS Syntax closes an unterminated string, function or block at end of
+// file rather than rejecting it, so `[align="center"` and
+// `::slotted(foo` are both selectors. css-tree needs them closed.
 function closeAtEndOfInput(text: string): string {
 	const open: string[] = [];
 	let quote = "";
@@ -28555,7 +28618,8 @@ function closeAtEndOfInput(text: string): string {
 		const char = text[index];
 		if (char === "\\") {
 			// An escape with nothing left to escape stands for U+FFFD, so the
-			// name it is part of is a name and the selector is a selector.
+			// name it is part of is still a name and the selector is still a
+			// selector.
 			dangling = index === text.length - 1;
 			index++;
 			continue;
@@ -28584,9 +28648,9 @@ function closeAtEndOfInput(text: string): string {
 	);
 }
 
-// `div,` and a bare `,` both have an empty selector. css-tree drops the
-// empty one and reads the rest, and a selector list that cannot be read is
-// not a selector list.
+// `div,` and a bare `,` both contain an empty selector. css-tree drops
+// the empty one and parses the rest, but a selector list that cannot be
+// parsed is not a selector list.
 function hasEmptySelector(text: string): boolean {
 	let depth = 0;
 	let quote = "";
@@ -28618,19 +28682,20 @@ function hasEmptySelector(text: string): boolean {
 	return empty(text.length);
 }
 
-// For shape alone: a prefix means whatever the sheet declares -- not this
-// reading's business -- and `&` stands where a rule encloses it.
+// Checks shape only. A prefix means whatever the sheet declares, which
+// is not this check's concern, and `&` is allowed where a rule encloses
+// it.
 const GRAMMAR_ONLY: CompileOptions = {
 	namespaces: null,
 	pseudoElements: true,
 	nesting: true,
-	// `@scope` lets a rule open with a combinator. One that does so anywhere
-	// else reads as a selector and then selects nothing, since there is no
+	// `@scope` lets a rule open with a combinator. Anywhere else such a
+	// rule parses as a selector and then selects nothing, since there is no
 	// root for it to be relative to.
 	relative: true,
 };
 
-// Newlines normalized, and every null and lone surrogate standing for
+// Normalizes newlines and replaces every null and lone surrogate with
 // U+FFFD (CSS Syntax 3).
 function preprocess(text: string): string {
 	if (!/[\0\r\f\uD800-\uDFFF]/.test(text)) {
@@ -28663,10 +28728,10 @@ function parseSelectorAST(text: string): SelectorNode | null {
 }
 
 /**
- * Null when the text does not parse -- which includes a pseudo this engine
- * does not know, since an unknown pseudo makes the whole selector invalid.
- * The prefixes are read for shape only: whether `svg|circle` names a
- * namespace anything declared is a question for whoever knows the
+ * Returns null when the text does not parse, including when it uses a
+ * pseudo this engine does not know, since an unknown pseudo makes the
+ * whole selector invalid. Prefixes are checked for shape only. Whether
+ * `svg|circle` names a declared namespace is for whoever knows the
  * declarations.
  */
 export function parseSelectorList(text: string): SelectorNode | null {
@@ -28684,22 +28749,22 @@ export function parseSelectorList(text: string): SelectorNode | null {
 
 interface CompileOptions {
 
-	// Null leaves the prefixes unresolved: the selector is checked for shape
-	// and every prefix is accepted, which is what a grammar check wants and a
+	// Null leaves the prefixes unresolved: the selector is checked for
+	// shape and every prefix is accepted. A grammar check wants that; a
 	// match does not.
 	namespaces?: SelectorNamespaces | null;
 
 	// The DOM's own query methods accept `a::before` and match nothing with
-	// it; the cascade, which asks about `::slotted()` and `::part()` for real,
+	// it. The cascade, which matches `::slotted()` and `::part()` for real,
 	// sets this.
 	pseudoElements?: boolean;
 
-	// A selector may open with a combinator, as `@scope` lets it.
+	// Allow the selector to open with a combinator, as `@scope` does.
 	relative?: boolean;
 
-	// `&` may stand in the selector inside a style rule and nowhere else. It
-	// selects nothing on its own: the rule it is nested in is what gives it
-	// something to name.
+	// `&` is allowed inside a style rule and nowhere else. It selects
+	// nothing on its own; the rule it is nested in gives it something to
+	// refer to.
 	nesting?: boolean;
 }
 
@@ -28758,7 +28823,7 @@ function compileComplex(
 		}
 		if (index === 0) {
 			// A relative selector opens with a combinator and is anchored to
-			// whatever the caller says; anywhere else that is a parse error.
+			// whatever the caller says. Anywhere else that is a parse error.
 			if (!relative || started) {
 				throw new SelectorError("a selector may not open with a combinator");
 			}
@@ -28782,8 +28847,8 @@ function compileComplex(
 	return {compounds, combinators};
 }
 
-// The compound a relative selector hangs from: the element `:has()`
-// asked.
+// The compound a relative selector hangs from: the element `:has()` was
+// asked about.
 const ANCHOR_COMPOUND: CompiledCompound = {
 	tests: [
 		(element: Element, state: MatchState): boolean =>
@@ -28804,7 +28869,7 @@ function compileCompound(
 		originTests: [],
 		host: false,
 	};
-	// A type selector is only a type selector where it is written first.
+	// A type selector is only a type selector when written first.
 	for (const [index, part] of parts.entries()) {
 		if (part.type === "TypeSelector" && index !== 0) {
 			throw new SelectorError("a type selector opens its compound");
@@ -28813,9 +28878,9 @@ function compileCompound(
 	for (const part of parts) {
 		compileSimple(part, compound, compiling);
 	}
-	// CSS Namespaces 2: a default namespace qualifies a compound that names no
-	// type at all, so where an HTML default is declared `.card` selects no SVG
-	// element. A featureless host is outside all of that.
+	// CSS Namespaces 2: a default namespace applies to a compound that
+	// names no type, so with an HTML default declared, `.card` selects no
+	// SVG element. A featureless host is outside all of that.
 	const declared = compiling.namespaces?.default ?? null;
 	if (
 		declared !== null &&
@@ -28912,8 +28977,8 @@ function qualifiedName(
 	if (bar === -1) {
 		const local = CSSTree.ident.decode(name);
 		return {
-			// An attribute with no prefix is in no namespace; an element with no
-			// prefix is in the default namespace the sheet declared.
+			// An attribute with no prefix is in no namespace. An element with
+			// no prefix is in the default namespace the sheet declared.
 			namespace: attribute ? null : (namespaces?.default ?? undefined),
 			local: local === "*" ? null : local,
 		};
@@ -28937,9 +29002,9 @@ function qualifiedName(
 	return {namespace: uri, local};
 }
 
-// ASCII case-insensitive against an HTML element in an HTML document and
-// case-sensitive everywhere else, which is what keeps `feGaussianBlur`
-// selectable and `DIV` matching a `div`.
+// ASCII case-insensitive against an HTML element in an HTML document,
+// case-sensitive everywhere else. That keeps `feGaussianBlur` selectable
+// and lets `DIV` match a `div`.
 function compileType(name: string, compiling: Compiling): Predicate {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : asciiLowercase(local);
@@ -28964,8 +29029,8 @@ function compileType(name: string, compiling: Compiling): Predicate {
 	};
 }
 
-// Compared case-insensitively on an HTML element in an HTML document, when
-// the selector states no case sensitivity of its own.
+// Compared case-insensitively on an HTML element in an HTML document
+// when the selector does not state its own case sensitivity.
 const CASE_INSENSITIVE_ATTRIBUTES: ReadonlySet<string> = new Set([
 	"accept",
 	"accept-charset",
@@ -29038,8 +29103,8 @@ function compileAttribute(
 	if (flags !== "" && flags !== "i" && flags !== "s") {
 		throw new SelectorError(`unknown attribute flag ${flags}`);
 	}
-	// The attribute the element carries, read the way HTML reads a name: an
-	// HTML element in an HTML document folds its attribute names to lower case.
+	// Read the attribute the way HTML reads a name. An HTML element in an
+	// HTML document lowercases its attribute names.
 	const read = (element: Element): string | null => {
 		const fold =
 			element.namespaceURI === HTML_NAMESPACE && isHTMLNode(element);
@@ -29090,7 +29155,8 @@ function compileAttribute(
 			case "=":
 				return subject === target;
 			case "~=":
-				// A value with whitespace in it, or none at all, is in no list.
+				// A value with whitespace in it, or an empty value, is in no
+				// list.
 				if (target === "" || /[\t\n\f\r ]/.test(target)) {
 					return false;
 				}
@@ -29251,8 +29317,8 @@ function compilePseudoClass(
 			compound.tests.push(isHyperlink);
 			return;
 		case "visited":
-			// A visited link is not something a terminal has ever recorded, and
-			// answering would leak history even where it had.
+			// A terminal has never recorded a visited link, and answering would
+			// leak history even if it had.
 			compound.tests.push(no);
 			return;
 		case "target":
@@ -29262,8 +29328,8 @@ function compilePseudoClass(
 			compound.tests.push((element) => isHovered(element));
 			return;
 		case "active":
-			// Nothing here is ever being activated between a press and a release:
-			// a terminal reports the key or the click, not the half of it.
+			// Nothing here is ever between a press and a release. A terminal
+			// reports the key or the click, not half of it.
 			compound.tests.push(() => false);
 			return;
 		case "focus":
@@ -29350,9 +29416,10 @@ function compilePseudoClass(
 			return;
 		default:
 			// Everything left names a state this user agent never enters: a
-			// media element's buffering, a page box's side, a spatial navigation
-			// target, autofill, and the constraint validation family, which is
-			// recorded as deliberately absent in the conformance notes.
+			// media element's buffering, a page box's side, a spatial
+			// navigation target, autofill, and the constraint validation
+			// family, which the conformance notes record as deliberately
+			// absent.
 			compound.tests.push(no);
 	}
 }
@@ -29371,8 +29438,8 @@ function identifierArgument(args: SelectorNode[], name: string): string {
 	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) {
 		throw new SelectorError(`:${name} takes one identifier`);
 	}
-	// The escapes in it spell the name, and the name has to be an identifier:
-	// `1` is a number wherever it is written.
+	// The escapes spell the name, and the name has to be an identifier. `1`
+	// is a number however it is written.
 	const identifier = CSSTree.ident.decode(text);
 	if (!/^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier)) {
 		throw new SelectorError(`:${name} takes one identifier`);
@@ -29380,7 +29447,7 @@ function identifierArgument(args: SelectorNode[], name: string): string {
 	return identifier;
 }
 
-/** Dropping the branches that do not read. */
+/** Drops the branches that do not parse. */
 function compileForgiving(
 	args: SelectorNode[],
 	compiling: Compiling,
@@ -29396,14 +29463,14 @@ function compileForgiving(
 			try {
 				compiled.push(compileComplex(selector, compiling, false));
 			} catch (_err) {
-				// A forgiving selector list keeps the branches it can read.
+				// A forgiving selector list keeps the branches it can parse.
 			}
 		}
 	}
 	return compiled;
 }
 
-/** One bad branch spoils the lot. */
+/** One bad branch invalidates the whole list. */
 function compileArgumentList(
 	args: SelectorNode[],
 	compiling: Compiling,
@@ -29449,7 +29516,7 @@ function compilePseudoElement(
 			compound.tests.push(no);
 			return;
 		}
-		// The slotted element is what the compound selects; everything written
+		// The slotted element is what the compound selects. Everything written
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
@@ -29467,7 +29534,7 @@ function compilePseudoElement(
 			compound.tests.push(no);
 			return;
 		}
-		// The part is what the compound selects; what is written before
+		// The part is what the compound selects. What is written before
 		// `::part()` describes the host whose tree the part lives in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
@@ -29561,7 +29628,7 @@ function readAnPlusB(node: SelectorNode | null): AnPlusB {
 	return {a, b};
 }
 
-// `n`, `+n` and `-n` all state a step of one.
+// `n`, `+n` and `-n` all mean a step of one.
 function readStep(text: string): number {
 	const trimmed = text.trim();
 	if (trimmed === "" || trimmed === "+") {
@@ -29581,8 +29648,8 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
 	return Number.isInteger(times) && times >= 0;
 }
 
-// What `:link` and `:any-link` name: an `a` or an `area` with an href. A
-// `link` element points somewhere too, and HTML leaves it out.
+// What `:link` and `:any-link` match: an `a` or `area` with an href. A
+// `link` element points somewhere too, but HTML leaves it out.
 function isHyperlink(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
@@ -29610,10 +29677,10 @@ function isDisableable(element: Element): boolean {
 	);
 }
 
-// By its own attribute, by an ancestor fieldset's, or -- for an option --
-// by the optgroup it sits in. A fieldset disables its descendants except
-// the ones inside its first legend, which is how a disabled fieldset still
-// lets its caption's controls work.
+// Disabled by its own attribute, by an ancestor fieldset's, or for an
+// option, by the optgroup it is in. A fieldset disables its descendants
+// except the ones inside its first legend, so a disabled fieldset's
+// caption controls still work.
 function isDisabled(element: Element, _state: MatchState): boolean {
 	if (!isDisableable(element)) {
 		return false;
@@ -29715,7 +29782,7 @@ const IMMUTABLE_INPUT_TYPES = new Set([
 	"submit",
 ]);
 
-// `:read-write`: a text control the user may type into, or anything an
+// `:read-write`: a text control the user can type into, or anything an
 // editing host contains.
 function isMutable(element: Element, state: MatchState): boolean {
 	if (element.namespaceURI === HTML_NAMESPACE) {
@@ -29753,7 +29820,7 @@ function isMutable(element: Element, state: MatchState): boolean {
 	return false;
 }
 
-// The elements `:open` and `:closed` say anything about.
+// The elements `:open` and `:closed` apply to.
 function canOpen(element: Element): boolean {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
@@ -29787,8 +29854,8 @@ function isEmpty(element: Element): boolean {
 	return true;
 }
 
-// RFC 4647 extended filtering: `:lang(en)` takes `en-GB`, and a `*` in a
-// range stands for any run of subtags.
+// RFC 4647 extended filtering: `:lang(en)` matches `en-GB`, and a `*`
+// in a range matches any run of subtags.
 function compileLang(args: SelectorNode[]): Predicate {
 	const ranges: string[] = [];
 	for (const argument of args) {
@@ -29864,7 +29931,7 @@ function rangeMatchesTag(range: string, tag: string): boolean {
 			index++;
 		}
 		while (index < have.length && have[index] !== subtag) {
-			// A range's subtag may skip over a tag's, but never over a
+			// A range's subtag may skip over a tag's subtag, but never over a
 			// singleton, which starts a private or extension sequence.
 			if (have[index].length === 1) {
 				return false;
@@ -29881,7 +29948,7 @@ function rangeMatchesTag(range: string, tag: string): boolean {
 
 const bidi = bidiFactory();
 
-// The elements whose text a `dir=auto` scan above them never reads.
+// Elements whose text a `dir=auto` scan above them never reads.
 const OPAQUE_TO_AUTO = new Set(["bdi", "script", "style", "textarea"]);
 
 const AUTO_INPUT_TYPES = new Set([
@@ -29900,11 +29967,11 @@ function compileDir(args: SelectorNode[]): Predicate {
 		element.nodeType === ELEMENT_NODE && directionality(element) === wanted;
 }
 
-// Per HTML: its own `dir`, the first strong character under a `dir=auto`,
-// or whatever it inherits. The first-strong scan is the bidirectional
-// algorithm's own paragraph rule, so a run of spaces, digits or
-// punctuation before the first letter decides nothing -- which is the
-// whole point of writing `dir=auto`.
+// Per HTML: the element's own `dir`, the first strong character under a
+// `dir=auto`, or the inherited direction. The first-strong scan is the
+// bidirectional algorithm's own paragraph rule, so a run of spaces,
+// digits or punctuation before the first letter decides nothing, which
+// is the point of `dir=auto`.
 function directionality(element: Element): "ltr" | "rtl" {
 	for (
 		let node: Element | null = element;
@@ -29922,7 +29989,7 @@ function directionality(element: Element): "ltr" | "rtl" {
 	return "ltr";
 }
 
-// `bdi`'s default included.
+// Includes `bdi`'s default.
 function declaredDirection(
 	element: Element,
 ): "ltr" | "rtl" | "auto" | null {
@@ -29934,8 +30001,8 @@ function declaredDirection(
 	if (html && (value === "ltr" || value === "rtl" || value === "auto")) {
 		return value;
 	}
-	// A bdi with no direction of its own is the element `dir=auto` was
-	// invented for: it isolates what it holds and reads it for itself.
+	// A bdi with no direction of its own is what `dir=auto` was invented
+	// for. It isolates its content and reads the direction from it.
 	return html && element.localName === "bdi" ? "auto" : null;
 }
 
@@ -29974,8 +30041,8 @@ function textUnder(element: Element, all: boolean): string {
 		if (descendant === null || all) {
 			continue;
 		}
-		// A descendant that states its own direction, and one that isolates
-		// what it holds, both keep their text out of the scan above them.
+		// A descendant that states its own direction, and one that isolates its
+		// content, both keep their text out of the scan above them.
 		if (
 			OPAQUE_TO_AUTO.has(descendant.localName) ||
 			declaredDirection(descendant) !== null
@@ -29996,7 +30063,7 @@ function firstStrong(text: string): "ltr" | "rtl" {
 	return paragraph && (paragraph.level & 1) === 1 ? "rtl" : "ltr";
 }
 
-// Read right to left.
+// Matches right to left.
 function matchComplex(
 	complex: CompiledComplex,
 	element: Element,
@@ -30092,7 +30159,7 @@ function matchFrom(
 	}
 }
 
-// For a shadow tree the step up ends at its featureless host.
+// In a shadow tree the step up ends at the featureless host.
 function parentStep(
 	element: Element,
 	state: MatchState,
@@ -30105,9 +30172,9 @@ function parentStep(
 	if (above !== null) {
 		return {element: above, featureless: false};
 	}
-	// A selector written in a shadow tree reaches the host it hangs under, and
-	// the host is featureless: only `:host` and its two functional forms name
-	// it.
+	// A selector written in a shadow tree can reach the host above it, and
+	// the host is featureless. Only `:host` and its two functional forms can
+	// match it.
 	if (state.shadow !== null && parent === state.shadow) {
 		const host = shadowHostOf(parent);
 		return host === null ? null : {element: host, featureless: true};
@@ -30115,16 +30182,18 @@ function parentStep(
 	return null;
 }
 
-// The search space is the anchor's subtree for a selector reaching down,
-// and its following siblings' subtrees for one reaching across -- which is
-// why `li:has(~ li.x)` never counts the `li.x` it was asked about.
+// The search space is the anchor's subtree for a selector reaching
+// down, and its following siblings' subtrees for one reaching across.
+// That is why `li:has(~ li.x)` never counts the `li.x` it was asked
+// about.
 function hasMatch(
 	inner: CompiledComplex[],
 	element: Element,
 	state: MatchState,
 ): boolean {
 	// The anchor is what a leading combinator hangs from. `:scope` is not
-	// touched: inside `:has()` it still names whatever the query scoped to.
+	// changed: inside `:has()` it still refers to whatever the query scoped
+	// to.
 	const inside: MatchState = {...state, anchor: element};
 	for (const complex of inner) {
 		const selects = (node: Element): boolean =>
@@ -30147,11 +30216,11 @@ function hasMatch(
 	return false;
 }
 
-// The DOM types the links between nodes as the platform does, where a parent is
-// a ParentNode and a sibling a ChildNode -- mixins that describe what may stand
-// in each position rather than what a node is. The matcher walks nodes, so it
-// reads each link back as the node on the other end of it, and these four
-// readers are the whole of where it does that.
+// The DOM types the links between nodes the way the platform does: a
+// parent is a ParentNode and a sibling a ChildNode, mixins that describe
+// what may stand in each position rather than what a node is. The
+// matcher walks nodes, so it reads each link as the node on the other
+// end, and these four readers are the only places it does that.
 
 function parentOf(node: Node): Node | null {
 	return node.parentNode as Node | null;
@@ -30221,8 +30290,8 @@ function splitOnWhitespace(text: string): string[] {
 	return text.split(/[\t\n\f\r ]+/).filter((token) => token !== "");
 }
 
-// Kept by text and the namespaces they were read against: a selector is
-// compiled once and matched against everything.
+// Keyed by text and the namespaces it was compiled against. A selector
+// is compiled once and matched against everything.
 const compiled = new Map<string, CompiledSelector | SelectorError>();
 
 function cacheKey(text: string, options: CompileOptions): string {
@@ -30240,8 +30309,8 @@ function cacheKey(text: string, options: CompileOptions): string {
 }
 
 /**
- * Throws a SelectorError at anything this engine will not read. The result
- * is cached, and so is the refusal.
+ * Throws a SelectorError for anything this engine rejects. The result is
+ * cached, and so is the rejection.
  */
 export function compileSelector(
 	text: string,
@@ -30275,7 +30344,7 @@ export function compileSelector(
 
 interface MatchOptions {
 
-	// The node `:scope` stands for.
+	// The node `:scope` refers to.
 	scope?: Node | null;
 
 	// The shadow root the selector was written in, for `:host`.
@@ -30289,7 +30358,7 @@ function stateFor(options: MatchOptions): MatchState {
 		scope: options.scope ?? null,
 		shadow: options.shadow ?? null,
 		// A relative selector hangs from the scoping root, which is also what
-		// `:scope` names; inside `:has()` both become the anchor instead.
+		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
 	};
 }
@@ -30384,9 +30453,8 @@ function closestSelector(
 
 // The node after this one in tree order, stopping at a root: its first
 // child, or else the next sibling of the nearest ancestor that has one.
-// The walk steps along the links a node already has rather than
-// recursing, so a deep tree costs no stack and a wide one allocates
-// nothing.
+// The walk follows the links a node already has rather than recursing,
+// so a deep tree costs no stack and a wide one allocates nothing.
 function walk(root: Node, visit: (element: Element) => boolean): boolean {
 	for (
 		let node = nextInTree(root, root);
