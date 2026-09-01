@@ -436,6 +436,43 @@ export function styleManagerFor(dom: {window: any}): StyleManager {
 	return sm;
 }
 
+/**
+ * Override a MockProcess's stdout.write to record every raw chunk written to
+ * it, and return a getter for everything recorded so far, joined.
+ *
+ * By default the write still reaches the underlying terminal (forward: true);
+ * pass forward: false for a stdout that has nothing real behind it to reach
+ * (a piped, non-TTY mock). onChunk, if given, sees each chunk as it arrives --
+ * for a caller that wants to react to output live rather than poll the
+ * getter.
+ */
+export function captureRawOutput(
+	t: MockProcess,
+	options: {forward?: boolean; onChunk?: (chunk: string) => void} = {},
+): () => string {
+	const {forward = true, onChunk} = options;
+	let raw = "";
+	const orig = t.stdout.write.bind(t.stdout);
+	(t.stdout as unknown as {write: unknown}).write = (
+		chunk: unknown,
+		enc?: unknown,
+		cb?: unknown,
+	) => {
+		const data = String(chunk);
+		raw += data;
+		onChunk?.(data);
+		if (forward) {
+			return (orig as (...a: unknown[]) => unknown)(chunk, enc, cb);
+		}
+		const callback = typeof enc === "function" ? enc : cb;
+		if (typeof callback === "function") {
+			(callback as () => void)();
+		}
+		return true;
+	};
+	return () => raw;
+}
+
 export function stripControlCodes(ansi: string): string {
 	return ansi
 		.replace(/\x1b\[\?2026[hl]/g, "") // Remove sync start/end

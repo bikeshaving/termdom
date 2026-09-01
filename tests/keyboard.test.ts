@@ -1,97 +1,11 @@
-import {EventEmitter} from "events";
-
 import {expect, test} from "@b9g/libuild/test";
 
 import {transportFromProcess} from "../src/internal/exchange.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
-
-// Mock TTY stream that simulates a real terminal
-class MockTTYStream extends EventEmitter {
-	isTTY: boolean;
-	readable: boolean;
-	readableObjectMode: boolean;
-
-	constructor() {
-		super();
-		this.isTTY = true;
-		this.readable = true;
-		this.readableObjectMode = false;
-	}
-
-	setRawMode(_mode: boolean): this {
-		return this;
-	}
-
-	resume(): this {
-		return this;
-	}
-
-	pause(): this {
-		return this;
-	}
-
-	// Simulate keyboard input
-	simulateKeypress(key: string): Promise<void> {
-		const buffer = Buffer.from(key);
-		this.emit("data", buffer);
-		// Input rides the transport's readable: delivery is a microtask away.
-		return new Promise((resolve) => setTimeout(resolve, 0));
-	}
-
-	simulateArrowKey(direction: "up" | "down" | "left" | "right"): Promise<void> {
-		const sequences = {
-			up: "\x1b[A",
-			down: "\x1b[B",
-			right: "\x1b[C",
-			left: "\x1b[D",
-		};
-		return this.simulateKeypress(sequences[direction]);
-	}
-}
-
-// Mock process that has a TTY
-class MockKeyboardProcess extends EventEmitter {
-	stdout: {
-		isTTY: boolean;
-		columns: number;
-		rows: number;
-		write: (chunk: any, encoding?: any, callback?: any) => boolean;
-	};
-
-	stdin: MockTTYStream;
-
-	env: {TERM: string; COLORTERM: string};
-	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
-		super(...args);
-		this.stdin = new MockTTYStream();
-		this.env = {
-			TERM: "xterm-256color",
-			COLORTERM: "truecolor",
-		};
-		this.stdout = {
-			isTTY: true,
-			columns: 80,
-			rows: 24,
-			write: (chunk: any, encoding?: any, callback?: any) => {
-				// Mock write - just call callback
-				if (typeof encoding === "function") {
-					encoding();
-				} else if (callback) {
-					callback();
-				}
-				return true;
-			},
-		};
-	}
-
-	exit(_code?: number): never {
-		throw new Error("Process exit");
-	}
-}
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 test("keyboard events are dispatched to elements", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -146,7 +60,7 @@ test("keyboard events are dispatched to elements", async () => {
 });
 
 test("special keys are mapped correctly", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -186,7 +100,7 @@ test("special keys are mapped correctly", async () => {
 });
 
 test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -220,7 +134,7 @@ test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", 
 });
 
 test("a plain letter never has ctrlKey set", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -244,7 +158,7 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 	// A raw terminal cannot distinguish the physical Enter/Tab keys from
 	// Ctrl+M/Ctrl+I -- they are the identical byte (0x0D/0x0A and 0x09). The
 	// named key has to win, matching every other terminal app.
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -270,7 +184,7 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 });
 
 test("Ctrl+letter in a focused input moves the caret, not inserts text", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -291,7 +205,7 @@ test("Ctrl+letter in a focused input moves the caret, not inserts text", async (
 });
 
 test("arrow keys are parsed correctly", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -340,7 +254,7 @@ test("arrow keys are parsed correctly", async () => {
 });
 
 test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -407,7 +321,7 @@ test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
 });
 
 test("an unmodified arrow key has no modifiers set", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -435,7 +349,7 @@ test("an unmodified arrow key has no modifiers set", async () => {
 });
 
 test("keyboard events bubble up the DOM", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -469,7 +383,7 @@ test("keyboard events bubble up the DOM", async () => {
 });
 
 test("can create keyboard event manually", () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -489,7 +403,7 @@ test("can create keyboard event manually", () => {
 });
 
 test("manual event dispatch works", () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -516,7 +430,7 @@ test("manual event dispatch works", () => {
 });
 
 test("keyboard system works with mock TTY", async () => {
-	const mockProcess = new MockKeyboardProcess();
+	const mockProcess = new MockProcess();
 
 	// Create TermDOM with our mock process
 	const termdom = new TermDOM({
@@ -555,25 +469,25 @@ test("keyboard system works with mock TTY", async () => {
 	await nextFrame(termdom);
 
 	// Test letter key
-	mockProcess.stdin.simulateKeypress("a");
+	(mockProcess.stdin as any).emit("data", Buffer.from("a"));
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	// Test number key
-	mockProcess.stdin.simulateKeypress("5");
+	(mockProcess.stdin as any).emit("data", Buffer.from("5"));
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	// Test special keys
-	mockProcess.stdin.simulateKeypress("\r"); // Enter
+	(mockProcess.stdin as any).emit("data", Buffer.from("\r")); // Enter
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	mockProcess.stdin.simulateKeypress("\t"); // Tab
+	(mockProcess.stdin as any).emit("data", Buffer.from("\t")); // Tab
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	// Test arrow keys
-	mockProcess.stdin.simulateArrowKey("up");
+	(mockProcess.stdin as any).emit("data", Buffer.from("\x1b[A")); // ArrowUp
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	mockProcess.stdin.simulateArrowKey("down");
+	(mockProcess.stdin as any).emit("data", Buffer.from("\x1b[B")); // ArrowDown
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	// Verify we got keyboard events
@@ -593,7 +507,7 @@ test("keyboard system works with mock TTY", async () => {
 });
 
 test("TTY detection works correctly", () => {
-	const mockProcess = new MockKeyboardProcess();
+	const mockProcess = new MockProcess();
 
 	// Test that our mock process reports TTY correctly
 	expect(mockProcess.stdin.isTTY).toBe(true);
@@ -1792,12 +1706,7 @@ test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () =
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document} = dom;
-	let raw = "";
-	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
-	(terminal.stdout as any).write = (chunk: any, enc?: any, cb?: any) => {
-		raw += String(chunk);
-		return originalWrite(chunk, enc, cb);
-	};
+	const raw = captureRawOutput(terminal);
 	const span = document.createElement("span");
 	span.textContent = "double";
 	span.style.setProperty("text-decoration", "underline");
@@ -1805,7 +1714,7 @@ test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () =
 	document.body.appendChild(span);
 	await nextFrame(dom);
 
-	expect(raw).toMatch(/\x1b\[[\d;]*4;4:2[;m]/);
+	expect(raw()).toMatch(/\x1b\[[\d;]*4;4:2[;m]/);
 
 	dom.dispose();
 });
@@ -2344,7 +2253,7 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 	// Backspace/Delete/arrow must step over a whole grapheme -- an emoji is a
 	// surrogate pair, a family emoji a ZWJ join, an accented letter a base plus
 	// a combining mark. Editing by code unit corrupts all three.
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -2650,7 +2559,7 @@ test("moving focus and opening a disclosure bring their target into view", async
 });
 
 test("a decoded keystroke is trusted; a constructed event is not", async () => {
-	const terminal = new MockKeyboardProcess();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({
 		transport: transportFromProcess(terminal as any),
 	});
@@ -2664,7 +2573,8 @@ test("a decoded keystroke is trusted; a constructed event is not", async () => {
 		});
 	}
 
-	await (terminal.stdin as any).simulateKeypress("a");
+	(terminal.stdin as any).emit("data", Buffer.from("a"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(trust).toEqual([
 		{type: "keydown", isTrusted: true},
 		{type: "keypress", isTrusted: true},

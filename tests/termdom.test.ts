@@ -5,7 +5,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const terminal = new MockProcess();
@@ -265,18 +265,14 @@ test("entering fullscreen hides the cursor on the screen it takes", async () => 
 	document.body.innerHTML = "<div id=\"fs\">STAGE</div>";
 	await dom.attach();
 
-	let written = "";
-	const original = terminal.stdout.write.bind(terminal.stdout);
-	terminal.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
-		written += String(chunk);
-		return original(chunk as never, ...(rest as never[]));
-	}) as typeof terminal.stdout.write;
+	const raw = captureRawOutput(terminal);
 
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
 	// The switch, then the hide, then the clear: a cursor the entry left
 	// visible would sit blinking on the screen it just took, and a frame's
 	// own hide arrives no earlier than the frame does.
+	const written = raw();
 	const entry = written.indexOf("\x1b[?1049h");
 	const hide = written.indexOf("\x1b[?25l");
 	const clear = written.indexOf("\x1b[2J");
@@ -302,16 +298,12 @@ test("closing while fullscreen leaves no trace, and the shell lands below", asyn
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
 
-	let written = "";
-	const original = terminal.stdout.write.bind(terminal.stdout);
-	terminal.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
-		written += String(chunk);
-		return original(chunk as never, ...(rest as never[]));
-	}) as typeof terminal.stdout.write;
+	const raw = captureRawOutput(terminal);
 
 	await dom.dispose();
 	// The alt screen exits, nothing pays out after it, and the cursor
 	// steps to a fresh line.
+	const written = raw();
 	const restoreAt = written.indexOf("\x1b[?1049l");
 	expect(restoreAt).toBeGreaterThan(-1);
 	const after = written.slice(restoreAt + "\x1b[?1049l".length);

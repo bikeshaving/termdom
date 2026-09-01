@@ -16,7 +16,7 @@ import {
 	inferParagraphDirection,
 	toVisualOrder,
 } from "../src/internal/text.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const HEBREW = "שלום";
 const HEBREW_VISUAL = [...HEBREW].reverse().join("");
@@ -117,15 +117,7 @@ test("the terminal is asked to leave bidi to us, and its answer is honoured", as
 	// reordering alone would happen with no negotiation at all, so what this
 	// reads is the asking: mode 8 reset to explicit, then queried.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
-	const original = stdout.write.bind(stdout);
-	let wire = "";
-	stdout.write = (...args: unknown[]) => {
-		wire += String(args[0]);
-		return original(...args);
-	};
+	const wire = captureRawOutput(terminal);
 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
@@ -134,7 +126,7 @@ test("the terminal is asked to leave bidi to us, and its answer is honoured", as
 	await new Promise((resolve) => setTimeout(resolve, 60));
 
 	// Explicit mode, then "what is mode 8 now?", in that order.
-	expect(wire).toContain("\x1b[8l\x1b[8$p");
+	expect(wire()).toContain("\x1b[8l\x1b[8$p");
 	// Nothing came back, and silence has always meant no bidi, so the order
 	// on screen is the one we put there.
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(HEBREW_VISUAL);
@@ -248,15 +240,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 	// Silence is the common answer, and means the same as "not recognised": our
 	// measurements do not change, only whether the terminal agrees with them.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const stdout = terminal.stdout as unknown as {
-		write: (...args: unknown[]) => boolean;
-	};
-	const original = stdout.write.bind(stdout);
-	const seen: string[] = [];
-	stdout.write = (...args: unknown[]) => {
-		seen.push(String(args[0]));
-		return original(...args);
-	};
+	const seen = captureRawOutput(terminal);
 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = "<div>hi</div>";
@@ -265,7 +249,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 	dom.dispose();
 
 	// Nothing to restore: the mode never took.
-	expect(seen.join("")).not.toContain("\x1b[?2027l");
+	expect(seen()).not.toContain("\x1b[?2027l");
 
 	dom.dispose();
 });

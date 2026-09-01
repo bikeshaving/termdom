@@ -6,109 +6,48 @@
  * The transport here records everything written and can be fed input by hand,
  * which is what a gesture is at this layer -- decoded stdin.
  */
-import {EventEmitter} from "events";
-
 import {expect, test} from "@b9g/libuild/test";
 
-import {
-	transportFromProcess,
-} from "../src/internal/exchange.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
-class MockTTYStream extends EventEmitter {
-	isTTY: boolean;
-
-	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
-		super(...args);
-		this.isTTY = true;
-	}
-
-	setRawMode(_mode: boolean): this {
-		return this;
-	}
-
-	resume(): this {
-		return this;
-	}
-
-	pause(): this {
-		return this;
-	}
-
-	setEncoding(_encoding: string): this {
-		return this;
-	}
-
-	/** Feed bytes as the terminal would, and wait for the read side to see them. */
-	send(data: string): Promise<void> {
-		this.emit("data", Buffer.from(data));
-		return new Promise((resolve) => setTimeout(resolve, 0));
-	}
+/** Feed bytes as the terminal would, and wait for the read side to see them. */
+function send(proc: MockProcess, data: string): Promise<void> {
+	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
+		"data",
+		Buffer.from(data),
+	);
+	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-class MockClipboardProcess extends EventEmitter {
-	output: string[];
-	stdin: MockTTYStream;
-	env: {TERM: string; COLORTERM: string};
+type ClipboardProc = MockProcess & {
 
 	/** Answered for the next clipboard query, if the terminal is one that does. */
 	clipboard: string | null;
-	stdout: {
-		isTTY: boolean;
-		columns: number;
-		rows: number;
-		write: (chunk: any, encoding?: any, callback?: any) => boolean;
-	};
+};
 
-	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
-		super(...args);
-		this.output = [];
-		this.stdin = new MockTTYStream();
-		this.env = {TERM: "xterm-256color", COLORTERM: "truecolor"};
-		this.clipboard = null;
-		this.stdout = {
-			isTTY: true,
-			columns: 40,
-			rows: 12,
-			write: (chunk: any, encoding?: any, callback?: any): boolean => {
-				const data = String(chunk);
-				this.output.push(data);
-				if (this.clipboard !== null && data.includes("\x1b]52;c;?\x07")) {
-					const payload = Buffer.from(this.clipboard, "utf8").toString(
-						"base64",
-					);
-					this.clipboard = null;
-					setTimeout(() => {
-						void this.stdin.send(`\x1b]52;c;${payload}\x07`);
-					}, 0);
-				}
-				if (typeof encoding === "function") {
-					encoding();
-				} else if (callback) {
-					callback();
-				}
-				return true;
-			},
-		};
-	}
-
-	get written(): string {
-		return this.output.join("");
-	}
-
-	exit(_code?: number): never {
-		throw new Error("Process exit");
-	}
-}
-
-async function mount(): Promise<{proc: MockClipboardProcess; dom: TermDOM}> {
-	const proc = new MockClipboardProcess();
-	const dom = new TermDOM({transport: transportFromProcess(proc as any)});
+async function mount(): Promise<{
+	proc: ClipboardProc;
+	raw: () => string;
+	dom: TermDOM;
+}> {
+	const proc = new MockProcess({cols: 40, rows: 12}) as ClipboardProc;
+	proc.clipboard = null;
+	const dom = new TermDOM({transport: proc.transport});
 	dom.document.body.textContent = "clipboard";
 	await nextFrame(dom);
-	proc.output.length = 0;
-	return {proc, dom};
+	const raw = captureRawOutput(proc, {
+		onChunk: (chunk) => {
+			if (proc.clipboard !== null && chunk.includes("\x1b]52;c;?\x07")) {
+				const payload = Buffer.from(proc.clipboard, "utf8").toString("base64");
+				proc.clipboard = null;
+				setTimeout(() => {
+					void send(proc, `\x1b]52;c;${payload}\x07`);
+				}, 0);
+			}
+		},
+	});
+	return {proc, raw, dom};
 }
 
 async function rejection(promise: Promise<unknown>): Promise<any> {
@@ -121,45 +60,45 @@ async function rejection(promise: Promise<unknown>): Promise<any> {
 }
 
 test("writeText inside a keystroke's dispatch reaches the terminal", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	let written: Promise<void> | null = null;
 	dom.document.addEventListener("keydown", () => {
 		written = dom.window.navigator.clipboard.writeText("hello");
 	});
-	await proc.stdin.send("c");
+	await send(proc, "c");
 	await written;
 	const payload = Buffer.from("hello", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	dom.dispose();
 });
 
 test("a mouse press is a gesture too", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const {document} = dom;
 	let written: Promise<void> | null = null;
 	document.body.addEventListener("mousedown", () => {
 		written = dom.window.navigator.clipboard.writeText("gesture");
 	});
-	await proc.stdin.send("\x1b[<0;1;1M");
+	await send(proc, "\x1b[<0;1;1M");
 	await written;
 	const payload = Buffer.from("gesture", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	dom.dispose();
 });
 
 test("a keystroke's gesture is over once its dispatch is", async () => {
-	const {proc, dom} = await mount();
-	await proc.stdin.send("c");
+	const {proc, raw, dom} = await mount();
+	await send(proc, "c");
 	const error = await rejection(
 		dom.window.navigator.clipboard.writeText("late"),
 	);
 	expect(error.name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	dom.dispose();
 });
 
 test("a handler that awaits before writing is too late", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const pending: Array<Promise<any>> = [];
 	dom.document.addEventListener("keydown", () => {
 		pending.push(
@@ -169,14 +108,14 @@ test("a handler that awaits before writing is too late", async () => {
 			})(),
 		);
 	});
-	await proc.stdin.send("c");
+	await send(proc, "c");
 	expect((await pending[0]).name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	dom.dispose();
 });
 
 test("writeText from a bare timer or microtask is refused", async () => {
-	const {proc, dom} = await mount();
+	const {raw, dom} = await mount();
 	const fromTimer = await new Promise<any>((resolve) => {
 		setTimeout(() => {
 			resolve(rejection(dom.window.navigator.clipboard.writeText("sneaky")));
@@ -184,7 +123,7 @@ test("writeText from a bare timer or microtask is refused", async () => {
 	});
 	const error = await fromTimer;
 	expect(error.name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	const fromMicrotask = await Promise.resolve().then(() =>
 		rejection(dom.window.navigator.clipboard.writeText("sneaky")),
 	);
@@ -193,7 +132,7 @@ test("writeText from a bare timer or microtask is refused", async () => {
 });
 
 test("an event an app dispatches itself is not a gesture", async () => {
-	const {proc, dom} = await mount();
+	const {raw, dom} = await mount();
 	const {document, window} = dom;
 	const pending: Array<Promise<any>> = [];
 	document.body.addEventListener("keydown", () => {
@@ -205,16 +144,16 @@ test("an event an app dispatches itself is not a gesture", async () => {
 		new window.KeyboardEvent("keydown", {key: "c", bubbles: true}),
 	);
 	expect((await pending[0]).name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	dom.dispose();
 });
 
 test("readText outside a gesture is refused, and asks the terminal nothing", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	proc.clipboard = "should not be read";
 	const error = await rejection(dom.window.navigator.clipboard.readText());
 	expect(error.name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;?");
+	expect(raw()).not.toContain("\x1b]52;c;?");
 	const {document, window} = dom;
 	const pending: Array<Promise<any>> = [];
 	document.body.addEventListener("keydown", () => {
@@ -224,19 +163,19 @@ test("readText outside a gesture is refused, and asks the terminal nothing", asy
 		new window.KeyboardEvent("keydown", {key: "v", bubbles: true}),
 	);
 	expect((await pending[0]).name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;?");
+	expect(raw()).not.toContain("\x1b]52;c;?");
 	dom.dispose();
 });
 
 test("readText queries the terminal and resolves with what it answers", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	proc.clipboard = "pasted text";
 	let reading: Promise<string> | null = null;
 	dom.document.addEventListener("keydown", () => {
 		reading = dom.window.navigator.clipboard.readText();
 	});
-	await proc.stdin.send("v");
-	expect(proc.written).toContain("\x1b]52;c;?\x07");
+	await send(proc, "v");
+	expect(raw()).toContain("\x1b]52;c;?\x07");
 	expect(await reading).toBe("pasted text");
 	dom.dispose();
 });
@@ -252,10 +191,10 @@ test("a clipboard reply survives arriving in pieces, and glued to typing", async
 			reading = dom.window.navigator.clipboard.readText();
 		}
 	});
-	await proc.stdin.send("v");
+	await send(proc, "v");
 	const payload = Buffer.from("héllo", "utf8").toString("base64");
-	await proc.stdin.send(`\x1b]52;c;${payload.slice(0, 3)}`);
-	await proc.stdin.send(`${payload.slice(3)}\x07jj`);
+	await send(proc, `\x1b]52;c;${payload.slice(0, 3)}`);
+	await send(proc, `${payload.slice(3)}\x07jj`);
 	expect(await reading).toBe("héllo");
 	expect(keys.join("")).toBe("vjj");
 	dom.dispose();
@@ -272,24 +211,24 @@ test("a reply whose base64 will not decode reads as an empty clipboard", async (
 			reading = dom.window.navigator.clipboard.readText();
 		}
 	});
-	await proc.stdin.send("v");
+	await send(proc, "v");
 	// One base64 digit carries no byte: a payload that cannot decode is
 	// answered as empty, and the input after it still arrives.
-	await proc.stdin.send("\x1b]52;c;A\x07");
+	await send(proc, "\x1b]52;c;A\x07");
 	expect(await reading).toBe("");
-	await proc.stdin.send("j");
+	await send(proc, "j");
 	expect(keys.join("")).toBe("vj");
 	dom.dispose();
 });
 
 test("readText rejects when the terminal does not answer", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const pending: Array<Promise<any>> = [];
 	dom.document.addEventListener("keydown", () => {
 		pending.push(rejection(dom.window.navigator.clipboard.readText()));
 	});
-	await proc.stdin.send("v");
-	expect(proc.written).toContain("\x1b]52;c;?\x07");
+	await send(proc, "v");
+	expect(raw()).toContain("\x1b]52;c;?\x07");
 	expect((await pending[0]).name).toBe("NotAllowedError");
 	dom.dispose();
 });
@@ -303,7 +242,7 @@ test("navigator.userActivation reports the gate the clipboard asks about", async
 	dom.document.addEventListener("keydown", () => {
 		duringKeydown.push(activation.isActive, activation.hasBeenActive);
 	});
-	await proc.stdin.send("x");
+	await send(proc, "x");
 	expect(duringKeydown).toEqual([true, true]);
 	// The gesture is the dispatch, and the dispatch is over.
 	expect(activation.isActive).toBe(false);
@@ -317,14 +256,14 @@ test("Escape is not a gesture", async () => {
 	dom.document.addEventListener("keydown", () => {
 		active.push(dom.window.navigator.userActivation.isActive);
 	});
-	await proc.stdin.send("\x1b");
-	await proc.stdin.send("a");
+	await send(proc, "\x1b");
+	await send(proc, "a");
 	expect(active).toEqual([false, true]);
 	dom.dispose();
 });
 
 test("Enter on a button is a gesture, through the click it generates", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const {document} = dom;
 	document.body.innerHTML = "<button id=\"copy\">copy</button>";
 	await nextFrame(dom);
@@ -336,11 +275,11 @@ test("Enter on a button is a gesture, through the click it generates", async () 
 		trusted = event.isTrusted;
 		written = dom.window.navigator.clipboard.writeText("keyboard");
 	});
-	await proc.stdin.send("\r");
+	await send(proc, "\r");
 	await written;
 	expect(trusted).toBe(true);
 	const payload = Buffer.from("keyboard", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	dom.dispose();
 });
 
@@ -360,7 +299,7 @@ test("a paste fires at the focused field and inserts by default", async () => {
 			trusted: event.isTrusted,
 		});
 	});
-	await proc.stdin.send("\x1b[200~hello\x1b[201~");
+	await send(proc, "\x1b[200~hello\x1b[201~");
 	await nextFrame(dom);
 	expect(seen).toEqual([{target: "field", text: "hello", trusted: true}]);
 	expect(field.value).toBe("hello");
@@ -376,7 +315,7 @@ test("a paste with nothing focused fires at the body", async () => {
 		targets.push(event.target);
 		text = event.clipboardData.getData("text");
 	});
-	await proc.stdin.send("\x1b[200~loose\x1b[201~");
+	await send(proc, "\x1b[200~loose\x1b[201~");
 	await nextFrame(dom);
 	expect(targets).toEqual([document.body]);
 	expect(text).toBe("loose");
@@ -398,7 +337,7 @@ test("preventing the paste suppresses the insert", async () => {
 	document.addEventListener("paste", (event: any) => {
 		event.preventDefault();
 	});
-	await proc.stdin.send("\x1b[200~blocked\x1b[201~");
+	await send(proc, "\x1b[200~blocked\x1b[201~");
 	await nextFrame(dom);
 	expect(inputTypes).toEqual([]);
 	expect(field.value).toBe("");
@@ -422,7 +361,7 @@ test("a paste's clipboardData is the pasted text, and read-only", async () => {
 		data.setData("text/plain", "rewritten");
 		rewritten = data.getData("TEXT ");
 	});
-	await proc.stdin.send("\x1b[200~held\x1b[201~");
+	await send(proc, "\x1b[200~held\x1b[201~");
 	await nextFrame(dom);
 	expect(Array.from(types)).toEqual(["text/plain"]);
 	expect(items).toBe(1);
@@ -440,7 +379,7 @@ test("a transfer held past its event answers with nothing", async () => {
 		held = event.clipboardData;
 		duringEvent = held.getData("text/plain");
 	});
-	await proc.stdin.send("\x1b[200~held\x1b[201~");
+	await send(proc, "\x1b[200~held\x1b[201~");
 	await nextFrame(dom);
 	expect(duringEvent).toBe("held");
 	expect(held.getData("text/plain")).toBe("");
@@ -449,22 +388,20 @@ test("a transfer held past its event answers with nothing", async () => {
 });
 
 test("a paste is a gesture: the clipboard is reachable from its listener", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	let written: Promise<void> | null = null;
 	dom.document.body.addEventListener("paste", () => {
 		written = dom.window.navigator.clipboard.writeText("from paste");
 	});
-	await proc.stdin.send("\x1b[200~text\x1b[201~");
+	await send(proc, "\x1b[200~text\x1b[201~");
 	await written;
 	const payload = Buffer.from("from paste", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	dom.dispose();
 });
 
 test("a DataTransfer an app builds is writable, and normalizes its formats", () => {
-	const dom = new TermDOM({
-		transport: transportFromProcess(new MockClipboardProcess() as any),
-	});
+	const dom = new TermDOM({transport: new MockProcess().transport});
 	const data = new (dom.window as any).DataTransfer();
 	data.setData("Text", "one");
 	data.setData("text/html", "<b>one</b>");
@@ -512,15 +449,15 @@ test("copy and cut exist as events an app can build and dispatch", async () => {
 	]);
 	// The user agent fires neither: the terminal keeps the copy gesture and
 	// does not report it, so no keystroke and no drag becomes one.
-	await proc.stdin.send("c");
-	await proc.stdin.send("\x1b[<0;1;1M");
-	await proc.stdin.send("\x1b[<0;9;1m");
+	await send(proc, "c");
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<0;9;1m");
 	expect(seen.length).toBe(2);
 	dom.dispose();
 });
 
 test("write() carries a ClipboardItem's text over OSC 52", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const {ClipboardItem} = dom.window as any;
 	const clipboard = dom.window.navigator.clipboard as any;
 	let written: Promise<void> | null = null;
@@ -529,15 +466,15 @@ test("write() carries a ClipboardItem's text over OSC 52", async () => {
 			new ClipboardItem({"text/plain": "an item"}),
 		]);
 	});
-	await proc.stdin.send("c");
+	await send(proc, "c");
 	await written;
 	const payload = Buffer.from("an item", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	dom.dispose();
 });
 
 test("write() takes a Blob, and refuses an item with no text", async () => {
-	const {proc, dom} = await mount();
+	const {proc, raw, dom} = await mount();
 	const {ClipboardItem} = dom.window as any;
 	const clipboard = dom.window.navigator.clipboard as any;
 	let written: Promise<void> | null = null;
@@ -554,23 +491,23 @@ test("write() takes a Blob, and refuses an item with no text", async () => {
 			),
 		);
 	});
-	await proc.stdin.send("c");
+	await send(proc, "c");
 	await written;
 	const payload = Buffer.from("blobbed", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(raw()).toContain(`\x1b]52;c;${payload}\x07`);
 	expect((await refused[0]).name).toBe("NotAllowedError");
 	dom.dispose();
 });
 
 test("write() outside a gesture is refused", async () => {
-	const {proc, dom} = await mount();
+	const {raw, dom} = await mount();
 	const {ClipboardItem} = dom.window as any;
 	const clipboard = dom.window.navigator.clipboard as any;
 	const error = await rejection(
 		clipboard.write([new ClipboardItem({"text/plain": "late"})]),
 	);
 	expect(error.name).toBe("NotAllowedError");
-	expect(proc.written).not.toContain("\x1b]52;c;");
+	expect(raw()).not.toContain("\x1b]52;c;");
 	dom.dispose();
 });
 
@@ -583,7 +520,7 @@ test("read() answers with one text/plain item, and is gated", async () => {
 	dom.document.addEventListener("keydown", () => {
 		reading = clipboard.read();
 	});
-	await proc.stdin.send("v");
+	await send(proc, "v");
 	const items = (await reading) as unknown as any[];
 	expect(items.length).toBe(1);
 	expect(Array.from(items[0].types)).toEqual(["text/plain"]);
@@ -642,7 +579,7 @@ test("permissions.query reports the gesture the clipboard asks about", async () 
 	dom.document.addEventListener("keydown", () => {
 		duringKeydown.push(read.state, write.state);
 	});
-	await proc.stdin.send("c");
+	await send(proc, "c");
 	expect(duringKeydown).toEqual(["granted", "granted"]);
 	expect(read.state).toBe("prompt");
 	expect(read.onchange).toBe(null);
@@ -672,9 +609,9 @@ async function readReply(chunks: string[]): Promise<string> {
 	dom.document.addEventListener("keydown", () => {
 		reading ??= dom.window.navigator.clipboard.readText();
 	});
-	await proc.stdin.send("v");
+	await send(proc, "v");
 	for (const chunk of chunks) {
-		await proc.stdin.send(chunk);
+		await send(proc, chunk);
 	}
 	const text = await reading!;
 	dom.dispose();
@@ -709,9 +646,9 @@ test("a reply cut inside its own opening still reads as a reply", async () => {
 	dom.document.addEventListener("keydown", (event: any) => {
 		keys.push(event.key);
 	});
-	await proc.stdin.send("\x1b]2");
+	await send(proc, "\x1b]2");
 	expect(keys).toEqual(["Escape", "]", "2"]);
-	await proc.stdin.send("\x1b");
+	await send(proc, "\x1b");
 	expect(keys.slice(3)).toEqual(["Escape"]);
 	dom.dispose();
 });

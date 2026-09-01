@@ -7,15 +7,11 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
-	const original = terminal.stdout.write.bind(terminal.stdout);
-	terminal.stdout.write = ((chunk: any, enc?: any, cb?: any) => {
-		writes++;
-		return original(chunk, enc, cb);
-	}) as typeof terminal.stdout.write;
+	captureRawOutput(terminal, {onChunk: () => writes++});
 	return {count: () => writes};
 }
 
@@ -158,19 +154,14 @@ test("dispose() restores shell-critical modes synchronously", async () => {
 	dom.attach();
 	await nextFrame(dom);
 
-	let restored = "";
-	const original = terminal.stdout.write.bind(terminal.stdout);
-	terminal.stdout.write = ((chunk: any, enc?: any, cb?: any) => {
-		restored += String(chunk);
-		return original(chunk, enc, cb);
-	}) as typeof terminal.stdout.write;
+	const restored = captureRawOutput(terminal);
 
 	void dom.dispose();
 	// No awaits between dispose and the assertions: exit comes next.
-	expect(restored).toContain("\x1b[?1002l");
-	expect(restored).toContain("\x1b[?1006l");
-	expect(restored).toContain("\x1b[?25h");
-	expect(restored).toContain("\x1b[?2004l");
+	expect(restored()).toContain("\x1b[?1002l");
+	expect(restored()).toContain("\x1b[?1006l");
+	expect(restored()).toContain("\x1b[?25h");
+	expect(restored()).toContain("\x1b[?2004l");
 });
 
 test("awaiting dispose() means the final flush has landed", async () => {

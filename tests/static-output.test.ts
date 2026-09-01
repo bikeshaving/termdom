@@ -14,34 +14,20 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 /** Render to a non-terminal stdout and return exactly what was written. */
 async function renderPiped(html: string, cols = 40): Promise<string> {
 	const terminal = new MockProcess({cols, rows: 10});
 	(terminal.stdout as any).isTTY = false;
-
-	const written: string[] = [];
-	(terminal.stdout as any).write = (
-		chunk: unknown,
-		encoding?: unknown,
-		callback?: (error?: Error) => void,
-	) => {
-		written.push(String(chunk));
-		// A real stdout invokes the callback once flushed, and TermDOM waits for it.
-		const done = typeof encoding === "function" ? encoding : callback;
-		if (typeof done === "function") {
-			(done as () => void)();
-		}
-		return true;
-	};
+	const written = captureRawOutput(terminal, {forward: false});
 
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	dom.dispose();
 
-	return written.join("");
+	return written();
 }
 
 test("piped output contains no terminal control sequences", async () => {

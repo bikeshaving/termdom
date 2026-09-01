@@ -1,94 +1,33 @@
-import {EventEmitter} from "events";
-
 import {expect, test} from "@b9g/libuild/test";
 
 import {transportFromProcess} from "../src/internal/exchange.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
-
-// A TTY-shaped process that records everything written to stdout, so tests
-// can assert on the escape sequences that enable and disable mouse capture.
-class MockTTYStream extends EventEmitter {
-	isTTY: boolean;
-	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
-		super(...args);
-		this.isTTY = true;
-	}
-
-	setRawMode(_mode: boolean): this {
-		return this;
-	}
-
-	resume(): this {
-		return this;
-	}
-
-	pause(): this {
-		return this;
-	}
-
-	send(data: string): Promise<void> {
-		this.emit("data", Buffer.from(data));
-		// Input rides the transport's readable: delivery is a microtask away.
-		return new Promise((resolve) => setTimeout(resolve, 0));
-	}
-}
-
-class MockMouseProcess extends EventEmitter {
-	output: string[];
-
-	stdout: {
-		isTTY: boolean;
-		columns: number;
-		rows: number;
-		write: (chunk: any, encoding?: any, callback?: any) => boolean;
-	};
-
-	stdin: MockTTYStream;
-
-	env: {TERM: string; COLORTERM: string};
-	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
-		super(...args);
-		this.output = [];
-		this.stdout = {
-			isTTY: true,
-			columns: 80,
-			rows: 24,
-			write: (chunk: any, encoding?: any, callback?: any): boolean => {
-				this.output.push(String(chunk));
-				if (typeof encoding === "function") {
-					encoding();
-				} else if (callback) {
-					callback();
-				}
-				return true;
-			},
-		};
-		this.stdin = new MockTTYStream();
-		this.env = {
-			TERM: "xterm-256color",
-			COLORTERM: "truecolor",
-		};
-	}
-
-	get written(): string {
-		return this.output.join("");
-	}
-
-	exit(_code?: number): never {
-		throw new Error("Process exit");
-	}
-}
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const ENABLE = "\x1b[?1002h\x1b[?1006h";
 const DISABLE = "\x1b[?1006l\x1b[?1002l";
 
+/** Feed bytes as the terminal would, and wait for the read side to see them. */
+function send(proc: MockProcess, data: string): Promise<void> {
+	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
+		"data",
+		Buffer.from(data),
+	);
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function makeDocumentModeApp(lines = 30): {
-	proc: MockMouseProcess;
+	proc: MockProcess;
+	written: () => string;
+	chunks: () => string[];
 	termdom: TermDOM;
 	document: Document;
 } {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
+	const seen: string[] = [];
+	const written = captureRawOutput(proc, {
+		onChunk: (chunk) => seen.push(chunk),
+	});
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 	for (let i = 0; i < lines; i++) {
@@ -96,28 +35,28 @@ function makeDocumentModeApp(lines = 30): {
 		div.textContent = `line ${i}`;
 		document.body.appendChild(div);
 	}
-	return {proc, termdom, document};
+	return {proc, written, chunks: () => seen, termdom, document};
 }
 
 test("an interactive app captures the mouse; dispose releases it", async () => {
-	const {proc, termdom} = makeDocumentModeApp();
+	const {written, termdom} = makeDocumentModeApp();
 	await nextFrame(termdom);
-	expect(proc.written).toContain(ENABLE);
+	expect(written()).toContain(ENABLE);
 
 	termdom.dispose();
 	// Dispose's mode restores ride the transport's stream; let them flush.
 	await new Promise((r) => setTimeout(r, 0));
-	expect(proc.written).toContain(DISABLE);
+	expect(written()).toContain(DISABLE);
 });
 
 test("wheel scrolls the document camera", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
-	await proc.stdin.send("\x1b[<65;5;3M"); // wheel down at col 5, row 3
+	await send(proc, "\x1b[<65;5;3M"); // wheel down at col 5, row 3
 	expect(termdom.window.scrollY).toBe(3);
 
-	await proc.stdin.send("\x1b[<64;5;3M"); // wheel up
+	await send(proc, "\x1b[<64;5;3M"); // wheel up
 	expect(termdom.window.scrollY).toBe(0);
 	termdom.dispose();
 });
@@ -138,7 +77,7 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 		{passive: false},
 	);
 
-	await proc.stdin.send("\x1b[<65;5;3M");
+	await send(proc, "\x1b[<65;5;3M");
 	expect(seen).toEqual([{deltaY: 3, deltaMode: 1}]);
 	expect(termdom.window.scrollY).toBe(0); // canceled
 	termdom.dispose();
@@ -154,52 +93,52 @@ test("mouse reports never leak into keyboard events", async () => {
 	});
 
 	// A report glued to fast keystrokes: both keys arrive, the report does not.
-	await proc.stdin.send("j\x1b[<65;4;7Mj");
+	await send(proc, "j\x1b[<65;4;7Mj");
 	expect(keys).toEqual(["j", "j"]);
 	expect(termdom.window.scrollY).toBe(3);
 
 	// Clicks and drag motion are swallowed too.
-	await proc.stdin.send("\x1b[<0;2;2M\x1b[<32;3;2M\x1b[<0;3;2m");
+	await send(proc, "\x1b[<0;2;2M\x1b[<32;3;2M\x1b[<0;3;2m");
 	expect(keys).toEqual(["j", "j"]);
 	termdom.dispose();
 });
 
 test("wheel at the document top chains to the terminal; a keystroke reclaims", async () => {
-	const {proc, termdom} = makeDocumentModeApp();
+	const {proc, chunks, termdom} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	const disables = () =>
-		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
+		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
 	const enables = () =>
-		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+		chunks().filter((chunk) => chunk.includes(ENABLE)).length;
 	expect(enables()).toBe(1);
 
 	// Scrolled down, wheel up consumes normally -- no chaining mid-document.
-	await proc.stdin.send("\x1b[<65;5;3M");
+	await send(proc, "\x1b[<65;5;3M");
 	expect(termdom.window.scrollY).toBe(3);
-	await proc.stdin.send("\x1b[<64;5;3M");
+	await send(proc, "\x1b[<64;5;3M");
 	expect(termdom.window.scrollY).toBe(0);
 	expect(disables()).toBe(0);
 
 	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,
 	// so the mouse is handed back.
-	await proc.stdin.send("\x1b[<64;5;3M");
+	await send(proc, "\x1b[<64;5;3M");
 	expect(disables()).toBe(1);
 
 	// A keystroke reclaims it.
-	await proc.stdin.send("j");
+	await send(proc, "j");
 	expect(enables()).toBe(2);
 	termdom.dispose();
 });
 
 test("a yielded wheel self-heals after the chain timeout, with no keystroke", async () => {
-	const {proc, termdom} = makeDocumentModeApp();
+	const {proc, chunks, termdom} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	const disables = () =>
-		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
+		chunks().filter((chunk) => chunk.includes(DISABLE)).length;
 	const enables = () =>
-		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+		chunks().filter((chunk) => chunk.includes(ENABLE)).length;
 	expect(enables()).toBe(1);
 
 	// Wheel up at the top yields the mouse -- same as the keystroke-reclaim
@@ -207,7 +146,7 @@ test("a yielded wheel self-heals after the chain timeout, with no keystroke", as
 	// test-only one: wheel activity produces no signal while yielded (that's
 	// the entire mechanism), so there's nothing to fake-clock advance against;
 	// this exercises the actual production constant.
-	await proc.stdin.send("\x1b[<64;5;3M");
+	await send(proc, "\x1b[<64;5;3M");
 	expect(disables()).toBe(1);
 	expect(enables()).toBe(1); // still yielded
 
@@ -215,13 +154,13 @@ test("a yielded wheel self-heals after the chain timeout, with no keystroke", as
 	expect(enables()).toBe(2); // self-healed without any keystroke
 
 	// And scrolling actually works again -- not just the escape sequence.
-	await proc.stdin.send("\x1b[<65;5;3M"); // wheel down
+	await send(proc, "\x1b[<65;5;3M"); // wheel down
 	expect(termdom.window.scrollY).toBe(3);
 	termdom.dispose();
 });
 
 test("preventDefault on wheel opts out of scroll chaining", async () => {
-	const {proc, termdom, document} = makeDocumentModeApp();
+	const {proc, chunks, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
 	document.body.addEventListener(
@@ -232,13 +171,13 @@ test("preventDefault on wheel opts out of scroll chaining", async () => {
 		{passive: false},
 	);
 
-	await proc.stdin.send("\x1b[<64;5;3M"); // wheel up at the top
-	expect(proc.output.filter((c) => c.includes(DISABLE)).length).toBe(0);
+	await send(proc, "\x1b[<64;5;3M"); // wheel up at the top
+	expect(chunks().filter((c) => c.includes(DISABLE)).length).toBe(0);
 	termdom.dispose();
 });
 
 test("click dispatches at the element under the cell and focuses inputs", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 
@@ -258,22 +197,22 @@ test("click dispatches at the element under the cell and focuses inputs", async 
 	}
 
 	// Press and release on the input's first row.
-	await proc.stdin.send("\x1b[<0;2;1M");
-	await proc.stdin.send("\x1b[<0;2;1m");
+	await send(proc, "\x1b[<0;2;1M");
+	await send(proc, "\x1b[<0;2;1m");
 
 	expect(events.map((e) => e.type)).toEqual(["mousedown", "mouseup", "click"]);
 	expect(events.every((e) => e.target === "INPUT")).toBe(true);
 	expect(document.activeElement).toBe(input);
 
 	// Mousedown on nothing focusable blurs, as in a browser.
-	await proc.stdin.send("\x1b[<0;2;6M");
-	await proc.stdin.send("\x1b[<0;2;6m");
+	await send(proc, "\x1b[<0;2;6M");
+	await send(proc, "\x1b[<0;2;6m");
 	expect(document.activeElement).not.toBe(input);
 	termdom.dispose();
 });
 
 test("clicking a checkbox toggles it and fires change, and preventDefault blocks it", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 
@@ -286,8 +225,8 @@ test("clicking a checkbox toggles it and fires change, and preventDefault blocks
 	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
 
 	const click = async () => {
-		await proc.stdin.send("\x1b[<0;1;1M");
-		await proc.stdin.send("\x1b[<0;1;1m");
+		await send(proc, "\x1b[<0;1;1M");
+		await send(proc, "\x1b[<0;1;1m");
 	};
 
 	await click();
@@ -307,7 +246,7 @@ test("clicking a checkbox toggles it and fires change, and preventDefault blocks
 });
 
 test("clicking a label toggles its associated checkbox and moves focus to it", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 
@@ -327,8 +266,8 @@ test("clicking a label toggles its associated checkbox and moves focus to it", a
 	// The checkbox ([ ], an inline-block) and the label share row 1 as one
 	// inline run: "[ ]Mark all as complete". Click inside the label's text,
 	// past the checkbox's 3 cells.
-	await proc.stdin.send("\x1b[<0;5;1M");
-	await proc.stdin.send("\x1b[<0;5;1m");
+	await send(proc, "\x1b[<0;5;1M");
+	await send(proc, "\x1b[<0;5;1m");
 
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
@@ -338,7 +277,7 @@ test("clicking a label toggles its associated checkbox and moves focus to it", a
 });
 
 test("two quick clicks on the same target fire dblclick in addition to two clicks", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 
@@ -352,8 +291,8 @@ test("two quick clicks on the same target fire dblclick in addition to two click
 	div.addEventListener("dblclick", () => events.push("dblclick"));
 
 	const click = async () => {
-		await proc.stdin.send("\x1b[<0;1;1M");
-		await proc.stdin.send("\x1b[<0;1;1m");
+		await send(proc, "\x1b[<0;1;1M");
+		await send(proc, "\x1b[<0;1;1m");
 	};
 
 	await click();
@@ -378,7 +317,7 @@ test("two quick clicks on the same target fire dblclick in addition to two click
 });
 
 test("a click long after the previous one does not fire dblclick", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 
@@ -392,8 +331,8 @@ test("a click long after the previous one does not fire dblclick", async () => {
 	div.addEventListener("dblclick", () => events.push("dblclick"));
 
 	const click = async () => {
-		await proc.stdin.send("\x1b[<0;1;1M");
-		await proc.stdin.send("\x1b[<0;1;1m");
+		await send(proc, "\x1b[<0;1;1M");
+		await send(proc, "\x1b[<0;1;1m");
 	};
 
 	await click();
@@ -405,7 +344,8 @@ test("a click long after the previous one does not fire dblclick", async () => {
 });
 
 test("dragging across text builds a real Selection and paints inverse, without touching the clipboard", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
+	const written = captureRawOutput(proc);
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document, window} = termdom;
 
@@ -418,35 +358,35 @@ test("dragging across text builds a real Selection and paints inverse, without t
 
 	// Press at col 1 row 1 (before "h"), drag to col 6 (before "o" -- wait,
 	// before index 5), release: selects "hello".
-	await proc.stdin.send("\x1b[<0;1;1M");
-	await proc.stdin.send("\x1b[<32;6;1M"); // motion with left button held
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<32;6;1M"); // motion with left button held
 	await nextFrame(termdom);
 
 	const selection = window.getSelection()!;
 	expect(selection.isCollapsed).toBe(false);
 	expect(selection.toString()).toBe("hello");
 	// The highlight paints as inverse video (SGR 7).
-	expect(proc.written).toMatch(/\x1b\[[\d;]*7m/);
+	expect(written()).toMatch(/\x1b\[[\d;]*7m/);
 
 	// Releasing a drag is only a selection: the clipboard is written by
 	// navigator.clipboard.writeText() from the app's own release handler --
 	// which is inside the release's dispatch, where the clipboard is
 	// reachable -- and never as a side effect of the drag.
-	expect(proc.written).not.toContain("\x1b]52;");
+	expect(written()).not.toContain("\x1b]52;");
 	let copied: Promise<void> | null = null;
 	document.addEventListener("mouseup", () => {
 		copied = window.navigator.clipboard.writeText(selection.toString());
 	});
-	await proc.stdin.send("\x1b[<0;6;1m");
+	await send(proc, "\x1b[<0;6;1m");
 	await copied;
 	const payload = Buffer.from("hello", "utf8").toString("base64");
-	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+	expect(written()).toContain(`\x1b]52;c;${payload}\x07`);
 
 	termdom.dispose();
 });
 
 test("a backward drag selects, and spans nodes, with the anchor/focus handled by Selection", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document, window} = termdom;
 
@@ -458,20 +398,20 @@ test("a backward drag selects, and spans nodes, with the anchor/focus handled by
 	await nextFrame(termdom);
 
 	// Press mid-way through line 2, drag UP to mid line 1.
-	await proc.stdin.send("\x1b[<0;7;2M"); // before "d" of "second" (offset 6)
-	await proc.stdin.send("\x1b[<32;3;1M"); // up to before "l" of "hello" (offset 2)
+	await send(proc, "\x1b[<0;7;2M"); // before "d" of "second" (offset 6)
+	await send(proc, "\x1b[<32;3;1M"); // up to before "l" of "hello" (offset 2)
 	await nextFrame(termdom);
 
 	const text = window.getSelection()!.toString();
 	expect(text).toContain("llo world");
 	expect(text).toContain("second");
-	await proc.stdin.send("\x1b[<0;3;1m");
+	await send(proc, "\x1b[<0;3;1m");
 
 	termdom.dispose();
 });
 
 test("a click collapses an existing selection", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document, window} = termdom;
 
@@ -480,14 +420,14 @@ test("a click collapses an existing selection", async () => {
 	document.body.appendChild(div);
 	await nextFrame(termdom);
 
-	await proc.stdin.send("\x1b[<0;1;1M");
-	await proc.stdin.send("\x1b[<32;10;1M");
-	await proc.stdin.send("\x1b[<0;10;1m");
+	await send(proc, "\x1b[<0;1;1M");
+	await send(proc, "\x1b[<32;10;1M");
+	await send(proc, "\x1b[<0;10;1m");
 	expect(window.getSelection()!.isCollapsed).toBe(false);
 
 	// A fresh click elsewhere collapses it, as in a browser.
-	await proc.stdin.send("\x1b[<0;3;1M");
-	await proc.stdin.send("\x1b[<0;3;1m");
+	await send(proc, "\x1b[<0;3;1M");
+	await send(proc, "\x1b[<0;3;1m");
 	expect(window.getSelection()!.isCollapsed).toBe(true);
 
 	termdom.dispose();
@@ -498,7 +438,7 @@ test("a selecting drag released over a label does not activate it", async () => 
 	// -- and in a framework app the resulting re-render replaces the very
 	// nodes the fresh selection points into, destroying it on the spot.
 	// Browsers suppress the click; so do we.
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document, window} = termdom;
 
@@ -517,17 +457,17 @@ test("a selecting drag released over a label does not activate it", async () => 
 	document.addEventListener("click", (e: any) => clicks.push(e.target.tagName));
 
 	// Drag across the label text ("[ ]Mark all..." -- label starts col 4).
-	await proc.stdin.send("\x1b[<0;5;1M");
-	await proc.stdin.send("\x1b[<32;12;1M");
-	await proc.stdin.send("\x1b[<0;12;1m");
+	await send(proc, "\x1b[<0;5;1M");
+	await send(proc, "\x1b[<32;12;1M");
+	await send(proc, "\x1b[<0;12;1m");
 
 	expect(window.getSelection()!.toString()).toBe("ark all");
 	expect(checkbox.checked).toBe(false); // NOT activated
 	expect(clicks).toEqual([]); // no click synthesized from a selecting drag
 
 	// A plain click on the label still activates as before.
-	await proc.stdin.send("\x1b[<0;5;1M");
-	await proc.stdin.send("\x1b[<0;5;1m");
+	await send(proc, "\x1b[<0;5;1M");
+	await send(proc, "\x1b[<0;5;1m");
 	expect(checkbox.checked).toBe(true);
 
 	termdom.dispose();
@@ -544,7 +484,7 @@ test("a click inside a widget's UA shadow content focuses the widget", async () 
 	await nextFrame(termdom);
 
 	expect(document.elementFromPoint(2, 1)?.id).toBe("i");
-	await proc.stdin.send("\x1b[<0;3;2M\x1b[<0;3;2m"); // click at col 3, row 2
+	await send(proc, "\x1b[<0;3;2M\x1b[<0;3;2m"); // click at col 3, row 2
 	await nextFrame(termdom);
 	expect(document.activeElement?.id).toBe("i");
 	termdom.dispose();
@@ -564,23 +504,14 @@ test("wheel scrolling moves the screen with a scroll region, not a redraw", asyn
 	).join("");
 	await nextFrame(dom);
 
-	let emitted = "";
-	const write = terminal.stdout.write.bind(terminal.stdout);
-	(terminal.stdout as unknown as {write: unknown}).write = (
-		chunk: unknown,
-		enc?: unknown,
-		cb?: unknown,
-	) => {
-		emitted += String(chunk);
-		return (write as (...a: unknown[]) => unknown)(chunk, enc, cb);
-	};
+	const emitted = captureRawOutput(terminal);
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<65;10;5M"));
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	// The region's margins are set, which only the transform path does.
-	expect(emitted).toMatch(/\x1b\[\d+;\d+r/);
+	expect(emitted()).toMatch(/\x1b\[\d+;\d+r/);
 	// And the document actually moved.
 	expect(dom.window.scrollY).toBeGreaterThan(0);
 
@@ -588,7 +519,7 @@ test("wheel scrolling moves the screen with a scroll region, not a redraw", asyn
 });
 
 test("a mouse event answers in the standard coordinate spaces", async () => {
-	const proc = new MockMouseProcess();
+	const proc = new MockProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document} = termdom;
 	document.body.innerHTML =
@@ -615,10 +546,10 @@ test("a mouse event answers in the standard coordinate spaces", async () => {
 	});
 
 	// Press at col 2, row 3 (1-based reports; the event is 0-based).
-	await proc.stdin.send("\x1b[<0;2;3M");
+	await send(proc, "\x1b[<0;2;3M");
 	// Motion to col 6, row 4: movement is the delta from the press.
-	await proc.stdin.send("\x1b[<32;6;4M");
-	await proc.stdin.send("\x1b[<0;6;4m");
+	await send(proc, "\x1b[<32;6;4M");
+	await send(proc, "\x1b[<0;6;4m");
 
 	expect(seen[0].clientX).toBe(1);
 	expect(seen[0].clientY).toBe(2);

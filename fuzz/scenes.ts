@@ -17,7 +17,7 @@
 import fc from "fast-check";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "../tests/test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "../tests/test-utils.js";
 
 export const SHEET = `
 	.hide { display: none; }
@@ -472,13 +472,7 @@ export function makeDOM(options: SceneOptions = {}): Scene {
 		terminal.stdout.write(line + "\r\n");
 	}
 	if (options.record) {
-		const record = options.record;
-		const stream = terminal.stdout as any;
-		const wrote = stream.write.bind(stream);
-		stream.write = (chunk: any, encoding?: any, callback?: any): boolean => {
-			record(String(chunk));
-			return wrote(chunk, encoding, callback);
-		};
+		captureRawOutput(terminal, {onChunk: options.record});
 	}
 	const dom = new TermDOM({
 		transport: options.shared ? terminal.sharedTransport : terminal.transport,

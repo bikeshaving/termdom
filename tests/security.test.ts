@@ -1,26 +1,12 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 // TermDOM renders UNTRUSTED content -- a Markdown file, an LLM reply in the chat
 // example. Two properties must hold: it never executes that content as code, and
 // it never lets that content's control characters reach the terminal as raw
 // escape bytes (cursor moves, window-title sets, clipboard writes...).
-
-function captureRawOutput(t: MockProcess): () => string {
-	let raw = "";
-	const orig = t.stdout.write.bind(t.stdout);
-	(t.stdout as unknown as {write: unknown}).write = (
-		chunk: unknown,
-		enc?: unknown,
-		cb?: unknown,
-	) => {
-		raw += String(chunk);
-		return (orig as (...a: unknown[]) => unknown)(chunk, enc, cb);
-	};
-	return () => raw;
-}
 
 // Control bytes TermDOM NEVER emits itself, so any occurrence is smuggled
 // through text content. (Bare ESC 0x1b is excluded: TermDOM emits it for its

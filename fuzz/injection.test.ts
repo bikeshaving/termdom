@@ -19,7 +19,7 @@ import {expect, test} from "@b9g/libuild/test";
 import fc from "fast-check";
 
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "../tests/test-utils.js";
+import {captureRawOutput, MockProcess, nextFrame} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 100);
 const SEED = Number(process.env.FC_SEED ?? 1);
@@ -87,22 +87,14 @@ test("a title carries no command but the one that frames it", async () => {
 			const terminal = new MockProcess({rows: 4, cols: 20});
 			const dom = new TermDOM({transport: terminal.transport});
 			await nextFrame(dom);
-			let raw = "";
-			const write = terminal.stdout.write.bind(terminal.stdout);
-			(terminal.stdout as unknown as {write: unknown}).write = (
-				chunk: unknown,
-				enc?: unknown,
-				cb?: unknown,
-			) => {
-				raw += String(chunk);
-				return (write as (...a: unknown[]) => unknown)(chunk, enc, cb);
-			};
+			const rawOutput = captureRawOutput(terminal);
 			dom.document.title = payload;
 			// The title rides the session's write queue; disposal drains it.
 			await dom.dispose();
 
 			// The sequence the title writes and nothing else: one ESC to
 			// open it, one BEL to close it, and no other control anywhere.
+			const raw = rawOutput();
 			const start = raw.indexOf("\x1b]2;");
 			expect(start).toBeGreaterThanOrEqual(0);
 			const end = raw.indexOf("\x07", start);
@@ -128,16 +120,7 @@ test("no text in a document puts a control byte on the wire", async () => {
 	await fc.assert(
 		fc.asyncProperty(dangerous, async (payload) => {
 			const terminal = new MockProcess({rows: 4, cols: 20});
-			let raw = "";
-			const write = terminal.stdout.write.bind(terminal.stdout);
-			(terminal.stdout as unknown as {write: unknown}).write = (
-				chunk: unknown,
-				enc?: unknown,
-				cb?: unknown,
-			) => {
-				raw += String(chunk);
-				return (write as (...a: unknown[]) => unknown)(chunk, enc, cb);
-			};
+			const raw = captureRawOutput(terminal);
 			const dom = new TermDOM({transport: terminal.transport});
 			dom.document.body.textContent = payload;
 			await nextFrame(dom);
@@ -146,10 +129,10 @@ test("no text in a document puts a control byte on the wire", async () => {
 			// them -- the engine's own CSI and SGR output is made of them --
 			// so the attacker's ESC-led sequences are checked whole below.
 			for (const byte of [0x9b, 0x9d, 0x90, 0x07, 0x08, 0x00, 0x7f]) {
-				expect(raw.includes(String.fromCharCode(byte))).toBe(false);
+				expect(raw().includes(String.fromCharCode(byte))).toBe(false);
 			}
 			for (const opener of ["\x1b]", "\x1bP", "\x1b[2J"]) {
-				expect(raw.includes(opener)).toBe(false);
+				expect(raw().includes(opener)).toBe(false);
 			}
 
 			// Liveness: every check above passes on a frame that painted
