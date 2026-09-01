@@ -8,8 +8,6 @@
  * are written to.
  */
 
-import "./inspector.js";
-
 import {getBoxModel, StyleManager} from "./cssom.js";
 import * as DOM from "./dom.js";
 import {
@@ -66,14 +64,14 @@ const kLifecycle = Symbol("lifecycle");
  * between belong to the session and wait on kAttachBegun rather than being
  * dropped.
  */
-function isAttached(termdom: TermDOM): boolean {
+export function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
 
-const kScreen = Symbol("screen");
-const kLayoutEngine = Symbol("layoutEngine");
-const kStyleManager = Symbol("styleManager");
+export const kScreen = Symbol("screen");
+export const kLayoutEngine = Symbol("layoutEngine");
+export const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
 const kIsRendering = Symbol("isRendering");
@@ -105,7 +103,7 @@ const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 const kTransport = Symbol("transport");
-const kExchange = Symbol("exchange");
+export const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
 
 const kOnDisclosureToggle = Symbol("onDisclosureToggle");
@@ -295,17 +293,15 @@ export class TermDOM {
 		// The engine the document stands on. From here a control builds and
 		// keeps its own shadow tree; the shell only says when a newly
 		// connected one should be upgraded.
-		DOM.mount(document, createMount(this));
+		DOM.adoptDocument(document, this);
 
-		this[kEventHandler] = new EventHandler(this.document);
-		this[kPainter] = new Painter({
-			window: this.window,
-			document: this.document,
-			layout: this[kLayoutEngine],
-			styleManager: this[kStyleManager],
-			scrollTop: () => this[kScreen].scrollTop,
-			topLayer: DOM.getTopLayer(this.document) as unknown as Set<Element>,
-		});
+		this[kEventHandler] = new EventHandler(this);
+		this[kPainter] = new Painter(
+			this.document,
+			this[kLayoutEngine],
+			this[kStyleManager],
+			this[kScreen],
+		);
 
 		// A field edit -- text (input), a caret or selection move
 		// (select/selectionchange), or a checkbox/radio toggle (change) --
@@ -505,66 +501,48 @@ export class TermDOM {
 }
 
 /**
- * The document's Mount: this engine's collaborators, and its answers for what
- * the DOM cannot work out from the tree -- the box measurements that need the
- * cascade's box model, the camera, the frame loop and the terminal itself.
- * Reached through the document -- no prototype carries engine state for these.
+ * End the session: the window closed and the beforeunload gate agreed, or
+ * the terminal went away.
  */
-function createMount(termDOM: TermDOM): DOM.Mount {
-	return {
-		layout: termDOM[kLayoutEngine],
-		styles: termDOM[kStyleManager],
-		exchange: termDOM[kExchange],
-		screen: termDOM[kScreen],
-		// A frame callback fires after the render it scheduled has been
-		// painted: a bare timer would be decoupled from the (async) paint,
-		// so a callback could fire before the frame is written. No dirty
-		// bit: the nothing-moved gate may skip the paint, but the render
-		// still drains the callbacks that awaited it.
-		render() {
-			void render(termDOM);
-		},
-		close() {
-			// A terminal that went away on its own has nothing to drain and
-			// nothing to close; the engine just ends.
-			const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
-			// An immediate close must not tear down mid-establishment: wait
-			// for attach to finish (anchor found, first frame painted) so the
-			// payout lands where the frame was, not at a stale row 0. Then
-			// everything dispose queued must reach the wire before the
-			// transport acts on the close (a process transport exits).
-			void (async () => {
-				if (live) {
-					await termDOM[kAttachReady];
-					// The last frames' DSR queries -- width probes above all
-					// -- have replies on the wire. Consume them while the
-					// session still reads, or they are typed into the shell
-					// that inherits the tty.
-					await termDOM[kExchange].drainQueries(200);
-				}
-				await termDOM.dispose();
-				if (live) {
-					termDOM[kTransport].close({status: 0});
-				}
-			})();
-		},
-		// Closing the document flushes the live region into the terminal's
-		// scrollback and seals it -- the SSR res.end() of the terminal. This
-		// is the "print rich output and stop" seam: write(), then close().
-		//
-		// dispose() has already set attached=false by the time it reaches
-		// here, so the seal is skipped. A real seal is a close() from a live,
-		// painted session.
-		seal() {
-			if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
-				flushDocument(termDOM);
-				termDOM[kSealed] = true;
-			}
-		},
-		get attached(): boolean {
-			return isAttached(termDOM);
-		},
-	};
+export function closeTermDOM(termDOM: TermDOM): void {
+	// A terminal that went away on its own has nothing to drain and
+	// nothing to close; the engine just ends.
+	const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
+	// An immediate close must not tear down mid-establishment: wait
+	// for attach to finish (anchor found, first frame painted) so the
+	// payout lands where the frame was, not at a stale row 0. Then
+	// everything dispose queued must reach the wire before the
+	// transport acts on the close (a process transport exits).
+	void (async () => {
+		if (live) {
+			await termDOM[kAttachReady];
+			// The last frames' DSR queries -- width probes above all
+			// -- have replies on the wire. Consume them while the
+			// session still reads, or they are typed into the shell
+			// that inherits the tty.
+			await termDOM[kExchange].drainQueries(200);
+		}
+		await termDOM.dispose();
+		if (live) {
+			termDOM[kTransport].close({status: 0});
+		}
+	})();
+}
+
+/**
+ * Closing the document flushes the live region into the terminal's
+ * scrollback and seals it -- the SSR res.end() of the terminal. This is the
+ * "print rich output and stop" seam: write(), then close().
+ *
+ * dispose() has already set attached=false by the time it reaches here, so
+ * the seal is skipped. A real seal is a close() from a live, painted
+ * session.
+ */
+export function sealTermDOM(termDOM: TermDOM): void {
+	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
+		flushDocument(termDOM);
+		termDOM[kSealed] = true;
+	}
 }
 
 /**
@@ -676,9 +654,7 @@ function updateHoverReporting(
 	termdom[kExchange].setMode("motionReporting", wanted);
 }
 
-async function render(
-	termdom: TermDOM,
-): Promise<void> {
+export async function render(termdom: TermDOM): Promise<void> {
 	// attach() is the ONLY door to the terminal: until the app calls it,
 	// mutations keep the DOM and layout live but write nothing. Rendering
 	// resumes -- starting with whatever the document holds by then -- the

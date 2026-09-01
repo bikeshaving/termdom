@@ -4,7 +4,11 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {getShadowRoot, mount, selectionRecordOf} from "../src/internal/dom.js";
+import {
+	adoptDocument,
+	getShadowRoot,
+	selectionRecordOf,
+} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -13,7 +17,7 @@ test("a document takes one engine and refuses a second", async () => {
 	// what is on screen.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
-	expect(() => mount(dom.document, {} as never)).toThrow();
+	expect(() => adoptDocument(dom.document, dom)).toThrow();
 	dom.dispose();
 });
 

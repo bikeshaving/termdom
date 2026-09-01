@@ -108,7 +108,7 @@ const DOM_DOORS = [
 	"flatIsConnected",
 	"flatParentElement",
 	"flushObservers",
-	"getMount",
+	"termDOMOf",
 	"getChildren",
 	"getPseudoHost",
 	"getPseudoName",
@@ -124,7 +124,7 @@ const DOM_DOORS = [
 	"lockDataTransfer",
 	"matchesCompiled",
 	"matchesSelector",
-	"mount",
+	"adoptDocument",
 	"parkFieldCaret",
 	"parseHTMLDocument",
 	"parseSelectorList",
@@ -162,13 +162,6 @@ if (process.argv.includes("--check")) {
 	for (const name of DOM_DOORS) {
 		if (!doors.includes(name)) {
 			failures.push(`internal/dom lost a listed door: ${name}`);
-		}
-	}
-	for (const dependent of dependents.get("internal/termdom") ?? []) {
-		if (dependent !== "index") {
-			failures.push(
-				`internal/termdom is glue and only index may import it, not ${dependent}`,
-			);
 		}
 	}
 

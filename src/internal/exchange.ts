@@ -19,8 +19,15 @@
  * nothing above transportFromProcess names Node.
  */
 
-import {dispatchAsUserAgent, getMount, refreshMediaQueries} from "./dom.js";
+import {dispatchAsUserAgent, refreshMediaQueries, termDOMOf} from "./dom.js";
 import type {EventHandler} from "./input.js";
+import {
+	closeTermDOM,
+	kLayoutEngine,
+	kScreen,
+	kStyleManager,
+	render,
+} from "./termdom.js";
 import {recordClusterAdvance} from "./text.js";
 
 /* -------------------------------------------------- the transport contract */
@@ -1221,7 +1228,10 @@ export class TerminalExchange {
 		void this[kTransport].closed.then(() => {
 			if (!this[kDisposed]) {
 				this[kTransportClosed] = true;
-				getMount(this[kDocument])?.close();
+				const termDOM = termDOMOf(this[kDocument]);
+				if (termDOM !== undefined) {
+					closeTermDOM(termDOM);
+				}
 			}
 		});
 	}
@@ -1284,7 +1294,7 @@ export class TerminalExchange {
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			getMount(this[kDocument])?.layout.adoptTerminalReordering();
+			termDOMOf(this[kDocument])?.[kLayoutEngine].adoptTerminalReordering();
 		}
 	}
 
@@ -1354,7 +1364,7 @@ export class TerminalExchange {
 			read: ({row}) => {
 				// The 1-based terminal row is the 0-based anchor: content
 				// shifts up to the terminal top from the command start.
-				const screen = getMount(this[kDocument])?.screen;
+				const screen = termDOMOf(this[kDocument])?.[kScreen];
 				if (screen !== undefined) {
 					screen.documentTop = row - 1;
 					screen.anchorScrollTop = 1 - row;
@@ -1603,10 +1613,10 @@ function requestStarvationFrame(session: TerminalExchange): void {
 		if (session[kDisposed] || session[kWidthStarved].size === 0) {
 			return;
 		}
-		const mount = getMount(session[kDocument]);
-		if (mount !== undefined) {
-			mount.screen.rideProbeTrain();
-			mount.render();
+		const termDOM = termDOMOf(session[kDocument]);
+		if (termDOM !== undefined) {
+			termDOM[kScreen].rideProbeTrain();
+			void render(termDOM);
 		}
 	}, TerminalExchange[kWidthStarvationWait]);
 }
@@ -1721,11 +1731,11 @@ function settleWidthProbe(
 		// difference. The previous frame described a screen that was never
 		// drawn: drop it and paint the region again from the corrected
 		// measurements.
-		const mount = getMount(session[kDocument]);
-		if (mount !== undefined) {
-			mount.layout.invalidateTextMeasurement();
-			mount.screen.repaintAll();
-			mount.render();
+		const termDOM = termDOMOf(session[kDocument]);
+		if (termDOM !== undefined) {
+			termDOM[kLayoutEngine].invalidateTextMeasurement();
+			termDOM[kScreen].repaintAll();
+			void render(termDOM);
 		}
 	}
 }
@@ -1818,16 +1828,16 @@ function scheduleResize(session: TerminalExchange): void {
  * is against the size the screen holds.
  */
 function applyTerminalSize(session: TerminalExchange): void {
-	const mount = getMount(session[kDocument]);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(session[kDocument]);
+	if (termDOM === undefined) {
 		return;
 	}
 	const {cols: width, rows: height} = session[kTransport];
-	const sizeChanged = width !== mount.screen.cols ||
-		height !== mount.screen.rows;
-	mount.screen.resize(height, width);
-	mount.layout.resize(width, height);
-	mount.styles.refreshStylesheets();
+	const sizeChanged = width !== termDOM[kScreen].cols ||
+		height !== termDOM[kScreen].rows;
+	termDOM[kScreen].resize(height, width);
+	termDOM[kLayoutEngine].resize(width, height);
+	termDOM[kStyleManager].refreshStylesheets();
 	if (sizeChanged) {
 		const window = session[kDocument].defaultView!;
 		dispatchAsUserAgent(window, new window.Event("resize"));
@@ -1856,15 +1866,15 @@ function applyTerminalSize(session: TerminalExchange): void {
  * for width).
  */
 function handleResize(session: TerminalExchange): void {
-	const mount = getMount(session[kDocument]);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(session[kDocument]);
+	if (termDOM === undefined) {
 		return;
 	}
 	applyTerminalSize(session);
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	mount.layout.calculateLayout();
-	const contentHeight = mount.layout.documentPaintHeight();
-	const wrappedRowsAbove = mount.screen.wrappedRowsAbovePark(newWidth);
+	termDOM[kLayoutEngine].calculateLayout();
+	const contentHeight = termDOM[kLayoutEngine].documentPaintHeight();
+	const wrappedRowsAbove = termDOM[kScreen].wrappedRowsAbovePark(newWidth);
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
@@ -1874,9 +1884,9 @@ function handleResize(session: TerminalExchange): void {
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		mount.screen.documentTop = startRow;
-		mount.screen.anchorScrollTop = -startRow;
-		mount.screen.replaced(startRow);
+		termDOM[kScreen].documentTop = startRow;
+		termDOM[kScreen].anchorScrollTop = -startRow;
+		termDOM[kScreen].replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection, which
@@ -1884,14 +1894,14 @@ function handleResize(session: TerminalExchange): void {
 		session[kSettlingResize] = null;
 		const wasDetected = session[kHasDetectedCommandStart];
 		session[kHasDetectedCommandStart] = false;
-		mount.render();
+		void render(termDOM);
 		session[kDocument].defaultView!.requestAnimationFrame(() => {
 			session[kHasDetectedCommandStart] = wasDetected;
 		});
 	};
 
 	const computedReanchor = () => {
-		const previousStart = mount.screen.documentTop;
+		const previousStart = termDOM[kScreen].documentTop;
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};
@@ -1941,11 +1951,11 @@ function route(session: TerminalExchange, chunk: string): void {
 	// Input dirties the frame wholesale: reactive pseudo-state and the
 	// selection move without a mutation record, and no cheaper answer than
 	// the paint exists.
-	const mount = getMount(session[kDocument]);
+	const termDOM = termDOMOf(session[kDocument]);
 	const input = session[kInput]!;
 	const flushKeys = () => {
 		if (keys.length > 0) {
-			mount?.screen.invalidate();
+			termDOM?.[kScreen].invalidate();
 			input.handleKeys(keys);
 			keys = [];
 		}
@@ -1966,12 +1976,12 @@ function route(session: TerminalExchange, chunk: string): void {
 				break;
 			case "mouse":
 				flushKeys();
-				mount?.screen.invalidate();
+				termDOM?.[kScreen].invalidate();
 				input.handleMouseReport(item.button, item.col, item.row, item.release);
 				break;
 			case "paste":
 				flushKeys();
-				mount?.screen.invalidate();
+				termDOM?.[kScreen].invalidate();
 				input.handlePaste(item.text);
 				break;
 			default:

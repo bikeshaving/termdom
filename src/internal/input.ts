@@ -35,20 +35,26 @@ import {
 	type EngineWindow,
 	fieldCaretOffset,
 	flatParentElement,
-	getMount,
 	getShadowRoot,
 	keyboardActivation,
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
-	type Mount,
 	parkFieldCaret,
 	setHoveredElement,
 	setUASelection,
+	termDOMOf,
 	topmostModalDialog,
 } from "./dom.js";
 import type {WireKey} from "./exchange.js";
 import type {LayoutEngine} from "./layout.js";
+import {
+	kLayoutEngine,
+	kScreen,
+	kStyleManager,
+	render,
+	type TermDOM,
+} from "./termdom.js";
 
 /* -------------------------------------------------- what a wire item means */
 
@@ -332,7 +338,7 @@ interface DocumentPoint {
 	/** False for a row above the painted region -- a shell prompt's rows. */
 	inDocument: boolean;
 }
-const kMount = Symbol("mount");
+const kTermDOM = Symbol("termDOM");
 
 /* --------------------------------------------------------- the interpreter */
 
@@ -351,7 +357,7 @@ function wheelScrollerFor(
 	deltaY: number,
 ): Element | null {
 	const document = handler[kDocument];
-	const layout = handler[kMount].layout;
+	const layout = handler[kTermDOM][kLayoutEngine];
 	for (
 		let element: Element | null = target;
 		element &&
@@ -423,7 +429,7 @@ export class EventHandler {
 	static readonly [kDblclickIntervalMs] = 500;
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
-	declare [kMount]: Mount;
+	declare [kTermDOM]: TermDOM;
 
 	// The last position a mouse event was dispatched at, which is what the
 	// spec's movementX/movementY measure from. The first report has nothing
@@ -476,10 +482,10 @@ export class EventHandler {
 	declare [kLastClickTarget]: Element | null;
 	declare [kLastClickTime]: number;
 
-	constructor(document: Document) {
-		this[kDocument] = document;
-		this[kWindow] = document.defaultView as unknown as EngineWindow;
-		this[kMount] = getMount(document)!;
+	constructor(termDOM: TermDOM) {
+		this[kDocument] = termDOM.document;
+		this[kWindow] = termDOM.document.defaultView as unknown as EngineWindow;
+		this[kTermDOM] = termDOM;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -553,7 +559,7 @@ export class EventHandler {
 				quiet: base <= 2,
 			};
 			if (base > 2) {
-				this[kMount].render();
+				void render(this[kTermDOM]);
 				return;
 			}
 		}
@@ -592,7 +598,7 @@ export class EventHandler {
 				// same way it would in a browser: preventDefault on the wheel
 				// event.
 				this[kMouseCaptureYielded] = true;
-				this[kMount].render();
+				void render(this[kTermDOM]);
 				if (this[kScrollChainTimer] !== null) {
 					clearTimeout(this[kScrollChainTimer]);
 				}
@@ -666,7 +672,7 @@ export class EventHandler {
 		if (target !== previous) {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
-			this[kMount].styles.handleHoverChange(previous, target);
+			this[kTermDOM][kStyleManager].handleHoverChange(previous, target);
 			const chainOf = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -803,7 +809,7 @@ export class EventHandler {
 				}),
 			);
 		}
-		this[kMount].render();
+		void render(this[kTermDOM]);
 	}
 
 	/**
@@ -862,7 +868,7 @@ function documentPointAt(
 	col: number,
 	row: number,
 ): DocumentPoint {
-	const screen = handler[kMount].screen;
+	const screen = handler[kTermDOM][kScreen];
 	const documentRow =
 		handler[kDocument].fullscreenElement !== null
 			? row - 1 + screen.anchorScrollTop
@@ -886,16 +892,16 @@ function scrollByWheel(
 		scroller.scrollTop += deltaY;
 		return false;
 	}
-	const mount = handler[kMount];
+	const termDOM = handler[kTermDOM];
 	if (
 		deltaY < 0 &&
-		mount.screen.scrollTop === 0 &&
+		termDOM[kScreen].scrollTop === 0 &&
 		handler[kDocument].fullscreenElement === null
 	) {
 		return true;
 	}
-	mount.screen.scrollTo(mount.screen.scrollTop + deltaY);
-	mount.render();
+	termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + deltaY);
+	void render(termDOM);
 	return false;
 }
 
@@ -915,7 +921,7 @@ function reclaimMouseCapture(handler: EventHandler): void {
 		handler[kScrollChainTimer] = null;
 	}
 	handler[kMouseCaptureYielded] = false;
-	handler[kMount].render();
+	void render(handler[kTermDOM]);
 }
 
 /**
@@ -941,7 +947,7 @@ function dragTo(
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
 			);
-			handler[kMount].render();
+			void render(handler[kTermDOM]);
 		}
 		return;
 	}
@@ -963,7 +969,7 @@ function dragTo(
 					focus.node,
 					focus.offset,
 				);
-			handler[kMount].render();
+			void render(handler[kTermDOM]);
 		}
 	}
 }
@@ -989,9 +995,11 @@ function press(
 	handler[kPopoverPressTarget] = lightDismissPress(target);
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
-	if (handler[kMount].styles.setFocusVisible(false)) {
-		handler[kMount].styles.handleFocusChange(handler[kDocument].activeElement);
-		handler[kMount].render();
+	if (handler[kTermDOM][kStyleManager].setFocusVisible(false)) {
+		handler[kTermDOM][kStyleManager].handleFocusChange(
+			handler[kDocument].activeElement,
+		);
+		void render(handler[kTermDOM]);
 	}
 	const notCanceled = dispatchAsUserAgent(
 		target,
@@ -1007,10 +1015,10 @@ function press(
 	const active = handler[kDocument].activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
-		handler[kMount].render();
+		void render(handler[kTermDOM]);
 	} else if (!focusable && active && active !== handler[kDocument].body) {
 		(active as HTMLElement).blur();
-		handler[kMount].render();
+		void render(handler[kTermDOM]);
 	}
 
 	// A select's press-to-open and option-row commit are the select
@@ -1037,7 +1045,7 @@ function press(
 		if (docSelection && !docSelection.isCollapsed) {
 			docSelection.removeAllRanges();
 		}
-		handler[kMount].render();
+		void render(handler[kTermDOM]);
 	}
 
 	// Default action: mousedown collapses the document selection at
@@ -1066,7 +1074,7 @@ function press(
 			selection.removeAllRanges();
 		}
 		if (hadSelection) {
-			handler[kMount].render();
+			void render(handler[kTermDOM]);
 		}
 	}
 }
@@ -1139,7 +1147,7 @@ function release(
 				: null;
 		if (control) {
 			control.focus();
-			handler[kMount].render();
+			void render(handler[kTermDOM]);
 		}
 
 		// A second click on the same target within the double-click interval
@@ -1179,9 +1187,11 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	const keyCode = legacyKeyCode(keyName);
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-	if (handler[kMount].styles.setFocusVisible(true)) {
-		handler[kMount].styles.handleFocusChange(handler[kDocument].activeElement);
-		handler[kMount].render();
+	if (handler[kTermDOM][kStyleManager].setFocusVisible(true)) {
+		handler[kTermDOM][kStyleManager].handleFocusChange(
+			handler[kDocument].activeElement,
+		);
+		void render(handler[kTermDOM]);
 	}
 
 	// Find the focused element. document.activeElement defaults to body when
@@ -1231,7 +1241,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// by its own affordance or document.exitFullscreen().
 	if (keyName === "Escape") {
 		if (closeTopmost(handler[kDocument])) {
-			handler[kMount].render();
+			void render(handler[kTermDOM]);
 			return;
 		}
 	}
@@ -1266,7 +1276,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 						composed: true,
 					}),
 				);
-				handler[kMount].render();
+				void render(handler[kTermDOM]);
 			}
 		}
 		// A select's editing (open/navigate/commit) is the select widget's
@@ -1349,7 +1359,10 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
 	const scope = topmostModalDialog(handler[kDocument]) ?? handler[kDocument];
-	const entries = sequentialFocusEntries(scope, handler[kMount].layout);
+	const entries = sequentialFocusEntries(
+		scope,
+		handler[kTermDOM][kLayoutEngine],
+	);
 
 	// activeElement retargets to the shadow host at document scope; the
 	// walk needs the innermost focused element, so follow each root's own
@@ -1489,7 +1502,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 	// :focus styling and the caret (the real terminal cursor, parked in the
 	// focused field) both need one to move.
-	handler[kMount].render();
+	void render(handler[kTermDOM]);
 }
 
 /**
@@ -1515,7 +1528,7 @@ function textPositionAt(
 	) {
 		return null;
 	}
-	return handler[kMount].layout.caretPositionFromPoint(x, y, element);
+	return handler[kTermDOM][kLayoutEngine].caretPositionFromPoint(x, y, element);
 }
 
 /** Whether the text at a caret position may enter the document selection. */
@@ -1524,5 +1537,6 @@ function selectable(
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
-	return parent === null || handler[kMount].styles.isSelectable(parent);
+	return parent === null ||
+		handler[kTermDOM][kStyleManager].isSelectable(parent);
 }

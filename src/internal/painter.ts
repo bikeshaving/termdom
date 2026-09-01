@@ -21,6 +21,7 @@ import {
 	fieldValueText,
 	flatParentElement,
 	getShadowRoot,
+	getTopLayer,
 	renderedTopLayer,
 	selectionRecordOf,
 } from "./dom.js";
@@ -30,7 +31,7 @@ import {
 	type LayoutEngine,
 	renderTextFragment,
 } from "./layout.js";
-import type {CellContext, CellStyle, LineStyle} from "./screen.js";
+import type {CellContext, CellStyle, LineStyle, Screen} from "./screen.js";
 
 /**
  * A clip as edges, stored rather than derived: an axis nothing clips runs
@@ -262,7 +263,7 @@ const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kLayout = Symbol("layout");
 const kStyleManager = Symbol("styleManager");
-const kScrollTop = Symbol("scrollTop");
+const kScreen = Symbol("screen");
 const kTopLayer = Symbol("topLayer");
 const kRenderedOutsideMarkers = Symbol("renderedOutsideMarkers");
 const kScrolledRows = Symbol("scrolledRows");
@@ -291,7 +292,7 @@ export class Painter {
 	declare [kStyleManager]: StyleManager;
 	// The document camera, read at paint time: a fixed subtree is laid out in
 	// viewport space and paints where the camera is looking.
-	declare [kScrollTop]: () => number;
+	declare [kScreen]: Screen;
 	// Shared with TermDOM by reference -- see the class doc.
 	declare [kTopLayer]: Set<Element>;
 	// List markers already painted this frame; each renders at most once.
@@ -302,22 +303,20 @@ export class Painter {
 	// the band by this amount instead of the extents.
 	declare [kScrolledRows]: number;
 
-	constructor(deps: {
-		window: EngineWindow;
-		document: Document;
-		layout: LayoutEngine;
-		styleManager: StyleManager;
-		scrollTop: () => number;
-		topLayer: Set<Element>;
-	}) {
+	constructor(
+		document: Document,
+		layout: LayoutEngine,
+		styleManager: StyleManager,
+		screen: Screen,
+	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
-		this[kWindow] = deps.window;
-		this[kDocument] = deps.document;
-		this[kLayout] = deps.layout;
-		this[kStyleManager] = deps.styleManager;
-		this[kScrollTop] = deps.scrollTop;
-		this[kTopLayer] = deps.topLayer;
+		this[kWindow] = document.defaultView as unknown as EngineWindow;
+		this[kDocument] = document;
+		this[kLayout] = layout;
+		this[kStyleManager] = styleManager;
+		this[kScreen] = screen;
+		this[kTopLayer] = getTopLayer(document) as unknown as Set<Element>;
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
@@ -797,7 +796,7 @@ function renderStackingContext(
 		// a fixed bar is laid out against the bar's viewport coordinates
 		// and must ride with it, so the walk includes ancestors.
 		if (painter[kLayout].isInFixedSpace(element)) {
-			ctx.viewportOffset = previousOffset + painter[kScrollTop]();
+			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
 		}
 		try {
 			if (painter[kLayout].formsStackingContext(element)) {

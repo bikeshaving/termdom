@@ -57,6 +57,17 @@ import {
 import type {LayoutEngine} from "./layout.js";
 import type {Screen} from "./screen.js";
 import {
+	closeTermDOM,
+	isAttached,
+	kExchange,
+	kLayoutEngine,
+	kScreen,
+	kStyleManager,
+	render,
+	sealTermDOM,
+	type TermDOM,
+} from "./termdom.js";
+import {
 	asciiLowercase,
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
@@ -268,11 +279,16 @@ export function fieldCaretOffset(
 	if (!valueText) {
 		return null;
 	}
-	const mount = getMount(element);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(element);
+	if (termDOM === undefined) {
 		return null;
 	}
-	const found = mount.layout.caretPositionFromPoint(x, y, valueText, true);
+	const found = termDOM[kLayoutEngine].caretPositionFromPoint(
+		x,
+		y,
+		valueText,
+		true,
+	);
 	if (!found) {
 		return null;
 	}
@@ -337,11 +353,11 @@ export function revealFieldCaret(document: globalThis.Document): void {
 	if (!valueText || !valueSpan) {
 		return;
 	}
-	const mount = getMount(active);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(active);
+	if (termDOM === undefined) {
 		return;
 	}
-	const content = mount.layout.contentRect(active);
+	const content = termDOM[kLayoutEngine].contentRect(active);
 	if (!content) {
 		return;
 	}
@@ -724,18 +740,18 @@ const kDocument = Symbol("node document");
  */
 function buildUARoot(
 	host: Element,
-	engine: Mount,
+	engine: TermDOM,
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
-	engine.layout.invalidate();
+	engine[kLayoutEngine].invalidate();
 	observeShadowRoot(host[kDocument]!, root);
 	// The sheet is in the root BEFORE the cascade hears about it, so the
 	// registration's incremental parse sees it: registered-then-populated
 	// left the cascade to notice the sheet by count drift, which ordered a
 	// full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
-	engine.styles.registerShadowRoot(root);
+	engine[kStyleManager].registerShadowRoot(root);
 	return root;
 }
 
@@ -8854,25 +8870,25 @@ export class Element extends Node implements globalThis.Element {
 			registry === undefined ? globalCustomElements : registry,
 		);
 		const root = this[kShadowRoot]! as ShadowRoot;
-		const mount = getMount(this);
-		if (mount !== undefined) {
+		const termDOM = termDOMOf(this);
+		if (termDOM !== undefined) {
 			observeShadowRoot(this[kDocument]!, root);
 			// A shadow attachment recomposes the host's subtree with no
 			// mutation record, so no box enumeration still stands.
-			mount.layout.invalidate();
+			termDOM[kLayoutEngine].invalidate();
 			// The root's <style> elements join the cascade, scoped to this
 			// tree; the refresh rides on the STYLE mutation records the
 			// enrollment above will deliver.
-			mount.styles.registerShadowRoot(root);
+			termDOM[kStyleManager].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
 			// just changed wholesale: light children stop rendering the moment
 			// the root exists, even while it is still empty. Rebuild the
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
-				mount.layout.invalidate(this);
-				mount.screen.invalidate();
-				mount.render();
+				termDOM[kLayoutEngine].invalidate(this);
+				termDOM[kScreen].invalidate();
+				void render(termDOM);
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -8884,7 +8900,7 @@ export class Element extends Node implements globalThis.Element {
 	 * document rejects.
 	 */
 	requestFullscreen(_options?: globalThis.FullscreenOptions): Promise<void> {
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return Promise.reject(
 				new TypeError("The element's document is not displayed"),
@@ -8893,7 +8909,7 @@ export class Element extends Node implements globalThis.Element {
 		// Fullscreen writes the alternate-screen switch; attach() is the
 		// only consent for that. A browser rejects without a user gesture,
 		// and this is the terminal's equivalent precondition.
-		if (!engine.attached) {
+		if (!isAttached(engine)) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -8907,8 +8923,8 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The element's UA styles changed (it now fills the viewport)
 		// and neither a mutation nor a focus move fired.
-		engine.styles.handleFocusChange(this);
-		engine.layout.invalidate(this);
+		engine[kStyleManager].handleFocusChange(this);
+		engine[kLayoutEngine].invalidate(this);
 		// The screen switch rides the next frame, where no frame can
 		// straddle it; the promise resolves once that frame is written.
 		return frameSettled(this[kDocument]!, engine);
@@ -9516,9 +9532,9 @@ Object.defineProperties(Element.prototype, {
 	},
 	scrollTop: {
 		get(this: Element): number {
-			const mount = isDocumentScroller(this) ? getMount(this) : undefined;
-			return mount
-				? mount.screen.scrollTop
+			const termDOM = isDocumentScroller(this) ? termDOMOf(this) : undefined;
+			return termDOM
+				? termDOM[kScreen].scrollTop
 				: (scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
@@ -9607,16 +9623,16 @@ function unionRect(
  * its client rect is scroll-invariant.
  */
 function toViewportRect(
-	mount: Mount,
+	termDOM: TermDOM,
 	rect: globalThis.DOMRect,
 	element: Element | null,
 ): globalThis.DOMRect {
-	if (element !== null && mount.layout.isInFixedSpace(element)) {
+	if (element !== null && termDOM[kLayoutEngine].isInFixedSpace(element)) {
 		return rect;
 	}
 	return new DOMRect(
 		rect.x,
-		rect.y - mount.screen.scrollTop,
+		rect.y - termDOM[kScreen].scrollTop,
 		rect.width,
 		rect.height,
 	);
@@ -9628,14 +9644,14 @@ function toViewportRect(
 Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
-			const mount = getMount(this);
-			if (mount === undefined || !this.isConnected) {
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined || !this.isConnected) {
 				return new DOMRect(0, 0, 0, 0);
 			}
 			flushLayout(this);
 			return toViewportRect(
-				mount,
-				mount.layout.getRect(this) ?? new DOMRect(),
+				termDOM,
+				termDOM[kLayoutEngine].getRect(this) ?? new DOMRect(),
 				this,
 			);
 		},
@@ -9644,15 +9660,15 @@ Object.defineProperties(Element.prototype, {
 	},
 	getClientRects: {
 		value(this: Element): globalThis.DOMRectList {
-			const mount = getMount(this);
-			if (mount === undefined || !this.isConnected) {
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined || !this.isConnected) {
 				return new DOMRectList();
 			}
 			flushLayout(this);
 			return rectList(
-				mount.layout
+				termDOM[kLayoutEngine]
 					.getRects(this)
-					.map((rect) => toViewportRect(mount, rect, this)),
+					.map((rect) => toViewportRect(termDOM, rect, this)),
 			);
 		},
 		writable: true,
@@ -10058,16 +10074,16 @@ export class HTMLElement extends Element {
 		if (previous === this || innermostActive(document) !== this) {
 			return;
 		}
-		const mount = getMount(this);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this);
+		if (termDOM === undefined) {
 			return;
 		}
 		// :focus rules match live and a focus move is not a mutation, so both
 		// elements' resolved styles go stale whether or not a listener
 		// touches anything.
-		mount.styles.handleFocusChange(previous, this);
-		mount.screen.invalidate();
-		mount.render();
+		termDOM[kStyleManager].handleFocusChange(previous, this);
+		termDOM[kScreen].invalidate();
+		void render(termDOM);
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -10097,13 +10113,13 @@ export class HTMLElement extends Element {
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
-		const mount = wasFocused ? getMount(this) : undefined;
-		if (mount === undefined) {
+		const termDOM = wasFocused ? termDOMOf(this) : undefined;
+		if (termDOM === undefined) {
 			return;
 		}
-		mount.styles.handleFocusChange(this, null);
-		mount.screen.invalidate();
-		mount.render();
+		termDOM[kStyleManager].handleFocusChange(this, null);
+		termDOM[kScreen].invalidate();
+		void render(termDOM);
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -10290,12 +10306,12 @@ export interface HTMLElement
  * reader below falls back to the zero the spec gives an element with no box.
  */
 function settledLayout(element: Element): LayoutEngine | undefined {
-	const mount = getMount(element);
-	if (mount === undefined || !element.isConnected) {
+	const termDOM = termDOMOf(element);
+	if (termDOM === undefined || !element.isConnected) {
 		return undefined;
 	}
 	flushLayout(element);
-	return mount.layout;
+	return termDOM[kLayoutEngine];
 }
 
 Object.defineProperties(HTMLElement.prototype, {
@@ -10331,7 +10347,7 @@ Object.defineProperties(HTMLElement.prototype, {
 	// layout flush -- unlike every other member around it.
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			return (getMount(this)?.layout.offsetParent(this) ?? null) as
+			return (termDOMOf(this)?.[kLayoutEngine].offsetParent(this) ?? null) as
 				Element |
 				null;
 		},
@@ -10355,14 +10371,14 @@ Object.defineProperties(HTMLElement.prototype, {
 	// The border widths, which the cascade alone decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.styles.borderEdge(this).left ?? 0;
+			return termDOMOf(this)?.[kStyleManager].borderEdge(this).left ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return getMount(this)?.styles.borderEdge(this).top ?? 0;
+			return termDOMOf(this)?.[kStyleManager].borderEdge(this).top ?? 0;
 		},
 		configurable: true,
 		enumerable: true,
@@ -10387,37 +10403,37 @@ Object.defineProperties(HTMLElement.prototype, {
 	// all moves are the minimal ones, block "nearest".
 	scrollIntoView: {
 		value(this: HTMLElement): void {
-			const mount = getMount(this);
-			if (mount === undefined || !this.isConnected) {
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined || !this.isConnected) {
 				return;
 			}
 			flushLayout(this);
-			mount.layout.revealInScrollPorts(this);
+			termDOM[kLayoutEngine].revealInScrollPorts(this);
 			// The scroll boxes around the element have revealed it within
 			// themselves; what remains is the camera's, which shows
 			// [scrollTop, scrollTop + region). Move it the minimal amount --
 			// the standard block: "nearest" behavior. Document-relative, so
 			// it compares directly against the camera's own offset.
-			const rect = mount.layout.getRect(this);
+			const rect = termDOM[kLayoutEngine].getRect(this);
 			if (!rect) {
 				return;
 			}
 			const document = this[kDocument]!;
-			const flow = mount.layout.getRect(document.documentElement);
+			const flow = termDOM[kLayoutEngine].getRect(document.documentElement);
 			const regionHeight =
 				fullscreenElementOf(document) !== null
-					? mount.screen.rows
+					? termDOM[kScreen].rows
 					: Math.min(
-						mount.screen.rows,
+						termDOM[kScreen].rows,
 						flow ? Math.ceil(flow.height) : 0,
 					);
-			const top = mount.screen.scrollTop;
+			const top = termDOM[kScreen].scrollTop;
 			if (rect.top < top) {
-				mount.screen.scrollTo(rect.top);
-				mount.render();
+				termDOM[kScreen].scrollTo(rect.top);
+				void render(termDOM);
 			} else if (rect.bottom > top + regionHeight) {
-				mount.screen.scrollTo(rect.bottom - regionHeight);
-				mount.render();
+				termDOM[kScreen].scrollTo(rect.bottom - regionHeight);
+				void render(termDOM);
 			}
 		},
 		configurable: true,
@@ -10433,8 +10449,8 @@ Object.defineProperties(HTMLElement.prototype, {
 			this: HTMLElement,
 			options?: globalThis.CheckVisibilityOptions,
 		): boolean {
-			const mount = getMount(this);
-			if (mount === undefined || !this.isConnected) {
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined || !this.isConnected) {
 				return false;
 			}
 			const view = this.ownerDocument!.defaultView as unknown as {
@@ -10458,7 +10474,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return mount.layout.getRects(this).length > 0;
+			return termDOM[kLayoutEngine].getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -13046,7 +13062,7 @@ class HTMLDetailsElement extends HTMLElement {
 	declare [kToggleQueued]?: boolean;
 	declare [kStateAtQueue]?: string;
 
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kContent]?: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -13061,7 +13077,7 @@ class HTMLDetailsElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -14265,7 +14281,7 @@ class HTMLInputElement extends HTMLElement {
 	// The rendered tree and what it was built for. "field" for a text-ish
 	// input, "toggle" for checkbox/radio; null until built. The two are
 	// different trees, so a type flip rebuilds.
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kKind]?: "field" | "toggle" | null;
 	declare [kRoot]?: globalThis.ShadowRoot | null;
 	declare [kValueText]?: globalThis.Text | null;
@@ -14747,7 +14763,7 @@ class HTMLInputElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -14831,7 +14847,7 @@ class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only hear it on a
 		// microtask.
 		if (changed) {
-			this[kEngine]!.layout.invalidate(this);
+			this[kEngine]![kLayoutEngine].invalidate(this);
 		}
 	}
 }
@@ -14965,7 +14981,7 @@ function build(
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		engine.layout.invalidate();
+		engine[kLayoutEngine].invalidate();
 		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
 	input[kRoot] = root;
@@ -14982,7 +14998,7 @@ function build(
 		input[kPlaceholderText] = null;
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
-	engine.layout.invalidate(input);
+	engine[kLayoutEngine].invalidate(input);
 	input[kUAReconcile]!();
 }
 
@@ -15649,7 +15665,7 @@ function gaugeRun(host: Element, glyph: string): string {
  */
 function buildGaugeRoot(
 	host: Element,
-	engine: Mount,
+	engine: TermDOM,
 	styles: string,
 ): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
@@ -15703,7 +15719,7 @@ const METER_ATTRIBUTES = new Set([
  * colors the bar from.
  */
 class HTMLMeterElement extends HTMLElement {
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kBar]?: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -15782,7 +15798,7 @@ class HTMLMeterElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -16271,7 +16287,7 @@ class HTMLPreElement extends HTMLElement {}
  * the difference the way a browser does.
  */
 class HTMLProgressElement extends HTMLElement {
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kBar]?: globalThis.HTMLElement | null;
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -16313,7 +16329,7 @@ class HTMLProgressElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -16436,7 +16452,7 @@ class HTMLSelectElement extends HTMLElement {
 	declare [kOptions]?: HTMLOptionsCollection | null;
 	declare [kSelectedOptions]?: HTMLCollection | null;
 
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPicker]?: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN; null = closed.
@@ -16541,7 +16557,7 @@ class HTMLSelectElement extends HTMLElement {
 			const row = (Array.from(
 				picker.childNodes,
 			) as globalThis.HTMLElement[]).find((node) => {
-				const rect = engine.layout.getRect(node);
+				const rect = engine[kLayoutEngine].getRect(node);
 				return rect ? rectContains(rect, x, y) : false;
 			});
 			if (row) {
@@ -16560,7 +16576,7 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			// Off every row: a press inside the picker's own padding does nothing; a
 			// press outside it (the closed face) dismisses.
-			const pickerRect = engine.layout.getRect(picker);
+			const pickerRect = engine[kLayoutEngine].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kHighlight] = null;
 				this[kUAReconcile]!();
@@ -16710,7 +16726,7 @@ class HTMLSelectElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -16771,7 +16787,7 @@ class HTMLSelectElement extends HTMLElement {
 		const label = selected ? selected.label : "";
 		if (this[kValueText]!.data !== label) {
 			this[kValueText]!.data = label;
-			engine.layout.invalidate(this);
+			engine[kLayoutEngine].invalidate(this);
 		}
 
 		if (this[kHighlight] === null) {
@@ -16786,7 +16802,7 @@ class HTMLSelectElement extends HTMLElement {
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's containing
 		// block is the ICB), matching the field's width.
-		const rect = engine.layout.getRect(this);
+		const rect = engine[kLayoutEngine].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
 			const left = `${Math.round(rect.left)}px`;
@@ -17692,7 +17708,7 @@ class HTMLTextAreaElement extends HTMLElement {
 	declare [kSelectionEnd]?: number;
 	declare [kSelectionDirection]?: string;
 
-	declare [kEngine]?: Mount | null;
+	declare [kEngine]?: TermDOM | null;
 	declare [kValueText]?: globalThis.Text | null;
 	declare [kPlaceholderText]?: globalThis.Text | null;
 	declare [kPlaceholderSpan]?: globalThis.HTMLElement | null;
@@ -17766,7 +17782,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				engine.layout.calculateLayout();
+				engine[kLayoutEngine].calculateLayout();
 				const target = verticalTarget(
 					this,
 					caret,
@@ -17778,8 +17794,8 @@ class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				engine.layout.calculateLayout();
-				const visual = textareaVisualLines(this, engine.layout);
+				engine[kLayoutEngine].calculateLayout();
+				const visual = textareaVisualLines(this, engine[kLayoutEngine]);
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
@@ -18000,7 +18016,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return;
 		}
@@ -18060,7 +18076,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		// hears its characterData change too, but only on a microtask -- an edit
 		// that reads the fresh geometry back the same tick (vertical motion,
 		// Home/End) needs the engine dirtied synchronously now.
-		engine.layout.invalidate(this);
+		engine[kLayoutEngine].invalidate(this);
 	}
 }
 
@@ -18086,7 +18102,10 @@ function verticalTarget(
 	caret: number,
 	direction: 1 | -1,
 ): number {
-	const visual = textareaVisualLines(textarea, textarea[kEngine]!.layout);
+	const visual = textareaVisualLines(
+		textarea,
+		textarea[kEngine]![kLayoutEngine],
+	);
 	if (!visual) {
 		return caret;
 	}
@@ -18351,13 +18370,13 @@ function topmostAutoPopover(
  * reveal, have nothing else to hear it from.
  */
 function popoverStateChanged(element: Element): void {
-	const mount = getMount(element);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(element);
+	if (termDOM === undefined) {
 		return;
 	}
-	mount.styles.handleStateChange(element);
-	mount.screen.invalidate();
-	mount.render();
+	termDOM[kStyleManager].handleStateChange(element);
+	termDOM[kScreen].invalidate();
+	void render(termDOM);
 }
 
 /**
@@ -21595,9 +21614,13 @@ export class Document extends Node implements globalThis.Document {
 		setDescendantText(element, String(value));
 		// A terminal's window title is the document's, set in-band -- while
 		// the terminal is attached and taking input, and not otherwise.
-		const mount = getMount(this);
-		if (mount !== undefined && mount.attached && mount.exchange.interactive) {
-			void mount.exchange.setTitle(String(value));
+		const termDOM = termDOMOf(this);
+		if (
+			termDOM !== undefined &&
+			isAttached(termDOM) &&
+			termDOM[kExchange].interactive
+		) {
+			void termDOM[kExchange].setTitle(String(value));
 		}
 	}
 
@@ -21864,7 +21887,7 @@ export class Document extends Node implements globalThis.Document {
 
 	/** Return the fullscreen element to the flow it came from. */
 	exitFullscreen(): Promise<void> {
-		const engine = getMount(this);
+		const engine = termDOMOf(this);
 		if (engine === undefined) {
 			return Promise.reject(
 				new TypeError("The document is not displayed"),
@@ -21872,8 +21895,8 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			engine.styles.handleFocusChange(exiting);
-			engine.layout.invalidate(exiting);
+			engine[kStyleManager].handleFocusChange(exiting);
+			engine[kLayoutEngine].invalidate(exiting);
 		}
 		return frameSettled(this, engine);
 	}
@@ -21887,7 +21910,10 @@ export class Document extends Node implements globalThis.Document {
 	 * document below the sealed block.
 	 */
 	close(): void {
-		getMount(this)?.seal();
+		const termDOM = termDOMOf(this);
+		if (termDOM !== undefined) {
+			sealTermDOM(termDOM);
+		}
 	}
 
 	getElementsByTagName<K extends keyof globalThis.HTMLElementTagNameMap>(
@@ -22650,17 +22676,17 @@ export function elementAtDocumentPoint(
 	x: number,
 	y: number,
 ): globalThis.Element | null {
-	const mount = getMount(document);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(document);
+	if (termDOM === undefined) {
 		return null;
 	}
 	flushLayout(document);
-	let element = mount.layout.hitTest(
+	let element = termDOM[kLayoutEngine].hitTest(
 		document.documentElement,
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		mount.screen.scrollTop,
+		termDOM[kScreen].scrollTop,
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -22701,14 +22727,14 @@ export function elementAtDocumentPoint(
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element | null {
-			const mount = getMount(this);
-			if (mount === undefined) {
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined) {
 				return null;
 			}
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same
 			// conversion getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + mount.screen.scrollTop);
+			return elementAtDocumentPoint(this, x, y + termDOM[kScreen].scrollTop);
 		},
 		writable: true,
 		configurable: true,
@@ -22721,11 +22747,11 @@ Object.defineProperties(Document.prototype, {
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
-			const mount = getMount(this);
+			const termDOM = termDOMOf(this);
 			let hit =
-				mount === undefined
+				termDOM === undefined
 					? null
-					: elementAtDocumentPoint(this, x, y + mount.screen.scrollTop);
+					: elementAtDocumentPoint(this, x, y + termDOM[kScreen].scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -23358,15 +23384,15 @@ function setScrollOffset(
 	axis: "left" | "top",
 	value: number,
 ): void {
-	const mount = getMount(element);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(element);
+	if (termDOM === undefined) {
 		writeScrollOffset(element, axis, toDouble(value));
 		return;
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			mount.screen.scrollTo(Number(value));
-			mount.render();
+			termDOM[kScreen].scrollTo(Number(value));
+			void render(termDOM);
 		}
 		return;
 	}
@@ -23374,7 +23400,7 @@ function setScrollOffset(
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
-		const room = mount.layout.scrollRange(element, axis);
+		const room = termDOM[kLayoutEngine].scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
 		}
@@ -23396,11 +23422,11 @@ function setScrollOffset(
 	// A vertical scroll is a band the terminal may be able to shift for us;
 	// a horizontal one is not, and dirties the frame like anything else.
 	if (axis === "top") {
-		recordScrollBand(mount, document, element, next - previous);
+		recordScrollBand(termDOM, document, element, next - previous);
 	} else {
-		mount.screen.invalidate();
+		termDOM[kScreen].invalidate();
 	}
-	mount.render();
+	void render(termDOM);
 }
 
 /**
@@ -23413,9 +23439,9 @@ function setScrollOffset(
  * offsets the journal already priced, and can move several boxes at once.
  */
 export function clampScrollOffsets(document: globalThis.Document): void {
-	const mount = getMount(document);
+	const termDOM = termDOMOf(document);
 	const held = scrolledElements.get(document as Document);
-	if (mount === undefined || held === undefined) {
+	if (termDOM === undefined || held === undefined) {
 		return;
 	}
 	let changed = false;
@@ -23428,8 +23454,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		if (!element.isConnected) {
 			continue;
 		}
-		const extent = mount.layout.scrollExtentOf(element);
-		const port = mount.layout.contentRect(element);
+		const extent = termDOM[kLayoutEngine].scrollExtentOf(element);
+		const port = termDOM[kLayoutEngine].contentRect(element);
 		if (!extent || !port) {
 			continue;
 		}
@@ -23448,8 +23474,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollBands.delete(document as Document);
-		mount.screen.invalidate();
-		mount.render();
+		termDOM[kScreen].invalidate();
+		void render(termDOM);
 	}
 }
 
@@ -23462,7 +23488,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 const scrollBands = new WeakMap<Document, {element: Element; delta: number}>();
 
 function recordScrollBand(
-	mount: Mount,
+	termDOM: TermDOM,
 	document: Document,
 	element: Element,
 	delta: number,
@@ -23474,7 +23500,7 @@ function recordScrollBand(
 		band.delta += delta;
 	} else {
 		scrollBands.delete(document);
-		mount.screen.invalidate();
+		termDOM[kScreen].invalidate();
 	}
 }
 
@@ -24962,14 +24988,14 @@ function rangeAnchor(range: Range): Element | null {
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
-			const mount = getMount(this.startContainer);
-			if (mount === undefined) {
+			const termDOM = termDOMOf(this.startContainer);
+			if (termDOM === undefined) {
 				return new DOMRect(0, 0, 0, 0);
 			}
 			flushLayout(this.startContainer);
 			return toViewportRect(
-				mount,
-				unionRect(mount.layout.getRangeRects(this)),
+				termDOM,
+				unionRect(termDOM[kLayoutEngine].getRangeRects(this)),
 				rangeAnchor(this),
 			);
 		},
@@ -24978,16 +25004,16 @@ Object.defineProperties(Range.prototype, {
 	},
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
-			const mount = getMount(this.startContainer);
-			if (mount === undefined) {
+			const termDOM = termDOMOf(this.startContainer);
+			if (termDOM === undefined) {
 				return new DOMRectList();
 			}
 			flushLayout(this.startContainer);
 			const anchor = rangeAnchor(this);
 			return rectList(
-				mount.layout
+				termDOM[kLayoutEngine]
 					.getRangeRects(this)
-					.map((rect) => toViewportRect(mount, rect, anchor)),
+					.map((rect) => toViewportRect(termDOM, rect, anchor)),
 			);
 		},
 		writable: true,
@@ -25016,10 +25042,10 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the repaint is asked for here -- before the coalescing
 	// guard below, which drops the second move of a task but not its paint.
-	const mount = getMount(document);
-	if (mount !== undefined) {
-		mount.screen.invalidate();
-		mount.render();
+	const termDOM = termDOMOf(document);
+	if (termDOM !== undefined) {
+		termDOM[kScreen].invalidate();
+		void render(termDOM);
 	}
 	if (document[kSelectionChangeScheduled]!) {
 		return;
@@ -25648,9 +25674,9 @@ function paintsText(
  */
 function selectionTextNodes(
 	document: Document,
-	engine: Mount | undefined,
+	engine: TermDOM | undefined,
 ): Text[] {
-	const layout = engine?.layout ?? null;
+	const layout = engine?.[kLayoutEngine] ?? null;
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]!;
@@ -25659,7 +25685,7 @@ function selectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					paintsText(child as Text, layout) &&
-					(engine === undefined || engine.styles.isSelectable(node))
+					(engine === undefined || engine[kStyleManager].isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
@@ -25861,8 +25887,8 @@ function modifiedPoint(
 	granularity: string,
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
-	const engine = getMount(document);
-	const layout = engine?.layout ?? null;
+	const engine = termDOMOf(document);
+	const layout = engine?.[kLayoutEngine] ?? null;
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -28407,59 +28433,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 /* -------------------------------------------------------------- mounting */
 
 /**
- * The engine standing behind a document: the collaborators it lays out,
- * cascades and observes through, and the few facts only the shell around them
- * knows -- what a move of focus fires, when a frame lands, where the camera
- * is, what the viewport is, and what the terminal behind it can do. A
- * measurement is not among them: a box is measured by asking `layout` and
- * `styles` directly, which is where the ingredients live. A mounting engine
- * installs one mount per document, and a node reaches it through its
- * ownerDocument, one hop. A headless document has none: it is the spec's
- * no-browsing-context document, and the members consulting a mount degrade to
- * that -- zero rects, empty lists, null parents.
- */
-export interface Mount {
-
-	/**
-	 * The two engines a document renders through, whole. A user-agent
-	 * widget needs both: a control's rendered content model is not its
-	 * children -- an input has none -- but a shadow tree the user agent
-	 * owns, built from the control's own value, placeholder and selection,
-	 * and that tree lays out and cascades like any other.
-	 */
-	layout: LayoutEngine;
-	styles: StyleManager;
-
-	/**
-	 * The terminal session the document speaks through: OSC 2 for its title,
-	 * OSC 52 for its clipboard. Rebound in place before the first attach
-	 * when the transport changes.
-	 */
-	exchange: TerminalExchange;
-
-	/**
-	 * The terminal surface: its size in cells -- the window's size and the
-	 * screen's both -- and where the document sits on it.
-	 */
-	screen: Screen;
-
-	/** Schedule a frame, and drain what awaited it once it is written. */
-	render(): void;
-
-	/**
-	 * End the session: the window closed and the beforeunload gate agreed,
-	 * or the terminal went away.
-	 */
-	close(): void;
-
-	/** Seal what the document painted into the terminal's scrollback. */
-	seal(): void;
-
-	/** Whether attach() has taken the terminal and dispose() has not. */
-	readonly attached: boolean;
-}
-
-/**
  * The state feeds a mounted document accepts only from its engine: what the
  * handle writes, no one else can.
  */
@@ -28481,30 +28454,33 @@ export function refreshMediaQueries(document: globalThis.Document): void {
 	}
 }
 
-const kMount = Symbol("mount");
+const kTermDOM = Symbol("termDOM");
 
 /**
- * Mount a document on its engine. Once per document: a second engine would
+ * Give a document to its TermDOM. Once per document: a second engine would
  * build every widget a second time, and the two would disagree about what is
  * on screen.
  */
-export function mount(document: globalThis.Document, engine: Mount): void {
-	const doc = document as unknown as Record<symbol, Mount | undefined>;
-	if (doc[kMount] !== undefined) {
+export function adoptDocument(
+	document: globalThis.Document,
+	termDOM: TermDOM,
+): void {
+	const doc = document as unknown as Record<symbol, TermDOM | undefined>;
+	if (doc[kTermDOM] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	doc[kMount] = engine;
+	doc[kTermDOM] = termDOM;
 	const mounted = document as Document;
 	hoverListenerCounts.set(
 		mounted,
-		watchHoverListeners(mounted, () => engine.render()),
+		watchHoverListeners(mounted, () => void render(termDOM)),
 	);
 	// Observation is the document's own: mutations fan out to the cascade,
 	// the layout tree and the UA default actions here, and the engine is
 	// only asked for the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
 		handleMutationRecords(mounted, mutations);
-		engine.render();
+		void render(termDOM);
 	});
 	observer.observe(document.documentElement as unknown as Node, {
 		childList: true,
@@ -28529,13 +28505,13 @@ function handleMutationRecords(
 	document: Document,
 	mutations: MutationRecord[],
 ): void {
-	const mount = getMount(document);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(document);
+	if (termDOM === undefined) {
 		return;
 	}
 	// Any observed mutation can move a node in the flat tree; drop the
 	// memoized composition links before anything reads through them.
-	mount.layout.invalidateFrame();
+	termDOM[kLayoutEngine].invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) re-assign className/style with identical values on every
@@ -28571,10 +28547,10 @@ function handleMutationRecords(
 			upgradeUAWidgetsIn(added);
 		}
 	}
-	mount.styles.handleMutations(relevant);
-	mount.layout.handleMutations(relevant);
+	termDOM[kStyleManager].handleMutations(relevant);
+	termDOM[kLayoutEngine].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
-	dropUnfocusableFocus(document, mount);
+	dropUnfocusableFocus(document, termDOM);
 }
 
 /**
@@ -28609,7 +28585,7 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
  * display:none anywhere on its flat chain -- unfocuses it, blur events
  * and restyle included.
  */
-function dropUnfocusableFocus(document: Document, mount: Mount): void {
+function dropUnfocusableFocus(document: Document, termDOM: TermDOM): void {
 	let active = document.activeElement;
 	while (active !== null) {
 		const shadow = getShadowRoot<ShadowRoot>(active);
@@ -28629,7 +28605,7 @@ function dropUnfocusableFocus(document: Document, mount: Mount): void {
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			mount.styles
+			termDOM[kStyleManager]
 				.declarationFor(node as Element)
 				.getComputedValue("display") === "none"
 		) {
@@ -28665,8 +28641,8 @@ export function applyMutations(document: globalThis.Document): boolean {
  * them, so the frame is asked for on the caller's behalf.
  */
 export function flushLayout(node: globalThis.Node): boolean {
-	const mount = getMount(node);
-	if (mount === undefined) {
+	const termDOM = termDOMOf(node);
+	if (termDOM === undefined) {
 		return false;
 	}
 	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
@@ -28675,9 +28651,9 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		mount.render();
+		void render(termDOM);
 	}
-	mount.layout.calculateLayout();
+	termDOM[kLayoutEngine].calculateLayout();
 	clampScrollOffsets(document);
 	return had;
 }
@@ -28690,12 +28666,12 @@ export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounts.get(document as Document)?.() ?? 0;
 }
 
-/** The mount of a node's document, or undefined when it is headless. */
-export function getMount(node: globalThis.Node): Mount | undefined {
+/** The TermDOM a node's document belongs to; undefined when it is headless. */
+export function termDOMOf(node: globalThis.Node): TermDOM | undefined {
 	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
 	const document =
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument;
-	return (document as Record<symbol, Mount | undefined> | null)?.[kMount];
+	return (document as Record<symbol, TermDOM | undefined> | null)?.[kTermDOM];
 }
 
 /* ------------------------------------------------- clipboard and permissions */
@@ -28860,8 +28836,12 @@ class Clipboard extends EventTarget {
  * reaches the page as the rejection the Clipboard API promises.
  */
 function reachClipboard(document: Document, what: string): TerminalExchange {
-	const mount = getMount(document);
-	if (mount === undefined || !mount.attached || !mount.exchange.interactive) {
+	const termDOM = termDOMOf(document);
+	if (
+		termDOM === undefined ||
+		!isAttached(termDOM) ||
+		!termDOM[kExchange].interactive
+	) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
 		);
@@ -28869,7 +28849,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (!userActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return mount.exchange;
+	return termDOM[kExchange];
 }
 
 Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
@@ -28944,8 +28924,8 @@ class PermissionStatus extends EventTarget {
 		) {
 			return "denied";
 		}
-		const mount = getMount(document);
-		if (!mount || !mount.attached || !mount.exchange.interactive) {
+		const termDOM = termDOMOf(document);
+		if (!termDOM || !isAttached(termDOM) || !termDOM[kExchange].interactive) {
 			return "denied";
 		}
 		return userActive(document) ? "granted" : "prompt";
@@ -29216,12 +29196,12 @@ function holdFrameCallback(
  * resolves its promise here, once the render that carries the switch has
  * been written.
  */
-function frameSettled(document: Document, mount: Mount): Promise<void> {
+function frameSettled(document: Document, termDOM: TermDOM): Promise<void> {
 	return new Promise((resolve) => {
 		holdFrameCallback(document, () => {
 			resolve();
 		});
-		mount.render();
+		void render(termDOM);
 	});
 }
 
@@ -29275,7 +29255,7 @@ export class Window extends EventTarget {
 	// moves them, and a value frozen at construction would have reported the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
-		return getMount(this.document)?.screen.cols ?? 0;
+		return termDOMOf(this.document)?.[kScreen].cols ?? 0;
 	}
 
 	get outerWidth(): number {
@@ -29283,7 +29263,7 @@ export class Window extends EventTarget {
 	}
 
 	get innerHeight(): number {
-		return getMount(this.document)?.screen.rows ?? 0;
+		return termDOMOf(this.document)?.[kScreen].rows ?? 0;
 	}
 
 	get outerHeight(): number {
@@ -29293,14 +29273,14 @@ export class Window extends EventTarget {
 	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
 	// the anchor after the window is built.
 	get screenTop(): number {
-		return getMount(this.document)?.screen.documentTop ?? 0;
+		return termDOMOf(this.document)?.[kScreen].documentTop ?? 0;
 	}
 
 	// Standard window scrolling, mapped onto the camera: scrollY is how far
 	// the camera has moved down the document, scrollBy moves it. A terminal
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		return getMount(this.document)?.screen.scrollTop ?? 0;
+		return termDOMOf(this.document)?.[kScreen].scrollTop ?? 0;
 	}
 
 	get pageYOffset(): number {
@@ -29354,16 +29334,16 @@ export class Window extends EventTarget {
 	// document.documentElement.scrollTop always): one camera, four ways to
 	// read or move it.
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		const mount = getMount(this.document);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this.document);
+		if (termDOM === undefined) {
 			return;
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? mount.screen.scrollTop)
+				? (xOrOptions.top ?? termDOM[kScreen].scrollTop)
 				: (y ?? 0);
-		mount.screen.scrollTo(top);
-		mount.render();
+		termDOM[kScreen].scrollTo(top);
+		void render(termDOM);
 	}
 
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
@@ -29371,16 +29351,16 @@ export class Window extends EventTarget {
 	}
 
 	scrollBy(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		const mount = getMount(this.document);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this.document);
+		if (termDOM === undefined) {
 			return;
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
-		mount.screen.scrollTo(mount.screen.scrollTop + top);
-		mount.render();
+		termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + top);
+		void render(termDOM);
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame: it
@@ -29388,12 +29368,12 @@ export class Window extends EventTarget {
 	// so "await a frame" always means the frame carrying the pending
 	// mutations has landed.
 	requestAnimationFrame(callback: FrameRequestCallback): number {
-		const mount = getMount(this.document);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this.document);
+		if (termDOM === undefined) {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		mount.render();
+		void render(termDOM);
 		return handle;
 	}
 
@@ -29421,9 +29401,9 @@ export class Window extends EventTarget {
 	 */
 	matchMedia(query: string): MediaQueryList {
 		const media = String(query);
-		const mount = getMount(this.document);
+		const termDOM = termDOMOf(this.document);
 		const matches = (): boolean =>
-			mount?.styles.mediaQueryMatches(media) ?? false;
+			termDOM?.[kStyleManager].mediaQueryMatches(media) ?? false;
 		const list = new EventTarget();
 		// `matches` reads live; this holds the value the last "change" event
 		// reported.
@@ -29479,8 +29459,8 @@ export class Window extends EventTarget {
 	 * carries nothing from the last one.
 	 */
 	close(): void {
-		const mount = getMount(this.document);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this.document);
+		if (termDOM === undefined) {
 			return;
 		}
 		const event = createBeforeUnloadEvent();
@@ -29488,7 +29468,7 @@ export class Window extends EventTarget {
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
 		}
-		mount.close();
+		closeTermDOM(termDOM);
 	}
 }
 

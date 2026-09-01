@@ -19,13 +19,12 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
-import {getBoxModel, MediaList, StyleManager} from "../src/internal/cssom.ts";
-import {
-	createDocumentWindow,
-	type EngineWindow,
-	mount,
-} from "../src/internal/dom.ts";
-import {LayoutEngine} from "../src/internal/layout.ts";
+import {createDocumentWindow, type EngineWindow} from "../src/internal/dom.ts";
+import type {
+	TerminalCloseInfo,
+	TerminalSize,
+} from "../src/internal/exchange.ts";
+import {TermDOM} from "../src/internal/termdom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
@@ -187,97 +186,32 @@ interface Outcome {
 	error?: string;
 }
 
-/** The style and layout engines mounted on a document, by document. */
-const mounts = new Map<
-	Document,
-	{styleManager: StyleManager; layoutEngine: LayoutEngine}
->();
-
 /**
- * The geometry reads a test takes off an element: clientWidth/clientHeight,
- * which several tests derive their expected resolved values from, and
- * getBoundingClientRect/getClientRects, which a test calls to force layout up
- * to date before reading a used value.
- *
- * TermDOM installs all of these off the same layout rects, from the mount that
- * owns the document's renderer. A document under this harness has a
- * StyleManager and a LayoutEngine but no TermDOM, so the harness installs the
- * same measurements against the same engine. The DOM classes are the realm's,
- * one set for every document in it, so each read finds the mount of the
- * document the element belongs to rather than closing over one of them.
+ * A TermDOM for a test document: the CSSOM, a cascade, a layout engine and
+ * the environment facts a test document expects to find around it. The suite
+ * is written against a browser viewport in CSS pixels; this engine's pixel is
+ * a cell, so the terminal behind it is a grid the same size as the viewport
+ * the tests assume. Nothing is written to it: the engine is never attached.
  */
-function installGeometry(window: EngineWindow): void {
-	if (geometryInstalled) {
-		return;
-	}
-	geometryInstalled = true;
-	const getMount = (
-		element: Element,
-	): {styleManager: StyleManager; layoutEngine: LayoutEngine} | undefined =>
-		element.ownerDocument ? mounts.get(element.ownerDocument) : undefined;
-	const clientBox = (
-		element: Element,
-	): {width: number; height: number} | null => {
-		const rect = getMount(element)?.styleManager.usedRect(element);
-		if (!rect) {
-			return null;
-		}
-		const box = getBoxModel(element);
-		return {
-			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-		};
-	};
-	for (const [property, axis] of [
-		["clientWidth", "width"],
-		["clientHeight", "height"],
-	] as const) {
-		Object.defineProperty(window.HTMLElement.prototype, property, {
-			get(this: Element) {
-				return Math.round(clientBox(this)?.[axis] ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-	Object.defineProperty(window.Element.prototype, "getBoundingClientRect", {
-		value(this: Element): DOMRect {
-			const mount = getMount(this);
-			if (!mount) {
-				return new DOMRect();
-			}
-			return (
-				mount.styleManager.usedRect(this) ?? new DOMRect()
-			);
+function mountEngine(html: string, url: string): TermDOM {
+	const termDOM = new TermDOM({
+		html,
+		url,
+		transport: {
+			cols: 800,
+			rows: 600,
+			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+			writable: new WritableStream<string>({}),
+			resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
+			closed: new Promise<TerminalCloseInfo>(() => {}),
+			ready: Promise.resolve(),
+			colorDepth: "rgb",
+			interactive: false,
+			sharesScreen: false,
+			close() {},
 		},
-		configurable: true,
-		writable: true,
 	});
-	Object.defineProperty(window.Element.prototype, "getClientRects", {
-		value(this: Element): DOMRectList {
-			const mount = getMount(this);
-			if (!mount) {
-				return [] as unknown as DOMRectList;
-			}
-			// usedRect for the flush; getRects for the fragments, which a box
-			// broken across lines has more than one of.
-			mount.styleManager.usedRect(this);
-			return mount.layoutEngine.getRects(this) as unknown as DOMRectList;
-		},
-		configurable: true,
-		writable: true,
-	});
-}
-
-let geometryInstalled = false;
-
-/**
- * Mount the engine on a document window: the CSSOM, a cascade, a layout engine
- * and the environment facts a test document expects to find around it. This is
- * the startup a TermDOM does, without the renderer.
- */
-function mountEngine(window: EngineWindow): StyleManager {
-	const document = window.document;
+	const {window, document} = termDOM;
 
 	// There is no render loop behind this harness, so a frame is the next
 	// macrotask -- which is what a test that waits for one is really waiting on.
@@ -303,38 +237,7 @@ function mountEngine(window: EngineWindow): StyleManager {
 		configurable: true,
 	});
 
-	const layoutEngine = new LayoutEngine(window);
-	const styleManager = new StyleManager(window, layoutEngine);
-	// Mounting is what arms the flush a resolved value takes: the DOM wires
-	// its own mutation observer at mount and drains it into the style and
-	// layout engines before each measurement. There is no render loop here,
-	// so everything the mount would ask of one is a stub.
-	mount(document, {
-		layout: layoutEngine,
-		styles: styleManager,
-		exchange: {interactive: false} as never,
-		screen: {cols: 800, rows: 600, invalidate() {}, scrollTo() {}} as never,
-		render() {},
-		close() {},
-		seal() {},
-		attached: false,
-	});
-	// The suite is written against a browser viewport in CSS pixels; this
-	// engine's pixel is a cell, so the harness gives it a grid the same size
-	// as the viewport the tests assume.
-	layoutEngine.resize(800, 600);
-	mounts.set(document, {styleManager, layoutEngine});
-	installGeometry(window);
-	// matchMedia, which TermDOM installs live off the same evaluator. There is
-	// no resize under this harness, so the list a query answers with is the
-	// one it is created with.
-	(window as unknown as Record<string, unknown>).matchMedia = (
-		query: string,
-	): {media: string; matches: boolean} => ({
-		media: new MediaList(String(query)).mediaText,
-		matches: styleManager.mediaQueryMatches(String(query)),
-	});
-	return styleManager;
+	return termDOM;
 }
 
 /**
@@ -360,12 +263,11 @@ function installFrames(window: EngineWindow): void {
 	const contextOf = (frame: Element): {document: Document; window: unknown} => {
 		let context = frames.get(frame);
 		if (context === undefined) {
-			const inner = createDocumentWindow(
+			const inner = mountEngine(
 				frame.getAttribute("srcdoc") ??
 				"<!doctype html><html><head></head><body></body></html>",
 				documentURL,
-			);
-			mountEngine(inner);
+			).window;
 			const realm = createRealm(inner, documentURL);
 			context = {
 				document: inner.document,
@@ -445,11 +347,9 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 
 	const url = `http://web-platform.test/${SUITE}/${file}`;
-	const window = createDocumentWindow(html, url);
-	const document = window.document;
+	const {window, document} = mountEngine(html, url);
 	documentURL = url;
 	installFrames(window);
-	mountEngine(window);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	let timer: ReturnType<typeof setTimeout> | null = null;

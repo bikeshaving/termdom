@@ -44,7 +44,6 @@ import {
 	flatParentElement,
 	flushLayout,
 	getChildren,
-	getMount,
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
@@ -61,10 +60,12 @@ import {
 	type SelectorNode,
 	setDocumentFocusVisible,
 	styleElementCount,
+	termDOMOf,
 	TransitionEvent,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
+import {kScreen} from "./termdom.js";
 import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
@@ -10505,7 +10506,7 @@ export class StyleManager {
 		// Without a renderer there is no layout pass, and so no used value to
 		// report: the computed value is the answer, as it is for any element
 		// with no box.
-		if (getMount(this[kDocument]) === undefined) {
+		if (termDOMOf(this[kDocument]) === undefined) {
 			return null;
 		}
 		// The flush is taken once per change, not once per read: until the
@@ -10976,11 +10977,11 @@ export class StyleManager {
 	 * terminal, where `1vw` has nothing to be a hundredth of.
 	 */
 	[kViewportSize](): {width: number; height: number} | null {
-		const mount = getMount(this[kDocument]);
-		if (mount === undefined) {
+		const termDOM = termDOMOf(this[kDocument]);
+		if (termDOM === undefined) {
 			return null;
 		}
-		return {width: mount.screen.cols, height: mount.screen.rows};
+		return {width: termDOM[kScreen].cols, height: termDOM[kScreen].rows};
 	}
 
 	/**

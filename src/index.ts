@@ -1,3 +1,5 @@
+import "./internal/inspector.js";
+
 export {TermDOM} from "./internal/termdom.js";
 export type {TermDOMOptions} from "./internal/termdom.js";
 export {transportFromProcess} from "./internal/exchange.js";

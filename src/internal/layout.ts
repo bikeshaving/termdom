@@ -42,15 +42,16 @@ import {
 	type EngineWindow,
 	flatIsConnected,
 	flatParentElement,
-	getMount,
 	getShadowRoot,
 	isModalDialog,
 	NodeFilter,
 	pseudoElementCount,
 	renderedTopLayer,
 	SHOW_FLAT,
+	termDOMOf,
 	TreeWalker,
 } from "./dom.js";
+import {kScreen} from "./termdom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
@@ -6536,18 +6537,18 @@ function approximatelyEqual(a: number, b: number): boolean {
 // Walking the flat tree
 // ---------------------------------------------------------------------------
 
-/**
- * The nodes a box tree walk stops on: elements and text, over the flat tree.
- * Everything else -- comments, processing instructions -- generates no box and
- * is skipped, so it cannot hide the content around it.
- */
-const FLOW_NODES = NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | SHOW_FLAT;
-
 function createTreeWalker(
 	root: Node,
 	filter: ((node: Node) => number) | null = null,
 ): TreeWalker {
-	return new TreeWalker(root as never, FLOW_NODES, filter as never);
+	// Elements and text, over the flat tree. Everything else -- comments,
+	// processing instructions -- generates no box and is skipped, so it cannot
+	// hide the content around it.
+	return new TreeWalker(
+		root as never,
+		NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | SHOW_FLAT,
+		filter as never,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -13569,5 +13570,5 @@ function changed(layout: LayoutEngine): void {
 		return;
 	}
 	usedValuesChanged(document);
-	getMount(document)?.screen.invalidateLayout();
+	termDOMOf(document)?.[kScreen].invalidateLayout();
 }
