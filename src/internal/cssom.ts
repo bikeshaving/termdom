@@ -12490,7 +12490,6 @@ function invalidateEnclosingList(
 function parseStylesheets(
 	manager: StyleManager,
 ): void {
-	manager[kLayoutEngine].invalidate();
 	const document = manager[kDocument];
 	manager[kParsedRules] = [];
 	manager[kSelectorsReachSiblings] = false;
@@ -12538,6 +12537,10 @@ function parseStylesheets(
 
 	sortRulesForCascade(manager);
 	manager[kClearCache]();
+	// Only now: the layout tree re-derives its boxes as it is invalidated,
+	// asking the cascade what each element's display is, and the answer has
+	// to come from the rules just parsed, not the ones they replace.
+	manager[kLayoutEngine].invalidate();
 	attachPseudoElements(manager);
 }
 
