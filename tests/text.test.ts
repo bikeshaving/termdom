@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {stringWidth, widthIsUncertain} from "../src/internal/text.js";
+import {getStringWidth, widthIsUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,
@@ -11,12 +11,12 @@ import {
 
 /**
  * Width drives line breaking and cell alignment, so the pure-JS width path
- * and Bun.stringWidth have to agree exactly: if they diverge, the same
+ * and Bun.getStringWidth have to agree exactly: if they diverge, the same
  * document renders with different wrapping on Node and Bun. The oracle's
  * answers live in a committed fixture a sufficiently new bun regenerates
- * (scripts/generate-width-oracle.ts). Under node, stringWidth IS the
+ * (scripts/generate-width-oracle.ts). Under node, getStringWidth IS the
  * pure-JS path, so holding it to the fixture is the parity check; under
- * bun, stringWidth IS the oracle, so the same run holds the fixture fresh.
+ * bun, getStringWidth IS the oracle, so the same run holds the fixture fresh.
  */
 const oracleFixture = JSON.parse(
 	readFileSync(
@@ -25,10 +25,10 @@ const oracleFixture = JSON.parse(
 	),
 ) as {cases: Record<string, number>; planes?: string; mixed?: number[]};
 
-describe("stringWidth matches the recorded oracle", () => {
+describe("getStringWidth matches the recorded oracle", () => {
 	for (const [name, input] of ORACLE_CASES) {
 		test(name, () => {
-			expect(`${name}: ${stringWidth(input)}`).toBe(
+			expect(`${name}: ${getStringWidth(input)}`).toBe(
 				`${name}: ${oracleFixture.cases[name]}`,
 			);
 		});
@@ -53,7 +53,7 @@ describe("stringWidth matches the recorded oracle", () => {
 				if (expected === -1) {
 					continue;
 				}
-				const actual = oracleSweepWidth(code, stringWidth, widthIsUncertain);
+				const actual = oracleSweepWidth(code, getStringWidth, widthIsUncertain);
 				if (actual !== expected) {
 					mismatches.push(`U+${code.toString(16).toUpperCase()}`);
 				}
@@ -67,7 +67,7 @@ describe("stringWidth matches the recorded oracle", () => {
 		() => {
 			const mismatches: string[] = [];
 			for (const [i, input] of randomMixedStrings()) {
-				if (stringWidth(input) !== oracleFixture.mixed![i]) {
+				if (getStringWidth(input) !== oracleFixture.mixed![i]) {
 					mismatches.push(JSON.stringify(input));
 				}
 			}
@@ -84,19 +84,19 @@ describe("stringWidth matches the recorded oracle", () => {
  */
 
 /**
- * The one place stringWidth and Bun.stringWidth deliberately DISAGREE, and why
- * stringWidth() gates on it: Bun.stringWidth charges a cell per code point, so a
+ * The one place getStringWidth and Bun.getStringWidth deliberately DISAGREE, and why
+ * getStringWidth() gates on it: Bun.getStringWidth charges a cell per code point, so a
  * combining mark -- which renders onto the character before it and advances
  * nothing -- is counted as if it were a letter of its own.
  */
 test("combining marks take the grapheme-aware path, not Bun's", () => {
 	// "שָׁלוֹם": four Hebrew letters carrying three niqqud. Four cells.
-	expect(stringWidth("שָׁלוֹם")).toBe(4);
+	expect(getStringWidth("שָׁלוֹם")).toBe(4);
 	// Arabic with harakat: five letters, three marks.
-	expect(stringWidth("مَرْحَبًا")).toBe(5);
+	expect(getStringWidth("مَرْحَبًا")).toBe(5);
 	// Cyrillic with a combining titlo.
-	expect(stringWidth("и҃")).toBe(1);
+	expect(getStringWidth("и҃")).toBe(1);
 	// And the fast path is still exact for everything without them.
-	expect(stringWidth("hello")).toBe(5);
-	expect(stringWidth("中文")).toBe(4);
+	expect(getStringWidth("hello")).toBe(5);
+	expect(getStringWidth("中文")).toBe(4);
 });

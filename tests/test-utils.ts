@@ -18,7 +18,7 @@ import {
 } from "../src/index.js";
 import type {ColorDepth} from "../src/internal/exchange.js";
 import {Screen} from "../src/internal/screen.js";
-import {stringWidth} from "../src/internal/text.js";
+import {getStringWidth} from "../src/internal/text.js";
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
@@ -37,7 +37,7 @@ type Terminal = InstanceType<typeof Terminal>;
 const TABLE_UNICODE_VERSION = {
 	version: "table",
 	wcwidth(codepoint: number): 0 | 1 | 2 {
-		const width = stringWidth(String.fromCodePoint(codepoint));
+		const width = getStringWidth(String.fromCodePoint(codepoint));
 		return width <= 0 ? 0 : width >= 2 ? 2 : 1;
 	},
 	charProperties(codepoint: number, preceding: number): number {
@@ -364,7 +364,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 					dim: !!cell.isDim(),
 					blink: !!cell.isBlink(),
 				});
-				outputCol += stringWidth(chars) === 2 ? 2 : 1;
+				outputCol += getStringWidth(chars) === 2 ? 2 : 1;
 			}
 		}
 

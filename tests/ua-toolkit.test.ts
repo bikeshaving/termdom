@@ -4,7 +4,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {getShadowRoot, selectionRecordOf} from "../src/internal/dom.js";
+import {getSelectionRecord, getShadowRoot} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -23,15 +23,15 @@ test("the UA surface reads past the type gate the author meets", async () => {
 	// The author-facing API hides a number input's selection per spec.
 	expect(number.selectionStart).toBe(null);
 
-	const record = selectionRecordOf(number);
+	const record = getSelectionRecord(number);
 	expect(record).not.toBe(null);
 	expect(typeof record!.start).toBe("number");
 	// A toggle's selection is degenerate: always collapsed, never null --
 	// its focus point is where the cursor parks.
-	const toggled = selectionRecordOf(checkbox);
+	const toggled = getSelectionRecord(checkbox);
 	expect(toggled).not.toBe(null);
 	expect(toggled!.start).toBe(toggled!.end);
-	expect(selectionRecordOf(div)).toBe(null);
+	expect(getSelectionRecord(div)).toBe(null);
 
 	// A closed root hides from the author and answers to the engine.
 	const host = document.createElement("div");

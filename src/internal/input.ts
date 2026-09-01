@@ -4,10 +4,10 @@ import {
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	type EngineWindow,
-	fieldCaretOffset,
 	flatParentElement,
+	getFieldCaretOffset,
+	getKeyboardActivation,
 	getShadowRoot,
-	keyboardActivation,
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
@@ -55,7 +55,7 @@ const NAMED_KEY_NUMBERS: Record<string, number> = {
 
 // The DOM `code`, assuming a US layout. A terminal only says what
 // character a key produced, never which key, so punctuation is a guess.
-function domCodeFor(keyName: string): string {
+function getDOMCode(keyName: string): string {
 	if (keyName === " ") {
 		return "Space";
 	}
@@ -75,7 +75,7 @@ function domCodeFor(keyName: string): string {
 }
 
 // The uppercase code for a character, so Ctrl+A and a typed "a" agree.
-function legacyKeyCode(keyName: string): number {
+function getLegacyKeyCode(keyName: string): number {
 	const named = NAMED_KEY_NUMBERS[keyName];
 	if (named !== undefined) {
 		return named;
@@ -102,7 +102,7 @@ function getTabIndex(element: Element): number {
 }
 
 // Every stop under the root, barred ones included, in scoped tab order.
-function sequentialFocusEntries(
+function getSequentialFocusEntries(
 	root: Document | Element,
 	layout: Layout,
 ): SequentialEntry[] {
@@ -233,7 +233,7 @@ const kDocument = Symbol("document");
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
 // null when the tick chains to the camera.
-function wheelScrollerFor(
+function getWheelScroller(
 	input: Input,
 	target: Element,
 	deltaY: number,
@@ -506,7 +506,7 @@ function deliverMouseReport(
 		buttons,
 	} = decodeMouseReport(code, isRelease);
 
-	const {x, y, inDocument} = documentPointAt(input, col, row);
+	const {x, y, inDocument} = getDocumentPoint(input, col, row);
 
 	// A report arrives per cell crossed, so motion is coalesced to one
 	// hit-test per frame. A drag's motion also falls through. Its mousemove
@@ -682,7 +682,7 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 	};
 }
 
-function documentPointAt(
+function getDocumentPoint(
 	input: Input,
 	col: number,
 	row: number,
@@ -707,7 +707,7 @@ function scrollByWheel(
 	target: Element,
 	deltaY: number,
 ): boolean {
-	const scroller = wheelScrollerFor(input, target, deltaY);
+	const scroller = getWheelScroller(input, target, deltaY);
 	if (scroller) {
 		scroller.scrollTop += deltaY;
 		return false;
@@ -743,7 +743,7 @@ function dragTo(
 	// Clamped into the field, whichever element the pointer is over now.
 	if (input[kFieldDragAnchor] && inDocument) {
 		const {element: fieldElement, offset: anchor} = input[kFieldDragAnchor];
-		const focus = fieldCaretOffset(fieldElement, x, y);
+		const focus = getFieldCaretOffset(fieldElement, x, y);
 		if (focus !== null) {
 			setUASelection(
 				fieldElement,
@@ -759,7 +759,7 @@ function dragTo(
 	if (
 		input[kSelectionDragAnchor] && input[kMouseDownTarget] && inDocument
 	) {
-		const focus = textPositionAt(input, x, y);
+		const focus = getTextPosition(input, x, y);
 		if (focus && selectable(input, focus)) {
 			const anchor = input[kSelectionDragAnchor];
 			input[kWindow]
@@ -834,7 +834,7 @@ function press(
 	// anchor a drag there. Left button only. preventDefault opts out.
 	const selection = input[kWindow].getSelection();
 	if (base === 0 && selection && !input[kFieldDragAnchor]) {
-		let anchor = inDocument ? textPositionAt(input, x, y) : null;
+		let anchor = inDocument ? getTextPosition(input, x, y) : null;
 		if (anchor && !selectable(input, anchor)) {
 			anchor = null;
 		}
@@ -932,7 +932,7 @@ function release(
 
 function dispatchKey(input: Input, stroke: WireKey): void {
 	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
-	const keyCode = legacyKeyCode(keyName);
+	const keyCode = getLegacyKeyCode(keyName);
 
 	if (setDocumentFocusVisible(input[kDocument], true)) {
 		input[kCascade].handleFocusChange(
@@ -951,7 +951,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 
 	const keydownEvent = new input[kWindow].KeyboardEvent("keydown", {
 		key: keyName,
-		code: domCodeFor(keyName),
+		code: getDOMCode(keyName),
 		keyCode,
 		charCode: 0,
 		which: keyCode,
@@ -982,7 +982,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		}
 
 		// Field editing is each widget's own keydown listener, run above.
-		const activation = keyboardActivation(targetElement);
+		const activation = getKeyboardActivation(targetElement);
 		if (activation) {
 			if (
 				(keyName === "Enter" && activation.enter) ||
@@ -1008,7 +1008,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		const charCode = char.codePointAt(0)!;
 		const keypressEvent = new input[kWindow].KeyboardEvent("keypress", {
 			key: char,
-			code: domCodeFor(char),
+			code: getDOMCode(char),
 			keyCode: charCode,
 			charCode,
 			which: charCode,
@@ -1026,7 +1026,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 
 	const keyupEvent = new input[kWindow].KeyboardEvent("keyup", {
 		key: keyName,
-		code: domCodeFor(keyName),
+		code: getDOMCode(keyName),
 		keyCode,
 		charCode: 0,
 		which: keyCode,
@@ -1063,7 +1063,7 @@ function insertText(
 function moveFocus(input: Input, reverse: boolean): void {
 	// Tab cannot leave a modal dialog.
 	const scope = topmostModalDialog(input[kDocument]) ?? input[kDocument];
-	const entries = sequentialFocusEntries(
+	const entries = getSequentialFocusEntries(
 		scope,
 		input[kLayout],
 	);
@@ -1183,7 +1183,7 @@ function moveFocus(input: Input, reverse: boolean): void {
 }
 
 // Null over a form control. Its value is not document text.
-function textPositionAt(
+function getTextPosition(
 	input: Input,
 	x: number,
 	y: number,

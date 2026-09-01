@@ -338,9 +338,9 @@ test("IntersectionObserver fires at every threshold crossing", async () => {
 
 	const ratios: number[] = [];
 	const io = new window.IntersectionObserver(
-		(es: Array<{intersectionRatio: number}>) => {
+		(es: Array<{getIntersectionRatio: number}>) => {
 			for (const e of es) {
-				ratios.push(e.intersectionRatio);
+				ratios.push(e.getIntersectionRatio);
 			}
 		},
 		{threshold: [0, 0.25, 0.5, 0.75, 1]},
@@ -391,7 +391,7 @@ test("observe({box}) chooses which box's change is worth reporting", async () =>
 	const record = (into: string[]) => (entries: any[]) => {
 		for (const e of entries) {
 			into.push(
-				`${e.contentBoxSize[0].inlineSize}/${e.borderBoxSize[0].inlineSize}`,
+				`${e.getContentBoxSize[0].inlineSize}/${e.borderBoxSize[0].inlineSize}`,
 			);
 		}
 	};

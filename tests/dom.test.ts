@@ -1917,9 +1917,9 @@ test("createContextualFragment parses in the range's context", () => {
 	expect(fragment.lastChild!.textContent).toBe(" tail");
 
 	// A range anchored at the document parses against the body.
-	const documentRange = document.createRange();
-	documentRange.setStart(document, 0);
-	const fromDocument = documentRange.createContextualFragment("<i>x</i>");
+	const getDocumentRange = document.createRange();
+	getDocumentRange.setStart(document, 0);
+	const fromDocument = getDocumentRange.createContextualFragment("<i>x</i>");
 	expect((fromDocument.firstChild as Element).tagName).toBe("I");
 });
 

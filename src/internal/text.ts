@@ -7,7 +7,7 @@ import {
 	ZERO_WIDTH_RANGES,
 } from "../generated/widthtables.js";
 
-// Bun has a native stringWidth. Node and Deno use the fallback.
+// Bun has a native getStringWidth. Node and Deno use the fallback.
 const bun = globalThis.Bun;
 
 // What HTML and CSS case-fold with. Never the locale.
@@ -87,7 +87,7 @@ export function recordClusterAdvance(
 	cluster: string,
 	advance: number,
 ): boolean {
-	if (clusterAdvances.has(cluster) || advance === graphemeWidth(cluster)) {
+	if (clusterAdvances.has(cluster) || advance === getGraphemeWidth(cluster)) {
 		return false;
 	}
 
@@ -141,7 +141,7 @@ export function widthIsUncertain(cluster: string): boolean {
 
 // Bun.stringWidth charges a cell per code point, so "שָׁלוֹם" measures 7
 // instead of 4. It is used only where no mark can be.
-export function stringWidth(str: string): number {
+export function getStringWidth(str: string): number {
 	if (PRINTABLE_ASCII.test(str)) {
 		return str.length;
 	}
@@ -155,7 +155,7 @@ export function stringWidth(str: string): number {
 	const width =
 		bun !== undefined && clusterAdvances.size === 0 && !COMBINING.test(str)
 			? bun.stringWidth(str)
-			: stringWidthFallback(str);
+			: getStringWidthFallback(str);
 	widthCache.set(str, width);
 	return width;
 }
@@ -176,16 +176,16 @@ export function writeClusterWidths(
 	}
 
 	for (const {index, segment} of graphemeSegmenter.segment(str)) {
-		out[offset + index + segment.length - 1] = graphemeWidth(segment);
+		out[offset + index + segment.length - 1] = getGraphemeWidth(segment);
 	}
 }
 
 // Must agree with Bun.stringWidth wherever Bun is still consulted, or
 // text misrenders on Node and Deno only.
-function stringWidthFallback(str: string): number {
+function getStringWidthFallback(str: string): number {
 	let width = 0;
 	for (const {segment} of graphemeSegmenter.segment(str)) {
-		width += graphemeWidth(segment);
+		width += getGraphemeWidth(segment);
 	}
 	return width;
 }
@@ -193,7 +193,7 @@ function stringWidthFallback(str: string): number {
 // Mc marks advance, unlike Mn and Me: Devanagari's vowel signs.
 const SPACING_MARK = /\p{Mc}/gu;
 
-function graphemeWidth(cluster: string): number {
+function getGraphemeWidth(cluster: string): number {
 	if (clusterAdvances.size !== 0) {
 		const measured = clusterAdvances.get(cluster);
 		if (measured !== undefined) {
@@ -241,7 +241,7 @@ function graphemeWidth(cluster: string): number {
 
 // For caret motion and deletion. A step snaps to a cluster boundary, so
 // Backspace deletes a whole emoji.
-function graphemeBoundaries(value: string): number[] {
+function getGraphemeBoundaries(value: string): number[] {
 	const boundaries = [0];
 	for (const {index, segment} of graphemeSegmenter.segment(value)) {
 		boundaries.push(index + segment.length);
@@ -249,8 +249,8 @@ function graphemeBoundaries(value: string): number[] {
 	return boundaries;
 }
 
-export function nextGraphemeBoundary(value: string, index: number): number {
-	for (const boundary of graphemeBoundaries(value)) {
+export function getNextGraphemeBoundary(value: string, index: number): number {
+	for (const boundary of getGraphemeBoundaries(value)) {
 		if (boundary > index) {
 			return boundary;
 		}
@@ -258,9 +258,12 @@ export function nextGraphemeBoundary(value: string, index: number): number {
 	return value.length;
 }
 
-export function prevGraphemeBoundary(value: string, index: number): number {
+export function getPreviousGraphemeBoundary(
+	value: string,
+	index: number,
+): number {
 	let previous = 0;
-	for (const boundary of graphemeBoundaries(value)) {
+	for (const boundary of getGraphemeBoundaries(value)) {
 		if (boundary >= index) {
 			break;
 		}
@@ -311,7 +314,7 @@ export function hasRTL(text: string): boolean {
 }
 
 // UAX #9 P2/P3: the first strong character decides.
-export function inferParagraphDirection(text: string): "ltr" | "rtl" {
+export function getParagraphDirection(text: string): "ltr" | "rtl" {
 	if (!hasRTL(text)) {
 		return "ltr";
 	}

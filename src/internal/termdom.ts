@@ -605,7 +605,7 @@ async function renderOnce(
 	await renderInteractive(termdom);
 }
 
-function documentFlowHeight(
+function getDocumentFlowHeight(
 	termdom: TermDOM,
 ): number {
 	const rect =
@@ -618,14 +618,14 @@ function documentFlowHeight(
  * and its element has left the flow, which then measures next to
  * nothing.
  */
-function cameraRegionHeight(
+function getScrollingRegionHeight(
 	termdom: TermDOM,
 ): number {
 	return isFullscreen(termdom)
 		? termdom[kScreen].rows
 		: Math.min(
 			termdom[kScreen].rows,
-			documentFlowHeight(termdom),
+			getDocumentFlowHeight(termdom),
 		);
 }
 
@@ -647,15 +647,15 @@ function queueCaretReveal(
  * The caret as the painter derives it: the selection focus, measured
  * through the rendered text. Null when there is no record, text or box.
  */
-function caretRectFor(
+function getCaretRect(
 	termdom: TermDOM,
 	element: Element,
 ): {x: number; y: number} | null {
-	const focus = DOM.selectionFocusOf(element);
+	const focus = DOM.getSelectionFocus(element);
 	if (focus === null) {
 		return null;
 	}
-	const node = DOM.fieldValueText(element);
+	const node = DOM.getFieldValueText(element);
 	if (node === null) {
 		return null;
 	}
@@ -683,7 +683,7 @@ function scrollCaretIntoView(
 		return;
 	}
 	let caretY = Math.round(rect.top);
-	const caret = caretRectFor(termdom, element);
+	const caret = getCaretRect(termdom, element);
 	if (caret !== null) {
 		caretY = caret.y;
 	}
@@ -701,7 +701,7 @@ function scrollCaretIntoView(
 	) {
 		revealBottom = Math.round(rect.bottom);
 	}
-	const regionHeight = cameraRegionHeight(termdom);
+	const regionHeight = getScrollingRegionHeight(termdom);
 	const top = termdom[kScreen].scrollTop;
 	const delta =
 		revealTop < top

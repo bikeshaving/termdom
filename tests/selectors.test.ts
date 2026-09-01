@@ -345,7 +345,7 @@ test(":lang filters by RFC 4647 extended matching", () => {
 	expect(ids(html, ":lang(en, fr)")).toEqual(["d1", "i1", "d2", "d3"]);
 });
 
-/* ----------------------------------------------------------- directionality */
+/* ----------------------------------------------------------- getDirectionality */
 
 test(":dir reads the direction HTML computes, not the text it can see", () => {
 	const html = `

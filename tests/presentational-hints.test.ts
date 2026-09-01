@@ -216,7 +216,7 @@ test("dir=auto reads the direction off the content", () => {
 test("an unrecognized dir value inherits the parent's direction", () => {
 	// Which is why the explicit values are attribute selectors rather than the
 	// Rendering section's `[dir]:dir(ltr)`: a value that is neither ltr, rtl
-	// nor auto matches no rule, and direction inherits, as the directionality
+	// nor auto matches no rule, and direction inherits, as the getDirectionality
 	// algorithm says it should.
 	const markup = "<div dir=\"rtl\"><p dir=\"sideways\" id=\"inner\">x</p></div>";
 	expect(computed(markup, "inner", "direction")).toBe("rtl");

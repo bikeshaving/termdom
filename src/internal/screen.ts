@@ -1,8 +1,8 @@
 import type {ColorDepth, Exchange} from "./exchange.js";
 import {
+	getStringWidth,
 	graphemeSegmenter,
 	PRINTABLE_ASCII,
-	stringWidth,
 	widthIsUncertain,
 } from "./text.js";
 
@@ -49,7 +49,7 @@ function rgbToBasic8(color: number): number {
 	return ansiColor;
 }
 
-function colorParameters(
+function getColorParameters(
 	color: number,
 	isFg: boolean,
 	colorDepth: ColorDepth,
@@ -88,7 +88,7 @@ interface StyleRun {
 	underline?: UnderlineStyle;
 }
 
-function underlineCodes(style: UnderlineStyle): string[] {
+function getUnderlineCodes(style: UnderlineStyle): string[] {
 	switch (style) {
 		case "none":
 			return ["24"];
@@ -192,7 +192,7 @@ class FrameWriter {
 	}
 
 	style(run: StyleRun): this {
-		const escape = styleEscape(run, this[kColorDepth]);
+		const escape = createStyleEscape(run, this[kColorDepth]);
 		if (escape !== "") {
 			this[kOut].push(escape);
 		}
@@ -220,16 +220,16 @@ function synchronized(frame: string): string {
 	return `\x1b[?2026h${frame}\x1b[?2026l`;
 }
 
-function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
+function createStyleEscape(run: StyleRun, colorDepth: ColorDepth): string {
 	const codes: string[] = [];
 	if (run.fg !== undefined) {
 		codes.push(
-			run.fg === null ? "39" : colorParameters(run.fg, true, colorDepth),
+			run.fg === null ? "39" : getColorParameters(run.fg, true, colorDepth),
 		);
 	}
 	if (run.bg !== undefined) {
 		codes.push(
-			run.bg === null ? "49" : colorParameters(run.bg, false, colorDepth),
+			run.bg === null ? "49" : getColorParameters(run.bg, false, colorDepth),
 		);
 	}
 
@@ -245,7 +245,7 @@ function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
 	state("dim", "2", "22");
 	state("italic", "3", "23");
 	if (run.underline) {
-		codes.push(...underlineCodes(run.underline));
+		codes.push(...getUnderlineCodes(run.underline));
 	}
 	state("blink", "5", "25");
 	state("inverse", "7", "27");
@@ -748,7 +748,7 @@ class CellGrid {
 		grapheme: string,
 		{style, background}: {style?: CellStyle; background?: number} = {},
 	): void {
-		const width = graphemeColumns(grapheme);
+		const width = getGraphemeColumns(grapheme);
 		this.char[index] = encodeGrapheme(grapheme);
 		this.fg[index] = (style?.fg ?? 0) & COLOR_MASK;
 		this.bg[index] =
@@ -790,7 +790,7 @@ class CellGrid {
 	widthAt(index: number): number {
 		const width = (this.attrs[index] & ATTR.WidthMask) >>> ATTR.WidthShift;
 		return width === ATTR.WidthWide
-			? stringWidth(decodeGrapheme(this.char[index]))
+			? getStringWidth(decodeGrapheme(this.char[index]))
 			: width;
 	}
 
@@ -876,13 +876,13 @@ function joinTouchingBorders(grid: CellGrid): void {
 	}
 }
 
-function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
-	const rowStart = row * grid.cols;
+function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
+	const getRowStart = row * grid.cols;
 	// A file should not be padded out to the terminal width, so stop at the
 	// last cell that actually holds something.
 	let lastCol = -1;
 	for (let col = grid.cols - 1; col >= 0; col--) {
-		if (grid.char[rowStart + col] !== 0) {
+		if (grid.char[getRowStart + col] !== 0) {
 			lastCol = col;
 			break;
 		}
@@ -890,13 +890,13 @@ function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 
 	let previous = -1;
 	for (let col = 0; col <= lastCol; col++) {
-		const index = rowStart + col;
+		const index = getRowStart + col;
 		if (grid.char[index] === 0) {
 			writer.text(" ");
 			continue;
 		}
 
-		styleDiff(grid, index, previous, writer);
+		getStyleDiff(grid, index, previous, writer);
 
 		const encoding = grid.border[index];
 		writer.text(
@@ -920,10 +920,10 @@ function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 	return writer.take();
 }
 
-function lineLength(grid: CellGrid, row: number): number {
-	const rowStart = row * grid.cols;
+function getLineLength(grid: CellGrid, row: number): number {
+	const getRowStart = row * grid.cols;
 	for (let col = grid.cols - 1; col >= 0; col--) {
-		const index = rowStart + col;
+		const index = getRowStart + col;
 		if (grid.char[index] !== 0) {
 			return col + grid.widthAt(index);
 		}
@@ -939,14 +939,14 @@ function encodeGrapheme(grapheme: string): number {
 	return CHAR_INTERNED | internGrapheme(grapheme);
 }
 
-function graphemeColumns(grapheme: string): number {
+function getGraphemeColumns(grapheme: string): number {
 	// Printable ASCII is the common case and always 1, so skip the tests
-	// stringWidth starts with.
+	// getStringWidth starts with.
 	const code = grapheme.charCodeAt(0);
 	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
 		return 1;
 	}
-	return stringWidth(grapheme);
+	return getStringWidth(grapheme);
 }
 
 export class CellContext {
@@ -1019,7 +1019,7 @@ export class CellContext {
 		}
 		let width = 0;
 		for (const segment of graphemeSegmenter.segment(text)) {
-			width += stringWidth(segment.segment);
+			width += getStringWidth(segment.segment);
 		}
 		return {width};
 	}
@@ -1049,7 +1049,7 @@ export class CellContext {
 				continue;
 			}
 
-			const width = stringWidth(char);
+			const width = getStringWidth(char);
 
 			if (currentX + width > this.cols) {
 				break;
@@ -1072,7 +1072,7 @@ export class CellContext {
 			return;
 		}
 		for (let col = x; col < x + width; col++) {
-			const index = guardedWriteIndex(this, y, col);
+			const index = getGuardedWriteIndex(this, y, col);
 			if (index < 0) {
 				continue;
 			}
@@ -1245,7 +1245,7 @@ function inClip(
 	return col >= left && col < right && row >= top && row < bottom;
 }
 
-function guardedWriteIndex(
+function getGuardedWriteIndex(
 	context: CellContext,
 	row: number,
 	col: number,
@@ -1272,7 +1272,7 @@ function setCell(
 	char: string,
 	style?: CellStyle,
 ): void {
-	const index = guardedWriteIndex(context, row, col);
+	const index = getGuardedWriteIndex(context, row, col);
 	if (index < 0) {
 		return;
 	}
@@ -1300,7 +1300,7 @@ function setBorderCell(
 	// A box whose extent touches an exposed band still stamps its whole
 	// outline. The gate drops the strokes on carried-over rows (a top border
 	// row carrying a legend, say), which keep what the seeded grid holds.
-	const index = guardedWriteIndex(context, y, x);
+	const index = getGuardedWriteIndex(context, y, x);
 	if (index < 0) {
 		return;
 	}
@@ -1319,7 +1319,7 @@ function setBorderCell(
 	);
 }
 
-function styleDiff(
+function getStyleDiff(
 	grid: CellGrid,
 	index: number,
 	prev: number,
@@ -1463,13 +1463,13 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	}
 
 	for (let row = 0; row < rows; row++) {
-		const rowStart = row * cols;
+		const getRowStart = row * cols;
 		let spanStart = -1;
 		let col = 0;
 		let rowHasContent = false;
 
 		while (col < cols) {
-			const index = rowStart + col;
+			const index = getRowStart + col;
 			if (char[index] === 0) {
 				spanStart = -1;
 				col++;
@@ -1542,7 +1542,12 @@ function generateANSI(
 					run++;
 					output +=
 						writer.text(cluster).take() +
-						measurer.probeWidth(cluster, run, cell.col, stringWidth(cluster));
+						measurer.probeWidth(
+							cluster,
+							run,
+							cell.col,
+							getStringWidth(cluster),
+						);
 				}
 				output += writer.carriageReturn().take();
 				run++;
@@ -1551,14 +1556,14 @@ function generateANSI(
 	}
 
 	for (let row = 0; row < rows; row++) {
-		const rowStart = row * cols;
+		const getRowStart = row * cols;
 		let rowHasContent = false;
 		let rowHasANSI = false;
 		let isFirstRenderOfLine = false;
 		unknownInRow = 0;
 
 		for (let col = 0; col < cols; col++) {
-			if (char[rowStart + col] !== 0) {
+			if (char[getRowStart + col] !== 0) {
 				rowHasContent = true;
 				break;
 			}
@@ -1572,7 +1577,7 @@ function generateANSI(
 		}
 
 		for (let col = 0; col < cols; col++) {
-			const index = rowStart + col;
+			const index = getRowStart + col;
 
 			if (char[index] === 0) {
 				continue;
@@ -1612,7 +1617,7 @@ function generateANSI(
 				}
 			}
 
-			styleDiff(grid, index, prevIndex, writer);
+			getStyleDiff(grid, index, prevIndex, writer);
 			const styleSeq = writer.take();
 			if (styleSeq !== "") {
 				output += styleSeq;
@@ -1848,7 +1853,7 @@ export class Screen {
 		);
 		let wrapped = 0;
 		for (let row = 0; row < limit; row++) {
-			wrapped += Math.max(1, Math.ceil(lineLength(grid, row) / cols));
+			wrapped += Math.max(1, Math.ceil(getLineLength(grid, row) / cols));
 		}
 		return wrapped + Math.floor(this[kPark].col / cols);
 	}
@@ -1901,7 +1906,7 @@ export class Screen {
 		this[kEndFrame] = (): string => {
 			const lines: string[] = [];
 			for (let row = 0; row < rows; row++) {
-				lines.push(gridLine(grid, row, this[kWriter]));
+				lines.push(getGridLine(grid, row, this[kWriter]));
 			}
 
 			// A file wants a bare newline. A terminal wants CRLF. A lone LF
@@ -2122,16 +2127,16 @@ export class Screen {
 				const regionHeight = (regionRows ?? this[kRows]) - anchorRow;
 				const seedRows = Math.min(frameRows, this[kRows], regionHeight);
 				for (let row = 0; row < seedRows; row++) {
-					const rowStart = row * cols;
+					const getRowStart = row * cols;
 					let empty = true;
 					for (let col = 0; col < cols; col++) {
-						if (diff.char[rowStart + col] !== 0) {
+						if (diff.char[getRowStart + col] !== 0) {
 							empty = false;
 							break;
 						}
 					}
 					if (empty) {
-						diff.setBlank(rowStart);
+						diff.setBlank(getRowStart);
 					}
 				}
 			}
@@ -2154,9 +2159,9 @@ export class Screen {
 				this[kRideProbeTrain] = false;
 				if (measurer !== undefined && !hasContent) {
 					for (let row = 0; row < frameRows && !hasContent; row++) {
-						const rowStart = row * cols;
+						const getRowStart = row * cols;
 						for (let col = 0; col < cols; col++) {
-							const index = rowStart + col;
+							const index = getRowStart + col;
 							if (next.char[index] !== 0) {
 								diff.setFrom(index, next, index);
 								hasContent = true;

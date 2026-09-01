@@ -12,8 +12,8 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/internal/termdom.js";
 import {
+	getParagraphDirection,
 	hasRTL,
-	inferParagraphDirection,
 	toVisualOrder,
 } from "../src/internal/text.js";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
@@ -75,9 +75,9 @@ test("paired punctuation is mirrored inside an RTL run", () => {
 });
 
 test("paragraph direction is inferred from the first strong character", () => {
-	expect(inferParagraphDirection("hello שלום")).toBe("ltr");
-	expect(inferParagraphDirection("שלום hello")).toBe("rtl");
-	expect(inferParagraphDirection("123 !?")).toBe("ltr");
+	expect(getParagraphDirection("hello שלום")).toBe("ltr");
+	expect(getParagraphDirection("שלום hello")).toBe("rtl");
+	expect(getParagraphDirection("123 !?")).toBe("ltr");
 	expect(hasRTL("plain ascii")).toBe(false);
 });
 

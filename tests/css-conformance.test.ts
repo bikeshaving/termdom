@@ -298,7 +298,7 @@ test("css: nested overflow:hidden clips intersect", async () => {
 // text-align: assert actual horizontal position, not just presence -- a
 // liveness-only check can't tell "centered" from "left-aligned but present".
 // justify is intentionally not covered: it isn't implemented (see
-// lineAlignOffset in layout.ts).
+// getLineAlignOffset in layout.ts).
 test("css: text-align:center centers a line within its container width", async () => {
 	const {text} = await renderFixture({
 		name: "text-align-center",

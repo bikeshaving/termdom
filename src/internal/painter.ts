@@ -8,13 +8,13 @@ import {
 } from "./cssom.js";
 import {
 	type EngineWindow,
-	fieldSelectionRange,
-	fieldValueText,
 	flatParentElement,
+	getFieldSelectionRange,
+	getFieldValueText,
+	getSelectionRecord,
 	getShadowRoot,
 	getTopLayer,
 	renderedTopLayer,
-	selectionRecordOf,
 } from "./dom.js";
 import {
 	flowWalker,
@@ -49,7 +49,7 @@ function overflowClips(value: string): boolean {
 // The clip is the padding box, so scrolled-out content does not paint
 // over the border glyphs. An axis that stays visible is unbounded, per
 // axis.
-function overflowClipRect(
+function getOverflowClipRect(
 	element: Element,
 	rect: {left: number; top: number; width: number; height: number} | null,
 	overflowX: string,
@@ -112,7 +112,9 @@ function isSystemHighlightColor(value: string): boolean {
 }
 
 // Canvas is the terminal's own background. Highlight is inverse.
-function backgroundFill(value: string): number | "default" | "inverse" | null {
+function getBackgroundFill(
+	value: string,
+): number | "default" | "inverse" | null {
 	if (!value || value === "initial" || isTransparentColor(value)) {
 		return null;
 	}
@@ -125,7 +127,7 @@ function backgroundFill(value: string): number | "default" | "inverse" | null {
 	return cssColorToNumber(value);
 }
 
-function cellStyleFromComputed(element: Element): CellStyle {
+function getCellStyle(element: Element): CellStyle {
 	const color = getComputedValue(element, "color");
 	const bgColor = getComputedValue(element, "background-color");
 	const {bold, dim} = resolveFontWeight(
@@ -164,7 +166,7 @@ function cellStyleFromComputed(element: Element): CellStyle {
 
 // Everything comes from ::selection rules. The UA sheet's Highlight
 // pair is what makes an unstyled selection inverse at all.
-function selectionStyleFor(
+function getSelectionStyle(
 	element: Element,
 	base: CellStyle,
 ): CellStyle {
@@ -267,7 +269,7 @@ export class Painter {
 
 // Whatever the ::backdrop rules resolve to, the UA sheet's included.
 function renderBackdrop(element: Element, ctx: CellContext): void {
-	const fill = backgroundFill(
+	const fill = getBackgroundFill(
 		getComputedValue(element, "background-color", "::backdrop"),
 	);
 	if (fill === null) {
@@ -406,11 +408,11 @@ function renderElement(
 	// The active element shows the terminal cursor at its selection focus.
 	// The content origin is used when the focus has no box.
 	if (rect && visible && element === painter[kDocument].activeElement) {
-		const record = selectionRecordOf(element);
+		const record = getSelectionRecord(element);
 		if (record !== null) {
 			const focus =
 				record.direction === "backward" ? record.start : record.end;
-			const node = fieldValueText(element) ?? getGlyphText(element);
+			const node = getFieldValueText(element) ?? getGlyphText(element);
 			let caret: {x: number; y: number} | null = null;
 			if (node) {
 				const range = element.ownerDocument.createRange();
@@ -495,7 +497,7 @@ function renderElement(
 	const overflowX = getComputedValue(element, "overflow-x") || overflow;
 	const overflowY = getComputedValue(element, "overflow-y") || overflow;
 	const previousClip = ctx.clipRect;
-	ctx.clipRect = overflowClipRect(
+	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
 		overflowX,
@@ -580,7 +582,7 @@ function renderElement(
 // The context root's clip intersected with the overflow of the
 // positioned ancestors only. A non-positioned overflow ancestor does not
 // contain the box.
-function positionedClipFor(
+function getPositionedClip(
 	painter: Painter,
 	element: Element,
 	contextRoot: Element,
@@ -601,7 +603,7 @@ function positionedClipFor(
 		if (overflowClips(overflowX) || overflowClips(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
-				clip = overflowClipRect(ancestor, rect, overflowX, overflowY, clip);
+				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
 		}
 	}
@@ -628,7 +630,7 @@ function renderStackingContext(
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter[kScrolledRows];
-		ctx.clipRect = positionedClipFor(painter, element, root, contextClip);
+		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
 		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
 		// Fixed space cancels the camera for the whole subtree. An absolute box
@@ -754,7 +756,7 @@ function renderText(
 	}
 
 	const textTransform = getComputedValue(parentElement, "text-transform");
-	const textStyle = cellStyleFromComputed(parentElement);
+	const textStyle = getCellStyle(parentElement);
 
 	// One fragment per line, each naming the range of `data` it renders.
 	// The characters come from the node under its own white-space.
@@ -791,11 +793,11 @@ function renderText(
 // A focused control's own selection when the node renders its value
 // (the document selection cannot see inside a control), else the
 // document's.
-function selectionRangeFor(
+function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
 ): {range: Range; selectionParent: Element} | null {
-	const field = fieldSelectionRange(painter[kDocument], textNode);
+	const field = getFieldSelectionRange(painter[kDocument], textNode);
 	if (field) {
 		// ::selection resolves on the field, not the shadow value span.
 		return {range: field.range, selectionParent: field.field};
@@ -805,8 +807,8 @@ function selectionRangeFor(
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 		return null;
 	}
-	const documentRange = selection.getRangeAt(0);
-	if (!documentRange.intersectsNode(textNode)) {
+	const getDocumentRange = selection.getRangeAt(0);
+	if (!getDocumentRange.intersectsNode(textNode)) {
 		return null;
 	}
 	const selectionParent = flatParentElement<Element>(textNode);
@@ -818,10 +820,12 @@ function selectionRangeFor(
 	}
 	// Narrowed to this node. ::selection resolves per parent.
 	const from =
-		documentRange.startContainer === textNode ? documentRange.startOffset : 0;
+		getDocumentRange.startContainer === textNode
+			? getDocumentRange.startOffset
+			: 0;
 	const to =
-		documentRange.endContainer === textNode
-			? documentRange.endOffset
+		getDocumentRange.endContainer === textNode
+			? getDocumentRange.endOffset
 			: textNode.data.length;
 	if (to <= from) {
 		return null;
@@ -840,12 +844,12 @@ function renderTextSelection(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	const found = selectionRangeFor(painter, textNode);
+	const found = getPaintSelectionRange(painter, textNode);
 	if (!found) {
 		return;
 	}
 	const {range, selectionParent} = found;
-	const selectionStyle = selectionStyleFor(selectionParent, textStyle);
+	const selectionStyle = getSelectionStyle(selectionParent, textStyle);
 	if (selectionStyle === textStyle) {
 		return;
 	}

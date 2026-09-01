@@ -40,7 +40,7 @@ import {
 } from "./dom.js";
 import type {Layout} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
-import {stringWidth} from "./text.js";
+import {getStringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 export type Unit = "undefined" | "cell" | "percent" | "auto";
@@ -77,7 +77,7 @@ type CSSNode = {
 const valueNodes = new Map<string, CSSNode[] | null>();
 
 /** A value's top-level nodes, or null if css-tree cannot parse the text. */
-function cssValueChildren(value: string): CSSNode[] | null {
+function getCSSValueChildren(value: string): CSSNode[] | null {
 	let nodes = valueNodes.get(value);
 	if (nodes === undefined) {
 		try {
@@ -98,7 +98,7 @@ function cssValueChildren(value: string): CSSNode[] | null {
 
 // Only a value whose canonical spelling matches the authored text may
 // seed the cache. For that value, the sheet's parse is the same parse
-// cssValueChildren would produce for the key.
+// getCSSValueChildren would produce for the key.
 function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	if (valueNodes.has(value)) {
 		return;
@@ -109,19 +109,19 @@ function seedValueNodes(value: string, nodes: CSSNode[]): void {
 	valueNodes.set(value, nodes);
 }
 
-function singleValueNode(value: string): CSSNode | undefined {
-	const nodes = cssValueChildren(value);
+function getSingleValueNode(value: string): CSSNode | undefined {
+	const nodes = getCSSValueChildren(value);
 	return nodes && nodes.length === 1 ? nodes[0] : undefined;
 }
 
-function functionArguments(node: CSSNode): CSSNode[] {
+function getFunctionArguments(node: CSSNode): CSSNode[] {
 	return (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
 }
 
-function cssTimeMs(token: string): number | null {
-	const node = singleValueNode(token.trim());
+function getCSSTimeMs(token: string): number | null {
+	const node = getSingleValueNode(token.trim());
 	if (!node || node.type !== "Dimension") {
 		return null;
 	}
@@ -838,7 +838,7 @@ interface ValueTerm {
 // spelling the index does not describe), in which case callers fall back
 // to reading by shape. The text is the component as the declaration
 // spells it.
-function grammarTerms(property: string, value: string): ValueTerm[] | null {
+function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
 	let ast: {children?: {toArray(): CSSNode[]} | null};
 	// getTrace returns one step of the match per term the node matched.
 	let match: {
@@ -894,7 +894,7 @@ const NUMERIC_NODES = new Set(["Number", "Dimension", "Percentage"]);
 // the grammar match. A rejected value is read by shape instead.
 function splitLineValue(property: string, value: string): LineValue {
 	const out: LineValue = {width: null, lineStyle: null, color: null};
-	const traced = grammarTerms(property, value);
+	const traced = getGrammarTerms(property, value);
 	if (traced) {
 		for (const component of traced) {
 			for (const term of component.terms) {
@@ -908,7 +908,7 @@ function splitLineValue(property: string, value: string): LineValue {
 		return out;
 	}
 	for (const token of splitComponents(value)) {
-		const type = singleValueNode(token)?.type;
+		const type = getSingleValueNode(token)?.type;
 		if (BORDER_STYLE_KEYWORDS.has(token)) {
 			out.lineStyle = token;
 		} else if (
@@ -992,7 +992,7 @@ function expandFlex(value: string): Record<string, string> | null {
 	let grow: string | undefined;
 	let shrink: string | undefined;
 	let basis: string | undefined;
-	const traced = grammarTerms("flex", v);
+	const traced = getGrammarTerms("flex", v);
 	if (traced) {
 		for (const component of traced) {
 			if (component.terms.includes("flex-grow")) {
@@ -1005,7 +1005,7 @@ function expandFlex(value: string): Record<string, string> | null {
 		}
 	} else {
 		for (const token of splitComponents(v)) {
-			if (singleValueNode(token)?.type === "Number") {
+			if (getSingleValueNode(token)?.type === "Number") {
 				if (grow === undefined) {
 					grow = token;
 				} else if (shrink === undefined) {
@@ -1040,7 +1040,7 @@ const LIST_STYLE_LONGHANDS = [
 // images, so it always means "no marker".
 function expandListStyle(value: string): Record<string, string> {
 	const parts: Record<string, string> = {};
-	const traced = grammarTerms("list-style", value);
+	const traced = getGrammarTerms("list-style", value);
 	if (traced) {
 		for (const component of traced) {
 			for (const longhand of LIST_STYLE_LONGHANDS) {
@@ -1068,7 +1068,7 @@ function expandListStyle(value: string): Record<string, string> {
 // IMAGE component, so a bare `background: none` leaves the color
 // transparent.
 function expandBackground(value: string): Record<string, string> {
-	const traced = grammarTerms("background", value);
+	const traced = getGrammarTerms("background", value);
 	if (traced) {
 		const image = traced
 			.filter((component) => component.terms.includes("bg-image"))
@@ -1108,7 +1108,7 @@ const IMAGE_FUNCTIONS = new Set([
 ]);
 
 function isImageValue(token: string): boolean {
-	const node = singleValueNode(token);
+	const node = getSingleValueNode(token);
 	if (!node) {
 		return false;
 	}
@@ -1137,7 +1137,7 @@ const BORDER_IMAGE_LONGHANDS = [
 // five longhands and serializes only while they are initial, so a block
 // has to know their values.
 function expandBorderImage(value: string): Record<string, string> {
-	const traced = grammarTerms("border-image", value);
+	const traced = getGrammarTerms("border-image", value);
 	if (traced) {
 		const out: Record<string, string> = {};
 		for (const component of traced) {
@@ -1294,18 +1294,18 @@ function expandGridPlacementPair(
 // it by the same custom-ident rule.
 function expandGridArea(value: string): Record<string, string> {
 	const groups = splitSlashGroups(value);
-	const rowStart = groups[0] || "auto";
+	const getRowStart = groups[0] || "auto";
 	const fallback = (index: number, from: string): string =>
 		groups.length > index && groups[index]
 			? groups[index]
 			: isCustomIdent(from)
 				? from
 				: "auto";
-	const columnStart = fallback(1, rowStart);
-	const rowEnd = fallback(2, rowStart);
+	const columnStart = fallback(1, getRowStart);
+	const rowEnd = fallback(2, getRowStart);
 	const columnEnd = fallback(3, columnStart);
 	return {
-		"grid-row-start": rowStart,
+		"grid-row-start": getRowStart,
 		"grid-column-start": columnStart,
 		"grid-row-end": rowEnd,
 		"grid-column-end": columnEnd,
@@ -1435,7 +1435,7 @@ const EASING_KEYWORDS = new Set([
 const EASING_FUNCTION_NAMES = new Set(["linear", "cubic-bezier", "steps"]);
 
 function isEasingValue(token: string): boolean {
-	const node = singleValueNode(token);
+	const node = getSingleValueNode(token);
 	if (!node) {
 		return false;
 	}
@@ -1462,7 +1462,7 @@ function expandTransition(value: string): Record<string, string> {
 		const times: string[] = [];
 		for (const token of splitComponents(item)) {
 			const lower = token.toLowerCase();
-			if (times.length < 2 && cssTimeMs(token) !== null) {
+			if (times.length < 2 && getCSSTimeMs(token) !== null) {
 				times.push(lower);
 			} else if (!easing && isEasingValue(token)) {
 				easing = lower;
@@ -1723,7 +1723,7 @@ function expandShorthands(
 				// `<line> || <style> || <color> || <thickness>`. Only the line
 				// component has a terminal rendering, and it is the one the
 				// painter reads.
-				const traced = grammarTerms(property, value);
+				const traced = getGrammarTerms(property, value);
 				const line = (
 					traced
 						? traced
@@ -1836,7 +1836,7 @@ function getElementDefaults(
 		const select = element as HTMLSelectElement;
 		let widest = 0;
 		for (const option of select.options) {
-			widest = Math.max(widest, stringWidth(option.label));
+			widest = Math.max(widest, getStringWidth(option.label));
 		}
 		return {width: `${widest + 2}ch`};
 	}
@@ -1913,10 +1913,10 @@ function getInitialStyle(
 
 // The unit collapses to the count (px and ch both measure one cell), and
 // a percentage keeps its mark for the caller to resolve against a basis.
-function leadingUnitValue(
+function getLeadingUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
-	const nodes = value ? cssValueChildren(value.trim()) : null;
+	const nodes = value ? getCSSValueChildren(value.trim()) : null;
 	const node = nodes?.[0];
 	if (!node) {
 		return null;
@@ -1942,7 +1942,7 @@ function leadingUnitValue(
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
-	const parsed = leadingUnitValue(value);
+	const parsed = getLeadingUnitValue(value);
 	const number =
 		typeof parsed === "number"
 			? parsed
@@ -1974,7 +1974,7 @@ export interface BoxModel {
 export function parseSignedUnitValue(
 	value: string,
 ): ReturnType<typeof parseUnitValue> {
-	return leadingUnitValue(value ?? "");
+	return getLeadingUnitValue(value ?? "");
 }
 
 /**
@@ -2153,7 +2153,7 @@ function isValidDeclaration(
 	// A shorthand is invalid as a WHOLE if one component is, so one bare
 	// nonzero Number node rejects the declaration. Only top-level nodes
 	// count. A number nested in a calc() is the grammar's business.
-	const nodes = cssValueChildren(value.trim());
+	const nodes = getCSSValueChildren(value.trim());
 	if (!nodes) {
 		return true;
 	}
@@ -2228,7 +2228,7 @@ function withMarkerSeparator(marker: string): string {
 
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
-function defaultMarkerContent(hostElement: Element): string | null {
+function getDefaultMarkerContent(hostElement: Element): string | null {
 	const listParent = hostElement.parentElement;
 	if (
 		!listParent ||
@@ -2309,7 +2309,7 @@ function getListGutterWidth(listElement: Element): number {
 			if (!marker) {
 				continue;
 			}
-			widest = Math.max(widest, stringWidth(marker));
+			widest = Math.max(widest, getStringWidth(marker));
 		}
 		return Math.max(DEFAULT_LIST_GUTTER, widest);
 	} finally {
@@ -2367,8 +2367,8 @@ const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
 // Drops the sign and trailing zeros, folds the unit, and gives a
 // unitless zero the px a length computes to.
-function computedNumber(token: string): string {
-	const node = singleValueNode(token);
+function getComputedNumber(token: string): string {
+	const node = getSingleValueNode(token);
 	if (!node) {
 		return token;
 	}
@@ -2404,7 +2404,7 @@ function collapseRadius(value: string): string {
 // part of the value. Every row writes its cells one space apart
 // (css-grid-2 §7.3).
 function normalizeGridAreas(value: string): string {
-	const children = cssValueChildren(value);
+	const children = getCSSValueChildren(value);
 	if (
 		!children ||
 		children.length === 0 ||
@@ -2433,7 +2433,7 @@ function normalizeValue(property: string, declared: string): string {
 		return serializeCSSColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
-		const lengths = value.split(/\s+/).map(computedNumber).join(" ");
+		const lengths = value.split(/\s+/).map(getComputedNumber).join(" ");
 		return RADIUS_LONGHANDS.has(property) ? collapseRadius(lengths) : lengths;
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
@@ -2477,7 +2477,7 @@ const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
 // property/text pair recurs across thousands of elements.
 const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
-function computedEntry(property: string, declared: string): ComputedEntry {
+function getComputedEntry(property: string, declared: string): ComputedEntry {
 	if (!declared) {
 		return EMPTY_ENTRY;
 	}
@@ -2505,8 +2505,8 @@ function computedEntry(property: string, declared: string): ComputedEntry {
 	return entry;
 }
 
-function computedValue(property: string, declared: string): string {
-	return computedEntry(property, declared).value;
+function getComputedValueEntry(property: string, declared: string): string {
+	return getComputedEntry(property, declared).value;
 }
 
 interface LengthContext {
@@ -2530,7 +2530,7 @@ function getFontSize(fontSize: string): number {
 	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
 }
 
-function unitFactor(unit: string, context: LengthContext): number | null {
+function getUnitFactor(unit: string, context: LengthContext): number | null {
 	switch (unit.toLowerCase()) {
 		case "em":
 			return context.font;
@@ -2572,7 +2572,7 @@ function absolutizeLengths(value: string, context: LengthContext): string {
 	return reduced.replace(
 		LENGTH_TOKEN,
 		(token, number: string, unit: string) => {
-			const factor = unitFactor(unit, context);
+			const factor = getUnitFactor(unit, context);
 			return factor === null
 				? token
 				: absoluteLength(parseFloat(number) * factor);
@@ -2680,7 +2680,7 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 		if (match[2] === "%" && context.percent === null) {
 			return {px: 0, percent: number, number: 0};
 		}
-		const factor = unitFactor(match[2], context);
+		const factor = getUnitFactor(match[2], context);
 		if (factor === null) {
 			return null;
 		}
@@ -2752,7 +2752,7 @@ const EMPTY_DECLARATIONS: DeclarationBlock = {
 
 // The slot name the block declares LAST at this importance, or null.
 // `accepts` rejects a flow-relative name that maps to the opposite edge.
-function declaredName(
+function getDeclaredName(
 	block: DeclarationBlock,
 	names: readonly string[],
 	important: boolean,
@@ -2847,7 +2847,7 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 	map("grid-column-gap", "column-gap");
 }
 
-function physicalProperty(
+function getPhysicalProperty(
 	property: string,
 	direction: string,
 ): string | undefined {
@@ -2856,8 +2856,8 @@ function physicalProperty(
 
 // The OTHER names of the cascade slot a longhand belongs to under
 // `direction`. Empty for a longhand with no aliases.
-function slotNames(property: string, direction: string): readonly string[] {
-	const physical = physicalProperty(property, direction);
+function getSlotNames(property: string, direction: string): readonly string[] {
+	const physical = getPhysicalProperty(property, direction);
 	if (physical) {
 		return [physical];
 	}
@@ -2866,7 +2866,7 @@ function slotNames(property: string, direction: string): readonly string[] {
 		return [];
 	}
 	return logical.filter(
-		(name) => physicalProperty(name, direction) === property,
+		(name) => getPhysicalProperty(name, direction) === property,
 	);
 }
 
@@ -2903,7 +2903,7 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	const indexed = reset
 		? all.filter((longhand) => !reset.includes(longhand))
 		: all;
-	const box = boxOrder(indexed, EDGES) ?? boxOrder(indexed, CORNERS);
+	const box = getBoxOrder(indexed, EDGES) ?? getBoxOrder(indexed, CORNERS);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
 	// A corner box whose longhands are radii writes its two axes around a
@@ -3174,7 +3174,7 @@ function expandShorthandValue(
 	return ordered;
 }
 
-function radiusAxes(value: string): [string, string] {
+function getRadiusAxes(value: string): [string, string] {
 	const [horizontal, vertical = horizontal] = value
 		.split(/\s+/)
 		.filter(Boolean);
@@ -3197,7 +3197,7 @@ function collapseSides(values: string[]): string {
 
 // The longhands grouped by the side or corner each names, in grammar
 // order. Null when they are not a box.
-function boxOrder(
+function getBoxOrder(
 	longhands: readonly string[],
 	parts: readonly string[],
 ): string[] | null {
@@ -3276,7 +3276,7 @@ function serializeShorthandValue(
 		// vertical ones after a slash, and drops the slash entirely when the
 		// two axes agree, which is every circular corner.
 		case "radius": {
-			const axes = values.map(radiusAxes);
+			const axes = values.map(getRadiusAxes);
 			const across = collapseSides(axes.map(([horizontal]) => horizontal));
 			const down = collapseSides(axes.map(([, vertical]) => vertical));
 			return across === down ? across : `${across} / ${down}`;
@@ -3501,7 +3501,7 @@ class CSSStyleDeclaration {
 			return declared.value;
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
-		return longhands ? shorthandValue(this, name, longhands) : "";
+		return longhands ? getShorthandValue(this, name, longhands) : "";
 	}
 
 	getPropertyPriority(property: string): string {
@@ -3735,7 +3735,7 @@ function serialize(
 			if (longhands.length > block[kDeclarations]!.length) {
 				continue;
 			}
-			const value = shorthandValue(block, shorthand, longhands);
+			const value = getShorthandValue(block, shorthand, longhands);
 			if (!value) {
 				unserializable.add(shorthand);
 				continue;
@@ -3894,7 +3894,7 @@ function apply(
 }
 
 // Returns "" when the longhands do not agree on one value.
-function shorthandValue(
+function getShorthandValue(
 	declaration: CSSStyleDeclaration,
 	shorthand: string,
 	longhands: readonly string[],
@@ -3985,7 +3985,7 @@ for (const property of CSS_PROPERTIES) {
 // from.
 let cssomWindow: EngineWindow | null = null;
 
-function sheetView(
+function getSheetView(
 	sheet: CSSStyleSheet | null | undefined,
 ): object | undefined {
 	const owner = sheet ? sheet.ownerNode : null;
@@ -3994,7 +3994,7 @@ function sheetView(
 }
 
 function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
-	const view = sheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
 	const Constructor =
 		(view as unknown as {TypeError?: typeof TypeError} | undefined)
 			?.TypeError ?? TypeError;
@@ -4006,7 +4006,7 @@ function domException(
 	name: string,
 	sheet?: CSSStyleSheet | null,
 ): DOMException {
-	const view = sheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
 	const Exception =
 		(view as unknown as {DOMException?: typeof DOMException} | undefined)
 			?.DOMException ?? DOMException;
@@ -4194,7 +4194,7 @@ interface MediaConditionNode {
 // authored text at them.
 const mediaQueryNodes = new Map<string, MediaQueryNode[] | null>();
 
-function mediaConditionParts(
+function getMediaConditionParts(
 	condition: MediaConditionNode | null | undefined,
 ): MediaConditionNode[] {
 	return condition?.children ? condition.children.toArray() : [];
@@ -4262,7 +4262,7 @@ function serializeMediaQuery(query: string): string {
 	// What may appear at the cursor: the first part, the joiner a feature
 	// expects, or the feature a joiner or bare `not` requires.
 	let expected: "first" | "feature" | "joiner" = "first";
-	for (const part of mediaConditionParts(parsed.condition)) {
+	for (const part of getMediaConditionParts(parsed.condition)) {
 		if (!part.loc) {
 			return serializeMediaQueryText(text);
 		}
@@ -4648,7 +4648,7 @@ class CSSStyleRule extends CSSGroupingRule {
 	get selectorText(): string {
 		return (this[kSelectorText]! ??= serializeSelectorList(
 			this[kSelectors]!,
-			sheetNamespaces(this.parentStyleSheet),
+			getSheetNamespaces(this.parentStyleSheet),
 		));
 	}
 
@@ -4698,7 +4698,7 @@ function namespacePrefixesDeclared(
 	}
 }
 
-function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
+function getSheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	if (!sheet) {
 		return NO_NAMESPACES;
 	}
@@ -5164,7 +5164,7 @@ class CSSContainerRule extends CSSTextConditionRule {
 		super(conditionText, parentStyleSheet, parentRule, build);
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
-		const parts = containerParts(this.conditionText);
+		const parts = getContainerParts(this.conditionText);
 		this[kContainerName] = parts.name;
 		this[kContainerQuery] = parts.query;
 	}
@@ -5189,7 +5189,7 @@ class CSSContainerRule extends CSSTextConditionRule {
 // `none`, `and`, `or` and `not` name no container, so a prelude opening
 // with one of those words is a query alone, as is a prelude outside the
 // grammar.
-function containerParts(prelude: string): {name: string; query: string} {
+function getContainerParts(prelude: string): {name: string; query: string} {
 	let nodes: ContainerPreludeNode[] = [];
 	try {
 		const ast = CSSTree.parse(prelude, {
@@ -5238,7 +5238,7 @@ class CSSScopeRule extends CSSGroupingRule {
 		this[kPrelude] = prelude.trim();
 		// The prelude does not change for this rule, so its parts are read
 		// once here.
-		const limits = scopeLimits(this[kPrelude]!);
+		const limits = getScopeLimits(this[kPrelude]!);
 		this[kScopeStart] = limits.start;
 		this[kScopeEnd] = limits.end;
 	}
@@ -5263,7 +5263,7 @@ class CSSScopeRule extends CSSGroupingRule {
 
 // Both null for a prelude outside the grammar. The limit alone for the
 // implicit `@scope to (...)`.
-function scopeLimits(prelude: string): {
+function getScopeLimits(prelude: string): {
 	start: string | null;
 	end: string | null;
 } {
@@ -5488,7 +5488,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				onChange: () => notifyRule(this),
 				descriptors: "@font-feature-values",
 			});
-			assignDeclarations(block, blockDeclarations(child, source));
+			assignDeclarations(block, getBlockDeclarations(child, source));
 			this[kBlocks]!.set(child.name.toLowerCase(), block);
 		}
 	}
@@ -5507,27 +5507,27 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 
 	get annotation(): CSSStyleDeclaration {
-		return featureBlock(this, "annotation");
+		return getFeatureBlock(this, "annotation");
 	}
 
 	get ornaments(): CSSStyleDeclaration {
-		return featureBlock(this, "ornaments");
+		return getFeatureBlock(this, "ornaments");
 	}
 
 	get stylistic(): CSSStyleDeclaration {
-		return featureBlock(this, "stylistic");
+		return getFeatureBlock(this, "stylistic");
 	}
 
 	get swash(): CSSStyleDeclaration {
-		return featureBlock(this, "swash");
+		return getFeatureBlock(this, "swash");
 	}
 
 	get characterVariant(): CSSStyleDeclaration {
-		return featureBlock(this, "character-variant");
+		return getFeatureBlock(this, "character-variant");
 	}
 
 	get styleset(): CSSStyleDeclaration {
-		return featureBlock(this, "styleset");
+		return getFeatureBlock(this, "styleset");
 	}
 
 	get cssText(): string {
@@ -5542,7 +5542,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 	}
 }
 
-function featureBlock(
+function getFeatureBlock(
 	rule: CSSFontFeatureValuesRule,
 	name: string,
 ): CSSStyleDeclaration {
@@ -6048,7 +6048,7 @@ const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
 	"nth-last-child",
 ]);
 
-function listSpecificity(list: SelectorNode): Specificity {
+function getListSpecificity(list: SelectorNode): Specificity {
 	let most: Specificity = [0, 0, 0];
 	for (const selector of getChildren(list)) {
 		const weight = getSelectorSpecificity(selector);
@@ -6073,13 +6073,13 @@ function getSelectorSpecificity(selector: SelectorNode): Specificity {
 	const argumentWeight = (node: SelectorNode): Specificity => {
 		for (const child of getChildren(node)) {
 			if (child.type === "SelectorList") {
-				return listSpecificity(child);
+				return getListSpecificity(child);
 			}
 			if (child.type === "Selector") {
 				return getSelectorSpecificity(child);
 			}
 			if (child.type === "Nth" && child.selector) {
-				return listSpecificity(child.selector);
+				return getListSpecificity(child.selector);
 			}
 		}
 		return [0, 0, 0];
@@ -6259,7 +6259,7 @@ function readSelector(selector: string): SelectorReading {
 	if (failed || !list || list.type !== "SelectorList") {
 		return {specificity: "000-000-000", subjectTag: undefined, compounds: []};
 	}
-	const weight = listSpecificity(list);
+	const weight = getListSpecificity(list);
 	const specificity = weight
 		.map((count) => String(count).padStart(3, "0"))
 		.join("-");
@@ -6592,7 +6592,10 @@ function getNodes(container: {
 // Value nodes from the sheet parse are kept when the canonical spelling
 // is the authored one. The value TEXT always serializes from the source,
 // which the parsed spelling cannot replace.
-function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
+function getBlockDeclarations(
+	node: ParsedNode,
+	source: string,
+): CSSDeclaration[] {
 	const declarations: CSSDeclaration[] = [];
 	if (!node.block) {
 		return declarations;
@@ -6681,7 +6684,7 @@ function parseRuleText(
 		source,
 		sheet,
 		parentRule,
-		sheetNamespaces(sheet),
+		getSheetNamespaces(sheet),
 	);
 	if (!rule) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
@@ -6720,7 +6723,7 @@ function convertRules(
 	return rules;
 }
 
-function preludeText(node: ParsedNode): string {
+function getPreludeText(node: ParsedNode): string {
 	return (node.prelude?.value ?? "").trim();
 }
 
@@ -6732,7 +6735,7 @@ function convertRule(
 	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): CSSRule | null {
 	if (node.type === "Rule") {
-		const prelude = preludeText(node);
+		const prelude = getPreludeText(node);
 		const selectors = parseSelectorList(prelude);
 		if (!selectors) {
 			return null;
@@ -6747,17 +6750,17 @@ function convertRule(
 		}
 		return new CSSStyleRule(
 			selectors,
-			blockDeclarations(node, source),
+			getBlockDeclarations(node, source),
 			sheet,
 			parentRule,
 			(rule) =>
-				convertRules(nestedRules(node), source, sheet, rule, namespaces),
+				convertRules(getNestedRules(node), source, sheet, rule, namespaces),
 		);
 	}
 	if (node.type !== "Atrule") {
 		return null;
 	}
-	const prelude = preludeText(node);
+	const prelude = getPreludeText(node);
 	switch ((node.name ?? "").toLowerCase()) {
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
 		case "charset":
@@ -6775,12 +6778,12 @@ function convertRule(
 		case "counter-style":
 			return new CSSCounterStyleRule(
 				prelude,
-				blockDeclarations(node, source),
+				getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "font-face":
 			return new CSSFontFaceRule(
-				blockDeclarations(node, source),
+				getBlockDeclarations(node, source),
 				sheet,
 				parentRule,
 			);
@@ -6789,7 +6792,7 @@ function convertRule(
 		case "font-palette-values":
 			return new CSSFontPaletteValuesRule(
 				prelude,
-				blockDeclarations(node, source),
+				getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "import":
@@ -6802,15 +6805,15 @@ function convertRule(
 					.map(
 						(frame) =>
 							new CSSKeyframeRule(
-								preludeText(frame),
-								blockDeclarations(frame, source),
+								getPreludeText(frame),
+								getBlockDeclarations(frame, source),
 								sheet,
 								rule,
 							),
 					),
 			);
 		case "layer": {
-			const names = layerNames(prelude);
+			const names = getLayerNames(prelude);
 			if (!names) {
 				return null;
 			}
@@ -6854,14 +6857,14 @@ function convertRule(
 		case "page":
 			return new CSSPageRule(
 				prelude,
-				blockDeclarations(node, source),
+				getBlockDeclarations(node, source),
 				sheet,
 				parentRule,
 			);
 		case "property":
 			return new CSSPropertyRule(
 				prelude,
-				blockDeclarations(node, source),
+				getBlockDeclarations(node, source),
 				sheet,
 			);
 		case "scope":
@@ -6899,7 +6902,7 @@ function convertRule(
 	}
 }
 
-function nestedRules(node: ParsedNode): ParsedNode[] {
+function getNestedRules(node: ParsedNode): ParsedNode[] {
 	return getNodes(node.block ?? {}).filter(
 		(child) => child.type === "Rule" || child.type === "Atrule",
 	);
@@ -6954,7 +6957,7 @@ interface LayerPreludeNode {
 
 // The empty list for the anonymous block. Null for a prelude outside
 // the grammar, which drops the at-rule.
-function layerNames(prelude: string): string[] | null {
+function getLayerNames(prelude: string): string[] | null {
 	let nodes: LayerPreludeNode[];
 	try {
 		const ast = CSSTree.parse(prelude, {
@@ -7119,7 +7122,7 @@ function asShadowRoot(root: Node): ShadowRoot | null {
 
 const kRefreshShadowRoot = Symbol("refreshShadowRoot");
 
-function sheetFor(element: Element): CSSStyleSheet {
+function getSheet(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
 	if (!sheet) {
 		sheet = new CSSStyleSheet({}, element);
@@ -7144,21 +7147,21 @@ function sheetFor(element: Element): CSSStyleSheet {
 
 // What `styleSheets` lists. An adopted sheet belongs to no element and
 // is not included.
-function declaredStyleSheets(root: Document | ShadowRoot): CSSStyleSheet[] {
-	return Array.from(root.querySelectorAll("style"), sheetFor);
+function getDeclaredStyleSheets(root: Document | ShadowRoot): CSSStyleSheet[] {
+	return Array.from(root.querySelectorAll("style"), getSheet);
 }
 
 // A `<link>` never resolves to a sheet, because there is no network
 // behind a terminal document.
-function documentStyleSheets(document: Document): CSSStyleSheet[] {
+function getDocumentStyleSheets(document: Document): CSSStyleSheet[] {
 	return [
-		...declaredStyleSheets(document),
+		...getDeclaredStyleSheets(document),
 		...(adoptedSheets.get(document) ?? []),
 	];
 }
 
-function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
-	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
+function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
+	return [...getDeclaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
 function getTreeCascade(tree: Node): Cascade | undefined {
@@ -7303,7 +7306,7 @@ for (const [name, type] of Object.entries({
 // Parsed once. Its rules never change.
 let uaDocumentSheet: CSSStyleSheet | null = null;
 
-function uaStyleSheet(): CSSStyleSheet {
+function getUAStyleSheet(): CSSStyleSheet {
 	if (!uaDocumentSheet) {
 		uaDocumentSheet = new CSSStyleSheet();
 		uaDocumentSheet.replaceSync(UA_ELEMENT_STYLES + UA_DOCUMENT_STYLES);
@@ -7335,7 +7338,7 @@ const USED_VALUE_PROPERTIES = new Set([
 ]);
 
 // A used length in the one unit a terminal has: a cell, spelled `px`.
-function usedLength(cells: number): string {
+function getUsedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
@@ -7390,7 +7393,7 @@ const OPPOSITE_INSET: Record<string, string> = {
 
 // Null for `auto`, which is not a length but an instruction to
 // measure.
-function insetLength(computed: string, basis: number): number | null {
+function getInsetLength(computed: string, basis: number): number | null {
 	if (!computed || computed === "auto") {
 		return null;
 	}
@@ -7430,7 +7433,7 @@ export function getComputedValue(
 			? documentCascades.get(host.ownerDocument)
 			: undefined;
 		return cascade
-			? pseudoDeclarationFor(cascade, host, name).nodeValue(property)
+			? getPseudoDeclaration(cascade, host, name).nodeValue(property)
 			: getComputedValue(host, property, name);
 	}
 	const document = element.ownerDocument;
@@ -7442,14 +7445,16 @@ export function getComputedValue(
 		return "";
 	}
 	const declaration = pseudoElement
-		? pseudoDeclarationFor(cascade, element, pseudoElement)
+		? getPseudoDeclaration(cascade, element, pseudoElement)
 		: cascade.declarationFor(element);
 	return declaration.getComputedValue(property);
 }
 
 // Only declarations handed to an author materialize an item list. The
 // engine's own computed styles never do.
-function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
+function getIndexedDeclaration<
+	T extends CSSStyleDeclaration,
+>(declaration: T): T {
 	syncIndexed(declaration);
 	return declaration;
 }
@@ -7501,7 +7506,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	override get length(): number {
-		return CSS_LONGHANDS.length + customNames(this).length;
+		return CSS_LONGHANDS.length + getCustomNames(this).length;
 	}
 
 	override get cssText(): string {
@@ -7555,7 +7560,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return this[kUsedValue](property);
 		}
 		if (this[kCascade] && MIN_SIZE_PROPERTIES.has(property)) {
-			return resolvedMinSize(this, this.getComputedValue(property));
+			return getResolvedMinSize(this, this.getComputedValue(property));
 		}
 		if (this[kCascade] && USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = this[kCascade][kUsedGridTracks](
@@ -7563,7 +7568,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 				property === "grid-template-rows",
 			);
 			if (tracks) {
-				return tracks.length > 0 ? tracks.map(usedLength).join(" ") : "none";
+				return tracks.length > 0 ? tracks.map(getUsedLength).join(" ") : "none";
 			}
 		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {
@@ -7596,13 +7601,13 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	override item(index: number): string {
 		return (
 			CSS_LONGHANDS[index] ??
-			customNames(this)[index - CSS_LONGHANDS.length] ??
+			getCustomNames(this)[index - CSS_LONGHANDS.length] ??
 			""
 		);
 	}
 
 	override [Symbol.iterator](): IterableIterator<string> {
-		return [...CSS_LONGHANDS, ...customNames(this)][Symbol.iterator]();
+		return [...CSS_LONGHANDS, ...getCustomNames(this)][Symbol.iterator]();
 	}
 
 	declaredCustomProperties(): string[] {
@@ -7614,7 +7619,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 				}
 			}
 		}
-		for (const name of Object.keys(inlineDeclarations(this).declarations)) {
+		for (const name of Object.keys(getInlineDeclarations(this).declarations)) {
 			if (name.startsWith("--") && !names.includes(name)) {
 				names.push(name);
 			}
@@ -7695,7 +7700,7 @@ function computed(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
-	const entry = computedEntry(
+	const entry = getComputedEntry(
 		property,
 		resolvePropertyValue(declaration, property),
 	);
@@ -7704,7 +7709,7 @@ function computed(
 	}
 	const absolute = absolutizeLengths(
 		entry.value,
-		lengthContext(declaration, property),
+		getLengthContext(declaration, property),
 	);
 	// Two radii that differ as written (`1ch 1px`) can measure the same
 	// cell, and a corner whose radii agree states one of them.
@@ -7713,7 +7718,7 @@ function computed(
 
 // `font-size` measures against the PARENT's font size, so it is the one
 // property whose own computed value is not in its own context.
-function lengthContext(
+function getLengthContext(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): LengthContext {
@@ -7726,7 +7731,7 @@ function lengthContext(
 			? getFontSize(getComputedValue(parent, "font-size"))
 			: INITIAL_FONT_SIZE
 		: getFontSize(declaration.getComputedValue("font-size"));
-	const root = rootFontSize(declaration, own);
+	const root = getRootFontSize(declaration, own);
 	const cascade = declaration[kCascade];
 	const block = cascade ? cascade[kLayout].initialContainingBlock : null;
 	return {
@@ -7741,7 +7746,7 @@ function lengthContext(
 	};
 }
 
-function rootFontSize(
+function getRootFontSize(
 	declaration: ComputedStyleDeclaration,
 	ownFontSize: boolean,
 ): number {
@@ -7764,7 +7769,7 @@ function toPhysicalProperty(
 		return property;
 	}
 	return (
-		physicalProperty(property, declaration.getComputedValue("direction")) ??
+		getPhysicalProperty(property, declaration.getComputedValue("direction")) ??
 		property
 	);
 }
@@ -7807,7 +7812,7 @@ function measure(
 		return computed;
 	}
 
-	const rect = usedRect(declaration[kCascade]!, declaration[kElement]!);
+	const rect = getUsedRect(declaration[kCascade]!, declaration[kElement]!);
 	// No box (display:none, or a tree layout never reached), so the
 	// computed value is the result, exactly as CSSOM says.
 	if (!rect) {
@@ -7815,7 +7820,7 @@ function measure(
 	}
 
 	if (inset) {
-		return usedInset(declaration, property, computed, rect, position);
+		return getUsedInset(declaration, property, computed, rect, position);
 	}
 
 	if (property === "width" || property === "height") {
@@ -7832,46 +7837,46 @@ function measure(
 		// resolved value of width is the CONTENT width either way (cssom-view
 		// §7.1), so the edges are subtracted regardless of box-sizing.
 		const border = vertical ? rect.height : rect.width;
-		return usedLength(Math.max(0, border - edges));
+		return getUsedLength(Math.max(0, border - edges));
 	}
 
 	// An `auto` margin is whatever space the box was given: the distance
 	// between its border box and its containing block's content edge.
 	if (computed === "auto" && property.startsWith("margin-")) {
-		return usedLength(autoMargin(declaration, property, rect));
+		return getUsedLength(getAutoMargin(declaration, property, rect));
 	}
 
 	// Every other used length is already absolute in this engine's own
 	// unit, so the computed value carries it. Only a percentage still has to
 	// be resolved, against the containing block's width.
 	if (computed.endsWith("%")) {
-		const basis = containingWidth(declaration);
+		const basis = getContainingWidth(declaration);
 		if (basis === null) {
 			return computed;
 		}
-		return usedLength((parseFloat(computed) / 100) * basis);
+		return getUsedLength((parseFloat(computed) / 100) * basis);
 	}
 	return computed || "0px";
 }
 
 // A declared inset resolves as written. `auto` is the one that has to be
 // measured, to whatever distance the box ended up at.
-function usedInset(
+function getUsedInset(
 	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
 	rect: DOMRect,
 	position: string,
 ): string {
-	const block = containingBlockBox(declaration, position);
+	const block = getContainingBlockBox(declaration, position);
 	if (!block) {
 		return computed;
 	}
 	const vertical = property === "top" || property === "bottom";
 	const basis = vertical ? block.height : block.width;
-	const own = insetLength(computed, basis);
+	const own = getInsetLength(computed, basis);
 	if (own !== null) {
-		return usedLength(own);
+		return getUsedLength(own);
 	}
 	// A sticky box keeps its `auto`. It names an edge that constrains
 	// nothing, not a distance.
@@ -7880,12 +7885,12 @@ function usedInset(
 	}
 
 	const opposite = OPPOSITE_INSET[property];
-	const other = insetLength(declaration.getComputedValue(opposite), basis);
+	const other = getInsetLength(declaration.getComputedValue(opposite), basis);
 	// A relatively positioned box is offset from where it already was, so
 	// an `auto` inset is the negative of its opposite, and zero when both
 	// are auto, which moves the box nowhere.
 	if (position === "relative") {
-		return usedLength(other === null ? 0 : -other);
+		return getUsedLength(other === null ? 0 : -other);
 	}
 
 	// Out of flow: the box hangs in its containing block, so the used inset
@@ -7899,21 +7904,21 @@ function usedInset(
 			(vertical ? rect.height : rect.width) +
 			edge(declaration, start) +
 			edge(declaration, end);
-		return usedLength(basis - other - size);
+		return getUsedLength(basis - other - size);
 	}
 	switch (property) {
 		case "top":
-			return usedLength(rect.y - edge(declaration, start) - block.y);
+			return getUsedLength(rect.y - edge(declaration, start) - block.y);
 		case "left":
-			return usedLength(rect.x - edge(declaration, start) - block.x);
+			return getUsedLength(rect.x - edge(declaration, start) - block.x);
 		case "bottom":
-			return usedLength(
+			return getUsedLength(
 				block.y +
 				block.height -
 				(rect.y + rect.height + edge(declaration, end)),
 			);
 		default:
-			return usedLength(
+			return getUsedLength(
 				block.x + block.width - (rect.x + rect.width + edge(declaration, end)),
 			);
 	}
@@ -7922,12 +7927,12 @@ function usedInset(
 // The padding box of the block an out-of-flow box hangs from, the
 // scrollport a sticky box is constrained by, and otherwise the content
 // box of the box this one flows in.
-function containingBlockBox(
+function getContainingBlockBox(
 	declaration: MeasuredDeclaration,
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
-		return viewportBox(declaration);
+		return getViewportBox(declaration);
 	}
 	if (position === "absolute") {
 		for (
@@ -7941,7 +7946,7 @@ function containingBlockBox(
 				return getBox(declaration, ancestor, false);
 			}
 		}
-		return viewportBox(declaration);
+		return getViewportBox(declaration);
 	}
 	if (position === "sticky") {
 		for (
@@ -7956,7 +7961,9 @@ function containingBlockBox(
 		}
 	}
 	const parent = flatParentElement<Element>(declaration[kElement]!);
-	return parent ? getBox(declaration, parent, true) : viewportBox(declaration);
+	return parent
+		? getBox(declaration, parent, true)
+		: getViewportBox(declaration);
 }
 
 function getBox(
@@ -7964,7 +7971,7 @@ function getBox(
 	element: Element,
 	content: boolean,
 ): DOMRect | null {
-	const rect = usedRect(declaration[kCascade]!, element);
+	const rect = getUsedRect(declaration[kCascade]!, element);
 	if (!rect) {
 		return null;
 	}
@@ -7989,11 +7996,11 @@ function getBox(
 }
 
 // The initial containing block: the grid itself.
-function viewportBox(
+function getViewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
 	const block = declaration[kCascade]![kLayout].initialContainingBlock;
-	const rect = usedRect(declaration[kCascade]!, declaration[kElement]!);
+	const rect = getUsedRect(declaration[kCascade]!, declaration[kElement]!);
 	if (!rect) {
 		return null;
 	}
@@ -8007,7 +8014,7 @@ function viewportBox(
 
 // `auto` means the automatic minimum only a flex or grid item, or an
 // aspect-ratio box, actually has. Anywhere else it resolves to 0px.
-function resolvedMinSize(
+function getResolvedMinSize(
 	declaration: ComputedStyleDeclaration,
 	computed: string,
 ): string {
@@ -8044,13 +8051,15 @@ function edge(
 
 // The space an `auto` margin actually took, measured from the two
 // boxes.
-function autoMargin(
+function getAutoMargin(
 	declaration: MeasuredDeclaration,
 	property: string,
 	rect: DOMRect,
 ): number {
 	const parent = flatParentElement<Element>(declaration[kElement]!);
-	const parentRect = parent ? usedRect(declaration[kCascade]!, parent) : null;
+	const parentRect = parent
+		? getUsedRect(declaration[kCascade]!, parent)
+		: null;
 	if (!parent || !parentRect) {
 		return 0;
 	}
@@ -8081,20 +8090,20 @@ function autoMargin(
 	}
 }
 
-function containingWidth(
+function getContainingWidth(
 	declaration: MeasuredDeclaration,
 ): number | null {
 	const parent = flatParentElement<Element>(declaration[kElement]!);
 	if (!parent) {
 		return null;
 	}
-	const rect = usedRect(declaration[kCascade]!, parent);
+	const rect = getUsedRect(declaration[kCascade]!, parent);
 	return rect ? rect.width : null;
 }
 
 // The cascade gets the expanded block, so a shorthand's `!important`
 // covers every longhand it declares.
-function inlineDeclarations(
+function getInlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): DeclarationBlock {
 	const style = (declaration[kElement]! as HTMLElement).style;
@@ -8211,18 +8220,18 @@ function resolvePropertyValueRaw(
 	let direction: string | null = null;
 	const mapsHere = (name: string): boolean =>
 		name === property ||
-		physicalProperty(
+		getPhysicalProperty(
 			name,
 			(direction ??= declaration.getComputedValue("direction")),
 		) === property;
 
-	const inline = inlineDeclarations(declaration);
-	const inlineName = declaredName(inline, names, false, mapsHere);
+	const inline = getInlineDeclarations(declaration);
+	const inlineName = getDeclaredName(inline, names, false, mapsHere);
 	const inlineValue = inlineName
 		? inline.declarations[inlineName].trim()
 		: undefined;
 	const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
-	const inlineImportantName = declaredName(inline, names, true, mapsHere);
+	const inlineImportantName = getDeclaredName(inline, names, true, mapsHere);
 	const inlineImportantValue = inlineImportantName
 		? inline.declarations[inlineImportantName].trim()
 		: undefined;
@@ -8251,11 +8260,11 @@ function resolvePropertyValueRaw(
 	let importantOrigin = false;
 	let importantLayer = 0;
 	for (const rule of declaration[kCSSRules]) {
-		const name = declaredName(rule, names, false, mapsHere);
+		const name = getDeclaredName(rule, names, false, mapsHere);
 		if (name !== null) {
 			ruleValue = rule.declarations[name];
 		}
-		const importantName = declaredName(rule, names, true, mapsHere);
+		const importantName = getDeclaredName(rule, names, true, mapsHere);
 		if (
 			importantName !== null &&
 			(importantRuleValue === null ||
@@ -8321,7 +8330,7 @@ function resolvePropertyValueRaw(
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
-		const depth = listNestingDepth(declaration[kElement]!);
+		const depth = getListNestingDepth(declaration[kElement]!);
 		return bullets[Math.min(depth, bullets.length - 1)];
 	}
 
@@ -8359,7 +8368,7 @@ function resolvePropertyValueRaw(
 
 // This element's own custom properties and every ancestor's, since a
 // custom property inherits.
-function customNames(
+function getCustomNames(
 	computed: ComputedStyleDeclaration,
 ): string[] {
 	const current = computed[kCascade]?.[kCurrentDeclarations];
@@ -8486,7 +8495,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			this[kRefresh]();
 		}
 		const value = this[kBaseValue](property);
-		const transitional = pseudoTransitionValue(this, property);
+		const transitional = getPseudoTransitionValue(this, property);
 		return transitional ?? value;
 	}
 
@@ -8502,10 +8511,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			value =
 				this[kBaseValue](property) ||
-				computedValue(property, getInitialStyle(null, property));
+				getComputedValueEntry(property, getInitialStyle(null, property));
 			this[kNodeResolved].set(property, value);
 		}
-		const transitional = pseudoTransitionValue(this, property);
+		const transitional = getPseudoTransitionValue(this, property);
 		return transitional ?? value;
 	}
 
@@ -8513,7 +8522,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		this[kCascade]?.[kFlushStyle]();
 		const computed =
 			this.getComputedValue(property) ||
-			computedValue(property, getInitialStyle(null, property));
+			getComputedValueEntry(property, getInitialStyle(null, property));
 		if (this[kCascade] && USED_VALUE_PROPERTIES.has(property)) {
 			return this[kUsedValue](property, computed);
 		}
@@ -8582,7 +8591,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 							CSS_INITIAL_VALUES[longhand] ||
 							"",
 					)
-					: computedValue(
+					: getComputedValueEntry(
 						property,
 						this[kPseudoDeclarations][property] ?? "",
 					);
@@ -8603,7 +8612,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			// under the flush is what creates a pseudo-element's node, so a
 			// lookup taken first would report "no box" for a box one render
 			// away.
-			usedRect(cascade, originating);
+			getUsedRect(cascade, originating);
 			const node = pseudoElement<Element>(
 				originating,
 				this[kPseudoElement],
@@ -8638,11 +8647,11 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		const vertical =
 			property === "height" || property === "top" || property === "bottom";
 		const basis = vertical ? box.height : box.width;
-		return usedLength((parseFloat(computed) / 100) * basis);
+		return getUsedLength((parseFloat(computed) / 100) * basis);
 	}
 }
 
-function pseudoTransitionValue(
+function getPseudoTransitionValue(
 	declaration: PseudoStyleDeclaration,
 	property: string,
 ): string | null {
@@ -8914,7 +8923,7 @@ function toRoman(num: number): string {
 	return result;
 }
 
-function listNestingDepth(element: Element): number {
+function getListNestingDepth(element: Element): number {
 	let depth = 0;
 	for (
 		let parent = element.parentElement;
@@ -8961,7 +8970,7 @@ function toAlpha(value: number): string {
 
 // `<ol start>` sets where counting begins, `<ol reversed>` counts down,
 // and a `<li value>` resets the counter mid-list and carries forward.
-function listItemOrdinal(listItem: Element, listParent: Element): number {
+function getListItemOrdinal(listItem: Element, listParent: Element): number {
 	const items = Array.from(listParent.children).filter(
 		(child) => child.tagName === "LI",
 	);
@@ -9031,7 +9040,7 @@ function getListMarker(listItem: Element, listParent: Element): string {
 		if (!items.includes(listItem)) {
 			return "";
 		}
-		return `${formatOrdinal(listItemOrdinal(listItem, listParent), listStyleType)}.`;
+		return `${formatOrdinal(getListItemOrdinal(listItem, listParent), listStyleType)}.`;
 	}
 
 	return "";
@@ -9194,7 +9203,7 @@ function attachPseudoElementsToElement(
 	// If no pseudo rule names this element's type, no counter scope reaches
 	// it, and it has no pseudo-element to reconsider, everything below would
 	// return no, at the cost of one matches() call per rule.
-	const tags = pseudoSubjects(cascade);
+	const tags = getPseudoSubjects(cascade);
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
@@ -9487,7 +9496,7 @@ export class Cascade {
 				// A <style>'s children ARE its stylesheet text. A shadow sheet's
 				// refresh stays inside its root.
 				if ((mutation.target as Element).tagName === "STYLE") {
-					reparseOwnerText(sheetFor(mutation.target as Element));
+					reparseOwnerText(getSheet(mutation.target as Element));
 					const styleRoot = asShadowRoot(mutation.target.getRootNode());
 					if (styleRoot) {
 						this[kRefreshShadowRoot](styleRoot);
@@ -9569,7 +9578,7 @@ export class Cascade {
 			} else if (mutation.type === "characterData") {
 				const owner = mutation.target.parentElement;
 				if (owner?.tagName === "STYLE") {
-					reparseOwnerText(sheetFor(owner));
+					reparseOwnerText(getSheet(owner));
 					const ownerRoot = asShadowRoot(owner.getRootNode());
 					if (ownerRoot) {
 						this[kRefreshShadowRoot](ownerRoot);
@@ -9744,7 +9753,7 @@ export class Cascade {
 		let content = styles.content;
 
 		if (!content || content === "none" || content === "normal") {
-			content = defaultMarkerContent(hostElement) ?? content;
+			content = getDefaultMarkerContent(hostElement) ?? content;
 		}
 		if (!content || content === "none" || content === "normal") {
 			return null;
@@ -9810,7 +9819,7 @@ export class Cascade {
 	// The box a child's or a pseudo-element's percentage resolves against,
 	// measured behind the same flush a rect read takes.
 	[kContentBox](element: Element): DOMRect | null {
-		if (!usedRect(this, element)) {
+		if (!getUsedRect(this, element)) {
 			return null;
 		}
 		return this[kLayout].contentRect(element);
@@ -9819,7 +9828,7 @@ export class Cascade {
 	// Null for a box that generated no grid. The resolved value then stays
 	// the computed track list, as CSSOM says.
 	[kUsedGridTracks](element: Element, rows: boolean): number[] | null {
-		if (!usedRect(this, element)) {
+		if (!getUsedRect(this, element)) {
 			return null;
 		}
 		return this[kLayout].gridTracks(element, rows);
@@ -9836,12 +9845,12 @@ export class Cascade {
 			(rule) => rule.scope !== root,
 		);
 		const before = this[kParsedRules].length;
-		for (const sheet of shadowStyleSheets(root)) {
+		for (const sheet of getShadowStyleSheets(root)) {
 			parseStyleSheet(this, sheet, root);
 		}
 		// Without this sync the drift check orders the full rebuild this path
 		// exists to avoid, once per widget.
-		this[kParsedStyleSheetCount] = styleSheetCount(this);
+		this[kParsedStyleSheetCount] = getStyleSheetCount(this);
 		const fresh = this[kParsedRules].slice(before);
 		if (fresh.length === 0) {
 			return;
@@ -9981,7 +9990,7 @@ export class Cascade {
 				const trimmedName = counterName.trim();
 				const trimmedStyle = style?.trim() || "decimal";
 				return formatCounterValue(
-					counterValueInScope(scope, trimmedName),
+					getCounterValueInScope(scope, trimmedName),
 					trimmedStyle,
 				);
 			},
@@ -9992,7 +10001,7 @@ export class Cascade {
 // The flush runs once per change, not once per read. A caller reading
 // four properties off two hundred elements pays one flush, not eight
 // hundred. Nothing under the flush can call back into this.
-function usedRect(cascade: Cascade, element: Element): DOMRect | null {
+function getUsedRect(cascade: Cascade, element: Element): DOMRect | null {
 	if (cascade[kUsedStale]) {
 		flushLayout(cascade[kDocument]);
 		cascade[kUsedStale] = false;
@@ -10002,7 +10011,7 @@ function usedRect(cascade: Cascade, element: Element): DOMRect | null {
 }
 
 // A pseudo-element's declaration, on the same internal read path.
-function pseudoDeclarationFor(
+function getPseudoDeclaration(
 	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
@@ -10241,12 +10250,12 @@ function getResolvedStyle(
 	}
 
 	if (pseudoElement) {
-		return indexedDeclaration(
-			pseudoDeclarationFor(cascade, element, pseudoElement),
+		return getIndexedDeclaration(
+			getPseudoDeclaration(cascade, element, pseudoElement),
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
-	return indexedDeclaration(
+	return getIndexedDeclaration(
 		cascade.declarationFor(element),
 	) as unknown as globalThis.CSSStyleDeclaration;
 }
@@ -10355,38 +10364,38 @@ function storeTransitionFallback(
 	byPseudo.set(pseudo, resolved);
 }
 
-function transitionBase(
+function getTransitionBase(
 	read: (property: string) => string,
 	property: string,
 ): string {
 	return (
 		read(property) ||
-		computedValue(property, CSS_INITIAL_VALUES[property] ?? "")
+		getComputedValueEntry(property, CSS_INITIAL_VALUES[property] ?? "")
 	);
 }
 
 function parseCSSTime(token: string): number {
-	return cssTimeMs(token) ?? 0;
+	return getCSSTimeMs(token) ?? 0;
 }
 
 // The timing lists repeat to the property list's length
 // (css-transitions-1 §2.1). A later item naming a property a prior one
 // covered wins.
-function matchedTransitions(
+function getMatchedTransitions(
 	read: (property: string) => string,
 ): Map<string, TransitionTiming> | null {
-	const propertyList = transitionBase(read, "transition-property");
+	const propertyList = getTransitionBase(read, "transition-property");
 	if (!propertyList || propertyList === "none") {
 		return null;
 	}
 	const durations = splitCommaList(
-		transitionBase(read, "transition-duration"),
+		getTransitionBase(read, "transition-duration"),
 	).map(parseCSSTime);
 	const delays = splitCommaList(
-		transitionBase(read, "transition-delay"),
+		getTransitionBase(read, "transition-delay"),
 	).map(parseCSSTime);
 	const easings = splitCommaList(
-		transitionBase(read, "transition-timing-function"),
+		getTransitionBase(read, "transition-timing-function"),
 	);
 	const items = splitCommaList(propertyList);
 	const out = new Map<string, TransitionTiming>();
@@ -10434,7 +10443,7 @@ function processTransitionStyle(
 		}
 		cascade[kTransitionsExist] = true;
 	}
-	const candidates = matchedTransitions(read);
+	const candidates = getMatchedTransitions(read);
 	let snapshots = cascade[kTransitionSnapshots].get(element);
 	const previous = snapshots?.get(pseudo);
 	const fallbacks = cascade[kTransitionFallback].get(element);
@@ -10451,7 +10460,7 @@ function processTransitionStyle(
 		...(active?.keys() ?? []),
 	]);
 	for (const property of names) {
-		const after = transitionBase(read, property);
+		const after = getTransitionBase(read, property);
 		const timing = candidates?.get(property);
 		const runnable =
 			timing !== undefined && timing.duration + Math.max(timing.delay, 0) > 0;
@@ -10464,7 +10473,7 @@ function processTransitionStyle(
 			if (after === running.to) {
 				continue;
 			}
-			const current = currentTransitionValue(running, now);
+			const current = getCurrentTransitionValue(running, now);
 			cancelTransition(cascade, element, pseudo, property, now);
 			if (current === after) {
 				continue;
@@ -10474,7 +10483,7 @@ function processTransitionStyle(
 			let duration = timing.duration;
 			let factor = 1;
 			if (after === running.reversingAdjustedStartValue) {
-				const progress = transitionProgress(running, now);
+				const progress = getTransitionProgress(running, now);
 				factor = Math.min(
 					Math.max(
 						progress * running.reversingShorteningFactor +
@@ -10501,7 +10510,7 @@ function processTransitionStyle(
 		const raw = previous?.get(property) ?? fallback?.get(property);
 		const before =
 			raw === ""
-				? computedValue(property, CSS_INITIAL_VALUES[property] ?? "")
+				? getComputedValueEntry(property, CSS_INITIAL_VALUES[property] ?? "")
 				: raw;
 		if (
 			before === undefined ||
@@ -10522,7 +10531,7 @@ function processTransitionStyle(
 	if (candidates) {
 		const snapshot = new Map<string, string>();
 		for (const property of candidates.keys()) {
-			snapshot.set(property, transitionBase(read, property));
+			snapshot.set(property, getTransitionBase(read, property));
 		}
 		if (!snapshots) {
 			snapshots = new Map();
@@ -10632,7 +10641,7 @@ function cancelTransition(
 	);
 }
 
-function transitionProgress(
+function getTransitionProgress(
 	transition: RunningTransition,
 	now: number,
 ): number {
@@ -10654,7 +10663,7 @@ function transitionProgress(
 	return transition.easing(linear);
 }
 
-function currentTransitionValue(
+function getCurrentTransitionValue(
 	transition: RunningTransition,
 	now: number,
 ): string {
@@ -10664,7 +10673,7 @@ function currentTransitionValue(
 	return interpolateValue(
 		transition.from,
 		transition.to,
-		transitionProgress(transition, now),
+		getTransitionProgress(transition, now),
 	);
 }
 
@@ -10682,7 +10691,7 @@ function getTransitionValue(
 	if (!transition) {
 		return null;
 	}
-	return currentTransitionValue(transition, cascade[kTransitionClock]);
+	return getCurrentTransitionValue(transition, cascade[kTransitionClock]);
 }
 
 // Numbers with a shared unit interpolate numerically, colors by
@@ -10695,8 +10704,8 @@ function interpolateValue(from: string, to: string, progress: number): string {
 	if (progress >= 1) {
 		return to;
 	}
-	const a = scalarComponents(from);
-	const b = scalarComponents(to);
+	const a = getScalarComponents(from);
+	const b = getScalarComponents(to);
 	if (a && b && a.unit === b.unit) {
 		const value = a.number + (b.number - a.number) * progress;
 		return `${Math.round(value * 1000) / 1000}${a.unit}`;
@@ -10718,10 +10727,10 @@ function interpolateValue(from: string, to: string, progress: number): string {
 	return progress < 0.5 ? from : to;
 }
 
-function scalarComponents(
+function getScalarComponents(
 	value: string,
 ): {number: number; unit: string} | null {
-	const node = singleValueNode(value);
+	const node = getSingleValueNode(value);
 	if (!node) {
 		return null;
 	}
@@ -10772,10 +10781,10 @@ function buildEasing(key: string): (input: number) => number {
 		case "step-end":
 			return stepsEasing(1, "jump-end");
 	}
-	const node = singleValueNode(key);
+	const node = getSingleValueNode(key);
 	if (node && node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
-		const args = functionArguments(node);
+		const args = getFunctionArguments(node);
 		if (name === "cubic-bezier" && args.length === 4) {
 			const points = args.map((arg) =>
 				arg.type === "Number" ? parseFloat(arg.value ?? "") : NaN,
@@ -11094,7 +11103,7 @@ function tickTransitions(cascade: Cascade): void {
 // is cheap enough to poll on every computed-style read. That catches a
 // sheet appended in the same tick, before the mutation observer
 // delivers.
-function styleSheetCount(
+function getStyleSheetCount(
 	cascade: Cascade,
 ): number {
 	return styleElementCount(cascade[kDocument] as unknown as DOMDocument);
@@ -11103,7 +11112,7 @@ function styleSheetCount(
 function parseStylesheetsIfStale(cascade: Cascade): void {
 	if (
 		cascade[kStylesheetsDirty] ||
-		styleSheetCount(cascade) !== cascade[kParsedStyleSheetCount]
+		getStyleSheetCount(cascade) !== cascade[kParsedStyleSheetCount]
 	) {
 		parseStylesheets(cascade);
 	}
@@ -11207,20 +11216,20 @@ function parseStylesheets(
 	cascade[kStylesheetsDirty] = false;
 	cascade[kLayerPaths] = [];
 	cascade[kAnonymousLayers] = 0;
-	cascade[kParsedStyleSheetCount] = styleSheetCount(cascade);
+	cascade[kParsedStyleSheetCount] = getStyleSheetCount(cascade);
 
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
-	parseStyleSheet(cascade, uaStyleSheet(), undefined, true);
+	parseStyleSheet(cascade, getUAStyleSheet(), undefined, true);
 
-	for (const sheet of documentStyleSheets(document)) {
+	for (const sheet of getDocumentStyleSheets(document)) {
 		parseStyleSheet(cascade, sheet);
 	}
 
 	// Disconnected roots parse too. attach-populate-connect is the standard
 	// order, and a scope-gated rule matches nothing until its tree renders.
 	for (const root of cascade[kShadowRoots]) {
-		for (const sheet of shadowStyleSheets(root)) {
+		for (const sheet of getShadowStyleSheets(root)) {
 			parseStyleSheet(cascade, sheet, root);
 		}
 	}
@@ -11395,7 +11404,7 @@ function mediaConditionMatches(
 	let matches: boolean | null = null;
 	let disjunction = false;
 	let negate = false;
-	for (const part of mediaConditionParts(condition)) {
+	for (const part of getMediaConditionParts(condition)) {
 		if (part.type === "Identifier") {
 			const word = (part.name ?? "").toLowerCase();
 			if (word === "not") {
@@ -11438,7 +11447,7 @@ function mediaOperandMatches(
 	return true;
 }
 
-function viewportLength(
+function getViewportLength(
 	cascade: Cascade,
 	dimension: string,
 ): number | null {
@@ -11453,7 +11462,7 @@ function viewportLength(
 
 // Null for a value outside the grammar, which leaves the feature
 // unevaluated.
-function mediaLength(node: CSSNode | null | undefined): number | null {
+function getMediaLength(node: CSSNode | null | undefined): number | null {
 	let length: number | null = null;
 	if (node?.type === "Number") {
 		length = parseFloat(node.value ?? "");
@@ -11516,11 +11525,11 @@ function mediaFeatureMatches(
 			: name.startsWith("max-")
 				? "max"
 				: null;
-	const actual = viewportLength(
+	const actual = getViewportLength(
 		cascade,
 		bound === null ? name : name.slice(4),
 	);
-	const length = mediaLength(value);
+	const length = getMediaLength(value);
 	if (actual === null || length === null) {
 		return true;
 	}
@@ -11542,9 +11551,9 @@ function mediaFeatureRangeMatches(
 	const named = (node: CSSNode | null | undefined): string =>
 		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
 	if (range.right) {
-		const actual = viewportLength(cascade, named(range.middle));
-		const low = mediaLength(range.left);
-		const high = mediaLength(range.right);
+		const actual = getViewportLength(cascade, named(range.middle));
+		const low = getMediaLength(range.left);
+		const high = getMediaLength(range.right);
 		if (actual === null || low === null || high === null) {
 			return true;
 		}
@@ -11554,8 +11563,8 @@ function mediaFeatureRangeMatches(
 		);
 	}
 	const leftName = named(range.left);
-	const actual = viewportLength(cascade, leftName || named(range.middle));
-	const length = mediaLength(leftName ? range.middle : range.left);
+	const actual = getViewportLength(cascade, leftName || named(range.middle));
+	const length = getMediaLength(leftName ? range.middle : range.left);
 	if (actual === null || length === null) {
 		return true;
 	}
@@ -11565,7 +11574,7 @@ function mediaFeatureRangeMatches(
 }
 
 function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
-	const namespaces = sheetNamespaces(rule.parentStyleSheet);
+	const namespaces = getSheetNamespaces(rule.parentStyleSheet);
 	const start = rule.start;
 	const owner = rule.parentStyleSheet?.ownerNode ?? null;
 	return {
@@ -11592,7 +11601,7 @@ function parseStyleRule(
 	// Each selector of the list is matched and weighed on its own.
 	// `#a::before, #b` is one pseudo rule and one ordinary rule.
 	const block = getDeclarationBlock(styleRule.style);
-	const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
+	const namespaces = getSheetNamespaces(styleRule.parentStyleSheet);
 	for (const selector of splitSelectorList(styleRule.selectorText)) {
 		parseSelector(
 			cascade,
@@ -11672,7 +11681,7 @@ function parseSelector(
 	block: DeclarationBlock,
 	scope?: Node,
 	uaOriginSheet?: boolean,
-	sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
+	getSheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
 	context: RuleContext = UNCONDITIONAL,
 ): void {
 	const {declarations, important, order} = block;
@@ -11700,12 +11709,12 @@ function parseSelector(
 		cascade[kScopedRulesExist] = true;
 	}
 	let namespaces: SelectorNamespaces | undefined;
-	if (sheetNamespaces !== NO_NAMESPACES) {
-		namespaces = sheetNamespaces;
+	if (getSheetNamespaces !== NO_NAMESPACES) {
+		namespaces = getSheetNamespaces;
 	}
 	if (
 		selector.includes("|") &&
-		!namespacePrefixesDeclared(selector, sheetNamespaces)
+		!namespacePrefixesDeclared(selector, getSheetNamespaces)
 	) {
 		return;
 	}
@@ -11794,11 +11803,11 @@ function getMatchingRules(
 ): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
-	const partPseudo = partPseudoFor(element);
+	const partPseudo = getPartPseudo(element);
 	const root = element.getRootNode();
 	const rootNode = root as unknown as Node;
 	const shadowHost = asShadowRoot(root)?.host ?? null;
-	const partNames = (element.getAttribute("part") ?? "")
+	const getPartNames = (element.getAttribute("part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
 	const matched = cascade[kParsedRules].filter((rule) => {
@@ -11810,7 +11819,7 @@ function getMatchingRules(
 			if (partArg) {
 				return (
 					shadowHost !== null &&
-					partNames.includes(partArg[1].trim()) &&
+					getPartNames.includes(partArg[1].trim()) &&
 					ruleMatches(shadowHost, rule)
 				);
 			}
@@ -11835,7 +11844,7 @@ function getMatchingRules(
 			(rule) =>
 				[
 					rule,
-					rule.scopes ? scopeProximity(element, rule) : UNSCOPED,
+					rule.scopes ? getScopeProximity(element, rule) : UNSCOPED,
 				] as const,
 		),
 	);
@@ -11885,16 +11894,16 @@ function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
 	if (!rule.scopes) {
 		return ruleSelectorMatches(element, rule);
 	}
-	return scopingRoot(element, rule) !== null;
+	return getScopingRoot(element, rule) !== null;
 }
 
 // Only called for a rule that matches. One out of scope everywhere has
 // already been filtered out.
-function scopeProximity(
+function getScopeProximity(
 	element: Element,
 	rule: ParsedCSSRule,
 ): number {
-	const root = scopingRoot(element, rule);
+	const root = getScopingRoot(element, rule);
 	if (!root) {
 		return UNSCOPED;
 	}
@@ -11912,7 +11921,7 @@ function scopeProximity(
 // Read outermost first, each condition taking the HIGHEST root it can
 // (which constrains the roots inside it least). The innermost takes the
 // NEAREST, which the selector and proximity are measured from.
-function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
+function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 	const conditions = rule.scopes!;
 	let outer: Element | null = null;
 	for (let index = 0; index < conditions.length; index++) {
@@ -11953,7 +11962,7 @@ function scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 
 // Author shadow trees are not eligible. Their parts are theirs to style
 // from inside.
-function partPseudoFor(element: Element): string | null {
+function getPartPseudo(element: Element): string | null {
 	const root = element.getRootNode();
 	if (isUAShadowRoot(root)) {
 		const part = element.getAttribute("part");
@@ -12039,7 +12048,7 @@ function computePseudoElementStyle(
 			direction ??= cascade
 				.declarationFor(element)
 				.getComputedValue("direction");
-			for (const other of slotNames(name, direction)) {
+			for (const other of getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
 		}
@@ -12048,7 +12057,7 @@ function computePseudoElementStyle(
 	return computedStyle;
 }
 
-function pseudoContentFor(
+function getPseudoContent(
 	cascade: Cascade,
 	hostElement: Element,
 	pseudoType: string,
@@ -12069,7 +12078,7 @@ function pseudoContentFor(
 			}
 
 			if (!content || content === "none" || content === "normal") {
-				content = defaultMarkerContent(hostElement) ?? content;
+				content = getDefaultMarkerContent(hostElement) ?? content;
 			}
 		}
 	}
@@ -12108,7 +12117,7 @@ function attachPseudoElements(
 	attachPseudoElementsToDocument(cascade);
 }
 
-function pseudoSubjects(
+function getPseudoSubjects(
 	cascade: Cascade,
 ): Set<string> | null {
 	if (cascade[kPseudoSubjectTags] !== undefined) {
@@ -12197,7 +12206,7 @@ function attachPseudoElementToElementForType(
 	}
 
 	const content = shouldCreatePseudoElement(cascade, element, pseudoType)
-		? pseudoContentFor(cascade, element, pseudoType)
+		? getPseudoContent(cascade, element, pseudoType)
 		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
@@ -12279,12 +12288,12 @@ function setupInvalidationHooks(
 
 // Each identifier opens a pair. A counter written without a number
 // takes `fallback`: 0 for a reset, 1 for an increment.
-function counterPairs(
+function getCounterPairs(
 	value: string,
 	fallback: number,
 ): Array<[string, number]> {
 	const pairs: Array<[string, number]> = [];
-	const nodes = cssValueChildren(value);
+	const nodes = getCSSValueChildren(value);
 	if (!nodes) {
 		return pairs;
 	}
@@ -12302,7 +12311,7 @@ function counterPairs(
 }
 
 function parseCounterReset(scope: CounterScope, counterReset: string): void {
-	for (const [name, value] of counterPairs(counterReset, 0)) {
+	for (const [name, value] of getCounterPairs(counterReset, 0)) {
 		scope.counters[name] = value;
 	}
 }
@@ -12312,7 +12321,7 @@ function parseCounterIncrement(
 	scope: CounterScope,
 	counterIncrement: string,
 ): void {
-	for (const [name, increment] of counterPairs(counterIncrement, 1)) {
+	for (const [name, increment] of getCounterPairs(counterIncrement, 1)) {
 		incrementCounter(cascade, scope, name, increment);
 	}
 }
@@ -12330,7 +12339,7 @@ function incrementCounter(
 		const currentValue = getListItemCounterValue(cascade, scope.element);
 		scope.counters[counterName] = currentValue + increment;
 	} else {
-		const currentValue = counterValueInScope(scope.parent, counterName);
+		const currentValue = getCounterValueInScope(scope.parent, counterName);
 		scope.counters[counterName] = currentValue + increment;
 	}
 }
@@ -12366,7 +12375,7 @@ function getListItemCounterValue(
 	return currentValue;
 }
 
-function counterValueInScope(
+function getCounterValueInScope(
 	scope: CounterScope | undefined,
 	counterName: string,
 ): number {
@@ -12387,7 +12396,7 @@ function formatCounterValue(value: number, style: string): string {
 }
 
 /** The element's inline style declaration, one per element for its lifetime. */
-export function inlineStyleOf(
+export function getInlineStyle(
 	element: Element,
 ): globalThis.CSSStyleDeclaration {
 	let style = inlineStyles.get(element);
@@ -12399,16 +12408,16 @@ export function inlineStyleOf(
 }
 
 /** The sheets a tree declares, as document.styleSheets lists them. */
-export function styleSheetsOf(
+export function getStyleSheets(
 	tree: Document | ShadowRoot,
 ): globalThis.StyleSheetList {
-	const list = new StyleSheetList(declaredStyleSheets(tree));
+	const list = new StyleSheetList(getDeclaredStyleSheets(tree));
 	syncIndexed(list);
 	return list as unknown as globalThis.StyleSheetList;
 }
 
 /** The tree's adopted sheets, as the observable array the setter replaces. */
-export function adoptedStyleSheetsOf(tree: Node): globalThis.CSSStyleSheet[] {
+export function getAdoptedStyleSheets(tree: Node): globalThis.CSSStyleSheet[] {
 	let list = adoptedSheets.get(tree);
 	if (!list) {
 		adoptedSheets.set(tree, (list = []));
@@ -12426,7 +12435,7 @@ export function styleElementSheet(
 	element: Element,
 ): globalThis.CSSStyleSheet | null {
 	return element.parentNode
-		? (sheetFor(element) as unknown as globalThis.CSSStyleSheet)
+		? (getSheet(element) as unknown as globalThis.CSSStyleSheet)
 		: null;
 }
 
@@ -12572,7 +12581,7 @@ function trackCells(node: CSSNode): number | null {
 	return Number.isFinite(number) ? number : null;
 }
 
-function cellBreadth(cells: number): TrackBreadth {
+function getCellBreadth(cells: number): TrackBreadth {
 	return {kind: "length", value: {unit: "cell", value: cells}};
 }
 
@@ -12585,7 +12594,7 @@ function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 	}
 	const cells = trackCells(node);
 	if (cells !== null) {
-		return cellBreadth(cells);
+		return getCellBreadth(cells);
 	}
 	if (node.type === "Percentage") {
 		const percentage = parseFloat(node.value ?? "");
@@ -12594,7 +12603,7 @@ function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 			: null;
 	}
 	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
-		return cellBreadth(0);
+		return getCellBreadth(0);
 	}
 	if (node.type === "Identifier") {
 		switch ((node.name ?? "").toLowerCase()) {
@@ -12612,7 +12621,7 @@ function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 function parseTrackSize(node: CSSNode): TrackSize | null {
 	if (node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
-		const args = functionArguments(node);
+		const args = getFunctionArguments(node);
 		if (name === "minmax") {
 			if (args.length !== 2) {
 				return null;
@@ -12655,7 +12664,7 @@ function parseTrackSize(node: CSSNode): TrackSize | null {
 	return {min: breadth, max: breadth};
 }
 
-function bracketNames(node: CSSNode): string[] {
+function getBracketNames(node: CSSNode): string[] {
 	return (node.children?.toArray() ?? [])
 		.filter((child) => child.type === "Identifier")
 		.map((child) => child.name ?? "");
@@ -12693,7 +12702,7 @@ function parseTrackListValue(value: string): TrackList | null {
 	if (REFUSED_GRID_VALUES.has(text.toLowerCase())) {
 		return null;
 	}
-	const children = cssValueChildren(text);
+	const children = getCSSValueChildren(text);
 	if (!children) {
 		return null;
 	}
@@ -12703,7 +12712,7 @@ function parseTrackListValue(value: string): TrackList | null {
 
 	for (const node of children) {
 		if (node.type === "Brackets") {
-			names = names.concat(bracketNames(node));
+			names = names.concat(getBracketNames(node));
 			continue;
 		}
 		if (
@@ -12770,7 +12779,7 @@ function parseTrackRepeat(node: CSSNode): TrackRepeat | null {
 	let names: string[] = [];
 	for (const child of args.slice(1)) {
 		if (child.type === "Brackets") {
-			names = names.concat(bracketNames(child));
+			names = names.concat(getBracketNames(child));
 			continue;
 		}
 		const size = parseTrackSize(child);
@@ -12800,7 +12809,7 @@ function parseTrackSizeListValue(
 	if (!text || text === "auto") {
 		return null;
 	}
-	const children = cssValueChildren(text);
+	const children = getCSSValueChildren(text);
 	if (!children) {
 		return null;
 	}
@@ -12829,7 +12838,7 @@ function parseGridAreasValue(value: string): GridAreaMap | null {
 	if (!text || text === "none") {
 		return null;
 	}
-	const children = cssValueChildren(text);
+	const children = getCSSValueChildren(text);
 	if (!children || children.length === 0) {
 		return null;
 	}
@@ -12910,7 +12919,7 @@ function parseGridPlacementValue(
 	if (!text || text === "auto") {
 		return null;
 	}
-	const children = cssValueChildren(text);
+	const children = getCSSValueChildren(text);
 	if (!children || children.length === 0) {
 		return null;
 	}

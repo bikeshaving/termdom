@@ -115,7 +115,7 @@ const SCREEN_CLEAR = "\x1b[2J\x1b[H";
 const SCROLL_STEP = "\x1bD";
 
 /** DECRQM. The mode is spelled as DECRPM reports it: "8", "?2027". */
-function modeQuery(mode: string): string {
+function createModeQuery(mode: string): string {
 	return mode.startsWith("?")
 		? `\x1b[?${parseInt(mode.slice(1), 10)}$p`
 		: `\x1b[${parseInt(mode, 10)}$p`;
@@ -663,7 +663,7 @@ export class Exchange {
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
 		this[kProbingEnded] = false;
-		this[kWidths] = freshWidthProbes(interactive);
+		this[kWidths] = createWidthProbes(interactive);
 		this[kTransport] = transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
@@ -821,7 +821,7 @@ export class Exchange {
 		this[kInteractive] = transport.interactive;
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
-		this[kWidths] = freshWidthProbes(transport.interactive);
+		this[kWidths] = createWidthProbes(transport.interactive);
 		terminalResized(this[kTermDOM], transport.cols, transport.rows);
 	}
 
@@ -893,7 +893,7 @@ export class Exchange {
 	}
 
 	/**
-	 * Mode 2027: measure by grapheme cluster, as stringWidth does, rather
+	 * Mode 2027: measure by grapheme cluster, as getStringWidth does, rather
 	 * than per code point as wcwidth does. A terminal that does not know the
 	 * mode leaves our measurements as they are. Only whether it agrees
 	 * changes.
@@ -952,11 +952,11 @@ export class Exchange {
 	}
 
 	writeClipboard(text: string): Promise<void> {
-		return this.write(clipboardEscape(text));
+		return this.write(createClipboardEscape(text));
 	}
 
 	setTitle(text: string): Promise<void> {
-		return this.write(titleEscape(text));
+		return this.write(createTitleEscape(text));
 	}
 
 	queryClipboard(): Promise<string | null> {
@@ -980,7 +980,7 @@ export class Exchange {
 	}
 
 	cursorToRow(row: number): Promise<void> {
-		return this.write(rowStart(row));
+		return this.write(getRowStart(row));
 	}
 
 	eraseBelow(): Promise<void> {
@@ -995,7 +995,7 @@ export class Exchange {
 	}
 
 	scrollUp(bottomRow: number, rows: number): Promise<void> {
-		return this.write(rowStart(bottomRow) + SCROLL_STEP.repeat(rows));
+		return this.write(getRowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
 
 	/**
@@ -1079,13 +1079,13 @@ export class Exchange {
 	}
 }
 
-function rowStart(row: number): string {
+function getRowStart(row: number): string {
 	return `\x1b[${row};1H`;
 }
 
 // Untrusted text the cell grid never sees. Rejects the same bytes a
 // cell does.
-function titleEscape(text: string): string {
+function createTitleEscape(text: string): string {
 	let safe = "";
 	for (const char of text) {
 		if (isControlByte(char.codePointAt(0)!)) {
@@ -1096,7 +1096,7 @@ function titleEscape(text: string): string {
 	return `\x1b]2;${safe}\x07`;
 }
 
-function clipboardEscape(text: string): string {
+function createClipboardEscape(text: string): string {
 	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 
@@ -1138,7 +1138,7 @@ interface WidthProbes {
 	writeBatch: object;
 }
 
-function freshWidthProbes(probing: boolean): WidthProbes {
+function createWidthProbes(probing: boolean): WidthProbes {
 	return {
 		pending: [],
 		settled: new Set(),
@@ -1525,7 +1525,7 @@ function queryMode(
 	prelude: string,
 ): Promise<number | null> {
 	return nextReply<"mode-report", number | null>(session, "mode-report", {
-		ask: prelude + modeQuery(mode),
+		ask: prelude + createModeQuery(mode),
 		timeoutMs: 1000,
 		absent: null,
 		mode,
