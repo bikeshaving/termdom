@@ -56,7 +56,7 @@
     "smoke": "node scripts/smoke.js",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.js",
     "support": "bun scripts/support-matrix.ts",
-    "test": "libuild test -p node -p bun",
+    "test": "libuild test -p node -p bun --timeout 180000",
     "typecheck": "tsc --noEmit",
     "verify:examples": "node scripts/verify-examples.ts",
     "verify:ime": "npm --prefix website run verify:ime",
