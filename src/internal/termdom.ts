@@ -17,6 +17,8 @@ import {
 	flushObservers,
 } from "./dom.js";
 import {
+	kSettlingResize,
+	kTransportClosed,
 	type TerminalCloseInfo,
 	TerminalExchange,
 	type TerminalSize,
@@ -74,8 +76,6 @@ export const kLayoutEngine = Symbol("layoutEngine");
 export const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
-const kIsRendering = Symbol("isRendering");
-
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
 const kOnAltScreen = Symbol("onAltScreen");
@@ -123,9 +123,6 @@ export class TermDOM {
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling.
 	declare [kPainter]: Painter;
-	// Guard against re-entrant rendering. A render() call arriving while one is in
-	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
-	declare [kIsRendering]: boolean;
 	// One updater per live MediaQueryList: re-evaluates its query and fires
 	// "change" if the answer flipped. Run by handleResize -- SIGWINCH is
 	// this screen's window resize.
@@ -136,6 +133,9 @@ export class TermDOM {
 	// Which screen the frames land on; flipped by the render loop when the
 	// document's fullscreen state disagrees.
 	declare [kOnAltScreen]: boolean;
+	// The running render loop, and the guard against re-entering it. A render()
+	// call arriving while one is in flight sets renderQueued rather than being
+	// dropped, so a trailing frame runs.
 	declare [kRenderInFlight]: Promise<void> | null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
@@ -202,7 +202,6 @@ export class TermDOM {
 	declare [kStaticSibling]: TermDOM | null;
 
 	constructor(options: TermDOMOptions = {}) {
-		this[kIsRendering] = false;
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
@@ -497,7 +496,7 @@ export class TermDOM {
 export function closeTermDOM(termDOM: TermDOM): void {
 	// A terminal that went away on its own has nothing to drain and
 	// nothing to close; the engine just ends.
-	const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
+	const live = isAttached(termDOM) && !termDOM[kExchange][kTransportClosed];
 	// An immediate close must not tear down mid-establishment: wait
 	// for attach to finish (anchor found, first frame painted) so the
 	// payout lands where the frame was, not at a stale row 0. Then
@@ -655,7 +654,7 @@ export async function render(termdom: TermDOM): Promise<void> {
 
 	// A resize is settling: suppress every render until the exchange issues
 	// the single re-anchored redraw.
-	if (termdom[kExchange].resizing) {
+	if (termdom[kExchange][kSettlingResize] !== null) {
 		return;
 	}
 
@@ -665,14 +664,17 @@ export async function render(termdom: TermDOM): Promise<void> {
 	// at the wrong place. Instead mark one pending and hand back the running
 	// loop's promise: it will fold this caller's changes into a trailing frame,
 	// so awaiting render() always means "the caller's changes are painted".
-	if (termdom[kIsRendering]) {
+	if (termdom[kRenderInFlight] !== null) {
 		termdom[kRenderQueued] = true;
-		return termdom[kRenderInFlight] ?? Promise.resolve();
+		return termdom[kRenderInFlight];
 	}
 
-	termdom[kIsRendering] = true;
+	// The loop's own first synchronous step can raise a render, and that one
+	// has to coalesce like any other: claim the slot before starting, then
+	// hand the real promise over the moment the loop yields.
+	termdom[kRenderInFlight] = Promise.resolve();
 	let framesAwaiting = false;
-	termdom[kRenderInFlight] = (async () => {
+	const frames = (async () => {
 		try {
 			do {
 				do {
@@ -686,11 +688,11 @@ export async function render(termdom: TermDOM): Promise<void> {
 				framesAwaiting = DOM.runFrameCallbacks(termdom.document);
 			} while (termdom[kRenderQueued] || framesAwaiting);
 		} finally {
-			termdom[kIsRendering] = false;
 			termdom[kRenderInFlight] = null;
 		}
 	})();
-	return termdom[kRenderInFlight];
+	termdom[kRenderInFlight] = frames;
+	return frames;
 }
 
 /**

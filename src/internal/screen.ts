@@ -392,18 +392,6 @@ interface TextMetrics {
 	width: number;
 }
 
-/** A box's sides, and "round" on each corner whose radius rounds it. */
-interface BoxSides {
-	top?: LineStyle;
-	right?: LineStyle;
-	bottom?: LineStyle;
-	left?: LineStyle;
-	topLeft?: "round";
-	topRight?: "round";
-	bottomRight?: "round";
-	bottomLeft?: "round";
-}
-
 const Color = {
 	Mask: 0xffffff,
 } as const;
@@ -634,7 +622,7 @@ const LINE_BITS: Record<LineStyle["style"], number> = {
 	hidden: BorderEdgeStyle.Hidden,
 };
 
-interface BoxCharSet {
+const BOX_DRAWING: Record<string, {
 	horizontal: string;
 	vertical: string;
 	topLeft: string;
@@ -646,9 +634,7 @@ interface BoxCharSet {
 	leftTee: string;
 	rightTee: string;
 	cross: string;
-}
-
-const BOX_DRAWING: Record<string, BoxCharSet> = {
+}> = {
 	dashed: {
 		horizontal: "╌",
 		vertical: "┆",
@@ -1319,7 +1305,17 @@ export class CellContext {
 		y: number,
 		width: number,
 		height: number,
-		sides: BoxSides,
+		// The sides, and "round" on each corner whose radius rounds it.
+		sides: {
+			top?: LineStyle;
+			right?: LineStyle;
+			bottom?: LineStyle;
+			left?: LineStyle;
+			topLeft?: "round";
+			topRight?: "round";
+			bottomRight?: "round";
+			bottomLeft?: "round";
+		},
 	): void {
 		if (width < 1 || height < 1) {
 			return;
@@ -1669,8 +1665,7 @@ const kCols = Symbol("cols");
 const kWriter = Symbol("writer");
 const kPrev = Symbol("prev");
 const kPrevContentHeight = Symbol("prevContentHeight");
-const kParkRow = Symbol("parkRow");
-const kParkCol = Symbol("parkCol");
+const kPark = Symbol("park");
 const kSpare = Symbol("spare");
 const kNeedsScreenReset = Symbol("needsScreenReset");
 const kResetAtRow = Symbol("resetAtRow");
@@ -1704,8 +1699,7 @@ export class Screen {
 	// Where the last frame parked the cursor, in buffer coordinates. The resize
 	// re-anchor derives the frame's new top row from the cursor's post-rewrap
 	// position minus the wrapped rows above this park point.
-	declare [kParkRow]: number;
-	declare [kParkCol]: number;
+	declare [kPark]: {row: number; col: number};
 	declare [kLastCaretVisible]: boolean;
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
@@ -1754,8 +1748,7 @@ export class Screen {
 		this[kEndFrame] = null;
 		this[kRenderedLines] = new Set();
 		this[kPrevContentHeight] = 0;
-		this[kParkRow] = 0;
-		this[kParkCol] = 0;
+		this[kPark] = {row: 0, col: 0};
 		this[kLastCaretVisible] = false;
 		this[kHasSavedCursor] = false;
 		this[kNeedsFullClear] = false;
@@ -1881,12 +1874,16 @@ export class Screen {
 		if (grid === null || this[kPrevContentHeight] === 0 || cols <= 0) {
 			return null;
 		}
-		const limit = Math.min(this[kParkRow], this[kPrevContentHeight], grid.rows);
+		const limit = Math.min(
+			this[kPark].row,
+			this[kPrevContentHeight],
+			grid.rows,
+		);
 		let wrapped = 0;
 		for (let row = 0; row < limit; row++) {
 			wrapped += Math.max(1, Math.ceil(lineLength(grid, row) / cols));
 		}
-		return wrapped + Math.floor(this[kParkCol] / cols);
+		return wrapped + Math.floor(this[kPark].col / cols);
 	}
 
 	/**
@@ -2278,8 +2275,8 @@ export class Screen {
 			const caretStateChanged =
 				caretVisible !== this[kLastCaretVisible] ||
 				(caretVisible &&
-					(this[kParkRow] !== caretBufferRow ||
-						this[kParkCol] !== caret.col));
+					(this[kPark].row !== caretBufferRow ||
+						this[kPark].col !== caret.col));
 			if (caretStateChanged) {
 				hasContent = true;
 			}
@@ -2419,8 +2416,7 @@ export class Screen {
 			let parkOutput = "";
 			if (hasContent && contentHeight > 0) {
 				if (caretVisible) {
-					this[kParkRow] = caretBufferRow;
-					this[kParkCol] = caret.col;
+					this[kPark] = {row: caretBufferRow, col: caret.col};
 					if (frameStartRow !== undefined) {
 						parkOutput = writer
 							.cursorTo(frameStartRow + caretBufferRow + 1, caret.col + 1)
@@ -2439,8 +2435,10 @@ export class Screen {
 					// The caret is the real cursor, so it is shown.
 					parkOutput += writer.privateMode(25, true).take();
 				} else {
-					this[kParkRow] = Math.min(contentHeight, this[kRows]) - 1;
-					this[kParkCol] = 0;
+					this[kPark] = {
+						row: Math.min(contentHeight, this[kRows]) - 1,
+						col: 0,
+					};
 					if (frameStartRow !== undefined) {
 						// 0-based start + height = 1-based last row; the bottom margin caps
 						// it when the content overflows the screen.

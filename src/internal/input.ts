@@ -22,9 +22,8 @@
  * reporting modes, the paint. Those arrive as collaborators, so nothing here
  * reaches into rendering.
  *
- * Start at EventHandler. Its handleKeys, handleMouseReport and handlePaste are
- * the three doors, one per kind of wire item, and the gestures they run are
- * the functions below the class.
+ * Start at EventHandler. Its dispatch is the one door every wire item comes
+ * in through, and the gestures it runs are the functions below the class.
  */
 
 import {getComputedValue} from "./cssom.js";
@@ -43,10 +42,9 @@ import {
 	parkFieldCaret,
 	setHoveredElement,
 	setUASelection,
-	termDOMOf,
 	topmostModalDialog,
 } from "./dom.js";
-import type {WireKey} from "./exchange.js";
+import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
 import type {LayoutEngine} from "./layout.js";
 import {
 	kLayoutEngine,
@@ -138,31 +136,6 @@ function legacyKeyCode(keyName: string): number {
 	return keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0;
 }
 
-/** A single decoded SGR mouse report: the semantics of the report bits. */
-interface MouseReport {
-	shiftKey: boolean;
-	altKey: boolean;
-	ctrlKey: boolean;
-
-	/** A motion report (a drag or hover), rather than a press/release. */
-	isMotion: boolean;
-
-	/** The button/wheel code with the modifier and motion bits stripped. */
-	base: number;
-
-	/**
-	 * The wheel notch in DOM_DELTA_LINE rows (one notch = three rows, the
-	 * browser's line-mode convention), or null when the report is not a wheel.
-	 */
-	wheelDeltaY: number | null;
-
-	/** The MouseEvent `button`, valid when base <= 2. */
-	button: number;
-
-	/** The MouseEvent `buttons` bitmask for this phase, valid when base <= 2. */
-	buttons: number;
-}
-
 /* -------------------------------------------------------- focus navigation */
 
 // What Tab traverses and what a mousedown focuses -- one definition of
@@ -174,18 +147,6 @@ interface MouseReport {
 // stays reachable by keyboard.
 const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
-
-/**
- * One entry in a focus navigation scope: a single element, or a scope
- * owner standing for its whole expanded scope. The owner's tabindex
- * positions the entry among its siblings; the expansion is already in
- * its own scope's order.
- */
-interface ScopeEntry {
-	tabindex: number;
-	sequence: number;
-	elements: SequentialEntry[];
-}
 
 /**
  * One stop in the sequential order. `barrier` names the nearest scope
@@ -253,7 +214,14 @@ function sequentialFocusEntries(
 		contents: Iterable<Node>,
 		barrier: Element | null,
 	): SequentialEntry[] => {
-		const entries: ScopeEntry[] = [];
+		// One entry per element, or per scope owner standing for its whole
+		// expanded scope. The owner's tabindex positions the entry among its
+		// siblings; the expansion is already in its own scope's order.
+		const entries: Array<{
+			tabindex: number;
+			sequence: number;
+			elements: SequentialEntry[];
+		}> = [];
 		let sequence = 0;
 		const push = (tabindex: number, elements: SequentialEntry[]): void => {
 			if (elements.length > 0) {
@@ -330,14 +298,6 @@ function sequentialFocusEntries(
 
 /* ------------------------------------------------------------ the document */
 
-/** A point in document space, and whether the cell it came from is in one. */
-interface DocumentPoint {
-	x: number;
-	y: number;
-
-	/** False for a row above the painted region -- a shell prompt's rows. */
-	inDocument: boolean;
-}
 const kTermDOM = Symbol("termDOM");
 
 /* --------------------------------------------------------- the interpreter */
@@ -516,138 +476,24 @@ export class EventHandler {
 	}
 
 	/**
-	 * A mouse report from the terminal: the code byte, the 1-based cell, and
-	 * whether the button went up. These only arrive while capture is on.
+	 * The one door input comes in through: a batch of keystrokes, a mouse
+	 * report, or a paste, each delivered to the document as its own events.
 	 *
-	 * Reports become the DOM's own mouse events, dispatched at the element
-	 * under the cell (document.elementFromPoint is layout-true), with the
-	 * browser's default actions: wheel scrolls the camera, mousedown moves
-	 * focus, mouseup on the mousedown target is a click.
+	 * Input dirties the frame wholesale -- reactive pseudo-state and the
+	 * selection move without a mutation record, and no cheaper answer than the
+	 * paint exists -- so anything arriving here invalidates the screen first.
 	 */
-	handleMouseReport(
-		code: number,
-		col: number,
-		row: number,
-		isRelease: boolean,
-	): void {
-		const {
-			shiftKey,
-			altKey,
-			ctrlKey,
-			isMotion,
-			base,
-			wheelDeltaY,
-			button,
-			buttons,
-		} = decodeMouseReport(code, isRelease);
-
-		const {x, y, inDocument} = documentPointAt(this, col, row);
-
-		// Motion arrives at cell granularity -- with 1003 on, a report per cell
-		// crossed -- so it is COALESCED: the frame hit-tests the last position
-		// once and updates the hover chain there (see resolvePendingHover),
-		// instead of paying a hit-test per report. A drag's motion (base <= 2)
-		// falls through besides: its per-report mousemove and selection updates
-		// predate hover and keep their timing.
-		if (isMotion) {
-			this[kPendingHover] = {
-				x,
-				y,
-				shiftKey,
-				altKey,
-				ctrlKey,
-				quiet: base <= 2,
-			};
-			if (base > 2) {
-				void render(this[kTermDOM]);
-				return;
-			}
-		}
-
-		// Already document-relative -- go straight to the shared hit-test rather
-		// than through the public elementFromPoint, which expects viewport-
-		// relative input and would convert it right back.
-		const target =
-			(inDocument && elementAtDocumentPoint(this[kDocument], x, y)) ||
-			this[kDocument].body;
-
-		if (wheelDeltaY !== null) {
-			const notCanceled = dispatchAsUserAgent(
-				target,
-				new this[kWindow].WheelEvent("wheel", {
-					deltaY: wheelDeltaY,
-					deltaMode: 1, // DOM_DELTA_LINE
-					clientX: x,
-					clientY: y,
-					shiftKey,
-					altKey,
-					ctrlKey,
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-			if (notCanceled && scrollByWheel(this, target, wheelDeltaY)) {
-				// Scroll chaining, the browser default: the camera is at the
-				// document top, so the scroll escapes to the parent scroller --
-				// here, the terminal's own scrollback. Yield the mouse so the
-				// next wheel tick scrolls the shell history natively; the next
-				// keystroke reclaims it, and kScrollChainTimeoutMs of silence
-				// reclaims it too, in case the user scrolls back down without
-				// ever pressing a key -- wheel activity while yielded produces no
-				// signal we could otherwise catch that on. An app opts out the
-				// same way it would in a browser: preventDefault on the wheel
-				// event.
-				this[kMouseCaptureYielded] = true;
-				void render(this[kTermDOM]);
-				if (this[kScrollChainTimer] !== null) {
-					clearTimeout(this[kScrollChainTimer]);
-				}
-				this[kScrollChainTimer] = setTimeout(() => {
-					this[kScrollChainTimer] = null;
-					reclaimMouseCapture(this);
-				}, EventHandler[kScrollChainTimeoutMs]);
-			}
+	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
+		this[kTermDOM][kScreen].invalidate();
+		if (Array.isArray(item)) {
+			deliverKeys(this, item);
 			return;
 		}
-
-		// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
-		// encoding; SGR names the button even on release, so 3 carries nothing.
-		if (base > 2) {
+		if (item.kind === "mouse") {
+			deliverMouseReport(this, item);
 			return;
 		}
-		const last = this[kLastMouse];
-		const eventInit = {
-			button,
-			buttons,
-			clientX: x,
-			clientY: y,
-			// The spec's delta from the previous mousemove; the first report
-			// has nothing to move from.
-			movementX: last === null ? 0 : x - last.x,
-			movementY: last === null ? 0 : y - last.y,
-			shiftKey,
-			altKey,
-			ctrlKey,
-			bubbles: true,
-			cancelable: true,
-		};
-		this[kLastMouse] = {x, y};
-
-		if (isMotion) {
-			dispatchAsUserAgent(
-				target,
-				new this[kWindow].MouseEvent("mousemove", eventInit),
-			);
-			dragTo(this, x, y, inDocument);
-			return;
-		}
-
-		if (!isRelease) {
-			press(this, target, base, x, y, inDocument, eventInit);
-			return;
-		}
-
-		release(this, target, eventInit);
+		deliverPaste(this, item.text);
 	}
 
 	/**
@@ -765,66 +611,199 @@ export class EventHandler {
 			this[kLastMouse] = {x, y};
 		}
 	}
+}
 
-	/**
-	 * Deliver a paste as a `paste` event carrying the text, at the focused
-	 * element or at the body when nothing is focused. A paste nobody cancels
-	 * runs its default action: into a text field, an `insertFromPaste`
-	 * beforeinput whose listener does the edit. Anywhere else the event is the
-	 * whole of it, and an application that wants the text reads it off
-	 * `clipboardData`.
-	 */
-	handlePaste(text: string): void {
-		// A terminal transmits a pasted line break as CR -- the byte Enter
-		// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
-		// while the DOM's paste carries newlines as LF. Converted here, at the
-		// boundary, so a multi-line paste into a textarea is multi-line and
-		// a field's own handlers never see a bare CR.
-		text = text.replace(/\r\n?/g, "\n");
-		const focused = this[kDocument].activeElement;
-		const target =
-			focused && focused !== this[kDocument].body
-				? focused
-				: this[kDocument].body;
-		const clipboardData = new this[kWindow].DataTransfer();
-		clipboardData.setData("text/plain", text);
-		lockDataTransfer(clipboardData);
-		const proceed = dispatchAsUserAgent(
+/**
+ * A mouse report from the terminal: the code byte, the 1-based cell, and
+ * whether the button went up. These only arrive while capture is on.
+ *
+ * Reports become the DOM's own mouse events, dispatched at the element
+ * under the cell (document.elementFromPoint is layout-true), with the
+ * browser's default actions: wheel scrolls the camera, mousedown moves
+ * focus, mouseup on the mousedown target is a click.
+ */
+function deliverMouseReport(
+	handler: EventHandler,
+	{button: code, col, row, release: isRelease}: WireMouse,
+): void {
+	const {
+		shiftKey,
+		altKey,
+		ctrlKey,
+		isMotion,
+		base,
+		wheelDeltaY,
+		button,
+		buttons,
+	} = decodeMouseReport(code, isRelease);
+
+	const {x, y, inDocument} = documentPointAt(handler, col, row);
+
+	// Motion arrives at cell granularity -- with 1003 on, a report per cell
+	// crossed -- so it is COALESCED: the frame hit-tests the last position
+	// once and updates the hover chain there (see resolvePendingHover),
+	// instead of paying a hit-test per report. A drag's motion (base <= 2)
+	// falls through besides: its per-report mousemove and selection updates
+	// predate hover and keep their timing.
+	if (isMotion) {
+		handler[kPendingHover] = {
+			x,
+			y,
+			shiftKey,
+			altKey,
+			ctrlKey,
+			quiet: base <= 2,
+		};
+		if (base > 2) {
+			void render(handler[kTermDOM]);
+			return;
+		}
+	}
+
+	// Already document-relative -- go straight to the shared hit-test rather
+	// than through the public elementFromPoint, which expects viewport-
+	// relative input and would convert it right back.
+	const target =
+		(inDocument && elementAtDocumentPoint(handler[kDocument], x, y)) ||
+		handler[kDocument].body;
+
+	if (wheelDeltaY !== null) {
+		const notCanceled = dispatchAsUserAgent(
 			target,
-			new this[kWindow].ClipboardEvent("paste", {
-				clipboardData,
+			new handler[kWindow].WheelEvent("wheel", {
+				deltaY: wheelDeltaY,
+				deltaMode: 1, // DOM_DELTA_LINE
+				clientX: x,
+				clientY: y,
+				shiftKey,
+				altKey,
+				ctrlKey,
 				bubbles: true,
 				cancelable: true,
 			}),
 		);
-		const tag = target.tagName;
-		if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
-			dispatchAsUserAgent(
-				target,
-				new this[kWindow].InputEvent("beforeinput", {
-					inputType: "insertFromPaste",
-					data: text,
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
+		if (notCanceled && scrollByWheel(handler, target, wheelDeltaY)) {
+			// Scroll chaining, the browser default: the camera is at the
+			// document top, so the scroll escapes to the parent scroller --
+			// here, the terminal's own scrollback. Yield the mouse so the
+			// next wheel tick scrolls the shell history natively; the next
+			// keystroke reclaims it, and kScrollChainTimeoutMs of silence
+			// reclaims it too, in case the user scrolls back down without
+			// ever pressing a key -- wheel activity while yielded produces no
+			// signal we could otherwise catch that on. An app opts out the
+			// same way it would in a browser: preventDefault on the wheel
+			// event.
+			handler[kMouseCaptureYielded] = true;
+			void render(handler[kTermDOM]);
+			if (handler[kScrollChainTimer] !== null) {
+				clearTimeout(handler[kScrollChainTimer]);
+			}
+			handler[kScrollChainTimer] = setTimeout(() => {
+				handler[kScrollChainTimer] = null;
+				reclaimMouseCapture(handler);
+			}, EventHandler[kScrollChainTimeoutMs]);
 		}
-		void render(this[kTermDOM]);
+		return;
 	}
 
-	/**
-	 * One chunk's keystrokes, as the wire's reader decoded them. A keystroke
-	 * also means the user is back at the live screen -- terminals snap to
-	 * the bottom on input -- so it takes the mouse back from a
-	 * scroll-chaining yield.
-	 */
-	handleKeys(keys: WireKey[]): void {
-		if (this[kMouseCaptureYielded]) {
-			reclaimMouseCapture(this);
-		}
-		for (const key of keys) {
-			dispatchKey(this, key);
-		}
+	// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
+	// encoding; SGR names the button even on release, so 3 carries nothing.
+	if (base > 2) {
+		return;
+	}
+	const last = handler[kLastMouse];
+	const eventInit = {
+		button,
+		buttons,
+		clientX: x,
+		clientY: y,
+		// The spec's delta from the previous mousemove; the first report
+		// has nothing to move from.
+		movementX: last === null ? 0 : x - last.x,
+		movementY: last === null ? 0 : y - last.y,
+		shiftKey,
+		altKey,
+		ctrlKey,
+		bubbles: true,
+		cancelable: true,
+	};
+	handler[kLastMouse] = {x, y};
+
+	if (isMotion) {
+		dispatchAsUserAgent(
+			target,
+			new handler[kWindow].MouseEvent("mousemove", eventInit),
+		);
+		dragTo(handler, x, y, inDocument);
+		return;
+	}
+
+	if (!isRelease) {
+		press(handler, target, base, x, y, inDocument, eventInit);
+		return;
+	}
+
+	release(handler, target, eventInit);
+}
+
+/**
+ * Deliver a paste as a `paste` event carrying the text, at the focused
+ * element or at the body when nothing is focused. A paste nobody cancels
+ * runs its default action: into a text field, an `insertFromPaste`
+ * beforeinput whose listener does the edit. Anywhere else the event is the
+ * whole of it, and an application that wants the text reads it off
+ * `clipboardData`.
+ */
+function deliverPaste(handler: EventHandler, text: string): void {
+	// A terminal transmits a pasted line break as CR -- the byte Enter
+	// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
+	// while the DOM's paste carries newlines as LF. Converted here, at the
+	// boundary, so a multi-line paste into a textarea is multi-line and
+	// a field's own handlers never see a bare CR.
+	text = text.replace(/\r\n?/g, "\n");
+	const focused = handler[kDocument].activeElement;
+	const target =
+		focused && focused !== handler[kDocument].body
+			? focused
+			: handler[kDocument].body;
+	const clipboardData = new handler[kWindow].DataTransfer();
+	clipboardData.setData("text/plain", text);
+	lockDataTransfer(clipboardData);
+	const proceed = dispatchAsUserAgent(
+		target,
+		new handler[kWindow].ClipboardEvent("paste", {
+			clipboardData,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+	const tag = target.tagName;
+	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
+		dispatchAsUserAgent(
+			target,
+			new handler[kWindow].InputEvent("beforeinput", {
+				inputType: "insertFromPaste",
+				data: text,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}
+	void render(handler[kTermDOM]);
+}
+
+/**
+ * One chunk's keystrokes, as the wire's reader decoded them. A keystroke
+ * also means the user is back at the live screen -- terminals snap to
+ * the bottom on input -- so it takes the mouse back from a
+ * scroll-chaining yield.
+ */
+function deliverKeys(handler: EventHandler, keys: WireKey[]): void {
+	if (handler[kMouseCaptureYielded]) {
+		reclaimMouseCapture(handler);
+	}
+	for (const key of keys) {
+		dispatchKey(handler, key);
 	}
 }
 
@@ -833,7 +812,29 @@ export class EventHandler {
  * mapping. The report's row/column and the dispatch itself stay with the
  * caller, which owns the hit-test and the render loop.
  */
-function decodeMouseReport(code: number, isRelease: boolean): MouseReport {
+function decodeMouseReport(code: number, isRelease: boolean): {
+	shiftKey: boolean;
+	altKey: boolean;
+	ctrlKey: boolean;
+
+	/** A motion report (a drag or hover), rather than a press/release. */
+	isMotion: boolean;
+
+	/** The button/wheel code with the modifier and motion bits stripped. */
+	base: number;
+
+	/**
+	 * The wheel notch in DOM_DELTA_LINE rows (one notch = three rows, the
+	 * browser's line-mode convention), or null when the report is not a wheel.
+	 */
+	wheelDeltaY: number | null;
+
+	/** The MouseEvent `button`, valid when base <= 2. */
+	button: number;
+
+	/** The MouseEvent `buttons` bitmask for this phase, valid when base <= 2. */
+	buttons: number;
+} {
 	const shiftKey = (code & 4) !== 0;
 	const altKey = (code & 8) !== 0;
 	const ctrlKey = (code & 16) !== 0;
@@ -867,7 +868,13 @@ function documentPointAt(
 	handler: EventHandler,
 	col: number,
 	row: number,
-): DocumentPoint {
+): {
+	x: number;
+	y: number;
+
+	/** False for a row above the painted region -- a shell prompt's rows. */
+	inDocument: boolean;
+} {
 	const screen = handler[kTermDOM][kScreen];
 	const documentRow =
 		handler[kDocument].fullscreenElement !== null

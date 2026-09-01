@@ -277,16 +277,13 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 
 /* --------------------------------------------------------- what comes back */
 
-/** The numbers an SGR mouse escape carries. */
-interface MouseEscape {
+/** One SGR mouse escape, whole, or null when the token is something else. */
+function decodeMouseEscape(token: string): {
 	button: number;
 	col: number;
 	row: number;
 	release: boolean;
-}
-
-/** One SGR mouse escape, whole, or null when the token is something else. */
-function decodeMouseEscape(token: string): MouseEscape | null {
+} | null {
 	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 	if (!match) {
 		return null;
@@ -328,6 +325,21 @@ export interface WireKey {
 	metaKey: boolean;
 }
 
+/** One SGR mouse report: the code byte, the 1-based cell, and the phase. */
+export interface WireMouse {
+	kind: "mouse";
+	button: number;
+	col: number;
+	row: number;
+	release: boolean;
+}
+
+/** One bracketed paste, whole, with its fences taken off. */
+export interface WirePaste {
+	kind: "paste";
+	text: string;
+}
+
 /**
  * One utterance off the wire: a keystroke, an SGR mouse escape, a whole paste
  * body, or a reply to one of the queries. A clipboard reply's text is null
@@ -335,8 +347,8 @@ export interface WireKey {
  */
 type WireItem =
 	WireKey |
-	{kind: "mouse"; button: number; col: number; row: number; release: boolean} |
-	{kind: "paste"; text: string} |
+	WireMouse |
+	WirePaste |
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "clipboard"; text: string | null};
@@ -738,8 +750,8 @@ const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
-const kSettlingResize = Symbol("settlingResize");
-const kTransportClosed = Symbol("transportClosed");
+export const kSettlingResize = Symbol("settlingResize");
+export const kTransportClosed = Symbol("transportClosed");
 const kDocument = Symbol("document");
 const kInput = Symbol("input");
 
@@ -749,7 +761,6 @@ const kResizeReader = Symbol("resizeReader");
 const kStarted = Symbol("started");
 const kDisposed = Symbol("disposed");
 const kLastWrite = Symbol("lastWrite");
-const kWriteBatch = Symbol("writeBatch");
 
 const kWireReader = Symbol("wireReader");
 
@@ -764,22 +775,9 @@ const kGraphemeClustersNegotiated = Symbol("graphemeClustersNegotiated");
 const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 
 const kProbingEnded = Symbol("probingEnded");
-const kWidthProbes = Symbol("widthProbes");
-const kWidthSettled = Symbol("widthSettled");
-const kWidthAsked = Symbol("widthAsked");
-const kWidthAnswered = Symbol("widthAnswered");
-const kWidthProbing = Symbol("widthProbing");
-const kWidthProbeTimer = Symbol("widthProbeTimer");
+const kWidths = Symbol("widths");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-
-const kWidthStarved = Symbol("widthStarved");
-const kStarvationTimer = Symbol("starvationTimer");
 const kWidthStarvationWait = Symbol("widthStarvationWait");
-
-const kDriftBatch = Symbol("driftBatch");
-const kWidthRun = Symbol("widthRun");
-const kWidthDrift = Symbol("widthDrift");
-const kWidthRunLost = Symbol("widthRunLost");
 
 /**
  * The conversation held over a transport: one reader, one writer, and the
@@ -836,6 +834,8 @@ export class TerminalExchange {
 	 * a newer burst began knows to stand down. Null between bursts.
 	 */
 	declare [kSettlingResize]: object | null;
+
+	/** The terminal went away on its own, so there is nothing to close. */
 	declare [kTransportClosed]: boolean;
 	declare [kInput]: EventHandler | null;
 
@@ -883,73 +883,14 @@ export class TerminalExchange {
 	 */
 	declare [kDsrSequence]: number;
 
-	/** Width probes written and not yet answered, oldest first. */
+	/** Teardown has begun: no frame may take another probe. */
 	declare [kProbingEnded]: boolean;
-	declare [kWidthProbes]: Array<{
-		cluster: string;
-		run: number;
-		batch: object;
-		column: number;
-		width: number;
-		sequence: number;
-		sentAt: number;
-	}>;
 
 	/**
-	 * Clusters whose advance this session no longer wonders about: the terminal
-	 * answered for them, or answered unreadably and the tables keep them.
-	 *
-	 * A cluster leaves this set never, and enters it only on a reply -- not on
-	 * a probe. So a cluster the frame paints twice before either answer is
-	 * asked about twice, which is what keeps a run's column arithmetic whole:
-	 * every glyph whose advance is still in question carries its own query, and
-	 * the replies come back in the same order the glyphs were painted.
+	 * The width-probe conversation, whole: what has been asked, what has come
+	 * back, and the drift each run's readings are corrected by.
 	 */
-	declare [kWidthSettled]: Set<string>;
-
-	/**
-	 * Every cluster that has ever carried a query, wherever it was asked from.
-	 * A cluster in here is not starved however often the margin turns it away:
-	 * it has had its question put, and the answer's fate is the queue's
-	 * business. This is what bounds the probe train to one per cluster.
-	 */
-	declare [kWidthAsked]: Set<string>;
-
-	/**
-	 * Clusters the margin guard turned away that have never been asked about
-	 * at all, waiting for a frame to carry their probe train. Right-aligned
-	 * text is what fills this: its clusters land against the last column every
-	 * time they are painted, so in place they would be deferred for the whole
-	 * session.
-	 */
-	declare [kWidthStarved]: Set<string>;
-
-	/** The wait for a frame the starved clusters could have ridden. */
-	declare [kStarvationTimer]: ReturnType<typeof setTimeout> | null;
-
-	/**
-	 * Whether frames may still probe: false from the start when nothing
-	 * interactive is behind the transport, and false for good once the
-	 * terminal proves it does not answer.
-	 */
-	declare [kWidthProbing]: boolean;
-
-	/** Whether the terminal has ever answered a width probe. */
-	declare [kWidthAnswered]: boolean;
-	declare [kWidthProbeTimer]: ReturnType<typeof setTimeout> | null;
-	// The write batch and emission run the running divergence belongs to, and
-	// the divergence itself: within one run each cluster's cells are reached by
-	// advancing through the ones before it, so an earlier miscount displaces
-	// every column after it by exactly this much. A reading that cannot be
-	// believed leaves the drift unknown, and the rest of that run unreadable
-	// with it.
-	declare [kDriftBatch]: object | null;
-	declare [kWidthRun]: number;
-	declare [kWidthDrift]: number;
-	declare [kWidthRunLost]: boolean;
-	// Replaced by every write, so probes taken while building one frame are
-	// told apart from probes taken while building the next.
-	declare [kWriteBatch]: object;
+	declare [kWidths]: WidthProbes;
 
 	constructor(deps: {transport: TerminalTransport; document: Document}) {
 		const interactive = deps.transport.interactive;
@@ -966,20 +907,8 @@ export class TerminalExchange {
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
 		this[kDsrSequence] = 0;
-		this[kWidthProbes] = [];
 		this[kProbingEnded] = false;
-		this[kWidthSettled] = new Set<string>();
-		this[kWidthProbing] = interactive;
-		this[kWidthAnswered] = false;
-		this[kWidthProbeTimer] = null;
-		this[kDriftBatch] = null;
-		this[kWidthRun] = -1;
-		this[kWidthDrift] = 0;
-		this[kWidthRunLost] = false;
-		this[kWriteBatch] = {};
-		this[kWidthAsked] = new Set();
-		this[kWidthStarved] = new Set();
-		this[kStarvationTimer] = null;
+		this[kWidths] = freshWidthProbes(interactive);
 		this[kTransport] = deps.transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
@@ -996,16 +925,6 @@ export class TerminalExchange {
 	/** Whether the transport takes input -- a pipe does not. */
 	get interactive(): boolean {
 		return this[kInteractive];
-	}
-
-	/** Whether a resize is settling, during which no frame may paint. */
-	get resizing(): boolean {
-		return this[kSettlingResize] !== null;
-	}
-
-	/** Whether the terminal went away on its own, so there is nothing to close. */
-	get transportClosed(): boolean {
-		return this[kTransportClosed];
 	}
 
 	/**
@@ -1026,7 +945,7 @@ export class TerminalExchange {
 	 * behind the transport and has not proven that it never answers.
 	 */
 	probing(): boolean {
-		return this[kWidthProbing];
+		return this[kWidths].probing;
 	}
 
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
@@ -1036,7 +955,7 @@ export class TerminalExchange {
 
 	/** Whether this cluster's advance is still unmeasured. */
 	wantsWidth(cluster: string): boolean {
-		return !this[kWidthSettled].has(cluster);
+		return !this[kWidths].settled.has(cluster);
 	}
 
 	/**
@@ -1047,7 +966,7 @@ export class TerminalExchange {
 	 * cluster leaves the set when it is probed.
 	 */
 	starvedWidths(): ReadonlySet<string> {
-		return this[kWidthStarved];
+		return this[kWidths].starved;
 	}
 
 	/**
@@ -1059,10 +978,11 @@ export class TerminalExchange {
 	 * again.
 	 */
 	deferWidth(cluster: string): void {
-		if (this[kWidthAsked].has(cluster) || this[kWidthStarved].has(cluster)) {
+		const widths = this[kWidths];
+		if (widths.asked.has(cluster) || widths.starved.has(cluster)) {
 			return;
 		}
-		this[kWidthStarved].add(cluster);
+		widths.starved.add(cluster);
 		requestStarvationFrame(this);
 	}
 
@@ -1089,12 +1009,13 @@ export class TerminalExchange {
 		if (this[kProbingEnded]) {
 			return "";
 		}
-		this[kWidthAsked].add(cluster);
-		this[kWidthStarved].delete(cluster);
-		this[kWidthProbes].push({
+		const widths = this[kWidths];
+		widths.asked.add(cluster);
+		widths.starved.delete(cluster);
+		widths.pending.push({
 			cluster,
 			run,
-			batch: this[kWriteBatch],
+			batch: widths.writeBatch,
 			column,
 			width,
 			sequence: this[kDsrSequence]++,
@@ -1162,7 +1083,7 @@ export class TerminalExchange {
 	write(output: string): Promise<void> {
 		// Probes are taken while a frame is being built and go out with it, so
 		// each write ends the batch that can share a drift correction.
-		this[kWriteBatch] = {};
+		this[kWidths].writeBatch = {};
 		// A disposed session has released the wire; late writes are dropped.
 		if (this[kDisposed] && !this[kWriter]) {
 			return Promise.resolve();
@@ -1196,6 +1117,8 @@ export class TerminalExchange {
 		this[kInteractive] = transport.interactive;
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
+		// Whether a probe can be answered is the new terminal's to say.
+		this[kWidths] = freshWidthProbes(transport.interactive);
 		applyTerminalSize(this);
 	}
 
@@ -1471,7 +1394,7 @@ export class TerminalExchange {
 			return Promise.resolve();
 		}
 		const settled = () =>
-			this[kWidthProbes].length === 0 &&
+			this[kWidths].pending.length === 0 &&
 			!this[kPendingReplies].some((entry) => entry.sequence !== undefined);
 		if (settled()) {
 			return Promise.resolve();
@@ -1523,16 +1446,17 @@ export class TerminalExchange {
 			clearTimeout(entry.timer);
 		}
 		this[kPendingReplies].length = 0;
-		if (this[kWidthProbeTimer] !== null) {
-			clearTimeout(this[kWidthProbeTimer]);
-			this[kWidthProbeTimer] = null;
+		const widths = this[kWidths];
+		if (widths.timer !== null) {
+			clearTimeout(widths.timer);
+			widths.timer = null;
 		}
-		if (this[kStarvationTimer] !== null) {
-			clearTimeout(this[kStarvationTimer]);
-			this[kStarvationTimer] = null;
+		if (widths.starvationTimer !== null) {
+			clearTimeout(widths.starvationTimer);
+			widths.starvationTimer = null;
 		}
-		this[kWidthProbes].length = 0;
-		this[kWidthProbing] = false;
+		widths.pending.length = 0;
+		widths.probing = false;
 
 		// Release the wire: cancelling the readable is what hands a process
 		// transport its tty back (raw mode off, stdin paused). The writer is
@@ -1584,6 +1508,105 @@ function clipboardEscape(text: string): string {
 
 /* ------------------------------------------------------------ width probes */
 
+/** Everything one session's width measurement remembers. */
+interface WidthProbes {
+
+	/** Probes written and not yet answered, oldest first. */
+	pending: Array<{
+		cluster: string;
+		run: number;
+		batch: object;
+		column: number;
+		width: number;
+		sequence: number;
+		sentAt: number;
+	}>;
+
+	/**
+	 * Clusters whose advance this session no longer wonders about: the terminal
+	 * answered for them, or answered unreadably and the tables keep them.
+	 *
+	 * A cluster leaves this set never, and enters it only on a reply -- not on
+	 * a probe. So a cluster the frame paints twice before either answer is
+	 * asked about twice, which is what keeps a run's column arithmetic whole:
+	 * every glyph whose advance is still in question carries its own query, and
+	 * the replies come back in the same order the glyphs were painted.
+	 */
+	settled: Set<string>;
+
+	/**
+	 * Every cluster that has ever carried a query, wherever it was asked from.
+	 * A cluster in here is not starved however often the margin turns it away:
+	 * it has had its question put, and the answer's fate is the queue's
+	 * business. This is what bounds the probe train to one per cluster.
+	 */
+	asked: Set<string>;
+
+	/**
+	 * Clusters the margin guard turned away that have never been asked about
+	 * at all, waiting for a frame to carry their probe train. Right-aligned
+	 * text is what fills this: its clusters land against the last column every
+	 * time they are painted, so in place they would be deferred for the whole
+	 * session.
+	 */
+	starved: Set<string>;
+
+	/** The wait for a frame the starved clusters could have ridden. */
+	starvationTimer: ReturnType<typeof setTimeout> | null;
+
+	/**
+	 * Whether frames may still probe: false from the start when nothing
+	 * interactive is behind the transport, and false for good once the
+	 * terminal proves it does not answer.
+	 */
+	probing: boolean;
+
+	/** Whether the terminal has ever answered a width probe. */
+	answered: boolean;
+	timer: ReturnType<typeof setTimeout> | null;
+
+	/**
+	 * The write batch and emission run the running divergence belongs to, and
+	 * the divergence itself: within one run each cluster's cells are reached by
+	 * advancing through the ones before it, so an earlier miscount displaces
+	 * every column after it by exactly this much. A reading that cannot be
+	 * believed leaves the drift unknown, and the rest of that run unreadable
+	 * with it.
+	 */
+	driftBatch: object | null;
+	run: number;
+	drift: number;
+	runLost: boolean;
+
+	/**
+	 * Replaced by every write, so probes taken while building one frame are
+	 * told apart from probes taken while building the next.
+	 */
+	writeBatch: object;
+}
+
+/**
+ * The state a session measures from: nothing asked, nothing answered, and
+ * probing on for as long as a terminal that might answer is behind the wire.
+ */
+function freshWidthProbes(probing: boolean): WidthProbes {
+	return {
+		pending: [],
+		settled: new Set(),
+		asked: new Set(),
+		starved: new Set(),
+		starvationTimer: null,
+		probing,
+		answered: false,
+		timer: null,
+		driftBatch: null,
+		run: -1,
+		drift: 0,
+		runLost: false,
+		writeBatch: {},
+	};
+}
+
 /**
  * Wait for a frame the starved clusters can ride, and ask for one if none
  * comes.
@@ -1596,12 +1619,13 @@ function clipboardEscape(text: string): string {
  * the two apart.
  */
 function requestStarvationFrame(session: TerminalExchange): void {
-	if (session[kStarvationTimer] !== null) {
+	const widths = session[kWidths];
+	if (widths.starvationTimer !== null) {
 		return;
 	}
-	session[kStarvationTimer] = setTimeout(() => {
-		session[kStarvationTimer] = null;
-		if (session[kDisposed] || session[kWidthStarved].size === 0) {
+	widths.starvationTimer = setTimeout(() => {
+		widths.starvationTimer = null;
+		if (session[kDisposed] || widths.starved.size === 0) {
 			return;
 		}
 		const termDOM = termDOMOf(session[kDocument]);
@@ -1617,10 +1641,11 @@ function requestStarvationFrame(session: TerminalExchange): void {
  * from the oldest of them.
  */
 function armWidthProbeTimer(session: TerminalExchange): void {
-	if (session[kWidthProbeTimer] !== null) {
+	const widths = session[kWidths];
+	if (widths.timer !== null) {
 		return;
 	}
-	const oldest = session[kWidthProbes][0];
+	const oldest = widths.pending[0];
 	if (oldest === undefined) {
 		return;
 	}
@@ -1628,8 +1653,8 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 		0,
 		oldest.sentAt + TerminalExchange[kWidthProbeTimeout] - Date.now(),
 	);
-	session[kWidthProbeTimer] = setTimeout(() => {
-		session[kWidthProbeTimer] = null;
+	widths.timer = setTimeout(() => {
+		widths.timer = null;
 		// Unanswered this long is unanswered. The queue is what matches
 		// replies to probes, so an abandoned probe must leave it; its
 		// cluster keeps the tables' answer and is not asked again. Probes
@@ -1639,22 +1664,22 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 		const deadline = Date.now() - TerminalExchange[kWidthProbeTimeout];
 		let expired = 0;
 		while (
-			expired < session[kWidthProbes].length &&
-			session[kWidthProbes][expired].sentAt <= deadline
+			expired < widths.pending.length &&
+			widths.pending[expired].sentAt <= deadline
 		) {
-			session[kWidthSettled].add(session[kWidthProbes][expired].cluster);
+			widths.settled.add(widths.pending[expired].cluster);
 			expired++;
 		}
 		// Nothing has ever come back: this terminal does not answer DSR,
 		// and asking it again each frame is asking forever. Fall open to
 		// the tables.
-		if (expired > 0 && !session[kWidthAnswered]) {
-			session[kWidthProbing] = false;
-			session[kWidthProbes].length = 0;
-			session[kWidthStarved].clear();
+		if (expired > 0 && !widths.answered) {
+			widths.probing = false;
+			widths.pending.length = 0;
+			widths.starved.clear();
 			return;
 		}
-		session[kWidthProbes].splice(0, expired);
+		widths.pending.splice(0, expired);
 		armWidthProbeTimer(session);
 	}, remaining);
 }
@@ -1678,44 +1703,43 @@ function settleWidthProbe(
 	},
 	replyColumn: number,
 ): void {
-	session[kWidthAnswered] = true;
+	const widths = session[kWidths];
+	widths.answered = true;
 	// The deadline belonged to the probe just answered; whatever is still
 	// waiting gets its own.
-	if (session[kWidthProbeTimer] !== null) {
-		clearTimeout(session[kWidthProbeTimer]);
-		session[kWidthProbeTimer] = null;
+	if (widths.timer !== null) {
+		clearTimeout(widths.timer);
+		widths.timer = null;
 	}
 	armWidthProbeTimer(session);
 
-	if (
-		probe.batch !== session[kDriftBatch] || probe.run !== session[kWidthRun]
-	) {
-		session[kDriftBatch] = probe.batch;
-		session[kWidthRun] = probe.run;
-		session[kWidthDrift] = 0;
-		session[kWidthRunLost] = false;
+	if (probe.batch !== widths.driftBatch || probe.run !== widths.run) {
+		widths.driftBatch = probe.batch;
+		widths.run = probe.run;
+		widths.drift = 0;
+		widths.runLost = false;
 	}
 
 	// An earlier reading in this run could not be believed, so the drift the
 	// glyphs before this one introduced is unknown and its column means
 	// nothing. Wait for a run whose arithmetic is whole.
-	if (session[kWidthRunLost]) {
+	if (widths.runLost) {
 		return;
 	}
 
 	// Terminal columns are 1-based; the ledger counts cells.
-	const advance = replyColumn - 1 - (probe.column + session[kWidthDrift]);
+	const advance = replyColumn - 1 - (probe.column + widths.drift);
 	// A reading no cluster could produce means the reply describes
 	// something else -- a screen that scrolled under the frame, a terminal
 	// answering out of turn. The tables keep the cluster, and the rest of
 	// the run is read against a drift this reading did not establish.
 	if (advance < 0 || advance > 4) {
-		session[kWidthRunLost] = true;
+		widths.runLost = true;
 		return;
 	}
 
-	session[kWidthSettled].add(probe.cluster);
-	session[kWidthDrift] += advance - probe.width;
+	widths.settled.add(probe.cluster);
+	widths.drift += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
 		// A cluster is wider or narrower on this terminal than the tables
 		// said, so every column after one on a painted row is off by the
@@ -1933,21 +1957,16 @@ function handleResize(session: TerminalExchange): void {
 
 /**
  * The demultiplexer: one pass over what the reader says a chunk meant, in
- * stream order. Contiguous keystrokes are batched into one onKeys call;
+ * stream order. Contiguous keystrokes are batched into one dispatch;
  * everything else is dispatched where it stands, so a report glued to fast
  * keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
  */
 function route(session: TerminalExchange, chunk: string): void {
 	let keys: WireKey[] = [];
-	// Input dirties the frame wholesale: reactive pseudo-state and the
-	// selection move without a mutation record, and no cheaper answer than
-	// the paint exists.
-	const termDOM = termDOMOf(session[kDocument]);
 	const input = session[kInput]!;
 	const flushKeys = () => {
 		if (keys.length > 0) {
-			termDOM?.[kScreen].invalidate();
-			input.handleKeys(keys);
+			input.dispatch(keys);
 			keys = [];
 		}
 	};
@@ -1966,14 +1985,9 @@ function route(session: TerminalExchange, chunk: string): void {
 				keys.push(item);
 				break;
 			case "mouse":
-				flushKeys();
-				termDOM?.[kScreen].invalidate();
-				input.handleMouseReport(item.button, item.col, item.row, item.release);
-				break;
 			case "paste":
 				flushKeys();
-				termDOM?.[kScreen].invalidate();
-				input.handlePaste(item.text);
+				input.dispatch(item);
 				break;
 			default:
 				flushKeys();
@@ -2088,12 +2102,12 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
 		break;
 	}
 	if (item.kind === "cursor-report") {
-		const width = session[kWidthProbes][0];
+		const width = session[kWidths].pending[0];
 		if (
 			width !== undefined &&
 			(index === -1 || width.sequence < (pending[index].sequence ?? Infinity))
 		) {
-			session[kWidthProbes].shift();
+			session[kWidths].pending.shift();
 			settleWidthProbe(session, width, item.col);
 			return;
 		}
