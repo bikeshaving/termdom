@@ -26,7 +26,7 @@
  * in through, and the gestures it runs are the functions below the class.
  */
 
-import {getComputedValue} from "./cssom.js";
+import {getComputedValue, type StyleManager} from "./cssom.js";
 import {
 	closeTopmost,
 	dispatchAsUserAgent,
@@ -47,13 +47,8 @@ import {
 } from "./dom.js";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
 import type {LayoutEngine} from "./layout.js";
-import {
-	getLayoutEngine,
-	getScreen,
-	getStyleManager,
-	render,
-	type TermDOM,
-} from "./termdom.js";
+import type {Screen} from "./screen.js";
+import {render, type TermDOM} from "./termdom.js";
 
 /* -------------------------------------------------- what a wire item means */
 
@@ -300,6 +295,9 @@ function sequentialFocusEntries(
 /* ------------------------------------------------------------ the document */
 
 const kTermDOM = Symbol("termDOM");
+const kLayout = Symbol("layout");
+const kStyles = Symbol("styles");
+const kScreen = Symbol("screen");
 
 /* --------------------------------------------------------- the interpreter */
 
@@ -318,7 +316,7 @@ function wheelScrollerFor(
 	deltaY: number,
 ): Element | null {
 	const document = handler[kDocument];
-	const layout = getLayoutEngine(handler[kTermDOM]);
+	const layout = handler[kLayout];
 	for (
 		let element: Element | null = target;
 		element &&
@@ -391,6 +389,9 @@ export class EventHandler {
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
 	declare [kTermDOM]: TermDOM;
+	declare [kLayout]: LayoutEngine;
+	declare [kStyles]: StyleManager;
+	declare [kScreen]: Screen;
 
 	// The last position a mouse event was dispatched at, which is what the
 	// spec's movementX/movementY measure from. The first report has nothing
@@ -443,10 +444,18 @@ export class EventHandler {
 	declare [kLastClickTarget]: Element | null;
 	declare [kLastClickTime]: number;
 
-	constructor(termDOM: TermDOM) {
+	constructor(
+		termDOM: TermDOM,
+		layout: LayoutEngine,
+		styles: StyleManager,
+		screen: Screen,
+	) {
 		this[kDocument] = termDOM.document;
 		this[kWindow] = termDOM.document.defaultView as unknown as EngineWindow;
 		this[kTermDOM] = termDOM;
+		this[kLayout] = layout;
+		this[kStyles] = styles;
+		this[kScreen] = screen;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -485,7 +494,7 @@ export class EventHandler {
 	 * paint exists -- so anything arriving here invalidates the screen first.
 	 */
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
-		getScreen(this[kTermDOM]).invalidate();
+		this[kScreen].invalidate();
 		if (Array.isArray(item)) {
 			deliverKeys(this, item);
 			return;
@@ -519,7 +528,7 @@ export class EventHandler {
 		if (target !== previous) {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
-			getStyleManager(this[kTermDOM]).handleHoverChange(previous, target);
+			this[kStyles].handleHoverChange(previous, target);
 			const chainOf = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -876,7 +885,7 @@ function documentPointAt(
 	/** False for a row above the painted region -- a shell prompt's rows. */
 	inDocument: boolean;
 } {
-	const screen = getScreen(handler[kTermDOM]);
+	const screen = handler[kScreen];
 	const documentRow =
 		handler[kDocument].fullscreenElement !== null
 			? row - 1 + screen.anchorScrollTop
@@ -903,12 +912,12 @@ function scrollByWheel(
 	const termDOM = handler[kTermDOM];
 	if (
 		deltaY < 0 &&
-		getScreen(termDOM).scrollTop === 0 &&
+		handler[kScreen].scrollTop === 0 &&
 		handler[kDocument].fullscreenElement === null
 	) {
 		return true;
 	}
-	getScreen(termDOM).scrollTo(getScreen(termDOM).scrollTop + deltaY);
+	handler[kScreen].scrollTo(handler[kScreen].scrollTop + deltaY);
 	void render(termDOM);
 	return false;
 }
@@ -1004,7 +1013,7 @@ function press(
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
 	if (setDocumentFocusVisible(handler[kDocument], false)) {
-		getStyleManager(handler[kTermDOM]).handleFocusChange(
+		handler[kStyles].handleFocusChange(
 			handler[kDocument].activeElement,
 		);
 		void render(handler[kTermDOM]);
@@ -1196,7 +1205,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
 	if (setDocumentFocusVisible(handler[kDocument], true)) {
-		getStyleManager(handler[kTermDOM]).handleFocusChange(
+		handler[kStyles].handleFocusChange(
 			handler[kDocument].activeElement,
 		);
 		void render(handler[kTermDOM]);
@@ -1369,7 +1378,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	const scope = topmostModalDialog(handler[kDocument]) ?? handler[kDocument];
 	const entries = sequentialFocusEntries(
 		scope,
-		getLayoutEngine(handler[kTermDOM]),
+		handler[kLayout],
 	);
 
 	// activeElement retargets to the shadow host at document scope; the
@@ -1536,7 +1545,7 @@ function textPositionAt(
 	) {
 		return null;
 	}
-	return getLayoutEngine(handler[kTermDOM]).caretPositionFromPoint(
+	return handler[kLayout].caretPositionFromPoint(
 		x,
 		y,
 		element,
@@ -1550,5 +1559,5 @@ function selectable(
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
 	return parent === null ||
-		getStyleManager(handler[kTermDOM]).isSelectable(parent);
+		handler[kStyles].isSelectable(parent);
 }

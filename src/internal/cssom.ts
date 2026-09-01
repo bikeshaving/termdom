@@ -59,12 +59,10 @@ import {
 	type SelectorNamespaces,
 	type SelectorNode,
 	styleElementCount,
-	termDOMOf,
 	TransitionEvent,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
-import {getScreen} from "./termdom.js";
 import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
@@ -8537,7 +8535,7 @@ function lengthContext(
 		: getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
 	const manager = declaration[kManager];
-	const viewport = manager ? viewportSize(manager) : null;
+	const viewport = manager ? manager[kLayoutEngine].viewport : null;
 	return {
 		font,
 		root,
@@ -8821,7 +8819,7 @@ function getBox(
 function viewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const viewport = viewportSize(declaration[kManager]!);
+	const viewport = declaration[kManager]![kLayoutEngine].viewport;
 	if (!viewport) {
 		return null;
 	}
@@ -11136,7 +11134,7 @@ function usedRect(manager: StyleManager, element: Element): DOMRect | null {
 	// Without a renderer there is no layout pass, and so no used value to
 	// report: the computed value is the answer, as it is for any element
 	// with no box.
-	if (termDOMOf(manager[kDocument]) === undefined) {
+	if (manager[kLayoutEngine].viewport === null) {
 		return null;
 	}
 	// The flush is taken once per change, not once per read: until the
@@ -11159,15 +11157,6 @@ function usedRect(manager: StyleManager, element: Element): DOMRect | null {
  * the window is mounted on no terminal, where `1vw` has nothing to be a
  * hundredth of.
  */
-function viewportSize(
-	manager: StyleManager,
-): {width: number; height: number} | null {
-	const termDOM = termDOMOf(manager[kDocument]);
-	if (termDOM === undefined) {
-		return null;
-	}
-	return {width: getScreen(termDOM).cols, height: getScreen(termDOM).rows};
-}
 
 /** A pseudo-element's declaration, on the same internal read path. */
 function pseudoDeclarationFor(

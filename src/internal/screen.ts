@@ -1673,7 +1673,6 @@ function generateANSI(
 
 interface FrameJournal {
 	readonly dirty: boolean;
-	readonly layoutMoved: boolean;
 	readonly frameScroll: number;
 	readonly needsRepaint: boolean;
 }
@@ -1698,7 +1697,6 @@ const kLastCaretVisible = Symbol("lastCaretVisible");
 const kScrollTop = Symbol("scrollTop");
 const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
-const kLayoutMoved = Symbol("layoutMoved");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 
@@ -1733,7 +1731,6 @@ export class Screen {
 	declare [kWriter]: FrameWriter;
 	declare [kFrameScroll]: number;
 	declare [kDirty]: boolean;
-	declare [kLayoutMoved]: boolean;
 
 	// Whether a frame probes is decided as it is emitted, so the channel
 	// ending or mode 2027 settling later changes nothing here.
@@ -1764,7 +1761,6 @@ export class Screen {
 		this[kAnchorScrollTop] = 0;
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
-		this[kLayoutMoved] = false;
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
@@ -1788,7 +1784,6 @@ export class Screen {
 	get journal(): FrameJournal {
 		return {
 			dirty: this[kDirty],
-			layoutMoved: this[kLayoutMoved],
 			frameScroll: this[kFrameScroll],
 			needsRepaint:
 				this[kNeedsScreenReset] ||
@@ -1830,10 +1825,6 @@ export class Screen {
 
 	invalidate(): void {
 		this[kDirty] = true;
-	}
-
-	invalidateLayout(): void {
-		this[kLayoutMoved] = true;
 	}
 
 	wrappedRowsAbovePark(cols: number): number | null {
@@ -2340,7 +2331,6 @@ export class Screen {
 		const ansi = end();
 		this[kFrameScroll] = 0;
 		this[kDirty] = false;
-		this[kLayoutMoved] = false;
 		return ansi;
 	}
 }

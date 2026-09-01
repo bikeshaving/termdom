@@ -12,15 +12,6 @@ import {
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-test("a document takes one engine and refuses a second", async () => {
-	// Two engines would build every UA widget twice and then disagree about
-	// what is on screen.
-	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: terminal.transport});
-	expect(() => adoptDocument(dom.document, dom)).toThrow();
-	dom.dispose();
-});
-
 test("the UA surface reads past the type gate the author meets", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});

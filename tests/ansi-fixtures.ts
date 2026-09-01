@@ -6,8 +6,8 @@
  * the contract: any change to the cell buffer, the diff, or the SGR emitter
  * that alters a single byte fails the fixture test.
  */
+import type {ColorDepth} from "../src/internal/exchange.js";
 import {type CellStyle, Screen} from "../src/internal/screen.js";
-import {type ColorDepth} from "../src/internal/exchange.js";
 import type {CellContext} from "../src/internal/screen.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 

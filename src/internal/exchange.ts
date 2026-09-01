@@ -19,14 +19,17 @@
  * nothing above transportFromProcess names Node.
  */
 
-import {dispatchAsUserAgent, refreshMediaQueries, termDOMOf} from "./dom.js";
 import type {EventHandler} from "./input.js";
 import {
 	closeTermDOM,
-	getLayoutEngine,
-	getScreen,
-	getStyleManager,
-	render,
+	commandStartDetected,
+	frameReplaced,
+	frameStanding,
+	probesStarved,
+	type TermDOM,
+	terminalReorders,
+	terminalResized,
+	widthsCorrected,
 } from "./termdom.js";
 import {recordClusterAdvance} from "./text.js";
 
@@ -752,7 +755,7 @@ const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
 const kSettlingResize = Symbol("settlingResize");
 const kTransportClosed = Symbol("transportClosed");
-const kDocument = Symbol("document");
+const kTermDOM = Symbol("termDOM");
 const kInput = Symbol("input");
 
 const kWriter = Symbol("writer");
@@ -826,7 +829,7 @@ export class TerminalExchange {
 	// The modes currently set on the terminal, the source restore derives from.
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
-	declare [kDocument]: Document;
+	declare [kTermDOM]: TermDOM;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
 
 	/**
@@ -892,8 +895,8 @@ export class TerminalExchange {
 	 */
 	declare [kWidths]: WidthProbes;
 
-	constructor(deps: {transport: TerminalTransport; document: Document}) {
-		const interactive = deps.transport.interactive;
+	constructor(transport: TerminalTransport, termDOM: TermDOM) {
+		const interactive = transport.interactive;
 		this[kWriter] = null;
 		this[kReader] = null;
 		this[kResizeReader] = null;
@@ -909,13 +912,13 @@ export class TerminalExchange {
 		this[kDsrSequence] = 0;
 		this[kProbingEnded] = false;
 		this[kWidths] = freshWidthProbes(interactive);
-		this[kTransport] = deps.transport;
+		this[kTransport] = transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
 		// A shared screen is one with a shell's rows above ours, which is what
 		// there is an anchor to find; a terminal that answers nothing has none.
-		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
-		this[kDocument] = deps.document;
+		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
+		this[kTermDOM] = termDOM;
 		this[kInput] = null;
 		this[kResizeTimer] = null;
 		this[kSettlingResize] = null;
@@ -1110,7 +1113,7 @@ export class TerminalExchange {
 			transport.sharesScreen && transport.interactive;
 		// Whether a probe can be answered is the new terminal's to say.
 		this[kWidths] = freshWidthProbes(transport.interactive);
-		applyTerminalSize(this);
+		terminalResized(this[kTermDOM], transport.cols, transport.rows);
 	}
 
 	/**
@@ -1133,10 +1136,7 @@ export class TerminalExchange {
 		void this[kTransport].closed.then(() => {
 			if (!this[kDisposed]) {
 				this[kTransportClosed] = true;
-				const termDOM = termDOMOf(this[kDocument]);
-				if (termDOM !== undefined) {
-					closeTermDOM(termDOM);
-				}
+				closeTermDOM(this[kTermDOM]);
 			}
 		});
 	}
@@ -1199,10 +1199,7 @@ export class TerminalExchange {
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			const termDOM = termDOMOf(this[kDocument]);
-			if (termDOM !== undefined) {
-				getLayoutEngine(termDOM).adoptTerminalReordering();
-			}
+			terminalReorders(this[kTermDOM]);
 		}
 	}
 
@@ -1274,12 +1271,7 @@ export class TerminalExchange {
 			read: ({row}) => {
 				// The 1-based terminal row is the 0-based anchor: content
 				// shifts up to the terminal top from the command start.
-				const termDOM = termDOMOf(this[kDocument]);
-				if (termDOM !== undefined) {
-					const screen = getScreen(termDOM);
-					screen.documentTop = row - 1;
-					screen.anchorScrollTop = 1 - row;
-				}
+				commandStartDetected(this[kTermDOM], row);
 				this[kHasDetectedCommandStart] = true;
 				return row;
 			},
@@ -1625,11 +1617,7 @@ function requestStarvationFrame(session: TerminalExchange): void {
 		if (session[kDisposed] || widths.starved.size === 0) {
 			return;
 		}
-		const termDOM = termDOMOf(session[kDocument]);
-		if (termDOM !== undefined) {
-			getScreen(termDOM).rideProbeTrain();
-			void render(termDOM);
-		}
+		probesStarved(session[kTermDOM]);
 	}, TerminalExchange[kWidthStarvationWait]);
 }
 
@@ -1743,12 +1731,7 @@ function settleWidthProbe(
 		// difference. The previous frame described a screen that was never
 		// drawn: drop it and paint the region again from the corrected
 		// measurements.
-		const termDOM = termDOMOf(session[kDocument]);
-		if (termDOM !== undefined) {
-			getLayoutEngine(termDOM).invalidateTextMeasurement();
-			getScreen(termDOM).repaintAll();
-			void render(termDOM);
-		}
+		widthsCorrected(session[kTermDOM]);
 	}
 }
 
@@ -1831,33 +1814,6 @@ function scheduleResize(session: TerminalExchange): void {
 }
 
 /**
- * Adopt the transport's size as the document's: the screen and the layout
- * root take it, the stylesheets re-parse against it (a viewport change can
- * flip any @media answer, and retires every viewport-relative value), the
- * window hears "resize" if the size changed, and each live MediaQueryList
- * re-evaluates and fires "change" if it flipped. A SIGWINCH reporting an
- * unchanged size still redraws but fires no resize event, so the comparison
- * is against the size the screen holds.
- */
-function applyTerminalSize(session: TerminalExchange): void {
-	const termDOM = termDOMOf(session[kDocument]);
-	if (termDOM === undefined) {
-		return;
-	}
-	const {cols: width, rows: height} = session[kTransport];
-	const sizeChanged = width !== getScreen(termDOM).cols ||
-		height !== getScreen(termDOM).rows;
-	getScreen(termDOM).resize(height, width);
-	getLayoutEngine(termDOM).resize(width, height);
-	getStyleManager(termDOM).refreshStylesheets();
-	if (sizeChanged) {
-		const window = session[kDocument].defaultView!;
-		dispatchAsUserAgent(window, new window.Event("resize"));
-	}
-	refreshMediaQueries(session[kDocument]);
-}
-
-/**
  * Re-anchor and redraw after a resize settles. The terminal has already
  * rewrapped everything on screen -- including our old frame -- and how far
  * our content moved depends on text above us that we do not own. But two
@@ -1878,15 +1834,13 @@ function applyTerminalSize(session: TerminalExchange): void {
  * for width).
  */
 function handleResize(session: TerminalExchange): void {
-	const termDOM = termDOMOf(session[kDocument]);
-	if (termDOM === undefined) {
-		return;
-	}
-	applyTerminalSize(session);
+	const termDOM = session[kTermDOM];
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	getLayoutEngine(termDOM).calculateLayout();
-	const contentHeight = getLayoutEngine(termDOM).documentPaintHeight();
-	const wrappedRowsAbove = getScreen(termDOM).wrappedRowsAbovePark(newWidth);
+	terminalResized(termDOM, newWidth, newHeight);
+	const {contentHeight, wrappedRowsAbove, documentTop} = frameStanding(
+		termDOM,
+		newWidth,
+	);
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
@@ -1896,9 +1850,7 @@ function handleResize(session: TerminalExchange): void {
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		getScreen(termDOM).documentTop = startRow;
-		getScreen(termDOM).anchorScrollTop = -startRow;
-		getScreen(termDOM).replaced(startRow);
+		frameReplaced(termDOM, startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection, which
@@ -1906,16 +1858,14 @@ function handleResize(session: TerminalExchange): void {
 		session[kSettlingResize] = null;
 		const wasDetected = session[kHasDetectedCommandStart];
 		session[kHasDetectedCommandStart] = false;
-		void render(termDOM);
-		session[kDocument].defaultView!.requestAnimationFrame(() => {
+		termDOM.window.requestAnimationFrame(() => {
 			session[kHasDetectedCommandStart] = wasDetected;
 		});
 	};
 
 	const computedReanchor = () => {
-		const previousStart = getScreen(termDOM).documentTop;
-		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
-		return Math.max(0, previousStart - scrolledUp);
+		const scrolledUp = Math.max(0, documentTop + contentHeight - newHeight);
+		return Math.max(0, documentTop - scrolledUp);
 	};
 
 	// The anchor is trustworthy exactly while the frame still FITS below it.
@@ -1976,7 +1926,7 @@ function route(session: TerminalExchange, chunk: string): void {
 				// decodes to the letter with the control modifier.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
-					session[kDocument].defaultView!.close();
+					session[kTermDOM].window.close();
 					break;
 				}
 				keys.push(item);

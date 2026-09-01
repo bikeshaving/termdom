@@ -223,9 +223,21 @@ export class TermDOM {
 		// The engine the document stands on. From here a control builds and
 		// keeps its own shadow tree; the shell only says when a newly
 		// connected one should be upgraded.
-		DOM.adoptDocument(document, this);
+		DOM.adoptDocument(
+			document,
+			this,
+			this[kLayoutEngine],
+			this[kStyleManager],
+			this[kExchange],
+			this[kScreen],
+		);
 
-		this[kEventHandler] = new EventHandler(this);
+		this[kEventHandler] = new EventHandler(
+			this,
+			this[kLayoutEngine],
+			this[kStyleManager],
+			this[kScreen],
+		);
 		this[kPainter] = new Painter(
 			this.document,
 			this[kLayoutEngine],
@@ -431,22 +443,6 @@ function isFullscreen(termdom: TermDOM): boolean {
 	return termdom.document.fullscreenElement !== null;
 }
 
-export function getLayoutEngine(termDOM: TermDOM): LayoutEngine {
-	return termDOM[kLayoutEngine];
-}
-
-export function getStyleManager(termDOM: TermDOM): StyleManager {
-	return termDOM[kStyleManager];
-}
-
-export function getExchange(termDOM: TermDOM): TerminalExchange {
-	return termDOM[kExchange];
-}
-
-export function getScreen(termDOM: TermDOM): Screen {
-	return termDOM[kScreen];
-}
-
 export function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
@@ -490,6 +486,86 @@ export function closeTermDOM(termDOM: TermDOM): void {
  * the seal is skipped. A real seal is a close() from a live, painted
  * session.
  */
+/**
+ * What the terminal says that the engine answers for: its size, where the
+ * command started, how it orders text, what its glyphs measure, and that
+ * it went away (closeTermDOM). The exchange reports; these react.
+ */
+export function terminalResized(
+	termDOM: TermDOM,
+	width: number,
+	height: number,
+): void {
+	const screen = termDOM[kScreen];
+	// A SIGWINCH reporting an unchanged size still redraws but fires no
+	// resize event, so the comparison is against the size the screen holds.
+	const sizeChanged = width !== screen.cols || height !== screen.rows;
+	screen.resize(height, width);
+	termDOM[kLayoutEngine].resize(width, height);
+	// A viewport change can flip any @media answer and retires every
+	// viewport-relative value.
+	termDOM[kStyleManager].refreshStylesheets();
+	if (sizeChanged) {
+		const window = termDOM.window;
+		DOM.dispatchAsUserAgent(window, new window.Event("resize"));
+	}
+	DOM.refreshMediaQueries(termDOM.document);
+}
+
+/** Where the frame stands after a resize, for the re-anchor. */
+export function frameStanding(
+	termDOM: TermDOM,
+	cols: number,
+): {
+	contentHeight: number;
+	wrappedRowsAbove: number | null;
+	documentTop: number;
+} {
+	const layout = termDOM[kLayoutEngine];
+	layout.calculateLayout();
+	return {
+		contentHeight: layout.documentPaintHeight(),
+		wrappedRowsAbove: termDOM[kScreen].wrappedRowsAbovePark(cols),
+		documentTop: termDOM[kScreen].documentTop,
+	};
+}
+
+/** The frame now stands at `startRow`; repaint it from there. */
+export function frameReplaced(termDOM: TermDOM, startRow: number): void {
+	const screen = termDOM[kScreen];
+	screen.documentTop = startRow;
+	screen.anchorScrollTop = -startRow;
+	screen.replaced(startRow);
+	void render(termDOM);
+}
+
+/** The 1-based terminal row the command started on is the 0-based anchor. */
+export function commandStartDetected(termDOM: TermDOM, row: number): void {
+	termDOM[kScreen].documentTop = row - 1;
+	termDOM[kScreen].anchorScrollTop = 1 - row;
+}
+
+export function terminalReorders(termDOM: TermDOM): void {
+	termDOM[kLayoutEngine].adoptTerminalReordering();
+}
+
+/** Starved width probes ride the next frame even if nothing changed. */
+export function probesStarved(termDOM: TermDOM): void {
+	termDOM[kScreen].rideProbeTrain();
+	void render(termDOM);
+}
+
+/**
+ * A cluster measured wider or narrower than the tables said, so every column
+ * after one on a painted row is off: the previous frame described a screen
+ * never drawn. Drop it and paint again from the corrected measurements.
+ */
+export function widthsCorrected(termDOM: TermDOM): void {
+	termDOM[kLayoutEngine].invalidateTextMeasurement();
+	termDOM[kScreen].repaintAll();
+	void render(termDOM);
+}
+
 export function sealTermDOM(termDOM: TermDOM): void {
 	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
 		flushDocument(termDOM);
@@ -505,10 +581,7 @@ export function sealTermDOM(termDOM: TermDOM): void {
 function buildExchange(
 	termdom: TermDOM,
 ): TerminalExchange {
-	return new TerminalExchange({
-		transport: termdom[kTransport],
-		document: termdom.document,
-	});
+	return new TerminalExchange(termdom[kTransport], termdom);
 }
 
 /**
@@ -841,7 +914,7 @@ function resolveScrollBand(
 		journal.frameScroll !== 0 ||
 		// Anything the layout derives a frame from has moved, so the rows the
 		// terminal would shift are not the rows the last frame painted.
-		journal.layoutMoved ||
+		termdom[kLayoutEngine].moved ||
 		!record.element.isConnected
 	) {
 		return null;
@@ -933,6 +1006,7 @@ async function printStatic(
 	});
 	termdom[kPainter].paint(context);
 	const output = termdom[kScreen].endFrame();
+	termdom[kLayoutEngine].framePainted();
 
 	if (output) {
 		await termdom[kExchange].write(output);
@@ -1103,7 +1177,7 @@ async function renderInteractive(
 	const journal = termdom[kScreen].journal;
 	if (
 		!journal.dirty &&
-		!journal.layoutMoved &&
+		!termdom[kLayoutEngine].moved &&
 		journal.frameScroll === 0 &&
 		journalled === null &&
 		!journal.needsRepaint
@@ -1160,6 +1234,7 @@ async function renderInteractive(
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
+	termdom[kLayoutEngine].framePainted();
 
 	// The cursor stays hidden while a frame paints and between frames: it is
 	// parked for resize bookkeeping, and a cursor blinking there is not UI.

@@ -48,10 +48,8 @@ import {
 	pseudoElementCount,
 	renderedTopLayer,
 	SHOW_FLAT,
-	termDOMOf,
 	TreeWalker,
 } from "./dom.js";
-import {getScreen} from "./termdom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
@@ -10802,6 +10800,7 @@ function measureText(
 }
 
 const kTerminalReordersText = Symbol("terminalReordersText");
+const kMoved = Symbol("moved");
 
 /**
  * Rewrite one built line from logical order into visual order, in place.
@@ -11471,7 +11470,12 @@ export class LayoutEngine {
 	 */
 	declare [kRestyled]: Set<Element>;
 
+	// Geometry moved since the last painted frame: the rows that frame
+	// painted no longer describe the document.
+	declare [kMoved]: boolean;
+
 	constructor(window: EngineWindow) {
+		this[kMoved] = false;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
 		this[kRectTextIndices] = new WeakMap<
@@ -11501,6 +11505,19 @@ export class LayoutEngine {
 		this[kViewportRoot] = new LayoutNode();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
+	}
+
+	/** The viewport the document lays out in, or null while it has none. */
+	get viewport(): {width: number; height: number} | null {
+		const width = this[kViewportRoot].style.width.value;
+		const height = this[kViewportRoot].style.height.value;
+		return Number.isNaN(width) || Number.isNaN(height)
+			? null
+			: {width, height};
+	}
+
+	get moved(): boolean {
+		return this[kMoved];
 	}
 
 	adoptTerminalReordering(): void {
@@ -11536,6 +11553,11 @@ export class LayoutEngine {
 		changed(this);
 
 		this.calculateLayout();
+	}
+
+	/** A frame has painted the geometry as it stands. */
+	framePainted(): void {
+		this[kMoved] = false;
 	}
 
 	calculateLayout(): void {
@@ -13541,8 +13563,5 @@ function changed(layout: LayoutEngine): void {
 		return;
 	}
 	usedValuesChanged(document);
-	const termDOM = termDOMOf(document);
-	if (termDOM !== undefined) {
-		getScreen(termDOM).invalidateLayout();
-	}
+	layout[kMoved] = true;
 }
