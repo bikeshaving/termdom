@@ -32,6 +32,7 @@ import * as Parse5 from "parse5";
 import {
 	adoptedStyleSheetsOf,
 	adoptStyleSheets,
+	getBoxModel,
 	inlineStyleOf,
 	styleAttributeChanged,
 	styleElementSheet,
@@ -10369,14 +10370,14 @@ Object.defineProperties(HTMLElement.prototype, {
 	// The border widths, which the cascade alone decides.
 	clientLeft: {
 		get(this: HTMLElement): number {
-			return termDOMOf(this)?.[kStyleManager].borderEdge(this).left ?? 0;
+			return getBoxModel(this).borderLeftWidth;
 		},
 		configurable: true,
 		enumerable: true,
 	},
 	clientTop: {
 		get(this: HTMLElement): number {
-			return termDOMOf(this)?.[kStyleManager].borderEdge(this).top ?? 0;
+			return getBoxModel(this).borderTopWidth;
 		},
 		configurable: true,
 		enumerable: true,

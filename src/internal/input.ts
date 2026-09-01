@@ -40,6 +40,7 @@ import {
 	lightDismissRelease,
 	lockDataTransfer,
 	parkFieldCaret,
+	setDocumentFocusVisible,
 	setHoveredElement,
 	setUASelection,
 	topmostModalDialog,
@@ -1002,7 +1003,7 @@ function press(
 	handler[kPopoverPressTarget] = lightDismissPress(target);
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
-	if (handler[kTermDOM][kStyleManager].setFocusVisible(false)) {
+	if (setDocumentFocusVisible(handler[kDocument], false)) {
 		handler[kTermDOM][kStyleManager].handleFocusChange(
 			handler[kDocument].activeElement,
 		);
@@ -1194,7 +1195,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	const keyCode = legacyKeyCode(keyName);
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-	if (handler[kTermDOM][kStyleManager].setFocusVisible(true)) {
+	if (setDocumentFocusVisible(handler[kDocument], true)) {
 		handler[kTermDOM][kStyleManager].handleFocusChange(
 			handler[kDocument].activeElement,
 		);

@@ -58,7 +58,6 @@ import {
 	selectAllCompiled,
 	type SelectorNamespaces,
 	type SelectorNode,
-	setDocumentFocusVisible,
 	styleElementCount,
 	termDOMOf,
 	TransitionEvent,
@@ -8225,7 +8224,7 @@ const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
 const kUsedValue = Symbol("usedValue");
 const kBaseValue = Symbol("baseValue");
-const kTransitionCount = Symbol("transitionCount");
+const kActiveTransitions = Symbol("activeTransitions");
 const kCurrentDeclarations = Symbol("currentDeclarations");
 const kUsedGridTracks = Symbol("usedGridTracks");
 const kFlushStyle = Symbol("flushStyle");
@@ -8305,7 +8304,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		const value = this[kBaseValue](property);
 		const manager = this[kManager];
-		if (manager !== null && manager[kTransitionCount] > 0) {
+		if (manager !== null && manager[kActiveTransitions].size > 0) {
 			const transitional = getTransitionValue(
 				manager,
 				this[kElement]!,
@@ -9552,7 +9551,7 @@ function pseudoTransitionValue(
 	if (
 		manager === null ||
 		declaration[kElement] === null ||
-		manager[kTransitionCount] === 0
+		manager[kActiveTransitions].size === 0
 	) {
 		return null;
 	}
@@ -10247,7 +10246,6 @@ const kAnonymousLayers = Symbol("anonymousLayers");
 const kUnlayeredRank = Symbol("unlayeredRank");
 const kTransitionSnapshots = Symbol("transitionSnapshots");
 const kTransitionFallback = Symbol("transitionFallback");
-const kActiveTransitions = Symbol("activeTransitions");
 const kTransitionClock = Symbol("transitionClock");
 const kTransitionTimer = Symbol("transitionTimer");
 const kTransitionEvents = Symbol("transitionEvents");
@@ -10382,8 +10380,6 @@ export class StyleManager {
 		Map<string, Map<string, RunningTransition>>
 	>;
 
-	declare [kTransitionCount]: number;
-
 	/** The timeline instant a frame's reads interpolate against. */
 	declare [kTransitionClock]: number;
 	declare [kTransitionTimer]: ReturnType<typeof setTimeout> | null;
@@ -10466,7 +10462,6 @@ export class StyleManager {
 		this[kTransitionSnapshots] = new WeakMap();
 		this[kTransitionFallback] = new WeakMap();
 		this[kActiveTransitions] = new Map();
-		this[kTransitionCount] = 0;
 		this[kTransitionClock] = 0;
 		this[kTransitionTimer] = null;
 		this[kTransitionEvents] = [];
@@ -10485,16 +10480,6 @@ export class StyleManager {
 		setupInvalidationHooks(this);
 
 		parseStylesheets(this);
-	}
-
-	/**
-	 * The border widths clientLeft/clientTop report: the distance from the
-	 * border box's edge to the padding box's. Style alone decides them, so
-	 * there is no layout to stand behind and nothing to flush.
-	 */
-	borderEdge(element: Element): {left: number; top: number} {
-		const box = getBoxModel(element);
-		return {left: box.borderLeftWidth, top: box.borderTopWidth};
 	}
 
 	/**
@@ -10786,11 +10771,6 @@ export class StyleManager {
 		return this[kHoverRulesExist];
 	}
 
-	/** Set the `:focus-visible` state; returns whether it changed. */
-	setFocusVisible(active: boolean): boolean {
-		return setDocumentFocusVisible(this[kDocument], active);
-	}
-
 	/**
 	 * The declaration behind an element, for the engine itself.
 	 *
@@ -10901,7 +10881,6 @@ export class StyleManager {
 			this[kTransitionTimer] = null;
 		}
 		this[kActiveTransitions].clear();
-		this[kTransitionCount] = 0;
 		this[kTransitionEvents] = [];
 	}
 
@@ -11813,7 +11792,6 @@ function startTransition(
 		reversingShorteningFactor: options.reversingShorteningFactor,
 	};
 	transitions.set(property, transition);
-	manager[kTransitionCount]++;
 	manager[kTransitionClock] = now;
 	// A negative delay starts partway in, which is what elapsedTime reports.
 	const elapsed =
@@ -11859,7 +11837,6 @@ function cancelTransition(
 	if (byPseudo.size === 0) {
 		manager[kActiveTransitions].delete(element);
 	}
-	manager[kTransitionCount]--;
 	const elapsed = Math.min(
 		Math.max((now - transition.start - transition.delay) / 1000, 0),
 		transition.duration / 1000,
@@ -12272,7 +12249,10 @@ function flushTransitionEvents(manager: StyleManager): void {
 }
 
 function scheduleTransitionTick(manager: StyleManager): void {
-	if (manager[kTransitionTimer] !== null || manager[kTransitionCount] === 0) {
+	if (
+		manager[kTransitionTimer] !== null ||
+		manager[kActiveTransitions].size === 0
+	) {
 		return;
 	}
 	manager[kTransitionTimer] = setTimeout(() => {
@@ -12318,7 +12298,6 @@ function tickTransitions(manager: StyleManager): void {
 					transition.start + transition.delay + transition.duration
 				) {
 					transitions.delete(property);
-					manager[kTransitionCount]--;
 					queueTransitionEvent(
 						manager,
 						element,
