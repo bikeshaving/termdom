@@ -80,25 +80,6 @@ class TerminalWindow {
 		this[kWindowId] = windowId;
 	}
 
-	[kTabProperty](property: "contents" | "history"): string {
-		// The tab must be addressed as `selected tab of w`, never through a
-		// loop variable: `contents of t` hits AppleScript's dereference
-		// operator and returns the tab's specifier string instead of its text.
-		// Every window this harness opens holds exactly one (selected) tab.
-		return osascript(`
-			tell application "Terminal"
-				repeat with w in (get windows)
-					try
-						if tty of selected tab of w is "${this[kTTY]}" then
-							return ${property} of selected tab of w
-						end if
-					end try
-				end repeat
-				error "harness tab ${this[kTTY]} not found"
-			end tell
-		`);
-	}
-
 	/** The visible screen as plain text. */
 	contents(): string {
 		return this[kTabProperty]("contents");
@@ -165,6 +146,25 @@ class TerminalWindow {
 				`  warning: window ${this[kWindowId]} did not close: ${(err as Error).message}`,
 			);
 		}
+	}
+
+	[kTabProperty](property: "contents" | "history"): string {
+		// The tab must be addressed as `selected tab of w`, never through a
+		// loop variable: `contents of t` hits AppleScript's dereference
+		// operator and returns the tab's specifier string instead of its text.
+		// Every window this harness opens holds exactly one (selected) tab.
+		return osascript(`
+			tell application "Terminal"
+				repeat with w in (get windows)
+					try
+						if tty of selected tab of w is "${this[kTTY]}" then
+							return ${property} of selected tab of w
+						end if
+					end try
+				end repeat
+				error "harness tab ${this[kTTY]} not found"
+			end tell
+		`);
 	}
 }
 

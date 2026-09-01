@@ -152,36 +152,6 @@ function encode64(bytes: Uint8Array): string {
 	return out;
 }
 
-/**
- * Tolerant base64, as terminals answer OSC 52: bytes outside the alphabet
- * are skipped and an unpadded tail still decodes, since terminals differ on
- * both. Null for a payload no reading rescues -- a digit count of one past
- * a four-digit boundary carries no byte.
- */
-function decode64(text: string): Uint8Array | null {
-	const bytes = new Uint8Array((text.length * 3) >> 2);
-	let held = 0;
-	let bits = 0;
-	let length = 0;
-	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i);
-		const value = code < 128 ? BASE64_CODES[code] : -1;
-		if (value < 0) {
-			continue;
-		}
-		held = (held << 6) | value;
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			bytes[length++] = (held >> bits) & 0xff;
-		}
-	}
-	if (bits >= 6) {
-		return null;
-	}
-	return bytes.subarray(0, length);
-}
-
 /* ----------------------------------------------------------- the spellings */
 
 /** DSR 6: where is the cursor? Answered by a cursor report, one-based. */
@@ -208,11 +178,6 @@ const SCREEN_CLEAR = "\x1b[2J\x1b[H";
 /** IND: down one row, scrolling the screen when the cursor is at the end. */
 const SCROLL_STEP = "\x1bD";
 
-/** CUP: the cursor to the first column of a one-based row. */
-function rowStart(row: number): string {
-	return `\x1b[${row};1H`;
-}
-
 /**
  * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers it,
  * a private mode keeping its "?" ("8", "?2027").
@@ -230,30 +195,6 @@ function modeQuery(mode: string): string {
  */
 function isControlByte(code: number): boolean {
 	return code < 0x20 || (code >= 0x7f && code < 0xa0);
-}
-
-/**
- * OSC 2: the window title. Untrusted text going somewhere the cell grid never
- * sees, so it is refused the same characters a cell is -- dropped, since the
- * rest of the title is still the title.
- */
-function titleEscape(text: string): string {
-	let safe = "";
-	for (const char of text) {
-		if (isControlByte(char.codePointAt(0)!)) {
-			continue;
-		}
-		safe += char;
-	}
-	return `\x1b]2;${safe}\x07`;
-}
-
-/**
- * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
- * beyond refusing -- there is nothing in the alphabet to refuse.
- */
-function clipboardEscape(text: string): string {
-	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 
 /* --------------------------------------------------------- the mode ledger */
@@ -361,43 +302,6 @@ const PASTE_END = "\x1b[201~";
 
 /** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
 const CLIPBOARD_START = "\x1b]52;";
-
-/**
- * The length of an incomplete escape sequence at the end of `chunk`, or 0.
- * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
- * arrived, an SS3 (ESC O) missing its one final character, or as much of the
- * clipboard reply's opening as has come -- past that opening the reply holds
- * itself, since its own terminator is what ends it. A bare trailing ESC
- * reports 0 -- it may be the Escape key itself, and holding it for a
- * continuation that never comes would swallow the keystroke.
- */
-function splitTrailingEscape(chunk: string): number {
-	const esc = chunk.lastIndexOf("\x1b");
-	if (esc === -1 || esc === chunk.length - 1) {
-		return 0;
-	}
-	const kind = chunk[esc + 1];
-	if (kind === "[") {
-		for (let i = esc + 2; i < chunk.length; i++) {
-			const code = chunk.charCodeAt(i);
-			if (code >= 0x40 && code <= 0x7e) {
-				return 0;
-			} // finished
-		}
-		return chunk.length - esc;
-	}
-	if (kind === "O" && esc + 2 >= chunk.length) {
-		return chunk.length - esc;
-	}
-	const tail = chunk.slice(esc);
-	if (
-		tail.length < CLIPBOARD_START.length &&
-		CLIPBOARD_START.startsWith(tail)
-	) {
-		return tail.length;
-	}
-	return 0;
-}
 
 /**
  * A whole OSC 52 reply: the selection field, then a base64 payload, then BEL
@@ -557,31 +461,6 @@ function decodeKeyToken(token: string): WireKey {
 	};
 }
 
-/** What one CSI token means: a mouse escape, a reply, or a keystroke. */
-function decodeControlToken(token: string): WireItem {
-	const mouse = decodeMouseEscape(token);
-	if (mouse) {
-		return {kind: "mouse", ...mouse};
-	}
-	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
-	if (cursor) {
-		return {
-			kind: "cursor-report",
-			row: parseInt(cursor[1], 10),
-			col: parseInt(cursor[2], 10),
-		};
-	}
-	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
-	if (mode) {
-		return {
-			kind: "mode-report",
-			mode: (mode[1] ? "?" : "") + mode[2],
-			value: parseInt(mode[3], 10),
-		};
-	}
-	return decodeKeyToken(token);
-}
-
 const kTail = Symbol("tail");
 const kPasteBody = Symbol("pasteBody");
 const kReplyBody = Symbol("replyBody");
@@ -607,19 +486,18 @@ const kReplyLimit = Symbol("replyLimit");
  * reading on its own.
  */
 class WireReader {
-	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
-	declare [kTail]: string;
-	// The body of an open paste; null when no paste is in flight.
-	declare [kPasteBody]: string | null;
-	// An open clipboard reply, from its ESC ] 52 on; null when none is.
-	declare [kReplyBody]: string | null;
-
 	/**
 	 * The most of a clipboard reply held while its terminator is awaited. A
 	 * larger payload is not a clipboard a terminal is answering with, and the
 	 * reader gives the reply up as null rather than buffer the wire.
 	 */
 	static readonly [kReplyLimit] = 1 << 16;
+	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
+	declare [kTail]: string;
+	// The body of an open paste; null when no paste is in flight.
+	declare [kPasteBody]: string | null;
+	// An open clipboard reply, from its ESC ] 52 on; null when none is.
+	declare [kReplyBody]: string | null;
 
 	constructor() {
 		this[kTail] = "";
@@ -729,6 +607,98 @@ class WireReader {
 	}
 }
 
+/**
+ * Tolerant base64, as terminals answer OSC 52: bytes outside the alphabet
+ * are skipped and an unpadded tail still decodes, since terminals differ on
+ * both. Null for a payload no reading rescues -- a digit count of one past
+ * a four-digit boundary carries no byte.
+ */
+function decode64(text: string): Uint8Array | null {
+	const bytes = new Uint8Array((text.length * 3) >> 2);
+	let held = 0;
+	let bits = 0;
+	let length = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const value = code < 128 ? BASE64_CODES[code] : -1;
+		if (value < 0) {
+			continue;
+		}
+		held = (held << 6) | value;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			bytes[length++] = (held >> bits) & 0xff;
+		}
+	}
+	if (bits >= 6) {
+		return null;
+	}
+	return bytes.subarray(0, length);
+}
+
+/**
+ * The length of an incomplete escape sequence at the end of `chunk`, or 0.
+ * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
+ * arrived, an SS3 (ESC O) missing its one final character, or as much of the
+ * clipboard reply's opening as has come -- past that opening the reply holds
+ * itself, since its own terminator is what ends it. A bare trailing ESC
+ * reports 0 -- it may be the Escape key itself, and holding it for a
+ * continuation that never comes would swallow the keystroke.
+ */
+function splitTrailingEscape(chunk: string): number {
+	const esc = chunk.lastIndexOf("\x1b");
+	if (esc === -1 || esc === chunk.length - 1) {
+		return 0;
+	}
+	const kind = chunk[esc + 1];
+	if (kind === "[") {
+		for (let i = esc + 2; i < chunk.length; i++) {
+			const code = chunk.charCodeAt(i);
+			if (code >= 0x40 && code <= 0x7e) {
+				return 0;
+			} // finished
+		}
+		return chunk.length - esc;
+	}
+	if (kind === "O" && esc + 2 >= chunk.length) {
+		return chunk.length - esc;
+	}
+	const tail = chunk.slice(esc);
+	if (
+		tail.length < CLIPBOARD_START.length &&
+		CLIPBOARD_START.startsWith(tail)
+	) {
+		return tail.length;
+	}
+	return 0;
+}
+
+/** What one CSI token means: a mouse escape, a reply, or a keystroke. */
+function decodeControlToken(token: string): WireItem {
+	const mouse = decodeMouseEscape(token);
+	if (mouse) {
+		return {kind: "mouse", ...mouse};
+	}
+	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
+	if (cursor) {
+		return {
+			kind: "cursor-report",
+			row: parseInt(cursor[1], 10),
+			col: parseInt(cursor[2], 10),
+		};
+	}
+	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
+	if (mode) {
+		return {
+			kind: "mode-report",
+			mode: (mode[1] ? "?" : "") + mode[2],
+			value: parseInt(mode[3], 10),
+		};
+	}
+	return decodeKeyToken(token);
+}
+
 /* ------------------------------------------------------------ the exchange */
 
 /**
@@ -829,6 +799,27 @@ const kWidthRunLost = Symbol("widthRunLost");
  * keeps the event loop open, which across a test suite is fatal.
  */
 export class TerminalExchange {
+	/**
+	 * Generous: the reply crosses whatever the transport is, and a terminal
+	 * answering late is still answering. Only a session that gets NOTHING back
+	 * gives up probing, and it can afford to wait to be sure.
+	 */
+	static readonly [kWidthProbeTimeout] = 2000;
+
+	/**
+	 * How long a starved cluster waits for a frame of the document's own
+	 * before one is asked for on its behalf. Long enough that anything still
+	 * animating, typing or scrolling carries the train for free.
+	 */
+	static readonly [kWidthStarvationWait] = 500;
+
+	/**
+	 * How long a clipboard query waits. Short on purpose: most terminals
+	 * refuse clipboard reads and refusing is silence, so this is the delay
+	 * every navigator.clipboard.readText() pays before rejecting. A terminal
+	 * that does answer answers at typing latency.
+	 */
+	static readonly [kClipboardQueryTimeout] = 500;
 	declare [kTransport]: TerminalTransport;
 	declare [kInteractive]: boolean;
 	// The modes currently set on the terminal, the source restore derives from.
@@ -957,27 +948,80 @@ export class TerminalExchange {
 	// told apart from probes taken while building the next.
 	declare [kWriteBatch]: object;
 
-	/**
-	 * Generous: the reply crosses whatever the transport is, and a terminal
-	 * answering late is still answering. Only a session that gets NOTHING back
-	 * gives up probing, and it can afford to wait to be sure.
-	 */
-	static readonly [kWidthProbeTimeout] = 2000;
+	constructor(deps: {transport: TerminalTransport; document: Document}) {
+		const interactive = deps.transport.interactive;
+		this[kWriter] = null;
+		this[kReader] = null;
+		this[kResizeReader] = null;
+		this[kStarted] = false;
+		this[kDisposed] = false;
+		this[kLastWrite] = Promise.resolve();
+		this[kWireReader] = new WireReader();
+		this[kHasDetectedCommandStart] = false;
+		this[kCursorDetectionPromise] = null;
+		this[kPendingReplies] = [];
+		this[kPriorBidiMode] = null;
+		this[kGraphemeClustersNegotiated] = false;
+		this[kDsrSequence] = 0;
+		this[kWidthProbes] = [];
+		this[kProbingEnded] = false;
+		this[kWidthSettled] = new Set<string>();
+		this[kWidthProbing] = interactive;
+		this[kWidthAnswered] = false;
+		this[kWidthProbeTimer] = null;
+		this[kDriftBatch] = null;
+		this[kWidthRun] = -1;
+		this[kWidthDrift] = 0;
+		this[kWidthRunLost] = false;
+		this[kWriteBatch] = {};
+		this[kWidthAsked] = new Set();
+		this[kWidthStarved] = new Set();
+		this[kStarvationTimer] = null;
+		this[kTransport] = deps.transport;
+		this[kInteractive] = interactive;
+		this[kEngagedModes] = new Set<ModeName>();
+		// A shared screen is one with a shell's rows above ours, which is what
+		// there is an anchor to find; a terminal that answers nothing has none.
+		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
+		this[kDocument] = deps.document;
+		this[kInput] = null;
+		this[kResizeTimer] = null;
+		this[kSettlingResize] = null;
+		this[kTransportClosed] = false;
+	}
+
+	/** Whether command-start anchoring runs: the default process transport only. */
+	get anchorDetectionEnabled(): boolean {
+		return this[kAnchorDetectionEnabled];
+	}
+
+	/** Whether the transport takes input -- a pipe does not. */
+	get interactive(): boolean {
+		return this[kInteractive];
+	}
+
+	/** Whether a resize is settling, during which no frame may paint. */
+	get resizing(): boolean {
+		return this[kSettlingResize] !== null;
+	}
+
+	/** Whether the terminal went away on its own, so there is nothing to close. */
+	get transportClosed(): boolean {
+		return this[kTransportClosed];
+	}
 
 	/**
-	 * How long a starved cluster waits for a frame of the document's own
-	 * before one is asked for on its behalf. Long enough that anything still
-	 * animating, typing or scrolling carries the train for free.
+	 * The outstanding startup command-start detection, or null once it has
+	 * settled. The first interactive frame awaits this so it anchors at the
+	 * resolved row rather than painting at row 0 first -- but only when one is
+	 * actually pending. A settled probe returns null so the caller adds no
+	 * async hop: an unconditional await would defer the rest of that frame a
+	 * microtask even with nothing to wait for, and a synchronous scroll clamp
+	 * depends on the frame running straight through.
 	 */
-	static readonly [kWidthStarvationWait] = 500;
-
-	/**
-	 * How long a clipboard query waits. Short on purpose: most terminals
-	 * refuse clipboard reads and refusing is silence, so this is the delay
-	 * every navigator.clipboard.readText() pays before rejecting. A terminal
-	 * that does answer answers at typing latency.
-	 */
-	static readonly [kClipboardQueryTimeout] = 500;
+	get cursorDetectionPending(): Promise<void> | null {
+		return this[kCursorDetectionPromise];
+	}
 
 	/**
 	 * Whether the wire can still carry an answered probe: a terminal is
@@ -1062,48 +1106,6 @@ export class TerminalExchange {
 		return CURSOR_QUERY;
 	}
 
-	constructor(deps: {transport: TerminalTransport; document: Document}) {
-		const interactive = deps.transport.interactive;
-		this[kWriter] = null;
-		this[kReader] = null;
-		this[kResizeReader] = null;
-		this[kStarted] = false;
-		this[kDisposed] = false;
-		this[kLastWrite] = Promise.resolve();
-		this[kWireReader] = new WireReader();
-		this[kHasDetectedCommandStart] = false;
-		this[kCursorDetectionPromise] = null;
-		this[kPendingReplies] = [];
-		this[kPriorBidiMode] = null;
-		this[kGraphemeClustersNegotiated] = false;
-		this[kDsrSequence] = 0;
-		this[kWidthProbes] = [];
-		this[kProbingEnded] = false;
-		this[kWidthSettled] = new Set<string>();
-		this[kWidthProbing] = interactive;
-		this[kWidthAnswered] = false;
-		this[kWidthProbeTimer] = null;
-		this[kDriftBatch] = null;
-		this[kWidthRun] = -1;
-		this[kWidthDrift] = 0;
-		this[kWidthRunLost] = false;
-		this[kWriteBatch] = {};
-		this[kWidthAsked] = new Set();
-		this[kWidthStarved] = new Set();
-		this[kStarvationTimer] = null;
-		this[kTransport] = deps.transport;
-		this[kInteractive] = interactive;
-		this[kEngagedModes] = new Set<ModeName>();
-		// A shared screen is one with a shell's rows above ours, which is what
-		// there is an anchor to find; a terminal that answers nothing has none.
-		this[kAnchorDetectionEnabled] = deps.transport.sharesScreen && interactive;
-		this[kDocument] = deps.document;
-		this[kInput] = null;
-		this[kResizeTimer] = null;
-		this[kSettlingResize] = null;
-		this[kTransportClosed] = false;
-	}
-
 	/**
 	 * Write a mode's set or reset and track the engagement, so teardown can
 	 * restore what was engaged and nothing else. Writing on change only makes
@@ -1154,11 +1156,6 @@ export class TerminalExchange {
 		}
 	}
 
-	/** Whether command-start anchoring runs: the default process transport only. */
-	get anchorDetectionEnabled(): boolean {
-		return this[kAnchorDetectionEnabled];
-	}
-
 	/**
 	 * Queue output on the transport, in order. The writer engages lazily on
 	 * the first write. Returns the chunk's flush promise; flush() awaits the
@@ -1187,11 +1184,6 @@ export class TerminalExchange {
 		return this[kLastWrite];
 	}
 
-	/** Whether the transport takes input -- a pipe does not. */
-	get interactive(): boolean {
-		return this[kInteractive];
-	}
-
 	/**
 	 * Adopt a different transport, in place. Only before the conversation
 	 * begins: a rebind re-derives what the terminal decides -- whether it
@@ -1207,16 +1199,6 @@ export class TerminalExchange {
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
 		applyTerminalSize(this);
-	}
-
-	/** Whether a resize is settling, during which no frame may paint. */
-	get resizing(): boolean {
-		return this[kSettlingResize] !== null;
-	}
-
-	/** Whether the terminal went away on its own, so there is nothing to close. */
-	get transportClosed(): boolean {
-		return this[kTransportClosed];
 	}
 
 	/**
@@ -1242,19 +1224,6 @@ export class TerminalExchange {
 				getMount(this[kDocument])?.close();
 			}
 		});
-	}
-
-	/**
-	 * The outstanding startup command-start detection, or null once it has
-	 * settled. The first interactive frame awaits this so it anchors at the
-	 * resolved row rather than painting at row 0 first -- but only when one is
-	 * actually pending. A settled probe returns null so the caller adds no
-	 * async hop: an unconditional await would defer the rest of that frame a
-	 * microtask even with nothing to wait for, and a synchronous scroll clamp
-	 * depends on the frame running straight through.
-	 */
-	get cursorDetectionPending(): Promise<void> | null {
-		return this[kCursorDetectionPromise];
 	}
 
 	/** Startup command-start detection, awaited by the first frame's anchor. */
@@ -1581,6 +1550,35 @@ export class TerminalExchange {
 			void this[kLastWrite].then(() => writer.releaseLock());
 		}
 	}
+}
+
+/** CUP: the cursor to the first column of a one-based row. */
+function rowStart(row: number): string {
+	return `\x1b[${row};1H`;
+}
+
+/**
+ * OSC 2: the window title. Untrusted text going somewhere the cell grid never
+ * sees, so it is refused the same characters a cell is -- dropped, since the
+ * rest of the title is still the title.
+ */
+function titleEscape(text: string): string {
+	let safe = "";
+	for (const char of text) {
+		if (isControlByte(char.codePointAt(0)!)) {
+			continue;
+		}
+		safe += char;
+	}
+	return `\x1b]2;${safe}\x07`;
+}
+
+/**
+ * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
+ * beyond refusing -- there is nothing in the alphabet to refuse.
+ */
+function clipboardEscape(text: string): string {
+	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 
 /* ------------------------------------------------------------ width probes */

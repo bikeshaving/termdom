@@ -7,12 +7,11 @@ import {EventEmitter} from "events";
 // A TTY-shaped process that records everything written to stdout, so tests
 // can assert on the escape sequences that enable and disable mouse capture.
 class MockTTYStream extends EventEmitter {
+	isTTY: boolean;
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);
 		this.isTTY = true;
 	}
-
-	isTTY: boolean;
 
 	setRawMode(_mode: boolean): this {
 		return this;
@@ -34,6 +33,18 @@ class MockTTYStream extends EventEmitter {
 }
 
 class MockMouseProcess extends EventEmitter {
+	output: string[];
+
+	stdout: {
+		isTTY: boolean;
+		columns: number;
+		rows: number;
+		write: (chunk: any, encoding?: any, callback?: any) => boolean;
+	};
+
+	stdin: MockTTYStream;
+
+	env: {TERM: string; COLORTERM: string};
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);
 		this.output = [];
@@ -58,25 +69,12 @@ class MockMouseProcess extends EventEmitter {
 		};
 	}
 
-	output: string[];
-
-	stdout: {
-		isTTY: boolean;
-		columns: number;
-		rows: number;
-		write: (chunk: any, encoding?: any, callback?: any) => boolean;
-	};
-
-	stdin: MockTTYStream;
-
-	env: {TERM: string; COLORTERM: string};
+	get written(): string {
+		return this.output.join("");
+	}
 
 	exit(_code?: number): never {
 		throw new Error("Process exit");
-	}
-
-	get written(): string {
-		return this.output.join("");
 	}
 }
 

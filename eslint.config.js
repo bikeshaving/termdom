@@ -1,4 +1,5 @@
 import b9g from "@b9g/eslint-config";
+import termdom from "./eslint.rules.js";
 
 export default [
 	...b9g,
@@ -8,10 +9,33 @@ export default [
 		ignores: ["website/**", ".wpt/**"],
 	},
 	{
+		plugins: {termdom},
 		rules: {
 			// An engine that parses and emits terminal escape sequences writes
 			// regexes about control characters on purpose.
 			"no-control-regex": "off",
+			// A class reads top to bottom: what it holds, how it is built, what
+			// it derives, then what it does.
+			"@typescript-eslint/member-ordering": [
+				"error",
+				{
+					classes: [
+						"signature",
+						"field",
+						"constructor",
+						["get", "set"],
+						"method",
+					],
+					interfaces: "never",
+					typeLiterals: "never",
+				},
+			],
+			// Inside each group, statics first and public before symbol-keyed; a
+			// helper one class uses sits below it; a symbol is declared before
+			// its first use.
+			"termdom/member-visibility-order": "error",
+			"termdom/helper-below-class": "error",
+			"termdom/symbol-before-use": "error",
 		},
 	},
 	{

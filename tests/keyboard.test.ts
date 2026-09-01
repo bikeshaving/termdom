@@ -50,6 +50,16 @@ class MockTTYStream extends EventEmitter {
 
 // Mock process that has a TTY
 class MockKeyboardProcess extends EventEmitter {
+	stdout: {
+		isTTY: boolean;
+		columns: number;
+		rows: number;
+		write: (chunk: any, encoding?: any, callback?: any) => boolean;
+	};
+
+	stdin: MockTTYStream;
+
+	env: {TERM: string; COLORTERM: string};
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);
 		this.stdin = new MockTTYStream();
@@ -72,17 +82,6 @@ class MockKeyboardProcess extends EventEmitter {
 			},
 		};
 	}
-
-	stdout: {
-		isTTY: boolean;
-		columns: number;
-		rows: number;
-		write: (chunk: any, encoding?: any, callback?: any) => boolean;
-	};
-
-	stdin: MockTTYStream;
-
-	env: {TERM: string; COLORTERM: string};
 
 	exit(_code?: number): never {
 		throw new Error("Process exit");

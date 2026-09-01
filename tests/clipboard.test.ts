@@ -91,12 +91,12 @@ class MockClipboardProcess extends EventEmitter {
 		};
 	}
 
-	exit(_code?: number): never {
-		throw new Error("Process exit");
-	}
-
 	get written(): string {
 		return this.output.join("");
+	}
+
+	exit(_code?: number): never {
+		throw new Error("Process exit");
 	}
 }
 

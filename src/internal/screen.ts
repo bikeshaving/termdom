@@ -151,46 +151,6 @@ function underlineCodes(from: UnderlineStyle, to: UnderlineStyle): string[] {
 	return ["4"];
 }
 
-/**
- * The SGR spelling a run, parameters in the order a terminal wants to hear
- * them: colors, then attributes. "" when the run says nothing -- no escape
- * is ever emitted empty, since an empty SGR is the terminal's reset.
- */
-function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
-	const codes: string[] = [];
-	if (run.fg !== undefined) {
-		codes.push(
-			run.fg === null ? "39" : colorParameters(run.fg, true, colorDepth),
-		);
-	}
-	if (run.bg !== undefined) {
-		codes.push(
-			run.bg === null ? "49" : colorParameters(run.bg, false, colorDepth),
-		);
-	}
-
-	const wanted = run.attributes;
-	const state = (name: StyleAttribute, on: string, off: string) => {
-		const want = wanted?.[name];
-		if (want !== undefined) {
-			codes.push(want ? on : off);
-		}
-	};
-
-	state("bold", "1", "22");
-	state("dim", "2", "22");
-	state("italic", "3", "23");
-	if (run.underline) {
-		codes.push(...underlineCodes(run.underline.from, run.underline.to));
-	}
-	state("blink", "5", "25");
-	state("inverse", "7", "27");
-	state("strikethrough", "9", "29");
-	state("overline", "53", "55");
-
-	return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
-}
-
 const kOut = Symbol("out");
 const kColorDepth = Symbol("colorDepth");
 
@@ -364,6 +324,46 @@ class FrameWriter {
 	}
 }
 
+/**
+ * The SGR spelling a run, parameters in the order a terminal wants to hear
+ * them: colors, then attributes. "" when the run says nothing -- no escape
+ * is ever emitted empty, since an empty SGR is the terminal's reset.
+ */
+function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
+	const codes: string[] = [];
+	if (run.fg !== undefined) {
+		codes.push(
+			run.fg === null ? "39" : colorParameters(run.fg, true, colorDepth),
+		);
+	}
+	if (run.bg !== undefined) {
+		codes.push(
+			run.bg === null ? "49" : colorParameters(run.bg, false, colorDepth),
+		);
+	}
+
+	const wanted = run.attributes;
+	const state = (name: StyleAttribute, on: string, off: string) => {
+		const want = wanted?.[name];
+		if (want !== undefined) {
+			codes.push(want ? on : off);
+		}
+	};
+
+	state("bold", "1", "22");
+	state("dim", "2", "22");
+	state("italic", "3", "23");
+	if (run.underline) {
+		codes.push(...underlineCodes(run.underline.from, run.underline.to));
+	}
+	state("blink", "5", "25");
+	state("inverse", "7", "27");
+	state("strikethrough", "9", "29");
+	state("overline", "53", "55");
+
+	return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
+}
+
 /* ------------------------------------------------------------------- cells */
 
 export interface CellStyle {
@@ -459,42 +459,6 @@ const Attr = {
 	WidthWide: 0x1f,
 } as const;
 
-/** The style bits of a CellStyle, packed. Width is added by the caller. */
-function packAttrs(style: CellStyle | undefined): number {
-	if (!style) {
-		return 0;
-	}
-	let attrs = 0;
-	if (style.bold) {
-		attrs |= Attr.Bold;
-	}
-	if (style.italic) {
-		attrs |= Attr.Italic;
-	}
-	if (style.underline) {
-		attrs |= Attr.Underline;
-		if (style.underlineStyle === "double") {
-			attrs |= Attr.DoubleUnderline;
-		}
-	}
-	if (style.strikethrough) {
-		attrs |= Attr.Strikethrough;
-	}
-	if (style.overline) {
-		attrs |= Attr.Overline;
-	}
-	if (style.inverse) {
-		attrs |= Attr.Inverse;
-	}
-	if (style.blink) {
-		attrs |= Attr.Blink;
-	}
-	if (style.dim) {
-		attrs |= Attr.Dim;
-	}
-	return attrs;
-}
-
 /* --------------------------------------------------------------- graphemes */
 
 /**
@@ -529,33 +493,11 @@ function internGrapheme(grapheme: string): number {
 	return id;
 }
 
-/** The char-plane value for a grapheme cluster. */
-function encodeGrapheme(grapheme: string): number {
-	const code = grapheme.codePointAt(0)!;
-	if (grapheme.length === (code > 0xffff ? 2 : 1)) {
-		return code;
-	}
-	return CHAR_INTERNED | internGrapheme(grapheme);
-}
-
 /** The grapheme cluster a char-plane value names. */
 function decodeGrapheme(char: number): string {
 	return char >= CHAR_INTERNED
 		? internedGraphemes[char - CHAR_INTERNED]
 		: String.fromCodePoint(char);
-}
-
-/**
- * Column count of a grapheme. Printable ASCII is answered from the code unit
- * itself -- the overwhelmingly common case, and one whose answer is always 1
- * -- so a cell write never pays for the tests stringWidth opens with.
- */
-function graphemeColumns(grapheme: string): number {
-	const code = grapheme.charCodeAt(0);
-	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
-		return 1;
-	}
-	return stringWidth(grapheme);
 }
 
 /* ----------------------------------------------------------------- borders */
@@ -895,65 +837,6 @@ function getBorderChar(borderEncoding: number): string {
 	return " ";
 }
 
-/**
- * Join the borders in `grid` whose strokes touch.
- *
- * A stroke is drawn to the edge of its cell, so a border cell beside another
- * whose line runs at it would, in a browser's pixels, be touched by that
- * line: the cell gains the connecting stub and `├ ┬ ┼` form where one-pixel
- * borders meet. Every decision reads the grid as painted, so a stub never
- * begets another; parallel strokes point along the shared edge rather than
- * across it, so boxes that merely sit flush stay separate.
- */
-function joinTouchingBorders(grid: CellGrid): void {
-	const {rows, cols, border} = grid;
-	const painted = border.slice();
-	// Which neighbour to look at for each edge of a cell, and which of that
-	// neighbour's edges would run into this one.
-	const REACHES: Array<{mask: number; step: number; from: number}> = [
-		{mask: BorderMask.Top, step: -cols, from: BorderMask.Bottom},
-		{mask: BorderMask.Bottom, step: cols, from: BorderMask.Top},
-		{mask: BorderMask.Left, step: -1, from: BorderMask.Right},
-		{mask: BorderMask.Right, step: 1, from: BorderMask.Left},
-	];
-
-	for (let row = 0; row < rows; row++) {
-		for (let col = 0; col < cols; col++) {
-			const index = row * cols + col;
-			const own = painted[index];
-			if (own === 0) {
-				continue;
-			}
-			let joined = border[index];
-			for (const {mask, step, from} of REACHES) {
-				if ((own & mask) !== 0) {
-					continue;
-				}
-				const neighbour = index + step;
-				if (mask === BorderMask.Top && row === 0) {
-					continue;
-				}
-				if (mask === BorderMask.Bottom && row === rows - 1) {
-					continue;
-				}
-				if (mask === BorderMask.Left && col === 0) {
-					continue;
-				}
-				if (mask === BorderMask.Right && col === cols - 1) {
-					continue;
-				}
-				const edge = getBorderEdge(painted[neighbour], from);
-				if (!getEdgePresence(edge)) {
-					continue;
-				}
-				joined = meetEdges(joined, setBorderEdge(0, mask, edge));
-			}
-
-			border[index] = joined;
-		}
-	}
-}
-
 /* ---------------------------------------------------------------- the grid */
 
 /**
@@ -1125,77 +1008,62 @@ class CellGrid {
 	}
 }
 
-/** A cleared grid of the given size, reusing the retired one when it matches. */
-function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
-	const spare = screen[kSpare];
-	if (spare !== null && spare.rows === rows && spare.cols === cols) {
-		screen[kSpare] = null;
-		spare.clear();
-		return spare;
+/** The style bits of a CellStyle, packed. Width is added by the caller. */
+function packAttrs(style: CellStyle | undefined): number {
+	if (!style) {
+		return 0;
 	}
-	return new CellGrid(rows, cols);
+	let attrs = 0;
+	if (style.bold) {
+		attrs |= Attr.Bold;
+	}
+	if (style.italic) {
+		attrs |= Attr.Italic;
+	}
+	if (style.underline) {
+		attrs |= Attr.Underline;
+		if (style.underlineStyle === "double") {
+			attrs |= Attr.DoubleUnderline;
+		}
+	}
+	if (style.strikethrough) {
+		attrs |= Attr.Strikethrough;
+	}
+	if (style.overline) {
+		attrs |= Attr.Overline;
+	}
+	if (style.inverse) {
+		attrs |= Attr.Inverse;
+	}
+	if (style.blink) {
+		attrs |= Attr.Blink;
+	}
+	if (style.dim) {
+		attrs |= Attr.Dim;
+	}
+	return attrs;
+}
+
+/** The char-plane value for a grapheme cluster. */
+function encodeGrapheme(grapheme: string): number {
+	const code = grapheme.codePointAt(0)!;
+	if (grapheme.length === (code > 0xffff ? 2 : 1)) {
+		return code;
+	}
+	return CHAR_INTERNED | internGrapheme(grapheme);
 }
 
 /**
- * One row of a grid as a styled string: the cells up to the last one holding
- * anything, with a wide glyph counted once and an unwritten cell spelled as
- * a space. This is how the static frame reads a grid, having no cursor to
- * move and no previous frame to diff against.
+ * Column count of a grapheme. Printable ASCII is answered from the code unit
+ * itself -- the overwhelmingly common case, and one whose answer is always 1
+ * -- so a cell write never pays for the tests stringWidth opens with.
  */
-function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
-	const rowStart = row * grid.cols;
-	// A file should not be padded out to the terminal width, so stop at the
-	// last cell that actually holds something.
-	let lastCol = -1;
-	for (let col = grid.cols - 1; col >= 0; col--) {
-		if (grid.char[rowStart + col] !== 0) {
-			lastCol = col;
-			break;
-		}
+function graphemeColumns(grapheme: string): number {
+	const code = grapheme.charCodeAt(0);
+	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
+		return 1;
 	}
-
-	let previous = -1;
-	for (let col = 0; col <= lastCol; col++) {
-		const index = rowStart + col;
-		if (grid.char[index] === 0) {
-			writer.text(" ");
-			continue;
-		}
-
-		styleDiff(grid, index, previous, writer);
-
-		const encoding = grid.border[index];
-		writer.text(
-			encoding > 0
-				? getBorderChar(encoding)
-				: decodeGrapheme(grid.char[index]),
-		);
-		previous = index;
-
-		// A wide grapheme's continuation column is empty in the buffer but
-		// already covered by the glyph -- skip it, or the line grows a
-		// phantom space per wide character and shifts what follows.
-		if (encoding === 0) {
-			col += grid.widthAt(index) - 1;
-		}
-	}
-
-	if (previous !== -1) {
-		writer.resetStyle();
-	}
-	return writer.take();
-}
-
-/** The columns a row occupies, out to the right edge of its last glyph. */
-function lineLength(grid: CellGrid, row: number): number {
-	const rowStart = row * grid.cols;
-	for (let col = grid.cols - 1; col >= 0; col--) {
-		const index = rowStart + col;
-		if (grid.char[index] !== 0) {
-			return col + grid.widthAt(index);
-		}
-	}
-	return 0;
+	return stringWidth(grapheme);
 }
 
 /* ---------------------------------------------------------------- painting */
@@ -1794,201 +1662,6 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	return null;
 }
 
-/**
- * Emit the grid as ANSI, row by row.
- *
- * Empty cells are skipped rather than painted, so the cursor jumps them with
- * CUF and whatever the terminal already shows there survives. `renderedLines`
- * names the rows that have been printed before; a row's first appearance opens
- * with an erase so nothing of the terminal's own is left on it.
- *
- * The bytes never end in a newline. A frame is repainted in place, and one
- * more line feed per render would scroll the terminal, pushing the command
- * line that launched us into the scrollback a row at a time.
- */
-function generateANSI(
-	grid: CellGrid,
-	writer: FrameWriter,
-	renderedLines: Set<number>,
-	measurer?: TerminalExchange,
-): string {
-	const {rows, cols, char, border} = grid;
-
-	let output = "";
-	let cursorRow = 0;
-	let cursorCol = 0;
-	// Flat index of the last cell emitted, whose style the next cell diffs
-	// against. -1 while no cell precedes.
-	let prevIndex = -1;
-
-	let skipNextCol = -1;
-
-	// Measurement bookkeeping: which emission run the cursor is in (every move
-	// ends one), and how many clusters of unknown advance this row has already
-	// painted -- each one can carry the real cursor a column either side of the
-	// predicted one.
-	let run = 0;
-	let unknownInRow = 0;
-
-	// Clusters the margin has starved are asked about off to the side, before
-	// the frame paints anything: the probe train goes to a cell the first
-	// painted row covers, and that row's own content lands on top of it in this
-	// same write, so nothing of it is ever on screen.
-	if (measurer !== undefined) {
-		const starving = measurer.starvedWidths();
-		if (starving.size > 0) {
-			const cell = safeProbeCell(grid);
-			if (cell !== null) {
-				output += moveCursor(writer, 0, 0, cell.row, 0);
-				cursorRow = cell.row;
-				cursorCol = 0;
-				// probe() takes the cluster out of the set being iterated.
-				for (const cluster of [...starving]) {
-					writer.carriageReturn();
-					if (cell.col > 0) {
-						writer.cursorForward(cell.col);
-					}
-					// Each probe is reached by naming its column outright, so
-					// no train glyph's advance carries into the next.
-					run++;
-					output +=
-						writer.text(cluster).take() +
-						measurer.probeWidth(cluster, run, cell.col, stringWidth(cluster));
-				}
-				output += writer.carriageReturn().take();
-				run++;
-			}
-		}
-	}
-
-	for (let row = 0; row < rows; row++) {
-		const rowStart = row * cols;
-		let rowHasContent = false;
-		let rowHasANSI = false;
-		let isFirstRenderOfLine = false;
-		unknownInRow = 0;
-
-		for (let col = 0; col < cols; col++) {
-			if (char[rowStart + col] !== 0) {
-				rowHasContent = true;
-				break;
-			}
-		}
-
-		if (rowHasContent) {
-			isFirstRenderOfLine = !renderedLines.has(row);
-			if (isFirstRenderOfLine) {
-				renderedLines.add(row);
-			}
-		}
-
-		for (let col = 0; col < cols; col++) {
-			const index = rowStart + col;
-
-			if (char[index] === 0) {
-				continue;
-			}
-
-			if (skipNextCol >= 0 && row === cursorRow && col === skipNextCol) {
-				skipNextCol = -1;
-				continue;
-			}
-
-			skipNextCol = -1;
-
-			if (row !== cursorRow || col !== cursorCol) {
-				const moveSeq = moveCursor(writer, cursorRow, cursorCol, row, col);
-				output += moveSeq;
-				cursorRow = row;
-				cursorCol = col;
-				// A carriage return puts the cursor in a column named
-				// absolutely, so whatever the glyphs before it really did stops
-				// mattering and a new run begins. A bare cursor-forward does
-				// not: it steps from wherever the cursor actually is, carrying
-				// any divergence with it, and the run continues.
-				if (measurer !== undefined && moveSeq.includes("\r")) {
-					run++;
-				}
-			}
-
-			if (isFirstRenderOfLine) {
-				output += writer.carriageReturn().eraseToLineEnd().take();
-				if (col > 0) {
-					output += writer.cursorForward(col).take();
-				}
-				cursorCol = col;
-				isFirstRenderOfLine = false;
-				if (measurer !== undefined) {
-					run++;
-				}
-			}
-
-			styleDiff(grid, index, prevIndex, writer);
-			const styleSeq = writer.take();
-			if (styleSeq !== "") {
-				output += styleSeq;
-				rowHasANSI = true;
-			}
-
-			const encoding = border[index];
-			const glyph =
-				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
-			output += writer.text(glyph).take();
-
-			const width = grid.widthAt(index);
-
-			// The cursor is sitting immediately after a cluster whose advance
-			// has never been checked against this terminal: ask now, while the
-			// column it started from is known. Only clusters terminals actually
-			// disagree about are asked at all; the char-plane test in front of
-			// widthIsUncertain keeps plain ASCII from reaching it, and a border
-			// glyph is drawn from a character this engine chose.
-			if (measurer !== undefined && encoding === 0) {
-				const code = char[index];
-				if (
-					(code > 0x7e || code < 0x20) &&
-					widthIsUncertain(glyph) &&
-					measurer.wantsWidth(glyph)
-				) {
-					// Near the right margin the answer is unreadable: a glyph
-					// that reaches the last column leaves the cursor there with
-					// wrap pending rather than past it, and the reply says the
-					// same column for two different advances. The room to leave
-					// is the widest advance a cluster can plausibly have, plus
-					// what the unmeasured clusters already on this row may have
-					// pushed the real cursor past the predicted one.
-					//
-					// Defer -- the cluster keeps its place in line and gets
-					// measured wherever it next appears with room -- or, if it
-					// never has room, on a later frame's probe train.
-					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
-						output += measurer.probeWidth(glyph, run, col, width);
-					} else {
-						measurer.deferWidth(glyph);
-					}
-					unknownInRow++;
-				}
-			}
-
-			cursorCol += width;
-			prevIndex = index;
-
-			if (width === 2) {
-				skipNextCol = col + 1;
-			}
-		}
-
-		if (rowHasContent) {
-			prevIndex = -1;
-			if (rowHasANSI) {
-				output += writer.resetStyle().take();
-			}
-		}
-	}
-
-	return output;
-}
-
 /* -------------------------------------------------------------- the screen */
 
 const kRows = Symbol("rows");
@@ -2014,22 +1687,6 @@ const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
-
-/**
- * One terminal's screen: the grid the last frame left on it, what is still
- * known to be true of that, and the writer the next frame is spelled with.
- * Frames come one at a time -- begin, draw, end -- and each ends by parking
- * the cursor where the next resize can find it again.
- */
-/**
- * Whether asking the terminal can teach the width tables anything. A wire
- * that stopped answering teaches nothing, and neither does a terminal that
- * negotiated mode 2027: that mode makes it advance by grapheme cluster,
- * measuring the way the tables do, so its answers cannot disagree with them.
- */
-function probingTeaches(exchange: TerminalExchange): boolean {
-	return exchange.probing() && !exchange.clusterWidthsNegotiated();
-}
 
 export class Screen {
 	declare [kPrev]: CellGrid | null;
@@ -2112,16 +1769,6 @@ export class Screen {
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
-	resize(rows: number, cols: number): void {
-		this[kRows] = rows;
-		this[kCols] = cols;
-	}
-
-	/** Adopt a rebound transport's color depth: the writer is its one holder. */
-	rebind(colorDepth: ColorDepth): void {
-		this[kWriter] = new FrameWriter(colorDepth);
-	}
-
 	get rows(): number {
 		return this[kRows];
 	}
@@ -2139,31 +1786,9 @@ export class Screen {
 		this[kScrollTop] = rows;
 	}
 
-	/**
-	 * Move the camera to a document row, clamped at the top.
-	 *
-	 * The one writer: the frame journal's scroll delta is the sum of what
-	 * comes through here since the last painted frame, so the camera and
-	 * the rows the terminal is about to be shifted by can never disagree.
-	 */
-	scrollTo(row: number): void {
-		const next = Math.max(0, row);
-		this[kFrameScroll] += next - this[kScrollTop];
-		this[kScrollTop] = next;
-	}
-
 	/** Camera rows moved since the last painted frame. */
 	get frameScroll(): number {
 		return this[kFrameScroll];
-	}
-
-	/**
-	 * Mark the frame stale by hand: for state no mutation record names --
-	 * a focus move, a selection, a popover shown -- the paint is asked for
-	 * here.
-	 */
-	invalidate(): void {
-		this[kDirty] = true;
 	}
 
 	get dirty(): boolean {
@@ -2186,6 +1811,47 @@ export class Screen {
 
 	set anchorScrollTop(row: number) {
 		this[kAnchorScrollTop] = row;
+	}
+
+	/** A reset or clear is pending: the next frame must actually paint. */
+	get needsRepaint(): boolean {
+		return (
+			this[kNeedsScreenReset] ||
+			this[kNeedsFullClear] ||
+			this[kRideProbeTrain]
+		);
+	}
+
+	resize(rows: number, cols: number): void {
+		this[kRows] = rows;
+		this[kCols] = cols;
+	}
+
+	/** Adopt a rebound transport's color depth: the writer is its one holder. */
+	rebind(colorDepth: ColorDepth): void {
+		this[kWriter] = new FrameWriter(colorDepth);
+	}
+
+	/**
+	 * Move the camera to a document row, clamped at the top.
+	 *
+	 * The one writer: the frame journal's scroll delta is the sum of what
+	 * comes through here since the last painted frame, so the camera and
+	 * the rows the terminal is about to be shifted by can never disagree.
+	 */
+	scrollTo(row: number): void {
+		const next = Math.max(0, row);
+		this[kFrameScroll] += next - this[kScrollTop];
+		this[kScrollTop] = next;
+	}
+
+	/**
+	 * Mark the frame stale by hand: for state no mutation record names --
+	 * a focus move, a selection, a popover shown -- the paint is asked for
+	 * here.
+	 */
+	invalidate(): void {
+		this[kDirty] = true;
 	}
 
 	/**
@@ -2263,15 +1929,6 @@ export class Screen {
 		this[kPrevContentHeight] = 0;
 		this[kNeedsFullClear] = true;
 		this[kRenderedLines].clear();
-	}
-
-	/** A reset or clear is pending: the next frame must actually paint. */
-	get needsRepaint(): boolean {
-		return (
-			this[kNeedsScreenReset] ||
-			this[kNeedsFullClear] ||
-			this[kRideProbeTrain]
-		);
 	}
 
 	/**
@@ -2813,4 +2470,347 @@ export class Screen {
 		this[kDirty] = false;
 		return ansi;
 	}
+}
+
+/**
+ * Join the borders in `grid` whose strokes touch.
+ *
+ * A stroke is drawn to the edge of its cell, so a border cell beside another
+ * whose line runs at it would, in a browser's pixels, be touched by that
+ * line: the cell gains the connecting stub and `├ ┬ ┼` form where one-pixel
+ * borders meet. Every decision reads the grid as painted, so a stub never
+ * begets another; parallel strokes point along the shared edge rather than
+ * across it, so boxes that merely sit flush stay separate.
+ */
+function joinTouchingBorders(grid: CellGrid): void {
+	const {rows, cols, border} = grid;
+	const painted = border.slice();
+	// Which neighbour to look at for each edge of a cell, and which of that
+	// neighbour's edges would run into this one.
+	const REACHES: Array<{mask: number; step: number; from: number}> = [
+		{mask: BorderMask.Top, step: -cols, from: BorderMask.Bottom},
+		{mask: BorderMask.Bottom, step: cols, from: BorderMask.Top},
+		{mask: BorderMask.Left, step: -1, from: BorderMask.Right},
+		{mask: BorderMask.Right, step: 1, from: BorderMask.Left},
+	];
+
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			const index = row * cols + col;
+			const own = painted[index];
+			if (own === 0) {
+				continue;
+			}
+			let joined = border[index];
+			for (const {mask, step, from} of REACHES) {
+				if ((own & mask) !== 0) {
+					continue;
+				}
+				const neighbour = index + step;
+				if (mask === BorderMask.Top && row === 0) {
+					continue;
+				}
+				if (mask === BorderMask.Bottom && row === rows - 1) {
+					continue;
+				}
+				if (mask === BorderMask.Left && col === 0) {
+					continue;
+				}
+				if (mask === BorderMask.Right && col === cols - 1) {
+					continue;
+				}
+				const edge = getBorderEdge(painted[neighbour], from);
+				if (!getEdgePresence(edge)) {
+					continue;
+				}
+				joined = meetEdges(joined, setBorderEdge(0, mask, edge));
+			}
+
+			border[index] = joined;
+		}
+	}
+}
+
+/** A cleared grid of the given size, reusing the retired one when it matches. */
+function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
+	const spare = screen[kSpare];
+	if (spare !== null && spare.rows === rows && spare.cols === cols) {
+		screen[kSpare] = null;
+		spare.clear();
+		return spare;
+	}
+	return new CellGrid(rows, cols);
+}
+
+/**
+ * One row of a grid as a styled string: the cells up to the last one holding
+ * anything, with a wide glyph counted once and an unwritten cell spelled as
+ * a space. This is how the static frame reads a grid, having no cursor to
+ * move and no previous frame to diff against.
+ */
+function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
+	const rowStart = row * grid.cols;
+	// A file should not be padded out to the terminal width, so stop at the
+	// last cell that actually holds something.
+	let lastCol = -1;
+	for (let col = grid.cols - 1; col >= 0; col--) {
+		if (grid.char[rowStart + col] !== 0) {
+			lastCol = col;
+			break;
+		}
+	}
+
+	let previous = -1;
+	for (let col = 0; col <= lastCol; col++) {
+		const index = rowStart + col;
+		if (grid.char[index] === 0) {
+			writer.text(" ");
+			continue;
+		}
+
+		styleDiff(grid, index, previous, writer);
+
+		const encoding = grid.border[index];
+		writer.text(
+			encoding > 0
+				? getBorderChar(encoding)
+				: decodeGrapheme(grid.char[index]),
+		);
+		previous = index;
+
+		// A wide grapheme's continuation column is empty in the buffer but
+		// already covered by the glyph -- skip it, or the line grows a
+		// phantom space per wide character and shifts what follows.
+		if (encoding === 0) {
+			col += grid.widthAt(index) - 1;
+		}
+	}
+
+	if (previous !== -1) {
+		writer.resetStyle();
+	}
+	return writer.take();
+}
+
+/** The columns a row occupies, out to the right edge of its last glyph. */
+function lineLength(grid: CellGrid, row: number): number {
+	const rowStart = row * grid.cols;
+	for (let col = grid.cols - 1; col >= 0; col--) {
+		const index = rowStart + col;
+		if (grid.char[index] !== 0) {
+			return col + grid.widthAt(index);
+		}
+	}
+	return 0;
+}
+
+/**
+ * Emit the grid as ANSI, row by row.
+ *
+ * Empty cells are skipped rather than painted, so the cursor jumps them with
+ * CUF and whatever the terminal already shows there survives. `renderedLines`
+ * names the rows that have been printed before; a row's first appearance opens
+ * with an erase so nothing of the terminal's own is left on it.
+ *
+ * The bytes never end in a newline. A frame is repainted in place, and one
+ * more line feed per render would scroll the terminal, pushing the command
+ * line that launched us into the scrollback a row at a time.
+ */
+function generateANSI(
+	grid: CellGrid,
+	writer: FrameWriter,
+	renderedLines: Set<number>,
+	measurer?: TerminalExchange,
+): string {
+	const {rows, cols, char, border} = grid;
+
+	let output = "";
+	let cursorRow = 0;
+	let cursorCol = 0;
+	// Flat index of the last cell emitted, whose style the next cell diffs
+	// against. -1 while no cell precedes.
+	let prevIndex = -1;
+
+	let skipNextCol = -1;
+
+	// Measurement bookkeeping: which emission run the cursor is in (every move
+	// ends one), and how many clusters of unknown advance this row has already
+	// painted -- each one can carry the real cursor a column either side of the
+	// predicted one.
+	let run = 0;
+	let unknownInRow = 0;
+
+	// Clusters the margin has starved are asked about off to the side, before
+	// the frame paints anything: the probe train goes to a cell the first
+	// painted row covers, and that row's own content lands on top of it in this
+	// same write, so nothing of it is ever on screen.
+	if (measurer !== undefined) {
+		const starving = measurer.starvedWidths();
+		if (starving.size > 0) {
+			const cell = safeProbeCell(grid);
+			if (cell !== null) {
+				output += moveCursor(writer, 0, 0, cell.row, 0);
+				cursorRow = cell.row;
+				cursorCol = 0;
+				// probe() takes the cluster out of the set being iterated.
+				for (const cluster of [...starving]) {
+					writer.carriageReturn();
+					if (cell.col > 0) {
+						writer.cursorForward(cell.col);
+					}
+					// Each probe is reached by naming its column outright, so
+					// no train glyph's advance carries into the next.
+					run++;
+					output +=
+						writer.text(cluster).take() +
+						measurer.probeWidth(cluster, run, cell.col, stringWidth(cluster));
+				}
+				output += writer.carriageReturn().take();
+				run++;
+			}
+		}
+	}
+
+	for (let row = 0; row < rows; row++) {
+		const rowStart = row * cols;
+		let rowHasContent = false;
+		let rowHasANSI = false;
+		let isFirstRenderOfLine = false;
+		unknownInRow = 0;
+
+		for (let col = 0; col < cols; col++) {
+			if (char[rowStart + col] !== 0) {
+				rowHasContent = true;
+				break;
+			}
+		}
+
+		if (rowHasContent) {
+			isFirstRenderOfLine = !renderedLines.has(row);
+			if (isFirstRenderOfLine) {
+				renderedLines.add(row);
+			}
+		}
+
+		for (let col = 0; col < cols; col++) {
+			const index = rowStart + col;
+
+			if (char[index] === 0) {
+				continue;
+			}
+
+			if (skipNextCol >= 0 && row === cursorRow && col === skipNextCol) {
+				skipNextCol = -1;
+				continue;
+			}
+
+			skipNextCol = -1;
+
+			if (row !== cursorRow || col !== cursorCol) {
+				const moveSeq = moveCursor(writer, cursorRow, cursorCol, row, col);
+				output += moveSeq;
+				cursorRow = row;
+				cursorCol = col;
+				// A carriage return puts the cursor in a column named
+				// absolutely, so whatever the glyphs before it really did stops
+				// mattering and a new run begins. A bare cursor-forward does
+				// not: it steps from wherever the cursor actually is, carrying
+				// any divergence with it, and the run continues.
+				if (measurer !== undefined && moveSeq.includes("\r")) {
+					run++;
+				}
+			}
+
+			if (isFirstRenderOfLine) {
+				output += writer.carriageReturn().eraseToLineEnd().take();
+				if (col > 0) {
+					output += writer.cursorForward(col).take();
+				}
+				cursorCol = col;
+				isFirstRenderOfLine = false;
+				if (measurer !== undefined) {
+					run++;
+				}
+			}
+
+			styleDiff(grid, index, prevIndex, writer);
+			const styleSeq = writer.take();
+			if (styleSeq !== "") {
+				output += styleSeq;
+				rowHasANSI = true;
+			}
+
+			const encoding = border[index];
+			const glyph =
+				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
+			output += writer.text(glyph).take();
+
+			const width = grid.widthAt(index);
+
+			// The cursor is sitting immediately after a cluster whose advance
+			// has never been checked against this terminal: ask now, while the
+			// column it started from is known. Only clusters terminals actually
+			// disagree about are asked at all; the char-plane test in front of
+			// widthIsUncertain keeps plain ASCII from reaching it, and a border
+			// glyph is drawn from a character this engine chose.
+			if (measurer !== undefined && encoding === 0) {
+				const code = char[index];
+				if (
+					(code > 0x7e || code < 0x20) &&
+					widthIsUncertain(glyph) &&
+					measurer.wantsWidth(glyph)
+				) {
+					// Near the right margin the answer is unreadable: a glyph
+					// that reaches the last column leaves the cursor there with
+					// wrap pending rather than past it, and the reply says the
+					// same column for two different advances. The room to leave
+					// is the widest advance a cluster can plausibly have, plus
+					// what the unmeasured clusters already on this row may have
+					// pushed the real cursor past the predicted one.
+					//
+					// Defer -- the cluster keeps its place in line and gets
+					// measured wherever it next appears with room -- or, if it
+					// never has room, on a later frame's probe train.
+					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
+						output += measurer.probeWidth(glyph, run, col, width);
+					} else {
+						measurer.deferWidth(glyph);
+					}
+					unknownInRow++;
+				}
+			}
+
+			cursorCol += width;
+			prevIndex = index;
+
+			if (width === 2) {
+				skipNextCol = col + 1;
+			}
+		}
+
+		if (rowHasContent) {
+			prevIndex = -1;
+			if (rowHasANSI) {
+				output += writer.resetStyle().take();
+			}
+		}
+	}
+
+	return output;
+}
+
+/**
+ * One terminal's screen: the grid the last frame left on it, what is still
+ * known to be true of that, and the writer the next frame is spelled with.
+ * Frames come one at a time -- begin, draw, end -- and each ends by parking
+ * the cursor where the next resize can find it again.
+ */
+/**
+ * Whether asking the terminal can teach the width tables anything. A wire
+ * that stopped answering teaches nothing, and neither does a terminal that
+ * negotiated mode 2027: that mode makes it advance by grapheme cluster,
+ * measuring the way the tables do, so its answers cannot disagree with them.
+ */
+function probingTeaches(exchange: TerminalExchange): boolean {
+	return exchange.probing() && !exchange.clusterWidthsNegotiated();
 }

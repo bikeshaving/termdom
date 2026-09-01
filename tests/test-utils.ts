@@ -139,12 +139,11 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 }
 
 class MockReadStream extends EventEmitter implements TTYReadStream {
+	isTTY: boolean;
 	constructor(...args: ConstructorParameters<typeof EventEmitter>) {
 		super(...args);
 		this.isTTY = true;
 	}
-
-	isTTY: boolean;
 
 	setRawMode(_mode: boolean): this {
 		return this;
@@ -176,21 +175,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
 	declare [kTransport]: TerminalTransport | null;
-
-	/** This mock as a TerminalTransport, the shape TermDOM takes. */
-	get transport(): TerminalTransport {
-		return (this[kTransport] ??= transportFromProcess(this));
-	}
-
-	/**
-	 * A transport that declares prior screen content (sharesScreen), for tests
-	 * exercising command-start anchoring: xterm-headless answers the DSR query.
-	 * Fresh per access -- a transport's streams are one-shot, and anchor tests
-	 * attach several instances to the same mock terminal in sequence.
-	 */
-	get sharedTransport(): TerminalTransport {
-		return transportFromProcess(this, {sharesScreen: true});
-	}
 
 	constructor(
 		options: {
@@ -248,6 +232,21 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 
 		this.stdin = new MockReadStream();
 		this.stdout = new MockWriteStream(this.terminal, this.stdin, cols, rows);
+	}
+
+	/** This mock as a TerminalTransport, the shape TermDOM takes. */
+	get transport(): TerminalTransport {
+		return (this[kTransport] ??= transportFromProcess(this));
+	}
+
+	/**
+	 * A transport that declares prior screen content (sharesScreen), for tests
+	 * exercising command-start anchoring: xterm-headless answers the DSR query.
+	 * Fresh per access -- a transport's streams are one-shot, and anchor tests
+	 * attach several instances to the same mock terminal in sequence.
+	 */
+	get sharedTransport(): TerminalTransport {
+		return transportFromProcess(this, {sharesScreen: true});
 	}
 
 	/**
@@ -373,6 +372,19 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
+	 * Write ANSI output to .ansi file after test passes
+	 */
+	writeANSI(testName: string): void {
+		const ansiOutput = this.getStaticANSI();
+		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
+		if (!existsSync(ansiDir)) {
+			mkdirSync(ansiDir, {recursive: true});
+		}
+		const ansiFilename = `${testName}.ansi`;
+		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
+	}
+
+	/**
 	 * Detect color depth from environment (same logic as TermDOM)
 	 */
 	[kDetectColorDepth](): ColorDepth {
@@ -387,19 +399,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		}
 
 		return "ansi";
-	}
-
-	/**
-	 * Write ANSI output to .ansi file after test passes
-	 */
-	writeANSI(testName: string): void {
-		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
-		if (!existsSync(ansiDir)) {
-			mkdirSync(ansiDir, {recursive: true});
-		}
-		const ansiFilename = `${testName}.ansi`;
-		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
 }
 

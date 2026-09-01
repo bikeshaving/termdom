@@ -212,34 +212,6 @@ const AUTO_VALUE: Value = {unit: "auto", value: NaN};
  */
 type Length = number | string | {percentage: number} | undefined | null;
 
-function toValue(input: Length): Value {
-	if (input === undefined || input === null) {
-		return UNDEFINED_VALUE;
-	}
-	if (typeof input === "object") {
-		return {unit: "percent", value: input.percentage};
-	}
-	if (typeof input === "number") {
-		return Number.isNaN(input)
-			? UNDEFINED_VALUE
-			: {unit: "cell", value: input};
-	}
-	const trimmed = input.trim();
-	if (trimmed === "auto") {
-		return AUTO_VALUE;
-	}
-	if (trimmed.endsWith("%")) {
-		const parsed = parseFloat(trimmed.slice(0, -1));
-		return Number.isNaN(parsed)
-			? UNDEFINED_VALUE
-			: {unit: "percent", value: parsed};
-	}
-	const parsed = parseFloat(trimmed);
-	return Number.isNaN(parsed)
-		? UNDEFINED_VALUE
-		: {unit: "cell", value: parsed};
-}
-
 /** Resolve a Value against an owner size. Returns NaN when unresolvable. */
 function resolveValue(value: Value, ownerSize: number): number {
 	switch (value.unit) {
@@ -539,104 +511,6 @@ interface LayoutResult {
 	selfCollapsing: boolean;
 }
 
-/**
- * Web (browser) flex defaults, always: flex-direction row, align-content
- * stretch, flex-shrink 1. Yoga's non-web defaults (column, flex-shrink 0) are
- * React Native's; a DOM renderer never wants them.
- */
-function createStyle(): Style {
-	return {
-		flexDirection: "row",
-		justifyContent: "flex-start",
-		alignContent: "stretch",
-		alignItems: "stretch",
-		alignSelf: "auto",
-		positionType: "relative",
-		flexWrap: "nowrap",
-		mode: "flex",
-
-		gap: {column: 0, row: 0},
-
-		justifyItems: "normal",
-		justifySelf: "auto",
-
-		gridTemplateColumns: EMPTY_TRACK_LIST,
-		gridTemplateRows: EMPTY_TRACK_LIST,
-		gridTemplateAreas: null,
-		gridAutoColumns: [AUTO_TRACK],
-		gridAutoRows: [AUTO_TRACK],
-		gridAutoFlowColumn: false,
-		gridAutoFlowDense: false,
-
-		gridRowStart: AUTO_PLACEMENT,
-		gridRowEnd: AUTO_PLACEMENT,
-		gridColumnStart: AUTO_PLACEMENT,
-		gridColumnEnd: AUTO_PLACEMENT,
-
-		colSpan: 1,
-		rowSpan: 1,
-		borderCollapse: false,
-		blockFormattingContext: false,
-
-		flexGrow: NaN,
-		order: 0,
-		flexShrink: NaN,
-		flexBasis: AUTO_VALUE,
-
-		margin: {
-			left: UNDEFINED_VALUE,
-			top: UNDEFINED_VALUE,
-			right: UNDEFINED_VALUE,
-			bottom: UNDEFINED_VALUE,
-		},
-		position: {
-			left: UNDEFINED_VALUE,
-			top: UNDEFINED_VALUE,
-			right: UNDEFINED_VALUE,
-			bottom: UNDEFINED_VALUE,
-		},
-		padding: {
-			left: UNDEFINED_VALUE,
-			top: UNDEFINED_VALUE,
-			right: UNDEFINED_VALUE,
-			bottom: UNDEFINED_VALUE,
-		},
-		border: {left: 0, top: 0, right: 0, bottom: 0},
-
-		width: AUTO_VALUE,
-		widthSizing: "none",
-		height: AUTO_VALUE,
-		minWidth: UNDEFINED_VALUE,
-		minHeight: UNDEFINED_VALUE,
-		maxWidth: UNDEFINED_VALUE,
-		maxHeight: UNDEFINED_VALUE,
-		aspectRatio: NaN,
-	};
-}
-
-function createLayout(): LayoutResult {
-	return {
-		left: 0,
-		top: 0,
-		width: NaN,
-		height: NaN,
-		margin: {left: 0, top: 0, right: 0, bottom: 0},
-		padding: {left: 0, top: 0, right: 0, bottom: 0},
-		border: {left: 0, top: 0, right: 0, bottom: 0},
-		computedFlexBasis: NaN,
-		autoMinMain: NaN,
-		gridColumns: null,
-		gridRows: null,
-		gridColumnOffset: 0,
-		gridRowOffset: 0,
-		collapseTopPositive: 0,
-		collapseTopNegative: 0,
-		collapseBottomPositive: 0,
-		collapseBottomNegative: 0,
-		selfCollapsing: false,
-	};
-}
-
 // ---------------------------------------------------------------------------
 // LayoutNode
 // ---------------------------------------------------------------------------
@@ -759,14 +633,6 @@ function cacheSlot(
 		5 +
 		(isMinContent(widthMode, availableWidth) ? 2 : 0) +
 		(isMinContent(heightMode, availableHeight) ? 1 : 0)
-	);
-}
-
-/** See LayoutNode's unstackedChildCount. */
-function breaksStacking(node: LayoutNode): boolean {
-	return (
-		node.style.positionType !== "static" ||
-		node.style.mode === "none"
 	);
 }
 
@@ -1239,6 +1105,140 @@ export class LayoutNode {
 		this.computePaintExtents(0);
 		this.dirty = false;
 	}
+}
+
+function toValue(input: Length): Value {
+	if (input === undefined || input === null) {
+		return UNDEFINED_VALUE;
+	}
+	if (typeof input === "object") {
+		return {unit: "percent", value: input.percentage};
+	}
+	if (typeof input === "number") {
+		return Number.isNaN(input)
+			? UNDEFINED_VALUE
+			: {unit: "cell", value: input};
+	}
+	const trimmed = input.trim();
+	if (trimmed === "auto") {
+		return AUTO_VALUE;
+	}
+	if (trimmed.endsWith("%")) {
+		const parsed = parseFloat(trimmed.slice(0, -1));
+		return Number.isNaN(parsed)
+			? UNDEFINED_VALUE
+			: {unit: "percent", value: parsed};
+	}
+	const parsed = parseFloat(trimmed);
+	return Number.isNaN(parsed)
+		? UNDEFINED_VALUE
+		: {unit: "cell", value: parsed};
+}
+
+/**
+ * Web (browser) flex defaults, always: flex-direction row, align-content
+ * stretch, flex-shrink 1. Yoga's non-web defaults (column, flex-shrink 0) are
+ * React Native's; a DOM renderer never wants them.
+ */
+function createStyle(): Style {
+	return {
+		flexDirection: "row",
+		justifyContent: "flex-start",
+		alignContent: "stretch",
+		alignItems: "stretch",
+		alignSelf: "auto",
+		positionType: "relative",
+		flexWrap: "nowrap",
+		mode: "flex",
+
+		gap: {column: 0, row: 0},
+
+		justifyItems: "normal",
+		justifySelf: "auto",
+
+		gridTemplateColumns: EMPTY_TRACK_LIST,
+		gridTemplateRows: EMPTY_TRACK_LIST,
+		gridTemplateAreas: null,
+		gridAutoColumns: [AUTO_TRACK],
+		gridAutoRows: [AUTO_TRACK],
+		gridAutoFlowColumn: false,
+		gridAutoFlowDense: false,
+
+		gridRowStart: AUTO_PLACEMENT,
+		gridRowEnd: AUTO_PLACEMENT,
+		gridColumnStart: AUTO_PLACEMENT,
+		gridColumnEnd: AUTO_PLACEMENT,
+
+		colSpan: 1,
+		rowSpan: 1,
+		borderCollapse: false,
+		blockFormattingContext: false,
+
+		flexGrow: NaN,
+		order: 0,
+		flexShrink: NaN,
+		flexBasis: AUTO_VALUE,
+
+		margin: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		position: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		padding: {
+			left: UNDEFINED_VALUE,
+			top: UNDEFINED_VALUE,
+			right: UNDEFINED_VALUE,
+			bottom: UNDEFINED_VALUE,
+		},
+		border: {left: 0, top: 0, right: 0, bottom: 0},
+
+		width: AUTO_VALUE,
+		widthSizing: "none",
+		height: AUTO_VALUE,
+		minWidth: UNDEFINED_VALUE,
+		minHeight: UNDEFINED_VALUE,
+		maxWidth: UNDEFINED_VALUE,
+		maxHeight: UNDEFINED_VALUE,
+		aspectRatio: NaN,
+	};
+}
+
+function createLayout(): LayoutResult {
+	return {
+		left: 0,
+		top: 0,
+		width: NaN,
+		height: NaN,
+		margin: {left: 0, top: 0, right: 0, bottom: 0},
+		padding: {left: 0, top: 0, right: 0, bottom: 0},
+		border: {left: 0, top: 0, right: 0, bottom: 0},
+		computedFlexBasis: NaN,
+		autoMinMain: NaN,
+		gridColumns: null,
+		gridRows: null,
+		gridColumnOffset: 0,
+		gridRowOffset: 0,
+		collapseTopPositive: 0,
+		collapseTopNegative: 0,
+		collapseBottomPositive: 0,
+		collapseBottomNegative: 0,
+		selfCollapsing: false,
+	};
+}
+
+/** See LayoutNode's unstackedChildCount. */
+function breaksStacking(node: LayoutNode): boolean {
+	return (
+		node.style.positionType !== "static" ||
+		node.style.mode === "none"
+	);
 }
 
 function markDirtyUpward(
@@ -6743,19 +6743,6 @@ export function isPositioned(element: Element): boolean {
 }
 
 /**
- * z-index only means anything on a positioned box; "auto" stays distinct from 0
- * -- auto paints in the same layer but does NOT form a context.
- */
-function getZIndexValue(element: Element): number | "auto" {
-	const zIndex = getComputedValue(element, "z-index");
-	if (!zIndex || zIndex === "auto") {
-		return "auto";
-	}
-	const value = parseInt(zIndex, 10);
-	return Number.isFinite(value) ? value : "auto";
-}
-
-/**
  * position:absolute (and fixed, approximated as absolute-to-ICB) takes a box
  * out of normal flow entirely.
  */
@@ -6946,16 +6933,6 @@ function usedDisplay(element: Element): Display {
 		return display;
 	}
 	return blockifies(element) ? "block" : display;
-}
-
-/**
- * Whether blockification actually moved this element: it asked to be
- * inline-level and was made block-level anyway. The two displays disagree here
- * and nowhere else, so this is the one place a caller has to care which it
- * holds -- everywhere else, go through the doors below.
- */
-function wasBlockified(element: Element): boolean {
-	return isInlineDisplay(computedDisplay(element)) && blockifies(element);
 }
 
 /**
@@ -7952,6 +7929,8 @@ function styleFlexNodeProperties(
 	}
 }
 
+const kPositionedElements = Symbol("positionedElements");
+
 /**
  * Apply an element's style to the layout node that carries its box, and
  * keep the one thing that style alone cannot answer wired up: an
@@ -8289,6 +8268,8 @@ function principalBox(
 	return box;
 }
 
+const kNodeMap = Symbol("nodeMap");
+
 /**
  * The layout node a container's own boxes hang from: an atomic inline's
  * content root, and otherwise the node its box is laid out by.
@@ -8422,27 +8403,6 @@ function getBoxEntry(
 	return principalBox(layout, node);
 }
 
-/** The smallest rect enclosing a set: the box a broken inline reports. */
-function unionRects(
-	layout: LayoutEngine,
-	rects: readonly DOMRect[],
-): DOMRect {
-	if (rects.length === 0) {
-		return new layout[kDOMRect]();
-	}
-	let left = Infinity;
-	let top = Infinity;
-	let right = -Infinity;
-	let bottom = -Infinity;
-	for (const rect of rects) {
-		left = Math.min(left, rect.x);
-		top = Math.min(top, rect.y);
-		right = Math.max(right, rect.x + rect.width);
-		bottom = Math.max(bottom, rect.y + rect.height);
-	}
-	return new layout[kDOMRect](left, top, right - left, bottom - top);
-}
-
 function laidOutBy(
 	layout: LayoutEngine,
 	box: Box,
@@ -8479,12 +8439,10 @@ function runBreakResult(
 const kDirtyRunContainers = Symbol("dirtyRunContainers");
 const kDOMRect = Symbol("DOMRect");
 const kRootElement = Symbol("rootElement");
-const kPositionedElements = Symbol("positionedElements");
 const kGeneration = Symbol("generation");
 const kInvalidations = Symbol("invalidations");
 const kViewportRoot = Symbol("viewportRootNode");
 const kEngineWindow = Symbol("window");
-const kNodeMap = Symbol("nodeMap");
 
 /**
  * Bring a container's layout children into line with its box list: every
@@ -9449,32 +9407,6 @@ function untrackNode(
 
 const kInvalidatedNodes = Symbol("invalidatedNodes");
 
-function pruneDisconnectedNodes(
-	layout: LayoutEngine,
-): void {
-	// A box outlives the nodes that pass through it, but not its container.
-	for (const box of [...layout[kAnonymousBoxes].values()]) {
-		if (!flatIsConnected(box.container)) {
-			retireAnonymousBox(layout, box);
-		}
-	}
-	for (const [node, flexNode] of layout[kNodeMap]) {
-		if (node === layout[kRootElement] || flatIsConnected(node)) {
-			continue;
-		}
-
-		const parent = flexNode.parent;
-		if (parent) {
-			parent.removeChild(flexNode);
-		}
-
-		layout[kMeasureNodes].delete(flexNode);
-		flexNode.freeRecursive();
-		untrackNode(layout, node);
-		layout[kInvalidatedNodes].delete(node);
-	}
-}
-
 /**
  * The first composed (flat-tree) child that can start an inline run:
  * shadow content for hosts, projected content through slots, skipping
@@ -9855,104 +9787,6 @@ function invalidateEnclosingMeasure(
 const kRestyled = Symbol("restyled");
 
 /**
- * Dirty what measures each restyled element, and restage the enumerations
- * that decide which box that is.
- *
- * Nothing here builds or rebuilds a box. A restyle says only that the boxes
- * around an element may no longer be the ones its container's enumeration
- * names, and that whatever measured it measured it under a style that is
- * gone; what kind of box it now generates, what styles sit on it and what it
- * holds are derived where every box is derived, from the enumeration.
- */
-function applyRestyles(
-	layout: LayoutEngine,
-): void {
-	while (layout[kRestyled].size > 0) {
-		const restyled = [...layout[kRestyled]];
-		layout[kRestyled].clear();
-		for (const element of restyled) {
-			if (!flatIsConnected(element)) {
-				continue;
-			}
-			// The element's own box may move between runs, and so may the
-			// boxes of its children.
-			restageBox(layout, element);
-			restageChildren(layout, element);
-			invalidateEnclosingMeasure(layout, element);
-			if (layout[kBoxes].get(element)?.children) {
-				invalidateContainerBoxes(layout, element);
-				// The children of a flex container are each a box of their
-				// own, blockified (css-display-3 §2.7), where a block
-				// container gathers the inline ones into anonymous boxes it
-				// shares -- so an element that becomes one, or stops being
-				// one, holds a different set of boxes than it did.
-				layout[kDirtyRunContainers].add(element);
-			}
-		}
-	}
-}
-
-/**
- * The work a single mutation record implies for layout.
- *
- * Nothing here builds or places a box. A mutation says only which
- * containers no longer hold the boxes their enumeration names, and what
- * measured content that has changed underneath it; the boxes themselves are
- * reconciled from the enumerations, by the one path a fresh build uses.
- */
-function restageForRecord(
-	layout: LayoutEngine,
-	record: MutationRecord,
-): void {
-	// A record on a shadow root describes the HOST's composed children.
-	const target =
-		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
-			? (record.target as ShadowRoot).host
-			: record.target;
-	if (record.type === "attributes") {
-		// The element's own box may move between runs (its display could
-		// have changed), and so may the boxes of its children (a flex
-		// container gives each child a box of its own). Which rules now
-		// match, and what that costs the boxes under them, is the cascade's
-		// to announce -- it does, through styleInvalidated.
-		restageBox(layout, target);
-		restageChildren(layout, target as Element);
-		if (record.attributeName === "slot") {
-			// Reassigning a slot moves the node in the COMPOSED tree while
-			// the light tree stands still -- no childList record will ever
-			// arrive, and the container it left is not reachable from where
-			// it now sits. The host's whole composed subtree re-enumerates;
-			// slot reassignment is rare enough for the hammer.
-			const host = (target as Element).parentElement;
-			if (host && getShadowRoot<ShadowRoot>(host)) {
-				restageSubtree(layout, host);
-			}
-		}
-		return;
-	}
-	if (record.type === "characterData") {
-		restageBox(layout, target);
-		invalidateEnclosingMeasure(layout, target);
-		return;
-	}
-	// Added and removed nodes both change the container's run structure --
-	// including the runs on either side of a block that left or arrived.
-	// The removed nodes are already detached, so the container is reached
-	// through the target rather than through them.
-	if (target.nodeType === target.ELEMENT_NODE) {
-		restageChildren(layout, target as Element);
-	}
-	// A member gaining or losing a descendant is not a change to any
-	// container's box list: the member is still there, holding more or
-	// less. Nothing about the space the box measuring it was offered says
-	// so, so that box is told directly.
-	invalidateEnclosingMeasure(layout, target);
-	for (const node of record.addedNodes) {
-		restageSubtree(layout, node);
-	}
-}
-
-/**
  * Dirty the measure that refills a run's break result -- and, when the run
  * lives under an atomic inline's content root, the box whose measure is the
  * only thing that ever lays that content out. Dirtying just the run there
@@ -10095,6 +9929,8 @@ interface LineFragment {
 	visualBase: "ltr" | "rtl" | null;
 }
 
+const kRectTextIndices = Symbol("rectTextIndices");
+
 /** One text node's placed fragment within a break result. See kRectTextIndices. */
 interface TextFragmentEntry {
 	line: number;
@@ -10122,17 +9958,6 @@ interface RectText {
 	startOffset: number;
 	endOffset: number;
 	visualBase: "ltr" | "rtl" | null;
-}
-
-/** Every text node under a node, in tree order -- the node itself included. */
-function* textNodesUnder(root: Node): Generator<Text> {
-	if (root.nodeType === root.TEXT_NODE) {
-		yield root as Text;
-		return;
-	}
-	for (const child of Array.from(root.childNodes)) {
-		yield* textNodesUnder(child);
-	}
 }
 
 /** The `white-space` a text node renders under: its flat-tree parent's. */
@@ -11304,137 +11129,6 @@ function findInlineBlockSegment(
 }
 
 /**
- * Where an inline-block box landed, read back out of the run that measured
- * it. Three depths, and only the first is direct:
- *
- * - The box owns a layout node (it heads its own run): ask the flex tree.
- * - It is a MEMBER of a run headed elsewhere ("Name: <input>"): it owns no
- *   layout node, so segment.x/line.y are RUN-relative and must be anchored
- *   at the head's absolute position -- returned bare, the input painted at
- *   the document's own row 0, over whatever lived there.
- * - It sits inside ANOTHER inline-block, which measured it as part of one
- *   opaque unit: its coordinates exist only in a break result nested under
- *   that box's leaf, so the walk below descends into each enclosing
- *   inline-block at its content edge to reach them. Without that descent,
- *   `<div style="display:inline-block"><input></div>` -- a widget in any
- *   inline-block toolbar or card -- resolves to no rect and paints nothing.
- */
-function inlineBlockRect(
-	layout: LayoutEngine,
-	element: Element,
-): DOMRect | null {
-	// Climb to the nearest enclosing run that was actually laid out on its
-	// own: a run measured inside an inline-block publishes no break result
-	// (it hangs off that box's leaf instead), and its head may still be
-	// holding a flex node left over from before it was absorbed -- one
-	// parked at 0,0.
-	// The climb goes OUTWARD. A box's position is read out of the run that
-	// PLACED it, never out of a run inside it: the box's own content is
-	// positioned relative to the box, so a run in there answers with the
-	// coordinates of the very frame being resolved. An enumeration read
-	// before a mutation is reconciled still describes the tree as it stood,
-	// and can name a head that has since moved in here; following it walks
-	// in a circle. This is also what keeps documentPosition's host search
-	// out of one -- the host of a box is never the box, so a run head from
-	// out here is never laid out under the content root of the box itself.
-	const outward = (node: Node): boolean => {
-		for (
-			let current: Node | null = node;
-			current;
-			current = boxParentElement(current)
-		) {
-			if (current === element) {
-				return false;
-			}
-		}
-		return true;
-	};
-	const headOutside = (node: Node): Node | null => {
-		const head = getBoxEntry(layout, node)?.head ?? null;
-		return head && outward(head) ? head : null;
-	};
-	let runHead: Node | null = headOutside(element) ?? element;
-	let headFlexNode = runFlexNode(layout, runHead);
-	let breakResult = runBreakResult(layout, runHead);
-	while (runHead && !(headFlexNode && breakResult)) {
-		const parent = boxParentElement(runHead);
-		if (!parent) {
-			return null;
-		}
-		runHead = headOutside(parent) ?? parent;
-		headFlexNode = runFlexNode(layout, runHead);
-		breakResult = runBreakResult(layout, runHead);
-	}
-	if (!runHead || !headFlexNode || !breakResult) {
-		return null;
-	}
-
-	const runPosition = documentPosition(layout, runHead, headFlexNode);
-	let originX = runPosition.x;
-	let originY = runPosition.y;
-
-	// Outermost-first, so each hop's offsets are expressed in the frame the
-	// previous hop just established. The run head itself is IN the chain
-	// when it is an inline-block: it heads the run its own box sits in, and
-	// the content it wraps lives one break result further down.
-	const enclosing: Element[] = [];
-	for (
-		let ancestor = flatParentElement<Element>(element);
-		ancestor;
-		ancestor = flatParentElement<Element>(ancestor)
-	) {
-		enclosing.unshift(ancestor);
-		if (ancestor === runHead) {
-			break;
-		}
-	}
-	let descended = false;
-	for (const ancestor of enclosing) {
-		if (!establishesContentRoot(ancestor)) {
-			continue;
-		}
-		const hop = findInlineBlockSegment(breakResult, ancestor);
-		if (!hop) {
-			continue;
-		}
-		// Border and padding both occupy cells, so the content edge is where
-		// the nested run's own origin sits.
-		originX +=
-			hop.segment.x +
-			hop.segment.leaf.boxModel.paddingLeft +
-			hop.segment.leaf.boxModel.borderLeftWidth;
-		originY +=
-			hop.line.y +
-			hop.segment.leaf.boxModel.paddingTop +
-			hop.segment.leaf.boxModel.borderTopWidth;
-		if (hop.segment.leaf.breakResult) {
-			breakResult = hop.segment.leaf.breakResult;
-			descended = true;
-		}
-	}
-
-	const target = findInlineBlockSegment(breakResult, element);
-	if (!target) {
-		return null;
-	}
-
-	// Only the run that owns the box can speak for its position. Once the
-	// walk descends into a nested measurement, any flex node the box still
-	// holds belongs to a layout it is no longer part of.
-	const ownFlexNode = descended ? undefined : runFlexNode(layout, element);
-	if (ownFlexNode) {
-		const {x, y} = documentPosition(layout, element, ownFlexNode);
-		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
-	}
-	return new layout[kDOMRect](
-		originX + target.segment.x,
-		originY + target.line.y,
-		target.segment.width,
-		target.line.height,
-	);
-}
-
-/**
  * A flex node's absolute document position: the sum of computed offsets up
  * the tree, minus the scrollLeft/scrollTop of every ANCESTOR scroll box
  * along the way -- a box's own scroll shifts its descendants, not itself.
@@ -11477,8 +11171,6 @@ function absolutePosition(
 	}
 	return {x, y};
 }
-
-const kRectTextIndices = Symbol("rectTextIndices");
 
 function breakResultTextIndex(
 	layout: LayoutEngine,
@@ -11528,216 +11220,6 @@ function breakResultTextIndex(
 	}
 	layout[kRectTextIndices].set(breakResult, index);
 	return index;
-}
-
-/** The text nodes a range covers, in document order. */
-function rangeTextNodes(
-	layout: LayoutEngine,
-	range: Range,
-): Text[] {
-	if (range.collapsed) {
-		const container = range.startContainer;
-		return container.nodeType === container.TEXT_NODE
-			? [container as Text]
-			: [];
-	}
-	const root = range.commonAncestorContainer;
-	if (root.nodeType === root.TEXT_NODE) {
-		return [root as Text];
-	}
-	const nodes: Text[] = [];
-	const walker = layout[kEngineWindow].document.createTreeWalker(
-		root,
-		layout[kEngineWindow].NodeFilter.SHOW_TEXT,
-	);
-	let node: Node | null;
-	while ((node = walker.nextNode())) {
-		if (range.intersectsNode(node)) {
-			nodes.push(node as Text);
-		}
-	}
-	return nodes;
-}
-
-/** A zero-width caret rect at a data offset within a text node. */
-function caretRect(
-	layout: LayoutEngine,
-	textNode: Text,
-	offset: number,
-): DOMRect | null {
-	const lines = layout.lineFragments(textNode);
-	if (lines.length === 0) {
-		return null;
-	}
-	// The line owning the caret: the first whose end it does not pass, but a
-	// caret exactly on a soft-wrap boundary belongs to the next line's start.
-	let lineIndex = lines.length - 1;
-	for (let i = 0; i < lines.length; i++) {
-		if (offset <= lines[i].endOffset) {
-			const next = lines[i + 1];
-			if (next && next.startOffset <= offset) {
-				continue;
-			}
-			lineIndex = i;
-			break;
-		}
-	}
-	const line = lines[lineIndex];
-	// The cells between the line's first character and the caret: the data
-	// up to the offset, rendered the way the line renders it.
-	const before = renderTextFragment(
-		textNode.data,
-		getWhiteSpace(textNode),
-		line.startOffset,
-		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
-	);
-	const x = Math.round(line.rect.x) + stringWidth(before);
-	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
-}
-
-/**
- * Where a column falls within one painted line: the data offset under it,
- * and how far outside the line's own cells the column was -- zero when the
- * point landed on the line, which is what picks between two lines painted
- * on the same row.
- */
-function offsetInFragment(
-	textNode: Text,
-	whiteSpace: string,
-	fragment: LineFragment,
-	x: number,
-): {offset: number; distance: number} {
-	const {text, offsets} = renderWhiteSpaceOffsets(
-		textNode.data.slice(fragment.startOffset, fragment.endOffset),
-		whiteSpace,
-	);
-	let cellX = fragment.rect.x;
-	let index = 0;
-	while (index < text.length && cellX < x) {
-		const width = stringWidth(text[index]);
-		if (cellX + width > x) {
-			break;
-		}
-		cellX += width;
-		index++;
-	}
-	const distance =
-		x < fragment.rect.x
-			? fragment.rect.x - x
-			: x >= cellX && index === text.length
-				? x - cellX
-				: 0;
-	return {
-		offset:
-			index < text.length
-				? fragment.startOffset + dataOffsetAt(offsets, index)
-				: fragment.endOffset,
-		distance,
-	};
-}
-
-/**
- * The selected runs within one text node's [from, to) data range: each a
- * contiguous painted run as a rect PLUS its raw (untransformed) text. The
- * text is what a rect alone cannot carry and what selection highlighting
- * needs, since the only way to restyle a cell is to redraw its glyph.
- */
-function selectionRuns(
-	layout: LayoutEngine,
-	textNode: Text,
-	from: number,
-	to: number,
-): Array<{rect: DOMRect; text: string}> {
-	const runs: Array<{rect: DOMRect; text: string}> = [];
-	const whiteSpace = getWhiteSpace(textNode);
-	for (const fragment of layout.lineFragments(textNode)) {
-		// The line's characters, and the data offset each of them renders --
-		// which is where a collapsing run makes column and offset diverge.
-		const {text, offsets} = renderWhiteSpaceOffsets(
-			textNode.data.slice(fragment.startOffset, fragment.endOffset),
-			whiteSpace,
-		);
-		let runStart = -1;
-		for (let i = 0; i <= text.length; i++) {
-			const dataOffset =
-				i < text.length
-					? fragment.startOffset + dataOffsetAt(offsets, i)
-					: -1;
-			const selected = dataOffset >= from && dataOffset < to;
-			if (selected && runStart === -1) {
-				runStart = i;
-			} else if (!selected && runStart !== -1) {
-				const x =
-					Math.round(fragment.rect.x) +
-					stringWidth(text.slice(0, runStart));
-				const width = stringWidth(text.slice(runStart, i));
-				runs.push({
-					rect: new layout[kDOMRect](
-						x,
-						Math.round(fragment.rect.y),
-						width,
-						fragment.rect.height,
-					),
-					// Painted order, since the caller redraws these cells: a
-					// selected run of a bidirectional line reverses just as
-					// the line it sits on did.
-					text: fragment.visualBase
-						? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
-						: text.slice(runStart, i),
-				});
-				runStart = -1;
-			}
-		}
-	}
-	return runs;
-}
-
-function hitTestContext(
-	layout: LayoutEngine,
-	root: Element,
-	x: number,
-	y: number,
-	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
-	cameraScrollTop: number,
-): Element | null {
-	const bucket = layers.get(root) ?? null;
-	const probeMember = (element: Element): Element | null => {
-		// A fixed box's layout lives in viewport space; convert the
-		// document-space probe point for its whole subtree. Fixed-space is
-		// a property of the containing-block CHAIN, so the check walks
-		// ancestors -- an absolute box inside a fixed bar lives there too.
-		const probeY = layout.isInFixedSpace(element) ? y - cameraScrollTop : y;
-		return layout.formsStackingContext(element)
-			? hitTestContext(layout, element, x, probeY, layers, cameraScrollTop)
-			: hitTestInFlow(layout, element, x, probeY);
-	};
-	if (bucket) {
-		for (let i = bucket.pos.length - 1; i >= 0; i--) {
-			const hit = probeMember(bucket.pos[i]);
-			if (hit) {
-				return hit;
-			}
-		}
-		for (let i = bucket.zero.length - 1; i >= 0; i--) {
-			const hit = probeMember(bucket.zero[i]);
-			if (hit) {
-				return hit;
-			}
-		}
-	}
-	const inFlow = hitTestInFlow(layout, root, x, y);
-	if (inFlow) {
-		return inFlow;
-	}
-	if (bucket) {
-		for (let i = bucket.neg.length - 1; i >= 0; i--) {
-			const hit = probeMember(bucket.neg[i]);
-			if (hit) {
-				return hit;
-			}
-		}
-	}
-	return null;
 }
 
 /**
@@ -12050,443 +11532,8 @@ function isPointInRects(
 	});
 }
 
-// The breaker's own fragments, processed text and all: an inline box's
-// lines as the line breaker produced them. Nothing outside layout may
-// reason about processed text -- geometry consumers read `getRects`,
-// `getRangeRects` or `lineFragments`, whose fragments carry data offsets
-// a consumer can render for itself.
-function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
-	if (node.nodeType === node.ELEMENT_NODE) {
-		const element = node as Element;
-		const display = computedDisplay(element);
-
-		if (!isInlineDisplay(display)) {
-			return [];
-		}
-
-		// An inline broken around a block-level box is a member of no run:
-		// its container lays out the fragments on either side as boxes of
-		// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
-		// content occupies, which each know the run they sit on; the block
-		// between them belongs to the container, not to the inline.
-		if (splitsAroundBlock(element)) {
-			const fragments: RectText[] = [];
-			const walk = (parent: Element): void => {
-				for (const child of Array.from(parent.childNodes) as Node[]) {
-					if (child.nodeType === child.TEXT_NODE) {
-						fragments.push(...getRectTexts(layout, child));
-					} else if (
-						child.nodeType === child.ELEMENT_NODE &&
-						// The USED display: a child out of flow lays out
-						// against its containing block, and its box is no part
-						// of the fragments this inline was broken into.
-						isInlineDisplay(usedDisplay(child as Element))
-					) {
-						walk(child as Element);
-					}
-				}
-			};
-			walk(element);
-			return fragments;
-		}
-
-		// An inline-block asked for directly: the run it heads holds its own box
-		// as one segment, and the text to report is in the break result nested
-		// under that segment's leaf.
-		if (
-			isAtomicInline(display) &&
-			getBoxEntry(layout, element)?.head === element
-		) {
-			const breakResult = runBreakResult(layout, element);
-			if (breakResult) {
-				const rectTexts: RectText[] = [];
-				const flexNode = runFlexNode(layout, element);
-				if (!flexNode) {
-					return [];
-				}
-
-				const position = documentPosition(layout, element, flexNode);
-				const containerX = position.x;
-				const containerY = position.y;
-
-				for (const line of breakResult.lines) {
-					for (const segment of line.segments) {
-						if (
-							segment.leaf.type === "inline-block" &&
-							segment.leaf.node === element &&
-							segment.leaf.breakResult
-						) {
-							// Content starts after border AND padding -- the border
-							// occupies real cells.
-							const nestedBreakResult = segment.leaf.breakResult;
-							const paddingLeft =
-								segment.leaf.boxModel.paddingLeft +
-								segment.leaf.boxModel.borderLeftWidth;
-							const paddingTop =
-								segment.leaf.boxModel.paddingTop +
-								segment.leaf.boxModel.borderTopWidth;
-							for (const nestedLine of nestedBreakResult.lines) {
-								for (const nestedSegment of nestedLine.segments) {
-									if (nestedSegment.leaf.type === "text") {
-										rectTexts.push({
-											text: nestedSegment.processedText,
-											startOffset: nestedSegment.dataStart,
-											endOffset: nestedSegment.dataEnd,
-											visualBase: nestedSegment.visualBase,
-											rect: new layout[kDOMRect](
-												containerX +
-												segment.x +
-												paddingLeft +
-												nestedSegment.x,
-												containerY + line.y + paddingTop + nestedLine.y,
-												nestedSegment.width,
-												nestedLine.height,
-											),
-										});
-									} else if (
-										nestedSegment.leaf.type === "inline-block" &&
-										nestedSegment.leaf.breakResult
-									) {
-										const nestedInlineBlock = nestedSegment.leaf;
-										const nestedPaddingLeft =
-											nestedInlineBlock.boxModel.paddingLeft +
-											nestedInlineBlock.boxModel.borderLeftWidth;
-										const nestedPaddingTop =
-											nestedInlineBlock.boxModel.paddingTop +
-											nestedInlineBlock.boxModel.borderTopWidth;
-
-										for (const innerLine of nestedInlineBlock.breakResult!
-											.lines) {
-											for (const innerSegment of innerLine.segments) {
-												if (innerSegment.leaf.type === "text") {
-													rectTexts.push({
-														text: innerSegment.processedText,
-														startOffset: innerSegment.dataStart,
-														endOffset: innerSegment.dataEnd,
-														visualBase: innerSegment.visualBase,
-														rect: new layout[kDOMRect](
-															containerX +
-															segment.x +
-															paddingLeft +
-															nestedSegment.x +
-															nestedPaddingLeft +
-															innerSegment.x,
-															containerY +
-															line.y +
-															paddingTop +
-															nestedLine.y +
-															nestedPaddingTop +
-															innerLine.y,
-															innerSegment.width,
-															innerLine.height,
-														),
-													});
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-				return rectTexts;
-			}
-		}
-	}
-
-	const runHead = getBoxEntry(layout, node)?.head ?? null;
-	if (!runHead) {
-		return [];
-	}
-
-	let breakResult = runBreakResult(layout, runHead);
-	if (!breakResult) {
-		return [];
-	}
-
-	const flexNode = runFlexNode(layout, runHead);
-	if (!flexNode) {
-		return [];
-	}
-
-	let {x: containerX, y: containerY} = documentPosition(
-		layout,
-		runHead,
-		flexNode,
-	);
-
-	// documentPosition gives the run head's BORDER box. A blockified
-	// inline flex item reserved its own padding and border in that box (see
-	// styleFlexNode's parentIsFlex exception) but its text ignored them,
-	// painting at the border edge instead of below the padding. Push the run
-	// in by that box. Scoped to exactly the blockified case: a normal inline
-	// has its flex-node box model cleared even when the author declared
-	// padding (so getBoxModel would over-report), an inline-block's content
-	// offset is already handled by documentPosition, and a block's
-	// run head is a text node with no box.
-	if (runHead.nodeType === runHead.ELEMENT_NODE) {
-		const runHeadElement = runHead as Element;
-		if (
-			computedDisplay(runHeadElement) === "inline" &&
-			hasItemParent(runHeadElement)
-		) {
-			const runHeadBox = getBoxModel(runHeadElement);
-			containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
-			containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
-		}
-	}
-
-	let currentBreakResult = breakResult;
-	let accumulatedOffsetX = 0;
-	let accumulatedOffsetY = 0;
-	let currentNode = node;
-	// The element whose text-align governs this breakResult's lines -- the
-	// block container normally, but an inline-block's own style once the walk
-	// below descends into its nested breakResult, since that's a fresh inline
-	// formatting context with its own alignment.
-	let alignContainer: Element | null = flatParentElement<Element>(runHead);
-
-	// COMPOSITION parents: a widget's UA shadow text has no parentElement
-	// chain to its host at all, so a parentElement walk dies at the shadow
-	// boundary and the value resolves to zero fragments.
-	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
-		const parent = flatParentElement<Element>(currentNode)!;
-
-		if (establishesContentRoot(parent)) {
-			// An overflow-scrolled inline-block (a field's windowed value,
-			// scrollLeft set by the caret-follow) shifts its content by its
-			// own scroll, so the caret stays in view. A property of the box,
-			// independent of whether its segment is found below.
-			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
-			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
-			let found = false;
-			for (const line of currentBreakResult.lines) {
-				for (const segment of line.segments) {
-					if (
-						segment.leaf.type === "inline-block" &&
-						segment.leaf.node === parent
-					) {
-						// Accumulate offset to the CONTENT edge -- border and
-						// padding both occupy cells -- and switch to the
-						// internal breakResult.
-						accumulatedOffsetX +=
-							segment.x +
-							segment.leaf.boxModel.paddingLeft +
-							segment.leaf.boxModel.borderLeftWidth;
-						accumulatedOffsetY +=
-							line.y +
-							segment.leaf.boxModel.paddingTop +
-							segment.leaf.boxModel.borderTopWidth;
-						if (segment.leaf.breakResult) {
-							currentBreakResult = segment.leaf.breakResult;
-							alignContainer = parent;
-						}
-						found = true;
-						break;
-					}
-				}
-				if (found) {
-					break;
-				}
-			}
-		}
-		currentNode = parent;
-	}
-
-	containerX += accumulatedOffsetX;
-	containerY += accumulatedOffsetY;
-	breakResult = currentBreakResult;
-
-	// position:relative on an inline RUN MEMBER (no flex node of its own)
-	// shifts its painted fragments; walk the box-less ancestors up to the
-	// run head accumulating offsets.
-	for (
-		let ancestor =
-			node.nodeType === node.ELEMENT_NODE
-				? (node as Element)
-				: flatParentElement<Element>(node);
-		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
-		ancestor = flatParentElement<Element>(ancestor)
-	) {
-		if (getPosition(ancestor) === "relative") {
-			const left = parseUnitValue(getComputedValue(ancestor, "left"));
-			const top = parseUnitValue(getComputedValue(ancestor, "top"));
-			if (typeof left === "number") {
-				containerX += left;
-			}
-			if (typeof top === "number") {
-				containerY += top;
-			}
-		}
-	}
-
-	let targetTextNodes: Set<Text>;
-
-	if (node.nodeType === node.TEXT_NODE) {
-		targetTextNodes = new Set([node as Text]);
-	} else {
-		targetTextNodes = new Set<Text>();
-
-		const walker = flowWalker(node);
-
-		let textNode;
-		while ((textNode = walker.nextNode())) {
-			targetTextNodes.add(textNode as Text);
-		}
-	}
-
-	const rectTexts: RectText[] = [];
-
-	// The break result's text index: which line each text node's fragments
-	// landed on, at what x, in what order. Built once per break result and
-	// keyed on the result object itself, so a re-break (always a fresh
-	// object) invalidates it for free. Without it every text node's lookup
-	// scanned every segment of its run -- painting a run of N boxes cost
-	// O(N^2) segment visits per frame.
-	const index = breakResultTextIndex(layout, breakResult);
-
-	// Merge fragments per line that belong to this node, in segment order.
-	const byLine = new Map<number, TextFragmentEntry[]>();
-	for (const textNode of targetTextNodes) {
-		const entries = index.get(textNode);
-		if (!entries) {
-			continue;
-		}
-		for (const entry of entries) {
-			let bucket = byLine.get(entry.line);
-			if (!bucket) {
-				byLine.set(entry.line, (bucket = []));
-			}
-			bucket.push(entry);
-		}
-	}
-
-	for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
-		const line = breakResult.lines[lineIndex];
-		bucket.sort((a, b) => a.ord - b.ord);
-
-		let minX = Infinity;
-		let maxX = -Infinity;
-		let concatenatedText = "";
-		for (const targetText of bucket) {
-			minX = Math.min(minX, targetText.x);
-			maxX = Math.max(maxX, targetText.x + targetText.width);
-			concatenatedText += targetText.text;
-		}
-		const first = bucket[0];
-		const last = bucket[bucket.length - 1];
-
-		const alignOffset = lineAlignOffset(
-			alignContainer,
-			currentBreakResult.containerWidth,
-			line.width,
-		);
-		const indent = lineIndent(
-			line === currentBreakResult.lines[0],
-			alignContainer,
-			currentBreakResult.containerWidth,
-		);
-
-		const rect = new layout[kDOMRect](
-			containerX + minX + alignOffset + indent,
-			containerY + line.y,
-			maxX - minX,
-			line.height,
-		);
-		rectTexts.push({
-			rect,
-			text: concatenatedText,
-			startOffset: first.startOffset,
-			endOffset: last.endOffset,
-			visualBase: first.visualBase,
-		});
-	}
-
-	return rectTexts;
-}
-
-/**
- * The single place that decides "is this element in the document, and what is
- * its border-box rect" -- so offsetWidth and clientWidth can never quietly
- * disagree about which rect they mean. Unrounded: each reader rounds for its
- * own purpose (offsetTop rounds the *difference* of two rects; rounding here
- * first would double-round and drift by a cell).
- */
-/** The document content's laid-out height: the body's border-box, whole. */
-function documentContentHeight(engine: LayoutEngine): number {
-	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
-	return bodyRect ? Math.ceil(bodyRect.height) : 0;
-}
-
 function layoutRect(engine: LayoutEngine, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
-}
-
-/**
- * The content+padding box: the border-box rect minus the border widths, which
- * both clientWidth/Height and scrollWidth/Height report.
- */
-function contentBoxSize(
-	engine: LayoutEngine,
-	element: Element,
-): {width: number; height: number} | null {
-	const rect = layoutRect(engine, element);
-	if (!rect) {
-		return null;
-	}
-	const box = getBoxModel(element);
-	return {
-		width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-		height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-	};
-}
-
-/**
- * html and body scroll the document itself: their scroll height is the
- * document's and their client height the terminal's. One viewport, however it
- * is reached.
- */
-function isRootBox(engine: LayoutEngine, element: Element): boolean {
-	const document = engine[kEngineWindow].document;
-	return element === document.documentElement || element === document.body;
-}
-
-/**
- * Move one scroll box so the element sits inside it. Document-relative rects
- * on both sides: the element wherever its current offsets put it, against the
- * scroller's padding box -- what the scroller actually shows.
- */
-function revealInPort(
-	engine: LayoutEngine,
-	element: Element,
-	scroller: Element,
-): void {
-	const rect = engine.getRect(element);
-	const scrollerRect = engine.getRect(scroller);
-	if (!rect || !scrollerRect) {
-		return;
-	}
-	const box = getBoxModel(scroller);
-	const portTop = scrollerRect.top + (box.borderTopWidth || 0);
-	const portBottom = scrollerRect.bottom - (box.borderBottomWidth || 0);
-	const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
-	const portRight = scrollerRect.right - (box.borderRightWidth || 0);
-	if (rect.top < portTop) {
-		scroller.scrollTop -= Math.round(portTop - rect.top);
-	} else if (rect.bottom > portBottom) {
-		scroller.scrollTop += Math.round(rect.bottom - portBottom);
-	}
-	if (rect.left < portLeft) {
-		scroller.scrollLeft -= Math.round(portLeft - rect.left);
-	} else if (rect.right > portRight) {
-		scroller.scrollLeft += Math.round(rect.right - portRight);
-	}
-}
-
-/** Whether an overflow value scrolls, programmatically or by hand. */
-function scrollsAt(overflow: string): boolean {
-	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
 }
 
 // ---------------------------------------------------------------------------
@@ -12624,32 +11671,6 @@ export class LayoutEngine {
 	declare [kGeneration]: number;
 	declare [kInvalidations]: number;
 
-	get generation(): number {
-		return this[kGeneration];
-	}
-
-	get invalidations(): number {
-		return this[kInvalidations];
-	}
-
-	adoptTerminalReordering(): void {
-		// Flips the visual order of every RTL run without a mutation.
-		if (this[kTerminalReordersText]) {
-			this.invalidate();
-			return;
-		}
-		this[kTerminalReordersText] = true;
-		// Every measured line was built for the other contract.
-		this.invalidateTextMeasurement();
-	}
-
-	invalidateTextMeasurement(): void {
-		this.invalidate();
-		for (const flexNode of this[kMeasureNodes]) {
-			flexNode.markDirty();
-		}
-	}
-
 	constructor(window: EngineWindow) {
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
@@ -12682,6 +11703,32 @@ export class LayoutEngine {
 		this[kViewportRoot] = new LayoutNode();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
+	}
+
+	get generation(): number {
+		return this[kGeneration];
+	}
+
+	get invalidations(): number {
+		return this[kInvalidations];
+	}
+
+	adoptTerminalReordering(): void {
+		// Flips the visual order of every RTL run without a mutation.
+		if (this[kTerminalReordersText]) {
+			this.invalidate();
+			return;
+		}
+		this[kTerminalReordersText] = true;
+		// Every measured line was built for the other contract.
+		this.invalidateTextMeasurement();
+	}
+
+	invalidateTextMeasurement(): void {
+		this.invalidate();
+		for (const flexNode of this[kMeasureNodes]) {
+			flexNode.markDirty();
+		}
 	}
 
 	/**
@@ -13737,4 +12784,959 @@ export class LayoutEngine {
 		}
 		return false;
 	}
+}
+
+/**
+ * z-index only means anything on a positioned box; "auto" stays distinct from 0
+ * -- auto paints in the same layer but does NOT form a context.
+ */
+function getZIndexValue(element: Element): number | "auto" {
+	const zIndex = getComputedValue(element, "z-index");
+	if (!zIndex || zIndex === "auto") {
+		return "auto";
+	}
+	const value = parseInt(zIndex, 10);
+	return Number.isFinite(value) ? value : "auto";
+}
+
+/**
+ * Whether blockification actually moved this element: it asked to be
+ * inline-level and was made block-level anyway. The two displays disagree here
+ * and nowhere else, so this is the one place a caller has to care which it
+ * holds -- everywhere else, go through the doors below.
+ */
+function wasBlockified(element: Element): boolean {
+	return isInlineDisplay(computedDisplay(element)) && blockifies(element);
+}
+
+/** The smallest rect enclosing a set: the box a broken inline reports. */
+function unionRects(
+	layout: LayoutEngine,
+	rects: readonly DOMRect[],
+): DOMRect {
+	if (rects.length === 0) {
+		return new layout[kDOMRect]();
+	}
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const rect of rects) {
+		left = Math.min(left, rect.x);
+		top = Math.min(top, rect.y);
+		right = Math.max(right, rect.x + rect.width);
+		bottom = Math.max(bottom, rect.y + rect.height);
+	}
+	return new layout[kDOMRect](left, top, right - left, bottom - top);
+}
+
+function pruneDisconnectedNodes(
+	layout: LayoutEngine,
+): void {
+	// A box outlives the nodes that pass through it, but not its container.
+	for (const box of [...layout[kAnonymousBoxes].values()]) {
+		if (!flatIsConnected(box.container)) {
+			retireAnonymousBox(layout, box);
+		}
+	}
+	for (const [node, flexNode] of layout[kNodeMap]) {
+		if (node === layout[kRootElement] || flatIsConnected(node)) {
+			continue;
+		}
+
+		const parent = flexNode.parent;
+		if (parent) {
+			parent.removeChild(flexNode);
+		}
+
+		layout[kMeasureNodes].delete(flexNode);
+		flexNode.freeRecursive();
+		untrackNode(layout, node);
+		layout[kInvalidatedNodes].delete(node);
+	}
+}
+
+/**
+ * Dirty what measures each restyled element, and restage the enumerations
+ * that decide which box that is.
+ *
+ * Nothing here builds or rebuilds a box. A restyle says only that the boxes
+ * around an element may no longer be the ones its container's enumeration
+ * names, and that whatever measured it measured it under a style that is
+ * gone; what kind of box it now generates, what styles sit on it and what it
+ * holds are derived where every box is derived, from the enumeration.
+ */
+function applyRestyles(
+	layout: LayoutEngine,
+): void {
+	while (layout[kRestyled].size > 0) {
+		const restyled = [...layout[kRestyled]];
+		layout[kRestyled].clear();
+		for (const element of restyled) {
+			if (!flatIsConnected(element)) {
+				continue;
+			}
+			// The element's own box may move between runs, and so may the
+			// boxes of its children.
+			restageBox(layout, element);
+			restageChildren(layout, element);
+			invalidateEnclosingMeasure(layout, element);
+			if (layout[kBoxes].get(element)?.children) {
+				invalidateContainerBoxes(layout, element);
+				// The children of a flex container are each a box of their
+				// own, blockified (css-display-3 §2.7), where a block
+				// container gathers the inline ones into anonymous boxes it
+				// shares -- so an element that becomes one, or stops being
+				// one, holds a different set of boxes than it did.
+				layout[kDirtyRunContainers].add(element);
+			}
+		}
+	}
+}
+
+/**
+ * The work a single mutation record implies for layout.
+ *
+ * Nothing here builds or places a box. A mutation says only which
+ * containers no longer hold the boxes their enumeration names, and what
+ * measured content that has changed underneath it; the boxes themselves are
+ * reconciled from the enumerations, by the one path a fresh build uses.
+ */
+function restageForRecord(
+	layout: LayoutEngine,
+	record: MutationRecord,
+): void {
+	// A record on a shadow root describes the HOST's composed children.
+	const target =
+		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
+			? (record.target as ShadowRoot).host
+			: record.target;
+	if (record.type === "attributes") {
+		// The element's own box may move between runs (its display could
+		// have changed), and so may the boxes of its children (a flex
+		// container gives each child a box of its own). Which rules now
+		// match, and what that costs the boxes under them, is the cascade's
+		// to announce -- it does, through styleInvalidated.
+		restageBox(layout, target);
+		restageChildren(layout, target as Element);
+		if (record.attributeName === "slot") {
+			// Reassigning a slot moves the node in the COMPOSED tree while
+			// the light tree stands still -- no childList record will ever
+			// arrive, and the container it left is not reachable from where
+			// it now sits. The host's whole composed subtree re-enumerates;
+			// slot reassignment is rare enough for the hammer.
+			const host = (target as Element).parentElement;
+			if (host && getShadowRoot<ShadowRoot>(host)) {
+				restageSubtree(layout, host);
+			}
+		}
+		return;
+	}
+	if (record.type === "characterData") {
+		restageBox(layout, target);
+		invalidateEnclosingMeasure(layout, target);
+		return;
+	}
+	// Added and removed nodes both change the container's run structure --
+	// including the runs on either side of a block that left or arrived.
+	// The removed nodes are already detached, so the container is reached
+	// through the target rather than through them.
+	if (target.nodeType === target.ELEMENT_NODE) {
+		restageChildren(layout, target as Element);
+	}
+	// A member gaining or losing a descendant is not a change to any
+	// container's box list: the member is still there, holding more or
+	// less. Nothing about the space the box measuring it was offered says
+	// so, so that box is told directly.
+	invalidateEnclosingMeasure(layout, target);
+	for (const node of record.addedNodes) {
+		restageSubtree(layout, node);
+	}
+}
+
+/** Every text node under a node, in tree order -- the node itself included. */
+function* textNodesUnder(root: Node): Generator<Text> {
+	if (root.nodeType === root.TEXT_NODE) {
+		yield root as Text;
+		return;
+	}
+	for (const child of Array.from(root.childNodes)) {
+		yield* textNodesUnder(child);
+	}
+}
+
+/**
+ * Where an inline-block box landed, read back out of the run that measured
+ * it. Three depths, and only the first is direct:
+ *
+ * - The box owns a layout node (it heads its own run): ask the flex tree.
+ * - It is a MEMBER of a run headed elsewhere ("Name: <input>"): it owns no
+ *   layout node, so segment.x/line.y are RUN-relative and must be anchored
+ *   at the head's absolute position -- returned bare, the input painted at
+ *   the document's own row 0, over whatever lived there.
+ * - It sits inside ANOTHER inline-block, which measured it as part of one
+ *   opaque unit: its coordinates exist only in a break result nested under
+ *   that box's leaf, so the walk below descends into each enclosing
+ *   inline-block at its content edge to reach them. Without that descent,
+ *   `<div style="display:inline-block"><input></div>` -- a widget in any
+ *   inline-block toolbar or card -- resolves to no rect and paints nothing.
+ */
+function inlineBlockRect(
+	layout: LayoutEngine,
+	element: Element,
+): DOMRect | null {
+	// Climb to the nearest enclosing run that was actually laid out on its
+	// own: a run measured inside an inline-block publishes no break result
+	// (it hangs off that box's leaf instead), and its head may still be
+	// holding a flex node left over from before it was absorbed -- one
+	// parked at 0,0.
+	// The climb goes OUTWARD. A box's position is read out of the run that
+	// PLACED it, never out of a run inside it: the box's own content is
+	// positioned relative to the box, so a run in there answers with the
+	// coordinates of the very frame being resolved. An enumeration read
+	// before a mutation is reconciled still describes the tree as it stood,
+	// and can name a head that has since moved in here; following it walks
+	// in a circle. This is also what keeps documentPosition's host search
+	// out of one -- the host of a box is never the box, so a run head from
+	// out here is never laid out under the content root of the box itself.
+	const outward = (node: Node): boolean => {
+		for (
+			let current: Node | null = node;
+			current;
+			current = boxParentElement(current)
+		) {
+			if (current === element) {
+				return false;
+			}
+		}
+		return true;
+	};
+	const headOutside = (node: Node): Node | null => {
+		const head = getBoxEntry(layout, node)?.head ?? null;
+		return head && outward(head) ? head : null;
+	};
+	let runHead: Node | null = headOutside(element) ?? element;
+	let headFlexNode = runFlexNode(layout, runHead);
+	let breakResult = runBreakResult(layout, runHead);
+	while (runHead && !(headFlexNode && breakResult)) {
+		const parent = boxParentElement(runHead);
+		if (!parent) {
+			return null;
+		}
+		runHead = headOutside(parent) ?? parent;
+		headFlexNode = runFlexNode(layout, runHead);
+		breakResult = runBreakResult(layout, runHead);
+	}
+	if (!runHead || !headFlexNode || !breakResult) {
+		return null;
+	}
+
+	const runPosition = documentPosition(layout, runHead, headFlexNode);
+	let originX = runPosition.x;
+	let originY = runPosition.y;
+
+	// Outermost-first, so each hop's offsets are expressed in the frame the
+	// previous hop just established. The run head itself is IN the chain
+	// when it is an inline-block: it heads the run its own box sits in, and
+	// the content it wraps lives one break result further down.
+	const enclosing: Element[] = [];
+	for (
+		let ancestor = flatParentElement<Element>(element);
+		ancestor;
+		ancestor = flatParentElement<Element>(ancestor)
+	) {
+		enclosing.unshift(ancestor);
+		if (ancestor === runHead) {
+			break;
+		}
+	}
+	let descended = false;
+	for (const ancestor of enclosing) {
+		if (!establishesContentRoot(ancestor)) {
+			continue;
+		}
+		const hop = findInlineBlockSegment(breakResult, ancestor);
+		if (!hop) {
+			continue;
+		}
+		// Border and padding both occupy cells, so the content edge is where
+		// the nested run's own origin sits.
+		originX +=
+			hop.segment.x +
+			hop.segment.leaf.boxModel.paddingLeft +
+			hop.segment.leaf.boxModel.borderLeftWidth;
+		originY +=
+			hop.line.y +
+			hop.segment.leaf.boxModel.paddingTop +
+			hop.segment.leaf.boxModel.borderTopWidth;
+		if (hop.segment.leaf.breakResult) {
+			breakResult = hop.segment.leaf.breakResult;
+			descended = true;
+		}
+	}
+
+	const target = findInlineBlockSegment(breakResult, element);
+	if (!target) {
+		return null;
+	}
+
+	// Only the run that owns the box can speak for its position. Once the
+	// walk descends into a nested measurement, any flex node the box still
+	// holds belongs to a layout it is no longer part of.
+	const ownFlexNode = descended ? undefined : runFlexNode(layout, element);
+	if (ownFlexNode) {
+		const {x, y} = documentPosition(layout, element, ownFlexNode);
+		return new layout[kDOMRect](x, y, target.segment.width, target.line.height);
+	}
+	return new layout[kDOMRect](
+		originX + target.segment.x,
+		originY + target.line.y,
+		target.segment.width,
+		target.line.height,
+	);
+}
+
+/** The text nodes a range covers, in document order. */
+function rangeTextNodes(
+	layout: LayoutEngine,
+	range: Range,
+): Text[] {
+	if (range.collapsed) {
+		const container = range.startContainer;
+		return container.nodeType === container.TEXT_NODE
+			? [container as Text]
+			: [];
+	}
+	const root = range.commonAncestorContainer;
+	if (root.nodeType === root.TEXT_NODE) {
+		return [root as Text];
+	}
+	const nodes: Text[] = [];
+	const walker = layout[kEngineWindow].document.createTreeWalker(
+		root,
+		layout[kEngineWindow].NodeFilter.SHOW_TEXT,
+	);
+	let node: Node | null;
+	while ((node = walker.nextNode())) {
+		if (range.intersectsNode(node)) {
+			nodes.push(node as Text);
+		}
+	}
+	return nodes;
+}
+
+/** A zero-width caret rect at a data offset within a text node. */
+function caretRect(
+	layout: LayoutEngine,
+	textNode: Text,
+	offset: number,
+): DOMRect | null {
+	const lines = layout.lineFragments(textNode);
+	if (lines.length === 0) {
+		return null;
+	}
+	// The line owning the caret: the first whose end it does not pass, but a
+	// caret exactly on a soft-wrap boundary belongs to the next line's start.
+	let lineIndex = lines.length - 1;
+	for (let i = 0; i < lines.length; i++) {
+		if (offset <= lines[i].endOffset) {
+			const next = lines[i + 1];
+			if (next && next.startOffset <= offset) {
+				continue;
+			}
+			lineIndex = i;
+			break;
+		}
+	}
+	const line = lines[lineIndex];
+	// The cells between the line's first character and the caret: the data
+	// up to the offset, rendered the way the line renders it.
+	const before = renderTextFragment(
+		textNode.data,
+		getWhiteSpace(textNode),
+		line.startOffset,
+		Math.max(line.startOffset, Math.min(offset, line.endOffset)),
+	);
+	const x = Math.round(line.rect.x) + stringWidth(before);
+	return new layout[kDOMRect](x, Math.round(line.rect.y), 0, line.rect.height);
+}
+
+/**
+ * Where a column falls within one painted line: the data offset under it,
+ * and how far outside the line's own cells the column was -- zero when the
+ * point landed on the line, which is what picks between two lines painted
+ * on the same row.
+ */
+function offsetInFragment(
+	textNode: Text,
+	whiteSpace: string,
+	fragment: LineFragment,
+	x: number,
+): {offset: number; distance: number} {
+	const {text, offsets} = renderWhiteSpaceOffsets(
+		textNode.data.slice(fragment.startOffset, fragment.endOffset),
+		whiteSpace,
+	);
+	let cellX = fragment.rect.x;
+	let index = 0;
+	while (index < text.length && cellX < x) {
+		const width = stringWidth(text[index]);
+		if (cellX + width > x) {
+			break;
+		}
+		cellX += width;
+		index++;
+	}
+	const distance =
+		x < fragment.rect.x
+			? fragment.rect.x - x
+			: x >= cellX && index === text.length
+				? x - cellX
+				: 0;
+	return {
+		offset:
+			index < text.length
+				? fragment.startOffset + dataOffsetAt(offsets, index)
+				: fragment.endOffset,
+		distance,
+	};
+}
+
+/**
+ * The selected runs within one text node's [from, to) data range: each a
+ * contiguous painted run as a rect PLUS its raw (untransformed) text. The
+ * text is what a rect alone cannot carry and what selection highlighting
+ * needs, since the only way to restyle a cell is to redraw its glyph.
+ */
+function selectionRuns(
+	layout: LayoutEngine,
+	textNode: Text,
+	from: number,
+	to: number,
+): Array<{rect: DOMRect; text: string}> {
+	const runs: Array<{rect: DOMRect; text: string}> = [];
+	const whiteSpace = getWhiteSpace(textNode);
+	for (const fragment of layout.lineFragments(textNode)) {
+		// The line's characters, and the data offset each of them renders --
+		// which is where a collapsing run makes column and offset diverge.
+		const {text, offsets} = renderWhiteSpaceOffsets(
+			textNode.data.slice(fragment.startOffset, fragment.endOffset),
+			whiteSpace,
+		);
+		let runStart = -1;
+		for (let i = 0; i <= text.length; i++) {
+			const dataOffset =
+				i < text.length
+					? fragment.startOffset + dataOffsetAt(offsets, i)
+					: -1;
+			const selected = dataOffset >= from && dataOffset < to;
+			if (selected && runStart === -1) {
+				runStart = i;
+			} else if (!selected && runStart !== -1) {
+				const x =
+					Math.round(fragment.rect.x) +
+					stringWidth(text.slice(0, runStart));
+				const width = stringWidth(text.slice(runStart, i));
+				runs.push({
+					rect: new layout[kDOMRect](
+						x,
+						Math.round(fragment.rect.y),
+						width,
+						fragment.rect.height,
+					),
+					// Painted order, since the caller redraws these cells: a
+					// selected run of a bidirectional line reverses just as
+					// the line it sits on did.
+					text: fragment.visualBase
+						? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
+						: text.slice(runStart, i),
+				});
+				runStart = -1;
+			}
+		}
+	}
+	return runs;
+}
+
+function hitTestContext(
+	layout: LayoutEngine,
+	root: Element,
+	x: number,
+	y: number,
+	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+	cameraScrollTop: number,
+): Element | null {
+	const bucket = layers.get(root) ?? null;
+	const probeMember = (element: Element): Element | null => {
+		// A fixed box's layout lives in viewport space; convert the
+		// document-space probe point for its whole subtree. Fixed-space is
+		// a property of the containing-block CHAIN, so the check walks
+		// ancestors -- an absolute box inside a fixed bar lives there too.
+		const probeY = layout.isInFixedSpace(element) ? y - cameraScrollTop : y;
+		return layout.formsStackingContext(element)
+			? hitTestContext(layout, element, x, probeY, layers, cameraScrollTop)
+			: hitTestInFlow(layout, element, x, probeY);
+	};
+	if (bucket) {
+		for (let i = bucket.pos.length - 1; i >= 0; i--) {
+			const hit = probeMember(bucket.pos[i]);
+			if (hit) {
+				return hit;
+			}
+		}
+		for (let i = bucket.zero.length - 1; i >= 0; i--) {
+			const hit = probeMember(bucket.zero[i]);
+			if (hit) {
+				return hit;
+			}
+		}
+	}
+	const inFlow = hitTestInFlow(layout, root, x, y);
+	if (inFlow) {
+		return inFlow;
+	}
+	if (bucket) {
+		for (let i = bucket.neg.length - 1; i >= 0; i--) {
+			const hit = probeMember(bucket.neg[i]);
+			if (hit) {
+				return hit;
+			}
+		}
+	}
+	return null;
+}
+
+// The breaker's own fragments, processed text and all: an inline box's
+// lines as the line breaker produced them. Nothing outside layout may
+// reason about processed text -- geometry consumers read `getRects`,
+// `getRangeRects` or `lineFragments`, whose fragments carry data offsets
+// a consumer can render for itself.
+function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
+	if (node.nodeType === node.ELEMENT_NODE) {
+		const element = node as Element;
+		const display = computedDisplay(element);
+
+		if (!isInlineDisplay(display)) {
+			return [];
+		}
+
+		// An inline broken around a block-level box is a member of no run:
+		// its container lays out the fragments on either side as boxes of
+		// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
+		// content occupies, which each know the run they sit on; the block
+		// between them belongs to the container, not to the inline.
+		if (splitsAroundBlock(element)) {
+			const fragments: RectText[] = [];
+			const walk = (parent: Element): void => {
+				for (const child of Array.from(parent.childNodes) as Node[]) {
+					if (child.nodeType === child.TEXT_NODE) {
+						fragments.push(...getRectTexts(layout, child));
+					} else if (
+						child.nodeType === child.ELEMENT_NODE &&
+						// The USED display: a child out of flow lays out
+						// against its containing block, and its box is no part
+						// of the fragments this inline was broken into.
+						isInlineDisplay(usedDisplay(child as Element))
+					) {
+						walk(child as Element);
+					}
+				}
+			};
+			walk(element);
+			return fragments;
+		}
+
+		// An inline-block asked for directly: the run it heads holds its own box
+		// as one segment, and the text to report is in the break result nested
+		// under that segment's leaf.
+		if (
+			isAtomicInline(display) &&
+			getBoxEntry(layout, element)?.head === element
+		) {
+			const breakResult = runBreakResult(layout, element);
+			if (breakResult) {
+				const rectTexts: RectText[] = [];
+				const flexNode = runFlexNode(layout, element);
+				if (!flexNode) {
+					return [];
+				}
+
+				const position = documentPosition(layout, element, flexNode);
+				const containerX = position.x;
+				const containerY = position.y;
+
+				for (const line of breakResult.lines) {
+					for (const segment of line.segments) {
+						if (
+							segment.leaf.type === "inline-block" &&
+							segment.leaf.node === element &&
+							segment.leaf.breakResult
+						) {
+							// Content starts after border AND padding -- the border
+							// occupies real cells.
+							const nestedBreakResult = segment.leaf.breakResult;
+							const paddingLeft =
+								segment.leaf.boxModel.paddingLeft +
+								segment.leaf.boxModel.borderLeftWidth;
+							const paddingTop =
+								segment.leaf.boxModel.paddingTop +
+								segment.leaf.boxModel.borderTopWidth;
+							for (const nestedLine of nestedBreakResult.lines) {
+								for (const nestedSegment of nestedLine.segments) {
+									if (nestedSegment.leaf.type === "text") {
+										rectTexts.push({
+											text: nestedSegment.processedText,
+											startOffset: nestedSegment.dataStart,
+											endOffset: nestedSegment.dataEnd,
+											visualBase: nestedSegment.visualBase,
+											rect: new layout[kDOMRect](
+												containerX +
+												segment.x +
+												paddingLeft +
+												nestedSegment.x,
+												containerY + line.y + paddingTop + nestedLine.y,
+												nestedSegment.width,
+												nestedLine.height,
+											),
+										});
+									} else if (
+										nestedSegment.leaf.type === "inline-block" &&
+										nestedSegment.leaf.breakResult
+									) {
+										const nestedInlineBlock = nestedSegment.leaf;
+										const nestedPaddingLeft =
+											nestedInlineBlock.boxModel.paddingLeft +
+											nestedInlineBlock.boxModel.borderLeftWidth;
+										const nestedPaddingTop =
+											nestedInlineBlock.boxModel.paddingTop +
+											nestedInlineBlock.boxModel.borderTopWidth;
+
+										for (const innerLine of nestedInlineBlock.breakResult!
+											.lines) {
+											for (const innerSegment of innerLine.segments) {
+												if (innerSegment.leaf.type === "text") {
+													rectTexts.push({
+														text: innerSegment.processedText,
+														startOffset: innerSegment.dataStart,
+														endOffset: innerSegment.dataEnd,
+														visualBase: innerSegment.visualBase,
+														rect: new layout[kDOMRect](
+															containerX +
+															segment.x +
+															paddingLeft +
+															nestedSegment.x +
+															nestedPaddingLeft +
+															innerSegment.x,
+															containerY +
+															line.y +
+															paddingTop +
+															nestedLine.y +
+															nestedPaddingTop +
+															innerLine.y,
+															innerSegment.width,
+															innerLine.height,
+														),
+													});
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				return rectTexts;
+			}
+		}
+	}
+
+	const runHead = getBoxEntry(layout, node)?.head ?? null;
+	if (!runHead) {
+		return [];
+	}
+
+	let breakResult = runBreakResult(layout, runHead);
+	if (!breakResult) {
+		return [];
+	}
+
+	const flexNode = runFlexNode(layout, runHead);
+	if (!flexNode) {
+		return [];
+	}
+
+	let {x: containerX, y: containerY} = documentPosition(
+		layout,
+		runHead,
+		flexNode,
+	);
+
+	// documentPosition gives the run head's BORDER box. A blockified
+	// inline flex item reserved its own padding and border in that box (see
+	// styleFlexNode's parentIsFlex exception) but its text ignored them,
+	// painting at the border edge instead of below the padding. Push the run
+	// in by that box. Scoped to exactly the blockified case: a normal inline
+	// has its flex-node box model cleared even when the author declared
+	// padding (so getBoxModel would over-report), an inline-block's content
+	// offset is already handled by documentPosition, and a block's
+	// run head is a text node with no box.
+	if (runHead.nodeType === runHead.ELEMENT_NODE) {
+		const runHeadElement = runHead as Element;
+		if (
+			computedDisplay(runHeadElement) === "inline" &&
+			hasItemParent(runHeadElement)
+		) {
+			const runHeadBox = getBoxModel(runHeadElement);
+			containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
+			containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
+		}
+	}
+
+	let currentBreakResult = breakResult;
+	let accumulatedOffsetX = 0;
+	let accumulatedOffsetY = 0;
+	let currentNode = node;
+	// The element whose text-align governs this breakResult's lines -- the
+	// block container normally, but an inline-block's own style once the walk
+	// below descends into its nested breakResult, since that's a fresh inline
+	// formatting context with its own alignment.
+	let alignContainer: Element | null = flatParentElement<Element>(runHead);
+
+	// COMPOSITION parents: a widget's UA shadow text has no parentElement
+	// chain to its host at all, so a parentElement walk dies at the shadow
+	// boundary and the value resolves to zero fragments.
+	while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
+		const parent = flatParentElement<Element>(currentNode)!;
+
+		if (establishesContentRoot(parent)) {
+			// An overflow-scrolled inline-block (a field's windowed value,
+			// scrollLeft set by the caret-follow) shifts its content by its
+			// own scroll, so the caret stays in view. A property of the box,
+			// independent of whether its segment is found below.
+			accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
+			accumulatedOffsetY -= (parent as Element).scrollTop || 0;
+			let found = false;
+			for (const line of currentBreakResult.lines) {
+				for (const segment of line.segments) {
+					if (
+						segment.leaf.type === "inline-block" &&
+						segment.leaf.node === parent
+					) {
+						// Accumulate offset to the CONTENT edge -- border and
+						// padding both occupy cells -- and switch to the
+						// internal breakResult.
+						accumulatedOffsetX +=
+							segment.x +
+							segment.leaf.boxModel.paddingLeft +
+							segment.leaf.boxModel.borderLeftWidth;
+						accumulatedOffsetY +=
+							line.y +
+							segment.leaf.boxModel.paddingTop +
+							segment.leaf.boxModel.borderTopWidth;
+						if (segment.leaf.breakResult) {
+							currentBreakResult = segment.leaf.breakResult;
+							alignContainer = parent;
+						}
+						found = true;
+						break;
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+		}
+		currentNode = parent;
+	}
+
+	containerX += accumulatedOffsetX;
+	containerY += accumulatedOffsetY;
+	breakResult = currentBreakResult;
+
+	// position:relative on an inline RUN MEMBER (no flex node of its own)
+	// shifts its painted fragments; walk the box-less ancestors up to the
+	// run head accumulating offsets.
+	for (
+		let ancestor =
+			node.nodeType === node.ELEMENT_NODE
+				? (node as Element)
+				: flatParentElement<Element>(node);
+		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
+		ancestor = flatParentElement<Element>(ancestor)
+	) {
+		if (getPosition(ancestor) === "relative") {
+			const left = parseUnitValue(getComputedValue(ancestor, "left"));
+			const top = parseUnitValue(getComputedValue(ancestor, "top"));
+			if (typeof left === "number") {
+				containerX += left;
+			}
+			if (typeof top === "number") {
+				containerY += top;
+			}
+		}
+	}
+
+	let targetTextNodes: Set<Text>;
+
+	if (node.nodeType === node.TEXT_NODE) {
+		targetTextNodes = new Set([node as Text]);
+	} else {
+		targetTextNodes = new Set<Text>();
+
+		const walker = flowWalker(node);
+
+		let textNode;
+		while ((textNode = walker.nextNode())) {
+			targetTextNodes.add(textNode as Text);
+		}
+	}
+
+	const rectTexts: RectText[] = [];
+
+	// The break result's text index: which line each text node's fragments
+	// landed on, at what x, in what order. Built once per break result and
+	// keyed on the result object itself, so a re-break (always a fresh
+	// object) invalidates it for free. Without it every text node's lookup
+	// scanned every segment of its run -- painting a run of N boxes cost
+	// O(N^2) segment visits per frame.
+	const index = breakResultTextIndex(layout, breakResult);
+
+	// Merge fragments per line that belong to this node, in segment order.
+	const byLine = new Map<number, TextFragmentEntry[]>();
+	for (const textNode of targetTextNodes) {
+		const entries = index.get(textNode);
+		if (!entries) {
+			continue;
+		}
+		for (const entry of entries) {
+			let bucket = byLine.get(entry.line);
+			if (!bucket) {
+				byLine.set(entry.line, (bucket = []));
+			}
+			bucket.push(entry);
+		}
+	}
+
+	for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
+		const line = breakResult.lines[lineIndex];
+		bucket.sort((a, b) => a.ord - b.ord);
+
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let concatenatedText = "";
+		for (const targetText of bucket) {
+			minX = Math.min(minX, targetText.x);
+			maxX = Math.max(maxX, targetText.x + targetText.width);
+			concatenatedText += targetText.text;
+		}
+		const first = bucket[0];
+		const last = bucket[bucket.length - 1];
+
+		const alignOffset = lineAlignOffset(
+			alignContainer,
+			currentBreakResult.containerWidth,
+			line.width,
+		);
+		const indent = lineIndent(
+			line === currentBreakResult.lines[0],
+			alignContainer,
+			currentBreakResult.containerWidth,
+		);
+
+		const rect = new layout[kDOMRect](
+			containerX + minX + alignOffset + indent,
+			containerY + line.y,
+			maxX - minX,
+			line.height,
+		);
+		rectTexts.push({
+			rect,
+			text: concatenatedText,
+			startOffset: first.startOffset,
+			endOffset: last.endOffset,
+			visualBase: first.visualBase,
+		});
+	}
+
+	return rectTexts;
+}
+
+/**
+ * The single place that decides "is this element in the document, and what is
+ * its border-box rect" -- so offsetWidth and clientWidth can never quietly
+ * disagree about which rect they mean. Unrounded: each reader rounds for its
+ * own purpose (offsetTop rounds the *difference* of two rects; rounding here
+ * first would double-round and drift by a cell).
+ */
+/** The document content's laid-out height: the body's border-box, whole. */
+function documentContentHeight(engine: LayoutEngine): number {
+	const bodyRect = engine.getRect(engine[kRootElement].ownerDocument?.body);
+	return bodyRect ? Math.ceil(bodyRect.height) : 0;
+}
+
+/**
+ * The content+padding box: the border-box rect minus the border widths, which
+ * both clientWidth/Height and scrollWidth/Height report.
+ */
+function contentBoxSize(
+	engine: LayoutEngine,
+	element: Element,
+): {width: number; height: number} | null {
+	const rect = layoutRect(engine, element);
+	if (!rect) {
+		return null;
+	}
+	const box = getBoxModel(element);
+	return {
+		width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+		height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+	};
+}
+
+/**
+ * html and body scroll the document itself: their scroll height is the
+ * document's and their client height the terminal's. One viewport, however it
+ * is reached.
+ */
+function isRootBox(engine: LayoutEngine, element: Element): boolean {
+	const document = engine[kEngineWindow].document;
+	return element === document.documentElement || element === document.body;
+}
+
+/**
+ * Move one scroll box so the element sits inside it. Document-relative rects
+ * on both sides: the element wherever its current offsets put it, against the
+ * scroller's padding box -- what the scroller actually shows.
+ */
+function revealInPort(
+	engine: LayoutEngine,
+	element: Element,
+	scroller: Element,
+): void {
+	const rect = engine.getRect(element);
+	const scrollerRect = engine.getRect(scroller);
+	if (!rect || !scrollerRect) {
+		return;
+	}
+	const box = getBoxModel(scroller);
+	const portTop = scrollerRect.top + (box.borderTopWidth || 0);
+	const portBottom = scrollerRect.bottom - (box.borderBottomWidth || 0);
+	const portLeft = scrollerRect.left + (box.borderLeftWidth || 0);
+	const portRight = scrollerRect.right - (box.borderRightWidth || 0);
+	if (rect.top < portTop) {
+		scroller.scrollTop -= Math.round(portTop - rect.top);
+	} else if (rect.bottom > portBottom) {
+		scroller.scrollTop += Math.round(rect.bottom - portBottom);
+	}
+	if (rect.left < portLeft) {
+		scroller.scrollLeft -= Math.round(portLeft - rect.left);
+	} else if (rect.right > portRight) {
+		scroller.scrollLeft += Math.round(rect.right - portRight);
+	}
+}
+
+/** Whether an overflow value scrolls, programmatically or by hand. */
+function scrollsAt(overflow: string): boolean {
+	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
 }

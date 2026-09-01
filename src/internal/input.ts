@@ -157,36 +157,6 @@ interface MouseReport {
 	buttons: number;
 }
 
-/**
- * Decode one SGR mouse report's code byte into its modifiers, phase, and button
- * mapping. The report's row/column and the dispatch itself stay with the
- * caller, which owns the hit-test and the render loop.
- */
-function decodeMouseReport(code: number, isRelease: boolean): MouseReport {
-	const shiftKey = (code & 4) !== 0;
-	const altKey = (code & 8) !== 0;
-	const ctrlKey = (code & 16) !== 0;
-	const isMotion = (code & 32) !== 0;
-	const base = code & ~(4 | 8 | 16 | 32);
-
-	// Wheel: 64 = up, 65 = down.
-	const wheelDeltaY = base === 64 ? -3 : base === 65 ? 3 : null;
-
-	const button = base === 1 ? 1 : base === 2 ? 2 : 0;
-	const buttons = isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1;
-
-	return {
-		shiftKey,
-		altKey,
-		ctrlKey,
-		isMotion,
-		base,
-		wheelDeltaY,
-		button,
-		buttons,
-	};
-}
-
 /* -------------------------------------------------------- focus navigation */
 
 // What Tab traverses and what a mousedown focuses -- one definition of
@@ -362,25 +332,11 @@ interface DocumentPoint {
 	/** False for a row above the painted region -- a shell prompt's rows. */
 	inDocument: boolean;
 }
+const kMount = Symbol("mount");
 
-/**
- * The document point under a 1-based terminal cell. The camera decides: in
- * fullscreen the region starts at the alternate screen's row zero; in flow
- * it starts at the command-start row, scrolled by the camera.
- */
-function documentPointAt(
-	handler: EventHandler,
-	col: number,
-	row: number,
-): DocumentPoint {
-	const screen = handler[kMount].screen;
-	const documentRow =
-		handler[kDocument].fullscreenElement !== null
-			? row - 1 + screen.anchorScrollTop
-			: row - 1 - screen.documentTop + screen.scrollTop;
-	const inDocument = documentRow >= 0;
-	return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
-}
+/* --------------------------------------------------------- the interpreter */
+
+const kDocument = Symbol("document");
 
 /**
  * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
@@ -427,39 +383,7 @@ function wheelScrollerFor(
 	return null;
 }
 
-/**
- * Scroll a wheel tick nothing canceled: the innermost scroll box that can
- * still move, else the camera. True when the tick escaped past both, which
- * is where scroll chaining hands the wheel to the terminal.
- */
-function scrollByWheel(
-	handler: EventHandler,
-	target: Element,
-	deltaY: number,
-): boolean {
-	const scroller = wheelScrollerFor(handler, target, deltaY);
-	if (scroller) {
-		scroller.scrollTop += deltaY;
-		return false;
-	}
-	const mount = handler[kMount];
-	if (
-		deltaY < 0 &&
-		mount.screen.scrollTop === 0 &&
-		handler[kDocument].fullscreenElement === null
-	) {
-		return true;
-	}
-	mount.screen.scrollTo(mount.screen.scrollTop + deltaY);
-	mount.render();
-	return false;
-}
-
-/* --------------------------------------------------------- the interpreter */
-
-const kDocument = Symbol("document");
 const kWindow = Symbol("window");
-const kMount = Symbol("mount");
 const kLastMouse = Symbol("lastMouse");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
@@ -480,6 +404,23 @@ const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
  * through.
  */
 export class EventHandler {
+	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
+	// activity produces literally no signal (that's the entire mechanism --
+	// the terminal is handling it, not us), so there's no way to reset this on
+	// continued scrolling the way a real debounce would. It's a flat window
+	// from the moment of yielding, not "N ms since the last wheel tick" --
+	// which is exactly why this can't be too short: a real wheel/trackpad
+	// doesn't tick perfectly continuously, and any gap between ticks longer
+	// than this window re-enables capture mid-scroll, which the very next
+	// tick immediately re-yields -- a disable/enable toggle on every gap for
+	// as long as the user keeps scrolling, not just a one-time early
+	// re-enable.
+	static readonly [kScrollChainTimeoutMs] = 3000;
+
+	// The target and time of the last completed click, to detect a second one
+	// close enough behind it to be a dblclick -- browsers' own double-click
+	// interval varies by OS/user setting; 500ms is the common default.
+	static readonly [kDblclickIntervalMs] = 500;
 	declare [kDocument]: Document;
 	declare [kWindow]: EngineWindow;
 	declare [kMount]: Mount;
@@ -510,18 +451,6 @@ export class EventHandler {
 	// moment the wheel should become ours again -- or, failing that, by
 	// kScrollChainTimeoutMs of silence (see kScrollChainTimer).
 	declare [kMouseCaptureYielded]: boolean;
-	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
-	// activity produces literally no signal (that's the entire mechanism --
-	// the terminal is handling it, not us), so there's no way to reset this on
-	// continued scrolling the way a real debounce would. It's a flat window
-	// from the moment of yielding, not "N ms since the last wheel tick" --
-	// which is exactly why this can't be too short: a real wheel/trackpad
-	// doesn't tick perfectly continuously, and any gap between ticks longer
-	// than this window re-enables capture mid-scroll, which the very next
-	// tick immediately re-yields -- a disable/enable toggle on every gap for
-	// as long as the user keeps scrolling, not just a one-time early
-	// re-enable.
-	static readonly [kScrollChainTimeoutMs] = 3000;
 	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
@@ -544,10 +473,6 @@ export class EventHandler {
 		offset: number;
 	} | null;
 
-	// The target and time of the last completed click, to detect a second one
-	// close enough behind it to be a dblclick -- browsers' own double-click
-	// interval varies by OS/user setting; 500ms is the common default.
-	static readonly [kDblclickIntervalMs] = 500;
 	declare [kLastClickTarget]: Element | null;
 	declare [kLastClickTime]: number;
 
@@ -895,6 +820,83 @@ export class EventHandler {
 			dispatchKey(this, key);
 		}
 	}
+}
+
+/**
+ * Decode one SGR mouse report's code byte into its modifiers, phase, and button
+ * mapping. The report's row/column and the dispatch itself stay with the
+ * caller, which owns the hit-test and the render loop.
+ */
+function decodeMouseReport(code: number, isRelease: boolean): MouseReport {
+	const shiftKey = (code & 4) !== 0;
+	const altKey = (code & 8) !== 0;
+	const ctrlKey = (code & 16) !== 0;
+	const isMotion = (code & 32) !== 0;
+	const base = code & ~(4 | 8 | 16 | 32);
+
+	// Wheel: 64 = up, 65 = down.
+	const wheelDeltaY = base === 64 ? -3 : base === 65 ? 3 : null;
+
+	const button = base === 1 ? 1 : base === 2 ? 2 : 0;
+	const buttons = isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1;
+
+	return {
+		shiftKey,
+		altKey,
+		ctrlKey,
+		isMotion,
+		base,
+		wheelDeltaY,
+		button,
+		buttons,
+	};
+}
+
+/**
+ * The document point under a 1-based terminal cell. The camera decides: in
+ * fullscreen the region starts at the alternate screen's row zero; in flow
+ * it starts at the command-start row, scrolled by the camera.
+ */
+function documentPointAt(
+	handler: EventHandler,
+	col: number,
+	row: number,
+): DocumentPoint {
+	const screen = handler[kMount].screen;
+	const documentRow =
+		handler[kDocument].fullscreenElement !== null
+			? row - 1 + screen.anchorScrollTop
+			: row - 1 - screen.documentTop + screen.scrollTop;
+	const inDocument = documentRow >= 0;
+	return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
+}
+
+/**
+ * Scroll a wheel tick nothing canceled: the innermost scroll box that can
+ * still move, else the camera. True when the tick escaped past both, which
+ * is where scroll chaining hands the wheel to the terminal.
+ */
+function scrollByWheel(
+	handler: EventHandler,
+	target: Element,
+	deltaY: number,
+): boolean {
+	const scroller = wheelScrollerFor(handler, target, deltaY);
+	if (scroller) {
+		scroller.scrollTop += deltaY;
+		return false;
+	}
+	const mount = handler[kMount];
+	if (
+		deltaY < 0 &&
+		mount.screen.scrollTop === 0 &&
+		handler[kDocument].fullscreenElement === null
+	) {
+		return true;
+	}
+	mount.screen.scrollTo(mount.screen.scrollTop + deltaY);
+	mount.render();
+	return false;
 }
 
 /* -------------------------------------------- gestures and default actions */

@@ -55,6 +55,9 @@ function isFullscreen(termdom: TermDOM): boolean {
  * down for good. Disposal is final -- there is no way back to detached.
  */
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
+const kAttachBegun = Symbol("attachBegun");
+
+const kLifecycle = Symbol("lifecycle");
 
 /**
  * Whether the terminal is ours to write to. True from the moment attach() is
@@ -81,9 +84,6 @@ const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 
 const kEventHandler = Symbol("eventHandler");
-
-const kLifecycle = Symbol("lifecycle");
-const kAttachBegun = Symbol("attachBegun");
 const kAttachReady = Symbol("attachReady");
 
 /** The engine invalidation count the last painted frame was built from. */
