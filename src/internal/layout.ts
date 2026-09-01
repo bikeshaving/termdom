@@ -26,12 +26,14 @@ import {
 	parseTrackSizeList,
 	parseUnitValue,
 	type Unit,
+	usedValuesChanged,
 } from "./cssom.js";
 import {
 	DOMRectList,
 	type EngineWindow,
 	flatIsConnected,
 	flatParentElement,
+	getMount,
 	getShadowRoot,
 	isModalDialog,
 	NodeFilter,
@@ -8440,8 +8442,6 @@ function runBreakResult(
 const kDirtyRunContainers = Symbol("dirtyRunContainers");
 const kDOMRect = Symbol("DOMRect");
 const kRootElement = Symbol("rootElement");
-const kGeneration = Symbol("generation");
-const kInvalidations = Symbol("invalidations");
 const kViewportRoot = Symbol("viewportRootNode");
 const kEngineWindow = Symbol("window");
 
@@ -11652,26 +11652,6 @@ export class LayoutEngine {
 	 */
 	declare [kRestyled]: Set<Element>;
 
-	/**
-	 * Two counters, because there are two questions and they differ in who
-	 * moves them. Both are written only here, and a reader that cares
-	 * remembers the number it last acted on and compares -- which is what a
-	 * flag two objects shared could never say cleanly.
-	 *
-	 * `generation` moves whenever the geometry this engine reports could
-	 * differ from a moment ago: an invalidation, and also every layout pass,
-	 * since the pass itself moves boxes. The cascade's used-value cache keys
-	 * on it.
-	 *
-	 * `invalidations` moves only when something was actually invalidated. A
-	 * pass that re-measures does not move it, which is what lets the frame
-	 * loop tell "the layout ran" from "the layout changed" -- the scroll band
-	 * shifts rows the last frame painted, and may only do so when nothing
-	 * those rows were derived from has moved.
-	 */
-	declare [kGeneration]: number;
-	declare [kInvalidations]: number;
-
 	constructor(window: EngineWindow) {
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
@@ -11681,8 +11661,6 @@ export class LayoutEngine {
 		>();
 		this[kBoxes] = new WeakMap<Node, Box>();
 		this[kDerivedContainers] = new WeakSet<Element>();
-		this[kGeneration] = 0;
-		this[kInvalidations] = 0;
 		this[kAnonymousBoxes] = new Map<LayoutNode, Box>();
 		this[kDirtyRunContainers] = new Set<Element>();
 		this[kRestyled] = new Set<Element>();
@@ -11704,14 +11682,6 @@ export class LayoutEngine {
 		this[kViewportRoot] = new LayoutNode();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
-	}
-
-	get generation(): number {
-		return this[kGeneration];
-	}
-
-	get invalidations(): number {
-		return this[kInvalidations];
 	}
 
 	adoptTerminalReordering(): void {
@@ -11744,6 +11714,7 @@ export class LayoutEngine {
 		for (const flexNode of this[kMeasureNodes]) {
 			flexNode.markDirty();
 		}
+		changed(this);
 
 		this.calculateLayout();
 	}
@@ -11755,9 +11726,6 @@ export class LayoutEngine {
 		if (!this[kNodeMap].has(this[kRootElement])) {
 			addNode(this, this[kRootElement], this[kViewportRoot]);
 		}
-		// Geometry moves with the pass, so anything memoized behind a flush --
-		// a resolved value, a rect -- re-measures after it.
-		this[kGeneration]++;
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be named against the styles that stand rather than the ones that
 		// were on their way out.
@@ -12716,8 +12684,7 @@ export class LayoutEngine {
 	 * record describes.
 	 */
 	invalidateFrame(): void {
-		this[kGeneration]++;
-		this[kInvalidations]++;
+		changed(this);
 	}
 
 	/**
@@ -12743,6 +12710,7 @@ export class LayoutEngine {
 		}
 		restageSubtree(this, node);
 		invalidateNode(this, node);
+		changed(this);
 	}
 
 	handleMutations(mutations: MutationRecord[]): void {
@@ -12765,6 +12733,7 @@ export class LayoutEngine {
 	 */
 	styleInvalidated(element: Element): void {
 		this[kRestyled].add(element);
+		changed(this);
 	}
 
 	/**
@@ -13740,4 +13709,20 @@ function revealInPort(
 /** Whether an overflow value scrolls, programmatically or by hand. */
 function scrollsAt(overflow: string): boolean {
 	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
+}
+
+/**
+ * Announce that what this engine reports may differ from a moment ago: the
+ * cascade's used values are stale, and the frame the screen last painted no
+ * longer describes the layout. Every entry that moves geometry says so; the
+ * pass itself moves nothing that was not announced first, which is what
+ * lets a frame that ran a pass and found nothing changed skip its paint.
+ */
+function changed(layout: LayoutEngine): void {
+	const document = layout[kRootElement].ownerDocument;
+	if (document === null) {
+		return;
+	}
+	usedValuesChanged(document);
+	getMount(document)?.screen.invalidateLayout();
 }

@@ -10229,7 +10229,7 @@ const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
 const kFlushing = Symbol("flushing");
 const kUsedValues = Symbol("usedValues");
-const kUsedGeneration = Symbol("used values generation");
+const kUsedStale = Symbol("used values stale");
 const kShadowRoots = Symbol("shadowRoots");
 const kSelectorsReachAncestors = Symbol("selectorsReachAncestors");
 const kSelectorsReachSiblings = Symbol("selectorsReachSiblings");
@@ -10411,8 +10411,8 @@ export class StyleManager {
 	 */
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
 
-	/** The engine generation the used values above were measured under. */
-	declare [kUsedGeneration]: number;
+	/** Set by the layout engine when geometry moved under the used values. */
+	declare [kUsedStale]: boolean;
 
 	/**
 	 * Every cascade layer, in the order its name was first declared: a
@@ -10463,7 +10463,7 @@ export class StyleManager {
 		this[kCounterScopes] = new WeakMap<Element, CounterScope>();
 		this[kFlushing] = false;
 		this[kUsedValues] = new WeakMap();
-		this[kUsedGeneration] = -1;
+		this[kUsedStale] = true;
 		this[kLayerPaths] = [];
 		this[kAnonymousLayers] = 0;
 		this[kUnlayeredRank] = 0;
@@ -10500,19 +10500,15 @@ export class StyleManager {
 		if (getMount(this[kDocument]) === undefined) {
 			return null;
 		}
-		// The flush is taken once per layout, not once per read: an
-		// invalidation and a layout pass both move the engine's generation on,
-		// and until one does, the layout standing behind the last flush is
-		// still the answer. A caller reading four properties off two hundred
-		// elements pays one flush, not eight hundred. Nothing under the flush
-		// can reach back here -- layout reads the cascade through
-		// getComputedValue, which has no used value to ask for.
-		//
-		// The generation is read back AFTER the flush, because the pass the
-		// flush runs moves it on again.
-		if (this[kUsedGeneration] !== this[kLayoutEngine].generation) {
+		// The flush is taken once per change, not once per read: until the
+		// layout engine says geometry moved, the layout standing behind the
+		// last flush is still the answer. A caller reading four properties
+		// off two hundred elements pays one flush, not eight hundred. Nothing
+		// under the flush can reach back here -- layout reads the cascade
+		// through getComputedValue, which has no used value to ask for.
+		if (this[kUsedStale]) {
 			flushLayout(this[kDocument]);
-			this[kUsedGeneration] = this[kLayoutEngine].generation;
+			this[kUsedStale] = false;
 			this[kUsedValues] = new WeakMap();
 		}
 		return this[kLayoutEngine].getRect(element);
@@ -13911,6 +13907,14 @@ export function styleAttributeChanged(
 }
 
 /** A shadow root registers with the cascade the moment it attaches. */
+/** The layout engine moved geometry: the used values measured under it are stale. */
+export function usedValuesChanged(document: object): void {
+	const manager = documentManagers.get(document);
+	if (manager !== undefined) {
+		manager[kUsedStale] = true;
+	}
+}
+
 export function styleShadowAttached(root: ShadowRoot): void {
 	documentManagers
 		.get((root.host as Element).ownerDocument as object)

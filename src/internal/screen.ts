@@ -1685,6 +1685,7 @@ const kLastCaretVisible = Symbol("lastCaretVisible");
 const kScrollTop = Symbol("scrollTop");
 const kFrameScroll = Symbol("frameScroll");
 const kDirty = Symbol("dirty");
+const kLayoutMoved = Symbol("layoutMoved");
 const kDocumentTop = Symbol("documentTop");
 const kAnchorScrollTop = Symbol("anchorScrollTop");
 
@@ -1731,6 +1732,7 @@ export class Screen {
 	declare [kWriter]: FrameWriter;
 	declare [kFrameScroll]: number;
 	declare [kDirty]: boolean;
+	declare [kLayoutMoved]: boolean;
 
 	/**
 	 * A screen measures widths through the channel it is built with, for as
@@ -1766,6 +1768,7 @@ export class Screen {
 		this[kAnchorScrollTop] = 0;
 		this[kFrameScroll] = 0;
 		this[kDirty] = true;
+		this[kLayoutMoved] = false;
 		this[kWriter] = new FrameWriter(colorDepth);
 	}
 
@@ -1793,6 +1796,10 @@ export class Screen {
 
 	get dirty(): boolean {
 		return this[kDirty];
+	}
+
+	get layoutMoved(): boolean {
+		return this[kLayoutMoved];
 	}
 
 	/** The screen row the document's first row is anchored to. */
@@ -1852,6 +1859,15 @@ export class Screen {
 	 */
 	invalidate(): void {
 		this[kDirty] = true;
+	}
+
+	/**
+	 * The layout engine moved geometry since the last frame: the rows that
+	 * frame painted no longer describe the document, so no band of them may
+	 * be shifted in place of a repaint.
+	 */
+	invalidateLayout(): void {
+		this[kLayoutMoved] = true;
 	}
 
 	/**
@@ -2468,6 +2484,7 @@ export class Screen {
 		const ansi = end();
 		this[kFrameScroll] = 0;
 		this[kDirty] = false;
+		this[kLayoutMoved] = false;
 		return ansi;
 	}
 }

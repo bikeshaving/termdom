@@ -87,9 +87,6 @@ const kRenderCount = Symbol("renderCount");
 const kEventHandler = Symbol("eventHandler");
 const kAttachReady = Symbol("attachReady");
 
-/** The engine invalidation count the last painted frame was built from. */
-const kPaintedGeneration = Symbol("paintedGeneration");
-
 /**
  * The terminal size the document has adopted, which is what `window.innerWidth`
  * reports, what a `vw` is a hundredth of, and what an `@media` query is
@@ -170,7 +167,6 @@ export class TermDOM {
 	// touches the process -- attach() does, lazily on the first render or
 	// explicitly -- and dispose() ends the instance for good.
 	declare [kLifecycle]: Lifecycle;
-	declare [kPaintedGeneration]: number;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
@@ -226,7 +222,6 @@ export class TermDOM {
 	declare [kStaticSibling]: TermDOM | null;
 
 	constructor(options: TermDOMOptions = {}) {
-		this[kPaintedGeneration] = -1;
 		this[kIsRendering] = false;
 		this[kSealed] = false;
 
@@ -914,7 +909,7 @@ function resolveScrollBand(
 		termdom[kScreen].frameScroll !== 0 ||
 		// Anything the layout derives a frame from has moved, so the rows the
 		// terminal would shift are not the rows the last frame painted.
-		termdom[kLayoutEngine].invalidations !== termdom[kPaintedGeneration] ||
+		termdom[kScreen].layoutMoved ||
 		!record.element.isConnected
 	) {
 		return null;
@@ -1175,7 +1170,7 @@ async function renderInteractive(
 	} | null;
 	if (
 		!termdom[kScreen].dirty &&
-		termdom[kLayoutEngine].invalidations === termdom[kPaintedGeneration] &&
+		!termdom[kScreen].layoutMoved &&
 		termdom[kScreen].frameScroll === 0 &&
 		journalled === null &&
 		!termdom[kScreen].needsRepaint
@@ -1229,7 +1224,6 @@ async function renderInteractive(
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
-	termdom[kPaintedGeneration] = termdom[kLayoutEngine].invalidations;
 
 	if (ansi) {
 		await termdom[kExchange].write(ansi);
