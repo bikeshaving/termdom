@@ -110,7 +110,7 @@ type Wrap = "nowrap" | "wrap" | "wrap-reverse";
 type FlexDirection = "column" | "column-reverse" | "row" | "row-reverse";
 
 /** Which axis a gap applies to. */
-type Gutter = "column" | "row" | "all";
+type Gutter = "column" | "row";
 
 /** How a layout node lays its own children out. */
 type LayoutMode =
@@ -151,20 +151,6 @@ type Edges<T> = {left: T; top: T; right: T; bottom: T};
 
 /** An edge a value is stored against. */
 type Edge = keyof Edges<unknown>;
-
-/**
- * What a caller may NAME when setting an edge: the four it can be stored
- * against, plus the shorthands that fan out across them. A distinct vocabulary
- * from Edge, because none of the shorthands is a place a value can be kept --
- * `expandEdge` is where the one becomes the other.
- */
-type EdgeShorthand =
-	Edge |
-	"start" |
-	"end" |
-	"horizontal" |
-	"vertical" |
-	"all";
 
 /**
  * The intrinsic sizing keywords of css-sizing-3 §5, carried beside a width of
@@ -214,10 +200,9 @@ const AUTO_VALUE: Value = {unit: "auto", value: NaN};
 
 /**
  * A length as a setter takes it: cells, a parsed percentage (the shape the
- * cascade's parseUnitValue hands over), a percent string like "50%",
- * "auto", or nothing.
+ * cascade's parseUnitValue hands over), `auto`, or nothing.
  */
-type Length = number | string | {percentage: number} | undefined | null;
+type Length = number | "auto" | {percentage: number} | undefined | null;
 
 /** Resolve a Value against an owner size. Returns NaN when unresolvable. */
 function resolveValue(value: Value, ownerSize: number): number {
@@ -766,13 +751,7 @@ export class LayoutNode {
 	}
 
 	setGap(gutter: Gutter, value: number): void {
-		const gap = Number.isFinite(value) ? Math.max(0, value) : 0;
-		if (gutter === "column" || gutter === "all") {
-			this.style.gap["column"] = gap;
-		}
-		if (gutter === "row" || gutter === "all") {
-			this.style.gap["row"] = gap;
-		}
+		this.style.gap[gutter] = Number.isFinite(value) ? Math.max(0, value) : 0;
 		this.markDirty();
 	}
 
@@ -944,26 +923,24 @@ export class LayoutNode {
 		this.markDirty();
 	}
 
-	setMargin(edge: EdgeShorthand, v: Length): void {
-		setEdges(this.style.margin, edge, toValue(v));
+	setMargin(edge: Edge, v: Length): void {
+		this.style.margin[edge] = toValue(v);
 		this.markDirty();
 	}
 
-	setPadding(edge: EdgeShorthand, v: Length): void {
-		setEdges(this.style.padding, edge, toValue(v));
+	setPadding(edge: Edge, v: Length): void {
+		this.style.padding[edge] = toValue(v);
 		this.markDirty();
 	}
 
-	setBorder(edge: EdgeShorthand, v: number | undefined): void {
+	setBorder(edge: Edge, v: number | undefined): void {
 		const width = v === undefined || Number.isNaN(v) ? 0 : v;
-		for (const index of expandEdge(edge)) {
-			this.style.border[index] = width;
-		}
+		this.style.border[edge] = width;
 		this.markDirty();
 	}
 
-	setPosition(edge: EdgeShorthand, v: Length): void {
-		setEdges(this.style.position, edge, toValue(v));
+	setPosition(edge: Edge, v: Length): void {
+		this.style.position[edge] = toValue(v);
 		this.markDirty();
 	}
 
@@ -1034,20 +1011,7 @@ function toValue(input: Length): Value {
 			? UNDEFINED_VALUE
 			: {unit: "cell", value: input};
 	}
-	const trimmed = input.trim();
-	if (trimmed === "auto") {
-		return AUTO_VALUE;
-	}
-	if (trimmed.endsWith("%")) {
-		const parsed = parseFloat(trimmed.slice(0, -1));
-		return Number.isNaN(parsed)
-			? UNDEFINED_VALUE
-			: {unit: "percent", value: parsed};
-	}
-	const parsed = parseFloat(trimmed);
-	return Number.isNaN(parsed)
-		? UNDEFINED_VALUE
-		: {unit: "cell", value: parsed};
+	return AUTO_VALUE;
 }
 
 /**
@@ -1161,37 +1125,6 @@ function markDirtyUpward(
 ): void {
 	for (let node: LayoutNode | null = start; node; node = node.parent) {
 		node.dirty = true;
-	}
-}
-
-function setEdges(
-	target: Edges<Value>,
-	edge: EdgeShorthand,
-	value: Value,
-): void {
-	for (const index of expandEdge(edge)) {
-		target[index] = value;
-	}
-}
-
-function expandEdge(edge: EdgeShorthand): readonly Edge[] {
-	switch (edge) {
-		case "left":
-		case "start":
-			return ["left"];
-		case "top":
-			return ["top"];
-		case "right":
-		case "end":
-			return ["right"];
-		case "bottom":
-			return ["bottom"];
-		case "horizontal":
-			return ["left", "right"];
-		case "vertical":
-			return ["top", "bottom"];
-		case "all":
-			return ["left", "top", "right", "bottom"];
 	}
 }
 

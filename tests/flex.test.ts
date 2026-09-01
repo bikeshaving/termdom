@@ -333,7 +333,10 @@ describe("percentage margins and padding resolve against the containing block wi
 		root.setFlexDirection("column");
 
 		const child = box(root);
-		child.setPadding("all", "10%");
+		child.setPadding("left", {percentage: 10});
+		child.setPadding("top", {percentage: 10});
+		child.setPadding("right", {percentage: 10});
+		child.setPadding("bottom", {percentage: 10});
 
 		const grandchild = box(child);
 		grandchild.setWidth(10);
@@ -357,8 +360,8 @@ describe("percentage margins and padding resolve against the containing block wi
 
 		const child = box(root);
 		child.setHeight(10);
-		child.setMargin("top", "10%");
-		child.setMargin("left", "10%");
+		child.setMargin("top", {percentage: 10});
+		child.setMargin("left", {percentage: 10});
 
 		root.calculateLayout(200, 100);
 
@@ -588,12 +591,6 @@ describe("gap (css-align-3)", () => {
 		// Wrapped, and pushed down by its own height plus the row gap.
 		expect(rect(items[2]).left).toBe(0);
 		expect(rect(items[2]).top).toBe(2);
-	});
-
-	test("a gap set on 'all' sets both axes", () => {
-		const root = node();
-		root.setGap("all", 4);
-		expect(root.style.gap).toEqual({column: 4, row: 4});
 	});
 });
 
