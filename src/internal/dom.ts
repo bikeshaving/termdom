@@ -246,6 +246,12 @@ export function fieldValueText(field: globalThis.Element): globalThis.Text |
 	);
 }
 
+const kTermDOM = Symbol("termDOM");
+const kLayout = Symbol("layout");
+const kStyles = Symbol("styles");
+const kExchange = Symbol("exchange");
+const kScreen = Symbol("screen");
+
 /**
  * The focus of a control's selection record, or null for an element with
  * no record: the caret, in the value text's own offsets.
@@ -21297,11 +21303,6 @@ const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
 const kContentType = Symbol("content type");
 const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
-const kTermDOM = Symbol("termDOM");
-const kLayout = Symbol("layout");
-const kStyles = Symbol("styles");
-const kExchange = Symbol("exchange");
-const kScreen = Symbol("screen");
 
 export class Document extends Node implements globalThis.Document {
 	// Installed on the prototype, where the mount that answers them is.

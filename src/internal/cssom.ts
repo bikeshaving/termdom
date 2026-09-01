@@ -8072,6 +8072,7 @@ function usedLength(cells: number): string {
 }
 
 const kManager = Symbol("manager");
+const kLayoutEngine = Symbol("layoutEngine");
 
 /**
  * The reads a used-value measurement takes, from whichever declaration owns
@@ -10209,7 +10210,6 @@ interface CounterScope {
 }
 
 const kWindow = Symbol("window");
-const kLayoutEngine = Symbol("layoutEngine");
 const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
 const kClearCache = Symbol("clearCache");

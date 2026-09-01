@@ -4,11 +4,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {
-	adoptDocument,
-	getShadowRoot,
-	selectionRecordOf,
-} from "../src/internal/dom.js";
+import {getShadowRoot, selectionRecordOf} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
