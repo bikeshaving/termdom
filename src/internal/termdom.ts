@@ -20,10 +20,7 @@ import {Screen} from "./screen.js";
 
 export interface TermDOMOptions {
 
-	/**
-	 * The terminal this instance renders to.
-	 * Defaults to a wrapper around the global process.
-	 */
+	/** Defaults to the global process. */
 	transport?: TerminalTransport;
 
 	/** The initial document's markup. */
@@ -61,85 +58,41 @@ export class TermDOM {
 	declare [kScreen]: Screen;
 	declare [kLayoutEngine]: LayoutEngine;
 	declare [kStyleManager]: StyleManager;
-	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
-	// owns no scheduling.
 	declare [kPainter]: Painter;
-	// One updater per live MediaQueryList: re-evaluates its query and fires
-	// "change" if the answer flipped. Run by handleResize -- SIGWINCH is
-	// this screen's window resize.
-	// document.close() sealed the current document into scrollback; the next
-	// mutation starts a fresh document below it.
+	// document.close() sealed the document into the scrollback; the next
+	// mutation starts a fresh one below it.
 	declare [kSealed]: boolean;
 	declare [kRenderQueued]: boolean;
-	// Which screen the frames land on; flipped by the render loop when the
+	// Which screen frames land on; switched at the head of a frame when the
 	// document's fullscreen state disagrees.
 	declare [kOnAltScreen]: boolean;
-	// The running render loop, and the guard against re-entering it. A render()
-	// call arriving while one is in flight sets renderQueued rather than being
-	// dropped, so a trailing frame runs.
+	// The running render loop. A render() during it queues a trailing frame
+	// rather than starting another.
 	declare [kRenderInFlight]: Promise<void> | null;
-
-	// Monotonic frame counter, used to timestamp observer entries.
+	// Timestamps observer entries.
 	declare [kRenderCount]: number;
-
-	// The input interpreter: decoded wire items in, DOM events out, and the
-	// transient gesture state interpretation needs.
 	declare [kEventHandler]: EventHandler;
-
-	// Timers that must be torn down in dispose(), or they keep the process
-	// alive after the app is done -- which, across a test suite, piles up
-	// into a hang.
-	// The resize being settled: a fresh object from the first SIGWINCH of a
-	// resize until the re-anchored redraw, and null between resizes. While one
-	// is set, render() bails: the terminal has rewrapped the screen and our
-	// anchor is momentarily stale, so an auto-render (an animation tick)
-	// painting now lands at the wrong rows and scrolls a stray copy into the
-	// scrollback. Only the final redraw that handleResize issues is allowed
-	// through. The redraw waits on an async cursor query, so it holds the
-	// object it was scheduled for and drops its answer if another SIGWINCH has
-	// replaced it -- the newer resize's own redraw is the one that lands.
-	// How far we have gone in taking hold of the terminal: raw mode, signal
-	// handlers, the stdin listener and the cursor query. Construction never
-	// touches the process -- attach() does, lazily on the first render or
-	// explicitly -- and dispose() ends the instance for good.
+	// Construction never touches the terminal; attach() does, and dispose()
+	// ends the instance for good.
 	declare [kLifecycle]: Lifecycle;
-
-	// Whether the terminal is currently reporting mouse events to us. See
-	// updateMouseReporting for when capture is on.
 	declare [kMouseReportingEnabled]: boolean;
-	// Whether the terminal is currently reporting pointer MOTION (SGR 1003)
-	// on top of button/drag reporting. See updateHoverReporting.
 	declare [kHoverReportingEnabled]: boolean;
-	// The field whose caret the NEXT frame must reveal -- set by edits,
-	// consumed inside renderInteractive after its layout flush. Last
-	// edit before the frame wins.
+	// The field whose caret the next frame reveals; the last edit before the
+	// frame wins.
 	declare [kPendingCaretReveal]: HTMLInputElement |
 		HTMLTextAreaElement |
 		HTMLSelectElement |
 		null;
 
 	declare [kTransport]: TerminalTransport;
-
-	// The conversation over the transport: the input demultiplexer plus the
-	// cursor-position (command start, resize re-anchor) and mode-support (bidi,
-	// grapheme clusters) queries whose replies arrive interleaved with typing.
 	declare [kExchange]: TerminalExchange;
-
-	// What attach() hands back and hands back again: resolved once the session
-	// is established and the first frame written.
+	// Resolves once the session is established and the first frame written.
 	declare [kAttachReady]: Promise<void>;
-	// Resolves once attach()'s begin phase has run (session started, cursor
-	// detection initialized): a render triggered between attach() and that
-	// phase -- a requestAnimationFrame, a mutation -- must not paint an
-	// unanchored first frame. Awaited only while attaching, so steady-state
-	// renders stay fully synchronous: an unconditional await would defer
-	// each frame a microtask, and the scrollTop clamp is synchronous by
-	// contract.
+	// Resolves once attach()'s begin phase has run. Awaited only while
+	// attaching: an unconditional await would defer every frame a microtask,
+	// and the scrollTop clamp is synchronous by contract.
 	declare [kAttachBegun]: Promise<void>;
-
-	// The scratch engine behind renderANSI/print: created on first use,
-	// sized from the transport, recreated if the width changes, reused
-	// across calls.
+	// The engine behind renderANSI and print, rebuilt when the width changes.
 	declare [kStaticSibling]: TermDOM | null;
 
 	constructor(options: TermDOMOptions = {}) {
@@ -154,9 +107,7 @@ export class TermDOM {
 		this[kMouseReportingEnabled] = false;
 		this[kHoverReportingEnabled] = false;
 		this[kPendingCaretReveal] = null;
-		// Reveal what a disclosure opened. A details that closes has taken
-		// content away rather than added it, so there is nothing to bring into
-		// view.
+		// A details that closes took content away; only opening reveals.
 		const onDisclosureToggle = (event: Event): void => {
 			const details = event.target as HTMLElement | null;
 			if (details === null || !("open" in details)) {
@@ -167,11 +118,8 @@ export class TermDOM {
 			}
 			details.scrollIntoView({block: "nearest"});
 		};
-		// Keep a focused field's caret in view and repaint, on the standard
-		// input/select/change events its own edit fires. Scoped to the active
-		// field: an event from elsewhere (a select commit, an author's dispatch
-		// on an unfocused control, a text input's change on blur) must not yank
-		// the camera to it.
+		// Only the active field: a select commit or an author's dispatch on an
+		// unfocused control must not move the camera.
 		const onFieldEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
@@ -203,9 +151,6 @@ export class TermDOM {
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
 
-		// The cascade measures through the layout engine, so it is built with
-		// it; the engine reads styles lazily, through the getComputedStyle the
-		// cascade installs on the window.
 		this[kLayoutEngine] = new LayoutEngine(
 			this.window,
 			this[kTransport].cols,
@@ -213,8 +158,7 @@ export class TermDOM {
 		);
 		this[kStyleManager] = new StyleManager(this.window, this[kLayoutEngine]);
 
-		// The session first: the screen measures widths over the session's
-		// probe channel, and takes it for its lifetime.
+		// The screen measures widths over the exchange's probe channel.
 		this[kExchange] = buildExchange(this);
 		this[kScreen] = new Screen(
 			this[kTransport].rows,
@@ -223,9 +167,6 @@ export class TermDOM {
 			this[kExchange],
 		);
 
-		// The engine the document stands on. From here a control builds and
-		// keeps its own shadow tree; the shell only says when a newly
-		// connected one should be upgraded.
 		DOM.adoptDocument(
 			document,
 			this,
@@ -248,11 +189,7 @@ export class TermDOM {
 			this[kScreen],
 		);
 
-		// A field edit -- text (input), a caret or selection move
-		// (select/selectionchange), or a checkbox/radio toggle (change) --
-		// announces itself with standard events. The render loop keeps the caret
-		// in view and repaints in response to those, rather than each edit path
-		// reaching back into it. Capture, so it lands however the event bubbles.
+		// Capture, so the event lands however it bubbles.
 		this.document.addEventListener("input", onFieldEditEvent, true);
 		this.document.addEventListener("select", onFieldEditEvent, true);
 		this.document.addEventListener("change", onFieldEditEvent, true);
@@ -261,29 +198,18 @@ export class TermDOM {
 			onFieldEditEvent,
 			true,
 		);
-		// A disclosure that opens has just put its contents on the page, and a
-		// terminal's page is one screen tall: what it revealed is often below
-		// the fold that hid it. Bring it into view, the way moving focus does.
+		// A terminal page is one screen tall; what a details opened is often
+		// below the fold.
 		this.document.addEventListener("toggle", onDisclosureToggle, true);
 	}
 
 	/**
-	 * Take hold of the terminal: begin the session (input, resizes, closure),
-	 * the startup cursor/mode queries, and mouse reporting.
-	 *
-	 * Construction is inert -- a constructor has no business writing escape
-	 * sequences or flipping a tty into raw mode. Attachment is the one door to
-	 * the terminal; dispose() reverses it.
-	 *
-	 * Passing a different transport rebinds to it -- the construction-time
-	 * transport (the global process by default) was only a stand-in, and this
-	 * re-derives every terminal-dependent fact from the one handed here.
-	 * Rebinding is only allowed before the first attach; re-attaching a live
-	 * instance to another terminal needs teardown that does not exist yet.
+	 * Takes the terminal: the session, the startup queries, mouse reporting.
+	 * Passing a transport rebinds to it, re-deriving everything that depends
+	 * on the terminal; only before the first attach.
 	 */
 	attach(transport: TerminalTransport = this[kTransport]): Promise<void> {
 		const rebinding = transport !== this[kTransport];
-		// A disposed instance owes the terminal nothing and takes nothing back.
 		if (this[kLifecycle] === "disposed") {
 			return this[kAttachReady];
 		}
@@ -299,11 +225,8 @@ export class TermDOM {
 		if (rebinding) {
 			rebindTransport(this, transport);
 		}
-		// Begin once the transport is established (a process tty already is;
-		// an SSH wrapper's channel may still be opening), then paint whatever
-		// the document holds. The returned promise resolves when that first
-		// frame has been written; negotiations are excluded deliberately --
-		// their silence timeouts must never hold a first paint hostage.
+		// Resolves when the first frame has been written; the negotiations'
+		// silence timeouts must not hold that up.
 		this[kLifecycle] = "attaching";
 		let begun!: () => void;
 		this[kAttachBegun] = new Promise<void>((resolve) => {
@@ -319,10 +242,8 @@ export class TermDOM {
 
 			this[kExchange].start(this[kEventHandler]);
 			if (this[kTransport].interactive) {
-				// Bracketed paste on: pasted text arrives fenced, one insertion.
 				this[kExchange].setMode("bracketedPaste", true);
-				// Save the terminal's title, so dispose can hand it back; the
-				// document.title setter emits the replacement.
+				// So dispose can hand the title back.
 				this[kExchange].setMode("titleStack", true);
 				if (this.document.title) {
 					void this[kExchange].setTitle(this.document.title);
@@ -336,9 +257,8 @@ export class TermDOM {
 			this[kLifecycle] = "attached";
 			begun();
 
-			// Deferred a microtask so the render does not occupy the
-			// re-entrancy guard while synchronous code right after attach()
-			// still expects its own render calls to drain mutations inline.
+			// A microtask later, so synchronous code after attach() can still
+			// drain its own mutations with render().
 			await new Promise<void>((resolve) => queueMicrotask(resolve));
 			await render(this);
 		})();
@@ -346,18 +266,16 @@ export class TermDOM {
 	}
 
 	/**
-	 * Render an HTML string to an ANSI string at the transport's width:
-	 * colors and line breaks, no cursor controls, no modes. <style> elements
-	 * in the fragment join the cascade. The instance's document is untouched.
+	 * HTML to ANSI at the transport's width: colors and line breaks, no
+	 * cursor controls, no modes. The instance's document is untouched.
 	 */
 	renderANSI(html: string): string {
 		return renderStaticHTML(this, html, "\n");
 	}
 
 	/**
-	 * renderANSI(html) written through the transport as ordinary command
-	 * output; resolves when the bytes have reached it. CRLF while a raw-mode
-	 * session holds the terminal, since raw mode does not translate newlines.
+	 * renderANSI(html) written through the transport as ordinary output.
+	 * CRLF while a raw-mode session holds the terminal.
 	 */
 	print(html: string): Promise<void> {
 		const output = renderStaticHTML(
@@ -371,50 +289,38 @@ export class TermDOM {
 		return this[kExchange].write(output);
 	}
 
-	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
+	/** `using dom = new TermDOM()` tears down on scope exit. */
 	[Symbol.dispose](): void {
 		this.dispose();
 	}
 
 	/**
-	 * Tear down and hand the terminal back. Resolves when every queued
-	 * restore has reached the transport; await it before writing further
-	 * output or exiting with a status code. The process transport restores
-	 * shell-critical modes synchronously besides, so exiting without
-	 * awaiting still leaves the shell usable.
+	 * Hands the terminal back. Resolves when every restore has reached the
+	 * transport; the process transport restores the shell-critical modes
+	 * synchronously besides, so exiting without awaiting leaves the shell
+	 * usable.
 	 */
 	dispose(): Promise<void> {
 		if (this[kLifecycle] === "disposed") {
 			return Promise.resolve();
 		}
 
-		// A TermDOM that never attached owes the terminal nothing: no final
-		// flush, no mode restores -- there is no session to close.
 		const wasAttached = isAttached(this);
 		this[kLifecycle] = "disposed";
 
-		// Document mode has been painting a window in place, so nothing it
-		// showed has reached the terminal's scrollback. Pay it all out now --
-		// but only if a frame was ever painted: with none, there is nothing
-		// of ours on screen, and the payout's cursor moves and erases would
-		// land on someone else's rows. A document closing WHILE fullscreen
-		// leaves no trace instead, the way an alt-screen program does: the
-		// screen switch restores what stood before entry, and that is the
-		// record. An app that wants its final state in scrollback exits
-		// fullscreen first and lets the flow frame pay out.
+		// Frames painted in place, so nothing reached the scrollback: pay the
+		// document out now. Not if no frame was ever painted -- the payout's
+		// erases would land on someone else's rows -- and not while
+		// fullscreen: the screen switch restores what stood before entry, and
+		// that is the record.
 		const closingFullscreen = isFullscreen(this);
 		if (wasAttached && this[kRenderCount] > 0 && !closingFullscreen) {
 			flushDocument(this);
 		}
 
-		// Frames keep the terminal cursor hidden (it is parked for resize
-		// bookkeeping, not UI); hand it back visible on the way out. The mouse
-		// goes back to the terminal the same way, the title we replaced pops
-		// back to what the terminal held before attach pushed it, and the
-		// alternate screen hands the main screen back. That restore puts the
-		// cursor where the switch saved it -- parked on the flow content's
-		// bottom row -- so step below the content, or the shell's next line
-		// lands on top of ours.
+		// Leaving the alternate screen puts the cursor where the switch saved
+		// it, on the flow content's bottom row: step below it, or the shell's
+		// next line lands on ours.
 		this[kExchange].restoreEngagedModes();
 		DOM.dropFullscreen(this.document);
 		this[kHoverReportingEnabled] = false;
@@ -423,10 +329,6 @@ export class TermDOM {
 			void this[kExchange].write("\r\n");
 		}
 
-		// Restore the terminal modes we negotiated, clear the session's timers
-		// and handlers (a live query timer keeps the event loop open), and
-		// release the transport -- which is what hands a process transport its
-		// tty back.
 		this[kExchange].dispose();
 
 		this[kEventHandler].dispose();
@@ -456,21 +358,16 @@ export function isAttached(termdom: TermDOM): boolean {
  * the terminal went away.
  */
 export function closeTermDOM(termDOM: TermDOM): void {
-	// A terminal that went away on its own has nothing to drain and
-	// nothing to close; the engine just ends.
+	// A terminal that went away has nothing to drain or close.
 	const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
-	// An immediate close must not tear down mid-establishment: wait
-	// for attach to finish (anchor found, first frame painted) so the
-	// payout lands where the frame was, not at a stale row 0. Then
-	// everything dispose queued must reach the wire before the
-	// transport acts on the close (a process transport exits).
+	// Wait for attach to finish so the payout lands where the frame was, and
+	// let everything dispose queued reach the wire before the transport acts
+	// on the close (a process transport exits).
 	void (async () => {
 		if (live) {
 			await termDOM[kAttachReady];
-			// The last frames' DSR queries -- width probes above all
-			// -- have replies on the wire. Consume them while the
-			// session still reads, or they are typed into the shell
-			// that inherits the tty.
+			// The last frames' DSR replies are on the wire; read them while
+			// the session still does, or the shell inherits them as typing.
 			await termDOM[kExchange].drainQueries(200);
 		}
 		await termDOM.dispose();
@@ -481,18 +378,9 @@ export function closeTermDOM(termDOM: TermDOM): void {
 }
 
 /**
- * Closing the document flushes the live region into the terminal's
- * scrollback and seals it -- the SSR res.end() of the terminal. This is the
- * "print rich output and stop" seam: write(), then close().
- *
- * dispose() has already set attached=false by the time it reaches here, so
- * the seal is skipped. A real seal is a close() from a live, painted
- * session.
- */
-/**
  * What the terminal says that the engine answers for: its size, where the
- * command started, how it orders text, what its glyphs measure, and that
- * it went away (closeTermDOM). The exchange reports; these react.
+ * command started, how it orders text, what its glyphs measure, and that it
+ * went away (closeTermDOM). The exchange reports; these react.
  */
 export function terminalResized(
 	termDOM: TermDOM,
@@ -500,13 +388,11 @@ export function terminalResized(
 	height: number,
 ): void {
 	const screen = termDOM[kScreen];
-	// A SIGWINCH reporting an unchanged size still redraws but fires no
-	// resize event, so the comparison is against the size the screen holds.
+	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== screen.cols || height !== screen.rows;
 	screen.resize(height, width);
 	termDOM[kLayoutEngine].resize(width, height);
-	// A viewport change can flip any @media answer and retires every
-	// viewport-relative value.
+	// A size change can flip any @media answer and every vw/vh value.
 	termDOM[kStyleManager].refreshStylesheets();
 	if (sizeChanged) {
 		const window = termDOM.window;
@@ -569,6 +455,10 @@ export function widthsCorrected(termDOM: TermDOM): void {
 	void render(termDOM);
 }
 
+/**
+ * document.close(): the document is flushed into the scrollback and sealed;
+ * the next mutation starts a fresh one below it.
+ */
 export function sealTermDOM(termDOM: TermDOM): void {
 	if (isAttached(termDOM) && termDOM[kRenderCount] > 0) {
 		flushDocument(termDOM);
@@ -576,23 +466,13 @@ export function sealTermDOM(termDOM: TermDOM): void {
 	}
 }
 
-/**
- * The exchange over the transport: input demultiplexing and the query
- * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
- * started only by attach() -- construction holds no lock and reads nothing.
- */
 function buildExchange(
 	termdom: TermDOM,
 ): TerminalExchange {
 	return new TerminalExchange(termdom[kTransport], termdom);
 }
 
-/**
- * Adopt `transport` and re-derive everything that comes from the terminal:
- * the session's input facts, the screen's color depth, and the sizes. In
- * place -- the mount holds the session and the screen by reference, and a
- * rebind always precedes the first frame.
- */
+/** Re-derives everything that comes from the transport; before the first frame. */
 function rebindTransport(
 	termdom: TermDOM,
 	transport: TerminalTransport,
@@ -603,14 +483,9 @@ function rebindTransport(
 }
 
 /**
- * The mouse is captured exactly when the document owns the camera: document
- * mode and fullscreen, where wheel-to-scroll is the default action, the same
- * as a browser. Flow mode leaves the mouse native -- there the terminal owns
- * scrolling (that is the mode's point), and capture would take the user's
- * scrollback and selection in exchange for nothing.
- *
- * Idempotent; call it whenever attachment, viewport mode, or fullscreen
- * changes.
+ * The mouse is captured while the document owns the camera. When the wheel
+ * has been yielded to the terminal, capture would take the user's scrollback
+ * and selection for nothing.
  */
 function updateMouseReporting(
 	termdom: TermDOM,
@@ -623,12 +498,8 @@ function updateMouseReporting(
 		return;
 	}
 	termdom[kMouseReportingEnabled] = wanted;
-	// 1002 with SGR encoding: button presses, releases, wheel, and drag
-	// motion, unambiguous past column 223 -- one mode as far as policy
-	// goes; the session spells the pair.
 	termdom[kExchange].setMode("mouseCapture", wanted);
-	// Motion reporting rides on top of capture: it follows capture off (a
-	// scroll-chaining yield hands the WHOLE mouse back) and back on.
+	// Motion reporting rides on capture: a yield hands the whole mouse back.
 	updateHoverReporting(termdom);
 }
 
@@ -643,16 +514,8 @@ function hoverObserved(
 }
 
 /**
- * Motion (hover) reporting -- SGR 1003 -- is DEMAND-DRIVEN: a terminal
- * reporting motion sends a report per cell the pointer crosses, a flood an
- * app that never looks at hover should not receive. So it turns on only
- * while base capture is on AND something observes hover, and turns back
- * off when the last observer goes. There is no override: observation is
- * the whole switch.
- *
- * Idempotent; called from every edge that can move the answer: capture
- * toggles, listener registration, and the end of each frame (where a
- * stylesheet's `:hover` rules have just parsed).
+ * Motion reporting (1003) sends a report per cell the pointer crosses, so it
+ * is on only while capture is on and something observes hover.
  */
 function updateHoverReporting(
 	termdom: TermDOM,
@@ -666,34 +529,26 @@ function updateHoverReporting(
 }
 
 export async function render(termdom: TermDOM): Promise<void> {
-	// attach() is the ONLY door to the terminal: until the app calls it,
-	// mutations keep the DOM and layout live but write nothing. Rendering
-	// resumes -- starting with whatever the document holds by then -- the
-	// moment attach() runs, which ends by scheduling this render.
+	// Until attach(), mutations keep the DOM and layout live but write nothing.
 	if (!isAttached(termdom)) {
 		return;
 	}
 
-	// A resize is settling: suppress every render until the exchange issues
-	// the single re-anchored redraw.
+	// A settling resize suppresses every render until its re-anchored redraw.
 	if (termdom[kExchange].resizing) {
 		return;
 	}
 
-	// A render in flight: coalesce, don't drop. Dropping an auto-render (a
-	// mutation observer firing mid-frame) leaves the diff renderer's
-	// previous-buffer out of step with the screen, which shows up as rows drawn
-	// at the wrong place. Instead mark one pending and hand back the running
-	// loop's promise: it will fold this caller's changes into a trailing frame,
-	// so awaiting render() always means "the caller's changes are painted".
+	// Coalesce, never drop: a dropped render leaves the diff's previous buffer
+	// out of step with the screen. The loop folds this call's changes into a
+	// trailing frame, so awaiting render() means they are painted.
 	if (termdom[kRenderInFlight] !== null) {
 		termdom[kRenderQueued] = true;
 		return termdom[kRenderInFlight];
 	}
 
-	// The loop's own first synchronous step can raise a render, and that one
-	// has to coalesce like any other: claim the slot before starting, then
-	// hand the real promise over the moment the loop yields.
+	// The loop's first synchronous step can raise a render, which has to
+	// coalesce too: claim the slot before starting.
 	termdom[kRenderInFlight] = Promise.resolve();
 	let framesAwaiting = false;
 	const frames = (async () => {
@@ -703,10 +558,8 @@ export async function render(termdom: TermDOM): Promise<void> {
 					termdom[kRenderQueued] = false;
 					await renderOnce(termdom);
 				} while (termdom[kRenderQueued]);
-				// The frames are written; wake everything that awaited them.
-				// A callback that schedules another frame re-queues the
-				// outer loop, so a chain of requestAnimationFrame calls
-				// ticks frame by frame instead of stalling after the first.
+				// A callback that schedules another frame re-queues the loop, so
+				// requestAnimationFrame chains tick frame by frame.
 				framesAwaiting = DOM.runFrameCallbacks(termdom.document);
 			} while (termdom[kRenderQueued] || framesAwaiting);
 		} finally {
@@ -718,20 +571,13 @@ export async function render(termdom: TermDOM): Promise<void> {
 }
 
 /**
- * The guards a frame passes before it may paint, and the fork between the
- * two renderers.
- *
- * Awaiting the interactive renderer through this call is load-bearing: the
- * probe-echo scrub attach queues must reach the terminal before the first
- * frame paints, and folding the two together writes the frame a turn
- * earlier -- soon enough for the erase to land on a row already painted.
+ * The await on the interactive renderer is load-bearing: the probe-echo
+ * scrub attach queued must reach the terminal before the first frame does.
  */
 async function renderOnce(
 	termdom: TermDOM,
 ): Promise<void> {
-	// The begin phase has to land before a frame can be anchored, and an
-	// in-flight render loop can outlive dispose() by one queued frame;
-	// everything below assumes a live document.
+	// A render loop can outlive dispose() by one queued frame.
 	if (termdom[kLifecycle] === "attaching") {
 		await termdom[kAttachBegun];
 	}
@@ -746,9 +592,6 @@ async function renderOnce(
 	await renderInteractive(termdom);
 }
 
-/**
- * The rows the document's flow occupies, from the root box that holds it.
- */
 function documentFlowHeight(
 	termdom: TermDOM,
 ): number {
@@ -758,11 +601,8 @@ function documentFlowHeight(
 }
 
 /**
- * The height of the window the camera shows, for the scroll-to-reveal
- * math. Fullscreen owns the whole screen from row zero, and the
- * fullscreen element has left the flow -- the flow measures next to
- * nothing there, and a reveal sized by it would scroll the camera by the
- * target's whole row.
+ * The rows the camera shows. Fullscreen owns the screen from row zero, and
+ * its element has left the flow, which then measures next to nothing.
  */
 function cameraRegionHeight(
 	termdom: TermDOM,
@@ -776,27 +616,21 @@ function cameraRegionHeight(
 }
 
 /**
- * Queue a caret reveal for the next frame. The reveal rides the frame
- * the edit already scheduled: one camera decision against the layout
- * that frame flushes anyway, however many keystrokes coalesced into it.
- * Revealing immediately instead would cost a full synchronous layout
- * flush per keystroke, before the frame's own -- half the typing latency.
+ * The reveal rides the frame the edit scheduled: one camera decision per
+ * frame instead of a synchronous layout flush per keystroke.
  */
 function queueCaretReveal(
 	termdom: TermDOM,
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
 	termdom[kPendingCaretReveal] = element;
-	// The reveal is a camera decision and a caret move, neither of which a
-	// mutation record describes.
+	// A camera move and a caret move: no mutation record describes either.
 	termdom[kScreen].invalidate();
 }
 
 /**
- * Where a control's caret sits on screen, derived as the painter derives
- * it: the focus of the selection record, measured through the text the
- * control renders. Null when there is no record, no text, or no box --
- * an empty value's caret is the caller's fallback.
+ * The caret as the painter derives it: the selection focus, measured through
+ * the rendered text. Null when there is no record, text or box.
  */
 function caretRectFor(
 	termdom: TermDOM,
@@ -821,12 +655,8 @@ function caretRectFor(
 }
 
 /**
- * Keep the editing caret inside the camera, the way a browser keeps the
- * caret of a focused control visible on every EDIT (typing, Enter,
- * caret travel) -- and only on edits: wheel-scrolling away from a
- * focused field stays allowed, so the render loop runs this only when
- * an edit queued it (see queueCaretReveal). The caret row comes from
- * fresh layout; single-row widgets reduce to their own row.
+ * Keeps the caret inside the camera on edits only: wheel-scrolling away from
+ * a focused field stays allowed.
  */
 function scrollCaretIntoView(
 	termdom: TermDOM,
@@ -842,9 +672,8 @@ function scrollCaretIntoView(
 	if (caret !== null) {
 		caretY = caret.y;
 	}
-	// The row span to reveal: the caret's row -- widened to the field's
-	// own edge when the caret sits on the first or last content row, so
-	// resting at a boundary shows the border instead of a cropped box.
+	// Widened to the field's edge when the caret is on its first or last
+	// row, so the border shows instead of a cropped box.
 	const boxModel = getBoxModel(element);
 	let revealTop = caretY;
 	let revealBottom = caretY + 1;
@@ -871,20 +700,10 @@ function scrollCaretIntoView(
 }
 
 /**
- * Resolve the journalled element scroll against this frame's layout: the
- * buffer rows its scroll port covers, or null when the terminal cannot be
- * asked to shift them.
- *
- * A band has to be the FULL WIDTH of the region, because DECSTBM margins are
- * horizontal: the terminal shifts whole rows or nothing. Everything else the
- * gate asks is about naming rows at all -- the box is still in the document,
- * layout gives it a box, and the rows it covers are inside the region. A
- * `delta` at least as tall as the band would scroll the band's whole content
- * out, which the plain repaint does for the same bytes.
- *
- * Content overlapping the band is not asked about. The terminal drags it
- * along, the shifted model says so, and the diff repairs it -- the same
- * backstop that repairs the fixed rows of a camera move.
+ * The buffer rows the journalled element scroll covers, or null when the
+ * terminal cannot shift them. DECSTBM margins are horizontal, so a band is
+ * the region's full width or nothing. Content overlapping the band is dragged
+ * along and the diff repairs it.
  */
 function resolveScrollBand(
 	termdom: TermDOM,
@@ -895,11 +714,10 @@ function resolveScrollBand(
 	if (
 		record === null ||
 		record.delta === 0 ||
-		// The camera owns the frame it moved in: one band per frame, and the
-		// region it shifts already contains this box.
+		// One band per frame: the camera's region already contains this box.
 		journal.frameScroll !== 0 ||
-		// Anything the layout derives a frame from has moved, so the rows the
-		// terminal would shift are not the rows the last frame painted.
+		// The rows the terminal would shift are not the rows the last frame
+		// painted.
 		termdom[kLayoutEngine].moved ||
 		!record.element.isConnected
 	) {
@@ -911,8 +729,7 @@ function resolveScrollBand(
 		return null;
 	}
 
-	// The scroll port is the PADDING box: what the port clips its content to,
-	// and so the rows whose content rides the scroll.
+	// The scroll port is the padding box.
 	const box = getBoxModel(record.element);
 	const left = rect.left + (box.borderLeftWidth || 0);
 	const right = rect.left + rect.width - (box.borderRightWidth || 0);
@@ -920,10 +737,8 @@ function resolveScrollBand(
 		return null;
 	}
 
-	// Layout rows are document rows -- the geometry funnel has already taken
-	// off what a scrolled ancestor lifts the box by -- and the buffer's are
-	// the camera's. A box in fixed space is laid out in viewport rows
-	// instead, and the paint cancels the camera for it.
+	// Layout rows are document rows; buffer rows are the camera's. A fixed
+	// box is laid out in viewport rows and the paint cancels the camera for it.
 	const lift = engine.isInFixedSpace(record.element)
 		? 0
 		: termdom[kScreen].scrollTop;
@@ -942,18 +757,14 @@ function resolveScrollBand(
 }
 
 /**
- * Run the observers against the layout just produced.
- *
- * Called after every render, once isRendering is clear -- a callback that
- * mutates the DOM schedules the next frame through the mutation observer, so
- * there is no re-entrancy to guard against here.
+ * Runs the observers against the layout just produced. A callback that
+ * mutates schedules the next frame through the mutation observer.
  */
 function afterRender(
 	termdom: TermDOM,
 ): void {
 	termdom[kRenderCount]++;
-	// The viewport in document coordinates: the scroll offset, one terminal
-	// high. IntersectionObserver measures targets against it.
+	// The viewport in document coordinates, for IntersectionObserver.
 	const viewport = new termdom.window.DOMRect(
 		0,
 		termdom[kScreen].scrollTop,
@@ -966,20 +777,12 @@ function afterRender(
 		viewport,
 		termdom[kRenderCount],
 	);
-	// The frame's stylesheets have parsed, so "does any rule test :hover"
-	// is current, and the wheel may have been handed to the terminal or
-	// taken back: re-answer what the terminal should report.
+	// The stylesheets have parsed, so whether any rule tests :hover is current.
 	updateMouseReporting(termdom);
 	updateHoverReporting(termdom);
 }
 
-/**
- * Render the whole document once, as plain lines, for a non-terminal stdout.
- *
- * There is no fold here, so there is nothing to commit, freeze or repair: the
- * document is simply printed. Every hard problem in this file is a consequence
- * of having a viewport, and a pipe does not have one.
- */
+/** The whole document as plain lines, for a stdout that is not a terminal. */
 async function printStatic(
 	termdom: TermDOM,
 ): Promise<void> {
@@ -1001,24 +804,9 @@ async function printStatic(
 }
 
 /**
- * Print the whole document to stdout, once, on the way out.
- *
- * Document mode never commits anything: it paints a window of the document into
- * a region it owns and repaints it in place. That is what buys the mutability --
- * nothing is frozen, because nothing was printed. But it means that at the
- * moment we exit, the terminal has only ever *seen* the last frame.
- *
- * So we settle up. Erase the region we were painting -- our own viewport rows,
- * with ED0; this is not the flicker sin, which is ED3 against the scrollback --
- * and then print the document in full. It scrolls into the scrollback exactly as
- * an ordinary command's output does, and the terminal ends up holding the whole
- * thing: searchable, selectable, and still there tomorrow.
- *
- * The axis was never "do you get scrollback". It is *when you commit*: flow
- * writes uneditable stdout as it goes, and document waits until the end.
- *
- * The cost of waiting is that a crash takes the output with it -- flow's partial
- * output survives, because it was already printed.
+ * Frames repaint in place and commit nothing, so on the way out the terminal
+ * has only seen the last one: erase our rows and print the document whole,
+ * into the scrollback like any command's output.
  */
 function flushDocument(
 	termdom: TermDOM,
@@ -1033,23 +821,16 @@ function flushDocument(
 		return;
 	}
 
-	// Back to the top of our region; every payout line then clears ITSELF
-	// (an EL before its text) and one partial erase covers whatever the
-	// old frame held below. Never a full ED from the top row: tmux
-	// preserves a fully-erased screen by pushing it into scrollback (the
-	// courtesy it extends to `clear`), which archived a copy of the final
-	// frame above the payout -- the document twice, interleaved.
+	// Every payout line clears itself and one partial erase covers what the
+	// old frame held below. Never a full ED from the top: tmux archives a
+	// fully erased screen into the scrollback, which put the document there
+	// twice.
 	void termdom[kExchange].cursorToRow(top + 1);
 	void termdom[kExchange].writeLines(output);
 	void termdom[kExchange].eraseBelow();
 }
 
-/**
- * The document as an ANSI string: colors and line breaks, no cursor
- * controls, no modes. Feeds the quit payout (CRLF: raw mode does not
- * translate bare newlines) and the scratch sibling behind renderANSI();
- * not part of the class's public surface.
- */
+/** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
 function renderStatic(
 	termdom: TermDOM,
 	lineEnding: "\n" | "\r\n",
@@ -1068,55 +849,35 @@ function renderStatic(
 }
 
 /**
- * Render a window of the document into a region we own.
- *
- * Document mode still starts at the command height: it does not seize the whole
- * terminal, and it does not paint over what was on screen before us. If it needs
- * more rows than are left below the command start, it *scrolls* the earlier
- * content away into the scrollback, where it survives and the user can still
- * reach it.
- *
- * Nothing of ours is committed. The document stays a single mutable thing
- * that we repaint a window of: content that scrolls out of view is never
- * frozen output, and reflow anywhere is free.
+ * A window of the document, repainted in place in a region below the command
+ * start. Needing more rows scrolls earlier output into the scrollback; nothing
+ * on screen before us is painted over.
  */
 async function renderInteractive(
 	termdom: TermDOM,
 ): Promise<void> {
-	// The previous document was sealed to scrollback by close(). Start a fresh
-	// one below it: re-anchor to where the cursor now sits and reset the diff so
-	// nothing composites over the frozen block.
+	// close() sealed the previous document; start a fresh one below it.
 	if (termdom[kSealed]) {
 		termdom[kSealed] = false;
 		termdom[kScreen].scrollTo(0);
 		termdom[kScreen].repaintAll();
-		// detectCommandStart waits for a reply on stdin, so the listener must
-		// be attached first (idempotent -- normally already done by now).
+		// detectCommandStart reads a reply, so the listener must be attached.
 		if (termdom[kTransport].interactive) {
 			termdom.attach();
 			await termdom[kExchange].detectCommandStart();
 		}
 	}
 
-	// Our region starts at the command-start row, which cursor detection resolves
-	// asynchronously. Render before it lands and the first frame anchors at row 0
-	// while every diff after detection anchors one row lower -- the labels stay,
-	// the values slide down a row. Wait for the anchor to settle first, exactly
-	// as the flow path does. Await only when one is pending: an unconditional
-	// await would defer the rest of this frame a microtask even with nothing
-	// to wait for, and a downstream synchronous scroll clamp depends on it.
+	// The region starts at the command-start row, found asynchronously; a
+	// frame before it lands anchors a row above every later one. Await only
+	// when pending: the scroll clamp below is synchronous by contract.
 	const detectionPending = termdom[kExchange].cursorDetectionPending;
 	if (detectionPending) {
 		await detectionPending;
 	}
 
-	// The screen under this frame must match the document's fullscreen
-	// state before anything composes: the switch is written here, at the
-	// head of a frame, so no frame can straddle it -- the previous frame's
-	// bytes are already on the wire, and this frame paints the screen it
-	// just took. Entry is switch, hide, clear: a cursor the entry left
-	// visible would sit blinking on the screen it just took, and a frame's
-	// own hide arrives no earlier than the frame does.
+	// The screen switch is written at the head of a frame so no frame
+	// straddles it. Entry is switch, hide, clear.
 	const wantAlt = isFullscreen(termdom);
 	if (wantAlt !== termdom[kOnAltScreen]) {
 		termdom[kOnAltScreen] = wantAlt;
@@ -1125,15 +886,13 @@ async function renderInteractive(
 			termdom[kExchange].setMode("cursorHidden", true);
 			void termdom[kExchange].clearScreen();
 		}
-		// The screen changed wholesale: drop the diff model, or this frame
-		// patches one screen against the other's content.
+		// Drop the diff model, or this frame patches one screen against the
+		// other's content.
 		termdom[kScreen].repaintAll();
 		updateMouseReporting(termdom);
 	}
 
-	// Coalesced pointer motion resolves first: a hover listener's
-	// synchronous mutations join the records taken below, and the hover
-	// chain's invalidation precedes this frame's style resolution.
+	// First, so a hover listener's mutations join the records taken below.
 	termdom[kEventHandler].resolvePendingHover();
 
 	DOM.applyMutations(termdom.document);
@@ -1141,10 +900,8 @@ async function renderInteractive(
 	termdom[kLayoutEngine].calculateLayout();
 	DOM.clampScrollOffsets(termdom.document);
 
-	// The caret reveal an edit queued runs here, against the layout this
-	// frame just flushed -- one camera decision per frame, however many
-	// keystrokes coalesced into it. Skipped if focus has already moved
-	// on: revealing a field the user left would yank the camera back.
+	// Skipped if focus has moved on: revealing a field the user left would
+	// yank the camera back.
 	if (termdom[kPendingCaretReveal]) {
 		const reveal = termdom[kPendingCaretReveal];
 		termdom[kPendingCaretReveal] = null;
@@ -1153,9 +910,7 @@ async function renderInteractive(
 		}
 	}
 
-	// The journal is empty and the camera stands where it painted: nothing
-	// this frame could paint differs from what the screen already shows.
-	// Don't pay to discover that.
+	// Nothing this frame could paint differs from the screen: skip the paint.
 	const journalled = DOM.takeScrollBand(termdom.document) as {
 		element: Element;
 		delta: number;
@@ -1168,20 +923,15 @@ async function renderInteractive(
 		journalled === null &&
 		!journal.needsRepaint
 	) {
-		// Skip the paint, not the frame: observers still run, so a fresh
-		// observe() gets its initial entry on the next tick.
+		// Observers still run, so a fresh observe() gets its initial entry.
 		afterRender(termdom);
 		return;
 	}
 
-	// Recompute the focused input's scroll window every frame (derived state).
 	DOM.revealFieldCaret(termdom.document);
 
-	// Fullscreen owns the WHOLE alternate screen from row zero: the
-	// main screen's command anchor means nothing there, and reserveRows'
-	// index-scrolls would scroll the alternate screen itself. The
-	// document's scroll position survives untouched underneath -- the
-	// fixed, Canvas-backed fullscreen element covers it regardless.
+	// Fullscreen owns the alternate screen from row zero; the document's
+	// scroll position survives underneath.
 	const fullscreen = isFullscreen(termdom);
 	const contentHeight = fullscreen
 		? termdom[kScreen].rows
@@ -1191,25 +941,19 @@ async function renderInteractive(
 		termdom[kScreen].rows,
 	);
 
-	// Take the room we need by pushing earlier output up, never over it.
 	const top = fullscreen ? 0 : reserveRows(termdom, regionHeight);
 
 	if (!fullscreen) {
-		// The camera cannot run off the end of the document. The clamp goes
-		// through the setter, so the journal's delta is what the screen is
-		// about to be shifted by -- there is no memory of where the last
-		// frame painted for it to disagree with.
+		// Through scrollTo, so the journal's delta is what the screen is
+		// about to be shifted by.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
 		termdom[kScreen].scrollTo(Math.min(termdom[kScreen].scrollTop, maxScroll));
 	}
 
-	// The camera has no alternate screen to move: fullscreen owns row zero
-	// and paints the whole of it. A scroll box inside it does move, though,
-	// and DECSTBM margins hold there like anywhere else -- a full-width pane
-	// scrolls under fixed chrome the terminal never touches.
+	// The camera has nothing to move in fullscreen; a scroll box inside it
+	// still does, under DECSTBM margins.
 	const band = resolveScrollBand(termdom, regionHeight, journalled);
-	// The clamp above goes through the camera, so the delta this frame is
-	// spelled with is read after it -- not from the gate's earlier reading.
+	// Read after the clamp, which adds to the journal.
 	const clamped = termdom[kScreen].journal;
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kScreen].scrollTop,
@@ -1234,10 +978,8 @@ async function renderInteractive(
 }
 
 /**
- * Reserve `rows` rows below the command start, returning how many rows the
- * screen must scroll so they fit (0 if they already do). When there isn't
- * room the command start rides up into the shell's scrollback, and the
- * region's start moves up by that much.
+ * How many rows the screen must scroll for `rows` to fit below the command
+ * start; the start moves up by that much.
  */
 function pushRowsUp(
 	termdom: TermDOM,
@@ -1254,45 +996,22 @@ function pushRowsUp(
 	return push;
 }
 
-/** Move the camera over the document. */
 function scrollCamera(
 	termdom: TermDOM,
 	rows: number,
 ): void {
 	termdom[kScreen].scrollTo(termdom[kScreen].scrollTop + rows);
-	// A camera move is invisible to the MutationObserver; schedule the frame
-	// it needs, the same way a DOM mutation would.
+	// No mutation record describes a camera move.
 	void render(termdom);
 }
 
 /**
- * Make room for `rows` rows below the command start, *without painting over
- * anything that was already on screen*.
- *
- * If there is not enough room between the command start and the bottom of the
- * terminal, we scroll the terminal -- pushing the rows above into the
- * scrollback, where they are preserved and the user can still reach them.
- * Overwriting them in place would destroy the output of whatever ran before
- * us; scrolling them away is what an ordinary command does when it prints.
- *
- * This positions the cursor at the bottom row (CUP) and sends IND (ESC D,
- * Index -- "move down a line, scrolling if already at the bottom margin")
- * `push` times. Two things this is deliberately NOT:
- *
- * - Not "print bare newlines at the bottom margin". Verified directly (a
- *   real terminal via tmux, and the xterm-headless mock the test suite
- *   runs against) that a bare LF only triggers a scroll when the cursor
- *   reaches the bottom row through ordinary sequential output --
- *   teleporting there with an absolute CUP first and then sending LF
- *   leaves the screen completely unchanged in both.
- * - Not CSI n S (Scroll Up), which scrolls the visible screen correctly in
- *   both but -- verified directly -- does not add the scrolled-off rows to
- *   xterm-headless's own scrollback history the way real terminal
- *   scrolling does, which would make the "scrolled away, not destroyed"
- *   half of this behavior untestable. IND scrolls identically but goes
- *   through the same internal path as natural overflow, so it does.
- *
- * Returns the screen row our region now starts at.
+ * Room below the command start comes from scrolling earlier output into the
+ * scrollback, never from painting over it. The scroll is IND (ESC D) from
+ * the bottom row: a bare LF after an absolute CUP does not scroll (tmux and
+ * xterm-headless both), and CSI n S scrolls without adding the rows to
+ * xterm-headless's scrollback, which would make this untestable. Returns
+ * the screen row the region starts at.
  */
 function reserveRows(
 	termdom: TermDOM,
@@ -1301,16 +1020,9 @@ function reserveRows(
 	const push = pushRowsUp(termdom, rows);
 	if (push > 0) {
 		void termdom[kExchange].scrollUp(termdom[kScreen].rows, push);
-		// Do NOT shift the screen's previous buffer. Its rows are relative to
-		// the region top, and the top moves up by exactly the amount the screen
-		// scrolled -- the two cancel, so buffer coordinates are unchanged.
-		// Shifting it desynced the diff by `push` rows: the model compared
-		// against the wrong screen rows, skipped cells it wrongly believed
-		// unchanged, and composited the old frame under the new one whenever a
-		// document-mode region grew past the space below the shell prompt.
-		//
-		// A pending post-resize screen reset IS screen-absolute, though, and
-		// must ride the scroll (see the screen's own `scrolled`).
+		// The previous buffer is not shifted: its rows are region-relative and
+		// the region top moved by exactly the scroll. A pending post-resize
+		// reset is screen-absolute and does ride it.
 		termdom[kScreen].scrolled(push);
 	}
 

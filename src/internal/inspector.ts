@@ -1,11 +1,5 @@
-/**
- * What a DOM object looks like when a debugger prints it.
- *
- * Node calls these through its inspect hook, so `console.log(element)` shows
- * markup rather than a field dump. Importing the module installs the hooks;
- * nothing else here is exported.
- */
-
+// Node's inspect hook, so console.log(element) shows markup rather than a
+// field dump. Importing the module installs the hooks.
 import {
 	Comment,
 	Document,
@@ -39,7 +33,6 @@ const plain = {
 	value: "",
 };
 
-/** The colours to render with, or the same keys emptied out. */
 function palette(colorize: boolean): typeof plain {
 	return colorize ? colors : plain;
 }
@@ -83,15 +76,15 @@ function inspectNode(
 	options: InspectorOptions = {},
 ): string {
 	switch (node.nodeType) {
-		case 1: // ELEMENT_NODE
+		case 1:
 			return inspectElement(node as Element, options);
-		case 3: // TEXT_NODE
+		case 3:
 			return inspectText(node as Text, options);
-		case 8: // COMMENT_NODE
+		case 8:
 			return inspectComment(node as Comment, options);
-		case 9: // DOCUMENT_NODE
+		case 9:
 			return inspectDocument(node as Document, options);
-		case 11: // DOCUMENT_FRAGMENT_NODE
+		case 11:
 			return inspectFragment(node as DocumentFragment, options);
 		default:
 			return node.nodeName;

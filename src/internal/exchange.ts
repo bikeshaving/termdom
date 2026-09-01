@@ -1,24 +1,3 @@
-/**
- * The terminal session: what the terminal can do, what it has been told, and
- * what it says back.
- *
- * Everything above this file works in cells and events. The exchange asks the
- * terminal what it supports, keeps the ledger of every mode it put the
- * terminal into so they can all be undone on the way out, spells what it has
- * to say, and sorts what comes back into input for the engine and answers for
- * the queries it is still waiting on. Start at TerminalExchange.
- *
- * The sections in front of it are the conversation as text: the spellings
- * this side writes, and the reader that says what a chunk from the other side
- * meant. A sequence can be spelled with no session and read with none
- * running.
- *
- * The one terminal this engine ships a wrapper for -- a Node process -- is
- * written as an ordinary TerminalTransport at the end of the module, where
- * raw mode, the stdin listener and the signal handlers are all it can reach:
- * nothing above transportFromProcess names Node.
- */
-
 import type {EventHandler} from "./input.js";
 import {
 	closeTermDOM,
@@ -33,12 +12,8 @@ import {
 } from "./termdom.js";
 import {recordClusterAdvance} from "./text.js";
 
-/* -------------------------------------------------- the transport contract */
-
-/** How many colors the terminal is believed to speak. */
 export type ColorDepth = "ansi" | "rgb" | "256";
 
-/** The terminal's dimensions, in cells. */
 export interface TerminalSize {
 	cols: number;
 	rows: number;
@@ -46,83 +21,51 @@ export interface TerminalSize {
 
 export interface TerminalCloseInfo {
 
-	/**
-	 * Exit status, process semantics: the process wrapper hands it to
-	 * process.exit; an SSH wrapper sends it as exit-status.
-	 */
+	/** The process wrapper hands it to process.exit; SSH sends exit-status. */
 	status?: number;
 }
 
 /**
- * The wire between the engine and a terminal: an established session as
- * duplex streams plus lifecycle, the common subset of WebTransport and
- * WebSocketStream. Everything Node-flavored -- raw mode, signals, env
- * sniffing -- belongs inside a wrapper, never in this contract.
+ * A terminal as duplex streams plus lifecycle. Anything Node-flavored -- raw
+ * mode, signals, env -- belongs in a wrapper, not here.
  */
 export interface TerminalTransport {
 
-	/**
-	 * The current size, as LIVE getters: after `resizes` emits, these answer
-	 * with the new size. `resizes` is the notification, these are the value.
-	 */
+	/** Live: after `resizes` emits, these answer with the new size. */
 	readonly cols: number;
 	readonly rows: number;
-
-	/** What the terminal can display; the wrapper knows its terminal. */
 	readonly colorDepth: ColorDepth;
 
 	/**
-	 * User input: keys, replies to queries, paste bursts. Chunks are strings,
-	 * so code points never split; escape sequences MAY split across chunks
-	 * (a network transport fragments arbitrarily), and the session
-	 * reassembles them.
+	 * Chunks are strings, so code points never split; escape sequences may,
+	 * and the exchange reassembles them.
 	 */
 	readonly readable: ReadableStream<string>;
-
-	/** Frames out. */
 	readonly writable: WritableStream<string>;
 	readonly resizes: ReadableStream<TerminalSize>;
 
 	/**
-	 * The screen holds prior content the app must not paint over (a shell
-	 * prompt above), so rendering anchors at the cursor rather than row 0.
-	 * True for a terminal shared with a shell; false for one the app owns
-	 * from row 0 (an xterm embed, a fresh SSH pty).
+	 * The screen holds content above the app (a shell prompt), so rendering
+	 * anchors at the cursor rather than row 0.
 	 */
 	readonly sharesScreen: boolean;
 
-	/**
-	 * Whether the far end is a screen that interprets cursor movement.
-	 * False for a pipe or a file; rendering degrades to plain appended
-	 * lines.
-	 */
+	/** False for a pipe or a file: rendering degrades to appended lines. */
 	readonly interactive: boolean;
 
-	/**
-	 * Resolves when the transport is established. A process's tty and an
-	 * xterm instance are established at construction (Promise.resolve());
-	 * an SSH wrapper resolves it when its channel opens.
-	 */
+	/** A pty is established at construction; an SSH channel when it opens. */
 	readonly ready: Promise<void>;
 
-	/**
-	 * The terminal went away: hangup, disconnect, process exit. Always
-	 * fulfills with a TerminalCloseInfo; fields may be absent.
-	 */
+	/** Hangup, disconnect, process exit. */
 	readonly closed: Promise<TerminalCloseInfo>;
 
 	/**
-	 * The app is done with the terminal (window.close()'s last act). A
-	 * transport that owns its medium ends it -- the process transport exits
-	 * the process with info's status; an SSH transport would end the channel.
-	 * One that doesn't (an embedded pane, a test harness) implements this as
-	 * a no-op: the engine has already flushed and disposed by the time it
-	 * calls here.
+	 * window.close()'s last act, after the engine has flushed and disposed.
+	 * A transport that owns its medium ends it; one that does not (an
+	 * embedded pane, a test) does nothing.
 	 */
 	close(info?: TerminalCloseInfo): void;
 }
-
-/* -------------------------------------------------------------- the base64 */
 
 const BASE64_ALPHABET =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -131,7 +74,6 @@ for (let i = 0; i < BASE64_ALPHABET.length; i++) {
 	BASE64_CODES[BASE64_ALPHABET.charCodeAt(i)] = i;
 }
 
-/** Padded base64, as OSC 52 carries a clipboard payload. */
 function encode64(bytes: Uint8Array): string {
 	let out = "";
 	let i = 0;
@@ -158,61 +100,32 @@ function encode64(bytes: Uint8Array): string {
 	return out;
 }
 
-/* ----------------------------------------------------------- the spellings */
-
-/** DSR 6: where is the cursor? Answered by a cursor report, one-based. */
 const CURSOR_QUERY = "\x1b[6n";
-
-/** OSC 52 with "?": what is on the clipboard? */
 const CLIPBOARD_QUERY = "\x1b]52;c;?\x07";
-
-/** BDSM reset: the application decides the order of bidirectional text. */
+// BDSM (mode 8): reset, the application orders bidi text; set, the terminal does.
 const BIDI_EXPLICIT = "\x1b[8l";
-
-/** BDSM set: the terminal reorders bidirectional text itself. */
 const BIDI_IMPLICIT = "\x1b[8h";
-
-/** EL 0: from the cursor to the end of its row. */
 const LINE_ERASE = "\x1b[K";
-
-/** ED 0: from the cursor to the end of the screen. */
 const BELOW_ERASE = "\x1b[J";
-
-/** ED 2 then CUP with no parameters: the screen blank, the cursor home. */
 const SCREEN_CLEAR = "\x1b[2J\x1b[H";
-
-/** IND: down one row, scrolling the screen when the cursor is at the end. */
 const SCROLL_STEP = "\x1bD";
 
-/**
- * DECRQM: what is this mode set to? The mode is spelled as DECRPM answers it,
- * a private mode keeping its "?" ("8", "?2027").
- */
+/** DECRQM. The mode is spelled as DECRPM answers it: "8", "?2027". */
 function modeQuery(mode: string): string {
 	return mode.startsWith("?")
 		? `\x1b[?${parseInt(mode.slice(1), 10)}$p`
 		: `\x1b[${parseInt(mode, 10)}$p`;
 }
 
-/**
- * The characters no payload may put on the wire: C0, DEL, and the C1 range
- * whose single bytes are CSI, OSC and DCS. One of these in untrusted text
- * would end the sequence around it or start one of its own.
- */
+// C0, DEL and the C1 range: in untrusted text one would end the sequence
+// around it or start one of its own.
 function isControlByte(code: number): boolean {
 	return code < 0x20 || (code >= 0x7f && code < 0xa0);
 }
 
-/* --------------------------------------------------------- the mode ledger */
-
-/**
- * The private modes and stack controls this engine sets, named once. `set`
- * engages, `reset` hands the terminal back. An orderly teardown resets what
- * was engaged, in this declaration order; the transport's panic paths
- * blanket-reset the union. A mode written anywhere else is a restore leak
- * waiting -- new modes are added here, and set through
- * TerminalExchange.setMode.
- */
+// Every mode the engine sets, so teardown can reset what was engaged (in
+// this order) and the panic paths can reset the union. A mode written
+// anywhere else is a restore leak.
 const MODE_SPELLINGS = {
 	motionReporting: {
 		set: "\x1b[?1003h",
@@ -234,26 +147,21 @@ const MODE_SPELLINGS = {
 		reset: "\x1b[?2004l",
 		panic: true,
 	},
-	// XTWINOPS 22 and 23: the window title onto the terminal's own stack, and
-	// back off it.
+	// XTWINOPS 22 and 23: the title onto the terminal's stack and back off.
 	titleStack: {
 		set: "\x1b[22;0t",
 		reset: "\x1b[23;0t",
 		panic: true,
 	},
-	// The Fullscreen API's screen switch. The panic spelling is ?1047, the
-	// switch WITHOUT the cursor restore: a bare ?1049l restores a saved
-	// cursor even when the alternate screen is not active (tmux and xterm
-	// both), and the saved slot outlives whichever program set it. The
-	// blanket restore cuts ahead of the queued payout, so a cursor-moving
-	// reset there teleports the payout onto rows the app never owned.
+	// The panic spelling is ?1047, without the cursor restore: a bare ?1049l
+	// restores a saved cursor even when the alternate screen is not active
+	// (tmux and xterm both), which would teleport the queued payout.
 	altScreen: {
 		set: "\x1b[?1049h",
 		reset: "\x1b[?1049l",
 		panic: "\x1b[?1047l",
 	},
-	// Negotiated, not imposed: a terminal that ignored the offer must not
-	// see the reset, so only the engaged-tracking restore may write it.
+	// Negotiated: a terminal that ignored the offer must not see the reset.
 	clusterWidths: {
 		set: "\x1b[?2027h",
 		reset: "\x1b[?2027l",
@@ -265,12 +173,8 @@ type ModeName = keyof typeof MODE_SPELLINGS;
 
 const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
 
-/**
- * The blanket restore the panic paths write: each panic-marked mode's reset,
- * engaged or not -- a panic path cannot know, and each must therefore hold as
- * a no-op on a terminal the mode never touched. A mode whose ordinary reset
- * is not that no-op carries its own panic spelling instead.
- */
+// Written engaged or not, so each reset must be a no-op on a terminal the
+// mode never touched.
 const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	(name) => MODE_SPELLINGS[name].panic,
 ).map((name) => {
@@ -278,9 +182,6 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	return typeof panic === "string" ? panic : reset;
 }).join("");
 
-/* --------------------------------------------------------- what comes back */
-
-/** One SGR mouse escape, whole, or null when the token is something else. */
 function decodeMouseEscape(token: string): {
 	button: number;
 	col: number;
@@ -299,25 +200,14 @@ function decodeMouseEscape(token: string): {
 	};
 }
 
-/** The fences a terminal wraps pasted text in, DEC private mode 2004. */
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
-/** The opening of an OSC 52 reply, the one OSC a terminal answers with. */
 const CLIPBOARD_START = "\x1b]52;";
-
-/**
- * A whole OSC 52 reply: the selection field, then a base64 payload, then BEL
- * or ST. The payload stops at ESC so a reply ended by ST still bounds it.
- */
+// The payload stops at ESC so a reply ended by ST is still bounded.
 const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
 
-/**
- * One keystroke, read: the key its spelling names and the modifiers that
- * spelling carries. `key` is a name for the keys a terminal spells out
- * ("ArrowUp", "Enter") and the character itself for the rest; `char` is the
- * character the keystroke produces, empty when it produces none.
- */
+/** `key` is a name ("ArrowUp") or the character itself; `char` is empty when the key produces none. */
 export interface WireKey {
 	kind: "key";
 	key: string;
@@ -328,7 +218,6 @@ export interface WireKey {
 	metaKey: boolean;
 }
 
-/** One SGR mouse report: the code byte, the 1-based cell, and the phase. */
 export interface WireMouse {
 	kind: "mouse";
 	button: number;
@@ -337,17 +226,12 @@ export interface WireMouse {
 	release: boolean;
 }
 
-/** One bracketed paste, whole, with its fences taken off. */
 export interface WirePaste {
 	kind: "paste";
 	text: string;
 }
 
-/**
- * One utterance off the wire: a keystroke, an SGR mouse escape, a whole paste
- * body, or a reply to one of the queries. A clipboard reply's text is null
- * when the reply outgrew the held-reply limit before its terminator arrived.
- */
+// A clipboard reply's text is null when it outgrew the held-reply limit.
 type WireItem =
 	WireKey |
 	WireMouse |
@@ -356,20 +240,12 @@ type WireItem =
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "clipboard"; text: string | null};
 
-/** Shift+Tab: CSI Z, the one named spelling carrying a modifier of its own. */
+// The one named spelling that carries a modifier.
 const SHIFT_TAB = "\x1b[Z";
 
-/**
- * The key each spelled-out token names. Enter is carriage return; line feed is
- * the Ctrl+J chord, which a terminal sends as its control byte like any other
- * letter's, and which an application binds if it wants a soft newline where
- * Enter already means something else. A lone ESC is the Escape key -- not the
- * start of a CSI or SS3 sequence, since the reader peels those off whole.
- *
- * F1-F4 arrive in the SS3 encoding, the modern xterm default. F5-F12 arrive as
- * CSI-tilde -- note the historical gap (no ~16), a quirk of the original xterm
- * numbering every terminal descended from it still follows.
- */
+// Line feed is not here: it is the Ctrl+J chord. A lone ESC is the Escape
+// key, since the reader peels CSI and SS3 off whole. F1-F4 are SS3; F5-F12
+// are CSI-tilde with xterm's historical gap at 16.
 const KEY_BY_TOKEN: Record<string, string> = {
 	"\r": "Enter",
 	"\t": "Tab",
@@ -402,7 +278,6 @@ const KEY_BY_TOKEN: Record<string, string> = {
 	"\x1b[24~": "F12",
 };
 
-/** The cursor keys xterm's modified spelling names, by its final letter. */
 const MODIFIED_CURSOR_KEYS: Record<string, string> = {
 	A: "ArrowUp",
 	B: "ArrowDown",
@@ -412,29 +287,18 @@ const MODIFIED_CURSOR_KEYS: Record<string, string> = {
 	H: "Home",
 };
 
-/**
- * xterm's extended CSI encoding for a modified cursor key: CSI 1 ; <mod>
- * <letter>, e.g. Alt+Up = CSI 1;3A, Shift+Home = CSI 1;2H. The reader yields
- * the whole sequence as one token -- it scans for the CSI final byte whatever
- * parameters precede it -- so this is pure decoding, no parsing changes.
- */
+// xterm's modified cursor key: CSI 1 ; <mod> <letter>, e.g. Alt+Up = CSI 1;3A.
 const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHF])$/;
 
-/** What one key token means: the key it names, and its modifiers. */
 function decodeKeyToken(token: string): WireKey {
 	const code = token.charCodeAt(0);
 
-	// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
-	// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
-	// it with Shift (the terminal only ever sends the one byte). Tab(0x09) and
-	// Enter(0x0D) are excluded even though they fall in this range: those bytes
-	// are what the physical Tab and Enter keys send, indistinguishable from
-	// Ctrl+I and Ctrl+M, so the named key wins. Line feed(0x0A) collides with
-	// no key and stays the Ctrl+J chord.
+	// Ctrl+<letter> is one control byte. 0x09 and 0x0d are what Tab and Enter
+	// send, indistinguishable from Ctrl+I and Ctrl+M, so the named key wins.
 	if (code >= 1 && code <= 26 && code !== 9 && code !== 13) {
 		return {
 			kind: "key",
-			key: String.fromCharCode(code + 96), // 0x01 -> 'a' ... 0x1A -> 'z'
+			key: String.fromCharCode(code + 96),
 			char: "",
 			shiftKey: false,
 			ctrlKey: true,
@@ -445,9 +309,7 @@ function decodeKeyToken(token: string): WireKey {
 
 	const modified = token.match(MODIFIED_CURSOR_KEY);
 	if (modified) {
-		// mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta (meta included for
-		// spec-completeness; nothing on macOS actually sends it, since Cmd+key
-		// never reaches the PTY at all).
+		// mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Meta.
 		const bits = parseInt(modified[1], 10) - 1;
 		return {
 			kind: "key",
@@ -460,11 +322,7 @@ function decodeKeyToken(token: string): WireKey {
 		};
 	}
 
-	// A token this table does not name is passed along as it arrived. What is
-	// left produces a character when it is one character wide and neither a
-	// control byte nor DEL -- every printable character, not only the ASCII
-	// ones, and a character outside the basic plane is one character across
-	// the two code units that spell it.
+	// A character outside the basic plane is one character across two units.
 	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
 	const printable =
 		astral || (token.length === 1 && code >= 32 && code !== 127);
@@ -485,36 +343,16 @@ const kReplyBody = Symbol("replyBody");
 const kReplyLimit = Symbol("replyLimit");
 
 /**
- * The reader: one chunk in, what it meant out.
- *
- * It holds syntactic state and nothing else, and owns every cut a chunk
- * boundary can make. An escape sequence split before its final byte is held
- * for the next chunk -- but never a bare trailing ESC, which may be the
- * Escape key itself, and holding it would swallow the keystroke. An open
- * paste body is buffered until its end fence and returned as one item; the
- * body is literal text, and nothing inside it is read except that fence. An
- * open clipboard reply is buffered until its terminator, and recognized
- * whether or not anyone asked: its base64 would otherwise type as keystrokes,
- * and dropping an unasked-for answer is the session's decision to make, not a
- * syntax accident.
- *
- * State survives everything except construction -- there is no reset --
- * because a held tail or an open paste must never be droppable mid-stream.
- * One is built bare, with no session behind it, wherever a chunk needs
- * reading on its own.
+ * One chunk in, what it meant out. Holds what a chunk boundary can cut: a
+ * split escape (never a bare trailing ESC, which may be the Escape key), an
+ * open paste body, an open clipboard reply -- recognized whether or not
+ * anyone asked, or its base64 would type as keystrokes.
  */
 class WireReader {
-	/**
-	 * The most of a clipboard reply held while its terminator is awaited. A
-	 * larger payload is not a clipboard a terminal is answering with, and the
-	 * reader gives the reply up as null rather than buffer the wire.
-	 */
+	// A larger reply is not a clipboard; it is given up as null.
 	static readonly [kReplyLimit] = 1 << 16;
-	// An incomplete CSI or SS3 at a chunk's end, held for the next chunk.
 	declare [kTail]: string;
-	// The body of an open paste; null when no paste is in flight.
 	declare [kPasteBody]: string | null;
-	// An open clipboard reply, from its ESC ] 52 on; null when none is.
 	declare [kReplyBody]: string | null;
 
 	constructor() {
@@ -523,13 +361,10 @@ class WireReader {
 		this[kReplyBody] = null;
 	}
 
-	/** Read one chunk, and say what arrived. */
 	feed(chunk: string): WireItem[] {
 		let data = this[kTail] + chunk;
 		this[kTail] = "";
-		// Hold a split escape for its continuation -- but only a short one:
-		// what outgrows a real sequence is not going to finish, and holding
-		// it would swallow input for good.
+		// Only a short one: what outgrows a real sequence will not finish.
 		const held = splitTrailingEscape(data);
 		if (held > 0 && held <= 32) {
 			this[kTail] = data.slice(-held);
@@ -539,8 +374,7 @@ class WireReader {
 		const items: WireItem[] = [];
 		let i = 0;
 		while (i < data.length) {
-			// Inside a paste only the end fence means anything; a start fence
-			// in the body must not restart one.
+			// Inside a paste only the end fence means anything.
 			if (this[kPasteBody] !== null) {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
@@ -555,9 +389,7 @@ class WireReader {
 				i = end + PASTE_END.length;
 				continue;
 			}
-			// Inside a clipboard reply everything belongs to it until BEL or
-			// ST closes it. A payload no reading rescues answers as an empty
-			// clipboard: OSC 52 has no channel for saying more.
+			// A payload no reading rescues answers as an empty clipboard.
 			if (this[kReplyBody] !== null) {
 				const reply = this[kReplyBody] + data.slice(i);
 				this[kReplyBody] = null;
@@ -590,8 +422,6 @@ class WireReader {
 			}
 			if (data[i] === "\x1b" && i + 1 < data.length) {
 				if (data[i + 1] === "[") {
-					// CSI: parameter/intermediate bytes end at a final byte
-					// 0x40-0x7e.
 					let end = i + 2;
 					while (
 						end < data.length &&
@@ -611,9 +441,7 @@ class WireReader {
 					continue;
 				}
 			}
-			// A character outside the basic plane arrives as two code units,
-			// and it is one keystroke: split, its halves are lone surrogates,
-			// which name no key and spell no character.
+			// A surrogate pair is one keystroke.
 			const code = data.charCodeAt(i);
 			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length
 				? 2
@@ -625,12 +453,8 @@ class WireReader {
 	}
 }
 
-/**
- * Tolerant base64, as terminals answer OSC 52: bytes outside the alphabet
- * are skipped and an unpadded tail still decodes, since terminals differ on
- * both. Null for a payload no reading rescues -- a digit count of one past
- * a four-digit boundary carries no byte.
- */
+// Tolerant, since terminals differ: bytes outside the alphabet are skipped
+// and an unpadded tail decodes. Null when the digit count carries no byte.
 function decode64(text: string): Uint8Array | null {
 	const bytes = new Uint8Array((text.length * 3) >> 2);
 	let held = 0;
@@ -655,15 +479,8 @@ function decode64(text: string): Uint8Array | null {
 	return bytes.subarray(0, length);
 }
 
-/**
- * The length of an incomplete escape sequence at the end of `chunk`, or 0.
- * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
- * arrived, an SS3 (ESC O) missing its one final character, or as much of the
- * clipboard reply's opening as has come -- past that opening the reply holds
- * itself, since its own terminator is what ends it. A bare trailing ESC
- * reports 0 -- it may be the Escape key itself, and holding it for a
- * continuation that never comes would swallow the keystroke.
- */
+// The length of an incomplete CSI, SS3 or clipboard-reply opening at the
+// end of the chunk, or 0. A bare trailing ESC is 0: it may be the Escape key.
 function splitTrailingEscape(chunk: string): number {
 	const esc = chunk.lastIndexOf("\x1b");
 	if (esc === -1 || esc === chunk.length - 1) {
@@ -675,7 +492,7 @@ function splitTrailingEscape(chunk: string): number {
 			const code = chunk.charCodeAt(i);
 			if (code >= 0x40 && code <= 0x7e) {
 				return 0;
-			} // finished
+			}
 		}
 		return chunk.length - esc;
 	}
@@ -692,7 +509,6 @@ function splitTrailingEscape(chunk: string): number {
 	return 0;
 }
 
-/** What one CSI token means: a mouse escape, a reply, or a keystroke. */
 function decodeControlToken(token: string): WireItem {
 	const mouse = decodeMouseEscape(token);
 	if (mouse) {
@@ -717,34 +533,18 @@ function decodeControlToken(token: string): WireItem {
 	return decodeKeyToken(token);
 }
 
-/* ------------------------------------------------------------ the exchange */
-
-/**
- * One question awaiting its answer: the kind of item that carries the reply,
- * the deadline, and for cursor questions the DSR send order that keeps them
- * and the width probes from taking each other's replies. Oldest first: the
- * first pending question an item fits is the one it answers, and an item
- * fitting none is a late or duplicate reply, dropped.
- */
+// A question awaiting its reply. The first pending question an item fits
+// answers it; an item fitting none is a late or duplicate reply, dropped.
 interface PendingReply {
-
-	/** The item kind that answers this question. */
 	kind: WireItem["kind"];
-
-	/** The mode a DECRPM answer must name; mode questions only. */
+	// Mode questions only: the mode a DECRPM answer must name.
 	mode?: string;
-
-	/** Answer the asker with the item that fit, clearing the deadline. */
 	settle(item: WireItem): void;
-
-	/** Answer the asker with silence: the deadline, a replacement, dispose. */
+	// Silence: the deadline, a replacement question, dispose.
 	giveUp(): void;
 	timer: ReturnType<typeof setTimeout>;
-
-	/** DSR send order, cursor questions only. */
+	// Cursor questions only: DSR send order, shared with the width probes.
 	sequence?: number;
-
-	/** The clipboard question: one at a time, and dispose answers it null. */
 	clipboard?: boolean;
 }
 
@@ -783,116 +583,51 @@ const kWidthProbeTimeout = Symbol("widthProbeTimeout");
 const kWidthStarvationWait = Symbol("widthStarvationWait");
 
 /**
- * The conversation held over a transport: one reader, one writer, and the
- * demultiplexer between them.
- *
- * Everything the wire carries arrives interleaved on one byte stream -- that
- * is the terminal protocol's nature. The reader above says what each chunk
- * meant, and this is where the items fan out: pastes, DECRPM mode replies and
- * DSR cursor replies to whichever query waits, mouse reports, keystrokes. The
- * engine sees typed callbacks and dispatches DOM events; no other layer
- * parses input.
- *
- * The query half is the round-trips the engine cannot have synchronously. A
- * DSR cursor query locates the command-start row so the painted region
- * anchors correctly; DECRQM queries settle capabilities the renderer's
- * contract depends on (explicit bidi, grapheme-cluster widths). Answers may
- * never come -- most terminals implement no such modes -- so every query is
- * bounded by a timer, and silence is a valid answer meaning "no opinion,
- * ours stands". Every timer is tracked so dispose() can clear it; a live one
- * keeps the event loop open, which across a test suite is fatal.
+ * One reader, one writer, and the demultiplexer between them. Every query
+ * is bounded by a timer, since most terminals answer nothing; silence means
+ * the terminal has no opinion and ours stands.
  */
 export class TerminalExchange {
-	/**
-	 * Generous: the reply crosses whatever the transport is, and a terminal
-	 * answering late is still answering. Only a session that gets NOTHING back
-	 * gives up probing, and it can afford to wait to be sure.
-	 */
+	// A terminal answering late is still answering; only one answering
+	// nothing at all gives up probing.
 	static readonly [kWidthProbeTimeout] = 2000;
-
-	/**
-	 * How long a starved cluster waits for a frame of the document's own
-	 * before one is asked for on its behalf. Long enough that anything still
-	 * animating, typing or scrolling carries the train for free.
-	 */
+	// Long enough that anything still animating or typing carries the train.
 	static readonly [kWidthStarvationWait] = 500;
-
-	/**
-	 * How long a clipboard query waits. Short on purpose: most terminals
-	 * refuse clipboard reads and refusing is silence, so this is the delay
-	 * every navigator.clipboard.readText() pays before rejecting. A terminal
-	 * that does answer answers at typing latency.
-	 */
+	// Most terminals refuse clipboard reads by silence: this is what every
+	// readText() pays before rejecting.
 	static readonly [kClipboardQueryTimeout] = 500;
 	declare [kTransport]: TerminalTransport;
 	declare [kInteractive]: boolean;
-	// The modes currently set on the terminal, the source restore derives from.
 	declare [kEngagedModes]: Set<ModeName>;
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kTermDOM]: TermDOM;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
-
-	/**
-	 * A resize is settling: a token per burst, so a redraw that lands after
-	 * a newer burst began knows to stand down. Null between bursts.
-	 */
+	// A token per resize burst, so a redraw that lands after a newer burst
+	// began stands down. Null between bursts.
 	declare [kSettlingResize]: object | null;
-
-	/** The terminal went away on its own, so there is nothing to close. */
 	declare [kTransportClosed]: boolean;
 	declare [kInput]: EventHandler | null;
-
 	declare [kWriter]: WritableStreamDefaultWriter<string> | null;
 	declare [kReader]: ReadableStreamDefaultReader<string> | null;
 	declare [kResizeReader]: ReadableStreamDefaultReader<TerminalSize> | null;
 	declare [kStarted]: boolean;
 	declare [kDisposed]: boolean;
-	// The last queued write, so flush() can await everything before it.
 	declare [kLastWrite]: Promise<void>;
-
-	// The session's reader, one per session: the syntax and cross-chunk state
-	// of what comes back -- split escapes, an open paste body, an open
-	// clipboard reply -- live there, and this class only dispatches the items
-	// it returns.
 	declare [kWireReader]: WireReader;
-
-	// Command start was resolved (even if at row 1). The resize re-anchor saves
-	// and restores this around its redraw.
+	// The resize re-anchor saves and restores this around its redraw.
 	declare [kHasDetectedCommandStart]: boolean;
-	// Resolves when startup command-start detection settles (or times out), so
-	// the first frame waits for the anchor rather than painting at row 0 first.
 	declare [kCursorDetectionPromise]: Promise<void> | null;
-
-	/**
-	 * Every question written and not yet answered or given up on, oldest
-	 * first: the anchor and re-anchor cursor queries, the DECRQM
-	 * negotiations, the clipboard read. Each item off the wire answers the
-	 * first question here that it fits. Two mode negotiations run
-	 * concurrently at startup and their answers can arrive in either order --
-	 * each names its own mode number, so neither takes the other's.
-	 */
+	// Oldest first. Two mode negotiations can be outstanding at once; each
+	// names its mode, so neither takes the other's answer.
 	declare [kPendingReplies]: PendingReply[];
-
-	/** The BDSM state the terminal reported before we touched it, for dispose. */
+	// The BDSM state the terminal reported before we touched it.
 	declare [kPriorBidiMode]: number | null;
-
-	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
 	declare [kGraphemeClustersNegotiated]: boolean;
-
-	/**
-	 * DSR queries in the order they went out. A terminal answers them in that
-	 * order, so the sequence number is what keeps cursor detection and width
-	 * measurement from taking each other's replies.
-	 */
+	// A terminal answers DSR in ask order, so this keeps cursor detection and
+	// width probes from taking each other's replies.
 	declare [kDsrSequence]: number;
-
-	/** Teardown has begun: no frame may take another probe. */
+	// Teardown has begun: no frame may take another probe.
 	declare [kProbingEnded]: boolean;
-
-	/**
-	 * The width-probe conversation, whole: what has been asked, what has come
-	 * back, and the drift each run's readings are corrected by.
-	 */
 	declare [kWidths]: WidthProbes;
 
 	constructor(transport: TerminalTransport, termDOM: TermDOM) {
@@ -915,8 +650,7 @@ export class TerminalExchange {
 		this[kTransport] = transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();
-		// A shared screen is one with a shell's rows above ours, which is what
-		// there is an anchor to find; a terminal that answers nothing has none.
+		// A shell's rows above ours are what there is an anchor to find.
 		this[kAnchorDetectionEnabled] = transport.sharesScreen && interactive;
 		this[kTermDOM] = termDOM;
 		this[kInput] = null;
@@ -925,70 +659,52 @@ export class TerminalExchange {
 		this[kTransportClosed] = false;
 	}
 
-	/** Whether the transport takes input -- a pipe does not. */
 	get interactive(): boolean {
 		return this[kInteractive];
 	}
 
-	/** Whether a resize is settling: renders wait for its one redraw. */
 	get resizing(): boolean {
 		return this[kSettlingResize] !== null;
 	}
 
-	/** Whether the terminal went away on its own. */
 	get transportClosed(): boolean {
 		return this[kTransportClosed];
 	}
 
 	/**
-	 * The outstanding startup command-start detection, or null once it has
-	 * settled. The first interactive frame awaits this so it anchors at the
-	 * resolved row rather than painting at row 0 first -- but only when one is
-	 * actually pending. A settled probe returns null so the caller adds no
-	 * async hop: an unconditional await would defer the rest of that frame a
-	 * microtask even with nothing to wait for, and a synchronous scroll clamp
-	 * depends on the frame running straight through.
+	 * Null once settled, so the frame adds no async hop: its scroll clamp is
+	 * synchronous by contract.
 	 */
 	get cursorDetectionPending(): Promise<void> | null {
 		return this[kCursorDetectionPromise];
 	}
 
-	/**
-	 * Whether the wire can still carry an answered probe: a terminal is
-	 * behind the transport and has not proven that it never answers.
-	 */
+	/** A terminal is behind the transport and has not proven it never answers. */
 	probing(): boolean {
 		return this[kWidths].probing;
 	}
 
-	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
 	clusterWidthsNegotiated(): boolean {
 		return this[kGraphemeClustersNegotiated];
 	}
 
-	/** Whether this cluster's advance is still unmeasured. */
 	wantsWidth(cluster: string): boolean {
 		return !this[kWidths].settled.has(cluster);
 	}
 
 	/**
-	 * Clusters the margin has starved: deferred, and never asked about
-	 * anywhere else either. Right-aligned text lands its glyphs against the
-	 * last column whenever it paints them, so in place they would wait
-	 * forever. The frame measures these somewhere with room instead; a
-	 * cluster leaves the set when it is probed.
+	 * Deferred by the margin and never asked about elsewhere: right-aligned
+	 * text would wait forever in place, so a frame measures these somewhere
+	 * with room.
 	 */
 	starvedWidths(): ReadonlySet<string> {
 		return this[kWidths].starved;
 	}
 
 	/**
-	 * The margin guard turned this cluster away: it was painted too near the
-	 * last column for its answer to be readable. A cluster that has been
-	 * asked about somewhere is not starving, whatever this frame's margin
-	 * did to it. So one deferral of a cluster nothing has ever asked about
-	 * IS the starvation: the layout that put it there will put it there
-	 * again.
+	 * Painted too near the last column for its answer to be readable. One
+	 * deferral of a cluster never asked about is starvation: the layout that
+	 * put it there will put it there again.
 	 */
 	deferWidth(cluster: string): void {
 		const widths = this[kWidths];
@@ -1000,15 +716,10 @@ export class TerminalExchange {
 	}
 
 	/**
-	 * Take a probe for `cluster`, whose first cell is painted at 0-based
-	 * `column` and which the tables call `width` cells wide. `run` names the
-	 * contiguous emission the cluster belongs to: probes sharing a run
-	 * reached their columns by advancing through glyphs, so each one's
-	 * divergence carries into the next; a cursor move starts a new run and
-	 * re-syncs the column. Returns the bytes the frame appends after the
-	 * glyph: the ask rides the frame that paints the cluster, and a width
-	 * reply is claimed by the queue in the DSR send order the sequence
-	 * number keeps.
+	 * The bytes a frame appends after the cluster's glyph, painted at 0-based
+	 * `column`. Probes sharing a `run` reached their columns by advancing
+	 * through glyphs, so each one's divergence carries into the next; a
+	 * cursor move starts a new run.
 	 */
 	probeWidth(
 		cluster: string,
@@ -1016,9 +727,7 @@ export class TerminalExchange {
 		column: number,
 		width: number,
 	): string {
-		// A teardown frame asks nothing: the reply would arrive after the
-		// tty is handed back, typed into the next shell, and the width it
-		// names will never be reused.
+		// A reply after the tty is handed back is typed into the next shell.
 		if (this[kProbingEnded]) {
 			return "";
 		}
@@ -1038,11 +747,7 @@ export class TerminalExchange {
 		return CURSOR_QUERY;
 	}
 
-	/**
-	 * Write a mode's set or reset and track the engagement, so teardown can
-	 * restore what was engaged and nothing else. Writing on change only makes
-	 * re-deciding callers free.
-	 */
+	/** Writes on change only; teardown restores what was engaged. */
 	setMode(name: ModeName, on: boolean): void {
 		if (on === this[kEngagedModes].has(name)) {
 			return;
@@ -1057,10 +762,6 @@ export class TerminalExchange {
 		);
 	}
 
-	/**
-	 * Reset the engaged modes, in the table's order. The orderly half of the
-	 * restore guarantee; the panic paths write the blanket union instead.
-	 */
 	restoreEngagedModes(): void {
 		for (const name of MODE_RESTORE_ORDER) {
 			if (this[kEngagedModes].delete(name)) {
@@ -1069,16 +770,10 @@ export class TerminalExchange {
 		}
 	}
 
-	/**
-	 * Queue output on the transport, in order. The writer engages lazily on
-	 * the first write. Returns the chunk's flush promise; flush() awaits the
-	 * queue's tail.
-	 */
 	write(output: string): Promise<void> {
-		// Probes are taken while a frame is being built and go out with it, so
-		// each write ends the batch that can share a drift correction.
+		// Probes taken while building one frame go out with it: a write ends
+		// the batch that can share a drift correction.
 		this[kWidths].writeBatch = {};
-		// A disposed session has released the wire; late writes are dropped.
 		if (this[kDisposed] && !this[kWriter]) {
 			return Promise.resolve();
 		}
@@ -1086,23 +781,16 @@ export class TerminalExchange {
 			this[kWriter] = this[kTransport].writable.getWriter();
 		}
 		this[kLastWrite] = this[kWriter].write(output).catch(() => {
-			// A transport torn down mid-write (disconnect) is a close, not a
-			// crash; the closed promise carries the real signal.
+			// A transport torn down mid-write is a close, not a crash.
 		});
 		return this[kLastWrite];
 	}
 
-	/** Resolves when everything written so far has reached the transport. */
 	flush(): Promise<void> {
 		return this[kLastWrite];
 	}
 
-	/**
-	 * Adopt a different transport, in place. Only before the conversation
-	 * begins: a rebind re-derives what the terminal decides -- whether it
-	 * takes input, whether an anchor is findable -- and a live session
-	 * cannot change terminals under its readers.
-	 */
+	/** Only before the session starts: it cannot change terminals under its readers. */
 	rebind(transport: TerminalTransport): void {
 		if (this[kStarted]) {
 			throw new Error("rebind(): the session has already started");
@@ -1111,15 +799,10 @@ export class TerminalExchange {
 		this[kInteractive] = transport.interactive;
 		this[kAnchorDetectionEnabled] =
 			transport.sharesScreen && transport.interactive;
-		// Whether a probe can be answered is the new terminal's to say.
 		this[kWidths] = freshWidthProbes(transport.interactive);
 		terminalResized(this[kTermDOM], transport.cols, transport.rows);
 	}
 
-	/**
-	 * Begin the conversation: acquire the readers, and route what arrives --
-	 * input to its interpreter, resizes and closure to the engine. Idempotent.
-	 */
 	start(input: EventHandler): void {
 		if (this[kStarted]) {
 			return;
@@ -1141,73 +824,45 @@ export class TerminalExchange {
 		});
 	}
 
-	/** Startup command-start detection, awaited by the first frame's anchor. */
 	initializeCursorDetection(): void {
 		this[kCursorDetectionPromise] = null;
 		if (this[kAnchorDetectionEnabled]) {
 			this[kCursorDetectionPromise] = Promise.race([
 				this.detectCommandStart().then(() => {}),
-				// Fallback: if cursor detection takes too long, proceed without it.
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
 					this[kHasDetectedCommandStart] = false;
 				})
 				.finally(() => {
-					// Clear the promise so subsequent renders don't wait.
 					this[kCursorDetectionPromise] = null;
 				});
 		}
 	}
 
 	/**
-	 * Settle who reorders bidirectional text, us or the terminal.
-	 *
-	 * ECMA-48 mode 8 (BDSM) has two sides: *implicit*, where the terminal runs
-	 * the bidi algorithm over what it receives, and *explicit*, where the
-	 * application decides the order and the terminal paints cells as given. We
-	 * need explicit, and not by preference: this renderer addresses cells
-	 * directly and diffs frames, so it hands the terminal single cells at
-	 * absolute positions. A terminal reordering each of those against a line it
-	 * was never given whole would scramble the frame. So we ask for explicit
-	 * and then ask what we got (DECRQM), rather than assuming either.
-	 *
-	 * The answer is a DECRPM value: 0 means the terminal does not recognise the
-	 * mode at all -- no bidi, cells land as written, which is the same contract
-	 * explicit gives us. 2 or 4 confirm explicit. 1 or 3 mean it intends to
-	 * reorder anyway, and 3 (permanently set) means our request was refused; in
-	 * that case we stop reordering and emit logical order, because the terminal
-	 * doing it once beats both of us doing it.
-	 *
-	 * Silence is the common case -- most terminals answer nothing at all -- and
-	 * is treated as "no bidi", which is what silence has always meant here.
+	 * Ask for explicit bidi (mode 8 reset) and then ask what we got. The
+	 * diff hands the terminal single cells at absolute positions, which a
+	 * terminal reordering implicitly would scramble. A terminal that keeps
+	 * reordering anyway (1 or 3) is handed logical order instead; silence
+	 * and 0 mean no bidi, which is the contract explicit gives.
 	 */
 	async negotiateBidi(): Promise<void> {
 		if (!this[kInteractive]) {
 			return;
 		}
 
-		// Explicit mode, then "what is mode 8 now?" in one write.
 		const answer = await queryMode(this, "8", BIDI_EXPLICIT);
-
-		// No bidi at all: cells land as written, which is the contract we want.
 		if (answer === null || answer === 0) {
 			return;
 		}
 		this[kPriorBidiMode] = answer;
-
-		// 1 = still set, 3 = permanently set. Either way it reorders regardless
-		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
 			terminalReorders(this[kTermDOM]);
 		}
 	}
 
-	/**
-	 * A terminal that does not implement a mode report may echo the
-	 * request's final byte as text. Homing and erasing the line disposes
-	 * of any echo, so the first frame starts on a clean row.
-	 */
+	/** A terminal without DECRQM may echo the request's final byte as text. */
 	scrubProbeEcho(): void {
 		if (!this[kInteractive]) {
 			return;
@@ -1216,22 +871,9 @@ export class TerminalExchange {
 	}
 
 	/**
-	 * Ask the terminal to measure text in grapheme CLUSTERS rather than by code
-	 * point (DEC private mode 2027, the terminal-unicode-core specification).
-	 *
-	 * The default a terminal implements is POSIX wcwidth, which is per code
-	 * point and predates emoji: it cannot express that a ZWJ family sequence or
-	 * an emoji with a variation selector is one indivisible unit, so it
-	 * advances the cursor once per code point in them. We measure by cluster --
-	 * that is what stringWidth does -- so on such a terminal every cluster of
-	 * more than one code point is a standing disagreement about where the next
-	 * cell is.
-	 *
-	 * Mode 2027 is the fix the terminal community landed on, and it is asked
-	 * for the same way as bidi: set it, then query it. A terminal that does not
-	 * know the mode answers 0 or says nothing, and we simply carry on -- our
-	 * measurements do not change, because they were already cluster-based; what
-	 * changes is only whether the terminal agrees with them.
+	 * Mode 2027: measure by grapheme cluster, as stringWidth does, rather than
+	 * per code point as wcwidth does. A terminal that does not know the mode
+	 * leaves our measurements as they are; only whether it agrees changes.
 	 */
 	async negotiateGraphemeClusters(): Promise<void> {
 		if (!this[kInteractive]) {
@@ -1243,7 +885,6 @@ export class TerminalExchange {
 			"?2027",
 			MODE_SPELLINGS.clusterWidths.set,
 		);
-		// 1 = set (it agrees now), 3 = permanently set (it always did).
 		this[kGraphemeClustersNegotiated] = answer === 1 || answer === 3;
 		// The set rode the query's own write; a terminal that ignored it must
 		// not see the reset, so only an agreed offer is engaged.
@@ -1252,25 +893,19 @@ export class TerminalExchange {
 		}
 	}
 
-	/**
-	 * Detect the current cursor position and set the viewport's command-start
-	 * anchor. Sends DSR (`ESC[6n`) and waits for the `ESC[row;colR` reply.
-	 */
+	/** DSR: the cursor row is the command-start anchor. */
 	detectCommandStart(): Promise<number> {
 		if (!this[kInteractive]) {
 			return Promise.reject(
 				new Error("Cannot detect cursor position: not interactive"),
 			);
 		}
-		// The same second the mode queries allow: a cold start or a slow SSH
-		// link can outlast a tighter window, and answering late is answering.
+		// A cold start or a slow link can outlast a tighter window.
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: 1000,
 			sequence: this[kDsrSequence]++,
 			read: ({row}) => {
-				// The 1-based terminal row is the 0-based anchor: content
-				// shifts up to the terminal top from the command start.
 				commandStartDetected(this[kTermDOM], row);
 				this[kHasDetectedCommandStart] = true;
 				return row;
@@ -1278,26 +913,13 @@ export class TerminalExchange {
 		});
 	}
 
-	/**
-	 * Ask the terminal where the cursor is (DSR) and resolve with its 0-based
-	 * row.
-	 *
-	 * Used by the resize re-anchor: the cursor is parked on our content's
-	 * bottom row after every frame, so after a rewrap its position names where
-	 * the frame actually ended up. Rejects on timeout so the caller can fall
-	 * back to a computed anchor.
-	 */
+	/** The 0-based cursor row, for the resize re-anchor; rejects on timeout. */
 	queryCursorRow(): Promise<number> {
 		if (!this[kInteractive]) {
 			return Promise.reject(new Error("not interactive"));
 		}
-		// Queries can overlap: a drag fires resizes faster than the terminal
-		// answers, and each handleResize issues its own. Each is its own
-		// pending question, and DSR answers arrive in ask order, so every
-		// query gets its own reply.
-		//
-		// Short timeout: the redraw should feel immediate, and a terminal
-		// that does not answer promptly falls back to the computed re-anchor.
+		// Short: the redraw should feel immediate, and a slow terminal falls
+		// back to the computed re-anchor.
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: 200,
@@ -1306,24 +928,20 @@ export class TerminalExchange {
 		});
 	}
 
-	/** OSC 52: replace the terminal's clipboard with `text`. */
 	writeClipboard(text: string): Promise<void> {
 		return this.write(clipboardEscape(text));
 	}
 
-	/** OSC 2: set the terminal's title (the stack holds the prior one). */
 	setTitle(text: string): Promise<void> {
 		return this.write(titleEscape(text));
 	}
 
-	/** OSC 52 with "?": what is on the terminal's clipboard? */
 	queryClipboard(): Promise<string | null> {
 		if (!this[kInteractive] || this[kDisposed]) {
 			return Promise.resolve(null);
 		}
-		// One query at a time -- the reply carries no sequence, so a second
-		// would have nothing to be told apart by. Asking again answers the
-		// first asker with silence.
+		// The reply carries no sequence, so one query at a time; asking again
+		// answers the first asker with silence.
 		abandonClipboardQuery(this);
 		return nextReply(this, "clipboard", {
 			ask: CLIPBOARD_QUERY,
@@ -1334,48 +952,33 @@ export class TerminalExchange {
 		});
 	}
 
-	/** ED 2 then CUP: the screen blank, the cursor at its top-left cell. */
 	clearScreen(): Promise<void> {
 		return this.write(SCREEN_CLEAR);
 	}
 
-	/** CUP: the cursor to the first column of a one-based row. */
 	cursorToRow(row: number): Promise<void> {
 		return this.write(rowStart(row));
 	}
 
-	/** ED 0: from the cursor to the end of the screen. */
 	eraseBelow(): Promise<void> {
 		return this.write(BELOW_ERASE);
 	}
 
-	/**
-	 * Lines that clear themselves: each opens by erasing the rest of its row,
-	 * so nothing an older frame left beside it survives. The text's own last
-	 * ending is left alone -- it ends the last line rather than opening
-	 * another.
-	 */
+	/** Each line opens by erasing the rest of its row. */
 	writeLines(text: string): Promise<void> {
 		return this.write(
 			LINE_ERASE + text.replace(/\r\n(?!$)/g, "\r\n" + LINE_ERASE),
 		);
 	}
 
-	/**
-	 * Push the screen up by `rows`: from the bottom row a step down scrolls,
-	 * one row at a time, and what leaves the top goes to the scrollback.
-	 */
 	scrollUp(bottomRow: number, rows: number): Promise<void> {
 		return this.write(rowStart(bottomRow) + SCROLL_STEP.repeat(rows));
 	}
 
 	/**
-	 * Wait for the reply of every outstanding cursor-position query --
-	 * width probes, an anchor query -- or give up when the deadline
-	 * passes. A reply that lands after the tty is handed back is typed
-	 * into the caller's shell, so teardown holds the wire until the debt
-	 * is paid or forfeited. Mode probes are not waited on: they belong to
-	 * attach, and their stragglers have erase handling of their own.
+	 * Wait for every outstanding cursor query, or give up at the deadline: a
+	 * reply after the tty is handed back is typed into the shell. Mode
+	 * queries are not waited on; their stragglers are scrubbed.
 	 */
 	drainQueries(deadlineMs: number): Promise<void> {
 		this[kProbingEnded] = true;
@@ -1396,8 +999,6 @@ export class TerminalExchange {
 					resolve();
 				}
 			}, 10);
-			// A process with nothing else to do may exit instead of
-			// waiting out a forfeited deadline.
 			timer.unref?.();
 		});
 	}
@@ -1408,28 +1009,18 @@ export class TerminalExchange {
 		}
 		this[kDisposed] = true;
 		this[kProbingEnded] = true;
-		// A pending resize redraw would paint a disposed engine's frame, and
-		// its timer would hold the event loop open.
 		if (this[kResizeTimer] !== null) {
 			clearTimeout(this[kResizeTimer]);
 			this[kResizeTimer] = null;
 		}
 
-		// We asked for explicit bidi on the way in; give the terminal back the
-		// mode it reported, so the next command inherits its own settings rather
-		// than ours. Only when it was SET -- reset is where we left it anyway.
+		// Only when it was set: reset is where we left it anyway.
 		if (this[kPriorBidiMode] === 1) {
 			void this.write(BIDI_IMPLICIT);
 			this[kPriorBidiMode] = null;
 		}
-		// The engaged modes go back too -- 2027 among them, for a terminal
-		// that agreed to it. A terminal that never had a mode does not see
-		// its reset, having never been set.
 		this.restoreEngagedModes();
 		this[kGraphemeClustersNegotiated] = false;
-		// The clipboard read is answered with silence; the rest of the pending
-		// questions are simply dropped, their timers cleared so nothing keeps
-		// the event loop alive.
 		abandonClipboardQuery(this);
 		for (const entry of this[kPendingReplies]) {
 			clearTimeout(entry.timer);
@@ -1447,9 +1038,8 @@ export class TerminalExchange {
 		widths.pending.length = 0;
 		widths.probing = false;
 
-		// Release the wire: cancelling the readable is what hands a process
-		// transport its tty back (raw mode off, stdin paused). The writer is
-		// released after the restores above have been queued on it.
+		// Cancelling the readable hands a process transport its tty back. The
+		// writer is released after the restores queued above.
 		if (this[kReader]) {
 			void this[kReader].cancel().catch(() => {});
 			this[kReader] = null;
@@ -1466,16 +1056,11 @@ export class TerminalExchange {
 	}
 }
 
-/** CUP: the cursor to the first column of a one-based row. */
 function rowStart(row: number): string {
 	return `\x1b[${row};1H`;
 }
 
-/**
- * OSC 2: the window title. Untrusted text going somewhere the cell grid never
- * sees, so it is refused the same characters a cell is -- dropped, since the
- * rest of the title is still the title.
- */
+// Untrusted text the cell grid never sees: refused the same bytes a cell is.
 function titleEscape(text: string): string {
 	let safe = "";
 	for (const char of text) {
@@ -1487,20 +1072,12 @@ function titleEscape(text: string): string {
 	return `\x1b]2;${safe}\x07`;
 }
 
-/**
- * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
- * beyond refusing -- there is nothing in the alphabet to refuse.
- */
 function clipboardEscape(text: string): string {
 	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 
-/* ------------------------------------------------------------ width probes */
-
-/** Everything one session's width measurement remembers. */
 interface WidthProbes {
-
-	/** Probes written and not yet answered, oldest first. */
+	// Oldest first.
 	pending: Array<{
 		cluster: string;
 		run: number;
@@ -1511,73 +1088,30 @@ interface WidthProbes {
 		sentAt: number;
 	}>;
 
-	/**
-	 * Clusters whose advance this session no longer wonders about: the terminal
-	 * answered for them, or answered unreadably and the tables keep them.
-	 *
-	 * A cluster leaves this set never, and enters it only on a reply -- not on
-	 * a probe. So a cluster the frame paints twice before either answer is
-	 * asked about twice, which is what keeps a run's column arithmetic whole:
-	 * every glyph whose advance is still in question carries its own query, and
-	 * the replies come back in the same order the glyphs were painted.
-	 */
+	// Entered only on a reply, never on a probe: a cluster painted twice
+	// before its answer is asked twice, which keeps a run's column
+	// arithmetic whole.
 	settled: Set<string>;
-
-	/**
-	 * Every cluster that has ever carried a query, wherever it was asked from.
-	 * A cluster in here is not starved however often the margin turns it away:
-	 * it has had its question put, and the answer's fate is the queue's
-	 * business. This is what bounds the probe train to one per cluster.
-	 */
+	// Ever asked, from anywhere: bounds the probe train to one per cluster.
 	asked: Set<string>;
-
-	/**
-	 * Clusters the margin guard turned away that have never been asked about
-	 * at all, waiting for a frame to carry their probe train. Right-aligned
-	 * text is what fills this: its clusters land against the last column every
-	 * time they are painted, so in place they would be deferred for the whole
-	 * session.
-	 */
+	// Turned away by the margin and never asked; waiting for a train.
 	starved: Set<string>;
-
-	/** The wait for a frame the starved clusters could have ridden. */
 	starvationTimer: ReturnType<typeof setTimeout> | null;
-
-	/**
-	 * Whether frames may still probe: false from the start when nothing
-	 * interactive is behind the transport, and false for good once the
-	 * terminal proves it does not answer.
-	 */
+	// False for good once the terminal proves it does not answer.
 	probing: boolean;
-
-	/** Whether the terminal has ever answered a width probe. */
 	answered: boolean;
 	timer: ReturnType<typeof setTimeout> | null;
-
-	/**
-	 * The write batch and emission run the running divergence belongs to, and
-	 * the divergence itself: within one run each cluster's cells are reached by
-	 * advancing through the ones before it, so an earlier miscount displaces
-	 * every column after it by exactly this much. A reading that cannot be
-	 * believed leaves the drift unknown, and the rest of that run unreadable
-	 * with it.
-	 */
+	// Within one run each cluster's cells are reached by advancing through
+	// the ones before, so an earlier miscount displaces every later column
+	// by the drift. An unbelievable reading loses the rest of the run.
 	driftBatch: object | null;
 	run: number;
 	drift: number;
 	runLost: boolean;
-
-	/**
-	 * Replaced by every write, so probes taken while building one frame are
-	 * told apart from probes taken while building the next.
-	 */
+	// Replaced by every write: probes from one frame are told from the next's.
 	writeBatch: object;
 }
 
-/**
- * The state a session measures from: nothing asked, nothing answered, and
- * probing on for as long as a terminal that might answer is behind the wire.
- */
 function freshWidthProbes(probing: boolean): WidthProbes {
 	return {
 		pending: [],
@@ -1596,17 +1130,9 @@ function freshWidthProbes(probing: boolean): WidthProbes {
 	};
 }
 
-/**
- * Wait for a frame the starved clusters can ride, and ask for one if none
- * comes.
- *
- * Starvation is discovered while a frame is being emitted, and that frame is
- * already past the point where its train would have gone -- so the clusters
- * need a later frame. A document still painting gives them one for nothing:
- * every frame carries whatever is starved when it starts. Only a document
- * that has gone quiet needs to be made to paint, and the wait is what tells
- * the two apart.
- */
+// Starvation is found mid-frame, past where the train would have gone. A
+// document still painting carries it on the next frame for free; only a
+// quiet one needs a frame asked for.
 function requestStarvationFrame(session: TerminalExchange): void {
 	const widths = session[kWidths];
 	if (widths.starvationTimer !== null) {
@@ -1621,10 +1147,7 @@ function requestStarvationFrame(session: TerminalExchange): void {
 	}, TerminalExchange[kWidthStarvationWait]);
 }
 
-/**
- * Keep a deadline running for as long as any probe is outstanding, timed
- * from the oldest of them.
- */
+// One deadline, timed from the oldest outstanding probe.
 function armWidthProbeTimer(session: TerminalExchange): void {
 	const widths = session[kWidths];
 	if (widths.timer !== null) {
@@ -1640,12 +1163,8 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 	);
 	widths.timer = setTimeout(() => {
 		widths.timer = null;
-		// Unanswered this long is unanswered. The queue is what matches
-		// replies to probes, so an abandoned probe must leave it; its
-		// cluster keeps the tables' answer and is not asked again. Probes
-		// written since the deadline was set are not late yet and keep
-		// their place -- the deadline is per probe, and re-arms for the
-		// oldest one still waiting.
+		// An abandoned probe leaves the queue that matches replies; its
+		// cluster keeps the tables' answer and is not asked again.
 		const deadline = Date.now() - TerminalExchange[kWidthProbeTimeout];
 		let expired = 0;
 		while (
@@ -1655,9 +1174,7 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 			widths.settled.add(widths.pending[expired].cluster);
 			expired++;
 		}
-		// Nothing has ever come back: this terminal does not answer DSR,
-		// and asking it again each frame is asking forever. Fall open to
-		// the tables.
+		// Nothing has ever come back: this terminal does not answer DSR.
 		if (expired > 0 && !widths.answered) {
 			widths.probing = false;
 			widths.pending.length = 0;
@@ -1669,14 +1186,8 @@ function armWidthProbeTimer(session: TerminalExchange): void {
 	}, remaining);
 }
 
-/**
- * Settle one width probe against the column the terminal reports.
- *
- * The probe rode the frame that painted the cluster, so the reply's column
- * minus the column the cluster started from IS the advance -- corrected by
- * the drift the earlier unmeasured clusters of the same run introduced,
- * which their own replies have just established.
- */
+// The reply's column minus the cluster's start column is the advance,
+// corrected by the drift the run's earlier clusters introduced.
 function settleWidthProbe(
 	session: TerminalExchange,
 	probe: {
@@ -1690,8 +1201,6 @@ function settleWidthProbe(
 ): void {
 	const widths = session[kWidths];
 	widths.answered = true;
-	// The deadline belonged to the probe just answered; whatever is still
-	// waiting gets its own.
 	if (widths.timer !== null) {
 		clearTimeout(widths.timer);
 		widths.timer = null;
@@ -1705,19 +1214,13 @@ function settleWidthProbe(
 		widths.runLost = false;
 	}
 
-	// An earlier reading in this run could not be believed, so the drift the
-	// glyphs before this one introduced is unknown and its column means
-	// nothing. Wait for a run whose arithmetic is whole.
 	if (widths.runLost) {
 		return;
 	}
 
-	// Terminal columns are 1-based; the ledger counts cells.
 	const advance = replyColumn - 1 - (probe.column + widths.drift);
-	// A reading no cluster could produce means the reply describes
-	// something else -- a screen that scrolled under the frame, a terminal
-	// answering out of turn. The tables keep the cluster, and the rest of
-	// the run is read against a drift this reading did not establish.
+	// No cluster advances that far: the reply describes something else -- a
+	// scroll under the frame, a terminal answering out of turn.
 	if (advance < 0 || advance > 4) {
 		widths.runLost = true;
 		return;
@@ -1726,16 +1229,9 @@ function settleWidthProbe(
 	widths.settled.add(probe.cluster);
 	widths.drift += advance - probe.width;
 	if (recordClusterAdvance(probe.cluster, advance)) {
-		// A cluster is wider or narrower on this terminal than the tables
-		// said, so every column after one on a painted row is off by the
-		// difference. The previous frame described a screen that was never
-		// drawn: drop it and paint the region again from the corrected
-		// measurements.
 		widthsCorrected(session[kTermDOM]);
 	}
 }
-
-/* ---------------------------------------------------- input demultiplexing */
 
 async function readLoop(
 	session: TerminalExchange,
@@ -1753,19 +1249,15 @@ async function readLoop(
 			try {
 				route(session, value);
 			} catch (err) {
-				// Only the read can tell the conversation is over, so a
-				// throw from routing -- a decode, a listener -- costs its
-				// chunk and no more. Nothing here reports an error to the
-				// document and swallowing one would hide it, so it is
-				// raised again out of band while the read goes on.
+				// A throw from a listener costs its chunk, not the read;
+				// raised out of band rather than swallowed.
 				queueMicrotask(() => {
 					throw err;
 				});
 			}
 		}
 	} catch (_err) {
-		// Reader cancelled by dispose, or the transport died; either way the
-		// conversation is over and closed/dispose carry the follow-up.
+		// Cancelled by dispose, or the transport died.
 	}
 }
 
@@ -1784,24 +1276,15 @@ async function resizeLoop(
 			}
 		}
 	} catch (_err) {
-		// As above: teardown, not error.
+		// Teardown, not error.
 	}
 }
 
 const RESIZE_DEBOUNCE_MS = 40;
 
-/**
- * Coalesce a burst of resize events into a single redraw.
- *
- * Dragging a terminal's edge fires a SIGWINCH for every width it passes
- * through -- dozens in one drag. Redrawing on each leaves a little reflowed
- * crud in the scrollback every time (see handleResize), so the crud grows
- * with the length of the drag rather than the fact that it happened. Waiting
- * for the drag to settle turns the whole gesture into one redraw, and one lot
- * of crud. Renders are suppressed from the very first SIGWINCH, before the
- * debounce settles, so a drag's worth of animation ticks cannot paint at the
- * stale anchor while the terminal is rewrapping under us.
- */
+// A drag fires a SIGWINCH per width; each redraw leaves reflowed crud in
+// the scrollback, so the burst becomes one redraw. Renders are suppressed
+// from the first SIGWINCH, or animation ticks paint at the stale anchor.
 function scheduleResize(session: TerminalExchange): void {
 	session[kSettlingResize] = {};
 	if (session[kResizeTimer] !== null) {
@@ -1813,26 +1296,11 @@ function scheduleResize(session: TerminalExchange): void {
 	}, RESIZE_DEBOUNCE_MS);
 }
 
-/**
- * Re-anchor and redraw after a resize settles. The terminal has already
- * rewrapped everything on screen -- including our old frame -- and how far
- * our content moved depends on text above us that we do not own. But two
- * facts make its new position exactly recoverable:
- *
- *   1. The cursor is parked on our content's bottom row after every frame,
- *      and it rides its line through the rewrap.
- *   2. Every row we paint is a hard line, so the old frame's rewrapped
- *      height is computable from the previous frame's own line lengths.
- *
- * So: ask the terminal where the cursor is (DSR), subtract the rewrapped
- * height, and that is our frame's new top row -- ground truth, immune to
- * whatever the shell prompt above did. Anything that ballooned past the
- * screen top is in the scrollback, beyond rewriting; the redraw's erase
- * covers everything from the recovered top down, so the visible screen
- * carries exactly one copy. If the terminal does not answer, fall back to
- * the computed vertical re-anchor (exact for height changes, approximate
- * for width).
- */
+// The terminal has rewrapped the old frame with the text above it. The
+// cursor was parked on the frame's bottom row and rode its line through the
+// rewrap, and every painted row is a hard line, so the rewrapped height is
+// computable: cursor row minus that height is the new top. A terminal that
+// does not answer gets the computed re-anchor, exact for height changes.
 function handleResize(session: TerminalExchange): void {
 	const termDOM = session[kTermDOM];
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
@@ -1844,17 +1312,10 @@ function handleResize(session: TerminalExchange): void {
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
-		// The recovered row is where the frame stands; whether it still
-		// FITS below that row at the new height is the frame's problem,
-		// which it solves the only permissible way -- scrolling earlier
-		// output up into the scrollback, never painting over it. Clamping
-		// startRow upward to force a fit instead would plant the frame on
-		// top of the shell prompt above it.
 		frameReplaced(termDOM, startRow);
 
-		// Everything suppressed since the first SIGWINCH may paint again. The
-		// frame is placed by the screen reset, not by cursor detection, which
-		// stands down until that frame is written.
+		// The frame is placed by the screen reset; cursor detection stands
+		// down until it is written.
 		session[kSettlingResize] = null;
 		const wasDetected = session[kHasDetectedCommandStart];
 		session[kHasDetectedCommandStart] = false;
@@ -1868,15 +1329,10 @@ function handleResize(session: TerminalExchange): void {
 		return Math.max(0, documentTop - scrolledUp);
 	};
 
-	// The anchor is trustworthy exactly while the frame still FITS below it.
-	// When it does, no room-making scroll happens and the redraw is precise,
-	// so the prompt above is left alone. When it does not, the terminal
-	// scrolled the frame by an amount a same-cursor DSR cannot report, and
-	// making room on top of that mis-anchor is what strands a copy of our
-	// own rows -- an intermittent race we cannot win. There, clear the whole
-	// screen and start at the top: the erase covers every row the old frame
-	// could hold, so no fragment survives. It costs the output above us,
-	// which is the trade for a screen that is always legible.
+	// The anchor holds only while the frame fits below it. When it does not,
+	// the terminal scrolled by an amount DSR cannot report, and making room
+	// on the mis-anchor strands a copy of our rows: start at the top, at the
+	// cost of the output above.
 	const place = (startRow: number) => {
 		redraw(startRow + contentHeight <= newHeight ? startRow : 0);
 	};
@@ -1885,7 +1341,6 @@ function handleResize(session: TerminalExchange): void {
 		session
 			.queryCursorRow()
 			.then((cursorRow) => {
-				// A newer resize superseded this one; its handler will redraw.
 				if (settling !== session[kSettlingResize]) {
 					return;
 				}
@@ -1902,12 +1357,8 @@ function handleResize(session: TerminalExchange): void {
 	}
 }
 
-/**
- * The demultiplexer: one pass over what the reader says a chunk meant, in
- * stream order. Contiguous keystrokes are batched into one dispatch;
- * everything else is dispatched where it stands, so a report glued to fast
- * keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side.
- */
+// Contiguous keystrokes are one dispatch; everything else is dispatched
+// where it stands, so a report glued to fast keystrokes eats neither side.
 function route(session: TerminalExchange, chunk: string): void {
 	let keys: WireKey[] = [];
 	const input = session[kInput]!;
@@ -1920,10 +1371,7 @@ function route(session: TerminalExchange, chunk: string): void {
 	for (const item of session[kWireReader].feed(chunk)) {
 		switch (item.kind) {
 			case "key":
-				// Ctrl-C: raw mode delivers it as data, and its default action
-				// is the engine's to decide (window.close()), not this layer's.
-				// Ctrl+c and nothing else is that one byte: no other spelling
-				// decodes to the letter with the control modifier.
+				// Raw mode delivers Ctrl-C as data; closing is the window's call.
 				if (item.ctrlKey && item.key === "c") {
 					flushKeys();
 					session[kTermDOM].window.close();
@@ -1945,27 +1393,15 @@ function route(session: TerminalExchange, chunk: string): void {
 	flushKeys();
 }
 
-/* ------------------------------------------------------- query correlation */
-
-/** The item of a given kind, for the reader that takes the answer out of it. */
 type ReplyOf<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
 
-/**
- * Ask, and answer with the reply.
- *
- * The question joins the pending table, the request goes out, and `read`
- * takes the answer out of whichever item comes back for it -- running where
- * the item is dispatched, so what it does besides reading happens in stream
- * order. The deadline is what ends a question no reply comes for: `absent`
- * names what silence answers with, and the only questions with no such answer
- * are the cursor ones, which reject instead.
- */
+// `read` runs where the item is dispatched, so its side effects happen in
+// stream order. `absent` is what silence answers with; the cursor questions
+// have none and reject instead.
 function nextReply<K extends WireItem["kind"], T>(
 	session: TerminalExchange,
 	kind: K,
 	options: {
-
-		/** The bytes that ask, whatever they ride behind. */
 		ask: string;
 		timeoutMs: number;
 		read: (item: ReplyOf<K>) => T;
@@ -2006,10 +1442,6 @@ function nextReply<K extends WireItem["kind"], T>(
 	});
 }
 
-/**
- * Answer the outstanding clipboard query with silence and forget it. Called
- * wherever the query ends without a reply: a replacement query, dispose.
- */
 function abandonClipboardQuery(session: TerminalExchange): void {
 	const pending = session[kPendingReplies];
 	const index = pending.findIndex((entry) => entry.clipboard);
@@ -2019,17 +1451,8 @@ function abandonClipboardQuery(session: TerminalExchange): void {
 	}
 }
 
-/**
- * Route one reply item to whichever question it answers: the first pending
- * one it fits, and an item fitting none is dropped as a late, duplicate or
- * unasked-for answer.
- *
- * Cursor reports need one more rule. Two kinds of query share that reply
- * shape -- the anchor queries here and the width probes a frame appends
- * after a cluster -- and a terminal answers DSR in the order it was asked,
- * so the oldest outstanding query owns the reply and neither kind can take
- * the other's.
- */
+// A cursor report answers whichever of the anchor queries and the width
+// probes was sent first: a terminal answers DSR in ask order.
 function dispatchReply(session: TerminalExchange, item: WireItem): void {
 	const pending = session[kPendingReplies];
 	let index = -1;
@@ -2037,8 +1460,6 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
 		if (pending[i].kind !== item.kind) {
 			continue;
 		}
-		// Two mode negotiations can be outstanding at once, so a DECRPM answer
-		// belongs to the one that asked about that mode.
 		if (
 			item.kind === "mode-report" &&
 			pending[i].mode !== item.mode
@@ -2066,24 +1487,14 @@ function dispatchReply(session: TerminalExchange, item: WireItem): void {
 	entry.settle(item);
 }
 
-/**
- * Set a terminal mode and ask what it actually is now (DECRQM), resolving
- * with the reported value -- or null if the terminal says nothing, which is
- * the common case, since most implement no such mode and answer only the
- * queries they know. `prelude` is the set bytes the query rides behind, in
- * one write.
- *
- * The reply values are DECRPM's: 0 not recognised, 1 set, 2 reset, 3
- * permanently set, 4 permanently reset. 0 and silence mean the same thing
- * to every caller here -- the terminal has no opinion, so ours stands.
- */
+// `prelude` rides in the same write as the DECRQM. DECRPM values: 0 not
+// recognised, 1 set, 2 reset, 3 permanently set, 4 permanently reset; null
+// when the terminal says nothing.
 function queryMode(
 	session: TerminalExchange,
 	mode: string,
 	prelude: string,
 ): Promise<number | null> {
-	// The same second the cursor query allows: a cold start or a slow SSH
-	// link can outlast a tighter window, and answering late is answering.
 	return nextReply<"mode-report", number | null>(session, "mode-report", {
 		ask: prelude + modeQuery(mode),
 		timeoutMs: 1000,
@@ -2093,11 +1504,7 @@ function queryMode(
 	});
 }
 
-/* --------------------------------------------------- the process transport */
-
-// The Node process shape the default wrapper consumes. The engine itself
-// never touches these: they exist so `transportFromProcess` can be typed
-// against exactly the members it reads, and so tests can hand it mocks.
+// The Node process shape transportFromProcess reads; tests hand it mocks.
 export interface TTYWriteStream {
 	write(
 		chunk: any,
@@ -2150,11 +1557,8 @@ function detectColorDepth(proc: ProcessLike): ColorDepth {
 	return "ansi";
 }
 
-// Frames keep the terminal cursor hidden, and dispose() shows it again -- but
-// an app that calls process.exit() without disposing would strand the user's
-// shell with no cursor. One process-level exit hook restores it for any
-// process transport still engaged. Registered lazily, only once a transport
-// actually takes its terminal.
+// An app that exits without disposing would strand the shell with no cursor
+// and the modes set; one exit hook restores every engaged process transport.
 const undisposedProcesses = new Set<ProcessLike>();
 let exitHookInstalled = false;
 
@@ -2168,21 +1572,19 @@ function installCursorRestoreOnExit(): void {
 			try {
 				proc.stdout.write(PANIC_RESTORE);
 			} catch (_err) {
-				// The stream may already be gone; the shell will survive.
+				// The stream may already be gone.
 			}
 		}
 	});
 }
 
 /**
- * A Node-process-shaped object as a TerminalTransport. Inert until used:
- * raw mode, the stdin listener, and the signal listeners engage on the
- * first read of `readable`. Cancelling the readable hands the tty back.
+ * Inert until the first read of `readable` engages raw mode and the
+ * listeners; cancelling it hands the tty back.
  */
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
-	// The global process sits below a shell; a wrapped mock or relay owns
-	// its screen unless the caller says otherwise.
+	// The global process sits below a shell; a mock or relay owns its screen.
 	options: {sharesScreen?: boolean} = {},
 ): TerminalTransport {
 	const sharesScreen =
@@ -2204,10 +1606,8 @@ export function transportFromProcess(
 		}
 		engaged = false;
 		undisposedProcesses.delete(proc);
-		// Restore SYNCHRONOUSLY: the engine's own restores ride the writable's
-		// queue, and `dispose(); process.exit()` exits before it flushes.
-		// These are the modes whose survival breaks the user's shell; each is
-		// idempotent, so the queued restores repeating them is harmless.
+		// Synchronously: the engine's restores ride the writable's queue, and
+		// `dispose(); process.exit()` exits before it flushes.
 		proc.stdout.write(PANIC_RESTORE);
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
@@ -2236,8 +1636,7 @@ export function transportFromProcess(
 				stdin.setRawMode?.(true);
 				stdin.resume();
 				stdin.setEncoding?.("utf8");
-				// Hosts without setEncoding deliver bytes; a streaming decoder
-				// keeps a code point split across two chunks whole.
+				// A streaming decoder keeps a code point split across chunks whole.
 				const decoder = new TextDecoder();
 				dataListener = (chunk: string | Uint8Array | ArrayBuffer) => {
 					controller.enqueue(
@@ -2248,14 +1647,11 @@ export function transportFromProcess(
 				};
 				stdin.on("data", dataListener);
 
-				// If the app dies without dispose, the exit hook restores the cursor.
 				undisposedProcesses.add(proc);
 				installCursorRestoreOnExit();
 
-				// A SIGINT here is an external kill, never Ctrl-C -- raw mode delivers
-				// that as \x03 on stdin. Resolve `closed` so the session disposes
-				// (microtasks), then exit; SIGTERM/SIGHUP/exit likewise close, with
-				// the process runtime handling the actual termination.
+				// A SIGINT here is an external kill; raw mode delivers Ctrl-C as
+				// data. Close, then exit once the session has disposed.
 				const closeOn = (signal: ProcessSignal, exitAfter: boolean) => {
 					const listener = () => {
 						closedResolve({});
@@ -2272,18 +1668,15 @@ export function transportFromProcess(
 				closeOn("exit", false);
 			},
 			cancel: disengage,
-			// HWM 0: pull only when a read is pending. The default (1) would pull at
-			// construction, engaging the tty before attach -- the exact takeover the
-			// attach() contract forbids.
+			// The default high-water mark would pull at construction and take
+			// the tty before attach().
 		},
 		{highWaterMark: 0},
 	);
 
 	const writable = new WritableStream<string>({
-		// Resolve on the stream's own completion callback: awaiting a write
-		// means the terminal HAS the bytes (a mock's emulator has ingested
-		// them, a real stdout has flushed), which is what frame ordering and
-		// "await a painted frame" rest on.
+		// Resolved on the write callback, so awaiting a write means the
+		// terminal has the bytes.
 		write: (chunk) =>
 			new Promise<void>((resolve, reject) => {
 				proc.stdout.write(chunk, "utf8", (error?: Error) => {

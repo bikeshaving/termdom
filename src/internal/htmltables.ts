@@ -1,27 +1,4 @@
-/**
- * The tables dom.ts builds the HTML element interfaces from: which interface
- * each tag is created through, which content attributes it reflects and how,
- * and the event handler IDL attributes an element, document or window carries.
- *
- * Data and nothing else -- no behavior lives here. A reflection is a
- * ReflectSpec, the helpers below are its spellings, and dom.ts reads the kind
- * and installs the accessor. Start at HTML_INTERFACES, the per-tag table.
- */
-
-/**
- * How a content attribute is reflected by an IDL attribute.
- *
- * - `string`: a DOMString, the empty string when the attribute is absent.
- * - `nullable-string`: a DOMString?, null when the attribute is absent.
- * - `url`: a URL, resolved against the document's base URL on getting.
- * - `boolean`: present or absent.
- * - `long`, `unsigned-long`: a number parsed from the attribute, falling back
- *   to a default, with the range restrictions the attribute's definition
- *   names.
- * - `enum`: limited to only known values, with a missing-value default and an
- *   invalid-value default.
- * - `tokenlist`: a DOMTokenList over the attribute's tokens.
- */
+// `url` resolves against the document's base URL on getting.
 type ReflectKind =
 	"string" |
 	"nullable-string" |
@@ -37,47 +14,35 @@ export interface ReflectSpec {
 	attribute: string;
 	kind: ReflectKind;
 
-	/** The value a number-valued attribute takes when it is absent or unparsable. */
+	// A number's value when the attribute is absent or unparsable.
 	fallback?: number;
 
-	/** An enumerated attribute's known values, in their canonical spelling. */
 	keywords?: readonly string[];
 
-	/** The state an enumerated attribute takes when it is absent. */
 	missing?: string;
 
-	/** The state an enumerated attribute takes when its value is not known. */
 	invalid?: string;
 
-	/** The state an enumerated attribute takes when its value is empty. */
 	empty?: string;
 
-	/** Limited to only non-negative numbers: a negative set throws. */
+	// A negative set throws.
 	nonNegative?: boolean;
 
-	/** Limited to only non-negative numbers greater than zero: a zero set throws. */
+	// A zero set throws too.
 	greaterThanZero?: boolean;
 
-	/** Clamped to a range on both getting and setting. */
 	clampMin?: number;
 	clampMax?: number;
 
-	/** The tokens a DOMTokenList-reflecting attribute supports. */
 	supported?: readonly string[];
 
-	/** An enumerated attribute whose missing-value default is null. */
 	nullable?: boolean;
 }
 
 interface InterfaceSpec {
-
-	/** The interface's name, which is also its Symbol.toStringTag. */
 	name: string;
-
-	/** The tags built through it; empty for one that only serves as a base. */
+	// Empty for an interface that only serves as a base.
 	tags: readonly string[];
-
-	/** The attributes it reflects. */
 	reflect?: readonly ReflectSpec[];
 }
 
@@ -174,7 +139,6 @@ function tokens(
 	};
 }
 
-/** The referrer policies every attribute that names one is limited to. */
 const REFERRER_POLICIES = [
 	"",
 	"no-referrer",
@@ -187,7 +151,6 @@ const REFERRER_POLICIES = [
 	"unsafe-url",
 ];
 
-/** Which half of the toggle a button with popovertarget runs. */
 function popoverTargetAction(): ReflectSpec {
 	return keyword(
 		"popoverTargetAction",
@@ -228,7 +191,6 @@ function loading(): ReflectSpec {
 	return keyword("loading", "loading", ["lazy", "eager"], "eager", "eager");
 }
 
-/** The keywords a table cell, row, section or column aligns its content by. */
 const CELL_ALIGN = [
 	str("align"),
 	str("ch", "char"),
@@ -236,7 +198,6 @@ const CELL_ALIGN = [
 	str("vAlign", "valign"),
 ];
 
-/** The form-submission attributes a submit button carries. */
 const FORM_SUBMISSION = [
 	url("formAction", "formaction"),
 	keyword(
@@ -251,11 +212,8 @@ const FORM_SUBMISSION = [
 	str("formTarget", "formtarget"),
 ];
 
-/**
- * The global attributes HTMLElement reflects plainly. The ones that are not
- * plain -- an inherited translate or spellcheck, a hidden that is `any`, a
- * tabIndex whose default depends on the element -- are written out in dom.ts.
- */
+// The global attributes reflected plainly; translate, spellcheck, hidden and
+// tabIndex are written out in dom.ts.
 export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 	str("accessKey", "accesskey"),
 	bool("autofocus"),
@@ -277,10 +235,8 @@ export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 	),
 	str("lang"),
 	str("nonce"),
-	// The empty string is the popover attribute's own spelling of the auto
-	// state. HTML's third state, hint, is not implemented -- see the note on
-	// the popover algorithms -- so `popover=hint` takes the route the
-	// attribute defines for a value it does not know.
+	// The empty string is popover's own spelling of auto. hint is not
+	// implemented, so it takes the unknown-value route.
 	{
 		property: "popover",
 		attribute: "popover",
@@ -301,12 +257,8 @@ export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 	),
 ];
 
-/**
- * The per-tag interface table.
- *
- * A tag that names no entry here is HTMLElement where HTML knows the name and
- * HTMLUnknownElement where it does not.
- */
+// A tag with no entry is HTMLElement where HTML knows the name and
+// HTMLUnknownElement where it does not.
 export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 	{
 		name: "HTMLAnchorElement",
@@ -847,8 +799,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["pre", "listing", "xmp"],
 		reflect: [long("width", "width", 0)],
 	},
-	// A progress bar and a gauge reflect nothing plainly: every number they
-	// carry is read against the others, so all of them are written out.
+	// Every number a gauge carries is read against the others; all written out.
 	{name: "HTMLProgressElement", tags: ["progress"]},
 	{name: "HTMLMeterElement", tags: ["meter"]},
 	{
@@ -1026,10 +977,6 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 	},
 ];
 
-/**
- * The names HTML gives no interface of their own: an element of one of these
- * is an HTMLElement.
- */
 export const HTML_ELEMENT_TAGS: readonly string[] = [
 	"abbr",
 	"acronym",
@@ -1084,11 +1031,7 @@ export const HTML_ELEMENT_TAGS: readonly string[] = [
 	"wbr",
 ];
 
-/**
- * The names HTML knows and gives HTMLUnknownElement to anyway. Every name HTML
- * does not know at all lands there too, so this list only matters for the ones
- * a parser still recognizes.
- */
+// Names HTML knows and gives HTMLUnknownElement to anyway.
 export const HTML_UNKNOWN_TAGS: readonly string[] = [
 	"applet",
 	"bgsound",
@@ -1100,10 +1043,6 @@ export const HTML_UNKNOWN_TAGS: readonly string[] = [
 	"spacer",
 ];
 
-/**
- * The ARIA mixin's string-valued members, each reflecting one aria-* content
- * attribute as a nullable DOMString.
- */
 export const ARIA_STRING_REFLECTIONS: ReadonlyArray<readonly [string, string]> =
 	[
 		["role", "role"],
@@ -1152,11 +1091,6 @@ export const ARIA_STRING_REFLECTIONS: ReadonlyArray<readonly [string, string]> =
 		["ariaValueText", "aria-valuetext"],
 	];
 
-/**
- * The ARIA mixin's element-reference members: a property naming one element
- * or a list of them, the content attribute it reflects, and whether it is a
- * list.
- */
 export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
 	readonly [string, string, boolean]
 > = [
@@ -1172,26 +1106,10 @@ export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
 
 /* ------------------------------------------- event handler IDL attributes */
 
-/**
- * The GlobalEventHandlers mixin: the event handler IDL attributes every
- * element, document and window carries.
- *
- * The set is the HTML Standard's table in full, plus the partials other
- * specifications add to the same mixin: Pointer Events, CSS Animations, CSS
- * Transitions and the Selection API. Membership is the attribute surface a
- * script probes with `"onclick" in element`, not a claim that the event
- * fires here -- a table with holes in it answers that probe wrongly, which is
- * the whole reason the attributes exist.
- *
- * A handler's event type is its name without the `on`. The four prefixed
- * animation handlers are the exception -- their event types are mixed-case
- * (`onwebkittransitionend` listens for `webkitTransitionEnd`) -- and the
- * installer carries that mapping.
- *
- * The partials of specifications this DOM has no notion of at all -- Touch
- * Events, DeviceOrientation, Media Capture, the scroll-snap events -- are not
- * here: they would name event types nothing in the engine can ever produce.
- */
+// The full HTML table plus the Pointer Events, CSS Animations, Transitions
+// and Selection partials: what `"onclick" in element` probes, not what fires.
+// The prefixed animation handlers listen for mixed-case types; the installer
+// carries that mapping. Partials of specs this DOM has no notion of are out.
 export const GLOBAL_EVENT_HANDLERS: readonly string[] = [
 	"onabort",
 	"onanimationcancel",
@@ -1289,10 +1207,6 @@ export const GLOBAL_EVENT_HANDLERS: readonly string[] = [
 	"onwheel",
 ];
 
-/**
- * The WindowEventHandlers mixin: the handlers a window carries, and that a
- * `body` and a `frameset` forward to their window.
- */
 export const WINDOW_EVENT_HANDLERS: readonly string[] = [
 	"onafterprint",
 	"onbeforeprint",
@@ -1314,17 +1228,12 @@ export const WINDOW_EVENT_HANDLERS: readonly string[] = [
 	"onunload",
 ];
 
-/** The DocumentAndElementEventHandlers mixin: the clipboard's three. */
 export const DOCUMENT_AND_ELEMENT_EVENT_HANDLERS: readonly string[] = [
 	"oncopy",
 	"oncut",
 	"onpaste",
 ];
 
-/**
- * The handlers a document carries beyond the mixins: its own two, and the
- * pair the Fullscreen API adds -- an API the engine implements.
- */
 export const DOCUMENT_EVENT_HANDLERS: readonly string[] = [
 	"onfullscreenchange",
 	"onfullscreenerror",
@@ -1332,15 +1241,7 @@ export const DOCUMENT_EVENT_HANDLERS: readonly string[] = [
 	"onvisibilitychange",
 ];
 
-/**
- * The handlers a `body` and a `frameset` do not own: setting one of these
- * sets it on the element's window instead, and getting one reads it back from
- * there. An element in a document with no window drops the write, which is
- * what the algorithm's null event handler target does.
- *
- * WindowEventHandlers is forwarded whole; these six are the GlobalEventHandlers
- * members the HTML Standard names alongside it.
- */
+// Set on a body or frameset, these land on its window and read back from it.
 export const FORWARDED_BODY_EVENT_HANDLERS: readonly string[] = [
 	"onblur",
 	"onerror",
