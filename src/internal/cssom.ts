@@ -3155,14 +3155,6 @@ function declaredName(
 	return winner;
 }
 
-/** The CSSOM shape a declaration block is read through: a rule's, or an element's. */
-interface DeclarationSource {
-	readonly [index: number]: string;
-	readonly length: number;
-	getPropertyValue(property: string): string;
-	getPropertyPriority(property: string): string;
-}
-
 /** One declaration of a block: a longhand, or a shorthand kept undecomposed. */
 interface CSSDeclaration {
 	name: string;
@@ -3931,7 +3923,7 @@ const kSync = Symbol("sync");
  * reparses into the object on the next read, recognized by the text differing
  * from what this object last serialized.
  */
-class CSSStyleDeclaration implements DeclarationSource {
+class CSSStyleDeclaration {
 	[index: number]: string;
 	declare [kElement]?: Element | null;
 	declare [kParentRule]?: CSSRule | null;

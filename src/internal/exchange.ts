@@ -19,7 +19,7 @@
  * nothing above transportFromProcess names Node.
  */
 
-import {recordClusterAdvance, type WidthMeasurer} from "./text.js";
+import {recordClusterAdvance} from "./text.js";
 import {getMount} from "./dom.js";
 import type {EventHandler} from "./input.js";
 
@@ -782,7 +782,6 @@ const kWidthAnswered = Symbol("widthAnswered");
 const kWidthProbing = Symbol("widthProbing");
 const kWidthProbeTimer = Symbol("widthProbeTimer");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-const kWidthMeasurer = Symbol("widthMeasurer");
 
 const kWidthStarved = Symbol("widthStarved");
 const kStarvationTimer = Symbol("starvationTimer");
@@ -926,7 +925,6 @@ export class TerminalExchange {
 	// Replaced by every write, so probes taken while building one frame are
 	// told apart from probes taken while building the next.
 	declare [kWriteBatch]: object;
-	declare [kWidthMeasurer]: WidthMeasurer;
 
 	/**
 	 * Generous: the reply crosses whatever the transport is, and a terminal
@@ -949,12 +947,86 @@ export class TerminalExchange {
 	static readonly [kClipboardQueryTimeout] = 500;
 
 	/**
-	 * The frame's channel for measuring cluster advances. Whether asking is
-	 * worth anything is not decided here: the channel reports this session's
-	 * facts and the width authority judges them (see probingTeaches).
+	 * Whether the wire can still carry an answered probe: a terminal is
+	 * behind the transport and has not proven that it never answers.
 	 */
-	get widthMeasurer(): WidthMeasurer {
-		return this[kWidthMeasurer];
+	probing(): boolean {
+		return this[kWidthProbing];
+	}
+
+	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
+	clusterWidthsNegotiated(): boolean {
+		return this[kGraphemeClustersNegotiated];
+	}
+
+	/** Whether this cluster's advance is still unmeasured. */
+	wantsWidth(cluster: string): boolean {
+		return !this[kWidthSettled].has(cluster);
+	}
+
+	/**
+	 * Clusters the margin has starved: deferred, and never asked about
+	 * anywhere else either. Right-aligned text lands its glyphs against the
+	 * last column whenever it paints them, so in place they would wait
+	 * forever. The frame measures these somewhere with room instead; a
+	 * cluster leaves the set when it is probed.
+	 */
+	starvedWidths(): ReadonlySet<string> {
+		return this[kWidthStarved];
+	}
+
+	/**
+	 * The margin guard turned this cluster away: it was painted too near the
+	 * last column for its answer to be readable. A cluster that has been
+	 * asked about somewhere is not starving, whatever this frame's margin
+	 * did to it. So one deferral of a cluster nothing has ever asked about
+	 * IS the starvation: the layout that put it there will put it there
+	 * again.
+	 */
+	deferWidth(cluster: string): void {
+		if (this[kWidthAsked].has(cluster) || this[kWidthStarved].has(cluster)) {
+			return;
+		}
+		this[kWidthStarved].add(cluster);
+		requestStarvationFrame(this);
+	}
+
+	/**
+	 * Take a probe for `cluster`, whose first cell is painted at 0-based
+	 * `column` and which the tables call `width` cells wide. `run` names the
+	 * contiguous emission the cluster belongs to: probes sharing a run
+	 * reached their columns by advancing through glyphs, so each one's
+	 * divergence carries into the next; a cursor move starts a new run and
+	 * re-syncs the column. Returns the bytes the frame appends after the
+	 * glyph: the ask rides the frame that paints the cluster, and a width
+	 * reply is claimed by the queue in the DSR send order the sequence
+	 * number keeps.
+	 */
+	probeWidth(
+		cluster: string,
+		run: number,
+		column: number,
+		width: number,
+	): string {
+		// A teardown frame asks nothing: the reply would arrive after the
+		// tty is handed back, typed into the next shell, and the width it
+		// names will never be reused.
+		if (this[kProbingEnded]) {
+			return "";
+		}
+		this[kWidthAsked].add(cluster);
+		this[kWidthStarved].delete(cluster);
+		this[kWidthProbes].push({
+			cluster,
+			run,
+			batch: this[kWriteBatch],
+			column,
+			width,
+			sequence: this[kDsrSequence]++,
+			sentAt: Date.now(),
+		});
+		armWidthProbeTimer(this);
+		return CURSOR_QUERY;
 	}
 
 	constructor(deps: {
@@ -990,53 +1062,6 @@ export class TerminalExchange {
 		this[kWidthAsked] = new Set();
 		this[kWidthStarved] = new Set();
 		this[kStarvationTimer] = null;
-		this[kWidthMeasurer] = {
-			probing: () => this[kWidthProbing],
-			clusterWidthsNegotiated: () => this[kGraphemeClustersNegotiated],
-			wants: (cluster: string) => !this[kWidthSettled].has(cluster),
-			starved: () => this[kWidthStarved],
-			defer: (cluster: string) => {
-				// A cluster that has been asked about somewhere is not
-				// starving, whatever this frame's margin did to it. So one
-				// deferral of a cluster nothing has ever asked about IS the
-				// starvation: the layout that put it there will put it there
-				// again.
-				if (
-					this[kWidthAsked].has(cluster) ||
-					this[kWidthStarved].has(cluster)
-				) {
-					return;
-				}
-				this[kWidthStarved].add(cluster);
-				requestStarvationFrame(this);
-			},
-			probe: (cluster: string, run: number, column: number, width: number) => {
-				// A teardown frame asks nothing: the reply would arrive
-				// after the tty is handed back, typed into the next shell,
-				// and the width it names will never be reused.
-				if (this[kProbingEnded]) {
-					return "";
-				}
-				this[kWidthAsked].add(cluster);
-				this[kWidthStarved].delete(cluster);
-				this[kWidthProbes].push({
-					cluster,
-					run,
-					batch: this[kWriteBatch],
-					column,
-					width,
-					sequence: this[kDsrSequence]++,
-					sentAt: Date.now(),
-				});
-				armWidthProbeTimer(this);
-				// The bytes go back to the caller rather than out: this ask
-				// rides the frame that paints the cluster. Nothing joins the
-				// pending table for it -- a width reply is claimed by the
-				// queue above, in the DSR send order the sequence number
-				// keeps.
-				return CURSOR_QUERY;
-			},
-		};
 		this[kTransport] = deps.transport;
 		this[kInteractive] = interactive;
 		this[kEngagedModes] = new Set<ModeName>();

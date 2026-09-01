@@ -17,12 +17,10 @@
 import {
 	graphemeSegmenter,
 	PRINTABLE_ASCII,
-	probingTeaches,
 	stringWidth,
 	widthIsUncertain,
-	type WidthMeasurer,
 } from "./text.js";
-import type {ColorDepth} from "./exchange.js";
+import type {ColorDepth, TerminalExchange} from "./exchange.js";
 
 export type {ColorDepth};
 
@@ -1810,7 +1808,7 @@ function generateANSI(
 	grid: CellGrid,
 	writer: FrameWriter,
 	renderedLines: Set<number>,
-	measurer?: WidthMeasurer,
+	measurer?: TerminalExchange,
 ): string {
 	const {rows, cols, char, border} = grid;
 
@@ -1835,7 +1833,7 @@ function generateANSI(
 	// painted row covers, and that row's own content lands on top of it in this
 	// same write, so nothing of it is ever on screen.
 	if (measurer !== undefined) {
-		const starving = measurer.starved();
+		const starving = measurer.starvedWidths();
 		if (starving.size > 0) {
 			const cell = safeProbeCell(grid);
 			if (cell !== null) {
@@ -1853,7 +1851,7 @@ function generateANSI(
 					run++;
 					output +=
 						writer.text(cluster).take() +
-						measurer.probe(cluster, run, cell.col, stringWidth(cluster));
+						measurer.probeWidth(cluster, run, cell.col, stringWidth(cluster));
 				}
 				output += writer.carriageReturn().take();
 				run++;
@@ -1948,7 +1946,7 @@ function generateANSI(
 				if (
 					(code > 0x7e || code < 0x20) &&
 					widthIsUncertain(glyph) &&
-					measurer.wants(glyph)
+					measurer.wantsWidth(glyph)
 				) {
 					// Near the right margin the answer is unreadable: a glyph
 					// that reaches the last column leaves the cursor there with
@@ -1962,9 +1960,9 @@ function generateANSI(
 					// measured wherever it next appears with room -- or, if it
 					// never has room, on a later frame's probe train.
 					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
-						output += measurer.probe(glyph, run, col, width);
+						output += measurer.probeWidth(glyph, run, col, width);
 					} else {
-						measurer.defer(glyph);
+						measurer.deferWidth(glyph);
 					}
 					unknownInRow++;
 				}
@@ -2021,6 +2019,16 @@ const kAnchorScrollTop = Symbol("anchorScrollTop");
  * Frames come one at a time -- begin, draw, end -- and each ends by parking
  * the cursor where the next resize can find it again.
  */
+/**
+ * Whether asking the terminal can teach the width tables anything. A wire
+ * that stopped answering teaches nothing, and neither does a terminal that
+ * negotiated mode 2027: that mode makes it advance by grapheme cluster,
+ * measuring the way the tables do, so its answers cannot disagree with them.
+ */
+function probingTeaches(exchange: TerminalExchange): boolean {
+	return exchange.probing() && !exchange.clusterWidthsNegotiated();
+}
+
 export class Screen {
 	declare [kPrev]: CellGrid | null;
 	// Retired grids kept for the next frame that wants their size: the frame
@@ -2047,7 +2055,7 @@ export class Screen {
 	declare [kRideProbeTrain]: boolean;
 	// The width-probe channel, or null when the screen has none (headless
 	// renders never have one).
-	declare [kMeasurer]: WidthMeasurer | null;
+	declare [kMeasurer]: TerminalExchange | null;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
 	declare [kCols]: number;
@@ -2075,7 +2083,7 @@ export class Screen {
 		rows: number,
 		cols: number,
 		colorDepth: ColorDepth = "rgb",
-		measurer: WidthMeasurer | null = null,
+		measurer: TerminalExchange | null = null,
 	) {
 		this[kRideProbeTrain] = false;
 		this[kMeasurer] = measurer;

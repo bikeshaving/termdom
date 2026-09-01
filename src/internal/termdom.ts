@@ -297,7 +297,7 @@ export class TermDOM {
 			this[kTransport].rows,
 			this[kTransport].cols,
 			this[kTransport].colorDepth,
-			this[kExchange].widthMeasurer,
+			this[kExchange],
 		);
 
 		// The engine the document stands on. From here a control builds and

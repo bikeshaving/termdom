@@ -15,11 +15,8 @@ import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {Screen} from "../src/internal/screen.js";
-import {
-	recordClusterAdvance,
-	stringWidth,
-	type WidthMeasurer,
-} from "../src/internal/text.js";
+import type {TerminalExchange} from "../src/internal/exchange.js";
+import {recordClusterAdvance, stringWidth} from "../src/internal/text.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(starved = new Set<string>()): {
@@ -31,7 +28,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 	}>;
 	deferred: string[];
 	starved: Set<string>;
-	measurer: WidthMeasurer;
+	measurer: TerminalExchange;
 } {
 	const probes: Array<{
 		cluster: string;
@@ -45,21 +42,28 @@ function recordingMeasurer(starved = new Set<string>()): {
 		probes,
 		deferred,
 		starved,
+		// The screen asks its exchange six things; this double answers them
+		// and records the asks, and is nothing else an exchange is.
 		measurer: {
 			probing: () => true,
 			clusterWidthsNegotiated: () => false,
-			wants: (cluster) => !asked.has(cluster),
-			starved: () => starved,
-			defer: (cluster) => {
+			wantsWidth: (cluster: string) => !asked.has(cluster),
+			starvedWidths: () => starved,
+			deferWidth: (cluster: string) => {
 				deferred.push(cluster);
 			},
-			probe: (cluster, run, column, width) => {
+			probeWidth: (
+				cluster: string,
+				run: number,
+				column: number,
+				width: number,
+			) => {
 				asked.add(cluster);
 				starved.delete(cluster);
 				probes.push({cluster, run, column, width});
 				return "\x1b[6n";
 			},
-		},
+		} as unknown as TerminalExchange,
 	};
 }
 
@@ -125,7 +129,7 @@ function emit(
 	rows: number,
 	cols: number,
 	cells: Array<[number, string]>,
-	measurer: WidthMeasurer,
+	measurer: TerminalExchange,
 ): string {
 	const screen = new Screen(rows, cols, "rgb", measurer);
 	const context = screen.beginFrame({offset: 0});
