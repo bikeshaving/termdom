@@ -26,7 +26,6 @@ import {
 } from "./cssom.js";
 import {
 	DOMRectList,
-	type EngineWindow,
 	flatIsConnected,
 	flatParentElement,
 	getShadowRoot,
@@ -36,6 +35,7 @@ import {
 	renderedTopLayer,
 	SHOW_FLAT,
 	TreeWalker,
+	type Window,
 } from "./dom.js";
 import {
 	getParagraphDirection,
@@ -9948,7 +9948,7 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 export class Layout {
 	declare [kDOMRect]: typeof DOMRect;
 	declare [kRootElement]: Element;
-	declare [kWindow]: EngineWindow;
+	declare [kWindow]: Window;
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
 	declare [kInitialContainingBlock]: LayoutNode;
@@ -10017,7 +10017,7 @@ export class Layout {
 	// Geometry moved since the last painted frame.
 	declare [kMoved]: boolean;
 
-	constructor(window: EngineWindow, width: number, height: number) {
+	constructor(window: Window, width: number, height: number) {
 		this[kMoved] = false;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;

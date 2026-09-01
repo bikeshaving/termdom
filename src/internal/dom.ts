@@ -27789,8 +27789,8 @@ export class Window extends EventTarget {
 		return location;
 	}
 
-	get customElements(): CustomElementRegistry {
-		return globalCustomElements;
+	get customElements(): globalThis.CustomElementRegistry {
+		return globalCustomElements as unknown as globalThis.CustomElementRegistry;
 	}
 
 	// The terminal is both the window and the screen, so the inner and
@@ -28245,46 +28245,23 @@ type WindowEventHandlerAttributes = Omit<
  * APIs an author reaches for through `window`. The member types are the
  * host's, which is how a caller outside this file sees them.
  */
-export interface EngineWindow
-	extends globalThis.EventTarget,
-	WindowEventHandlerAttributes {
-	readonly document: globalThis.Document;
-	readonly window: EngineWindow;
-	readonly self: EngineWindow;
-	readonly navigator: globalThis.Navigator;
-
-	readonly innerWidth: number;
-	readonly innerHeight: number;
-	readonly outerWidth: number;
-	readonly outerHeight: number;
-	readonly screenTop: number;
-	readonly scrollX: number;
-	readonly scrollY: number;
-	readonly pageXOffset: number;
-	readonly pageYOffset: number;
-	scroll(options?: globalThis.ScrollToOptions): void;
-	scroll(x: number, y: number): void;
-	scrollTo(options?: globalThis.ScrollToOptions): void;
-	scrollTo(x: number, y: number): void;
-	scrollBy(options?: globalThis.ScrollToOptions): void;
-	scrollBy(x: number, y: number): void;
+export interface Window extends WindowEventHandlerAttributes {
+	// An overload with the host's event type, so a caller holding a Window
+	// can dispatch a platform event as it would to any EventTarget.
+	dispatchEvent(event: globalThis.Event): boolean;
+	readonly window: Window;
+	readonly self: Window;
 
 	getComputedStyle(
 		element: globalThis.Element,
 		pseudoElement?: string | null,
 	): globalThis.CSSStyleDeclaration;
-	getSelection(): globalThis.Selection | null;
-	matchMedia(query: string): globalThis.MediaQueryList;
-	requestAnimationFrame(callback: globalThis.FrameRequestCallback): number;
-	cancelAnimationFrame(handle: number): void;
 	setTimeout: typeof globalThis.setTimeout;
 	clearTimeout: typeof globalThis.clearTimeout;
 	setInterval: typeof globalThis.setInterval;
 	clearInterval: typeof globalThis.clearInterval;
 	queueMicrotask: typeof globalThis.queueMicrotask;
-	close(): void;
 
-	readonly customElements: globalThis.CustomElementRegistry;
 	readonly NodeFilter: typeof globalThis.NodeFilter;
 
 	EventTarget: typeof globalThis.EventTarget;
@@ -28368,7 +28345,7 @@ export interface EngineWindow
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
 // frames, the clipboard) as it mounts the document.
-function buildWindow(document: Document): EngineWindow {
+function buildWindow(document: Document): Window {
 	const window = new Window(document) as unknown as Record<string, unknown>;
 	Object.assign(window, platform, {
 		// The platform's DOMException, which is the one the DOM and the CSSOM
@@ -28383,11 +28360,11 @@ function buildWindow(document: Document): EngineWindow {
 	});
 	window.window = window;
 	window.self = window;
-	return window as unknown as EngineWindow;
+	return window as unknown as Window;
 }
 
 /** Parse a document from markup and display it in a window of its own. */
-export function createDocumentWindow(html: string, url?: string): EngineWindow {
+export function createDocumentWindow(html: string, url?: string): Window {
 	return buildWindow(parseHTMLDocument(html, url));
 }
 

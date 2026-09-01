@@ -7,7 +7,6 @@ import {
 	resolveBorderSides,
 } from "./cssom.js";
 import {
-	type EngineWindow,
 	flatParentElement,
 	getFieldSelectionRange,
 	getFieldValueText,
@@ -15,6 +14,7 @@ import {
 	getShadowRoot,
 	getTopLayer,
 	renderedTopLayer,
+	type Window,
 } from "./dom.js";
 import {
 	flowWalker,
@@ -216,7 +216,7 @@ const kScrolledRows = Symbol("scrolledRows");
 
 /** Reads the DOM, styles and geometry. Writes only into the CellContext. */
 export class Painter {
-	declare [kWindow]: EngineWindow;
+	declare [kWindow]: Window;
 	declare [kDocument]: Document;
 	declare [kLayout]: Layout;
 	declare [kCascade]: Cascade;
@@ -236,7 +236,7 @@ export class Painter {
 	) {
 		this[kRenderedOutsideMarkers] = new WeakSet<Element>();
 		this[kScrolledRows] = 0;
-		this[kWindow] = document.defaultView as unknown as EngineWindow;
+		this[kWindow] = document.defaultView as unknown as Window;
 		this[kDocument] = document;
 		this[kLayout] = layout;
 		this[kCascade] = cascade;

@@ -3,8 +3,8 @@ import * as DOM from "./dom.js";
 import {
 	createDocumentWindow,
 	disconnectObservers,
-	type EngineWindow,
 	flushObservers,
+	type Window,
 } from "./dom.js";
 import {
 	Exchange,
@@ -53,7 +53,7 @@ const kLifecycle = Symbol("lifecycle");
 
 export class TermDOM {
 	readonly document: Document;
-	readonly window: EngineWindow;
+	readonly window: Window;
 
 	declare [kScreen]: Screen;
 	declare [kLayout]: Layout;

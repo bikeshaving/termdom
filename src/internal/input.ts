@@ -3,7 +3,6 @@ import {
 	closeTopmost,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
-	type EngineWindow,
 	flatParentElement,
 	getFieldCaretOffset,
 	getKeyboardActivation,
@@ -16,6 +15,7 @@ import {
 	setHoveredElement,
 	setUASelection,
 	topmostModalDialog,
+	type Window,
 } from "./dom.js";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
 import type {Layout} from "./layout.js";
@@ -294,7 +294,7 @@ export class Input {
 	static readonly [kScrollChainTimeoutMs] = 3000;
 	static readonly [kDblclickIntervalMs] = 500;
 	declare [kDocument]: Document;
-	declare [kWindow]: EngineWindow;
+	declare [kWindow]: Window;
 	declare [kTermDOM]: TermDOM;
 	declare [kLayout]: Layout;
 	declare [kCascade]: Cascade;
@@ -340,7 +340,7 @@ export class Input {
 		screen: Screen,
 	) {
 		this[kDocument] = termDOM.document;
-		this[kWindow] = termDOM.document.defaultView as unknown as EngineWindow;
+		this[kWindow] = termDOM.document.defaultView as unknown as Window;
 		this[kTermDOM] = termDOM;
 		this[kLayout] = layout;
 		this[kCascade] = styles;

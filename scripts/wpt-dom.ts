@@ -1127,7 +1127,7 @@ interface HarnessGlobals {
 /** Install this realm's DOM as the harness realm's DOM, and hand back the undo. */
 function installGlobals(
 	dom: DOMModule,
-	engineWindow: DOM.EngineWindow,
+	engineWindow: DOM.Window,
 	document: Document,
 	url: string,
 ): HarnessGlobals {

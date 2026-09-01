@@ -19,7 +19,7 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createContext, runInContext} from "node:vm";
 
-import {createDocumentWindow, type EngineWindow} from "../src/internal/dom.ts";
+import {createDocumentWindow, type Window} from "../src/internal/dom.ts";
 import type {
 	TerminalCloseInfo,
 	TerminalSize,
@@ -255,7 +255,7 @@ const frames = new WeakMap<Element, {document: Document; window: unknown}>();
 let framesInstalled = false;
 let documentURL = "about:blank";
 
-function installFrames(window: EngineWindow): void {
+function installFrames(window: Window): void {
 	if (framesInstalled) {
 		return;
 	}
@@ -483,7 +483,7 @@ function defineAll(
  * engine's, reached across the boundary exactly as a browser's page script
  * reaches the UA's.
  */
-function createRealm(window: EngineWindow, url: string): object {
+function createRealm(window: Window, url: string): object {
 	// Every name the window carries, own or inherited, enumerable or not: the
 	// DOM and CSSOM interface objects live on Window.prototype and a test reads
 	// them as bare globals. A realm's global is a flat object, so the chain is

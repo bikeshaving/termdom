@@ -16,7 +16,6 @@ import {
 	type Element as DOMElement,
 	type Node as DOMNode,
 	dropPseudoElement,
-	type EngineWindow,
 	ensurePseudoElement,
 	flatParentElement,
 	flushLayout,
@@ -37,6 +36,7 @@ import {
 	type SelectorNode,
 	styleElementCount,
 	TransitionEvent,
+	type Window,
 } from "./dom.js";
 import type {Layout} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
@@ -3995,7 +3995,7 @@ for (const property of CSS_PROPERTIES) {
 // DOMException. A sheet reaches its document through its owner node. A
 // constructed sheet has none, and uses the window its constructor came
 // from.
-let cssomWindow: EngineWindow | null = null;
+let cssomWindow: Window | null = null;
 
 function getSheetView(
 	sheet: CSSStyleSheet | null | undefined,
@@ -9397,7 +9397,7 @@ export class Cascade {
 
 	// Fixed for the window's lifetime, so held directly.
 	declare [kDocument]: Document;
-	declare [kWindow]: EngineWindow;
+	declare [kWindow]: Window;
 	declare [kLayout]: Layout;
 
 	declare [kFlushing]: boolean;
@@ -9423,7 +9423,7 @@ export class Cascade {
 	// chain.
 	declare [kPseudoSubjectTags]: Set<string> | null | undefined;
 
-	constructor(window: EngineWindow, layout: Layout) {
+	constructor(window: Window, layout: Layout) {
 		this[kComputedStyleCache] = new WeakMap<
 			Element,
 			ComputedStyleDeclaration
