@@ -10681,10 +10681,13 @@ Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// A constructor can be defined in more than one registry. A `super()`
-// call means the registry whose upgrade is in flight. With none in
-// flight, the realm's own registry is checked first, and a scoped
-// registry only if it is the only one that knows the constructor.
+// HTML's element constructors look the constructor up in the registry
+// whose upgrade is in flight, and otherwise in the current global
+// object's document registry. Every document here shares one realm, so
+// there is no second global for an iframe's script to run under. The
+// last branch stands in for it: a constructor known only to an iframe's
+// registry resolves as it would from that iframe's own global
+// (custom-elements/htmlconstructor/newtarget.html).
 function getConstructorDefinition(
 	constructor: CustomElementConstructor,
 ): CustomElementDefinition | null {
@@ -10823,9 +10826,11 @@ function getDefinitionRegistry(
 	return definition.registry;
 }
 
-// A template's content belongs to a document with no browsing context,
-// and such a document looks nothing up. An element in one never upgrades,
-// however it got there.
+// Elements inside template contents never upgrade, including ones moved
+// in that already carry a registry (custom-elements/registries/upgrade.html).
+// Parser-built contents already resolve to no definition, because the
+// template contents owner document has no registry; this check covers
+// the moved-in case.
 function getUpgradeDefinition(
 	element: Element,
 ): CustomElementDefinition | null {
