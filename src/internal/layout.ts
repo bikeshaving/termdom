@@ -14,9 +14,14 @@
 import LineBreaker from "linebreak";
 
 import {
+	AUTO_PLACEMENT,
+	AUTO_TRACK,
 	type BoxModel,
+	EMPTY_TRACK_LIST,
 	getBoxModel,
 	getComputedValue,
+	type GridAreaMap,
+	type GridPlacement,
 	parseAspectRatio,
 	parseBorderWidthValue,
 	parseGridAreas,
@@ -25,8 +30,12 @@ import {
 	parseTrackList,
 	parseTrackSizeList,
 	parseUnitValue,
-	type Unit,
+	type TrackBreadth,
+	type TrackList,
+	type TrackListTrack,
+	type TrackSize,
 	usedValuesChanged,
+	type Value,
 } from "./cssom.js";
 import {
 	DOMRectList,
@@ -200,11 +209,6 @@ type StaticPositionFunction = (
 // Values
 // ---------------------------------------------------------------------------
 
-interface Value {
-	unit: Unit;
-	value: number;
-}
-
 const UNDEFINED_VALUE: Value = {unit: "undefined", value: NaN};
 const AUTO_VALUE: Value = {unit: "auto", value: NaN};
 
@@ -239,98 +243,6 @@ function resolveMargin(value: Value, ownerWidth: number): number {
 	const resolved = resolveValue(value, ownerWidth);
 	return isDefined(resolved) ? resolved : 0;
 }
-
-// ---------------------------------------------------------------------------
-// Grid values (css-grid-2 §7, §8)
-//
-// The compute core takes these already parsed: a track list arrives as the
-// structure the grammar describes, never as CSS text. Lengths keep the Value
-// shape everything else here uses, so a percentage track resolves against the
-// grid container the same way a percentage width does.
-// ---------------------------------------------------------------------------
-
-/**
- * A `<track-breadth>`: one end of a track's sizing function. `flex` is the
- * `fr` unit, whose factor is a share of the leftover space rather than a
- * length; the three keywords are intrinsic, and size from the items in them.
- */
-export type TrackBreadth =
-	{kind: "length"; value: Value} |
-	{kind: "flex"; factor: number} |
-	{kind: "auto"} |
-	{kind: "min-content"} |
-	{kind: "max-content"};
-
-/**
- * A `<track-size>`: the minimum and maximum a track may take.
- *
- * `fit-content(x)` is `minmax(auto, max-content)` with the maximum clamped by
- * `x` (css-grid-2 §7.2.3), so it is held as exactly that -- the clamp beside
- * the pair, not a fourth kind of sizing function.
- */
-export interface TrackSize {
-	min: TrackBreadth;
-	max: TrackBreadth;
-	fitContent?: Value;
-}
-
-/** One track of a track list, with the line names written before it. */
-export interface TrackListTrack {
-	names: string[];
-	size: TrackSize;
-}
-
-/**
- * A `repeat()` group. `auto-fill` and `auto-fit` decide their own count from
- * the space available; `auto-fit` then collapses the tracks that took no item
- * (css-grid-2 §7.2.3.2).
- */
-export interface TrackRepeat {
-	count: number | "auto-fill" | "auto-fit";
-	tracks: TrackListTrack[];
-
-	/** Line names written after the repeat group's last track. */
-	endNames: string[];
-}
-
-export type TrackListPart =
-	{type: "track"; track: TrackListTrack} |
-	{type: "repeat"; repeat: TrackRepeat};
-
-/** A `<track-list>`: the tracks of one axis, with the lines named between them. */
-export interface TrackList {
-	parts: TrackListPart[];
-
-	/** Line names written after the last track. */
-	endNames: string[];
-}
-
-/**
- * A `grid-template-areas` map: one entry per row, one name (or null for a `.`
- * null cell) per column. Every row has `columnCount` entries.
- */
-export interface GridAreaMap {
-	rows: Array<Array<string | null>>;
-	columnCount: number;
-}
-
-/**
- * One `<grid-line>` (css-grid-2 §8.3). `auto` is index null with no name and
- * no span; the rest are the grammar's three forms, which the parser has
- * already told apart.
- */
-export interface GridPlacement {
-	span: boolean;
-	index: number | null;
-	name: string | null;
-}
-
-const AUTO_PLACEMENT: GridPlacement = {span: false, index: null, name: null};
-
-/** The `auto` track size: the initial value of grid-auto-rows/columns. */
-const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
-
-const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
 // ---------------------------------------------------------------------------
 // Axis helpers

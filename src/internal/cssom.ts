@@ -63,7 +63,6 @@ import {
 	styleElementCount,
 	TransitionEvent,
 } from "./dom.js";
-import type * as SolverTypes from "./layout.js";
 import type {LayoutEngine} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
 import {stringWidth} from "./text.js";
@@ -95,6 +94,15 @@ import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
  * point; they are words now, and a wrong one is a type error.
  */
 export type Unit = "undefined" | "cell" | "percent" | "auto";
+
+/**
+ * A length as the solver holds it: a unit and a number. NaN is the number
+ * of `undefined` and `auto`, whose unit is the whole of what they say.
+ */
+export interface Value {
+	unit: Unit;
+	value: number;
+}
 
 /** The keywords every property accepts, whatever its own grammar. */
 const CSS_WIDE_KEYWORDS = new Set([
@@ -13924,10 +13932,13 @@ export function styleShadowAttached(root: ShadowRoot): void {
 // ---------------------------------------------------------------------------
 // Grid values (css-grid-2 §7, §8)
 //
-// The compute core takes track lists, area maps and placements already parsed,
-// so this is where CSS text becomes them. css-tree does the tokenizing: a
-// track list nests functions, bracketed line names and strings, and a
-// hand-rolled splitter gets one of those wrong sooner or later.
+// The shapes a track list, an area map and a placement take once parsed, and
+// the parsing that produces them from CSS text; the solver takes these and
+// never the text. Lengths keep the Value shape everything else uses, so a
+// percentage track resolves against the grid container the same way a
+// percentage width does. css-tree does the tokenizing: a track list nests
+// functions, bracketed line names and strings, and a hand-rolled splitter
+// gets one of those wrong sooner or later.
 //
 // Two values are REFUSED rather than approximated. `subgrid` (css-grid-2 §9.5)
 // takes its tracks from an ancestor grid, which means a grid's own sizing can
@@ -13936,6 +13947,93 @@ export function styleShadowAttached(root: ShadowRoot): void {
 // the property falls back to `none` -- the same answer a browser that does not
 // implement them gives.
 // ---------------------------------------------------------------------------
+
+/**
+ * A `<track-breadth>`: one end of a track's sizing function. `flex` is the
+ * `fr` unit, whose factor is a share of the leftover space rather than a
+ * length; the three keywords are intrinsic, and size from the items in them.
+ */
+export type TrackBreadth =
+	{kind: "length"; value: Value} |
+	{kind: "flex"; factor: number} |
+	{kind: "auto"} |
+	{kind: "min-content"} |
+	{kind: "max-content"};
+
+/**
+ * A `<track-size>`: the minimum and maximum a track may take.
+ *
+ * `fit-content(x)` is `minmax(auto, max-content)` with the maximum clamped by
+ * `x` (css-grid-2 §7.2.3), so it is held as exactly that -- the clamp beside
+ * the pair, not a fourth kind of sizing function.
+ */
+export interface TrackSize {
+	min: TrackBreadth;
+	max: TrackBreadth;
+	fitContent?: Value;
+}
+
+/** One track of a track list, with the line names written before it. */
+export interface TrackListTrack {
+	names: string[];
+	size: TrackSize;
+}
+
+/**
+ * A `repeat()` group. `auto-fill` and `auto-fit` decide their own count from
+ * the space available; `auto-fit` then collapses the tracks that took no item
+ * (css-grid-2 §7.2.3.2).
+ */
+export interface TrackRepeat {
+	count: number | "auto-fill" | "auto-fit";
+	tracks: TrackListTrack[];
+
+	/** Line names written after the repeat group's last track. */
+	endNames: string[];
+}
+
+export type TrackListPart =
+	{type: "track"; track: TrackListTrack} |
+	{type: "repeat"; repeat: TrackRepeat};
+
+/** A `<track-list>`: the tracks of one axis, with the lines named between them. */
+export interface TrackList {
+	parts: TrackListPart[];
+
+	/** Line names written after the last track. */
+	endNames: string[];
+}
+
+/**
+ * A `grid-template-areas` map: one entry per row, one name (or null for a `.`
+ * null cell) per column. Every row has `columnCount` entries.
+ */
+export interface GridAreaMap {
+	rows: Array<Array<string | null>>;
+	columnCount: number;
+}
+
+/**
+ * One `<grid-line>` (css-grid-2 §8.3). `auto` is index null with no name and
+ * no span; the rest are the grammar's three forms, which the parser has
+ * already told apart.
+ */
+export interface GridPlacement {
+	span: boolean;
+	index: number | null;
+	name: string | null;
+}
+
+export const AUTO_PLACEMENT: GridPlacement = {
+	span: false,
+	index: null,
+	name: null,
+};
+
+/** The `auto` track size: the initial value of grid-auto-rows/columns. */
+export const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
+
+export const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
 
 /** The refused grid values, kept together so the refusal is one list. */
 const REFUSED_GRID_VALUES = new Set(["subgrid", "masonry"]);
@@ -13953,12 +14051,12 @@ function trackCells(node: CSSNode): number | null {
 	return Number.isFinite(number) ? number : null;
 }
 
-function cellBreadth(cells: number): SolverTypes.TrackBreadth {
+function cellBreadth(cells: number): TrackBreadth {
 	return {kind: "length", value: {unit: "cell", value: cells}};
 }
 
 /** One `<track-breadth>`: a length, a percentage, an `fr`, or an intrinsic keyword. */
-function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
+function parseTrackBreadth(node: CSSNode): TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
 		return Number.isFinite(factor) && factor >= 0
@@ -13992,7 +14090,7 @@ function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
 }
 
 /** One `<track-size>`: a breadth, a `minmax()` pair, or a `fit-content()` clamp. */
-function parseTrackSize(node: CSSNode): SolverTypes.TrackSize | null {
+function parseTrackSize(node: CSSNode): TrackSize | null {
 	if (node.type === "Function") {
 		const name = (node.name ?? "").toLowerCase();
 		const args = functionArguments(node);
@@ -14072,11 +14170,11 @@ function memoizeGridValue<T>(
 }
 
 /** A `<track-list>`, or null when the value is not one (and so has no effect). */
-export function parseTrackList(value: string): SolverTypes.TrackList | null {
+export function parseTrackList(value: string): TrackList | null {
 	return memoizeGridValue("track-list", value, parseTrackListValue);
 }
 
-function parseTrackListValue(value: string): SolverTypes.TrackList | null {
+function parseTrackListValue(value: string): TrackList | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -14089,7 +14187,7 @@ function parseTrackListValue(value: string): SolverTypes.TrackList | null {
 		return null;
 	}
 
-	const parts: SolverTypes.TrackListPart[] = [];
+	const parts: TrackListPart[] = [];
 	let names: string[] = [];
 
 	for (const node of children) {
@@ -14130,7 +14228,7 @@ function parseTrackListValue(value: string): SolverTypes.TrackList | null {
 	return {parts, endNames: names};
 }
 
-function parseTrackRepeat(node: CSSNode): SolverTypes.TrackRepeat | null {
+function parseTrackRepeat(node: CSSNode): TrackRepeat | null {
 	const args = (node.children?.toArray() ?? []).filter(
 		(child) => child.type !== "Operator",
 	);
@@ -14157,7 +14255,7 @@ function parseTrackRepeat(node: CSSNode): SolverTypes.TrackRepeat | null {
 		return null;
 	}
 
-	const tracks: SolverTypes.TrackListTrack[] = [];
+	const tracks: TrackListTrack[] = [];
 	let names: string[] = [];
 	for (const child of args.slice(1)) {
 		if (child.type === "Brackets") {
@@ -14180,13 +14278,13 @@ function parseTrackRepeat(node: CSSNode): SolverTypes.TrackRepeat | null {
 /** grid-auto-rows/columns: a list of track sizes, cycled over implicit tracks. */
 export function parseTrackSizeList(
 	value: string,
-): SolverTypes.TrackSize[] | null {
+): TrackSize[] | null {
 	return memoizeGridValue("track-size-list", value, parseTrackSizeListValue);
 }
 
 function parseTrackSizeListValue(
 	value: string,
-): SolverTypes.TrackSize[] | null {
+): TrackSize[] | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;
@@ -14195,7 +14293,7 @@ function parseTrackSizeListValue(
 	if (!children) {
 		return null;
 	}
-	const sizes: SolverTypes.TrackSize[] = [];
+	const sizes: TrackSize[] = [];
 	for (const node of children) {
 		const size = parseTrackSize(node);
 		if (!size) {
@@ -14211,11 +14309,11 @@ function parseTrackSizeListValue(
  * -- and so declares nothing -- unless every row states the same number of
  * cells and every named area is a solid rectangle (css-grid-2 §7.3).
  */
-export function parseGridAreas(value: string): SolverTypes.GridAreaMap | null {
+export function parseGridAreas(value: string): GridAreaMap | null {
 	return memoizeGridValue("areas", value, parseGridAreasValue);
 }
 
-function parseGridAreasValue(value: string): SolverTypes.GridAreaMap | null {
+function parseGridAreasValue(value: string): GridAreaMap | null {
 	const text = value.trim();
 	if (!text || text === "none") {
 		return null;
@@ -14289,13 +14387,13 @@ function parseGridAreasValue(value: string): SolverTypes.GridAreaMap | null {
 /** One `<grid-line>`: `auto`, a line number, a name, or a span of either. */
 export function parseGridPlacement(
 	value: string,
-): SolverTypes.GridPlacement | null {
+): GridPlacement | null {
 	return memoizeGridValue("placement", value, parseGridPlacementValue);
 }
 
 function parseGridPlacementValue(
 	value: string,
-): SolverTypes.GridPlacement | null {
+): GridPlacement | null {
 	const text = value.trim();
 	if (!text || text === "auto") {
 		return null;
