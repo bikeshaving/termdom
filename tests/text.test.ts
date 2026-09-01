@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {getStringWidth, widthIsUncertain} from "../src/internal/text.js";
+import {getStringWidth, isWidthUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,
@@ -53,7 +53,7 @@ describe("getStringWidth matches the recorded oracle", () => {
 				if (expected === -1) {
 					continue;
 				}
-				const actual = oracleSweepWidth(code, getStringWidth, widthIsUncertain);
+				const actual = oracleSweepWidth(code, getStringWidth, isWidthUncertain);
 				if (actual !== expected) {
 					mismatches.push(`U+${code.toString(16).toUpperCase()}`);
 				}

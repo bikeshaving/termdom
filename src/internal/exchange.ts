@@ -1,10 +1,10 @@
 import type {Input} from "./input.js";
 import {
+	anchorDetected,
 	closeTermDOM,
-	commandStartDetected,
 	frameReplaced,
 	frameStanding,
-	probesStarved,
+	probesDeferred,
 	type TermDOM,
 	terminalReorders,
 	terminalResized,
@@ -583,9 +583,9 @@ const kLastWrite = Symbol("lastWrite");
 
 const kWireReader = Symbol("wireReader");
 
-const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
+const kHasDetectedAnchor = Symbol("hasDetectedAnchor");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
-const kDsrSequence = Symbol("dsrSequence");
+const kDSRSequence = Symbol("dsrSequence");
 const kPendingReplies = Symbol("pendingReplies");
 
 const kPriorBidiMode = Symbol("priorBidiMode");
@@ -596,7 +596,7 @@ const kClipboardQueryTimeout = Symbol("clipboardQueryTimeout");
 const kProbingEnded = Symbol("probingEnded");
 const kWidths = Symbol("widths");
 const kWidthProbeTimeout = Symbol("widthProbeTimeout");
-const kWidthStarvationWait = Symbol("widthStarvationWait");
+const kWidthDeferralWait = Symbol("widthStarvationWait");
 
 /**
  * One reader, one writer, and the demultiplexer between them. Every
@@ -608,8 +608,8 @@ export class Exchange {
 	// replies at all stops probing.
 	static readonly [kWidthProbeTimeout] = 2000;
 	// Long enough that anything still animating or typing carries the
-	// train.
-	static readonly [kWidthStarvationWait] = 500;
+	// pending probes.
+	static readonly [kWidthDeferralWait] = 500;
 	// Most terminals refuse clipboard reads by silence. This is what every
 	// readText() waits before rejecting.
 	static readonly [kClipboardQueryTimeout] = 500;
@@ -632,7 +632,7 @@ export class Exchange {
 	declare [kLastWrite]: Promise<void>;
 	declare [kWireReader]: WireReader;
 	// The resize re-anchor saves and restores this around its redraw.
-	declare [kHasDetectedCommandStart]: boolean;
+	declare [kHasDetectedAnchor]: boolean;
 	declare [kCursorDetectionPromise]: Promise<void> | null;
 	// Oldest first. Two mode negotiations can be outstanding at once. Each
 	// names its mode, so neither takes the other's reply.
@@ -642,7 +642,7 @@ export class Exchange {
 	declare [kGraphemeClustersNegotiated]: boolean;
 	// A terminal replies to DSR in ask order, so this keeps cursor
 	// detection and width probes from taking each other's replies.
-	declare [kDsrSequence]: number;
+	declare [kDSRSequence]: number;
 	// Teardown has begun. No frame may send another probe.
 	declare [kProbingEnded]: boolean;
 	declare [kWidths]: WidthProbes;
@@ -656,12 +656,12 @@ export class Exchange {
 		this[kDisposed] = false;
 		this[kLastWrite] = Promise.resolve();
 		this[kWireReader] = new WireReader();
-		this[kHasDetectedCommandStart] = false;
+		this[kHasDetectedAnchor] = false;
 		this[kCursorDetectionPromise] = null;
 		this[kPendingReplies] = [];
 		this[kPriorBidiMode] = null;
 		this[kGraphemeClustersNegotiated] = false;
-		this[kDsrSequence] = 0;
+		this[kDSRSequence] = 0;
 		this[kProbingEnded] = false;
 		this[kWidths] = createWidthProbes(interactive);
 		this[kTransport] = transport;
@@ -716,13 +716,13 @@ export class Exchange {
 	 * would wait forever in place, so a frame measures these somewhere with
 	 * room.
 	 */
-	starvedWidths(): ReadonlySet<string> {
+	deferredWidths(): ReadonlySet<string> {
 		return this[kWidths].starved;
 	}
 
 	/**
 	 * Painted too near the last column for its reply to be readable. One
-	 * deferral of a cluster never probed is starvation, because the layout
+	 * deferral of a cluster never probed is deferral, because the layout
 	 * that put it there will put it there again.
 	 */
 	deferWidth(cluster: string): void {
@@ -731,7 +731,7 @@ export class Exchange {
 			return;
 		}
 		widths.starved.add(cluster);
-		requestStarvationFrame(this);
+		requestDeferredProbeFrame(this);
 	}
 
 	/**
@@ -759,7 +759,7 @@ export class Exchange {
 			batch: widths.writeBatch,
 			column,
 			width,
-			sequence: this[kDsrSequence]++,
+			sequence: this[kDSRSequence]++,
 			sentAt: Date.now(),
 		});
 		armWidthProbeTimer(this);
@@ -850,11 +850,11 @@ export class Exchange {
 		this[kCursorDetectionPromise] = null;
 		if (this[kAnchorDetectionEnabled]) {
 			this[kCursorDetectionPromise] = Promise.race([
-				this.detectCommandStart().then(() => {}),
+				this.detectAnchor().then(() => {}),
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
-					this[kHasDetectedCommandStart] = false;
+					this[kHasDetectedAnchor] = false;
 				})
 				.finally(() => {
 					this[kCursorDetectionPromise] = null;
@@ -916,8 +916,8 @@ export class Exchange {
 		}
 	}
 
-	/** DSR. The cursor row is the command-start anchor. */
-	detectCommandStart(): Promise<number> {
+	/** DSR. The cursor row is the anchor anchor. */
+	detectAnchor(): Promise<number> {
 		if (!this[kInteractive]) {
 			return Promise.reject(
 				new Error("Cannot detect cursor position: not interactive"),
@@ -927,10 +927,10 @@ export class Exchange {
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: 1000,
-			sequence: this[kDsrSequence]++,
+			sequence: this[kDSRSequence]++,
 			read: ({row}) => {
-				commandStartDetected(this[kTermDOM], row);
-				this[kHasDetectedCommandStart] = true;
+				anchorDetected(this[kTermDOM], row);
+				this[kHasDetectedAnchor] = true;
 				return row;
 			},
 		});
@@ -946,7 +946,7 @@ export class Exchange {
 		return nextReply(this, "cursor-report", {
 			ask: CURSOR_QUERY,
 			timeoutMs: 200,
-			sequence: this[kDsrSequence]++,
+			sequence: this[kDSRSequence]++,
 			read: ({row}) => row - 1,
 		});
 	}
@@ -1054,9 +1054,9 @@ export class Exchange {
 			clearTimeout(widths.timer);
 			widths.timer = null;
 		}
-		if (widths.starvationTimer !== null) {
-			clearTimeout(widths.starvationTimer);
-			widths.starvationTimer = null;
+		if (widths.deferralTimer !== null) {
+			clearTimeout(widths.deferralTimer);
+			widths.deferralTimer = null;
 		}
 		widths.pending.length = 0;
 		widths.probing = false;
@@ -1116,12 +1116,12 @@ interface WidthProbes {
 	// before its reply is probed twice, which keeps a run's column
 	// arithmetic whole.
 	settled: Set<string>;
-	// Ever probed, from anywhere. Bounds the probe train to one per
+	// Ever probed, from anywhere. Bounds the pending probes to one per
 	// cluster.
 	asked: Set<string>;
-	// Turned away by the margin and never probed. Waiting for a train.
+	// Turned away by the margin and never probed. Waiting for a pending probes.
 	starved: Set<string>;
-	starvationTimer: ReturnType<typeof setTimeout> | null;
+	deferralTimer: ReturnType<typeof setTimeout> | null;
 	// False for good once the terminal proves it does not reply.
 	probing: boolean;
 	answered: boolean;
@@ -1144,7 +1144,7 @@ function createWidthProbes(probing: boolean): WidthProbes {
 		settled: new Set(),
 		asked: new Set(),
 		starved: new Set(),
-		starvationTimer: null,
+		deferralTimer: null,
 		probing,
 		answered: false,
 		timer: null,
@@ -1156,21 +1156,21 @@ function createWidthProbes(probing: boolean): WidthProbes {
 	};
 }
 
-// Starvation is found mid-frame, past where the train would have gone.
+// Starvation is found mid-frame, past where the pending probes would have gone.
 // A document still painting carries it on the next frame for free. Only
 // a quiet one needs a frame requested.
-function requestStarvationFrame(session: Exchange): void {
+function requestDeferredProbeFrame(session: Exchange): void {
 	const widths = session[kWidths];
-	if (widths.starvationTimer !== null) {
+	if (widths.deferralTimer !== null) {
 		return;
 	}
-	widths.starvationTimer = setTimeout(() => {
-		widths.starvationTimer = null;
+	widths.deferralTimer = setTimeout(() => {
+		widths.deferralTimer = null;
 		if (session[kDisposed] || widths.starved.size === 0) {
 			return;
 		}
-		probesStarved(session[kTermDOM]);
-	}, Exchange[kWidthStarvationWait]);
+		probesDeferred(session[kTermDOM]);
+	}, Exchange[kWidthDeferralWait]);
 }
 
 // One deadline, timed from the oldest outstanding probe.
@@ -1273,7 +1273,7 @@ async function readLoop(
 				continue;
 			}
 			try {
-				route(session, value);
+				routeChunk(session, value);
 			} catch (err) {
 				// A throw from a listener costs its chunk, not the read. Raised
 				// out of band rather than swallowed.
@@ -1345,10 +1345,10 @@ function handleResize(session: Exchange): void {
 		// The frame is placed by the screen reset. Cursor detection is
 		// suspended until it is written.
 		session[kSettlingResize] = null;
-		const wasDetected = session[kHasDetectedCommandStart];
-		session[kHasDetectedCommandStart] = false;
+		const wasDetected = session[kHasDetectedAnchor];
+		session[kHasDetectedAnchor] = false;
 		termDOM.window.requestAnimationFrame(() => {
-			session[kHasDetectedCommandStart] = wasDetected;
+			session[kHasDetectedAnchor] = wasDetected;
 		});
 	};
 
@@ -1387,7 +1387,7 @@ function handleResize(session: Exchange): void {
 
 // Contiguous keystrokes are one dispatch. Everything else is dispatched
 // in place, so a report glued to fast keystrokes eats neither side.
-function route(session: Exchange, chunk: string): void {
+function routeChunk(session: Exchange, chunk: string): void {
 	let keys: WireKey[] = [];
 	const input = session[kInput]!;
 	const flushKeys = () => {

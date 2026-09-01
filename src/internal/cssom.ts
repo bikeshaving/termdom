@@ -9,13 +9,13 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.js";
 import {
-	clearPseudoElement,
 	type CompiledSelector,
 	compileSelector,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
 	type Node as DOMNode,
+	dropPseudoElement,
 	type EngineWindow,
 	ensurePseudoElement,
 	flatParentElement,
@@ -24,7 +24,7 @@ import {
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
-	isUAShadowRoot,
+	isUARoot,
 	LEGACY_PSEUDO_ELEMENTS,
 	matchesCompiled,
 	NO_NAMESPACES,
@@ -2144,7 +2144,7 @@ function isValidDeclaration(
 	value: string,
 	atRule = "",
 ): boolean {
-	if (!matchesGrammar(property, value, atRule)) {
+	if (!isValidByGrammar(property, value, atRule)) {
 		return false;
 	}
 	if (!LENGTH_PROPERTIES.has(property)) {
@@ -2171,7 +2171,11 @@ const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 // A value that does not match its grammar is not a declaration at all.
 // `color: notacolor` is a no-op, not a value. A value with a
 // substitution is not checked.
-function matchesGrammar(property: string, value: string, atRule = ""): boolean {
+function isValidByGrammar(
+	property: string,
+	value: string,
+	atRule = "",
+): boolean {
 	if (property.startsWith("--")) {
 		return true;
 	}
@@ -3461,7 +3465,7 @@ class CSSStyleDeclaration {
 
 	get cssText(): string {
 		this[kSync]!();
-		return serialize(this);
+		return serializeDeclarations(this);
 	}
 
 	set cssText(text: string) {
@@ -3469,10 +3473,10 @@ class CSSStyleDeclaration {
 		this[kDeclarations] = [];
 		this[kByName]!.clear();
 		for (const declaration of parseDeclarationText(text ?? "")) {
-			if (!supports(this, declaration.name)) {
+			if (!isSupportedDeclaration(this, declaration.name)) {
 				continue;
 			}
-			apply(
+			applyDeclaration(
 				this,
 				declaration.name,
 				declaration.value,
@@ -3480,7 +3484,7 @@ class CSSStyleDeclaration {
 				true,
 			);
 		}
-		flush(this);
+		flushStyleAttribute(this);
 	}
 
 	item(index: number): string {
@@ -3496,7 +3500,7 @@ class CSSStyleDeclaration {
 	getPropertyValue(property: string): string {
 		this[kSync]!();
 		const name = normalizePropertyName(property);
-		const declared = find(this, name);
+		const declared = findDeclaration(this, name);
 		if (declared) {
 			return declared.value;
 		}
@@ -3507,14 +3511,14 @@ class CSSStyleDeclaration {
 	getPropertyPriority(property: string): string {
 		this[kSync]!();
 		const name = normalizePropertyName(property);
-		const declared = find(this, name);
+		const declared = findDeclaration(this, name);
 		if (declared) {
 			return declared.important ? "important" : "";
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(name);
 		if (
 			longhands &&
-			longhands.every((longhand) => find(this, longhand)?.important)
+			longhands.every((longhand) => findDeclaration(this, longhand)?.important)
 		) {
 			return "important";
 		}
@@ -3524,7 +3528,7 @@ class CSSStyleDeclaration {
 	setProperty(property: string, value: string, priority?: string): void {
 		this[kSync]!();
 		const name = normalizePropertyName(property);
-		if (!supports(this, name)) {
+		if (!isSupportedDeclaration(this, name)) {
 			return;
 		}
 		// `[LegacyNullToEmptyString]`: null means the empty value, which
@@ -3540,8 +3544,8 @@ class CSSStyleDeclaration {
 		if (priorityText !== "" && priorityText !== "important") {
 			return;
 		}
-		if (apply(this, name, text, priorityText === "important")) {
-			flush(this);
+		if (applyDeclaration(this, name, text, priorityText === "important")) {
+			flushStyleAttribute(this);
 		}
 	}
 
@@ -3549,12 +3553,12 @@ class CSSStyleDeclaration {
 		this[kSync]!();
 		const name = normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
-		let changed = remove(this, name);
+		let changed = removeDeclaration(this, name);
 		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
-			changed = remove(this, longhand) || changed;
+			changed = removeDeclaration(this, longhand) || changed;
 		}
 		if (changed) {
-			flush(this);
+			flushStyleAttribute(this);
 		}
 		return previous;
 	}
@@ -3575,7 +3579,7 @@ class CSSStyleDeclaration {
 		this[kDeclarations] = [];
 		this[kByName]!.clear();
 		for (const declaration of parseDeclarationText(text)) {
-			apply(
+			applyDeclaration(
 				this,
 				declaration.name,
 				declaration.value,
@@ -3583,7 +3587,7 @@ class CSSStyleDeclaration {
 				true,
 			);
 		}
-		invalidate(this);
+		invalidateDeclaration(this);
 	}
 }
 
@@ -3711,7 +3715,7 @@ function getDeclarationBlock(style: CSSStyleDeclaration): DeclarationBlock {
 }
 
 // Reconstructs shorthands and keeps priority.
-function serialize(
+function serializeDeclarations(
 	block: CSSStyleDeclaration,
 ): string {
 	const parts: string[] = [];
@@ -3740,7 +3744,7 @@ function serialize(
 				unserializable.add(shorthand);
 				continue;
 			}
-			const important = find(block, longhands[0])!.important;
+			const important = findDeclaration(block, longhands[0])!.important;
 			text = `${shorthand}: ${value}${important ? " !important" : ""};`;
 			for (const longhand of longhands) {
 				serialized.add(longhand);
@@ -3761,18 +3765,18 @@ function serialize(
 
 // Serializes to the `style` attribute, which is what invalidation
 // observes.
-function flush(
+function flushStyleAttribute(
 	declaration: CSSStyleDeclaration,
 ): void {
-	invalidate(declaration);
+	invalidateDeclaration(declaration);
 	if (declaration[kElement]!) {
-		declaration[kAttributeText] = serialize(declaration);
+		declaration[kAttributeText] = serializeDeclarations(declaration);
 		declaration[kElement]!.setAttribute("style", declaration[kAttributeText]!);
 	}
 	declaration[kOnChange]?.();
 }
 
-function invalidate(
+function invalidateDeclaration(
 	declaration: CSSStyleDeclaration,
 ): void {
 	declaration[kBlock] = null;
@@ -3785,7 +3789,7 @@ function invalidate(
 	}
 }
 
-function find(
+function findDeclaration(
 	declaration: CSSStyleDeclaration,
 	property: string,
 ): CSSDeclaration | undefined {
@@ -3796,7 +3800,7 @@ const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
 
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
 
-function supports(
+function isSupportedDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
@@ -3818,14 +3822,14 @@ function supports(
 
 // A declaration that changes the value moves to the END of the block.
 // Restating one unchanged leaves it in place.
-function store(
+function storeDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 	value: string,
 	important: boolean,
 	cascade = false,
 ): boolean {
-	const declared = find(declaration, name);
+	const declared = findDeclaration(declaration, name);
 	if (declared) {
 		// Parsing a block is a cascade in miniature. A normal declaration does
 		// not displace an important one already there.
@@ -3835,7 +3839,7 @@ function store(
 		if (declared.value === value && declared.important === important) {
 			return false;
 		}
-		remove(declaration, name);
+		removeDeclaration(declaration, name);
 	}
 	const entry = {name, value, important};
 	declaration[kDeclarations]!.push(entry);
@@ -3843,7 +3847,7 @@ function store(
 	return true;
 }
 
-function remove(
+function removeDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 ): boolean {
@@ -3858,7 +3862,7 @@ function remove(
 	return true;
 }
 
-function apply(
+function applyDeclaration(
 	declaration: CSSStyleDeclaration,
 	name: string,
 	value: string,
@@ -3873,21 +3877,29 @@ function apply(
 	}
 	const expanded = expandShorthandValue(name, value);
 	if (!expanded) {
-		return store(declaration, name, value, important, cascade);
+		return storeDeclaration(declaration, name, value, important, cascade);
 	}
-	let changed = remove(declaration, name);
+	let changed = removeDeclaration(declaration, name);
 	for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
 		if (longhand in expanded) {
 			continue;
 		}
-		if (cascade && find(declaration, longhand)?.important && !important) {
+		if (
+			cascade && findDeclaration(declaration, longhand)?.important && !important
+		) {
 			continue;
 		}
-		changed = remove(declaration, longhand) || changed;
+		changed = removeDeclaration(declaration, longhand) || changed;
 	}
 	for (const [longhand, longhandValue] of Object.entries(expanded)) {
 		changed =
-			store(declaration, longhand, longhandValue, important, cascade) ||
+			storeDeclaration(
+				declaration,
+				longhand,
+				longhandValue,
+				important,
+				cascade,
+			) ||
 			changed;
 	}
 	return changed;
@@ -3901,7 +3913,7 @@ function getShorthandValue(
 ): string {
 	let important: boolean | null = null;
 	for (const longhand of longhands) {
-		const declared = find(declaration, longhand);
+		const declared = findDeclaration(declaration, longhand);
 		if (!declared) {
 			return "";
 		}
@@ -3914,7 +3926,7 @@ function getShorthandValue(
 	return serializeShorthandValue(
 		shorthand,
 		longhands,
-		(longhand) => find(declaration, longhand)!.value,
+		(longhand) => findDeclaration(declaration, longhand)!.value,
 	);
 }
 
@@ -4362,7 +4374,7 @@ export class MediaList implements globalThis.MediaList {
 	constructor(mediaText = "", onChange?: () => void) {
 		this[kMedia] = [];
 		this[kOnChange] = onChange ?? null;
-		parse(this, mediaText);
+		parseMediaText(this, mediaText);
 	}
 
 	get mediaText(): string {
@@ -4370,7 +4382,7 @@ export class MediaList implements globalThis.MediaList {
 	}
 
 	set mediaText(text: string) {
-		parse(this, text);
+		parseMediaText(this, text);
 		this[kOnChange]?.();
 	}
 
@@ -4427,7 +4439,7 @@ export class MediaList implements globalThis.MediaList {
 	}
 }
 
-function parse(
+function parseMediaText(
 	list: MediaList,
 	text: string,
 ): void {
@@ -4603,13 +4615,13 @@ function assignDeclarations(
 	declarations: readonly CSSDeclaration[],
 ): void {
 	for (const declaration of declarations) {
-		if (!supports(block, declaration.name)) {
+		if (!isSupportedDeclaration(block, declaration.name)) {
 			continue;
 		}
 		const {name, value, important} = declaration;
-		apply(block, name, value, important, true);
+		applyDeclaration(block, name, value, important, true);
 	}
-	flush(block);
+	flushStyleAttribute(block);
 }
 
 class CSSStyleRule extends CSSGroupingRule {
@@ -5452,7 +5464,7 @@ class CSSImportRule extends CSSRule {
 			out += this[kLayerName]! ? ` layer(${this[kLayerName]!})` : " layer";
 		}
 		if (this[kSupportsText] !== null) {
-			out += ` supports(${this[kSupportsText]!})`;
+			out += ` isSupportedDeclaration(${this[kSupportsText]!})`;
 		}
 		const media = this[kMedia]!.mediaText;
 		if (media) {
@@ -7120,7 +7132,7 @@ function asShadowRoot(root: Node): ShadowRoot | null {
 		: null;
 }
 
-const kRefreshShadowRoot = Symbol("refreshShadowRoot");
+const kSyncShadowRoot = Symbol("syncShadowRoot");
 
 function getSheet(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
@@ -7131,13 +7143,13 @@ function getSheet(element: Element): CSSStyleSheet {
 			if (!cascade) {
 				return;
 			}
-			// A shadow sheet's change refreshes its root. Only a document
+			// A shadow sheet's change syncs its root. Only a document
 			// sheet's change rebuilds the document cascade.
 			const root = asShadowRoot(element.getRootNode());
 			if (root) {
-				cascade[kRefreshShadowRoot](root);
+				cascade[kSyncShadowRoot](root);
 			} else {
-				cascade.refreshStylesheets();
+				cascade.syncStylesheets();
 			}
 		});
 		elementSheets.set(element, sheet);
@@ -7183,7 +7195,7 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 			sheet,
 		);
 	}
-	sheetNotifiers.set(sheet, () => getTreeCascade(tree)?.refreshStylesheets());
+	sheetNotifiers.set(sheet, () => getTreeCascade(tree)?.syncStylesheets());
 	return sheet;
 }
 
@@ -7234,7 +7246,7 @@ function observableAdopted(
 		return proxy;
 	}
 	const changed = (): void => {
-		getTreeCascade(target)?.refreshStylesheets();
+		getTreeCascade(target)?.syncStylesheets();
 	};
 	// Assignment to arbitrary indices of adoptedStyleSheets must be
 	// observed.
@@ -7460,7 +7472,7 @@ function getIndexedDeclaration<
 }
 
 const kCSSRules = Symbol("cssRules");
-const kRefresh = Symbol("refresh");
+const kSyncResolved = Symbol("syncResolved");
 const kResolved = Symbol("resolved");
 const kCustom = Symbol("custom");
 const kUsedValue = Symbol("usedValue");
@@ -7524,7 +7536,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	getComputedValue(property: string): string {
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
-			this[kRefresh]();
+			this[kSyncResolved]();
 		}
 		const value = this[kBaseValue](property);
 		const cascade = this[kCascade];
@@ -7551,7 +7563,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		this[kCascade]?.[kFlushStyle]();
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
-			this[kRefresh]();
+			this[kSyncResolved]();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
@@ -7577,7 +7589,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		const longhands = SHORTHAND_LONGHANDS.get(property);
 		if (longhands) {
-			return shorthand(property, longhands, (longhand) =>
+			return resolveShorthand(property, longhands, (longhand) =>
 				this.getPropertyValue(longhand),
 			);
 		}
@@ -7639,7 +7651,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 
 		const computed = this.getComputedValue(property);
-		const value = measure(this, property, computed);
+		const value = measureUsedValue(this, property, computed);
 		used.set(property, value);
 		return value;
 	}
@@ -7652,10 +7664,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands
-				? shorthand(property, longhands, (longhand) =>
+				? resolveShorthand(property, longhands, (longhand) =>
 					this[kBaseValue](longhand),
 				)
-				: computed(this, toPhysicalProperty(this, property));
+				: getAbsolutizedValue(this, toPhysicalProperty(this, property));
 			this[kResolved].set(property, value);
 		}
 		return value;
@@ -7663,7 +7675,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	// Reads call this only when the cascade no longer vouches for this
 	// declaration. It runs under every property read of every element.
-	[kRefresh](): void {
+	[kSyncResolved](): void {
 		if (!this[kCascade]) {
 			return;
 		}
@@ -7696,7 +7708,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 
 // The cascade's declaration, interned, and absolutized against this
 // element when the interned entry says only an element can resolve it.
-function computed(
+function getAbsolutizedValue(
 	declaration: ComputedStyleDeclaration,
 	property: string,
 ): string {
@@ -7777,7 +7789,7 @@ function toPhysicalProperty(
 // The reader is the caller's. The computed and resolved paths ask their
 // longhands different questions, and the results must not mix, which is
 // why only the computed one is memoized.
-function shorthand(
+function resolveShorthand(
 	property: string,
 	longhands: readonly string[],
 	read: (longhand: string) => string,
@@ -7789,7 +7801,7 @@ function shorthand(
 	);
 }
 
-function measure(
+function measureUsedValue(
 	declaration: MeasuredDeclaration,
 	property: string,
 	computed: string,
@@ -7826,13 +7838,16 @@ function measure(
 	if (property === "width" || property === "height") {
 		const vertical = property === "height";
 		const edges =
-			edge(declaration, vertical ? "border-top-width" : "border-left-width") +
-			edge(
+			getEdgeLength(
+				declaration,
+				vertical ? "border-top-width" : "border-left-width",
+			) +
+			getEdgeLength(
 				declaration,
 				vertical ? "border-bottom-width" : "border-right-width",
 			) +
-			edge(declaration, vertical ? "padding-top" : "padding-left") +
-			edge(declaration, vertical ? "padding-bottom" : "padding-right");
+			getEdgeLength(declaration, vertical ? "padding-top" : "padding-left") +
+			getEdgeLength(declaration, vertical ? "padding-bottom" : "padding-right");
 		// The rect is the border box whichever way the box was sized, and the
 		// resolved value of width is the CONTENT width either way (cssom-view
 		// §7.1), so the edges are subtracted regardless of box-sizing.
@@ -7902,24 +7917,30 @@ function getUsedInset(
 	if (other !== null) {
 		const size =
 			(vertical ? rect.height : rect.width) +
-			edge(declaration, start) +
-			edge(declaration, end);
+			getEdgeLength(declaration, start) +
+			getEdgeLength(declaration, end);
 		return getUsedLength(basis - other - size);
 	}
 	switch (property) {
 		case "top":
-			return getUsedLength(rect.y - edge(declaration, start) - block.y);
+			return getUsedLength(
+				rect.y - getEdgeLength(declaration, start) - block.y,
+			);
 		case "left":
-			return getUsedLength(rect.x - edge(declaration, start) - block.x);
+			return getUsedLength(
+				rect.x - getEdgeLength(declaration, start) - block.x,
+			);
 		case "bottom":
 			return getUsedLength(
 				block.y +
 				block.height -
-				(rect.y + rect.height + edge(declaration, end)),
+				(rect.y + rect.height + getEdgeLength(declaration, end)),
 			);
 		default:
 			return getUsedLength(
-				block.x + block.width - (rect.x + rect.width + edge(declaration, end)),
+				block.x +
+				block.width -
+				(rect.x + rect.width + getEdgeLength(declaration, end)),
 			);
 	}
 }
@@ -8042,7 +8063,7 @@ function getResolvedMinSize(
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
-function edge(
+function getEdgeLength(
 	declaration: MeasuredDeclaration,
 	property: string,
 ): number {
@@ -8373,7 +8394,7 @@ function getCustomNames(
 ): string[] {
 	const current = computed[kCascade]?.[kCurrentDeclarations];
 	if (current !== undefined && !current.has(computed)) {
-		computed[kRefresh]();
+		computed[kSyncResolved]();
 	}
 	if (computed[kCustom]) {
 		return computed[kCustom];
@@ -8492,7 +8513,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	getComputedValue(property: string): string {
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
-			this[kRefresh]();
+			this[kSyncResolved]();
 		}
 		const value = this[kBaseValue](property);
 		const transitional = getPseudoTransitionValue(this, property);
@@ -8505,7 +8526,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	nodeValue(property: string): string {
 		const current = this[kCascade]?.[kCurrentDeclarations];
 		if (current !== undefined && !current.has(this)) {
-			this[kRefresh]();
+			this[kSyncResolved]();
 		}
 		let value = this[kNodeResolved].get(property);
 		if (value === undefined) {
@@ -8545,7 +8566,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return CSS_LONGHANDS[index] ?? "";
 	}
 
-	[kRefresh](): void {
+	[kSyncResolved](): void {
 		// Before the work, because resolving below reads back through this
 		// declaration.
 		this[kCascade]?.[kCurrentDeclarations].add(this);
@@ -8618,7 +8639,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				this[kPseudoElement],
 			);
 			if (node) {
-				return measure(getBoxView(this, node), property, computed);
+				return measureUsedValue(getBoxView(this, node), property, computed);
 			}
 		}
 		if (!computed.endsWith("%")) {
@@ -8672,7 +8693,7 @@ function getPseudoTransitionValue(
 }
 
 // The same cascade with the pseudo-element's own node in place of the
-// element. One view per node: composition may retire a node and make
+// element. One view per node: composition may drop a node and make
 // another, and a view naming the old one would measure a rect no layout
 // has.
 function getBoxView(
@@ -9126,7 +9147,7 @@ const UNCONDITIONAL: RuleContext = {layer: null, scopes: []};
 // Farther from any element than any scoping root can be.
 const UNSCOPED = Number.MAX_SAFE_INTEGER;
 
-function scopeRootMatches(
+function isScopeRootMatch(
 	element: Element,
 	condition: ScopeCondition,
 	outer: Element | null,
@@ -9137,8 +9158,8 @@ function scopeRootMatches(
 	// Relative to the enclosing scope's root, which is what `:scope` refers
 	// to.
 	return outer
-		? condition.rootsInOuter.some((root) => selects(element, root, outer))
-		: condition.roots.some((root) => selects(element, root, element));
+		? condition.rootsInOuter.some((root) => isSelectedBy(element, root, outer))
+		: condition.roots.some((root) => isSelectedBy(element, root, element));
 }
 
 // Inside the root with no scoping limit between the two. The root is
@@ -9150,7 +9171,7 @@ function isInScope(
 ): boolean {
 	let node: Element | null = element;
 	for (; node && node !== root; node = node.parentElement) {
-		if (condition.limits.some((limit) => selects(node!, limit, root))) {
+		if (condition.limits.some((limit) => isSelectedBy(node!, limit, root))) {
 			return false;
 		}
 	}
@@ -9160,7 +9181,7 @@ function isInScope(
 // The cascade types its nodes as the platform's interfaces and the
 // matcher as this DOM's own classes. They are the same objects under two
 // names, cast here.
-function selects(
+function isSelectedBy(
 	element: Element,
 	selector: CompiledSelector,
 	scope: Node,
@@ -9245,7 +9266,7 @@ interface CounterScope {
 const kWindow = Symbol("window");
 const kDocument = Symbol("document");
 const kAttributeReachesDescendants = Symbol("attributeReachesDescendants");
-const kClearCache = Symbol("clearCache");
+const kDropCache = Symbol("clearCache");
 const kResolveCounterFunction = Symbol("resolveCounterFunction");
 const kStylesheetsDirty = Symbol("stylesheetsDirty");
 const kParsedStyleSheetCount = Symbol("parsedStyleSheetCount");
@@ -9282,8 +9303,8 @@ const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 export class Cascade {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
 
-	// Every declaration resolved against the current cascade. Dropping one,
-	// or replacing the set, sends it back through kRefresh on its next read.
+	// Every declaration resolved against the current cascade. Dropping one, or
+	// replacing the set, sends it back through kSyncResolved on its next read.
 	// Weak, so a declaration nobody holds costs nothing.
 	declare [kCurrentDeclarations]: WeakSet<object>;
 
@@ -9466,12 +9487,12 @@ export class Cascade {
 		this[kShadowRoots].add(root);
 		// Incrementally. Rebuilding every sheet per widget upgrade made a
 		// document of n widgets reparse everything n times.
-		this[kRefreshShadowRoot](root);
+		this[kSyncShadowRoot](root);
 	}
 
 	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this[kWindow].Node;
-		let shouldRefreshStylesheets = false;
+		let shouldSyncStylesheets = false;
 
 		// A :has() subject sits ABOVE what changed it, so when such rules exist
 		// every mutation restyles its flat-tree ancestor chain too.
@@ -9493,15 +9514,15 @@ export class Cascade {
 
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
-				// A <style>'s children ARE its stylesheet text. A shadow sheet's
-				// refresh stays inside its root.
+				// A <style>'s children ARE its stylesheet text. A shadow
+				// sheet's sync stays inside its root.
 				if ((mutation.target as Element).tagName === "STYLE") {
 					reparseOwnerText(getSheet(mutation.target as Element));
 					const styleRoot = asShadowRoot(mutation.target.getRootNode());
 					if (styleRoot) {
-						this[kRefreshShadowRoot](styleRoot);
+						this[kSyncShadowRoot](styleRoot);
 					} else {
-						shouldRefreshStylesheets = true;
+						shouldSyncStylesheets = true;
 					}
 				}
 				// A list's gutter is derived from its children, so a mutation
@@ -9518,9 +9539,9 @@ export class Cascade {
 									? asShadowRoot(element.getRootNode())
 									: null;
 							if (addedRoot) {
-								this[kRefreshShadowRoot](addedRoot);
+								this[kSyncShadowRoot](addedRoot);
 							} else {
-								shouldRefreshStylesheets = true;
+								shouldSyncStylesheets = true;
 							}
 						} else {
 							invalidateElementCaches(this, element);
@@ -9539,7 +9560,7 @@ export class Cascade {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
 						if (isStyleElement(element)) {
-							shouldRefreshStylesheets = true;
+							shouldSyncStylesheets = true;
 						}
 					}
 				}
@@ -9565,7 +9586,7 @@ export class Cascade {
 				// styles know nothing of this change. :has() reaches ancestors,
 				// and the only correct response is to drop every cached style.
 				if (this[kSelectorsReachAncestors]) {
-					this[kClearCache]();
+					this[kDropCache]();
 				} else if (this[kSelectorsReachSiblings]) {
 					for (
 						let sibling = element.nextElementSibling;
@@ -9581,21 +9602,21 @@ export class Cascade {
 					reparseOwnerText(getSheet(owner));
 					const ownerRoot = asShadowRoot(owner.getRootNode());
 					if (ownerRoot) {
-						this[kRefreshShadowRoot](ownerRoot);
+						this[kSyncShadowRoot](ownerRoot);
 					} else {
-						shouldRefreshStylesheets = true;
+						shouldSyncStylesheets = true;
 					}
 				}
 			}
 		}
 
-		if (shouldRefreshStylesheets) {
-			this.refreshStylesheets();
+		if (shouldSyncStylesheets) {
+			this.syncStylesheets();
 		}
 	}
 
 	// user-select, with `auto` resolved through the parent per css-ui-4.
-	// `text`, `all` and `contain` all behave as plain selectable. Nothing
+	// `text`, `all` and `contain` all behave as plain isSelectable. Nothing
 	// implements the shapes `all` and `contain` ask for yet.
 	isSelectable(element: Node): boolean {
 		let current = element as Element | null;
@@ -9707,7 +9728,7 @@ export class Cascade {
 			);
 			this[kComputedStyleCache].set(element, declaration);
 			// Building a fresh declaration is the other form of the style
-			// change event kRefresh sees.
+			// change event kSyncResolved sees.
 			const fresh = declaration;
 			processTransitionStyle(
 				this,
@@ -9766,7 +9787,7 @@ export class Cascade {
 		return textContent;
 	}
 
-	refreshStylesheets(): void {
+	syncStylesheets(): void {
 		parseStylesheets(this);
 
 		// Boxes may have been built under the pre-parse styles. A
@@ -9836,7 +9857,7 @@ export class Cascade {
 
 	// Re-parse ONE shadow root's sheets in place. Only trees the root's
 	// rules can reach restyle. A pending full rebuild covers this root.
-	[kRefreshShadowRoot](root: ShadowRoot): void {
+	[kSyncShadowRoot](root: ShadowRoot): void {
 		if (this[kStylesheetsDirty] || this[kParsedStyleSheetCount] < 0) {
 			this[kStylesheetsDirty] = true;
 			return;
@@ -9905,9 +9926,9 @@ export class Cascade {
 			}
 		}
 		// A pseudo-element of a flex or grid container is one of its items,
-		// and an item's display blockifies, including the initial `inline`.
+		// and an item's display isBlockified, including the initial `inline`.
 		if (ITEM_DISPLAYS.has(hostStyle.getComputedValue("display"))) {
-			declarations.display = blockified(
+			declarations.display = getBlockifiedDisplay(
 				declarations.display || getInitialStyle(null, "display"),
 			);
 		}
@@ -9971,7 +9992,7 @@ export class Cascade {
 		return this[kReachingStates] && STATE_ATTRIBUTES.has(name);
 	}
 
-	[kClearCache](): void {
+	[kDropCache](): void {
 		// Every computed style ever handed out re-resolves on its next read.
 		this[kCurrentDeclarations] = new WeakSet<object>();
 		this[kUsedValues] = new WeakMap();
@@ -10199,7 +10220,7 @@ function reparseOwnerText(sheet: CSSStyleSheet): void {
 	sheet[kText] = null;
 }
 
-function blockified(display: string): string {
+function getBlockifiedDisplay(display: string): string {
 	return BLOCKIFIED_DISPLAYS[display] ?? display;
 }
 
@@ -11243,7 +11264,7 @@ function parseStylesheets(
 	}
 
 	sortRulesForCascade(cascade);
-	cascade[kClearCache]();
+	cascade[kDropCache]();
 	// Only now, because invalidated layout re-derives boxes by asking the
 	// cascade for display, and the result must come from the rules just
 	// parsed.
@@ -11626,7 +11647,7 @@ function indexReachingKeys(
 	let inherits = false;
 	for (const property in declarations) {
 		// `display` is not inherited but reaches descendants anyway. A flex
-		// container blockifies its children (css-display-3 §2.7).
+		// container isBlockified its children (css-display-3 §2.7).
 		if (
 			property === "all" ||
 			property === "display" ||
@@ -11738,7 +11759,7 @@ function parseSelector(
 	}
 	const specificity = reading.specificity;
 	const uaOrigin = Boolean(
-		uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
+		uaOriginSheet || (scope != null && isUARoot(scope)),
 	);
 
 	const subjectTag = reading.subjectTag;
@@ -11820,17 +11841,17 @@ function getMatchingRules(
 				return (
 					shadowHost !== null &&
 					getPartNames.includes(partArg[1].trim()) &&
-					ruleMatches(shadowHost, rule)
+					isRuleMatch(shadowHost, rule)
 				);
 			}
 			return (
 				partPseudo !== null &&
 				shadowHost !== null &&
 				rule.pseudoElement === partPseudo &&
-				ruleMatches(shadowHost, rule)
+				isRuleMatch(shadowHost, rule)
 			);
 		}
-		return ruleMatches(element, rule, rootNode);
+		return isRuleMatch(element, rule, rootNode);
 	});
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it depends on THIS element.
@@ -11873,7 +11894,7 @@ function ruleSelectorMatches(
 	if (matcher === null) {
 		return false;
 	}
-	return selects(element, matcher, root ?? element, ruleShadow(rule));
+	return isSelectedBy(element, matcher, root ?? element, ruleShadow(rule));
 }
 
 function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
@@ -11936,7 +11957,7 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 			if (outer && candidate !== outer && !outer.contains(candidate)) {
 				break;
 			}
-			if (!scopeRootMatches(candidate, condition, outer)) {
+			if (!isScopeRootMatch(candidate, condition, outer)) {
 				continue;
 			}
 			if (!isInScope(element, candidate, condition)) {
@@ -11964,7 +11985,7 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 // from inside.
 function getPartPseudo(element: Element): string | null {
 	const root = element.getRootNode();
-	if (isUAShadowRoot(root)) {
+	if (isUARoot(root)) {
 		const part = element.getAttribute("part");
 		if (part === "placeholder" || part === "selection") {
 			return `::${part}`;
@@ -11975,7 +11996,7 @@ function getPartPseudo(element: Element): string | null {
 
 // A rule matches only elements of the tree its stylesheet belongs to,
 // plus the one deliberate crossing: :host.
-function ruleMatches(
+function isRuleMatch(
 	element: Element,
 	rule: ParsedCSSRule,
 	elementRoot?: Node,
@@ -12023,7 +12044,7 @@ function computePseudoElementStyle(
 		if (rule.pseudoElement !== pseudoElement) {
 			return false;
 		}
-		return ruleMatches(element, rule, pseudoRoot);
+		return isRuleMatch(element, rule, pseudoRoot);
 	});
 
 	// A pseudo-element's declarations are a flat record, not a per-property
@@ -12096,7 +12117,7 @@ function attachPseudoElements(
 	cascade: Cascade,
 ): void {
 	// Preserve identity, never clear wholesale. Layout keys a
-	// pseudo-element's boxes by node instance, and a fresh node per refresh
+	// pseudo-element's boxes by node instance, and a fresh node per sync
 	// orphans every mapped one.
 	if (!cascade[kDocument].documentElement) {
 		return;
@@ -12242,7 +12263,7 @@ function removePseudoElement(
 	if (!pseudoElement(element, pseudoType)) {
 		return;
 	}
-	clearPseudoElement(element, pseudoType);
+	dropPseudoElement(element, pseudoType);
 	cascade[kLayout].invalidate();
 	cascade[kLayout].invalidate(element);
 }
@@ -12427,7 +12448,7 @@ export function getAdoptedStyleSheets(tree: Node): globalThis.CSSStyleSheet[] {
 
 export function adoptStyleSheets(tree: Node, sheets: unknown): void {
 	adopt(tree, sheets);
-	getTreeCascade(tree)?.refreshStylesheets();
+	getTreeCascade(tree)?.syncStylesheets();
 }
 
 /** A style element's sheet. Null outside a tree, as in a browser. */

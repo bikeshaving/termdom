@@ -49,7 +49,7 @@ function recordingMeasurer(starved = new Set<string>()): {
 			probing: () => true,
 			clusterWidthsNegotiated: () => false,
 			wantsWidth: (cluster: string) => !asked.has(cluster),
-			starvedWidths: () => starved,
+			deferredWidths: () => starved,
 			deferWidth: (cluster: string) => {
 				deferred.push(cluster);
 			},

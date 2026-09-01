@@ -33,7 +33,7 @@ const plain = {
 	value: "",
 };
 
-function palette(colorize: boolean): typeof plain {
+function getPalette(colorize: boolean): typeof plain {
 	return colorize ? colors : plain;
 }
 
@@ -51,7 +51,7 @@ function inspectDocument(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	let output = `${c.comment}#document${c.reset}`;
 
@@ -96,7 +96,7 @@ function inspectElement(
 	options: InspectorOptions & {currentDepth?: number} = {},
 ): string {
 	const {maxDepth = 2, colorize = true, currentDepth = 0} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const tagName = element.tagName.toLowerCase();
 	let output = `${c.tag}<${tagName}${c.reset}`;
@@ -148,7 +148,7 @@ function formatAttributes(
 	options: {colorize?: boolean} = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const attrs: string[] = [];
 
@@ -195,7 +195,7 @@ function formatChildren(
 	options: InspectorOptions & {currentDepth?: number},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const children = Array.from(element.childNodes);
 
@@ -231,7 +231,7 @@ function inspectText(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const content = text.textContent || "";
 	if (!content.trim()) {
@@ -250,7 +250,7 @@ function inspectComment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const content = comment.textContent || "";
 	return `${c.comment}<!--${content}-->${c.reset}`;
@@ -261,7 +261,7 @@ function inspectFragment(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	let output = `${c.comment}#document-fragment${c.reset}`;
 
@@ -280,7 +280,7 @@ function inspectDOMRect(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	return `${c.comment}DOMRect${c.reset} { ${c.attr}x${c.reset}: ${c.value}${rect.x}${c.reset}, ${c.attr}y${c.reset}: ${c.value}${rect.y}${c.reset}, ${c.attr}width${c.reset}: ${c.value}${rect.width}${c.reset}, ${c.attr}height${c.reset}: ${c.value}${rect.height}${c.reset} }`;
 }
@@ -290,7 +290,7 @@ function inspectNodeList(
 	options: InspectorOptions = {},
 ): string {
 	const {colorize = true, maxDepth = 0} = options;
-	const c = palette(colorize);
+	const c = getPalette(colorize);
 
 	const typeName = nodeList.constructor.name;
 	const length = nodeList.length;
@@ -331,7 +331,7 @@ function inspectNodeList(
 
 const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
 
-function hook(
+function installInspectHook(
 	prototype: object,
 	render: (
 		target: never,
@@ -348,40 +348,40 @@ function hook(
 	});
 }
 
-hook(Element.prototype, (element: Element, depth, options) =>
+installInspectHook(Element.prototype, (element: Element, depth, options) =>
 	inspectElement(element, {
 		maxDepth: depth,
 		colorize: options.colors !== false,
 	}),
 );
 
-hook(Text.prototype, (text: Text, _depth, options) =>
+installInspectHook(Text.prototype, (text: Text, _depth, options) =>
 	inspectText(text, {colorize: options.colors !== false}),
 );
 
-hook(Comment.prototype, (comment: Comment, _depth, options) =>
+installInspectHook(Comment.prototype, (comment: Comment, _depth, options) =>
 	inspectComment(comment, {colorize: options.colors !== false}),
 );
 
-hook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
+installInspectHook(DocumentFragment.prototype, (fragment: DocumentFragment, depth, options) =>
 	inspectFragment(fragment, {
 		maxDepth: depth,
 		colorize: options.colors !== false,
 	}),
 );
 
-hook(Document.prototype, (document: Document, depth, options) =>
+installInspectHook(Document.prototype, (document: Document, depth, options) =>
 	inspectDocument(document, {
 		maxDepth: depth,
 		colorize: options.colors !== false,
 	}),
 );
 
-hook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
+installInspectHook(DOMRect.prototype, (rect: DOMRect, _depth, options) =>
 	inspectDOMRect(rect, {colorize: options.colors !== false}),
 );
 
-hook(NodeList.prototype, (list: NodeList, depth, options) =>
+installInspectHook(NodeList.prototype, (list: NodeList, depth, options) =>
 	inspectNodeList(list, {
 		maxDepth: depth,
 		colorize: options.colors !== false,

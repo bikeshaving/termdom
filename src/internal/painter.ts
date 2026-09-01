@@ -18,8 +18,8 @@ import {
 } from "./dom.js";
 import {
 	flowWalker,
-	formsStackingContext,
 	isPositioned,
+	isStackingContext,
 	type Layout,
 	renderTextFragment,
 } from "./layout.js";
@@ -37,7 +37,7 @@ function hasLineThrough(decorationLine: string): boolean {
 	return decorationLine.includes("line-through");
 }
 
-function overflowClips(value: string): boolean {
+function isClippingOverflow(value: string): boolean {
 	return (
 		value === "hidden" ||
 		value === "clip" ||
@@ -59,8 +59,8 @@ function getOverflowClipRect(
 	if (!rect) {
 		return parent;
 	}
-	const clipsX = overflowClips(overflowX);
-	const clipsY = overflowClips(overflowY);
+	const clipsX = isClippingOverflow(overflowX);
+	const clipsY = isClippingOverflow(overflowY);
 	if (!clipsX && !clipsY) {
 		return parent;
 	}
@@ -225,7 +225,7 @@ export class Painter {
 	// Each list marker paints at most once per frame.
 	declare [kRenderedOutsideMarkers]: WeakSet<Element>;
 	// Paint extents are cached in unscrolled rows. A scrolled subtree
-	// paints this many rows higher, so culling shifts the band instead.
+	// paints this many rows higher, so culling shifts the viewport instead.
 	declare [kScrolledRows]: number;
 
 	constructor(
@@ -285,12 +285,18 @@ function renderElement(
 	ctx: CellContext,
 	afterOwnBox?: () => void,
 ): void {
-	// A subtree wholly outside the buffer's band would be styled, shaped
+	// A subtree wholly outside the viewport would be styled, shaped
 	// and drawn, then discarded cell by cell.
 	const scrolledRows = painter[kScrolledRows];
-	let bandTop = -ctx.viewportOffset + scrolledRows;
-	let bandBottom = bandTop + ctx.rows;
-	if (painter[kLayout].isSubtreeOutsideBand(element, bandTop, bandBottom)) {
+	let viewportTop = -ctx.viewportOffset + scrolledRows;
+	let viewportBottom = viewportTop + ctx.rows;
+	if (
+		painter[kLayout].isSubtreeOutsideViewport(
+			element,
+			viewportTop,
+			viewportBottom,
+		)
+	) {
 		return;
 	}
 
@@ -441,24 +447,24 @@ function renderElement(
 	}
 
 	// The element's own scroll shifts its children, not itself. The
-	// document roots' scrollTop is the camera, applied at
+	// document roots' scrollTop is the document scroll, applied at
 	// ctx.viewportOffset.
 	const ownScrolledRows =
 		element === painter[kDocument].body ||
 		element === painter[kDocument].documentElement
 			? 0
 			: element.scrollTop || 0;
-	bandTop += ownScrolledRows;
-	bandBottom += ownScrolledRows;
+	viewportTop += ownScrolledRows;
+	viewportBottom += ownScrolledRows;
 
 	const children: Node[] = [];
 
 	// For a plain vertical stack the layout tree knows which children are
-	// in band. The walk below costs every sibling.
-	const fastChildren = painter[kLayout].visibleChildrenInBand(
+	// in the viewport. The walk below costs every sibling.
+	const fastChildren = painter[kLayout].getVisibleChildren(
 		element,
-		bandTop,
-		bandBottom,
+		viewportTop,
+		viewportBottom,
 	);
 	if (fastChildren) {
 		for (const childNode of fastChildren) {
@@ -471,13 +477,14 @@ function renderElement(
 			childNode;
 			childNode = walker.nextSibling()
 		) {
-			// Before any style read. An off-band child costs one lookup.
+			// Before any style read. A child outside the viewport costs one
+			// lookup.
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				painter[kLayout].isSubtreeOutsideBand(
+				painter[kLayout].isSubtreeOutsideViewport(
 					childNode as Element,
-					bandTop,
-					bandBottom,
+					viewportTop,
+					viewportBottom,
 				)
 			) {
 				continue;
@@ -600,7 +607,7 @@ function getPositionedClip(
 		const overflow = getComputedValue(ancestor, "overflow");
 		const overflowX = getComputedValue(ancestor, "overflow-x") || overflow;
 		const overflowY = getComputedValue(ancestor, "overflow-y") || overflow;
-		if (overflowClips(overflowX) || overflowClips(overflowY)) {
+		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
 				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
@@ -633,13 +640,13 @@ function renderStackingContext(
 		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
 		// Entered from its stacking context, not its ancestor chain.
 		painter[kScrolledRows] = painter[kLayout].scrolledAncestorRows(element);
-		// Fixed space cancels the camera for the whole subtree. An absolute box
-		// inside a fixed bar moves with it.
+		// Fixed space cancels the document scroll for the whole subtree. An
+		// absolute box inside a fixed bar moves with it.
 		if (painter[kLayout].isInFixedSpace(element)) {
 			ctx.viewportOffset = previousOffset + painter[kScreen].scrollTop;
 		}
 		try {
-			if (formsStackingContext(element)) {
+			if (isStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
 				renderElement(painter, element, ctx);

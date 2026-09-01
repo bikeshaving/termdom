@@ -11,7 +11,7 @@
 
 import {writeFileSync} from "node:fs";
 
-import {widthIsUncertain} from "../src/internal/text.js";
+import {isWidthUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,
 	oracleSweepWidth,
@@ -41,7 +41,7 @@ if (sweepable) {
 	let lastWidth = -2;
 	let count = 0;
 	for (let code = 0; code <= 0x3ffff; code++) {
-		const width = oracleSweepWidth(code, oracle, widthIsUncertain);
+		const width = oracleSweepWidth(code, oracle, isWidthUncertain);
 		if (width === lastWidth) {
 			count++;
 		} else {

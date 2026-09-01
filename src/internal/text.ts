@@ -11,7 +11,7 @@ import {
 const bun = globalThis.Bun;
 
 // What HTML and CSS case-fold with. Never the locale.
-export function asciiLowercase(value: string): string {
+export function toASCIILowercase(value: string): string {
 	return value.replace(/[A-Z]/g, (character) =>
 		String.fromCharCode(character.charCodeAt(0) + 32),
 	);
@@ -113,7 +113,7 @@ const DEFAULT_EMOJI_HIGH = 0x1faf8;
 // outside the scripts not in doubt, default emoji presentation, and
 // Arabic presentation forms, which a ligating terminal advances
 // differently. Runs once per painted cell and allocates nothing.
-export function widthIsUncertain(cluster: string): boolean {
+export function isWidthUncertain(cluster: string): boolean {
 	const code = cluster.codePointAt(0)!;
 	if (cluster.length !== (code > 0xffff ? 2 : 1)) {
 		return true;

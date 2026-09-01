@@ -694,7 +694,7 @@ test("a flex item's width applies even when it is an inline box", async () => {
 
 	await nextFrame(dom);
 
-	// Flex items are blockified (css-display-3 §2.7), so `width` is theirs to
+	// Flex items are getBlockifiedDisplay (css-display-3 §2.7), so `width` is theirs to
 	// keep; treating them as pure inlines let the measure answer with the text
 	// size instead. 30 + 30 in 40 columns shrinks to 20 and 20.
 	const [first, second] = [...dom.document.querySelectorAll("span")].map((el) =>
@@ -724,7 +724,7 @@ test("flex-shrink: 0 keeps an item at its width while the rest give way", async 
 });
 
 test("an inline element that becomes a flex item keeps its padding", async () => {
-	// A flex item is blockified (css-display-3 §2.7): `display: inline` on a
+	// A flex item is getBlockifiedDisplay (css-display-3 §2.7): `display: inline` on a
 	// flex container's child computes to block-level and carries its box model
 	// like any block. The engine used to clear the inline element's padding,
 	// so `.row{display:flex} .row span{padding:0 2ch}` collapsed to no gap --
@@ -750,8 +750,8 @@ test("an inline element that becomes a flex item keeps its padding", async () =>
 	dom.dispose();
 });
 
-test("a blockified inline flex item offsets its content by padding", async () => {
-	// The blockified inline flex item reserves its padding in its box, and its
+test("a getBlockifiedDisplay inline flex item offsets its content by padding", async () => {
+	// The getBlockifiedDisplay inline flex item reserves its padding in its box, and its
 	// content must sit inside that padding, not at the border edge. The box was
 	// reserved but the text painted at the corner -- horizontally ("LBL" flush
 	// left inside a padded box) and vertically (padding-top ignored).

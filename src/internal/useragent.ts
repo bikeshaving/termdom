@@ -142,7 +142,7 @@ export const UA_DOCUMENT_STYLES = `
 `;
 
 // The value text node lays out and paints like any document text. The
-// reconcile hides the placeholder inline whenever a value exists.
+// sync hides the placeholder inline whenever a value exists.
 export const TEXTAREA_UA_STYLES = `
 	[part="placeholder"] { color: #808080; }
 	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }

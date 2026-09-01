@@ -167,7 +167,7 @@ test("inserting a node in the middle of an already-laid-out list lands at the ri
 
 test("scrolling a long list paints the correct visible rows at every offset", async () => {
 	// #renderElement's child-gathering has a fast path that binary-searches
-	// straight to the visible range (Layout#visibleChildrenInBand)
+	// straight to the visible range (Layout#getVisibleChildren)
 	// instead of walking every sibling to rule it out -- this is the
 	// correctness half of that: the camera moving mid-list has to land on
 	// exactly the rows in view, not an off-by-one range from a binary search
@@ -206,7 +206,7 @@ test("scrolling a long list paints the correct visible rows at every offset", as
 });
 
 test("an absolutely positioned overlay among many siblings still paints, scrolled or not", async () => {
-	// visibleChildrenInBand refuses the fast path (falls back to the exact
+	// getVisibleChildren refuses the fast path (falls back to the exact
 	// walk) whenever a container has any position:relative/absolute child,
 	// since such a child's extent can land anywhere regardless of DOM order
 	// -- a binary search assuming top-to-bottom order would silently miss it.
@@ -644,7 +644,7 @@ test("a restyle deep inside an inline-block re-measures the run holding it", asy
 
 test("a flex item that stops being one gives up its layout node", async () => {
 	// A flex container gives each child a box of its own, so an inline child
-	// blockified into one owns a layout node. When the container stops being a
+	// getBlockifiedDisplay into one owns a layout node. When the container stops being a
 	// flex container the child joins an anonymous box instead -- and the node
 	// it kept lays the same content out a second time, beside the box.
 	const terminal = new MockProcess({cols: 30, rows: 10});
@@ -733,7 +733,7 @@ test("an inline-block turned block gives up its content root", async () => {
 });
 
 test("a block turned flex gives each child a box of its own", async () => {
-	// A flex container blockifies its children (css-display-3 §2.7): each is a
+	// A flex container isBlockified its children (css-display-3 §2.7): each is a
 	// box of its own, where a block container gathers the inline ones into
 	// anonymous boxes it shares. A ::before is one of those children, and its
 	// box has to be built the moment the container becomes a flex one.

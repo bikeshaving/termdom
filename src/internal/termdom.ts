@@ -36,7 +36,7 @@ const kCascade = Symbol("cascade");
 const kPainter = Symbol("painter");
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
-const kOnAltScreen = Symbol("onAltScreen");
+const kOnAlternateScreen = Symbol("onAlternateScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
 const kInput = Symbol("input");
@@ -65,7 +65,7 @@ export class TermDOM {
 	declare [kRenderQueued]: boolean;
 	// Which screen frames land on. Switched at the start of a frame when
 	// the document's fullscreen state disagrees.
-	declare [kOnAltScreen]: boolean;
+	declare [kOnAlternateScreen]: boolean;
 	// The running render loop. A render() during it queues a trailing
 	// frame rather than starting another.
 	declare [kRenderInFlight]: Promise<void> | null;
@@ -99,7 +99,7 @@ export class TermDOM {
 		this[kSealed] = false;
 
 		this[kRenderQueued] = false;
-		this[kOnAltScreen] = false;
+		this[kOnAlternateScreen] = false;
 		this[kRenderInFlight] = null;
 		this[kRenderCount] = 0;
 		this[kLifecycle] = "detached";
@@ -119,7 +119,7 @@ export class TermDOM {
 			details.scrollIntoView({block: "nearest"});
 		};
 		// Only the active field. A select commit or an author's dispatch on an
-		// unfocused control must not move the camera.
+		// unfocused control must not move the document scroll.
 		const onFieldEditEvent = (event: Event): void => {
 			const target = event.target;
 			if (
@@ -250,7 +250,7 @@ export class TermDOM {
 					void this[kExchange].setTitle(this.document.title);
 				}
 			}
-			updateMouseReporting(this);
+			syncMouseReporting(this);
 			this[kExchange].initializeCursorDetection();
 			void this[kExchange].negotiateBidi();
 			void this[kExchange].negotiateGraphemeClusters();
@@ -396,12 +396,12 @@ export function terminalResized(
 	screen.resize(height, width);
 	termDOM[kLayout].resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
-	termDOM[kCascade].refreshStylesheets();
+	termDOM[kCascade].syncStylesheets();
 	if (sizeChanged) {
 		const window = termDOM.window;
 		DOM.dispatchAsUserAgent(window, new window.Event("resize"));
 	}
-	DOM.refreshMediaQueries(termDOM.document);
+	DOM.syncMediaQueries(termDOM.document);
 }
 
 /** Record where the frame is after a resize, for the re-anchor. */
@@ -434,7 +434,7 @@ export function frameReplaced(termDOM: TermDOM, startRow: number): void {
 /**
  * The 1-based terminal row the command started on becomes the 0-based anchor.
  */
-export function commandStartDetected(termDOM: TermDOM, row: number): void {
+export function anchorDetected(termDOM: TermDOM, row: number): void {
 	termDOM[kScreen].documentTop = row - 1;
 	termDOM[kScreen].anchorScrollTop = 1 - row;
 }
@@ -444,8 +444,8 @@ export function terminalReorders(termDOM: TermDOM): void {
 }
 
 /** Starved width probes go out with the next frame even if nothing changed. */
-export function probesStarved(termDOM: TermDOM): void {
-	termDOM[kScreen].rideProbeTrain();
+export function probesDeferred(termDOM: TermDOM): void {
+	termDOM[kScreen].flushProbes();
 	void render(termDOM);
 }
 
@@ -492,11 +492,11 @@ function rebindTransport(
 }
 
 /**
- * The mouse is captured while the document owns the camera. When the
+ * The mouse is captured while the document owns the document scroll. When the
  * wheel has been yielded to the terminal, capture would take the user's
  * scrollback and selection for nothing.
  */
-function updateMouseReporting(
+function syncMouseReporting(
 	termdom: TermDOM,
 ): void {
 	const wanted =
@@ -510,11 +510,11 @@ function updateMouseReporting(
 	termdom[kExchange].setMode("mouseCapture", wanted);
 	// Motion reporting depends on capture. A yield hands the whole mouse
 	// back.
-	updateHoverReporting(termdom);
+	syncHoverReporting(termdom);
 }
 
 /** Whether anything in the document can observe pointer hover right now. */
-function hoverObserved(
+function isHoverObserved(
 	termdom: TermDOM,
 ): boolean {
 	return (
@@ -527,10 +527,10 @@ function hoverObserved(
  * Motion reporting (1003) sends a report per cell the pointer crosses, so
  * it is on only while capture is on and something observes hover.
  */
-function updateHoverReporting(
+function syncHoverReporting(
 	termdom: TermDOM,
 ): void {
-	const wanted = termdom[kMouseReportingEnabled] && hoverObserved(termdom);
+	const wanted = termdom[kMouseReportingEnabled] && isHoverObserved(termdom);
 	if (wanted === termdom[kHoverReportingEnabled]) {
 		return;
 	}
@@ -614,7 +614,7 @@ function getDocumentFlowHeight(
 }
 
 /**
- * The rows the camera shows. Fullscreen owns the screen from row zero,
+ * The rows the document scroll shows. Fullscreen owns the screen from row zero,
  * and its element has left the flow, which then measures next to
  * nothing.
  */
@@ -631,7 +631,7 @@ function getScrollingRegionHeight(
 
 /**
  * The reveal happens on the frame the edit scheduled, so there is one
- * camera decision per frame instead of a synchronous layout flush per
+ * document scroll decision per frame instead of a synchronous layout flush per
  * keystroke.
  */
 function queueCaretReveal(
@@ -639,7 +639,8 @@ function queueCaretReveal(
 	element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): void {
 	termdom[kPendingCaretReveal] = element;
-	// A camera move and a caret move. No mutation record describes either.
+	// A document scroll move and a caret move. No mutation record describes
+	// either.
 	termdom[kScreen].invalidate();
 }
 
@@ -670,7 +671,7 @@ function getCaretRect(
 }
 
 /**
- * Keeps the caret inside the camera on edits only. Wheel-scrolling away
+ * Keeps the caret inside the document scroll on edits only. Wheel-scrolling away
  * from a focused field stays allowed.
  */
 function scrollCaretIntoView(
@@ -710,17 +711,17 @@ function scrollCaretIntoView(
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
-		scrollCamera(termdom, delta);
+		scrollDocument(termdom, delta);
 	}
 }
 
 /**
  * The buffer rows the journalled element scroll covers, or null when the
- * terminal cannot shift them. DECSTBM margins are horizontal, so a band
- * is the region's full width or nothing. Content overlapping the band is
+ * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll shift
+ * is the region's full width or nothing. Content overlapping the shift is
  * dragged along and the diff repairs it.
  */
-function resolveScrollBand(
+function resolveScrollShift(
 	termdom: TermDOM,
 	regionHeight: number,
 	record: {element: Element; delta: number} | null,
@@ -729,7 +730,8 @@ function resolveScrollBand(
 	if (
 		record === null ||
 		record.delta === 0 ||
-		// One band per frame. The camera's region already contains this box.
+		// One scroll shift per frame. The document scroll's region already
+		// contains this box.
 		journal.frameScroll !== 0 ||
 		// The rows the terminal would shift are not the rows the last frame
 		// painted.
@@ -752,9 +754,9 @@ function resolveScrollBand(
 		return null;
 	}
 
-	// Layout rows are document rows. Buffer rows are the camera's. A fixed
-	// box is laid out in viewport rows and the paint cancels the camera for
-	// it.
+	// Layout rows are document rows. Buffer rows are the document scroll's. A
+	// fixed box is laid out in viewport rows and the paint cancels the document
+	// scroll for it.
 	const lift = engine.isInFixedSpace(record.element)
 		? 0
 		: termdom[kScreen].scrollTop;
@@ -795,8 +797,8 @@ function afterRender(
 	);
 	// The stylesheets have parsed, so whether any rule tests :hover is
 	// current.
-	updateMouseReporting(termdom);
-	updateHoverReporting(termdom);
+	syncMouseReporting(termdom);
+	syncHoverReporting(termdom);
 }
 
 /** The whole document as plain lines, for a stdout that is not a terminal. */
@@ -867,7 +869,7 @@ function renderStatic(
 
 /**
  * A window of the document, repainted in place in a region below the
- * command start. Needing more rows scrolls earlier output into the
+ * anchor. Needing more rows scrolls earlier output into the
  * scrollback. Nothing on screen before us is painted over.
  */
 async function renderInteractive(
@@ -878,14 +880,14 @@ async function renderInteractive(
 		termdom[kSealed] = false;
 		termdom[kScreen].scrollTo(0);
 		termdom[kScreen].repaintAll();
-		// detectCommandStart reads a reply, so the listener must be attached.
+		// detectAnchor reads a reply, so the listener must be attached.
 		if (termdom[kTransport].interactive) {
 			termdom.attach();
-			await termdom[kExchange].detectCommandStart();
+			await termdom[kExchange].detectAnchor();
 		}
 	}
 
-	// The region starts at the command-start row, found asynchronously. A
+	// The region starts at the anchor row, found asynchronously. A
 	// frame painted before it is known anchors a row above every later one.
 	// Await only when pending, because the scroll clamp below is synchronous
 	// by contract.
@@ -897,8 +899,8 @@ async function renderInteractive(
 	// The screen switch is written at the start of a frame so no frame
 	// straddles it. Entry is switch, hide, clear.
 	const wantAlt = isFullscreen(termdom);
-	if (wantAlt !== termdom[kOnAltScreen]) {
-		termdom[kOnAltScreen] = wantAlt;
+	if (wantAlt !== termdom[kOnAlternateScreen]) {
+		termdom[kOnAlternateScreen] = wantAlt;
 		termdom[kExchange].setMode("altScreen", wantAlt);
 		if (wantAlt) {
 			termdom[kExchange].setMode("cursorHidden", true);
@@ -907,7 +909,7 @@ async function renderInteractive(
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
 		termdom[kScreen].repaintAll();
-		updateMouseReporting(termdom);
+		syncMouseReporting(termdom);
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
@@ -919,7 +921,7 @@ async function renderInteractive(
 	DOM.clampScrollOffsets(termdom.document);
 
 	// Skipped if focus has moved on. Revealing a field the user left would
-	// yank the camera back.
+	// yank the document scroll back.
 	if (termdom[kPendingCaretReveal]) {
 		const reveal = termdom[kPendingCaretReveal];
 		termdom[kPendingCaretReveal] = null;
@@ -930,7 +932,7 @@ async function renderInteractive(
 
 	// Nothing this frame could paint differs from the screen, so skip the
 	// paint.
-	const journalled = DOM.takeScrollBand(termdom.document) as {
+	const journalled = DOM.takeScrollShift(termdom.document) as {
 		element: Element;
 		delta: number;
 	} | null;
@@ -969,17 +971,17 @@ async function renderInteractive(
 		termdom[kScreen].scrollTo(Math.min(termdom[kScreen].scrollTop, maxScroll));
 	}
 
-	// The camera has nothing to move in fullscreen. A scroll box inside it
-	// still does, under DECSTBM margins.
-	const band = resolveScrollBand(termdom, regionHeight, journalled);
+	// The document scroll has nothing to move in fullscreen. A scroll box
+	// inside it still does, under DECSTBM margins.
+	const shift = resolveScrollShift(termdom, regionHeight, journalled);
 	// Read after the clamp, which adds to the journal.
 	const clamped = termdom[kScreen].journal;
 	const context = termdom[kScreen].beginFrame({
 		offset: -termdom[kScreen].scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
-		delta: band ? band.delta : fullscreen ? 0 : clamped.frameScroll,
-		band: band ?? undefined,
+		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
+		shift: shift ?? undefined,
 	});
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
@@ -999,7 +1001,7 @@ async function renderInteractive(
 
 /**
  * How many rows the screen must scroll for `rows` to fit below the
- * command start. The start moves up by that much.
+ * anchor. The start moves up by that much.
  */
 function pushRowsUp(
 	termdom: TermDOM,
@@ -1016,17 +1018,17 @@ function pushRowsUp(
 	return push;
 }
 
-function scrollCamera(
+function scrollDocument(
 	termdom: TermDOM,
 	rows: number,
 ): void {
 	termdom[kScreen].scrollTo(termdom[kScreen].scrollTop + rows);
-	// No mutation record describes a camera move.
+	// No mutation record describes a document scroll move.
 	void render(termdom);
 }
 
 /**
- * Room below the command start comes from scrolling earlier output into
+ * Room below the anchor comes from scrolling earlier output into
  * the scrollback, never from painting over it. The scroll is IND (ESC D)
  * from the bottom row. A bare LF after an absolute CUP does not scroll
  * (tmux and xterm-headless both), and CSI n S scrolls without adding the

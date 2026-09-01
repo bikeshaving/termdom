@@ -5,7 +5,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // A raw-capture mock: it keeps the exact bytes TermDOM writes, so tests can
-// assert the wire protocol (synchronized-output wrappers, no redundant cursor
+// assert the wire protocol (wrapSynchronized-output wrappers, no redundant cursor
 // homing, nothing at all when empty). stdin.isTTY:false disables cursor
 // detection entirely, so these tests render from the terminal home row without
 // any anchor setup.
@@ -75,8 +75,8 @@ describe("Viewport Integration Tests", () => {
 		const output = mock.getOutput();
 		expect(output).toContain("Hello World");
 		expect(output).not.toContain("\x1b[H"); // cursor already at home
-		expect(output).toContain("\x1b[?2026h"); // synchronized output start
-		expect(output).toContain("\x1b[?2026l"); // synchronized output end
+		expect(output).toContain("\x1b[?2026h"); // wrapSynchronized output start
+		expect(output).toContain("\x1b[?2026l"); // wrapSynchronized output end
 	});
 
 	test("empty content writes nothing (hasContent optimization)", async () => {

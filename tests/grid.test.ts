@@ -1169,7 +1169,7 @@ test("text directly in a grid container becomes an item of its own", async () =>
 	expect(items()[0].left).toBe(4);
 });
 
-test("a grid item is blockified", async () => {
+test("a grid item is getBlockifiedDisplay", async () => {
 	// css-display-3 §2.7: an inline child of a grid container computes to
 	// block, so its width applies.
 	const {item} = await render(

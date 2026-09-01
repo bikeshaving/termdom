@@ -416,7 +416,7 @@ test("a click collapses an existing selection", async () => {
 	const {document, window} = termdom;
 
 	const div = document.createElement("div");
-	div.textContent = "some selectable text";
+	div.textContent = "some isSelectable text";
 	document.body.appendChild(div);
 	await nextFrame(termdom);
 

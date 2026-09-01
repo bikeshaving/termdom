@@ -11,7 +11,7 @@ import {
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
-	parkFieldCaret,
+	placeFieldCaret,
 	setDocumentFocusVisible,
 	setHoveredElement,
 	setUASelection,
@@ -232,7 +232,7 @@ const kDocument = Symbol("document");
 
 // The nearest scroll container (overflow auto or scroll; hidden does
 // not take the wheel) that can still move in the tick's direction, or
-// null when the tick chains to the camera.
+// null when the tick chains to the document scroll.
 function getWheelScroller(
 	input: Input,
 	target: Element,
@@ -313,8 +313,8 @@ export class Input {
 	} | null;
 
 	declare [kHoverElement]: Element | null;
-	// The camera hit the document top and the user kept scrolling up, so
-	// the wheel belongs to the terminal's scrollback until the next
+	// The document scroll hit the document top and the user kept scrolling up,
+	// so the wheel belongs to the terminal's scrollback until the next
 	// keystroke (terminals snap to the live screen on input) or the timer.
 	declare [kMouseCaptureYielded]: boolean;
 	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
@@ -506,7 +506,7 @@ function deliverMouseReport(
 		buttons,
 	} = decodeMouseReport(code, isRelease);
 
-	const {x, y, inDocument} = getDocumentPoint(input, col, row);
+	const {x, y, isInDocument} = getDocumentPoint(input, col, row);
 
 	// A report arrives per cell crossed, so motion is coalesced to one
 	// hit-test per frame. A drag's motion also falls through. Its mousemove
@@ -527,7 +527,7 @@ function deliverMouseReport(
 	}
 
 	const target =
-		(inDocument && elementAtDocumentPoint(input[kDocument], x, y)) ||
+		(isInDocument && elementAtDocumentPoint(input[kDocument], x, y)) ||
 		input[kDocument].body;
 
 	if (wheelDeltaY !== null) {
@@ -588,16 +588,16 @@ function deliverMouseReport(
 			target,
 			new input[kWindow].MouseEvent("mousemove", eventInit),
 		);
-		dragTo(input, x, y, inDocument);
+		dragTo(input, x, y, isInDocument);
 		return;
 	}
 
 	if (!isRelease) {
-		press(input, target, base, x, y, inDocument, eventInit);
+		dispatchPress(input, target, base, x, y, isInDocument, eventInit);
 		return;
 	}
 
-	release(input, target, eventInit);
+	dispatchRelease(input, target, eventInit);
 }
 
 function deliverPaste(input: Input, text: string): void {
@@ -690,18 +690,18 @@ function getDocumentPoint(
 	x: number;
 	y: number;
 	// False above the painted region, meaning a shell prompt's rows.
-	inDocument: boolean;
+	isInDocument: boolean;
 } {
 	const screen = input[kScreen];
 	const documentRow =
 		input[kDocument].fullscreenElement !== null
 			? row - 1 + screen.anchorScrollTop
 			: row - 1 - screen.documentTop + screen.scrollTop;
-	const inDocument = documentRow >= 0;
-	return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
+	const isInDocument = documentRow >= 0;
+	return {x: col - 1, y: isInDocument ? documentRow : 0, isInDocument};
 }
 
-// True when the tick escaped past every scroller and the camera.
+// True when the tick escaped past every scroller and the document scroll.
 function scrollByWheel(
 	input: Input,
 	target: Element,
@@ -738,10 +738,10 @@ function dragTo(
 	input: Input,
 	x: number,
 	y: number,
-	inDocument: boolean,
+	isInDocument: boolean,
 ): void {
 	// Clamped into the field, whichever element the pointer is over now.
-	if (input[kFieldDragAnchor] && inDocument) {
+	if (input[kFieldDragAnchor] && isInDocument) {
 		const {element: fieldElement, offset: anchor} = input[kFieldDragAnchor];
 		const focus = getFieldCaretOffset(fieldElement, x, y);
 		if (focus !== null) {
@@ -757,10 +757,10 @@ function dragTo(
 	}
 	// Over a textless stretch or user-select: none, the focus stays put.
 	if (
-		input[kSelectionDragAnchor] && input[kMouseDownTarget] && inDocument
+		input[kSelectionDragAnchor] && input[kMouseDownTarget] && isInDocument
 	) {
 		const focus = getTextPosition(input, x, y);
-		if (focus && selectable(input, focus)) {
+		if (focus && isSelectable(input, focus)) {
 			const anchor = input[kSelectionDragAnchor];
 			input[kWindow]
 				.getSelection()
@@ -775,13 +775,13 @@ function dragTo(
 	}
 }
 
-function press(
+function dispatchPress(
 	input: Input,
 	target: Element,
 	base: number,
 	x: number,
 	y: number,
-	inDocument: boolean,
+	isInDocument: boolean,
 	eventInit: object,
 ): void {
 	input[kMouseDownTarget] = target;
@@ -816,7 +816,7 @@ function press(
 	// Default action: a press in a field places the caret and anchors a
 	// field drag. The select widget's own mousedown listener ran above.
 	const parked =
-		base === 0 && inDocument ? parkFieldCaret(target, x, y) : null;
+		base === 0 && isInDocument ? placeFieldCaret(target, x, y) : null;
 	if (parked) {
 		input[kFieldDragAnchor] = {
 			element: parked.field as HTMLInputElement | HTMLTextAreaElement,
@@ -834,8 +834,8 @@ function press(
 	// anchor a drag there. Left button only. preventDefault opts out.
 	const selection = input[kWindow].getSelection();
 	if (base === 0 && selection && !input[kFieldDragAnchor]) {
-		let anchor = inDocument ? getTextPosition(input, x, y) : null;
-		if (anchor && !selectable(input, anchor)) {
+		let anchor = isInDocument ? getTextPosition(input, x, y) : null;
+		if (anchor && !isSelectable(input, anchor)) {
 			anchor = null;
 		}
 		const hadSelection = !selection.isCollapsed;
@@ -856,7 +856,7 @@ function press(
 	}
 }
 
-function release(
+function dispatchRelease(
 	input: Input,
 	target: Element,
 	eventInit: object,
@@ -1204,7 +1204,7 @@ function getTextPosition(
 	);
 }
 
-function selectable(
+function isSelectable(
 	input: Input,
 	position: {node: Text; offset: number},
 ): boolean {

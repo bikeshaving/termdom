@@ -237,7 +237,7 @@ test("a display: contents element added brings its children with it", async () =
 });
 
 test("an inline flex item holding a block is a block container", async () => {
-	// A flex container blockifies its children (css-display-3 §2.7), so an
+	// A flex container isBlockified its children (css-display-3 §2.7), so an
 	// inline one holding block-level content establishes a block container.
 	// Measured as a run instead, its content ends at the first block inside it
 	// -- and everything from there on, which here is everything, is dropped.

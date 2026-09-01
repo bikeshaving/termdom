@@ -2,8 +2,8 @@ import type {ColorDepth, Exchange} from "./exchange.js";
 import {
 	getStringWidth,
 	graphemeSegmenter,
+	isWidthUncertain,
 	PRINTABLE_ASCII,
-	widthIsUncertain,
 } from "./text.js";
 
 function isControlByte(code: number): boolean {
@@ -216,7 +216,7 @@ class FrameWriter {
 }
 
 /** DEC 2026: the terminal shows the frame at once rather than as it arrives. */
-function synchronized(frame: string): string {
+function wrapSynchronized(frame: string): string {
 	return `\x1b[?2026h${frame}\x1b[?2026l`;
 }
 
@@ -1297,7 +1297,7 @@ function setBorderCell(
 	borderEncoding: number,
 	style?: CellStyle,
 ): void {
-	// A box whose extent touches an exposed band still stamps its whole
+	// A box whose extent touches an exposed row still stamps its whole
 	// outline. The gate drops the strokes on carried-over rows (a top border
 	// row carrying a legend, say), which keep what the seeded grid holds.
 	const index = getGuardedWriteIndex(context, y, x);
@@ -1333,7 +1333,7 @@ function getStyleDiff(
 		writer.style({
 			fg: fg === 0 ? undefined : fg,
 			bg: bg === 0 ? undefined : bg,
-			attributes: attrsChanged(attrs, 0),
+			attributes: getChangedAttributes(attrs, 0),
 			underline: getUnderline(attrs) === "none"
 				? undefined
 				: getUnderline(attrs),
@@ -1380,7 +1380,7 @@ function getStyleDiff(
 		run.bg = bg === 0 ? null : bg;
 	}
 	if (fgChanged || bgChanged) {
-		run.attributes = attrsChanged(attrs, prevAttrs);
+		run.attributes = getChangedAttributes(attrs, prevAttrs);
 		if (getUnderline(attrs) !== getUnderline(prevAttrs)) {
 			run.underline = getUnderline(attrs);
 		}
@@ -1396,7 +1396,10 @@ function getUnderline(attrs: number): UnderlineStyle {
 	return attrs & ATTR.DoubleUnderline ? "double" : "single";
 }
 
-function attrsChanged(attrs: number, prevAttrs: number): StyleAttributes {
+function getChangedAttributes(
+	attrs: number,
+	prevAttrs: number,
+): StyleAttributes {
 	const changed: StyleAttributes = {};
 	const flag = (bit: number, name: StyleAttribute) => {
 		if ((attrs & bit) !== (prevAttrs & bit)) {
@@ -1455,8 +1458,8 @@ const PROBE_RESIDUE_COLUMNS = 4;
 
 function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	// Only the first painted row can hide a probe. Emission never moves the
-	// cursor back up, so content could not paint over a train on a later
-	// row.
+	// cursor back up, so content could not paint over a pending probes on a
+	// later row.
 	const {rows, cols, char, border} = grid;
 	if (cols <= PROBE_RESIDUE_COLUMNS) {
 		return null;
@@ -1519,12 +1522,12 @@ function generateANSI(
 	let run = 0;
 	let unknownInRow = 0;
 
-	// Clusters the margin has starved are probed off to the side, before
-	// the frame paints anything. The probe train goes to a cell the first
+	// Clusters the margin has deferred are probed off to the side, before
+	// the frame paints anything. The pending probes goes to a cell the first
 	// painted row covers, and that row's own content lands on top of it in
 	// this same write, so nothing of it is ever on screen.
 	if (measurer !== undefined) {
-		const starving = measurer.starvedWidths();
+		const starving = measurer.deferredWidths();
 		if (starving.size > 0) {
 			const cell = safeProbeCell(grid);
 			if (cell !== null) {
@@ -1538,7 +1541,7 @@ function generateANSI(
 						writer.cursorForward(cell.col);
 					}
 					// Each probe is reached by naming its column outright, so
-					// no train glyph's advance carries into the next.
+					// no pending probes glyph's advance carries into the next.
 					run++;
 					output +=
 						writer.text(cluster).take() +
@@ -1632,13 +1635,13 @@ function generateANSI(
 			const width = grid.widthAt(index);
 
 			// Only clusters terminals disagree about are probed. The char test
-			// keeps ASCII from reaching widthIsUncertain, and a border glyph is
+			// keeps ASCII from reaching isWidthUncertain, and a border glyph is
 			// a character this engine chose.
 			if (measurer !== undefined && encoding === 0) {
 				const code = char[index];
 				if (
 					(code > 0x7e || code < 0x20) &&
-					widthIsUncertain(glyph) &&
+					isWidthUncertain(glyph) &&
 					measurer.wantsWidth(glyph)
 				) {
 					// Near the right margin the reply is unreadable. A glyph
@@ -1651,7 +1654,7 @@ function generateANSI(
 					//
 					// Defer instead. The cluster keeps its place in line and
 					// gets measured wherever it next appears with room, or, if
-					// it never has room, on a later frame's probe train.
+					// it never has room, on a later frame's pending probes.
 					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
 						output += measurer.probeWidth(glyph, run, col, width);
 					} else {
@@ -1702,7 +1705,7 @@ const kHasSavedCursor = Symbol("hasSavedCursor");
 const kNeedsFullClear = Symbol("needsFullClear");
 const kRenderedLines = Symbol("renderedLines");
 const kEndFrame = Symbol("endFrame");
-const kRideProbeTrain = Symbol("rideProbeTrain");
+const kFlushProbes = Symbol("flushProbes");
 const kMeasurer = Symbol("measurer");
 const kDiff = Symbol("diff");
 const kLastCaretVisible = Symbol("lastCaretVisible");
@@ -1714,7 +1717,7 @@ const kAnchorScrollTop = Symbol("anchorScrollTop");
 
 export class Screen {
 	declare [kPrev]: CellGrid | null;
-	// The retired grid, reused by the next frame of the same size.
+	// The dropped grid, reused by the next frame of the same size.
 	declare [kSpare]: CellGrid | null;
 	declare [kDiff]: CellGrid | null;
 	declare [kEndFrame]: (() => string) | null;
@@ -1728,9 +1731,9 @@ export class Screen {
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
 	declare [kNeedsScreenReset]: boolean;
-	// A probe train is waiting. The next flush re-emits the first
+	// A pending probes is waiting. The next flush re-emits the first
 	// contentful row as its cover even if nothing changed.
-	declare [kRideProbeTrain]: boolean;
+	declare [kFlushProbes]: boolean;
 	// Null for a headless render.
 	declare [kMeasurer]: Exchange | null;
 	declare [kResetAtRow]: number;
@@ -1752,7 +1755,7 @@ export class Screen {
 		colorDepth: ColorDepth = "rgb",
 		measurer: Exchange | null = null,
 	) {
-		this[kRideProbeTrain] = false;
+		this[kFlushProbes] = false;
 		this[kMeasurer] = measurer;
 		this[kPrev] = null;
 		this[kSpare] = null;
@@ -1800,7 +1803,7 @@ export class Screen {
 			needsRepaint:
 				this[kNeedsScreenReset] ||
 				this[kNeedsFullClear] ||
-				this[kRideProbeTrain],
+				this[kFlushProbes],
 		};
 	}
 
@@ -1871,8 +1874,8 @@ export class Screen {
 		}
 	}
 
-	rideProbeTrain(): void {
-		this[kRideProbeTrain] = true;
+	flushProbes(): void {
+		this[kFlushProbes] = true;
 	}
 
 	repaintAll(): void {
@@ -1922,10 +1925,10 @@ export class Screen {
 		cursorRow: cursorPosition,
 		regionRows,
 		delta = 0,
-		band,
+		shift,
 	}: {
 
-		/** Rows the camera has scrolled, negative downward. */
+		/** Rows the document scroll has scrolled, negative downward. */
 		offset: number;
 
 		cursorRow?: number;
@@ -1943,10 +1946,10 @@ export class Screen {
 
 		/**
 		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
-		 * port names its own rows here. The camera names none and takes the
-		 * whole region, which is the band a camera move spans.
+		 * port names its own rows here. The document scroll names none and takes the
+		 * whole region, which is the rows a document scroll spans.
 		 */
-		band?: {top: number; end: number};
+		shift?: {top: number; end: number};
 	}): CellContext {
 		const frameRows = Math.max(this[kRows], regionRows ?? this[kRows]);
 		const overflowing = frameRows > this[kRows];
@@ -1954,22 +1957,22 @@ export class Screen {
 		const next = takeGrid(this, frameRows, cols);
 
 		// A scroll is a rigid transform the terminal performs. DECSTBM pins the
-		// margins to the band (a shell prompt above stays outside them), and
-		// DL/IL move rows without touching the scrollback, unlike SU. The
-		// previous buffer shifts to match, so the diff emits only what the
-		// shift could not carry.
+		// margins to the shifted rows (a shell prompt above stays outside
+		// them), and DL/IL move rows without touching the scrollback, unlike
+		// SU. The previous buffer shifts to match, so the diff emits only what
+		// the shift could not carry.
 		let scrollPrefix = "";
 		const regionTop = cursorPosition ?? 0;
 		const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
-		const bandTop = Math.max(0, band ? band.top : 0);
+		const viewportTop = Math.max(0, shift ? shift.top : 0);
 		const bandEnd = Math.min(
 			this[kPrev]?.rows ?? 0,
-			band ? band.end : regionEnd - regionTop,
+			shift ? shift.end : regionEnd - regionTop,
 		);
 		const scrolling =
 			delta !== 0 &&
 			Math.abs(delta) < this[kRows] &&
-			bandEnd > bandTop &&
+			bandEnd > viewportTop &&
 			this[kPrev] !== null &&
 			// A rigid transform only makes sense between grids of one width.
 			this[kPrev].cols === cols &&
@@ -1979,7 +1982,7 @@ export class Screen {
 			cursorPosition !== undefined;
 		if (scrolling && this[kPrev]) {
 			const prev = this[kPrev];
-			const start = bandTop * cols;
+			const start = viewportTop * cols;
 			const stop = bandEnd * cols;
 			const shift = Math.abs(delta) * cols;
 			if (shift >= stop - start) {
@@ -1993,12 +1996,12 @@ export class Screen {
 			}
 			const shiftedLines = new Set<number>();
 			for (const row of this[kRenderedLines]) {
-				if (row < bandTop || row >= bandEnd) {
+				if (row < viewportTop || row >= bandEnd) {
 					shiftedLines.add(row);
 					continue;
 				}
 				const moved = row - delta;
-				if (moved >= bandTop && moved < bandEnd) {
+				if (moved >= viewportTop && moved < bandEnd) {
 					shiftedLines.add(moved);
 				}
 			}
@@ -2007,7 +2010,7 @@ export class Screen {
 			// DECSTBM homes the cursor. The standard prefix always CUPs for
 			// this caller afterward.
 			const count = Math.abs(delta);
-			const bandRow = regionTop + bandTop + 1;
+			const bandRow = regionTop + viewportTop + 1;
 			const writer = this[kWriter];
 			writer.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
 			if (delta > 0) {
@@ -2021,7 +2024,7 @@ export class Screen {
 		const context = new CellContext(next, frameRows, cols, offset);
 		this[kEndFrame] = (): string => {
 			const measurer =
-				this[kMeasurer] !== null && probingTeaches(this[kMeasurer])
+				this[kMeasurer] !== null && isProbingUseful(this[kMeasurer])
 					? this[kMeasurer]
 					: undefined;
 			// The frame is complete. Join the borders whose strokes touch, so
@@ -2151,12 +2154,12 @@ export class Screen {
 				}
 			}
 
-			// A waiting probe train goes only under cells this same write
+			// A waiting pending probes goes only under cells this same write
 			// paints over. A frame that diffs to nothing offers none, so the
 			// first contentful row re-emits verbatim: identical cells, no
-			// erase, and the train goes under them.
-			if (this[kRideProbeTrain]) {
-				this[kRideProbeTrain] = false;
+			// erase, and the pending probes goes under them.
+			if (this[kFlushProbes]) {
+				this[kFlushProbes] = false;
 				if (measurer !== undefined && !hasContent) {
 					for (let row = 0; row < frameRows && !hasContent; row++) {
 						const getRowStart = row * cols;
@@ -2335,7 +2338,7 @@ export class Screen {
 			}
 
 			const frame = prefix + output + staleOutput + parkOutput;
-			return hasContent ? synchronized(frame) : frame;
+			return hasContent ? wrapSynchronized(frame) : frame;
 		};
 		return context;
 	}
@@ -2363,6 +2366,6 @@ function takeGrid(screen: Screen, rows: number, cols: number): CellGrid {
 	return new CellGrid(rows, cols);
 }
 
-function probingTeaches(exchange: Exchange): boolean {
+function isProbingUseful(exchange: Exchange): boolean {
 	return exchange.probing() && !exchange.clusterWidthsNegotiated();
 }

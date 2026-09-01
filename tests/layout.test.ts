@@ -1843,7 +1843,7 @@ test("white space beside an out-of-flow box collapses as if it were absent", () 
 	// Nothing in flow: the box has left it, and the space has nothing to sit
 	// beside, so the container has no line to be one row tall for. The
 	// collapsing test read the COMPUTED display, where the <b> is still an
-	// inline, rather than the used one, where it has blockified.
+	// inline, rather than the used one, where it has getBlockifiedDisplay.
 	const dom = layoutDOM(
 		"<div id=\"host\">   <b style=\"position: absolute\"></b></div>",
 	);
