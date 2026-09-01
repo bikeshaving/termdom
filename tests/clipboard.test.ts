@@ -9,7 +9,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {
-	clipboardEscape,
 	transportFromProcess,
 	WireReader,
 } from "../src/internal/exchange.js";
@@ -670,7 +669,6 @@ test("the wire's base64 tolerates what terminals send", () => {
 		return item.text;
 	};
 	const read = (payload: string) => replyText(`\x1b]52;c;${payload}\x07`);
-	expect(clipboardEscape("hi")).toBe("\x1b]52;c;aGk=\x07");
 	expect(read("aGk=")).toBe("hi");
 	expect(read("aGk")).toBe("hi");
 	expect(read("aG\r\nk=")).toBe("hi");
@@ -681,7 +679,7 @@ test("the wire's base64 tolerates what terminals send", () => {
 	expect(read("A")).toBe("");
 	expect(read("aGkAB")).toBe("");
 	const long = "x".repeat(300);
-	expect(replyText(clipboardEscape(long))).toBe(long);
+	expect(read(Buffer.from(long, "utf8").toString("base64"))).toBe(long);
 });
 
 test("a reply cut inside its own opening still reads as a reply", () => {

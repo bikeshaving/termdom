@@ -10125,7 +10125,7 @@ function selects(
 }
 
 /** Whether a rule or style gives the element this pseudo-element. */
-export function shouldCreatePseudoElement(
+function shouldCreatePseudoElement(
 	manager: StyleManager,
 	element: Element,
 	pseudoType: string,
@@ -10150,7 +10150,7 @@ export function shouldCreatePseudoElement(
  * Give one element the pseudo-element nodes its rules reach: the door a
  * mutation comes back through.
  */
-export function attachPseudoElementsToElement(
+function attachPseudoElementsToElement(
 	manager: StyleManager,
 	element: Element,
 ): void {

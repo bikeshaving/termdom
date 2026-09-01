@@ -217,7 +217,7 @@ function isControlByte(code: number): boolean {
  * sees, so it is refused the same characters a cell is -- dropped, since the
  * rest of the title is still the title.
  */
-export function titleEscape(text: string): string {
+function titleEscape(text: string): string {
 	let safe = "";
 	for (const char of text) {
 		if (isControlByte(char.codePointAt(0)!)) {
@@ -232,7 +232,7 @@ export function titleEscape(text: string): string {
  * OSC 52: put text on the terminal's clipboard. Base64 puts the payload
  * beyond refusing -- there is nothing in the alphabet to refuse.
  */
-export function clipboardEscape(text: string): string {
+function clipboardEscape(text: string): string {
 	return `\x1b]52;c;${encode64(new TextEncoder().encode(text))}\x07`;
 }
 

@@ -1,12 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, styleManagerFor} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {
-	attachPseudoElementsToElement,
-	shouldCreatePseudoElement,
-} from "../src/internal/cssom.js";
-import {
-	createDocumentWindow,
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
@@ -296,12 +291,10 @@ test("StyleManager auto-refresh on DOM changes", async () => {
 	expect(computedStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 });
 
-test("StyleManager createPseudoElementNode", async () => {
-	// The test is UA-side code: it builds its own cascade over a document
-	// no engine holds.
-	const window = createDocumentWindow("<!DOCTYPE html><body></body>");
-	const {document} = window;
-
+test("pseudo-element nodes follow the rules that reach their hosts", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
 	const style = document.createElement("style");
 	style.textContent = `
     .test::before { content: "Hello World"; }
@@ -309,44 +302,18 @@ test("StyleManager createPseudoElementNode", async () => {
     .normal::before { content: normal; }
   `;
 	document.head.appendChild(style);
+	document.body.innerHTML =
+		"<div class=\"test\"></div><div class=\"empty\"></div>" +
+		"<div class=\"normal\"></div>";
+	await nextFrame(termdom);
 
-	await new Promise((resolve) => setTimeout(resolve, 10));
-
-	const styleManager = styleManagerFor({window});
-
-	// Test element with content
-	const testDiv = document.createElement("div");
-	testDiv.className = "test";
-
-	attachPseudoElementsToElement(styleManager, testDiv);
+	const [testDiv, emptyDiv, normalDiv] = Array.from(document.body.children);
 	const pseudoNode = pseudoElement<Element>(testDiv, "::before");
 	expect(pseudoNode).not.toBeNull();
 	expect(pseudoNode!.textContent).toBe("Hello World");
 	expect(getPseudoName(pseudoNode!)).toBe("::before");
 	expect(getPseudoHost(pseudoNode!)).toBe(testDiv);
-
-	// Test element with no content
-	const emptyDiv = document.createElement("div");
-	emptyDiv.className = "empty";
-
-	attachPseudoElementsToElement(styleManager, emptyDiv);
 	expect(pseudoElement(emptyDiv, "::before")).toBeNull();
-
-	// Test element with content: normal
-	const normalDiv = document.createElement("div");
-	normalDiv.className = "normal";
-
-	attachPseudoElementsToElement(styleManager, normalDiv);
 	expect(pseudoElement(normalDiv, "::before")).toBeNull();
-
-	// Test shouldCreatePseudoElement
-	expect(shouldCreatePseudoElement(styleManager, testDiv, "::before")).toBe(
-		true,
-	);
-	expect(shouldCreatePseudoElement(styleManager, emptyDiv, "::before")).toBe(
-		false,
-	);
-	expect(shouldCreatePseudoElement(styleManager, normalDiv, "::before")).toBe(
-		false,
-	);
+	termdom.dispose();
 });

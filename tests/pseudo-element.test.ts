@@ -2,7 +2,7 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {flowWalker} from "../src/internal/layout.js";
-import {shouldCreatePseudoElement} from "../src/internal/cssom.js";
+import {pseudoElement} from "../src/internal/dom.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -235,21 +235,14 @@ test.todo(
 		expect(output).toContain('He said: "Hello"Content');
 		expect(output).toContain("★ Important");
 
-		// Verify empty/none/normal don't create pseudo-elements
-		const styleManager = styleManagerFor(termdom);
-
-		expect(shouldCreatePseudoElement(styleManager, emptyEl, "::before")).toBe(
-			false,
-		);
-		expect(shouldCreatePseudoElement(styleManager, noneEl, "::before")).toBe(
-			false,
-		);
-
+		// Content of none, normal or nothing creates no pseudo-element.
 		const normalEl = document.createElement("div");
 		normalEl.className = "normal";
-		expect(shouldCreatePseudoElement(styleManager, normalEl, "::before")).toBe(
-			false,
-		);
+		document.body.appendChild(normalEl);
+		await nextFrame(termdom);
+		expect(pseudoElement(emptyEl, "::before")).toBeNull();
+		expect(pseudoElement(noneEl, "::before")).toBeNull();
+		expect(pseudoElement(normalEl, "::before")).toBeNull();
 	},
 );
 

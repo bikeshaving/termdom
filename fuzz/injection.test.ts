@@ -19,7 +19,6 @@ import {test, expect} from "@b9g/libuild/test";
 import fc from "fast-check";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {titleEscape} from "../src/internal/exchange.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 100);
 const SEED = Number(process.env.FC_SEED ?? 1);
@@ -81,16 +80,33 @@ const dangerous: fc.Arbitrary<string> = fc
 	)
 	.map((parts) => parts.join(""));
 
-test("a title carries no command but the one that frames it", () => {
-	fc.assert(
-		fc.property(dangerous, (payload) => {
-			const encoded = titleEscape(payload);
+test("a title carries no command but the one that frames it", async () => {
+	await fc.assert(
+		fc.asyncProperty(dangerous, async (payload) => {
+			const terminal = new MockProcess({rows: 4, cols: 20});
+			const dom = new TermDOM({transport: terminal.transport});
+			await nextFrame(dom);
+			let raw = "";
+			const write = terminal.stdout.write.bind(terminal.stdout);
+			(terminal.stdout as unknown as {write: unknown}).write = (
+				chunk: unknown,
+				enc?: unknown,
+				cb?: unknown,
+			) => {
+				raw += String(chunk);
+				return (write as (...a: unknown[]) => unknown)(chunk, enc, cb);
+			};
+			dom.document.title = payload;
+			// The title rides the session's write queue; disposal drains it.
+			await dom.dispose();
 
-			// The sequence this function writes and nothing else: one ESC to
+			// The sequence the title writes and nothing else: one ESC to
 			// open it, one BEL to close it, and no other control anywhere.
-			expect(encoded.startsWith("\x1b]2;")).toBe(true);
-			expect(encoded.endsWith("\x07")).toBe(true);
-			const body = encoded.slice("\x1b]2;".length, -1);
+			const start = raw.indexOf("\x1b]2;");
+			expect(start).toBeGreaterThanOrEqual(0);
+			const end = raw.indexOf("\x07", start);
+			expect(end).toBeGreaterThan(start);
+			const body = raw.slice(start + "\x1b]2;".length, end);
 			expect(hasControl(body)).toBe(false);
 
 			// What survives is the payload with its controls dropped and

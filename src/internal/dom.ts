@@ -84,7 +84,7 @@ const kUAUpgrade = Symbol("build a control's UA widget");
  * and a control that left the tree and came back only catches up the state it
  * drifted from.
  */
-export function upgradeUAWidget(element: globalThis.Element): void {
+function upgradeUAWidget(element: globalThis.Element): void {
 	(element as unknown as Record<symbol, (() => void) | undefined>)[
 		kUAUpgrade
 	]?.();
