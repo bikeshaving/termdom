@@ -861,7 +861,7 @@ function renderTextSelection(
 		return;
 	}
 
-	for (const run of painter[kLayout].getRangeRuns(range)) {
+	for (const run of painter[kLayout].getRangeSpans(range)) {
 		ctx.drawText(
 			applyTextTransform(run.text, textTransform),
 			run.rect.x,

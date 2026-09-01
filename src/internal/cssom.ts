@@ -7964,7 +7964,7 @@ function getContainingBlockBox(
 			const ancestorPosition =
 				getComputedValue(ancestor, "position");
 			if (ancestorPosition && ancestorPosition !== "static") {
-				return getBox(declaration, ancestor, false);
+				return getUsedBoxRect(declaration, ancestor, false);
 			}
 		}
 		return getViewportBox(declaration);
@@ -7977,17 +7977,17 @@ function getContainingBlockBox(
 		) {
 			const overflow = getComputedValue(ancestor, "overflow");
 			if (overflow && overflow !== "visible") {
-				return getBox(declaration, ancestor, true);
+				return getUsedBoxRect(declaration, ancestor, true);
 			}
 		}
 	}
 	const parent = flatParentElement<Element>(declaration[kElement]!);
 	return parent
-		? getBox(declaration, parent, true)
+		? getUsedBoxRect(declaration, parent, true)
 		: getViewportBox(declaration);
 }
 
-function getBox(
+function getUsedBoxRect(
 	declaration: MeasuredDeclaration,
 	element: Element,
 	content: boolean,

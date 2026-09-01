@@ -81,7 +81,7 @@ type StyleAttributes = {[K in StyleAttribute]?: boolean};
 
 type UnderlineStyle = "none" | "single" | "double";
 
-interface StyleRun {
+interface StyleSpan {
 	fg?: number | null;
 	bg?: number | null;
 	attributes?: StyleAttributes;
@@ -191,7 +191,7 @@ class FrameWriter {
 		return this;
 	}
 
-	style(run: StyleRun): this {
+	style(run: StyleSpan): this {
 		const escape = createStyleEscape(run, this[kColorDepth]);
 		if (escape !== "") {
 			this[kOut].push(escape);
@@ -220,7 +220,7 @@ function wrapSynchronized(frame: string): string {
 	return `\x1b[?2026h${frame}\x1b[?2026l`;
 }
 
-function createStyleEscape(run: StyleRun, colorDepth: ColorDepth): string {
+function createStyleEscape(run: StyleSpan, colorDepth: ColorDepth): string {
 	const codes: string[] = [];
 	if (run.fg !== undefined) {
 		codes.push(
@@ -678,7 +678,7 @@ function getBorderChar(borderEncoding: number): string {
 class CellGrid {
 	readonly rows: number;
 	readonly cols: number;
-	readonly char: Uint32Array;
+	readonly cluster: Uint32Array;
 	readonly fg: Uint32Array;
 	readonly bg: Uint32Array;
 	readonly attrs: Uint16Array;
@@ -688,7 +688,7 @@ class CellGrid {
 		this.rows = rows;
 		this.cols = cols;
 		const size = rows * cols;
-		this.char = new Uint32Array(size);
+		this.cluster = new Uint32Array(size);
 		this.fg = new Uint32Array(size);
 		this.bg = new Uint32Array(size);
 		this.attrs = new Uint16Array(size);
@@ -696,7 +696,7 @@ class CellGrid {
 	}
 
 	clear(): void {
-		this.char.fill(0);
+		this.cluster.fill(0);
 		this.fg.fill(0);
 		this.bg.fill(0);
 		this.attrs.fill(0);
@@ -707,7 +707,7 @@ class CellGrid {
 		if (end <= start) {
 			return;
 		}
-		this.char.fill(0, start, end);
+		this.cluster.fill(0, start, end);
 		this.fg.fill(0, start, end);
 		this.bg.fill(0, start, end);
 		this.attrs.fill(0, start, end);
@@ -715,7 +715,7 @@ class CellGrid {
 	}
 
 	moveRange(dest: number, srcStart: number, srcEnd: number): void {
-		this.char.copyWithin(dest, srcStart, srcEnd);
+		this.cluster.copyWithin(dest, srcStart, srcEnd);
 		this.fg.copyWithin(dest, srcStart, srcEnd);
 		this.bg.copyWithin(dest, srcStart, srcEnd);
 		this.attrs.copyWithin(dest, srcStart, srcEnd);
@@ -726,7 +726,7 @@ class CellGrid {
 		source: CellGrid,
 		{to, start, end}: {to: number; start: number; end: number},
 	): void {
-		this.char.set(source.char.subarray(start, end), to);
+		this.cluster.set(source.cluster.subarray(start, end), to);
 		this.fg.set(source.fg.subarray(start, end), to);
 		this.bg.set(source.bg.subarray(start, end), to);
 		this.attrs.set(source.attrs.subarray(start, end), to);
@@ -749,7 +749,7 @@ class CellGrid {
 		{style, background}: {style?: CellStyle; background?: number} = {},
 	): void {
 		const width = getGraphemeColumns(grapheme);
-		this.char[index] = encodeGrapheme(grapheme);
+		this.cluster[index] = encodeGrapheme(grapheme);
 		this.fg[index] = (style?.fg ?? 0) & COLOR_MASK;
 		this.bg[index] =
 			background !== undefined ? background : (style?.bg ?? 0) & COLOR_MASK;
@@ -763,7 +763,7 @@ class CellGrid {
 		// A border strokes. It does not fill. The cell keeps the background the
 		// fills beneath it painted, unless the caller specifies one.
 		const bg = style?.bg != null ? style.bg & COLOR_MASK : this.bg[index];
-		this.char[index] = 0x20;
+		this.cluster[index] = 0x20;
 		this.fg[index] = (style?.fg ?? 0) & COLOR_MASK;
 		this.bg[index] = bg;
 		this.attrs[index] =
@@ -772,7 +772,7 @@ class CellGrid {
 	}
 
 	setBlank(index: number): void {
-		this.char[index] = 0x20;
+		this.cluster[index] = 0x20;
 		this.fg[index] = 0;
 		this.bg[index] = 0;
 		this.attrs[index] = 1 << ATTR.WidthShift;
@@ -780,7 +780,7 @@ class CellGrid {
 	}
 
 	setFrom(index: number, source: CellGrid, sourceIndex: number): void {
-		this.char[index] = source.char[sourceIndex];
+		this.cluster[index] = source.cluster[sourceIndex];
 		this.fg[index] = source.fg[sourceIndex];
 		this.bg[index] = source.bg[sourceIndex];
 		this.attrs[index] = source.attrs[sourceIndex];
@@ -790,13 +790,13 @@ class CellGrid {
 	widthAt(index: number): number {
 		const width = (this.attrs[index] & ATTR.WidthMask) >>> ATTR.WidthShift;
 		return width === ATTR.WidthWide
-			? getStringWidth(decodeGrapheme(this.char[index]))
+			? getStringWidth(decodeGrapheme(this.cluster[index]))
 			: width;
 	}
 
 	equalCells(index: number, other: CellGrid, otherIndex: number): boolean {
 		return (
-			this.char[index] === other.char[otherIndex] &&
+			this.cluster[index] === other.cluster[otherIndex] &&
 			this.fg[index] === other.fg[otherIndex] &&
 			this.bg[index] === other.bg[otherIndex] &&
 			(this.attrs[index] & ATTR.StyleMask) ===
@@ -882,7 +882,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 	// last cell that actually holds something.
 	let lastCol = -1;
 	for (let col = grid.cols - 1; col >= 0; col--) {
-		if (grid.char[getRowStart + col] !== 0) {
+		if (grid.cluster[getRowStart + col] !== 0) {
 			lastCol = col;
 			break;
 		}
@@ -891,7 +891,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 	let previous = -1;
 	for (let col = 0; col <= lastCol; col++) {
 		const index = getRowStart + col;
-		if (grid.char[index] === 0) {
+		if (grid.cluster[index] === 0) {
 			writer.text(" ");
 			continue;
 		}
@@ -902,7 +902,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 		writer.text(
 			encoding > 0
 				? getBorderChar(encoding)
-				: decodeGrapheme(grid.char[index]),
+				: decodeGrapheme(grid.cluster[index]),
 		);
 		previous = index;
 
@@ -924,7 +924,7 @@ function getLineLength(grid: CellGrid, row: number): number {
 	const getRowStart = row * grid.cols;
 	for (let col = grid.cols - 1; col >= 0; col--) {
 		const index = getRowStart + col;
-		if (grid.char[index] !== 0) {
+		if (grid.cluster[index] !== 0) {
 			return col + grid.widthAt(index);
 		}
 	}
@@ -1076,14 +1076,14 @@ export class CellContext {
 			if (index < 0) {
 				continue;
 			}
-			if (grid.char[index] !== 0) {
+			if (grid.cluster[index] !== 0) {
 				let attrs = grid.attrs[index] | edgeBit;
 				if (style.dim !== undefined) {
 					attrs = style.dim ? attrs | ATTR.Dim : attrs & ~ATTR.Dim;
 				}
 				grid.attrs[index] = attrs;
 			} else {
-				grid.char[index] = 0x20;
+				grid.cluster[index] = 0x20;
 				grid.fg[index] = (style.fg ?? 0) & COLOR_MASK;
 				grid.bg[index] = 0;
 				grid.attrs[index] =
@@ -1283,7 +1283,7 @@ function setCell(
 	// the cell. Text painted over a filled box sits ON the fill rather than
 	// punching a default-colored hole through it.
 	let bgColor: number | undefined;
-	if (style && style.bg == null && grid.char[index] !== 0) {
+	if (style && style.bg == null && grid.cluster[index] !== 0) {
 		bgColor = grid.bg[index];
 	}
 
@@ -1312,7 +1312,7 @@ function setBorderCell(
 	const existing = grid.border[index];
 	grid.setBorderCell(
 		index,
-		grid.char[index] !== 0 && existing > 0
+		grid.cluster[index] !== 0 && existing > 0
 			? meetEdges(existing, borderEncoding)
 			: borderEncoding,
 		style,
@@ -1372,7 +1372,7 @@ function getStyleDiff(
 	const bgChanged =
 		bg !== prevBg || (attrs & ATTR.BGGroup) !== (prevAttrs & ATTR.BGGroup);
 
-	const run: StyleRun = {};
+	const run: StyleSpan = {};
 	if (fgChanged) {
 		run.fg = fg === 0 ? null : fg;
 	}
@@ -1460,7 +1460,7 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	// Only the first painted row can hide a probe. Emission never moves the
 	// cursor back up, so content could not paint over a pending probes on a
 	// later row.
-	const {rows, cols, char, border} = grid;
+	const {rows, cols, cluster, border} = grid;
 	if (cols <= PROBE_RESIDUE_COLUMNS) {
 		return null;
 	}
@@ -1473,7 +1473,7 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 
 		while (col < cols) {
 			const index = getRowStart + col;
-			if (char[index] === 0) {
+			if (cluster[index] === 0) {
 				spanStart = -1;
 				col++;
 				continue;
@@ -1507,7 +1507,7 @@ function generateANSI(
 	renderedLines: Set<number>,
 	measurer?: Exchange,
 ): string {
-	const {rows, cols, char, border} = grid;
+	const {rows, cols, cluster, border} = grid;
 
 	let output = "";
 	let cursorRow = 0;
@@ -1566,7 +1566,7 @@ function generateANSI(
 		unknownInRow = 0;
 
 		for (let col = 0; col < cols; col++) {
-			if (char[getRowStart + col] !== 0) {
+			if (cluster[getRowStart + col] !== 0) {
 				rowHasContent = true;
 				break;
 			}
@@ -1582,7 +1582,7 @@ function generateANSI(
 		for (let col = 0; col < cols; col++) {
 			const index = getRowStart + col;
 
-			if (char[index] === 0) {
+			if (cluster[index] === 0) {
 				continue;
 			}
 
@@ -1629,7 +1629,7 @@ function generateANSI(
 
 			const encoding = border[index];
 			const glyph =
-				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
+				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(cluster[index]);
 			output += writer.text(glyph).take();
 
 			const width = grid.widthAt(index);
@@ -1638,7 +1638,7 @@ function generateANSI(
 			// keeps ASCII from reaching isWidthUncertain, and a border glyph is
 			// a character this engine chose.
 			if (measurer !== undefined && encoding === 0) {
-				const code = char[index];
+				const code = cluster[index];
 				if (
 					(code > 0x7e || code < 0x20) &&
 					isWidthUncertain(glyph) &&
@@ -2062,7 +2062,7 @@ export class Screen {
 							const n = nextRow + col;
 							const p = prevRow + col;
 							if (
-								next.char[n] !== prev.char[p] ||
+								next.cluster[n] !== prev.cluster[p] ||
 								next.fg[n] !== prev.fg[p] ||
 								next.bg[n] !== prev.bg[p] ||
 								(next.attrs[n] & ATTR.StyleMask) !==
@@ -2080,7 +2080,7 @@ export class Screen {
 
 					for (; col < cols; col++) {
 						const n = nextRow + col;
-						const nextChar = next.char[n];
+						const nextChar = next.cluster[n];
 
 						if (!rowInPrev || col >= prevCols) {
 							if (nextChar !== 0) {
@@ -2090,7 +2090,7 @@ export class Screen {
 						}
 
 						const p = prevRow + col;
-						const prevChar = prev.char[p];
+						const prevChar = prev.cluster[p];
 
 						if (prevChar === 0) {
 							if (nextChar !== 0) {
@@ -2133,7 +2133,7 @@ export class Screen {
 					const getRowStart = row * cols;
 					let empty = true;
 					for (let col = 0; col < cols; col++) {
-						if (diff.char[getRowStart + col] !== 0) {
+						if (diff.cluster[getRowStart + col] !== 0) {
 							empty = false;
 							break;
 						}
@@ -2148,7 +2148,7 @@ export class Screen {
 
 			const diffCells = frameRows * cols;
 			for (let index = 0; index < diffCells; index++) {
-				if (diff.char[index] !== 0) {
+				if (diff.cluster[index] !== 0) {
 					hasContent = true;
 					break;
 				}
@@ -2165,7 +2165,7 @@ export class Screen {
 						const getRowStart = row * cols;
 						for (let col = 0; col < cols; col++) {
 							const index = getRowStart + col;
-							if (next.char[index] !== 0) {
+							if (next.cluster[index] !== 0) {
 								diff.setFrom(index, next, index);
 								hasContent = true;
 							}

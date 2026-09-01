@@ -79,7 +79,7 @@ const UPGRADEABLE_CONTROLS = new Set([
 	"SELECT",
 	"TEXTAREA",
 ]);
-const kNext = Symbol("next sibling");
+const kNext = Symbol("next sibling link");
 const kFirstChild = Symbol("first child");
 
 // Walks the child links directly instead of running a selector query.
@@ -4211,12 +4211,14 @@ function reportError(error: unknown): void {
 }
 
 const kSync = Symbol("resynchronize own properties");
-const kShapeSync = Symbol("resynchronize after a change to a tree's shape");
+const kStructureSync = Symbol(
+	"resynchronize after a change to a tree's structure",
+);
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 interface Materializable {
 	[kSync]?(): void;
-	[kShapeSync]?(
+	[kStructureSync]?(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
@@ -4285,7 +4287,7 @@ const kTreeRoot = Symbol("tree root");
 // of walking the tree again. A document-wide collection is reached through
 // the document of the change's point, because a tree under construction
 // outside the document can still contain its members.
-function shapeChanged(
+function structureChanged(
 	point: Node,
 	changed: readonly Node[] | null,
 	added: boolean,
@@ -4297,14 +4299,14 @@ function shapeChanged(
 				continue;
 			}
 			for (const collection of held) {
-				shapeSyncMethod.call(collection, point, changed, added);
+				structureSyncMethod.call(collection, point, changed, added);
 			}
 		}
 	}
 	const wide = point[kDocument]![kDocumentWideLists]!;
 	if (wide !== null) {
 		for (const collection of wide) {
-			shapeSyncMethod.call(collection, point, changed, added);
+			structureSyncMethod.call(collection, point, changed, added);
 		}
 	}
 }
@@ -4383,7 +4385,7 @@ const kAdoptingSteps = Symbol("adopting steps");
 const kCloningSteps = Symbol("cloning steps");
 const kCloneSingle = Symbol("clone a single node");
 const kLastChild = Symbol("last child");
-const kPrevious = Symbol("previous sibling");
+const kPrevious = Symbol("previous sibling link");
 const kChildNodes = Symbol("childNodes");
 const kRegisteredObservers = Symbol("registered observer list");
 const kRegistry = Symbol("custom element registry");
@@ -5212,8 +5214,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 			}
 		}
 	}
-	shapeChanged(oldParent, [node], false);
-	shapeChanged(newParent, [node], true);
+	structureChanged(oldParent, [node], false);
+	structureChanged(newParent, [node], true);
 	queueTreeMutationRecord(
 		oldParent,
 		[],
@@ -5340,7 +5342,7 @@ function insertNode(
 			}
 		}
 	}
-	shapeChanged(parent, nodes, true);
+	structureChanged(parent, nodes, true);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -5602,7 +5604,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	shapeChanged(parent, [node], false);
+	structureChanged(parent, [node], false);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -6241,7 +6243,7 @@ abstract class LiveList implements Materializable {
 	// The members the changed nodes carry, if the collection can determine
 	// that from those nodes alone and knows its named properties did not
 	// move. Null if the list has to be recomputed to find out.
-	shapeMembers(changed: readonly Node[]): Node[] | null {
+	structureMembers(changed: readonly Node[]): Node[] | null {
 		const member = this[kChildMember]!;
 		if (member === null) {
 			return null;
@@ -6279,7 +6281,7 @@ abstract class LiveList implements Materializable {
 	// except for a document-wide list, which is dropped and recomputed on the
 	// next read, because a document sees far more changes than reads of such
 	// a list.
-	[kShapeSync]?(
+	[kStructureSync]?(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
@@ -6296,7 +6298,7 @@ abstract class LiveList implements Materializable {
 				return;
 			}
 			if (changed !== null) {
-				const members = this.shapeMembers(changed);
+				const members = this.structureMembers(changed);
 				if (members !== null && splice(this, point, changed, members, added)) {
 					return;
 				}
@@ -6483,12 +6485,12 @@ function ensureList(list: LiveList): Node[] {
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync]!;
-const shapeSyncMethod = (
+const structureSyncMethod = (
 	LiveList.prototype as unknown as Record<
 		symbol,
 		(point: Node, changed: readonly Node[] | null, added: boolean) => void
 	>
-)[kShapeSync]!;
+)[kStructureSync]!;
 
 const kCompute = Symbol("compute");
 
@@ -6584,8 +6586,8 @@ class HTMLCollection extends LiveList {
 		return this[kCompute]!();
 	}
 
-	override shapeMembers(changed: readonly Node[]): Node[] | null {
-		const members = super.shapeMembers(changed);
+	override structureMembers(changed: readonly Node[]): Node[] | null {
+		const members = super.structureMembers(changed);
 		if (members === null || isNameless(members)) {
 			return members;
 		}
@@ -6782,7 +6784,7 @@ class MatchingCollection extends HTMLCollection {
 
 	// Runs the test over the changed subtree rather than over the tree it
 	// moved in or out of.
-	override shapeMembers(changed: readonly Node[]): Node[] | null {
+	override structureMembers(changed: readonly Node[]): Node[] | null {
 		const members: Node[] = [];
 		for (const node of changed) {
 			const elements =
@@ -7011,7 +7013,7 @@ class DOMTokenList extends LiveList implements globalThis.DOMTokenList {
 	}
 
 	// An attribute's tokens are not part of the tree's shape.
-	override shapeMembers(): Node[] {
+	override structureMembers(): Node[] {
 		return [];
 	}
 
@@ -7917,7 +7919,7 @@ class NamedNodeMap extends LiveList implements globalThis.NamedNodeMap {
 	}
 
 	// An element's attributes are not part of the tree's shape.
-	override shapeMembers(): Node[] {
+	override structureMembers(): Node[] {
 		return [];
 	}
 
@@ -15479,7 +15481,7 @@ interface HTMLScriptElement
 const kPicker = Symbol("picker");
 const kOnMousedown = Symbol("onMousedown");
 const kOnBlur = Symbol("onBlur");
-const kHighlight = Symbol("highlight");
+const kPickerHighlight = Symbol("highlight");
 
 // Selectedness lives on the options. The select's members read it, and
 // every read first runs the selectedness setting algorithm, which keeps a
@@ -15513,7 +15515,7 @@ class HTMLSelectElement extends HTMLElement {
 	declare [kPicker]?: globalThis.HTMLElement | null;
 	// The highlighted option index while the picker is OPEN. Null means
 	// closed.
-	declare [kHighlight]?: number | null;
+	declare [kPickerHighlight]?: number | null;
 
 	// OPEN: arrows move the highlight without committing, Enter/Space
 	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
@@ -15535,7 +15537,7 @@ class HTMLSelectElement extends HTMLElement {
 		this[kUpgraded] = false;
 		this[kValueText] = null;
 		this[kPicker] = null;
-		this[kHighlight] = null;
+		this[kPickerHighlight] = null;
 		this[kOnKeydown] = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) {
 				return;
@@ -15547,18 +15549,22 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			const current = this.selectedIndex;
 
-			if (this[kHighlight] !== null) {
-				const highlight = this[kHighlight]!;
+			if (this[kPickerHighlight] !== null) {
+				const highlight = this[kPickerHighlight]!;
 				if (key === "ArrowDown") {
-					this[kHighlight] = stepSelectHighlight(this, highlight, 1);
+					this[kPickerHighlight] = stepSelectHighlight(this, highlight, 1);
 				} else if (key === "ArrowUp") {
-					this[kHighlight] = stepSelectHighlight(this, highlight, -1);
+					this[kPickerHighlight] = stepSelectHighlight(this, highlight, -1);
 				} else if (key === "Home") {
-					this[kHighlight] = stepSelectHighlight(this, -1, 1);
+					this[kPickerHighlight] = stepSelectHighlight(this, -1, 1);
 				} else if (key === "End") {
-					this[kHighlight] = stepSelectHighlight(this, options.length, -1);
+					this[kPickerHighlight] = stepSelectHighlight(
+						this,
+						options.length,
+						-1,
+					);
 				} else if (key === "Enter" || key === " ") {
-					this[kHighlight] = null;
+					this[kPickerHighlight] = null;
 					if (highlight !== current && !optionIsDisabled(options[highlight])) {
 						commitSelectOption(this, highlight);
 						return;
@@ -15566,7 +15572,7 @@ class HTMLSelectElement extends HTMLElement {
 					this[kSyncWidget]!(); // No change: just close.
 					return;
 				} else if (key === "Escape") {
-					this[kHighlight] = null;
+					this[kPickerHighlight] = null;
 				} else {
 					return;
 				}
@@ -15601,7 +15607,7 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			const attached = getAttachedDocument(this)!;
 			this.focus(); // A press focuses the control, as in a browser.
-			if (this[kHighlight] === null) {
+			if (this[kPickerHighlight] === null) {
 				openPicker(this);
 				return;
 			}
@@ -15619,7 +15625,7 @@ class HTMLSelectElement extends HTMLElement {
 				// nothing commits.
 				const option = getOptionList(this)[index];
 				if (option && !optionIsDisabled(option)) {
-					this[kHighlight] = null;
+					this[kPickerHighlight] = null;
 					if (index !== this.selectedIndex) {
 						commitSelectOption(this, index);
 					} else {
@@ -15632,13 +15638,13 @@ class HTMLSelectElement extends HTMLElement {
 			// nothing. A press outside it (on the closed face) dismisses.
 			const pickerRect = attached[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
-				this[kHighlight] = null;
+				this[kPickerHighlight] = null;
 				this[kSyncWidget]!();
 			}
 		};
 		this[kOnBlur] = (): void => {
-			if (this[kHighlight] !== null) {
-				this[kHighlight] = null;
+			if (this[kPickerHighlight] !== null) {
+				this[kPickerHighlight] = null;
 				this[kSyncWidget]!();
 			}
 		};
@@ -15817,8 +15823,8 @@ class HTMLSelectElement extends HTMLElement {
 	// loss, since focus cannot rest on an element off the tree.
 	override [kRemovingSteps]?(oldParent: Node): void {
 		super[kRemovingSteps]!(oldParent);
-		if (this[kHighlight] !== null) {
-			this[kHighlight] = null;
+		if (this[kPickerHighlight] !== null) {
+			this[kPickerHighlight] = null;
 			this[kSyncWidget]!();
 		}
 	}
@@ -15838,7 +15844,7 @@ class HTMLSelectElement extends HTMLElement {
 			attached[kLayout].invalidate(this);
 		}
 
-		if (this[kHighlight] === null) {
+		if (this[kPickerHighlight] === null) {
 			if (picker.style.display !== "none") {
 				picker.style.display = "none";
 			}
@@ -15896,7 +15902,7 @@ function getPickerRows(
 			label: option.label,
 			disabled: optionIsDisabled(option),
 			grouped,
-			highlighted: index === select[kHighlight]!,
+			highlighted: index === select[kPickerHighlight]!,
 		});
 		index++;
 	};
@@ -15986,7 +15992,7 @@ function openPicker(
 	if (index < 0) {
 		index = options.findIndex((o) => !optionIsDisabled(o));
 	}
-	select[kHighlight] = index;
+	select[kPickerHighlight] = index;
 	select[kSyncWidget]!();
 }
 
@@ -15994,7 +16000,7 @@ function commitSelectOption(
 	select: HTMLSelectElement,
 	index: number,
 ): void {
-	select[kHighlight] = null;
+	select[kPickerHighlight] = null;
 	select.selectedIndex = index; // The setter reconciles (closes + label).
 	dispatch(select, new Event("input", {bubbles: true, cancelable: false}));
 	dispatch(select, new Event("change", {bubbles: true, cancelable: false}));
@@ -25416,7 +25422,10 @@ function isOpenElement(element: Element): boolean {
 			return element.getAttribute("open") !== null;
 		case "select":
 			return (
-				(element as unknown as {[kHighlight]?: unknown})[kHighlight] != null
+				(element as unknown as {
+					[kPickerHighlight]?: unknown;
+				})[kPickerHighlight] !=
+				null
 			);
 		default:
 			return false;

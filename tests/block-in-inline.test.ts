@@ -151,7 +151,7 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 	const input = dom.document.querySelector("input")!;
 	const rect = input.getBoundingClientRect();
-	// Positions under a content root mean nothing until the run places the box
+	// Positions under a independent formatting context mean nothing until the run places the box
 	// that owns it; the widget's own rect is anchored to that box's content edge.
 	expect(rect.x).toBe(1);
 	expect(terminal.getPlainText()).toContain("typed");
@@ -161,7 +161,7 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 test("an inline-block's content survives sitting inside another inline", async () => {
 	// Nested this way the box is a run MEMBER, and #addElementNode is never
-	// called on one, so its measurement is what gives it a content root.
+	// called on one, so its measurement is what gives it a independent formatting context.
 	const {dom, lines} = await render(
 		"<span><span style=\"display: inline-block\"><p>deep</p></span> tail</span>",
 	);
@@ -251,7 +251,7 @@ test("an inline flex item holding a block is a block container", async () => {
 });
 
 test("an inline-block inside an inline-block takes a block child", async () => {
-	// The inner one lays its block content out under a content root of its
+	// The inner one lays its block content out under a independent formatting context of its
 	// own, and a block arriving there belongs to that box's children like any
 	// other.
 	const {dom, lines} = await render(

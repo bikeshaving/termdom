@@ -429,7 +429,7 @@ export class LayoutNode {
 	cachedLayout: CachedLayout | null;
 	styling: boolean;
 
-	// Null for a node no DOM node owns: an anonymous run's, a content root,
+	// Null for a node no DOM node owns: an anonymous run's, a independent formatting context,
 	// the viewport. Stored on the node rather than in a map because it is
 	// read during paint culling and every child sweep, and a node that left
 	// the tree cannot go stale.
@@ -6974,7 +6974,7 @@ class Box {
 	// The root an atomic inline's own children lay out under. The run
 	// measures the box as one opaque unit, so only the box's own measurement
 	// can lay them out, relative to its content edge.
-	contentRoot: LayoutNode | null;
+	independentFormattingContext: LayoutNode | null;
 
 	// The lines of the last PLACING measurement. A probe at another width
 	// never becomes what the painter sees.
@@ -6989,7 +6989,7 @@ class Box {
 		this.holdsFragments = false;
 		this.layoutNode = null;
 		this.styledFrom = null;
-		this.contentRoot = null;
+		this.independentFormattingContext = null;
 		this.fragments = null;
 		this.kind = kind;
 		this.node = node;
@@ -7129,7 +7129,7 @@ function getContainerLayoutNode(
 	container: Element,
 ): LayoutNode | undefined {
 	return (
-		layout[kBoxes].get(container)?.contentRoot ??
+		layout[kBoxes].get(container)?.independentFormattingContext ??
 		layout[kNodeMap].get(container)
 	);
 }
@@ -7276,7 +7276,7 @@ function runBreakResult(
 const kDirtyRunContainers = Symbol("dirtyRunContainers");
 const kDOMRect = Symbol("DOMRect");
 const kRootElement = Symbol("rootElement");
-const kViewportRoot = Symbol("viewportRootNode");
+const kInitialContainingBlock = Symbol("initialContainingBlock");
 const kWindow = Symbol("window");
 
 // Bring a container's layout children into line with its box list.
@@ -7403,7 +7403,7 @@ function syncRunMembers(
 			addNode(layout, element, null);
 			continue;
 		}
-		if (!layout[kBoxes].get(element)?.contentRoot) {
+		if (!layout[kBoxes].get(element)?.independentFormattingContext) {
 			dropLayoutNode(layout, element);
 		}
 		dropRunContent(layout, element);
@@ -7459,7 +7459,10 @@ function getRunContainerFromParent(
 		if (isAtomicInline(display)) {
 			// An atomic inline nested in one starts a run there rather than
 			// joining the run its host is in.
-			if (layout[kBoxes].get(current)?.contentRoot || startsOwnRun) {
+			if (
+				layout[kBoxes].get(current)?.independentFormattingContext ||
+				startsOwnRun
+			) {
 				return current;
 			}
 			continue;
@@ -7511,11 +7514,11 @@ function addNode(
 	}
 	// An out-of-flow box stays where it is for its containing block to
 	// reach down to, unless the two are in different layout trees (a
-	// content root's block cannot reach in). Then the box moves.
+	// independent formatting context's block cannot reach in). Then the box moves.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
 			getPosition(node as Element) === "fixed"
-				? layout[kViewportRoot]
+				? layout[kInitialContainingBlock]
 				: getContainingBlockLayoutNode(layout, node as Element);
 		if (
 			containingBlock && !isReachableFrom(parentLayoutNode, containingBlock)
@@ -7567,7 +7570,7 @@ function addNode(
 			styleNode(layout, element, existingLayoutNode);
 			// A kept box is re-derived exactly as if built from scratch.
 			if (isMeasuredAsRun(element)) {
-				syncContentRoot(layout, element);
+				syncIndependentFormattingContext(layout, element);
 				dropRunContent(layout, element);
 			}
 		}
@@ -7611,7 +7614,7 @@ function addElementNode(
 		if (box) {
 			invalidateBox(layout, box);
 			layout[kDirtyRunContainers].add(box.container);
-			syncContentRoot(layout, element);
+			syncIndependentFormattingContext(layout, element);
 			dropRunContent(layout, element);
 			return;
 		}
@@ -7647,13 +7650,13 @@ function addElementNode(
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 
-		syncContentRoot(layout, element);
+		syncIndependentFormattingContext(layout, element);
 		dropRunContent(layout, element);
 		return;
 	}
 
-	// A content root left behind would go on claiming the same children.
-	dropContentRoot(getPrincipalBox(layout, element));
+	// A independent formatting context left behind would go on claiming the same children.
+	dropIndependentFormattingContext(getPrincipalBox(layout, element));
 
 	// Only DIRECT children. A broken inline's boxes reach the tree through
 	// this container's own box reconciliation.
@@ -7753,7 +7756,7 @@ function flowChildren(
 // a block-level box, so block content inside it is laid out by the box's
 // own measurement. Only the run that placed the box knows its content
 // edge.
-function syncContentRoot(
+function syncIndependentFormattingContext(
 	layout: Layout,
 	element: Element,
 ): void {
@@ -7768,15 +7771,15 @@ function syncContentRoot(
 		!establishesIndependentFormattingContext(element) ||
 		(!grid && !hasBlockLevelBox(element))
 	) {
-		dropContentRoot(box);
+		dropIndependentFormattingContext(box);
 		return;
 	}
 
-	let root = box.contentRoot;
+	let root = box.independentFormattingContext;
 	if (!root) {
 		root = new LayoutNode();
 		root.setBlockFormattingContext(true);
-		box.contentRoot = root;
+		box.independentFormattingContext = root;
 	}
 	// The root IS the box's formatting context, so it gets the display and
 	// the grid container properties. The element's own node is the run's.
@@ -7812,12 +7815,12 @@ function syncContentRoot(
 	}
 }
 
-function dropContentRoot(box: Box): void {
-	const root = box.contentRoot;
+function dropIndependentFormattingContext(box: Box): void {
+	const root = box.independentFormattingContext;
 	if (!root) {
 		return;
 	}
-	box.contentRoot = null;
+	box.independentFormattingContext = null;
 	// Sever first. Freeing the children would leave nodeMap pointing at
 	// freed nodes.
 	while (root.children.length > 0) {
@@ -7836,7 +7839,7 @@ function dropHiddenContent(
 	dropContainerBoxes(layout, element);
 	const box = layout[kBoxes].get(element);
 	if (box) {
-		dropContentRoot(box);
+		dropIndependentFormattingContext(box);
 	}
 	const walker = createTreeWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
@@ -7869,12 +7872,12 @@ function dropContainerBoxes(
 // keeps a layout node. One left over is laid out a second time, in a
 // box the tree no longer has. Boxes the run does not measure are left
 // alone: out-of-flow boxes (hoisted instead) and atomic inlines with
-// content roots.
+// independent formatting contexts.
 function dropRunContent(
 	layout: Layout,
 	element: Element,
 ): void {
-	if (layout[kBoxes].get(element)?.contentRoot) {
+	if (layout[kBoxes].get(element)?.independentFormattingContext) {
 		return;
 	}
 	dropContainerBoxes(layout, element);
@@ -7887,7 +7890,7 @@ function dropRunContent(
 				node = skipSubtree(walker) ? walker.currentNode : null;
 				continue;
 			}
-			if (layout[kBoxes].get(child)?.contentRoot) {
+			if (layout[kBoxes].get(child)?.independentFormattingContext) {
 				node = skipSubtree(walker) ? walker.currentNode : null;
 				continue;
 			}
@@ -7964,7 +7967,7 @@ function isHiddenByAncestor(node: Node): boolean {
 	return false;
 }
 
-// Coordinates under a content root start at the box that owns it: the
+// Coordinates under a independent formatting context start at the box that owns it: the
 // ancestor whose root the node was actually laid out under, not the
 // nearest one. An out-of-flow descendant hangs from its containing block
 // instead.
@@ -7978,7 +7981,7 @@ function getDocumentPosition(
 	for (let parent = root.parent; parent; parent = root.parent) {
 		root = parent;
 	}
-	if (root === layout[kViewportRoot]) {
+	if (root === layout[kInitialContainingBlock]) {
 		return position;
 	}
 	let host: Element | null = null;
@@ -7987,7 +7990,7 @@ function getDocumentPosition(
 		current && !host;
 		current = getBoxParentElement(current)
 	) {
-		if (layout[kBoxes].get(current)?.contentRoot === root) {
+		if (layout[kBoxes].get(current)?.independentFormattingContext === root) {
 			host = current;
 		}
 	}
@@ -8271,14 +8274,14 @@ function dropBreakResultCache(
 }
 
 // Drop an anonymous box's lines and dirty the measure that refills
-// them, including, under a content root, the box whose measure is the
+// them, including, under a independent formatting context, the box whose measure is the
 // only thing that ever lays that content out.
 function invalidateBox(
 	layout: Layout,
 	box: Box,
 ): void {
 	box.layoutNode?.markDirty();
-	const host = getEnclosingContentRoot(layout, box.container);
+	const host = getEnclosingIndependentFormattingContext(layout, box.container);
 	if (host) {
 		invalidateEnclosingMeasure(layout, host);
 	}
@@ -8287,12 +8290,12 @@ function invalidateBox(
 // A DOM question, not a flex-tree one. A box whose layout node is
 // momentarily detached would report that it is in no tree at all,
 // leaving the only measure that ever runs it un-dirtied.
-function getEnclosingContentRoot(
+function getEnclosingIndependentFormattingContext(
 	layout: Layout,
 	from: Element | null,
 ): Element | null {
 	for (let current = from; current; current = getBoxParentElement(current)) {
-		if (layout[kBoxes].get(current)?.contentRoot) {
+		if (layout[kBoxes].get(current)?.independentFormattingContext) {
 			return current;
 		}
 	}
@@ -8356,8 +8359,8 @@ function invalidateEnclosingMeasure(
 		const headLayoutNode = layout[kNodeMap].get(entry.node!);
 		if (headLayoutNode && headLayoutNode.measureFunc) {
 			headLayoutNode.markDirty();
-			// Out of any content root too. Only its owner runs that layout.
-			const host = getEnclosingContentRoot(
+			// Out of any independent formatting context too. Only its owner runs that layout.
+			const host = getEnclosingIndependentFormattingContext(
 				layout,
 				getBoxParentElement(entry.node!),
 			);
@@ -8381,7 +8384,7 @@ function invalidateEnclosingMeasure(
 			if (layoutNode.measureFunc) {
 				layoutNode.markDirty();
 			}
-			const host = getEnclosingContentRoot(
+			const host = getEnclosingIndependentFormattingContext(
 				layout,
 				getBoxParentElement(current),
 			);
@@ -8396,7 +8399,7 @@ function invalidateEnclosingMeasure(
 
 const kRestyled = Symbol("restyled");
 
-// Under a content root, dirtying just the run invalidates it forever.
+// Under a independent formatting context, dirtying just the run invalidates it forever.
 // Nothing above the box ever visits those nodes, so the cleared break
 // result is never rebuilt and the run paints nothing.
 function markRunMeasureDirty(
@@ -8410,7 +8413,10 @@ function markRunMeasureDirty(
 	if (layoutNode.measureFunc) {
 		layoutNode.markDirty();
 	}
-	const host = getEnclosingContentRoot(layout, getBoxParentElement(runHead));
+	const host = getEnclosingIndependentFormattingContext(
+		layout,
+		getBoxParentElement(runHead),
+	);
 	if (host) {
 		invalidateEnclosingMeasure(layout, host);
 	}
@@ -8730,8 +8736,8 @@ function collectLeaves(
 				// An inline-block nested in another inline is a run member, and
 				// addElementNode is never called on one. This is the first
 				// moment its block content is known to need a root.
-				if (!ownBox.contentRoot) {
-					syncContentRoot(layout, element);
+				if (!ownBox.independentFormattingContext) {
+					syncIndependentFormattingContext(layout, element);
 				}
 
 				const boxModel = getBoxModel(element);
@@ -8866,17 +8872,18 @@ function collectLeaves(
 
 				// The COMPOSED first child. A shadow host renders its shadow
 				// content, and measuring the light children sized it to zero.
-				const contentRoot = ownBox.contentRoot;
+				const independentFormattingContext =
+					ownBox.independentFormattingContext;
 				let inlineBlockResult: BreakResult | undefined;
 				let finalContentWidth: number;
 				let finalContentHeight: number;
 
-				if (contentRoot) {
+				if (independentFormattingContext) {
 					// Laid out here because nothing above the box will. NaN
 					// shrinks the axis to fit. A sizing keyword on the root
 					// turns a passed width into the matching probe.
-					contentRoot.setWidthSizing(widthSizing);
-					contentRoot.calculateLayout(
+					independentFormattingContext.setWidthSizing(widthSizing);
+					independentFormattingContext.calculateLayout(
 						contentWidthMode === "exactly" ||
 						(widthSizing !== "none" &&
 							contentWidthMode === "at-most")
@@ -8886,8 +8893,8 @@ function collectLeaves(
 							? contentHeight
 							: Number.NaN,
 					);
-					finalContentWidth = contentRoot.getComputedWidth();
-					finalContentHeight = contentRoot.getComputedHeight();
+					finalContentWidth = independentFormattingContext.getComputedWidth();
+					finalContentHeight = independentFormattingContext.getComputedHeight();
 				} else {
 					const contentStart = flatFirstRenderableChild(element);
 					if (contentStart) {
@@ -9942,7 +9949,7 @@ export class Layout {
 	declare [kWindow]: EngineWindow;
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
-	declare [kViewportRoot]: LayoutNode;
+	declare [kInitialContainingBlock]: LayoutNode;
 
 	// Not every node has one. A run member is measured by the run around
 	// it and owns none, which is what getOwnLayoutNode checks.
@@ -10036,18 +10043,18 @@ export class Layout {
 		this[kInvalidatedNodes] = new Set<Node>();
 		this[kMeasureNodes] = new Set<LayoutNode>();
 
-		this[kViewportRoot] = new LayoutNode();
-		this[kViewportRoot].setFlexDirection("column");
-		this[kViewportRoot].setAlignItems("stretch");
-		this[kViewportRoot].setWidth(width);
-		this[kViewportRoot].setHeight(height);
+		this[kInitialContainingBlock] = new LayoutNode();
+		this[kInitialContainingBlock].setFlexDirection("column");
+		this[kInitialContainingBlock].setAlignItems("stretch");
+		this[kInitialContainingBlock].setWidth(width);
+		this[kInitialContainingBlock].setHeight(height);
 	}
 
 	/** The block the document lays out in: the terminal's size, in cells. */
 	get initialContainingBlock(): {width: number; height: number} {
 		return {
-			width: this[kViewportRoot].style.width.value,
-			height: this[kViewportRoot].style.height.value,
+			width: this[kInitialContainingBlock].style.width.value,
+			height: this[kInitialContainingBlock].style.height.value,
 		};
 	}
 
@@ -10075,8 +10082,8 @@ export class Layout {
 	// The engine keeps no copy of the size. The root it sizes here is the
 	// copy, and the document holds the one everything else reads.
 	resize(width: number, height: number): void {
-		this[kViewportRoot].setWidth(width);
-		this[kViewportRoot].setHeight(height);
+		this[kInitialContainingBlock].setWidth(width);
+		this[kInitialContainingBlock].setHeight(height);
 
 		for (const layoutNode of this[kMeasureNodes]) {
 			layoutNode.markDirty();
@@ -10094,7 +10101,7 @@ export class Layout {
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
 		if (!this[kNodeMap].has(this[kRootElement])) {
-			addNode(this, this[kRootElement], this[kViewportRoot]);
+			addNode(this, this[kRootElement], this[kInitialContainingBlock]);
 		}
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be resolved against the current styles.
@@ -10103,7 +10110,7 @@ export class Layout {
 		// cannot be hiding a disconnection, and even the pruning sweep below is
 		// not worth paying.
 		if (
-			!this[kViewportRoot].dirty &&
+			!this[kInitialContainingBlock].dirty &&
 			this[kInvalidatedNodes].size === 0 &&
 			this[kDirtyRunContainers].size === 0
 		) {
@@ -10158,19 +10165,19 @@ export class Layout {
 		// A clean root means the previous layout is still exact. Recomputing
 		// would be a full-tree relayout per frame for an animation repainting
 		// one span.
-		if (!this[kViewportRoot].dirty) {
+		if (!this[kInitialContainingBlock].dirty) {
 			return;
 		}
 
 		// The root's own size is the request. The terminal is the viewport, so
 		// html can size to its content and still resolve percentages and
 		// viewport units against it.
-		const root = this[kViewportRoot];
+		const root = this[kInitialContainingBlock];
 		root.calculateLayout(root.style.width.value, root.style.height.value);
 	}
 
 	dispose(): void {
-		this[kViewportRoot].freeRecursive();
+		this[kInitialContainingBlock].freeRecursive();
 
 		this[kNodeMap] = new Map();
 		this[kInvalidatedNodes] = new Set();
@@ -10293,7 +10300,7 @@ export class Layout {
 			root.ownerDocument!) as unknown as Element[];
 		for (const element of rendered) {
 			if (isModalDialog(element)) {
-				return this[kViewportRoot].style.height.value;
+				return this[kInitialContainingBlock].style.height.value;
 			}
 			const rect = this.getRect(element);
 			if (rect) {
@@ -10429,7 +10436,7 @@ export class Layout {
 			width: Math.round(box?.width ?? 0),
 			height:
 				isRootBox(this, element)
-					? this[kViewportRoot].style.height.value
+					? this[kInitialContainingBlock].style.height.value
 					: Math.round(box?.height ?? 0),
 		};
 	}
@@ -10622,7 +10629,7 @@ export class Layout {
 	// line.
 	getRangeRects(range: Range): DOMRect[] {
 		if (!range.collapsed) {
-			return this.getRangeRuns(range).map((run) => run.rect);
+			return this.getRangeSpans(range).map((run) => run.rect);
 		}
 		const rects: DOMRect[] = [];
 		for (const textNode of rangeTextNodes(this, range)) {
@@ -10640,7 +10647,7 @@ export class Layout {
 
 	// The text lets a caller repaint the run in the selection style.
 	// getRangeRects is this without the text.
-	getRangeRuns(range: Range): Array<{rect: DOMRect; text: string}> {
+	getRangeSpans(range: Range): Array<{rect: DOMRect; text: string}> {
 		if (range.collapsed) {
 			return [];
 		}
