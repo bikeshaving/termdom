@@ -26,11 +26,8 @@ import {
 	transportFromProcess,
 } from "./exchange.js";
 import {Screen} from "./screen.js";
-import {StyleManager, getComputedValue, getBoxModel} from "./cssom.js";
-import {
-	EventHandler,
-	type DocumentPoint,
-} from "./input.js";
+import {StyleManager, getBoxModel} from "./cssom.js";
+import {EventHandler} from "./input.js";
 
 export interface TermDOMOptions {
 	/**
@@ -308,7 +305,7 @@ export class TermDOM {
 		// connected one should be upgraded.
 		DOM.mount(document, createMount(this));
 
-		this[kEventHandler] = buildEventHandler(this);
+		this[kEventHandler] = new EventHandler(this.document);
 		this[kPainter] = new Painter({
 			window: this.window,
 			document: this.document,
@@ -581,73 +578,6 @@ function createMount(termDOM: TermDOM): DOM.Mount {
 			return isAttached(termDOM);
 		},
 	};
-}
-
-/**
- * The input interpreter, wired to this instance. Its collaborators are split
- * by owner: what it dispatches into, what it asks about a point, and the
- * user-agent defaults that move the camera or the wire and so stay here.
- */
-function buildEventHandler(termdom: TermDOM): EventHandler {
-	return new EventHandler({
-		view: {
-			get document(): Document {
-				return termdom.document;
-			},
-			get window(): EngineWindow {
-				return termdom.window;
-			},
-			requestRender: () => {
-				void render(termdom);
-			},
-		},
-		hitTest: {
-			// A row above the painted region is not part of the document -- a
-			// shell prompt above the command start. In fullscreen the alternate
-			// screen owns row zero, so the anchor supplies the origin directly.
-			documentPointAt: (col, row): DocumentPoint => {
-				const documentRow =
-					isFullscreen(termdom) ?
-						row - 1 + termdom[kScreen].anchorScrollTop :
-						row - 1 - termdom[kScreen].documentTop + termdom[kScreen].scrollTop;
-				const inDocument = documentRow >= 0;
-				return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
-			},
-			elementAt: (x, y) => DOM.elementAtDocumentPoint(termdom.document, x, y),
-		},
-		defaults: {
-			scrollByWheel: (target, deltaY) => {
-				// The innermost scroll box under the pointer that can still move
-				// in the wheel's direction consumes the tick; an exhausted one
-				// chains outward -- ultimately to the camera and the terminal's
-				// own scrollback below, the browser's scroll chaining.
-				const scroller = wheelScrollerFor(termdom, target, deltaY);
-				if (scroller) {
-					scroller.scrollTop += deltaY;
-					return false;
-				}
-				if (
-					deltaY < 0 &&
-					termdom[kScreen].scrollTop === 0 &&
-					!isFullscreen(termdom)
-				) {
-					return true;
-				}
-				scrollCamera(termdom, deltaY);
-				return false;
-			},
-			mouseCaptureChanged: () => {
-				updateMouseReporting(termdom);
-			},
-			hoverMoved: (target) => {
-				DOM.setHoveredElement(termdom.document, target);
-			},
-			modalScope: () => DOM.topmostModalDialog(termdom.document),
-			fullscreenTarget: () => termdom.document.fullscreenElement,
-		},
-		styleManager: termdom[kStyleManager],
-		layout: termdom[kLayoutEngine],
-	});
 }
 
 /**
@@ -1314,52 +1244,10 @@ function afterRender(
 		termdom[kRenderCount],
 	);
 	// The frame's stylesheets have parsed, so "does any rule test :hover"
-	// is current: re-answer whether the terminal should report motion.
+	// is current, and the wheel may have been handed to the terminal or
+	// taken back: re-answer what the terminal should report.
+	updateMouseReporting(termdom);
 	updateHoverReporting(termdom);
-}
-
-/**
- * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
- * ancestor (the target included) whose overflow-y makes it a scroll
- * container -- auto or scroll; hidden and visible don't take the wheel, as
- * in a browser -- and that can still move in the tick's direction. None
- * means the tick chains past every element scroller to the document camera.
- */
-function wheelScrollerFor(
-	termdom: TermDOM,
-	target: Element,
-	deltaY: number,
-): Element | null {
-	const body = termdom.document.body;
-	const root = termdom.document.documentElement;
-	const engine = termdom[kLayoutEngine];
-	for (
-		let element: Element | null = target;
-		element && element !== body && element !== root;
-		element = DOM.flatParentElement<Element>(element)
-	) {
-		const overflowY =
-			getComputedValue(element, "overflow-y") ||
-			getComputedValue(element, "overflow");
-		if (overflowY !== "auto" && overflowY !== "scroll") {
-			continue;
-		}
-		if (deltaY < 0) {
-			if (element.scrollTop > 0) {
-				return element;
-			}
-			continue;
-		}
-		const extent = engine.scrollExtentOf(element);
-		const port = engine.contentRect(element);
-		if (!extent || !port) {
-			continue;
-		}
-		if (element.scrollTop < extent.height - Math.round(port.height)) {
-			return element;
-		}
-	}
-	return null;
 }
 
 /**

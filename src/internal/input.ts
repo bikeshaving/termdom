@@ -29,8 +29,11 @@
 
 import {
 	type EngineWindow,
+	type Mount,
 	closeTopmost,
 	dispatchAsUserAgent,
+	elementAtDocumentPoint,
+	getMount,
 	fieldCaretOffset,
 	flatParentElement,
 	getShadowRoot,
@@ -39,11 +42,13 @@ import {
 	lightDismissPress,
 	lightDismissRelease,
 	lockDataTransfer,
+	setHoveredElement,
 	setUASelection,
+	topmostModalDialog,
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import type {WireKey} from "./exchange.js";
-import {type StyleManager, getComputedValue} from "./cssom.js";
+import {getComputedValue} from "./cssom.js";
 
 /* -------------------------------------------------- what a wire item means */
 
@@ -342,10 +347,10 @@ function sequentialFocusEntries(
 	return buildScope(roots, null);
 }
 
-/* ----------------------------------------------------------- collaborators */
+/* ------------------------------------------------------------ the document */
 
 /** A point in document space, and whether the cell it came from is in one. */
-export interface DocumentPoint {
+interface DocumentPoint {
 	x: number;
 	y: number;
 	/** False for a row above the painted region -- a shell prompt's rows. */
@@ -353,58 +358,102 @@ export interface DocumentPoint {
 }
 
 /**
- * The document events are built in and dispatched into, and the frame that
- * paints what a dispatch changed.
+ * The document point under a 1-based terminal cell. The camera decides: in
+ * fullscreen the region starts at the alternate screen's row zero; in flow
+ * it starts at the command-start row, scrolled by the camera.
  */
-interface EventView {
-	readonly document: Document;
-	readonly window: EngineWindow;
-	/**
-	 * Ask for a frame. Reactive pseudo-state, the document selection and the
-	 * caret all move without a mutation record, so interpretation says when
-	 * the screen owes an answer.
-	 */
-	requestRender(): void;
-}
-
-/** Where a reported cell lands in the document, and what is under it. */
-interface HitTester {
-	/** The document point under a 1-based terminal cell. */
-	documentPointAt(col: number, row: number): DocumentPoint;
-	/** The element at a document point, against fresh layout. */
-	elementAt(x: number, y: number): Element | null;
+function documentPointAt(
+	handler: EventHandler,
+	col: number,
+	row: number,
+): DocumentPoint {
+	const screen = handler[kMount].screen;
+	const documentRow =
+		handler[kDocument].fullscreenElement !== null ?
+			row - 1 + screen.anchorScrollTop :
+			row - 1 - screen.documentTop + screen.scrollTop;
+	const inDocument = documentRow >= 0;
+	return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
 }
 
 /**
- * The user-agent behaviors a dispatched event triggers that belong to the
- * engine rather than to interpretation: scrolling, the top layer and
- * fullscreen, the wire's reporting modes, and the hover the host is told
- * about.
+ * The scroll box a wheel tick over `target` belongs to: the nearest flat-tree
+ * ancestor (the target included) whose overflow-y makes it a scroll
+ * container -- auto or scroll; hidden and visible don't take the wheel, as
+ * in a browser -- and that can still move in the tick's direction. None
+ * means the tick chains past every element scroller to the document camera.
  */
-interface UADefaultActions {
-	/**
-	 * Scroll a wheel tick nothing canceled -- the innermost scroll box that
-	 * can still move, else the camera. True when the tick escaped past both,
-	 * which is where scroll chaining hands the wheel to the terminal.
-	 */
-	scrollByWheel(target: Element, deltaY: number): boolean;
-	/** Mouse capture was yielded or reclaimed; re-decide the wire's modes. */
-	mouseCaptureChanged(): void;
-	/** The pointer is over a different element than it was. */
-	hoverMoved(target: Element | null): void;
-	/** The showing modal dialog Tab is confined to, if one is up. */
-	modalScope(): Element | null;
-	/** The fullscreen element, which keystrokes fall back to. */
-	fullscreenTarget(): Element | null;
+function wheelScrollerFor(
+	handler: EventHandler,
+	target: Element,
+	deltaY: number,
+): Element | null {
+	const document = handler[kDocument];
+	const layout = handler[kMount].layout;
+	for (
+		let element: Element | null = target;
+		element &&
+		element !== document.body &&
+		element !== document.documentElement;
+		element = flatParentElement<Element>(element)
+	) {
+		const overflowY =
+			getComputedValue(element, "overflow-y") ||
+			getComputedValue(element, "overflow");
+		if (overflowY !== "auto" && overflowY !== "scroll") {
+			continue;
+		}
+		if (deltaY < 0) {
+			if (element.scrollTop > 0) {
+				return element;
+			}
+			continue;
+		}
+		const extent = layout.scrollExtentOf(element);
+		const port = layout.contentRect(element);
+		if (!extent || !port) {
+			continue;
+		}
+		if (element.scrollTop < extent.height - Math.round(port.height)) {
+			return element;
+		}
+	}
+	return null;
+}
+
+/**
+ * Scroll a wheel tick nothing canceled: the innermost scroll box that can
+ * still move, else the camera. True when the tick escaped past both, which
+ * is where scroll chaining hands the wheel to the terminal.
+ */
+function scrollByWheel(
+	handler: EventHandler,
+	target: Element,
+	deltaY: number,
+): boolean {
+	const scroller = wheelScrollerFor(handler, target, deltaY);
+	if (scroller) {
+		scroller.scrollTop += deltaY;
+		return false;
+	}
+	const mount = handler[kMount];
+	if (
+		deltaY < 0 &&
+		mount.screen.scrollTop === 0 &&
+		handler[kDocument].fullscreenElement === null
+	) {
+		return true;
+	}
+	mount.screen.scrollTo(mount.screen.scrollTop + deltaY);
+	mount.render();
+	return false;
 }
 
 /* --------------------------------------------------------- the interpreter */
 
-const kView = Symbol("view");
-const kHitTest = Symbol("hitTest");
-const kDefaults = Symbol("defaults");
-const kStyleManager = Symbol("styleManager");
-const kLayout = Symbol("layout");
+const kDocument = Symbol("document");
+const kWindow = Symbol("window");
+const kMount = Symbol("mount");
 const kLastMouse = Symbol("lastMouse");
 const kPendingHover = Symbol("pendingHover");
 const kHoverElement = Symbol("hoverElement");
@@ -425,11 +474,9 @@ const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
  * through.
  */
 export class EventHandler {
-	declare [kView]: EventView;
-	declare [kHitTest]: HitTester;
-	declare [kDefaults]: UADefaultActions;
-	declare [kStyleManager]: StyleManager;
-	declare [kLayout]: LayoutEngine;
+	declare [kDocument]: Document;
+	declare [kWindow]: EngineWindow;
+	declare [kMount]: Mount;
 
 	// The last position a mouse event was dispatched at, which is what the
 	// spec's movementX/movementY measure from. The first report has nothing
@@ -498,18 +545,10 @@ export class EventHandler {
 	declare [kLastClickTarget]: Element | null;
 	declare [kLastClickTime]: number;
 
-	constructor(deps: {
-		view: EventView;
-		hitTest: HitTester;
-		defaults: UADefaultActions;
-		styleManager: StyleManager;
-		layout: LayoutEngine;
-	}) {
-		this[kView] = deps.view;
-		this[kHitTest] = deps.hitTest;
-		this[kDefaults] = deps.defaults;
-		this[kStyleManager] = deps.styleManager;
-		this[kLayout] = deps.layout;
+	constructor(document: Document) {
+		this[kDocument] = document;
+		this[kWindow] = document.defaultView as unknown as EngineWindow;
+		this[kMount] = getMount(document)!;
 		this[kLastMouse] = null;
 		this[kPendingHover] = null;
 		this[kHoverElement] = null;
@@ -554,7 +593,6 @@ export class EventHandler {
 		row: number,
 		isRelease: boolean,
 	): void {
-		const view = this[kView];
 		const {
 			shiftKey,
 			altKey,
@@ -566,7 +604,7 @@ export class EventHandler {
 			buttons,
 		} = decodeMouseReport(code, isRelease);
 
-		const {x, y, inDocument} = this[kHitTest].documentPointAt(col, row);
+		const {x, y, inDocument} = documentPointAt(this, col, row);
 
 		// Motion arrives at cell granularity -- with 1003 on, a report per cell
 		// crossed -- so it is COALESCED: the frame hit-tests the last position
@@ -584,7 +622,7 @@ export class EventHandler {
 				quiet: base <= 2,
 			};
 			if (base > 2) {
-				view.requestRender();
+				this[kMount].render();
 				return;
 			}
 		}
@@ -593,12 +631,13 @@ export class EventHandler {
 		// than through the public elementFromPoint, which expects viewport-
 		// relative input and would convert it right back.
 		const target =
-			(inDocument && this[kHitTest].elementAt(x, y)) || view.document.body;
+			(inDocument && elementAtDocumentPoint(this[kDocument], x, y)) ||
+			this[kDocument].body;
 
 		if (wheelDeltaY !== null) {
 			const notCanceled = dispatchAsUserAgent(
 				target,
-				new view.window.WheelEvent("wheel", {
+				new this[kWindow].WheelEvent("wheel", {
 					deltaY: wheelDeltaY,
 					deltaMode: 1, // DOM_DELTA_LINE
 					clientX: x,
@@ -610,7 +649,7 @@ export class EventHandler {
 					cancelable: true,
 				}),
 			);
-			if (notCanceled && this[kDefaults].scrollByWheel(target, wheelDeltaY)) {
+			if (notCanceled && scrollByWheel(this, target, wheelDeltaY)) {
 				// Scroll chaining, the browser default: the camera is at the
 				// document top, so the scroll escapes to the parent scroller --
 				// here, the terminal's own scrollback. Yield the mouse so the
@@ -622,7 +661,7 @@ export class EventHandler {
 				// same way it would in a browser: preventDefault on the wheel
 				// event.
 				this[kMouseCaptureYielded] = true;
-				this[kDefaults].mouseCaptureChanged();
+				this[kMount].render();
 				if (this[kScrollChainTimer] !== null) {
 					clearTimeout(this[kScrollChainTimer]);
 				}
@@ -660,7 +699,7 @@ export class EventHandler {
 		if (isMotion) {
 			dispatchAsUserAgent(
 				target,
-				new view.window.MouseEvent("mousemove", eventInit),
+				new this[kWindow].MouseEvent("mousemove", eventInit),
 			);
 			dragTo(this, x, y, inDocument);
 			return;
@@ -689,14 +728,14 @@ export class EventHandler {
 			return;
 		}
 		this[kPendingHover] = null;
-		const view = this[kView];
 		const {x, y, shiftKey, altKey, ctrlKey} = pending;
-		const target = this[kHitTest].elementAt(x, y) || view.document.body;
+		const target = elementAtDocumentPoint(this[kDocument], x, y) ||
+			this[kDocument].body;
 		const previous = this[kHoverElement];
 		if (target !== previous) {
 			this[kHoverElement] = target;
-			this[kDefaults].hoverMoved(target);
-			this[kStyleManager].handleHoverChange(previous, target);
+			setHoveredElement(this[kDocument], target);
+			this[kMount].styles.handleHoverChange(previous, target);
 			const chainOf = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -727,7 +766,7 @@ export class EventHandler {
 			if (previous !== null) {
 				dispatchAsUserAgent(
 					previous,
-					new view.window.MouseEvent("mouseout", {
+					new this[kWindow].MouseEvent("mouseout", {
 						...boundaryInit,
 						bubbles: true,
 						cancelable: true,
@@ -738,7 +777,7 @@ export class EventHandler {
 					if (!targetSet.has(node)) {
 						dispatchAsUserAgent(
 							node,
-							new view.window.MouseEvent("mouseleave", {
+							new this[kWindow].MouseEvent("mouseleave", {
 								...boundaryInit,
 								relatedTarget: target,
 							}),
@@ -748,7 +787,7 @@ export class EventHandler {
 			}
 			dispatchAsUserAgent(
 				target,
-				new view.window.MouseEvent("mouseover", {
+				new this[kWindow].MouseEvent("mouseover", {
 					...boundaryInit,
 					bubbles: true,
 					cancelable: true,
@@ -759,7 +798,7 @@ export class EventHandler {
 			for (let i = entering.length - 1; i >= 0; i--) {
 				dispatchAsUserAgent(
 					entering[i],
-					new view.window.MouseEvent("mouseenter", {
+					new this[kWindow].MouseEvent("mouseenter", {
 						...boundaryInit,
 						relatedTarget: previous,
 					}),
@@ -772,7 +811,7 @@ export class EventHandler {
 			const last = this[kLastMouse];
 			dispatchAsUserAgent(
 				target,
-				new view.window.MouseEvent("mousemove", {
+				new this[kWindow].MouseEvent("mousemove", {
 					button: 0,
 					buttons: 0,
 					clientX: x,
@@ -799,24 +838,23 @@ export class EventHandler {
 	 * `clipboardData`.
 	 */
 	handlePaste(text: string): void {
-		const view = this[kView];
 		// A terminal transmits a pasted line break as CR -- the byte Enter
 		// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
 		// while the DOM's paste carries newlines as LF. Converted here, at the
 		// boundary, so a multi-line paste into a textarea is multi-line and
 		// a field's own handlers never see a bare CR.
 		text = text.replace(/\r\n?/g, "\n");
-		const focused = view.document.activeElement;
+		const focused = this[kDocument].activeElement;
 		const target =
-			focused && focused !== view.document.body ?
+			focused && focused !== this[kDocument].body ?
 				focused :
-				view.document.body;
-		const clipboardData = new view.window.DataTransfer();
+				this[kDocument].body;
+		const clipboardData = new this[kWindow].DataTransfer();
 		clipboardData.setData("text/plain", text);
 		lockDataTransfer(clipboardData);
 		const proceed = dispatchAsUserAgent(
 			target,
-			new view.window.ClipboardEvent("paste", {
+			new this[kWindow].ClipboardEvent("paste", {
 				clipboardData,
 				bubbles: true,
 				cancelable: true,
@@ -826,7 +864,7 @@ export class EventHandler {
 		if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
 			dispatchAsUserAgent(
 				target,
-				new view.window.InputEvent("beforeinput", {
+				new this[kWindow].InputEvent("beforeinput", {
 					inputType: "insertFromPaste",
 					data: text,
 					bubbles: true,
@@ -834,7 +872,7 @@ export class EventHandler {
 				}),
 			);
 		}
-		view.requestRender();
+		this[kMount].render();
 	}
 
 	/**
@@ -869,7 +907,7 @@ function reclaimMouseCapture(handler: EventHandler): void {
 		handler[kScrollChainTimer] = null;
 	}
 	handler[kMouseCaptureYielded] = false;
-	handler[kDefaults].mouseCaptureChanged();
+	handler[kMount].render();
 }
 
 /**
@@ -882,7 +920,6 @@ function dragTo(
 	y: number,
 	inDocument: boolean,
 ): void {
-	const view = handler[kView];
 	// A field drag extends the field's own selection to the offset
 	// under the pointer -- clamped into the field, whichever element
 	// the pointer is over now (the field holds the capture).
@@ -896,7 +933,7 @@ function dragTo(
 				Math.max(anchor, focus),
 				focus < anchor ? "backward" : "forward",
 			);
-			view.requestRender();
+			handler[kMount].render();
 		}
 		return;
 	}
@@ -910,7 +947,7 @@ function dragTo(
 		const focus = textPositionAt(handler, x, y);
 		if (focus && selectable(handler, focus)) {
 			const anchor = handler[kSelectionDragAnchor];
-			view.window
+			handler[kWindow]
 				.getSelection()
 				?.setBaseAndExtent(
 					anchor.node,
@@ -918,7 +955,7 @@ function dragTo(
 					focus.node,
 					focus.offset,
 				);
-			view.requestRender();
+			handler[kMount].render();
 		}
 	}
 }
@@ -937,7 +974,6 @@ function press(
 	inDocument: boolean,
 	eventInit: object,
 ): void {
-	const view = handler[kView];
 	handler[kMouseDownTarget] = target;
 	// The popover a press belongs to, which the release compares
 	// against: light dismiss is a press and a release in the same
@@ -945,13 +981,13 @@ function press(
 	handler[kPopoverPressTarget] = lightDismissPress(target);
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
-	if (handler[kStyleManager].setFocusVisible(false)) {
-		handler[kStyleManager].handleFocusChange(view.document.activeElement);
-		view.requestRender();
+	if (handler[kMount].styles.setFocusVisible(false)) {
+		handler[kMount].styles.handleFocusChange(handler[kDocument].activeElement);
+		handler[kMount].render();
 	}
 	const notCanceled = dispatchAsUserAgent(
 		target,
-		new view.window.MouseEvent("mousedown", eventInit),
+		new handler[kWindow].MouseEvent("mousedown", eventInit),
 	);
 	if (!notCanceled) {
 		return;
@@ -960,13 +996,13 @@ function press(
 	// to the nearest focusable ancestor, or away from the active element
 	// when the click lands on nothing focusable.
 	const focusable = target.closest(FOCUSABLE_SELECTOR);
-	const active = view.document.activeElement;
+	const active = handler[kDocument].activeElement;
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus();
-		view.requestRender();
-	} else if (!focusable && active && active !== view.document.body) {
+		handler[kMount].render();
+	} else if (!focusable && active && active !== handler[kDocument].body) {
 		(active as HTMLElement).blur();
-		view.requestRender();
+		handler[kMount].render();
 	}
 
 	// A select's press-to-open and option-row commit are the select
@@ -989,11 +1025,11 @@ function press(
 		// selection doesn't stay highlighted behind a field click
 		// in a browser either. The two worlds just never merge:
 		// getSelection() cannot see inside the field, per spec.
-		const docSelection = view.window.getSelection();
+		const docSelection = handler[kWindow].getSelection();
 		if (docSelection && !docSelection.isCollapsed) {
 			docSelection.removeAllRanges();
 		}
-		view.requestRender();
+		handler[kMount].render();
 	}
 
 	// Default action: mousedown collapses the document selection at
@@ -1001,7 +1037,7 @@ function press(
 	// as in a browser. Left button only -- and preventDefault on
 	// mousedown suppresses it, which is exactly how apps that want
 	// the drag events for themselves opt out.
-	const selection = view.window.getSelection();
+	const selection = handler[kWindow].getSelection();
 	if (base === 0 && selection && !handler[kFieldDragAnchor]) {
 		let anchor = inDocument ? textPositionAt(handler, x, y) : null;
 		// user-select: none refuses the anchor: a press on it clears
@@ -1022,7 +1058,7 @@ function press(
 			selection.removeAllRanges();
 		}
 		if (hadSelection) {
-			view.requestRender();
+			handler[kMount].render();
 		}
 	}
 }
@@ -1037,10 +1073,9 @@ function release(
 	target: Element,
 	eventInit: object,
 ): void {
-	const view = handler[kView];
 	dispatchAsUserAgent(
 		target,
-		new view.window.MouseEvent("mouseup", eventInit),
+		new handler[kWindow].MouseEvent("mouseup", eventInit),
 	);
 	// LIGHT DISMISS runs before the click, as in a browser; the gesture
 	// state is the press target remembered at mousedown.
@@ -1054,7 +1089,7 @@ function release(
 	handler[kFieldDragAnchor] = null;
 	if (handler[kSelectionDragAnchor]) {
 		handler[kSelectionDragAnchor] = null;
-		const text = view.window.getSelection()?.toString() ?? "";
+		const text = handler[kWindow].getSelection()?.toString() ?? "";
 		if (text.length > 0) {
 			selectedByDrag = true;
 		}
@@ -1071,7 +1106,7 @@ function release(
 	if (handler[kMouseDownTarget] === target) {
 		dispatchAsUserAgent(
 			target,
-			new view.window.MouseEvent("click", {...eventInit, buttons: 0}),
+			new handler[kWindow].MouseEvent("click", {...eventInit, buttons: 0}),
 		);
 		// A checkbox/radio's .checked already flipped -- the activation
 		// behavior handles that directly, and forwards it from a <label
@@ -1085,18 +1120,18 @@ function release(
 		// mousedown's own default action above, so this is a harmless
 		// no-op there).
 		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			el instanceof (view.window as any).HTMLInputElement &&
+			el instanceof (handler[kWindow] as any).HTMLInputElement &&
 			((el as HTMLInputElement).type === "checkbox" ||
 				(el as HTMLInputElement).type === "radio");
 		const control = isCheckable(target) ?
 			target :
-			target instanceof (view.window as any).HTMLLabelElement &&
+			target instanceof (handler[kWindow] as any).HTMLLabelElement &&
 			isCheckable((target as any).control) ?
 					((target as any).control as HTMLInputElement) :
 				null;
 		if (control) {
 			control.focus();
-			view.requestRender();
+			handler[kMount].render();
 		}
 
 		// A second click on the same target within the double-click interval
@@ -1110,7 +1145,7 @@ function release(
 		) {
 			dispatchAsUserAgent(
 				target,
-				new view.window.MouseEvent("dblclick", {
+				new handler[kWindow].MouseEvent("dblclick", {
 					...eventInit,
 					buttons: 0,
 				}),
@@ -1132,14 +1167,13 @@ function release(
  * keypress a character-producing key owes -- and keyup.
  */
 function dispatchKey(handler: EventHandler, stroke: WireKey): void {
-	const view = handler[kView];
 	const {key: keyName, char, shiftKey, ctrlKey, altKey, metaKey} = stroke;
 	const keyCode = legacyKeyCode(keyName);
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
-	if (handler[kStyleManager].setFocusVisible(true)) {
-		handler[kStyleManager].handleFocusChange(view.document.activeElement);
-		view.requestRender();
+	if (handler[kMount].styles.setFocusVisible(true)) {
+		handler[kMount].styles.handleFocusChange(handler[kDocument].activeElement);
+		handler[kMount].render();
 	}
 
 	// Find the focused element. document.activeElement defaults to body when
@@ -1151,13 +1185,13 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// Fall back to it, before document.body, so keydown still lands on it --
 	// but prefer an explicitly focused descendant, an input inside the
 	// fullscreen element being the case that matters.
-	const active = view.document.activeElement;
+	const active = handler[kDocument].activeElement;
 	const targetElement =
-		active && active !== view.document.body ?
+		active && active !== handler[kDocument].body ?
 			active :
-			handler[kDefaults].fullscreenTarget() || view.document.body;
+			handler[kDocument].fullscreenElement || handler[kDocument].body;
 
-	const keydownEvent = new view.window.KeyboardEvent("keydown", {
+	const keydownEvent = new handler[kWindow].KeyboardEvent("keydown", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -1188,8 +1222,8 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// modal editor or a cancel affordance spends it. A fullscreen app exits
 	// by its own affordance or document.exitFullscreen().
 	if (keyName === "Escape") {
-		if (closeTopmost(view.document)) {
-			view.requestRender();
+		if (closeTopmost(handler[kDocument])) {
+			handler[kMount].render();
 			return;
 		}
 	}
@@ -1218,13 +1252,13 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 				// a link follows its href, exactly as a mouse click would.
 				dispatchAsUserAgent(
 					targetElement,
-					new view.window.PointerEvent("click", {
+					new handler[kWindow].PointerEvent("click", {
 						bubbles: true,
 						cancelable: true,
 						composed: true,
 					}),
 				);
-				view.requestRender();
+				handler[kMount].render();
 			}
 		}
 		// A select's editing (open/navigate/commit) is the select widget's
@@ -1238,7 +1272,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// character is the wire's answer; charCode is that character's own code.
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;
-		const keypressEvent = new view.window.KeyboardEvent("keypress", {
+		const keypressEvent = new handler[kWindow].KeyboardEvent("keypress", {
 			key: char,
 			code: domCodeFor(char),
 			keyCode: charCode,
@@ -1256,7 +1290,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 		}
 	}
 
-	const keyupEvent = new view.window.KeyboardEvent("keyup", {
+	const keyupEvent = new handler[kWindow].KeyboardEvent("keyup", {
 		key: keyName,
 		code: domCodeFor(keyName),
 		keyCode,
@@ -1290,10 +1324,9 @@ function insertText(
 	if (tag !== "INPUT" && tag !== "TEXTAREA") {
 		return;
 	}
-	const view = handler[kView];
 	dispatchAsUserAgent(
 		target,
-		new view.window.InputEvent("beforeinput", {
+		new handler[kWindow].InputEvent("beforeinput", {
 			inputType: "insertText",
 			data: text,
 			bubbles: true,
@@ -1304,17 +1337,16 @@ function insertText(
 
 /** Focus the next or previous focusable element. */
 function moveFocus(handler: EventHandler, reverse: boolean): void {
-	const view = handler[kView];
 	// A modal dialog makes the rest of the document inert, and the visible
 	// half of inertness is that Tab cannot leave the dialog: the sequential
 	// order is the dialog's own, and it wraps within it.
-	const scope = handler[kDefaults].modalScope() ?? view.document;
-	const entries = sequentialFocusEntries(scope, handler[kLayout]);
+	const scope = topmostModalDialog(handler[kDocument]) ?? handler[kDocument];
+	const entries = sequentialFocusEntries(scope, handler[kMount].layout);
 
 	// activeElement retargets to the shadow host at document scope; the
 	// walk needs the innermost focused element, so follow each root's own
 	// activeElement down.
-	let current = view.document.activeElement;
+	let current = handler[kDocument].activeElement;
 	while (current !== null) {
 		const shadow = getShadowRoot<ShadowRoot>(current);
 		const inner = shadow?.activeElement ?? null;
@@ -1449,7 +1481,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 	// :focus styling and the caret (the real terminal cursor, parked in the
 	// focused field) both need one to move.
-	view.requestRender();
+	handler[kMount].render();
 }
 
 /**
@@ -1466,8 +1498,8 @@ function textPositionAt(
 	x: number,
 	y: number,
 ): {node: Text; offset: number} | null {
-	const window = handler[kView].window;
-	const element = handler[kHitTest].elementAt(x, y);
+	const window = handler[kWindow];
+	const element = elementAtDocumentPoint(handler[kDocument], x, y);
 	if (
 		!element ||
 		element instanceof (window as any).HTMLInputElement ||
@@ -1475,7 +1507,7 @@ function textPositionAt(
 	) {
 		return null;
 	}
-	return handler[kLayout].caretPositionFromPoint(x, y, element);
+	return handler[kMount].layout.caretPositionFromPoint(x, y, element);
 }
 
 /** Whether the text at a caret position may enter the document selection. */
@@ -1484,5 +1516,5 @@ function selectable(
 	position: {node: Text; offset: number},
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
-	return parent === null || handler[kStyleManager].isSelectable(parent);
+	return parent === null || handler[kMount].styles.isSelectable(parent);
 }
