@@ -375,9 +375,9 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 
 const CACHE_SLOT_COUNT = 9;
 
-// One cache slot per query shape, after Taffy: one slot per query shape, so the probes
-// one pass makes of a child (min-content, max-content, fixed) never evict
-// each other.
+// One cache slot per query shape, after Taffy: one slot per query shape, so the
+// probes one pass makes of a child (min-content, max-content, fixed) never
+// evict each other.
 function getCacheSlot(
 	availableWidth: number,
 	availableHeight: number,
@@ -1114,9 +1114,9 @@ function constrainMaxSizeForMode(
 		mode.mode === "fit-content"
 	) {
 		// A max caps the size without making it indefinite. Downgrading
-		// `definite` to `fit-content` tells an empty box it is shrink-wrapped, and
-		// it collapses to zero instead of taking the size flex just resolved
-		// for it.
+		// `definite` to `fit-content` tells an empty box it is shrink-wrapped,
+		// and it collapses to zero instead of taking the size flex just
+		// resolved for it.
 		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
 	} else {
 		mode.value = max;
@@ -1586,9 +1586,9 @@ function layoutFlexbox(
 				getAxisMargin(child, cross, ownerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
-		// Only a definite cross size fills the line. An `fit-content` bound treated
-		// as definite becomes the container's content size, then its basis
-		// above.
+		// Only a definite cross size fills the line. An `fit-content` bound
+		// treated as definite becomes the container's content size, then its
+		// basis above.
 		if (!wrap && isDefined(innerCross) && crossSpace === "definite") {
 			lineCross = Math.max(lineCross, innerCross);
 		}
@@ -8812,11 +8812,11 @@ function collectLeaves(
 
 				// On a row flex item's main axis the flex engine owns the used
 				// width, and the requests carry that authority: an `definite`
-				// request is the resolved width, and an `fit-content` request below
-				// the CSS width is an intrinsic probe wanting the CONTENT's
-				// minimum, not the basis. Row flex items only. Elsewhere an
-				// `definite` request describes the container, and a
-				// definite-width inline-block in a narrow block overflows
+				// request is the resolved width, and an `fit-content` request
+				// below the CSS width is an intrinsic probe wanting the
+				// CONTENT's minimum, not the basis. Row flex items only.
+				// Elsewhere an `definite` request describes the container, and
+				// a definite-width inline-block in a narrow block overflows
 				// rather than re-wrapping.
 				let offerOwnsWidth = false;
 				if (
