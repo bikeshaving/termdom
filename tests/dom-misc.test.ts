@@ -6,20 +6,22 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {
+	createDocumentWindow,
 	type Document,
+	DOMParser,
 	HTMLElement,
-	parseHTMLDocument,
 	Window,
 } from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return parseHTMLDocument(
+	return new DOMParser().parseFromString(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,
-	);
+		"text/html",
+	) as unknown as Document;
 }
 
 const customElements = new Window(createHTMLDocument()).customElements;
@@ -119,12 +121,10 @@ test("attachInternals refuses with a NotSupportedError", () => {
 });
 
 test("a window's location takes the document's URL apart", () => {
-	const window = new Window(
-		parseHTMLDocument(
-			"<!doctype html>",
-			"https://example.com:8443/a/b?q=1#top",
-		),
-	);
+	const window = createDocumentWindow(
+		"<!doctype html>",
+		"https://example.com:8443/a/b?q=1#top",
+	) as any;
 	const location = window.location;
 	expect(location.href).toBe("https://example.com:8443/a/b?q=1#top");
 	expect(location.protocol).toBe("https:");
@@ -150,7 +150,7 @@ test("a window's location takes the document's URL apart", () => {
 });
 
 test("a location will not navigate, and an unmounted document has none", () => {
-	const window = new Window(parseHTMLDocument("<!doctype html>"));
+	const window = createDocumentWindow("<!doctype html>") as any;
 	const location = window.location;
 	expect(location.href).toBe("about:blank");
 

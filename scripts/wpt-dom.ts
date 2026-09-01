@@ -1070,7 +1070,8 @@ function installFramePages(
 		}
 		let document = loaded.get(frame);
 		if (document === undefined) {
-			document = dom.parseHTMLDocument(text, new URL(src!, url).href);
+			document = dom.createDocumentWindow(text, new URL(src!, url).href)
+				.document as unknown as Document;
 			// The frame's window, which the corpus reads its interfaces off
 			// (`doc.defaultView.NodeList`) the way the outer document reads
 			// them off the harness realm. One realm serves both, so the

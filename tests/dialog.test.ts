@@ -7,7 +7,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {parseHTMLDocument} from "../src/internal/dom.js";
+import {DOMParser} from "../src/internal/dom.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -251,9 +251,10 @@ test("close falls back to the body when the opener left the document", async () 
 });
 
 test("a headless document moves focus state through show and close", () => {
-	const document = parseHTMLDocument(
+	const document = new DOMParser().parseFromString(
 		"<!doctype html><button id=\"page\">page</button>" +
 		"<dialog><button id=\"ok\">OK</button></dialog>",
+		"text/html",
 	);
 	const dialog = (document as any).querySelector(
 		"dialog",

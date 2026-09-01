@@ -51,6 +51,59 @@ test("CSS specificity calculation", async () => {
 	termdom.dispose();
 });
 
+test("@namespace qualifies the type selectors a sheet writes", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	const SVG = "http://www.w3.org/2000/svg";
+
+	const style = document.createElement("style");
+	style.textContent = `
+    @namespace svg url(${SVG});
+    svg|circle { color: red; }
+    |circle { color: blue; }
+    *|rect { color: green; }
+    nope|rect { color: purple; }
+  `;
+	document.head.appendChild(style);
+	const circle = document.createElementNS(SVG, "circle");
+	const rect = document.createElementNS(SVG, "rect");
+	document.body.append(circle, rect);
+	await nextFrame(termdom);
+
+	const colorOf = (el: Element): string =>
+		termdom.window.getComputedStyle(el).getPropertyValue("color");
+	expect(colorOf(circle)).toBe("rgb(255, 0, 0)");
+	expect(colorOf(rect)).toBe("rgb(0, 128, 0)");
+
+	termdom.dispose();
+});
+
+test("a default @namespace keeps a typeless compound off other namespaces", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = `
+    @namespace url(http://www.w3.org/2000/svg);
+    .x { color: red; }
+  `;
+	document.head.appendChild(style);
+	const div = document.createElement("div");
+	div.className = "x";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	expect(
+		termdom.window.getComputedStyle(div).getPropertyValue("color"),
+	).not.toBe(
+		"rgb(255, 0, 0)",
+	);
+
+	termdom.dispose();
+});
+
 test("selector-list pseudo-classes weigh their most specific argument", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});

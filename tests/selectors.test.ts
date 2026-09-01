@@ -10,16 +10,11 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {
-	closestSelector,
+	createDocumentWindow,
 	type Document,
 	type Element,
-	matchesSelector,
 	type Node,
-	parseHTMLDocument,
 	parseSelectorList,
-	selectAll,
-	selectFirst,
-	SelectorError,
 	setDocumentFocusVisible,
 	setHoveredElement,
 } from "../src/internal/dom.js";
@@ -27,29 +22,29 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {
-	return parseHTMLDocument(html, url);
+	return createDocumentWindow(html, url).document as unknown as Document;
 }
 
 function ids(html: string, selector: string): string[] {
 	const document = tree(html);
-	return selectAll(document, selector).map(
+	return Array.from(document.querySelectorAll(selector)).map(
 		(element) => element.getAttribute("id") ?? "",
 	);
 }
 
 /** The ids a selector finds under a root, in tree order. */
 function found(root: Node, selector: string): string[] {
-	return selectAll(root, selector).map(
-		(element) => element.getAttribute("id") ?? "",
-	);
+	return Array.from(
+		(root as unknown as ParentNode).querySelectorAll(selector),
+	).map((element) => element.getAttribute("id") ?? "");
 }
 
 function find(root: Node, id: string): Element {
-	const found = selectFirst(root, `#${id}`);
+	const found = (root as unknown as ParentNode).querySelector(`#${id}`);
 	if (found === null) {
 		throw new Error(`no #${id} in the fixture`);
 	}
-	return found;
+	return found as unknown as Element;
 }
 
 /* ------------------------------------------------------------------ grammar */
@@ -74,7 +69,7 @@ test("a selector this engine cannot read is a SyntaxError, not a miss", () => {
 		"^|div",
 		">*",
 	]) {
-		expect(() => selectAll(document, selector)).toThrow(SelectorError);
+		expect(() => document.querySelectorAll(selector)).toThrow(DOMException);
 	}
 });
 
@@ -113,7 +108,9 @@ test(":is drops the branches it cannot read and keeps the rest", () => {
 
 test(":not is not forgiving", () => {
 	const document = tree("<p></p>");
-	expect(() => selectAll(document, ":not(p, :garbage)")).toThrow(SelectorError);
+	expect(() => document.querySelectorAll(":not(p, :garbage)")).toThrow(
+		DOMException,
+	);
 });
 
 test("a selector is compiled once and answers the same twice", () => {
@@ -131,37 +128,8 @@ test("a type selector folds case for HTML and keeps it for everything else", () 
 		"feGaussianBlur",
 	) as unknown as Element;
 	find(document, "host").appendChild(svg);
-	expect(matchesSelector(svg, "feGaussianBlur")).toBe(true);
-	expect(matchesSelector(svg, "fegaussianblur")).toBe(false);
-});
-
-test("a namespace prefix is only as good as its declaration", () => {
-	const namespaces = {
-		default: null,
-		prefixes: new Map([["svg", "http://www.w3.org/2000/svg"]]),
-	};
-	const document = tree("<div id=a></div>");
-	const svg = document.createElementNS(
-		"http://www.w3.org/2000/svg",
-		"circle",
-	) as unknown as Element;
-	find(document, "a").appendChild(svg);
-	expect(matchesSelector(svg, "svg|circle", {namespaces})).toBe(true);
-	expect(matchesSelector(svg, "*|circle", {namespaces})).toBe(true);
-	expect(matchesSelector(svg, "|circle", {namespaces})).toBe(false);
-	expect(() => matchesSelector(svg, "nope|circle", {namespaces})).toThrow(
-		SelectorError,
-	);
-});
-
-test("a default namespace qualifies a compound that names no type", () => {
-	const namespaces = {
-		default: "http://www.w3.org/2000/svg",
-		prefixes: new Map(),
-	};
-	const document = tree("<div id=a class=x></div>");
-	expect(matchesSelector(find(document, "a"), ".x", {namespaces})).toBe(false);
-	expect(matchesSelector(find(document, "a"), ".x")).toBe(true);
+	expect(svg.matches("feGaussianBlur")).toBe(true);
+	expect(svg.matches("fegaussianblur")).toBe(false);
 });
 
 test("class and id fold case only in quirks mode", () => {
@@ -207,7 +175,9 @@ test("the flags say what case sensitivity the value is compared with", () => {
 });
 
 test("an attribute flag this engine does not know is a SyntaxError", () => {
-	expect(() => selectAll(tree("<p>"), "[title=x q]")).toThrow(SelectorError);
+	expect(() => tree("<p>").querySelectorAll("[title=x q]")).toThrow(
+		DOMException,
+	);
 });
 
 /* --------------------------------------------------------------- combinators */
@@ -246,8 +216,8 @@ test("a deep tree costs no stack", () => {
 		node.appendChild(child);
 		node = child;
 	}
-	expect(selectAll(document, ".deep").length).toBe(1);
-	expect(selectAll(document, "#top:has(.deep)").length).toBe(1);
+	expect(document.querySelectorAll(".deep").length).toBe(1);
+	expect(document.querySelectorAll("#top:has(.deep)").length).toBe(1);
 });
 
 test("results come back in tree order, once each", () => {
@@ -294,7 +264,7 @@ test(":empty counts text but not comments", () => {
 
 test(":root is the element the document hangs from", () => {
 	expect(ids("<p id=a>", ":root")).toEqual([""]);
-	expect(matchesSelector(find(tree("<p id=a>"), "a"), ":root")).toBe(false);
+	expect(find(tree("<p id=a>"), "a").matches(":root")).toBe(false);
 });
 
 /* -------------------------------------------------------------------- :has */
@@ -321,20 +291,17 @@ test(":has reaches down, across and no further than it should", () => {
 test(":has nests, and :scope inside it still names the query's root", () => {
 	const document = tree(HAS);
 	expect(ids(HAS, "ul:has(li:has(b))")).toEqual(["list"]);
-	expect(
-		matchesSelector(find(document, "list"), "ul:has(> :scope)", {
-			scope: find(document, "l2"),
-		}),
-	).toBe(true);
-	expect(
-		matchesSelector(find(document, "list"), "ul:has(> :scope)", {
-			scope: find(document, "deep"),
-		}),
-	).toBe(false);
+	const list = find(document, "list");
+	const l2 = find(document, "l2");
+	const deep = find(document, "deep");
+	expect(l2.closest("ul:has(> :scope)")).toBe(list);
+	expect(deep.closest("ul:has(> :scope)")).toBe(null);
 });
 
 test(":has takes no unreadable branch", () => {
-	expect(() => selectAll(tree(HAS), "li:has(:garbage)")).toThrow(SelectorError);
+	expect(() => tree(HAS).querySelectorAll("li:has(:garbage)")).toThrow(
+		DOMException,
+	);
 });
 
 /* ------------------------------------------------------------------- :scope */
@@ -342,37 +309,28 @@ test(":has takes no unreadable branch", () => {
 test(":scope names what each entry point scopes to", () => {
 	const document = tree(NTH);
 	const list = find(document, "list");
+	const l1 = find(document, "l1");
 	// The census's fifth defect: an element matches `:scope` against itself.
-	expect(matchesSelector(list, ":scope", {scope: list})).toBe(true);
-	expect(matchesSelector(list, ":scope li", {scope: list})).toBe(false);
-	expect(
-		matchesSelector(find(document, "l1"), ":scope > li", {scope: list}),
-	).toBe(true);
-	expect(
-		closestSelector(find(document, "l1"), "ul > :scope", {
-			scope: find(document, "l1"),
-		}),
-	).toBe(find(document, "l1"));
+	expect(list.matches(":scope")).toBe(true);
+	expect(list.matches(":scope li")).toBe(false);
+	expect(list.querySelector(":scope > li")).toBe(l1);
+	expect(l1.closest("ul > :scope")).toBe(l1);
 });
 
 test("a relative selector hangs from the root it is scoped to", () => {
 	const document = tree(NTH);
 	const list = find(document, "list");
+	const l1 = find(document, "l1");
 	expect(
-		selectAll(document, "> li", {scope: list, relative: true}).map(
-			(element) => element.getAttribute("id"),
+		Array.from(list.querySelectorAll(":scope > li")).map((element) =>
+			(element as Element).getAttribute("id"),
 		),
 	).toEqual(["l1", "l2", "l3", "l4", "l5"]);
-	expect(
-		selectAll(document, "> li", {
-			scope: find(document, "l1"),
-			relative: true,
-		}),
-	).toEqual([]);
-	expect(() => selectAll(document, "> li")).toThrow(SelectorError);
+	expect(Array.from(l1.querySelectorAll(":scope > li"))).toEqual([]);
+	expect(() => document.querySelectorAll("> li")).toThrow(DOMException);
 });
 
-/* ---------------------------------------------------------------- languages */
+/* ------------------------------------------------------------------ languages */
 
 test(":lang filters by RFC 4647 extended matching", () => {
 	const html = `
@@ -488,7 +446,8 @@ test("the states the document holds answer their pseudo-classes", async () => {
 	);
 	await nextFrame(dom);
 	const body = document.body as unknown as Node;
-	const byId = (id: string) => selectFirst(body, `#${id}`)!;
+	const byId = (id: string) =>
+		(body as unknown as ParentNode).querySelector(`#${id}`)!;
 
 	setHoveredElement(document, byId("hovered") as unknown as globalThis.Element);
 	expect(found(body, ":hover")).toEqual(["hovered"]);
@@ -543,41 +502,6 @@ test(":link is a hyperlink, and :visited is nothing at all", () => {
 	expect(ids(html, ":link")).toEqual(["a", "d"]);
 	expect(ids(html, ":any-link")).toEqual(["a", "d"]);
 	expect(ids(html, ":visited")).toEqual([]);
-});
-
-/* ---------------------------------------------------------------- tree scope */
-
-test(":host names the host of the tree the selector was written in", () => {
-	const document = tree("<div id=host></div><div id=other></div>");
-	const host = find(document, "host");
-	const shadow = host.attachShadow({mode: "open"}) as unknown as Node;
-	const options = {shadow};
-	expect(matchesSelector(host, ":host", options)).toBe(true);
-	expect(matchesSelector(find(document, "other"), ":host", options)).toBe(
-		false,
-	);
-	expect(matchesSelector(host, ":host")).toBe(false);
-	expect(matchesSelector(host, ":host(div)", options)).toBe(true);
-	expect(matchesSelector(host, ":host(span)", options)).toBe(false);
-	expect(matchesSelector(host, ":host-context(body)", options)).toBe(true);
-	expect(matchesSelector(host, ":host-context(table)", options)).toBe(false);
-});
-
-test("::part and ::slotted select through the boundary, and only for the cascade", () => {
-	const document = tree("<div id=host><span id=light></span></div>");
-	const host = find(document, "host");
-	const light = find(document, "light");
-	const shadow = host.attachShadow({mode: "open"});
-	shadow.innerHTML = "<b id=inner part=knob><slot></slot></b>";
-	const inner = find(shadow as unknown as Node, "inner");
-	const options = {pseudoElements: true};
-	expect(matchesSelector(inner, "#host::part(knob)", options)).toBe(true);
-	expect(matchesSelector(inner, "#host::part(other)", options)).toBe(false);
-	expect(matchesSelector(light, "::slotted(span)", options)).toBe(true);
-	expect(matchesSelector(light, "::slotted(b)", options)).toBe(false);
-	// A query over the tree never selects a pseudo-element.
-	expect(matchesSelector(light, "::slotted(span)")).toBe(false);
-	expect(matchesSelector(light, "span::before")).toBe(false);
 });
 
 /* ------------------------------------------------------------- shared parsing */

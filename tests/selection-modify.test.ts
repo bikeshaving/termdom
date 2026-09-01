@@ -7,16 +7,17 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {type Document, parseHTMLDocument, Window} from "../src/internal/dom.js";
+import {type Document, DOMParser, Window} from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return parseHTMLDocument(
+	return new DOMParser().parseFromString(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,
-	);
+		"text/html",
+	) as unknown as Document;
 }
 
 import {TermDOM} from "../src/internal/termdom.js";

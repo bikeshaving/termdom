@@ -10,16 +10,16 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {type Document, parseHTMLDocument} from "../src/internal/dom.js";
+import {createDocumentWindow, type Document} from "../src/internal/dom.js";
 
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return parseHTMLDocument(
+	return createDocumentWindow(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,
-	);
+	).document as unknown as Document;
 }
 
 /**
@@ -153,7 +153,7 @@ test("a whole document round-trips through the parser to a fixpoint", () => {
 		'<p title="&quot;q&quot;">t &lt; u</p><br><img alt="&amp;">',
 		"</body></html>",
 	].join("");
-	const once = parseHTMLDocument(source).documentElement!.outerHTML;
-	const twice = parseHTMLDocument(once).documentElement!.outerHTML;
+	const once = createDocumentWindow(source).document.documentElement!.outerHTML;
+	const twice = createDocumentWindow(once).document.documentElement!.outerHTML;
 	expect(twice).toBe(once);
 });

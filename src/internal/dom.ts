@@ -27216,7 +27216,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
  * realm's registry, and every document an author builds carries none until a
  * registry claims it, exactly as a document with no browsing context does.
  */
-export function parseHTMLDocument(
+function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
@@ -32070,7 +32070,7 @@ export function selectAllCompiled(
 }
 
 /** Whether an element matches a selector, which is what `matches()` asks. */
-export function matchesSelector(
+function matchesSelector(
 	element: Element,
 	text: string,
 	options: QueryOptions = {},
@@ -32079,7 +32079,7 @@ export function matchesSelector(
 }
 
 /** Every element under a root that a selector selects, in tree order. */
-export function selectAll(
+function selectAll(
 	root: Node,
 	text: string,
 	options: QueryOptions = {},
@@ -32088,7 +32088,7 @@ export function selectAll(
 }
 
 /** The first element under a root that a selector selects, in tree order. */
-export function selectFirst(
+function selectFirst(
 	root: Node,
 	text: string,
 	options: QueryOptions = {},
@@ -32107,7 +32107,7 @@ export function selectFirst(
 }
 
 /** The nearest inclusive ancestor of an element that a selector selects. */
-export function closestSelector(
+function closestSelector(
 	element: Element,
 	text: string,
 	options: QueryOptions = {},

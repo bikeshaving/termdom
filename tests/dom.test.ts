@@ -10,6 +10,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {
+	createDocumentWindow,
 	type Document,
 	CustomEvent as DOMCustomEvent,
 	Event as DOMEvent,
@@ -17,7 +18,6 @@ import {
 	HTMLElement,
 	MutationObserver,
 	NodeFilter,
-	parseHTMLDocument,
 	Text,
 	Window,
 } from "../src/internal/dom.js";
@@ -25,11 +25,11 @@ import {
 // The door a test document comes through. The parser is the one that hands
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
-	return parseHTMLDocument(
+	return createDocumentWindow(
 		title === undefined
 			? "<!doctype html>"
 			: `<!doctype html><title>${title}</title>`,
-	);
+	).document as unknown as Document;
 }
 
 const customElements = new Window(createHTMLDocument()).customElements;
@@ -468,8 +468,8 @@ test("raw text children are not escaped", () => {
 });
 
 test("the parser puts a document in quirks mode without a doctype", () => {
-	const noQuirks = parseHTMLDocument("<!doctype html><p>x");
-	const quirks = parseHTMLDocument("<p>x");
+	const noQuirks = createDocumentWindow("<!doctype html><p>x").document;
+	const quirks = createDocumentWindow("<p>x").document;
 	expect(noQuirks.compatMode).toBe("CSS1Compat");
 	expect(quirks.compatMode).toBe("BackCompat");
 });
@@ -1683,9 +1683,9 @@ test("a disabled fieldset disables what its legend does not hold", () => {
 /* -------------------------------------------------------- template content */
 
 test("a template's children are parsed into its content, not into the tree", () => {
-	const document = parseHTMLDocument(
+	const document = createDocumentWindow(
 		"<body><template><div id=inside>text</div></template></body>",
-	) as any;
+	).document as any;
 	const template = document.querySelector("template");
 	expect(template.childNodes.length).toBe(0);
 	expect(template.content.childNodes.length).toBe(1);
@@ -1842,7 +1842,10 @@ test("a value that is not an object is null, per the callback's legacy rule", ()
 });
 
 test("a body's window handlers are its window's, and are dropped without one", () => {
-	const document = make();
+	const document = new DOMParser().parseFromString(
+		"<!doctype html><title></title>",
+		"text/html",
+	) as any;
 	const body = document.body as any;
 	// The set that forwards; the rest of the mixin stays the element's own.
 	expect("onload" in body).toBe(true);
