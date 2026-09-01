@@ -10,8 +10,9 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function render(html: string, cols = 40, rows = 8): Promise<
 	{dom: TermDOM; terminal: MockProcess; lines: () => string[]}

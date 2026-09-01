@@ -9,6 +9,7 @@
  * host of one's own is a tree one is inside.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {
 	type Document,
 	FocusEvent,

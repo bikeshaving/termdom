@@ -1,8 +1,10 @@
-import {expect, test} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
-import {transportFromProcess} from "../src/internal/exchange.js";
-import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
+
+import {expect, test} from "@b9g/libuild/test";
+
+import {transportFromProcess} from "../src/internal/exchange.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {nextFrame} from "./test-utils.js";
 
 // A TTY-shaped process that records everything written to stdout, so tests
 // can assert on the escape sequences that enable and disable motion

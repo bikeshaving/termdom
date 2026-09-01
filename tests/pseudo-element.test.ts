@@ -1,8 +1,9 @@
 import {expect, test} from "@b9g/libuild/test";
+
+import {pseudoElement} from "../src/internal/dom.js";
+import {flowWalker} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {flowWalker} from "../src/internal/layout.js";
-import {pseudoElement} from "../src/internal/dom.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();

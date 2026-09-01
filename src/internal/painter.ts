@@ -8,6 +8,14 @@
  * its in-flow children, and renderText draws the runs inside it.
  */
 import {
+	cssColorToNumber,
+	getBoxModel,
+	getComputedValue,
+	isTransparentColor,
+	resolveBorderSides,
+	type StyleManager,
+} from "./cssom.js";
+import {
 	type EngineWindow,
 	fieldSelectionRange,
 	fieldValueText,
@@ -22,14 +30,6 @@ import {
 	type LayoutEngine,
 	renderTextFragment,
 } from "./layout.js";
-import {
-	cssColorToNumber,
-	getBoxModel,
-	getComputedValue,
-	isTransparentColor,
-	resolveBorderSides,
-	type StyleManager,
-} from "./cssom.js";
 import type {CellContext, CellStyle, LineStyle} from "./screen.js";
 
 /**

@@ -20,8 +20,10 @@
  *
  * SCAN=600 WANT=20 npx libuild test fuzz -p node
  */
-import {test} from "@b9g/libuild/test";
 import {mkdirSync, writeFileSync} from "fs";
+
+import {test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 

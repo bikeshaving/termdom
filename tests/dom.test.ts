@@ -8,6 +8,7 @@
  * normally be needed to set up.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {
 	type Document,
 	CustomEvent as DOMCustomEvent,

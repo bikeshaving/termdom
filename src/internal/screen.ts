@@ -14,13 +14,13 @@
  * the writer, the cell encoding, the box-drawing glyphs, the grid, the draw
  * calls, and the emission.
  */
+import type {ColorDepth, TerminalExchange} from "./exchange.js";
 import {
 	graphemeSegmenter,
 	PRINTABLE_ASCII,
 	stringWidth,
 	widthIsUncertain,
 } from "./text.js";
-import type {ColorDepth, TerminalExchange} from "./exchange.js";
 
 export type {ColorDepth};
 

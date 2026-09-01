@@ -25,9 +25,21 @@
  * cascade and the layout engine sit beside this file, each importing the
  * other, and none of the three touches another while its body runs.
  */
-import * as Parse5 from "parse5";
-import * as CSSTree from "css-tree";
 import bidiFactory from "bidi-js";
+import * as CSSTree from "css-tree";
+import * as Parse5 from "parse5";
+
+import {
+	adoptedStyleSheetsOf,
+	adoptStyleSheets,
+	inlineStyleOf,
+	styleAttributeChanged,
+	styleElementSheet,
+	type StyleManager,
+	styleShadowAttached,
+	styleSheetsOf,
+} from "./cssom.js";
+import type {TerminalExchange} from "./exchange.js";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
@@ -42,6 +54,8 @@ import {
 	type ReflectSpec,
 	WINDOW_EVENT_HANDLERS,
 } from "./htmltables.js";
+import type {LayoutEngine} from "./layout.js";
+import type {Screen} from "./screen.js";
 import {
 	asciiLowercase,
 	nextGraphemeBoundary,
@@ -56,19 +70,6 @@ import {
 	SELECT_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
-import type {LayoutEngine} from "./layout.js";
-import {
-	adoptedStyleSheetsOf,
-	adoptStyleSheets,
-	inlineStyleOf,
-	styleAttributeChanged,
-	styleElementSheet,
-	type StyleManager,
-	styleShadowAttached,
-	styleSheetsOf,
-} from "./cssom.js";
-import type {TerminalExchange} from "./exchange.js";
-import type {Screen} from "./screen.js";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";

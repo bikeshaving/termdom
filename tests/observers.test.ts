@@ -5,6 +5,7 @@
  * drive real renders and assert the callbacks fire with the right values.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

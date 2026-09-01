@@ -6,6 +6,7 @@
  * of the same tree renders, and each case below asserts exactly that.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

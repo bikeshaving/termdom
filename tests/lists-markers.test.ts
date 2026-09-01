@@ -12,6 +12,7 @@
  * the marker sits immediately before it, separated by exactly one cell.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {stripControlCodes} from "./test-utils.js";

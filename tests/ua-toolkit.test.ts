@@ -3,8 +3,9 @@
  * the DOM API gives an author no way to do.
  */
 import {expect, test} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+
 import {getShadowRoot, mount, selectionRecordOf} from "../src/internal/dom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("a document takes one engine and refuses a second", async () => {

@@ -12,6 +12,7 @@
  */
 import arabicPersianReshaper from "arabic-persian-reshaper";
 import bidiFactory from "bidi-js";
+
 import {
 	UNCERTAIN_RANGES,
 	WIDE_RANGES,

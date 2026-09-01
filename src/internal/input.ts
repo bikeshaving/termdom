@@ -27,6 +27,7 @@
  * the functions below the class.
  */
 
+import {getComputedValue} from "./cssom.js";
 import {
 	closeTopmost,
 	dispatchAsUserAgent,
@@ -46,9 +47,8 @@ import {
 	setUASelection,
 	topmostModalDialog,
 } from "./dom.js";
-import type {LayoutEngine} from "./layout.js";
 import type {WireKey} from "./exchange.js";
-import {getComputedValue} from "./cssom.js";
+import type {LayoutEngine} from "./layout.js";
 
 /* -------------------------------------------------- what a wire item means */
 

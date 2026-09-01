@@ -15,6 +15,7 @@
  * one.
  */
 import fc from "fast-check";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 

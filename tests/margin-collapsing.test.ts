@@ -7,8 +7,9 @@
  * conditions that stop a collapse (border, padding, a BFC, a flex parent).
  */
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function rectOf(_dom: TermDOM, el: Element): DOMRect {
 	return (el as HTMLElement).getBoundingClientRect();

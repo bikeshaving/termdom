@@ -8,8 +8,9 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("renders single emoji correctly", async () => {
 	const terminal = new MockProcess();

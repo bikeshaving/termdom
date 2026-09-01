@@ -8,6 +8,7 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
+
 import {
 	closestSelector,
 	type Document,

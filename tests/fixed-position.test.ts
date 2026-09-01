@@ -6,8 +6,9 @@
  * hoist to the terminal-sized viewport root, not the document root.
  */
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function makeTallDoc(dom: TermDOM): void {
 	dom.document.body.innerHTML =

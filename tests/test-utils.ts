@@ -3,6 +3,10 @@
  * TermDOM through, and the helpers that read a frame back off it.
  */
 
+import {EventEmitter} from "events";
+
+import xtermPkg from "@xterm/headless";
+
 import {
 	type ProcessLike,
 	transportFromProcess,
@@ -10,8 +14,6 @@ import {
 	type TTYWriteStream,
 } from "../src/internal/exchange.js";
 import type {TerminalTransport} from "../src/internal/exchange.js";
-import {EventEmitter} from "events";
-import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
 import {type ColorDepth, Screen} from "../src/internal/screen.js";

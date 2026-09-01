@@ -18,6 +18,7 @@
  */
 import {test} from "@b9g/libuild/test";
 import fc from "fast-check";
+
 import {
 	frameOf,
 	play,

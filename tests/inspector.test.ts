@@ -1,7 +1,10 @@
-import {expect, test} from "@b9g/libuild/test";
-import {inspect} from "node:util";
-import {createDocumentWindow, type Element} from "../src/internal/dom.js";
 import "../src/internal/inspector.js";
+
+import {inspect} from "node:util";
+
+import {expect, test} from "@b9g/libuild/test";
+
+import {createDocumentWindow, type Element} from "../src/internal/dom.js";
 
 function asElement(value: unknown): Element {
 	return value as Element;

@@ -1,11 +1,12 @@
 import {expect, test} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+
 import {
 	getPseudoHost,
 	getPseudoName,
 	pseudoElement,
 } from "../src/internal/dom.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();

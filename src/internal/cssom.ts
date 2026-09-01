@@ -21,7 +21,16 @@
  * the grid values the solver takes already parsed.
  */
 
-import {LINE_STYLES, type LineStyle} from "./screen.js";
+import * as CSSTree from "css-tree";
+
+import {
+	CSS_AT_RULE_DESCRIPTORS,
+	CSS_INITIAL_VALUES,
+	CSS_LONGHANDS,
+	CSS_PROPERTIES,
+	CSS_RESET_ONLY_LONGHANDS,
+	CSS_SHORTHANDS,
+} from "../generated/cssproperties.js";
 import {
 	clearPseudoElement,
 	type CompiledSelector,
@@ -54,18 +63,10 @@ import {
 	styleElementCount,
 	TransitionEvent,
 } from "./dom.js";
-import * as CSSTree from "css-tree";
-import {stringWidth} from "./text.js";
-import type {LayoutEngine} from "./layout.js";
 import type * as SolverTypes from "./layout.js";
-import {
-	CSS_AT_RULE_DESCRIPTORS,
-	CSS_INITIAL_VALUES,
-	CSS_LONGHANDS,
-	CSS_PROPERTIES,
-	CSS_RESET_ONLY_LONGHANDS,
-	CSS_SHORTHANDS,
-} from "../generated/cssproperties.js";
+import type {LayoutEngine} from "./layout.js";
+import {LINE_STYLES, type LineStyle} from "./screen.js";
+import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
 // ---------------------------------------------------------------------------

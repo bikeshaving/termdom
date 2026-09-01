@@ -15,16 +15,17 @@
  */
 
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
-import {createContext, runInContext} from "node:vm";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
+import {createContext, runInContext} from "node:vm";
+
 import {getBoxModel, MediaList, StyleManager} from "../src/internal/cssom.ts";
-import {LayoutEngine} from "../src/internal/layout.ts";
 import {
 	createDocumentWindow,
 	type EngineWindow,
 	mount,
 } from "../src/internal/dom.ts";
+import {LayoutEngine} from "../src/internal/layout.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");

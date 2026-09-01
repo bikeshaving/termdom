@@ -4,6 +4,7 @@
  * member throws.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {
 	type Document,
 	HTMLElement,

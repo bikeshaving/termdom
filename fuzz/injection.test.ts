@@ -17,8 +17,9 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 import fc from "fast-check";
-import {MockProcess, nextFrame} from "../tests/test-utils.js";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 100);
 const SEED = Number(process.env.FC_SEED ?? 1);

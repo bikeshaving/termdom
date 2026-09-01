@@ -10,6 +10,7 @@
  */
 
 import {writeFileSync} from "node:fs";
+
 import {widthIsUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,

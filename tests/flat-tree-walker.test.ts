@@ -1,6 +1,5 @@
 import {expect, test} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
+
 import {
 	createDocumentWindow,
 	ensurePseudoElement,
@@ -9,6 +8,8 @@ import {
 	pseudoElement,
 } from "../src/internal/dom.js";
 import {flowWalker} from "../src/internal/layout.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 
 /**
  * A document of this DOM, from markup, displayed in a window of its own, with

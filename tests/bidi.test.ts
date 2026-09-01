@@ -9,13 +9,14 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
 	toVisualOrder,
 } from "../src/internal/text.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 const HEBREW = "שלום";
 const HEBREW_VISUAL = [...HEBREW].reverse().join("");

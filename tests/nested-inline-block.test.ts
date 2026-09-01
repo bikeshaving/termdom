@@ -4,11 +4,12 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+
 import {StyleManager} from "../src/internal/cssom.js";
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 /**
  * The breaker under test, over a document of the test's own: build the

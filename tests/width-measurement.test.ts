@@ -12,11 +12,12 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
-import {TermDOM} from "../src/internal/termdom.js";
-import {Screen} from "../src/internal/screen.js";
+
 import type {TerminalExchange} from "../src/internal/exchange.js";
+import {Screen} from "../src/internal/screen.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {recordClusterAdvance, stringWidth} from "../src/internal/text.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(starved = new Set<string>()): {

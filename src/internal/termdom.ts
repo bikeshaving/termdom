@@ -8,16 +8,16 @@
  * are written to.
  */
 
-import * as DOM from "./dom.js";
 import "./inspector.js";
+
+import {getBoxModel, StyleManager} from "./cssom.js";
+import * as DOM from "./dom.js";
 import {
 	createDocumentWindow,
 	disconnectObservers,
 	type EngineWindow,
 	flushObservers,
 } from "./dom.js";
-import {LayoutEngine} from "./layout.js";
-import {Painter} from "./painter.js";
 import {
 	type TerminalCloseInfo,
 	TerminalExchange,
@@ -25,9 +25,10 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "./exchange.js";
-import {Screen} from "./screen.js";
-import {getBoxModel, StyleManager} from "./cssom.js";
 import {EventHandler} from "./input.js";
+import {LayoutEngine} from "./layout.js";
+import {Painter} from "./painter.js";
+import {Screen} from "./screen.js";
 
 export interface TermDOMOptions {
 

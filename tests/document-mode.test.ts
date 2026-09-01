@@ -20,6 +20,7 @@
  * document stays a single mutable thing that we repaint a window of.
  */
 import {expect, test} from "@b9g/libuild/test";
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

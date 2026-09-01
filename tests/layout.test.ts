@@ -1,11 +1,12 @@
 import {describe, expect, test} from "@b9g/libuild/test";
+
+import {StyleManager} from "../src/internal/cssom.js";
+import {createDocumentWindow} from "../src/internal/dom.js";
 import {
 	LayoutEngine,
 } from "../src/internal/layout.js";
-import {StyleManager} from "../src/internal/cssom.js";
 import {renderTextFragment} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
-import {createDocumentWindow} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /**

@@ -26,7 +26,9 @@
 
 import {readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
+
 import properties from "mdn-data/css/properties.json" with {type: "json"};
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 

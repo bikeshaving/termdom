@@ -12,13 +12,7 @@
  * where to start reading.
  */
 import LineBreaker from "linebreak";
-import {
-	hasRTL,
-	inferParagraphDirection,
-	stringWidth,
-	toVisualOrder,
-	writeClusterWidths,
-} from "./text.js";
+
 import {
 	type BoxModel,
 	getBoxModel,
@@ -46,6 +40,13 @@ import {
 	SHOW_FLAT,
 	TreeWalker,
 } from "./dom.js";
+import {
+	hasRTL,
+	inferParagraphDirection,
+	stringWidth,
+	toVisualOrder,
+	writeClusterWidths,
+} from "./text.js";
 
 // ---------------------------------------------------------------------------
 // The vocabulary boxes are sized and placed in

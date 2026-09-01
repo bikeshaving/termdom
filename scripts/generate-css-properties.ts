@@ -10,9 +10,9 @@
  * Run: node --experimental-strip-types scripts/generate-css-properties.ts
  */
 
-import {createRequire} from "node:module";
 import {execFileSync} from "node:child_process";
 import {writeFileSync} from "node:fs";
+import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 
 const require = createRequire(import.meta.url);

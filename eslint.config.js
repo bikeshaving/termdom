@@ -1,4 +1,5 @@
 import b9g from "@b9g/eslint-config";
+
 import termdom from "./eslint.rules.js";
 
 export default [
@@ -36,6 +37,7 @@ export default [
 			"termdom/member-visibility-order": "error",
 			"termdom/helper-below-class": "error",
 			"termdom/symbol-before-use": "error",
+			"termdom/import-order": "error",
 			// The names inside one import's braces read in a fixed order; the
 			// imports themselves stay in the order they were written.
 			"sort-imports": [

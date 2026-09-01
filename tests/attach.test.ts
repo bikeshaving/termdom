@@ -5,8 +5,9 @@
  * the document already holds; mutations after it render normally.
  */
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;

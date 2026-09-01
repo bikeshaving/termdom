@@ -13,8 +13,9 @@
  * `-u` cannot quietly bless a regression on its own.
  */
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("a grid places its items on the tracks it declares", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});

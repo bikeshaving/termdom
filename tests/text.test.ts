@@ -1,5 +1,7 @@
-import {describe, expect, test} from "@b9g/libuild/test";
 import {readFileSync} from "node:fs";
+
+import {describe, expect, test} from "@b9g/libuild/test";
+
 import {stringWidth, widthIsUncertain} from "../src/internal/text.js";
 import {
 	ORACLE_CASES,

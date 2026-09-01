@@ -24,8 +24,9 @@
  * `FC_NUM_RUNS=500` widens the search, `FC_SEED=...` replays one.
  */
 import {test} from "@b9g/libuild/test";
-import fc from "fast-check";
 import {expect} from "@b9g/libuild/test";
+import fc from "fast-check";
+
 import {documentArbitrary, makeDOM, type Scene, settle} from "./scenes.js";
 
 type Document = {html: string; tokens: string[]};

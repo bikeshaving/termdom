@@ -19,9 +19,9 @@
  * nothing above transportFromProcess names Node.
  */
 
-import {recordClusterAdvance} from "./text.js";
 import {dispatchAsUserAgent, getMount, refreshMediaQueries} from "./dom.js";
 import type {EventHandler} from "./input.js";
+import {recordClusterAdvance} from "./text.js";
 
 /* -------------------------------------------------- the transport contract */
 

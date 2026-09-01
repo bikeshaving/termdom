@@ -6,8 +6,9 @@
  */
 
 import {expect, test} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+
 import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils";
 
 test("flexbox-demo layout renders correctly", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 24});
