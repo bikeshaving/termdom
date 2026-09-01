@@ -3330,15 +3330,6 @@ const PlatformAbortSignal = (
 	globalThis as unknown as {AbortSignal?: new () => ListenerSignal}
 ).AbortSignal;
 
-interface FlatOptions {
-	capture: boolean;
-	once: boolean;
-
-	/** Null until the type and target decide, which is what the spec defers. */
-	passive: boolean | null;
-	signal: ListenerSignal | null;
-}
-
 const kHandlers = Symbol("handlers");
 const kListeners = Symbol("event listener list");
 const kGetTheParent = Symbol("get the parent");
@@ -3460,7 +3451,14 @@ class EventTarget implements globalThis.EventTarget {
 
 function flattenMore(
 	options: boolean | AddEventListenerOptions | undefined,
-): FlatOptions {
+): {
+	capture: boolean;
+	once: boolean;
+
+	/** Null until the type and target decide, which is what the spec defers. */
+	passive: boolean | null;
+	signal: ListenerSignal | null;
+} {
 	if (
 		options !== null &&
 		options !== undefined &&
@@ -20772,7 +20770,6 @@ interface ContentBox {
 const kTargets = Symbol("targets");
 const kHomes = Symbol("homes");
 const kMeasure = Symbol("measure");
-const kDeliver = Symbol("deliver");
 const kObserverCallback = Symbol("observer callback");
 
 /**
@@ -20833,6 +20830,9 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	/** The documents running this observer, one per document it has a target in. */
 	[kHomes]: Set<object>;
 
+	/** The author's callback: what a pass measured, and the observer that ran it. */
+	declare [kObserverCallback]: (entries: TEntry[], observer: this) => void;
+
 	constructor() {
 		this[kTargets] = new Map<
 			globalThis.Element,
@@ -20889,8 +20889,6 @@ abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 		frame: number,
 		options: TOptions | undefined,
 	): {state: TState; entry: TEntry} | null;
-
-	abstract [kDeliver](entries: TEntry[]): void;
 }
 
 function getObservers(document: globalThis.Document): Set<AnyObserver> {
@@ -20925,7 +20923,7 @@ function checkObserver<TState, TEntry, TOptions = void>(
 		entries.push(result.entry);
 	}
 	if (entries.length > 0) {
-		observer[kDeliver](entries);
+		observer[kObserverCallback](entries, observer);
 	}
 }
 
@@ -20970,8 +20968,6 @@ class ResizeObserver extends LayoutObserver<
 	ResizeObserverEntry,
 	ResizeObserverOptions
 > {
-	declare [kObserverCallback]?: ResizeObserverCallback;
-
 	constructor(callback: ResizeObserverCallback) {
 		super();
 		this[kObserverCallback] = callback;
@@ -21058,10 +21054,6 @@ class ResizeObserver extends LayoutObserver<
 			},
 		};
 	}
-
-	[kDeliver](entries: ResizeObserverEntry[]): void {
-		this[kObserverCallback]!(entries, this);
-	}
 }
 
 /**
@@ -21116,7 +21108,6 @@ class IntersectionObserver extends LayoutObserver<
 > {
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];
-	declare [kObserverCallback]?: IntersectionObserverCallback;
 	declare [kIntersectionRoot]?: globalThis.Element | null;
 
 	constructor(
@@ -21182,10 +21173,6 @@ class IntersectionObserver extends LayoutObserver<
 				time: frame,
 			},
 		};
-	}
-
-	[kDeliver](entries: IntersectionObserverEntry[]): void {
-		this[kObserverCallback]!(entries, this);
 	}
 }
 
@@ -24286,19 +24273,16 @@ function createFragment(document: Document): DocumentFragment {
 	return fragment;
 }
 
-/** The children of a range's common ancestor the extraction algorithms move. */
-interface ExtractionShape {
-	commonAncestor: Node;
-	firstPartiallyContained: Node | null;
-	lastPartiallyContained: Node | null;
-	containedChildren: Node[];
-}
-
 /**
  * The children of the common ancestor a range covers: the one it starts inside
  * of, the ones it holds whole, and the one it ends inside of.
  */
-function extractionShape(range: Range): ExtractionShape {
+function extractionShape(range: Range): {
+	commonAncestor: Node;
+	firstPartiallyContained: Node | null;
+	lastPartiallyContained: Node | null;
+	containedChildren: Node[];
+} {
 	const commonAncestor = getCommonAncestor(range);
 	const startNode = range[kStartNode]!;
 	const endNode = range[kEndNode]!;

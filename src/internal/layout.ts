@@ -9654,18 +9654,10 @@ interface InlineBlockLeaf {
 	contentHeight: number;
 }
 
-interface TextLeaf {
-	type: "text";
-	node: Text;
-	content: string;
-}
-
-interface BRLeaf {
-	type: "br";
-	node: HTMLBRElement;
-}
-
-type Leaf = InlineBlockLeaf | TextLeaf | BRLeaf;
+type Leaf =
+	InlineBlockLeaf |
+	{type: "text"; node: Text; content: string} |
+	{type: "br"; node: HTMLBRElement};
 
 interface LineResult {
 	segments: Array<{
