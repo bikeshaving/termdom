@@ -8535,12 +8535,12 @@ function lengthContext(
 		: getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
 	const manager = declaration[kManager];
-	const viewport = manager ? manager[kLayoutEngine].viewport : null;
+	const block = manager ? manager[kLayoutEngine].initialContainingBlock : null;
 	return {
 		font,
 		root,
-		viewportWidth: viewport ? viewport.width : 0,
-		viewportHeight: viewport ? viewport.height : 0,
+		viewportWidth: block ? block.width : 0,
+		viewportHeight: block ? block.height : 0,
 		// A percentage is font-relative on exactly two properties: on
 		// `font-size` it is a share of the parent's, on `line-height` of
 		// this element's own. Everywhere else it stays a percentage until
@@ -8819,10 +8819,7 @@ function getBox(
 function viewportBox(
 	declaration: MeasuredDeclaration,
 ): DOMRect | null {
-	const viewport = declaration[kManager]![kLayoutEngine].viewport;
-	if (!viewport) {
-		return null;
-	}
+	const block = declaration[kManager]![kLayoutEngine].initialContainingBlock;
 	const rect = usedRect(declaration[kManager]!, declaration[kElement]!);
 	if (!rect) {
 		return null;
@@ -8830,8 +8827,8 @@ function viewportBox(
 	return new (rect.constructor as typeof DOMRect)(
 		0,
 		0,
-		viewport.width,
-		viewport.height,
+		block.width,
+		block.height,
 	);
 }
 
@@ -11131,12 +11128,6 @@ export class StyleManager {
 
 /** The element's border-box rect, measured behind the layout flush. */
 function usedRect(manager: StyleManager, element: Element): DOMRect | null {
-	// Without a renderer there is no layout pass, and so no used value to
-	// report: the computed value is the answer, as it is for any element
-	// with no box.
-	if (manager[kLayoutEngine].viewport === null) {
-		return null;
-	}
 	// The flush is taken once per change, not once per read: until the
 	// layout engine says geometry moved, the layout standing behind the
 	// last flush is still the answer. A caller reading four properties

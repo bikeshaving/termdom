@@ -206,9 +206,12 @@ export class TermDOM {
 		// The cascade measures through the layout engine, so it is built with
 		// it; the engine reads styles lazily, through the getComputedStyle the
 		// cascade installs on the window.
-		this[kLayoutEngine] = new LayoutEngine(this.window);
+		this[kLayoutEngine] = new LayoutEngine(
+			this.window,
+			this[kTransport].cols,
+			this[kTransport].rows,
+		);
 		this[kStyleManager] = new StyleManager(this.window, this[kLayoutEngine]);
-		adoptTerminalSize(this, this[kTransport].cols, this[kTransport].rows);
 
 		// The session first: the screen measures widths over the session's
 		// probe channel, and takes it for its lifetime.
@@ -597,23 +600,6 @@ function rebindTransport(
 	termdom[kTransport] = transport;
 	termdom[kScreen].rebind(transport.colorDepth);
 	termdom[kExchange].rebind(transport);
-}
-
-/**
- * Take a terminal size on as the document's own, and hand it to the layout
- * engine, which lays the viewport root out at it. The one writer: everything
- * else reads the size back through `window.innerWidth`/`innerHeight`, or
- * through the mount those go to.
- */
-function adoptTerminalSize(
-	termdom: TermDOM,
-	width: number,
-	height: number,
-): void {
-	// The screen is the size's owner; the constructor adopts before the
-	// screen exists and builds it at this size right after.
-	termdom[kScreen]?.resize(height, width);
-	termdom[kLayoutEngine].resize(width, height);
 }
 
 /**

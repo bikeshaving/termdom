@@ -11474,7 +11474,7 @@ export class LayoutEngine {
 	// painted no longer describe the document.
 	declare [kMoved]: boolean;
 
-	constructor(window: EngineWindow) {
+	constructor(window: EngineWindow, width: number, height: number) {
 		this[kMoved] = false;
 		this[kPositionedElements] = new Set<Element>();
 		this[kTerminalReordersText] = false;
@@ -11505,15 +11505,16 @@ export class LayoutEngine {
 		this[kViewportRoot] = new LayoutNode();
 		this[kViewportRoot].setFlexDirection("column");
 		this[kViewportRoot].setAlignItems("stretch");
+		this[kViewportRoot].setWidth(width);
+		this[kViewportRoot].setHeight(height);
 	}
 
-	/** The viewport the document lays out in, or null while it has none. */
-	get viewport(): {width: number; height: number} | null {
-		const width = this[kViewportRoot].style.width.value;
-		const height = this[kViewportRoot].style.height.value;
-		return Number.isNaN(width) || Number.isNaN(height)
-			? null
-			: {width, height};
+	/** The block the document lays out in: the terminal's size, in cells. */
+	get initialContainingBlock(): {width: number; height: number} {
+		return {
+			width: this[kViewportRoot].style.width.value,
+			height: this[kViewportRoot].style.height.value,
+		};
 	}
 
 	get moved(): boolean {
