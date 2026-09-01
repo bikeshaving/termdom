@@ -103,7 +103,7 @@ test("inspect formats: handles self-closing tags", () => {
 
 test("inspect formats: truncates long text", () => {
 	const longText =
-		"This is a very long text that should be truncated when displayed in the inspector output to avoid making it too verbose";
+		"This is a very long text that should be truncated when attached in the inspector output to avoid making it too verbose";
 	const dom = documentWindow(`<p>${longText}</p>`);
 	const p = dom.window.document.querySelector("p");
 

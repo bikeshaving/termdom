@@ -238,11 +238,11 @@ export function fieldCaretOffset(
 	if (!valueText) {
 		return null;
 	}
-	const displayed = displayedDocument(element);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined) {
 		return null;
 	}
-	const found = displayed[kLayout].caretPositionFromPoint(
+	const found = attached[kLayout].caretPositionFromPoint(
 		x,
 		y,
 		valueText,
@@ -315,11 +315,11 @@ export function revealFieldCaret(document: globalThis.Document): void {
 	if (!valueText || !valueSpan) {
 		return;
 	}
-	const displayed = displayedDocument(active);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(active);
+	if (attached === undefined) {
 		return;
 	}
-	const content = displayed[kLayout].contentRect(active);
+	const content = attached[kLayout].contentRect(active);
 	if (!content) {
 		return;
 	}
@@ -658,18 +658,18 @@ const kDocument = Symbol("node document");
 // populating it is the invalidation that swaps in the new composed tree.
 function buildUARoot(
 	host: Element,
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
-	displayed[kLayout].invalidate();
+	attached[kLayout].invalidate();
 	observeShadowRoot(host[kDocument]!, root);
 	// The sheet has to be in the root BEFORE the cascade is told about the
 	// root, so the registration's incremental parse picks it up. Registering
 	// first and populating after left the cascade to notice the sheet by count
 	// drift, which forced a full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
-	displayed[kStyles].registerShadowRoot(root);
+	attached[kStyles].registerShadowRoot(root);
 	return root;
 }
 
@@ -1776,7 +1776,7 @@ const kButton = Symbol("button");
 const kButtons = Symbol("buttons");
 const kModifiers = Symbol("modifiers");
 
-const kDefaultView = Symbol("the window this document is displayed in");
+const kDefaultView = Symbol("the window this document is attached in");
 
 // Dispatch runs activation behavior for a click that is a MouseEvent.
 // [kIsMouseEvent] is how it checks.
@@ -8278,25 +8278,25 @@ export class Element extends Node implements globalThis.Element {
 			registry === undefined ? globalCustomElements : registry,
 		);
 		const root = this[kShadowRoot]! as ShadowRoot;
-		const displayed = displayedDocument(this);
-		if (displayed !== undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached !== undefined) {
 			observeShadowRoot(this[kDocument]!, root);
 			// Attaching a shadow root recomposes the host's subtree without a
 			// mutation record, so every cached box enumeration is stale.
-			displayed[kLayout].invalidate();
+			attached[kLayout].invalidate();
 			// The root's <style> elements join the cascade, scoped to this
 			// tree. The refresh happens on the STYLE mutation records the
 			// observer registration above will deliver.
-			displayed[kStyles].registerShadowRoot(root);
+			attached[kStyles].registerShadowRoot(root);
 			// attachShadow is not a DOM mutation, so no observer record fires
 			// for it. But on a CONNECTED host the composed tree just changed
 			// wholesale: light children stop rendering as soon as the root
 			// exists, even while it is empty. Rebuild the host's composed
 			// subtree and repaint.
 			if (this.isConnected) {
-				displayed[kLayout].invalidate(this);
-				displayed[kScreen].invalidate();
-				void render(displayed[kTermDOM]);
+				attached[kLayout].invalidate(this);
+				attached[kScreen].invalidate();
+				void render(attached[kTermDOM]);
 			}
 		}
 		return root as unknown as globalThis.ShadowRoot;
@@ -8305,16 +8305,16 @@ export class Element extends Node implements globalThis.Element {
 	// A headless document has no viewport to fill, so this rejects the way
 	// the spec's no-browsing-context document does.
 	requestFullscreen(_options?: globalThis.FullscreenOptions): Promise<void> {
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return Promise.reject(
-				new TypeError("The element's document is not displayed"),
+				new TypeError("The element's document is not attached"),
 			);
 		}
 		// Fullscreen switches to the alternate screen, and attach() is the only
 		// consent for that. A browser rejects without a user gesture; this is
 		// the terminal equivalent.
-		if (!isAttached(displayed[kTermDOM])) {
+		if (!isAttached(attached[kTermDOM])) {
 			return Promise.reject(
 				new Error("requestFullscreen(): attach() the terminal first"),
 			);
@@ -8328,11 +8328,11 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The element's UA styles changed (it now fills the viewport) and
 		// neither a mutation nor a focus move fired to notify the cascade.
-		displayed[kStyles].handleFocusChange(this);
-		displayed[kLayout].invalidate(this);
+		attached[kStyles].handleFocusChange(this);
+		attached[kLayout].invalidate(this);
 		// The screen switch happens on the next frame so no frame straddles it.
 		// The promise resolves once that frame is written.
-		return frameSettled(this[kDocument]!, displayed);
+		return frameSettled(this[kDocument]!, attached);
 	}
 
 	hasAttributes(): boolean {
@@ -8929,11 +8929,11 @@ Object.defineProperties(Element.prototype, {
 	},
 	scrollTop: {
 		get(this: Element): number {
-			const displayed = isDocumentScroller(this)
-				? displayedDocument(this)
+			const attached = isDocumentScroller(this)
+				? getAttachedDocument(this)
 				: undefined;
-			return displayed
-				? displayed[kScreen].scrollTop
+			return attached
+				? attached[kScreen].scrollTop
 				: (scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
@@ -9014,16 +9014,16 @@ function unionRect(
 // through. A position:fixed subtree is already laid out in viewport
 // space, and per spec its client rect does not change with scroll.
 function toViewportRect(
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 	rect: globalThis.DOMRect,
 	element: Element | null,
 ): globalThis.DOMRect {
-	if (element !== null && displayed[kLayout].isInFixedSpace(element)) {
+	if (element !== null && attached[kLayout].isInFixedSpace(element)) {
 		return rect;
 	}
 	return new DOMRect(
 		rect.x,
-		rect.y - displayed[kScreen].scrollTop,
+		rect.y - attached[kScreen].scrollTop,
 		rect.width,
 		rect.height,
 	);
@@ -9035,14 +9035,14 @@ function toViewportRect(
 Object.defineProperties(Element.prototype, {
 	getBoundingClientRect: {
 		value(this: Element): globalThis.DOMRect {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined || !this.isConnected) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined || !this.isConnected) {
 				return new DOMRect(0, 0, 0, 0);
 			}
 			flushLayout(this);
 			return toViewportRect(
-				displayed,
-				displayed[kLayout].getRect(this) ?? new DOMRect(),
+				attached,
+				attached[kLayout].getRect(this) ?? new DOMRect(),
 				this,
 			);
 		},
@@ -9051,15 +9051,15 @@ Object.defineProperties(Element.prototype, {
 	},
 	getClientRects: {
 		value(this: Element): globalThis.DOMRectList {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined || !this.isConnected) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined || !this.isConnected) {
 				return new DOMRectList();
 			}
 			flushLayout(this);
 			return rectList(
-				displayed[kLayout]
+				attached[kLayout]
 					.getRects(this)
-					.map((rect) => toViewportRect(displayed, rect, this)),
+					.map((rect) => toViewportRect(attached, rect, this)),
 			);
 		},
 		writable: true,
@@ -9433,16 +9433,16 @@ export class HTMLElement extends Element {
 		if (previous === this || innermostActive(document) !== this) {
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		// :focus rules match live and a focus move is not a mutation, so both
 		// elements' resolved styles are stale whether or not a listener changes
 		// anything.
-		displayed[kStyles].handleFocusChange(previous, this);
-		displayed[kScreen].invalidate();
-		void render(displayed[kTermDOM]);
+		attached[kStyles].handleFocusChange(previous, this);
+		attached[kScreen].invalidate();
+		void render(attached[kTermDOM]);
 		// The body holds focus whenever nothing else does, so moving focus off
 		// the body fires no blur.
 		if (previous !== null && previous !== (document.body as unknown)) {
@@ -9471,13 +9471,13 @@ export class HTMLElement extends Element {
 		if (document[kActiveElement] === this) {
 			document[kActiveElement] = null;
 		}
-		const displayed = wasFocused ? displayedDocument(this) : undefined;
-		if (displayed === undefined) {
+		const attached = wasFocused ? getAttachedDocument(this) : undefined;
+		if (attached === undefined) {
 			return;
 		}
-		displayed[kStyles].handleFocusChange(this, null);
-		displayed[kScreen].invalidate();
-		void render(displayed[kTermDOM]);
+		attached[kStyles].handleFocusChange(this, null);
+		attached[kScreen].invalidate();
+		void render(attached[kTermDOM]);
 		dispatchAsUserAgent(
 			this,
 			new FocusEvent("blur", {relatedTarget: null, bubbles: false}),
@@ -9647,12 +9647,12 @@ export interface HTMLElement
 // element outside one), and every caller then falls back to the zero the
 // spec gives an element with no box.
 function settledLayout(element: Element): LayoutEngine | undefined {
-	const displayed = displayedDocument(element);
-	if (displayed === undefined || !element.isConnected) {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined || !element.isConnected) {
 		return undefined;
 	}
 	flushLayout(element);
-	return displayed[kLayout];
+	return attached[kLayout];
 }
 
 Object.defineProperties(HTMLElement.prototype, {
@@ -9688,11 +9688,11 @@ Object.defineProperties(HTMLElement.prototype, {
 	// unlike every other member around it.
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined) {
 				return null;
 			}
-			return displayed[kLayout].offsetParent(this) as Element | null;
+			return attached[kLayout].offsetParent(this) as Element | null;
 		},
 		configurable: true,
 		enumerable: true,
@@ -9746,38 +9746,38 @@ Object.defineProperties(HTMLElement.prototype, {
 	// move is the minimal one, block "nearest".
 	scrollIntoView: {
 		value(this: HTMLElement): void {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined || !this.isConnected) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined || !this.isConnected) {
 				return;
 			}
 			flushLayout(this);
-			displayed[kLayout].revealInScrollPorts(this);
+			attached[kLayout].revealInScrollPorts(this);
 			// The scroll boxes around the element have already revealed it
 			// within themselves. What remains is the camera, which shows
 			// [scrollTop, scrollTop + region). Move it the minimal amount, the
 			// standard block: "nearest" behavior. The rect is
 			// document-relative, so it compares directly against the camera
 			// offset.
-			const rect = displayed[kLayout].getRect(this);
+			const rect = attached[kLayout].getRect(this);
 			if (!rect) {
 				return;
 			}
 			const document = this[kDocument]!;
-			const flow = displayed[kLayout].getRect(document.documentElement);
+			const flow = attached[kLayout].getRect(document.documentElement);
 			const regionHeight =
 				fullscreenElementOf(document) !== null
-					? displayed[kScreen].rows
+					? attached[kScreen].rows
 					: Math.min(
-						displayed[kScreen].rows,
+						attached[kScreen].rows,
 						flow ? Math.ceil(flow.height) : 0,
 					);
-			const top = displayed[kScreen].scrollTop;
+			const top = attached[kScreen].scrollTop;
 			if (rect.top < top) {
-				displayed[kScreen].scrollTo(rect.top);
-				void render(displayed[kTermDOM]);
+				attached[kScreen].scrollTo(rect.top);
+				void render(attached[kTermDOM]);
 			} else if (rect.bottom > top + regionHeight) {
-				displayed[kScreen].scrollTo(rect.bottom - regionHeight);
-				void render(displayed[kTermDOM]);
+				attached[kScreen].scrollTo(rect.bottom - regionHeight);
+				void render(attached[kTermDOM]);
 			}
 		},
 		configurable: true,
@@ -9793,8 +9793,8 @@ Object.defineProperties(HTMLElement.prototype, {
 			this: HTMLElement,
 			options?: globalThis.CheckVisibilityOptions,
 		): boolean {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined || !this.isConnected) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined || !this.isConnected) {
 				return false;
 			}
 			const view = this.ownerDocument!.defaultView as unknown as {
@@ -9818,7 +9818,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return displayed[kLayout].getRects(this).length > 0;
+			return attached[kLayout].getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -12255,13 +12255,13 @@ class HTMLDetailsElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUARoot(this, displayed, DETAILS_UA_STYLES);
+		const root = buildUARoot(this, attached, DETAILS_UA_STYLES);
 		const shadow = root as unknown as ShadowRoot;
 		const summarySlot = document.createElement("slot");
 		const content = document.createElement("div");
@@ -13859,8 +13859,8 @@ class HTMLInputElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
@@ -13941,7 +13941,7 @@ class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only see it on a
 		// microtask.
 		if (changed) {
-			displayedDocument(this)![kLayout].invalidate(this);
+			getAttachedDocument(this)![kLayout].invalidate(this);
 		}
 	}
 }
@@ -14052,17 +14052,17 @@ function kindFor(
 function build(
 	input: HTMLInputElement,
 ): void {
-	const displayed = displayedDocument(input)!;
+	const attached = getAttachedDocument(input)!;
 	let root = input[kRoot]!;
 	if (root === null) {
-		root = buildUARoot(input, displayed, FIELD_UA_STYLES);
+		root = buildUARoot(input, attached, FIELD_UA_STYLES);
 	} else {
 		// A rebuild keeps the root and its observer registration and replaces
 		// only what is under it, including the stylesheet.
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		displayed[kLayout].invalidate();
+		attached[kLayout].invalidate();
 		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
 	input[kRoot] = root;
@@ -14079,7 +14079,7 @@ function build(
 		input[kPlaceholderText] = null;
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
-	displayed[kLayout].invalidate(input);
+	attached[kLayout].invalidate(input);
 	input[kUAReconcile]!();
 }
 
@@ -14714,11 +14714,11 @@ function gaugeRun(host: Element, glyph: string): string {
 // fraction filled and the groove that shows past it.
 function buildGaugeRoot(
 	host: Element,
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 	styles: string,
 ): {bar: globalThis.HTMLElement; groove: globalThis.Text} {
 	const document = getUADocument(host);
-	const root = buildUARoot(host, displayed, styles);
+	const root = buildUARoot(host, attached, styles);
 	const track = addPart(root, "track");
 	track.removeChild(track.firstChild!);
 	const bar = document.createElement("span");
@@ -14842,12 +14842,12 @@ class HTMLMeterElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, displayed, METER_UA_STYLES).bar;
+		this[kBar] = buildGaugeRoot(this, attached, METER_UA_STYLES).bar;
 		this[kUAReconcile]!();
 	}
 
@@ -15355,12 +15355,12 @@ class HTMLProgressElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
-		this[kBar] = buildGaugeRoot(this, displayed, PROGRESS_UA_STYLES).bar;
+		this[kBar] = buildGaugeRoot(this, attached, PROGRESS_UA_STYLES).bar;
 		this[kUAReconcile]!();
 	}
 
@@ -15560,7 +15560,7 @@ class HTMLSelectElement extends HTMLElement {
 			if (event.defaultPrevented || event.button !== 0) {
 				return;
 			}
-			const displayed = displayedDocument(this)!;
+			const attached = getAttachedDocument(this)!;
 			this.focus(); // A press focuses the control, as in a browser.
 			if (this[kHighlight] === null) {
 				openPicker(this);
@@ -15571,7 +15571,7 @@ class HTMLSelectElement extends HTMLElement {
 			const row = (Array.from(
 				picker.childNodes,
 			) as globalThis.HTMLElement[]).find((node) => {
-				const rect = displayed[kLayout].getRect(node);
+				const rect = attached[kLayout].getRect(node);
 				return rect ? rectContains(rect, x, y) : false;
 			});
 			if (row) {
@@ -15591,7 +15591,7 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			// Not on any row. A press inside the picker's own padding does
 			// nothing. A press outside it (on the closed face) dismisses.
-			const pickerRect = displayed[kLayout].getRect(picker);
+			const pickerRect = attached[kLayout].getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kHighlight] = null;
 				this[kUAReconcile]!();
@@ -15739,8 +15739,8 @@ class HTMLSelectElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
@@ -15748,7 +15748,7 @@ class HTMLSelectElement extends HTMLElement {
 		// The tree: the selected option's label (part=value), the ▾ indicator
 		// (part=indicator), and the picker popover (part=picker, one row per
 		// option). Composition hides the light option list.
-		const root = buildUARoot(this, displayed, SELECT_UA_STYLES);
+		const root = buildUARoot(this, attached, SELECT_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
@@ -15789,14 +15789,14 @@ class HTMLSelectElement extends HTMLElement {
 		if (!this[kUpgraded] || picker === null) {
 			return;
 		}
-		const displayed = displayedDocument(this)!;
+		const attached = getAttachedDocument(this)!;
 		const options = optionList(this);
 		const selectedIndex = this.selectedIndex;
 		const selected = selectedIndex >= 0 ? options[selectedIndex] : null;
 		const label = selected ? selected.label : "";
 		if (this[kValueText]!.data !== label) {
 			this[kValueText]!.data = label;
-			displayed[kLayout].invalidate(this);
+			attached[kLayout].invalidate(this);
 		}
 
 		if (this[kHighlight] === null) {
@@ -15811,7 +15811,7 @@ class HTMLSelectElement extends HTMLElement {
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's
 		// containing block is the ICB), matching the field's width.
-		const rect = displayed[kLayout].getRect(this);
+		const rect = attached[kLayout].getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
 			const left = `${Math.round(rect.left)}px`;
@@ -16731,7 +16731,7 @@ class HTMLTextAreaElement extends HTMLElement {
 			if (!this[kUpgraded]) {
 				return;
 			}
-			const displayed = displayedDocument(this)!;
+			const attached = getAttachedDocument(this)!;
 			const {key, shiftKey, ctrlKey} = event;
 			// The goal column survives only an unbroken run of vertical moves.
 			if (key !== "ArrowUp" && key !== "ArrowDown") {
@@ -16754,7 +16754,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				displayed[kLayout].calculateLayout();
+				attached[kLayout].calculateLayout();
 				const target = verticalTarget(
 					this,
 					caret,
@@ -16766,8 +16766,8 @@ class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				displayed[kLayout].calculateLayout();
-				const visual = textareaVisualLines(this, displayed[kLayout]);
+				attached[kLayout].calculateLayout();
+				const visual = textareaVisualLines(this, attached[kLayout]);
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
@@ -16981,13 +16981,13 @@ class HTMLTextAreaElement extends HTMLElement {
 			this[kUAReconcile]!();
 			return;
 		}
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return;
 		}
 		this[kUpgraded] = true;
 		const document = getUADocument(this);
-		const root = buildUARoot(this, displayed, TEXTAREA_UA_STYLES);
+		const root = buildUARoot(this, attached, TEXTAREA_UA_STYLES);
 		this[kValueText] = addPart(root, "value").firstChild as globalThis.Text;
 		this[kPlaceholderSpan] = addPart(root, "placeholder");
 		this[kPlaceholderText] =
@@ -17014,7 +17014,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		if (!this[kUpgraded]) {
 			return;
 		}
-		const displayed = displayedDocument(this)!;
+		const attached = getAttachedDocument(this)!;
 		const value = this[kUAValue]!;
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
@@ -17038,7 +17038,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		// sees its characterData change too, but only on a microtask. An edit
 		// that reads the fresh geometry back in the same tick (vertical motion,
 		// Home/End) needs the engine invalidated synchronously now.
-		displayed[kLayout].invalidate(this);
+		attached[kLayout].invalidate(this);
 	}
 }
 
@@ -17064,7 +17064,7 @@ function verticalTarget(
 ): number {
 	const visual = textareaVisualLines(
 		textarea,
-		displayedDocument(textarea)![kLayout],
+		getAttachedDocument(textarea)![kLayout],
 	);
 	if (!visual) {
 		return caret;
@@ -17304,13 +17304,13 @@ function topmostAutoPopover(
 // unchanged. So the rules that test `:popover-open`, and the frame that
 // would paint what they hide or reveal, have to be notified from here.
 function popoverStateChanged(element: Element): void {
-	const displayed = displayedDocument(element);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined) {
 		return;
 	}
-	displayed[kStyles].handleStateChange(element);
-	displayed[kScreen].invalidate();
-	void render(displayed[kTermDOM]);
+	attached[kStyles].handleStateChange(element);
+	attached[kScreen].invalidate();
+	void render(attached[kTermDOM]);
 }
 
 // Returns true, false for a call that should silently do nothing, or the
@@ -20028,7 +20028,7 @@ let ambientDocument: Document | null = null;
 
 // A window here is not the global object, so there is no "current
 // global object" to consult. A bare `new Text()` belongs to whichever
-// document was last displayed in a window, or to one created here if
+// document was last attached to a window, or to one created here if
 // none has been.
 function currentDocument(): Document {
 	if (currentDocumentForConstruction !== null) {
@@ -20084,7 +20084,7 @@ export class Document extends Node implements globalThis.Document {
 	[kPopoverShowing]?: boolean;
 	[kPopoverHidingCount]?: number;
 
-	// What a displayed document renders through, set by adoptDocument. A
+	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
 	// context.
 	[kTermDOM]?: TermDOM;
@@ -20172,9 +20172,9 @@ export class Document extends Node implements globalThis.Document {
 		return null;
 	}
 
-	// Null until a Window is built over the document. A document nothing
-	// displays behaves as the standards say a document with no browsing
-	// context does. lib.dom intersects Window with typeof globalThis because
+	// Null until a Window is built over the document. A headless document
+	// behaves as the standards say a document with no browsing context
+	// does. lib.dom intersects Window with typeof globalThis because
 	// in a browser the window IS the global. Here it is not, so a caller who
 	// reaches through this for a browser-only global finds nothing.
 	get defaultView(): (globalThis.Window & typeof globalThis) | null {
@@ -20353,13 +20353,13 @@ export class Document extends Node implements globalThis.Document {
 		setDescendantText(element, String(value));
 		// The terminal's window title is the document's, set in-band. This
 		// happens only while the terminal is attached and taking input.
-		const displayed = displayedDocument(this);
+		const attached = getAttachedDocument(this);
 		if (
-			displayed !== undefined &&
-			isAttached(displayed[kTermDOM]) &&
-			displayed[kExchange].interactive
+			attached !== undefined &&
+			isAttached(attached[kTermDOM]) &&
+			attached[kExchange].interactive
 		) {
-			void displayed[kExchange].setTitle(String(value));
+			void attached[kExchange].setTitle(String(value));
 		}
 	}
 
@@ -20622,28 +20622,28 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	exitFullscreen(): Promise<void> {
-		const displayed = displayedDocument(this);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this);
+		if (attached === undefined) {
 			return Promise.reject(
-				new TypeError("The document is not displayed"),
+				new TypeError("The document is not attached"),
 			);
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			displayed[kStyles].handleFocusChange(exiting);
-			displayed[kLayout].invalidate(exiting);
+			attached[kStyles].handleFocusChange(exiting);
+			attached[kLayout].invalidate(exiting);
 		}
-		return frameSettled(this, displayed);
+		return frameSettled(this, attached);
 	}
 
 	// There is no document.open() here, so there is never a parse to flush.
-	// A displayed document finalizes when it closes: what it painted is
+	// An attached document finalizes when it closes: what it painted is
 	// sealed into the terminal's scrollback, and a later mutation starts a
 	// fresh document below the sealed block.
 	close(): void {
-		const displayed = displayedDocument(this);
-		if (displayed !== undefined) {
-			sealTermDOM(displayed[kTermDOM]);
+		const attached = getAttachedDocument(this);
+		if (attached !== undefined) {
+			sealTermDOM(attached[kTermDOM]);
 		}
 	}
 
@@ -21085,7 +21085,7 @@ export class Document extends Node implements globalThis.Document {
 	// The Selection API also exposes this on the Window, and returns null
 	// for a document with no browsing context. There is no browsing context
 	// here. The selection belongs to the document, a window's getSelection
-	// calls this one, and a document nothing displays still has a selection.
+	// calls this one, and a headless document still has a selection.
 	getSelection(): globalThis.Selection | null {
 		let selection = this[kSelection]!;
 		if (selection === null) {
@@ -21386,17 +21386,17 @@ export function elementAtDocumentPoint(
 	x: number,
 	y: number,
 ): globalThis.Element | null {
-	const displayed = displayedDocument(document);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
 		return null;
 	}
 	flushLayout(document);
-	let element = displayed[kLayout].hitTest(
+	let element = attached[kLayout].hitTest(
 		document.documentElement,
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		displayed[kScreen].scrollTop,
+		attached[kScreen].scrollTop,
 	);
 	// The DOM cannot hand out a pseudo-element, so a hit on the content it
 	// generates is a hit on the element it originates from.
@@ -21437,14 +21437,14 @@ export function elementAtDocumentPoint(
 Object.defineProperties(Document.prototype, {
 	elementFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element | null {
-			const displayed = displayedDocument(this);
-			if (displayed === undefined) {
+			const attached = getAttachedDocument(this);
+			if (attached === undefined) {
 				return null;
 			}
 			// Per CSSOM View, x/y are viewport-relative. Convert to the
 			// document-relative space hit testing works in, the same conversion
 			// getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + displayed[kScreen].scrollTop);
+			return elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
 		},
 		writable: true,
 		configurable: true,
@@ -21457,11 +21457,11 @@ Object.defineProperties(Document.prototype, {
 	elementsFromPoint: {
 		value(this: Document, x: number, y: number): globalThis.Element[] {
 			const stack: globalThis.Element[] = [];
-			const displayed = displayedDocument(this);
+			const attached = getAttachedDocument(this);
 			let hit =
-				displayed === undefined
+				attached === undefined
 					? null
-					: elementAtDocumentPoint(this, x, y + displayed[kScreen].scrollTop);
+					: elementAtDocumentPoint(this, x, y + attached[kScreen].scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -22065,7 +22065,7 @@ function isDocumentScroller(element: Element): boolean {
 
 const scrolledElements = new WeakMap<Document, Set<Element>>();
 
-// A write on a mounted document rounds to whole cells (everything
+// A write on an attached document rounds to whole cells (everything
 // paints on the cell grid, like the document camera), clamps into the
 // range layout reports for the box, stores the value, and tells the
 // engine what moved so the frame journal can price it. A box whose
@@ -22078,15 +22078,15 @@ function setScrollOffset(
 	axis: "left" | "top",
 	value: number,
 ): void {
-	const displayed = displayedDocument(element);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(element);
+	if (attached === undefined) {
 		writeScrollOffset(element, axis, toDouble(value));
 		return;
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			displayed[kScreen].scrollTo(Number(value));
-			void render(displayed[kTermDOM]);
+			attached[kScreen].scrollTo(Number(value));
+			void render(attached[kTermDOM]);
 		}
 		return;
 	}
@@ -22094,7 +22094,7 @@ function setScrollOffset(
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
-		const room = displayed[kLayout].scrollRange(element, axis);
+		const room = attached[kLayout].scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
 		}
@@ -22116,11 +22116,11 @@ function setScrollOffset(
 	// A vertical scroll is a band the terminal may be able to shift for us.
 	// A horizontal one is not, and dirties the frame like anything else.
 	if (axis === "top") {
-		recordScrollBand(displayed, document, element, next - previous);
+		recordScrollBand(attached, document, element, next - previous);
 	} else {
-		displayed[kScreen].invalidate();
+		attached[kScreen].invalidate();
 	}
-	void render(displayed[kTermDOM]);
+	void render(attached[kTermDOM]);
 }
 
 /**
@@ -22133,9 +22133,9 @@ function setScrollOffset(
  * journal already priced, and can move several boxes at once.
  */
 export function clampScrollOffsets(document: globalThis.Document): void {
-	const displayed = displayedDocument(document);
+	const attached = getAttachedDocument(document);
 	const held = scrolledElements.get(document as Document);
-	if (displayed === undefined || held === undefined) {
+	if (attached === undefined || held === undefined) {
 		return;
 	}
 	let changed = false;
@@ -22148,8 +22148,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		if (!element.isConnected) {
 			continue;
 		}
-		const extent = displayed[kLayout].scrollExtentOf(element);
-		const port = displayed[kLayout].contentRect(element);
+		const extent = attached[kLayout].scrollExtentOf(element);
+		const port = attached[kLayout].contentRect(element);
 		if (!extent || !port) {
 			continue;
 		}
@@ -22168,8 +22168,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollBands.delete(document as Document);
-		displayed[kScreen].invalidate();
-		void render(displayed[kTermDOM]);
+		attached[kScreen].invalidate();
+		void render(attached[kTermDOM]);
 	}
 }
 
@@ -22181,7 +22181,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 const scrollBands = new WeakMap<Document, {element: Element; delta: number}>();
 
 function recordScrollBand(
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 	document: Document,
 	element: Element,
 	delta: number,
@@ -22193,7 +22193,7 @@ function recordScrollBand(
 		band.delta += delta;
 	} else {
 		scrollBands.delete(document);
-		displayed[kScreen].invalidate();
+		attached[kScreen].invalidate();
 	}
 }
 
@@ -23625,14 +23625,14 @@ function rangeAnchor(range: Range): Element | null {
 Object.defineProperties(Range.prototype, {
 	getBoundingClientRect: {
 		value(this: Range): globalThis.DOMRect {
-			const displayed = displayedDocument(this.startContainer);
-			if (displayed === undefined) {
+			const attached = getAttachedDocument(this.startContainer);
+			if (attached === undefined) {
 				return new DOMRect(0, 0, 0, 0);
 			}
 			flushLayout(this.startContainer);
 			return toViewportRect(
-				displayed,
-				unionRect(displayed[kLayout].getRangeRects(this)),
+				attached,
+				unionRect(attached[kLayout].getRangeRects(this)),
 				rangeAnchor(this),
 			);
 		},
@@ -23641,16 +23641,16 @@ Object.defineProperties(Range.prototype, {
 	},
 	getClientRects: {
 		value(this: Range): globalThis.DOMRectList {
-			const displayed = displayedDocument(this.startContainer);
-			if (displayed === undefined) {
+			const attached = getAttachedDocument(this.startContainer);
+			if (attached === undefined) {
 				return new DOMRectList();
 			}
 			flushLayout(this.startContainer);
 			const anchor = rangeAnchor(this);
 			return rectList(
-				displayed[kLayout]
+				attached[kLayout]
 					.getRangeRects(this)
-					.map((rect) => toViewportRect(displayed, rect, anchor)),
+					.map((rect) => toViewportRect(attached, rect, anchor)),
 			);
 		},
 		writable: true,
@@ -23675,10 +23675,10 @@ function scheduleSelectionChange(document: Document): void {
 	// A selection move is not a mutation and no record names the rows it
 	// covers, so the repaint is requested here, before the coalescing guard
 	// below. That guard drops the second move in a task but not its paint.
-	const displayed = displayedDocument(document);
-	if (displayed !== undefined) {
-		displayed[kScreen].invalidate();
-		void render(displayed[kTermDOM]);
+	const attached = getAttachedDocument(document);
+	if (attached !== undefined) {
+		attached[kScreen].invalidate();
+		void render(attached[kTermDOM]);
 	}
 	if (document[kSelectionChangeScheduled]!) {
 		return;
@@ -24197,7 +24197,7 @@ class Selection implements globalThis.Selection {
 	//
 	// "character" and "word" are computed from the text. "line" and
 	// "lineboundary" depend on laid-out lines rather than the string, so
-	// they need a document mounted in a terminal and do nothing without one.
+	// they need a document attached to a terminal and do nothing without one.
 	// A line's ends are its first and last text in tree order, which is its
 	// visual order only for left-to-right text. "sentence", "paragraph" and
 	// their boundaries are not implemented. Anything unrecognized does
@@ -24286,9 +24286,9 @@ function paintsText(
 // `text` descendant inside a `none` ancestor is selectable again.
 function selectionTextNodes(
 	document: Document,
-	displayed: DisplayedDocument | undefined,
+	attached: AttachedDocument | undefined,
 ): Text[] {
-	const layout = displayed === undefined ? null : displayed[kLayout];
+	const layout = attached === undefined ? null : attached[kLayout];
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]!;
@@ -24297,7 +24297,7 @@ function selectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					paintsText(child as Text, layout) &&
-					(displayed === undefined || displayed[kStyles].isSelectable(node))
+					(attached === undefined || attached[kStyles].isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
@@ -24482,8 +24482,8 @@ function modifiedPoint(
 	granularity: string,
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
-	const displayed = displayedDocument(document);
-	const layout = displayed === undefined ? null : displayed[kLayout];
+	const attached = getAttachedDocument(document);
+	const layout = attached === undefined ? null : attached[kLayout];
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -24493,7 +24493,7 @@ function modifiedPoint(
 		// just mutated has to be laid out first.
 		layout.calculateLayout();
 	}
-	const run = flattenSelectionText(selectionTextNodes(document, displayed));
+	const run = flattenSelectionText(selectionTextNodes(document, attached));
 	if (run.parts.length === 0) {
 		return null;
 	}
@@ -26922,7 +26922,7 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-// State a mounted document accepts only from its engine.
+// State an attached document accepts only from its engine.
 // Re-evaluators called when the viewport changes. The lists belong to
 // this module. The resize path is the one place a terminal viewport
 // changes, so the engine decides when to call them.
@@ -26945,7 +26945,7 @@ export function refreshMediaQueries(document: globalThis.Document): void {
  * Once per document. A second engine would build every widget a second
  * time, and the two would disagree about what is on screen.
  */
-export function adoptDocument(
+export function attachDocument(
 	document: globalThis.Document,
 	termDOM: TermDOM,
 	layout: LayoutEngine,
@@ -26953,24 +26953,24 @@ export function adoptDocument(
 	exchange: TerminalExchange,
 	screen: Screen,
 ): void {
-	const mounted = document as Document;
-	if (mounted[kTermDOM] !== undefined) {
+	const attached = document as Document;
+	if (attached[kTermDOM] !== undefined) {
 		throw new Error("This document already has its engine.");
 	}
-	mounted[kTermDOM] = termDOM;
-	mounted[kLayout] = layout;
-	mounted[kStyles] = styles;
-	mounted[kExchange] = exchange;
-	mounted[kScreen] = screen;
+	attached[kTermDOM] = termDOM;
+	attached[kLayout] = layout;
+	attached[kStyles] = styles;
+	attached[kExchange] = exchange;
+	attached[kScreen] = screen;
 	hoverListenerCounts.set(
-		mounted,
-		watchHoverListeners(mounted, () => render(termDOM)),
+		attached,
+		watchHoverListeners(attached, () => render(termDOM)),
 	);
 	// The document owns the observer. Mutations fan out to the cascade, the
 	// layout tree and the UA default actions here, and the engine is only
 	// asked to render the frame that shows the result.
 	const observer = new MutationObserver((mutations) => {
-		handleMutationRecords(mounted, mutations);
+		handleMutationRecords(attached, mutations);
 		void render(termDOM);
 	});
 	observer.observe(document.documentElement as unknown as Node, {
@@ -26980,7 +26980,7 @@ export function adoptDocument(
 		attributeOldValue: true,
 		characterData: true,
 	});
-	engineObservers.set(mounted, observer);
+	engineObservers.set(attached, observer);
 }
 
 const engineObservers = new WeakMap<Document, MutationObserver>();
@@ -26993,13 +26993,13 @@ function handleMutationRecords(
 	document: Document,
 	mutations: MutationRecord[],
 ): void {
-	const displayed = displayedDocument(document);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
 		return;
 	}
 	// Any observed mutation can move a node in the flat tree. Drop the
 	// memoized composition links before anything reads through them.
-	displayed[kLayout].invalidateFrame();
+	attached[kLayout].invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) reassign className/style with identical values on every
@@ -27035,10 +27035,10 @@ function handleMutationRecords(
 			upgradeUAWidgetsIn(added);
 		}
 	}
-	displayed[kStyles].handleMutations(relevant);
-	displayed[kLayout].handleMutations(relevant);
+	attached[kStyles].handleMutations(relevant);
+	attached[kLayout].handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
-	dropUnfocusableFocus(document, displayed);
+	dropUnfocusableFocus(document, attached);
 }
 
 // An element with `autofocus` gets focused as soon as it connects, as a
@@ -27070,7 +27070,7 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 // restyle.
 function dropUnfocusableFocus(
 	document: Document,
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 ): void {
 	let active = document.activeElement;
 	while (active !== null) {
@@ -27091,7 +27091,7 @@ function dropUnfocusableFocus(
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			displayed[kStyles]
+			attached[kStyles]
 				.declarationFor(node as Element)
 				.getComputedValue("display") === "none"
 		) {
@@ -27127,8 +27127,8 @@ export function applyMutations(document: globalThis.Document): boolean {
  * them, so this requests the frame on the caller's behalf.
  */
 export function flushLayout(node: globalThis.Node): boolean {
-	const displayed = displayedDocument(node);
-	if (displayed === undefined) {
+	const attached = getAttachedDocument(node);
+	if (attached === undefined) {
 		return false;
 	}
 	const shaped = node as {nodeType?: number; ownerDocument?: object | null};
@@ -27137,9 +27137,9 @@ export function flushLayout(node: globalThis.Node): boolean {
 	) as globalThis.Document;
 	const had = applyMutations(document);
 	if (had) {
-		void render(displayed[kTermDOM]);
+		void render(attached[kTermDOM]);
 	}
-	displayed[kLayout].calculateLayout();
+	attached[kLayout].calculateLayout();
 	clampScrollOffsets(document);
 	return had;
 }
@@ -27152,7 +27152,7 @@ export function hoverListenerCount(document: globalThis.Document): number {
 
 // A document that has been adopted. It renders, and knows what it
 // renders through.
-type DisplayedDocument = Document & {
+type AttachedDocument = Document & {
 	[kTermDOM]: TermDOM;
 	[kLayout]: LayoutEngine;
 	[kStyles]: StyleManager;
@@ -27160,15 +27160,15 @@ type DisplayedDocument = Document & {
 	[kScreen]: Screen;
 };
 
-function displayedDocument(
+function getAttachedDocument(
 	node: globalThis.Node,
-): DisplayedDocument | undefined {
+): AttachedDocument | undefined {
 	const shaped = node as {nodeType?: number; ownerDocument?: Document | null};
 	const document = (
 		shaped.nodeType === DOCUMENT_NODE ? node : shaped.ownerDocument
 	) as Document | null;
 	return document !== null && document[kTermDOM] !== undefined
-		? (document as DisplayedDocument)
+		? (document as AttachedDocument)
 		: undefined;
 }
 
@@ -27317,11 +27317,11 @@ class Clipboard extends EventTarget {
 // Every caller is async, so the throw reaches the page as the rejection
 // the Clipboard API specifies.
 function reachClipboard(document: Document, what: string): TerminalExchange {
-	const displayed = displayedDocument(document);
+	const attached = getAttachedDocument(document);
 	if (
-		displayed === undefined ||
-		!isAttached(displayed[kTermDOM]) ||
-		!displayed[kExchange].interactive
+		attached === undefined ||
+		!isAttached(attached[kTermDOM]) ||
+		!attached[kExchange].interactive
 	) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
@@ -27330,7 +27330,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (!userActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return displayed[kExchange];
+	return attached[kExchange];
 }
 
 Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
@@ -27400,11 +27400,11 @@ class PermissionStatus extends EventTarget {
 		) {
 			return "denied";
 		}
-		const displayed = displayedDocument(document);
+		const attached = getAttachedDocument(document);
 		if (
-			!displayed ||
-			!isAttached(displayed[kTermDOM]) ||
-			!displayed[kExchange].interactive
+			!attached ||
+			!isAttached(attached[kTermDOM]) ||
+			!attached[kExchange].interactive
 		) {
 			return "denied";
 		}
@@ -27619,9 +27619,9 @@ function noNavigation(): DOMException {
 	);
 }
 
-// The window a document is displayed in: an EventTarget whose members
+// The window a document is attached to: an EventTarget whose members
 // are the browsing context's, implemented by the engine the document is
-// mounted on. A window exists only when mounted (a headless document has
+// attached to. A window exists only when attached (a headless document has
 // none), so the members below may expect a mount, and degrade the way
 // the document's own do without one: a viewport of no size, a camera at
 // the origin, a query that matches nothing.
@@ -27653,14 +27653,14 @@ function holdFrameCallback(
 // that carries the switch has been written.
 function frameSettled(
 	document: Document,
-	displayed: DisplayedDocument,
+	attached: AttachedDocument,
 ): Promise<
 	void> {
 	return new Promise((resolve) => {
 		holdFrameCallback(document, () => {
 			resolve();
 		});
-		void render(displayed[kTermDOM]);
+		void render(attached[kTermDOM]);
 	});
 }
 
@@ -27685,7 +27685,7 @@ export class Window extends EventTarget {
 	constructor(document: Document) {
 		super();
 		this.document = document;
-		// Displaying a document gives it a defaultView, and the displayed
+		// Attaching a document gives it a defaultView, and the attached
 		// document is the one bare node constructors use.
 		document[kDefaultView] = this;
 		ambientDocument = document;
@@ -27712,8 +27712,8 @@ export class Window extends EventTarget {
 	// SIGWINCH changes them. A value frozen at construction would report the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
-		const displayed = displayedDocument(this.document);
-		return displayed === undefined ? 0 : displayed[kScreen].cols;
+		const attached = getAttachedDocument(this.document);
+		return attached === undefined ? 0 : attached[kScreen].cols;
 	}
 
 	get outerWidth(): number {
@@ -27721,8 +27721,8 @@ export class Window extends EventTarget {
 	}
 
 	get innerHeight(): number {
-		const displayed = displayedDocument(this.document);
-		return displayed === undefined ? 0 : displayed[kScreen].rows;
+		const attached = getAttachedDocument(this.document);
+		return attached === undefined ? 0 : attached[kScreen].rows;
 	}
 
 	get outerHeight(): number {
@@ -27732,16 +27732,16 @@ export class Window extends EventTarget {
 	// screenTop is readonly like a browser's, and LIVE. Cursor detection
 	// moves the anchor after the window is built.
 	get screenTop(): number {
-		const displayed = displayedDocument(this.document);
-		return displayed === undefined ? 0 : displayed[kScreen].documentTop;
+		const attached = getAttachedDocument(this.document);
+		return attached === undefined ? 0 : attached[kScreen].documentTop;
 	}
 
 	// Standard window scrolling, mapped onto the camera. scrollY is how far
 	// the camera has moved down the document, and scrollBy moves it. A
 	// terminal document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		const displayed = displayedDocument(this.document);
-		return displayed === undefined ? 0 : displayed[kScreen].scrollTop;
+		const attached = getAttachedDocument(this.document);
+		return attached === undefined ? 0 : attached[kScreen].scrollTop;
 	}
 
 	get pageYOffset(): number {
@@ -27789,16 +27789,16 @@ export class Window extends EventTarget {
 	// (window.scrollY === document.documentElement.scrollTop always). One
 	// camera, four ways to read or move it.
 	scrollTo(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		const displayed = displayedDocument(this.document);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this.document);
+		if (attached === undefined) {
 			return;
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? displayed[kScreen].scrollTop)
+				? (xOrOptions.top ?? attached[kScreen].scrollTop)
 				: (y ?? 0);
-		displayed[kScreen].scrollTo(top);
-		void render(displayed[kTermDOM]);
+		attached[kScreen].scrollTo(top);
+		void render(attached[kTermDOM]);
 	}
 
 	scroll(xOrOptions?: number | ScrollToOptions, y?: number): void {
@@ -27806,16 +27806,16 @@ export class Window extends EventTarget {
 	}
 
 	scrollBy(xOrOptions?: number | ScrollToOptions, y?: number): void {
-		const displayed = displayedDocument(this.document);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this.document);
+		if (attached === undefined) {
 			return;
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
-		displayed[kScreen].scrollTo(displayed[kScreen].scrollTop + top);
-		void render(displayed[kTermDOM]);
+		attached[kScreen].scrollTo(attached[kScreen].scrollTop + top);
+		void render(attached[kTermDOM]);
 	}
 
 	// requestAnimationFrame is the only way to await a painted frame. It
@@ -27823,12 +27823,12 @@ export class Window extends EventTarget {
 	// so "await a frame" always means the frame carrying the pending
 	// mutations has landed.
 	requestAnimationFrame(callback: FrameRequestCallback): number {
-		const displayed = displayedDocument(this.document);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this.document);
+		if (attached === undefined) {
 			return 0;
 		}
 		const handle = holdFrameCallback(this.document, callback);
-		void render(displayed[kTermDOM]);
+		void render(attached[kTermDOM]);
 		return handle;
 	}
 
@@ -27851,10 +27851,10 @@ export class Window extends EventTarget {
 	// resize hook.
 	matchMedia(query: string): MediaQueryList {
 		const media = String(query);
-		const displayed = displayedDocument(this.document);
+		const attached = getAttachedDocument(this.document);
 		const matches = (): boolean =>
-			displayed !== undefined &&
-			displayed[kStyles].mediaQueryMatches(media);
+			attached !== undefined &&
+			attached[kStyles].mediaQueryMatches(media);
 		const list = new EventTarget();
 		// `matches` reads live. This holds the value the last "change" event
 		// reported.
@@ -27906,8 +27906,8 @@ export class Window extends EventTarget {
 	// and to call close() again once the user confirms. Every close asks
 	// again; the event carries nothing from the last one.
 	close(): void {
-		const displayed = displayedDocument(this.document);
-		if (displayed === undefined) {
+		const attached = getAttachedDocument(this.document);
+		if (attached === undefined) {
 			return;
 		}
 		const event = createBeforeUnloadEvent();
@@ -27915,7 +27915,7 @@ export class Window extends EventTarget {
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
 		}
-		closeTermDOM(displayed[kTermDOM]);
+		closeTermDOM(attached[kTermDOM]);
 	}
 }
 

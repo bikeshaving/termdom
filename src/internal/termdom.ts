@@ -167,7 +167,7 @@ export class TermDOM {
 			this[kExchange],
 		);
 
-		DOM.adoptDocument(
+		DOM.attachDocument(
 			document,
 			this,
 			this[kLayoutEngine],

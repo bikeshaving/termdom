@@ -162,7 +162,7 @@ test("the line granularities do nothing without a layout behind them", () => {
 /* --------------------------------------------- lines, as the layout has them */
 
 /** A 12-column terminal, so "hello there world" wraps into two rows. */
-async function mounted(html: string): Promise<{dom: TermDOM; document: any}> {
+async function attached(html: string): Promise<{dom: TermDOM; document: any}> {
 	const terminal = new MockProcess({cols: 12, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const document = dom.document as any;
@@ -172,7 +172,7 @@ async function mounted(html: string): Promise<{dom: TermDOM; document: any}> {
 }
 
 test("lineboundary runs to the ends of the WRAPPED line, not the string", async () => {
-	const {dom, document} = await mounted("<p>hello there world</p>");
+	const {dom, document} = await attached("<p>hello there world</p>");
 	const text = document.body.firstChild.firstChild;
 	const selection = document.getSelection()!;
 	// "hello there world" in 12 columns wraps as "hello there " / "world":
@@ -189,7 +189,7 @@ test("lineboundary runs to the ends of the WRAPPED line, not the string", async 
 });
 
 test("a line move steps a wrapped row at a time, keeping the column", async () => {
-	const {dom, document} = await mounted("<p>hello there world</p>");
+	const {dom, document} = await attached("<p>hello there world</p>");
 	const text = document.body.firstChild.firstChild;
 	const selection = document.getSelection()!;
 	selection.setBaseAndExtent(text, 2, text, 2);
@@ -205,7 +205,7 @@ test("a line move steps a wrapped row at a time, keeping the column", async () =
 });
 
 test("a line move crosses from one block into the next, and extends", async () => {
-	const {dom, document} = await mounted("<p>abcd</p><p>wxyz</p>");
+	const {dom, document} = await attached("<p>abcd</p><p>wxyz</p>");
 	const first = document.body.firstChild.firstChild;
 	const second = document.body.childNodes[1].firstChild;
 	const selection = document.getSelection()!;

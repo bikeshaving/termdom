@@ -1,7 +1,7 @@
 /**
  * Run the web-platform-tests css/cssom suite against this engine's CSSOM.
  *
- * Each test is a testharness.js document of this engine's own DOM, displayed
+ * Each test is a testharness.js document of this engine's own DOM, attached
  * in a window with the engine's CSSOM, which the styles module defines on
  * the DOM's own prototypes at load, plus the StyleManager a TermDOM builds. Its harness scripts are evaluated in
  * document order, at the global scope of a realm of the file's own whose
@@ -247,7 +247,7 @@ function mountEngine(html: string, url: string): TermDOM {
  * A terminal has no frames, so TermDOM gives an iframe no content document --
  * and a fixture that reaches through one is not testing frames, it is using a
  * second document to have a second cascade. The harness gives it that: the
- * iframe's `srcdoc`, or an empty document, mounted on an engine of its own and
+ * iframe's `srcdoc`, or an empty document, attached on an engine of its own and
  * running in a realm of its own, which is what `contentWindow.eval` runs in.
  * Lazily, because a document written into a frame can carry frames of its own.
  */

@@ -13,7 +13,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function mounted(html: string): {
+function attached(html: string): {
 	terminal: MockProcess;
 	dom: TermDOM;
 	document: TermDOM["document"];
@@ -25,7 +25,7 @@ function mounted(html: string): {
 }
 
 test("transition events fire in order with their payloads", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { width: 10px; height: 1px; transition: width 0.05s linear; }</style><div id='box'></div>",
 	);
 	await nextFrame(dom);
@@ -67,7 +67,7 @@ test("transition events fire in order with their payloads", async () => {
 });
 
 test("getComputedStyle answers the interpolated value mid-transition", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { width: 10px; height: 1px; color: rgb(0, 0, 0); " +
 		"transition: width 100s steps(1, jump-both), color 100s steps(1, jump-both); }" +
 		"</style><div id='box'>x</div>",
@@ -84,7 +84,7 @@ test("getComputedStyle answers the interpolated value mid-transition", async () 
 });
 
 test("a non-interpolable property flips at the midpoint", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { text-align: left; height: 1px; " +
 		"transition: text-align 100s steps(1, jump-both); }" +
 		"</style><div id='box'>x</div>",
@@ -99,7 +99,7 @@ test("a non-interpolable property flips at the midpoint", async () => {
 });
 
 test("a pseudo-element transitions, and its events name it", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>" +
 		"#host::before { content: 'x'; color: rgb(0, 0, 0); " +
 		"transition: color 100s steps(1, jump-both); }" +
@@ -129,7 +129,7 @@ test("a pseudo-element transitions, and its events name it", async () => {
 });
 
 test("removing the transition declaration cancels mid-flight", async () => {
-	const {dom, document} = mounted(
+	const {dom, document} = attached(
 		"<style>" +
 		"#box { width: 10px; height: 1px; }" +
 		"#box.eased { transition: width 100s linear; }" +
@@ -153,7 +153,7 @@ test("removing the transition declaration cancels mid-flight", async () => {
 });
 
 test("removing the element cancels its transitions", async () => {
-	const {dom, document} = mounted(
+	const {dom, document} = attached(
 		"<style>#box { width: 10px; height: 1px; transition: width 100s linear; }" +
 		"</style><div id='box'></div>",
 	);
@@ -174,7 +174,7 @@ test("removing the element cancels its transitions", async () => {
 });
 
 test("retargeting mid-flight cancels and starts over from here", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { width: 10px; height: 1px; " +
 		"transition: width 100s steps(1, jump-both); }" +
 		"</style><div id='box'></div>",
@@ -201,7 +201,7 @@ test("retargeting mid-flight cancels and starts over from here", async () => {
 });
 
 test("the transition longhands serialize from the shorthand", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { transition: left 2s ease-in 0.5s, color 1s; }" +
 		"</style><div id='box'></div>",
 	);
@@ -215,7 +215,7 @@ test("the transition longhands serialize from the shorthand", async () => {
 });
 
 test("a delayed transition holds its start value, then runs", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { width: 10px; height: 1px; " +
 		"transition: width 0.05s steps(1, jump-both) 0.06s; }" +
 		"</style><div id='box'></div>",
@@ -241,7 +241,7 @@ test("a delayed transition holds its start value, then runs", async () => {
 });
 
 test("the painter draws the interpolated color", async () => {
-	const {terminal, dom, document} = mounted(
+	const {terminal, dom, document} = attached(
 		"<style>#box { color: rgb(0, 0, 0); height: 1px; " +
 		"transition: color 100s steps(1, jump-both); }" +
 		"</style><div id='box'>mid</div>",
@@ -256,7 +256,7 @@ test("the painter draws the interpolated color", async () => {
 });
 
 test("a transition declared and retargeted in one event still runs", async () => {
-	const {dom, document} = mounted("<div id='box' style='height: 1px'></div>");
+	const {dom, document} = attached("<div id='box' style='height: 1px'></div>");
 	await nextFrame(dom);
 	const box = document.getElementById("box")!;
 	const {window} = dom;
@@ -275,7 +275,7 @@ test("a transition declared and retargeted in one event still runs", async () =>
 });
 
 test("a linear() stop list eases by its stops", async () => {
-	const {dom, document, window} = mounted(
+	const {dom, document, window} = attached(
 		"<style>#box { color: rgb(0, 0, 0); height: 1px; " +
 		"transition: color 100s linear(0.25 0% 50%, 1 100%); }" +
 		"</style><div id='box'>x</div>",
