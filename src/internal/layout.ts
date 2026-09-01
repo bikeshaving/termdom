@@ -8057,9 +8057,9 @@ function untrackNode(
 
 const kInvalidatedNodes = Symbol("invalidatedNodes");
 
-// The first composed child that can start an inline run. A UA shadow
+// The first flat-tree child that can start an inline run. A UA shadow
 // tree's <style> would otherwise end leaf collection at position zero.
-function firstComposedRenderableChild(element: Element): Node | null {
+function flatFirstRenderableChild(element: Element): Node | null {
 	const walker = flowWalker(element);
 	for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 		if (
@@ -8201,7 +8201,7 @@ function invalidateNode(
 				// reusing the node as-is kept the stale gutter.
 				styleNode(layout, node as Element, flexNode);
 
-				// Sever its children too. The composed child set may have
+				// Sever its children too. The flat-tree child set may have
 				// changed wholesale (attachShadow on a host already rendering
 				// its light children), and stale children keep painting.
 				// Survivors reattach through the re-add sweep. The rest stay
@@ -8861,7 +8861,7 @@ function collectLeavesUnder(
 					finalContentWidth = contentRoot.getComputedWidth();
 					finalContentHeight = contentRoot.getComputedHeight();
 				} else {
-					const contentStart = firstComposedRenderableChild(element);
+					const contentStart = flatFirstRenderableChild(element);
 					if (contentStart) {
 						inlineBlockResult = breakNodes(
 							layout,
@@ -10089,7 +10089,7 @@ export class Layout {
 
 		for (const node of this[kInvalidatedNodes]) {
 			if (node.isConnected) {
-				// The composed BOX parent. A shadow root's direct child has no
+				// The flat-tree BOX parent. A shadow root's direct child has no
 				// parentElement, and attaching under a display:contents element
 				// strands the child in an orphan subtree.
 				let parent = boxParentElement(node);
@@ -10991,7 +10991,7 @@ function restageForRecord(
 	layout: Layout,
 	record: MutationRecord,
 ): void {
-	// A record on a shadow root describes the HOST's composed children.
+	// A record on a shadow root describes the HOST's flat-tree children.
 	const target =
 		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
 			? (record.target as ShadowRoot).host

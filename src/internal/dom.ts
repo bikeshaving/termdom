@@ -19168,16 +19168,16 @@ const NODE_LINKS: TreeLinks = Object.freeze({
 // the children they belong beside. Neither is a link a node stores, so
 // each hop computes its result.
 const FLAT_LINKS: TreeLinks = Object.freeze({
-	parent: composedParentNode,
-	firstChild: composedFirstChild,
-	lastChild: composedLastChild,
-	nextSibling: composedNextSibling,
-	previousSibling: composedPreviousSibling,
+	parent: flatParentNode,
+	firstChild: flatFirstChild,
+	lastChild: flatLastChild,
+	nextSibling: flatNextSibling,
+	previousSibling: flatPreviousSibling,
 });
 
 const kLinks = Symbol("links");
 
-// The composed hops: the flat tree, with pseudo-element nodes among the
+// The flat-tree hops, with pseudo-element nodes among the
 // children they belong beside.
 
 function pseudoSlot(element: Element, name: string): Element | null {
@@ -19185,7 +19185,7 @@ function pseudoSlot(element: Element, name: string): Element | null {
 	return slots === null ? null : (slots.get(name) ?? null);
 }
 
-function composedFirstChild(node: Node): Node | null {
+function flatFirstChild(node: Node): Node | null {
 	if (node.nodeType !== ELEMENT_NODE) {
 		return node[kFirstChild]!;
 	}
@@ -19202,9 +19202,9 @@ function composedFirstChild(node: Node): Node | null {
 			return before;
 		}
 	}
-	const composed = composedContentFirstChild(element);
-	if (composed !== null) {
-		return composed;
+	const content = flatContentFirstChild(element);
+	if (content !== null) {
+		return content;
 	}
 	// A CHILDLESS element still renders its ::after. The sibling transition
 	// only reaches ::after from a last child, and there is none here, so for
@@ -19217,7 +19217,7 @@ function composedFirstChild(node: Node): Node | null {
 // because light children render only through slots); a slot's assigned
 // nodes if it has any; otherwise its own children, which for a slot is
 // the fallback content.
-function composedContentFirstChild(element: Element): Node | null {
+function flatContentFirstChild(element: Element): Node | null {
 	const shadow = element[kShadowRoot]!;
 	if (shadow !== null) {
 		return shadow[kFirstChild]!;
@@ -19231,20 +19231,20 @@ function composedContentFirstChild(element: Element): Node | null {
 	return element[kFirstChild]!;
 }
 
-function composedLastChild(node: Node): Node | null {
+function flatLastChild(node: Node): Node | null {
 	if (node.nodeType !== ELEMENT_NODE) {
 		return node[kLastChild]!;
 	}
 	const element = node as Element;
 	const after = pseudoSlot(element, "::after");
-	return after !== null ? after : composedLastContent(element);
+	return after !== null ? after : flatLastContent(element);
 }
 
 // The last child an element renders, or the ::before or ::marker it
 // renders instead when it has no content of its own. Different from
-// composedLastChild, which returns the ::after when there is one.
-function composedLastContent(element: Element): Node | null {
-	const child = lastRenderedChild(element);
+// flatLastChild, which returns the ::after when there is one.
+function flatLastContent(element: Element): Node | null {
+	const child = flatContentLastChild(element);
 	if (child !== null) {
 		return child;
 	}
@@ -19264,9 +19264,9 @@ function composedLastContent(element: Element): Node | null {
 	return null;
 }
 
-// The mirror of composedContentFirstChild. A host with an empty shadow
+// The mirror of flatContentFirstChild. A host with an empty shadow
 // tree renders nothing of its own, light children included.
-function lastRenderedChild(element: Element): Node | null {
+function flatContentLastChild(element: Element): Node | null {
 	const shadow = element[kShadowRoot]!;
 	if (shadow !== null) {
 		return shadow[kLastChild]!;
@@ -19280,7 +19280,7 @@ function lastRenderedChild(element: Element): Node | null {
 	return element[kLastChild]!;
 }
 
-function composedNextSibling(node: Node): Node | null {
+function flatNextSibling(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost]!;
 	if (host !== null && host !== undefined) {
 		const name = (node as Element)[kPseudoName]!;
@@ -19291,13 +19291,13 @@ function composedNextSibling(node: Node): Node | null {
 			}
 		}
 		if (name !== "::after") {
-			const content = composedContentFirstChild(host);
+			const content = flatContentFirstChild(host);
 			return content !== null ? content : pseudoSlot(host, "::after");
 		}
 		return null;
 	}
 
-	// A projected node's composed siblings are its neighbours in the slot's
+	// A projected node's flat-tree siblings are its neighbours in the slot's
 	// assigned-node list, NOT its light-tree siblings. The light nextSibling
 	// may be assigned to a different slot, or to none.
 	const slot = getAssignedSlot(node);
@@ -19324,19 +19324,19 @@ function composedNextSibling(node: Node): Node | null {
 	// host's ::after. A shadowed element's ::after follows its shadow
 	// content, which the node tree cannot express because it puts the shadow
 	// root between them.
-	const parent = composedParentNode(node);
+	const parent = flatParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		return pseudoSlot(parent as Element, "::after");
 	}
 	return null;
 }
 
-function composedPreviousSibling(node: Node): Node | null {
+function flatPreviousSibling(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost]!;
 	if (host !== null && host !== undefined) {
 		const name = (node as Element)[kPseudoName]!;
 		if (name === "::after") {
-			return composedLastContent(host);
+			return flatLastContent(host);
 		}
 		if (name === "::before") {
 			return pseudoSlot(host, "::marker");
@@ -19368,7 +19368,7 @@ function composedPreviousSibling(node: Node): Node | null {
 	// Mirror of the ::after hop. Uses the composed parent, so walking
 	// backwards out of a shadow root reaches the host's ::before and
 	// ::marker.
-	const parent = composedParentNode(node);
+	const parent = flatParentNode(node);
 	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
 		const before = pseudoSlot(parent as Element, "::before");
 		if (before !== null) {
@@ -19379,7 +19379,7 @@ function composedPreviousSibling(node: Node): Node | null {
 	return null;
 }
 
-function composedParentNode(node: Node): Node | null {
+function flatParentNode(node: Node): Node | null {
 	const host = (node as Element)[kPseudoHost]!;
 	if (host !== null && host !== undefined) {
 		return host;
