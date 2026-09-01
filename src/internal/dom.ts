@@ -24,8 +24,7 @@
  * context does. The widgets it upgrades render through that same Mount, and
  * the cascade and the layout engine are below this file, not above.
  */
-
-import {parseFragment, parse as parse5Parse} from "parse5";
+import * as Parse5 from "parse5";
 import * as CSSTree from "css-tree";
 import bidiFactory from "bidi-js";
 import {
@@ -27213,7 +27212,7 @@ export function parseHTMLDocument(
 	parseRegistry = registry;
 	let document: Document;
 	try {
-		document = parse5Parse(html, {
+		document = Parse5.parse(html, {
 			treeAdapter: adapter as never,
 		}) as unknown as Document;
 	} finally {
@@ -27244,7 +27243,7 @@ function parseFragmentHTML(
 	parseRegistry = context[kRegistry]!;
 	let parsed: DocumentFragment;
 	try {
-		parsed = parseFragment(context as never, markup, {
+		parsed = Parse5.parseFragment(context as never, markup, {
 			treeAdapter: adapter as never,
 		}) as unknown as DocumentFragment;
 	} finally {
