@@ -1,9 +1,10 @@
-// No painter emits an attribute that did not come from a computed style: a
-// selection is inverse because a rule here says Highlight/HighlightText.
+// No painter emits an attribute that did not come from a computed
+// style. A selection is inverse because a rule here says
+// Highlight/HighlightText.
 
-// Parsed ahead of UA_DOCUMENT_STYLES, so that sheet wins ties. What cannot
-// be CSS (a select sized to its widest option, the size attribute) is the
-// cascade's getElementDefaults.
+// Parsed before UA_DOCUMENT_STYLES, so that sheet wins ties. What
+// cannot be CSS (a select sized to its widest option, the size
+// attribute) is handled by the cascade's getElementDefaults.
 export const UA_ELEMENT_STYLES = `
 	head { display: none; }
 	link { display: none; }
@@ -91,11 +92,11 @@ export const UA_ELEMENT_STYLES = `
 	}
 `;
 
-// Applies in every tree scope, as a browser's UA sheet styles shadow trees.
-// A modal dialog centers by inset: 0 and auto margins, as a browser's sheet
-// does; its ::backdrop is Canvas because a cell cannot blend a scrim. A
-// popover's ::backdrop is transparent, which keeps a dialog shown as a
-// popover from clearing the viewport.
+// Applies in every tree scope, as a browser's UA sheet styles shadow
+// trees. A modal dialog centers by inset: 0 and auto margins, as a
+// browser's sheet does. Its ::backdrop is Canvas because a cell cannot
+// blend a scrim. A popover's ::backdrop is transparent, which keeps a
+// dialog shown as a popover from clearing the viewport.
 export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
 	button::before { content: "[ "; }
@@ -140,7 +141,7 @@ export const UA_DOCUMENT_STYLES = `
 	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
-// The value text node lays out and paints like any document text; the
+// The value text node lays out and paints like any document text. The
 // reconcile hides the placeholder inline whenever a value exists.
 export const TEXTAREA_UA_STYLES = `
 	[part="placeholder"] { color: #808080; }
@@ -148,36 +149,38 @@ export const TEXTAREA_UA_STYLES = `
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
-// The value and placeholder clip their text; the render loop sets scrollLeft
-// to follow the caret. The outline paints as a bottom underline.
+// The value and placeholder clip their text. The render loop sets
+// scrollLeft to follow the caret. The outline paints as a bottom
+// underline.
 export const FIELD_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
-// The disclosure flips the content container's display inline from `open`,
-// which hides a closed details' text children with no rule into the light tree.
+// The disclosure flips the content container's display inline from
+// `open`, which hides a closed details' text children without any rule
+// in the light tree.
 export const DETAILS_UA_STYLES = `
 	[part="details-content"] { display: block; }
 `;
 
-// The bar's width is the fraction filled; the groove follows it in the same
-// clip, so an empty bar still reads as a bar.
+// The bar's width is the fraction filled. The groove follows it in the
+// same clip, so an empty bar still reads as a bar.
 const GAUGE_UA_STYLES = `
 	[part="track"] { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
 	[part="groove"] { color: #808080; font-weight: lighter; }
 	[part="bar"] { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
 `;
 
-// An indeterminate bar has no bar at all; the groove alone shows.
+// An indeterminate bar has no bar at all. Only the groove shows.
 export const PROGRESS_UA_STYLES = `
 	${GAUGE_UA_STYLES}
 	[part="bar"] { color: #5fafff; }
 `;
 
-// The level the value reads as against low/high/optimum is an attribute a
-// rule matches, not a color the painter picks.
+// The level the value falls in against low/high/optimum is an
+// attribute a rule matches, not a color the painter picks.
 export const METER_UA_STYLES = `
 	${GAUGE_UA_STYLES}
 	[part="bar"][data-level="optimum"] { color: #5faf5f; }

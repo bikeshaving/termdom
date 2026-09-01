@@ -22,8 +22,8 @@ import type {LayoutEngine} from "./layout.js";
 import type {Screen} from "./screen.js";
 import {render, type TermDOM} from "./termdom.js";
 
-// The keys a terminal names, with the legacy keyCode plenty of code still
-// reads. Also the roster of names that are physical key identities.
+// The keys a terminal names, with the legacy keyCode plenty of code
+// still reads. Also the list of names that are physical key identities.
 const NAMED_KEY_NUMBERS: Record<string, number> = {
 	Enter: 13,
 	Tab: 9,
@@ -53,8 +53,8 @@ const NAMED_KEY_NUMBERS: Record<string, number> = {
 	F12: 123,
 };
 
-// The DOM `code`, assuming a US layout: a terminal only says what character
-// a key produced, never which key, so punctuation is a guess.
+// The DOM `code`, assuming a US layout. A terminal only says what
+// character a key produced, never which key, so punctuation is a guess.
 function domCodeFor(keyName: string): string {
 	if (keyName === " ") {
 		return "Space";
@@ -87,9 +87,10 @@ function legacyKeyCode(keyName: string): number {
 const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
-// `barrier` is the nearest scope owner above with a negative tabindex: the
-// stop cannot be tabbed into from outside, but focus scripted inside still
-// navigates among stops behind the same barrier and exits past it.
+// `barrier` is the nearest scope owner above with a negative tabindex.
+// The stop cannot be tabbed into from outside, but focus scripted inside
+// still navigates among stops behind the same barrier and exits past
+// it.
 interface SequentialEntry {
 	element: Element;
 	barrier: Element | null;
@@ -144,7 +145,7 @@ function sequentialFocusEntries(
 		contents: Iterable<Node>,
 		barrier: Element | null,
 	): SequentialEntry[] => {
-		// A scope owner is one entry standing for its whole expansion, placed
+		// A scope owner is one entry representing its whole expansion, placed
 		// among its siblings by its own tabindex.
 		const entries: Array<{
 			tabindex: number;
@@ -167,7 +168,7 @@ function sequentialFocusEntries(
 			if (shadow !== null) {
 				const innerBarrier =
 					ownerTabindex < 0 ? (barrier ?? element) : barrier;
-				// The host's light children surface through slots or nowhere.
+				// The host's light children appear through slots or not at all.
 				const inner = buildScope(shadow.children, innerBarrier);
 				let expansion = inner;
 				if (shadow.delegatesFocus !== true && isFocusable(element)) {
@@ -229,9 +230,9 @@ const kScreen = Symbol("screen");
 
 const kDocument = Symbol("document");
 
-// The nearest scroll container (overflow auto or scroll; hidden does not
-// take the wheel) that can still move in the tick's direction, or null
-// when the tick chains to the camera.
+// The nearest scroll container (overflow auto or scroll; hidden does
+// not take the wheel) that can still move in the tick's direction, or
+// null when the tick chains to the camera.
 function wheelScrollerFor(
 	handler: EventHandler,
 	target: Element,
@@ -286,9 +287,10 @@ const kLastClickTime = Symbol("lastClickTime");
 const kDblclickIntervalMs = Symbol("dblclickIntervalMs");
 
 export class EventHandler {
-	// Reclaims a yield no keystroke reclaimed. A flat window from the yield,
-	// not a debounce: wheel activity while yielded produces no signal, and a
-	// gap between ticks longer than this would re-yield on the next tick.
+	// Reclaims a yield no keystroke reclaimed. A flat window from the
+	// yield, not a debounce. Wheel activity while yielded produces no
+	// signal, and a gap between ticks longer than this would re-yield on
+	// the next tick.
 	static readonly [kScrollChainTimeoutMs] = 3000;
 	static readonly [kDblclickIntervalMs] = 500;
 	declare [kDocument]: Document;
@@ -311,9 +313,9 @@ export class EventHandler {
 	} | null;
 
 	declare [kHoverElement]: Element | null;
-	// The camera hit the document top and the user kept scrolling up, so the
-	// wheel belongs to the terminal's scrollback until the next keystroke
-	// (terminals snap to the live screen on input) or the timer.
+	// The camera hit the document top and the user kept scrolling up, so
+	// the wheel belongs to the terminal's scrollback until the next
+	// keystroke (terminals snap to the live screen on input) or the timer.
 	declare [kMouseCaptureYielded]: boolean;
 	declare [kScrollChainTimer]: ReturnType<typeof setTimeout> | null;
 	// A mouseup on the same element is a click.
@@ -321,8 +323,8 @@ export class EventHandler {
 	declare [kPopoverPressTarget]: Element | null;
 	// The document selection's anchor while a left-button drag selects.
 	declare [kSelectionDragAnchor]: {node: Text; offset: number} | null;
-	// A drag begun in a field extends the field's own bounded selection, not
-	// the document's; the two never merge.
+	// A drag begun in a field extends the field's own bounded selection,
+	// not the document's. The two never merge.
 	declare [kFieldDragAnchor]: {
 		element: HTMLInputElement | HTMLTextAreaElement;
 		offset: number;
@@ -381,7 +383,9 @@ export class EventHandler {
 		deliverPaste(this, item.text);
 	}
 
-	/** One hit-test at the last reported position, at the top of the frame. */
+	/**
+	 * One hit-test at the last reported position, at the start of the frame.
+	 */
 	resolvePendingHover(): void {
 		const pending = this[kPendingHover];
 		if (pending === null) {
@@ -504,9 +508,9 @@ function deliverMouseReport(
 
 	const {x, y, inDocument} = documentPointAt(handler, col, row);
 
-	// A report per cell crossed, so motion is coalesced to one hit-test per
-	// frame. A drag's motion also falls through: its mousemove and selection
-	// updates are per report.
+	// A report arrives per cell crossed, so motion is coalesced to one
+	// hit-test per frame. A drag's motion also falls through. Its mousemove
+	// and selection updates are per report.
 	if (isMotion) {
 		handler[kPendingHover] = {
 			x,
@@ -542,7 +546,7 @@ function deliverMouseReport(
 			}),
 		);
 		if (notCanceled && scrollByWheel(handler, target, wheelDeltaY)) {
-			// Scroll chaining: the parent scroller is the terminal's own
+			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on the
 			// wheel event opts out, as in a browser.
 			handler[kMouseCaptureYielded] = true;
@@ -558,7 +562,8 @@ function deliverMouseReport(
 		return;
 	}
 
-	// SGR names the button even on release, so 3 (no button) carries nothing.
+	// SGR names the button even on release, so 3 (no button) carries
+	// nothing.
 	if (base > 2) {
 		return;
 	}
@@ -596,8 +601,8 @@ function deliverMouseReport(
 }
 
 function deliverPaste(handler: EventHandler, text: string): void {
-	// A terminal pastes line breaks as CR (tmux documents the replacement);
-	// the DOM's paste carries LF.
+	// A terminal pastes line breaks as CR (tmux documents the replacement).
+	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
 	const focused = handler[kDocument].activeElement;
 	const target =
@@ -630,7 +635,8 @@ function deliverPaste(handler: EventHandler, text: string): void {
 	void render(handler[kTermDOM]);
 }
 
-// A keystroke also means the terminal has snapped back to the live screen.
+// A keystroke also means the terminal has snapped back to the live
+// screen.
 function deliverKeys(handler: EventHandler, keys: WireKey[]): void {
 	if (handler[kMouseCaptureYielded]) {
 		reclaimMouseCapture(handler);
@@ -683,7 +689,7 @@ function documentPointAt(
 ): {
 	x: number;
 	y: number;
-	// False above the painted region: a shell prompt's rows.
+	// False above the painted region, meaning a shell prompt's rows.
 	inDocument: boolean;
 } {
 	const screen = handler[kScreen];
@@ -807,7 +813,7 @@ function press(
 		void render(handler[kTermDOM]);
 	}
 
-	// Default action: a press in a field parks the caret and anchors a
+	// Default action: a press in a field places the caret and anchors a
 	// field drag. The select widget's own mousedown listener ran above.
 	const parked =
 		base === 0 && inDocument ? parkFieldCaret(target, x, y) : null;
@@ -825,7 +831,7 @@ function press(
 	}
 
 	// Default action: collapse the document selection at the press and
-	// anchor a drag there. Left button only; preventDefault opts out.
+	// anchor a drag there. Left button only. preventDefault opts out.
 	const selection = handler[kWindow].getSelection();
 	if (base === 0 && selection && !handler[kFieldDragAnchor]) {
 		let anchor = inDocument ? textPositionAt(handler, x, y) : null;
@@ -871,7 +877,7 @@ function release(
 			selectedByDrag = true;
 		}
 	}
-	// A selecting drag is not a click: released over a label, the click
+	// A selecting drag is not a click. Released over a label, the click
 	// would toggle its checkbox and a framework's re-render would destroy
 	// the selection just made.
 	if (selectedByDrag) {
@@ -901,7 +907,7 @@ function release(
 			void render(handler[kTermDOM]);
 		}
 
-		// In addition to its own click; reset so a third click starts a pair.
+		// In addition to its own click. Reset so a third click starts a pair.
 		const now = performance.now();
 		if (
 			handler[kLastClickTarget] === target &&
@@ -960,8 +966,9 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	const notCanceled = dispatchAsUserAgent(targetElement, keydownEvent);
 
 	// A close request on the top of the top layer, whether or not keydown
-	// was canceled. It does not exit fullscreen: the alternate screen takes
-	// nothing from the user, and terminal convention gives Escape to the app.
+	// was canceled. It does not exit fullscreen. The alternate screen takes
+	// nothing from the user, and terminal convention gives Escape to the
+	// app.
 	if (keyName === "Escape") {
 		if (closeTopmost(handler[kDocument])) {
 			void render(handler[kTermDOM]);
@@ -1061,7 +1068,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 		handler[kLayout],
 	);
 
-	// activeElement retargets to the shadow host; follow it down.
+	// activeElement retargets to the shadow host. Follow it down.
 	let current = handler[kDocument].activeElement;
 	while (current !== null) {
 		const shadow = getShadowRoot<ShadowRoot>(current);
@@ -1076,7 +1083,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	);
 	const currentBarrier =
 		currentIndex === -1 ? null : entries[currentIndex].barrier;
-	// Crossing out of a barrier is the tree exit below; crossing in never
+	// Crossing out of a barrier is the tree exit below. Crossing in never
 	// happens.
 	const reachable = (index: number): boolean =>
 		entries[index].barrier === currentBarrier;
@@ -1159,8 +1166,8 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 		}
 	}
 
-	// Past the ends focus rests on nothing, standing in for the browser
-	// chrome; it also keeps a single-stop scope escapable.
+	// Past the ends focus rests on nothing, which stands in for the browser
+	// chrome. It also keeps a single-stop scope escapable.
 	if (nextIndex === -1) {
 		if (current !== null) {
 			(current as HTMLElement).blur();
@@ -1175,7 +1182,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	void render(handler[kTermDOM]);
 }
 
-// Null over a form control: its value is not document text.
+// Null over a form control. Its value is not document text.
 function textPositionAt(
 	handler: EventHandler,
 	x: number,

@@ -212,8 +212,8 @@ const FORM_SUBMISSION = [
 	str("formTarget", "formtarget"),
 ];
 
-// The global attributes reflected plainly; translate, spellcheck, hidden and
-// tabIndex are written out in dom.ts.
+// The global attributes reflected plainly. translate, spellcheck, hidden
+// and tabIndex are written out in dom.ts.
 export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 	str("accessKey", "accesskey"),
 	bool("autofocus"),
@@ -236,7 +236,7 @@ export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 	str("lang"),
 	str("nonce"),
 	// The empty string is popover's own spelling of auto. hint is not
-	// implemented, so it takes the unknown-value route.
+	// implemented, so it takes the unknown-value path.
 	{
 		property: "popover",
 		attribute: "popover",
@@ -799,7 +799,8 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 		tags: ["pre", "listing", "xmp"],
 		reflect: [long("width", "width", 0)],
 	},
-	// Every number a gauge carries is read against the others; all written out.
+	// Every number a gauge has is read against the others, so all are
+	// written out.
 	{name: "HTMLProgressElement", tags: ["progress"]},
 	{name: "HTMLMeterElement", tags: ["meter"]},
 	{
@@ -1104,10 +1105,11 @@ export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
 	["ariaOwnsElements", "aria-owns", true],
 ];
 
-// The full HTML table plus the Pointer Events, CSS Animations, Transitions
-// and Selection partials: what `"onclick" in element` probes, not what fires.
-// The prefixed animation handlers listen for mixed-case types; the installer
-// carries that mapping. Partials of specs this DOM has no notion of are out.
+// The full HTML table plus the Pointer Events, CSS Animations,
+// Transitions and Selection partials. This is what `"onclick" in
+// element` probes, not what fires. The prefixed animation handlers
+// listen for mixed-case types, and the installer carries that mapping.
+// Partials of specs this DOM has no notion of are left out.
 export const GLOBAL_EVENT_HANDLERS: readonly string[] = [
 	"onabort",
 	"onanimationcancel",
@@ -1239,7 +1241,8 @@ export const DOCUMENT_EVENT_HANDLERS: readonly string[] = [
 	"onvisibilitychange",
 ];
 
-// Set on a body or frameset, these land on its window and read back from it.
+// Set on a body or frameset, these are stored on its window and read
+// back from it.
 export const FORWARDED_BODY_EVENT_HANDLERS: readonly string[] = [
 	"onblur",
 	"onerror",

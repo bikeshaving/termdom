@@ -95,8 +95,9 @@ function underlineCodes(style: UnderlineStyle): string[] {
 		case "single":
 			return ["4"];
 		case "double":
-			// Plain 4 first: a terminal that ignores 4:2 still draws a line, and
-			// a later plain 4 downgrades double to single (ECMA-48, and tmux).
+			// Plain 4 first. A terminal that ignores 4:2 still draws a line,
+			// and a later plain 4 downgrades double to single (ECMA-48, and
+			// tmux).
 			return ["4", "4:2"];
 	}
 }
@@ -200,8 +201,9 @@ class FrameWriter {
 
 	text(glyphs: string): this {
 		let safe = "";
-		// Text is a document's own: a control byte in it would end the sequence
-		// around it and hand the rest of the string to the terminal as commands.
+		// Text is the document's own. A control byte in it would end the
+		// sequence around it and hand the rest of the string to the terminal as
+		// commands.
 		for (const char of glyphs) {
 			if (isControlByte(char.codePointAt(0)!)) {
 				continue;
@@ -314,8 +316,8 @@ const ATTR_FLAGS = {
 	Italic: 1 << 1,
 	Underline: 1 << 2,
 	// SGR 4:2. Emission sends plain 4 first so a terminal that ignores 4:2
-	// keeps a single underline; tmux collapses the pair and Apple Terminal
-	// drops the result, so the UA sheet never uses it -- authors may.
+	// keeps a single underline. tmux collapses the pair and Apple Terminal
+	// drops the result, so the UA sheet never uses it. Authors may.
 	DoubleUnderline: 1 << 3,
 	Strikethrough: 1 << 4,
 	Overline: 1 << 5,
@@ -343,13 +345,13 @@ const ATTR = {
 	WidthWide: 0x1f,
 } as const;
 
-// At or above this a char-plane value indexes internedGraphemes; below it
-// the value is the code point. Zero is the empty cell.
+// At or above this a char-plane value indexes internedGraphemes. Below
+// it the value is the code point. Zero is the empty cell.
 const CHAR_INTERNED = 0x8000_0000;
 
-// Clusters of more than one code point, named by index so a cell stays one
-// uint32. Append-only: an id names the same cluster for the life of the
-// process, so a value copied between grids stays valid.
+// Clusters of more than one code point, referenced by index so a cell
+// stays one uint32. Append-only: an id refers to the same cluster for
+// the life of the process, so a value copied between grids stays valid.
 const internedGraphemes: string[] = [""];
 const internedIds = new Map<string, number>();
 
@@ -383,8 +385,9 @@ const BORDER_EDGE_STYLE = {
 	Hidden: 0b1111,
 
 	// Flags (bit 4+)
-	// Set on the edges that meet in a corner cell whose radius rounds it, and
-	// on nothing else: the runs between corners are the same line either way.
+	// Set on the edges that meet in a corner cell whose radius rounds it,
+	// and on nothing else. The runs between corners are the same line either
+	// way.
 	Rounded: 0b00010000,
 } as const;
 
@@ -439,11 +442,12 @@ function getEdgeRounded(edgeValue: number): boolean {
 }
 
 /**
- * A border line: the CSS keyword and its color, the terminal's default
- * foreground when absent. A cap says how an end finishes: at the end
- * cell's center by default, so another line's half-stroke unions with it
- * into a corner or a tee; "square" projects through the cell for a free
- * end; "round" curves the glyph where two capped ends meet.
+ * A border line: the CSS keyword and its color, or the terminal's
+ * default foreground when absent. A cap says how an end finishes. By
+ * default it stops at the end cell's center, so another line's
+ * half-stroke joins with it into a corner or a tee. "square" projects
+ * through the cell for a free end. "round" curves the glyph where two
+ * capped ends meet.
  */
 export const LINE_STYLES = [
 	"solid",
@@ -556,8 +560,8 @@ const BOX_DRAWING: Record<string, {
 	},
 };
 
-// Only the light stroke has rounded glyphs; double and heavy corners stay
-// square because no character bends them.
+// Only the light stroke has rounded glyphs. Double and heavy corners
+// stay square because no character bends them.
 const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 	"┌": "╭",
 	"┐": "╮",
@@ -594,9 +598,9 @@ function getBorderChar(borderEncoding: number): string {
 		(hasBottom && getEdgeRounded(bottomEdge)) ||
 		(hasLeft && getEdgeRounded(leftEdge));
 
-	// Solid is the light stroke, and so are ridge, inset and outset: a terminal
-	// draws one weight of line, so the three shaded keywords land on the glyphs
-	// their unshaded relative uses.
+	// Solid is the light stroke, and so are ridge, inset and outset. A
+	// terminal draws one weight of line, so the three shaded keywords use
+	// the glyphs their unshaded relative uses.
 	let charSet = BOX_DRAWING.light;
 	switch (dominantStyle) {
 		case BORDER_EDGE_STYLE.Double:
@@ -636,10 +640,10 @@ function getBorderChar(borderEncoding: number): string {
 		return charSet.leftTee; // ┤
 	}
 
-	// A corner takes its rounded form where one exists. The character set is
-	// still the border style's -- a rounded dashed box keeps its dashes and
-	// bends only the four cells where the strokes turn -- and a style whose
-	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
+	// A corner takes its rounded form where one exists. The character set
+	// is still the border style's (a rounded dashed box keeps its dashes
+	// and bends only the four cells where the strokes turn), and a style
+	// whose corner has no rounded glyph stays square. See ROUNDED_CORNERS.
 	const corner =
 		hasRight && hasBottom
 			? charSet.topLeft // ┌
@@ -665,10 +669,11 @@ function getBorderChar(borderEncoding: number): string {
 }
 
 /**
- * Parallel typed-array planes indexed by `row * cols + col`. A color of 0
- * is the terminal's default, not black -- the sentinel the diff spells as
- * 39/49. A char of 0 is an empty cell, including the column a two-column
- * glyph covers; the glyph's width field steps the emitter over it.
+ * Parallel typed-array planes indexed by `row * cols + col`. A color of
+ * 0 is the terminal's default, not black. It is the sentinel the diff
+ * writes as 39/49. A char of 0 is an empty cell, including the column a
+ * two-column glyph covers. The glyph's width field steps the emitter
+ * over it.
  */
 class CellGrid {
 	readonly rows: number;
@@ -755,8 +760,8 @@ class CellGrid {
 	}
 
 	setBorderCell(index: number, border: number, style?: CellStyle): void {
-		// A border strokes; it does not fill. The cell keeps the background
-		// the fills beneath it painted, unless the caller names one.
+		// A border strokes. It does not fill. The cell keeps the background the
+		// fills beneath it painted, unless the caller specifies one.
 		const bg = style?.bg != null ? style.bg & COLOR_MASK : this.bg[index];
 		this.char[index] = 0x20;
 		this.fg[index] = (style?.fg ?? 0) & COLOR_MASK;
@@ -902,8 +907,8 @@ function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 		previous = index;
 
 		// A wide grapheme's continuation column is empty in the buffer but
-		// already covered by the glyph -- skip it, or the line grows a
-		// phantom space per wide character and shifts what follows.
+		// already covered by the glyph. Skip it, or the line grows a phantom
+		// space per wide character and shifts what follows.
 		if (encoding === 0) {
 			col += grid.widthAt(index) - 1;
 		}
@@ -935,8 +940,8 @@ function encodeGrapheme(grapheme: string): number {
 }
 
 function graphemeColumns(grapheme: string): number {
-	// Printable ASCII is the common case and always 1: skip the tests
-	// stringWidth opens with.
+	// Printable ASCII is the common case and always 1, so skip the tests
+	// stringWidth starts with.
 	const code = grapheme.charCodeAt(0);
 	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) {
 		return 1;
@@ -949,11 +954,11 @@ export class CellContext {
 	rows: number;
 	cols: number;
 	viewportOffset: number;
-	// Where a focused field wants the real cursor: IME composition anchors
+	// Where a focused field wants the real cursor. IME composition anchors
 	// there, so an inverse-cell caret is not enough for text entry.
 	caret: {col: number; row: number} | null;
-	// The overflow:hidden clip in document (row, col) space; an edge is
-	// +-Infinity on an axis that is not clipped, null when none is active.
+	// The overflow:hidden clip in document (row, col) space. An edge is
+	// +-Infinity on an axis that is not clipped. Null when none is active.
 	clipRect: {
 		left: number;
 		top: number;
@@ -990,10 +995,10 @@ export class CellContext {
 			return;
 		}
 
-		// "default" clears the cells to the terminal's own background --
-		// CSS's Canvas system color -- which still OVERWRITES whatever was
-		// painted underneath: an opaque box in the theme's color, whatever
-		// that theme is. "inverse" fills with SGR inverse instead: the
+		// "default" clears the cells to the terminal's own background (CSS's
+		// Canvas system color), which still OVERWRITES whatever was painted
+		// underneath with an opaque box in the theme's color, whatever that
+		// theme is. "inverse" fills with SGR inverse instead. That is the
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
 		const style: CellStyle =
@@ -1036,10 +1041,10 @@ export class CellContext {
 		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
 
-			// Never write a control char to a cell: a cell is a column, and a
-			// control byte must be turned away before it takes one, or it
-			// survives to the output as a raw escape byte (injection from
-			// untrusted text).
+			// Never write a control char to a cell. A cell is a column, and a
+			// control byte must be rejected before it takes one, or it survives
+			// to the output as a raw escape byte (injection from untrusted
+			// text).
 			if (isControlByte(char.codePointAt(0)!)) {
 				continue;
 			}
@@ -1057,7 +1062,7 @@ export class CellContext {
 
 	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
 		// An edge across existing glyphs, which drawText cannot draw because it
-		// overwrites. The style's fg is the row's default: a cell with its own
+		// overwrites. The style's fg is the row's default. A cell with its own
 		// (::selection, ::placeholder, an authored color) keeps it.
 		const grid = this.grid;
 		const edgeBit =
@@ -1085,7 +1090,7 @@ export class CellContext {
 					edgeBit | (style.dim ? ATTR.Dim : 0) | (1 << ATTR.WidthShift);
 			}
 			// The edge replaces a box-drawing glyph with the space that cell
-			// measures as: an outline is a line of its own, not a junction.
+			// measures as. An outline is a line of its own, not a junction.
 			grid.border[index] = 0;
 		}
 	}
@@ -1097,10 +1102,10 @@ export class CellContext {
 		y2: number,
 		line: LineStyle,
 	): void {
-		// Axis-aligned, half-open: the stroke runs from the start cell toward
+		// Axis-aligned, half-open. The stroke runs from the start cell toward
 		// the end coordinate and stops short of it, so a one-cell vertical is
-		// (x, y, x, y + 1) and equal points stroke nothing -- which is also
-		// what disambiguates the axis of a one-cell line.
+		// (x, y, x, y + 1) and equal points stroke nothing. That is also what
+		// disambiguates the axis of a one-cell line.
 		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
 			return;
 		}
@@ -1113,12 +1118,12 @@ export class CellContext {
 		const rounded = BORDER_EDGE_STYLE.Rounded;
 
 		// Each cell records which way the stroke LEAVES it, and an end cell
-		// keeps only its inward half -- the stroke enters and stops at
-		// center. Two lines meeting in a cell then union into the corner,
-		// the tee or the cross without either knowing the other exists. A
-		// "square" cap projects through its cell instead, for a free end; a
-		// "round" cap rides the half-stroke, which is how a corner cell
-		// learns it curves.
+		// keeps only its inward half. The stroke enters and stops at center.
+		// Two lines meeting in a cell then join into the corner, the tee or the
+		// cross without either knowing the other exists. A "square" cap
+		// projects through its cell instead, for a free end. A "round" cap is
+		// recorded on the half-stroke, which is how a corner cell learns it
+		// curves.
 		if (y1 === y2) {
 			const a = Math.min(x1, x2);
 			const b = Math.max(x1, x2) - 1;
@@ -1192,9 +1197,9 @@ export class CellContext {
 			corner: "round" | undefined,
 		): "round" | "square" | undefined => (adjacent ? corner : "square");
 
-		// Verticals first: a corner cell's glyph spans two sides but holds one
-		// color, and the horizontal side's wins -- the closest a cell gets to
-		// the browser's diagonal miter.
+		// Verticals first. A corner cell's glyph spans two sides but holds one
+		// color, and the horizontal side's wins, which is the closest a cell
+		// gets to the browser's diagonal miter.
 		if (sides.left) {
 			this.drawLine(x, y, x, b + 1, {
 				...sides.left,
@@ -1216,7 +1221,8 @@ export class CellContext {
 				endCap: cap(sides.right, sides.topRight),
 			});
 		}
-		// A 1-row box's bottom shares the top's row; the top already drew it.
+		// A 1-row box's bottom shares the top's row, and the top already drew
+		// it.
 		if (sides.bottom && !(b === y && sides.top)) {
 			this.drawLine(x, b, r + 1, b, {
 				...sides.bottom,
@@ -1274,7 +1280,7 @@ function setCell(
 	const grid = context.grid;
 
 	// A style that names no background of its own takes the one already in
-	// the cell: text painted over a filled box sits ON the fill rather than
+	// the cell. Text painted over a filled box sits ON the fill rather than
 	// punching a default-colored hole through it.
 	let bgColor: number | undefined;
 	if (style && style.bg == null && grid.char[index] !== 0) {
@@ -1292,9 +1298,8 @@ function setBorderCell(
 	style?: CellStyle,
 ): void {
 	// A box whose extent touches an exposed band still stamps its whole
-	// outline; the gate drops the strokes on carried-over rows -- a top
-	// border row wearing a legend, say -- which keep what the seeded grid
-	// holds.
+	// outline. The gate drops the strokes on carried-over rows (a top border
+	// row carrying a legend, say), which keep what the seeded grid holds.
 	const index = guardedWriteIndex(context, y, x);
 	if (index < 0) {
 		return;
@@ -1302,8 +1307,8 @@ function setBorderCell(
 
 	const grid = context.grid;
 
-	// Two boxes sharing a cell union their edges, so a shared wall lands on
-	// a tee or a cross rather than the later box's corner.
+	// Two boxes sharing a cell union their edges, so a shared wall becomes a
+	// tee or a cross rather than the later box's corner.
 	const existing = grid.border[index];
 	grid.setBorderCell(
 		index,
@@ -1360,8 +1365,8 @@ function styleDiff(
 		return;
 	}
 
-	// A color moves with its attribute group, so a run of identically styled
-	// cells emits nothing at all.
+	// A color moves with its attribute group, so a run of identically
+	// styled cells emits nothing at all.
 	const fgChanged =
 		fg !== prevFg || (attrs & ATTR.FGGroup) !== (prevAttrs & ATTR.FGGroup);
 	const bgChanged =
@@ -1449,8 +1454,9 @@ function moveCursor(
 const PROBE_RESIDUE_COLUMNS = 4;
 
 function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
-	// Only the first painted row can hide a probe: emission never moves the
-	// cursor back up, so content could not paint over a train on a later row.
+	// Only the first painted row can hide a probe. Emission never moves the
+	// cursor back up, so content could not paint over a train on a later
+	// row.
 	const {rows, cols, char, border} = grid;
 	if (cols <= PROBE_RESIDUE_COLUMNS) {
 		return null;
@@ -1474,7 +1480,7 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 				spanStart = col;
 			}
 			// A wide glyph covers its continuation column too, which the grid
-			// leaves empty: the span runs on across it.
+			// leaves empty. The span runs on across it.
 			col += border[index] > 0 ? 1 : Math.max(1, grid.widthAt(index));
 			if (
 				col - spanStart >= PROBE_RESIDUE_COLUMNS &&
@@ -1508,15 +1514,15 @@ function generateANSI(
 	let skipNextCol = -1;
 
 	// The emission run the cursor is in (every move ends one), and how many
-	// unmeasured clusters this row has painted -- each can carry the real
+	// unmeasured clusters this row has painted. Each can carry the real
 	// cursor a column either side of the predicted one.
 	let run = 0;
 	let unknownInRow = 0;
 
-	// Clusters the margin has starved are asked about off to the side, before
-	// the frame paints anything: the probe train goes to a cell the first
-	// painted row covers, and that row's own content lands on top of it in this
-	// same write, so nothing of it is ever on screen.
+	// Clusters the margin has starved are probed off to the side, before
+	// the frame paints anything. The probe train goes to a cell the first
+	// painted row covers, and that row's own content lands on top of it in
+	// this same write, so nothing of it is ever on screen.
 	if (measurer !== undefined) {
 		const starving = measurer.starvedWidths();
 		if (starving.size > 0) {
@@ -1587,7 +1593,7 @@ function generateANSI(
 				// A carriage return puts the cursor in a column named
 				// absolutely, so whatever the glyphs before it really did stops
 				// mattering and a new run begins. A bare cursor-forward does
-				// not: it steps from wherever the cursor actually is, carrying
+				// not. It steps from wherever the cursor actually is, carrying
 				// any divergence with it, and the run continues.
 				if (measurer !== undefined && moveSeq.includes("\r")) {
 					run++;
@@ -1620,7 +1626,7 @@ function generateANSI(
 
 			const width = grid.widthAt(index);
 
-			// Only clusters terminals disagree about are asked; the char test
+			// Only clusters terminals disagree about are probed. The char test
 			// keeps ASCII from reaching widthIsUncertain, and a border glyph is
 			// a character this engine chose.
 			if (measurer !== undefined && encoding === 0) {
@@ -1630,17 +1636,17 @@ function generateANSI(
 					widthIsUncertain(glyph) &&
 					measurer.wantsWidth(glyph)
 				) {
-					// Near the right margin the answer is unreadable: a glyph
+					// Near the right margin the reply is unreadable. A glyph
 					// that reaches the last column leaves the cursor there with
-					// wrap pending rather than past it, and the reply says the
-					// same column for two different advances. The room to leave
-					// is the widest advance a cluster can plausibly have, plus
-					// what the unmeasured clusters already on this row may have
-					// pushed the real cursor past the predicted one.
+					// wrap pending rather than past it, and the reply reports
+					// the same column for two different advances. The room to
+					// leave is the widest advance a cluster can plausibly have,
+					// plus what the unmeasured clusters already on this row may
+					// have pushed the real cursor past the predicted one.
 					//
-					// Defer -- the cluster keeps its place in line and gets
-					// measured wherever it next appears with room -- or, if it
-					// never has room, on a later frame's probe train.
+					// Defer instead. The cluster keeps its place in line and
+					// gets measured wherever it next appears with room, or, if
+					// it never has room, on a later frame's probe train.
 					if (col + PROBE_RESIDUE_COLUMNS + 2 * unknownInRow < cols) {
 						output += measurer.probeWidth(glyph, run, col, width);
 					} else {
@@ -1666,8 +1672,9 @@ function generateANSI(
 		}
 	}
 
-	// Never a trailing newline: the frame is repainted in place, and one line
-	// feed per render would scroll the launching prompt up a row each time.
+	// Never a trailing newline. The frame is repainted in place, and one
+	// line feed per render would scroll the launching prompt up a row each
+	// time.
 	return output;
 }
 
@@ -1708,18 +1715,18 @@ export class Screen {
 	declare [kEndFrame]: (() => string) | null;
 	declare [kRenderedLines]: Set<number>;
 	declare [kPrevContentHeight]: number;
-	// Where the last frame parked the cursor, in buffer coordinates. The resize
-	// re-anchor derives the frame's new top row from the cursor's post-rewrap
-	// position minus the wrapped rows above this park point.
+	// Where the last frame parked the cursor, in buffer coordinates. The
+	// resize re-anchor derives the frame's new top row from the cursor's
+	// post-rewrap position minus the wrapped rows above this park point.
 	declare [kPark]: {row: number; col: number};
 	declare [kLastCaretVisible]: boolean;
 	declare [kHasSavedCursor]: boolean;
 	declare [kNeedsFullClear]: boolean;
 	declare [kNeedsScreenReset]: boolean;
-	// A probe train is waiting; the next flush re-emits the first contentful
-	// row as its cover even if nothing changed.
+	// A probe train is waiting. The next flush re-emits the first
+	// contentful row as its cover even if nothing changed.
 	declare [kRideProbeTrain]: boolean;
-	// null for a headless render.
+	// Null for a headless render.
 	declare [kMeasurer]: TerminalExchange | null;
 	declare [kResetAtRow]: number;
 	declare [kRows]: number;
@@ -1865,8 +1872,8 @@ export class Screen {
 
 	repaintAll(): void {
 		// After a resize DECRC no longer points where the content began, so
-		// the next frame homes, clears the visible screen (ED2, not ED3: the
-		// scrollback is left alone) and reprints.
+		// the next frame homes, clears the visible screen (ED2, not ED3, which
+		// leaves the scrollback alone) and reprints.
 		this[kSpare] = this[kPrev];
 		this[kPrev] = null;
 		this[kPrevContentHeight] = 0;
@@ -1897,9 +1904,9 @@ export class Screen {
 				lines.push(gridLine(grid, row, this[kWriter]));
 			}
 
-			// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
-			// cursor down without returning it to column 0, so the lines would staircase
-			// away across the screen.
+			// A file wants a bare newline. A terminal wants CRLF. A lone LF
+			// moves the cursor down without returning it to column 0, so the
+			// lines would staircase across the screen.
 			return lines.join(lineEnding) + lineEnding;
 		};
 		return context;
@@ -1920,9 +1927,9 @@ export class Screen {
 
 		/**
 		 * Rows past the terminal's height are printed with newlines, which is
-		 * what scrolls them into the scrollback where they stay readable (CSI
-		 * n S discards them). Only the last `rows` of them are kept as the
-		 * previous frame: they alone can still be redrawn.
+		 * what scrolls them into the scrollback where they stay readable (CSI n
+		 * S discards them). Only the last `rows` of them are kept as the previous
+		 * frame. They alone can still be redrawn.
 		 */
 		regionRows?: number;
 
@@ -1931,8 +1938,8 @@ export class Screen {
 
 		/**
 		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
-		 * port names its own rows here; the camera names none and takes the
-		 * whole region, which is the band a camera move happens to span.
+		 * port names its own rows here. The camera names none and takes the
+		 * whole region, which is the band a camera move spans.
 		 */
 		band?: {top: number; end: number};
 	}): CellContext {
@@ -1941,11 +1948,11 @@ export class Screen {
 		const cols = this[kCols];
 		const next = takeGrid(this, frameRows, cols);
 
-		// A scroll is a rigid transform the terminal performs: DECSTBM pins
-		// the margins to the band (a shell prompt above stays outside them)
-		// and DL/IL move rows without touching the scrollback, unlike SU.
-		// The previous buffer shifts to match, so the diff emits only what
-		// the shift could not carry.
+		// A scroll is a rigid transform the terminal performs. DECSTBM pins the
+		// margins to the band (a shell prompt above stays outside them), and
+		// DL/IL move rows without touching the scrollback, unlike SU. The
+		// previous buffer shifts to match, so the diff emits only what the
+		// shift could not carry.
 		let scrollPrefix = "";
 		const regionTop = cursorPosition ?? 0;
 		const regionEnd = Math.min(regionRows ?? this[kRows], this[kRows]);
@@ -1992,7 +1999,7 @@ export class Screen {
 			}
 			this[kRenderedLines] = shiftedLines;
 
-			// DECSTBM homes the cursor; the standard prefix always CUPs for
+			// DECSTBM homes the cursor. The standard prefix always CUPs for
 			// this caller afterward.
 			const count = Math.abs(delta);
 			const bandRow = regionTop + bandTop + 1;
@@ -2012,14 +2019,14 @@ export class Screen {
 				this[kMeasurer] !== null && probingTeaches(this[kMeasurer])
 					? this[kMeasurer]
 					: undefined;
-			// The frame is complete: join the borders whose strokes touch,
-			// so the diff below sees a junction appear even when only its
+			// The frame is complete. Join the borders whose strokes touch, so
+			// the diff below sees a junction appear even when only its
 			// neighbour changed.
 			joinTouchingBorders(next);
 
-			// Build the diff. A frame taller than the terminal is a growth frame:
-			// the rows below the fold have never been on screen, so there is nothing
-			// to diff against -- print all of it.
+			// Build the diff. A frame taller than the terminal is a growth
+			// frame. The rows below the fold have never been on screen, so
+			// there is nothing to diff against. Print all of it.
 			let diff = this[kDiff];
 			if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
 				diff = new CellGrid(frameRows, cols);
@@ -2082,9 +2089,9 @@ export class Screen {
 								diff.setFrom(n, next, n);
 							}
 						} else if (nextChar === 0) {
-							// A cell the frame no longer paints has to be erased,
-							// not merely skipped: the terminal still shows the old
-							// glyph there.
+							// A cell the frame no longer paints has to be
+							// erased, not merely skipped. The terminal still
+							// shows the old glyph there.
 							diff.setBlank(n);
 						} else if (!next.equalCells(n, prev, p)) {
 							diff.setFrom(n, next, n);
@@ -2093,20 +2100,22 @@ export class Screen {
 				}
 			}
 
-			// A reset frame redraws onto rows whose terminal content is unknown --
-			// the previous buffer was dropped. Every region row must clear ITSELF:
-			// a row the new frame leaves blank gets a seeded space so generateANSI
-			// emits its \r\e[K line like any content row. Per-row erases instead of
-			// one ED from the home position matter in tmux, which preserves a
-			// fully-erased screen by pushing it into scrollback (the courtesy it
-			// extends to `clear`) -- the ED archived a copy of the old frame into
-			// the scrollback on every resize.
+			// A reset frame redraws onto rows whose terminal content is
+			// unknown, because the previous buffer was dropped. Every region
+			// row must clear ITSELF. A row the new frame leaves blank gets a
+			// seeded space so generateANSI emits its \r\e[K line like any
+			// content row. Per-row erases instead of one ED from the home
+			// position matter in tmux, which preserves a fully-erased screen by
+			// pushing it into scrollback (the courtesy it extends to `clear`).
+			// The ED archived a copy of the old frame into the scrollback on
+			// every resize.
 			const resetFrame = this[kNeedsScreenReset] || this[kNeedsFullClear];
 			if (resetFrame) {
-				// Buffer rows are region-relative (the anchor row is where the frame
-				// CUPs to); regionRows is a screen-absolute end. Seed exactly the
-				// region's rows -- seeding further would count blank screen rows as
-				// content and skew the park the resize re-anchor measures from.
+				// Buffer rows are region-relative (the anchor row is where the
+				// frame CUPs to). regionRows is a screen-absolute end. Seed
+				// exactly the region's rows. Seeding further would count blank
+				// screen rows as content and skew the park the resize re-anchor
+				// measures from.
 				const anchorRow = this[kNeedsScreenReset]
 					? this[kResetAtRow]
 					: (cursorPosition ?? 0);
@@ -2137,7 +2146,7 @@ export class Screen {
 				}
 			}
 
-			// A waiting probe train rides only under cells this same write
+			// A waiting probe train goes only under cells this same write
 			// paints over. A frame that diffs to nothing offers none, so the
 			// first contentful row re-emits verbatim: identical cells, no
 			// erase, and the train goes under them.
@@ -2157,9 +2166,10 @@ export class Screen {
 				}
 			}
 
-			// A caret appearing, moving, or disappearing must emit a frame even when
-			// no cell changed -- a blurred input leaves no visual diff, but the real
-			// cursor is sitting visible at the stale caret until a frame re-parks it.
+			// A caret appearing, moving, or disappearing must emit a frame even
+			// when no cell changed. A blurred input leaves no visual diff, but
+			// the real cursor is sitting visible at the stale caret until a
+			// frame re-parks it.
 			const caret = context.caret;
 			const caretBufferRow = caret === null ? null : caret.row + offset;
 			const caretVisible =
@@ -2188,11 +2198,12 @@ export class Screen {
 			let frameStartRow: number | undefined;
 			if (hasContent) {
 				if (this[kNeedsScreenReset]) {
-					// After a resize the terminal rewrapped our frame and moved the
-					// cursor where DECRC cannot find it; the row our content starts
-					// at still holds, since what sits above us does not reflow-grow.
-					// No home and no ED: that would wipe what is above us, and tmux
-					// archives a full-screen erase into the scrollback.
+					// After a resize the terminal rewrapped our frame and moved
+					// the cursor where DECRC cannot find it. The row our
+					// content starts at still holds, since what is above us
+					// does not reflow-grow. No home and no ED. That would wipe
+					// what is above us, and tmux archives a full-screen erase
+					// into the scrollback.
 					prefix +=
 						writer.cursorTo(this[kResetAtRow] + 1, 1).saveCursor().take();
 					this[kHasSavedCursor] = true;
@@ -2245,18 +2256,18 @@ export class Screen {
 				frameStartRow !== undefined &&
 				frameStartRow + contentHeight < this[kRows]
 			) {
-				// After a reset nothing below the content is trusted either -- the
-				// old frame may have been taller. Erase from the first row past the
-				// content: a PARTIAL erase, which no terminal treats as a screen
-				// clear worth archiving.
+				// After a reset nothing below the content is trusted either,
+				// because the old frame may have been taller. Erase from the
+				// first row past the content. This is a PARTIAL erase, which no
+				// terminal treats as a screen clear worth archiving.
 				staleOutput = writer
 					.cursorTo(frameStartRow + contentHeight + 1, 1)
 					.eraseBelow()
 					.take();
 			}
 
-			// The two grids trade places; of an overflowing frame only the rows
-			// still on screen are kept -- the rest scrolled into the scrollback.
+			// The two grids trade places. Of an overflowing frame only the rows
+			// still on screen are kept. The rest scrolled into the scrollback.
 			const retired = this[kPrev];
 			if (overflowing) {
 				this[kPrev] = next.bottomRows(this[kRows]);
@@ -2270,7 +2281,8 @@ export class Screen {
 			// A diff leaves the cursor at the last changed cell, and a resize
 			// scrolls just enough to keep the cursor on screen, so the park is
 			// what wrappedRowsAbovePark re-anchors from. A caret parks the real
-			// cursor there, shown: IME composition anchors at the real cursor.
+			// cursor there, shown, because IME composition anchors at the real
+			// cursor.
 			let parkOutput = "";
 			if (hasContent && contentHeight > 0) {
 				if (caretVisible) {
@@ -2296,17 +2308,18 @@ export class Screen {
 						col: 0,
 					};
 					if (frameStartRow !== undefined) {
-						// 0-based start + height = 1-based last row; the bottom margin caps
-						// it when the content overflows the screen.
+						// 0-based start + height = 1-based last row. The bottom
+						// margin caps it when the content overflows the screen.
 						const lastRow = Math.min(
 							frameStartRow + contentHeight,
 							this[kRows],
 						);
 						parkOutput = writer.cursorTo(lastRow, 1).take();
 					} else if (this[kHasSavedCursor]) {
-						// No absolute row to name: restore the saved content start, re-save
-						// it, and step down. CUD stops at the bottom margin, which is the
-						// content's visible bottom when it overflows.
+						// No absolute row to name. Restore the saved content
+						// start, re-save it, and step down. CUD stops at the
+						// bottom margin, which is the content's visible bottom
+						// when it overflows.
 						writer.restoreCursor().saveCursor();
 						if (contentHeight > 1) {
 							writer.cursorDown(contentHeight - 1);
