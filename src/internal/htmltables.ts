@@ -1104,8 +1104,6 @@ export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
 	["ariaOwnsElements", "aria-owns", true],
 ];
 
-/* ------------------------------------------- event handler IDL attributes */
-
 // The full HTML table plus the Pointer Events, CSS Animations, Transitions
 // and Selection partials: what `"onclick" in element` probes, not what fires.
 // The prefixed animation handlers listen for mixed-case types; the installer
