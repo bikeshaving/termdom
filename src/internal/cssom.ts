@@ -44,15 +44,7 @@ import {
 	isUAShadowRoot,
 	styleElementCount,
 	dispatchAsUserAgent,
-	selectorResolver,
 	setDocumentFocusVisible,
-	TransitionEvent,
-	type EngineWindow,
-	type Element as DOMElement,
-	type Node as DOMNode,
-} from "./dom.js";
-import * as CSSTree from "css-tree";
-import {
 	type CompiledSelector,
 	type SelectorNamespaces,
 	type SelectorNode,
@@ -64,7 +56,12 @@ import {
 	parseSelectorList,
 	selectAllCompiled,
 	pseudoName,
-} from "./selectors.js";
+	TransitionEvent,
+	type EngineWindow,
+	type Element as DOMElement,
+	type Node as DOMNode,
+} from "./dom.js";
+import * as CSSTree from "css-tree";
 import {stringWidth} from "./text.js";
 import type {LayoutEngine} from "./layout.js";
 import type * as SolverTypes from "./layout.js";
@@ -10118,7 +10115,6 @@ function selects(
 	shadow: Node | null = null,
 ): boolean {
 	return matchesCompiled(element as unknown as DOMElement, selector, {
-		resolver: selectorResolver,
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
 	});
@@ -13222,7 +13218,6 @@ function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
 		return [];
 	}
 	return selectAllCompiled(root as unknown as DOMNode, rule.matcher, {
-		resolver: selectorResolver,
 		scope: root as unknown as DOMNode,
 		shadow: ruleShadow(rule) as DOMNode | null,
 	}) as unknown as Element[];

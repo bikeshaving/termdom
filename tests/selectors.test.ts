@@ -1,8 +1,8 @@
 /**
- * The selector matcher on its own: a tree with no engine over it, a resolver
- * that answers for the states a tree cannot, and one selector at a time.
+ * The selector matcher on its own: a tree with no engine over it, and one
+ * selector at a time.
  *
- * Everything here is asked of `src/internal/selectors.ts` directly rather than
+ * Everything here is asked of the matcher's own entry points rather than
  * through `querySelectorAll`, so a failure names the matcher and not the DOM
  * around it.
  */
@@ -12,30 +12,33 @@ import {
 	type Document,
 	type Element,
 	type Node,
-	parseHTMLDocument,
-} from "../src/internal/dom.js";
-import {
-	INERT_RESOLVER,
-	type SelectorResolver,
 	SelectorError,
 	closestSelector,
 	matchesSelector,
+	parseHTMLDocument,
 	parseSelectorList,
 	selectAll,
 	selectFirst,
-} from "../src/internal/selectors.js";
+	setDocumentFocusVisible,
+	setHoveredElement,
+} from "../src/internal/dom.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 function tree(html: string, url = "about:blank"): Document {
 	return parseHTMLDocument(html, url);
 }
 
-function ids(
-	html: string,
-	selector: string,
-	resolver: SelectorResolver = INERT_RESOLVER,
-): string[] {
+function ids(html: string, selector: string): string[] {
 	const document = tree(html);
-	return selectAll(document, selector, {resolver}).map(
+	return selectAll(document, selector).map(
+		(element) => element.getAttribute("id") ?? "",
+	);
+}
+
+/** The ids a selector finds under a root, in tree order. */
+function found(root: Node, selector: string): string[] {
+	return selectAll(root, selector).map(
 		(element) => element.getAttribute("id") ?? "",
 	);
 }
@@ -161,10 +164,10 @@ test("a default namespace qualifies a compound that names no type", () => {
 });
 
 test("class and id fold case only in quirks mode", () => {
-	const quirks: SelectorResolver = {...INERT_RESOLVER, quirks: () => true};
-	expect(ids("<p id=A class=B>", "#a")).toEqual([]);
-	expect(ids("<p id=A class=B>", "#a", quirks)).toEqual(["A"]);
-	expect(ids("<p id=A class=B>", ".b", quirks)).toEqual(["A"]);
+	// A document without a doctype is in quirks mode, as the parser says.
+	expect(ids("<!doctype html><p id=A class=B>", "#a")).toEqual([]);
+	expect(ids("<p id=A class=B>", "#a")).toEqual(["A"]);
+	expect(ids("<p id=A class=B>", ".b")).toEqual(["A"]);
 });
 
 /* ---------------------------------------------------------------- attributes */
@@ -458,71 +461,78 @@ test("the constraint validation pseudos are deliberately absent", () => {
 	expect(ids("<input id=a autocomplete=name>", ":autofill")).toEqual([]);
 });
 
-test("the states an engine holds are the resolver's to answer", () => {
-	const html = "<div id=a></div><div id=b></div>";
-	const document = tree(html);
-	const a = find(document, "a");
-	const only = (element: Element): boolean => element === a;
-	const resolver: SelectorResolver = {
-		...INERT_RESOLVER,
-		hovered: only,
-		focused: only,
-		focusVisible: () => false,
-		focusWithin: only,
-		active: only,
-		target: only,
-		modal: only,
-		popoverOpen: only,
-		fullscreen: only,
-		checked: only,
-		indeterminate: only,
-		placeholderShown: only,
-		defaulted: only,
-		open: only,
-		state: (element, name) => element === a && name === "loud",
-	};
-	for (const selector of [
-		":hover",
-		":focus",
-		":focus-within",
-		":active",
-		":target",
-		":modal",
-		":popover-open",
-		":fullscreen",
-		":checked",
-		":indeterminate",
-		":placeholder-shown",
-		":default",
-		":state(loud)",
-	]) {
-		expect(selectAll(document, selector, {resolver}).map(
-			(element) => element.getAttribute("id"),
-		)).toEqual(["a"]);
-	}
-	// :focus-visible is its own pseudo, and says no where :focus says yes.
-	expect(selectAll(document, ":focus-visible", {resolver})).toEqual([]);
+test("the states the document holds answer their pseudo-classes", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<input id=hovered>" +
+		"<div id=within><input id=inner></div>" +
+		"<dialog id=modal></dialog>" +
+		"<div id=popover popover></div>" +
+		"<div id=fullscreen></div>" +
+		"<input id=checked type=checkbox checked>" +
+		"<input id=indeterminate type=checkbox>" +
+		"<input id=placeholder placeholder=hint>" +
+		"<form><button id=defaulted></button><button id=other></button></form>" +
+		"<loud-box id=loud></loud-box>";
+	window.customElements.define(
+		"loud-box",
+		class extends window.HTMLElement {
+			constructor() {
+				super();
+				this.attachInternals().states.add("loud");
+			}
+		},
+	);
+	await nextFrame(dom);
+	const body = document.body as unknown as Node;
+	const byId = (id: string) => selectFirst(body, `#${id}`)!;
+
+	setHoveredElement(document, byId("hovered") as unknown as globalThis.Element);
+	expect(found(body, ":hover")).toEqual(["hovered"]);
+
+	(byId("inner") as unknown as HTMLElement).focus();
+	expect(found(body, ":focus")).toEqual(["inner"]);
+	expect(found(body, ":focus-within")).toEqual(["within", "inner"]);
+	// :focus-visible is its own pseudo, and follows the last input modality.
+	setDocumentFocusVisible(document, false);
+	expect(found(body, ":focus-visible")).toEqual([]);
+	setDocumentFocusVisible(document, true);
+	expect(found(body, ":focus-visible")).toEqual(["inner"]);
+	// A terminal reports a press or a release, never the half between.
+	expect(found(body, ":active")).toEqual([]);
+
+	(byId("modal") as unknown as HTMLDialogElement).showModal();
+	expect(found(body, ":modal")).toEqual(["modal"]);
+	(byId("popover") as unknown as HTMLElement).showPopover();
+	expect(found(body, ":popover-open")).toEqual(["popover"]);
+	await (byId("fullscreen") as unknown as HTMLElement).requestFullscreen();
+	expect(found(body, ":fullscreen")).toEqual(["fullscreen"]);
+
+	expect(found(body, ":checked")).toEqual(["checked"]);
+	(byId("indeterminate") as unknown as HTMLInputElement).indeterminate = true;
+	expect(found(body, ":indeterminate")).toEqual(["indeterminate"]);
+	expect(found(body, ":placeholder-shown")).toEqual(["placeholder"]);
+	expect(found(body, ":default")).toContain("defaulted");
+	expect(found(body, ":default")).not.toContain("other");
+	expect(found(body, ":state(loud)")).toEqual(["loud"]);
+	dom.dispose();
+});
+
+test(":target is the element the document's URL fragment names", () => {
+	const document = tree("<div id=t></div><div id=u></div>", "about:blank#t");
+	expect(found(document, ":target")).toEqual(["t"]);
 });
 
 test(":open and :closed only speak of what can be open", () => {
-	const html = "<details id=d></details><div id=v></div>";
-	const document = tree(html);
-	const details = find(document, "d");
-	const resolver: SelectorResolver = {
-		...INERT_RESOLVER,
-		open: (element) => element === details,
-	};
-	expect(
-		selectAll(document, ":open", {resolver}).map((e) => e.getAttribute("id")),
-	).toEqual(["d"]);
-	expect(
-		selectAll(document, ":closed", {resolver}).map((e) => e.getAttribute("id")),
-	).toEqual([]);
-	expect(
-		selectAll(document, ":closed", {resolver: INERT_RESOLVER}).map((e) =>
-			e.getAttribute("id"),
-		),
-	).toEqual(["d"]);
+	const document = tree("<details id=d></details><div id=v></div>");
+	const details = find(document, "d") as unknown as HTMLDetailsElement;
+	details.open = true;
+	expect(found(document, ":open")).toEqual(["d"]);
+	expect(found(document, ":closed")).toEqual([]);
+	details.open = false;
+	expect(found(document, ":closed")).toEqual(["d"]);
 });
 
 test(":link is a hyperlink, and :visited is nothing at all", () => {
@@ -539,26 +549,13 @@ test(":link is a hyperlink, and :visited is nothing at all", () => {
 test(":host names the host of the tree the selector was written in", () => {
 	const document = tree("<div id=host></div><div id=other></div>");
 	const host = find(document, "host");
-	const shadow = {
-		nodeType: 11,
-		localName: "",
-		namespaceURI: null,
-		nodeValue: null,
-		parentNode: null,
-		childNodes: [],
-		attributes: [],
-		getAttribute: () => null,
-	} as unknown as Node;
-	const resolver: SelectorResolver = {
-		...INERT_RESOLVER,
-		shadowHost: (root) => (root === shadow ? host : null),
-	};
-	const options = {resolver, shadow};
+	const shadow = host.attachShadow({mode: "open"}) as unknown as Node;
+	const options = {shadow};
 	expect(matchesSelector(host, ":host", options)).toBe(true);
 	expect(matchesSelector(find(document, "other"), ":host", options)).toBe(
 		false,
 	);
-	expect(matchesSelector(host, ":host", {resolver})).toBe(false);
+	expect(matchesSelector(host, ":host")).toBe(false);
 	expect(matchesSelector(host, ":host(div)", options)).toBe(true);
 	expect(matchesSelector(host, ":host(span)", options)).toBe(false);
 	expect(matchesSelector(host, ":host-context(body)", options)).toBe(true);
@@ -569,22 +566,17 @@ test("::part and ::slotted select through the boundary, and only for the cascade
 	const document = tree("<div id=host><span id=light></span></div>");
 	const host = find(document, "host");
 	const light = find(document, "light");
-	const slot = find(tree("<slot id=slot></slot>"), "slot");
-	const resolver: SelectorResolver = {
-		...INERT_RESOLVER,
-		parts: (element) => (element === light ? ["knob"] : []),
-		assignedSlot: (element) => (element === light ? slot : null),
-		root: (element) => (element === light ? slot : host),
-		shadowHost: (root) => (root === slot ? host : null),
-	};
-	const options = {resolver, pseudoElements: true};
-	expect(matchesSelector(light, "#host::part(knob)", options)).toBe(true);
-	expect(matchesSelector(light, "#host::part(other)", options)).toBe(false);
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<b id=inner part=knob><slot></slot></b>";
+	const inner = find(shadow as unknown as Node, "inner");
+	const options = {pseudoElements: true};
+	expect(matchesSelector(inner, "#host::part(knob)", options)).toBe(true);
+	expect(matchesSelector(inner, "#host::part(other)", options)).toBe(false);
 	expect(matchesSelector(light, "::slotted(span)", options)).toBe(true);
 	expect(matchesSelector(light, "::slotted(b)", options)).toBe(false);
 	// A query over the tree never selects a pseudo-element.
-	expect(matchesSelector(light, "::slotted(span)", {resolver})).toBe(false);
-	expect(matchesSelector(light, "span::before", {resolver})).toBe(false);
+	expect(matchesSelector(light, "::slotted(span)")).toBe(false);
+	expect(matchesSelector(light, "span::before")).toBe(false);
 });
 
 /* ------------------------------------------------------------- shared parsing */
