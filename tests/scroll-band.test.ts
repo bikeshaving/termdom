@@ -116,8 +116,8 @@ describe("banded element scroll", () => {
 		// the margins, so the terminal never moves them and the frame never
 		// mentions them. Only the three rows the delete exposed are painted.
 		expect(terminal.taken()).toBe(
-			"\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
-			"\x1b[?25l\x1b[?2026h\x1b[1;1H\x1b7" +
+			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
+			"\x1b[1;1H\x1b7" +
 			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
 			"\r\x1b[Krow 9                                   " +
 			"\r\n\r\x1b[Krow 10                                  " +
@@ -141,8 +141,8 @@ describe("banded element scroll", () => {
 		await nextFrame(dom);
 
 		expect(terminal.taken()).toBe(
-			"\x1b[2;10r\x1b[2;1H\x1b[2M\x1b[r" +
-			"\x1b[?25l\x1b[?2026h\x1b[1;1H\x1b7" +
+			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[2M\x1b[r" +
+			"\x1b[1;1H\x1b7" +
 			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
 			"\r\x1b[Krow 9\r\n\r\x1b[Krow 10" +
 			"\x1b[11;1H\x1b[?2026l",
@@ -167,8 +167,8 @@ describe("banded element scroll", () => {
 		await nextFrame(dom);
 
 		expect(terminal.taken()).toBe(
-			"\x1b[2;10r\x1b[2;1H\x1b[2L\x1b[r" +
-			"\x1b[?25l\x1b[?2026h\x1b[1;1H\x1b7" +
+			"\x1b[?2026h\x1b[2;10r\x1b[2;1H\x1b[2L\x1b[r" +
+			"\x1b[1;1H\x1b7" +
 			"\r\n\r\x1b[Krow 3\r\n\r\x1b[Krow 4" +
 			"\x1b[11;1H\x1b[?2026l",
 		);
@@ -223,7 +223,7 @@ describe("banded element scroll", () => {
 		// No band names both boxes, so no DECSTBM at all -- the diff repaints
 		// the digits that changed in each.
 		expect(terminal.taken()).toBe(
-			"\x1b[?25l\x1b[?2026h\x1b[1;1H\x1b7" +
+			"\x1b[?2026h\x1b[1;1H\x1b7" +
 			"\x1b[2C2\r\n\x1b[2C3\r\n\x1b[2C4\r\n\x1b[2C5\r\n\x1b[2C6\r\n" +
 			"\x1b[2C2\r\n\x1b[2C3\r\n\x1b[2C4\r\n\x1b[2C5\r\n\x1b[2C6" +
 			"\x1b[10;1H\x1b[?2026l",
@@ -250,7 +250,7 @@ describe("banded element scroll", () => {
 		// Layout moved under the band, so the rows the terminal would shift
 		// are not the rows the last frame painted.
 		expect(terminal.taken()).toBe(
-			"\x1b[?25l\x1b[?2026h\x1b[1;1H\x1b7CH\x1b[1CNGED\r\n" +
+			"\x1b[?2026h\x1b[1;1H\x1b7CH\x1b[1CNGED\r\n" +
 			"\x1b[4C3\r\n\x1b[4C4\r\n\x1b[4C5\r\n\x1b[4C6\r\n\x1b[4C7\r\n" +
 			"\x1b[4C8\r\n\x1b[4C9\r\n\x1b[4C10\r\n\x1b[4C11" +
 			"\x1b[10;1H\x1b[?2026l",

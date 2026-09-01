@@ -255,23 +255,21 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 });
 
 test("entering fullscreen hides the cursor on the screen it takes", async () => {
-	// The session records the cursor as hidden before its first frame,
-	// because frames hide it as they paint. Entry cannot read that record as
-	// "the bytes are on the wire": the alternate screen it just switched to
-	// has had none of them.
+	// A focused field shows the real cursor on its caret. Entry is switch,
+	// hide, clear: a cursor the entry left visible would sit blinking on the
+	// screen it just took.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML = "<div id=\"fs\">STAGE</div>";
+	document.body.innerHTML = "<input id=\"i\"><div id=\"fs\">STAGE</div>";
 	await dom.attach();
+	document.getElementById("i")!.focus();
+	await nextFrame(dom);
 
 	const raw = captureRawOutput(terminal);
 
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
-	// The switch, then the hide, then the clear: a cursor the entry left
-	// visible would sit blinking on the screen it just took, and a frame's
-	// own hide arrives no earlier than the frame does.
 	const written = raw();
 	const entry = written.indexOf("\x1b[?1049h");
 	const hide = written.indexOf("\x1b[?25l");

@@ -109,9 +109,7 @@ describe("Screen", () => {
 			// Should hide cursor and enable sync mode. The cursor stays hidden
 			// between frames -- it is parked for resize bookkeeping, not UI --
 			// and dispose() is what shows it again on the way out.
-			expect(output).toContain("\x1b[?25l"); // Hide cursor
 			expect(output).toContain("\x1b[?2026h"); // Sync mode start
-			expect(output).not.toContain("\x1b[?25h"); // Cursor stays hidden
 			expect(output).toContain("\x1b[?2026l"); // Sync mode end
 		});
 

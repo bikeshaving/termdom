@@ -312,9 +312,6 @@ export class TermDOM {
 				if (this.document.title) {
 					void this[kExchange].setTitle(this.document.title);
 				}
-				// Frames park the cursor hidden as they paint; recorded here so
-				// the restore shows it again.
-				this[kExchange].markModeEngaged("cursorHidden");
 			}
 			updateMouseReporting(this);
 			this[kExchange].initializeCursorDetection();
@@ -1065,7 +1062,7 @@ async function renderInteractive(
 		termdom[kOnAltScreen] = wantAlt;
 		termdom[kExchange].setMode("altScreen", wantAlt);
 		if (wantAlt) {
-			termdom[kExchange].engageMode("cursorHidden");
+			termdom[kExchange].setMode("cursorHidden", true);
 			void termdom[kExchange].clearScreen();
 		}
 		// The screen changed wholesale: drop the diff model, or this frame
@@ -1164,9 +1161,14 @@ async function renderInteractive(
 	termdom[kPainter].paint(context);
 	const ansi = termdom[kScreen].endFrame();
 
+	// The cursor stays hidden while a frame paints and between frames: it is
+	// parked for resize bookkeeping, and a cursor blinking there is not UI.
+	// A focused field shows it on its caret, where IME composition anchors.
 	if (ansi) {
+		termdom[kExchange].setMode("cursorHidden", true);
 		await termdom[kExchange].write(ansi);
 	}
+	termdom[kExchange].setMode("cursorHidden", !termdom[kScreen].caretVisible);
 	afterRender(termdom);
 }
 

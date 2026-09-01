@@ -198,11 +198,6 @@ class FrameWriter {
 		return this;
 	}
 
-	privateMode(code: number, on: boolean): this {
-		this[kOut].push(`\x1b[?${code}${on ? "h" : "l"}`);
-		return this;
-	}
-
 	text(glyphs: string): this {
 		let safe = "";
 		// Text is a document's own: a control byte in it would end the sequence
@@ -216,6 +211,11 @@ class FrameWriter {
 		this[kOut].push(safe);
 		return this;
 	}
+}
+
+/** DEC 2026: the terminal shows the frame at once rather than as it arrives. */
+function synchronized(frame: string): string {
+	return `\x1b[?2026h${frame}\x1b[?2026l`;
 }
 
 function styleEscape(run: StyleRun, colorDepth: ColorDepth): string {
@@ -1780,6 +1780,11 @@ export class Screen {
 		return this[kScrollTop];
 	}
 
+	/** Whether the last frame parked the real cursor on a caret. */
+	get caretVisible(): boolean {
+		return this[kLastCaretVisible];
+	}
+
 	get journal(): FrameJournal {
 		return {
 			dirty: this[kDirty],
@@ -2189,11 +2194,8 @@ export class Screen {
 
 			const writer = this[kWriter];
 			let prefix = scrollPrefix;
-			let suffix = "";
 			let frameStartRow: number | undefined;
 			if (hasContent) {
-				prefix += writer.privateMode(25, false).privateMode(2026, true).take();
-
 				if (this[kNeedsScreenReset]) {
 					// After a resize the terminal rewrapped our frame and moved the
 					// cursor where DECRC cannot find it; the row our content starts
@@ -2224,12 +2226,6 @@ export class Screen {
 					prefix += writer.eraseBelow().take();
 					this[kNeedsFullClear] = false;
 				}
-
-				// The cursor stays hidden between frames: it is parked at the content's
-				// bottom-left for resize bookkeeping, and a blinking cursor squatting
-				// there is not UI. Focused inputs paint their own caret as an inverse
-				// cell. dispose() shows the real cursor again on the way out.
-				suffix = writer.privateMode(2026, false).take(); // synchronized, end
 			}
 
 			const output = generateANSI(diff, writer, this[kRenderedLines], measurer);
@@ -2303,7 +2299,6 @@ export class Screen {
 						}
 						parkOutput = writer.take();
 					}
-					parkOutput += writer.privateMode(25, true).take();
 				} else {
 					this[kPark] = {
 						row: Math.min(contentHeight, this[kRows]) - 1,
@@ -2330,7 +2325,8 @@ export class Screen {
 				}
 			}
 
-			return prefix + output + staleOutput + parkOutput + suffix;
+			const frame = prefix + output + staleOutput + parkOutput;
+			return hasContent ? synchronized(frame) : frame;
 		};
 		return context;
 	}
