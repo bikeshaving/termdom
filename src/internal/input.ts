@@ -48,10 +48,10 @@ import {
 import type {WireKey, WireMouse, WirePaste} from "./exchange.js";
 import type {LayoutEngine} from "./layout.js";
 import {
-	kLayoutEngine,
-	kScreen,
-	kStyleManager,
+	layoutOf,
 	render,
+	screenOf,
+	stylesOf,
 	type TermDOM,
 } from "./termdom.js";
 
@@ -318,7 +318,7 @@ function wheelScrollerFor(
 	deltaY: number,
 ): Element | null {
 	const document = handler[kDocument];
-	const layout = handler[kTermDOM][kLayoutEngine];
+	const layout = layoutOf(handler[kTermDOM]);
 	for (
 		let element: Element | null = target;
 		element &&
@@ -485,7 +485,7 @@ export class EventHandler {
 	 * paint exists -- so anything arriving here invalidates the screen first.
 	 */
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
-		this[kTermDOM][kScreen].invalidate();
+		screenOf(this[kTermDOM]).invalidate();
 		if (Array.isArray(item)) {
 			deliverKeys(this, item);
 			return;
@@ -519,7 +519,7 @@ export class EventHandler {
 		if (target !== previous) {
 			this[kHoverElement] = target;
 			setHoveredElement(this[kDocument], target);
-			this[kTermDOM][kStyleManager].handleHoverChange(previous, target);
+			stylesOf(this[kTermDOM]).handleHoverChange(previous, target);
 			const chainOf = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -876,7 +876,7 @@ function documentPointAt(
 	/** False for a row above the painted region -- a shell prompt's rows. */
 	inDocument: boolean;
 } {
-	const screen = handler[kTermDOM][kScreen];
+	const screen = screenOf(handler[kTermDOM]);
 	const documentRow =
 		handler[kDocument].fullscreenElement !== null
 			? row - 1 + screen.anchorScrollTop
@@ -903,12 +903,12 @@ function scrollByWheel(
 	const termDOM = handler[kTermDOM];
 	if (
 		deltaY < 0 &&
-		termDOM[kScreen].scrollTop === 0 &&
+		screenOf(termDOM).scrollTop === 0 &&
 		handler[kDocument].fullscreenElement === null
 	) {
 		return true;
 	}
-	termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + deltaY);
+	screenOf(termDOM).scrollTo(screenOf(termDOM).scrollTop + deltaY);
 	void render(termDOM);
 	return false;
 }
@@ -1004,7 +1004,7 @@ function press(
 	handler[kFieldDragAnchor] = null;
 	// A pointer press suppresses the :focus-visible ring.
 	if (setDocumentFocusVisible(handler[kDocument], false)) {
-		handler[kTermDOM][kStyleManager].handleFocusChange(
+		stylesOf(handler[kTermDOM]).handleFocusChange(
 			handler[kDocument].activeElement,
 		);
 		void render(handler[kTermDOM]);
@@ -1196,7 +1196,7 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 
 	// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
 	if (setDocumentFocusVisible(handler[kDocument], true)) {
-		handler[kTermDOM][kStyleManager].handleFocusChange(
+		stylesOf(handler[kTermDOM]).handleFocusChange(
 			handler[kDocument].activeElement,
 		);
 		void render(handler[kTermDOM]);
@@ -1369,7 +1369,7 @@ function moveFocus(handler: EventHandler, reverse: boolean): void {
 	const scope = topmostModalDialog(handler[kDocument]) ?? handler[kDocument];
 	const entries = sequentialFocusEntries(
 		scope,
-		handler[kTermDOM][kLayoutEngine],
+		layoutOf(handler[kTermDOM]),
 	);
 
 	// activeElement retargets to the shadow host at document scope; the
@@ -1536,7 +1536,7 @@ function textPositionAt(
 	) {
 		return null;
 	}
-	return handler[kTermDOM][kLayoutEngine].caretPositionFromPoint(x, y, element);
+	return layoutOf(handler[kTermDOM]).caretPositionFromPoint(x, y, element);
 }
 
 /** Whether the text at a caret position may enter the document selection. */
@@ -1546,5 +1546,5 @@ function selectable(
 ): boolean {
 	const parent = flatParentElement<Element>(position.node);
 	return parent === null ||
-		handler[kTermDOM][kStyleManager].isSelectable(parent);
+		stylesOf(handler[kTermDOM]).isSelectable(parent);
 }

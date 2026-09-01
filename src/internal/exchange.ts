@@ -23,10 +23,10 @@ import {dispatchAsUserAgent, refreshMediaQueries, termDOMOf} from "./dom.js";
 import type {EventHandler} from "./input.js";
 import {
 	closeTermDOM,
-	kLayoutEngine,
-	kScreen,
-	kStyleManager,
+	layoutOf,
 	render,
+	screenOf,
+	stylesOf,
 } from "./termdom.js";
 import {recordClusterAdvance} from "./text.js";
 
@@ -750,8 +750,8 @@ const kInteractive = Symbol("interactive");
 const kEngagedModes = Symbol("engagedModes");
 const kAnchorDetectionEnabled = Symbol("anchorDetectionEnabled");
 const kResizeTimer = Symbol("resizeTimer");
-export const kSettlingResize = Symbol("settlingResize");
-export const kTransportClosed = Symbol("transportClosed");
+const kSettlingResize = Symbol("settlingResize");
+const kTransportClosed = Symbol("transportClosed");
 const kDocument = Symbol("document");
 const kInput = Symbol("input");
 
@@ -925,6 +925,16 @@ export class TerminalExchange {
 	/** Whether the transport takes input -- a pipe does not. */
 	get interactive(): boolean {
 		return this[kInteractive];
+	}
+
+	/** Whether a resize is settling: renders wait for its one redraw. */
+	get resizing(): boolean {
+		return this[kSettlingResize] !== null;
+	}
+
+	/** Whether the terminal went away on its own. */
+	get transportClosed(): boolean {
+		return this[kTransportClosed];
 	}
 
 	/**
@@ -1208,7 +1218,10 @@ export class TerminalExchange {
 		// 1 = still set, 3 = permanently set. Either way it reorders regardless
 		// of what we asked, so hand it text in the order it expects.
 		if (answer === 1 || answer === 3) {
-			termDOMOf(this[kDocument])?.[kLayoutEngine].adoptTerminalReordering();
+			const termDOM = termDOMOf(this[kDocument]);
+			if (termDOM !== undefined) {
+				layoutOf(termDOM).adoptTerminalReordering();
+			}
 		}
 	}
 
@@ -1278,8 +1291,9 @@ export class TerminalExchange {
 			read: ({row}) => {
 				// The 1-based terminal row is the 0-based anchor: content
 				// shifts up to the terminal top from the command start.
-				const screen = termDOMOf(this[kDocument])?.[kScreen];
-				if (screen !== undefined) {
+				const termDOM = termDOMOf(this[kDocument]);
+				if (termDOM !== undefined) {
+					const screen = screenOf(termDOM);
 					screen.documentTop = row - 1;
 					screen.anchorScrollTop = 1 - row;
 				}
@@ -1630,7 +1644,7 @@ function requestStarvationFrame(session: TerminalExchange): void {
 		}
 		const termDOM = termDOMOf(session[kDocument]);
 		if (termDOM !== undefined) {
-			termDOM[kScreen].rideProbeTrain();
+			screenOf(termDOM).rideProbeTrain();
 			void render(termDOM);
 		}
 	}, TerminalExchange[kWidthStarvationWait]);
@@ -1748,8 +1762,8 @@ function settleWidthProbe(
 		// measurements.
 		const termDOM = termDOMOf(session[kDocument]);
 		if (termDOM !== undefined) {
-			termDOM[kLayoutEngine].invalidateTextMeasurement();
-			termDOM[kScreen].repaintAll();
+			layoutOf(termDOM).invalidateTextMeasurement();
+			screenOf(termDOM).repaintAll();
 			void render(termDOM);
 		}
 	}
@@ -1848,11 +1862,11 @@ function applyTerminalSize(session: TerminalExchange): void {
 		return;
 	}
 	const {cols: width, rows: height} = session[kTransport];
-	const sizeChanged = width !== termDOM[kScreen].cols ||
-		height !== termDOM[kScreen].rows;
-	termDOM[kScreen].resize(height, width);
-	termDOM[kLayoutEngine].resize(width, height);
-	termDOM[kStyleManager].refreshStylesheets();
+	const sizeChanged = width !== screenOf(termDOM).cols ||
+		height !== screenOf(termDOM).rows;
+	screenOf(termDOM).resize(height, width);
+	layoutOf(termDOM).resize(width, height);
+	stylesOf(termDOM).refreshStylesheets();
 	if (sizeChanged) {
 		const window = session[kDocument].defaultView!;
 		dispatchAsUserAgent(window, new window.Event("resize"));
@@ -1887,9 +1901,9 @@ function handleResize(session: TerminalExchange): void {
 	}
 	applyTerminalSize(session);
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	termDOM[kLayoutEngine].calculateLayout();
-	const contentHeight = termDOM[kLayoutEngine].documentPaintHeight();
-	const wrappedRowsAbove = termDOM[kScreen].wrappedRowsAbovePark(newWidth);
+	layoutOf(termDOM).calculateLayout();
+	const contentHeight = layoutOf(termDOM).documentPaintHeight();
+	const wrappedRowsAbove = screenOf(termDOM).wrappedRowsAbovePark(newWidth);
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
@@ -1899,9 +1913,9 @@ function handleResize(session: TerminalExchange): void {
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		termDOM[kScreen].documentTop = startRow;
-		termDOM[kScreen].anchorScrollTop = -startRow;
-		termDOM[kScreen].replaced(startRow);
+		screenOf(termDOM).documentTop = startRow;
+		screenOf(termDOM).anchorScrollTop = -startRow;
+		screenOf(termDOM).replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection, which
@@ -1916,7 +1930,7 @@ function handleResize(session: TerminalExchange): void {
 	};
 
 	const computedReanchor = () => {
-		const previousStart = termDOM[kScreen].documentTop;
+		const previousStart = screenOf(termDOM).documentTop;
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};

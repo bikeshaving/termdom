@@ -59,13 +59,13 @@ import type {LayoutEngine} from "./layout.js";
 import type {Screen} from "./screen.js";
 import {
 	closeTermDOM,
+	exchangeOf,
 	isAttached,
-	kExchange,
-	kLayoutEngine,
-	kScreen,
-	kStyleManager,
+	layoutOf,
 	render,
+	screenOf,
 	sealTermDOM,
+	stylesOf,
 	type TermDOM,
 } from "./termdom.js";
 import {
@@ -284,7 +284,7 @@ export function fieldCaretOffset(
 	if (termDOM === undefined) {
 		return null;
 	}
-	const found = termDOM[kLayoutEngine].caretPositionFromPoint(
+	const found = layoutOf(termDOM).caretPositionFromPoint(
 		x,
 		y,
 		valueText,
@@ -358,7 +358,7 @@ export function revealFieldCaret(document: globalThis.Document): void {
 	if (termDOM === undefined) {
 		return;
 	}
-	const content = termDOM[kLayoutEngine].contentRect(active);
+	const content = layoutOf(termDOM).contentRect(active);
 	if (!content) {
 		return;
 	}
@@ -745,14 +745,14 @@ function buildUARoot(
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
-	engine[kLayoutEngine].invalidate();
+	layoutOf(engine).invalidate();
 	observeShadowRoot(host[kDocument]!, root);
 	// The sheet is in the root BEFORE the cascade hears about it, so the
 	// registration's incremental parse sees it: registered-then-populated
 	// left the cascade to notice the sheet by count drift, which ordered a
 	// full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
-	engine[kStyleManager].registerShadowRoot(root);
+	stylesOf(engine).registerShadowRoot(root);
 	return root;
 }
 
@@ -8874,19 +8874,19 @@ export class Element extends Node implements globalThis.Element {
 			observeShadowRoot(this[kDocument]!, root);
 			// A shadow attachment recomposes the host's subtree with no
 			// mutation record, so no box enumeration still stands.
-			termDOM[kLayoutEngine].invalidate();
+			layoutOf(termDOM).invalidate();
 			// The root's <style> elements join the cascade, scoped to this
 			// tree; the refresh rides on the STYLE mutation records the
 			// enrollment above will deliver.
-			termDOM[kStyleManager].registerShadowRoot(root);
+			stylesOf(termDOM).registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
 			// just changed wholesale: light children stop rendering the moment
 			// the root exists, even while it is still empty. Rebuild the
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
-				termDOM[kLayoutEngine].invalidate(this);
-				termDOM[kScreen].invalidate();
+				layoutOf(termDOM).invalidate(this);
+				screenOf(termDOM).invalidate();
 				void render(termDOM);
 			}
 		}
@@ -8922,8 +8922,8 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The element's UA styles changed (it now fills the viewport)
 		// and neither a mutation nor a focus move fired.
-		engine[kStyleManager].handleFocusChange(this);
-		engine[kLayoutEngine].invalidate(this);
+		stylesOf(engine).handleFocusChange(this);
+		layoutOf(engine).invalidate(this);
 		// The screen switch rides the next frame, where no frame can
 		// straddle it; the promise resolves once that frame is written.
 		return frameSettled(this[kDocument]!, engine);
@@ -9533,7 +9533,7 @@ Object.defineProperties(Element.prototype, {
 		get(this: Element): number {
 			const termDOM = isDocumentScroller(this) ? termDOMOf(this) : undefined;
 			return termDOM
-				? termDOM[kScreen].scrollTop
+				? screenOf(termDOM).scrollTop
 				: (scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
@@ -9626,12 +9626,12 @@ function toViewportRect(
 	rect: globalThis.DOMRect,
 	element: Element | null,
 ): globalThis.DOMRect {
-	if (element !== null && termDOM[kLayoutEngine].isInFixedSpace(element)) {
+	if (element !== null && layoutOf(termDOM).isInFixedSpace(element)) {
 		return rect;
 	}
 	return new DOMRect(
 		rect.x,
-		rect.y - termDOM[kScreen].scrollTop,
+		rect.y - screenOf(termDOM).scrollTop,
 		rect.width,
 		rect.height,
 	);
@@ -9650,7 +9650,7 @@ Object.defineProperties(Element.prototype, {
 			flushLayout(this);
 			return toViewportRect(
 				termDOM,
-				termDOM[kLayoutEngine].getRect(this) ?? new DOMRect(),
+				layoutOf(termDOM).getRect(this) ?? new DOMRect(),
 				this,
 			);
 		},
@@ -9665,7 +9665,7 @@ Object.defineProperties(Element.prototype, {
 			}
 			flushLayout(this);
 			return rectList(
-				termDOM[kLayoutEngine]
+				layoutOf(termDOM)
 					.getRects(this)
 					.map((rect) => toViewportRect(termDOM, rect, this)),
 			);
@@ -10080,8 +10080,8 @@ export class HTMLElement extends Element {
 		// :focus rules match live and a focus move is not a mutation, so both
 		// elements' resolved styles go stale whether or not a listener
 		// touches anything.
-		termDOM[kStyleManager].handleFocusChange(previous, this);
-		termDOM[kScreen].invalidate();
+		stylesOf(termDOM).handleFocusChange(previous, this);
+		screenOf(termDOM).invalidate();
 		void render(termDOM);
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
@@ -10116,8 +10116,8 @@ export class HTMLElement extends Element {
 		if (termDOM === undefined) {
 			return;
 		}
-		termDOM[kStyleManager].handleFocusChange(this, null);
-		termDOM[kScreen].invalidate();
+		stylesOf(termDOM).handleFocusChange(this, null);
+		screenOf(termDOM).invalidate();
 		void render(termDOM);
 		dispatchAsUserAgent(
 			this,
@@ -10310,7 +10310,7 @@ function settledLayout(element: Element): LayoutEngine | undefined {
 		return undefined;
 	}
 	flushLayout(element);
-	return termDOM[kLayoutEngine];
+	return layoutOf(termDOM);
 }
 
 Object.defineProperties(HTMLElement.prototype, {
@@ -10346,9 +10346,11 @@ Object.defineProperties(HTMLElement.prototype, {
 	// layout flush -- unlike every other member around it.
 	offsetParent: {
 		get(this: HTMLElement): Element | null {
-			return (termDOMOf(this)?.[kLayoutEngine].offsetParent(this) ?? null) as
-				Element |
-				null;
+			const termDOM = termDOMOf(this);
+			if (termDOM === undefined) {
+				return null;
+			}
+			return layoutOf(termDOM).offsetParent(this) as Element | null;
 		},
 		configurable: true,
 		enumerable: true,
@@ -10407,31 +10409,31 @@ Object.defineProperties(HTMLElement.prototype, {
 				return;
 			}
 			flushLayout(this);
-			termDOM[kLayoutEngine].revealInScrollPorts(this);
+			layoutOf(termDOM).revealInScrollPorts(this);
 			// The scroll boxes around the element have revealed it within
 			// themselves; what remains is the camera's, which shows
 			// [scrollTop, scrollTop + region). Move it the minimal amount --
 			// the standard block: "nearest" behavior. Document-relative, so
 			// it compares directly against the camera's own offset.
-			const rect = termDOM[kLayoutEngine].getRect(this);
+			const rect = layoutOf(termDOM).getRect(this);
 			if (!rect) {
 				return;
 			}
 			const document = this[kDocument]!;
-			const flow = termDOM[kLayoutEngine].getRect(document.documentElement);
+			const flow = layoutOf(termDOM).getRect(document.documentElement);
 			const regionHeight =
 				fullscreenElementOf(document) !== null
-					? termDOM[kScreen].rows
+					? screenOf(termDOM).rows
 					: Math.min(
-						termDOM[kScreen].rows,
+						screenOf(termDOM).rows,
 						flow ? Math.ceil(flow.height) : 0,
 					);
-			const top = termDOM[kScreen].scrollTop;
+			const top = screenOf(termDOM).scrollTop;
 			if (rect.top < top) {
-				termDOM[kScreen].scrollTo(rect.top);
+				screenOf(termDOM).scrollTo(rect.top);
 				void render(termDOM);
 			} else if (rect.bottom > top + regionHeight) {
-				termDOM[kScreen].scrollTo(rect.bottom - regionHeight);
+				screenOf(termDOM).scrollTo(rect.bottom - regionHeight);
 				void render(termDOM);
 			}
 		},
@@ -10473,7 +10475,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return termDOM[kLayoutEngine].getRects(this).length > 0;
+			return layoutOf(termDOM).getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -14846,7 +14848,7 @@ class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only hear it on a
 		// microtask.
 		if (changed) {
-			this[kEngine]![kLayoutEngine].invalidate(this);
+			layoutOf(this[kEngine]!).invalidate(this);
 		}
 	}
 }
@@ -14980,7 +14982,7 @@ function build(
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		engine[kLayoutEngine].invalidate();
+		layoutOf(engine).invalidate();
 		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
 	input[kRoot] = root;
@@ -14997,7 +14999,7 @@ function build(
 		input[kPlaceholderText] = null;
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
-	engine[kLayoutEngine].invalidate(input);
+	layoutOf(engine).invalidate(input);
 	input[kUAReconcile]!();
 }
 
@@ -16556,7 +16558,7 @@ class HTMLSelectElement extends HTMLElement {
 			const row = (Array.from(
 				picker.childNodes,
 			) as globalThis.HTMLElement[]).find((node) => {
-				const rect = engine[kLayoutEngine].getRect(node);
+				const rect = layoutOf(engine).getRect(node);
 				return rect ? rectContains(rect, x, y) : false;
 			});
 			if (row) {
@@ -16575,7 +16577,7 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			// Off every row: a press inside the picker's own padding does nothing; a
 			// press outside it (the closed face) dismisses.
-			const pickerRect = engine[kLayoutEngine].getRect(picker);
+			const pickerRect = layoutOf(engine).getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kHighlight] = null;
 				this[kUAReconcile]!();
@@ -16786,7 +16788,7 @@ class HTMLSelectElement extends HTMLElement {
 		const label = selected ? selected.label : "";
 		if (this[kValueText]!.data !== label) {
 			this[kValueText]!.data = label;
-			engine[kLayoutEngine].invalidate(this);
+			layoutOf(engine).invalidate(this);
 		}
 
 		if (this[kHighlight] === null) {
@@ -16801,7 +16803,7 @@ class HTMLSelectElement extends HTMLElement {
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's containing
 		// block is the ICB), matching the field's width.
-		const rect = engine[kLayoutEngine].getRect(this);
+		const rect = layoutOf(engine).getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
 			const left = `${Math.round(rect.left)}px`;
@@ -17781,7 +17783,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				engine[kLayoutEngine].calculateLayout();
+				layoutOf(engine).calculateLayout();
 				const target = verticalTarget(
 					this,
 					caret,
@@ -17793,8 +17795,8 @@ class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				engine[kLayoutEngine].calculateLayout();
-				const visual = textareaVisualLines(this, engine[kLayoutEngine]);
+				layoutOf(engine).calculateLayout();
+				const visual = textareaVisualLines(this, layoutOf(engine));
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
@@ -18075,7 +18077,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		// hears its characterData change too, but only on a microtask -- an edit
 		// that reads the fresh geometry back the same tick (vertical motion,
 		// Home/End) needs the engine dirtied synchronously now.
-		engine[kLayoutEngine].invalidate(this);
+		layoutOf(engine).invalidate(this);
 	}
 }
 
@@ -18103,7 +18105,7 @@ function verticalTarget(
 ): number {
 	const visual = textareaVisualLines(
 		textarea,
-		textarea[kEngine]![kLayoutEngine],
+		layoutOf(textarea[kEngine]!),
 	);
 	if (!visual) {
 		return caret;
@@ -18373,8 +18375,8 @@ function popoverStateChanged(element: Element): void {
 	if (termDOM === undefined) {
 		return;
 	}
-	termDOM[kStyleManager].handleStateChange(element);
-	termDOM[kScreen].invalidate();
+	stylesOf(termDOM).handleStateChange(element);
+	screenOf(termDOM).invalidate();
 	void render(termDOM);
 }
 
@@ -21606,9 +21608,9 @@ export class Document extends Node implements globalThis.Document {
 		if (
 			termDOM !== undefined &&
 			isAttached(termDOM) &&
-			termDOM[kExchange].interactive
+			exchangeOf(termDOM).interactive
 		) {
-			void termDOM[kExchange].setTitle(String(value));
+			void exchangeOf(termDOM).setTitle(String(value));
 		}
 	}
 
@@ -21883,8 +21885,8 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			engine[kStyleManager].handleFocusChange(exiting);
-			engine[kLayoutEngine].invalidate(exiting);
+			stylesOf(engine).handleFocusChange(exiting);
+			layoutOf(engine).invalidate(exiting);
 		}
 		return frameSettled(this, engine);
 	}
@@ -22669,12 +22671,12 @@ export function elementAtDocumentPoint(
 		return null;
 	}
 	flushLayout(document);
-	let element = termDOM[kLayoutEngine].hitTest(
+	let element = layoutOf(termDOM).hitTest(
 		document.documentElement,
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		termDOM[kScreen].scrollTop,
+		screenOf(termDOM).scrollTop,
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -22722,7 +22724,7 @@ Object.defineProperties(Document.prototype, {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same
 			// conversion getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + termDOM[kScreen].scrollTop);
+			return elementAtDocumentPoint(this, x, y + screenOf(termDOM).scrollTop);
 		},
 		writable: true,
 		configurable: true,
@@ -22739,7 +22741,7 @@ Object.defineProperties(Document.prototype, {
 			let hit =
 				termDOM === undefined
 					? null
-					: elementAtDocumentPoint(this, x, y + termDOM[kScreen].scrollTop);
+					: elementAtDocumentPoint(this, x, y + screenOf(termDOM).scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -23379,7 +23381,7 @@ function setScrollOffset(
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			termDOM[kScreen].scrollTo(Number(value));
+			screenOf(termDOM).scrollTo(Number(value));
 			void render(termDOM);
 		}
 		return;
@@ -23388,7 +23390,7 @@ function setScrollOffset(
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
-		const room = termDOM[kLayoutEngine].scrollRange(element, axis);
+		const room = layoutOf(termDOM).scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
 		}
@@ -23412,7 +23414,7 @@ function setScrollOffset(
 	if (axis === "top") {
 		recordScrollBand(termDOM, document, element, next - previous);
 	} else {
-		termDOM[kScreen].invalidate();
+		screenOf(termDOM).invalidate();
 	}
 	void render(termDOM);
 }
@@ -23442,8 +23444,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		if (!element.isConnected) {
 			continue;
 		}
-		const extent = termDOM[kLayoutEngine].scrollExtentOf(element);
-		const port = termDOM[kLayoutEngine].contentRect(element);
+		const extent = layoutOf(termDOM).scrollExtentOf(element);
+		const port = layoutOf(termDOM).contentRect(element);
 		if (!extent || !port) {
 			continue;
 		}
@@ -23462,7 +23464,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollBands.delete(document as Document);
-		termDOM[kScreen].invalidate();
+		screenOf(termDOM).invalidate();
 		void render(termDOM);
 	}
 }
@@ -23488,7 +23490,7 @@ function recordScrollBand(
 		band.delta += delta;
 	} else {
 		scrollBands.delete(document);
-		termDOM[kScreen].invalidate();
+		screenOf(termDOM).invalidate();
 	}
 }
 
@@ -24980,7 +24982,7 @@ Object.defineProperties(Range.prototype, {
 			flushLayout(this.startContainer);
 			return toViewportRect(
 				termDOM,
-				unionRect(termDOM[kLayoutEngine].getRangeRects(this)),
+				unionRect(layoutOf(termDOM).getRangeRects(this)),
 				rangeAnchor(this),
 			);
 		},
@@ -24996,7 +24998,7 @@ Object.defineProperties(Range.prototype, {
 			flushLayout(this.startContainer);
 			const anchor = rangeAnchor(this);
 			return rectList(
-				termDOM[kLayoutEngine]
+				layoutOf(termDOM)
 					.getRangeRects(this)
 					.map((rect) => toViewportRect(termDOM, rect, anchor)),
 			);
@@ -25029,7 +25031,7 @@ function scheduleSelectionChange(document: Document): void {
 	// guard below, which drops the second move of a task but not its paint.
 	const termDOM = termDOMOf(document);
 	if (termDOM !== undefined) {
-		termDOM[kScreen].invalidate();
+		screenOf(termDOM).invalidate();
 		void render(termDOM);
 	}
 	if (document[kSelectionChangeScheduled]!) {
@@ -25661,7 +25663,7 @@ function selectionTextNodes(
 	document: Document,
 	engine: TermDOM | undefined,
 ): Text[] {
-	const layout = engine?.[kLayoutEngine] ?? null;
+	const layout = engine === undefined ? null : layoutOf(engine);
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]!;
@@ -25670,7 +25672,7 @@ function selectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					paintsText(child as Text, layout) &&
-					(engine === undefined || engine[kStyleManager].isSelectable(node))
+					(engine === undefined || stylesOf(engine).isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
@@ -25873,7 +25875,7 @@ function modifiedPoint(
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
 	const engine = termDOMOf(document);
-	const layout = engine?.[kLayoutEngine] ?? null;
+	const layout = engine === undefined ? null : layoutOf(engine);
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -28496,7 +28498,7 @@ function handleMutationRecords(
 	}
 	// Any observed mutation can move a node in the flat tree; drop the
 	// memoized composition links before anything reads through them.
-	termDOM[kLayoutEngine].invalidateFrame();
+	layoutOf(termDOM).invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) re-assign className/style with identical values on every
@@ -28532,8 +28534,8 @@ function handleMutationRecords(
 			upgradeUAWidgetsIn(added);
 		}
 	}
-	termDOM[kStyleManager].handleMutations(relevant);
-	termDOM[kLayoutEngine].handleMutations(relevant);
+	stylesOf(termDOM).handleMutations(relevant);
+	layoutOf(termDOM).handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document, termDOM);
 }
@@ -28590,7 +28592,7 @@ function dropUnfocusableFocus(document: Document, termDOM: TermDOM): void {
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			termDOM[kStyleManager]
+			stylesOf(termDOM)
 				.declarationFor(node as Element)
 				.getComputedValue("display") === "none"
 		) {
@@ -28638,7 +28640,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	if (had) {
 		void render(termDOM);
 	}
-	termDOM[kLayoutEngine].calculateLayout();
+	layoutOf(termDOM).calculateLayout();
 	clampScrollOffsets(document);
 	return had;
 }
@@ -28825,7 +28827,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (
 		termDOM === undefined ||
 		!isAttached(termDOM) ||
-		!termDOM[kExchange].interactive
+		!exchangeOf(termDOM).interactive
 	) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
@@ -28834,7 +28836,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (!userActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return termDOM[kExchange];
+	return exchangeOf(termDOM);
 }
 
 Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
@@ -28910,7 +28912,7 @@ class PermissionStatus extends EventTarget {
 			return "denied";
 		}
 		const termDOM = termDOMOf(document);
-		if (!termDOM || !isAttached(termDOM) || !termDOM[kExchange].interactive) {
+		if (!termDOM || !isAttached(termDOM) || !exchangeOf(termDOM).interactive) {
 			return "denied";
 		}
 		return userActive(document) ? "granted" : "prompt";
@@ -29240,7 +29242,8 @@ export class Window extends EventTarget {
 	// moves them, and a value frozen at construction would have reported the
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
-		return termDOMOf(this.document)?.[kScreen].cols ?? 0;
+		const termDOM = termDOMOf(this.document);
+		return termDOM === undefined ? 0 : screenOf(termDOM).cols;
 	}
 
 	get outerWidth(): number {
@@ -29248,7 +29251,8 @@ export class Window extends EventTarget {
 	}
 
 	get innerHeight(): number {
-		return termDOMOf(this.document)?.[kScreen].rows ?? 0;
+		const termDOM = termDOMOf(this.document);
+		return termDOM === undefined ? 0 : screenOf(termDOM).rows;
 	}
 
 	get outerHeight(): number {
@@ -29258,14 +29262,16 @@ export class Window extends EventTarget {
 	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
 	// the anchor after the window is built.
 	get screenTop(): number {
-		return termDOMOf(this.document)?.[kScreen].documentTop ?? 0;
+		const termDOM = termDOMOf(this.document);
+		return termDOM === undefined ? 0 : screenOf(termDOM).documentTop;
 	}
 
 	// Standard window scrolling, mapped onto the camera: scrollY is how far
 	// the camera has moved down the document, scrollBy moves it. A terminal
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
-		return termDOMOf(this.document)?.[kScreen].scrollTop ?? 0;
+		const termDOM = termDOMOf(this.document);
+		return termDOM === undefined ? 0 : screenOf(termDOM).scrollTop;
 	}
 
 	get pageYOffset(): number {
@@ -29325,9 +29331,9 @@ export class Window extends EventTarget {
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? termDOM[kScreen].scrollTop)
+				? (xOrOptions.top ?? screenOf(termDOM).scrollTop)
 				: (y ?? 0);
-		termDOM[kScreen].scrollTo(top);
+		screenOf(termDOM).scrollTo(top);
 		void render(termDOM);
 	}
 
@@ -29344,7 +29350,7 @@ export class Window extends EventTarget {
 			typeof xOrOptions === "object" && xOrOptions !== null
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
-		termDOM[kScreen].scrollTo(termDOM[kScreen].scrollTop + top);
+		screenOf(termDOM).scrollTo(screenOf(termDOM).scrollTop + top);
 		void render(termDOM);
 	}
 
@@ -29388,7 +29394,7 @@ export class Window extends EventTarget {
 		const media = String(query);
 		const termDOM = termDOMOf(this.document);
 		const matches = (): boolean =>
-			termDOM?.[kStyleManager].mediaQueryMatches(media) ?? false;
+			termDOM !== undefined && stylesOf(termDOM).mediaQueryMatches(media);
 		const list = new EventTarget();
 		// `matches` reads live; this holds the value the last "change" event
 		// reported.

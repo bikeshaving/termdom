@@ -51,7 +51,7 @@ import {
 	termDOMOf,
 	TreeWalker,
 } from "./dom.js";
-import {kScreen} from "./termdom.js";
+import {screenOf} from "./termdom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
@@ -13541,5 +13541,8 @@ function changed(layout: LayoutEngine): void {
 		return;
 	}
 	usedValuesChanged(document);
-	termDOMOf(document)?.[kScreen].invalidateLayout();
+	const termDOM = termDOMOf(document);
+	if (termDOM !== undefined) {
+		screenOf(termDOM).invalidateLayout();
+	}
 }

@@ -17,8 +17,6 @@ import {
 	flushObservers,
 } from "./dom.js";
 import {
-	kSettlingResize,
-	kTransportClosed,
 	type TerminalCloseInfo,
 	TerminalExchange,
 	type TerminalSize,
@@ -66,14 +64,35 @@ const kLifecycle = Symbol("lifecycle");
  * between belong to the session and wait on kAttachBegun rather than being
  * dropped.
  */
+/**
+ * The collaborators a TermDOM renders through, for the modules that reach
+ * it from a document: the DOM's own members, the cascade, the input and
+ * the session. Functions, so the fields stay the TermDOM's.
+ */
+export function layoutOf(termDOM: TermDOM): LayoutEngine {
+	return termDOM[kLayoutEngine];
+}
+
+export function stylesOf(termDOM: TermDOM): StyleManager {
+	return termDOM[kStyleManager];
+}
+
+export function exchangeOf(termDOM: TermDOM): TerminalExchange {
+	return termDOM[kExchange];
+}
+
+export function screenOf(termDOM: TermDOM): Screen {
+	return termDOM[kScreen];
+}
+
 export function isAttached(termdom: TermDOM): boolean {
 	const lifecycle = termdom[kLifecycle];
 	return lifecycle === "attaching" || lifecycle === "attached";
 }
 
-export const kScreen = Symbol("screen");
-export const kLayoutEngine = Symbol("layoutEngine");
-export const kStyleManager = Symbol("styleManager");
+const kScreen = Symbol("screen");
+const kLayoutEngine = Symbol("layoutEngine");
+const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
 
 const kSealed = Symbol("sealed");
@@ -103,7 +122,7 @@ const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
 
 const kTransport = Symbol("transport");
-export const kExchange = Symbol("exchange");
+const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
 
 /**
@@ -496,7 +515,7 @@ export class TermDOM {
 export function closeTermDOM(termDOM: TermDOM): void {
 	// A terminal that went away on its own has nothing to drain and
 	// nothing to close; the engine just ends.
-	const live = isAttached(termDOM) && !termDOM[kExchange][kTransportClosed];
+	const live = isAttached(termDOM) && !termDOM[kExchange].transportClosed;
 	// An immediate close must not tear down mid-establishment: wait
 	// for attach to finish (anchor found, first frame painted) so the
 	// payout lands where the frame was, not at a stale row 0. Then
@@ -654,7 +673,7 @@ export async function render(termdom: TermDOM): Promise<void> {
 
 	// A resize is settling: suppress every render until the exchange issues
 	// the single re-anchored redraw.
-	if (termdom[kExchange][kSettlingResize] !== null) {
+	if (termdom[kExchange].resizing) {
 		return;
 	}
 
