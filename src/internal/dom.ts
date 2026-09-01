@@ -21,8 +21,9 @@
  * engines whole and answers besides for what only a shell can know: what the
  * viewport is, when a frame lands, how far the camera has moved. A document
  * with no mount answers the way the standards say a document with no browsing
- * context does. The widgets it upgrades render through that same Mount, and
- * the cascade and the layout engine are below this file, not above.
+ * context does. The widgets it upgrades render through that same Mount. The
+ * cascade and the layout engine sit beside this file, each importing the
+ * other, and none of the three touches another while its body runs.
  */
 import * as Parse5 from "parse5";
 import * as CSSTree from "css-tree";
