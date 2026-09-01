@@ -36,7 +36,6 @@ import {
 	inlineStyleOf,
 	styleAttributeChanged,
 	styleElementSheet,
-	type StyleManager,
 	styleShadowAttached,
 	styleSheetsOf,
 } from "./cssom.js";
@@ -56,16 +55,15 @@ import {
 	WINDOW_EVENT_HANDLERS,
 } from "./htmltables.js";
 import type {LayoutEngine} from "./layout.js";
-import type {Screen} from "./screen.js";
 import {
 	closeTermDOM,
-	exchangeOf,
+	getExchange,
+	getLayoutEngine,
+	getScreen,
+	getStyleManager,
 	isAttached,
-	layoutOf,
 	render,
-	screenOf,
 	sealTermDOM,
-	stylesOf,
 	type TermDOM,
 } from "./termdom.js";
 import {
@@ -284,7 +282,7 @@ export function fieldCaretOffset(
 	if (termDOM === undefined) {
 		return null;
 	}
-	const found = layoutOf(termDOM).caretPositionFromPoint(
+	const found = getLayoutEngine(termDOM).caretPositionFromPoint(
 		x,
 		y,
 		valueText,
@@ -358,7 +356,7 @@ export function revealFieldCaret(document: globalThis.Document): void {
 	if (termDOM === undefined) {
 		return;
 	}
-	const content = layoutOf(termDOM).contentRect(active);
+	const content = getLayoutEngine(termDOM).contentRect(active);
 	if (!content) {
 		return;
 	}
@@ -745,14 +743,14 @@ function buildUARoot(
 	styles: string,
 ): globalThis.ShadowRoot {
 	const root = attachUAShadowRoot<globalThis.ShadowRoot>(host);
-	layoutOf(engine).invalidate();
+	getLayoutEngine(engine).invalidate();
 	observeShadowRoot(host[kDocument]!, root);
 	// The sheet is in the root BEFORE the cascade hears about it, so the
 	// registration's incremental parse sees it: registered-then-populated
 	// left the cascade to notice the sheet by count drift, which ordered a
 	// full rebuild of every sheet per widget.
 	root.appendChild(uaStyleElement(host, styles));
-	stylesOf(engine).registerShadowRoot(root);
+	getStyleManager(engine).registerShadowRoot(root);
 	return root;
 }
 
@@ -8874,19 +8872,19 @@ export class Element extends Node implements globalThis.Element {
 			observeShadowRoot(this[kDocument]!, root);
 			// A shadow attachment recomposes the host's subtree with no
 			// mutation record, so no box enumeration still stands.
-			layoutOf(termDOM).invalidate();
+			getLayoutEngine(termDOM).invalidate();
 			// The root's <style> elements join the cascade, scoped to this
 			// tree; the refresh rides on the STYLE mutation records the
 			// enrollment above will deliver.
-			stylesOf(termDOM).registerShadowRoot(root);
+			getStyleManager(termDOM).registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
 			// just changed wholesale: light children stop rendering the moment
 			// the root exists, even while it is still empty. Rebuild the
 			// host's composed subtree and repaint.
 			if (this.isConnected) {
-				layoutOf(termDOM).invalidate(this);
-				screenOf(termDOM).invalidate();
+				getLayoutEngine(termDOM).invalidate(this);
+				getScreen(termDOM).invalidate();
 				void render(termDOM);
 			}
 		}
@@ -8922,8 +8920,8 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The element's UA styles changed (it now fills the viewport)
 		// and neither a mutation nor a focus move fired.
-		stylesOf(engine).handleFocusChange(this);
-		layoutOf(engine).invalidate(this);
+		getStyleManager(engine).handleFocusChange(this);
+		getLayoutEngine(engine).invalidate(this);
 		// The screen switch rides the next frame, where no frame can
 		// straddle it; the promise resolves once that frame is written.
 		return frameSettled(this[kDocument]!, engine);
@@ -9533,7 +9531,7 @@ Object.defineProperties(Element.prototype, {
 		get(this: Element): number {
 			const termDOM = isDocumentScroller(this) ? termDOMOf(this) : undefined;
 			return termDOM
-				? screenOf(termDOM).scrollTop
+				? getScreen(termDOM).scrollTop
 				: (scrollOffsets.get(this)?.top ?? 0);
 		},
 		set(this: Element, value: number) {
@@ -9626,12 +9624,12 @@ function toViewportRect(
 	rect: globalThis.DOMRect,
 	element: Element | null,
 ): globalThis.DOMRect {
-	if (element !== null && layoutOf(termDOM).isInFixedSpace(element)) {
+	if (element !== null && getLayoutEngine(termDOM).isInFixedSpace(element)) {
 		return rect;
 	}
 	return new DOMRect(
 		rect.x,
-		rect.y - screenOf(termDOM).scrollTop,
+		rect.y - getScreen(termDOM).scrollTop,
 		rect.width,
 		rect.height,
 	);
@@ -9650,7 +9648,7 @@ Object.defineProperties(Element.prototype, {
 			flushLayout(this);
 			return toViewportRect(
 				termDOM,
-				layoutOf(termDOM).getRect(this) ?? new DOMRect(),
+				getLayoutEngine(termDOM).getRect(this) ?? new DOMRect(),
 				this,
 			);
 		},
@@ -9665,7 +9663,7 @@ Object.defineProperties(Element.prototype, {
 			}
 			flushLayout(this);
 			return rectList(
-				layoutOf(termDOM)
+				getLayoutEngine(termDOM)
 					.getRects(this)
 					.map((rect) => toViewportRect(termDOM, rect, this)),
 			);
@@ -10080,8 +10078,8 @@ export class HTMLElement extends Element {
 		// :focus rules match live and a focus move is not a mutation, so both
 		// elements' resolved styles go stale whether or not a listener
 		// touches anything.
-		stylesOf(termDOM).handleFocusChange(previous, this);
-		screenOf(termDOM).invalidate();
+		getStyleManager(termDOM).handleFocusChange(previous, this);
+		getScreen(termDOM).invalidate();
 		void render(termDOM);
 		// The body holds the focus whenever nothing else does, and a move off
 		// it is a move off nothing.
@@ -10116,8 +10114,8 @@ export class HTMLElement extends Element {
 		if (termDOM === undefined) {
 			return;
 		}
-		stylesOf(termDOM).handleFocusChange(this, null);
-		screenOf(termDOM).invalidate();
+		getStyleManager(termDOM).handleFocusChange(this, null);
+		getScreen(termDOM).invalidate();
 		void render(termDOM);
 		dispatchAsUserAgent(
 			this,
@@ -10310,7 +10308,7 @@ function settledLayout(element: Element): LayoutEngine | undefined {
 		return undefined;
 	}
 	flushLayout(element);
-	return layoutOf(termDOM);
+	return getLayoutEngine(termDOM);
 }
 
 Object.defineProperties(HTMLElement.prototype, {
@@ -10350,7 +10348,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			if (termDOM === undefined) {
 				return null;
 			}
-			return layoutOf(termDOM).offsetParent(this) as Element | null;
+			return getLayoutEngine(termDOM).offsetParent(this) as Element | null;
 		},
 		configurable: true,
 		enumerable: true,
@@ -10409,31 +10407,31 @@ Object.defineProperties(HTMLElement.prototype, {
 				return;
 			}
 			flushLayout(this);
-			layoutOf(termDOM).revealInScrollPorts(this);
+			getLayoutEngine(termDOM).revealInScrollPorts(this);
 			// The scroll boxes around the element have revealed it within
 			// themselves; what remains is the camera's, which shows
 			// [scrollTop, scrollTop + region). Move it the minimal amount --
 			// the standard block: "nearest" behavior. Document-relative, so
 			// it compares directly against the camera's own offset.
-			const rect = layoutOf(termDOM).getRect(this);
+			const rect = getLayoutEngine(termDOM).getRect(this);
 			if (!rect) {
 				return;
 			}
 			const document = this[kDocument]!;
-			const flow = layoutOf(termDOM).getRect(document.documentElement);
+			const flow = getLayoutEngine(termDOM).getRect(document.documentElement);
 			const regionHeight =
 				fullscreenElementOf(document) !== null
-					? screenOf(termDOM).rows
+					? getScreen(termDOM).rows
 					: Math.min(
-						screenOf(termDOM).rows,
+						getScreen(termDOM).rows,
 						flow ? Math.ceil(flow.height) : 0,
 					);
-			const top = screenOf(termDOM).scrollTop;
+			const top = getScreen(termDOM).scrollTop;
 			if (rect.top < top) {
-				screenOf(termDOM).scrollTo(rect.top);
+				getScreen(termDOM).scrollTo(rect.top);
 				void render(termDOM);
 			} else if (rect.bottom > top + regionHeight) {
-				screenOf(termDOM).scrollTo(rect.bottom - regionHeight);
+				getScreen(termDOM).scrollTo(rect.bottom - regionHeight);
 				void render(termDOM);
 			}
 		},
@@ -10475,7 +10473,7 @@ Object.defineProperties(HTMLElement.prototype, {
 			) {
 				return false;
 			}
-			return layoutOf(termDOM).getRects(this).length > 0;
+			return getLayoutEngine(termDOM).getRects(this).length > 0;
 		},
 		writable: true,
 		configurable: true,
@@ -14848,7 +14846,7 @@ class HTMLInputElement extends HTMLElement {
 		// invalidates the measure, and the observer would only hear it on a
 		// microtask.
 		if (changed) {
-			layoutOf(this[kEngine]!).invalidate(this);
+			getLayoutEngine(this[kEngine]!).invalidate(this);
 		}
 	}
 }
@@ -14982,7 +14980,7 @@ function build(
 		while (root.firstChild) {
 			root.removeChild(root.firstChild);
 		}
-		layoutOf(engine).invalidate();
+		getLayoutEngine(engine).invalidate();
 		root.appendChild(uaStyleElement(input, FIELD_UA_STYLES));
 	}
 	input[kRoot] = root;
@@ -14999,7 +14997,7 @@ function build(
 		input[kPlaceholderText] = null;
 		input[kGlyphText] = addPart(root, "glyph").firstChild as globalThis.Text;
 	}
-	layoutOf(engine).invalidate(input);
+	getLayoutEngine(engine).invalidate(input);
 	input[kUAReconcile]!();
 }
 
@@ -16558,7 +16556,7 @@ class HTMLSelectElement extends HTMLElement {
 			const row = (Array.from(
 				picker.childNodes,
 			) as globalThis.HTMLElement[]).find((node) => {
-				const rect = layoutOf(engine).getRect(node);
+				const rect = getLayoutEngine(engine).getRect(node);
 				return rect ? rectContains(rect, x, y) : false;
 			});
 			if (row) {
@@ -16577,7 +16575,7 @@ class HTMLSelectElement extends HTMLElement {
 			}
 			// Off every row: a press inside the picker's own padding does nothing; a
 			// press outside it (the closed face) dismisses.
-			const pickerRect = layoutOf(engine).getRect(picker);
+			const pickerRect = getLayoutEngine(engine).getRect(picker);
 			if (!(pickerRect && rectContains(pickerRect, x, y))) {
 				this[kHighlight] = null;
 				this[kUAReconcile]!();
@@ -16788,7 +16786,7 @@ class HTMLSelectElement extends HTMLElement {
 		const label = selected ? selected.label : "";
 		if (this[kValueText]!.data !== label) {
 			this[kValueText]!.data = label;
-			layoutOf(engine).invalidate(this);
+			getLayoutEngine(engine).invalidate(this);
 		}
 
 		if (this[kHighlight] === null) {
@@ -16803,7 +16801,7 @@ class HTMLSelectElement extends HTMLElement {
 
 		// Anchor below the field in DOCUMENT coordinates (the picker's containing
 		// block is the ICB), matching the field's width.
-		const rect = layoutOf(engine).getRect(this);
+		const rect = getLayoutEngine(engine).getRect(this);
 		if (rect) {
 			const top = `${Math.round(rect.bottom)}px`;
 			const left = `${Math.round(rect.left)}px`;
@@ -17783,7 +17781,7 @@ class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				layoutOf(engine).calculateLayout();
+				getLayoutEngine(engine).calculateLayout();
 				const target = verticalTarget(
 					this,
 					caret,
@@ -17795,8 +17793,8 @@ class HTMLTextAreaElement extends HTMLElement {
 				key === "End" ||
 				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
 			) {
-				layoutOf(engine).calculateLayout();
-				const visual = textareaVisualLines(this, layoutOf(engine));
+				getLayoutEngine(engine).calculateLayout();
+				const visual = textareaVisualLines(this, getLayoutEngine(engine));
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
@@ -18077,7 +18075,7 @@ class HTMLTextAreaElement extends HTMLElement {
 		// hears its characterData change too, but only on a microtask -- an edit
 		// that reads the fresh geometry back the same tick (vertical motion,
 		// Home/End) needs the engine dirtied synchronously now.
-		layoutOf(engine).invalidate(this);
+		getLayoutEngine(engine).invalidate(this);
 	}
 }
 
@@ -18105,7 +18103,7 @@ function verticalTarget(
 ): number {
 	const visual = textareaVisualLines(
 		textarea,
-		layoutOf(textarea[kEngine]!),
+		getLayoutEngine(textarea[kEngine]!),
 	);
 	if (!visual) {
 		return caret;
@@ -18375,8 +18373,8 @@ function popoverStateChanged(element: Element): void {
 	if (termDOM === undefined) {
 		return;
 	}
-	stylesOf(termDOM).handleStateChange(element);
-	screenOf(termDOM).invalidate();
+	getStyleManager(termDOM).handleStateChange(element);
+	getScreen(termDOM).invalidate();
 	void render(termDOM);
 }
 
@@ -21608,9 +21606,9 @@ export class Document extends Node implements globalThis.Document {
 		if (
 			termDOM !== undefined &&
 			isAttached(termDOM) &&
-			exchangeOf(termDOM).interactive
+			getExchange(termDOM).interactive
 		) {
-			void exchangeOf(termDOM).setTitle(String(value));
+			void getExchange(termDOM).setTitle(String(value));
 		}
 	}
 
@@ -21885,8 +21883,8 @@ export class Document extends Node implements globalThis.Document {
 		}
 		const exiting = leaveFullscreen(this);
 		if (exiting) {
-			stylesOf(engine).handleFocusChange(exiting);
-			layoutOf(engine).invalidate(exiting);
+			getStyleManager(engine).handleFocusChange(exiting);
+			getLayoutEngine(engine).invalidate(exiting);
 		}
 		return frameSettled(this, engine);
 	}
@@ -22671,12 +22669,12 @@ export function elementAtDocumentPoint(
 		return null;
 	}
 	flushLayout(document);
-	let element = layoutOf(termDOM).hitTest(
+	let element = getLayoutEngine(termDOM).hitTest(
 		document.documentElement,
 		x,
 		y,
 		getTopLayer(document) as unknown as Set<globalThis.Element>,
-		screenOf(termDOM).scrollTop,
+		getScreen(termDOM).scrollTop,
 	);
 	// A pseudo-element is not an element the DOM can hand out: the hit on
 	// the content it generates is a hit on the element it originates from.
@@ -22724,7 +22722,7 @@ Object.defineProperties(Document.prototype, {
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same
 			// conversion getBoundingClientRect makes in the other direction.
-			return elementAtDocumentPoint(this, x, y + screenOf(termDOM).scrollTop);
+			return elementAtDocumentPoint(this, x, y + getScreen(termDOM).scrollTop);
 		},
 		writable: true,
 		configurable: true,
@@ -22741,7 +22739,7 @@ Object.defineProperties(Document.prototype, {
 			let hit =
 				termDOM === undefined
 					? null
-					: elementAtDocumentPoint(this, x, y + screenOf(termDOM).scrollTop);
+					: elementAtDocumentPoint(this, x, y + getScreen(termDOM).scrollTop);
 			while (hit !== null) {
 				stack.push(hit as globalThis.Element);
 				hit = flatParentElement(hit);
@@ -23381,7 +23379,7 @@ function setScrollOffset(
 	}
 	if (isDocumentScroller(element)) {
 		if (axis === "top") {
-			screenOf(termDOM).scrollTo(Number(value));
+			getScreen(termDOM).scrollTo(Number(value));
 			void render(termDOM);
 		}
 		return;
@@ -23390,7 +23388,7 @@ function setScrollOffset(
 	let next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
 	if (element.isConnected) {
 		flushLayout(element);
-		const room = layoutOf(termDOM).scrollRange(element, axis);
+		const room = getLayoutEngine(termDOM).scrollRange(element, axis);
 		if (room !== null) {
 			next = Math.min(next, room);
 		}
@@ -23414,7 +23412,7 @@ function setScrollOffset(
 	if (axis === "top") {
 		recordScrollBand(termDOM, document, element, next - previous);
 	} else {
-		screenOf(termDOM).invalidate();
+		getScreen(termDOM).invalidate();
 	}
 	void render(termDOM);
 }
@@ -23444,8 +23442,8 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		if (!element.isConnected) {
 			continue;
 		}
-		const extent = layoutOf(termDOM).scrollExtentOf(element);
-		const port = layoutOf(termDOM).contentRect(element);
+		const extent = getLayoutEngine(termDOM).scrollExtentOf(element);
+		const port = getLayoutEngine(termDOM).contentRect(element);
 		if (!extent || !port) {
 			continue;
 		}
@@ -23464,7 +23462,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollBands.delete(document as Document);
-		screenOf(termDOM).invalidate();
+		getScreen(termDOM).invalidate();
 		void render(termDOM);
 	}
 }
@@ -23490,7 +23488,7 @@ function recordScrollBand(
 		band.delta += delta;
 	} else {
 		scrollBands.delete(document);
-		screenOf(termDOM).invalidate();
+		getScreen(termDOM).invalidate();
 	}
 }
 
@@ -24982,7 +24980,7 @@ Object.defineProperties(Range.prototype, {
 			flushLayout(this.startContainer);
 			return toViewportRect(
 				termDOM,
-				unionRect(layoutOf(termDOM).getRangeRects(this)),
+				unionRect(getLayoutEngine(termDOM).getRangeRects(this)),
 				rangeAnchor(this),
 			);
 		},
@@ -24998,7 +24996,7 @@ Object.defineProperties(Range.prototype, {
 			flushLayout(this.startContainer);
 			const anchor = rangeAnchor(this);
 			return rectList(
-				layoutOf(termDOM)
+				getLayoutEngine(termDOM)
 					.getRangeRects(this)
 					.map((rect) => toViewportRect(termDOM, rect, anchor)),
 			);
@@ -25031,7 +25029,7 @@ function scheduleSelectionChange(document: Document): void {
 	// guard below, which drops the second move of a task but not its paint.
 	const termDOM = termDOMOf(document);
 	if (termDOM !== undefined) {
-		screenOf(termDOM).invalidate();
+		getScreen(termDOM).invalidate();
 		void render(termDOM);
 	}
 	if (document[kSelectionChangeScheduled]!) {
@@ -25663,7 +25661,7 @@ function selectionTextNodes(
 	document: Document,
 	engine: TermDOM | undefined,
 ): Text[] {
-	const layout = engine === undefined ? null : layoutOf(engine);
+	const layout = engine === undefined ? null : getLayoutEngine(engine);
 	const nodes: Text[] = [];
 	const collect = (node: Node): void => {
 		for (let child = node[kFirstChild]!;
@@ -25672,7 +25670,7 @@ function selectionTextNodes(
 			if (child.nodeType === TEXT_NODE) {
 				if (
 					paintsText(child as Text, layout) &&
-					(engine === undefined || stylesOf(engine).isSelectable(node))
+					(engine === undefined || getStyleManager(engine).isSelectable(node))
 				) {
 					nodes.push(child as Text);
 				}
@@ -25875,7 +25873,7 @@ function modifiedPoint(
 ): [Node, number] | null {
 	const document = selection[kDocument]!;
 	const engine = termDOMOf(document);
-	const layout = engine === undefined ? null : layoutOf(engine);
+	const layout = engine === undefined ? null : getLayoutEngine(engine);
 	if (layout === null) {
 		if (granularity === "line" || granularity === "lineboundary") {
 			return null;
@@ -28460,7 +28458,7 @@ export function adoptDocument(
 	const mounted = document as Document;
 	hoverListenerCounts.set(
 		mounted,
-		watchHoverListeners(mounted, () => void render(termDOM)),
+		watchHoverListeners(mounted, () => render(termDOM)),
 	);
 	// Observation is the document's own: mutations fan out to the cascade,
 	// the layout tree and the UA default actions here, and the engine is
@@ -28498,7 +28496,7 @@ function handleMutationRecords(
 	}
 	// Any observed mutation can move a node in the flat tree; drop the
 	// memoized composition links before anything reads through them.
-	layoutOf(termDOM).invalidateFrame();
+	getLayoutEngine(termDOM).invalidateFrame();
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) re-assign className/style with identical values on every
@@ -28534,8 +28532,8 @@ function handleMutationRecords(
 			upgradeUAWidgetsIn(added);
 		}
 	}
-	stylesOf(termDOM).handleMutations(relevant);
-	layoutOf(termDOM).handleMutations(relevant);
+	getStyleManager(termDOM).handleMutations(relevant);
+	getLayoutEngine(termDOM).handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document, termDOM);
 }
@@ -28592,7 +28590,7 @@ function dropUnfocusableFocus(document: Document, termDOM: TermDOM): void {
 	) {
 		if (
 			node.hasAttribute("inert") ||
-			stylesOf(termDOM)
+			getStyleManager(termDOM)
 				.declarationFor(node as Element)
 				.getComputedValue("display") === "none"
 		) {
@@ -28640,7 +28638,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	if (had) {
 		void render(termDOM);
 	}
-	layoutOf(termDOM).calculateLayout();
+	getLayoutEngine(termDOM).calculateLayout();
 	clampScrollOffsets(document);
 	return had;
 }
@@ -28827,7 +28825,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (
 		termDOM === undefined ||
 		!isAttached(termDOM) ||
-		!exchangeOf(termDOM).interactive
+		!getExchange(termDOM).interactive
 	) {
 		throw clipboardDenied(
 			"clipboard requires an attached interactive terminal",
@@ -28836,7 +28834,7 @@ function reachClipboard(document: Document, what: string): TerminalExchange {
 	if (!userActive(document)) {
 		throw clipboardDenied(`clipboard ${what} need a user gesture`);
 	}
-	return exchangeOf(termDOM);
+	return getExchange(termDOM);
 }
 
 Object.defineProperty(Clipboard.prototype, Symbol.toStringTag, {
@@ -28912,7 +28910,7 @@ class PermissionStatus extends EventTarget {
 			return "denied";
 		}
 		const termDOM = termDOMOf(document);
-		if (!termDOM || !isAttached(termDOM) || !exchangeOf(termDOM).interactive) {
+		if (!termDOM || !isAttached(termDOM) || !getExchange(termDOM).interactive) {
 			return "denied";
 		}
 		return userActive(document) ? "granted" : "prompt";
@@ -29243,7 +29241,7 @@ export class Window extends EventTarget {
 	// size the terminal had when the engine was built.
 	get innerWidth(): number {
 		const termDOM = termDOMOf(this.document);
-		return termDOM === undefined ? 0 : screenOf(termDOM).cols;
+		return termDOM === undefined ? 0 : getScreen(termDOM).cols;
 	}
 
 	get outerWidth(): number {
@@ -29252,7 +29250,7 @@ export class Window extends EventTarget {
 
 	get innerHeight(): number {
 		const termDOM = termDOMOf(this.document);
-		return termDOM === undefined ? 0 : screenOf(termDOM).rows;
+		return termDOM === undefined ? 0 : getScreen(termDOM).rows;
 	}
 
 	get outerHeight(): number {
@@ -29263,7 +29261,7 @@ export class Window extends EventTarget {
 	// the anchor after the window is built.
 	get screenTop(): number {
 		const termDOM = termDOMOf(this.document);
-		return termDOM === undefined ? 0 : screenOf(termDOM).documentTop;
+		return termDOM === undefined ? 0 : getScreen(termDOM).documentTop;
 	}
 
 	// Standard window scrolling, mapped onto the camera: scrollY is how far
@@ -29271,7 +29269,7 @@ export class Window extends EventTarget {
 	// document never scrolls sideways, so the X pair reads 0.
 	get scrollY(): number {
 		const termDOM = termDOMOf(this.document);
-		return termDOM === undefined ? 0 : screenOf(termDOM).scrollTop;
+		return termDOM === undefined ? 0 : getScreen(termDOM).scrollTop;
 	}
 
 	get pageYOffset(): number {
@@ -29331,9 +29329,9 @@ export class Window extends EventTarget {
 		}
 		const top =
 			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? screenOf(termDOM).scrollTop)
+				? (xOrOptions.top ?? getScreen(termDOM).scrollTop)
 				: (y ?? 0);
-		screenOf(termDOM).scrollTo(top);
+		getScreen(termDOM).scrollTo(top);
 		void render(termDOM);
 	}
 
@@ -29350,7 +29348,7 @@ export class Window extends EventTarget {
 			typeof xOrOptions === "object" && xOrOptions !== null
 				? (xOrOptions.top ?? 0)
 				: (y ?? 0);
-		screenOf(termDOM).scrollTo(screenOf(termDOM).scrollTop + top);
+		getScreen(termDOM).scrollTo(getScreen(termDOM).scrollTop + top);
 		void render(termDOM);
 	}
 
@@ -29394,7 +29392,8 @@ export class Window extends EventTarget {
 		const media = String(query);
 		const termDOM = termDOMOf(this.document);
 		const matches = (): boolean =>
-			termDOM !== undefined && stylesOf(termDOM).mediaQueryMatches(media);
+			termDOM !== undefined &&
+			getStyleManager(termDOM).mediaQueryMatches(media);
 		const list = new EventTarget();
 		// `matches` reads live; this holds the value the last "change" event
 		// reported.

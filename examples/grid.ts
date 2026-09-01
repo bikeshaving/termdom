@@ -183,12 +183,14 @@ panel(
 );
 
 const clock = dashboard.querySelector(".clock")!;
+
 function tick(): void {
 	const now = new Date();
 	clock.textContent = [now.getHours(), now.getMinutes(), now.getSeconds()]
 		.map((part) => String(part).padStart(2, "0"))
 		.join(":");
 }
+
 tick();
 const timer = setInterval(tick, 1000);
 

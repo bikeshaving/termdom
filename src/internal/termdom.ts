@@ -1,13 +1,3 @@
-/**
- * The shell: the frame loop, and the wiring that makes the other modules one
- * running program.
- *
- * It answers none of their questions itself. The document holds the tree, the
- * cascade decides style, the box tree decides geometry and the paint walk
- * decides cells; this decides when to ask, and owns the terminal the answers
- * are written to.
- */
-
 import {getBoxModel, StyleManager} from "./cssom.js";
 import * as DOM from "./dom.js";
 import {
@@ -31,8 +21,8 @@ import {Screen} from "./screen.js";
 export interface TermDOMOptions {
 
 	/**
-	 * The terminal this instance renders to. Defaults to a wrapper around the
-	 * global process.
+	 * The terminal this instance renders to.
+	 * Defaults to a wrapper around the global process.
 	 */
 	transport?: TerminalTransport;
 
@@ -43,95 +33,28 @@ export interface TermDOMOptions {
 	url?: string;
 }
 
-/** Whether the alternate screen is engaged: an element is fullscreen. */
-function isFullscreen(termdom: TermDOM): boolean {
-	return termdom.document.fullscreenElement !== null;
-}
-
-/**
- * Where an instance stands with the terminal, in order: constructed and
- * writing nothing, attach() establishing the session, the session live, torn
- * down for good. Disposal is final -- there is no way back to detached.
- */
-type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
-const kAttachBegun = Symbol("attachBegun");
-
-const kLifecycle = Symbol("lifecycle");
-
-/**
- * Whether the terminal is ours to write to. True from the moment attach() is
- * called, not from the moment its begin phase finishes: renders raised in
- * between belong to the session and wait on kAttachBegun rather than being
- * dropped.
- */
-/**
- * The collaborators a TermDOM renders through, for the modules that reach
- * it from a document: the DOM's own members, the cascade, the input and
- * the session. Functions, so the fields stay the TermDOM's.
- */
-export function layoutOf(termDOM: TermDOM): LayoutEngine {
-	return termDOM[kLayoutEngine];
-}
-
-export function stylesOf(termDOM: TermDOM): StyleManager {
-	return termDOM[kStyleManager];
-}
-
-export function exchangeOf(termDOM: TermDOM): TerminalExchange {
-	return termDOM[kExchange];
-}
-
-export function screenOf(termDOM: TermDOM): Screen {
-	return termDOM[kScreen];
-}
-
-export function isAttached(termdom: TermDOM): boolean {
-	const lifecycle = termdom[kLifecycle];
-	return lifecycle === "attaching" || lifecycle === "attached";
-}
-
 const kScreen = Symbol("screen");
 const kLayoutEngine = Symbol("layoutEngine");
 const kStyleManager = Symbol("styleManager");
 const kPainter = Symbol("painter");
-
 const kSealed = Symbol("sealed");
 const kRenderQueued = Symbol("renderQueued");
 const kOnAltScreen = Symbol("onAltScreen");
 const kRenderInFlight = Symbol("renderInFlight");
 const kRenderCount = Symbol("renderCount");
-
 const kEventHandler = Symbol("eventHandler");
 const kAttachReady = Symbol("attachReady");
-
-/**
- * The terminal size the document has adopted, which is what `window.innerWidth`
- * reports, what a `vw` is a hundredth of, and what an `@media` query is
- * answered against.
- *
- * Distinct from `transport.cols`/`rows`, which is the size the terminal is
- * RIGHT NOW. The two part company between a SIGWINCH and the frame that
- * answers it: the transport moves immediately, this moves when the document
- * takes the new size on, so the whole of a frame resolves against one size and
- * a signal reporting a size the document already has is recognised as the
- * no-op it is.
- */
-
 const kMouseReportingEnabled = Symbol("mouseReportingEnabled");
 const kHoverReportingEnabled = Symbol("hoverReportingEnabled");
 const kPendingCaretReveal = Symbol("pendingCaretReveal");
-
 const kTransport = Symbol("transport");
 const kExchange = Symbol("exchange");
 const kStaticSibling = Symbol("staticSibling");
+const kAttachBegun = Symbol("attachBegun");
 
-/**
- * One document on one terminal: the object an application holds.
- *
- * It builds the document and the engine that lays it out, takes hold of the
- * terminal on the first frame, and from then on runs the loop -- mutations
- * in, a painted frame out -- until dispose() gives the terminal back.
- */
+type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
+const kLifecycle = Symbol("lifecycle");
+
 export class TermDOM {
 	readonly document: Document;
 	readonly window: EngineWindow;
@@ -506,6 +429,31 @@ export class TermDOM {
 		disconnectObservers(this.document);
 		return this[kExchange].flush();
 	}
+}
+
+function isFullscreen(termdom: TermDOM): boolean {
+	return termdom.document.fullscreenElement !== null;
+}
+
+export function getLayoutEngine(termDOM: TermDOM): LayoutEngine {
+	return termDOM[kLayoutEngine];
+}
+
+export function getStyleManager(termDOM: TermDOM): StyleManager {
+	return termDOM[kStyleManager];
+}
+
+export function getExchange(termDOM: TermDOM): TerminalExchange {
+	return termDOM[kExchange];
+}
+
+export function getScreen(termDOM: TermDOM): Screen {
+	return termDOM[kScreen];
+}
+
+export function isAttached(termdom: TermDOM): boolean {
+	const lifecycle = termdom[kLifecycle];
+	return lifecycle === "attaching" || lifecycle === "attached";
 }
 
 /**

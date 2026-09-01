@@ -23,10 +23,10 @@ import {dispatchAsUserAgent, refreshMediaQueries, termDOMOf} from "./dom.js";
 import type {EventHandler} from "./input.js";
 import {
 	closeTermDOM,
-	layoutOf,
+	getLayoutEngine,
+	getScreen,
+	getStyleManager,
 	render,
-	screenOf,
-	stylesOf,
 } from "./termdom.js";
 import {recordClusterAdvance} from "./text.js";
 
@@ -1220,7 +1220,7 @@ export class TerminalExchange {
 		if (answer === 1 || answer === 3) {
 			const termDOM = termDOMOf(this[kDocument]);
 			if (termDOM !== undefined) {
-				layoutOf(termDOM).adoptTerminalReordering();
+				getLayoutEngine(termDOM).adoptTerminalReordering();
 			}
 		}
 	}
@@ -1293,7 +1293,7 @@ export class TerminalExchange {
 				// shifts up to the terminal top from the command start.
 				const termDOM = termDOMOf(this[kDocument]);
 				if (termDOM !== undefined) {
-					const screen = screenOf(termDOM);
+					const screen = getScreen(termDOM);
 					screen.documentTop = row - 1;
 					screen.anchorScrollTop = 1 - row;
 				}
@@ -1644,7 +1644,7 @@ function requestStarvationFrame(session: TerminalExchange): void {
 		}
 		const termDOM = termDOMOf(session[kDocument]);
 		if (termDOM !== undefined) {
-			screenOf(termDOM).rideProbeTrain();
+			getScreen(termDOM).rideProbeTrain();
 			void render(termDOM);
 		}
 	}, TerminalExchange[kWidthStarvationWait]);
@@ -1762,8 +1762,8 @@ function settleWidthProbe(
 		// measurements.
 		const termDOM = termDOMOf(session[kDocument]);
 		if (termDOM !== undefined) {
-			layoutOf(termDOM).invalidateTextMeasurement();
-			screenOf(termDOM).repaintAll();
+			getLayoutEngine(termDOM).invalidateTextMeasurement();
+			getScreen(termDOM).repaintAll();
 			void render(termDOM);
 		}
 	}
@@ -1862,11 +1862,11 @@ function applyTerminalSize(session: TerminalExchange): void {
 		return;
 	}
 	const {cols: width, rows: height} = session[kTransport];
-	const sizeChanged = width !== screenOf(termDOM).cols ||
-		height !== screenOf(termDOM).rows;
-	screenOf(termDOM).resize(height, width);
-	layoutOf(termDOM).resize(width, height);
-	stylesOf(termDOM).refreshStylesheets();
+	const sizeChanged = width !== getScreen(termDOM).cols ||
+		height !== getScreen(termDOM).rows;
+	getScreen(termDOM).resize(height, width);
+	getLayoutEngine(termDOM).resize(width, height);
+	getStyleManager(termDOM).refreshStylesheets();
 	if (sizeChanged) {
 		const window = session[kDocument].defaultView!;
 		dispatchAsUserAgent(window, new window.Event("resize"));
@@ -1901,9 +1901,9 @@ function handleResize(session: TerminalExchange): void {
 	}
 	applyTerminalSize(session);
 	const {cols: newWidth, rows: newHeight} = session[kTransport];
-	layoutOf(termDOM).calculateLayout();
-	const contentHeight = layoutOf(termDOM).documentPaintHeight();
-	const wrappedRowsAbove = screenOf(termDOM).wrappedRowsAbovePark(newWidth);
+	getLayoutEngine(termDOM).calculateLayout();
+	const contentHeight = getLayoutEngine(termDOM).documentPaintHeight();
+	const wrappedRowsAbove = getScreen(termDOM).wrappedRowsAbovePark(newWidth);
 	const settling = session[kSettlingResize];
 
 	const redraw = (startRow: number) => {
@@ -1913,9 +1913,9 @@ function handleResize(session: TerminalExchange): void {
 		// output up into the scrollback, never painting over it. Clamping
 		// startRow upward to force a fit instead would plant the frame on
 		// top of the shell prompt above it.
-		screenOf(termDOM).documentTop = startRow;
-		screenOf(termDOM).anchorScrollTop = -startRow;
-		screenOf(termDOM).replaced(startRow);
+		getScreen(termDOM).documentTop = startRow;
+		getScreen(termDOM).anchorScrollTop = -startRow;
+		getScreen(termDOM).replaced(startRow);
 
 		// Everything suppressed since the first SIGWINCH may paint again. The
 		// frame is placed by the screen reset, not by cursor detection, which
@@ -1930,7 +1930,7 @@ function handleResize(session: TerminalExchange): void {
 	};
 
 	const computedReanchor = () => {
-		const previousStart = screenOf(termDOM).documentTop;
+		const previousStart = getScreen(termDOM).documentTop;
 		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 		return Math.max(0, previousStart - scrolledUp);
 	};

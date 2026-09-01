@@ -9,6 +9,7 @@
 import {mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {homedir} from "node:os";
 import {join} from "node:path";
+
 import {TermDOM} from "@b9g/termdom";
 
 // The last successful search, kept in the platform's state directory so a
@@ -250,11 +251,11 @@ function temperatureChart(temps: number[]): string {
 			})
 			.join("");
 		const label =
-			row === ROWS - 1 ?
-				String(Math.round(max)).padStart(4) + "° " :
-				row === 0 ?
-					String(Math.round(min)).padStart(4) + "° " :
-					"      ";
+			row === ROWS - 1
+				? String(Math.round(max)).padStart(4) + "° "
+				: row === 0
+					? String(Math.round(min)).padStart(4) + "° "
+					: "      ";
 		lines.push(`<div><span class="label">${label}</span>${cells}</div>`);
 	}
 	return lines.join("");

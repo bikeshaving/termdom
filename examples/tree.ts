@@ -1,6 +1,7 @@
-import {TermDOM} from "@b9g/termdom";
 import {readdirSync} from "node:fs";
 import {join, resolve} from "node:path";
+
+import {TermDOM} from "@b9g/termdom";
 
 const root = resolve(process.argv[2] ?? ".");
 const term = new TermDOM();

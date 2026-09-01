@@ -11,14 +11,14 @@
  *
  * Keys: left/right arrows or 1-4 pick the language, q quits.
  */
-import {TermDOM} from "@b9g/termdom";
-import Prism from "prismjs";
-
 // Each pack registers its grammar on the Prism it is imported beside. CSS and
 // JavaScript ship in Prism's core, so only the rest need a line here.
 import "prismjs/components/prism-typescript.js";
 import "prismjs/components/prism-json.js";
 import "prismjs/components/prism-python.js";
+
+import {TermDOM} from "@b9g/termdom";
+import Prism from "prismjs";
 
 interface Sample {
 	id: string;
@@ -222,6 +222,7 @@ function show(index: number): void {
 		sample.id,
 	);
 }
+
 show(0);
 
 const bindings: Record<string, () => void> = {

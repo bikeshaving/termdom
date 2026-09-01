@@ -9,10 +9,10 @@
 //   Tab              move between the controls
 //   Space            toggle the focused checkbox or press the button
 //   double-click     edit a todo (Enter saves, Escape cancels)
-import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
-import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
+import {jsx} from "@b9g/crank/standalone";
+import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 

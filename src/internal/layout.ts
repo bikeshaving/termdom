@@ -51,7 +51,7 @@ import {
 	termDOMOf,
 	TreeWalker,
 } from "./dom.js";
-import {screenOf} from "./termdom.js";
+import {getScreen} from "./termdom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
@@ -13543,6 +13543,6 @@ function changed(layout: LayoutEngine): void {
 	usedValuesChanged(document);
 	const termDOM = termDOMOf(document);
 	if (termDOM !== undefined) {
-		screenOf(termDOM).invalidateLayout();
+		getScreen(termDOM).invalidateLayout();
 	}
 }

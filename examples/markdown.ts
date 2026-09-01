@@ -1,17 +1,18 @@
+import "prismjs/components/prism-typescript.js";
+import "prismjs/components/prism-json.js";
+import "prismjs/components/prism-bash.js";
+import "prismjs/components/prism-python.js";
+
+import {readFileSync} from "node:fs";
+
 import {TermDOM} from "@b9g/termdom";
 import {marked} from "marked";
 import {markedHighlight} from "marked-highlight";
-import {readFileSync} from "node:fs";
-
 // Prism is a browser syntax highlighter; here it tokenises fenced code blocks
 // into <span class="token ..."> markup that the theme below colours. Each pack
 // registers its grammar on the Prism it is imported beside; CSS and JavaScript
 // ship in Prism's core, so only the rest need a line here.
 import Prism from "prismjs";
-import "prismjs/components/prism-typescript.js";
-import "prismjs/components/prism-json.js";
-import "prismjs/components/prism-bash.js";
-import "prismjs/components/prism-python.js";
 
 // marked and marked-highlight are standard Node/browser libraries used here
 // completely unmodified -- the whole point: a real web toolchain feeding a real
@@ -208,6 +209,7 @@ if (!process.stdout.isTTY || fits) {
 function page(): number {
 	return Math.max(1, window.innerHeight - 1);
 }
+
 function height(): number {
 	return document.body.scrollHeight;
 }
@@ -226,22 +228,23 @@ function updateStatus(): void {
 	const max = Math.max(1, height() - window.innerHeight);
 	pct.textContent = `${Math.min(100, Math.round((window.scrollY / max) * 100))}%`;
 }
+
 updateStatus();
 const bindings: Record<string, () => void> = {
-	"q": () => {
+	q: () => {
 		term.window.close();
 	},
 	" ": () => window.scrollBy(0, page()),
-	"f": () => window.scrollBy(0, page()),
-	"PageDown": () => window.scrollBy(0, page()),
-	"b": () => window.scrollBy(0, -page()),
-	"PageUp": () => window.scrollBy(0, -page()),
-	"j": () => window.scrollBy(0, 1),
-	"ArrowDown": () => window.scrollBy(0, 1),
-	"k": () => window.scrollBy(0, -1),
-	"ArrowUp": () => window.scrollBy(0, -1),
-	"g": () => window.scrollBy(0, -height()),
-	"G": () => window.scrollBy(0, height()),
+	f: () => window.scrollBy(0, page()),
+	PageDown: () => window.scrollBy(0, page()),
+	b: () => window.scrollBy(0, -page()),
+	PageUp: () => window.scrollBy(0, -page()),
+	j: () => window.scrollBy(0, 1),
+	ArrowDown: () => window.scrollBy(0, 1),
+	k: () => window.scrollBy(0, -1),
+	ArrowUp: () => window.scrollBy(0, -1),
+	g: () => window.scrollBy(0, -height()),
+	G: () => window.scrollBy(0, height()),
 };
 document.addEventListener("keydown", (event: Event) => {
 	bindings[(event as KeyboardEvent).key]?.();

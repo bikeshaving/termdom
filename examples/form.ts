@@ -41,9 +41,9 @@ const done = document.getElementById("done")!;
 function updatePreview(): void {
 	const [name, email, handle] = fields.map((f) => f.value);
 	preview.textContent =
-		name || email || handle ?
-			`» ${name || "?"} <${email || "?"}> @${handle || "?"}` :
-			"» start typing to build a profile";
+		name || email || handle
+			? `» ${name || "?"} <${email || "?"}> @${handle || "?"}`
+			: "» start typing to build a profile";
 	done.textContent = "";
 }
 

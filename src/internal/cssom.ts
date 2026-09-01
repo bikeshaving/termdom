@@ -64,7 +64,7 @@ import {
 } from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {LINE_STYLES, type LineStyle} from "./screen.js";
-import {screenOf} from "./termdom.js";
+import {getScreen} from "./termdom.js";
 import {stringWidth} from "./text.js";
 import {UA_DOCUMENT_STYLES, UA_ELEMENT_STYLES} from "./useragent.js";
 
@@ -11166,7 +11166,7 @@ function viewportSize(
 	if (termDOM === undefined) {
 		return null;
 	}
-	return {width: screenOf(termDOM).cols, height: screenOf(termDOM).rows};
+	return {width: getScreen(termDOM).cols, height: getScreen(termDOM).rows};
 }
 
 /** A pseudo-element's declaration, on the same internal read path. */
