@@ -409,7 +409,7 @@ export class LayoutNode {
 	parent: LayoutNode | null;
 	measureContent: ContentMeasure | null;
 	staticPositionFunc: StaticPositionFunction | null;
-	dirty: boolean;
+	stale: boolean;
 
 	// The rows this subtree can paint, in absolute document rows. Absolutely
 	// positioned children push it outside the box. Set by
@@ -440,7 +440,7 @@ export class LayoutNode {
 		this.parent = null;
 		this.measureContent = null;
 		this.staticPositionFunc = null;
-		this.dirty = true;
+		this.stale = true;
 		this.extentTop = 0;
 		this.extentBottom = 0;
 		this.unstackedChildCount = 0;
@@ -486,7 +486,7 @@ export class LayoutNode {
 	}
 
 	invalidate(): void {
-		this.dirty = true;
+		this.stale = true;
 		if (this.styling) {
 			return;
 		}
@@ -808,7 +808,7 @@ export class LayoutNode {
 
 		roundToGrid(this, 0, 0);
 		this.computePaintExtents(0);
-		this.dirty = false;
+		this.stale = false;
 	}
 }
 
@@ -932,7 +932,7 @@ function invalidateAncestors(
 	start: LayoutNode,
 ): void {
 	for (let node: LayoutNode | null = start; node; node = node.parent) {
-		node.dirty = true;
+		node.stale = true;
 	}
 }
 
@@ -5576,7 +5576,7 @@ function layoutNode(
 	// size and skips its whole subtree. A full layout satisfies a sizing
 	// query. A sizing result never satisfies a layout query, since it
 	// placed no children.
-	if (!node.dirty) {
+	if (!node.stale) {
 		let hit: CachedSize | null = null;
 		if (
 			node.cachedLayout &&
@@ -5635,7 +5635,7 @@ function layoutNode(
 	}
 
 	// Whatever dirtied the node invalidated every cached result.
-	if (node.dirty) {
+	if (node.stale) {
 		node.cachedLayout = null;
 		node.cachedSizes.fill(null);
 	}
@@ -5668,7 +5668,7 @@ function layoutNode(
 			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace)
 		] = entry;
 	}
-	node.dirty = false;
+	node.stale = false;
 }
 
 function layoutNodeImpl(
@@ -10112,7 +10112,7 @@ export class Layout {
 		// cannot be hiding a disconnection, and even the pruning sweep below is
 		// not worth paying.
 		if (
-			!this[kInitialContainingBlock].dirty &&
+			!this[kInitialContainingBlock].stale &&
 			this[kInvalidatedNodes].size === 0 &&
 			this[kDirtyRunContainers].size === 0
 		) {
@@ -10167,7 +10167,7 @@ export class Layout {
 		// A clean root means the previous layout is still exact. Recomputing
 		// would be a full-tree relayout per frame for an animation repainting
 		// one span.
-		if (!this[kInitialContainingBlock].dirty) {
+		if (!this[kInitialContainingBlock].stale) {
 			return;
 		}
 
