@@ -429,10 +429,10 @@ export class LayoutNode {
 	cachedLayout: CachedLayout | null;
 	styling: boolean;
 
-	// Null for a node no DOM node owns: an anonymous run's, a independent formatting context,
-	// the viewport. Stored on the node rather than in a map because it is
-	// read during paint culling and every child sweep, and a node that left
-	// the tree cannot go stale.
+	// Null for a node no DOM node owns: an anonymous run's, a independent
+	// formatting context, the viewport. Stored on the node rather than in a map
+	// because it is read during paint culling and every child sweep, and a node
+	// that left the tree cannot go stale.
 	owner: object | null;
 
 	constructor() {
@@ -7512,9 +7512,9 @@ function addNode(
 		}
 		return;
 	}
-	// An out-of-flow box stays where it is for its containing block to
-	// reach down to, unless the two are in different layout trees (a
-	// independent formatting context's block cannot reach in). Then the box moves.
+	// An out-of-flow box stays where it is for its containing block to reach
+	// down to, unless the two are in different layout trees (a independent
+	// formatting context's block cannot reach in). Then the box moves.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
 			getPosition(node as Element) === "fixed"
@@ -7655,7 +7655,8 @@ function addElementNode(
 		return;
 	}
 
-	// A independent formatting context left behind would go on claiming the same children.
+	// A independent formatting context left behind would go on claiming the
+	// same children.
 	dropIndependentFormattingContext(getPrincipalBox(layout, element));
 
 	// Only DIRECT children. A broken inline's boxes reach the tree through
@@ -7967,8 +7968,8 @@ function isHiddenByAncestor(node: Node): boolean {
 	return false;
 }
 
-// Coordinates under a independent formatting context start at the box that owns it: the
-// ancestor whose root the node was actually laid out under, not the
+// Coordinates under a independent formatting context start at the box that owns
+// it: the ancestor whose root the node was actually laid out under, not the
 // nearest one. An out-of-flow descendant hangs from its containing block
 // instead.
 function getDocumentPosition(
@@ -8273,9 +8274,9 @@ function dropBreakResultCache(
 	}
 }
 
-// Drop an anonymous box's lines and dirty the measure that refills
-// them, including, under a independent formatting context, the box whose measure is the
-// only thing that ever lays that content out.
+// Drop an anonymous box's lines and dirty the measure that refills them,
+// including, under a independent formatting context, the box whose measure is
+// the only thing that ever lays that content out.
 function invalidateBox(
 	layout: Layout,
 	box: Box,
@@ -8359,7 +8360,8 @@ function invalidateEnclosingMeasure(
 		const headLayoutNode = layout[kNodeMap].get(entry.node!);
 		if (headLayoutNode && headLayoutNode.measureFunc) {
 			headLayoutNode.markDirty();
-			// Out of any independent formatting context too. Only its owner runs that layout.
+			// Out of any independent formatting context too. Only its owner
+			// runs that layout.
 			const host = getEnclosingIndependentFormattingContext(
 				layout,
 				getBoxParentElement(entry.node!),
@@ -8399,8 +8401,8 @@ function invalidateEnclosingMeasure(
 
 const kRestyled = Symbol("restyled");
 
-// Under a independent formatting context, dirtying just the run invalidates it forever.
-// Nothing above the box ever visits those nodes, so the cleared break
+// Under a independent formatting context, dirtying just the run invalidates it
+// forever. Nothing above the box ever visits those nodes, so the cleared break
 // result is never rebuilt and the run paints nothing.
 function markRunMeasureDirty(
 	layout: Layout,
