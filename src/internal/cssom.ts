@@ -312,9 +312,9 @@ function serializeCSSValue(input: string, property = ""): string {
 				const end = input.indexOf(")", i);
 				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
 				const url =
-					body.startsWith('"') || body.startsWith("'") ?
-							unescapeCSSString(body.slice(1, -1)) :
-							unescapeCSSString(body);
+					body.startsWith('"') || body.startsWith("'")
+						? unescapeCSSString(body.slice(1, -1))
+						: unescapeCSSString(body);
 				emit(`url(${serializeCSSString(url)})`);
 				i = end === -1 ? input.length : end;
 				continue;
@@ -385,9 +385,9 @@ function canonicalizeValue(property: string, value: string): string {
 			const lower = name.toLowerCase();
 			return FAMILY_IDENTIFIERS.test(name) &&
 				!CSS_WIDE_KEYWORDS.has(lower) &&
-				!RESERVED_FAMILY_NAMES.has(lower) ?
-				name :
-				quoted;
+				!RESERVED_FAMILY_NAMES.has(lower)
+				? name
+				: quoted;
 		});
 	}
 	// `counter(name, decimal)` counts what `counter(name)` counts, and the
@@ -810,9 +810,9 @@ function parseAlpha(raw: string | undefined): number {
 	if (raw === undefined) {
 		return 1;
 	}
-	const value = raw.endsWith("%") ?
-		Number(raw.slice(0, -1)) / 100 :
-			Number(raw);
+	const value = raw.endsWith("%")
+		? Number(raw.slice(0, -1)) / 100
+		: Number(raw);
 	return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
 }
 
@@ -962,7 +962,7 @@ const grammarLexer = CSSTree.fork({
 		"outline-color": "| invert",
 	},
 	types: {
-		"color": "| <deprecated-system-color>",
+		color: "| <deprecated-system-color>",
 		"family-name":
 			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
 	},
@@ -1340,9 +1340,9 @@ function expandBorderImage(value: string): Record<string, string> {
 			for (const longhand of BORDER_IMAGE_LONGHANDS) {
 				if (component.terms.includes(longhand)) {
 					out[longhand] =
-						out[longhand] === undefined ?
-							component.text :
-							`${out[longhand]} ${component.text}`;
+						out[longhand] === undefined
+							? component.text
+							: `${out[longhand]} ${component.text}`;
 					break;
 				}
 			}
@@ -1491,11 +1491,11 @@ function expandGridPlacementPair(
 	const groups = splitSlashGroups(value);
 	const first = groups[0] || "auto";
 	const second =
-		groups.length > 1 && groups[1] ?
-			groups[1] :
-			isCustomIdent(first) ?
-				first :
-				"auto";
+		groups.length > 1 && groups[1]
+			? groups[1]
+			: isCustomIdent(first)
+				? first
+				: "auto";
 	return {[start]: first, [end]: second};
 }
 
@@ -1508,11 +1508,11 @@ function expandGridArea(value: string): Record<string, string> {
 	const groups = splitSlashGroups(value);
 	const rowStart = groups[0] || "auto";
 	const fallback = (index: number, from: string): string =>
-		groups.length > index && groups[index] ?
-			groups[index] :
-			isCustomIdent(from) ?
-				from :
-				"auto";
+		groups.length > index && groups[index]
+			? groups[index]
+			: isCustomIdent(from)
+				? from
+				: "auto";
 	const columnStart = fallback(1, rowStart);
 	const rowEnd = fallback(2, rowStart);
 	const columnEnd = fallback(3, columnStart);
@@ -1621,23 +1621,23 @@ function expandGrid(value: string): Record<string, string> {
 
 	// The axis the flow runs along takes the implicit sizes; the other axis
 	// takes the explicit track list written across the slash.
-	return flowInSecond ?
-			{
-				"grid-template-rows": otherGroup || "none",
-				"grid-template-columns": "none",
-				"grid-template-areas": "none",
-				"grid-auto-flow": dense ? "column dense" : "column",
-				"grid-auto-columns": sizes || "auto",
-				"grid-auto-rows": "auto",
-			} :
-			{
-				"grid-template-columns": otherGroup || "none",
-				"grid-template-rows": "none",
-				"grid-template-areas": "none",
-				"grid-auto-flow": dense ? "row dense" : "row",
-				"grid-auto-rows": sizes || "auto",
-				"grid-auto-columns": "auto",
-			};
+	return flowInSecond
+		? {
+			"grid-template-rows": otherGroup || "none",
+			"grid-template-columns": "none",
+			"grid-template-areas": "none",
+			"grid-auto-flow": dense ? "column dense" : "column",
+			"grid-auto-columns": sizes || "auto",
+			"grid-auto-rows": "auto",
+		}
+		: {
+			"grid-template-columns": otherGroup || "none",
+			"grid-template-rows": "none",
+			"grid-template-areas": "none",
+			"grid-auto-flow": dense ? "row dense" : "row",
+			"grid-auto-rows": sizes || "auto",
+			"grid-auto-columns": "auto",
+		};
 }
 
 /** The easing keywords css-easing-1 defines. */
@@ -1959,15 +1959,15 @@ function expandShorthands(
 				// painter reads.
 				const traced = grammarTerms(property, value);
 				const line = (
-					traced ?
-							traced
-								.filter((component) =>
-									component.terms.includes("text-decoration-line"),
-								)
-								.map((component) => component.text) :
-							values.filter((token) =>
-								DECORATION_LINE_KEYWORDS.has(token.toLowerCase()),
+					traced
+						? traced
+							.filter((component) =>
+								component.terms.includes("text-decoration-line"),
 							)
+							.map((component) => component.text)
+						: values.filter((token) =>
+							DECORATION_LINE_KEYWORDS.has(token.toLowerCase()),
+						)
 				).join(" ");
 				if (line) {
 					out["text-decoration-line"] = line;
@@ -1987,7 +1987,7 @@ function expandShorthands(
  * cell where the index says `medium`, and `box-sizing` with `border-box`.
  */
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
-	"display": "inline",
+	display: "inline",
 	"margin-top": "0",
 	"margin-right": "0",
 	"margin-bottom": "0",
@@ -2012,7 +2012,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
 	"background-color": "transparent",
-	"color": "#000000",
+	color: "#000000",
 	// One cell tall: the terminal's font is the grid, and a length written in
 	// em is a length written in cells.
 	"font-size": "1px",
@@ -2020,10 +2020,10 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"font-style": "normal",
 	"text-decoration": "none",
 	"white-space": "normal",
-	"overflow": "visible",
-	"position": "static",
-	"width": "auto",
-	"height": "auto",
+	overflow: "visible",
+	position: "static",
+	width: "auto",
+	height: "auto",
 	"box-sizing": "border-box",
 	"flex-direction": "row",
 	"flex-wrap": "nowrap",
@@ -2034,14 +2034,14 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"justify-content": "normal",
 	"align-items": "stretch",
 	"align-content": "normal",
-	"gap": "0",
+	gap: "0",
 	"row-gap": "0",
 	"column-gap": "0",
 	"flex-grow": "0",
 	"flex-shrink": "1",
 	"flex-basis": "auto",
 	"align-self": "auto",
-	"order": "0",
+	order: "0",
 };
 
 // ---- Element defaults the stylesheet cannot express ----
@@ -2066,11 +2066,11 @@ function getElementDefaults(
 		const window = document.defaultView;
 		if (window) {
 			return {
-				"position": "fixed",
-				"top": "0px",
-				"left": "0px",
-				"width": `${window.innerWidth}ch`,
-				"height": `${window.innerHeight}px`,
+				position: "fixed",
+				top: "0px",
+				left: "0px",
+				width: `${window.innerWidth}ch`,
+				height: `${window.innerHeight}px`,
 				"background-color": "Canvas",
 			};
 		}
@@ -2202,11 +2202,11 @@ export function parseUnitValue(
 ): number | {percentage: number} | null {
 	const parsed = leadingUnitValue(value);
 	const number =
-		typeof parsed === "number" ?
-			parsed :
-			parsed !== null ?
-				parsed.percentage :
-				null;
+		typeof parsed === "number"
+			? parsed
+			: parsed !== null
+				? parsed.percentage
+				: null;
 	return number !== null && number < 0 ? null : parsed;
 }
 
@@ -2474,9 +2474,9 @@ function matchesGrammar(property: string, value: string, atRule = ""): boolean {
 	}
 	let valid = true;
 	try {
-		const match = atRule ?
-				grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text) :
-				grammarLexer.matchProperty(property, text);
+		const match = atRule
+			? grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text)
+			: grammarLexer.matchProperty(property, text);
 		// A descriptor or property the grammars do not describe is one this
 		// cannot judge.
 		valid =
@@ -2618,9 +2618,9 @@ function getListGutterWidth(listElement: Element): number {
 			if (child.tagName !== "LI") {
 				continue;
 			}
-			const marker = styleManager ?
-					styleManager.getMarkerContent(child) :
-					withMarkerSeparator(getListMarker(child, listElement));
+			const marker = styleManager
+				? styleManager.getMarkerContent(child)
+				: withMarkerSeparator(getListMarker(child, listElement));
 			if (!marker) {
 				continue;
 			}
@@ -2861,12 +2861,15 @@ function computedValue(property: string, declared: string): string {
 
 /** The unit a length measures in, and the px each one of it is worth. */
 interface LengthContext {
+
 	/** The font size relative units measure against, in px. */
 	font: number;
+
 	/** The root element's font size, for `rem`. */
 	root: number;
 	viewportWidth: number;
 	viewportHeight: number;
+
 	/** What a percentage is worth, or null where percentages stay. */
 	percent: number | null;
 }
@@ -2933,9 +2936,9 @@ function absolutizeLengths(value: string, context: LengthContext): string {
 		LENGTH_TOKEN,
 		(token, number: string, unit: string) => {
 			const factor = unitFactor(unit, context);
-			return factor === null ?
-				token :
-					absoluteLength(parseFloat(number) * factor);
+			return factor === null
+				? token
+				: absoluteLength(parseFloat(number) * factor);
 		},
 	);
 }
@@ -3109,6 +3112,7 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 interface DeclarationBlock {
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
+
 	/**
 	 * Each declaration's position in the block, counting from the first. A
 	 * logical property and the physical property it maps to are two names for
@@ -3308,9 +3312,9 @@ const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
 
 for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	const reset = CSS_RESET_ONLY_LONGHANDS[shorthand];
-	const indexed = reset ?
-			all.filter((longhand) => !reset.includes(longhand)) :
-		all;
+	const indexed = reset
+		? all.filter((longhand) => !reset.includes(longhand))
+		: all;
 	const box = boxOrder(indexed, EDGES) ?? boxOrder(indexed, CORNERS);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
@@ -3322,32 +3326,32 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		shorthand,
 		// The grid shorthands write their components around slashes, which no
 		// other shorthand's grammar does.
-		GRID_LINE_SHORTHANDS.has(shorthand) ?
-			"grid-line" :
-			shorthand === "grid" || shorthand === "grid-template" ?
-				"grid-template" :
-				box ?
-					radius ?
-						"radius" :
-						"box" : // A width, a style and a color stated once for several sides:
+		GRID_LINE_SHORTHANDS.has(shorthand)
+			? "grid-line"
+			: shorthand === "grid" || shorthand === "grid-template"
+				? "grid-template"
+				: box
+					? radius
+						? "radius"
+						: "box" // A width, a style and a color stated once for several sides:
 				// four for `border`, the axis's two for `border-block` and
 				// `border-inline`.
-					indexed.length >= 2 * LINE_COMPONENTS.length &&
-					LINE_COMPONENTS.every(
-						(kind) =>
-							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-								.length ===
-								indexed.length / LINE_COMPONENTS.length,
-					) ?
-						"border" :
-						indexed.length === LINE_COMPONENTS.length &&
-						indexed.every((longhand, index) =>
-							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-						) ?
-							"line" :
-							indexed.length === 2 && axisPair(shorthand, indexed) ?
-								"pair" :
-								"sequence",
+					: indexed.length >= 2 * LINE_COMPONENTS.length &&
+						LINE_COMPONENTS.every(
+							(kind) =>
+								indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+									.length ===
+									indexed.length / LINE_COMPONENTS.length,
+						)
+						? "border"
+						: indexed.length === LINE_COMPONENTS.length &&
+							indexed.every((longhand, index) =>
+								longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+							)
+							? "line"
+							: indexed.length === 2 && axisPair(shorthand, indexed)
+								? "pair"
+								: "sequence",
 	);
 }
 
@@ -3478,11 +3482,11 @@ function supportsConditionMatches(
 			operand = !operand;
 		}
 		matches =
-			matches === null ?
-				operand :
-				joiner === "or" ?
-					matches || operand :
-					matches && operand;
+			matches === null
+				? operand
+				: joiner === "or"
+					? matches || operand
+					: matches && operand;
 		awaited = false;
 	}
 	// A negated operand is a whole condition, so nothing may be joined to it.
@@ -3734,9 +3738,9 @@ function boxOrder(
 		byPart.set(matched, longhand);
 	}
 	const ordered = parts.map((part) => byPart.get(part));
-	return ordered.every((name): name is string => name !== undefined) ?
-		ordered :
-		null;
+	return ordered.every((name): name is string => name !== undefined)
+		? ordered
+		: null;
 }
 
 /** A shorthand's value, reconstructed from its longhands' values. */
@@ -3766,9 +3770,9 @@ function serializeShorthandValue(
 			}
 		}
 	}
-	const stated = reset ?
-			longhands.filter((longhand) => !reset.has(longhand)) :
-		longhands;
+	const stated = reset
+		? longhands.filter((longhand) => !reset.has(longhand))
+		: longhands;
 	const values = reset ? stated.map(valueOf) : all;
 
 	switch (SHORTHAND_SHAPES.get(shorthand)) {
@@ -3928,25 +3932,31 @@ class CSSStyleDeclaration {
 	declare [kElement]?: Element | null;
 	declare [kParentRule]?: CSSRule | null;
 	declare [kOnChange]?: (() => void) | null;
+
 	/**
 	 * The at-rule whose descriptors this block holds, empty for a block of CSS
 	 * properties. A descriptor is named only inside its own at-rule, and only
 	 * its own at-rule's grammar can judge its value.
 	 */
 	declare [kDescriptors]?: string;
+
 	/** Whether this block is one keyframe of an animation. */
 	declare [kKeyframe]?: boolean;
 	declare [kDeclarations]?: CSSDeclaration[];
+
 	/**
 	 * The declarations by name. A block holds one declaration per property, so
 	 * a lookup is a map read; `all` expands to every longhand there is, and a
 	 * scan per lookup would make serializing such a block cubic in its size.
 	 */
 	declare [kByName]?: Map<string, CSSDeclaration>;
+
 	/** The `style` attribute text this object last serialized or parsed. */
 	declare [kAttributeText]?: string | null;
+
 	/** The declarations expanded to longhands for the cascade. */
 	declare [kBlock]?: DeclarationBlock | null;
+
 	/** How many numeric index properties currently name a declaration. */
 	declare [kIndexed]?: number;
 
@@ -4423,9 +4433,9 @@ function parsePropertyName(source: string): string {
 	if (!name.startsWith("--")) {
 		return normalizePropertyName(name);
 	}
-	return name.includes("\\") ?
-		`--${CSSTree.ident.decode(name.slice(2))}` :
-		name;
+	return name.includes("\\")
+		? `--${CSSTree.ident.decode(name.slice(2))}`
+		: name;
 }
 
 /**
@@ -4434,9 +4444,9 @@ function parsePropertyName(source: string): string {
  * name already an identifier.
  */
 function serializePropertyName(property: string): string {
-	return property.startsWith("--") ?
-		`--${serializeCSSIdentifier(property.slice(2))}` :
-		property;
+	return property.startsWith("--")
+		? `--${serializeCSSIdentifier(property.slice(2))}`
+		: property;
 }
 
 for (const property of CSS_PROPERTIES) {
@@ -4564,9 +4574,9 @@ function syncIndexed(collection: object, items?: readonly unknown[]): void {
 	const length = items ? items.length : list.length;
 	for (let index = previous; index < length; index++) {
 		Object.defineProperty(list, index, {
-			get: items ?
-					(): unknown => items[index] :
-					(): unknown => list.item(index) ?? undefined,
+			get: items
+				? (): unknown => items[index]
+				: (): unknown => list.item(index) ?? undefined,
 			enumerable: true,
 			configurable: true,
 		});
@@ -4829,13 +4839,13 @@ function serializeMediaQuery(query: string): string {
 			continue;
 		}
 		const wellGapped =
-			expected === "joiner" ?
-				false :
-				expected === "feature" ?
-						/^\s+$/.test(gap) :
-					type !== null ?
-							/^\s+and\s+$/i.test(gap) :
-						gap === "";
+			expected === "joiner"
+				? false
+				: expected === "feature"
+					? /^\s+$/.test(gap)
+					: type !== null
+						? /^\s+and\s+$/i.test(gap)
+						: gap === "";
 		if (!wellGapped) {
 			return serializeMediaQueryText(text);
 		}
@@ -5376,9 +5386,9 @@ abstract class CSSDeclarationBlockRule extends CSSRule {
 
 	get cssText(): string {
 		const declarations = this[kStyle]!.cssText;
-		return declarations ?
-			`${this.prelude} { ${declarations} }` :
-			`${this.prelude} { }`;
+		return declarations
+			? `${this.prelude} { ${declarations} }`
+			: `${this.prelude} { }`;
 	}
 }
 
@@ -5626,9 +5636,9 @@ function serializeKeyText(text: string): string {
 			keys.push(`${serializeCSSNumber(key.value ?? "")}%`);
 			continue;
 		}
-		const word = key.type === "TypeSelector" ?
-				(key.name ?? "").toLowerCase() :
-			"";
+		const word = key.type === "TypeSelector"
+			? (key.name ?? "").toLowerCase()
+			: "";
 		if (word === "from") {
 			keys.push("0%");
 		} else if (word === "to") {
@@ -5824,9 +5834,9 @@ function scopeLimits(prelude: string): {
 		scope = undefined;
 	}
 	const sliceOf = (node: ScopePreludeNode | null | undefined): string | null =>
-		node?.loc ?
-				prelude.slice(node.loc.start.offset, node.loc.end.offset) :
-			null;
+		node?.loc
+			? prelude.slice(node.loc.start.offset, node.loc.end.offset)
+			: null;
 	return {start: sliceOf(scope?.root), end: sliceOf(scope?.limit)};
 }
 
@@ -6237,9 +6247,9 @@ class CSSKeyframesRule extends CSSRule {
 		// strings they are.
 		const reserved = this[kName]!.toLowerCase();
 		const name =
-			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none" ?
-					serializeCSSString(this[kName]!) :
-					serializeCSSIdentifier(this[kName]!);
+			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
+				? serializeCSSString(this[kName]!)
+				: serializeCSSIdentifier(this[kName]!);
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 }
@@ -6323,6 +6333,7 @@ class CSSStyleSheet {
 	declare [kDisabled]?: boolean;
 	declare [kHref]?: string | null;
 	declare [kTitle]?: string | null;
+
 	/** The owner node's text this sheet last parsed. */
 	declare [kText]?: string | null;
 
@@ -7034,9 +7045,9 @@ function serializeSimpleSelector(
 			let out = `[${serializeQualifiedName(name.name, ATTRIBUTE_NAMESPACES)}`;
 			if (node.matcher && node.value) {
 				const value =
-					node.value.type === "String" ?
-							(node.value.value ?? "") :
-							(node.value.name ?? "");
+					node.value.type === "String"
+						? (node.value.value ?? "")
+						: (node.value.name ?? "");
 				out += `${node.matcher}${serializeCSSString(value)}`;
 				if (node.flags) {
 					out += ` ${node.flags.toLowerCase()}`;
@@ -7078,12 +7089,12 @@ function serializeSelectorArgument(
 		case "Selector":
 			return serializeSelector(node, namespaces);
 		case "Nth": {
-			const nth = node.nth ?
-					serializeSelectorArgument(node.nth, namespaces) :
-				"";
-			const of = node.selector ?
-				` of ${serializeSelectorList(node.selector, namespaces)}` :
-				"";
+			const nth = node.nth
+				? serializeSelectorArgument(node.nth, namespaces)
+				: "";
+			const of = node.selector
+				? ` of ${serializeSelectorList(node.selector, namespaces)}`
+				: "";
 			return `${nth}${of}`;
 		}
 		case "AnPlusB":
@@ -7106,9 +7117,9 @@ function serializeSelectorArgument(
 			// An argument that is one identifier -- `::highlight(name)`,
 			// `:lang(ja)` -- serializes as the identifier its escapes spell.
 			// Anything else the parser handed over whole stays as written.
-			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text) ?
-					serializeIdentifierSource(text) :
-				text;
+			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text)
+				? serializeIdentifierSource(text)
+				: text;
 		}
 		default:
 			return "";
@@ -7277,14 +7288,14 @@ function blockDeclarations(node: ParsedNode, source: string): CSSDeclaration[] {
 		}
 		const name = parsePropertyName(child.property ?? "");
 		const raw =
-			child.value.type === "Raw" ?
-					(child.value.value ?? "") :
-				child.value.loc ?
-						source.slice(
-							child.value.loc.start.offset,
-							child.value.loc.end.offset,
-						) :
-						CSSTree.generate(child.value as never);
+			child.value.type === "Raw"
+				? (child.value.value ?? "")
+				: child.value.loc
+					? source.slice(
+						child.value.loc.start.offset,
+						child.value.loc.end.offset,
+					)
+					: CSSTree.generate(child.value as never);
 		const value = serializeCSSValue(raw, name);
 		if (!value) {
 			continue;
@@ -7498,9 +7509,9 @@ function convertRule(
 			}
 			if (!node.block) {
 				// `@layer;` orders nothing, and names nothing to order.
-				return names.length === 0 ?
-					null :
-						new CSSLayerStatementRule(names, sheet, parentRule);
+				return names.length === 0
+					? null
+					: new CSSLayerStatementRule(names, sheet, parentRule);
 			}
 			// A block opens one layer: a list of names belongs to the
 			// statement form alone.
@@ -7745,9 +7756,9 @@ function convertImportRule(
 		const spelled = sliceOf(node);
 		const opened = (node.name ?? "").length + 1;
 		supportsText = (
-			spelled.endsWith(")") ?
-					spelled.slice(opened, -1) :
-					spelled.slice(opened)
+			spelled.endsWith(")")
+				? spelled.slice(opened, -1)
+				: spelled.slice(opened)
 		).trim();
 		index++;
 	}
@@ -7818,9 +7829,9 @@ const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
  * from a tree some element composes.
  */
 function asShadowRoot(root: Node): ShadowRoot | null {
-	return root.nodeType === 11 && (root as ShadowRoot).host ?
-			(root as ShadowRoot) :
-		null;
+	return root.nodeType === 11 && (root as ShadowRoot).host
+		? (root as ShadowRoot)
+		: null;
 }
 
 function sheetFor(element: Element): CSSStyleSheet {
@@ -7874,9 +7885,9 @@ function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 /** The cascade a tree's sheets belong to. */
 function managerForTree(tree: Node): StyleManager | undefined {
 	const document =
-		tree.nodeType === tree.DOCUMENT_NODE ?
-				(tree as Document) :
-			tree.ownerDocument;
+		tree.nodeType === tree.DOCUMENT_NODE
+			? (tree as Document)
+			: tree.ownerDocument;
 	return document ? documentManagers.get(document) : undefined;
 }
 
@@ -8111,7 +8122,7 @@ const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
 
 /** The block-level display an inline-level box takes as a flex or grid item. */
 const BLOCKIFIED_DISPLAYS: Record<string, string> = {
-	"inline": "block",
+	inline: "block",
 	"inline-block": "block",
 	"inline-flex": "flex",
 	"inline-grid": "grid",
@@ -8182,12 +8193,12 @@ export function getComputedValue(
 	const host = getPseudoHost<Element>(element);
 	if (host !== null) {
 		const name = getPseudoName(element) as string;
-		const manager = host.ownerDocument ?
-				documentManagers.get(host.ownerDocument) :
-			undefined;
-		return manager ?
-				manager[kPseudoDeclarationFor](host, name).nodeValue(property) :
-				getComputedValue(host, property, name);
+		const manager = host.ownerDocument
+			? documentManagers.get(host.ownerDocument)
+			: undefined;
+		return manager
+			? manager[kPseudoDeclarationFor](host, name).nodeValue(property)
+			: getComputedValue(host, property, name);
 	}
 	const document = element.ownerDocument;
 	if (!document) {
@@ -8197,9 +8208,9 @@ export function getComputedValue(
 	if (!manager) {
 		return "";
 	}
-	const declaration = pseudoElement ?
-			manager[kPseudoDeclarationFor](element, pseudoElement) :
-			manager.declarationFor(element);
+	const declaration = pseudoElement
+		? manager[kPseudoDeclarationFor](element, pseudoElement)
+		: manager.declarationFor(element);
 	return declaration.getComputedValue(property);
 }
 
@@ -8235,6 +8246,7 @@ const kBaseValue = Symbol("baseValue");
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	declare [kElement]: Element;
 	declare [kCSSRules]: ParsedCSSRule[];
+
 	/**
 	 * The manager to re-ask for matching rules, and the one that says whether
 	 * this declaration still stands for the cascade.
@@ -8322,12 +8334,12 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		let value = this[kResolved].get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
-			value = longhands ?
-					shorthand(property, longhands, (longhand) =>
-						this[kBaseValue](longhand),
-					) : // A flow-relative longhand shares its computed value with the
-					// physical longhand it maps to, so it is answered as that one.
-					computed(this, toPhysicalProperty(this, property));
+			value = longhands
+				? shorthand(property, longhands, (longhand) =>
+					this[kBaseValue](longhand),
+				) // A flow-relative longhand shares its computed value with the
+			// physical longhand it maps to, so it is answered as that one.
+				: computed(this, toPhysicalProperty(this, property));
 			this[kResolved].set(property, value);
 		}
 		return value;
@@ -8520,14 +8532,14 @@ function lengthContext(
 	property: string,
 ): LengthContext {
 	const own = property === "font-size";
-	const parent = own ?
-			flatParentElement<Element>(declaration[kElement]!) :
-		null;
-	const font = own ?
-		parent ?
-				getFontSize(getComputedValue(parent, "font-size")) :
-			INITIAL_FONT_SIZE :
-			getFontSize(declaration.getComputedValue("font-size"));
+	const parent = own
+		? flatParentElement<Element>(declaration[kElement]!)
+		: null;
+	const font = own
+		? parent
+			? getFontSize(getComputedValue(parent, "font-size"))
+			: INITIAL_FONT_SIZE
+		: getFontSize(declaration.getComputedValue("font-size"));
 	const root = rootFontSize(declaration, own);
 	const viewport = declaration[kManager]?.[kViewportSize]();
 	return {
@@ -8554,9 +8566,9 @@ function rootFontSize(
 	if (!root || (ownFontSize && root === declaration[kElement]!)) {
 		return INITIAL_FONT_SIZE;
 	}
-	return root === declaration[kElement]! ?
-			getFontSize(declaration.getComputedValue("font-size")) :
-			getFontSize(getComputedValue(root, "font-size"));
+	return root === declaration[kElement]!
+		? getFontSize(declaration.getComputedValue("font-size"))
+		: getFontSize(getComputedValue(root, "font-size"));
 }
 
 /**
@@ -8859,9 +8871,9 @@ function resolvedMinSize(
 		return "auto";
 	}
 	const parent = flatParentElement<Element>(declaration[kElement]!);
-	const display = parent ?
-			getComputedValue(parent, "display") :
-		"";
+	const display = parent
+		? getComputedValue(parent, "display")
+		: "";
 	return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
 }
 
@@ -8934,9 +8946,9 @@ function inlineDeclarations(
 	declaration: ComputedStyleDeclaration,
 ): DeclarationBlock {
 	const style = (declaration[kElement]! as HTMLElement).style;
-	return style instanceof CSSStyleDeclaration ?
-			getDeclarationBlock(style) :
-		EMPTY_DECLARATIONS;
+	return style instanceof CSSStyleDeclaration
+		? getDeclarationBlock(style)
+		: EMPTY_DECLARATIONS;
 }
 
 /** This element's flat-tree parent's computed value for `property`, or null at the root. */
@@ -9024,11 +9036,11 @@ function resolvePropertyValue(
 	// A custom property holds the tokens it was given; substituting it
 	// into a property of its own grammar re-serializes them in that
 	// property's spelling.
-	const value = raw ?
-		property.startsWith("--") ?
-				substituteVar(declaration, raw) :
-				serializeCSSValue(substituteVar(declaration, raw), property) :
-		raw;
+	const value = raw
+		? property.startsWith("--")
+			? substituteVar(declaration, raw)
+			: serializeCSSValue(substituteVar(declaration, raw), property)
+		: raw;
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value says; on `color` itself it means the parent's.
 	if (
@@ -9040,9 +9052,9 @@ function resolvePropertyValue(
 		// drains mutations and lays the document out, from inside the
 		// resolution of a style that layout is waiting on. `color` has no
 		// used value to wait for, so the two answer alike.
-		return property === "color" ?
-				(resolveFromParent(declaration, "color") ?? "") :
-				declaration.getComputedValue("color");
+		return property === "color"
+			? (resolveFromParent(declaration, "color") ?? "")
+			: declaration.getComputedValue("color");
 	}
 	return value;
 }
@@ -9070,14 +9082,14 @@ function resolvePropertyValueRaw(
 
 	const inline = inlineDeclarations(declaration);
 	const inlineName = declaredName(inline, names, false, mapsHere);
-	const inlineValue = inlineName ?
-			inline.declarations[inlineName].trim() :
-		undefined;
+	const inlineValue = inlineName
+		? inline.declarations[inlineName].trim()
+		: undefined;
 	const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
 	const inlineImportantName = declaredName(inline, names, true, mapsHere);
-	const inlineImportantValue = inlineImportantName ?
-			inline.declarations[inlineImportantName].trim() :
-		undefined;
+	const inlineImportantValue = inlineImportantName
+		? inline.declarations[inlineImportantName].trim()
+		: undefined;
 	const inlineImportant =
 		!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
 
@@ -9299,6 +9311,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// Lazily resolved properties, cleared by kRefresh -- the same one-per
 	// -resolution memo an element's declaration keeps, for the same reason.
 	declare [kResolved]: Map<string, string>;
+
 	/**
 	 * The element the pseudo-element originates from, which pseudo-element it
 	 * is, and the manager whose flush a resolved value is measured behind.
@@ -9383,16 +9396,19 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value =
-				longhands && this[kPseudoDeclarations][property] === undefined ?
-						serializeShorthandValue(
-							property,
-							longhands,
-							(longhand) =>
-								this[kBaseValue](longhand) ||
-								CSS_INITIAL_VALUES[longhand] ||
-								"",
-						) :
-						computedValue(property, this[kPseudoDeclarations][property] ?? "");
+				longhands && this[kPseudoDeclarations][property] === undefined
+					? serializeShorthandValue(
+						property,
+						longhands,
+						(longhand) =>
+							this[kBaseValue](longhand) ||
+							CSS_INITIAL_VALUES[longhand] ||
+							"",
+					)
+					: computedValue(
+						property,
+						this[kPseudoDeclarations][property] ?? "",
+					);
 			this[kResolved].set(property, value);
 		}
 		return value;
@@ -9744,9 +9760,9 @@ export function resolveBorderSides(element: Element): BorderSides {
 			return undefined;
 		}
 		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style) ?
-				(style as LineStyle["style"]) :
-			"solid";
+		return LINE_KEYWORDS.has(style)
+			? (style as LineStyle["style"])
+			: "solid";
 	};
 
 	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
@@ -9759,9 +9775,9 @@ export function resolveBorderSides(element: Element): BorderSides {
 		if (radii.length === 0) {
 			return undefined;
 		}
-		return radii.every((radius) => parseFloat(radius) > 0) ?
-			"round" :
-			undefined;
+		return radii.every((radius) => parseFloat(radius) > 0)
+			? "round"
+			: undefined;
 	};
 
 	const of = (side: string): LineStyle["style"] | undefined =>
@@ -9899,9 +9915,9 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
 			return ordinal > 0 ? toAlpha(ordinal) : `${ordinal}`;
 		case "lower-roman":
 			// Roman numerals are undefined outside 1-3999; CSS falls back to decimal.
-			return ordinal > 0 && ordinal < 4000 ?
-					toRoman(ordinal).toLowerCase() :
-				`${ordinal}`;
+			return ordinal > 0 && ordinal < 4000
+				? toRoman(ordinal).toLowerCase()
+				: `${ordinal}`;
 		case "upper-alpha":
 		case "upper-latin":
 			return ordinal > 0 ? toAlpha(ordinal).toUpperCase() : `${ordinal}`;
@@ -9947,6 +9963,7 @@ function getListMarker(listItem: Element, listParent: Element): string {
 
 // TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
+
 	/**
 	 * The rule's selector, compiled against the namespaces its sheet declared.
 	 * A rule is matched through this and never through its text: the selector
@@ -9954,11 +9971,13 @@ interface ParsedCSSRule {
 	 * cannot read, which styles nothing.
 	 */
 	matcher: CompiledSelector | null;
+
 	/**
 	 * The same selector read relative to a scoping root, which is what
 	 * `@scope { > .a { } }` writes. Only a rule inside an `@scope` has one.
 	 */
 	relativeMatcher: CompiledSelector | null;
+
 	/**
 	 * The element type the selector's subject is anchored to, lowercased --
 	 * absent when the subject names no type and any element could be it. Every
@@ -9968,12 +9987,15 @@ interface ParsedCSSRule {
 	 */
 	subjectTag?: string;
 	declarations: Record<string, string>;
+
 	/** Properties declared `!important` in this rule. */
 	important: Record<string, boolean>;
+
 	/** Each declaration's position in the rule's block. See DeclarationBlock. */
 	order: Record<string, number>;
 	specificity: string; // Zero-padded string for lexicographic comparison
 	pseudoElement?: string;
+
 	/**
 	 * The tree scope whose stylesheet declared this rule: a ShadowRoot for
 	 * rules from a shadow tree's <style>, undefined for document rules. A
@@ -9981,12 +10003,14 @@ interface ParsedCSSRule {
 	 * encapsulation boundary in both directions.
 	 */
 	scope?: Node;
+
 	/**
 	 * Whether the selector names `:host`, which is the one thing that reaches
 	 * out of the tree its stylesheet belongs to. Only meaningful with a
 	 * shadow `scope`.
 	 */
 	reachesHost?: boolean;
+
 	/**
 	 * True for rules declared by a UA-internal shadow tree's stylesheet.
 	 * Cascade ORIGIN, the tier above specificity: every author rule beats
@@ -9995,17 +10019,20 @@ interface ParsedCSSRule {
 	 * higher specificity -- exactly the browser's origin ordering.
 	 */
 	uaOrigin?: boolean;
+
 	/**
 	 * The cascade layer this rule was declared in, dot-joined through every
 	 * enclosing `@layer`, or null for a rule in no layer.
 	 */
 	layer: string | null;
+
 	/**
 	 * Where the rule's layer sorts, smallest first: layers in the order their
 	 * names were declared, then -- last, and so winning the normal cascade --
 	 * every unlayered rule. Filled in once the whole layer order is known.
 	 */
 	layerRank: number;
+
 	/**
 	 * The `@scope` conditions the rule was declared inside, outermost first.
 	 * Absent for a rule no `@scope` encloses, which is in scope everywhere.
@@ -10021,13 +10048,16 @@ interface ParsedCSSRule {
  */
 interface ScopeCondition {
 	roots: readonly CompiledSelector[] | null;
+
 	/**
 	 * The same roots read relative to the scope an enclosing `@scope` opened,
 	 * which is what lets `@scope (.a) { @scope (> .b) }` say what it says.
 	 */
 	rootsInOuter: readonly CompiledSelector[];
+
 	/** The scoping limits, read relative to the root they close. */
 	limits: readonly CompiledSelector[];
+
 	/** The implicit scoping root, for a condition that names none. */
 	owner: Element | null;
 }
@@ -10061,9 +10091,9 @@ function scopeRootMatches(
 	}
 	// Inside an enclosing scope the roots are read relative to the root that
 	// scope found, which is also what `:scope` names for them.
-	return outer ?
-			condition.rootsInOuter.some((root) => selects(element, root, outer)) :
-			condition.roots.some((root) => selects(element, root, element));
+	return outer
+		? condition.rootsInOuter.some((root) => selects(element, root, outer))
+		: condition.roots.some((root) => selects(element, root, element));
 }
 
 /**
@@ -10245,6 +10275,7 @@ const kTransitionFlushQueued = Symbol("transitionFlushQueued");
 
 export class StyleManager {
 	declare [kComputedStyleCache]: WeakMap<Element, ComputedStyleDeclaration>;
+
 	/**
 	 * Every declaration this manager has resolved against the cascade as it
 	 * stands. A declaration reads this to know whether its values are still
@@ -10253,6 +10284,7 @@ export class StyleManager {
 	 * declaration nobody holds costs nothing to have handed out.
 	 */
 	declare [kCurrentDeclarations]: WeakSet<object>;
+
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
 	 * Nothing else names a shadow tree's sheets, so a parse walks these and
@@ -10266,6 +10298,7 @@ export class StyleManager {
 
 	declare [kParsedRules]: ParsedCSSRule[];
 	declare [kStylesheetsDirty]: boolean;
+
 	/**
 	 * Whether any parsed selector can reach OUTSIDE the mutated element's
 	 * subtree: sibling combinators reach following siblings, :has() reaches
@@ -10276,6 +10309,7 @@ export class StyleManager {
 	 */
 	declare [kSelectorsReachSiblings]: boolean;
 	declare [kSelectorsReachAncestors]: boolean;
+
 	/**
 	 * The keys a change to which can reach an element's DESCENDANTS: those a
 	 * selector tests left of a combinator (`.editing .view` is TodoMVC's edit
@@ -10291,6 +10325,7 @@ export class StyleManager {
 	declare [kReachingClasses]: Set<string>;
 	declare [kReachingIds]: Set<string>;
 	declare [kReachingAttributes]: Set<string>;
+
 	/**
 	 * Whether any of those keys is a STATE pseudo-class (`:checked ~`,
 	 * `details[open] :not(summary)`) rather than a name. State pseudos are
@@ -10298,6 +10333,7 @@ export class StyleManager {
 	 * to any of {@link STATE_ATTRIBUTES} goes wide while this holds.
 	 */
 	declare [kReachingStates]: boolean;
+
 	/**
 	 * Rule-existence gates, also set during parsing. Attaching pseudos and
 	 * initializing counters both start by building full computed-style
@@ -10309,9 +10345,11 @@ export class StyleManager {
 	declare [kPseudoRulesByType]: Map<string, ParsedCSSRule[]>;
 	declare [kCounterRulesExist]: boolean;
 	declare [kListItemRulesExist]: boolean;
+
 	/** Whether any rule is scoped, which is what puts proximity in the sort. */
 	declare [kScopedRulesExist]: boolean;
 	declare [kHasRulesExist]: boolean;
+
 	/**
 	 * Whether any parsed selector mentions `:hover`. The engine reads this to
 	 * decide whether the terminal must report pointer motion: a sheet that
@@ -10365,6 +10403,7 @@ export class StyleManager {
 	>;
 
 	declare [kTransitionCount]: number;
+
 	/** The timeline instant a frame's reads interpolate against. */
 	declare [kTransitionClock]: number;
 	declare [kTransitionTimer]: ReturnType<typeof setTimeout> | null;
@@ -10549,6 +10588,7 @@ export class StyleManager {
 	 * says nothing has been measured, which costs nothing to say.
 	 */
 	declare [kUsedValues]: WeakMap<object, Map<string, string>>;
+
 	/** The engine generation the used values above were measured under. */
 	declare [kUsedGeneration]: number;
 
@@ -10602,9 +10642,9 @@ export class StyleManager {
 		const layerRanks = rankLayers(this);
 		for (const rule of this[kParsedRules]) {
 			rule.layerRank =
-				rule.layer === null ?
-					this[kUnlayeredRank] :
-						(layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
+				rule.layer === null
+					? this[kUnlayeredRank]
+					: (layerRanks.get(rule.layer) ?? this[kUnlayeredRank]);
 		}
 		sortRulesForCascade(this);
 		const host = root.host as Element | null;
@@ -10644,9 +10684,9 @@ export class StyleManager {
 		if (this[kHasRulesExist]) {
 			for (const mutation of mutations) {
 				const start =
-					mutation.target.nodeType === 1 ?
-							(mutation.target as Element) :
-						mutation.target.parentElement;
+					mutation.target.nodeType === 1
+						? (mutation.target as Element)
+						: mutation.target.parentElement;
 				for (
 					let ancestor: Element | null = start;
 					ancestor;
@@ -10684,9 +10724,9 @@ export class StyleManager {
 						const element = node as Element;
 						if (isStyleElement(element)) {
 							const addedRoot =
-								element.tagName === "STYLE" ?
-										asShadowRoot(element.getRootNode()) :
-									null;
+								element.tagName === "STYLE"
+									? asShadowRoot(element.getRootNode())
+									: null;
 							if (addedRoot) {
 								this[kRefreshShadowRoot](addedRoot);
 							} else {
@@ -11191,9 +11231,9 @@ export class StyleManager {
 				for (const element of selectForRule(scope, rule)) {
 					matchingElements.add(element);
 				}
-				const host = rule.reachesHost ?
-						((rule.scope as ShadowRoot).host as Element | null) :
-					null;
+				const host = rule.reachesHost
+					? ((rule.scope as ShadowRoot).host as Element | null)
+					: null;
 				if (host && ruleSelectorMatches(host, rule)) {
 					matchingElements.add(host);
 				}
@@ -11294,9 +11334,9 @@ export class StyleManager {
 		);
 
 		const parentElement = element.parentElement;
-		const parentScope = parentElement ?
-				this[kCounterScopes].get(parentElement) :
-			undefined;
+		const parentScope = parentElement
+			? this[kCounterScopes].get(parentElement)
+			: undefined;
 
 		const scope: CounterScope = {
 			element,
@@ -11311,9 +11351,9 @@ export class StyleManager {
 
 		if (element.tagName === "OL" || element.tagName === "UL") {
 			const startValue =
-				element.tagName === "OL" ?
-						parseInt(element.getAttribute("start") || "1", 10) :
-					0;
+				element.tagName === "OL"
+					? parseInt(element.getAttribute("start") || "1", 10)
+					: 0;
 			scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
 		}
 
@@ -11444,11 +11484,13 @@ interface RunningTransition {
 	property: string;
 	from: string;
 	to: string;
+
 	/** Timeline ms of the style change event that started it. */
 	start: number;
 	delay: number;
 	duration: number;
 	easing: (input: number) => number;
+
 	/** Whether transitionstart has fired -- the delay has elapsed. */
 	started: boolean;
 	reversingAdjustedStartValue: string;
@@ -11592,11 +11634,11 @@ function matchedTransitions(
 		// A shorthand in the list covers its longhands (css-transitions-1
 		// §2.1); `all` covers the bounded list above.
 		const targets =
-			name === "all" ?
-				TRANSITIONABLE_ALL :
-					(
-						SHORTHAND_LONGHANDS.get(name) ?? [name]
-					);
+			name === "all"
+				? TRANSITIONABLE_ALL
+				: (
+					SHORTHAND_LONGHANDS.get(name) ?? [name]
+				);
 		for (const target of targets) {
 			out.set(target, timing);
 		}
@@ -11697,9 +11739,9 @@ function processTransitionStyle(
 		// string, which is the initial value the snapshot spells out.
 		const raw = previous?.get(property) ?? fallback?.get(property);
 		const before =
-			raw === "" ?
-					computedValue(property, CSS_INITIAL_VALUES[property] ?? "") :
-				raw;
+			raw === ""
+				? computedValue(property, CSS_INITIAL_VALUES[property] ?? "")
+				: raw;
 		if (
 			before === undefined ||
 			before === after ||
@@ -11839,17 +11881,17 @@ function transitionProgress(
 		return 0;
 	}
 	const linear =
-		transition.duration <= 0 ?
-			1 :
-				(
-					Math.min(
-						Math.max(
-							(now - transition.start - transition.delay) / transition.duration,
-							0,
-						),
-						1,
-					)
-				);
+		transition.duration <= 0
+			? 1
+			: (
+				Math.min(
+					Math.max(
+						(now - transition.start - transition.delay) / transition.duration,
+						0,
+					),
+					1,
+				)
+			);
 	return transition.easing(linear);
 }
 
@@ -11994,11 +12036,11 @@ function buildEasing(key: string): (input: number) => number {
 			const count =
 				args[0].type === "Number" ? parseInt(args[0].value ?? "", 10) : NaN;
 			const position =
-				args.length < 2 ?
-					"end" :
-					args[1].type === "Identifier" ?
-							(args[1].name ?? "").toLowerCase() :
-						"";
+				args.length < 2
+					? "end"
+					: args[1].type === "Identifier"
+						? (args[1].name ?? "").toLowerCase()
+						: "";
 			if (Number.isFinite(count) && count > 0 && position) {
 				return stepsEasing(count, position);
 			}
@@ -12119,11 +12161,11 @@ function stepsEasing(
 		position === "start" ||
 		position === "jump-both";
 	const jumps =
-		position === "jump-both" ?
-			count + 1 :
-			position === "jump-none" ?
-					Math.max(count - 1, 1) :
-				count;
+		position === "jump-both"
+			? count + 1
+			: position === "jump-none"
+				? Math.max(count - 1, 1)
+				: count;
 	return (input) => {
 		if (input >= 1) {
 			return 1;
@@ -12406,9 +12448,9 @@ function invalidateEnclosingList(
 	target: Node,
 ): void {
 	let element: Element | null =
-		target.nodeType === manager[kWindow].Node.ELEMENT_NODE ?
-				(target as Element) :
-			target.parentElement;
+		target.nodeType === manager[kWindow].Node.ELEMENT_NODE
+			? (target as Element)
+			: target.parentElement;
 
 	for (; element; element = element.parentElement) {
 		if (element.tagName !== "UL" && element.tagName !== "OL") {
@@ -12477,9 +12519,9 @@ function parseStylesheets(
 	const layerRanks = rankLayers(manager);
 	for (const rule of manager[kParsedRules]) {
 		rule.layerRank =
-			rule.layer === null ?
-				manager[kUnlayeredRank] :
-					(layerRanks.get(rule.layer) ?? manager[kUnlayeredRank]);
+			rule.layer === null
+				? manager[kUnlayeredRank]
+				: (layerRanks.get(rule.layer) ?? manager[kUnlayeredRank]);
 	}
 
 	sortRulesForCascade(manager);
@@ -12612,13 +12654,13 @@ function parseStyleSheet(
 		} else if (rule instanceof CSSLayerBlockRule) {
 			// An unnamed block opens a layer nothing else can name or reach,
 			// which is a layer of its own wherever it stands.
-			const layer = rule.name ?
-					declareLayer(manager, context.layer, rule.name) :
-					declareLayer(
-						manager,
-						context.layer,
-						` ${manager[kAnonymousLayers]++}`,
-					);
+			const layer = rule.name
+				? declareLayer(manager, context.layer, rule.name)
+				: declareLayer(
+					manager,
+					context.layer,
+					` ${manager[kAnonymousLayers]++}`,
+				);
 			parseStyleSheet(manager, rule, scope, uaOrigin, {...context, layer});
 		} else if (rule instanceof CSSScopeRule) {
 			parseStyleSheet(manager, rule, scope, uaOrigin, {
@@ -12686,11 +12728,11 @@ function mediaConditionMatches(
 			negate = false;
 		}
 		matches =
-			matches === null ?
-				operand :
-				disjunction ?
-					matches || operand :
-					matches && operand;
+			matches === null
+				? operand
+				: disjunction
+					? matches || operand
+					: matches && operand;
 	}
 	return matches ?? true;
 }
@@ -12796,11 +12838,11 @@ function mediaFeatureMatches(
 		return true;
 	}
 	const bound =
-		name.startsWith("min-") ?
-			"min" :
-			name.startsWith("max-") ?
-				"max" :
-				null;
+		name.startsWith("min-")
+			? "min"
+			: name.startsWith("max-")
+				? "max"
+				: null;
 	const actual = viewportLength(
 		manager,
 		bound === null ? name : name.slice(4),
@@ -12848,9 +12890,9 @@ function mediaFeatureRangeMatches(
 	if (actual === null || length === null) {
 		return true;
 	}
-	return leftName ?
-			mediaComparison(actual, range.leftComparison, length) :
-			mediaComparison(length, range.leftComparison, actual);
+	return leftName
+		? mediaComparison(actual, range.leftComparison, length)
+		: mediaComparison(length, range.leftComparison, actual);
 }
 
 /**
@@ -12864,13 +12906,13 @@ function readScopeCondition(rule: CSSScopeRule): ScopeCondition {
 	return {
 		roots: start === null ? null : compileSelectors(start, {namespaces}),
 		rootsInOuter:
-			start === null ?
-					[] :
-					compileSelectors(start, {namespaces, relative: true}),
+			start === null
+				? []
+				: compileSelectors(start, {namespaces, relative: true}),
 		limits:
-			rule.end ?
-					compileSelectors(rule.end, {namespaces, relative: true}) :
-					[],
+			rule.end
+				? compileSelectors(rule.end, {namespaces, relative: true})
+				: [],
 		owner: owner ? owner.parentElement : null,
 	};
 }
@@ -13590,9 +13632,9 @@ function attachPseudoElementToElementForType(
 	}
 
 	// Compute what the pseudo should hold now; null means "none".
-	const content = shouldCreatePseudoElement(manager, element, pseudoType) ?
-			pseudoContentFor(manager, element, pseudoType) :
-		null;
+	const content = shouldCreatePseudoElement(manager, element, pseudoType)
+		? pseudoContentFor(manager, element, pseudoType)
+		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
 	// Pseudo NODE IDENTITY is stable: attaches re-run on every element
@@ -13841,9 +13883,9 @@ export function adoptStyleSheets(tree: Node, sheets: unknown): void {
 export function styleElementSheet(
 	element: Element,
 ): globalThis.CSSStyleSheet | null {
-	return element.parentNode ?
-			(sheetFor(element) as unknown as globalThis.CSSStyleSheet) :
-		null;
+	return element.parentNode
+		? (sheetFor(element) as unknown as globalThis.CSSStyleSheet)
+		: null;
 }
 
 /**
@@ -13908,9 +13950,9 @@ function cellBreadth(cells: number): SolverTypes.TrackBreadth {
 function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
-		return Number.isFinite(factor) && factor >= 0 ?
-				{kind: "flex", factor} :
-			null;
+		return Number.isFinite(factor) && factor >= 0
+			? {kind: "flex", factor}
+			: null;
 	}
 	const cells = trackCells(node);
 	if (cells !== null) {
@@ -13918,9 +13960,9 @@ function parseTrackBreadth(node: CSSNode): SolverTypes.TrackBreadth | null {
 	}
 	if (node.type === "Percentage") {
 		const percentage = parseFloat(node.value ?? "");
-		return Number.isFinite(percentage) ?
-				{kind: "length", value: {unit: "percent", value: percentage}} :
-			null;
+		return Number.isFinite(percentage)
+			? {kind: "length", value: {unit: "percent", value: percentage}}
+			: null;
 	}
 	if (node.type === "Number" && parseFloat(node.value ?? "") === 0) {
 		return cellBreadth(0);

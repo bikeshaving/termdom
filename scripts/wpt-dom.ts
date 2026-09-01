@@ -62,6 +62,7 @@ async function freshRealm(): Promise<Realm> {
 }
 
 interface MockTransport extends TerminalTransport {
+
 	/** Type into the engine: the bytes a terminal would send for the keys. */
 	pushInput(text: string): void;
 }
@@ -379,8 +380,10 @@ const SUITES = [
 	"shadow-dom",
 	"custom-elements",
 ];
+
 /** A test that has not finished in this long is recorded as a timeout. */
 const TIMEOUT_MS = 5000;
+
 /** What `<meta name=timeout content=long>` buys a test. */
 const LONG_TIMEOUT_MS = 60000;
 
@@ -1092,9 +1095,9 @@ function installFramePages(
 	Object.defineProperty(prototype, "contentWindow", {
 		get(this: object): unknown {
 			const document = load(this);
-			return document === null ?
-					inherited.window.get!.call(this) :
-					{document, frameElement: this};
+			return document === null
+				? inherited.window.get!.call(this)
+				: {document, frameElement: this};
 		},
 		configurable: true,
 	});
@@ -1270,9 +1273,9 @@ async function runFile(file: string): Promise<Outcome> {
 	if (source === null) {
 		return {file, harness: "ERROR", subtests: [], error: "not fetched"};
 	}
-	const html = /\.(any|window)\.js$/.test(file) ?
-			generatedDocument(file, source) :
-		source;
+	const html = /\.(any|window)\.js$/.test(file)
+		? generatedDocument(file, source)
+		: source;
 	const url = `http://web-platform.test/${file}`;
 
 	const {dom, termdom} = await freshRealm();
@@ -1420,9 +1423,9 @@ async function runMountedFile(
 		}
 		const timer = setTimeout(
 			settle,
-			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html) ?
-				LONG_TIMEOUT_MS :
-				TIMEOUT_MS,
+			/<meta\s+name=["']?timeout["']?\s+content=["']?long/i.test(html)
+				? LONG_TIMEOUT_MS
+				: TIMEOUT_MS,
 		);
 		timer.unref?.();
 		await done;
@@ -1456,9 +1459,10 @@ process.on("unhandledRejection", () => {});
 const WORKER_FILE_LIMIT = 100;
 const workerSuite = process.argv[2] === "--suite" ? process.argv[3] : null;
 const workerStart =
-	workerSuite !== null && process.argv[4] === "--start" ?
-			Number(process.argv[5]) :
-		null;
+	workerSuite !== null && process.argv[4] === "--start"
+		? Number(process.argv[5])
+		: null;
+
 function filterArgument(): string | undefined {
 	if (workerSuite === null) {
 		return process.argv[2];

@@ -47,6 +47,7 @@ function trackAccessor(node: any, property: "value" | "checked"): {
 	});
 	return {
 		assigned,
+
 		/** Whether the element's value has moved out from under the tracker. */
 		drifted: () => node[property] !== seen,
 	};

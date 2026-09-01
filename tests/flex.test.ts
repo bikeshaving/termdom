@@ -720,9 +720,9 @@ describe("what a measurement produced, not only how big it was", () => {
 		const item = box(parent);
 		item.setMeasureFunc((width, widthMode, _height, _heightMode, placing) => {
 			const limit =
-				widthMode === "unconstrained" ?
-					Number.MAX_SAFE_INTEGER :
-					width;
+				widthMode === "unconstrained"
+					? Number.MAX_SAFE_INTEGER
+					: width;
 			const lines = breakWords(limit);
 			if (placing) {
 				placed.lines = lines;

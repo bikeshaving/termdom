@@ -137,17 +137,22 @@ interface MouseReport {
 	shiftKey: boolean;
 	altKey: boolean;
 	ctrlKey: boolean;
+
 	/** A motion report (a drag or hover), rather than a press/release. */
 	isMotion: boolean;
+
 	/** The button/wheel code with the modifier and motion bits stripped. */
 	base: number;
+
 	/**
 	 * The wheel notch in DOM_DELTA_LINE rows (one notch = three rows, the
 	 * browser's line-mode convention), or null when the report is not a wheel.
 	 */
 	wheelDeltaY: number | null;
+
 	/** The MouseEvent `button`, valid when base <= 2. */
 	button: number;
+
 	/** The MouseEvent `buttons` bitmask for this phase, valid when base <= 2. */
 	buttons: number;
 }
@@ -311,9 +316,9 @@ function sequentialFocusEntries(
 					slotContents as Iterable<Node>,
 					innerBarrier,
 				);
-				const expansion = isFocusable(element) ?
-						[{element, barrier}, ...inner] :
-					inner;
+				const expansion = isFocusable(element)
+					? [{element, barrier}, ...inner]
+					: inner;
 				push(ownerTabindex, expansion);
 				return;
 			}
@@ -339,11 +344,11 @@ function sequentialFocusEntries(
 	};
 
 	const roots =
-		root.nodeType === 9 ?
-				((root as Document).documentElement ?
-						[(root as Document).documentElement as Element] :
-						[]) :
-				Array.from((root as Element).children);
+		root.nodeType === 9
+			? ((root as Document).documentElement
+				? [(root as Document).documentElement as Element]
+				: [])
+			: Array.from((root as Element).children);
 	return buildScope(roots, null);
 }
 
@@ -353,6 +358,7 @@ function sequentialFocusEntries(
 interface DocumentPoint {
 	x: number;
 	y: number;
+
 	/** False for a row above the painted region -- a shell prompt's rows. */
 	inDocument: boolean;
 }
@@ -369,9 +375,9 @@ function documentPointAt(
 ): DocumentPoint {
 	const screen = handler[kMount].screen;
 	const documentRow =
-		handler[kDocument].fullscreenElement !== null ?
-			row - 1 + screen.anchorScrollTop :
-			row - 1 - screen.documentTop + screen.scrollTop;
+		handler[kDocument].fullscreenElement !== null
+			? row - 1 + screen.anchorScrollTop
+			: row - 1 - screen.documentTop + screen.scrollTop;
 	const inDocument = documentRow >= 0;
 	return {x: col - 1, y: inDocument ? documentRow : 0, inDocument};
 }
@@ -846,9 +852,9 @@ export class EventHandler {
 		text = text.replace(/\r\n?/g, "\n");
 		const focused = this[kDocument].activeElement;
 		const target =
-			focused && focused !== this[kDocument].body ?
-				focused :
-				this[kDocument].body;
+			focused && focused !== this[kDocument].body
+				? focused
+				: this[kDocument].body;
 		const clipboardData = new this[kWindow].DataTransfer();
 		clipboardData.setData("text/plain", text);
 		lockDataTransfer(clipboardData);
@@ -1123,12 +1129,12 @@ function release(
 			el instanceof (handler[kWindow] as any).HTMLInputElement &&
 			((el as HTMLInputElement).type === "checkbox" ||
 				(el as HTMLInputElement).type === "radio");
-		const control = isCheckable(target) ?
-			target :
-			target instanceof (handler[kWindow] as any).HTMLLabelElement &&
-			isCheckable((target as any).control) ?
-					((target as any).control as HTMLInputElement) :
-				null;
+		const control = isCheckable(target)
+			? target
+			: target instanceof (handler[kWindow] as any).HTMLLabelElement &&
+				isCheckable((target as any).control)
+				? ((target as any).control as HTMLInputElement)
+				: null;
 		if (control) {
 			control.focus();
 			handler[kMount].render();
@@ -1187,9 +1193,9 @@ function dispatchKey(handler: EventHandler, stroke: WireKey): void {
 	// fullscreen element being the case that matters.
 	const active = handler[kDocument].activeElement;
 	const targetElement =
-		active && active !== handler[kDocument].body ?
-			active :
-			handler[kDocument].fullscreenElement || handler[kDocument].body;
+		active && active !== handler[kDocument].body
+			? active
+			: handler[kDocument].fullscreenElement || handler[kDocument].body;
 
 	const keydownEvent = new handler[kWindow].KeyboardEvent("keydown", {
 		key: keyName,

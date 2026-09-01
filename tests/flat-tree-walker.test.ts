@@ -1065,9 +1065,9 @@ test("flat-tree walker skips comments rather than halting on them", () => {
 		const out: string[] = [];
 		for (let n = walker.firstChild(); n; n = walker.nextSibling()) {
 			out.push(
-				n.nodeType === n.ELEMENT_NODE ?
-						(n as Element).tagName :
-						(n as Text).data,
+				n.nodeType === n.ELEMENT_NODE
+					? (n as Element).tagName
+					: (n as Text).data,
 			);
 		}
 		return out;

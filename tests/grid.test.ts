@@ -25,13 +25,16 @@ interface Box {
 interface Rendered {
 	dom: TermDOM;
 	document: Document;
+
 	/** The nth <i> in the document, which every fixture uses for its items. */
 	item(index: number): Box;
 	items(): Box[];
 	box(selector: string, index?: number): Box;
 	rows(): string[];
+
 	/** The painted frame, colors and all. */
 	painted(): string;
+
 	/** A resolved value off the grid container, which every fixture calls #g. */
 	resolved(property: string, selector?: string): string;
 }

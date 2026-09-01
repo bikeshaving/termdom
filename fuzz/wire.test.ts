@@ -68,8 +68,10 @@ const CHROME =
 interface Wire {
 	chunks: string[];
 	record: (chunk: string) => void;
+
 	/** Everything written from `at` onwards, as one string. */
 	since: (at: number) => string;
+
 	/** The index the next chunk will land at. */
 	mark: () => number;
 }

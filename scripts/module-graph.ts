@@ -171,6 +171,7 @@ if (process.argv.includes("--check")) {
 			);
 		}
 	}
+
 	/**
 	 * The modules that spell escape sequences. exchange.ts writes them to the
 	 * terminal and reads them back; screen.ts spells the frames. inspector.ts

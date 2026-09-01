@@ -36,34 +36,47 @@ export interface ReflectSpec {
 	property: string;
 	attribute: string;
 	kind: ReflectKind;
+
 	/** The value a number-valued attribute takes when it is absent or unparsable. */
 	fallback?: number;
+
 	/** An enumerated attribute's known values, in their canonical spelling. */
 	keywords?: readonly string[];
+
 	/** The state an enumerated attribute takes when it is absent. */
 	missing?: string;
+
 	/** The state an enumerated attribute takes when its value is not known. */
 	invalid?: string;
+
 	/** The state an enumerated attribute takes when its value is empty. */
 	empty?: string;
+
 	/** Limited to only non-negative numbers: a negative set throws. */
 	nonNegative?: boolean;
+
 	/** Limited to only non-negative numbers greater than zero: a zero set throws. */
 	greaterThanZero?: boolean;
+
 	/** Clamped to a range on both getting and setting. */
 	clampMin?: number;
 	clampMax?: number;
+
 	/** The tokens a DOMTokenList-reflecting attribute supports. */
 	supported?: readonly string[];
+
 	/** An enumerated attribute whose missing-value default is null. */
 	nullable?: boolean;
 }
 
 interface InterfaceSpec {
+
 	/** The interface's name, which is also its Symbol.toStringTag. */
 	name: string;
+
 	/** The tags built through it; empty for one that only serves as a base. */
 	tags: readonly string[];
+
 	/** The attributes it reflects. */
 	reflect?: readonly ReflectSpec[];
 }

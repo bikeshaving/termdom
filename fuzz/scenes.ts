@@ -121,7 +121,7 @@ const CLUSTERS = [
 const ID_POOL = 16;
 
 type Tree =
-	| {leaf: "text" | "space" | "comment"} |
+	{leaf: "text" | "space" | "comment"} |
 	{cluster: string} |
 	{tag: string; cls: string; children: Tree[]};
 
@@ -129,9 +129,9 @@ const treeArbitrary = fc.letrec<{node: Tree}>((tie) => ({
 	node: fc.oneof(
 		{maxDepth: 3, depthIdentifier: "node"},
 		fc.constantFrom<Tree>({leaf: "text"}, {leaf: "space"}, {leaf: "comment"}),
-		...(SHAPES ?
-				[fc.constantFrom<Tree>(...CLUSTERS.map((cluster) => ({cluster})))] :
-				[]),
+		...(SHAPES
+			? [fc.constantFrom<Tree>(...CLUSTERS.map((cluster) => ({cluster})))]
+			: []),
 		fc.record({
 			tag: fc.constantFrom(...TAGS),
 			cls: fc.constantFrom("", ...CLASSES),
@@ -186,7 +186,7 @@ export const documentArbitrary = fc
 	.map(toMarkup);
 
 export type Action =
-	| {kind: "class"; id: string; cls: string} |
+	{kind: "class"; id: string; cls: string} |
 	{kind: "style"; id: string; value: string} |
 	{kind: "attr"; id: string; value: string} |
 	{
@@ -326,33 +326,33 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 		id: fc.oneof(elementIdArbitrary, fc.constant("pane")),
 	}),
 	fc.record({kind: fc.constant("view" as const), id: idArbitrary}),
-	...(SHAPES ?
-			[
-				fc.record({
-					kind: fc.constant("dir" as const),
-					id: idArbitrary,
-					value: fc.constantFrom("", "ltr", "rtl", "auto"),
-				}),
-				fc.record({
-					kind: fc.constant("open" as const),
-					id: elementIdArbitrary,
-				}),
-				fc.record({
-					kind: fc.constant("pop" as const),
-					id: elementIdArbitrary,
-					value: fc.constantFrom("", "auto", "manual"),
-				}),
-				fc.record({
-					kind: fc.constant("flash" as const),
-					id: elementIdArbitrary,
-					mode: fc.constantFrom(
-						"modal" as const,
-						"dialog" as const,
-						"popover" as const,
-					),
-				}),
-			] :
-			[]),
+	...(SHAPES
+		? [
+			fc.record({
+				kind: fc.constant("dir" as const),
+				id: idArbitrary,
+				value: fc.constantFrom("", "ltr", "rtl", "auto"),
+			}),
+			fc.record({
+				kind: fc.constant("open" as const),
+				id: elementIdArbitrary,
+			}),
+			fc.record({
+				kind: fc.constant("pop" as const),
+				id: elementIdArbitrary,
+				value: fc.constantFrom("", "auto", "manual"),
+			}),
+			fc.record({
+				kind: fc.constant("flash" as const),
+				id: elementIdArbitrary,
+				mode: fc.constantFrom(
+					"modal" as const,
+					"dialog" as const,
+					"popover" as const,
+				),
+			}),
+		]
+		: []),
 );
 
 /**
@@ -438,10 +438,13 @@ export interface Scene {
 export interface SceneOptions {
 	cols?: number;
 	rows?: number;
+
 	/** Declare prior screen content, so the region anchors below it. */
 	shared?: boolean;
+
 	/** Rows of output already on the terminal when the engine attaches. */
 	prior?: string[];
+
 	/**
 	 * Every chunk the engine puts on the wire, as it is written and before
 	 * the emulator sees it. This is the whole observation channel the wire
@@ -449,11 +452,13 @@ export interface SceneOptions {
 	 * engine.
 	 */
 	record?: (chunk: string) => void;
+
 	/**
 	 * Markup put in front of the generated document. A scroll box here is
 	 * what makes the banded transform fire on documents this small.
 	 */
 	chrome?: string;
+
 	/** Run after the document's first frame and after every action's. */
 	onFrame?: (scene: Scene) => void | Promise<void>;
 }

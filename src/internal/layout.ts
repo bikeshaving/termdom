@@ -220,9 +220,9 @@ function toValue(input: Length): Value {
 		return {unit: "percent", value: input.percentage};
 	}
 	if (typeof input === "number") {
-		return Number.isNaN(input) ?
-			UNDEFINED_VALUE :
-				{unit: "cell", value: input};
+		return Number.isNaN(input)
+			? UNDEFINED_VALUE
+			: {unit: "cell", value: input};
 	}
 	const trimmed = input.trim();
 	if (trimmed === "auto") {
@@ -230,14 +230,14 @@ function toValue(input: Length): Value {
 	}
 	if (trimmed.endsWith("%")) {
 		const parsed = parseFloat(trimmed.slice(0, -1));
-		return Number.isNaN(parsed) ?
-			UNDEFINED_VALUE :
-				{unit: "percent", value: parsed};
+		return Number.isNaN(parsed)
+			? UNDEFINED_VALUE
+			: {unit: "percent", value: parsed};
 	}
 	const parsed = parseFloat(trimmed);
-	return Number.isNaN(parsed) ?
-		UNDEFINED_VALUE :
-			{unit: "cell", value: parsed};
+	return Number.isNaN(parsed)
+		? UNDEFINED_VALUE
+		: {unit: "cell", value: parsed};
 }
 
 /** Resolve a Value against an owner size. Returns NaN when unresolvable. */
@@ -313,6 +313,7 @@ export interface TrackListTrack {
 export interface TrackRepeat {
 	count: number | "auto-fill" | "auto-fit";
 	tracks: TrackListTrack[];
+
 	/** Line names written after the repeat group's last track. */
 	endNames: string[];
 }
@@ -324,6 +325,7 @@ export type TrackListPart =
 /** A `<track-list>`: the tracks of one axis, with the lines named between them. */
 export interface TrackList {
 	parts: TrackListPart[];
+
 	/** Line names written after the last track. */
 	endNames: string[];
 }
@@ -437,6 +439,7 @@ interface Style {
 	gridTemplateAreas: GridAreaMap | null;
 	gridAutoColumns: TrackSize[];
 	gridAutoRows: TrackSize[];
+
 	/** grid-auto-flow: the axis the placement cursor advances along, and dense. */
 	gridAutoFlowColumn: boolean;
 	gridAutoFlowDense: boolean;
@@ -450,6 +453,7 @@ interface Style {
 	/** Table cell spans. 1 unless set; only meaningful on a table-cell. */
 	colSpan: number;
 	rowSpan: number;
+
 	/** Set on the table itself; collapsed cells share their borders. */
 	borderCollapse: boolean;
 
@@ -461,6 +465,7 @@ interface Style {
 	blockFormattingContext: boolean;
 
 	flexGrow: number;
+
 	/** CSS order: items lay out in order-modified document order. */
 	order: number;
 	flexShrink: number;
@@ -472,6 +477,7 @@ interface Style {
 	border: Edges<number>;
 
 	width: Value;
+
 	/** See Sizing: how an auto width resolves; none means fill or measure. */
 	widthSizing: Sizing;
 	height: Value;
@@ -497,6 +503,7 @@ interface LayoutResult {
 	padding: Edges<number>;
 	border: Edges<number>;
 	computedFlexBasis: number;
+
 	/** css-flexbox-1 §4.5 automatic minimum size, along the parent's main axis. */
 	autoMinMain: number;
 
@@ -508,6 +515,7 @@ interface LayoutResult {
 	 */
 	gridColumns: number[] | null;
 	gridRows: number[] | null;
+
 	/** How many of gridColumns/gridRows sit BEFORE the explicit grid's first line. */
 	gridColumnOffset: number;
 	gridRowOffset: number;
@@ -1195,9 +1203,9 @@ export class LayoutNode {
 		const height = resolveValue(this.style.height, ownerHeight);
 
 		let availableWidth = isDefined(width) ? width : ownerWidth;
-		let widthMode: MeasureMode = isDefined(availableWidth) ?
-			"exactly" :
-			"unconstrained";
+		let widthMode: MeasureMode = isDefined(availableWidth)
+			? "exactly"
+			: "unconstrained";
 		// A sizing keyword on a root turns the owner's width from the used
 		// width into a probe: zero for min-content, a ceiling for fit-content,
 		// and no offer at all for max-content.
@@ -1219,9 +1227,9 @@ export class LayoutNode {
 			availableWidth,
 			availableHeight,
 			widthMode,
-			isDefined(availableHeight) ?
-				"exactly" :
-				"unconstrained",
+			isDefined(availableHeight)
+				? "exactly"
+				: "unconstrained",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -1304,9 +1312,9 @@ function resolveFlexBasis(node: LayoutNode, mainAxis: FlexDirection): Value {
 
 function getAlignSelf(parent: LayoutNode, child: LayoutNode): Align {
 	const align =
-		child.style.alignSelf === "auto" ?
-			parent.style.alignItems :
-			child.style.alignSelf;
+		child.style.alignSelf === "auto"
+			? parent.style.alignItems
+			: child.style.alignSelf;
 	// `normal` behaves as `stretch` on a flex item (css-align-3 §4.2).
 	return align === "normal" ? "stretch" : align;
 }
@@ -1348,9 +1356,9 @@ function baselineWithinBorderBox(node: LayoutNode, ownerWidth: number): number {
  * along is a reliable way to get this backwards.
  */
 function gapForAxis(node: LayoutNode, axis: FlexDirection): number {
-	return isRow(axis) ?
-		node.style.gap["column"] :
-		node.style.gap["row"];
+	return isRow(axis)
+		? node.style.gap["column"]
+		: node.style.gap["row"];
 }
 
 function marginForAxis(
@@ -1553,12 +1561,12 @@ function layoutMeasureNode(
 	const marginRow = marginForAxis(node, "row", ownerWidth);
 	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
-	const innerWidth = isDefined(availableWidth) ?
-			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
-		NaN;
-	const innerHeight = isDefined(availableHeight) ?
-			Math.max(0, availableHeight - marginColumn - paddingBorderColumn) :
-		NaN;
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
 
 	if (
 		widthMode === "exactly" &&
@@ -1591,13 +1599,13 @@ function layoutMeasureNode(
 	);
 
 	const width =
-		widthMode === "exactly" ?
-			availableWidth - marginRow :
-			measured.width + paddingBorderRow;
+		widthMode === "exactly"
+			? availableWidth - marginRow
+			: measured.width + paddingBorderRow;
 	const height =
-		heightMode === "exactly" ?
-			availableHeight - marginColumn :
-			measured.height + paddingBorderColumn;
+		heightMode === "exactly"
+			? availableHeight - marginColumn
+			: measured.height + paddingBorderColumn;
 
 	// An `at-most` bound is an upper bound on the *offer*, not a licence to report a
 	// smaller box than the content needs. The measure function already fits the
@@ -1632,14 +1640,14 @@ function layoutEmptyContainer(
 	const marginColumn = marginForAxis(node, "column", ownerWidth);
 
 	const width =
-		widthMode === "unconstrained" || widthMode === "at-most" ?
-			paddingBorderRow :
-			availableWidth - marginRow;
+		widthMode === "unconstrained" || widthMode === "at-most"
+			? paddingBorderRow
+			: availableWidth - marginRow;
 	const height =
 		heightMode === "unconstrained" ||
-		heightMode === "at-most" ?
-			paddingBorderColumn :
-			availableHeight - marginColumn;
+		heightMode === "at-most"
+			? paddingBorderColumn
+			: availableHeight - marginColumn;
 
 	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
 }
@@ -1828,12 +1836,12 @@ function layoutFlexbox(
 	const paddingBorderMain = mainIsRow ? paddingBorderRow : paddingBorderColumn;
 	const paddingBorderCross = mainIsRow ? paddingBorderColumn : paddingBorderRow;
 
-	const innerWidth = isDefined(availableWidth) ?
-			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
-		NaN;
-	const innerHeight = isDefined(availableHeight) ?
-			Math.max(0, availableHeight - marginColumn - paddingBorderColumn) :
-		NaN;
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
 
 	const innerMain = mainIsRow ? innerWidth : innerHeight;
 	const innerCross = mainIsRow ? innerHeight : innerWidth;
@@ -1943,9 +1951,9 @@ function layoutFlexbox(
 		// The gaps are not available to the items, so take them off the top before
 		// any of it is distributed.
 		const lineGap = mainGap * Math.max(0, line.items.length - 1);
-		const mainForItems = isDefined(innerMain) ?
-				Math.max(0, innerMain - lineGap) :
-			innerMain;
+		const mainForItems = isDefined(innerMain)
+			? Math.max(0, innerMain - lineGap)
+			: innerMain;
 
 		resolveFlexibleLengths(
 			line,
@@ -2009,43 +2017,43 @@ function layoutFlexbox(
 
 	// -- measured size ------------------------------------------------------
 
-	const measuredMain = mainIsRow ?
-		widthMode === "exactly" ?
-			availableWidth - marginRow :
-				boundAxis(
-					node,
-					mainAxis,
-					maxMainDim + paddingBorderMain,
-					ownerWidth,
-					ownerWidth,
-				) :
-		heightMode === "exactly" ?
-			availableHeight - marginColumn :
-				boundAxis(
-					node,
-					mainAxis,
-					maxMainDim + paddingBorderMain,
-					ownerHeight,
-					ownerWidth,
-				);
-
-	const crossIsRow = isRow(cross);
-	const crossExactly = crossIsRow ?
-		widthMode === "exactly" :
-		heightMode === "exactly";
-	const crossAvailable = crossIsRow ?
-		availableWidth - marginRow :
-		availableHeight - marginColumn;
-
-	const measuredCross = crossExactly ?
-		crossAvailable :
-			boundAxis(
+	const measuredMain = mainIsRow
+		? widthMode === "exactly"
+			? availableWidth - marginRow
+			: boundAxis(
 				node,
-				cross,
-				totalCrossDim + paddingBorderCross,
-				crossIsRow ? ownerWidth : ownerHeight,
+				mainAxis,
+				maxMainDim + paddingBorderMain,
+				ownerWidth,
+				ownerWidth,
+			)
+		: heightMode === "exactly"
+			? availableHeight - marginColumn
+			: boundAxis(
+				node,
+				mainAxis,
+				maxMainDim + paddingBorderMain,
+				ownerHeight,
 				ownerWidth,
 			);
+
+	const crossIsRow = isRow(cross);
+	const crossExactly = crossIsRow
+		? widthMode === "exactly"
+		: heightMode === "exactly";
+	const crossAvailable = crossIsRow
+		? availableWidth - marginRow
+		: availableHeight - marginColumn;
+
+	const measuredCross = crossExactly
+		? crossAvailable
+		: boundAxis(
+			node,
+			cross,
+			totalCrossDim + paddingBorderCross,
+			crossIsRow ? ownerWidth : ownerHeight,
+			ownerWidth,
+		);
 
 	if (mainIsRow) {
 		node.layout.width = measuredMain;
@@ -2277,9 +2285,9 @@ function resolveFlexibleLengths(
 	}
 
 	const factorOf = (child: LayoutNode) =>
-		growing ?
-				resolveFlexGrow(child) :
-			resolveFlexShrink(child) * base.get(child)!;
+		growing
+			? resolveFlexGrow(child)
+			: resolveFlexShrink(child) * base.get(child)!;
 
 	// §9.7.4.a: freeze the items that cannot flex. An item whose flex base size
 	// already sits on the wrong side of its own clamp can never move in the
@@ -2408,9 +2416,9 @@ function autoMinimumMainSize(
 	// and its text collapses onto one line, and the floor comes out a row short of
 	// what the item actually needs.
 	const crossAvailable = isDefined(innerCross) ? innerCross : NaN;
-	const crossMeasureMode = isDefined(innerCross) ?
-		crossMode :
-		"unconstrained";
+	const crossMeasureMode = isDefined(innerCross)
+		? crossMode
+		: "unconstrained";
 
 	layoutNode(
 		child,
@@ -2483,12 +2491,12 @@ function layoutFlexItem(
 	}
 
 	// Cross axis: explicit size wins, else stretch to the line, else shrink-to-fit.
-	const crossTarget = crossDimDefined ?
-			resolveValue(
-				isRow(cross) ? child.style.width : child.style.height,
-				isRow(cross) ? ownerWidth : ownerHeight,
-			) :
-		NaN;
+	const crossTarget = crossDimDefined
+		? resolveValue(
+			isRow(cross) ? child.style.width : child.style.height,
+			isRow(cross) ? ownerWidth : ownerHeight,
+		)
+		: NaN;
 
 	if (isDefined(crossTarget)) {
 		// Clamped, like every other resolved size: min-width and max-width bound
@@ -2724,9 +2732,9 @@ function positionCrossAxis(
 	const crossIsRow = isRow(cross);
 	const crossGap = gapForAxis(node, cross);
 
-	const freeCross = isDefined(containerInnerCross) ?
-		containerInnerCross - totalCrossDim :
-		0;
+	const freeCross = isDefined(containerInnerCross)
+		? containerInnerCross - totalCrossDim
+		: 0;
 
 	let lineLeading = 0;
 	let lineBetween = 0;
@@ -2769,9 +2777,9 @@ function positionCrossAxis(
 	const stretchPerLine =
 		node.style.alignContent === "stretch" &&
 		lineCount > 0 &&
-		freeCross > 0 ?
-			freeCross / lineCount :
-			0;
+		freeCross > 0
+			? freeCross / lineCount
+			: 0;
 
 	let cursor = leadingPaddingBorderCross + lineLeading;
 
@@ -2830,9 +2838,9 @@ function positionCrossAxis(
 				!trailingAuto
 			) {
 				const targetCross = lineCross - leadingMargin - trailingMargin;
-				const currentCross = crossIsRow ?
-					child.layout.width :
-					child.layout.height;
+				const currentCross = crossIsRow
+					? child.layout.width
+					: child.layout.height;
 				if (!approximatelyEqual(currentCross, targetCross)) {
 					stretchFlexItem(node, child, targetCross, ownerWidth, ownerHeight);
 				}
@@ -2945,9 +2953,9 @@ function layoutAbsoluteChild(
 	const blockLeft = area ? area.left : borderLeft;
 	const blockTop = area ? area.top : borderTop;
 	const blockWidth = area ? area.width : parentWidth - borderLeft - borderRight;
-	const blockHeight = area ?
-		area.height :
-		parentHeight - borderTop - borderBottom;
+	const blockHeight = area
+		? area.height
+		: parentHeight - borderTop - borderBottom;
 	const basisWidth = area ? area.width : parentWidth;
 	const basisHeight = area ? area.height : parentHeight;
 
@@ -3000,9 +3008,9 @@ function layoutAbsoluteChild(
 		// (css-align-3 §5.2). Nothing but a grid area has an alignment
 		// container to fill, so nothing else stretches.
 		childWidth.mode =
-			area && gridSelfAlign(node, child, true) === "stretch" ?
-				"exactly" :
-				"at-most";
+			area && gridSelfAlign(node, child, true) === "stretch"
+				? "exactly"
+				: "at-most";
 	}
 
 	if (styleDimIsDefined(child, "column", basisHeight)) {
@@ -3018,9 +3026,9 @@ function layoutAbsoluteChild(
 	} else if (isDefined(blockHeight)) {
 		childHeight.value = blockHeight;
 		childHeight.mode =
-			area && gridSelfAlign(node, child, false) === "stretch" ?
-				"exactly" :
-				"at-most";
+			area && gridSelfAlign(node, child, false) === "stretch"
+				? "exactly"
+				: "at-most";
 	}
 
 	layoutNode(
@@ -3038,9 +3046,9 @@ function layoutAbsoluteChild(
 	// one with an inset on either side is pinned and never asks for it.
 	const staticPosition =
 		(!isDefined(left) && !isDefined(right)) ||
-		(!isDefined(top) && !isDefined(bottom)) ?
-				(child.staticPositionFunc?.(node) ?? null) :
-			null;
+		(!isDefined(top) && !isDefined(bottom))
+			? (child.staticPositionFunc?.(node) ?? null)
+			: null;
 
 	const isGrid = node.style.mode === "grid";
 
@@ -3061,15 +3069,15 @@ function layoutAbsoluteChild(
 		const free = blockWidth - child.layout.width;
 		// A grid container aligns an out-of-flow box by the box's own
 		// justify-self, which is the alignment its area was going to give it.
-		const align = isGrid ?
-				gridSelfAlign(node, child, true) :
-			isRow(node.style.flexDirection) ?
-				node.style.justifyContent === "center" ?
-					"center" :
-					node.style.justifyContent === "flex-end" ?
-						"flex-end" :
-						"flex-start" :
-				"flex-start";
+		const align = isGrid
+			? gridSelfAlign(node, child, true)
+			: isRow(node.style.flexDirection)
+				? node.style.justifyContent === "center"
+					? "center"
+					: node.style.justifyContent === "flex-end"
+						? "flex-end"
+						: "flex-start"
+				: "flex-start";
 		if (align === "center") {
 			child.layout.left = blockLeft + free / 2;
 		} else if (align === "flex-end") {
@@ -3092,15 +3100,15 @@ function layoutAbsoluteChild(
 		child.layout.top = staticPosition.top + marginTop;
 	} else {
 		const free = blockHeight - child.layout.height;
-		const align = isGrid ?
-				gridSelfAlign(node, child, false) :
-			isColumn(node.style.flexDirection) ?
-				node.style.alignItems === "center" ?
-					"center" :
-					node.style.alignItems === "flex-end" ?
-						"flex-end" :
-						"flex-start" :
-				"flex-start";
+		const align = isGrid
+			? gridSelfAlign(node, child, false)
+			: isColumn(node.style.flexDirection)
+				? node.style.alignItems === "center"
+					? "center"
+					: node.style.alignItems === "flex-end"
+						? "flex-end"
+						: "flex-start"
+				: "flex-start";
 		if (align === "center") {
 			child.layout.top = blockTop + free / 2;
 		} else if (align === "flex-end") {
@@ -3409,12 +3417,12 @@ function resolveColumnWidths(
 	// A table with an indefinite width shrink-wraps to its content rather than
 	// filling its container, which is why `<table>` in a browser is only as wide
 	// as it needs to be.
-	const target = widthIsDefinite ?
-		available :
-			Math.min(
-				Math.max(totalMin, isDefined(available) ? available : totalMax),
-				totalMax,
-			);
+	const target = widthIsDefinite
+		? available
+		: Math.min(
+			Math.max(totalMin, isDefined(available) ? available : totalMax),
+			totalMax,
+		);
 
 	const widths = new Array<number>(columnCount).fill(0);
 
@@ -3443,9 +3451,9 @@ function resolveColumnWidths(
 		// If every column is fixed there is nobody to give it to, so spread it out
 		// rather than leaving the table short of the width it was told to be.
 		const receivers =
-			autoColumns.length > 0 ?
-				autoColumns :
-					Array.from({length: columnCount}, (_, i) => i);
+			autoColumns.length > 0
+				? autoColumns
+				: Array.from({length: columnCount}, (_, i) => i);
 
 		let weight = 0;
 		for (const i of receivers) {
@@ -3522,9 +3530,9 @@ function layoutTable(
 	const overlap = node.style.borderCollapse ? 1 : 0;
 	const columnOverlap = overlap * Math.max(0, columnCount - 1);
 
-	const innerWidth = isDefined(availableWidth) ?
-			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
-		NaN;
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
 
 	const widthIsDefinite =
 		widthMode === "exactly" && isDefined(innerWidth);
@@ -3545,6 +3553,7 @@ function layoutTable(
 
 	/** Where column `index` starts, once the shared borders are folded away. */
 	const columnStart = (index: number) => columnEdges[index] - overlap * index;
+
 	/** Width of a cell spanning `span` columns from `index`. */
 	const spanWidth = (index: number, span: number) =>
 		columnEdges[index + span] - columnEdges[index] - overlap * (span - 1);
@@ -3647,13 +3656,13 @@ function layoutTable(
 
 	// -- table box ---------------------------------------------------------
 	const width =
-		widthMode === "exactly" ?
-			availableWidth - marginRow :
-			contentWidth + paddingBorderRow;
+		widthMode === "exactly"
+			? availableWidth - marginRow
+			: contentWidth + paddingBorderRow;
 	const height =
-		heightMode === "exactly" ?
-			availableHeight - marginColumn :
-			contentHeight + paddingBorderColumn;
+		heightMode === "exactly"
+			? availableHeight - marginColumn
+			: contentHeight + paddingBorderColumn;
 
 	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
 
@@ -3677,9 +3686,9 @@ function layoutTable(
 		// A row inside a group is positioned relative to that group's border box,
 		// and every group's box starts at gridTop, so the two cancel out.
 		row.node.layout.left = row.group ? 0 : leftPaddingBorder;
-		row.node.layout.top = row.group ?
-				rowStart(index) :
-			gridTop + rowStart(index);
+		row.node.layout.top = row.group
+			? rowStart(index)
+			: gridTop + rowStart(index);
 		row.node.layout.width = contentWidth;
 		row.node.layout.height = rowHeights[index];
 	});
@@ -3726,22 +3735,29 @@ function layoutTable(
 /** A track as the sizing algorithm works on it (css-grid-2 §12.2). */
 interface GridTrack {
 	size: TrackSize;
+
 	/** The track's floor: what it has been grown to so far. */
 	base: number;
+
 	/** Infinity until §12.5 gives an intrinsic or flexible track a limit. */
 	growthLimit: number;
+
 	/** The `fit-content()` clamp; Infinity for every other sizing function. */
 	fitContentLimit: number;
+
 	/**
 	 * css-grid-2 §12.5.1: the growth limit was set from a content contribution
 	 * one step ago and is not the author's word on the track, so the next
 	 * distribution grows past it as though it were still infinite.
 	 */
 	infinitelyGrowable: boolean;
+
 	/** Scratch space for one distribution pass: an increase not yet applied. */
 	planned: number;
+
 	/** The track's start edge within the container's content box. */
 	position: number;
+
 	/** An `auto-fit` track that took no item: it occupies no space at all. */
 	collapsed: boolean;
 }
@@ -3749,9 +3765,11 @@ interface GridTrack {
 /** A grid item, with the lines its area sits between once placement is done. */
 interface GridItem {
 	node: LayoutNode;
+
 	/** Placement as authored: a start line (null when auto) and a span. */
 	column: {start: number | null; span: number};
 	row: {start: number | null; span: number};
+
 	/** Track indices, after the implicit grid is normalized to start at zero. */
 	columnStart: number;
 	columnEnd: number;
@@ -3813,8 +3831,10 @@ function createTrack(size: TrackSize, ownerSize: number): GridTrack {
 /** An expanded `<track-list>`: its tracks, and the names of the lines between them. */
 interface ExpandedTracks {
 	sizes: TrackSize[];
+
 	/** Names of line i, for i in [0, sizes.length]. */
 	lineNames: string[][];
+
 	/** The range an `auto-fit` repeat produced, whose empty tracks collapse. */
 	autoFit: {start: number; count: number} | null;
 }
@@ -4059,9 +4079,9 @@ function resolveGridLine(
 	return {
 		kind: "line",
 		index:
-			placement.index > 0 ?
-				placement.index - 1 :
-				explicitCount + placement.index + 1,
+			placement.index > 0
+				? placement.index - 1
+				: explicitCount + placement.index + 1,
 	};
 }
 
@@ -4074,9 +4094,9 @@ function spanToName(
 	forward: boolean,
 ): number {
 	const matches = names.get(name) ?? [];
-	const ordered = forward ?
-			matches.filter((line) => line > from) :
-			matches.filter((line) => line < from).reverse();
+	const ordered = forward
+		? matches.filter((line) => line > from)
+		: matches.filter((line) => line < from).reverse();
 	if (ordered.length >= count) {
 		return ordered[count - 1];
 	}
@@ -4145,11 +4165,11 @@ function pairGridLines(
 	}
 
 	const span =
-		start.kind === "span" || start.kind === "spanName" ?
-			start.count :
-			end.kind === "span" || end.kind === "spanName" ?
-				end.count :
-				1;
+		start.kind === "span" || start.kind === "spanName"
+			? start.count
+			: end.kind === "span" || end.kind === "spanName"
+				? end.count
+				: 1;
 	return {start: null, span: Math.max(1, span)};
 }
 
@@ -4308,20 +4328,26 @@ interface TrackSizing {
 	node: LayoutNode;
 	tracks: GridTrack[];
 	items: GridItem[];
+
 	/** Whether this pass is sizing the inline axis. */
 	columns: boolean;
+
 	/** The space the tracks have to fill; NaN when the container is indefinite. */
 	availableSpace: number;
 	gap: number;
+
 	/** The size percentages in the track list resolve against. */
 	ownerSize: number;
 	ownerWidth: number;
 	ownerHeight: number;
+
 	/** The sized columns, which an item's height is measured against. */
 	columnSizes: number[] | null;
 	columnGap: number;
+
 	/** Whether the content alignment on this axis stretches auto tracks (§12.8). */
 	stretchesAutoTracks: boolean;
+
 	/**
 	 * How much taller a baseline-aligned item makes its row than its own box
 	 * (css-grid-2 §12.5 step 1): the distance it will be pushed down to meet
@@ -4332,9 +4358,9 @@ interface TrackSizing {
 }
 
 function itemTrackRange(sizing: TrackSizing, item: GridItem): [number, number] {
-	return sizing.columns ?
-			[item.columnStart, item.columnEnd] :
-			[item.rowStart, item.rowEnd];
+	return sizing.columns
+		? [item.columnStart, item.columnEnd]
+		: [item.rowStart, item.rowEnd];
 }
 
 /** The room a run of tracks provides, gaps between them included. */
@@ -4511,23 +4537,23 @@ function distributeExtraSpace(
 	}
 
 	const startOf = (track: GridTrack) =>
-		toLimits ?
-			track.growthLimit === Infinity ?
-				track.base :
-				track.growthLimit :
-			track.base;
+		toLimits
+			? track.growthLimit === Infinity
+				? track.base
+				: track.growthLimit
+			: track.base;
 	// A base grows toward its own growth limit. A growth limit grows toward
 	// nothing at all -- it is already where it stops -- unless it was set from
 	// a contribution one step ago, which is what infinitely growable marks:
 	// such a limit grows on, up to a fit-content() clamp if the track has one
 	// (css-grid-2 §12.5.1).
 	const limitOf = (track: GridTrack) =>
-		toLimits ?
-				Math.min(
-					track.infinitelyGrowable ? Infinity : track.growthLimit,
-					track.fitContentLimit,
-				) :
-			track.growthLimit;
+		toLimits
+			? Math.min(
+				track.infinitelyGrowable ? Infinity : track.growthLimit,
+				track.fitContentLimit,
+			)
+			: track.growthLimit;
 
 	let remaining = space;
 	const frozen = new Set<number>();
@@ -4539,9 +4565,9 @@ function distributeExtraSpace(
 			const track = tracks[index];
 			const limit = limitOf(track);
 			const room =
-				limit === Infinity ?
-					Infinity :
-						Math.max(0, limit - startOf(track) - track.planned);
+				limit === Infinity
+					? Infinity
+					: Math.max(0, limit - startOf(track) - track.planned);
 			const growth = Math.min(share, room);
 			track.planned += growth;
 			used += growth;
@@ -4611,18 +4637,18 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		if (intrinsicMin(track)) {
 			const kind = track.size.min.kind;
 			const floor =
-				kind === "min-content" ?
-						gridItemContribution(sizing, item, true) :
-					kind === "max-content" ?
-							gridItemContribution(sizing, item, false) :
-							minimumContribution(sizing, item, start, end);
+				kind === "min-content"
+					? gridItemContribution(sizing, item, true)
+					: kind === "max-content"
+						? gridItemContribution(sizing, item, false)
+						: minimumContribution(sizing, item, start, end);
 			track.base = Math.max(track.base, floor);
 		}
 		if (intrinsicMax(track)) {
 			const limit =
-				track.size.max.kind === "min-content" ?
-						gridItemContribution(sizing, item, true) :
-						gridItemContribution(sizing, item, false);
+				track.size.max.kind === "min-content"
+					? gridItemContribution(sizing, item, true)
+					: gridItemContribution(sizing, item, false);
 			limits[start] = Math.max(limits[start], limit);
 		}
 	}
@@ -4679,9 +4705,9 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 			indices.reduce(
 				(sum, i) =>
 					sum +
-					(tracks[i].growthLimit === Infinity ?
-						tracks[i].base :
-						tracks[i].growthLimit),
+					(tracks[i].growthLimit === Infinity
+						? tracks[i].base
+						: tracks[i].growthLimit),
 				0,
 			);
 
@@ -5038,9 +5064,9 @@ function gridSelfAlign(
 	inline: boolean,
 ): Align {
 	const own = inline ? item.style.justifySelf : item.style.alignSelf;
-	const fallback = inline ?
-		container.style.justifyItems :
-		container.style.alignItems;
+	const fallback = inline
+		? container.style.justifyItems
+		: container.style.alignItems;
 	const value = own === "auto" ? fallback : own;
 	return value === "auto" || value === "normal" ? "stretch" : value;
 }
@@ -5312,12 +5338,12 @@ function layoutGrid(
 	const contentLeft = paddingAndBorderForEdge(node, "left", ownerWidth);
 	const contentTop = paddingAndBorderForEdge(node, "top", ownerWidth);
 
-	const innerWidth = isDefined(availableWidth) ?
-			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
-		NaN;
-	const innerHeight = isDefined(availableHeight) ?
-			Math.max(0, availableHeight - marginColumn - paddingBorderColumn) :
-		NaN;
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
 
 	const columnGap = node.style.gap["column"];
 	const rowGap = node.style.gap["row"];
@@ -5348,9 +5374,12 @@ function layoutGrid(
 
 	// -- the explicit grid --------------------------------------------------
 	const areas = node.style.gridTemplateAreas;
-	const fromAreas = areas ?
-			areaLineNames(areas) :
-			{columns: new Map<string, number[]>(), rows: new Map<string, number[]>()};
+	const fromAreas = areas
+		? areaLineNames(areas)
+		: {
+			columns: new Map<string, number[]>(),
+			rows: new Map<string, number[]>(),
+		};
 
 	const columnTemplate = expandTrackList(
 		node.style.gridTemplateColumns,
@@ -5455,9 +5484,9 @@ function layoutGrid(
 		for (let i = 0; i < count; i++) {
 			const line = base + i;
 			const explicit = line >= 0 && line < template.sizes.length;
-			const size = explicit ?
-				template.sizes[line] :
-				autoSizes[implicit++ % autoSizes.length];
+			const size = explicit
+				? template.sizes[line]
+				: autoSizes[implicit++ % autoSizes.length];
 			tracks.push(createTrack(size, ownerSize));
 		}
 		return tracks;
@@ -5606,25 +5635,25 @@ function layoutGrid(
 
 	// -- the grid container's own box ---------------------------------------
 	const width =
-		widthMode === "exactly" ?
-			availableWidth - marginRow :
-				boundAxis(
-					node,
-					"row",
-					columnsTotal + paddingBorderRow,
-					ownerWidth,
-					ownerWidth,
-				);
+		widthMode === "exactly"
+			? availableWidth - marginRow
+			: boundAxis(
+				node,
+				"row",
+				columnsTotal + paddingBorderRow,
+				ownerWidth,
+				ownerWidth,
+			);
 	const height =
-		heightMode === "exactly" ?
-			availableHeight - marginColumn :
-				boundAxis(
-					node,
-					"column",
-					rowsTotal + paddingBorderColumn,
-					ownerHeight,
-					ownerWidth,
-				);
+		heightMode === "exactly"
+			? availableHeight - marginColumn
+			: boundAxis(
+				node,
+				"column",
+				rowsTotal + paddingBorderColumn,
+				ownerHeight,
+				ownerWidth,
+			);
 
 	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
 
@@ -6096,9 +6125,9 @@ function layoutBlock(
 		inFlow.push(child);
 	}
 
-	const innerWidth = isDefined(availableWidth) ?
-			Math.max(0, availableWidth - marginRow - paddingBorderRow) :
-		NaN;
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
 
 	// -- content width ------------------------------------------------------
 	//
@@ -6210,9 +6239,9 @@ function layoutBlock(
 	}
 
 	const height =
-		heightMode === "exactly" ?
-			availableHeight - marginColumn :
-			Math.max(0, contentHeight) + paddingBorderColumn;
+		heightMode === "exactly"
+			? availableHeight - marginColumn
+			: Math.max(0, contentHeight) + paddingBorderColumn;
 
 	setMeasuredDimensions(node, borderBoxWidth, height, ownerWidth, ownerHeight);
 
@@ -7383,18 +7412,18 @@ function applyInsets(
  * has (see baselineWithinBorderBox).
  */
 const ALIGNMENT_CONSTANTS: Record<string, Align> = {
-	"normal": "normal",
-	"stretch": "stretch",
-	"center": "center",
-	"baseline": "baseline",
-	"start": "flex-start",
-	"end": "flex-end",
+	normal: "normal",
+	stretch: "stretch",
+	center: "center",
+	baseline: "baseline",
+	start: "flex-start",
+	end: "flex-end",
 	"flex-start": "flex-start",
 	"flex-end": "flex-end",
 	"self-start": "flex-start",
 	"self-end": "flex-end",
-	"left": "flex-start",
-	"right": "flex-end",
+	left: "flex-start",
+	right: "flex-end",
 	"space-between": "space-between",
 	"space-around": "space-around",
 	"space-evenly": "space-evenly",
@@ -7402,15 +7431,15 @@ const ALIGNMENT_CONSTANTS: Record<string, Align> = {
 
 /** The inline-axis content distribution constants, which are their own enum. */
 const JUSTIFY_CONTENT_CONSTANTS: Record<string, Justify> = {
-	"normal": "normal",
-	"stretch": "stretch",
-	"center": "center",
-	"start": "flex-start",
-	"end": "flex-end",
+	normal: "normal",
+	stretch: "stretch",
+	center: "center",
+	start: "flex-start",
+	end: "flex-end",
 	"flex-start": "flex-start",
 	"flex-end": "flex-end",
-	"left": "flex-start",
-	"right": "flex-end",
+	left: "flex-start",
+	right: "flex-end",
 	"space-between": "space-between",
 	"space-around": "space-around",
 	"space-evenly": "space-evenly",
@@ -7588,17 +7617,17 @@ function styleFlexNodeProperties(
 		const widthValue = getComputedValue(element, "width");
 		const width = parseUnitValue(widthValue);
 		flexNode.setWidth(
-			typeof width === "number" ?
-				width + contentBoxEdges(element, false) :
-					(width ?? "auto"),
+			typeof width === "number"
+				? width + contentBoxEdges(element, false)
+				: (width ?? "auto"),
 		);
 		flexNode.setWidthSizing(widthSizingConstant(widthValue));
 
 		const height = parseUnitValue(getComputedValue(element, "height"));
 		flexNode.setHeight(
-			typeof height === "number" ?
-				height + contentBoxEdges(element, true) :
-					(height ?? "auto"),
+			typeof height === "number"
+				? height + contentBoxEdges(element, true)
+				: (height ?? "auto"),
 		);
 
 		applyMinMax(flexNode, element);
@@ -7641,9 +7670,9 @@ function styleFlexNodeProperties(
 			flexNode.setMargin(
 				edge,
 				margin ??
-				(getComputedValue(element, property) === "auto" ?
-					"auto" :
-					undefined),
+				(getComputedValue(element, property) === "auto"
+					? "auto"
+					: undefined),
 			);
 			flexNode.setPadding(
 				edge,
@@ -7702,9 +7731,9 @@ function styleFlexNodeProperties(
 			"flex-direction",
 		);
 		const crossEdges: readonly Edge[] =
-			direction === "column" || direction === "column-reverse" ?
-					["left", "right"] :
-					["top", "bottom"];
+			direction === "column" || direction === "column-reverse"
+				? ["left", "right"]
+				: ["top", "bottom"];
 		for (const edge of crossEdges) {
 			flexNode.setPadding(edge, 0);
 			flexNode.setBorder(edge, 0);
@@ -7738,9 +7767,9 @@ function styleFlexNodeProperties(
 	);
 	flexNode.setFlexBasis(
 		flexBasis ??
-		(getComputedValue(element, "flex-basis") === "auto" ?
-			"auto" :
-			undefined),
+		(getComputedValue(element, "flex-basis") === "auto"
+			? "auto"
+			: undefined),
 	);
 
 	const alignSelf = getComputedValue(element, "align-self");
@@ -8511,9 +8540,9 @@ function syncContainerRuns(
 		if (entry.kind === "anonymous") {
 			let flexNode = entry.layoutNode;
 			const styledFrom =
-				entry.head.nodeType === entry.head.ELEMENT_NODE ?
-						(entry.head as Element) :
-					null;
+				entry.head.nodeType === entry.head.ELEMENT_NODE
+					? (entry.head as Element)
+					: null;
 			// The head decides the box's own flex styles (an anonymous box has
 			// none), so a run that changes hands starts from a fresh node
 			// rather than wearing the last head's margins and flex factors.
@@ -8752,9 +8781,9 @@ function addNode(
 	// box moved, and the test is simply whether the block can be climbed to.
 	if (isOutOfFlow(node)) {
 		const containingBlock =
-			getPosition(node as Element) === "fixed" ?
-				layout[kViewportRoot] :
-					containingBlockFlexNode(layout, node as Element);
+			getPosition(node as Element) === "fixed"
+				? layout[kViewportRoot]
+				: containingBlockFlexNode(layout, node as Element);
 		if (containingBlock && !climbsTo(parentFlexNode, containingBlock)) {
 			parentFlexNode = containingBlock;
 		}
@@ -9364,9 +9393,9 @@ export function flowWalker(root: Node): TreeWalker {
  */
 function contentsSkipped(node: Node): number {
 	return (
-		node.nodeType === node.ELEMENT_NODE && dissolvesIntoChildren(node) ?
-			NodeFilter.FILTER_SKIP :
-			NodeFilter.FILTER_ACCEPT
+		node.nodeType === node.ELEMENT_NODE && dissolvesIntoChildren(node)
+			? NodeFilter.FILTER_SKIP
+			: NodeFilter.FILTER_ACCEPT
 	);
 }
 
@@ -9877,9 +9906,9 @@ function restageForRecord(
 ): void {
 	// A record on a shadow root describes the HOST's composed children.
 	const target =
-		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE ?
-				(record.target as ShadowRoot).host :
-			record.target;
+		record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
+			? (record.target as ShadowRoot).host
+			: record.target;
 	if (record.type === "attributes") {
 		// The element's own box may move between runs (its display could
 		// have changed), and so may the boxes of its children (a flex
@@ -9981,6 +10010,7 @@ interface LineResult {
 		x: number;
 		width: number;
 		processedText: string;
+
 		/**
 		 * The range of the leaf text node's raw `data` this segment renders,
 		 * trimmed to begin and end on a rendered character: rendering it under
@@ -9990,6 +10020,7 @@ interface LineResult {
 		 */
 		dataStart: number;
 		dataEnd: number;
+
 		/**
 		 * The paragraph direction this segment's characters were reordered into,
 		 * null while they stand in logical order (no bidirectional text on the
@@ -10006,6 +10037,7 @@ interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
+
 	/**
 	 * The available width lines were broken against, for text-align:center/right
 	 * to offset a line's used width (line.width) within it. Unset when the
@@ -10021,6 +10053,7 @@ interface ProcessedContent {
 		start: number;
 		end: number;
 		processedContent?: string;
+
 		/**
 		 * The mapping from `processedContent`'s code units back to offsets in
 		 * the leaf text node's raw `data`. Null where the two are the same.
@@ -10028,6 +10061,7 @@ interface ProcessedContent {
 		dataOffsets?: Int32Array | null;
 	}>;
 	text: string;
+
 	/**
 	 * Cumulative cell widths over `text`: entry i is the width of text[0..i), so
 	 * any range measures as prefixWidths[end] - prefixWidths[start]. An
@@ -10050,10 +10084,13 @@ interface BreakPoint {
  */
 interface LineFragment {
 	rect: DOMRect;
+
 	/** Data offset of the line's first character / caret slot. */
 	startOffset: number;
+
 	/** Data offset of the caret slot AFTER the line's last character. */
 	endOffset: number;
+
 	/** See LineResult segments: the visual order the line was laid out in. */
 	visualBase: "ltr" | "rtl" | null;
 }
@@ -10383,9 +10420,9 @@ function collectLeavesUnder(
 				// A sizing keyword never reaches getBoxModel's numbers; it
 				// picks the probe the content is measured under instead.
 				const widthSizing =
-					boxModel.width === undefined ?
-							widthSizingConstant(getComputedValue(element, "width")) :
-						"none";
+					boxModel.width === undefined
+						? widthSizingConstant(getComputedValue(element, "width"))
+						: "none";
 				if (boxModel.width !== undefined) {
 					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
 					contentWidthMode = "exactly";
@@ -10506,12 +10543,12 @@ function collectLeavesUnder(
 					contentRoot.calculateLayout(
 						contentWidthMode === "exactly" ||
 						(widthSizing !== "none" &&
-							contentWidthMode === "at-most") ?
-							contentWidth :
-							Number.NaN,
-						contentHeightMode === "exactly" ?
-							contentHeight :
-							Number.NaN,
+							contentWidthMode === "at-most")
+							? contentWidth
+							: Number.NaN,
+						contentHeightMode === "exactly"
+							? contentHeight
+							: Number.NaN,
 					);
 					finalContentWidth = contentRoot.getComputedWidth();
 					finalContentHeight = contentRoot.getComputedHeight();
@@ -10681,9 +10718,9 @@ function breakNodes(
 	// pseudo-element is the pseudo-element's own node.
 	const opener = source.head;
 	const styleElement =
-		opener.nodeType === opener.TEXT_NODE ?
-			flatParentElement<Element>(opener)! :
-				(opener as Element);
+		opener.nodeType === opener.TEXT_NODE
+			? flatParentElement<Element>(opener)!
+			: (opener as Element);
 
 	const whiteSpace = getComputedValue(styleElement, "white-space");
 	const wordBreak = getComputedValue(styleElement, "word-break");
@@ -10695,9 +10732,9 @@ function breakNodes(
 	// max-content instead, making min-content zero everywhere, with a long
 	// word left nothing to stop it overflowing its box.
 	const maxWidth =
-		widthMode === "unconstrained" ?
-			Number.MAX_SAFE_INTEGER :
-			width;
+		widthMode === "unconstrained"
+			? Number.MAX_SAFE_INTEGER
+			: width;
 
 	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
@@ -10732,11 +10769,11 @@ function breakNodes(
 	// string usually arrives.
 	const declared = getComputedValue(styleElement, "direction");
 	const base: "ltr" | "rtl" =
-		declared === "rtl" ?
-			"rtl" :
-			declared === "ltr" ?
-				"ltr" :
-					inferParagraphDirection(processedContent.text);
+		declared === "rtl"
+			? "rtl"
+			: declared === "ltr"
+				? "ltr"
+				: inferParagraphDirection(processedContent.text);
 
 	const lines = buildLines(
 		layout,
@@ -11037,9 +11074,9 @@ function buildLines(
 		// anywhere/break-all may synthesize a break inside the word.
 		if (bestBreak === lineStart && !breakAnywhere) {
 			bestBreak =
-				cursor < breaks.length ?
-					breaks[cursor].position :
-					content.text.length;
+				cursor < breaks.length
+					? breaks[cursor].position
+					: content.text.length;
 			bestBreakWidth = measureText(content, lineStart, bestBreak);
 		}
 
@@ -11077,13 +11114,13 @@ function buildLines(
 		if (lineNodes.length > 0) {
 			const lineHeight = Math.max(
 				...lineNodes.map((n) =>
-					n.leaf.type === "inline-block" ?
-						n.leaf.contentHeight +
+					n.leaf.type === "inline-block"
+						? n.leaf.contentHeight +
 						n.leaf.boxModel.paddingTop +
 						n.leaf.boxModel.paddingBottom +
 						n.leaf.boxModel.borderTopWidth +
-						n.leaf.boxModel.borderBottomWidth :
-						1,
+						n.leaf.boxModel.borderBottomWidth
+						: 1,
 				),
 				1,
 			);
@@ -11235,9 +11272,9 @@ function lineIndent(
 	if (typeof parsed === "number") {
 		return parsed;
 	}
-	return containerWidth === undefined ?
-		0 :
-			(parsed.percentage / 100) * containerWidth;
+	return containerWidth === undefined
+		? 0
+		: (parsed.percentage / 100) * containerWidth;
 }
 
 /** The line and segment a break result placed an inline-block box on. */
@@ -11500,9 +11537,9 @@ function rangeTextNodes(
 ): Text[] {
 	if (range.collapsed) {
 		const container = range.startContainer;
-		return container.nodeType === container.TEXT_NODE ?
-				[container as Text] :
-				[];
+		return container.nodeType === container.TEXT_NODE
+			? [container as Text]
+			: [];
 	}
 	const root = range.commonAncestorContainer;
 	if (root.nodeType === root.TEXT_NODE) {
@@ -11585,16 +11622,16 @@ function offsetInFragment(
 		index++;
 	}
 	const distance =
-		x < fragment.rect.x ?
-			fragment.rect.x - x :
-			x >= cellX && index === text.length ?
-				x - cellX :
-				0;
+		x < fragment.rect.x
+			? fragment.rect.x - x
+			: x >= cellX && index === text.length
+				? x - cellX
+				: 0;
 	return {
 		offset:
-			index < text.length ?
-				fragment.startOffset + dataOffsetAt(offsets, index) :
-				fragment.endOffset,
+			index < text.length
+				? fragment.startOffset + dataOffsetAt(offsets, index)
+				: fragment.endOffset,
 		distance,
 	};
 }
@@ -11623,9 +11660,9 @@ function selectionRuns(
 		let runStart = -1;
 		for (let i = 0; i <= text.length; i++) {
 			const dataOffset =
-				i < text.length ?
-					fragment.startOffset + dataOffsetAt(offsets, i) :
-						-1;
+				i < text.length
+					? fragment.startOffset + dataOffsetAt(offsets, i)
+					: -1;
 			const selected = dataOffset >= from && dataOffset < to;
 			if (selected && runStart === -1) {
 				runStart = i;
@@ -11644,9 +11681,9 @@ function selectionRuns(
 					// Painted order, since the caller redraws these cells: a
 					// selected run of a bidirectional line reverses just as
 					// the line it sits on did.
-					text: fragment.visualBase ?
-							toVisualOrder(text.slice(runStart, i), fragment.visualBase) :
-							text.slice(runStart, i),
+					text: fragment.visualBase
+						? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
+						: text.slice(runStart, i),
 				});
 				runStart = -1;
 			}
@@ -11670,9 +11707,9 @@ function hitTestContext(
 		// a property of the containing-block CHAIN, so the check walks
 		// ancestors -- an absolute box inside a fixed bar lives there too.
 		const probeY = layout.isInFixedSpace(element) ? y - cameraScrollTop : y;
-		return layout.formsStackingContext(element) ?
-				hitTestContext(layout, element, x, probeY, layers, cameraScrollTop) :
-				hitTestInFlow(layout, element, x, probeY);
+		return layout.formsStackingContext(element)
+			? hitTestContext(layout, element, x, probeY, layers, cameraScrollTop)
+			: hitTestInFlow(layout, element, x, probeY);
 	};
 	if (bucket) {
 		for (let i = bucket.pos.length - 1; i >= 0; i--) {
@@ -11933,13 +11970,13 @@ function getNodesInRange(
 				// sits -- the caret slot of a blank line.
 				const offsets = item.dataOffsets ?? null;
 				const dataStart =
-					relativeStart < item.processedContent.length ?
-							dataOffsetAt(offsets, relativeStart) :
-						item.leafNode.node.data.length;
+					relativeStart < item.processedContent.length
+						? dataOffsetAt(offsets, relativeStart)
+						: item.leafNode.node.data.length;
 				const dataEnd =
-					portion.length > 0 ?
-						dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1 :
-						dataStart;
+					portion.length > 0
+						? dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1
+						: dataStart;
 
 				nodes.push({
 					leaf: item.leafNode,
@@ -12266,9 +12303,9 @@ function getRectTexts(layout: LayoutEngine, node: Node): RectText[] {
 	// run head accumulating offsets.
 	for (
 		let ancestor =
-			node.nodeType === node.ELEMENT_NODE ?
-					(node as Element) :
-					flatParentElement<Element>(node);
+			node.nodeType === node.ELEMENT_NODE
+				? (node as Element)
+				: flatParentElement<Element>(node);
 		ancestor && ancestor !== runHead && !layout[kNodeMap].has(ancestor);
 		ancestor = flatParentElement<Element>(ancestor)
 	) {
@@ -12999,12 +13036,12 @@ export class LayoutEngine {
 			}
 			if (right !== null) {
 				right =
-					child.measureFunc !== null ?
-						null :
-							Math.max(
-								right,
-								child.layout.left + child.getComputedWidth(),
-							);
+					child.measureFunc !== null
+						? null
+						: Math.max(
+							right,
+							child.layout.left + child.getComputedWidth(),
+						);
 			}
 			bottom = Math.max(
 				bottom,
@@ -13021,14 +13058,14 @@ export class LayoutEngine {
 			(box.borderBottomWidth || 0);
 		return {
 			width:
-				right === null ?
-					null :
-						Math.round(
-							Math.max(
-								clientWidth,
-								right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
-							),
+				right === null
+					? null
+					: Math.round(
+						Math.max(
+							clientWidth,
+							right - (box.borderLeftWidth || 0) + (box.paddingRight || 0),
 						),
+					),
 			height: Math.round(
 				Math.max(
 					clientHeight,
@@ -13090,11 +13127,11 @@ export class LayoutEngine {
 		return {
 			width: Math.round(box?.width ?? 0),
 			height:
-				isRootBox(this, element) ?
+				isRootBox(this, element)
 					// The terminal is the viewport, and the root it was laid
 					// out at is where that size is held.
-					this[kViewportRoot].style.height.value :
-						Math.round(box?.height ?? 0),
+					? this[kViewportRoot].style.height.value
+					: Math.round(box?.height ?? 0),
 		};
 	}
 
@@ -13110,9 +13147,9 @@ export class LayoutEngine {
 		return {
 			width: extent?.width ?? Math.round(box?.width ?? 0),
 			height:
-				isRootBox(this, element) ?
-						documentContentHeight(this) :
-						(extent?.height ?? Math.round(box?.height ?? 0)),
+				isRootBox(this, element)
+					? documentContentHeight(this)
+					: (extent?.height ?? Math.round(box?.height ?? 0)),
 		};
 	}
 
@@ -13128,11 +13165,11 @@ export class LayoutEngine {
 		const extent = this.scrollExtentOf(element);
 		const port = this.contentRect(element);
 		const size =
-			extent === null ?
-				null :
-				axis === "top" ?
-					extent.height :
-					extent.width;
+			extent === null
+				? null
+				: axis === "top"
+					? extent.height
+					: extent.width;
 		if (size === null || !port) {
 			return null;
 		}
@@ -13347,9 +13384,9 @@ export class LayoutEngine {
 		for (const textNode of rangeTextNodes(this, range)) {
 			const from = range.startContainer === textNode ? range.startOffset : 0;
 			const to =
-				range.endContainer === textNode ?
-					range.endOffset :
-					textNode.data.length;
+				range.endContainer === textNode
+					? range.endOffset
+					: textNode.data.length;
 			if (to > from) {
 				runs.push(...selectionRuns(this, textNode, from, to));
 			}
@@ -13605,9 +13642,9 @@ export class LayoutEngine {
 		// is laid out in is the root element's.
 		const paintRoot =
 			root === document.documentElement &&
-			!dissolvesIntoChildren(document.body) ?
-				document.body :
-				root;
+			!dissolvesIntoChildren(document.body)
+				? document.body
+				: root;
 		for (const element of [...topLayer].reverse()) {
 			if (!flatIsConnected(element)) {
 				continue;

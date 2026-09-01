@@ -178,26 +178,26 @@ function cellStyleFromComputed(element: Element): CellStyle {
 	const isHighlightPair = isSystemHighlightColor(bgColor);
 	return {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color) ?
-					cssColorToNumber(color) :
-				undefined,
+			color && color !== "initial" && !isSystemHighlightColor(color)
+				? cssColorToNumber(color)
+				: undefined,
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
 			!isTransparentColor(bgColor) &&
 			!/^canvas$/i.test(bgColor.trim()) &&
-			!isSystemHighlightColor(bgColor) ?
-					cssColorToNumber(bgColor) :
-				undefined,
+			!isSystemHighlightColor(bgColor)
+				? cssColorToNumber(bgColor)
+				: undefined,
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
 		italic: getComputedValue(element, "font-style") === "italic",
 		underline: hasUnderline(getComputedValue(element, "text-decoration-line")),
 		underlineStyle:
-			getComputedValue(element, "text-decoration-style") === "double" ?
-					("double" as const) :
-				undefined,
+			getComputedValue(element, "text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined,
 		strikethrough: hasLineThrough(
 			getComputedValue(element, "text-decoration-line"),
 		),
@@ -421,25 +421,25 @@ function renderElement(
 	// terminal through the text runs inside it, never through the box.
 	const style = {
 		fg:
-			color && color !== "initial" && !isSystemHighlightColor(color) ?
-					cssColorToNumber(color) :
-				undefined,
+			color && color !== "initial" && !isSystemHighlightColor(color)
+				? cssColorToNumber(color)
+				: undefined,
 		bg:
 			backgroundColor &&
 			!isCanvasBg &&
 			backgroundColor !== "initial" &&
 			!isTransparentColor(backgroundColor) &&
-			!isSystemHighlightColor(backgroundColor) ?
-					cssColorToNumber(backgroundColor) :
-				undefined,
+			!isSystemHighlightColor(backgroundColor)
+				? cssColorToNumber(backgroundColor)
+				: undefined,
 	};
 
 	if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-		const fill = isCanvasBg ?
-			"default" :
-			isHighlightBox ?
-				"inverse" :
-				style.bg;
+		const fill = isCanvasBg
+			? "default"
+			: isHighlightBox
+				? "inverse"
+				: style.bg;
 		// A box that broke across lines has a fragment on each of them, and
 		// its background belongs to those fragments rather than to the
 		// rectangle enclosing them: the enclosing one covers the whole width
@@ -488,9 +488,9 @@ function renderElement(
 				color:
 					borderColor &&
 					borderColor !== "currentcolor" &&
-					borderColor !== "currentColor" ?
-							cssColorToNumber(borderColor) :
-						style.fg,
+					borderColor !== "currentColor"
+						? cssColorToNumber(borderColor)
+						: style.fg,
 			};
 		};
 		const top = sideFor(sides.top, "border-top-color");
@@ -574,9 +574,9 @@ function renderElement(
 	// never here.
 	const ownScrolledRows =
 		element === painter[kDocument].body ||
-		element === painter[kDocument].documentElement ?
-			0 :
-			element.scrollTop || 0;
+		element === painter[kDocument].documentElement
+			? 0
+			: element.scrollTop || 0;
 	bandTop += ownScrolledRows;
 	bandBottom += ownScrolledRows;
 
@@ -712,9 +712,9 @@ function renderElement(
 					Math.round(rect.left),
 					Math.round(rect.bottom) - 1,
 					Math.round(rect.width),
-					hasColor ?
-							{underline: true, fg: cssColorToNumber(outlineColor)} :
-							{underline: true},
+					hasColor
+						? {underline: true, fg: cssColorToNumber(outlineColor)}
+						: {underline: true},
 				);
 			}
 		}
@@ -879,9 +879,9 @@ function renderOutsideMarker(
 
 	const markerTextStyle = {
 		fg:
-			markerColor && markerColor !== "initial" ?
-					cssColorToNumber(markerColor) :
-				undefined,
+			markerColor && markerColor !== "initial"
+				? cssColorToNumber(markerColor)
+				: undefined,
 		bold: markerBold,
 		dim: markerDim,
 		italic: markerItalic,
@@ -1005,9 +1005,9 @@ function selectionRangeFor(
 	const from =
 		documentRange.startContainer === textNode ? documentRange.startOffset : 0;
 	const to =
-		documentRange.endContainer === textNode ?
-			documentRange.endOffset :
-			textNode.data.length;
+		documentRange.endContainer === textNode
+			? documentRange.endOffset
+			: textNode.data.length;
 	if (to <= from) {
 		return null;
 	}

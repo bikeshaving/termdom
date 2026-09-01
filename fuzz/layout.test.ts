@@ -194,11 +194,11 @@ test("an absolute box lands by its containing block, not its depth", async () =>
 					}
 					const [head, ...rest] = levels;
 					const wrapped =
-						head === "inline-block" ?
-							`<span style="display: inline-block">${inner}</span>` :
-							head === "contents" ?
-								`<div style="display: contents">${inner}</div>` :
-								`<div>${inner}</div>`;
+						head === "inline-block"
+							? `<span style="display: inline-block">${inner}</span>`
+							: head === "contents"
+								? `<div style="display: contents">${inner}</div>`
+								: `<div>${inner}</div>`;
 					return nest(wrapped, rest);
 				};
 				const box =

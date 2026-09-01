@@ -49,6 +49,7 @@ class MockClipboardProcess extends EventEmitter {
 	output: string[];
 	stdin: MockTTYStream;
 	env: {TERM: string; COLORTERM: string};
+
 	/** Answered for the next clipboard query, if the terminal is one that does. */
 	clipboard: string | null;
 	stdout: {

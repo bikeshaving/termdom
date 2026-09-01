@@ -35,7 +35,7 @@ function computed(html: string, id: string, property: string): string {
  */
 const IMPLEMENTED_HINTS: Record<string, string> = {
 	"*[dir]": "direction",
-	"bdi": "direction",
+	bdi: "direction",
 	"input[type=tel]": "direction",
 };
 
@@ -84,7 +84,7 @@ const EXCLUDED_HINTS: Record<string, string> = {
 
 	// Alignment attributes, which map to text-align, float and vertical-align.
 	"div[align]": "text-align: the align attribute predates text-align",
-	"center": "text-align: center, which the UA sheet could carry but does not",
+	center: "text-align: center, which the UA sheet could carry but does not",
 	"td[align]": "text-align on a cell",
 	"th[align]": "text-align on a cell",
 	"tr[align]": "text-align on a row",

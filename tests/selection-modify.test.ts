@@ -12,11 +12,12 @@ import {type Document, parseHTMLDocument, Window} from "../src/internal/dom.js";
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
 	return parseHTMLDocument(
-		title === undefined ?
-			"<!doctype html>" :
-			`<!doctype html><title>${title}</title>`,
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
 	);
 }
+
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 

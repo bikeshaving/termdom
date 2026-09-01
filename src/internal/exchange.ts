@@ -35,11 +35,13 @@ export interface TerminalSize {
 }
 
 export interface TerminalCloseInfo {
+
 	/**
 	 * Exit status, process semantics: the process wrapper hands it to
 	 * process.exit; an SSH wrapper sends it as exit-status.
 	 */
 	status?: number;
+
 	/** The signal that ended the session ("SIGHUP", "SIGTERM"), when one did. */
 	signal?: string;
 	reason?: string;
@@ -52,14 +54,17 @@ export interface TerminalCloseInfo {
  * sniffing -- belongs inside a wrapper, never in this contract.
  */
 export interface TerminalTransport {
+
 	/**
 	 * The current size, as LIVE getters: after `resizes` emits, these answer
 	 * with the new size. `resizes` is the notification, these are the value.
 	 */
 	readonly cols: number;
 	readonly rows: number;
+
 	/** What the terminal can display; the wrapper knows its terminal. */
 	readonly colorDepth: ColorDepth;
+
 	/**
 	 * User input: keys, replies to queries, paste bursts. Chunks are strings,
 	 * so code points never split; escape sequences MAY split across chunks
@@ -67,9 +72,11 @@ export interface TerminalTransport {
 	 * reassembles them.
 	 */
 	readonly readable: ReadableStream<string>;
+
 	/** Frames out. */
 	readonly writable: WritableStream<string>;
 	readonly resizes: ReadableStream<TerminalSize>;
+
 	/**
 	 * The screen holds prior content the app must not paint over (a shell
 	 * prompt above), so rendering anchors at the cursor rather than row 0.
@@ -77,23 +84,27 @@ export interface TerminalTransport {
 	 * from row 0 (an xterm embed, a fresh SSH pty).
 	 */
 	readonly sharesScreen: boolean;
+
 	/**
 	 * Whether the far end is a screen that interprets cursor movement.
 	 * False for a pipe or a file; rendering degrades to plain appended
 	 * lines.
 	 */
 	readonly interactive: boolean;
+
 	/**
 	 * Resolves when the transport is established. A process's tty and an
 	 * xterm instance are established at construction (Promise.resolve());
 	 * an SSH wrapper resolves it when its channel opens.
 	 */
 	readonly ready: Promise<void>;
+
 	/**
 	 * The terminal went away: hangup, disconnect, process exit. Always
 	 * fulfills with a TerminalCloseInfo; fields may be absent.
 	 */
 	readonly closed: Promise<TerminalCloseInfo>;
+
 	/**
 	 * The app is done with the terminal (window.close()'s last act). A
 	 * transport that owns its medium ends it -- the process transport exits
@@ -175,18 +186,25 @@ function decode64(text: string): Uint8Array | null {
 
 /** DSR 6: where is the cursor? Answered by a cursor report, one-based. */
 const CURSOR_QUERY = "\x1b[6n";
+
 /** OSC 52 with "?": what is on the clipboard? */
 const CLIPBOARD_QUERY = "\x1b]52;c;?\x07";
+
 /** BDSM reset: the application decides the order of bidirectional text. */
 const BIDI_EXPLICIT = "\x1b[8l";
+
 /** BDSM set: the terminal reorders bidirectional text itself. */
 const BIDI_IMPLICIT = "\x1b[8h";
+
 /** EL 0: from the cursor to the end of its row. */
 const LINE_ERASE = "\x1b[K";
+
 /** ED 0: from the cursor to the end of the screen. */
 const BELOW_ERASE = "\x1b[J";
+
 /** ED 2 then CUP with no parameters: the screen blank, the cursor home. */
 const SCREEN_CLEAR = "\x1b[2J\x1b[H";
+
 /** IND: down one row, scrolling the screen when the cursor is at the end. */
 const SCROLL_STEP = "\x1bD";
 
@@ -200,9 +218,9 @@ function rowStart(row: number): string {
  * a private mode keeping its "?" ("8", "?2027").
  */
 function modeQuery(mode: string): string {
-	return mode.startsWith("?") ?
-		`\x1b[?${parseInt(mode.slice(1), 10)}$p` :
-		`\x1b[${parseInt(mode, 10)}$p`;
+	return mode.startsWith("?")
+		? `\x1b[?${parseInt(mode.slice(1), 10)}$p`
+		: `\x1b[${parseInt(mode, 10)}$p`;
 }
 
 /**
@@ -701,9 +719,9 @@ class WireReader {
 			// and it is one keystroke: split, its halves are lone surrogates,
 			// which name no key and spell no character.
 			const code = data.charCodeAt(i);
-			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ?
-				2 :
-				1;
+			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length
+				? 2
+				: 1;
 			items.push(decodeKeyToken(data.slice(i, i + width)));
 			i += width;
 		}
@@ -721,17 +739,23 @@ class WireReader {
  * fitting none is a late or duplicate reply, dropped.
  */
 interface PendingReply {
+
 	/** The item kind that answers this question. */
 	kind: WireItem["kind"];
+
 	/** The mode a DECRPM answer must name; mode questions only. */
 	mode?: string;
+
 	/** Answer the asker with the item that fit, clearing the deadline. */
 	settle(item: WireItem): void;
+
 	/** Answer the asker with silence: the deadline, a replacement, dispose. */
 	giveUp(): void;
 	timer: ReturnType<typeof setTimeout>;
+
 	/** DSR send order, cursor questions only. */
 	sequence?: number;
+
 	/** The clipboard question: one at a time, and dispose answers it null. */
 	clipboard?: boolean;
 }
@@ -812,6 +836,7 @@ export class TerminalExchange {
 	declare [kAnchorDetectionEnabled]: boolean;
 	declare [kDocument]: Document;
 	declare [kResizeTimer]: ReturnType<typeof setTimeout> | null;
+
 	/**
 	 * A resize is settling: a token per burst, so a redraw that lands after
 	 * a newer burst began knows to stand down. Null between bursts.
@@ -850,8 +875,10 @@ export class TerminalExchange {
 	 * each names its own mode number, so neither takes the other's.
 	 */
 	declare [kPendingReplies]: PendingReply[];
+
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	declare [kPriorBidiMode]: number | null;
+
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
 	declare [kGraphemeClustersNegotiated]: boolean;
 
@@ -861,6 +888,7 @@ export class TerminalExchange {
 	 * measurement from taking each other's replies.
 	 */
 	declare [kDsrSequence]: number;
+
 	/** Width probes written and not yet answered, oldest first. */
 	declare [kProbingEnded]: boolean;
 	declare [kWidthProbes]: Array<{
@@ -884,6 +912,7 @@ export class TerminalExchange {
 	 * the replies come back in the same order the glyphs were painted.
 	 */
 	declare [kWidthSettled]: Set<string>;
+
 	/**
 	 * Every cluster that has ever carried a query, wherever it was asked from.
 	 * A cluster in here is not starved however often the margin turns it away:
@@ -891,6 +920,7 @@ export class TerminalExchange {
 	 * business. This is what bounds the probe train to one per cluster.
 	 */
 	declare [kWidthAsked]: Set<string>;
+
 	/**
 	 * Clusters the margin guard turned away that have never been asked about
 	 * at all, waiting for a frame to carry their probe train. Right-aligned
@@ -899,14 +929,17 @@ export class TerminalExchange {
 	 * session.
 	 */
 	declare [kWidthStarved]: Set<string>;
+
 	/** The wait for a frame the starved clusters could have ridden. */
 	declare [kStarvationTimer]: ReturnType<typeof setTimeout> | null;
+
 	/**
 	 * Whether frames may still probe: false from the start when nothing
 	 * interactive is behind the transport, and false for good once the
 	 * terminal proves it does not answer.
 	 */
 	declare [kWidthProbing]: boolean;
+
 	/** Whether the terminal has ever answered a width probe. */
 	declare [kWidthAnswered]: boolean;
 	declare [kWidthProbeTimer]: ReturnType<typeof setTimeout> | null;
@@ -930,12 +963,14 @@ export class TerminalExchange {
 	 * gives up probing, and it can afford to wait to be sure.
 	 */
 	static readonly [kWidthProbeTimeout] = 2000;
+
 	/**
 	 * How long a starved cluster waits for a frame of the document's own
 	 * before one is asked for on its behalf. Long enough that anything still
 	 * animating, typing or scrolling carries the train for free.
 	 */
 	static readonly [kWidthStarvationWait] = 500;
+
 	/**
 	 * How long a clipboard query waits. Short on purpose: most terminals
 	 * refuse clipboard reads and refusing is silence, so this is the delay
@@ -1969,6 +2004,7 @@ function nextReply<K extends WireItem["kind"], T>(
 	session: TerminalExchange,
 	kind: K,
 	options: {
+
 		/** The bytes that ask, whatever they ride behind. */
 		ask: string;
 		timeoutMs: number;
@@ -2245,9 +2281,9 @@ export function transportFromProcess(
 				const decoder = new TextDecoder();
 				dataListener = (chunk: string | Uint8Array | ArrayBuffer) => {
 					controller.enqueue(
-						typeof chunk === "string" ?
-							chunk :
-								decoder.decode(chunk, {stream: true}),
+						typeof chunk === "string"
+							? chunk
+							: decoder.decode(chunk, {stream: true}),
 					);
 				};
 				stdin.on("data", dataListener);

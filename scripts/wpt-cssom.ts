@@ -30,6 +30,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
 const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITE = "css/cssom";
+
 /**
  * A test that has not finished in this long is recorded as a timeout.
  *
@@ -617,9 +618,9 @@ function createRealm(window: EngineWindow, url: string): object {
 				...descriptor,
 				value:
 					typeof descriptor.value === "function" &&
-					descriptor.value.prototype === undefined ?
-							descriptor.value.bind(window) :
-						descriptor.value,
+					descriptor.value.prototype === undefined
+						? descriptor.value.bind(window)
+						: descriptor.value,
 				configurable: true,
 			});
 		}
@@ -705,9 +706,9 @@ async function flattenModule(
 	const prefix: string[] = [];
 	for (const match of imports) {
 		const specifier = match[1];
-		const path = specifier.startsWith("/") ?
-				specifier.slice(1) :
-			`${SUITE}/${specifier.replace(/^\.\//, "")}`;
+		const path = specifier.startsWith("/")
+			? specifier.slice(1)
+			: `${SUITE}/${specifier.replace(/^\.\//, "")}`;
 		const text = await cached(path);
 		if (text === null) {
 			return null;

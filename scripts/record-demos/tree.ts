@@ -54,6 +54,7 @@ export default {
 				container.appendChild(makeRow(entry, depth));
 			}
 		}
+
 		fill(tree, ".", 0);
 
 		const rows = (): HTMLElement[] =>
@@ -85,9 +86,9 @@ export default {
 					const depth =
 						Math.floor((parseInt(current.style.paddingLeft) - 1) / 2) + 1;
 					const dir =
-						current.dataset.path === "src/" ?
-							"./src" :
-							"./" + current.dataset.path!.replace(/\/$/, "");
+						current.dataset.path === "src/"
+							? "./src"
+							: "./" + current.dataset.path!.replace(/\/$/, "");
 					fill(children, dir, depth);
 					current.after(children);
 					current.dataset.open = "true";

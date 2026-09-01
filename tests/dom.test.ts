@@ -25,9 +25,9 @@ import {
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
 	return parseHTMLDocument(
-		title === undefined ?
-			"<!doctype html>" :
-			`<!doctype html><title>${title}</title>`,
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
 	);
 }
 
@@ -787,11 +787,13 @@ test("stopPropagation on a platform event ends the walk", () => {
 test("a subclass of the platform CustomEvent dispatches", () => {
 	const document = make();
 	const target = document.createElement("div");
+
 	class ThingEvent extends globalThis.CustomEvent<{count: number}> {
 		constructor(count: number) {
 			super("thing", {bubbles: true, detail: {count}});
 		}
 	}
+
 	let heard: unknown = null;
 	document.body.appendChild(target);
 	document.body.addEventListener("thing", (event: any) => {
@@ -1196,6 +1198,7 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 	const element = document.createElement("order-three");
 	element.setAttribute("a", "1");
 	document.body.appendChild(element);
+
 	class OrderThree extends HTMLElement {
 		static get observedAttributes(): string[] {
 			return ["a"];
@@ -1209,6 +1212,7 @@ test("an upgrade replays the attributes and the connection it missed", () => {
 			seen.push("connected");
 		}
 	}
+
 	expect(element instanceof OrderThree).toBe(false);
 	customElements.define("order-three", OrderThree);
 	expect(element instanceof OrderThree).toBe(true);
@@ -1232,7 +1236,9 @@ test("a definition is rejected by name and by a constructor already used", () =>
 test("a constructor called on its own builds an element of its own name", () => {
 	const document = make();
 	new Window(document);
+
 	class OrderSix extends HTMLElement {}
+
 	customElements.define("order-six", OrderSix);
 	const element: any = new OrderSix();
 	expect(element.localName).toBe("order-six");

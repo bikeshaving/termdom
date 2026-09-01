@@ -7,6 +7,7 @@
  */
 
 declare module "linebreak" {
+
 	/** UAX #14 line breaking. */
 	export default class LineBreaker {
 		constructor(text: string);
@@ -36,6 +37,7 @@ declare module "css-tree" {
 	}
 
 	export function parse(text: string, options?: ParseOptions): CSSTreeNode;
+
 	export function generate(node: CSSTreeNode): string;
 
 	export interface MatchResult {
@@ -70,6 +72,7 @@ declare module "css-tree" {
 }
 
 declare module "bidi-js" {
+
 	/** UAX #9, the Unicode bidirectional algorithm. */
 	export interface EmbeddingLevels {
 		levels: Uint8Array;
@@ -77,6 +80,7 @@ declare module "bidi-js" {
 	}
 
 	export interface Bidi {
+
 		/**
 		 * Resolve embedding levels for a string. `explicitDirection` forces the
 		 * paragraph direction; omitted, it is inferred per §P2 from the first
@@ -86,6 +90,7 @@ declare module "bidi-js" {
 			text: string,
 			explicitDirection?: "ltr" | "rtl" | "auto",
 		): EmbeddingLevels;
+
 		/**
 		 * The string in visual order, with mirrored characters substituted
 		 * (§L2 and §L4 together).
@@ -139,7 +144,8 @@ declare module "arabic-persian-reshaper" {
 declare namespace globalThis {
 	// eslint-disable-next-line no-var
 	var Bun:
-		| {
+		{
+
 			/** The rendered column width of a string. */
 			stringWidth(input: string): number;
 		} |

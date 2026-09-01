@@ -162,6 +162,7 @@ for (const name of longhands) {
  * accessors on that rule's own declaration block and nowhere else.
  */
 const descriptors: Record<string, string[]> = {};
+
 /**
  * Descriptors the property index leaves out. css-page-3 gives @page's block
  * the page margins alongside its own descriptors, so they are named on

@@ -337,6 +337,7 @@ function inspectNodeList(
 }
 
 const kNodeInspect = Symbol.for("nodejs.util.inspect.custom");
+
 function hook(
 	prototype: object,
 	render: (

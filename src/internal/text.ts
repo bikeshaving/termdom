@@ -253,9 +253,9 @@ export function stringWidth(str: string): number {
 	// learned anything takes the cluster-by-cluster path -- which is where the
 	// ledger is consulted. An empty ledger costs one size read.
 	const width =
-		bun !== undefined && clusterAdvances.size === 0 && !COMBINING.test(str) ?
-				bun.stringWidth(str) :
-				stringWidthFallback(str);
+		bun !== undefined && clusterAdvances.size === 0 && !COMBINING.test(str)
+			? bun.stringWidth(str)
+			: stringWidthFallback(str);
 	widthCache.set(str, width);
 	return width;
 }

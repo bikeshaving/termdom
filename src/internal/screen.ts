@@ -210,6 +210,7 @@ const kColorDepth = Symbol("colorDepth");
 class FrameWriter {
 	/** Everything spelled since the last take(), in order. */
 	declare [kOut]: string[];
+
 	/** What the terminal can display; style() spells colors at this depth. */
 	declare [kColorDepth]: ColorDepth;
 
@@ -371,6 +372,7 @@ export interface CellStyle {
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
+
 	/** CSS text-decoration-style, insofar as SGR can draw it. */
 	underlineStyle?: "solid" | "double";
 	strikethrough?: boolean;
@@ -538,9 +540,9 @@ function encodeGrapheme(grapheme: string): number {
 
 /** The grapheme cluster a char-plane value names. */
 function decodeGrapheme(char: number): string {
-	return char >= CHAR_INTERNED ?
-		internedGraphemes[char - CHAR_INTERNED] :
-			String.fromCodePoint(char);
+	return char >= CHAR_INTERNED
+		? internedGraphemes[char - CHAR_INTERNED]
+		: String.fromCodePoint(char);
 }
 
 /**
@@ -870,15 +872,15 @@ function getBorderChar(borderEncoding: number): string {
 	// bends only the four cells where the strokes turn -- and a style whose
 	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
 	const corner =
-		hasRight && hasBottom ?
-			charSet.topLeft : // ┌
-			hasLeft && hasBottom ?
-				charSet.topRight : // ┐
-				hasRight && hasTop ?
-					charSet.bottomLeft : // └
-					hasLeft && hasTop ?
-						charSet.bottomRight : // ┘
-						null;
+		hasRight && hasBottom
+			? charSet.topLeft // ┌
+			: hasLeft && hasBottom
+				? charSet.topRight // ┐
+				: hasRight && hasTop
+					? charSet.bottomLeft // └
+					: hasLeft && hasTop
+						? charSet.bottomRight // ┘
+						: null;
 	if (corner !== null) {
 		return hasRounded ? (ROUNDED_CORNERS[corner] ?? corner) : corner;
 	}
@@ -1105,9 +1107,9 @@ class CellGrid {
 	/** Columns the cell's glyph occupies. */
 	widthAt(index: number): number {
 		const width = (this.attrs[index] & Attr.WidthMask) >>> Attr.WidthShift;
-		return width === Attr.WidthWide ?
-				stringWidth(decodeGrapheme(this.char[index])) :
-			width;
+		return width === Attr.WidthWide
+			? stringWidth(decodeGrapheme(this.char[index]))
+			: width;
 	}
 
 	/** Whether two cells carry the same content and the same styling. */
@@ -1164,9 +1166,9 @@ function gridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 
 		const encoding = grid.border[index];
 		writer.text(
-			encoding > 0 ?
-					getBorderChar(encoding) :
-					decodeGrapheme(grid.char[index]),
+			encoding > 0
+				? getBorderChar(encoding)
+				: decodeGrapheme(grid.char[index]),
 		);
 		previous = index;
 
@@ -1262,9 +1264,9 @@ export class CellContext {
 		// Highlight/HighlightText system-color pair, swapping each cell's
 		// colors with no assumption about what they are.
 		const style: CellStyle =
-			background === "inverse" ?
-					{inverse: true} :
-					{bg: background === "default" ? undefined : background};
+			background === "inverse"
+				? {inverse: true}
+				: {bg: background === "default" ? undefined : background};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -1582,9 +1584,9 @@ function setBorderCell(
 	const existing = grid.border[index];
 	grid.setBorderCell(
 		index,
-		grid.char[index] !== 0 && existing > 0 ?
-				meetEdges(existing, borderEncoding) :
-			borderEncoding,
+		grid.char[index] !== 0 && existing > 0
+			? meetEdges(existing, borderEncoding)
+			: borderEncoding,
 		style,
 	);
 }
@@ -2339,14 +2341,19 @@ export class Screen {
 		delta = 0,
 		band,
 	}: {
+
 		/** Rows the camera has scrolled, negative downward. */
 		offset: number;
+
 		/** Where the cursor parks when the frame ends. */
 		cursorRow?: number;
+
 		/** Rows the frame spans, when it is taller than the screen. */
 		regionRows?: number;
+
 		/** Rows the scroll moved since the last frame, positive downward. */
 		delta?: number;
+
 		/**
 		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
 		 * port names its own rows here; the camera names none and takes the
@@ -2437,9 +2444,9 @@ export class Screen {
 			// Whether this frame probes is the width authority's call, taken
 			// as the frame is emitted so the session's facts are current.
 			const measurer =
-				this[kMeasurer] !== null && probingTeaches(this[kMeasurer]) ?
-					this[kMeasurer] :
-					undefined;
+				this[kMeasurer] !== null && probingTeaches(this[kMeasurer])
+					? this[kMeasurer]
+					: undefined;
 			// The frame is complete: join the borders whose strokes touch,
 			// so the diff below sees a junction appear even when only its
 			// neighbour changed.
@@ -2537,9 +2544,9 @@ export class Screen {
 				// CUPs to); regionRows is a screen-absolute end. Seed exactly the
 				// region's rows -- seeding further would count blank screen rows as
 				// content and skew the park the resize re-anchor measures from.
-				const anchorRow = this[kNeedsScreenReset] ?
-					this[kResetAtRow] :
-						(cursorPosition ?? 0);
+				const anchorRow = this[kNeedsScreenReset]
+					? this[kResetAtRow]
+					: (cursorPosition ?? 0);
 				const regionHeight = (regionRows ?? this[kRows]) - anchorRow;
 				const seedRows = Math.min(frameRows, this[kRows], regionHeight);
 				for (let row = 0; row < seedRows; row++) {

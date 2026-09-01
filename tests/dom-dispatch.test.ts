@@ -19,9 +19,9 @@ import {
 // a document the realm's custom element registry, as it does the engine's.
 function createHTMLDocument(title?: string): Document {
 	return parseHTMLDocument(
-		title === undefined ?
-			"<!doctype html>" :
-			`<!doctype html><title>${title}</title>`,
+		title === undefined
+			? "<!doctype html>"
+			: `<!doctype html><title>${title}</title>`,
 	);
 }
 

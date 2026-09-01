@@ -20,6 +20,7 @@ interface Fixture {
 	cols?: number;
 	rows?: number;
 	html: string;
+
 	/** A substring that must appear in the visible text, as a liveness check. */
 	contains?: string[];
 }

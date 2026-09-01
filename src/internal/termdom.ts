@@ -30,13 +30,16 @@ import {StyleManager, getBoxModel} from "./cssom.js";
 import {EventHandler} from "./input.js";
 
 export interface TermDOMOptions {
+
 	/**
 	 * The terminal this instance renders to. Defaults to a wrapper around the
 	 * global process.
 	 */
 	transport?: TerminalTransport;
+
 	/** The initial document's markup. */
 	html?: string;
+
 	/** The initial document's URL. */
 	url?: string;
 }
@@ -177,7 +180,7 @@ export class TermDOM {
 	// The field whose caret the NEXT frame must reveal -- set by edits,
 	// consumed inside renderInteractive after its layout flush. Last
 	// edit before the frame wins.
-	declare [kPendingCaretReveal]: | HTMLInputElement |
+	declare [kPendingCaretReveal]: HTMLInputElement |
 		HTMLTextAreaElement |
 		HTMLSelectElement |
 		null;
@@ -778,12 +781,12 @@ function documentFlowHeight(
 function cameraRegionHeight(
 	termdom: TermDOM,
 ): number {
-	return isFullscreen(termdom) ?
-		termdom[kScreen].rows :
-			Math.min(
-				termdom[kScreen].rows,
-				documentFlowHeight(termdom),
-			);
+	return isFullscreen(termdom)
+		? termdom[kScreen].rows
+		: Math.min(
+			termdom[kScreen].rows,
+			documentFlowHeight(termdom),
+		);
 }
 
 /**
@@ -871,11 +874,11 @@ function scrollCaretIntoView(
 	const regionHeight = cameraRegionHeight(termdom);
 	const top = termdom[kScreen].scrollTop;
 	const delta =
-		revealTop < top ?
-			revealTop - top :
-			revealBottom > top + regionHeight ?
-				revealBottom - (top + regionHeight) :
-				0;
+		revealTop < top
+			? revealTop - top
+			: revealBottom > top + regionHeight
+				? revealBottom - (top + regionHeight)
+				: 0;
 	if (delta) {
 		scrollCamera(termdom, delta);
 	}
@@ -934,9 +937,9 @@ function resolveScrollBand(
 	// off what a scrolled ancestor lifts the box by -- and the buffer's are
 	// the camera's. A box in fixed space is laid out in viewport rows
 	// instead, and the paint cancels the camera for it.
-	const lift = engine.isInFixedSpace(record.element) ?
-		0 :
-		termdom[kScreen].scrollTop;
+	const lift = engine.isInFixedSpace(record.element)
+		? 0
+		: termdom[kScreen].scrollTop;
 	const top = Math.max(
 		0,
 		Math.round(rect.top + (box.borderTopWidth || 0)) - lift,
@@ -1191,9 +1194,9 @@ async function renderInteractive(
 	// document's scroll position survives untouched underneath -- the
 	// fixed, Canvas-backed fullscreen element covers it regardless.
 	const fullscreen = isFullscreen(termdom);
-	const contentHeight = fullscreen ?
-		termdom[kScreen].rows :
-			termdom[kLayoutEngine].documentPaintHeight();
+	const contentHeight = fullscreen
+		? termdom[kScreen].rows
+		: termdom[kLayoutEngine].documentPaintHeight();
 	const regionHeight = Math.min(
 		contentHeight,
 		termdom[kScreen].rows,

@@ -142,11 +142,12 @@ function rng(seed: number): () => number {
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 }
+
 const pick = <T>(next: () => number, items: T[]): T =>
 	items[Math.floor(next() * items.length) % items.length];
 
 type Action =
-	| {kind: "class"; id: string; cls: string} |
+	{kind: "class"; id: string; cls: string} |
 	{kind: "style"; id: string; value: string} |
 	{kind: "attr"; id: string; value: string} |
 	{
@@ -682,11 +683,11 @@ const REGRESSION_SEEDS = [
 test("shrink", async () => {
 	const scan = Number(process.env.SCAN ?? 0);
 	const from = Number(process.env.FROM ?? 1);
-	const seeds = scan ?
-			Array.from({length: scan}, (_, i) => from + i) :
-		process.env.SEEDS ?
-				process.env.SEEDS.split(",").map((s) => Number(s.trim())) :
-			REGRESSION_SEEDS;
+	const seeds = scan
+		? Array.from({length: scan}, (_, i) => from + i)
+		: process.env.SEEDS
+			? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
+			: REGRESSION_SEEDS;
 	const wanted = Number(process.env.WANT ?? seeds.length);
 	const report: string[] = [];
 	let found = 0;
